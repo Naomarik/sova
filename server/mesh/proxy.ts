@@ -51,7 +51,7 @@ export function setPeerHeadersTimeout(ms: number): void {
 /** Tests: forget what is known. */
 export const clearPeerReach = (): void => reach.clear();
 
-function tcpReachable(url: string): Promise<boolean> {
+export function tcpReachable(url: string): Promise<boolean> {
   const u = new URL(url);
   const port = Number(u.port) || (u.protocol === "https:" ? 443 : 80);
   const host = u.hostname.replace(/^\[|\]$/g, "");
@@ -69,7 +69,7 @@ function tcpReachable(url: string): Promise<boolean> {
 
 /** Whether to try the hop at all: recent knowledge first, else a short TCP connect. "recent"
     means the hop goes ahead without a check, so it needs a stall watch (watchStall). */
-async function preflight(url: string): Promise<boolean | "recent"> {
+export async function preflight(url: string): Promise<boolean | "recent"> {
   const known = reach.get(url);
   const age = known ? Date.now() - known.at : Infinity;
   if (known && !known.ok && age < DOWN_MS) return false;
@@ -84,7 +84,7 @@ async function preflight(url: string): Promise<boolean | "recent"> {
  * with a bare TCP connect and call `abort` if it is gone. Returns the function that says "it
  * answered" (cancels the watch).
  */
-function watchStall(url: string, abort: () => void): () => void {
+export function watchStall(url: string, abort: () => void): () => void {
   let answered = false;
   const timer = setTimeout(() => {
     void tcpReachable(url).then((ok) => {

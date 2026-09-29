@@ -2,6 +2,8 @@ import { createEffect, createResource, createSignal, For, on, Show } from "solid
 import { abilitiesOf, MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
+import { LINK_WARNINGS } from "../../shared/public-links";
+import { openSettings } from "../lib/settings-nav";
 import { linkReplaced, linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
 import { requestListRefresh } from "../lib/list-refresh";
 import { confirmActivate } from "../lib/confirm-step";
@@ -39,9 +41,9 @@ export function BatonStrip(props: {
   const [info, { refetch, mutate }] = createResource(key, (k) => getBaton(k.path));
   const now = useMinuteNow();
   /** Links shown once, and the hand-off they belong to: they stay until dismissed or a later hand-off. */
-  const [shown, setShown] = createSignal<{ links: OfferLink[]; at: number } | null>(null);
+  const [shown, setShown] = createSignal<{ links: OfferLink[]; at: number; warning?: string } | null>(null);
   const links = () => shown()?.links ?? null;
-  const showLinks = (l: OfferLink[], at: number) => setShown(l.length ? { links: l, at } : null);
+  const showLinks = (l: OfferLink[], at: number, warning?: string) => setShown(l.length ? { links: l, at, ...(warning ? { warning } : {}) } : null);
   const [error, setError] = createSignal<string | null>(null);
   const [closeArmed, setCloseArmed] = createSignal(false);
   const [handing, setHanding] = createSignal<string[] | null>(null);
@@ -135,7 +137,7 @@ export function BatonStrip(props: {
                   void act(async () => {
                     const r = await batonLink(sid());
                     const holder = i().session.holder!;
-                    showLinks([{ personId: holder, name: nameOf(i(), holder), link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n);
+                    showLinks([{ personId: holder, name: nameOf(i(), holder), link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n, r.linkWarning);
                   }, "New link ready below.")
                 }
               >
@@ -208,8 +210,12 @@ export function BatonStrip(props: {
             <div class="baton-strip-link">
               <Banner
                 tone="warn"
-                title="Links from this host can't be opened from outside."
-                body="No share listener is running here. Set SOVA_SHARE_HOST and SOVA_SHARE_PORT (and SOVA_SHARE_PUBLIC_URL behind a proxy), then restart Sova."
+                title={LINK_WARNINGS.off}
+                action={
+                  <button type="button" class="button button-sm button-ghost" onClick={() => openSettings("public-links")}>
+                    Open Settings
+                  </button>
+                }
               />
             </div>
           </Show>
@@ -226,7 +232,7 @@ export function BatonStrip(props: {
                       onClick={() =>
                         void act(async () => {
                           const r = await inviteeLink(sid(), p.id);
-                          showLinks([{ personId: p.id, name: p.name, link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n);
+                          showLinks([{ personId: p.id, name: p.name, link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n, r.linkWarning);
                         }, `New link for ${p.name} ready below.`)
                       }
                     >
@@ -243,10 +249,10 @@ export function BatonStrip(props: {
                 info={i()}
                 preselected={pre}
                 onCancel={() => setHanding(null)}
-                onDone={(l, msg, info, to) => {
+                onDone={(l, msg, info, to, warning) => {
                   setHanding(null);
                   if (info) mutate(info);
-                  showLinks(l, info?.session.handoffs.length ?? (i().session.handoffs.length + 1));
+                  showLinks(l, info?.session.handoffs.length ?? (i().session.handoffs.length + 1), warning);
                   // Handed to someone just approved: their "is on the roster now" row has done its job.
                   setApproved((a) => a.filter((x) => !to.includes(x.id)));
                   toast(msg);
@@ -317,7 +323,7 @@ export function BatonStrip(props: {
           <Show when={links()}>
             {(l) => (
               <div class="baton-strip-link">
-                <LinksBanner links={l()} replaced={(link) => linkReplaced(link, info.latest)} onDismiss={() => setShown(null)} />
+                <LinksBanner links={l()} warning={shown()?.warning} replaced={(link) => linkReplaced(link, info.latest)} onDismiss={() => setShown(null)} />
               </div>
             )}
           </Show>
@@ -411,7 +417,7 @@ function HandOnForm(props: {
   preselected: string[];
   onCancel(): void;
   /** What the server answered: the links to show once, the fresh info when it sent one, and who it went to. */
-  onDone(links: OfferLink[], message: string, info: BatonInfo | undefined, to: string[]): void;
+  onDone(links: OfferLink[], message: string, info: BatonInfo | undefined, to: string[], warning?: string): void;
 }) {
   const [to, setTo] = createSignal<string[]>(props.preselected);
   const [question, setQuestion] = createSignal("");
@@ -428,10 +434,10 @@ function HandOnForm(props: {
       if (to().length === 1) {
         const who = to()[0]!;
         const r = await handBaton(sid, who, question().trim(), briefing().trim() || undefined);
-        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link, ...(r.at ? { at: r.at } : {}) }] : [], `Handed to ${nameOf(who)}.`, r.info, [who]);
+        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link, ...(r.at ? { at: r.at } : {}) }] : [], `Handed to ${nameOf(who)}.`, r.info, [who], r.linkWarning);
       } else {
         const r = await offerBaton(sid, to(), question().trim(), briefing().trim() || undefined);
-        props.onDone(r.links, `Offered to ${to().length} people. The first to answer takes it.`, r.info, to());
+        props.onDone(r.links, `Offered to ${to().length} people. The first to answer takes it.`, r.info, to(), r.linkWarning);
       }
     } catch (err) {
       setError(`${errText(err).replace(/\.$/, "")}. Nothing was sent.`);

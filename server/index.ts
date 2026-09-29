@@ -22,7 +22,9 @@ import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
-import { startShareListener, stopShareListener } from "./share/listener";
+import { mountPublicLinks } from "./public-links-routes";
+import { mountShareGateway } from "./share/gateway-routes";
+import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
@@ -1151,6 +1153,10 @@ const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(
 setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
+// Public links (shared/public-links.ts): Settings → Public links under /api/public-links (main
+// listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
+mountPublicLinks(app);
+mountShareGateway(app, meshApi);
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
@@ -1230,8 +1236,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port}`);
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
-  // The share listener, only when SOVA_SHARE_HOST/SOVA_SHARE_PORT are set (§app.baton/share-listener).
-  void startShareListener();
+  // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
+  void startShareRuntime();
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler
@@ -1332,7 +1338,7 @@ async function shutdown() {
   stopResourceMonitor();
   meshLinks.stop();
   stopMesh();
-  stopShareListener();
+  stopShareRuntime();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   // Every visit with an open share socket is seen now, so the commit below carries it.
   try {

@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "n
 import { dirname, join } from "node:path";
 import { OWNER_LINK_DAYS } from "../shared/owner";
 import { hashToken, TOKEN_RE } from "./baton-links";
+import { shareLinksChanged } from "./share/links-events";
 import { stateRoot } from "./state-root";
 
 /**
@@ -118,6 +119,7 @@ export function mintOwnerLink(orgId: string, personId: string, now = Date.now())
   store.links.push(record);
   if (!store.key) store.key = handleKey();
   write(store);
+  shareLinksChanged({ kind: "i", cause: "mint" });
   return { token, record };
 }
 
@@ -143,7 +145,10 @@ export function revokePersonLinks(match: (l: PersonLinkRecord) => boolean, why: 
       l.revokedWhy = why;
       n++;
     }
-  if (n) write(store);
+  if (n) {
+    write(store);
+    shareLinksChanged({ kind: "i", cause: "revoke" });
+  }
   return n;
 }
 

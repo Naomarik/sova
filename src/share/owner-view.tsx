@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, type JSX, on, onCleanup, onMount, Show } from "solid-js";
 import type { OwnerConversation, OwnerDecision, OwnerHome, OwnerNews, OwnerProject, OwnerWaiting } from "../../shared/owner";
+import { OFFLINE_PAGE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
 import {
   builtLine,
   byTopic,
@@ -27,8 +28,9 @@ import { Item, LinkedText } from "./thread";
  */
 
 /** Why a load failed. `unknown`/`gone`/`expired` are about the link (the whole page); `missing` is
-    one project or conversation that isn't on the page; `failed` is anything else. */
-export type OwnerProblemKind = "unknown" | "gone" | "expired" | "busy" | "missing" | "failed";
+    one project or conversation that isn't on the page; `offline` is a public gateway's 503 (the
+    host it lives on is offline: the page stays and keeps trying); `failed` is anything else. */
+export type OwnerProblemKind = "unknown" | "gone" | "expired" | "busy" | "missing" | "offline" | "failed";
 export class OwnerLoadError extends Error {
   constructor(readonly kind: OwnerProblemKind) {
     super(kind);
@@ -37,7 +39,7 @@ export class OwnerLoadError extends Error {
 
 export type OwnerAnswer = OwnerHome | OwnerProject | OwnerConversation;
 
-const PROBLEM: Record<Exclude<OwnerProblemKind, "missing" | "failed">, { title: string; body: string }> = {
+const PROBLEM: Record<Exclude<OwnerProblemKind, "missing" | "offline" | "failed">, { title: string; body: string }> = {
   expired: { title: "This link has expired.", body: "These links last 90 days. Ask the person who sent it for a new one." },
   gone: { title: "This link is no longer active.", body: "Ask the person who sent it for a new one." },
   unknown: { title: "This link doesn't open anything.", body: "Check that you copied all of it." },
@@ -65,6 +67,8 @@ export function OwnerPage(props: {
   const [problem, setProblem] = createSignal<OwnerProblemKind | null>(null);
   const [now, setNow] = createSignal(Date.now());
   let seq = 0;
+  let offlineRetry: ReturnType<typeof setTimeout> | undefined;
+  let offlineDelay: number = RECONNECT_BACKOFF_MS.first;
   /** Read the current route. Only the newest read lands; a failed refresh keeps what was shown. */
   const read = async () => {
     const mine = ++seq;
@@ -75,11 +79,20 @@ export function OwnerPage(props: {
       setAnswer(d);
       setProblem(null);
       setNow(Date.now());
+      offlineDelay = RECONNECT_BACKOFF_MS.first;
     } catch (err) {
       if (mine !== seq) return;
-      setProblem(err instanceof OwnerLoadError ? err.kind : "failed");
+      const kind = err instanceof OwnerLoadError ? err.kind : "failed";
+      setProblem(kind);
+      // Offline: read again from 5 s, backing off to 60 s, until the host answers.
+      if (kind === "offline" && !props.preview) {
+        clearTimeout(offlineRetry);
+        offlineRetry = setTimeout(() => void read(), offlineDelay);
+        offlineDelay = Math.min(offlineDelay * 2, RECONNECT_BACKOFF_MS.max);
+      }
     }
   };
+  onCleanup(() => clearTimeout(offlineRetry));
   createEffect(
     on(key, () => {
       setProblem(null);
@@ -145,10 +158,12 @@ export function OwnerPage(props: {
           </div>
         }
       >
-        <Show when={problem() === "failed" && current()}>
+        <Show when={(problem() === "failed" || problem() === "offline") && current()}>
           <div class="banner banner-warn owner-banner" role="alert">
             <div class="banner-main">
-              <p class="banner-body">We couldn't load this page. Your link still works. Try again in a minute.</p>
+              <p class="banner-body">
+                {problem() === "offline" ? OFFLINE_PAGE.body : "We couldn't load this page. Your link still works. Try again in a minute."}
+              </p>
             </div>
             <button type="button" class="button button-sm banner-action" onClick={() => void read()}>
               Try Again
@@ -168,11 +183,20 @@ export function OwnerPage(props: {
                 <Show
                   when={problem() === "missing"}
                   fallback={
-                    <>
-                      <p class="empty-title">We couldn't load this page.</p>
-                      <p class="empty-body">Your link still works. Try again in a minute.</p>
+                    <Show
+                      when={problem() === "offline"}
+                      fallback={
+                        <>
+                          <p class="empty-title">We couldn't load this page.</p>
+                          <p class="empty-body">Your link still works. Try again in a minute.</p>
+                          {tryAgain}
+                        </>
+                      }
+                    >
+                      <p class="empty-title">{OFFLINE_PAGE.heading}</p>
+                      <p class="empty-body">{OFFLINE_PAGE.body}</p>
                       {tryAgain}
-                    </>
+                    </Show>
                   }
                 >
                   <p class="empty-title">This isn't on your page.</p>

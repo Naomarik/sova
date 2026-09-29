@@ -2159,6 +2159,8 @@ export interface WorkerInfo {
       reaches workers; §chat.mode-menu/workers), a resumed worker's being the ones its resume gave.
       Absent when it was given none, and from records of an older pi-config — show nothing then. */
   modes?: string[];
+  /** ms: its first spawn — kept across resumes and restarts (a restored worker: its transcript's
+      start, else its first durable record's time). */
   startedAt?: number; lastActivity?: number; endedAt?: number;
   outcome?: "success" | "error" | "aborted";
   teamId?: string;
@@ -2171,6 +2173,11 @@ export interface WorkerInfo {
   /** Tokens this worker has used so far (both backends report them). Absent for a worker that
       has spent nothing yet, and from live records written by an older pi-config. */
   usage?: TokenUsage;
+  /** Model replies this worker has had so far, across resumes (the TUI's '{n} turns'): the live
+      record's `workers[].turns`, or for a restored worker its transcript's or last snapshot's
+      count. Absent when unknown (an older writer, a record that never counted) — never 0 for
+      unknown. */
+  turns?: number;
   /** Where `usage` comes from. `transcript`: recomputed from its own transcript (exact tokens;
       cost only when the backend records one). `snapshot`: the last number the worker reported
       before the restart, true as of `usageAsOf`. `unavailable`: its transcript couldn't be read

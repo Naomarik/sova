@@ -166,12 +166,17 @@
 .board-act, .board-act-wide { display: none; }
 .board-act-gap { width: var(--control-md); }
 
-/* ---- The open row: workers, the team, and one line per worktree ---- */
+/* ---- The open row: workers, the team, and one line per worktree ----
+   Its children sit in the title column at every width (8 + 44 + 4 = 56px), behind one guide rule
+   drawn under the chevron's centre (8 + 22): depth is the rule's job. A team's members take no
+   further step; the hierarchy is at most session → team → member. */
 .board-detail {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: 0 var(--space-3) var(--space-3) var(--space-4);
+  margin: 0 var(--space-3) var(--space-3) calc(var(--space-2) + var(--control-md) / 2);
+  padding-left: calc(var(--control-md) / 2 + var(--space-1) - var(--stroke-thin));
+  border-left: var(--stroke-thin) solid var(--color-border);
 }
 .board-reason { display: flex; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-caption); color: var(--color-ink); }
 .board-reason > .icon { flex: none; color: var(--status-warn); }
@@ -192,7 +197,9 @@
 }
 .board-worker + .board-worker { border-top: var(--stroke-thin) solid var(--color-border); }
 .board-worker-name { font-weight: var(--fw-medium); color: var(--color-ink); white-space: nowrap; }
-.board-worker-meta { font-size: var(--fs-mono); color: var(--color-ink-muted); white-space: nowrap; }
+/* id · model · started · turns: each part whole, the line breaks between them when it must. */
+.board-worker-meta { min-width: 0; font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.board-worker-meta > span { white-space: nowrap; }
 .board-worker-preview { flex: 1 1 100%; order: 9; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .board-worker-preview:empty { display: none; }
 .board-worker > .chip { flex: none; }
@@ -252,7 +259,6 @@
   .board-title-edit { display: block; }
   .board-title-text, .board-state-inline, .board-micro { display: none; }
   .board-act:not(.board-act-wide) { display: inline-flex; }
-  .board-detail { padding-left: calc(var(--space-2) + var(--control-md) + var(--space-1)); }
   .board-worker { flex-wrap: nowrap; }
   .board-worker-preview { flex: 1 1 auto; order: 0; }
 }

@@ -16,6 +16,14 @@ const err = (body: string) => {
   assert.equal(r.ok, false, `expected an error for:\n${body}`);
   return r as { ok: false; line: number; message: string };
 };
+/** A fence that still draws: its first warning (parse.ts). */
+const warning = (body: string) => {
+  const r = parseVis("chart", body);
+  if (!r.ok) assert.fail(`expected a drawing with a warning, got line ${r.line}: ${r.message}`);
+  assert.ok(r.warnings.length, `expected a warning for:\n${body}`);
+  assert.deepEqual(r.spec.warnings, r.warnings, "the spec carries the same warnings");
+  return r.warnings[0]!;
+};
 
 const WINDOW = `type: parts
 unit: tokens
@@ -86,7 +94,7 @@ test("parts: each error says what to write", () => {
   assert.match(err("type: parts\nof: 0\na 1").message, /number above 0/);
   assert.match(err("type: parts\nof: 100").message, /add parts like/);
   assert.match(err(`type: parts\n${Array.from({ length: 13 }, (_, i) => `p${i} 1`).join("\n")}`).message, /13 parts; at most 12/);
-  assert.match(err('type: parts\na 1\nmark "b"').message, /no row "b"/);
+  assert.match(warning('type: parts\na 1\nmark "b"').message, /no row "b", dropped/);
 });
 
 test("parts height: head, bar and legend rows, as parts.css lays them out", () => {

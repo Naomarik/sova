@@ -88,7 +88,12 @@
         "src/components/SessionDetails.tsx",
         "src/App.tsx",
         "src/components/InsightsPage.tsx",
-        "src/lib/pane-insight.ts"
+        "src/lib/pane-insight.ts",
+        "server/insights.ts",
+        "server/worker-restore.ts",
+        "shared/protocol.ts",
+        "server/insights-workers.test.ts",
+        "server/insights-restored.test.ts"
       ]
     },
     "§app.insights/tokens-motion-and-accessibility": {
@@ -6329,7 +6334,11 @@
         "src/lib/fences.ts",
         "src/vis/share-views.ts",
         "src/share/vis.tsx",
-        "src/vis/share-markdown.test.ts"
+        "src/vis/share-markdown.test.ts",
+        "src/vis/golden.test.ts",
+        "src/vis/golden.json",
+        "server/vis-check.ts",
+        "server/vis-check.test.ts"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
@@ -6571,7 +6580,8 @@
         "src/vis/kinds/flow/View.tsx",
         "src/vis/kinds/flow/flow.css",
         "src/vis/kinds/flow/layout.ts",
-        "pi-config/extensions/mode/vis-mode.md"
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/guide.test.ts"
       ]
     },
     "§chat.markdown/vis-parts": {
@@ -6722,7 +6732,11 @@
         "pi-config/extensions/show-changes/tests/run.mjs",
         "pi-config/extensions/show-changes/tests/runtime.mjs",
         "pi-config/extensions/show-changes/README.md",
-        "pi-config/README.md"
+        "pi-config/README.md",
+        "pi-config/extensions/show-changes/coverage.ts",
+        "pi-config/extensions/show-changes/hunks.ts",
+        "pi-config/extensions/show-changes/coverage.test.ts",
+        "src/lib/show-changes-coverage.test.ts"
       ]
     },
     "§chat.changes/steps": {

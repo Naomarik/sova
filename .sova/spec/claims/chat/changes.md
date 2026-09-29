@@ -107,7 +107,7 @@ stays an ordinary tool row.
 
 The agent opens the viewer with one tool, `show_changes` (pi-config's `show-changes`
 extension), when the user asks to see or review changes; it replies in a sentence or two instead of
-pasting a diff. The tool is read-only and computes no diff. It takes a scope: `dirty` (the index
+pasting a diff. The tool is read-only. It takes a scope: `dirty` (the index
 and working tree, untracked files included, against HEAD), `worktree` (a branch against its
 merge-base with its base branch: the tracked worktree's base branch, else `master`, else `main`,
 else the branch `origin/HEAD` names, else the tracked base commit) or `commit` (one commit, which it names, against its first parent).
@@ -120,11 +120,22 @@ named by file (every hunk of it) or by file and the start line of the hunk's old
 The tool refuses, changing and showing nothing, a malformed call with a sentence saying what to
 fix: a path that is absolute or climbs out with `..`, a step building on itself or a later step,
 the same hunk named twice, a commit that does not resolve, a checkout on its own base branch for
-`worktree`, a folder outside git, and any call in a session whose tools run on a remote target. It
-does not check the steps against the real diff; the viewer places each hunk (§chat.changes/steps).
+`worktree`, a folder outside git, and any call in a session whose tools run on a remote target.
 
-Its result's text names the comparison, lists the changed files (the first 40), and, when steps
-were given, the step refs naming no changed file and the changed files no step names. Its result's
+It then reads the hunks of the diff the viewer shows (the same comparison, files, rename detection
+and default context; an untracked file is one added hunk, a binary file or one whose patch is too
+large to draw is one whole-file unit), within the paths given, and places them the way the viewer
+does (§chat.changes/steps). It refuses, showing nothing, a diff of more than one hunk sent without
+steps, and steps that leave a hunk unplaced or hold a ref naming no hunk. The refusal says how to
+fix it in one retry: for no steps, to resend with steps, and for a change that is one idea, one
+step naming every file by path; it lists every hunk still to place, grouped by file, as its new
+start and line count and its first changed line (past 150 hunks, the files with their hunk counts
+instead, since a ref by path places all of a file's hunks), and each ref naming no hunk with the
+file's hunk ranges or that the file is not in the diff; it stays under about 12 KB. A diff of one
+hunk or none needs no steps.
+
+Its result's text names the comparison, lists the changed files (the first 40), and says how many
+hunks there are and, when steps were given, that every hunk is placed in a step. Its result's
 details are the record Sova reads: version 1, the scope with the folder read, the repository's
 top level and the full commit ids the tool resolved, and the title, paths and steps as checked;
 Sova ignores a result whose details are malformed.

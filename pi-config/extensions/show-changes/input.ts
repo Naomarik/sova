@@ -12,10 +12,13 @@ import {
 	type ShowChangesStep,
 } from "./details.ts";
 
-/** A call the model can fix: the message says what was wrong and where. */
+/** A call the model can fix: the message says what was wrong and where. `complete`: the message
+    already says nothing was shown (a multi-line refusal), so nothing is appended to it. */
 export class ShowChangesError extends Error {
-	constructor(message: string) {
+	readonly complete: boolean;
+	constructor(message: string, complete = false) {
 		super(message);
+		this.complete = complete;
 		this.name = "ShowChangesError";
 	}
 }

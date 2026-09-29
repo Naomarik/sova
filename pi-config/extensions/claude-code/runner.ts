@@ -134,7 +134,8 @@ export class ClaudeRunner implements Worker {
 	readonly forked = false;
 	/** modelUsage/total_cost_usd are cumulative over the Claude session, --resume history included. */
 	readonly usageScope = "session" as const;
-	readonly startedAt = Date.now();
+	/** Its first spawn: now, or for a resume the original start it carries. */
+	readonly startedAt: number;
 	readonly whenClosed: Promise<void>;
 	status: AgentStatus = "starting";
 	taskOutcome?: TaskOutcome;
@@ -203,6 +204,7 @@ export class ClaudeRunner implements Worker {
 		this.options = options; this.handlers = handlers;
 		this.id = options.id; this.groupId = options.groupId; this.name = options.name;
 		this.task = options.task; this.cwd = options.cwd; this.wake = options.wake ?? true;
+		this.startedAt = (options.adopt ? undefined : options.resume?.startedAt) ?? Date.now();
 		this.model = options.model; this.effort = options.effort;
 		this.timings = { ...TIMINGS, ...options.timings };
 		this.limits = { ...LIMITS, ...options.limits };

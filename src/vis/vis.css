@@ -65,6 +65,14 @@
   line-height: var(--lh-caption);
   color: var(--color-ink-muted);
 }
+/* What the parser cut or dropped to draw it (chat only): quieter than the caption, never an alarm. */
+.vis .vis-warning {
+  margin: 0;
+  padding: 0 var(--space-3) var(--space-3);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+}
 /* At phone width the head keeps the title and trades the button words for their icons. */
 @container vis (max-width: 420px) {
   .vis-action { font-size: 0; gap: 0; min-width: var(--control-sm); justify-content: center; }
@@ -105,7 +113,7 @@
   color: var(--color-ink-muted);
 }
 /* The error line teaches syntax and the failed block is syntax: `->` must never become an arrow. */
-.md .md-vis-error, .md-vis-source pre, .vis-caption code, .vis-notes code {
+.md .md-vis-error, .md-vis-source pre, .vis-caption code, .vis-notes code, .vis .vis-warning {
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0, "calt" 0;
 }
@@ -174,7 +182,6 @@
   color: var(--color-ink-2);
 }
 .vis-notes li { display: flex; align-items: baseline; gap: var(--space-1); }
-.vis-notes li > .vis-em-badge { transform: translateY(3px); }
 
 /* ---- Step-through (stepper.tsx) and not-drawn-yet kinds (StubView.tsx) ----------------------- */
 .vis-stepper { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); margin-bottom: var(--space-2); }

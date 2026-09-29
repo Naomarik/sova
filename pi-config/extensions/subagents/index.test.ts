@@ -192,12 +192,12 @@ test("worker snapshots answer before startup and publish bounded background stat
 		await h.call("agent_spawn", { prompt: "background task", wake: false });
 		const a = h.workers[0];
 		assert.deepEqual(snapshots.at(-1).workers, [{ id: a.id, name: a.name,
-			status: "running", model: "test/model", preview: "No response yet.", backend: "pi", effort: "high" }]);
+			status: "running", model: "test/model", preview: "No response yet.", backend: "pi", effort: "high", turns: 0 }]);
 		// Additive presence fields come straight from the Worker; unset/invalid values are omitted.
 		Object.assign(a, { startedAt: 1_000, lastActivity: 2_000, endedAt: Number.NaN, taskOutcome: "bogus" });
 		request();
 		assert.deepEqual(snapshots.at(-1).workers[0], { id: a.id, name: a.name, status: "running", model: "test/model",
-			preview: "No response yet.", backend: "pi", effort: "high", startedAt: 1_000, lastActivity: 2_000 });
+			preview: "No response yet.", backend: "pi", effort: "high", startedAt: 1_000, lastActivity: 2_000, turns: 0 });
 		// The live process's pid rides the in-process event only (Sova's resource monitor); the
 		// sessions extension never copies it into the on-disk record (sessions/workers.test.ts).
 		// Omitted once the process is gone, and when absent or not a positive integer.
@@ -229,7 +229,7 @@ test("worker snapshots answer before startup and publish bounded background stat
 		request();
 		assert.deepEqual(snapshots.at(-1).workers[0], { id: a.id, name: a.name, status: "running", model: "test/model",
 			preview: "No response yet.", backend: "pi", sessionFile: "/tmp/sessions/worker.jsonl", sessionId: "0199-worker",
-			effort: "high", startedAt: 1_000, lastActivity: 2_000 });
+			effort: "high", startedAt: 1_000, lastActivity: 2_000, turns: 0 });
 		Object.assign(a, { sessionFile: "", sessionId: 42 });
 		request();
 		for (const key of ["sessionFile", "sessionId"]) assert.ok(!(key in snapshots.at(-1).workers[0]), key);
@@ -309,6 +309,11 @@ test("worker snapshots carry token counts and a session-lifetime total that surv
 		const { cost, ...counts } = snapshots.at(-1).workerUsage;
 		assert.deepEqual(counts, { input: 120, output: 60, cacheRead: 1200, cacheWrite: 120, workers: 2 });
 		assert.ok(Math.abs(cost - 0.12) < 1e-9, "costs are summed as reported, not rounded");
+		// Model replies ride top-level beside usage (sessions WorkerEntry.turns), so a usage trim keeps them.
+		h.workers[0].usage.turns = 3;
+		request();
+		assert.equal(snapshots.at(-1).workers[0].turns, 3);
+		assert.equal(snapshots.at(-1).workers[1].turns, 0, "a live worker with no reply yet has a known 0");
 		// Garbage from a backend counts as 0 and never reaches a consumer.
 		Object.assign(h.workers[1].usage, { input: Number.NaN, output: -5, cacheRead: "1000", cacheWrite: Infinity, cost: undefined });
 		request();

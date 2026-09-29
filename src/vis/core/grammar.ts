@@ -1,15 +1,17 @@
 /**
  * The shared grammar of every `vis` kind: lines, `#` comment lines, `title:` / `caption:` settings,
- * tokens (words, "quoted strings", arrows), `|` fields, comma lists, tone words and the one error
- * type. A kind's parser (src/vis/kinds/<kind>/parse.ts) is built from these; it throws VisError
- * (via `fail`) and never ignores anything it does not understand. Pure, dependency-free.
+ * tokens (words, "quoted strings", arrows), `|` fields, comma lists, tone words, the one error
+ * type and soft warnings. A kind's parser (src/vis/kinds/<kind>/parse.ts) is built from these; it
+ * throws VisError (via `fail`) on anything it does not understand, and `warn`s only where the intent
+ * is plain and the figure can still draw it (overlong text is cut, a stray mark is dropped).
+ * Pure, dependency-free.
  */
 
 export const TONES = ["accent", "ok", "warn", "error", "info", "muted"] as const;
 export type Tone = (typeof TONES)[number];
 export const isTone = (w: string): w is Tone => (TONES as readonly string[]).includes(w);
 
-/** Longest free text (a label, a note, a title) any kind accepts. */
+/** Longest free text (a label, a note, a title) any kind draws whole; longer text is cut, with a warning. */
 export const MAX_TEXT = 200;
 
 /**
@@ -20,6 +22,14 @@ export interface VisBase {
   title?: string;
   caption?: string;
   emphasis?: Emphasis[];
+  /** Present only when the parse warned (parse.ts sets it): the figure draws, with one muted line listing these. */
+  warnings?: VisWarning[];
+}
+
+/** A soft problem: what the parser changed or dropped so the figure could still draw. Line 0: the fence as a whole. */
+export interface VisWarning {
+  line: number;
+  message: string;
 }
 
 /**
@@ -46,6 +56,32 @@ export class VisError extends Error {
 export const fail = (line: number, message: string): never => {
   throw new VisError(line, message);
 };
+
+// Warnings go to the parse in progress (collectWarnings); parsing is synchronous, so one sink is enough.
+let sink: VisWarning[] | null = null;
+/** Record a soft problem at a 1-based body line (0: the fence as a whole). Outside collectWarnings it is dropped. */
+export const warn = (line: number, message: string): void => {
+  sink?.push({ line, message });
+};
+/** Run a parse, collecting what it `warn`s. */
+export function collectWarnings<T>(parse: () => T): { value: T; warnings: VisWarning[] } {
+  const prev = sink;
+  const warnings: VisWarning[] = [];
+  sink = warnings;
+  try {
+    return { value: parse(), warnings };
+  } finally {
+    sink = prev;
+  }
+}
+
+/** `s` cut to `max` characters, the last one an ellipsis (never half a surrogate pair). */
+export function clip(s: string, max: number): string {
+  if (s.length <= max) return s;
+  let cut = s.slice(0, max - 1);
+  if (/[\uD800-\uDBFF]$/.test(cut)) cut = cut.slice(0, -1);
+  return `${cut.trimEnd()}…`;
+}
 
 export interface Line {
   /** 1-based, within the fence body. */
@@ -103,9 +139,11 @@ export function takeSettings(ls: Line[], allowed: readonly string[], base: VisBa
   return { rest, values };
 }
 
+/** Free text as drawn: over MAX_TEXT characters it is cut with an ellipsis (the whole text stays in Source). */
 export function text(s: string, n: number): string {
-  if (s.length > MAX_TEXT) fail(n, `text longer than ${MAX_TEXT} characters`);
-  return s;
+  if (s.length <= MAX_TEXT) return s;
+  warn(n, `text over ${MAX_TEXT} characters, shortened`);
+  return clip(s, MAX_TEXT);
 }
 
 export const unquote = (s: string) => s.replace(/\\(["\\n|])/g, (_, c: string) => (c === "n" ? "\n" : c));

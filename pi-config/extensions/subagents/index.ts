@@ -398,7 +398,7 @@ interface BatchRequest {
 	 * session idle (SpawnOptions.resume). Its id and group are kept, no ID is reserved, it is never
 	 * hosted, and its durable record is written only once it is up (resumeWorker).
 	 */
-	resume?: { id: string; groupId: string; groupLabel: string; sessionId?: string; sessionFile?: string };
+	resume?: { id: string; groupId: string; groupLabel: string; sessionId?: string; sessionFile?: string; startedAt?: number };
 }
 /** What a member's identity carries beyond its team (mailbox.ts MemberContext). */
 interface TeamIdentity { role: string; orchestrator: boolean; duty?: MemberDuty; coordinated?: boolean; successorOf?: string }
@@ -824,6 +824,10 @@ export function registerSubagents(
 			// Token counts this worker has used so far (cumulative, both backends);
 			// a worker that has spent nothing yet carries no usage at all.
 			...(isRestored(a) && a.usageSource === "none" ? {} : usageField(a)),
+			// Model replies so far, across resumes; top-level so the record's usage trim keeps it.
+			// Unknown (a restored worker whose transcript and snapshot never counted them) publishes
+			// nothing, never 0.
+			...(isRestored(a) && !a.turnsKnown ? {} : { turns: lifetimeUsage(a).turns }),
 			...restoredFields(a),
 		})),
 	});
@@ -1312,7 +1316,7 @@ export function registerSubagents(
 							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
 							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
 							...hosted,
-							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}) } } : {}),
+							...(resuming ? { resume: { ...(resuming.sessionId ? { sessionId: resuming.sessionId } : {}), ...(resuming.sessionFile ? { sessionFile: resuming.sessionFile } : {}), ...(resuming.startedAt ? { startedAt: resuming.startedAt } : {}) } } : {}),
 							id,
 							groupId,
 							name,
@@ -2281,6 +2285,9 @@ export function registerSubagents(
 		const base = current
 			? lifetimeUsage(current)
 			: view ? { input: view.view.usage.input, output: view.view.usage.output, cacheRead: view.view.usage.cacheRead, cacheWrite: view.view.usage.cacheWrite, cost: view.view.usage.cost ?? 0, turns: view.view.usage.turns ?? 0 } : undefined;
+		// Its first spawn, kept across the resume: the listed entry's, else its view's transcript
+		// start, else the first record's time.
+		const startedAt = current?.startedAt ?? view?.view.summary?.startedAt ?? manifest.firstAt;
 		const groupLabel = current ? (groups.find((g) => g.id === current.groupId)?.label ?? `${current.groupId} · resumed`) : `${manifest.groupId ?? "run_restored"} · resumed`;
 		resumingIds.add(id);
 		// Never two entries with one ID (the live record refuses duplicate IDs): the earlier one
@@ -2290,7 +2297,7 @@ export function registerSubagents(
 		try {
 			const group = await spawnBatch(ctx, {
 				specs: [spec], team,
-				resume: { id, groupId: manifest.groupId ?? current?.groupId ?? "run_restored", groupLabel, ...identity },
+				resume: { id, groupId: manifest.groupId ?? current?.groupId ?? "run_restored", groupLabel, ...identity, ...(startedAt ? { startedAt } : {}) },
 			}, signal);
 			worker = group.agents[0];
 			if (base) usageBase.set(worker, base);

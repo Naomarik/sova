@@ -188,7 +188,7 @@ cd extensions/remote && node --test argv.test.ts
 cd extensions/link && node --test client.test.ts && node tests/run.mjs
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs
 cd extensions/worktrees && node --test state.test.ts git.test.ts && node tests/run.mjs
-cd extensions/show-changes && node --test details.test.ts git.test.ts && node tests/run.mjs
+cd extensions/show-changes && node --test details.test.ts git.test.ts coverage.test.ts && node tests/run.mjs
 cd extensions/explain && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/topic-outline && node test.mjs
 cd extensions/btw && node --test btw.test.ts && node ../claude-code/provider/typecheck.mjs ../../btw/btw.ts

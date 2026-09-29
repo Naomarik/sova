@@ -4,7 +4,8 @@
 //
 // Privacy: a row never holds link tokens or hashes, never message text, never About text or contact
 // values. `scrub` applies the chart's `:redact` rules over the defaults, by key name, anywhere in the
-// envelope and in `changed`: "drop" removes the key, "contact" writes "[contact]", "digest" writes
+// envelope and in `changed` (a dotted path matches when ANY of its segments has a rule, outermost first:
+// `contact.email` is contact), and to a field-change record's from/to (`{field: "contact", from, to}`): "drop" removes the key, "contact" writes "[contact]", "digest" writes
 // `{sha, len}` (sha-256 of the text, hex). A refusal's model tail is never logged.
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
@@ -24,10 +25,17 @@ export const DEFAULT_REDACT: Record<string, RedactRule> = {
   links: "drop",
   url: "drop",
   contact: "contact",
+  email: "contact",
+  phone: "contact",
+  whatsapp: "contact",
   about: "digest",
   text: "digest",
   message: "digest",
+  quote: "digest",
 };
+
+/** The value keys of a field-change record (`{field: "contact", from, to}`): scrubbed by the field's rule. */
+const FIELD_VALUE_KEYS = ["from", "to", "value", "old", "new"];
 
 export interface LogRow {
   at: number;
@@ -56,9 +64,12 @@ export function digest(text: string): { sha: string; len: number } {
   return { sha: createHash("sha256").update(text).digest("hex"), len: text.length };
 }
 
+/** The rule for a key or a dotted path: the first segment, outermost first, that has one
+    (`contact.email` is contact). */
 function ruleFor(key: string, rules: Record<string, RedactRule>): RedactRule | undefined {
-  const last = key.includes(".") ? key.slice(key.lastIndexOf(".") + 1) : key;
-  return rules[last] ?? rules[key];
+  if (rules[key]) return rules[key];
+  for (const seg of key.split(".")) if (rules[seg]) return rules[seg];
+  return undefined;
 }
 
 function apply(rule: RedactRule, v: unknown): Json | undefined {
@@ -73,8 +84,10 @@ export function scrub(value: unknown, rules: Record<string, RedactRule> = DEFAUL
   if (Array.isArray(value)) return value.map((v) => scrub(v, rules));
   if (value && typeof value === "object") {
     const out: Record<string, Json> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const rule = ruleFor(k, rules);
+    const obj = value as Record<string, unknown>;
+    const fieldRule = typeof obj["field"] === "string" ? ruleFor(obj["field"], rules) : undefined;
+    for (const [k, v] of Object.entries(obj)) {
+      const rule = ruleFor(k, rules) ?? (fieldRule && FIELD_VALUE_KEYS.includes(k) ? fieldRule : undefined);
       if (rule) {
         const x = apply(rule, v);
         if (x !== undefined) out[k] = x;

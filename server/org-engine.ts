@@ -163,7 +163,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
     const stamp: Stamp = (sid, _event, payload, who) => {
       if (!self) throw new Error("The org engine stamped before it opened.");
       const pid = stampProject(self, sid, payload, who);
-      return stampEnvelope(self, opts.orgId, pid, { by: who?.by ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings(), typeof payload.sovaReleased === "string" ? payload.sovaReleased : null);
+      return stampEnvelope(self, opts.orgId, pid, { by: who?.by ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings());
     };
     const host = await opener({ ...opts, stamp });
     self = host;

@@ -50,7 +50,7 @@ import { isOpenDoc, type AlignEntry } from "../lib/align";
 import { AlignChip } from "./AlignChip";
 import { dragHasRow } from "../lib/session-groups";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
-import { showWorkersLabel, teamNote, type WorkingSplit, workersRunningLabel, workersWorkingLabel } from "../lib/workers";
+import { showWorkersOfLabel, teamNote, type WorkingSplit, workersOfLabel, workersRunningLabel } from "../lib/workers";
 import { ComposerMenu, type ComposerMenuApi, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
@@ -64,6 +64,30 @@ const PANE_ID = "session-pane";
 
 /** The run-status row's icon for what the turn is doing (§chat.transcript/streaming). */
 const STEP_ICON: Record<RunStep, IconName> = { thinking: "bulb", writing: "pencil", tool: "wrench" };
+
+const RING_R = 6;
+const RING_CIRCUMFERENCE = 2 * Math.PI * RING_R;
+
+/** The subagents trigger's meter: the working share of every worker, filled clockwise from 12
+    o'clock, empty once all have settled. Static — the row's one live dot is what moves — and
+    `aria-hidden`: the trigger's words say the same. */
+function WorkersRing(props: { working: number; total: number }) {
+  const fraction = () => (props.total > 0 ? Math.min(1, props.working / props.total) : 0);
+  return (
+    <svg class="workers-ring" viewBox="0 0 14 14" aria-hidden="true">
+      <circle class="workers-ring-track" cx="7" cy="7" r={RING_R} fill="none" />
+      <circle
+        class="workers-ring-fill"
+        cx="7"
+        cy="7"
+        r={RING_R}
+        fill="none"
+        transform="rotate(-90 7 7)"
+        style={{ "stroke-dasharray": `${RING_CIRCUMFERENCE}`, "stroke-dashoffset": `${RING_CIRCUMFERENCE * (1 - fraction())}` }}
+      />
+    </svg>
+  );
+}
 
 export interface ComposerReason {
   icon: IconName;
@@ -283,26 +307,35 @@ export function Composer(props: {
   };
 
   /** The subagents status row: what's working, or — once idle — what the session
-      has, so the pane stays one click away after every worker settles. While the parent's own
-      turn runs it stays too, showing the counts without repeating "working" beside the Working
-      label; a settled-workers row is only worth offering once the parent is idle. */
+      has, so the pane stays one click away after every worker settles. Its ring draws the
+      working share of every worker the session has; a settled-workers row is only worth
+      offering once the parent is idle. */
   const workersRow = () => {
     const working = props.workersWorking ?? 0;
+    // The list's total can lag the socket's working count: never draw more working than there are.
+    const total = Math.max(props.workersTotal ?? 0, working);
     if (working > 0)
       return {
-        live: true,
-        n: working,
-        text: props.running ? workersRunningLabel(working, props.workersSplit) : workersWorkingLabel(working, props.workersSplit),
-        label: showWorkersLabel(working, props.workersSplit),
+        working,
+        total,
+        n: `${working}/${total}`,
+        text: workersOfLabel(working, total, props.workersSplit),
+        label: showWorkersOfLabel(working, total, props.workersSplit),
       };
     if (props.running) return null;
-    const total = props.workersTotal ?? 0;
     if (total === 0 || !props.onShowWorkers) return null; // settled workers are only worth a row you can open
     const text = `${total} ${total === 1 ? "subagent" : "subagents"}`;
-    return { live: false, n: total, text, label: `${text} — show subagents` };
+    return { working: 0, total, n: `${total}`, text, label: `${text} — show subagents` };
   };
-  /** The subagents trigger shows a count; its tooltip is the words, plus the team when there is one. */
-  const workersTitle = (words: string) => [words, teamNote(props.workersSplit)].filter(Boolean).join("\n");
+  /** The subagents trigger shows a count; its tooltip is the words, plus the split of a mix of
+      subagents and team members, and the team when there is one. */
+  const workersTitle = (words: string) => {
+    const split = props.workersSplit;
+    const mix = split && split.members > 0 && split.subagents > 0 ? workersRunningLabel(props.workersWorking ?? 0, split) : undefined;
+    return [words, mix, teamNote(split)].filter(Boolean).join("\n");
+  };
+  /** The session has work in flight: its own run status, or a subagent working. The row's one dot. */
+  const inFlight = () => controls().status || (props.workersWorking ?? 0) > 0;
 
   /** The run-status words: the tooltip and accessible name of the icon, or, for Stopping and the
       rare states, the row's own text. */
@@ -745,22 +778,25 @@ export function Composer(props: {
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
         <Show when={controls().status || workersRow() || inputsRow() || inputsHeld() || alignRow()}>
           <p class="run-status">
+            {/* One dot leads the row while anything works — the turn, a stop, a rare state, a
+                compaction or a subagent — and nothing else in the row pulses. */}
+            <Show when={inFlight()}>
+              <span class="live-dot" aria-hidden="true" />
+            </Show>
             {/* Two forms, picked by the composer's width in CSS (§chat.transcript/streaming): wide,
-                "Working · running bash" in words; narrow, the dot and the step's icon, the same words
-                visually hidden, so they're read once either way. Stopping and the rare states keep
-                their words in both. */}
+                "Working · running bash" in words; narrow, the step's icon, the same words visually
+                hidden, so they're read once either way. Stopping and the rare states keep their
+                words in both. */}
             <Show when={controls().status}>
               <Show
                 when={!props.stopping && !props.activity}
                 fallback={
                   <span class="run-status-state" title={stateWords()}>
-                    <span class="live-dot" />
                     <span class="run-status-words">{stateWords()}</span>
                   </span>
                 }
               >
                 <span class="run-status-state" title={stateWords()}>
-                  <span class="live-dot" />
                   <Show when={props.detail}>{(d) => <Icon name={STEP_ICON[d().step]} small class="run-status-narrow" />}</Show>
                   <span class="run-status-say">
                     Working
@@ -776,8 +812,7 @@ export function Composer(props: {
                     when={props.onShowWorkers}
                     fallback={
                       <span class="run-status-workers" title={workersTitle(row().text)}>
-                        <span class="live-dot" />
-                        <Icon name="worker" small class="run-status-narrow" />
+                        <WorkersRing working={row().working} total={row().total} />
                         <span class="text-num run-status-narrow" aria-hidden="true">{row().n}</span>
                         <span class="run-status-say">{row().text}</span>
                       </span>
@@ -793,10 +828,7 @@ export function Composer(props: {
                         aria-controls={PANE_ID}
                         onClick={() => show()()}
                       >
-                        <Show when={row().live}>
-                          <span class="live-dot" />
-                        </Show>
-                        <Icon name="worker" small class="run-status-narrow" />
+                        <WorkersRing working={row().working} total={row().total} />
                         <span class="text-num run-status-narrow">{row().n}</span>
                         <span class="run-status-wide">{row().text}</span>
                         <Icon name="chevron-right" small />

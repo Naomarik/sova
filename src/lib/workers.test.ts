@@ -18,6 +18,7 @@ import {
   sourceName,
   sourceOf,
   showWorkersLabel,
+  showWorkersOfLabel,
   subagentsWorkingLabel,
   teamNote,
   transcriptUsage,
@@ -27,6 +28,7 @@ import {
   workerEjected,
   workerLabel,
   workersNoun,
+  workersOfLabel,
   workersRunningLabel,
   workersWorkingLabel,
   workerTeam,
@@ -255,6 +257,15 @@ test("workersRunningLabel drops the trailing wording the Working row already say
   assert.equal(workersRunningLabel(3, { members: 2, subagents: 1 }), "1 subagent · 2 team members");
   assert.equal(workersRunningLabel(1, { members: 0, subagents: 1 }), "1 subagent");
   assert.equal(workersRunningLabel(3, null), "3 subagents", "unsplittable: the plain wording");
+});
+
+test("workersOfLabel says the working share the ring draws, its noun following the split and the total", () => {
+  assert.equal(workersOfLabel(2, 5, null), "2 of 5 subagents working");
+  assert.equal(workersOfLabel(1, 1, { members: 0, subagents: 1 }), "1 of 1 subagent working", "the noun counts the total");
+  assert.equal(workersOfLabel(2, 4, { members: 2, subagents: 0, team: "Explain UX" }), "2 of 4 team members working");
+  assert.equal(workersOfLabel(3, 5, { members: 2, subagents: 1 }), "3 of 5 workers working", "a mix: workers");
+  assert.equal(showWorkersOfLabel(2, 5, null), "2 of 5 subagents working — show subagents");
+  assert.equal(showWorkersOfLabel(3, 5, { members: 2, subagents: 1 }), "3 of 5 workers working — show workers");
 });
 
 test("showWorkersLabel, teamNote and workingChipTitle follow the split", () => {

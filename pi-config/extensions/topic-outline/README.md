@@ -23,11 +23,11 @@ and it can scroll the fullscreen transcript directly to the message that started
 
 After each settled run (debounced, one run at a time, skipped when nothing changed):
 
-1. **Claude Code CLI with haiku** — spawned directly (`claudeBin`, never via your shell
+1. **Pi model registry** — `ollama-cloud/deepseek-v4.1-flash` via
+   `ctx.modelRegistry.complete()` (Pi's own auth resolution).
+2. **Claude Code CLI with sonnet** — spawned directly (`claudeBin`, never via your shell
    alias), no tools, no settings sources, no MCP, `dontAsk` permissions, no session
    persistence, in an empty private temp dir, prompt on stdin, `$0.05` budget cap.
-2. **Pi model registry** — `ollama-cloud/deepseek-v4.1-flash` via
-   `ctx.modelRegistry.complete()` (Pi's own auth resolution).
 
 Each backend is checked against the user's model policy **at the moment it is called**
 (`summarizers/policy-gate.ts`, over `~/.pi/agent/model-policy.json`): one turned off in Sova's
@@ -110,8 +110,8 @@ for trusted projects):
 ```json
 {
   "summarizers": [
-    { "backend": "claude-code", "model": "haiku", "timeoutMs": 45000, "maxBudgetUsd": 0.05 },
-    { "backend": "pi", "model": "ollama-cloud/deepseek-v4.1-flash", "timeoutMs": 60000 }
+    { "backend": "pi", "model": "ollama-cloud/deepseek-v4.1-flash", "timeoutMs": 60000 },
+    { "backend": "claude-code", "model": "sonnet", "timeoutMs": 45000, "maxBudgetUsd": 0.05 }
   ],
   "trigger": { "debounceMs": 3000, "minNewMessages": 2 },
   "shareWithSessions": "now-only",
@@ -163,7 +163,7 @@ outline in memory only.
   navigates branches or alters model context.
 - Summaries send excerpted session content (user text, assistant text, tool names and
   result snippets ≤ 500 chars, never bash commands) to the configured backends —
-  Anthropic via Claude Code and, on fallback, your `pi` backend provider.
+  your `pi` backend provider and, on fallback, Anthropic via Claude Code.
 
 ## Debugging jumps
 

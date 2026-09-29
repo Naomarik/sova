@@ -450,7 +450,9 @@
         "src/lib/known-before-mount.test.ts",
         "src/components/Composer.tsx",
         "src/design/base.css",
-        "src/design/align-viewer.css"
+        "src/design/align-viewer.css",
+        "src/lib/workers.ts",
+        "src/lib/workers.test.ts"
       ]
     },
     "§app.subagents-pane/worker-rows": {
@@ -3403,7 +3405,8 @@
         "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "server/team-defaults.test.ts"
       ]
     },
     "§teams.defaults/handover": {
@@ -3717,7 +3720,8 @@
         "src/lib/summarizer-draft.ts",
         "src/lib/summarizer-form.ts",
         "src/lib/settings-draft.ts",
-        "server/topic-outline-settings.ts"
+        "server/topic-outline-settings.ts",
+        "server/topic-outline-settings.test.ts"
       ]
     },
     "§app.baton/attribution": {

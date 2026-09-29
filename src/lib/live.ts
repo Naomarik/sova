@@ -112,6 +112,14 @@ export function runDetail(s: LiveState): RunDetail | null {
   return null;
 }
 
+/** Whether block `i` of an assistant entry still streams (its live dot): while the entry does, and
+    for thinking only until a later block starts, so its dot never pulses beside the reply's head
+    (§chat.transcript/transcript-items). `blocks` can have holes, as in runDetail. */
+export function blockStreams(entry: { blocks: LiveBlock[]; done: boolean }, i: number): boolean {
+  if (entry.done) return false;
+  return entry.blocks[i]?.type !== "thinking" || !entry.blocks.slice(i + 1).some(Boolean);
+}
+
 /** "provider/model" of a streaming assistant message, when the event carries one. */
 function liveModelOf(msg: Record<string, unknown>): string | undefined {
   const provider = str(msg.provider);

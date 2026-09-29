@@ -23,7 +23,10 @@ const agentDir = () => {
 const EMPTY: ModelPolicy = { disabledProviders: [], disabledModels: [], subagentDisabledProviders: [], subagentDisabledModels: [] };
 const ALL_CLAUDE = ["low", "medium", "high", "xhigh", "max"];
 const sources = (over: Partial<DelegateSources> = {}): DelegateSources => ({
-  piModels: async () => [{ ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "low", "medium", "high"] }],
+  piModels: async () => [
+    { ref: "zai/glm-5.3", id: "glm-5.3", provider: "zai", thinkingLevels: ["off", "low", "medium", "high"] },
+    { ref: "ollama-cloud/deepseek-v4.1-flash", id: "deepseek-v4.1-flash", provider: "ollama-cloud", thinkingLevels: ["off", "low", "medium", "high"] },
+  ],
   claudeModels: async () => [
     { id: "opus[1m]", name: "Opus", efforts: ALL_CLAUDE },
     { id: "haiku", name: "Haiku", efforts: ALL_CLAUDE },
@@ -65,8 +68,8 @@ describe("GET /api/settings/team", () => {
       monitor: {
         enabled: true,
         role: "monitor",
-        primary: { backend: "claude-code", model: "haiku", effort: "medium" },
-        fallback: null,
+        primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "low" },
+        fallback: { backend: "claude-code", model: "sonnet", effort: "low" },
         contextPct: 60,
         everyMinutes: 10,
         usage: { enabled: true, pausePct: 90, resumeMarginMinutes: 5 },
@@ -96,7 +99,7 @@ describe("GET /api/settings/team/options", () => {
   test("is Delegate's discovery, policy included", async () => {
     const options = await teamOptions(sources({ policy: () => ({ ...EMPTY, subagentDisabledModels: ["haiku"] }) }));
     assert.deepEqual(options.backends.map((b) => [b.id, b.models?.map((m) => m.id)]), [
-      ["pi", ["zai/glm-5.3"]],
+      ["pi", ["ollama-cloud/deepseek-v4.1-flash", "zai/glm-5.3"]],
       ["claude-code", ["opus[1m]", "haiku", "sonnet"]],
     ]);
     assert.match(options.backends[1]!.models!.find((m) => m.id === "haiku")!.denied!, /off for subagents/);
@@ -182,13 +185,13 @@ describe("PUT /api/settings/team", () => {
     const dir = agentDir();
     const body = on();
     body.coordinator.fallback = sonnet;
-    const policy: ModelPolicy = { ...EMPTY, disabledModels: ["opus[1m]"], subagentDisabledModels: ["haiku"] };
+    const policy: ModelPolicy = { ...EMPTY, disabledModels: ["opus[1m]"], subagentDisabledModels: ["ollama-cloud/deepseek-v4.1-flash"] };
     const result = await saveTeamDefaults(body, sources({ policy: () => policy }), dir);
     assert.equal(result.status, 200, JSON.stringify(result.body));
     if (result.status !== 200) return;
     assert.deepEqual(result.body.warnings, [
       "Coordinator primary: opus[1m] is turned off in Settings → Models; the team uses the fallback or isn't created",
-      "Monitor primary: haiku is off for subagents in Settings → Models; the team uses the fallback or isn't created",
+      "Monitor primary: ollama-cloud/deepseek-v4.1-flash is off for subagents in Settings → Models; the team uses the fallback or isn't created",
     ]);
     assert.ok(existsSync(teamDefaultsFile(dir)));
   });
@@ -202,7 +205,10 @@ describe("PUT /api/settings/team", () => {
     const result = await saveTeamDefaults(body, sources({ piModels: async () => [] }), dir);
     assert.equal(result.status, 200, JSON.stringify(result.body));
     if (result.status !== 200) return;
-    assert.deepEqual(result.body.warnings, ["Monitor fallback: zai/glm-5.3 isn't offered by pi"]);
+    assert.deepEqual(result.body.warnings, [
+      "Monitor primary: ollama-cloud/deepseek-v4.1-flash isn't offered by pi",
+      "Monitor fallback: zai/glm-5.3 isn't offered by pi",
+    ]);
     assert.equal(teamDefaultsInfo(dir).settings.coordinator.role, "lead");
   });
 
@@ -220,6 +226,6 @@ describe("PUT /api/settings/team", () => {
     const result = await saveTeamDefaults(on(), sources({ claudeModels: async () => { throw new Error("CLI missing"); } }), dir);
     assert.equal(result.status, 200, JSON.stringify(result.body));
     if (result.status !== 200) return;
-    assert.deepEqual(result.body.warnings, ["Not verified, because Claude Code couldn't list its models (CLI missing): Coordinator primary, Monitor primary"]);
+    assert.deepEqual(result.body.warnings, ["Not verified, because Claude Code couldn't list its models (CLI missing): Coordinator primary, Monitor fallback"]);
   });
 });

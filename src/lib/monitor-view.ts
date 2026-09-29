@@ -245,11 +245,43 @@ const workerRow = (w: MonitorWorker, scope: string): WorkerRow => ({
 
 const heaviest = <T extends { cpuPct: number; rssBytes: number }>(a: T, b: T): number => b.cpuPct - a.cpuPct || b.rssBytes - a.rssBytes;
 
-/** The last path segment, for a session with no title. */
-const baseName = (p: string): string => p.slice(p.lastIndexOf("/") + 1).replace(/\.jsonl$/, "");
+/** A folder's last segment: "/home/me/webapps/sova" → "sova". */
+const folderName = (p: string): string => p.replace(/\/+$/, "").slice(p.replace(/\/+$/, "").lastIndexOf("/") + 1) || p;
 
+/** What a person calls a session: its title, else "Untitled session" and its folder. Never the file name. */
 export const sessionLabel = (s: Pick<MonitorSession, "title" | "sessionPath" | "cwd">): string =>
-  s.title || (s.sessionPath ? baseName(s.sessionPath) : s.cwd ? `Unknown session in ${s.cwd}` : "Unknown session");
+  s.title?.trim() || (s.cwd ? `Untitled session in ${folderName(s.cwd)}` : "Untitled session");
+
+/** A label that is only a session file's name (what a history without the title falls back to). */
+const isFileLabel = (label: string): boolean => /\.jsonl$/.test(label) || label.includes("/");
+
+/** Resolves a session's title from the session list the app already holds, keyed by path. */
+export type TitleOf = (sessionPath: string) => string | undefined;
+
+/** A title worth showing: the list's "Untitled" placeholder isn't one. */
+const known = (titleOf: TitleOf, path: string): string | undefined => {
+  const t = titleOf(path)?.trim();
+  return t && t !== "Untitled" ? t : undefined;
+};
+
+/** The snapshot with every session's title as the app's list says it, where the list has one. */
+export function withTitles(s: MonitorSnapshot, titleOf: TitleOf): MonitorSnapshot {
+  return { ...s, sessions: s.sessions.map((x) => {
+      const title = x.sessionPath ? known(titleOf, x.sessionPath) : undefined;
+      return title ? { ...x, title } : x;
+    }) };
+}
+
+/** The history's labels with each session's title from the app's list, and no file name left as a label. */
+export function labelsWithTitles(labels: MonitorHistory["groups"], titleOf: TitleOf): MonitorHistory["groups"] {
+  const out: MonitorHistory["groups"] = {};
+  for (const [key, g] of Object.entries(labels)) {
+    const path = g.sessionPath ?? (key.startsWith("/") ? key : undefined);
+    const title = path ? known(titleOf, path) : undefined;
+    out[key] = title ? { ...g, label: title } : g;
+  }
+  return out;
+}
 
 /** The words for the groups that aren't a session, the same in the table, the chart and transient work. */
 const RESERVED: Record<string, string> = {
@@ -260,7 +292,12 @@ const RESERVED: Record<string, string> = {
 };
 
 /** A history group's name: ours for the reserved keys, else the history's label, else the file name. */
-export const groupLabel = (key: string, labels: MonitorHistory["groups"]): string => RESERVED[key] ?? (labels[key]?.label || baseName(key));
+export function groupLabel(key: string, labels: MonitorHistory["groups"]): string {
+  const reserved = RESERVED[key];
+  if (reserved) return reserved;
+  const label = labels[key]?.label?.trim();
+  return label && !isFileLabel(label) ? label : "Untitled session";
+}
 
 /** The table now: every session, then the server itself, workers of no known session, escaped and unattributed processes. Heaviest first within sessions. */
 export function liveRows(s: MonitorSnapshot): GroupRow[] {
@@ -309,7 +346,7 @@ export function liveRows(s: MonitorSnapshot): GroupRow[] {
     const row = bucketRow(s.escaped);
     row.procs = s.escaped.procs.map((p) => ({
       ...procRow(p),
-      chargedTo: p.sessionPath ? `${titles.get(p.sessionPath) ?? baseName(p.sessionPath)}${p.workerId ? ` · ${p.workerId}` : ""}` : undefined,
+      chargedTo: p.sessionPath ? `${titles.get(p.sessionPath) ?? "Untitled session"}${p.workerId ? ` · ${p.workerId}` : ""}` : undefined,
     }));
     rows.push({ ...row, key: ESCAPED_GROUP, label: "Escaped processes", caption: "In the unit, no longer under the server", kind: "escaped" });
   }

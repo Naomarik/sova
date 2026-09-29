@@ -67,7 +67,9 @@
   font-size: var(--fs-caption);
   color: var(--color-ink-2);
 }
-.monitor-legend li { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.monitor-legend li { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; max-width: 100%; }
+/* A long session title keeps the legend to one line per item; the full name is in its title. */
+.monitor-legend-name { max-width: 32ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .monitor-swatch {
   flex: none;
   width: 12px;

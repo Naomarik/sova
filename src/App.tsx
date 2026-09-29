@@ -1253,7 +1253,7 @@ export function App() {
       </Show>
       {/* Opened from the sidebar foot's monitor button or the spine; it polls only while open. */}
       <Show when={monitorOpen()}>
-        <ResourceMonitor onClose={closeMonitor} />
+        <ResourceMonitor onClose={closeMonitor} titleOf={(path) => list()?.find((x) => x.path === path)?.title} />
       </Show>
       <Show when={staleChange()}>
         {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}

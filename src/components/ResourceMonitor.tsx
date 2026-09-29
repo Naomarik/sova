@@ -29,6 +29,9 @@ import {
   scopeLine,
   statusText,
   type TabMemory,
+  type TitleOf,
+  labelsWithTitles,
+  withTitles,
   tabLine,
   transient,
   transientName,
@@ -46,9 +49,11 @@ import "../monitor.css";
  * while it exists (paused in a hidden tab). The history is fetched once in full, then as a delta
  * after each poll.
  */
-export function ResourceMonitor(props: { onClose(): void }) {
+export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
   const [points, setPoints] = createSignal<MonitorPoint[]>([]);
-  const [labels, setLabels] = createSignal<MonitorHistory["groups"]>({});
+  const [rawLabels, setLabels] = createSignal<MonitorHistory["groups"]>({});
+  // Session names as the sidebar says them; the monitor's own labels are only a fallback.
+  const labels = createMemo(() => (props.titleOf ? labelsWithTitles(rawLabels(), props.titleOf) : rawLabels()));
   /** The scrubbed moment; null = now. */
   const [pickedAt, setPickedAt] = createSignal<number | null>(null);
   const [tab, setTab] = createSignal<string | null>(null);
@@ -82,7 +87,10 @@ export function ResourceMonitor(props: { onClose(): void }) {
     return snap;
   }, MONITOR_POLL_MS);
 
-  const snap = (): MonitorSnapshot | undefined => poll.data();
+  const snap = createMemo((): MonitorSnapshot | undefined => {
+    const s = poll.data();
+    return s && props.titleOf ? withTitles(s, props.titleOf) : s;
+  });
   const now = () => snap()?.at ?? Date.now();
   const picked = createMemo(() => {
     const at = pickedAt();
@@ -359,7 +367,9 @@ function Chart(props: { points: MonitorPoint[]; labels: MonitorHistory["groups"]
           {(s, i) => (
             <li>
               <span class={`monitor-swatch monitor-series-${s.key === "*" ? "rest" : i()}`} aria-hidden="true" />
-              {s.label}
+              <span class="monitor-legend-name" title={s.label}>
+                {s.label}
+              </span>
             </li>
           )}
         </For>

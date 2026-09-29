@@ -8,6 +8,9 @@ import {
   cpuText,
   degradedLine,
   groupLabel,
+  labelsWithTitles,
+  sessionLabel,
+  withTitles,
   idleSummary,
   isHeuristic,
   liveRows,
@@ -315,7 +318,7 @@ test("chart: stacks the heaviest groups, folds the rest, breaks paths across gap
     point(now - 5000, { a: [90, 2 * GB], b: [20, GB] }),
     point(now, { a: [80, 2 * GB], b: [20, GB] }),
   ];
-  const m = chartModel(pts, { a: { label: "Session A" } }, { width: 720, height: 120, now, maxSeries: 4 });
+  const m = chartModel(pts, { a: { label: "Session A" }, b: { label: "b" }, c: { label: "c" } }, { width: 720, height: 120, now, maxSeries: 4 });
   assert.deepEqual(
     m.series.map((s) => s.label),
     ["Session A", "b", "c", "Everything else"],
@@ -345,7 +348,26 @@ test("reserved groups read the same everywhere, whatever the history calls them"
   assert.equal(groupLabel("unattributed", labels), "Not attributed");
   assert.equal(groupLabel("server", {}), "Sova server");
   assert.equal(groupLabel("/s/a.jsonl", labels), "A chat");
-  assert.equal(groupLabel("/s/b.jsonl", labels), "b");
+  assert.equal(groupLabel("/s/b.jsonl", labels), "Untitled session");
+  assert.equal(groupLabel("/s/c.jsonl", { "/s/c.jsonl": { label: "2026-09-29T06-28-59-167Z_01a0.jsonl", sessionPath: "/s/c.jsonl" } }), "Untitled session");
   const m = chartModel([point(0, { unattributed: [5, MB] })], labels, { width: 10, height: 10, now: 0 });
   assert.equal(m.series[0]!.label, "Not attributed");
+});
+
+test("session names come from the app's list, never from the file name", () => {
+  const titleOf = (p: string) => ({ "/s/heavy.jsonl": "Renamed heavy", "/s/new.jsonl": "Untitled" })[p];
+  const s = withTitles(snapshot(), titleOf);
+  assert.deepEqual(
+    liveRows(s).map((r) => r.label).slice(0, 2),
+    ["Renamed heavy", "Light"],
+  );
+  assert.equal(liveRows(s).find((r) => r.kind === "escaped")!.procs[0]!.chargedTo, "Renamed heavy · w3");
+  const labels = labelsWithTitles(
+    { "/s/heavy.jsonl": { label: "heavy.jsonl", sessionPath: "/s/heavy.jsonl" }, "/s/new.jsonl": { label: "new.jsonl" }, server: { label: "Server" } },
+    titleOf,
+  );
+  assert.equal(groupLabel("/s/heavy.jsonl", labels), "Renamed heavy");
+  assert.equal(groupLabel("/s/new.jsonl", labels), "Untitled session");
+  assert.equal(sessionLabel({ cwd: "/home/me/webapps/sova/" }), "Untitled session in sova");
+  assert.equal(sessionLabel({ sessionPath: "/s/x.jsonl" }), "Untitled session");
 });

@@ -107,7 +107,8 @@ export const median = (xs: number[]): number => {
 
 /**
  * Best first: rows with every clip scored before partial ones; then the fewest word errors, except
- * that among rows within 1 word of the best, more jargon hits win, then the shorter median time.
+ * that among rows within 1 word of the best, more jargon hits win, then fewer word errors, then the
+ * shorter median time.
  */
 export function rankRows(rows: VoiceCalibrationRow[]): VoiceCalibrationRow[] {
   const most = Math.max(0, ...rows.map((r) => r.scored));
@@ -119,7 +120,7 @@ export function rankRows(rows: VoiceCalibrationRow[]): VoiceCalibrationRow[] {
     const an = near(a);
     const bn = near(b);
     if (an !== bn) return an ? -1 : 1;
-    if (an) return b.jargonHits - a.jargonHits || a.medianMs - b.medianMs || a.errors - b.errors;
+    if (an) return b.jargonHits - a.jargonHits || a.errors - b.errors || a.medianMs - b.medianMs;
     return a.errors - b.errors || b.jargonHits - a.jargonHits || a.medianMs - b.medianMs;
   };
   const byWer = (a: VoiceCalibrationRow, b: VoiceCalibrationRow) => a.wer - b.wer || b.jargonHits - a.jargonHits || a.medianMs - b.medianMs;
@@ -257,7 +258,8 @@ export class Calibrator {
         const other = f.slice(0, -5);
         if (other === model) continue;
         const r = readRun(dir, device, other);
-        const best = r?.rows[0];
+        // Only a completed run speaks for a model: a stopped or failed one may have scored one clip.
+        const best = r?.phase === "done" ? r.rows[0] : undefined;
         if (!r || !best) continue;
         out.scores.push({
           model: other,
@@ -496,7 +498,8 @@ export class Calibrator {
       const d = (s.devices[device] ??= { label: "", app: false, lastSeenAt: Date.now(), perModel: {} });
       const old = d.perModel[run.model];
       const previous = old ? { settings: old.settings, source: old.source, updatedAt: old.updatedAt, ...(old.calibration ? { calibration: old.calibration } : {}) } : null;
-      d.perModel[run.model] = { settings: row.settings, source, previous, calibration: summary, updatedAt: Date.now() };
+      // Only a completed run's scores become the summary: a stopped run's row may rest on one clip.
+      d.perModel[run.model] = { settings: row.settings, source, previous, updatedAt: Date.now(), ...(run.phase === "done" ? { calibration: summary } : {}) };
     });
   }
 

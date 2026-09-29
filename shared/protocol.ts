@@ -4192,7 +4192,7 @@ export interface VoiceCalibrationRun {
   grid: "full" | "quick" | "score";
   phase: "running" | "done" | "stopped" | "failed";
   progress: { setting: number; settings: number; clip: number; clips: number; done: number; total: number; etaSec?: number; pausedForDictation: boolean };
-  /** Ranked best first: lowest word error; within one word of it, more jargon hits; then faster. */
+  /** Ranked best first: fewest word errors; within one word of the best, more jargon hits, then fewer errors, then faster. */
   rows: VoiceCalibrationRow[];
   best?: string;
   /** The row the run applied to the device when it ended (auto-apply), or one chosen later. */
@@ -4214,7 +4214,7 @@ export interface VoiceCalibration {
   minClips: number;
   /** Its run on the active model: the one running, or the last. */
   run?: VoiceCalibrationRun;
-  /** The best row of its last run on every other model (Parakeet's score among them), to compare. */
+  /** The best row of its last completed run on every other model (Parakeet's score among them), to compare. */
   scores: VoiceModelScore[];
 }
 

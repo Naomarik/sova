@@ -39,9 +39,17 @@ test("a snapshot failing validation changes nothing and is bad-snapshot", () => 
   assert.deepEqual(reg.commit("n1", snap(1, [row(H("a"))]), URL_, everyone), { ok: false, error: "bad-snapshot" });
   assert.equal(reg.seqOf("n1"), null);
   assert.throws(() => statSync(file));
-  // The default check is registry-validation's; its M0 stub rejects everything.
-  const real = new GatewayRegistry({ file: () => join(root, "real.json") });
-  assert.deepEqual(real.commit("n1", snap(1, [row(H("a"))]), URL_, everyone), { ok: false, error: "bad-snapshot" });
+  // The default check is registry-validation's (M2's validateSnapshot): an invalid snapshot is
+  // refused whole and nothing is written...
+  const realFile = join(root, "real.json");
+  const real = new GatewayRegistry({ file: () => realFile });
+  for (const bad of [{ ...snap(1, [row(H("a"))]), extra: 1 }, { ...snap(1, [row(H("a"))]), v: 2 }])
+    assert.deepEqual(real.commit("n1", bad as never, URL_, everyone), { ok: false, error: "bad-snapshot" }, JSON.stringify(Object.keys(bad)));
+  assert.equal(real.seqOf("n1"), null);
+  assert.throws(() => statSync(realFile), "no file written");
+  // ...and a valid one is stored: the real validator, not a reject-all stub.
+  assert.deepEqual(real.commit("n1", snap(1, [row(H("a"))]), URL_, everyone), { ok: true, seq: 1, publicUrl: URL_ });
+  assert.equal(real.seqOf("n1"), 1);
 });
 
 test("a commit stores the rows at 0600 and acks the stored seq; they route by kind", () => {

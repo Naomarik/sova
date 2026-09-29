@@ -1157,7 +1157,20 @@ export function tallyForeign(t: TurnTally, foreign: readonly string[] | undefine
 	for (const id of foreign ?? []) t.ids.add(id);
 }
 
-/** Judge each operation (judgeOp) into the tally: a landing adds its gate lists. */
+/** Paths the current spec at a root (its work tree's manifest.json) maps in some claim's `code`; empty when unreadable. */
+export async function mappedNow(root: string, io: SpecIO = localIO): Promise<Set<string>> {
+	try {
+		const m = JSON.parse(await io.readFile(join(root, SPEC_REL, "manifest.json"))) as { claims?: Record<string, { code?: unknown }> };
+		return new Set(Object.values(m.claims ?? {}).flatMap((c) => (Array.isArray(c?.code) ? c.code.filter((p): p is string => typeof p === "string") : [])));
+	} catch {
+		return new Set();
+	}
+}
+
+/**
+ * Judge each operation (judgeOp) into the tally: a landing adds its gate lists. An unmapped file a claim
+ * of the current spec maps by now (a promotion later in the run) is covered, as the Stop hook re-checks it.
+ */
 export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultTips: (top: string) => string | undefined, core: string, io: SpecIO = localIO): Promise<void> {
 	for (const op of ops) {
 		let j: OpJudgement;
@@ -1173,7 +1186,11 @@ export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultT
 			const where = op.top.split("/").pop() ?? op.top;
 			if (op.actor && op.actor !== "self") t.landed.push(`${op.kind} by ${op.actor} in ${where}`);
 			else if (op.kind === "commit") t.landed.push(`changed the current spec in ${where}`);
-			for (const e of j.lists?.unmappedChanged ?? []) t.unmapped.add(e.path);
+			if (j.lists?.unmappedChanged.length) {
+				const root = await findSpecRoot(op.top, (p) => io.exists(p));
+				const mapped = root ? await mappedNow(root, io) : new Set<string>();
+				for (const e of j.lists.unmappedChanged) if (!mapped.has(e.path)) t.unmapped.add(e.path);
+			}
 			for (const d of j.lists?.unpromotedDrafts ?? []) for (const id of d.ids) t.unpromoted.add(id);
 			for (const m of j.lists?.mappedUntouched ?? []) t.advisory.add(m.id);
 		}

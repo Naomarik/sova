@@ -39,6 +39,8 @@ import {
 	treeStart,
 	treeTurn,
 	workerReported,
+	freshTally,
+	tallyOps,
 	judgeOp,
 	ownBasesFor,
 	appendLedger,
@@ -771,5 +773,37 @@ test("F6/F7: the census follows the tree a call writes in (a parent's `cd <workt
 		assert.doesNotMatch(w.text ?? "", /No draft yet/);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("tallyOps: an unmapped file a claim of the current spec maps by settle time is covered (as the Stop hook re-checks)", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const repo = mkdtempSync(join(scratchRoot, "spec-mapped-"));
+	try {
+		const git = (...args: string[]) => spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args], { encoding: "utf8" }).stdout.trim();
+		const manifest = (code: string[]) => JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§app/shell": { kind: "surface", code } } });
+		mkdirSync(join(repo, ".sova/spec/claims/app"), { recursive: true });
+		writeFileSync(join(repo, ".sova/spec/manifest.json"), manifest(["src/App.tsx"]));
+		writeFileSync(join(repo, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell.\n");
+		mkdirSync(join(repo, "src"));
+		writeFileSync(join(repo, "src/App.tsx"), "1\n");
+		git("init", "-q", "-b", "master");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+		const before = git("rev-parse", "HEAD");
+		mkdirSync(join(repo, "tools"));
+		writeFileSync(join(repo, "tools/footer.ts"), "1\n");
+		git("add", "-A");
+		git("commit", "-qm", "footer");
+		const op = { top: repo, before, after: git("rev-parse", "HEAD"), kind: "merge" as const, actor: "self" };
+		const t = freshTally();
+		await tallyOps(t, [op], () => before, CORE);
+		assert.deepEqual([...t.unmapped], ["tools/footer.ts"]);
+		writeFileSync(join(repo, ".sova/spec/manifest.json"), manifest(["src/App.tsx", "tools/footer.ts"]));
+		const later = freshTally();
+		await tallyOps(later, [op], () => before, CORE);
+		assert.deepEqual([...later.unmapped], [], "mapped by the current spec now");
+	} finally {
+		rmSync(repo, { recursive: true, force: true });
 	}
 });

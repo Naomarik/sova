@@ -259,6 +259,42 @@ try {
 	await session.prompt("and?");
 	assert.equal(warns(), warnsBefore2 + 1, "a named report still makes the line required");
 
+	// B2 work-3's under-count: a worker promotes 2 foreign § in a worktree created mid-run, and its
+	// report (cut short by the relay) names only 1. The list is Git's: both.
+	const wt4 = path.join(scratch, "wt4");
+	const wt4Git = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt4, ...args]).status, 0, `git ${args.join(" ")}`);
+	const put4 = (rel, text) => {
+		mkdirSync(path.dirname(path.join(wt4, rel)), { recursive: true });
+		writeFileSync(path.join(wt4, rel), text);
+	};
+	const create4 = () => {
+		put4(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims: { "§app/shell": { kind: "surface", code: ["src/App.tsx"] }, "§design/deck": { kind: "note" } } }));
+		put4(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell.\n");
+		put4(".sova/spec/claims/design/deck.md", "# §design/deck\n\nDeck.\n");
+		put4("src/App.tsx", "1\n");
+		wt4Git("init", "-q");
+		wt4Git("add", "-A");
+		wt4Git("commit", "-qm", "base");
+		hostPi.events.emit("worktrees:state", { version: 1, active: [wt, wt2, wt3, wt4] });
+	};
+	const worker4 = () => {
+		put4(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell, 4.\n");
+		put4(".sova/spec/claims/design/deck.md", "# §design/deck\n\nDeck, 4.\n");
+		wt4Git("commit", "-qam", "spec: promoted by a worker");
+	};
+	at = requests.length;
+	const before4 = checks().length;
+	script.push(
+		{ effect: create4, tool: "bash", args: { command: "true" } },
+		{ effect: worker4, text: "Worker report: Also changes: §app/shell — 4 [Final answer: 3,938 chars, whole in /tmp/x]\nAlso changes: §app/shell — 4" },
+		{ text: "Done.\nAlso changes: §app/shell — 4; §design/deck — 4" },
+	);
+	await session.prompt("have a worker do both in a new worktree");
+	assert.equal(requests.length, at + 3, "one continuation");
+	assert.equal(checks().length, before4 + 1);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell, §design\/deck\./, "Git's list, not the truncated line");
+	assert.match(checks().at(-1).content, /omits §design\/deck/);
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

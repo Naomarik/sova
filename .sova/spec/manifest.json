@@ -2173,7 +2173,9 @@
       "evidence": "verified",
       "code": [
         "server/mesh/hello.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "shared/mesh-resync.ts",
+        "server/mesh/build-id.ts"
       ]
     },
     "§mesh.peers/listener": {
@@ -3284,7 +3286,8 @@
         "server/mesh/peers.ts",
         "server/mesh/hello.ts",
         "server/mesh/details.test.ts",
-        "server/mesh/details-collect.test.ts"
+        "server/mesh/details-collect.test.ts",
+        "server/mesh/build-id.ts"
       ]
     },
     "§mesh.details/rename": {
@@ -3581,9 +3584,10 @@
     "§mesh/vps": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "scripts/mesh-vps/deploy.sh"
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-vps/remote-setup.sh"
       ]
     },
     "§mesh.phone/claude-store": {
@@ -3602,9 +3606,10 @@
     "§mesh/phone": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "scripts/mesh-termux/install.sh"
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/deploy.sh"
       ],
       "requires": []
     },
@@ -7329,6 +7334,36 @@
         "src/components/AccountsSettings.tsx",
         "server/claude-pool/agent.test.ts",
         "src/lib/claude-pool.test.ts"
+      ]
+    },
+    "§mesh.peers/resync": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.peers/hello",
+        "§mesh.peers/health",
+        "§mesh.peers/listener",
+        "§mesh.details/fields",
+        "§mesh.remote-sessions/host-filter",
+        "§mesh/vps",
+        "§mesh/phone"
+      ],
+      "code": [
+        "server/mesh/resync.ts",
+        "server/mesh/build-id.ts",
+        "shared/mesh-resync.ts",
+        "server/mesh/resync.test.ts",
+        "server/mesh/build-id.test.ts",
+        "src/components/MeshHostMenu.tsx",
+        "src/components/MeshResyncSheet.tsx",
+        "src/lib/mesh-resync.ts",
+        "src/lib/mesh-resync.test.ts",
+        "src/lib/api.ts",
+        "src/mesh.css",
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-termux/deploy.sh",
+        "server/index.ts"
       ]
     }
   },

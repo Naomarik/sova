@@ -54,7 +54,9 @@ menu (upward when there is no room below; a bottom sheet on a narrow screen), an
 changes no filter. The collapsed pane has no host item. The menu lists `All hosts` and then each
 host by name with its dot, whose tone and word follow the host's state: up is a green dot and no
 word; on another version (`skewed`) an amber dot and "other version"; not answering a red dot and
-"down"; refusing this host a red dot and "refused". Exactly one is chosen.
+"down"; refusing this host a red dot and "refused". A host on another version also says, under its
+name, where its build sits against this host's, and one that is behind has `Resync` beside it
+(§mesh.peers/resync). Exactly one is chosen.
 `All hosts` is the default and shows every host's sessions; a host shows only that host's sessions.
 It narrows together with the text filter, and the choice is remembered across reloads; a remembered
 host that is no longer known reads as `All hosts`. The menu ends with `Mesh details…`. With the

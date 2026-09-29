@@ -247,7 +247,7 @@ function AlignQuestion(props: { q: AlignQuestionInfo; doc: string; answer?: Alig
               return (
                 <li>
                   {/* On an answerable card an open question's option is a radio's label: the whole
-                      row is the target, its letter the indicator, and a click on the picked one
+                      row is the target, picked it takes the selection tint and accent edge, and a click on the picked one
                       clears it. */}
                   <Show
                     when={take()}

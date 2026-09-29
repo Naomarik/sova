@@ -1161,6 +1161,17 @@
   [charts text]
   (snapshot-text (migrate-snapshot charts (read-snapshot text))))
 
+(defn peek-snapshot
+  "A snapshot's chart, configuration (document order), data and running flag, migrated, WITHOUT
+   loading it: reads of cold sessions (lists keep settled batons, builds, decisions)."
+  [charts text]
+  (let [{:keys [chart wmem]} (migrate-snapshot charts (read-snapshot text))
+        c (get-in charts [chart :chart])]
+    {:chart         chart
+     :configuration (chart/in-document-order c (::sc/configuration wmem))
+     :data          (get wmem data-key)
+     :running       (boolean (::sc/running? wmem))}))
+
 (defn load!
   "Replace (or add) session `sid` from snapshot `text`, migrating an older chart version. Nothing
    runs: resume afterwards."

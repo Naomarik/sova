@@ -202,6 +202,11 @@
   [nm]
   (->js (core/chart-info charts nm)))
 
+(defn peek-snapshot
+  "A snapshot text's {chart, configuration, data, running} without loading it (cold reads)."
+  [text]
+  (->js (core/peek-snapshot charts text)))
+
 (defn migrate-text
   "A snapshot's EDN text at its chart's current version (throws when it can't be migrated)."
   [text]

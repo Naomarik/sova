@@ -568,3 +568,11 @@
 
 (deftest the-reentry-lint-finds-external-self-descendant-transitions-under-a-parallel
   (is (= [["lint" [:bad] :a]] (map (fn [[c _ e s]] [c e s]) (core/reentry-hazards {"lint" {:chart lint-chart :version 1}})))))
+
+(deftest a-snapshot-can-be-read-without-loading-it
+  (let [eng (parent (new-eng))]
+    (core/send! eng "par" :gather/start (assoc overseer :to "a" :attended true) {:now t0})
+    (let [p (core/peek-snapshot rp/charts (core/dump eng "par"))]
+      (is (= {:chart "refit-parent" :configuration [:top :gathering] :running true}
+            (select-keys p [:chart :configuration :running])))
+      (is (= 1 (:gathers (:data p)))))))

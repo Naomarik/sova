@@ -81,6 +81,8 @@
       (assoc-in [:env ::sc/event-queue] q)
       (assoc-in [:env ::sc/execution-model] (lambda/new-execution-model dm q)))))
 
+(declare run-due!)
+
 (defn start!
   "Start session `sid` of `chart` (a registry name) with `data`."
   [{:keys [env sessions charts] :as h} chart sid data]
@@ -88,7 +90,7 @@
     (swap! sessions assoc sid wm)
     (swap! charts assoc sid chart)
     (check-problems!)
-    h))
+    (run-due! h)))
 
 (defn wmem [h sid] (get @(:sessions h) sid))
 (defn config [h sid] (set (::sc/configuration (wmem h sid))))

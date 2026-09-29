@@ -96,7 +96,7 @@
 (defn close-refusal
   "The operator's Close; the overseer's sova_close_gathering (its own, in today's order)."
   [data {:keys [by reason owner-project]}]
-  (if (= "operator" by)
+  (if (contains? #{"operator" "system"} by)
     (when (= "closed" (course data)) (r/refuse 409 "This session is already closed."))
     (cond
       (blank? reason) (r/refuse 400 "Say why you close it (reason).")
@@ -162,15 +162,20 @@
 
 ;; ---- decisions and referrals -------------------------------------------------------------------------
 
+(defn owner-area-refusal
+  "pickOwnerArea: a roster decision area (any case; stored in the roster's spelling) or none."
+  [{:keys [owner-area owner-areas]}]
+  (when (and (not (blank? owner-area)) (not= "none" owner-area)
+             (not-any? #(= (str/lower-case %) (str/lower-case owner-area)) owner-areas))
+    (r/refuse 400 (str "\"" owner-area "\" is not an owner area. Use one of: " (str/join ", " (map #(str "\"" % "\"") owner-areas)) " or \"none\"."))))
+
 (defn record-decision-refusal
   "record_decision: the area, the statement and the quote, then the owner area (a roster decision
    area, as the roster spells it, or none; the host stamps `owner-areas`)."
   [{:keys [area statement quote owner-area owner-areas]}]
   (cond
     (or (blank? area) (blank? statement) (blank? quote)) (r/refuse 400 "Give the area, the statement and their exact words.")
-    (and (not (blank? owner-area)) (not= "none" owner-area)
-         (not-any? #(= (str/lower-case %) (str/lower-case owner-area)) owner-areas))
-    (r/refuse 400 (str "\"" owner-area "\" is not an owner area. Use one of: " (str/join ", " (map #(str "\"" % "\"") owner-areas)) " or \"none\"."))))
+    :else (owner-area-refusal {:owner-area owner-area :owner-areas owner-areas})))
 
 (defn spelled-owner-area
   "The owner area in the roster's spelling (the same key), or none."

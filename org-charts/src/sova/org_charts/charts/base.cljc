@@ -131,3 +131,39 @@
   [ms]
   #?(:clj  (let [t (str (java.time.Instant/ofEpochMilli ms))] (subs (clojure.string/replace t "T" " ") 0 16))
      :cljs (subs (clojure.string/replace (.toISOString (js/Date. ms)) "T" " ") 0 16)))
+
+;; ---- sends decided at run time ------------------------------------------------------------------------
+;; A `Send` always sends (and a send to a session that exists nowhere rolls the call back). A send
+;; that depends on the data is queued in `:sova.charts/sends` by `send-if` and delivered one per
+;; microstep by the chart's `flush-transition` (place it on the top state).
+
+(defn queue-sends
+  "Ops queueing `sends` (`[{:target sid :event kw :data {}}]`), then a raise of `:sova.charts/flush`."
+  [data sends]
+  (when (seq sends)
+    [(ops/assign :sova.charts/sends (into (vec (:sova.charts/sends data)) sends))]))
+
+(defn send-if
+  "Executable content: send `(event)` to `(target-fn data)` with `(content-fn data)` when the target
+   is not nil."
+  [event target-fn content-fn]
+  [(script {:expr (fn [_ data] (let [t (target-fn data)]
+                                 (when t (queue-sends data [{:target t :event event :data (content-fn data)}]))))})
+   (com.fulcrologic.statecharts.elements/raise {:event :sova.charts/flush})])
+
+(defn send-all
+  "Executable content: queue every send `(sends-fn data)` returns."
+  [sends-fn]
+  [(script {:expr (fn [_ data] (queue-sends data (vec (sends-fn data))))})
+   (com.fulcrologic.statecharts.elements/raise {:event :sova.charts/flush})])
+
+(defn flush-transition
+  "The top state's transition delivering queued sends, one per microstep."
+  []
+  (com.fulcrologic.statecharts.elements/transition
+    {:event :sova.charts/flush :cond (fn [_ d] (seq (:sova.charts/sends d)))}
+    (Send {:eventexpr (fn [_ d] (:event (first (:sova.charts/sends d))))
+           :targetexpr (fn [_ d] (:target (first (:sova.charts/sends d))))
+           :content (fn [_ d] (:data (first (:sova.charts/sends d))))})
+    (script {:expr (fn [_ d] [(ops/assign :sova.charts/sends (vec (rest (:sova.charts/sends d))))])})
+    (com.fulcrologic.statecharts.elements/raise {:event :sova.charts/flush})))

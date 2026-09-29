@@ -398,6 +398,6 @@
    :version  version
    :migrate  {}
    :storage  :host-local
-   :exported [:paused :looks-today :last-run :held :reasons :ledgers :settings]
+   :exported [:paused :roster-active :archived :looks-today :last-run :held :reasons :ledgers :settings]
    :acts     acts
    :not-here not-here})

@@ -15,7 +15,7 @@ import {
   SOON_CHOICES,
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
-import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
+import { AUTONOMY_LEVELS, AUTONOMY_MEANING, CONFIRM_KINDS, type ConfirmKind, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { OrgDetail } from "../../shared/orgs";
 import {
   addProjectOverseerIdea,
@@ -43,7 +43,7 @@ import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
-import { actionLine, allowanceLine, gapArea, gapWords, holdHint, holdWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { actionLine, allowanceLine, confirmKindDone, confirmKindLabel, gapArea, gapWords, holdHint, holdWords, toggleConfirmKind, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
@@ -172,6 +172,16 @@ export function ProjectOverseerPanel(props: {
               )}
             </Show>
             <AutonomyPicker info={i()} busy={busy()} onPick={setAutonomy} />
+            <ConfirmKindsPicker
+              info={i()}
+              busy={busy()}
+              onPick={(kind, checked) =>
+                void run(
+                  () => patchProjectOverseer(o(), p(), { confirmKinds: toggleConfirmKind(CONFIRM_KINDS, i().settings.confirmKinds, kind, checked) }),
+                  confirmKindDone(kind, checked),
+                )
+              }
+            />
             <div class="project-overseer-settings">
               <label class="toggle toggle-switch">
                 <span>Watch this project</span>
@@ -311,6 +321,33 @@ function AutonomyPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPic
         </p>
       </Show>
       <p class="field-hint">Your own messages to it can always use every tool.</p>
+    </fieldset>
+  );
+}
+
+/**
+ * The confirm list (r8, q14): the act kinds that, once held, wait for the overseer to approve
+ * them. The rest go ahead when their hold ends. Each tick saves at once, like the level.
+ */
+function ConfirmKindsPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPick(kind: ConfirmKind, checked: boolean): void }) {
+  const on = () => new Set<string>(props.info.settings.confirmKinds ?? []);
+  return (
+    <fieldset class="project-confirm">
+      <legend class="field-label">Waits for the overseer's approval</legend>
+      <p class="field-hint project-confirm-hint">
+        When one of these is held, it goes ahead only once the overseer approves it; you can cancel it in Needs you. The rest go ahead when their hold ends.
+      </p>
+      <div class="project-confirm-list">
+        <For each={CONFIRM_KINDS}>
+          {(kind) => (
+            <label class="toggle project-confirm-row">
+              <input type="checkbox" checked={on().has(kind)} disabled={props.busy} onChange={(e) => props.onPick(kind, e.currentTarget.checked)} />
+              <span class="toggle-box" />
+              <span>{confirmKindLabel(kind)}</span>
+            </label>
+          )}
+        </For>
+      </div>
     </fieldset>
   );
 }

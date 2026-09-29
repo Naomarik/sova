@@ -228,3 +228,21 @@ test("holdWords and holdHint: no hold at 0, else the minutes and where to cancel
   assert.equal(holdHint(0), "What it starts on its own that reaches a person or the code goes ahead at once.");
   assert.equal(holdHint(10), "What it starts on its own that reaches a person or the code waits 10 min in Needs you, where you can cancel it.");
 });
+
+test("the confirm list: labels by kind (an unknown kind reads as its id), toggling keeps the server's order, and what a tick says", async () => {
+  const { confirmKindLabel, toggleConfirmKind, confirmKindDone } = await import("./project-overseer-view");
+  assert.equal(confirmKindLabel("message"), "Messages to people");
+  assert.equal(confirmKindLabel("roster-decline"), "Declining a proposed person");
+  assert.equal(confirmKindLabel("new-kind"), "new-kind");
+  const all = ["message", "gather", "promote"] as const;
+  assert.deepEqual(toggleConfirmKind(all, ["promote"], "message", true), ["message", "promote"]);
+  assert.deepEqual(toggleConfirmKind(all, ["message", "promote"], "message", false), ["promote"]);
+  assert.equal(confirmKindDone("promote", true), "Promoting decisions: waits for the overseer's approval once its hold ends.");
+  assert.equal(confirmKindDone("promote", false), "Promoting decisions: goes ahead when its hold ends.");
+});
+
+test("every act kind the server lists has its own label", async () => {
+  const { CONFIRM_KINDS } = await import("../../shared/project-overseer");
+  const { CONFIRM_KIND_LABEL } = await import("./project-overseer-view");
+  for (const k of CONFIRM_KINDS) assert.ok(CONFIRM_KIND_LABEL[k], k);
+});

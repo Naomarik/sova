@@ -56,7 +56,7 @@ import { commitAll, gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./
 export class OrgError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 404 | 409 = 400,
+    readonly status: 400 | 404 | 409 | 410 = 400,
     /** A refusal the client acts on by name (`held`: attach an org another host holds). */
     readonly code?: string,
   ) {

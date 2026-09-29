@@ -4012,10 +4012,17 @@ a.group-option { color: inherit; text-decoration: none; }
   font-size: var(--fs-caption);
 }
 .insights-row[aria-current="page"] { background: var(--color-accent-tint); color: var(--color-ink); }
-/* The Agents row and the Settings gear share one line: the glance link keeps its
-   width, the gear sits at the row's right end, clear of the text it follows. */
+/* The Usage row + Resource monitor button, and the Agents row + Settings gear:
+   each link keeps the width, its button sits at the row's right end, and the two
+   buttons share one class so they stack in one column. The link's right padding
+   drops to space-2: the 44px button already carries 14px of air around its icon.
+   The link keeps its divider and the row draws the same line under the button
+   (an inset shadow, so the row stays 44px); the last row has none, since the
+   link is never its row's :last-child. */
 .sidebar-foot-row { display: flex; align-items: stretch; }
-.sidebar-foot-link { flex: 1; min-width: 0; }
+.sidebar-foot-row:not(:last-child) { box-shadow: inset 0 calc(-1 * var(--stroke-thin)) var(--color-border); }
+.sidebar-foot-row:last-child > .sidebar-foot-link { border-bottom: 0; }
+.sidebar-foot-link { flex: 1; min-width: 0; padding-right: var(--space-2); }
 .sidebar-settings {
   flex: none;
   align-self: center;
@@ -4026,10 +4033,12 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .sidebar-settings:hover { background: var(--color-sunken); color: var(--color-ink); }
 
-/* Usage glance: "C 47%  O 95%  OL 80%  Z 0%", one segment per provider.
-   Never wraps (4 × 100% ≈ 210px fits the 320px sidebar); clips as a guard.
+/* Usage glance: "C 47% O 95% OL 80% Z 0% DS $4", one segment per provider.
+   Never wraps; clips as a guard. Beside the monitor button the box is 215px in
+   the 320px sidebar, so segments sit space-2 apart (twice the tag-to-number gap,
+   so each still reads as one pair): a real five-provider reading is 210px.
    High = weight, not hue (no word to pair a color with); stale = muted. */
-.usage-glance { display: flex; align-items: baseline; gap: var(--space-3); flex-wrap: nowrap; }
+.usage-glance { display: flex; align-items: baseline; gap: var(--space-2); flex-wrap: nowrap; }
 .usage-glance-item { display: inline-flex; align-items: baseline; gap: var(--space-1); flex: none; }
 .usage-glance-tag { color: var(--color-ink-muted); }
 .usage-glance-item .text-num { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-2); }

@@ -64,6 +64,7 @@ import { listPlaybooks } from "./playbooks";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
+import { registerClaudeAccountRoutes } from "./claude-accounts";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
@@ -672,6 +673,10 @@ app.get("/api/settings/claude-status", async (c) => {
   const status = await claudeCliStatus();
   return c.json(status.error === undefined ? { ...status, models: await claudeCodeModelCount() } : status);
 });
+
+// Settings → Accounts (§app.claude-logins): this host's Claude logins, their order, and adding one
+// through Claude Code's own `claude auth login`. The registry is the claude-code extension's.
+const claudeAccounts = registerClaudeAccountRoutes(app);
 
 // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
 // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
@@ -1298,6 +1303,7 @@ async function shutdown() {
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
+  claudeAccounts.dispose();
   // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
   // Marked first, so a run that records how it ended says the shutdown cut it off.
   markShutdown();

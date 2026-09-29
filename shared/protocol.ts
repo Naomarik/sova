@@ -818,6 +818,63 @@ export interface ClaudeCliStatus {
   error?: string;
 }
 
+// ---- Claude logins (Settings → Accounts, §app.claude-logins) ------------------------------------
+// The registry is the claude-code extension's (pi-config/extensions/claude-code/accounts.ts); these
+// are its wire shapes. Nothing here ever carries a token, a code or a credential.
+
+/** Who a login is, from Claude Code's own `.claude.json`. */
+export interface ClaudeLoginIdentity {
+  accountUuid?: string;
+  email?: string;
+  orgUuid?: string;
+  orgName?: string;
+  plan?: string;
+  rateLimitTier?: string;
+}
+/** A login's standing on this host: usable, out until a limit resets, or out until signed in again. */
+export type ClaudeLoginStanding =
+  | { state: "ready" }
+  | { state: "limited"; until: number; window?: string }
+  | { state: "auth"; message?: string };
+export interface ClaudeLoginRow {
+  /** `default` (Claude Code's own directory) or `l-` and 8 hex digits. */
+  id: string;
+  label?: string;
+  identity: ClaudeLoginIdentity | null;
+  /** false: never chosen automatically. */
+  enabled: boolean;
+  standing: ClaudeLoginStanding;
+  /** Its directory holds `.credentials.json`. */
+  signedIn: boolean;
+  addedAt?: number;
+}
+/** The add-login flow (`claude auth login` for a new directory); one at a time per host. */
+export type ClaudeLoginFlowState =
+  | { state: "starting" }
+  /** The URL to open in any browser; `error` after a code the CLI refused (it keeps waiting). */
+  | { state: "waiting"; url: string; error?: string }
+  | { state: "finishing" }
+  | { state: "done"; login: ClaudeLoginRow; sharedAccount: boolean }
+  | { state: "failed"; error: string };
+/** GET /api/claude/accounts, and the answer of every change. */
+export interface ClaudeAccountsInfo {
+  /** This host as a device: its mesh id and name, else `local` / "This device". */
+  device: { id: string; label: string };
+  /** This device's logins, in its order, `default` included. */
+  logins: ClaudeLoginRow[];
+  /** Logins assigned to another device (listed, never used here). */
+  elsewhere: { id: string; device: string | null; label?: string; identity: ClaudeLoginIdentity | null }[];
+  /** The registry could not be read: only `default` is used, and nothing is written. */
+  error?: string;
+  flow: ClaudeLoginFlowState | null;
+}
+/** PUT /api/claude/accounts/order */
+export interface ClaudeLoginOrderRequest { order: string[] }
+/** PATCH /api/claude/accounts/:id */
+export interface ClaudeLoginPatchRequest { enabled?: boolean; label?: string | null }
+/** POST /api/claude/accounts/flow/code */
+export interface ClaudeLoginCodeRequest { code: string }
+
 
 /** PUT /api/models/favorite's body. */
 export interface ModelFavoriteRequest {

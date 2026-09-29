@@ -332,6 +332,9 @@ describe("org host", () => {
     assert.ok(feed.every((e) => e.session === "p/1"));
     assert.ok(!JSON.stringify(host.feed("prj1", { includeQuiet: true })).includes("MARK-feed"));
     assert.deepEqual(host.feed("prj1", { limit: 1, newestFirst: true }).map((e) => e.event), ["gather/start"]);
+    await host.act("p/1", "renew", {}, operator);
+    assert.ok(!host.feed("prj1").some((e) => e.event === "renew"), "H28: a quiet step is not in the default feed…");
+    assert.equal(host.feed("prj1", { includeQuiet: true }).filter((e) => e.event === "renew").length, 1, "…and is there on request");
     await host.close();
   });
 

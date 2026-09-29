@@ -8065,6 +8065,19 @@
       "requires": [
         "§chat.voice/runtime"
       ]
+    },
+    "§mesh.public/front-cdn": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/front",
+        "§mesh.public/forwarded-for"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/front.ts",
+        "server/share-front.test.ts"
+      ]
     }
   },
   "boundary": {

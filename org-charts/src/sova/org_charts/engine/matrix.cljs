@@ -18,9 +18,9 @@
 
 (defn- fresh [charts opts start]
   (let [eng (core/new-engine charts (merge {:absorb-unknown true}
-                                      (select-keys opts [:level-check :stamp :max-microsteps :load-cold :absorb-unknown])))]
-    (core/start! eng sid (:chart opts) start (:now opts 1000000))
-    eng))
+                                      (select-keys opts [:level-check :stamp :max-microsteps :load-cold :absorb-unknown])))
+        r   (core/start! eng sid (:chart opts) start (:now opts 1000000))]
+    [eng (:absorbed r)]))
 
 (defn- state-key [eng key-fn]
   [(set (core/configuration eng sid)) (when key-fn (key-fn (core/data eng sid)))])
@@ -29,39 +29,54 @@
   (first (filter #(and (= sid (:session-id %)) (= event (:event %))) (:steps r))))
 
 (defn- attempt
-  "Send `[event payload]` under `envelope`: {:accepted? :refused :error}."
+  "Send `[event payload]` under `envelope`: {:accepted? :refused :absorbed :error}."
   [eng now [event payload] envelope]
   (try
     (let [r    (core/send! eng sid event (merge payload envelope) {:now now})
           step (step-of r event)]
       {:accepted? (boolean (and step (not (:refused step)) (not (:ignored step))))
        :refused   (:refused step)
-       :ignored   (boolean (:ignored step))})
+       :absorbed  (:absorbed r)})
     (catch :default e {:error (ex-message e)})))
 
-(defn- drive-one [eng now item]
-  (let [[k x] item
-        x (if (fn? x) (x (core/data eng sid)) x)]
+(defn- drive-one
+  "Deliver a drive item: {:absorbed [...]} or {:error message}."
+  [eng now item]
+  (let [[k x] item]
     (try
-      (if (= k :fire)
-        (core/fire-due! eng (+ now x))
-        (core/send! eng sid k (or x {}) {:now now}))
-      true
-      (catch :default _ false))))
+      (let [x (if (fn? x) (x (core/data eng sid)) x)
+            r (if (= k :fire)
+                (core/fire-due! eng (+ now x))
+                (core/send! eng sid k (or x {}) {:now now}))]
+        {:absorbed (:absorbed r)})
+      (catch :default e {:error (ex-message e)}))))
 
 (defn- sentence-ok? [sentences s]
   (cond (nil? sentences) true (set? sentences) (contains? sentences s) (fn? sentences) (boolean (sentences s)) :else true))
+
+(defn- in-world? [world s]
+  (cond (nil? world) false (set? world) (contains? world s) (fn? world) (boolean (world s)) :else false))
 
 (defn run
   "opts: `:charts` (the registry map), `:chart` (name), `:starts` [start-data …], `:drive`
    [[event payload] | [:fire ms] …], `:acts` [[event payload] …], `:envelopes` {name envelope},
    `:sentences` (set or fn), `:level-check`, `:stamp`, `:key` (fn [data] → extra state key, default
    none: configurations only), `:max-configs` (default 5000), `:now`, `:sid` (the session under
-   test's id, default \"matrix/session\"), `:load-cold` (fn [sid] → snapshot text | nil) and
-   `:absorb-unknown` (default true: a session that exists nowhere is a sink that takes every event,
-   so the chart's sends, watches and drives to its world never throw).
-   Returns `{:configs n :cells n :accepted n :refused n :failures [{…}] :reached #{configuration}}`."
-  [{:keys [charts starts drive acts envelopes sentences max-configs now] :as opts}]
+   test's id, default \"matrix/session\"), `:load-cold` (fn [sid] → snapshot text | nil).
+   A payload or an envelope may be a fn of the session's data at the checkpoint (fresh ids, a real
+   stamp's counts).
+
+   The world: a session the chart sends to, watches, spawns next to or drives that exists nowhere
+   becomes a sink (`:absorb-unknown`, default true), where production throws
+   `sova/unknown-session`. So every absorbed id must be named in `:world` (a set or a pred): an
+   absorbed id outside it is a failure. `:absorbed` in the report lists them all.
+
+   Failures: an act send that throws, an explain that throws, a drive that throws, taken while
+   explain refuses, refused while explain is nil, a different sentence, a sentence outside the
+   catalogue, an absorbed session outside the world.
+   Returns `{:configs :cells :accepted :refused :failures [{…}] :reached #{configuration}
+   :absorbed #{sid} :truncated}`."
+  [{:keys [charts starts drive acts envelopes sentences max-configs now world] :as opts}]
   (binding [sid (or (:sid opts) default-sid)]
   (let [now      (or now 1000000)
         maxc     (or max-configs 5000)
@@ -71,10 +86,17 @@
         acc      (volatile! 0)
         ref      (volatile! 0)
         reached  (volatile! #{})
-        n        (volatile! 0)]
+        absorbed (volatile! #{})
+        n        (volatile! 0)
+        absorb!  (fn [ids where]
+                   (doseq [a ids]
+                     (vswap! absorbed conj a)
+                     (when-not (in-world? world a)
+                       (vswap! failures conj (merge where {:why "sent to a session outside the world" :session a})))))]
     (doseq [start (or (seq starts) [{}])]
-      (let [eng  (fresh charts opts start)
+      (let [[eng started] (fresh charts opts start)
             seen (volatile! #{})]
+        (absorb! started {:start start})
         (loop [frontier [(core/checkpoint eng)]]
           (when (and (seq frontier) (< @n maxc))
             (let [cp (first frontier)]
@@ -86,45 +108,54 @@
                     (vswap! seen conj k)
                     (vswap! n inc)
                     (vswap! reached conj (first k))
-                    ;; the cells: every act × envelope, sent on this state
                     (let [nexts (volatile! [])]
+                      ;; the cells: every act × envelope, sent on this state
                       (doseq [act acts
-                              [ename envelope] envelopes]
+                              [ename env] envelopes]
                         (core/rewind! eng cp)
+                        (vswap! cells inc)
                         (let [[event p] act
-                              payload (if (fn? p) (p (core/data eng sid)) p)
-                              r   (core/explain eng sid event (merge payload envelope) {:now now})
-                              out (attempt eng now [event payload] envelope)]
-                          (vswap! cells inc)
-                          (cond
-                            (:error out)
-                            (vswap! failures conj {:state (first k) :act event :envelope ename :why "the send threw" :error (:error out)})
-                            (:accepted? out)
-                            (do (vswap! acc inc)
-                                (when r (vswap! failures conj {:state (first k) :act event :envelope ename
-                                                               :why "taken, but explain refuses" :explain (:sentence r)}))
-                                (vswap! nexts conj (core/checkpoint eng)))
-                            :else
-                            (do (vswap! ref inc)
-                                (cond
-                                  (nil? r)
-                                  (vswap! failures conj {:state (first k) :act event :envelope ename
-                                                         :why "refused, but explain is nil" :refused (:sentence (:refused out))})
-                                  (and (:refused out) (not= (:sentence r) (:sentence (:refused out))))
-                                  (vswap! failures conj {:state (first k) :act event :envelope ename
-                                                         :why "the send's sentence differs from explain's"
-                                                         :explain (:sentence r) :refused (:sentence (:refused out))})
-                                  (not (sentence-ok? sentences (:sentence r)))
-                                  (vswap! failures conj {:state (first k) :act event :envelope ename
-                                                         :why "a sentence outside the catalogue" :explain (:sentence r)}))))))
+                              at      {:state (first k) :act event :envelope ename}
+                              data    (core/data eng sid)
+                              payload (if (fn? p) (p data) p)
+                              envelope (if (fn? env) (env data) env)
+                              ex      (try {:r (core/explain eng sid event (merge payload envelope) {:now now})}
+                                        (catch :default e {:error (ex-message e)}))]
+                          (if (:error ex)
+                            (vswap! failures conj (assoc at :why "explain threw" :error (:error ex)))
+                            (let [r   (:r ex)
+                                  out (attempt eng now [event payload] envelope)]
+                              (absorb! (:absorbed out) at)
+                              (cond
+                                (:error out)
+                                (vswap! failures conj (assoc at :why "the send threw" :error (:error out)))
+                                (:accepted? out)
+                                (do (vswap! acc inc)
+                                    (when r (vswap! failures conj (assoc at :why "taken, but explain refuses" :explain (:sentence r))))
+                                    (vswap! nexts conj (core/checkpoint eng)))
+                                :else
+                                (do (vswap! ref inc)
+                                    (cond
+                                      (nil? r)
+                                      (vswap! failures conj (assoc at :why "refused, but explain is nil" :refused (:sentence (:refused out))))
+                                      (and (:refused out) (not= (:sentence r) (:sentence (:refused out))))
+                                      (vswap! failures conj (assoc at :why "the send's sentence differs from explain's"
+                                                              :explain (:sentence r) :refused (:sentence (:refused out))))
+                                      (not (sentence-ok? sentences (:sentence r)))
+                                      (vswap! failures conj (assoc at :why "a sentence outside the catalogue" :explain (:sentence r))))))))))
+                      ;; the drives: facts, notifications, timers
                       (doseq [item drive]
                         (core/rewind! eng cp)
-                        (when (drive-one eng now item)
-                          (vswap! nexts conj (core/checkpoint eng))))
+                        (let [out (drive-one eng now item)
+                              at  {:state (first k) :drive (first item)}]
+                          (if (:error out)
+                            (vswap! failures conj (assoc at :why "a drive threw" :error (:error out)))
+                            (do (absorb! (:absorbed out) at)
+                                (vswap! nexts conj (core/checkpoint eng))))))
                       (recur (into (subvec (vec frontier) 1) @nexts))))))))))
       nil)
     {:configs @n :cells @cells :accepted @acc :refused @ref :failures @failures :reached @reached
-     :truncated (>= @n maxc)})))
+     :absorbed @absorbed :truncated (>= @n maxc)})))
 
 (defn clean?
   "True when the report has no failure and was not truncated."

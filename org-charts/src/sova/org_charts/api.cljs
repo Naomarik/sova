@@ -5,27 +5,16 @@
    (\"gather/start\" → :gather/start). Session ids are strings. Snapshots are EDN text."
   (:require
     [clojure.string :as str]
-    [sova.org-charts.charts.project :as project]
     [sova.org-charts.charts.registry :as registry]
-    [sova.org-charts.charts.work-item :as work-item]
-    [sova.org-charts.charts.guards :as guards]
     [sova.org-charts.engine.bounded :as bounded]
     [sova.org-charts.engine.core :as core]
     [sova.org-charts.engine.js-chart :as js-chart]))
 
-(def spike-charts
-  "The spike's charts (project v1 as \"spike-project\", beside the refit's own \"project\"; work-item v3),
-   kept for the spike replay until the refit's charts replace them: they explain through `guards/explain`."
-  {"spike-project" {:chart project/chart :version project/version
-                :explain (fn [event data envelope] (guards/explain "project" event data envelope))}
-   "work-item" {:chart work-item/chart :version work-item/version
-                :explain (fn [event data envelope] (guards/explain "work-item" event data envelope))}})
-
 (def charts
-  "The shipped charts: the refit's registry (charts/registry.cljc) over the spike's. The engine's test
-   chart (`engine-probe`) is not here: its TS tests register a JS copy of it at runtime
+  "The shipped charts: the refit's registry (charts/registry.cljc). The engine's test chart
+   (`engine-probe`) is not here: its TS tests register a JS copy of it at runtime
    (`createEngine({charts})`, `engine/js_chart.cljs`)."
-  (merge spike-charts registry/charts))
+  registry/charts)
 
 ;; ---------------------------------------------------------------------------------------------
 ;; Marshalling

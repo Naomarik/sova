@@ -893,10 +893,7 @@
         stage? (fn [s] (or (nil? stages) (contains? stages s)))
         act    (get-in entry [:acts event-name])
         edata  (assoc d :_event {:name event-name :data envelope})]
-    (if-let [legacy (:explain entry)]
-      (when (or (nil? stages) (stage? :state))
-        (dsl/as-refusal (legacy event-name (assoc d :sova/configuration (set config) :sova/running? run?) envelope) :legacy nil))
-      (or
+    (or
         (when (and (stage? :final) (not run?))
           {:sentence (or (:final-refusal entry) "This has ended.") :stage :final})
         (when (and (stage? :level) act (:needs act) level-check)
@@ -923,7 +920,7 @@
               :else
               (when (stage? :check)
                 (let [rs (map #(transition-refusal penv data % skip-payload?) cands)]
-                  (when (every? some? rs) (first rs)))))))))))
+                  (when (every? some? rs) (first rs))))))))))
 
 (defn explain
   "The refusal (a map) act `event-name` with `envelope` would get on `sid` now, or nil."

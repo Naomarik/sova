@@ -35,10 +35,15 @@
     (is (contains? (:reached r) #{:top :gathering}))))
 
 (deftest a-disagreeing-explain-is-caught
-  (let [charts (assoc-in rp/charts ["refit-parent" :explain] (fn [_ _ _] nil))
+  ;; an impure pre check (it refuses every other time it runs) makes explain and the send disagree
+  (let [calls  (atom 0)
+        flaky  {:name :flaky :fn (fn [_] (when (= 1 (swap! calls inc)) "Flaky."))}
+        charts (assoc-in rp/charts ["refit-parent" :acts :door/open :pre] [flaky])
         r      (matrix/run {:charts charts :chart "refit-parent" :level-check rp/level-check
-                            :acts [[:gather/close {}]] :envelopes {"operator" {:by "operator"}}})]
-    (is (= ["refused, but explain is nil"] (distinct (map :why (:failures r)))))))
+                            :acts [[:door/open {}]] :envelopes {"operator" {:by "operator"}}})]
+    (is (seq (:failures r)))
+    (is (every? #{"taken, but explain refuses" "refused, but explain is nil" "the send's sentence differs from explain's"}
+          (map :why (:failures r))))))
 
 (deftest sentences-outside-the-catalogue-are-caught
   (let [r (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check
@@ -46,12 +51,32 @@
                        :sentences #{"something else"}})]
     (is (= ["a sentence outside the catalogue"] (distinct (map :why (:failures r)))))))
 
-(deftest the-world-around-the-session-is-absorbed
-  (let [r (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check :sid "par/o1/1"
-                       :acts [[:kid/spawn {:name "k"}]] :envelopes {"operator" {:by "operator"}}
-                       :drive [[:kid/watch {:target "kid/nowhere"}]]})]
-    (is (empty? (:failures r)) "a watch of a session that exists nowhere does not throw")
-    (is (pos? (:cells r)))))
+(deftest the-world-must-be-declared
+  (let [go (fn [world] (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check :sid "par/o1/1"
+                                    :acts [[:kid/spawn {:name "k"}]] :envelopes {"operator" {:by "operator"}}
+                                    :drive [[:kid/watch {:target "kid/nowhere"}]] :world world}))]
+    (let [r (go nil)]
+      (is (= #{"kid/nowhere"} (:absorbed r)))
+      (is (= ["sent to a session outside the world"] (distinct (map :why (:failures r))))
+        "absorbing an unknown session is a failure unless the world names it"))
+    (is (empty? (:failures (go #{"kid/nowhere"}))))))
+
+(deftest a-drive-or-explain-that-throws-fails
+  (let [r (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check
+                       :acts [] :envelopes {} :drive [[:probe/boom (fn [_] (throw (js/Error. "boom")))]]})]
+    (is (= [{:why "a drive threw" :error "boom"}] (map #(select-keys % [:why :error]) (:failures r)))))
+  (let [charts (assoc-in rp/charts ["refit-parent" :not-here] (fn [_ _ _] (throw (js/Error. "not-here threw"))))
+        r      (matrix/run {:charts charts :chart "refit-parent" :level-check rp/level-check
+                            :acts [[:gather/close {}]] :envelopes {"operator" {:by "operator"}}})]
+    (is (= "explain threw" (:why (first (:failures r)))))))
+
+(deftest envelopes-may-be-fns-of-the-state
+  (let [r (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check
+                       :acts [[:gather/start {:to "a"}]]
+                       :envelopes {"stamped" (fn [d] {:by "overseer" :level (if (:gathers d) "L0" "L3") :project-id "p1" :hold-ms 0})}})]
+    (is (empty? (:failures r)))
+    (is (pos? (:accepted r)))
+    (is (pos? (:refused r)) "the second state's stamp refuses")))
 
 (deftest payloads-may-be-fns-of-the-state
   (let [r (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check

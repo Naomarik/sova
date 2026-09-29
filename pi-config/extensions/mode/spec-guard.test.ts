@@ -441,3 +441,29 @@ test("treeTurn reports a comparison that failed instead of staying silent; worke
 	assert.ok(workerReported([{ type: "message", message: { role: "toolResult", toolName: "agent_spawn" } }]));
 	assert.ok(!workerReported([{ type: "custom_message", customType: "spec-check", content: "x" }, { type: "message", message: { role: "toolResult", toolName: "bash" } }]));
 });
+
+test("a new child inserted right above a sibling's heading flags the parent (child-added), never the sibling", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const repo = mkdtempSync(join(scratchRoot, "spec-sibling-"));
+	try {
+		const put = (rel: string, text: string) => {
+			mkdirSync(dirname(join(repo, rel)), { recursive: true });
+			writeFileSync(join(repo, rel), text);
+		};
+		const git = (...args: string[]) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args]).status, 0, args.join(" "));
+		const manifest = (extra: Record<string, unknown>) =>
+			JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, claims: { "§app/insights": { kind: "note" }, "§app.insights/cards": { kind: "note" }, "§app.insights/refresh": { kind: "note" }, ...extra } });
+		put(".sova/spec/manifest.json", manifest({}));
+		put(".sova/spec/claims/app/insights.md", "# §app/insights — Insights\n\nIntro.\n\n## §app.insights/cards — Cards\n\nCards.\n\n## §app.insights/refresh — Refresh\n\nRefresh.\n");
+		git("init", "-q", "-b", "master");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+		const start = await treeStart(repo);
+		put(".sova/spec/manifest.json", manifest({ "§app.insights/summary": { kind: "note" } }));
+		put(".sova/spec/claims/app/insights.md", "# §app/insights — Insights\n\nIntro.\n\n## §app.insights/cards — Cards\n\nCards.\n\n## §app.insights/summary — Summary\n\nSummary.\n\n## §app.insights/refresh — Refresh\n\nRefresh.\n");
+		git("commit", "-qam", "summary");
+		assert.deepEqual((await treeTurn(start!, CORE)).foreign, ["§app/insights"]);
+	} finally {
+		rmSync(repo, { recursive: true, force: true });
+	}
+});

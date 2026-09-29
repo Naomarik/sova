@@ -553,6 +553,18 @@ export function gitMerges(command: string): boolean {
 	return /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+merge(?![-\w])/.test(command);
 }
 
+/** The directories a shell command works in: each `cd <dir>`, `git -C <dir>` and `--root <dir>`; else the cwd. */
+export function commandDirs(command: string, cwd: string): string[] {
+	const dirs: string[] = [];
+	const word = String.raw`("([^"]+)"|'([^']+)'|([^\s;&|]+))`;
+	for (const re of [new RegExp(String.raw`(?:^|[;&|(]\s*)cd\s+` + word, "g"), new RegExp(String.raw`\bgit\s+-C\s+` + word, "g"), new RegExp(String.raw`--root[=\s]+` + word, "g")])
+		for (const m of command.matchAll(re)) {
+			const dir = m[2] ?? m[3] ?? m[4];
+			if (dir) dirs.push(dir.startsWith("/") ? dir : join(cwd, dir));
+		}
+	return dirs.length ? dirs : [cwd];
+}
+
 /** The `--root <dir>` a spec tool command names, if any. */
 export function commandRoot(command: string): string | undefined {
 	const m = /--root[=\s]+("([^"]+)"|'([^']+)'|(\S+))/.exec(command);
@@ -739,10 +751,15 @@ export async function landedSpec(
 	return { specChanged: true, foreign: every.filter((id) => !absorbed.has(id) || own.has(id) || uncommitted.includes(id)) };
 }
 
-/** Compare a tree with how the run found it. Never throws. */
-export async function treeTurn(start: TreeStart, core: string, io: SpecIO = localIO): Promise<TreeTurn> {
+/**
+ * Compare a tree with how the run found it. Never throws. `commits: false` ignores HEAD's movement (only
+ * the work tree's own changes count): for the session's tree when this session made no commit, merge or
+ * promotion there, so a commit someone else lands meanwhile (another task on master) is never this turn's.
+ */
+export async function treeTurn(start: TreeStart, core: string, io: SpecIO = localIO, options: { commits?: boolean } = {}): Promise<TreeTurn> {
 	try {
 		const end = await gitView(start.view.top, io);
+		if (options.commits === false && end) start = { ...start, view: { ...start.view, head: end.head } };
 		const manifest = manifestConflict(end);
 		const conflict = manifest && end ? { conflict: manifestConflictNote(end.top, manifest, core) } : {};
 		const drafts = start.root ? draftsTouched(start.drafts, await draftStamps(start.root, io)) : [];

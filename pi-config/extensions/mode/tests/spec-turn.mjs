@@ -357,6 +357,43 @@ try {
 	assert.equal(checks().length, before6 + 1);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the list is not empty");
 
+	// M1-B-s2-1/-3: while the session promotes in its worktree, ANOTHER task lands a spec commit on master
+	// in the session's own checkout. That commit is not this turn's: the list is the worktree's § only.
+	const addOther = JSON.parse(spawnSync("git", ["-C", cwd, "show", "HEAD:.sova/spec/manifest.json"], { encoding: "utf8" }).stdout);
+	addOther.claims["§app/other"] = { kind: "note" };
+	put(".sova/spec/manifest.json", JSON.stringify(addOther));
+	put(".sova/spec/claims/app/other.md", "# §app/other\n\nOther.\n");
+	git("add", "-A");
+	git("commit", "-qm", "other claim");
+	const wt7 = path.join(scratch, "wt7");
+	const wt7Git = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt7, ...args]).status, 0, `git ${args.join(" ")}`);
+	mkdirSync(wt7, { recursive: true });
+	wt7Git("init", "-q");
+	for (const rel of [".sova/spec/manifest.json", ".sova/spec/claims/app/shell.md", "src/App.tsx"]) {
+		mkdirSync(path.dirname(path.join(wt7, rel)), { recursive: true });
+		writeFileSync(path.join(wt7, rel), spawnSync("git", ["-C", cwd, "show", `HEAD:${rel === ".sova/spec/manifest.json" ? rel : rel}`], { encoding: "utf8" }).stdout);
+	}
+	mkdirSync(path.join(wt7, ".sova/spec/claims/app"), { recursive: true });
+	writeFileSync(path.join(wt7, ".sova/spec/claims/app/other.md"), "# §app/other\n\nOther.\n");
+	wt7Git("add", "-A");
+	wt7Git("commit", "-qm", "base");
+	hostPi.events.emit("worktrees:state", { version: 1, active: [wt, wt2, wt3, wt4, wt5, wt6, wt7] });
+	const otherTask = () => {
+		put(".sova/spec/claims/app/other.md", "# §app/other\n\nOther, by another task.\n");
+		git("commit", "-qam", "spec: another task on master");
+	};
+	at = requests.length;
+	const before7 = checks().length;
+	script.push(
+		{ tool: "bash", args: { command: `: sova-spec-draft.mjs promote feat --root ${wt7} --write; printf '# §app/shell\\n\\nShell, wt7.\\n' > ${wt7}/.sova/spec/claims/app/shell.md` } },
+		{ effect: otherTask, text: "Promoted.\nAlso changes: none" },
+		{ text: "Promoted.\nAlso changes: §app/shell — wt7 wording" },
+	);
+	await session.prompt("promote it in wt7");
+	assert.equal(requests.length, at + 3);
+	assert.equal(checks().length, before7 + 1);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "another task's §app/other on master is not this turn's");
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

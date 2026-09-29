@@ -187,7 +187,7 @@ export function Composer(props: {
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
-  /** Recommendations ticked on an alignment card (§chat.alignment/card), staged for the next send:
+  /** Answers picked on an alignment card (§chat.alignment/card), staged for the next send:
       the row names them, and `compose` puts their line ahead of the typed text in one message. */
   picks?: { label: string; compose(text: string): string; clear(): void } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
@@ -934,10 +934,10 @@ export function Composer(props: {
 
         <Show when={props.picks}>
           {(p) => (
-            <div class="align-picks" role="group" aria-label="Staged recommendations">
+            <div class="align-picks" role="group" aria-label="Staged answers">
               <Icon name="check" small />
-              <span class="align-picks-text" title={`Taking your recommendation: ${p().label}`}>
-                Taking your recommendation: <span class="text-mono">{p().label}</span>
+              <span class="align-picks-text" title={`Answering: ${p().label}`}>
+                Answering: <span class="text-mono">{p().label}</span>
               </span>
               <button type="button" class="button button-icon button-ghost" aria-label="Clear Picks" title="Clear Picks" onClick={() => p().clear()}>
                 <Icon name="close" small />

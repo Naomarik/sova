@@ -20,11 +20,12 @@
     <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
          trigger, both at the row's right end (§chat.alignment/chip) -->
 
-    <!-- ticked alignment recommendations, staged for the next send (§chat.alignment/card);
+    <!-- answers picked on an alignment card (recommendations ticked, options picked), staged for
+         the next send (§chat.alignment/card); each question reads "rec" or its option's letter;
          omit when there are none -->
-    <div class="align-picks" role="group" aria-label="Staged recommendations">
+    <div class="align-picks" role="group" aria-label="Staged answers">
       <span class="icon icon-sm" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
-      <span class="align-picks-text">Taking your recommendation: <span class="text-mono">al_3 q1, q3; al_4 q2</span></span>
+      <span class="align-picks-text">Answering: <span class="text-mono">al_3 q1 rec, q2 b; al_4 q2 rec</span></span>
       <button class="button button-icon button-ghost" type="button" aria-label="Clear Picks" title="Clear Picks">…close…</button>
     </div>
 
@@ -187,8 +188,8 @@ the skill's copy ladder.
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` | enabled | Send `aria-disabled` until the next `agent_settled` | `attention` — "pi is busy with another turn. Send when it finishes." |
 
-Send is enabled by typed text, an attachment, **or ticked alignment recommendations alone**
-(§chat.alignment/card): with ticks and no text it sends just their line. With ticks staged, a
+Send is enabled by typed text, an attachment, **or answers picked on an alignment card alone**
+(§chat.alignment/card): with picks and no text it sends just their line. With picks staged, a
 typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them

@@ -130,6 +130,7 @@ test("timelineOrder: newest first; one time keeps the later log row first", () =
     { at: ago(H), by: "chart", line: "c" },
   ];
   assert.deepEqual(timelineOrder(rows).map((r) => r.line), ["c", "b", "a"]);
+  assert.deepEqual(timelineOrder([...rows, { at: ago(0), by: "chart", line: "lease renewed", quiet: true }]).map((r) => r.line), ["c", "b", "a"], "a quiet row is left out (r8a)");
 });
 
 test("logStamp: 24-hour clock today, date and clock before, year when not this year", () => {

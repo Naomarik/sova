@@ -109,6 +109,8 @@ export interface TimelineRow {
   reason?: string;
   /** The refusal sentence, when a guard refused the act. */
   refused?: string;
+  /** The transition's feed class is `quiet` (r8a: a timer re-armed, a lease renewed, bookkeeping). */
+  quiet?: boolean;
 }
 
 export interface PipelineTimeline {

@@ -232,6 +232,7 @@ export interface TimelineRowLike {
   refused?: string | null;
   from?: string | null;
   to?: string | null;
+  quiet?: boolean;
 }
 
 /** Who did it, in words: the operator is "You" ("You via the Overseer"), the chart itself "Sova", a person their name. */
@@ -248,9 +249,11 @@ export function moveLine(r: Pick<TimelineRowLike, "from" | "to">): string {
   return `${phaseDetail(r.from)} → ${phaseDetail(r.to)}`;
 }
 
-/** Newest first, ties keep the log's order reversed (the later write is newer). */
+/** Newest first, ties keep the log's order reversed (the later write is newer). Quiet rows (r8a:
+    a timer re-armed, a lease renewed, bookkeeping) moved nothing, so the timeline leaves them out. */
 export function timelineOrder<T extends TimelineRowLike>(rows: readonly T[]): T[] {
   return rows
+    .filter((r) => !r.quiet)
     .map((r, i) => ({ r, i, t: Date.parse(r.at) || 0 }))
     .sort((a, b) => b.t - a.t || b.i - a.i)
     .map((x) => x.r);

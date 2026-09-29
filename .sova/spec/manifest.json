@@ -6145,11 +6145,15 @@
         "src/lib/align.ts",
         "src/lib/align.test.ts",
         "src/design/align-viewer.css",
-        "src/design/base.css"
+        "src/design/base.css",
+        "shared/row-counts.ts",
+        "src/lib/older-rows.ts",
+        "src/lib/older-rows.test.ts"
       ],
       "requires": [
         "§chat.alignment/card",
-        "§chat.composer/anatomy"
+        "§chat.composer/anatomy",
+        "§chat.transcript/rendering"
       ]
     },
     "§chat.alignment/document": {

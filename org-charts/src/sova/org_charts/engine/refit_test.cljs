@@ -613,3 +613,30 @@
       (testing "an explicit watch of a session that exists nowhere still throws"
         (is (= core/unknown-session-type
               (:type (ex-data (thrown #(core/send! eng "par" :kid/watch {:target "kid/nobody"} {:now (+ t0 3)}))))))))))
+
+;; ---- a timer that throws (verifier H52; the host sets its session aside) ------------------------------
+
+(def boom-chart
+  "A delayed `:boom` enters an eventless cycle: that timer's step always trips the step limit."
+  (chart/statechart {:initial :armed}
+    (elements/state {:id :armed}
+      (elements/on-entry {} (elements/Send {:event :boom :delay 10}))
+      (elements/transition {:event :boom :target :spin-a}))
+    (elements/state {:id :spin-a} (elements/transition {:target :spin-b}))
+    (elements/state {:id :spin-b} (elements/transition {:target :spin-a}))))
+
+(deftest a-timer-can-be-fired-for-some-sessions-only
+  (let [eng (core/new-engine (assoc rp/charts "boom" {:chart boom-chart :version 1}) {:level-check rp/level-check :max-microsteps 20})]
+    (core/start! eng "bad" "boom" {} t0)
+    (parent eng)
+    (core/send! eng "par" :timed/arm {} {:now t0})
+    (is (= ["bad" "par"] (core/due-sessions eng (+ t0 1000))))
+    (is (= ["bad"] (core/due-sessions eng (+ t0 10))) "only what is due by then")
+    (is (thrown? js/Error (core/fire-due! eng (+ t0 1000))) "together, the bad timer throws and rolls everything back")
+    (is (in? eng "par" :timed))
+    (is (thrown? js/Error (core/fire-due! eng (+ t0 1000) {:only #{"bad"}})))
+    (let [r (core/fire-due! eng (+ t0 1000) {:except #{"bad"}})]
+      (is (= [:timed/fired] (map :event (:steps r))) "the rest fire")
+      (is (in? eng "par" :idle)))
+    (is (= (+ t0 10) (core/next-due-at eng)) "the bad timer is still pending")
+    (is (nil? (core/next-due-at eng #{"bad"})) "and nothing else is")))

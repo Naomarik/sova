@@ -172,8 +172,13 @@
          :chartOf       (fn [sid] (:chart (core/snapshot-meta eng sid)))
          :enabledEvents (fn [sid envelope opts] (->js (core/enabled-events eng sid (->clj envelope) (call-opts opts))))
          :holds         (fn [sid] (->js (if (some? sid) (core/holds eng sid) (core/holds eng))))
-         :nextDueAt     (fn [] (core/next-due-at eng))
-         :fireDue       (guarded (fn [now] (->js (core/fire-due! eng now))))
+         :nextDueAt     (fn [except] (core/next-due-at eng (when except (set except))))
+         :dueSessions   (fn [now] (->js (core/due-sessions eng now)))
+         :fireDue       (guarded (fn [now opts]
+                                   (let [only (opt opts "only") except (opt opts "except")]
+                                     (->js (core/fire-due! eng now (cond-> {}
+                                                                     only (assoc :only (set only))
+                                                                     except (assoc :except (set except))))))))
          :dump          (fn [sid] (core/dump eng sid))
          :load          (guarded (fn [sid text] (->js (core/load! eng sid text))))
          :unload        (fn [sid] (core/unload! eng sid))

@@ -779,16 +779,20 @@
 (defn- call
   "Run `f` (the call's own steps; returns them), then drain. opts: `:due-first` (deliver what is due
    before `f`: W5), `:rollback` (a trial: compute the result, then put everything back),
-   `:own-only` (drain only events this call queued: resume). A call that throws changes nothing:
+   `:own-only` (drain only events this call queued: resume), `:targets` (a pred on session ids: deliver
+   only what was due for them, plus whatever the call itself queues). A call that throws changes nothing:
    sessions, generations and the queue are put back; no callback has run."
-  [eng now {:keys [due-first rollback own-only]} f]
+  [eng now {:keys [due-first rollback own-only targets]} f]
   (begin-call! eng now)
   (let [saved (save-state eng)
         mark  (q/ordinal (:queue (engine eng)))]
     (try
       (let [[log0 u0] (if due-first (drain! eng [] nil) [[] []])
             log1      (into log0 (f))
-            [log2 u1] (drain! eng log1 (when own-only (fn [e] (> (q/event-ordinal e) mark))))
+            mine?     (fn [e] (> (q/event-ordinal e) mark))
+            [log2 u1] (drain! eng log1 (cond own-only mine?
+                                             ;; `:targets`: what was due for those sessions, and whatever the call queues
+                                             targets (fn [e] (or (mine? e) (targets (:target e))))))
             res       (end-call! eng log2 (into u0 u1) saved (boolean rollback))]
         (if rollback (restore! eng saved) (fire-callbacks! eng res))
         res)
@@ -835,14 +839,28 @@
         []))))
 
 (defn next-due-at
-  "Earliest delivery time of a pending event for a loaded session, or nil."
-  [eng]
-  (first (q/next-due (:queue (engine eng)) #(loaded? eng %))))
+  "Earliest delivery time of a pending event for a loaded session (not in `except`), or nil."
+  ([eng] (next-due-at eng nil))
+  ([eng except]
+   (first (q/next-due (:queue (engine eng)) #(and (loaded? eng %) (not (contains? except %)))))))
+
+(defn due-sessions
+  "The loaded sessions with an event due at or before `now`, sorted."
+  [eng now]
+  (let [queue (:queue (engine eng))]
+    (vec (sort (filter (fn [sid] (and (loaded? eng sid) (some #(<= (:delivery-time %) now) (q/snapshot-session queue sid))))
+                 (keys @(:session-queues queue)))))))
 
 (defn fire-due!
-  "Advance the clock to `now` and deliver everything due by then."
-  [eng now]
-  (call eng now {} (fn [] [])))
+  "Advance the clock to `now` and deliver everything due by then; with `:only` (a set of session ids)
+   what is due for those alone, with `:except` all but theirs (a timer that throws is found and set
+   aside by the host). Whatever the call queues is delivered either way."
+  ([eng now] (fire-due! eng now nil))
+  ([eng now {:keys [only except]}]
+   (call eng now (cond only {:targets #(contains? only %)}
+                       except {:targets #(not (contains? except %))}
+                       :else {})
+     (fn [] []))))
 
 ;; ---------------------------------------------------------------------------------------------
 ;; Explain, trial, enabled events

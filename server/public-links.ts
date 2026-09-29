@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { SHARE_PORT_DEFAULT, type PublicLinksFile, type ShareFront, type ShareGatewaySetting, type ShareRoute } from "../shared/public-links";
@@ -72,19 +73,39 @@ function parseRoute(v: unknown): ShareRoute {
   return fail('route must be "off", "self" or {via: {nodeId}}');
 }
 
+/** A URL as stored: exactly the canonical origin (parsePublicUrl's form, no trailing slash). */
+function storedUrl(v: unknown, what: string): string {
+  if (parsePublicUrl(v) !== v) fail(`${what} must be written as its bare origin, with no trailing slash`);
+  return v as string;
+}
+
+/** Every key present, nothing defaulted or deduplicated: the stored gateway as the contract has it. */
 function parseGateway(v: unknown): ShareGatewaySetting {
   if (!isObj(v)) return fail("gateway must be an object");
   onlyKeys(v, GATEWAY_KEYS, "gateway");
-  const publicUrl = parsePublicUrl(v.publicUrl);
+  const publicUrl = storedUrl(v.publicUrl, "gateway.publicUrl");
   if (!FRONTS.includes(v.front as ShareFront)) fail(`gateway.front must be one of ${FRONTS.join(", ")}`);
-  const sharePort = v.sharePort === undefined ? SHARE_PORT_DEFAULT : v.sharePort;
-  if (!isPort(sharePort)) fail("gateway.sharePort must be a port, 1-65535");
-  const acceptFrom = v.acceptFrom === undefined ? "all" : v.acceptFrom;
+  if (!isPort(v.sharePort)) fail("gateway.sharePort must be a port, 1-65535");
+  const acceptFrom = v.acceptFrom;
   if (acceptFrom !== "all") {
     if (!Array.isArray(acceptFrom) || acceptFrom.length > ACCEPT_MAX || !acceptFrom.every((x) => typeof x === "string" && NODE_ID.test(x)))
       fail('gateway.acceptFrom must be "all" or a list of node ids');
+    if (new Set(acceptFrom as string[]).size !== (acceptFrom as string[]).length) fail("gateway.acceptFrom lists a node twice");
   }
-  return { publicUrl, front: v.front as ShareFront, sharePort: sharePort as number, acceptFrom: acceptFrom === "all" ? "all" : [...new Set(acceptFrom as string[])] };
+  return { publicUrl, front: v.front as ShareFront, sharePort: v.sharePort as number, acceptFrom: acceptFrom === "all" ? "all" : [...(acceptFrom as string[])] };
+}
+
+/** A PUT's gateway before the strict parse: the port and acceptFrom may be left out (their
+    defaults), and publicUrl may carry one trailing slash. Nothing else is forgiven. */
+function gatewayInput(v: unknown): unknown {
+  if (!isObj(v)) return v;
+  let publicUrl = v.publicUrl;
+  try {
+    publicUrl = parsePublicUrl(v.publicUrl);
+  } catch {
+    // left as sent: the strict parse names the problem
+  }
+  return { sharePort: SHARE_PORT_DEFAULT, acceptFrom: "all", ...v, publicUrl };
 }
 
 /** The whole file, strictly; throws on anything else. */
@@ -98,7 +119,7 @@ export function parsePublicLinks(raw: unknown): PublicLinksFile {
     if (!isPort(raw.ingressPort)) fail("ingressPort must be a port, 1-65535");
     out.ingressPort = raw.ingressPort as number;
   }
-  if (raw.lastKnownUrl !== undefined) out.lastKnownUrl = parsePublicUrl(raw.lastKnownUrl);
+  if (raw.lastKnownUrl !== undefined) out.lastKnownUrl = storedUrl(raw.lastKnownUrl, "lastKnownUrl");
   if (raw.verifiedAt !== undefined) {
     if (typeof raw.verifiedAt !== "number" || !Number.isSafeInteger(raw.verifiedAt) || raw.verifiedAt < 0) fail("verifiedAt must be a time");
     out.verifiedAt = raw.verifiedAt as number;
@@ -107,7 +128,11 @@ export function parsePublicLinks(raw: unknown): PublicLinksFile {
   return out;
 }
 
-/** The setting as stored; off when there is no file or it doesn't parse. */
+/** The file version last warned about, so a bad file is named once, not on every read. */
+let warnedFile: string | null = null;
+
+/** The setting as stored; off when there is no file or it doesn't parse. A file that doesn't
+    parse is warned about once per version, never quoting its contents. */
 export function readPublicLinks(): PublicLinksFile {
   let text: string;
   try {
@@ -118,7 +143,12 @@ export function readPublicLinks(): PublicLinksFile {
   try {
     return parsePublicLinks(JSON.parse(text));
   } catch (err) {
-    console.warn(`[share] public-links.json ignored (read as off): ${err instanceof ParseError ? err.message : "not JSON"}`);
+    const why = err instanceof ParseError ? "it breaks the setting's rules" : "not JSON";
+    const version = `${text.length}:${createHash("sha256").update(text).digest("hex")}`;
+    if (warnedFile !== version) {
+      warnedFile = version;
+      console.warn(`[share] public-links.json ignored (read as off until it is fixed or saved again in Settings → Public links): ${why}`);
+    }
     return { ...OFF };
   }
 }
@@ -144,7 +174,7 @@ export function patchPublicLinks(patch: unknown): { file: PublicLinksFile } | { 
     onlyKeys(p, PATCH_KEYS, "body");
     const next: Record<string, unknown> = { ...cur };
     if ("route" in p) next.route = p.route;
-    if ("gateway" in p) next.gateway = p.gateway;
+    if ("gateway" in p) next.gateway = gatewayInput(p.gateway);
     if ("ingressPort" in p) next.ingressPort = p.ingressPort;
     for (const k of PATCH_KEYS) if (next[k] === null) delete next[k];
     const file = parsePublicLinks(next);

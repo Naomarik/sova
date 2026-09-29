@@ -1,10 +1,12 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { PublicLinksFile, PublicLinksInfo, VerifyResult } from "../shared/public-links";
+import type { AdvertisedGateway, PublicLinksFile, PublicLinksInfo, RoutedHost, VerifyResult } from "../shared/public-links";
+import { advertisedGateways } from "./mesh/hello";
 import { PROXIED_HEADER } from "./mesh/proxy";
 import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
 import { frontGuide, verifyPublicUrl } from "./share/front";
 import { noteVerify, shareState } from "./share/listener";
+import { routedHosts } from "./share/registry";
 import { publicLinksChanged } from "./share/setting-events";
 
 /**
@@ -19,17 +21,31 @@ const local = (c: Context) => !(c.env as { meshPeer?: unknown } | undefined)?.me
 const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const NO_STORE = { "Cache-Control": "no-store" };
 
-export function publicLinksInfo(file: PublicLinksFile = readPublicLinks()): PublicLinksInfo {
+/** Where GET and PUT learn the gateway's routed hosts (server/share/registry.ts) and the peers
+    advertising a gateway (server/mesh/hello.ts); tests pass their own. */
+export interface PublicLinksSources {
+  routed: () => Promise<RoutedHost[] | null>;
+  gateways: () => Promise<AdvertisedGateway[]>;
+}
+const SOURCES: PublicLinksSources = { routed: () => routedHosts(), gateways: () => advertisedGateways() };
+
+/** The answer of GET and PUT: `routed` only while this host is the gateway (route "self"),
+    `gateways` always (none while the mesh is off). */
+export async function publicLinksInfo(file: PublicLinksFile = readPublicLinks(), sources: PublicLinksSources = SOURCES): Promise<PublicLinksInfo> {
+  const self = file.route === "self" && !!file.gateway;
+  const [routed, gateways] = await Promise.all([self ? sources.routed().catch(() => null) : null, sources.gateways().catch(() => [])]);
   return {
     file,
     share: shareState(process.env, file),
     pinnedByEnv: pinnedByEnv(),
-    ...(file.route === "self" && file.gateway ? { front: frontGuide(file.gateway) } : {}),
+    ...(self && file.gateway ? { front: frontGuide(file.gateway) } : {}),
+    ...(self && routed ? { routed } : {}),
+    gateways,
   };
 }
 
-export function mountPublicLinks(app: Hono): void {
-  app.get("/api/public-links", (c) => (local(c) ? c.json(publicLinksInfo(), 200, NO_STORE) : notFound(c)));
+export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCES): void {
+  app.get("/api/public-links", async (c) => (local(c) ? c.json(await publicLinksInfo(readPublicLinks(), sources), 200, NO_STORE) : notFound(c)));
 
   app.put("/api/public-links", small, async (c) => {
     if (!local(c)) return notFound(c);
@@ -37,7 +53,7 @@ export function mountPublicLinks(app: Hono): void {
     const r = patchPublicLinks(body);
     if ("error" in r) return c.json({ error: r.error }, 400);
     publicLinksChanged(r.file);
-    return c.json(publicLinksInfo(r.file), 200, NO_STORE);
+    return c.json(await publicLinksInfo(r.file, sources), 200, NO_STORE);
   });
 
   // Checks the effective address as it is now; a pass is kept (verifiedAt), a failure reads as

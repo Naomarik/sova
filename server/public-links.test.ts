@@ -18,6 +18,7 @@ const store = await import("./public-links");
 const listener = await import("./share/listener");
 const events = await import("./share/links-events");
 const { mountPublicLinks } = await import("./public-links-routes");
+const { gatewayHooks } = await import("./share/router");
 
 after(() => {
   listener.stopShareListener();
@@ -180,6 +181,47 @@ describe("the file", () => {
     }
   });
 
+  test("one strict parser (M5's rules): the stored file has every gateway key, no duplicate, URLs in their exact form; a PUT may leave the defaults out", () => {
+    const g = { ...GATEWAY };
+    const file = (gateway: unknown, more: object = {}) => ({ version: 1, route: "self", gateway, ...more });
+    const { sharePort: _p, ...noPort } = g;
+    const { acceptFrom: _a, ...noAccept } = g;
+    const { front: _f, ...noFront } = g;
+    for (const [what, raw] of [
+      ["missing sharePort", file(noPort)],
+      ["missing acceptFrom", file(noAccept)],
+      ["missing front", file(noFront)],
+      ["acceptFrom twice", file({ ...g, acceptFrom: ["n1", "n1"] })],
+      ["stored URL with a trailing slash", file({ ...g, publicUrl: "https://share.example.com/" })],
+      ["lastKnownUrl with a trailing slash", { version: 1, route: "off", lastKnownUrl: "https://gw.example.com/" }],
+      ["backslash URL", file({ ...g, publicUrl: "https://share.example.com\\private" })],
+    ] as const)
+      assert.throws(() => store.parsePublicLinks(raw), /./, what);
+    assert.deepEqual(store.parsePublicLinks(file(g)), file(g), "a whole, canonical file parses as itself");
+    const put = store.patchPublicLinks({ route: "self", gateway: { publicUrl: "https://share.example.com/", front: "vhost" } });
+    assert.ok("file" in put && put.file.gateway?.sharePort === 4802 && put.file.gateway.acceptFrom === "all" && put.file.gateway.publicUrl === "https://share.example.com");
+    assert.ok("error" in store.patchPublicLinks({ gateway: { ...g, acceptFrom: ["n1", "n1"] } }), "a PUT's duplicate is refused, never quietly dropped");
+  });
+
+  test("a bad file is warned about once per version, never quoting it", () => {
+    const warned: string[] = [];
+    const warn = console.warn;
+    console.warn = (...a: unknown[]) => void warned.push(a.join(" "));
+    try {
+      writeFileSync(store.publicLinksFile(), JSON.stringify({ version: 1, route: "off", secretish: "tok-XYZ" }));
+      for (let i = 0; i < 5; i++) assert.deepEqual(store.readPublicLinks(), { version: 1, route: "off" });
+      assert.equal(warned.length, 1, "once, however often it is read");
+      assert.match(warned[0]!, /public-links\.json ignored/);
+      assert.ok(!/secretish|tok-XYZ/.test(warned[0]!), "the file's contents are never logged");
+      writeFileSync(store.publicLinksFile(), "{nope");
+      store.readPublicLinks();
+      assert.equal(warned.length, 2, "a new version warns again");
+      assert.match(warned[1]!, /not JSON/);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   test("verifiedAt is the server's, and a new address drops it", () => {
     store.patchPublicLinks({ route: "self", gateway: GATEWAY });
     store.writeServerFields({ verifiedAt: 1000 });
@@ -226,6 +268,44 @@ describe("the listener follows the setting", () => {
     assert.equal((await a.request("/api/public-links", put({ route: "off" }))).status, 200);
     await until(() => listener.shareListenerState() === null, "off unbinds");
     assert.equal(await connects(p2), false);
+  });
+
+  test("each bound server's gateway router is disposed on rebind, off, stop and a failed bind; the same address keeps it", async () => {
+    const made: { disposed: number }[] = [];
+    const hooks = () => {
+      const real = gatewayHooks();
+      const rec = { disposed: 0 };
+      made.push(rec);
+      return { ...real, dispose: () => (rec.disposed++, real.dispose()) };
+    };
+    const [p1, p2] = [await freePort(), await freePort()];
+    store.patchPublicLinks({ route: "self", gateway: { ...GATEWAY, sharePort: p1 } });
+    await listener.startShareListener({}, { hooks });
+    assert.deepEqual(made.map((r) => r.disposed), [0]);
+    const a = app();
+    await a.request("/api/public-links", put({ gateway: { ...GATEWAY, sharePort: p2 } }));
+    await until(() => listener.shareListenerState()?.port === p2, "rebound");
+    assert.deepEqual(made.map((r) => r.disposed), [1, 0], "the old server's router is disposed, the new one is live");
+    await a.request("/api/public-links", put({ gateway: { ...GATEWAY, sharePort: p2, front: "funnel" } }));
+    await new Promise((r) => setTimeout(r, 50));
+    assert.deepEqual(made.map((r) => r.disposed), [1, 0], "same address: same server, same router");
+    await a.request("/api/public-links", put({ route: "off" }));
+    await until(() => listener.shareListenerState() === null, "off");
+    assert.deepEqual(made.map((r) => r.disposed), [1, 1]);
+    const taken = createServer();
+    await new Promise<void>((r) => taken.listen(p1, "127.0.0.1", r));
+    try {
+      store.patchPublicLinks({ route: "self", gateway: { ...GATEWAY, sharePort: p1 } });
+      assert.equal(await listener.startShareListener({}, { hooks }), null, "the port is taken");
+      assert.equal(made.at(-1)!.disposed, 1, "a bind that failed leaves no router behind");
+    } finally {
+      await new Promise<void>((r) => taken.close(() => r()));
+    }
+    store.patchPublicLinks({ route: "self", gateway: { ...GATEWAY, sharePort: p2 } });
+    await listener.startShareListener({}, { hooks });
+    listener.stopShareListener();
+    assert.equal(made.at(-1)!.disposed, 1, "stop disposes it");
+    assert.ok(made.every((r) => r.disposed === 1), "each router disposed exactly once");
   });
 
   test("SOVA_SHARE_HOST and SOVA_SHARE_PORT pin the bind; the setting can't move it", async () => {
@@ -322,6 +402,29 @@ describe("the routes", () => {
     assert.equal(bad.status, 400);
     assert.match((await bad.json()).error, /unknown key "verifiedAt"/);
     assert.equal((await a.request("/api/public-links", { method: "PUT", body: "{" })).status, 400);
+  });
+
+  test("routed (only while route is self) and gateways, on GET and PUT; a failing source leaves its field out or empty", async () => {
+    const routed = [{ nodeId: "nB", peer: "b", links: 2, up: true, lastPushAt: 5, accepted: true }];
+    const gateways = [{ nodeId: "nG", peer: "g", publicUrl: "https://gw.example.com" }];
+    let calls = 0;
+    const a = new Hono();
+    mountPublicLinks(a, { routed: async () => (calls++, routed), gateways: async () => gateways });
+    const off = await (await a.request("/api/public-links")).json();
+    assert.equal(off.routed, undefined, "not a gateway: no routed");
+    assert.equal(calls, 0, "and the registry isn't asked");
+    assert.deepEqual(off.gateways, gateways);
+    const self = await (await a.request("/api/public-links", put({ route: "self", gateway: GATEWAY }))).json();
+    assert.deepEqual([self.routed, self.gateways], [routed, gateways], "the PUT answers them too");
+    assert.deepEqual((await (await a.request("/api/public-links")).json()).routed, routed);
+    const b = new Hono();
+    mountPublicLinks(b, { routed: async () => null, gateways: async () => Promise.reject(new Error("probe")) });
+    const failed = await (await b.request("/api/public-links")).json();
+    assert.equal(failed.routed, undefined);
+    assert.deepEqual(failed.gateways, []);
+    const real = await (await app().request("/api/public-links")).json();
+    assert.deepEqual(real.gateways, [], "the real providers: no peers, no gateways");
+    assert.ok(Array.isArray(real.routed), "a gateway with nothing registered: an empty list");
   });
 
   test("pinnedByEnv reports the variables that win", async () => {

@@ -1,0 +1,152 @@
+# Org-charts engine API (refit, P0)
+
+Owner: engine member. Stable contract for the charts member (CLJS authoring) and the server member
+(TS host under `server/org-host/`). Changes are announced by team message; additions only.
+
+## 1. Registering a chart (CLJS, charts member)
+
+Each chart namespace exports one registry entry; `sova.org-charts.charts.registry/charts` (charts
+member) is `{"<name>" entry}`, and `api.cljs` ships exactly that map.
+
+```clojure
+{:chart     chart                 ; (statechart {...} (state {:id :top ...}))  ONE top-level compound state
+ :version   3                     ; bump on any state-id / data-shape change
+ :migrate   {1 (fn [s] s') 2 ...} ; vN -> vN+1, chained at load (see §6)
+ :storage   :portable             ; or :host-local
+ :exported  [:holder :decisions]  ; data keys watchers receive in link/moved
+ :acts      {:gather/start {:needs "L1" :tool "sova_start_gathering"
+                            :people-facing true :code-facing false :counts "gather"
+                            :pre [check ...]}  ; run BEFORE "is it enabled here" (level is automatic from :needs/:tool)
+             ...}
+ :not-here  (fn [event config data] sentence)  ; refusal when no transition for the act exists in this configuration
+ :final-refusal "…"                            ; refusal once the session is final / not running
+ :redact    {:about :digest :email :contact :token :drop}  ; log privacy (TS applies; defaults: token/hash/secret dropped)
+ :cold?     (fn [config data] bool)}         ; may unload after 24 h with nothing pending (host)
+```
+
+`sova.org-charts.charts.registry/options` (charts member): `{:level-check (fn [tool need envelope] sentence-or-nil)}`
+— the engine calls it for every act with `:needs` before any other check (operator clicks: return nil).
+
+## 2. Authoring helpers — `sova.org-charts.engine.dsl`
+
+A **check** is `(fn [data] nil | "sentence" | {:sentence s :tail t :status 409 :code "taken"})`
+or `{:name :holder-chose :fn f :payload? true}` (named; `:payload?` checks are skipped by
+`enabled-events`, which has no payload). `data` has `:_event {:name :data}`; `(dsl/evt data)` is the
+event data (envelope + payload).
+
+- `(dsl/act {:event :gather/start :target :starting :checks [c1 c2] :cond extra-guard} & content)`
+  A transition whose cond is `pre-checks(act) ∧ level ∧ checks ∧ cond`, with `:sova/checks` metadata.
+  explain order: **level → act :pre → state (not-here) → transition :checks → :cond** (then
+  `:sova/refusal` attr of the transition, else "That can't be done now.").
+- `(dsl/correction {:event :item/reopen :needs "L1" :target … :checks [...]} & content)` — q9.
+  Same as `act`, tagged `:sova/correction true`; a blank `:reason` in the event data refuses with
+  `dsl/reason-required` = "A correction needs a reason: say why." (checked right after the level).
+  Declare it in `:acts` like any act (needs/tool).
+- `(dsl/effect kind (fn [data] {...}))` — executable content: an effect intent. The engine assigns
+  `:key` (`<sid>@<generation>.<n>`, unique forever, the idempotency key) and keeps it in the session's
+  `:sova/pending` until the host answers `effect/done {key result}` or `effect/failed {key detail}`
+  (delivered to the chart with the original effect under `:effect` and its `:kind`). A second answer
+  for the same key is stale and dropped. Pending effects are durable (in the snapshot).
+- `(dsl/held kind (fn [data] {...}) {:ms 600000 :hold? (fn [data] bool) :while-in :offered :what (fn [data] "Offer to Ana")})`
+  — q10. When `:hold?` is true (default: the act was not the operator's own click, i.e.
+  `(:by envelope)` ≠ "operator" and not attended) the effect waits in `:sova/holds {id {:id :kind
+  :effect :since :until :what :by}}`; hold length: the helper's `:ms`, else the envelope's
+  `:hold-ms` (the host stamps it from the project's hold setting, r6), else data `:sova/hold-ms`,
+  else 600000; **0 = no hold** (the effect goes straight out). The engine arms `:sova/hold-due` at `:until`. At that time, if
+  the hold is still there (and the session is still `In :while-in`, when given), the effect moves to
+  the outbox and the chart receives `:hold/released {:id :kind :key}`; if `:while-in` no longer
+  holds it receives `:hold/lapsed {:id :kind}`. Default ms is data `:sova/hold-ms`, else 600000.
+- `(dsl/cancel-hold (fn [data] id))` — executable content removing a hold (its timer is cancelled);
+  the chart then receives nothing more for it. Use inside a `correction` on `:hold/cancel {:id :reason}`;
+  `(dsl/hold-cancel-correction {:needs "L0"})` is that transition, ready to place on the top state.
+- `(dsl/spawn {:chart "baton" :id (fn [data] sid) :data (fn [data] {...}) :link :item :watch? true})`
+  — executable content: after this step (same call, same atomic batch) the engine starts session
+  `sid` of `chart` with `data`, `:sova/links {:item <this sid>}` and `:sova/watchers [<this sid>]`
+  (unless `:watch? false`), and this session's `:sova/children` gains `{:sid :chart :link}`.
+  Spawning an id that exists (loaded or cold) throws (the call rolls back) unless `:if-exists :skip`.
+- `(dsl/watch (fn [data] target-sid))` / `(dsl/unwatch …)` — add/remove this session as a watcher
+  of another session (re-link, q9). Watching sends an immediate `link/moved` with its current state.
+- Link notifications: after any step that changes a session's configuration, `running`, or any
+  `:exported` key, every watcher receives
+  `:link/moved {:from sid :chart "baton" :states [..configuration..] :running bool :exported {...}}`
+  (same call, queued in (time, ordinal) order). Also on spawn (start) and on resume.
+- Invocations: `(invoke {:id :reply :type :sova/reply :params (fn [_ d] {...})})`. Types:
+  `:sova/look :sova/reply :sova/wrapup :sova/reconcile`. The host reports back with
+  `<name>/finished`, `<name>/stopped {detail}`, `<name>/not-started {detail}` carrying the run id
+  (`invokeId` option); a result for a run that is no longer active is stale and dropped. Active runs
+  are in `:sova/invocations {run-id {:type :invoke-id :since}}`.
+- Resume: `:sova/resumed {:cut-off [{:run-id :type :invoke-id}]}` is delivered to every loaded
+  session; each state holding an invocation treats it as cut off. Then `link/moved` per link.
+- Time: every delivered event has `:at` in its data; the data model's `:now` is the event time.
+
+## 3. Engine calls (CLJS `engine.core`, JS `createEngine`)
+
+All take `now`. Every call is atomic: it throws and changes nothing, or it commits.
+Before an external event (`send`) the engine delivers every delayed send due at ≤ now (W5).
+
+| call | does |
+|---|---|
+| `start(sid, chart, data)` | new session |
+| `send(sid, event, data, {invokeId})` | one event, then drain (cross-session sends, spawns, link/moved) |
+| `trial(sid, event, data)` | the same call on a copy, rolled back: `{taken, refusal (sentence string), refusalInfo:{sentence,tail,stage,check,status,code}, transitions, refused, before, configuration, steps, outbox, holds, spawned, sends}` |
+| `explain(sid, event, data)` | refusal or null (no step) |
+| `enabledEvents(sid, envelope)` | `[{event, enabled, refusal?}]` for every act the chart declares + events on active transitions |
+| `setState(sid, {states, data, reason}, envelope)` | q9 free set-state: attended/operator turns only, reason required; runs exits/entries |
+| `resume(sids)` | `sova/resumed` to each, then link/moved per link; past-due timers are NOT fired: call `fireDue(now)` after |
+| `fireDue(now)` | deliver everything due |
+| `nextDueAt()` | earliest pending delayed event |
+| `load(sid, text)` / `unload(sid)` / `dump(sid)` | snapshots (EDN); load migrates older versions |
+| `holds()` | every held act of every loaded session |
+| `chartInfo(name)` / `charts()` | registry: version, storage, exported, acts with metadata, transitions, corrections, states (visualizer node/edge export) |
+
+Options: `loadCold(sid) → text | null` (sync; null = unknown session: a send to it throws
+`sova/unknown-session` and the call rolls back; a throw from loadCold — e.g. a broken snapshot —
+rolls the call back with that error), `clock`, `maxMicrosteps`, `charts` (runtime JS charts, tests).
+
+Call result: `{steps, outbox, holds, sends, invocations, spawned, loaded, snapshots, errors}`.
+A step: `{sessionId, chart, at, event, data, by, via, before, after, changed: {path: [from, to]},
+effects: [keys], refused?: {sentence, stage, check}, reason?, microsteps}` — the transition-log row
+before privacy scrubbing (TS host scrubs with `:redact`). `snapshots` = every session the call
+touched: write them together (journal).
+
+## 4. TS host — `server/org-host/`
+
+`OrgHost` per org: one FIFO, journal (`<stateRoot>/org-charts/<org>/journal/`), snapshots
+(portable `<workspace>/charts/<chart>/<id>.edn`, host-local `<stateRoot>/org-charts/<org>/<chart>/<id>.edn`),
+log (`<workspace>/charts/log/<yyyy-mm>.jsonl`, host-local under stateRoot), effect runner
+(`host.effects.register(kind, async (effect) => result)`), invocation runner
+(`host.invocations.register(type, {start, stop})`), one timer from `nextDueAt`, read API.
+
+### Host API (server member calls these; `server/org-host/index.ts`)
+
+```ts
+const host = await OrgHost.open({ orgId, workspaceDir, stateDir, clock?, log? });  // loads, replays journals, resumes
+host.effects.register(kind, async (effect) => result);        // idempotent by effect.key
+host.invocations.register(type, { start(inv, report), stop(inv) });  // report("finished"|"stopped"|"not-started", detail?)
+await host.act(sid, event, payload, envelope)   // → { taken, refusal: {sentence, tail, stage, check, status, code} | null, result }
+await host.start(sid, chart, data, envelope)    // new session (org/project roots); spawns come from charts
+await host.setState(sid, {states, patch, reason}, envelope)
+host.trial(sid, event, payload, envelope)       // sync read, nothing written
+host.explain / host.enabledEvents(sid, envelope) / host.configuration(sid) / host.data(sid)
+host.sessions(chart?) / host.holds() / host.chartOf(sid) / host.problems()  // workspace problems (broken snapshots)
+await host.logAct(row)   // a log row for a non-chart act (note, idea, to-do, confirm): {session?, event, by, via?, envelope, refused?}
+host.onChange(fn)        // after every committed batch: {sessions touched, steps}
+await host.close()
+```
+Envelope: plain JSON, camelCase in TS (`by, via, attended, autonomy, paused, rosterActive,
+archived, allowance, atOnce, card, holdMs, invalid, reason`); charts read kebab keywords.
+
+## 5. Matrix generator — `sova.org-charts.engine.matrix`
+
+`(matrix/run {:chart "baton" :starts [data ...] :drive [[event data] ...] :acts [[event payload] ...]
+ :envelopes {name envelope} :sentences #{...} :max-configs 5000})` → explores reachable snapshots by
+sending `:drive` events (and acts), then for every snapshot × act × envelope sends the act on a copy
+and asserts `taken ⇔ explain nil`, and (when `:sentences` given) every refusal ∈ catalogue.
+Returns `{:configs n :cells n :failures [...]}`; `(matrix/assert-clean! report)` for cljs.test.
+
+## 6. Migrations
+
+`(fn [{:keys [config data history queue]}] {...same keys...})`: `config` a set of state ids,
+`data` the data model, `history` {history-id #{state-ids}}, `queue` pending
+`[{:event {:name :data} :delivery-time :ordinal}]`. `(core/migrate-text registry text)` returns the
+current-version EDN; tests load a fixture of every shipped version.

@@ -155,7 +155,7 @@ describe("the wrap-up records what people say about themselves", () => {
     const run = wrap.beginWrapupRun(c.sessionId);
     try {
       await tool.execute("id", { updates: [{ personId: kim.id, field: "language", to: "fr", quote: "The export runs every night" }] } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
-      wrap.inferLanguages(c.sessionId, row, branch, run);
+      await wrap.inferLanguages(c.sessionId, row, branch, run);
     } finally {
       wrap.endWrapupRun(c.sessionId);
     }

@@ -28,7 +28,8 @@ function has(e: OrgCharts, sid: string, ...ids: string[]): boolean {
 describe("org-charts engine (vendored ESM)", () => {
   test("the bundle lists its charts, each with a positive integer version", () => {
     const names = chartVersions().map((c) => c.name);
-    assert.deepEqual(names.sort(), ["project", "work-item"], "the shipped module has no test chart");
+    assert.ok(names.includes("spike-project") && names.includes("work-item") && names.includes("person"), "the refit's registry ships beside the spike's charts");
+    assert.ok(!names.includes(PROBE), "the shipped module has no test chart");
     assert.throws(() => createShipped().start("p", PROBE), /Unknown chart/, "the probe exists only where it is registered");
     assert.throws(() => createShipped({ charts: { project: PROBE_CHARTS["engine-probe"] } }), /Chart project is already registered/);
     for (const c of chartVersions()) {
@@ -110,17 +111,21 @@ describe("org-charts engine (vendored ESM)", () => {
     e.send("p", "next", {}, { now: T0 });
     const r = e.fireDue(T0 + 1);
     assert.ok(has(e, "p", "c"));
-    assert.deepEqual(started, [{ sessionId: "p", invokeId: "look", type: "sova/look", params: { fired: 1, sid: "p" } }]);
+    assert.deepEqual(started.map(({ runId: _r, ...i }) => i), [{ op: "start", sessionId: "p", invokeId: "look", type: "sova/look", params: { fired: 1, sid: "p" } }]);
+    const runId = started[0]?.runId ?? "";
+    assert.match(runId, /^p#look#\d+$/, "each start has a run id");
     assert.deepEqual(r.invocations.map((i) => i.op), ["start"]);
     const r2 = e.send("p", "next", {}, { now: T0 + 2 });
     assert.ok(has(e, "p", "a"));
-    assert.deepEqual(stopped, [{ sessionId: "p", invokeId: "look", type: "sova/look" }]);
+    assert.deepEqual(stopped, [{ op: "stop", sessionId: "p", invokeId: "look", type: "sova/look", runId }]);
     assert.deepEqual(r2.invocations.map((i) => i.op), ["stop"]);
     // The host reports a look back with its invoke id.
     e.send("p", "next", {}, { now: T0 + 3 });
     e.send("p", "next", {}, { now: T0 + 3 });
-    e.fireDue(T0 + 4);
-    e.send("p", "look/finished", {}, { now: T0 + 5, invokeId: "look" });
+    const again = e.fireDue(T0 + 4).invocations[0]?.runId ?? "";
+    assert.deepEqual(e.send("p", "look/finished", {}, { now: T0 + 5, invokeId: runId }).steps, [], "a result for an ended run is stale");
+    assert.ok(has(e, "p", "c"));
+    e.send("p", "look/finished", {}, { now: T0 + 5, invokeId: again });
     assert.ok(has(e, "p", "a"));
     assert.equal(e.data("p")?.["looks"], 1);
   });
@@ -138,16 +143,17 @@ describe("org-charts engine (vendored ESM)", () => {
     const ok = e.trial("p", "act/promote", { by: "overseer", level: "L2" }, { now: T0 });
     assert.equal(ok.taken, true);
     assert.ok(ok.configuration.includes("acted"));
-    assert.deepEqual(ok.outbox, [{ kind: "promote", key: "promote/0" }]);
+    assert.deepEqual(ok.outbox.map(({ key: _k, ...o }) => o), [{ kind: "promote", chartKey: "promote/0", sessionId: "p" }]);
     assert.equal(saves.length, before, "a trial saves nothing");
     assert.ok(has(e, "p", "ready"), "and the session did not move");
     assert.equal(e.trial("p", "act/promote", { by: "operator" }, { now: T0 }).taken, true);
-    assert.ok(!e.enabledEvents("p", { by: "overseer", level: "L1" }).includes("act/promote"));
-    assert.deepEqual(e.enabledEvents("p", { level: "L2" }), [
+    assert.ok(!e.enabledEvents("p", { by: "overseer", level: "L1" }).some((x) => x.event === "act/promote"));
+    assert.deepEqual(e.enabledEvents("p", { level: "L2" }).map((x) => x.event), [
       "probe/stop", "hold", "next", "gate/open", "spin/facts", "peer/pinged", "poke", "act/promote", "act/ping", "probe/warn", "probe/throw",
     ]);
     const r = e.send("p", "act/promote", { by: "overseer", level: "L2" }, { now: T0 });
-    assert.deepEqual(r.outbox, [{ kind: "promote", key: "promote/0", sessionId: "p" }]);
+    assert.deepEqual(r.outbox.map(({ key: _k, ...o }) => o), [{ kind: "promote", chartKey: "promote/0", sessionId: "p" }]);
+    assert.deepEqual(Object.keys((e.data("p")?.["sova/pending"] ?? {}) as object), [r.outbox[0]?.key], "the effect stays pending under its key");
     assert.deepEqual(e.data("p")?.["outbox"], [], "the outbox is drained from the data model");
   });
 
@@ -164,7 +170,7 @@ describe("org-charts engine (vendored ESM)", () => {
     calls.length = 0;
     const armed = e.trial("a", "next", {}, { now: T0 });
     assert.ok(armed.configuration.includes("b2"));
-    assert.deepEqual(armed.sends, [{ to: "a", event: "timer/fired", delay: 1000, data: {} }]);
+    assert.deepEqual(armed.sends.map(({ to, event, delay, data }) => ({ to, event, delay, data })), [{ to: "a", event: "timer/fired", delay: 1000, data: {} }]);
     assert.equal(e.nextDueAt(), null, "the would-be timer is reported, not queued");
     e.send("a", "next", {}, { now: T0 });
     calls.length = 0;
@@ -236,7 +242,7 @@ describe("org-charts engine (vendored ESM)", () => {
     e2.send("p", "sova/resumed", {}, { now: T0 + 100 });
     assert.ok(has(e2, "p", "a"));
     assert.equal(e2.data("p")?.["resumes"], 1);
-    assert.deepEqual(calls, ["stop", "save"], "exiting stops the dead look, then the step is saved");
+    assert.deepEqual(calls, ["save", "stop"], "once the call committed: the step is saved, then the dead look is stopped");
     assert.equal(e2.generation("p"), (gen ?? 0) + 1, "the generation continues from the snapshot");
   });
 
@@ -266,7 +272,7 @@ describe("org-charts engine (vendored ESM)", () => {
     assert.throws(() => e.send("nobody", "next"), /not loaded/);
     assert.throws(() => e.start("p", "nope" as "project"), /Unknown chart/);
     e.start("p", PROBE, {}, { now: T0 });
-    assert.throws(() => e.start("p", PROBE), /already loaded/);
+    assert.throws(() => e.start("p", PROBE), { name: "OrgChartsError", code: "sova/session-exists" });
     assert.throws(() => e.load("q", "{:bad 1}"), /format/);
   });
 

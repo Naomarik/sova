@@ -150,7 +150,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Placeholder, idle | Enter sends: Ask pi to…—Enter sends, Shift+Enter adds a line · touch mode (§chat.composer/behavior) and read only: Ask pi to… |
 | Placeholder, streaming | Enter sends: Steer the current turn…—Enter sends, Shift+Enter adds a line · touch mode: Steer the current turn… |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
-| Run status | Wide composer (≥ 620px): `Working` + detail: `· thinking` / `· writing` / `· running {tool}`, and beside it the subagents trigger with the counts only: `2 subagents` · `1 subagent · 2 team members`. Narrow: no visible words, the dot and the step's icon, and the trigger as an icon and a count (`2`); the same words are the tooltip and accessible name · in both: `Stopping…` · `Compacting context` · `Retrying after a provider error` · trigger name: `2 subagents working — show subagents` |
+| Run status | Wide composer (≥ 620px): `Working` + detail: `· thinking` / `· writing` / `· running {tool}`, and beside it the subagents trigger: `2 of 5 subagents working` (team members among them: `2 of 5 team members working` · `3 of 5 workers working`, the split `1 subagent · 2 team members` in the tooltip), `5 subagents` once all have settled. Narrow: no visible words, the dot and the step's icon, and the trigger as its ring and a count (`2/5`, settled `5`); the same words are the tooltip and accessible name · in both: `Stopping…` · `Compacting context` · `Retrying after a provider error` · trigger name: `2 of 5 subagents working — show subagents` · settled: `5 subagents — show subagents` |
 | Alignment chip (§chat.alignment/chip) | `{n} aligns · {decided}/{total} decided` (1: `1 align · …`) · `aria-label` "{n} open alignments, {decided} of {total} questions decided — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
 | Staged recommendations (§chat.alignment/card) | `Taking your recommendation: {al_N} {q1}, {q3}` (alignments joined by "; ") · group label "Staged recommendations" · `Clear Picks` |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
@@ -409,7 +409,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Trigger | `{n} subagents working…` (1: `1 subagent working…`) · while the parent's turn runs: the counts only, `{n} subagents` · accessible name: `{n} subagents working — show subagents` |
+| Trigger | `{w} of {n} subagents working` (1 of 1: `1 of 1 subagent working`), the same while the parent's turn runs · narrow: `{w}/{n}` · all settled: `{n} subagents`, narrow `{n}` · accessible name: `{w} of {n} subagents working — show subagents` · settled: `{n} subagents — show subagents` |
 | Pane | label and title: Subagents · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close subagents |
 | Row meta | `{provider}` · `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed (the provider leads: `claude code`, `zai`, …) |
 | Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped · Restored · Interrupted · beside any of them, for a team member whose seat was released: Ejected |

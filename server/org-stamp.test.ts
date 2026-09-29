@@ -22,7 +22,7 @@ describe("stamping an envelope from the charts as they stand", () => {
     s(`person/${O}/p_1`, "person", ["left"]),
     s(`person/${O}/p_2`, "person", ["active"]),
     s(`project/${O}/${P}`, "project", ["shelf", "archived"]),
-    s(`watch/${O}/${P}`, "watch", ["attach", "paused"], { ledger: { message: { gather: 2 }, day: { gather: 4, promote: 9 } }, looksToday: 7 }),
+    s(`watch/${O}/${P}`, "watch", ["attach", "paused"], { ledgers: { message: { gather: 2 }, day: { gather: 4, promote: 9 } }, looksToday: 7 }),
     s(`baton/${O}/s1`, "baton", ["course", "open", "with-person"], { projectId: P, owner: { overseerOf: P } }),
     s(`build/${O}/${P}/b1`, "build", ["turn", "working"], { projectId: P, kind: "coding" }),
   ];
@@ -64,13 +64,13 @@ describe("stamping an envelope from the charts as they stand", () => {
 
   test("ledgerOf reads numbers only; anything else is 0", () => {
     assert.deepEqual(ledgerOf(null), { message: {}, day: {}, looksToday: 0 });
-    assert.deepEqual(ledgerOf({ ledger: { day: { gather: 1, promote: "x" } }, looksToday: "3" }), { message: {}, day: { gather: 1 }, looksToday: 0 });
+    assert.deepEqual(ledgerOf({ ledgers: { day: { gather: 1, promote: "x" } }, looksToday: "3" }), { message: {}, day: { gather: 1 }, looksToday: 0 });
   });
 });
 
 describe("pending holds are the engine's to count (F2)", () => {
   test("the stamp counts only uses the watch recorded and sessions that run: a pending hold changes nothing here", () => {
-    const sessions = [s(`person/${O}/p_2`, "person", ["active"]), s(`watch/${O}/${P}`, "watch", ["attach", "live"], { ledger: { day: { gather: 4 } } })];
+    const sessions = [s(`person/${O}/p_2`, "person", ["active"]), s(`watch/${O}/${P}`, "watch", ["attach", "live"], { ledgers: { day: { gather: 4 } } })];
     const holds = [{ id: "h1", sessionId: `item/${O}/${P}/g1`, event: "gather/start", data: {} }];
     const e = stampEnvelope({ ...fakeHost(sessions), holds: () => holds } as never, O, P, { by: "overseer", attended: false }, () => settings, settings);
     assert.deepEqual([e.allowance.gather.used, e.atOnce.gatheringsOpen, e.projectId], [4, 0, P]);

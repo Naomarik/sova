@@ -28,9 +28,9 @@ const counts = (v: unknown): Partial<Record<PoLimitKind, number>> => {
   return out;
 };
 
-/** The ledgers as the watch session's data holds them (`ledger {message, day}`, `looksToday`); none: all 0. */
+/** The ledgers as the watch session's data holds them (`ledgers {message, day}`, `looksToday`); none: all 0. */
 export function ledgerOf(watch: Record<string, unknown> | null): LedgerCounts {
-  const ledger = (watch?.ledger ?? {}) as Record<string, unknown>;
+  const ledger = (watch?.ledgers ?? {}) as Record<string, unknown>;
   const looks = watch?.looksToday;
   return { message: counts(ledger.message), day: counts(ledger.day), looksToday: typeof looks === "number" ? looks : 0 };
 }

@@ -439,7 +439,19 @@ Sova that aren't archived.
         <div class="board-cell board-trees">feat/x · ↑3 ↓1 · +120 −4 · dirty dot · +1</div>
         <div class="board-cell board-actions">Open · Session details (aria-expanded) · Archive · Move into group · ⋯</div>
       </div>
-      <div class="board-detail">…one line per worker, the team, one line per worktree…</div>   <!-- open rows only -->
+      <div class="board-detail">   <!-- open rows only: in the title column, behind a guide rule under the twist -->
+        <p class="board-reason">…why it needs you…</p>
+        <ul class="board-worker-list" aria-label="Workers">
+          <li class="board-worker">
+            <span class="board-worker-name">scout</span>
+            <span class="board-worker-meta text-mono">ag_10 · opus-5.5 · <time datetime="…" title="Started Tue, Sep 29, 2026, 1:43:07 PM">1:43 PM · 2h ago</time> · <span title="Model replies so far">12 turns</span></span>
+            <span class="board-worker-preview">…while working…</span>
+            <span class="chip">…status…</span>
+          </li>
+        </ul>
+        <section class="team-group board-team">…head, objective, one board-worker per member, events…</section>
+        <ul class="board-tree-list" aria-label="Worktrees">…one line per worktree…</ul>
+      </div>
     </li>
   </ul>
 </div>
@@ -500,9 +512,20 @@ Sova that aren't archived.
   Sova only.
 - **Archive.** Only for sessions started in Sova, or already archived. Refused with its reason
   (open in a TUI, mid-turn, subagents working) before the press, never after.
-- **Open row.** One line per worker outside a team (working first): name, id and model in mono,
-  the preview while working, and the status chip (the table below); a line has no actions. Then
-  each team, then one line per worktree.
+- **Open row.** Everything it holds — the why-it-needs-you line, the workers, each team, the
+  worktree lines — starts at the title's left edge at every width, behind one thin guide rule
+  drawn down from under the twist: that rule, not width, says it belongs to the session. A
+  team's members take no further step; the team's bordered block is the second level. One line
+  per worker outside a team (working first, then last active): its name, then in mono its id, its
+  model, when it started, and its turns; the preview while working; and the status chip (the
+  table below). A line has no actions. **Started** is its first spawn, kept across resumes and
+  restarts, as a message stamp (“1:43 PM · 2h ago”, “Mar 4 1:43 PM · 3d ago” on another day, the
+  stamp alone past 7 days) in a `<time>` whose `title` is the full local date and time; a team
+  member with no live record shows when it joined its team; unknown shows nothing. **Turns** is
+  the model's replies so far, across resumes (“12 turns”, “1 turn”, `title` “Model replies so
+  far”, a restored worker's from its transcript or last report); unknown shows nothing, never 0.
+  At folded width the mono parts wrap between themselves, never inside one. Then each team, then
+  one line per worktree.
 - **Team.** A bordered block, `.team-group`, `id="team-{teamKey}"`, `tabindex="-1"`: the name,
   its id in mono, Paused (warn) when its newest pause/resume is a pause, "{n} working", the
   objective on one line, then its members one line each — coordinator (or orchestrator) first,

@@ -600,11 +600,11 @@ html, body, #root { height: 100%; }
 /* Label and hash · age on one unbroken line; the subject below, full width, wrapped whole. */
 .git-commit-meta { flex: none; margin: 0; white-space: nowrap; }
 .git-commit-subject { margin: var(--space-1) 0 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
-/* Loading: lines at the read facts' rhythm, so the section is about as tall as it will be. */
-.git-skeleton { display: flex; flex-direction: column; padding-top: var(--space-1); }
-.git-skeleton > .skeleton-line { margin-bottom: 14px; }
-.git-skeleton > .skeleton-line:first-child { width: 60%; }
-.git-skeleton > .skeleton-line:last-child { width: 30%; margin-bottom: 0; }
+/* Loading: a clean read's own elements, each a line of text with a bar over it, so the section is
+   as tall as a clean repository's (Worktrees' placeholder is one such line). `contents`: the lines are the section's children, with its gaps. */
+.git-skeleton { display: contents; }
+.text-skeleton { position: relative; display: block; flex: 1 1 auto; margin: 0; }
+.text-skeleton > .skeleton { position: absolute; left: 0; top: 50%; height: 12px; margin-top: -6px; }
 
 /* The folder's uncommitted changes, named, with the viewer's control at the end of the line; the
    control wraps below the text when both don't fit. */

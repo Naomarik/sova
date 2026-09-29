@@ -55,7 +55,7 @@ describe("Settings → Accounts service", () => {
     assert.equal(login.signedIn, true);
     assert.equal((done as { sharedAccount: boolean }).sharedAccount, false);
     const i = svc.info();
-    assert.deepEqual(i.logins.map((l) => l.id), ["default", login.id], "appended to this device's order");
+    assert.deepEqual(i.logins.map((l) => l.id), [login.id, "default"], "appended to this device's order; Claude Code's own login stays last");
     assert.ok(!JSON.stringify(i).includes("fake\""), "no credential field reaches the wire");
     const dir = join(agentDir, "claude-accounts", login.id);
     assert.equal(lstatSync(dir).mode & 0o777, 0o700);

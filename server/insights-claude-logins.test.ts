@@ -40,7 +40,8 @@ writeFileSync(
     devices: { local: { order: [B, "default", A] } },
   }),
 );
-// B is out until an hour from now: the next new chat starts on default, the first usable one.
+// B is out until an hour from now: the next new chat starts on A, the first usable one (default,
+// Claude Code's own login, is always last).
 writeFileSync(join(agentDir, "claude-accounts-state.json"), JSON.stringify({ version: 1, logins: { [B]: { kind: "limit", at: Date.now(), until: Date.now() + 3_600_000, window: "five_hour" } } }));
 
 let pad = 0;
@@ -57,8 +58,8 @@ test("one card per login on this host, in its order, with identity, standing, th
   writeCache({ claudeAccounts: { [B]: { data: { state: "ok", fiveHour: { pct: 100 } }, fetchedAt: 900, nextFetchAt: 0 }, [C]: { data: { state: "ok", fiveHour: { pct: 1 } }, nextFetchAt: 0 } } });
   const u = await getUsageInsight();
   const logins = u.claudeLogins!;
-  assert.deepEqual(logins.map((l) => l.id), [B, "default", A], "this device's order; another device's login is not listed");
-  const [b, own, a] = logins as [typeof logins[0], typeof logins[0], typeof logins[0]];
+  assert.deepEqual(logins.map((l) => l.id), [B, A, "default"], "this device's order, default last; another device's login is not listed");
+  const [b, a, own] = logins as [typeof logins[0], typeof logins[0], typeof logins[0]];
   assert.equal(b.email, "spare@example.com");
   assert.equal(b.label, "Spare");
   assert.equal(b.planLabel, "Pro");
@@ -70,7 +71,8 @@ test("one card per login on this host, in its order, with identity, standing, th
 
   assert.equal(own.email, "own@example.com");
   assert.equal(own.planLabel, "Max 20x", "the tier names the plan, not the billing type");
-  assert.equal(own.inUse, true, "B is limited, so new chats start on default");
+  assert.equal(own.inUse, false, "default is the last resort");
+  assert.equal(a.inUse, true, "B is limited, so new chats start on A");
   assert.deepEqual(own.usage.windows.map((w) => w.pct), [50], "default's reading is the provider card's `claude`");
   assert.equal(own.fetchedAt, 1000);
 

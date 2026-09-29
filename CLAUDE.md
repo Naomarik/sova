@@ -58,9 +58,19 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `claude-accounts/<id>/` (0700; `projects/`, `settings.json`, `CLAUDE.md`, `agents`, `commands`,
   `skills`, `plugins` symlinked to Claude Code's own directory so `--resume` and every transcript
   reader keep one `projects/`), this host's standing of each login `claude-accounts-state.json`,
-  the per-device order and the one resolver login → `CLAUDE_CONFIG_DIR` that every `claude` spawn
-  uses; written by Sova's Settings → Accounts, read by the chat provider, workers, model discovery
-  and the topic-outline summarizer at each spawn; and the session's hidden `claude-login` custom
+  the per-device order (`default`, Claude Code's own login, always last) and the one resolver
+  login → `CLAUDE_CONFIG_DIR` that every `claude` spawn uses; written by Sova's Settings → Accounts
+  and the pool agent, read by the chat provider, workers, model discovery and the topic-outline
+  summarizer at each spawn. With the mesh on (`<agent dir>/sova/peers.json` lists a peer) logins
+  form one pool (`server/claude-pool/`): a registry login's `device` is the device that HOLDS it
+  (`null` = kept here, free, for lending: never run while the mesh is on), and accounts.ts also
+  owns the pool's marks every spawn honours — `<login dir>/.sova-leaving` `{v: 1, at, reason}`
+  (never chosen), the per-process leases `<login dir>/.sova-leases/<pid>.json` `{v: 1, owner,
+  users, busy, children, lastActiveAt, at}` (`LoginUsers`, a `globalThis` singleton that also
+  releases idle users of a leaving login), the borrow requests `<agent dir>/claude-pool/wants/*.json`
+  `{v: 1, at, pid, excludeAccounts?, excludeLogins?}` that `acquire` / `failoverAsync` write and
+  wait on, and the agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`;
+  and the session's hidden `claude-login` custom
   entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}`, written by the provider and read
   by Sova, which renders one with `from` as a note row), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
@@ -93,8 +103,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   the session list's `SessionSummary.align` read what the extension writes, with its own code),
   `server/insights.ts` imports
   `pi-config/extensions/usage-status/fetch.ts` (which imports `claude-code/accounts.ts`, builtins
-  only, to fetch each login's usage; `server/auth-status.ts` and `server/claude-login-state.ts`
-  import `accounts.ts` too), `server/worker-context.ts` and `server/delegate.ts`
+  only, to fetch each login's usage; `server/auth-status.ts`, `server/claude-login-state.ts` and
+  the pool agent `server/claude-pool/` import `accounts.ts` too), `server/worker-context.ts` and `server/delegate.ts`
   import `pi-config/extensions/claude-code/context-window.ts` (imports nothing: the one Claude Code
   window rule, `[1m]` or natively 1M else 200k, and the list rule that adds `opus[1m]` and
   `claude-fable-5-1[1m]` after their listed base; the provider, `agent_models` and the subagents

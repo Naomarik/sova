@@ -123,6 +123,8 @@ describe("the file", () => {
       "https://share.example.com#",
       "https://share.example.com/.",
       "https://share.example.com/%2e",
+      "https://share.example.com/private/..",
+      "https://share.example.com\\private",
       "https://share.example.com//",
       "https:share.example.com",
       "https:/share.example.com",

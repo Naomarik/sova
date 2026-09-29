@@ -9,17 +9,19 @@ import { REFUSED_HEADER } from "../mesh/hello";
 import { addWatcher, viewForToken } from "./hub";
 import { socketClosed, socketOpened } from "../visits";
 import { createShareApp, logVisit, PAGE_CSP } from "./routes";
-import { clientAddress } from "./security";
+import { clientAddress, trustedClient } from "./security";
 
-// Today's client-address rule lives with the other trust helpers; its old import path stays.
+// The old client-address rule lives with the other trust helpers; its old import path stays.
 export { clientAddress };
 
 /**
  * The share edge (§app.baton/share-listener): what every share-serving `http.Server` does before a
  * request reaches whatever answers it. Every request is judged against an allowlist of exact
- * shapes on the RAW path, before any routing: anything else is a 404 that never reaches a router,
- * so the operator app, /api/*, /ws/chat, /ws/watch, /peer/* and /ext/* do not exist here. Then the
- * per-address limit, the body cap and the timeouts, then the `dispatch` / `upgrade` hook.
+ * shapes on the RAW request target, before any URL parsing (which would resolve `..`, `%2e` and
+ * the like): anything but an origin-form target whose path is one of those shapes is refused and
+ * never reaches a router, so the operator app, /api/*, /ws/chat, /ws/watch, /peer/* and /ext/* do
+ * not exist here. Then the per-address limit (keyed by trustedClient), the body cap and the
+ * timeouts, then the `dispatch` / `upgrade` hook.
  *
  * The hooks default to the in-process share app (server/share/routes.ts) and its WebSocket server,
  * which is all today's listener runs. The public-links gateway replaces them with its router (a
@@ -39,6 +41,15 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/p/q_[a-z2-9]{8}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}$`) },
 ];
+
+/** The raw request target split into path and query, or null unless it is origin-form: "/"
+    then anything but a second "/" (absolute-form "http://…", authority-form "host:443", "*" and
+    "//host/…" are all refused). Nothing is decoded or resolved. */
+export function rawTarget(target: string | undefined): { path: string; query: string } | null {
+  if (!target || target[0] !== "/" || target[1] === "/") return null;
+  const q = target.indexOf("?");
+  return q < 0 ? { path: target, query: "" } : { path: target.slice(0, q), query: target.slice(q + 1) };
+}
 
 /** Whether a request may reach the share app. Raw pathname, exact shapes, no escapes at all (a
     token or an asset name never needs one, and a decoded path is never re-judged). */
@@ -125,8 +136,8 @@ function routeKind(pathname: string): string {
 
 /** What a request passed on its way through the edge. */
 export interface ShareRequestContext {
-  /** The request target, parsed. Its pathname passed shareMayReach; note that URL parsing has
-      already resolved dot segments (judging the raw target is the security milestone's). */
+  /** The request target, parsed. Its raw path passed shareMayReach before it was parsed, and
+      parsing left it unchanged. */
   url: URL;
   /** The rate-limit key the request was counted under. */
   client: string;
@@ -134,7 +145,7 @@ export interface ShareRequestContext {
 
 /** A `/ws/h` upgrade that passed the edge: the path, the token's shape and the address limit. */
 export interface ShareUpgradeContext extends ShareRequestContext {
-  /** The `token` query parameter, matching TOKEN_RE. */
+  /** The `token` query parameter (exactly one), matching TOKEN_RE. */
   token: string;
 }
 
@@ -154,7 +165,8 @@ export interface ShareServerOptions {
       rejection is 403 with REFUSED_HEADER and `Connection: close`. Absent (the default): every
       connection is admitted, with no async step. */
   admit?: (req: IncomingMessage) => boolean | Promise<boolean>;
-  /** The per-address limit's key. Default: clientAddress. A throw is a 500. */
+  /** The per-address limit's key. Default: trustedClient with `local-proxy` trust (the loopback
+      front's last X-Forwarded-For hop, else the socket address). A throw is a 500. */
   client?: (req: IncomingMessage) => string;
   /** Default: the in-process share app. */
   dispatch?: ShareDispatch;
@@ -265,7 +277,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   const local = opts.dispatch && opts.upgrade ? null : inProcessShare();
   const dispatch = opts.dispatch ?? local!.dispatch;
   const upgrade = opts.upgrade ?? local!.upgrade;
-  const clientOf = opts.client ?? clientAddress;
+  const clientOf = opts.client ?? ((req: IncomingMessage) => trustedClient(req, { trust: "local-proxy" }));
   const perAddress = new RateLimiter(REQUESTS_PER_MINUTE);
   const requestTimeout = opts.requestMs ?? REQUEST_TIMEOUT_MS;
   const options = {
@@ -275,14 +287,13 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
     connectionsCheckingInterval: opts.checkMs ?? 1000,
   };
   const serve = (req: IncomingMessage, res: ServerResponse): void => {
-    let url: URL;
-    try {
-      url = new URL(req.url ?? "/", "http://share");
-    } catch {
+    const target = rawTarget(req.url);
+    if (!target) {
       json(res, 400, { error: "Bad request" });
       return;
     }
-    if (!shareMayReach(req.method ?? "GET", url.pathname)) {
+    const url = shareMayReach(req.method ?? "GET", target.path) ? parsedTarget(target) : null;
+    if (!url) {
       json(res, 404, { error: "Not found" });
       return;
     }
@@ -313,15 +324,15 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
     guarded(() => dispatch(req, res, { url, client }), failed("dispatch"));
   };
   const serveUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
-    let url: URL;
-    try {
-      url = new URL(req.url ?? "/", "http://share");
-    } catch {
+    const target = rawTarget(req.url);
+    if (!target) {
       refuse(socket, 400, { error: "Bad request" });
       return;
     }
-    const token = url.searchParams.get("token") ?? "";
-    if (url.pathname !== "/ws/h" || !TOKEN_RE.test(token)) {
+    const url = target.path === "/ws/h" && req.method === "GET" ? parsedTarget(target) : null;
+    const tokens = url?.searchParams.getAll("token") ?? [];
+    const token = tokens.length === 1 ? tokens[0]! : "";
+    if (!url || !TOKEN_RE.test(token)) {
       refuse(socket, 404, { error: "Not found" });
       return;
     }
@@ -364,5 +375,23 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       else refuseMarked(socket);
     }).catch(() => socket.destroy());
   });
+  // A CONNECT (authority-form target) is never a share request; Node would drop it silently. It
+  // is refused before `admit` runs, the one exception to "admit first": nothing is served or
+  // forwarded, so a gated ingress answers it 405 too, without the refused marker.
+  server.on("connect", (_req: IncomingMessage, socket: Duplex) => {
+    socket.on("error", () => {});
+    if (!socket.destroyed) socket.end("HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+  });
   return server;
+}
+
+/** A judged raw target as a URL, or null when it doesn't parse or parsing would change its path
+    (the path the allowlist judged must be the path that is routed). */
+function parsedTarget(target: { path: string; query: string }): URL | null {
+  try {
+    const url = new URL(target.query ? `${target.path}?${target.query}` : target.path, "http://share");
+    return url.pathname === target.path ? url : null;
+  } catch {
+    return null;
+  }
 }

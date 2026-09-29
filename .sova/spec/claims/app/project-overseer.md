@@ -154,9 +154,17 @@ user row.
   "Earlier Overseer Conversation", its meta "{title} · {age}", the back link going to the current
   conversation ("Back to the overseer"), and the read-only line "An earlier conversation. Read only."
   It has no level, Run Now, ⋯ or status strip.
-- **Phone** (below 480px): line 1 keeps back, the title, the state chip, ⋯ and Session details; the
+- **Phone** (below 480px): line 1 keeps back, the title, the state chip, the context readout
+  (§chat.context-window/width-budget: its ring and "222k"), ⋯ and Session details; the
   meta line keeps only the project (the org and the watch word go; ⋯ says Stop or Start Watching),
   on a line of its own under line 1, lined up with the title, ending in "…" when it doesn't fit.
+  Below 420px, while the state chip shows, the row's gaps close to 2px and its side padding to
+  4px, and nothing on line 1 wraps. Below 380px, while the state chip shows, the word "Overseer"
+  would not fit beside the widest chip ("L3 in force") and the context readout, so the title is
+  the overseer's eye icon instead (the one the sidebar's Overseer button uses, 16px, never
+  cut): the heading keeps "Overseer" as its text for AT, visually hidden, the icon is
+  `aria-hidden`, and hovering it shows "Overseer · {project}". From 380px up, and without a
+  state chip at any width, the title is the word, as before.
 
 ## §app.project-overseer/autonomy-levels — What it may do on its own
 

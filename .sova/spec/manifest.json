@@ -334,7 +334,10 @@
     "§app.shell/remote-session-chips": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/RemoteStatus.tsx"
+      ]
     },
     "§app.shell/resizing-the-sessions-pane": {
       "kind": "behavior",
@@ -613,8 +616,12 @@
     },
     "§chat.context-window/format": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/design/base.css"
+      ]
     },
     "§chat.context-window/honesty": {
       "kind": "behavior",
@@ -628,12 +635,21 @@
     "§chat.context-window/markup": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/OverseerView.tsx"
+      ]
     },
     "§chat.context-window/plain-text-not-a-meter": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/design/base.css"
+      ]
     },
     "§chat.context-window/sidebar-ring": {
       "kind": "behavior",
@@ -656,12 +672,16 @@
         "src/components/ContextGauge.tsx"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§chat.context-window/steps-toward-the-limit": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/design/base.css"
+      ]
     },
     "§chat.context-window/tokens": {
       "kind": "note",
@@ -673,7 +693,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/app.css"
       ]
     },
     "§chat.images/composer-attachments": {
@@ -1013,7 +1034,8 @@
       "code": [
         "src/components/Thread.tsx",
         "server/transcript.ts",
-        "src/components/SessionDetails.tsx"
+        "src/components/SessionDetails.tsx",
+        "src/components/SessionView.tsx"
       ]
     },
     "§chat.transcript/landing-page": {
@@ -1213,8 +1235,8 @@
     },
     "§design.copy-deck/context-window": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§design.copy-deck/fanout": {
       "kind": "note",
@@ -5824,7 +5846,7 @@
     "§app.project-overseer/page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/ProjectOverseerHead.tsx",
         "src/components/SessionView.tsx",

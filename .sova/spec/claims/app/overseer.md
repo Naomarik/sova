@@ -560,17 +560,16 @@ in full, and every control on the row is at least 44px wide. The rules below nev
 head's height, so a width change is no layout shift.
 
 - **Wide, 900px and up.** Back (below a 768px window only, as on every chat head), the title and
-  meta line, the context readout (§design.copy-deck/context-window; its full words from 1000px, its
-  percent below that), the proactivity cycle (a bell and the current mode,
+  meta line, the context readout (§design.copy-deck/context-window; its ring and "222k / 1M"), the proactivity cycle (a bell and the current mode,
   §app.overseer/proactivity), **Ideas** and **Todos** with their icons and counts, **History** ▾ and
   **Clear**. No ⋯.
 - **Medium, 660 to 899px** (the Fold's inner screen held upright, about 704px; a desktop window
   about 1024px wide): History and Clear leave the row for **⋯**. The proactivity cycle keeps its
   bell and mode; Ideas and Todos keep their words and counts, without their icons. The context
-  readout is its percent.
+  readout drops its window below a 720px head ("222k").
 - **Narrow, below 660px** (phones and the Fold's cover screen): the proactivity cycle leaves the
   row too. Ideas and Todos are their icons with the count as a corner badge. The row is back, the
-  title and meta, Ideas, Todos and ⋯.
+  title and meta, the context readout, Ideas, Todos and ⋯.
 - **⋯** ("Overseer actions") holds the same three items wherever it shows: **Proactivity…** (its
   note the current mode), **History…** (its note "{n} earlier" while there are any) and **Clear**
   (its note "Start a new conversation. This one moves to History."). It keeps an 8px gap from the
@@ -586,10 +585,13 @@ head's height, so a width change is no layout shift.
   sessions the sidebar's Needs you region lists (§app.session-list/needs-you). It carries no
   menu: who replied since you last looked is each row's unread dot (§app.overseer/seen), and a
   session with an unsent draft is marked in the list. From a 660px head up the row leaves it at
-  least 230px, so "181 sessions · 5 working · 2 need you" shows in full; below that, or when it is
+  least 220px, so "181 sessions · 5 working · 2 need you" (about 218px) shows in full; below that, or when it is
   longer, it ends in "…".
-- **Context.** Below a 520px head the context readout leaves the row and its percentage leads the
-  meta line ("24% · 181 sessions · …"), as on every chat head.
+- **Context.** The context readout stays on the row at every width, as on every chat head
+  (§chat.context-window/width-budget): the ring and "222k", with the window ("222k / 1M") from a
+  720px head. No percent shows; it is in the readout's `title`. The meta line carries no context.
+  Below a 360px window (a 320px phone) the row's gaps close to 2px and its side padding to 4px,
+  so back, the title in full, the readout, Ideas, Todos and ⋯ still fit without clipping.
 - **An earlier conversation** (`#/overseer/h/<id>`): back, its title and age, and History ▾ at
   900px and up; below that, ⋯ holding History… only.
 

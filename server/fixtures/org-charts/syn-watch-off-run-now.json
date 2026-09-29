@@ -1,0 +1,13 @@
+{"v":1,"id":"syn-watch-off-run-now","source":"synthetic","note":"Synthetic: Watch off: reasons wait and no look starts on its own; Run Now still looks","t0":"2026-09-28T10:00:00Z","hosts":1,"sova":{"commit":null,"how":"synthetic","features":{"askedOperatorReason":true,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":true,"mergeReasonAndTodosOperatorOnly":true,"noTokenBudget":true}},
+"events": [
+{"dt":0,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":1000,"kind":"fact","entity":"baton","id":"b1","state":"open","by":"operator"},
+{"dt":60000,"kind":"fact","entity":"baton","id":"b1","state":"done","wrote":true},
+{"dt":660000,"kind":"expect","session":"project","in":["watch-off"],"notIn":["running"],"reasonKinds":["baton/done"]},
+{"dt":720000,"kind":"operator","act":"run-now"},
+{"dt":720001,"kind":"expect","session":"project","in":["running"]},
+{"dt":721000,"kind":"turn","by":"watch","attended":false,"level":"L3","reasons":[{"kind":"gathering-done","soon":true}]},
+{"dt":730000,"kind":"turn-end","stop":"stop"}
+],
+"final": {"autonomy":"L3","watch":false,"caps":{"gatherPerTurn":3,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"gatherPerDay":4,"promotePerDay":60,"createPerDay":4,"promptsPerDay":12,"unattendedPerDay":12,"gatheringsOpen":5,"codingRunning":2},"watchGapMin":10,"soonLookSec":60,"archived":false,"rosterActive":1,"gaps":[],"batons":[],"decisions":[],"builds":[],"hosts":[]}
+}

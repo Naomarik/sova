@@ -1,0 +1,16 @@
+{"v":1,"id":"syn-empty-roster","source":"synthetic","note":"Synthetic: the last active person leaves: level in force L0; the operator's own turn still acts","t0":"2026-09-28T10:00:00Z","hosts":1,"sova":{"commit":null,"how":"synthetic","features":{"askedOperatorReason":true,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":true,"mergeReasonAndTodosOperatorOnly":true,"noTokenBudget":true}},
+"events": [
+{"dt":0,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":1000,"kind":"fact","entity":"gap","id":"§gap/g1","status":"open"},
+{"dt":60000,"kind":"fact","entity":"person","id":"p1","status":"left"},
+{"dt":120000,"kind":"turn","by":"watch","attended":false,"level":"L0","levelWhy":"empty-roster","reasons":[],"runAll":true},
+{"dt":125000,"kind":"tool","name":"sova_start_gathering","attended":false,"level":"L0","verdict":"refused","levelWhy":"empty-roster","refusal":"autonomy","levelAtCall":"L0","link":{"gap":"§gap/g1","how":"named"}},
+{"dt":130000,"kind":"turn-end","stop":"stop"},
+{"dt":180000,"kind":"turn","by":"operator","attended":true,"level":"L0","levelWhy":"empty-roster","reasons":[]},
+{"dt":185000,"kind":"tool","name":"sova_start_gathering","attended":true,"level":"L0","verdict":"ok","levelWhy":"empty-roster","args":{"baton":"b1"},"link":{"gap":"§gap/g1","how":"named"}},
+{"dt":185005,"kind":"fact","entity":"baton","id":"b1","state":"open","by":"overseer"},
+{"dt":190000,"kind":"turn-end","stop":"stop"},
+{"dt":191000,"kind":"expect","session":"§gap/g1","in":["asking"]}
+],
+"final": {"autonomy":"L3","watch":true,"caps":{"gatherPerTurn":3,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"gatherPerDay":4,"promotePerDay":60,"createPerDay":4,"promptsPerDay":12,"unattendedPerDay":12,"gatheringsOpen":5,"codingRunning":2},"watchGapMin":10,"soonLookSec":60,"archived":false,"rosterActive":0,"gaps":[],"batons":[],"decisions":[],"builds":[],"hosts":[]}
+}

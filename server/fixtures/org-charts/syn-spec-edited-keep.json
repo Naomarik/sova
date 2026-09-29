@@ -1,0 +1,25 @@
+{"v":1,"id":"syn-spec-edited-keep","source":"synthetic","note":"Synthetic: a promoted decision edited in the spec: the item waits on the operator's Keep, then goes on","t0":"2026-09-28T10:00:00Z","hosts":1,"sova":{"commit":null,"how":"synthetic","features":{"askedOperatorReason":true,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":true,"mergeReasonAndTodosOperatorOnly":true,"noTokenBudget":true}},
+"events": [
+{"dt":0,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":1000,"kind":"fact","entity":"gap","id":"§gap/g1","status":"open"},
+{"dt":2000,"kind":"turn","by":"operator","attended":true,"level":"L3","reasons":[]},
+{"dt":3000,"kind":"tool","name":"sova_start_gathering","attended":true,"level":"L3","verdict":"ok","args":{"baton":"b1"},"link":{"gap":"§gap/g1","how":"named"}},
+{"dt":3005,"kind":"fact","entity":"baton","id":"b1","state":"open","by":"overseer"},
+{"dt":4000,"kind":"turn-end","stop":"stop"},
+{"dt":301000,"kind":"fact","entity":"decision","id":"d1","baton":"b1","state":"pending","ownerArea":true},
+{"dt":361000,"kind":"fact","entity":"baton","id":"b1","state":"done","wrote":true},
+{"dt":421000,"kind":"turn","by":"operator","attended":true,"level":"L3","reasons":[]},
+{"dt":422000,"kind":"tool","name":"sova_reconcile","attended":true,"level":"L3","verdict":"ok"},
+{"dt":423000,"kind":"fact","entity":"decision","id":"d1","baton":"b1","state":"drafted","by":"overseer"},
+{"dt":424000,"kind":"tool","name":"sova_promote","attended":true,"level":"L3","verdict":"ok","args":{"ids":["d1"]}},
+{"dt":425000,"kind":"fact","entity":"decision","id":"d1","baton":"b1","state":"promoted","by":"overseer"},
+{"dt":426000,"kind":"turn-end","stop":"stop"},
+{"dt":540000,"kind":"expect","session":"§gap/g1","in":["awaiting-build"]},
+{"dt":600000,"kind":"fact","entity":"decision","id":"d1","baton":"b1","state":"promoted","edited":true},
+{"dt":600001,"kind":"expect","session":"§gap/g1","in":["spec-edited"]},
+{"dt":660000,"kind":"operator","act":"settle-text","gap":"§gap/g1","value":"keep"},
+{"dt":720000,"kind":"fact","entity":"decision","id":"d1","baton":"b1","state":"promoted","edited":false},
+{"dt":720001,"kind":"expect","session":"§gap/g1","in":["awaiting-build"]}
+],
+"final": {"autonomy":"L3","watch":true,"caps":{"gatherPerTurn":3,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"gatherPerDay":4,"promotePerDay":60,"createPerDay":4,"promptsPerDay":12,"unattendedPerDay":12,"gatheringsOpen":5,"codingRunning":2},"watchGapMin":10,"soonLookSec":60,"archived":false,"rosterActive":1,"gaps":[],"batons":[],"decisions":[],"builds":[],"hosts":[]}
+}

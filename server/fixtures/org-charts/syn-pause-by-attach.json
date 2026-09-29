@@ -1,0 +1,20 @@
+{"v":1,"id":"syn-pause-by-attach","source":"synthetic","note":"Synthetic: attached on this host: level in force L0 until the operator sets a level","t0":"2026-09-28T10:00:00Z","hosts":1,"sova":{"commit":null,"how":"synthetic","features":{"askedOperatorReason":true,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":true,"mergeReasonAndTodosOperatorOnly":true,"noTokenBudget":true}},
+"events": [
+{"dt":0,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":1000,"kind":"fact","entity":"gap","id":"§gap/g1","status":"open"},
+{"dt":2000,"kind":"operator","act":"attach"},
+{"dt":3000,"kind":"expect","session":"project","in":["paused"]},
+{"dt":60000,"kind":"turn","by":"watch","attended":false,"level":"L0","levelWhy":"paused","reasons":[],"runAll":true},
+{"dt":65000,"kind":"tool","name":"sova_start_gathering","attended":false,"level":"L0","verdict":"refused","levelWhy":"paused","refusal":"autonomy","levelAtCall":"L0","link":{"gap":"§gap/g1","how":"named"}},
+{"dt":66000,"kind":"tool","name":"sova_idea","attended":false,"level":"L0","verdict":"ok","levelWhy":"paused","args":{"op":"add","id":"§gap/g2"}},
+{"dt":70000,"kind":"turn-end","stop":"stop"},
+{"dt":120000,"kind":"setting","key":"autonomy","value":"L1","src":"synthetic"},
+{"dt":120001,"kind":"expect","session":"project","in":["live"],"notIn":["paused"]},
+{"dt":180000,"kind":"turn","by":"operator","attended":false,"level":"L1","reasons":[]},
+{"dt":185000,"kind":"tool","name":"sova_start_gathering","attended":false,"level":"L1","verdict":"ok","args":{"baton":"b1"},"link":{"gap":"§gap/g1","how":"named"}},
+{"dt":185005,"kind":"fact","entity":"baton","id":"b1","state":"open","by":"overseer"},
+{"dt":190000,"kind":"turn-end","stop":"stop"},
+{"dt":191000,"kind":"expect","session":"§gap/g1","in":["asking"]}
+],
+"final": {"autonomy":"L1","watch":true,"caps":{"gatherPerTurn":3,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"gatherPerDay":4,"promotePerDay":60,"createPerDay":4,"promptsPerDay":12,"unattendedPerDay":12,"gatheringsOpen":5,"codingRunning":2},"watchGapMin":10,"soonLookSec":60,"archived":false,"rosterActive":1,"gaps":[],"batons":[],"decisions":[],"builds":[],"hosts":[]}
+}

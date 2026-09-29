@@ -554,3 +554,27 @@ user row.
   through `sova_list_sessions`, labelled "started by the operator".
 - **Never swept as an empty husk.** Clean Up's empty-husk sweep skips every session a project's
   `started.json` records, so an empty coding session and its row stay until the operator archives it.
+
+## §app.project-overseer/org-charts — The org statecharts, shadow-only
+
+- **Shadow-only.** Nothing in the live server imports any of this: the overseer, its watch loop
+  and its tools run as before. It exists to be measured against what Sova does, before any of it
+  is wired in.
+- **The engine.** `org-charts/` is a ClojureScript project: the project and work-item charts on
+  com.fulcrologic/statecharts, and an engine around them (a durable delayed-event queue, host
+  invocations for a look, a side-effect-free trial, enabled events, dump and load, and at most
+  `maxMicrosteps` microsteps per event, else a typed step-limit error and the whole call rolled
+  back). A caller may register more charts at runtime, written as a JS tree; the engine tests
+  register their probe chart this way, so they run the shipped bundle.
+- **The bundle.** `server/vendor/org-charts.js` is its one-file ESM release build, vendored. Only
+  `node scripts/build-org-charts.mjs` rebuilds it (a JVM and the Clojure CLI; it refuses
+  uncommitted chart sources, the build is byte-reproducible, `--check` compares a fresh build with
+  the vendored file, `--test` runs the CLJS tests). `pnpm build` and `pnpm test` never build it and
+  need no JVM.
+- **The wrapper.** `server/org-charts.ts` types the bundle's API (`createOrgCharts`); a step limit
+  surfaces as `OrgChartsStepLimitError`.
+- **The replay.** `server/org-charts-replay.ts` replays traces (`server/fixtures/org-charts/`: real
+  ones mined by `scripts/org-charts-mine.mjs` and anonymized, and synthetic edge cases) through the
+  shipped charts on a virtual clock, checks each tool verdict against today's autonomy rule, each
+  work item against the stores' facts and each look against the real one, and names the evidence
+  for every divergence. Its test requires zero unexplained divergences.

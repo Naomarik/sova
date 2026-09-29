@@ -60,6 +60,7 @@ import { announce, home } from "../lib/ui-state";
 import { DecisionSettingsSection } from "./DecisionSettings";
 import { DelegateSettingsSection } from "./DelegateSettings";
 import { MeshSettingsSection } from "./MeshSettings";
+import { AccountsSettingsSection } from "./AccountsSettings";
 import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PushSettingsSection } from "./PushSettings";
@@ -70,12 +71,13 @@ import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Eleven screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Twelve screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
   { id: "general", label: "General", icon: "settings" as const },
   { id: "models", label: "Models", icon: "sliders" as const },
+  { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "teams", label: "Teams", icon: "command" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
@@ -217,6 +219,13 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "models"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-models" aria-labelledby="settings-tab-models">
               <ModelsPanel />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is: the logins and their standing are read when it opens,
+              and closing Settings cancels a sign-in still waiting for its code. */}
+          <Show when={tab() === "accounts"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-accounts" aria-labelledby="settings-tab-accounts">
+              <AccountsSettingsSection />
             </div>
           </Show>
           {/* Mounted only while its tab is: the backend discovery (a Claude Code CLI call) runs

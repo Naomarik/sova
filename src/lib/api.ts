@@ -3,7 +3,9 @@ import type {
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
+  ClaudeAccountsInfo,
   ClaudeCliStatus,
+  ClaudeLoginFlowState,
   ContextInfo,
   ExtensionInfo,
   ExplanationInfo,
@@ -206,6 +208,21 @@ export const putSpecSettings = (settings: SpecSettings) =>
 
 /** Team defaults (Settings → Teams): the coordinator and monitor every new team gets. */
 export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/team");
+
+/** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
+export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
+/** Start `claude auth login` for a new login; answers once its sign-in URL is out. */
+export const startClaudeLogin = () => request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST" });
+/** The code the sign-in page showed; answers once Claude Code finished (or refused it). */
+export const sendClaudeLoginCode = (code: string) =>
+  request<ClaudeLoginFlowState>("/api/claude/accounts/flow/code", { method: "POST", body: JSON.stringify({ code }) });
+export const cancelClaudeLogin = () => request<ClaudeAccountsInfo>("/api/claude/accounts/flow", { method: "DELETE" });
+export const putClaudeLoginOrder = (order: string[]) =>
+  request<ClaudeAccountsInfo>("/api/claude/accounts/order", { method: "PUT", body: JSON.stringify({ order }) });
+export const patchClaudeLogin = (id: string, patch: { enabled?: boolean; label?: string | null }) =>
+  request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const clearClaudeLogin = (id: string) => request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}/clear`, { method: "POST" });
+export const removeClaudeLogin = (id: string) => request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
 
 /** What each worker backend offers for the two roles: the same discovery as Delegate's. */
 export const getTeamOptions = () => request<DelegateOptions>("/api/settings/team/options");

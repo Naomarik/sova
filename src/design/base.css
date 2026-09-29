@@ -5531,6 +5531,18 @@ a.subagent-row { text-decoration: none; }
 .push-device-name { color: var(--color-ink); font-weight: var(--fw-medium); }
 .push-device-fact { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .push-device-error { color: var(--status-error); }
+/* Settings → Accounts (§app.claude-logins): this device's Claude logins, in order. */
+.accounts-logins { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.accounts-login { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding: var(--space-2) var(--space-3); border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); }
+.accounts-login-text { flex: 1 1 14rem; min-width: 0; display: flex; flex-direction: column; }
+.accounts-login-name { color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; }
+.accounts-login-fact { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.accounts-login-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-login-toggle { gap: var(--space-2); }
+.accounts-login-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+.accounts-flow { display: flex; flex-direction: column; gap: var(--space-3); }
+.accounts-flow-url { margin: 0; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.accounts-flow-url a { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-caption); }
 .push-kinds { display: flex; flex-direction: column; gap: var(--space-1); }
 .push-kinds .toggle { justify-content: flex-start; align-self: flex-start; width: fit-content; }
 .push-quiet { display: flex; gap: var(--space-3); flex-wrap: wrap; }

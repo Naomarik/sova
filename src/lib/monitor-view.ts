@@ -369,10 +369,11 @@ function sum<T>(xs: readonly T[], f: (x: T) => number): number {
  * from the history's labels and, for a worker, the live snapshot's name. Processes come from the
  * point's top 5, so a worker row expands to what was busy then.
  */
-export function rowsAt(point: MonitorPoint, labels: MonitorHistory["groups"], live: MonitorSnapshot | undefined): GroupRow[] {
-  const workerNames = new Map<string, MonitorWorker>();
-  for (const x of live?.sessions ?? []) for (const w of x.workers) workerNames.set(`${x.sessionPath ?? ""}/${w.id}`, w);
-  for (const w of live?.unownedWorkers ?? []) workerNames.set(`${UNOWNED_GROUP}/${w.id}`, w);
+export function rowsAt(point: MonitorPoint, labels: MonitorHistory["groups"], live: MonitorSnapshot | undefined, fromHistory?: WorkerLabels): GroupRow[] {
+  const liveWorkers = new Map<string, MonitorWorker>();
+  for (const x of live?.sessions ?? []) for (const w of x.workers) liveWorkers.set(`${x.sessionPath ?? ""}/${w.id}`, w);
+  for (const w of live?.unownedWorkers ?? []) liveWorkers.set(`${UNOWNED_GROUP}/${w.id}`, w);
+  const nameOf = workerNamer(live, fromHistory);
   const kindOf = (key: string): GroupRow["kind"] =>
     key === SERVER_GROUP ? "server" : key === ESCAPED_GROUP ? "escaped" : key === UNATTRIBUTED_GROUP ? "unattributed" : key === UNOWNED_GROUP ? "unowned" : "session";
   const rows: GroupRow[] = Object.entries(point.groups).map(([key, [cpuPct, rssBytes]]) => {
@@ -382,9 +383,9 @@ export function rowsAt(point: MonitorPoint, labels: MonitorHistory["groups"], li
     const workers: WorkerRow[] = Object.entries(point.workers[key] ?? {})
       .map(([id, [wc, wr]]) => {
         const scope = kind === "unowned" ? UNOWNED_GROUP : (sessionPath ?? key);
-        const w = workerNames.get(`${scope}/${id}`);
+        const w = liveWorkers.get(`${scope}/${id}`);
         const top = point.top.filter((p) => p.group === key && p.workerId === id).map((p) => ({ key: `${p.pid}`, pid: p.pid, cmd: p.cmd, kind: p.kind, cpuPct: p.cpuPct, rssBytes: p.rssBytes }));
-        return { key: `${key}/${id}`, label: w?.name || id, backend: w?.backend, via: w?.via, cpuPct: wc, rssBytes: wr, top };
+        return { key: `${key}/${id}`, label: nameOf(key, id) || w?.name || id, backend: w?.backend, via: w?.via, cpuPct: wc, rssBytes: wr, top };
       })
       .sort(heaviest);
     const procs = point.top
@@ -487,10 +488,28 @@ export function transient(points: readonly MonitorPoint[], alive: ReadonlySet<nu
 export const transientName = (r: Pick<TransientRow, "cmd" | "runs">): string => (r.runs > 1 ? `${r.cmd} ×${r.runs}` : r.cmd);
 
 /** Who a transient process was charged to: "Refactor auth · w3" / "Not attributed". */
-export function chargedTo(r: Pick<TransientRow, "group" | "workerId">, labels: MonitorHistory["groups"]): string {
+export function chargedTo(r: Pick<TransientRow, "group" | "workerId">, labels: MonitorHistory["groups"], nameOf: WorkerNameOf = () => undefined): string {
   if (!r.group || r.group === UNATTRIBUTED_GROUP) return "Not attributed";
   const g = groupLabel(r.group, labels);
-  return r.workerId ? `${g} · ${r.workerId}` : g;
+  return r.workerId ? `${g} · ${nameOf(r.group, r.workerId) ?? r.workerId}` : g;
+}
+
+/** A worker's name by history group key and worker id, when anything knows it. */
+export type WorkerNameOf = (group: string, workerId: string) => string | undefined;
+
+/** Worker names per history group, then per worker id, as a history may carry them. */
+export type WorkerLabels = Record<string, Record<string, string>>;
+
+/**
+ * Names a worker from the history's own labels (which outlive the worker and a restart), else
+ * from the live snapshot while it still runs; undefined leaves the caller its id. A snapshot
+ * session's workers are keyed by its path, the history's group key for that session.
+ */
+export function workerNamer(live: MonitorSnapshot | undefined, fromHistory: WorkerLabels | undefined): WorkerNameOf {
+  const liveNames = new Map<string, string>();
+  for (const x of live?.sessions ?? []) for (const w of x.workers) if (w.name) liveNames.set(`${x.sessionPath ?? ""}\n${w.id}`, w.name);
+  for (const w of live?.unownedWorkers ?? []) if (w.name) liveNames.set(`${UNATTRIBUTED_GROUP}\n${w.id}`, w.name);
+  return (group, id) => fromHistory?.[group]?.[id] || liveNames.get(`${group}\n${id}`);
 }
 
 // ---- history -----------------------------------------------------------------------------------

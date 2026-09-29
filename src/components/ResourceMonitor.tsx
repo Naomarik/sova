@@ -30,6 +30,8 @@ import {
   statusText,
   type TabMemory,
   type TitleOf,
+  type WorkerLabels,
+  workerNamer,
   labelsWithTitles,
   withTitles,
   tabLine,
@@ -52,6 +54,20 @@ import "../monitor.css";
 export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
   const [points, setPoints] = createSignal<MonitorPoint[]>([]);
   const [rawLabels, setLabels] = createSignal<MonitorHistory["groups"]>({});
+  const [workerLabels, setWorkerLabels] = createSignal<WorkerLabels>({});
+  /** Merge a history answer's worker names (group → id → name), when it carries them. */
+  const takeWorkerLabels = (...hs: Array<MonitorHistory | null | undefined>) => {
+    const add: WorkerLabels = {};
+    for (const h of hs) {
+      const w = (h as { workerLabels?: WorkerLabels } | null | undefined)?.workerLabels;
+      if (w && typeof w === "object") for (const [g, ids] of Object.entries(w)) add[g] = { ...add[g], ...ids };
+    }
+    if (Object.keys(add).length) setWorkerLabels((cur) => {
+      const next = { ...cur };
+      for (const [g, ids] of Object.entries(add)) next[g] = { ...next[g], ...ids };
+      return next;
+    });
+  };
   // Session names as the sidebar says them; the monitor's own labels are only a fallback.
   const labels = createMemo(() => (props.titleOf ? labelsWithTitles(rawLabels(), props.titleOf) : rawLabels()));
   /** The scrubbed moment; null = now. */
@@ -65,6 +81,7 @@ export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
         const since = now - CHART_SPAN_MS;
         const [fine, coarse] = await Promise.all([fetchMonitorHistory(since, "5s"), fetchMonitorHistory(since, "30s").catch(() => null)]);
         setLabels({ ...(coarse?.groups ?? {}), ...fine.groups });
+        takeWorkerLabels(coarse, fine);
         setPoints(mergeHistory(fine.points, coarse?.points ?? [], now));
         historyLoaded = true;
       } else {
@@ -72,6 +89,7 @@ export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
         const last = held.length ? held[held.length - 1]!.at : now - CHART_SPAN_MS;
         const delta = await fetchMonitorHistory(last + 1, "5s");
         setLabels((l) => ({ ...l, ...delta.groups }));
+        takeWorkerLabels(delta);
         setPoints(appendHistory(held, delta.points, now));
       }
     } catch {
@@ -101,9 +119,10 @@ export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
   const rows = createMemo((): GroupRow[] => {
     const p = picked();
     const s = snap();
-    if (p) return rowsAt(p, labels(), s);
+    if (p) return rowsAt(p, labels(), s, workerLabels());
     return s ? liveRows(s) : [];
   });
+  const nameOf = createMemo(() => workerNamer(snap(), workerLabels()));
   const transients = createMemo(() => {
     const s = snap();
     return s ? transient(points(), livePids(s)) : [];
@@ -203,7 +222,7 @@ export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
                               {(t) => (
                                 <tr>
                                   <td class="monitor-cmd text-mono">{transientName(t)}</td>
-                                  <td>{chargedTo(t, labels())}</td>
+                                  <td>{chargedTo(t, labels(), nameOf())}</td>
                                   <td class="monitor-num">{cpuText(t.peakCpuPct)}</td>
                                   <td class="monitor-num">{relativeTime(t.lastAt, now())}</td>
                                 </tr>

@@ -11,6 +11,7 @@ import {
   labelsWithTitles,
   sessionLabel,
   withTitles,
+  workerNamer,
   idleSummary,
   isHeuristic,
   liveRows,
@@ -370,4 +371,13 @@ test("session names come from the app's list, never from the file name", () => {
   assert.equal(groupLabel("/s/new.jsonl", labels), "Untitled session");
   assert.equal(sessionLabel({ cwd: "/home/me/webapps/sova/" }), "Untitled session in sova");
   assert.equal(sessionLabel({ sessionPath: "/s/x.jsonl" }), "Untitled session");
+});
+
+test("a gone worker keeps its name from the history; a live one from the snapshot; else its id", () => {
+  const nameOf = workerNamer(snapshot(), { "/s/old.jsonl": { ag_01: "jvm-runner" } });
+  assert.equal(chargedTo({ group: "/s/old.jsonl", workerId: "ag_01" }, { "/s/old.jsonl": { label: "Old" } }, nameOf), "Old · jvm-runner");
+  assert.equal(chargedTo({ group: "/s/heavy.jsonl", workerId: "w3" }, { "/s/heavy.jsonl": { label: "Heavy" } }, nameOf), "Heavy · builder");
+  assert.equal(chargedTo({ group: "/s/heavy.jsonl", workerId: "w9" }, { "/s/heavy.jsonl": { label: "Heavy" } }, nameOf), "Heavy · w9");
+  const rows = rowsAt(point(1, { "/s/old.jsonl": [5, MB] }, { workers: { "/s/old.jsonl": { ag_01: [5, MB] } } }), {}, undefined, { "/s/old.jsonl": { ag_01: "jvm-runner" } });
+  assert.equal(rows[0]!.workers[0]!.label, "jvm-runner");
 });

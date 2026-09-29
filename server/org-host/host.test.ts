@@ -3,7 +3,7 @@
 // the log and its privacy, effects (answered once, re-run at open), holds, invocations, timers,
 // workspace problems.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
@@ -380,6 +380,14 @@ describe("org host", () => {
     assert.deepEqual(host.sessions("host-local-probe", { warmOnly: true }), [], "unloaded");
     assert.deepEqual(host.configuration("l/1"), ["top", "gathering"], "a cold session still reads, from its snapshot");
     assert.deepEqual(host.sessions("host-local-probe").map((x) => [x.id, x.configuration]), [["l/1", ["top", "gathering"]]], "and is listed");
+    assert.equal(host.data("l/1")?.["now"], 1_000_000, "H32: data() answers a cold session from its snapshot");
+    // H31: a newer snapshot on disk is read again (the peek cache follows the file's mtime)
+    const file = scanSnapshots(host.paths.local).find((x) => x.sid === "l/1")!.file;
+    writeFileSync(file, readFileSync(file, "utf8").replace(":gathering", ":idle"));
+    utimesSync(file, new Date(), new Date(Date.now() + 5000));
+    assert.deepEqual(host.configuration("l/1"), ["top", "idle"], "the rewritten snapshot is read, not the cached one");
+    writeFileSync(file, readFileSync(file, "utf8").replace(":idle", ":gathering"));
+    utimesSync(file, new Date(), new Date(Date.now() + 10000));
     assert.equal((await host.act("l/1", "gather/close", {}, operator)).taken, true, "loaded on demand");
     assert.deepEqual(host.configuration("l/1"), ["top", "idle"]);
     await host.close();

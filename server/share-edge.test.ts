@@ -313,17 +313,17 @@ test("setting-events: a throwing or rejecting listener is logged, never unhandle
   }
 });
 
-test("the security stubs fail closed: trustedClient believes no forwarded header; the others refuse", async () => {
+test("the security helpers are real (their full tables: share-security.test.ts); clientAddress is unchanged", async () => {
   const req = (from: string, xff?: string) => ({ headers: xff ? { "x-forwarded-for": xff } : {}, socket: { remoteAddress: from } });
-  for (const ctx of [{ trust: "none" as const }, { trust: "admitted" as const, admitted: false }, { trust: "admitted" as const }, { trust: "admitted" as const, admitted: true }, { trust: "local-proxy" as const }]) {
-    assert.equal(security.trustedClient(req("127.0.0.1", "203.0.113.9"), ctx), "127.0.0.1", JSON.stringify(ctx));
-    assert.equal(security.trustedClient(req("100.101.1.2", "203.0.113.9"), ctx), "100.101.1.2", `a tailnet source: ${JSON.stringify(ctx)}`);
-    assert.equal(security.trustedClient(req("::ffff:198.51.100.7"), ctx), "198.51.100.7");
-  }
-  assert.equal(edge.clientAddress(req("127.0.0.1", "203.0.113.9")), "203.0.113.9", "the listener's own rule is unchanged");
-  assert.throws(() => security.stripForwarded({}));
-  assert.equal(validateSnapshot({ v: 1, seq: 1, links: [], assets: [], ingressPort: 4802 }, { now: Date.now() }).ok, false);
-  assert.equal(await callerNode(new Socket()), null);
+  for (const from of ["127.0.0.1", "100.101.1.2", "198.51.100.7"])
+    assert.equal(security.trustedClient(req(from, "203.0.113.9"), { trust: "admitted", admitted: true }), "203.0.113.9", `admitted, from ${from}`);
+  assert.equal(security.trustedClient(req("127.0.0.1", "198.51.100.1, 203.0.113.9"), { trust: "local-proxy" }), "203.0.113.9", "a loopback front: its last hop");
+  assert.equal(security.trustedClient(req("100.101.1.2", "203.0.113.9"), { trust: "local-proxy" }), "100.101.1.2", "a tailnet source: its socket");
+  assert.equal(security.trustedClient(req("127.0.0.1", "203.0.113.9"), { trust: "none" }), "127.0.0.1");
+  assert.equal(edge.clientAddress(req("127.0.0.1", "203.0.113.9")), "203.0.113.9", "the listener's old rule is unchanged");
+  assert.deepEqual(security.stripForwarded({ "x-forwarded-for": "1.2.3.4", accept: "*/*" }), { accept: "*/*" });
+  assert.equal(validateSnapshot({ v: 1, seq: 1, links: [], assets: [], ingressPort: 4802 }, { now: Date.now() }).ok, true);
+  assert.equal(await callerNode(new Socket()), null, "no remote address: nobody");
   assert.equal(await gatewayGate(() => ({ nodeId: "n1" }))(new Socket()), false);
 });
 

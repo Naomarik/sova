@@ -314,6 +314,15 @@ const get = (target: string, method = "GET") => `${method} ${target} HTTP/1.1\r\
 const upgradeReq = (target: string) =>
   `GET ${target} HTTP/1.1\r\nHost: share.example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n`;
 
+test("rawTarget: origin-form only, split at the first ?", () => {
+  assert.deepEqual(edge.rawTarget(`/h/${TOKEN}`), { path: `/h/${TOKEN}`, query: "" });
+  const q = edge.rawTarget(`/ws/h?token=${TOKEN}`);
+  assert.equal(q?.path, "/ws/h");
+  assert.equal(q?.query, `token=${TOKEN}`);
+  for (const t of [`http://share.example.com/h/${TOKEN}`, "share.example.com:443", "*", "", `//h/${TOKEN}`, `h/${TOKEN}`])
+    assert.equal(edge.rawTarget(t), null, JSON.stringify(t));
+});
+
 test("edge: a well-formed target still reaches dispatch (the control)", async () => {
   const { server, reached } = probeServer();
   const s = await bound(server);

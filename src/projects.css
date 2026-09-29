@@ -203,6 +203,8 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .pipeline-link-state { flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); }
 .pipeline-decisions > summary { list-style: none; }
 .pipeline-decisions > summary::-webkit-details-marker { display: none; }
+.pipeline-decisions > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+.pipeline-decisions[open] > summary .icon-twist { transform: rotate(90deg); }
 .pipeline-decision-list { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-1) 0 0 var(--space-3); }
 .pipeline-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .pipeline-actions .button { min-height: var(--tap-min); }

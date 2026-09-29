@@ -2209,7 +2209,8 @@ export function Sidebar(props: {
                         session, the row opens the project page. A held act recounts its minutes and has Cancel. */}
                     <For each={orgItems()}>
                       {(it) => {
-                        const detail = () => (it.held ? heldLine(it.held.what, it.held.goesAt, props.now) : it.detail);
+                        // Recounted on the list's clock, read at the real time: the clock lags up to a tick, and a count must never run high.
+                        const detail = () => (it.held ? heldLine(it.held.what, it.held.goesAt, Math.max(props.now, Date.now())) : it.detail);
                         return (
                           <li classList={{ "org-needs-held": !!it.held }}>
                             <a class="list-row list-row-interactive org-needs-item" href={it.href} title={detail()}>

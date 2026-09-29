@@ -2,7 +2,7 @@ import { createEffect, createMemo, createResource, createSignal, For, on, onClea
 import type { HeldAct, PipelineInfo, PipelineRow, TimelineRow } from "../../shared/pipeline";
 import { DECISION_STATE } from "../lib/decisions-view";
 import { ApiError, getGapTimeline, getPipeline, holdGap, resumeGap } from "../lib/api";
-import { relativeTime, stampTime } from "../lib/format";
+import { stampTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import {
   byWord,
@@ -20,7 +20,7 @@ import {
 } from "../lib/pipeline-view";
 import { announce, toast } from "../lib/ui-state";
 import { CancelHeldButton } from "./HeldAct";
-import { Chip } from "./ui";
+import { Chip, Icon } from "./ui";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 
@@ -140,11 +140,7 @@ function GapRow(props: { orgId: string; projectId: string; row: Row; now: number
         <span class="orgs-mono">{r().gap}</span>
       </p>
       <Show when={r().held}>
-        {(h) => (
-          <p class="pipeline-meta">
-            On hold since <span title={stampTime(h().since)}>{relativeTime(h().since)}</span>. {heldFromLine(r())}
-          </p>
-        )}
+        <p class="pipeline-meta">{heldFromLine(r())}</p>
       </Show>
 
       <Show when={r().gatherings.length || r().builds.length || r().decisions.length}>
@@ -173,10 +169,9 @@ function GapRow(props: { orgId: string; projectId: string; row: Row; now: number
             <li>
               <details class="pipeline-decisions">
                 <summary class="pipeline-link">
-                  <span class="pipeline-link-kind">Decisions</span>{" "}
-                  <span class="pipeline-link-title">
-                    {r().decisions.length} · {decisionWords()}
-                  </span>
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  <span class="pipeline-link-kind">{r().decisions.length === 1 ? "Decision" : `${r().decisions.length} decisions`}</span>{" "}
+                  <span class="pipeline-link-title">{decisionWords()}</span>
                 </summary>
                 <ul class="pipeline-decision-list">
                   <For each={r().decisions}>

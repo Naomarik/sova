@@ -32,7 +32,8 @@ export const SHOW_CHANGES_SCOPE_KINDS: readonly ShowChangesScopeKind[] = ["dirty
  * - dirty: the index and working tree, untracked files included, against HEAD (`head`, then).
  * - worktree: the branch against its merge-base (`base`) with `baseRef` (the tracked worktree's
  *   base branch, else master, else main, else origin/HEAD's target such as "origin/main"; else the
- *   tracked base commit's short sha).
+ *   tracked base commit's short sha). Once the branch is merged, `base` is where what its merge
+ *   brought in starts and `baseRef` names it, e.g. "master before 4ef9f18" or "f686546 (created from)".
  * - commit: one commit against its first parent (`parent`; absent for a root commit, whose
  *   diff is against the empty tree).
  */

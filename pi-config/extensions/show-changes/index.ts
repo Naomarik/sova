@@ -28,7 +28,7 @@ const LIST_FILES = 40;
 
 export const SHOW_CHANGES_DESCRIPTION = `Open Sova's changes viewer on a set of git changes, for the user to review: a file tree, a numbered list of steps, and one file or step's diff at a time. Read-only: it changes nothing and returns the changed files.
 
-scope: "dirty" = uncommitted work (index + working tree, untracked files included) vs HEAD; "worktree" = a worktree's branch vs its merge-base with its base branch (the tracked worktree's base, else master, else main, else origin/HEAD); "commit" = one commit vs its first parent (give commit, e.g. a sha or "HEAD").
+scope: "dirty" = uncommitted work (index + working tree, untracked files included) vs HEAD; "worktree" = a worktree's branch vs its merge-base with its base branch (the tracked worktree's base, else master, else main, else origin/HEAD), or, once merged, what its merge brought in; "commit" = one commit vs its first parent (give commit, e.g. a sha or "HEAD").
 worktree: for dirty or worktree, which checkout: a tracked worktree's branch or path, or a directory; default the tracked worktree holding the session cwd, else (worktree scope) the only tracked one, else the session cwd.
 paths: limit the view to these repo-relative files or directories.
 steps: the change told as a story, in reading order. Required when the diff has more than one hunk: the tool checks the steps against the diff (git's default context) and refuses, opening nothing, unless every hunk is in a step and every ref names a hunk; the refusal lists the hunks to place. Each step: a title, why (optional), buildsOn (numbers of earlier steps it depends on) and hunks: {path} for every hunk of a file, or {path, newStart} (or oldStart) naming one hunk by any line inside it, new side (old side), as numbered in \`git show\`/\`git diff\` @@ -a,b +c,d @@ headers at default context. A hunk named by two steps goes to the first.
@@ -65,7 +65,7 @@ const Step = Type.Object(
 export const SHOW_CHANGES_PARAMETERS = Type.Object(
 	{
 		scope: StringEnum(["dirty", "worktree", "commit"] as const, {
-			description: "dirty: uncommitted work vs HEAD; worktree: a branch vs its merge-base with its base branch; commit: one commit vs its first parent.",
+			description: "dirty: uncommitted work vs HEAD; worktree: a branch vs its merge-base with its base branch (once merged, what its merge brought in); commit: one commit vs its first parent.",
 		}),
 		commit: Type.Optional(Type.String({ minLength: 1, description: 'scope commit only: the commit, e.g. a sha or "HEAD~1".' })),
 		worktree: Type.Optional(Type.String({ minLength: 1, description: "scope dirty or worktree: a tracked worktree's branch or path, or a directory (default: see the description)." })),

@@ -87,7 +87,8 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   `server/worktrees-state.ts` imports
   `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"
-  probe, git by argv), `server/transcript.ts` and `server/align-state.ts` import
+  probe, git by argv; `server/git-diff.ts` imports it too, for `mergedReviewBase`, the review
+  base of an already merged branch, which show-changes' `git.ts` shares), `server/transcript.ts` and `server/align-state.ts` import
   `pi-config/extensions/mode/align.ts` (builtins only: the `align` tool's details shape, its strict
   check `normalizeAlignDetails` and the one fold `foldAlignments` — the transcript's align row and
   the session list's `SessionSummary.align` read what the extension writes, with its own code),

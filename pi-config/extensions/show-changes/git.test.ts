@@ -94,6 +94,76 @@ test("worktree: merge-base with master; the tracked base branch wins; on master 
 	}
 });
 
+test("worktree once merged: what the merge brought in, a fast-forward against the tracked base, new commits alone", async () => {
+	const r = repo();
+	try {
+		const commit = (cwd: string, file: string) => {
+			writeFileSync(join(cwd, file), `${file}\n`);
+			sh(cwd, "add", file);
+			sh(cwd, "commit", "-q", "-m", file);
+		};
+		const c0 = sh(r.main, "rev-parse", "HEAD");
+		const setup = (name: string) => {
+			const wt = join(r.root, name);
+			sh(r.main, "worktree", "add", "-q", "-b", `feat/${name}`, wt, c0);
+			commit(wt, `${name}.txt`);
+			return { wt, tree: { path: wt, branch: `feat/${name}`, base: c0, baseBranch: "master" } };
+		};
+		const worktree = async (t: { wt: string; tree: { path: string; branch: string; base: string; baseBranch: string } }) => {
+			const s = await resolveScope(runGit, { scope: "worktree" }, t.wt, t.tree);
+			assert.equal(s.kind, "worktree");
+			return { s: s as Extract<typeof s, { kind: "worktree" }>, files: await changedFiles(runGit, s) };
+		};
+
+		// (a) A merge commit into master: that merge's own change, named by it.
+		const a = setup("a");
+		commit(r.main, "m1.txt");
+		sh(r.main, "merge", "-q", "--no-ff", "--no-edit", "feat/a");
+		const la = sh(r.main, "rev-parse", "HEAD");
+		let got = await worktree(a);
+		assert.deepEqual(got.files, ["a.txt"]);
+		assert.equal(got.s.baseRef, `master before ${la.slice(0, 7)}`);
+		assert.deepEqual(got.files, sh(r.main, "diff", "--name-only", `${la}^1`, la).split("\n"));
+
+		// (b) master merged into the branch first, then the branch merged: master's work stays out.
+		const b = setup("b");
+		sh(b.wt, "merge", "-q", "--no-edit", "master");
+		commit(r.main, "m2.txt");
+		sh(r.main, "merge", "-q", "--no-ff", "--no-edit", "feat/b");
+		const lb = sh(r.main, "rev-parse", "HEAD");
+		got = await worktree(b);
+		assert.deepEqual(got.files, ["b.txt"]);
+		assert.equal(got.s.baseRef, `master before ${lb.slice(0, 7)}`);
+
+		// (d) New commits after the merge: only those, against the plain merge-base.
+		sh(a.wt, "merge", "-q", "--ff-only", "master");
+		commit(a.wt, "a2.txt");
+		got = await worktree(a);
+		assert.deepEqual(got.files, ["a2.txt"]);
+		assert.equal(got.s.baseRef, "master");
+		assert.equal(got.s.base, lb);
+
+		// (c) A fast-forward: against the tracked base when it is an ancestor, else empty.
+		const c = setup("c");
+		sh(c.wt, "merge", "-q", "--no-edit", "master");
+		sh(r.main, "merge", "-q", "--ff-only", "feat/c");
+		const fork = sh(r.main, "merge-base", "feat/c", "master");
+		got = await worktree({ wt: c.wt, tree: { ...c.tree, base: lb } });
+		assert.deepEqual(got.files, ["c.txt"]);
+		assert.equal(got.s.baseRef, `${lb.slice(0, 7)} (created from)`);
+		got = await worktree({ wt: c.wt, tree: { ...c.tree, base: "0" } });
+		assert.deepEqual(got.files, []);
+		assert.equal(got.s.base, fork);
+		// A branch with no commits beyond its tracked base stays empty.
+		const d = { wt: c.wt, tree: { ...c.tree, base: sh(c.wt, "rev-parse", "HEAD") } };
+		got = await worktree(d);
+		assert.deepEqual(got.files, []);
+		assert.equal(got.s.baseRef, "master");
+	} finally {
+		r.done();
+	}
+});
+
 test("pickDir: by branch, by path, the tree holding the cwd, else the cwd", () => {
 	const r = repo();
 	try {

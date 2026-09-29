@@ -7,6 +7,7 @@
 import { execFile } from "node:child_process";
 import { existsSync, realpathSync, statSync } from "node:fs";
 import { resolve } from "node:path";
+import { mergedReviewBase } from "../worktrees/git.ts";
 import { isSha, type ShowChangesScope } from "./details.ts";
 import { ShowChangesError, type ShowChangesRequest } from "./input.ts";
 
@@ -120,13 +121,26 @@ export async function resolveScope(git: Git, req: ShowChangesRequest, dir: strin
 					break;
 				}
 			}
-			let base = baseRef ? await maybe(git, ["merge-base", "HEAD", `refs/heads/${baseRef}`], root) : undefined;
+			let baseTip = baseRef ? `refs/heads/${baseRef}` : undefined;
+			let base = baseTip ? await maybe(git, ["merge-base", "HEAD", baseTip], root) : undefined;
 			// Then origin/HEAD's target, as Sova's diff endpoint does; the tracked base commit last.
 			if (!base) {
 				const origin = await maybe(git, ["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"], root);
 				if (origin?.startsWith("refs/remotes/") && origin !== `refs/remotes/origin/${branch}`) {
 					base = await maybe(git, ["merge-base", "HEAD", origin], root);
-					if (base) baseRef = origin.slice("refs/remotes/".length);
+					if (base) {
+						baseRef = origin.slice("refs/remotes/".length);
+						baseTip = origin;
+					}
+				}
+			}
+			// Already merged: what the merge brought in, as Sova's diff endpoint compares it.
+			if (base && baseRef && baseTip) {
+				const tip = await maybe(git, ["rev-parse", "--verify", "--quiet", `${baseTip}^{commit}`], root);
+				const merged = tip ? await mergedReviewBase(git, root, head, tip, base, tree?.base) : undefined;
+				if (merged && isSha(merged.base)) {
+					base = merged.base;
+					baseRef = merged.landing ? `${baseRef} before ${merged.landing.slice(0, 7)}` : `${merged.base.slice(0, 7)} (created from)`;
 				}
 			}
 			if (!base && tree && isSha(tree.base) && (await git(["merge-base", "--is-ancestor", tree.base, "HEAD"], root)).code === 0) {

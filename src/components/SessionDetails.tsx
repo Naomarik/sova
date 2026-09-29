@@ -511,7 +511,7 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?:
           type="button"
           class="button button-sm worktree-row-action"
           aria-label={`Review Changes on ${w().branch}`}
-          title="The branch's commits against where it left its base branch. Nothing is changed."
+          title="The branch's commits against where it left its base branch, or, once merged, what its merge brought in. Nothing is changed."
           onClick={() => setReviewing(true)}
         >
           Review Changes

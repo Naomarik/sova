@@ -18,11 +18,11 @@ let firstSha: string;
 let secondSha: string;
 const SESSION = "/fake/session.jsonl";
 
-function diffs(roots: () => string[], trees: { path: string; baseBranch?: string }[] = [], untrackedBudget?: number) {
+function diffs(roots: () => string[], trees: { path: string; baseBranch?: string; base?: string }[] = [], untrackedBudget?: number) {
   return new GitDiffs({
     untrackedBudget,
     sessionKnown: async (p) =>
-      p === SESSION ? { roots: roots(), trees: trees.map((t) => ({ ...t, branch: "x", base: "0", status: "active", session: "s", how: "created", at: 0 }) as never) } : null,
+      p === SESSION ? { roots: roots(), trees: trees.map((t) => ({ branch: "x", base: "0", status: "active", session: "s", how: "created", at: 0, ...t }) as never) } : null,
   });
 }
 
@@ -191,6 +191,89 @@ describe("worktree scope", () => {
     assert.equal(s.base.label, "release (merge-base)");
     assert.equal(s.base.oid, firstSha);
     assert.ok(s.files.some((f) => f.path === "feature.ts") && s.files.some((f) => f.path === "keep.txt"));
+  });
+});
+
+describe("worktree scope once merged", () => {
+  let n = 0;
+  /** A fresh repository with master at one commit, and a tracked worktree on feat/m with one commit of its own. */
+  function setup() {
+    const dir = join(root, `merged-${++n}`);
+    const main = join(dir, "main");
+    const wt = join(dir, "wt");
+    mkdirSync(main, { recursive: true });
+    git(main, "init", "-q", "-b", "master");
+    writeFileSync(join(main, "a.txt"), "a\n");
+    git(main, "add", "-A");
+    git(main, "commit", "-q", "-m", "c0");
+    const c0 = git(main, "rev-parse", "HEAD");
+    git(main, "worktree", "add", "-q", "-b", "feat/m", wt);
+    const commit = (cwd: string, file: string) => {
+      writeFileSync(join(cwd, file), `${file}\n`);
+      git(cwd, "add", "-A");
+      git(cwd, "commit", "-q", "-m", file);
+      return git(cwd, "rev-parse", "HEAD");
+    };
+    commit(wt, "f1.txt");
+    const d = (base = c0) => diffs(() => [wt], [{ path: wt, baseBranch: "master", base }]);
+    const scope: DiffScope = { kind: "worktree", sessionPath: SESSION, worktreePath: wt };
+    return { main, wt, c0, commit, d, scope };
+  }
+  const names = (cwd: string, a: string, b: string) => git(cwd, "diff", "--name-only", a, b).split("\n").filter(Boolean);
+
+  it("shows what the merge commit brought in, named by that commit", async () => {
+    const { main, commit, d, scope } = setup();
+    commit(main, "m1.txt");
+    git(main, "merge", "-q", "--no-ff", "--no-edit", "feat/m");
+    const landing = git(main, "rev-parse", "HEAD");
+    const s = await d().summary(scope);
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt"]);
+    assert.deepEqual(s.files.map((f) => f.path), names(main, `${landing}^1`, landing));
+    assert.equal(s.base.label, `master before ${landing.slice(0, 7)}`);
+    assert.equal(s.head.label, "feat/m");
+  });
+
+  it("leaves out master's work merged into the branch before it landed", async () => {
+    const { main, wt, commit, d, scope } = setup();
+    commit(main, "m1.txt");
+    git(wt, "merge", "-q", "--no-edit", "master");
+    commit(main, "m2.txt");
+    git(main, "merge", "-q", "--no-ff", "--no-edit", "feat/m");
+    const landing = git(main, "rev-parse", "HEAD");
+    const s = await d().summary(scope);
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt"]);
+    assert.equal(s.base.label, `master before ${landing.slice(0, 7)}`);
+  });
+
+  it("after a fast-forward, compares against the tracked base when it is an ancestor, else stays empty", async () => {
+    const { main, wt, c0, d, scope } = setup();
+    git(main, "merge", "-q", "--ff-only", "feat/m");
+    const s = await d().summary(scope);
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt"]);
+    assert.equal(s.base.label, `${c0.slice(0, 7)} (created from)`);
+    assert.equal(s.base.oid, c0);
+    // No usable tracked base: today's empty comparison.
+    const none = await d("0").summary(scope);
+    assert.deepEqual(none.files, []);
+    assert.equal(none.base.label, "master (merge-base)");
+    // No commits beyond the tracked base: empty.
+    const head = git(wt, "rev-parse", "HEAD");
+    const own = await d(head).summary(scope);
+    assert.deepEqual(own.files, []);
+    assert.equal(own.base.label, "master (merge-base)");
+  });
+
+  it("with new commits after the merge, shows only those", async () => {
+    const { main, wt, commit, d, scope } = setup();
+    commit(main, "m1.txt");
+    git(main, "merge", "-q", "--no-ff", "--no-edit", "feat/m");
+    const landing = git(main, "rev-parse", "HEAD");
+    git(wt, "merge", "-q", "--ff-only", "master");
+    commit(wt, "f2.txt");
+    const s = await d().summary(scope);
+    assert.deepEqual(s.files.map((f) => f.path), ["f2.txt"]);
+    assert.equal(s.base.label, "master (merge-base)");
+    assert.equal(s.base.oid, landing);
   });
 });
 

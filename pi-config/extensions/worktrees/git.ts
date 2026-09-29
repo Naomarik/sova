@@ -174,6 +174,43 @@ export async function landedStats(git: Git, cwd: string, before: string, after: 
 	return { sha, commits, ...(await lineCounts(git, cwd, [`${before}...${branchSha}`])), fastForward: sha === branchSha };
 }
 
+/** Where a review of an already merged branch starts: `landing` names the commit that brought it in; without it, the tracked base. */
+export interface MergedReviewBase {
+	base: string;
+	landing?: string;
+}
+
+/**
+ * The base side for reviewing `head` once it is in `target` (`mergeBase`, their merge-base, is
+ * `head` itself). The landing commit is the first commit on the target's first-parent history
+ * since `head` that contains it, as landedStats finds it; the review is `head` against its
+ * merge-base with that commit's first parent, so the target's own work beside the branch stays
+ * out. A target that fast-forwarded to `head` has no such commit: `trackedBase` then, when it is a
+ * full sha, an ancestor of `head` and not `head`. Undefined when neither applies, when `head` is
+ * not in `target`, when `head` is `trackedBase` (no commits of its own) or when git fails.
+ */
+export async function mergedReviewBase(git: Git, cwd: string, head: string, target: string, mergeBase: string, trackedBase?: string): Promise<MergedReviewBase | undefined> {
+	if (mergeBase !== head || head === trackedBase) return undefined;
+	const lines = async (args: string[]) => {
+		const r = await git(args, cwd);
+		return r.code === 0 ? r.stdout.split("\n").filter(Boolean) : undefined;
+	};
+	const firstParent = await lines(["rev-list", "--first-parent", "--reverse", `${head}..${target}`]);
+	const containing = await lines(["rev-list", "--ancestry-path", `${head}..${target}`]);
+	if (!firstParent || !containing) return undefined;
+	const has = new Set(containing);
+	const landing = firstParent.find((c) => has.has(c));
+	if (landing) {
+		const p1 = (await lines(["rev-parse", "--verify", "--quiet", `${landing}^1^{commit}`]))?.[0];
+		if (p1 && p1 !== head) {
+			const base = (await lines(["merge-base", head, p1]))?.[0];
+			if (base) return { base, landing };
+		}
+	}
+	if (!trackedBase || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(trackedBase)) return undefined;
+	return (await git(["merge-base", "--is-ancestor", trackedBase, head], cwd)).code === 0 ? { base: trackedBase } : undefined;
+}
+
 export interface MergeRequest {
 	tree: Pick<TrackedWorktree, "path" | "branch">;
 	target: string;

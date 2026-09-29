@@ -4,7 +4,11 @@
 // Three comparisons, all chosen here, never a ref from the client:
 //  - worktree: the worktree's committed HEAD against its merge-base with its base branch (the
 //    tracked worktree's `baseBranch` when that branch exists, else server/worktrees.ts pickBase:
-//    master, main, origin/HEAD's target);
+//    master, main, origin/HEAD's target). Once the branch is merged that merge-base is HEAD
+//    itself; then, for a branch with commits beyond its tracked base, HEAD against what its merge
+//    brought in (pi-config/extensions/worktrees/git.ts mergedReviewBase: the merge-base with the
+//    first parent of the base branch's first-parent commit that landed it, labelled "master before
+//    <sha>"; after a fast-forward the tracked base commit, when it is an ancestor);
 //  - commit: one commit (hex sha, resolved to a commit) against its first parent, a root commit
 //    against the empty tree;
 //  - dirty: the working tree (index included) against HEAD, untracked files as added.
@@ -17,7 +21,7 @@
 // has that commit, the session's own folder first.
 //
 // Read-only, with server/worktrees.ts's discipline: plumbing only (diff-tree, diff-index,
-// ls-files, cat-file, rev-parse, for-each-ref, merge-base), `--no-ext-diff --no-textconv`,
+// ls-files, cat-file, rev-parse, for-each-ref, merge-base, rev-list), `--no-ext-diff --no-textconv`,
 // `-c core.fsmonitor=false --no-optional-locks` (and GIT_OPTIONAL_LOCKS=0), literal pathspecs,
 // execFile (no shell). diff-index against the working tree does not refresh the index, so a file
 // whose stat changed but whose content did not is listed by --raw with no numstat line: it is
@@ -38,6 +42,7 @@ import { spawn } from "node:child_process";
 import { lstat, open, readFile, readlink, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 import type { DiffFilePatch, DiffFileStatus, DiffFileSummary, DiffScope, DiffSide, DiffSummary } from "../shared/protocol";
+import { mergedReviewBase } from "../pi-config/extensions/worktrees/git.ts";
 import { canonical, isWithin, normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE } from "../pi-config/extensions/worktrees/state.ts";
 import { resolveSessionPath } from "./paths";
 import { parseTargetCwd } from "./targets";
@@ -379,10 +384,26 @@ export class GitDiffs {
     const mb = await this.git(top, ["merge-base", base.oid, head]);
     const mbOid = mb.stdout.toString("utf8").trim();
     if (mb.code !== 0 || !isOid(mbOid)) throw new DiffError(mb.code === 1 ? "No common history with the base branch" : gitError("merge-base", mb), mb.code === 1 ? 404 : 500);
+    // Already merged: what the merge brought in, not the empty HEAD..HEAD.
+    const merged = await mergedReviewBase(
+      async (args, cwd) => {
+        const r = await this.git(cwd, args);
+        return { code: r.code ?? 1, stdout: r.stdout.toString("utf8"), stderr: r.stderr };
+      },
+      top,
+      head,
+      base.oid,
+      mbOid,
+      tracked?.base,
+    );
+    const baseSide =
+      merged && isOid(merged.base)
+        ? { label: merged.landing ? `${base.name} before ${merged.landing.slice(0, 7)}` : `${merged.base.slice(0, 7)} (created from)`, oid: merged.base }
+        : { label: `${base.name} (merge-base)`, oid: mbOid };
     return {
       scope,
       top,
-      base: { label: `${base.name} (merge-base)`, oid: mbOid, treeish: mbOid },
+      base: { ...baseSide, treeish: baseSide.oid },
       head: { label: branch ?? head.slice(0, 7), oid: head, treeish: head },
     };
   }

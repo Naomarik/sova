@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createWorktree, forkPoint, GitError, inspectWorktree, landedStats, mergeStats, mergeWorktree, probeMerge, runGit } from "./git.ts";
+import { createWorktree, forkPoint, GitError, inspectWorktree, landedStats, mergedReviewBase, mergeStats, mergeWorktree, probeMerge, runGit } from "./git.ts";
 
 const sh = (cwd: string, ...args: string[]) => execFileSync("git", args, { cwd, encoding: "utf8", env: { ...process.env, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_SYSTEM: "/dev/null" } }).trim();
 
@@ -211,6 +211,34 @@ test("landedStats: a single merge gives mergeStats' numbers at the target's new 
 		assert.equal(sha, after);
 		assert.deepEqual(stats, await mergeStats(runGit, r.main, before, after, x));
 		assert.deepEqual(stats, { commits: 1, added: 2, removed: 0, fastForward: false });
+	} finally {
+		r.done();
+	}
+});
+
+test("mergedReviewBase: the landing merge's first parent, a fast-forward's tracked base, else nothing", async () => {
+	const r = repo();
+	try {
+		const c0 = sh(r.main, "rev-parse", "master");
+		const x = branchWith(r.main, "x", "x.txt", "x\n");
+		const tipOf = () => sh(r.main, "rev-parse", "master");
+		// Not in the target yet: its merge-base is not the head.
+		assert.equal(await mergedReviewBase(runGit, r.main, x, tipOf(), c0, c0), undefined);
+		commit(r.main, "m.txt", "m\n", "direct");
+		sh(r.main, "merge", "-q", "--no-edit", "--no-ff", "x");
+		const landing = tipOf();
+		commit(r.main, "after.txt", "later\n", "later");
+		assert.deepEqual(await mergedReviewBase(runGit, r.main, x, tipOf(), x, c0), { base: c0, landing });
+		// No commits beyond the tracked base: nothing.
+		assert.equal(await mergedReviewBase(runGit, r.main, x, tipOf(), x, x), undefined);
+		// A fast-forward: the tracked base when it is a full sha and an ancestor.
+		const before = tipOf();
+		const z = branchWith(r.main, "z", "z.txt", "z\n");
+		sh(r.main, "merge", "-q", "--ff-only", "z");
+		assert.deepEqual(await mergedReviewBase(runGit, r.main, z, tipOf(), z, before), { base: before });
+		assert.equal(await mergedReviewBase(runGit, r.main, z, tipOf(), z, undefined), undefined);
+		assert.equal(await mergedReviewBase(runGit, r.main, z, tipOf(), z, before.slice(0, 7)), undefined);
+		assert.equal(await mergedReviewBase(runGit, r.main, z, tipOf(), z, landing.replace(/.$/, (c) => (c === "0" ? "1" : "0"))), undefined);
 	} finally {
 		r.done();
 	}

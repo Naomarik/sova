@@ -108,6 +108,78 @@ describe("the file", () => {
     assert.throws(() => statSync(store.publicLinksFile()), "a refused patch writes nothing");
   });
 
+  test("publicUrl: only the canonical bare https origin; nothing the URL parser would rewrite", () => {
+    for (const ok of ["https://share.example.com", "https://share.example.com/", "https://share.example.com:8443", "https://[::1]:8443", " https://share.example.com "])
+      assert.equal(store.parsePublicUrl(ok), ok.trim().replace(/\/$/, ""), ok);
+    const bad = [
+      "https://host\\evil",
+      "https://host\\@other",
+      "https://host\\",
+      "https://share.example.com\\",
+      "https://sha\nre.example.com",
+      "https://share.example.com\t/",
+      "https://share.example.com?",
+      "https://share.example.com#",
+      "https://share.example.com/.",
+      "https://share.example.com/%2e",
+      "https://share.example.com//",
+      "https:share.example.com",
+      "https:/share.example.com",
+      "https:///share.example.com",
+      "https://share.example.com:443",
+      "https://SHARE.example.com",
+      "HTTPS://share.example.com",
+      "https://user@share.example.com",
+      "https://:@share.example.com",
+      "https://share.example.com/x",
+      "http://share.example.com",
+    ];
+    for (const v of bad) assert.throws(() => store.parsePublicUrl(v), /publicUrl/, JSON.stringify(v));
+    assert.ok("error" in store.patchPublicLinks({ route: "self", gateway: { ...GATEWAY, publicUrl: "https://host\\" } }));
+  });
+
+  test("the SOVA_SHARE_PUBLIC_URL pin: http allowed, the rest of the rule applies; a refused pin warns once and counts as no pin", () => {
+    const pin = (v: string) => store.sharePin({ SOVA_SHARE_PUBLIC_URL: v });
+    assert.equal(pin("https://share.example.com/"), "https://share.example.com");
+    assert.equal(pin(" http://100.64.0.1:4802 "), "http://100.64.0.1:4802", "a tailnet http pin still works");
+    assert.equal(pin("http://[fd7a::1]:4802"), "http://[fd7a::1]:4802");
+    const warned: string[] = [];
+    const warn = console.warn;
+    console.warn = (...a: unknown[]) => void warned.push(a.join(" "));
+    try {
+      const bad = [
+        "https://host\\evil",
+        "https://host\\@other",
+        "https://host\\",
+        "https://sha re.example.com",
+        "https://sha\u0001re.example.com",
+        "https://user:pw@share.example.com",
+        "https://:@share.example.com",
+        "https://share.example.com?x=1",
+        "https://share.example.com?",
+        "https://share.example.com#top",
+        "https://share.example.com/x",
+        "https://share.example.com/.",
+        "https://share.example.com//",
+        "ftp://share.example.com",
+        "not a url",
+      ];
+      for (const v of bad) assert.equal(pin(v), null, JSON.stringify(v));
+      assert.equal(warned.length, bad.length, "one warning per refused pin");
+      assert.ok(warned.every((w) => w.includes("SOVA_SHARE_PUBLIC_URL ignored")));
+      for (const v of bad) pin(v);
+      assert.equal(warned.length, bad.length, "and only once each, however often it is read");
+      const env = { SOVA_SHARE_PUBLIC_URL: "https://share.example.com/x" };
+      assert.deepEqual(store.pinnedByEnv(env), [], "a refused pin is no pin");
+      assert.equal(listener.shareState(env).state, "off", "nothing else set: off");
+      store.patchPublicLinks({ route: "self", gateway: GATEWAY });
+      assert.deepEqual([listener.shareState(env).source, listener.shareState(env).publicUrl], ["setting", GATEWAY.publicUrl], "the setting decides");
+      assert.equal(listener.linkUrl("h", "A".repeat(43), env), `${GATEWAY.publicUrl}/h/${"A".repeat(43)}`);
+    } finally {
+      console.warn = warn;
+    }
+  });
+
   test("verifiedAt is the server's, and a new address drops it", () => {
     store.patchPublicLinks({ route: "self", gateway: GATEWAY });
     store.writeServerFields({ verifiedAt: 1000 });

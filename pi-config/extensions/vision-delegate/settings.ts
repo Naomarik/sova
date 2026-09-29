@@ -19,10 +19,10 @@ export interface VisionSettings {
 
 /**
  * zai first: it carries the lowest subscription usage here and glm-5.3-flash is
- * the only zai model with image input. Anthropic's haiku is the backstop.
+ * the only zai model with image input. Ollama Cloud's kimi-k3 (image input too) is the backstop.
  */
 export const DEFAULT_SETTINGS: VisionSettings = {
-	fallbacks: ["zai/glm-5.3-flash", "anthropic/claude-haiku-4-5"],
+	fallbacks: ["zai/glm-5.3-flash", "ollama-cloud/kimi-k3"],
 	exhaustedAbovePct: 90,
 	contextChars: 2000,
 };

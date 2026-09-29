@@ -39,6 +39,8 @@ import { orgHref, orgSessionHref, orgTabHref, personHref, projectHref, startForH
 import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
+import { meshPeers, orgHostOf } from "../lib/mesh";
+import { orgHostOffline } from "../lib/org-host-offline";
 import { LinksBanner } from "./LinksBanner";
 import { OwnerCard } from "./OwnerCard";
 import { PersonForm } from "./PersonForm";
@@ -349,6 +351,8 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
       busy={org.pending()}
       titleRef={props.titleRef}
     >
+      {/* Outside the org's Show: a down host can't answer the org's own fetch. */}
+      <Show when={orgHostOffline(orgHostOf(props.id), meshPeers())}>{(w) => <Banner tone="warn" title={w()} />}</Show>
       <Show when={org.data()}>
         {(o) => (
           <>

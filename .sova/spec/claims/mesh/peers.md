@@ -11,7 +11,9 @@ no page-origin check.
 The mesh is **on** exactly when this host's `peers.json` lists at least one peer. While it is off,
 Sova behaves as it did before the mesh existed, except for the Mesh card, the `#/mesh` page and the
 Mesh section of Settings: no new listening port, no Tailscale call, no timer, no outbound request, no
-write to `auth.json`, to Claude Code credentials or to any settings file. Every existing route and
+write to `auth.json`, to Claude Code credentials or to any settings file (apart from what the user
+asks for in Settings → Accounts, §app.claude-logins/add-remove, which works the same with the mesh
+off). Every existing route and
 WebSocket answers byte-for-byte as before, protocol additions are optional fields or new types
 only, and a `SessionSummary` carries no host or peer field.
 

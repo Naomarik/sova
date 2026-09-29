@@ -96,6 +96,10 @@ export interface LlmProviderDeps {
   denial?: (choice: WorkerChoice) => string | null;
   policy?: () => ModelPolicy;
   timeoutMs?: number;
+  /** Extra environment for a `claude` spawn (the host's Claude login, server/claude-accounts.ts). */
+  env?: () => Record<string, string>;
+  /** Sees each pi request's provider payload as it leaves (a testing aid; never changes it). */
+  onPayload?: (payload: unknown) => void;
 }
 
 const providerIdOf = (choice: WorkerChoice): DecisionProviderId => (choice.backend === "pi" ? "pi" : "claude-code");
@@ -129,12 +133,38 @@ export function createLlmProvider(choice: WorkerChoice, deps: LlmProviderDeps): 
   };
 }
 
-type Fail = (failure: DecisionFailure, message: string) => DecisionError;
+export type Fail = (failure: DecisionFailure, message: string) => DecisionError;
 type RunOut = { json: unknown; usage?: DecisionUsage };
 
 const count = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) && v > 0 ? v : 0);
 
 async function runPi(choice: WorkerChoice, prompt: string, req: DecisionRequest, deps: LlmProviderDeps, timeoutMs: number, fail: Fail): Promise<RunOut> {
+  const out = await piText(
+    choice,
+    { systemPrompt: SYSTEM_PROMPT, prompt, maxTokens: (reasoning) => 256 + 48 * Object.keys(req.questions).length + (reasoning ? 4096 : 0), signal: req.signal },
+    deps,
+    timeoutMs,
+    fail,
+  );
+  return { json: extractJsonObject(out.text), usage: out.usage };
+}
+
+/** One text completion: a system prompt, one user message, and nothing else of pi's (no tools, no session). */
+export interface TextCall {
+  systemPrompt: string;
+  prompt: string;
+  /** The reply's token cap; `reasoning` says whether the row's effort turned thinking on. */
+  maxTokens(reasoning: boolean): number;
+  signal?: AbortSignal;
+}
+
+/**
+ * pi's `completeSimple` with exactly `call`'s system prompt and user message, temperature 0 unless
+ * the choice's effort turns reasoning on for a model that reasons. The reply's text (non-empty) and
+ * its usage, or a DecisionError from `fail`. Shared by decisions and the session namer
+ * (server/session-autotitle.ts).
+ */
+export async function piText(choice: WorkerChoice, call: TextCall, deps: LlmProviderDeps, timeoutMs: number, fail: Fail): Promise<{ text: string; usage?: DecisionUsage }> {
   const slash = choice.model.indexOf("/");
   if (slash <= 0) throw fail("unavailable", `expected "provider/model", got ${choice.model}`);
   const providerId = choice.model.slice(0, slash);
@@ -153,19 +183,20 @@ async function runPi(choice: WorkerChoice, prompt: string, req: DecisionRequest,
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   timer.unref?.();
   const onAbort = () => controller.abort();
-  req.signal?.addEventListener("abort", onAbort, { once: true });
+  call.signal?.addEventListener("abort", onAbort, { once: true });
   const reasoning = choice.effort && choice.effort !== "off" && (model as { reasoning?: boolean }).reasoning ? choice.effort : undefined;
   try {
     const response = await runtime.completeSimple(
       model as never,
-      { systemPrompt: SYSTEM_PROMPT, messages: [{ role: "user", content: [{ type: "text", text: prompt }], timestamp: Date.now() }] },
+      { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
       {
         signal: controller.signal,
-        maxTokens: 256 + 48 * Object.keys(req.questions).length + (reasoning ? 4096 : 0),
+        maxTokens: call.maxTokens(!!reasoning),
         temperature: reasoning ? undefined : 0,
         cacheRetention: "none",
         sessionId: randomUUID(),
         ...(reasoning ? { reasoning } : {}),
+        ...(deps.onPayload ? { onPayload: (payload: unknown) => void deps.onPayload!(payload) } : {}),
       },
     );
     const text = response.content.filter((b) => b.type === "text" && typeof b.text === "string").map((b) => b.text).join("\n");
@@ -187,7 +218,7 @@ async function runPi(choice: WorkerChoice, prompt: string, req: DecisionRequest,
             ...(typeof response.responseModel === "string" && response.responseModel ? { model: response.responseModel } : {}),
           }
         : undefined;
-    return { json: extractJsonObject(text), usage };
+    return { text, usage };
   } catch (err) {
     if (err instanceof DecisionError) throw err;
     if (controller.signal.aborted) throw fail("timeout", `${choice.model} did not answer within ${timeoutMs} ms`);
@@ -195,7 +226,7 @@ async function runPi(choice: WorkerChoice, prompt: string, req: DecisionRequest,
     throw fail(textFailure(why), why);
   } finally {
     clearTimeout(timer);
-    req.signal?.removeEventListener("abort", onAbort);
+    call.signal?.removeEventListener("abort", onAbort);
   }
 }
 
@@ -285,6 +316,22 @@ export function claudeArgs(choice: WorkerChoice, schema: Record<string, unknown>
 }
 
 function runClaude(choice: WorkerChoice, prompt: string, req: DecisionRequest, deps: LlmProviderDeps, timeoutMs: number, fail: Fail): Promise<RunOut> {
+  return claudeRun(claudeArgs(choice, answerSchema(req.questions)), prompt, deps, timeoutMs, fail, req.signal).then((stdout) => {
+    try {
+      return parseClaudeEnvelope(stdout, fail);
+    } catch (err) {
+      throw err instanceof DecisionError ? err : fail("malformed-answer", failureMessage(err));
+    }
+  });
+}
+
+/**
+ * The Claude Code CLI with `argv`, `input` on stdin, in an empty temporary folder that is removed
+ * afterwards, without the variables that make it think it runs inside Claude Code: its stdout (the
+ * JSON envelope, which a failed run prints too), or a DecisionError. Shared by decisions and the
+ * session namer (server/session-autotitle.ts).
+ */
+export function claudeRun(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     let cwd: string;
     try {
@@ -293,24 +340,24 @@ function runClaude(choice: WorkerChoice, prompt: string, req: DecisionRequest, d
       reject(fail("unavailable", `cannot create a temp dir: ${failureMessage(err)}`));
       return;
     }
-    const env = { ...process.env } as Record<string, string | undefined>;
+    const env = { ...process.env, ...(deps.env?.() ?? {}) } as Record<string, string | undefined>;
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE_ENTRYPOINT;
     delete env.CLAUDE_AGENT_SDK_VERSION;
     let child: ChildProcessWithoutNullStreams;
     let settled = false;
-    const settle = (err: DecisionError | null, value?: RunOut) => {
+    const settle = (err: DecisionError | null, value?: string) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      req.signal?.removeEventListener("abort", onAbort);
+      signal?.removeEventListener("abort", onAbort);
       try {
         rmSync(cwd, { recursive: true, force: true });
       } catch {
         /* best effort */
       }
       if (err) reject(err);
-      else resolve(value as RunOut);
+      else resolve(value as string);
     };
     const onAbort = () => {
       child?.kill("SIGKILL");
@@ -322,12 +369,12 @@ function runClaude(choice: WorkerChoice, prompt: string, req: DecisionRequest, d
     }, timeoutMs);
     timer.unref?.();
     try {
-      child = (deps.spawn ?? nodeSpawn)(deps.claudeBin ?? "claude", claudeArgs(choice, answerSchema(req.questions)), { cwd, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
+      child = (deps.spawn ?? nodeSpawn)(deps.claudeBin ?? "claude", argv, { cwd, env: env as NodeJS.ProcessEnv, stdio: ["pipe", "pipe", "pipe"] });
     } catch (err) {
       settle(fail("unavailable", `cannot run claude: ${failureMessage(err)}`));
       return;
     }
-    req.signal?.addEventListener("abort", onAbort, { once: true });
+    signal?.addEventListener("abort", onAbort, { once: true });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => {
@@ -342,17 +389,13 @@ function runClaude(choice: WorkerChoice, prompt: string, req: DecisionRequest, d
     child.on("error", (err: NodeJS.ErrnoException) => settle(fail(err.code === "ENOENT" ? "unavailable" : "network", `claude: ${err.message}`)));
     child.on("close", (code) => {
       if (settled) return;
-      try {
-        // A failed run still prints its envelope on stdout (is_error); fall back to the exit code.
-        if (stdout.trim()) settle(null, parseClaudeEnvelope(stdout, fail));
-        else settle(fail(textFailure(stderr), `claude exited with code ${code}`));
-      } catch (err) {
-        settle(err instanceof DecisionError ? err : fail("malformed-answer", failureMessage(err)));
-      }
+      // A failed run still prints its envelope on stdout (is_error); fall back to the exit code.
+      if (stdout.trim()) settle(null, stdout);
+      else settle(fail(textFailure(stderr), `claude exited with code ${code}`));
     });
     child.stdin.on("error", () => {
       /* EPIPE when the child exits early; close reports it */
     });
-    child.stdin.end(prompt);
+    child.stdin.end(input);
   });
 }

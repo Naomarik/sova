@@ -3,6 +3,7 @@ import { batch, createEffect, createMemo, createSignal, For, Match, on, onCleanu
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
+  ChatClaudeLogin,
   ChatServerMessage,
   ContextInfo,
   OverseerQuickAction,
@@ -357,6 +358,8 @@ export function ChatView(props: {
   /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
   const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal(false);
+  /** This chat's Claude login (WS "claude_login"), null until told or when the host can't name one. */
+  const [claudeLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null>(null);
   /** Local "Ran /name args" rows; `tui` marks one that asked for a UI Sova can't show, `note` one
       that was refused (a /compact), whose row then says why instead of "Ran". */
   const [commandRows, setCommandRows] = createSignal<{ label: string; tui: boolean; note?: string }[]>([]);
@@ -563,6 +566,7 @@ export function ChatView(props: {
           });
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
+          setClaudeLogin(null); // a "claude_login" message follows when this host has several logins
           batch(() => {
             setThinking(msg.thinking);
             setPendingThinking(null);
@@ -751,6 +755,9 @@ export function ChatView(props: {
           break;
         case "sandbox":
           setSandboxState({ on: msg.on, enforcement: msg.enforcement, status: msg.status });
+          break;
+        case "claude_login":
+          setClaudeLogin(msg.login);
           break;
         case "event":
           queue.push(msg.event);
@@ -1671,7 +1678,8 @@ export function ChatView(props: {
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}
-        detail={live.activity ?? runDetail(live)}
+        activity={live.activity}
+        detail={runDetail(live)}
         workersWorking={workersWorking()}
         workersTotal={workersTotal()}
         workersSplit={workersSplit()}
@@ -1709,6 +1717,7 @@ export function ChatView(props: {
         onJumpAlign={jumpToAlign}
         autofocus={props.autofocus}
         model={modelControl}
+        claudeLogin={claudeLogin}
         thinking={thinkingControl}
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}

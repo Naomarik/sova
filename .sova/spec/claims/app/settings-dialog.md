@@ -7,7 +7,7 @@ each other (§design/ground-rules and §design/deviations record the deviation).
 the session stays behind, closed by the scrim, Esc, or its Close button (Cancel while anything
 is unsaved, §app.settings-dialog/save-bar).
 
-The rail is the structure: each settings screen is one tab — General, Models, Modes, Teams,
+The rail is the structure: each settings screen is one tab — General, Models, Accounts, Modes, Teams,
 Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
@@ -216,7 +216,7 @@ The file is `~/.pi/agent/topic-outline.json` (shown in the footnote), shared wit
 terminal. The TUI and every runtime read it once per session, at session start, so **a change
 applies to sessions started afterwards, here and in the terminal**, and the panel says so. A
 missing file, or one naming no usable summarizer, reads as the extension's built-in chain —
-Claude Code `haiku`, then pi `ollama-cloud/deepseek-v4.1-flash` — and, while nothing is staged,
+pi `ollama-cloud/deepseek-v4.1-flash`, then Claude Code `sonnet` — and, while nothing is staged,
 the section heading says those are the built-in models, beside its Reset to Defaults.
 
 - **Choices, not free text.** Model lists are Delegate's (`GET /api/settings/delegate/options`).
@@ -248,6 +248,43 @@ the section heading says those are the built-in models, beside its Reset to Defa
   so in a banner — the extras still run, and a save here keeps only the two shown. A file that
   exists but isn't a JSON object is never overwritten: an error banner quotes why, sessions run
   the built-in chain, and the selects and Save are disabled until it is fixed.
+
+**Session titles**, the tab's second section, below the summary line: whether and with which
+model Sova names sessions itself (§app.session-list/auto-titles). It is Sova's own file,
+`<state root>/session-titles-settings.json` (`~/.pi/agent/sova/`, shown in the footnote), never
+`topic-outline.json`: nothing outside Sova reads it, each host has its own, and a save applies to
+the sweep's next run.
+
+- **A switch, "Name sessions automatically", off by default.** Its hint says what it does: each
+  session is named once, from its summary line, after it has been quiet for the time below, and a
+  title you or the Overseer set is never changed. Off, no background call is made; the section
+  heads' Name sessions button works either way.
+- **Timing, two whole-minute fields**, Teams' number fields: "Check every (minutes)" (default 5,
+  1–1440; hint "How often the sweep looks for sessions to name.") and "After quiet for (minutes)"
+  (default 5, 0–1440; hint "A session is named once nothing was written in it for this long.").
+  A value outside its range, or not a whole number, replaces the hint with "A whole number of
+  minutes, {min} to {max}." and holds Save.
+- **Primary and an optional Fallback**, each the Delegate row — Backend, Model, Effort
+  (`WorkerSlotRow`), with that row's model lists and its "not offered" and "not verified" notes,
+  but without Delegate's "off for subagents" marks (a title model is not a worker) — and the same
+  Fallback switch as the summary line's; with it off, "No fallback: when the primary can't run,
+  sessions keep their titles until it can." The defaults are pi
+  `ollama-cloud/deepseek-v4.1-flash` at effort `off`, then Claude Code `sonnet` at effort `low`.
+  **Reset to Defaults** in the section heading fills them in, with the switch and timing, and
+  saves nothing; it is disabled while the form already shows them.
+- **When neither saved model can run**, a warning banner says so with each row's reason
+  ("not in pi's model registry", "no key for {provider}", "the Claude Code CLI isn't installed or
+  doesn't answer", "turned off in Settings → Models", from `GET`'s `unusable`): "Neither title
+  model can run right now." then "Primary: {reason}." and "Fallback: {reason}.". Saving is still
+  allowed.
+- **Picks wait for Save** (§app.settings-dialog/save-bar), as "Session titles" in the footer.
+  Save waits for a complete form (both minute fields valid, every row has a model and an effort,
+  the fallback is not the primary; the footer names the first of these that's missing, e.g.
+  "Session titles needs a whole number of minutes between checks."), and the server refuses the
+  same (400). A failed save keeps
+  the draft under "Couldn't save the session title settings.", with the reason.
+- **The file.** Read tolerantly (a missing or broken file, or a field in it that doesn't parse,
+  reads as that field's default), written whole and atomically on Save.
 
 ## §app.settings-dialog/themes — Themes
 

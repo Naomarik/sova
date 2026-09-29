@@ -1,9 +1,14 @@
 import type {
+  AutoTitleResponse,
+  SessionTitleSettings,
+  SessionTitleSettingsInfo,
   AgentsInsight,
   SessionsDirInfo,
   AttentionDigest,
   ChatModeResult,
+  ClaudeAccountsInfo,
   ClaudeCliStatus,
+  ClaudeLoginFlowState,
   ContextInfo,
   ExtensionInfo,
   ExplanationInfo,
@@ -67,6 +72,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
+import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -207,6 +213,21 @@ export const putSpecSettings = (settings: SpecSettings) =>
 /** Team defaults (Settings → Teams): the coordinator and monitor every new team gets. */
 export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/team");
 
+/** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
+export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
+/** Start `claude auth login` for a new login; answers once its sign-in URL is out. */
+export const startClaudeLogin = () => request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST" });
+/** The code the sign-in page showed; answers once Claude Code finished (or refused it). */
+export const sendClaudeLoginCode = (code: string) =>
+  request<ClaudeLoginFlowState>("/api/claude/accounts/flow/code", { method: "POST", body: JSON.stringify({ code }) });
+export const cancelClaudeLogin = () => request<ClaudeAccountsInfo>("/api/claude/accounts/flow", { method: "DELETE" });
+export const putClaudeLoginOrder = (order: string[]) =>
+  request<ClaudeAccountsInfo>("/api/claude/accounts/order", { method: "PUT", body: JSON.stringify({ order }) });
+export const patchClaudeLogin = (id: string, patch: { enabled?: boolean; label?: string | null }) =>
+  request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(patch) });
+export const clearClaudeLogin = (id: string) => request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}/clear`, { method: "POST" });
+export const removeClaudeLogin = (id: string) => request<ClaudeAccountsInfo>(`/api/claude/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+
 /** What each worker backend offers for the two roles: the same discovery as Delegate's. */
 export const getTeamOptions = () => request<DelegateOptions>("/api/settings/team/options");
 
@@ -220,6 +241,24 @@ export const getSummarizerSettings = () => request<SummarizerSettingsInfo>("/api
 /** Replace the chain; the file's other keys stay. Sessions started afterwards, here and in the TUI, use it. */
 export const putSummarizerSettings = (settings: SummarizerSettings) =>
   request<SummarizerSettingsInfo>("/api/settings/summarizer", { method: "PUT", body: JSON.stringify(settings) });
+
+/** Settings → Summaries → Session titles: the automatic namer's switch, timing and models (Sova's own file). */
+export const getSessionTitleSettings = () => request<SessionTitleSettingsInfo>("/api/settings/session-titles");
+
+/** Replace the whole file; the sweep picks it up at once. */
+export const putSessionTitleSettings = (settings: SessionTitleSettings) =>
+  request<SessionTitleSettingsInfo>("/api/settings/session-titles", { method: "PUT", body: JSON.stringify(settings) });
+
+/**
+ * Name these sessions with the host's title model (§app.session-list/auto-titles). All `paths`
+ * must live on one host: `request` sends them to that host, as with every path-named route.
+ */
+export const autoTitleSessions = (paths: string[], dryRun = false) =>
+  request<AutoTitleResponse>("/api/sessions/auto-title", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(dryRun ? { paths, dryRun } : { paths }),
+  });
 
 /** One session by id, listed or not (the list omits sessions with no user message). 404: no file has that id. */
 export const getSessionSummaryById = (id: string) => request<SessionSummary>(`/api/sessions/summary?id=${encodeURIComponent(id)}`);
@@ -856,6 +895,12 @@ export const claimMeshLogin = (key: string) =>
 /** Every host's own details (shared/mesh-details.ts), this host first; mesh on only. */
 export const fetchMeshDetails = () => request<MeshDetails>("/api/mesh/details", meshReadInit(true));
 
+/** The Resource Monitor's latest tick (§app/resource-monitor); polled only while its modal is open. */
+export const fetchMonitor = () => request<MonitorSnapshot>("/api/monitor", { cache: "no-store" });
+/** Monitor history after `since` (epoch ms): the 5s ring, or the 30s rollups on disk. */
+export const fetchMonitorHistory = (since: number, res: MonitorResolution) =>
+  request<MonitorHistory>(`/api/monitor/history?since=${Math.floor(since)}&res=${res}`, { cache: "no-store" });
+
 /** Rename a host: this one, or a peer (which then tells its own peers). */
 export const putHostLabel = (id: string, label: string) =>
   request<HostRenameResult>("/api/mesh/label", {
@@ -987,13 +1032,13 @@ export const setBatonAbilities = (sid: string, abilities: Partial<GatheringAbili
 export const getBatonSettings = () => request<BatonSettings>("/api/baton/settings");
 export const putBatonSettings = (settings: BatonSettings) => request<BatonSettings>("/api/baton/settings", jsonInit("PUT", settings));
 export const offerBaton = (sid: string, to: string[], question?: string, briefing?: string) =>
-  request<{ links: OfferLink[]; info?: BatonInfo }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
+  request<{ links: OfferLink[]; info?: BatonInfo; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));
 /** A fresh link for one invitee of the open offer (their older one stops working). */
 export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
-  request<{ info?: BatonInfo; link?: string; at?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
+  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
 export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
 export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
 export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);

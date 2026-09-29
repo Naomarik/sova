@@ -33,6 +33,8 @@ export function SlashMenu(props: {
   ids: string[];
   active: number;
   query: string;
+  /** The composer is in touch mode: Enter adds a line there, so the empty state doesn't promise it sends. */
+  touch?: boolean;
   onPick(index: number): void;
   onHover(index: number): void;
 }) {
@@ -54,7 +56,7 @@ export function SlashMenu(props: {
         when={count() > 0}
         fallback={
           <p class="command-menu-empty">
-            0 commands match “/{props.query}”. Enter sends it as a message.
+            0 commands match “/{props.query}”.{props.touch ? "" : " Enter sends it as a message."}
           </p>
         }
       >

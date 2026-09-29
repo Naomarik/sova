@@ -266,7 +266,7 @@ once), **lease** (an offer's lock on its first taker).
   text stays escaped. No other scheme is linked, nor an address without one (`www.x.com`, an
   e-mail address). The model's replies render as markdown, whose links open the same way.
 - **Drawings.** A `vis` fence in a reply whose kind is `chart`, `flow`, `matrix`, `timeline`,
-  `tree`, `steps`, `wireframe` or `layers` is drawn as in the chat (§chat.markdown/visuals): the same figure,
+  `tree`, `steps` or `layers` is drawn as in the chat (§chat.markdown/visuals): the same figure,
   title, notes and caption, with no Source or Copy. Any other kind (`html`, `svg`, `sequence`,
   `state`, `code`), and a block that doesn't parse, shows one muted line, "A drawing couldn't be
   shown here.", and never its source; the operator's transcript keeps the source and the error.
@@ -475,13 +475,11 @@ once), **lease** (an offer's lock on its first taker).
   refused once it is done or closed). A change applies from the session's next reply: the prompt
   and the tools are set when a run starts. The share page never shows them.
 - **The drawing guide** is Sova's short opening plus `vis-mode.md`'s emphasis section and its
-  `flow`, `chart`, `matrix`, `timeline`, `tree`, `steps`, `wireframe` and `layers` sections (owner notes and stub
+  `flow`, `chart`, `matrix`, `timeline`, `tree`, `steps` and `layers` sections (owner notes and stub
   kinds stripped as the vis mode strips them; its examples parse, tested). Its rules: at most one
   drawing in a reply, and only when a picture helps the person; only about the person's own
   subject (their figures, a screen or layout they describe, their own work's steps); never about
   people, roles, the roster, who decides what, the goal, or how this conversation is run. A
-  screen or layout the person describes is drawn as a `wireframe`, in the person's own words and
-  figures or a placeholder ("AED —"), never invented sample names or numbers. A
   drawing falls under every rule a reply does (§app.baton/goal-and-loadout).
 
 ## §app.baton/read-link — Opening a link someone wrote

@@ -28,9 +28,13 @@ import { join } from "node:path";
 import { claudeProjectsRoot, claudeSessionId, nextFreeLaunch } from "./session-records.ts";
 import { BRIDGE_REGISTRY, CLAUDE_FORK_ENV, decodeForkPoint, type ClaudeForkPoint } from "./fork-point.ts";
 import {
-	buildClaudeArgv, ClaudeTransport,
+	buildClaudeArgv, ClaudeFailureDetector, ClaudeTransport,
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
 } from "../transport.ts";
+import {
+	loginEntryFor, switchText,
+	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginEntry, type ClaudeLoginSwitch,
+} from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
 import {
@@ -128,10 +132,20 @@ export const MIN_FOLD_CHARS = 64 * 1024;
 /**
  * The largest fold budget. The folded history is ONE stream-json stdin line,
  * and the transport refuses a line over `maxLineBytes` (4 MiB); JSON escaping
- * and multi-byte text make bytes outrun characters, and images ride the same
- * line. Raise it only once a live probe shows the CLI takes a bigger line.
+ * and multi-byte text make bytes outrun characters. Images ride the same line
+ * but are not counted here: they get their own byte budget, whatever of the
+ * line the serialized text leaves (see foldHistory). Raise it only once a live
+ * probe shows the CLI takes a bigger line.
  */
 export const MAX_FOLD_CHARS = 2 * 1024 * 1024;
+/**
+ * Bytes of the stdin line a fold leaves unspent. The transport refuses a line
+ * when it plus whatever is still queued on the pipe passes `maxLineBytes`, and
+ * the image budget is set before the omission placeholders are written into
+ * the text, so the fold aims this far under the limit. 64 KiB is under 2% of
+ * the 4 MiB line, and holds hundreds of placeholders or a queued control request.
+ */
+export const FOLD_LINE_HEADROOM = 64 * 1024;
 
 /** What sizes a fold: the model's window and output cap, and what else shares the window. */
 export interface FoldBudgetInput {
@@ -206,6 +220,26 @@ export interface SessionBridgeOptions {
 	signalGroupImpl?: (pid: number, signal: NodeJS.Signals) => void;
 	/** Diagnostics sink. Defaults to the opt-in log behind PI_CLAUDE_CODE_DEBUG=1. */
 	onDebug?: (entry: Record<string, unknown>) => void;
+	/**
+	 * The host's Claude logins (accounts.ts ClaudeLogins): which one each child runs on, and where a
+	 * turn goes on a usage limit or a failed sign-in. Absent: every child inherits the environment,
+	 * and a failure ends the turn (as before logins existed).
+	 */
+	logins?: ClaudeLoginSource;
+}
+
+/** What the bridge needs of the host's logins; accounts.ts ClaudeLogins is the real one. */
+export interface ClaudeLoginSource {
+	select(current?: string): ClaudeLoginChoice;
+	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): ClaudeLoginChoice | undefined;
+	recordFailure(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): void;
+	forcedFailure?(id: string): ClaudeAccountFailure | undefined;
+}
+
+/** A pi session's login bookkeeping (setSessionLogin). */
+interface SessionLoginHooks {
+	recorded?: string;
+	onChange?: (entry: ClaudeLoginEntry) => void;
 }
 
 /** Opt-in (PI_CLAUDE_CODE_DEBUG=1) bridge diagnostics; never includes message text. */
@@ -350,6 +384,12 @@ export interface FoldedHistory {
 	images: ImageContent[];
 	/** Messages left out to fit the budget; 0 when the history fits. */
 	omitted: number;
+	/** Images of kept messages left out to fit the stdin line, each replaced by a placeholder. */
+	imagesDropped: number;
+	/** Bytes of the stdin line this fold makes; undefined when no line limit applied. */
+	bytes?: number;
+	/** Why this fold can never be sent: the current message's own images are over the line. */
+	overflow?: string;
 }
 
 /** A tool as the CLI names it: the model only knows `mcp__sova__<name>`. */
@@ -357,11 +397,70 @@ function cliToolName(name: string): string {
 	return name.startsWith(MCP_TOOL_PREFIX) ? name : `${MCP_TOOL_PREFIX}${name}`;
 }
 
+/** An image in the Anthropic source shape: stream-json user messages are Anthropic messages, not MCP's flat one. */
+function imageBlock(image: ImageContent): Record<string, unknown> {
+	return { type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } };
+}
+
+/** One stream-json user message: its text, then its images. */
+function userFrame(text: string, images: readonly ImageContent[]): Record<string, unknown> {
+	const content: Record<string, unknown>[] = [];
+	if (text) content.push({ type: "text", text });
+	for (const image of images) content.push(imageBlock(image));
+	if (!content.length) content.push({ type: "text", text: "" });
+	return { type: "user", message: { role: "user", content } };
+}
+
+/** Bytes of the stdin line the transport writes for a frame, measured as it measures them (newline included). */
+function frameBytes(frame: unknown): number {
+	return Buffer.byteLength(JSON.stringify(frame)) + 1;
+}
+
+/** What one image adds to a frame: its block and the comma before it. */
+function imageBytes(image: ImageContent): number {
+	return Buffer.byteLength(JSON.stringify(imageBlock(image))) + 1;
+}
+
+/** An image of a folded message, and what stands in its place if it has to go. */
+interface FoldImage {
+	image: ImageContent;
+	placeholder: string;
+}
+
 /** One folded pi message: its rendered text, and the images it carried. */
 interface FoldSegment {
+	/** The message as it reads with every image kept: what fitFold sizes. */
 	text: string;
-	images: ImageContent[];
+	/** The message without its image note. */
+	head: string;
+	images: FoldImage[];
+	/** Where the image note says the images came from. */
+	origin: string;
 	user: boolean;
+}
+
+/** Stands in for a dropped image whose origin is not known. */
+const FOLD_IMAGE_OMITTED = "[image omitted to fit the resend]";
+
+function imageNote(count: number, origin: string): string {
+	return `[${count} image(s) ${origin}, included below]`;
+}
+
+function foldSegment(head: string, images: FoldImage[], origin: string, user: boolean): FoldSegment {
+	return { text: images.length ? `${head}\n${imageNote(images.length, origin)}` : head, head, images, origin, user };
+}
+
+/**
+ * A segment's text once `dropped` images are left out: each dropped one is a
+ * placeholder line where the note would have counted it, and the note counts
+ * only the images still included below.
+ */
+function segmentText(segment: FoldSegment, dropped: ReadonlySet<FoldImage>): string {
+	if (!segment.images.some((image) => dropped.has(image))) return segment.text;
+	const lines = [segment.head, ...segment.images.filter((image) => dropped.has(image)).map((image) => image.placeholder)];
+	const kept = segment.images.length - lines.length + 1;
+	if (kept) lines.push(imageNote(kept, segment.origin));
+	return lines.join("\n");
 }
 
 /** Added to the header of a fold that had to leave messages out. */
@@ -373,19 +472,17 @@ const FOLD_SEP = "\n\n";
 const FOLD_MARKER_RESERVE = 256;
 
 /**
- * Keep what fits in `budget` characters, dropping the OLDEST messages first.
+ * Which messages fit in `budget` characters, dropping the OLDEST first; the
+ * indices come back in order.
  *
  * The last user message is always kept whole: it is what the model has to
  * answer. The first user message (usually the task) is kept next if it takes
  * no more than a quarter of the budget. Then the newest messages, walking back
- * from the end until the next one would not fit. The body opens with a marker
- * saying how much is missing, and a gap in the middle gets its own marker.
+ * from the end until the next one would not fit.
  */
-function fitFold(segments: readonly FoldSegment[], budget: number): { body: string; images: ImageContent[]; omitted: number } {
+function fitFold(segments: readonly FoldSegment[], budget: number): { keep: number[]; omitted: number } {
 	const total = segments.reduce((sum, segment) => sum + segment.text.length, 0) + FOLD_SEP.length * Math.max(0, segments.length - 1);
-	if (total <= budget) {
-		return { body: segments.map((segment) => segment.text).join(FOLD_SEP), images: segments.flatMap((segment) => segment.images), omitted: 0 };
-	}
+	if (total <= budget) return { keep: segments.map((_, i) => i), omitted: 0 };
 	const keep = new Set<number>();
 	let used = FOLD_MARKER_RESERVE;
 	const take = (i: number) => { keep.add(i); used += segments[i]!.text.length + FOLD_SEP.length; };
@@ -399,21 +496,82 @@ function fitFold(segments: readonly FoldSegment[], budget: number): { body: stri
 		if (!fits(i)) break;
 		take(i);
 	}
+	return { keep: [...keep].sort((x, y) => x - y), omitted: segments.length - keep.size };
+}
 
-	const omitted = segments.length - keep.size;
+/**
+ * The body of a fold: the kept messages, and when some were left out, a
+ * marker at the head saying how many and one for each gap in the middle.
+ */
+function foldBody(segments: readonly FoldSegment[], keep: readonly number[], omitted: number, dropped: ReadonlySet<FoldImage>): string {
+	if (!omitted) return keep.map((i) => segmentText(segments[i]!, dropped)).join(FOLD_SEP);
 	const parts = [`[${omitted} earlier message(s) omitted to fit the context window]`];
-	const images: ImageContent[] = [];
-	let gap = 0;
-	let seenKept = false;
-	for (let i = 0; i < segments.length; i++) {
-		if (!keep.has(i)) { gap++; continue; }
+	let previous = -1;
+	for (const i of keep) {
 		// A leading gap is what the opening marker already says.
-		if (gap && seenKept) parts.push(`[… ${gap} message(s) omitted here …]`);
-		gap = 0; seenKept = true;
-		parts.push(segments[i]!.text);
-		images.push(...segments[i]!.images);
+		if (previous >= 0 && i - previous > 1) parts.push(`[… ${i - previous - 1} message(s) omitted here …]`);
+		previous = i;
+		parts.push(segmentText(segments[i]!, dropped));
 	}
-	return { body: parts.join(FOLD_SEP), images, omitted };
+	return parts.join(FOLD_SEP);
+}
+
+/**
+ * Keep what images fit in the one stdin line beside the text, NEWEST first.
+ *
+ * `images` run oldest to newest; `current` are the ones the model is being
+ * asked about now, and are never dropped. The text is sized first, since it
+ * is the history itself; the images get what its serialized bytes leave of
+ * `lineBytes` less FOLD_LINE_HEADROOM, walking back from the newest until one
+ * does not fit, and every older one goes with it. Then the real frame is
+ * measured: placeholders lengthen the text, so while it is still over, the
+ * oldest image still kept goes too. The images are the line's bulk (21
+ * screenshots in one real session were 4.18 MB of base64 against 112K
+ * characters of text), and without this every restart of such a session
+ * failed on a line the transport refuses.
+ */
+function fitImages(
+	images: readonly FoldImage[], current: ReadonlySet<FoldImage>, render: (dropped: ReadonlySet<FoldImage>) => string, lineBytes: number,
+): { text: string; images: ImageContent[]; dropped: number; bytes?: number; overflow?: string } {
+	const dropped = new Set<FoldImage>();
+	const kept = () => images.filter((image) => !dropped.has(image)).map((image) => image.image);
+	if (!Number.isFinite(lineBytes)) return { text: render(dropped), images: kept(), dropped: 0 };
+	const target = lineBytes - FOLD_LINE_HEADROOM;
+	let room = target - frameBytes(userFrame(render(dropped), []));
+	for (const image of current) room -= imageBytes(image.image);
+	let full = false;
+	for (let i = images.length - 1; i >= 0; i--) {
+		const image = images[i]!;
+		if (current.has(image)) continue;
+		const cost = imageBytes(image.image);
+		if (!full && cost <= room) room -= cost;
+		else { full = true; dropped.add(image); }
+	}
+	let text = render(dropped);
+	let bytes = frameBytes(userFrame(text, kept()));
+	while (bytes > target) {
+		const oldest = images.find((image) => !current.has(image) && !dropped.has(image));
+		if (!oldest) break;
+		dropped.add(oldest);
+		text = render(dropped);
+		bytes = frameBytes(userFrame(text, kept()));
+	}
+	const result = { text, images: kept(), dropped: dropped.size, bytes };
+	// Only the current message's images are left beside the text. If the text
+	// alone would fit, they are what the line cannot take: say so, rather than
+	// the transport's generic refusal. Text over the line alone is not an image
+	// problem, and the transport says that as before.
+	if (bytes > lineBytes && result.images.length) {
+		const textBytes = frameBytes(userFrame(text, []));
+		if (textBytes <= lineBytes) {
+			return {
+				...result,
+				overflow: `Claude Code cannot take this request: the current message's ${result.images.length} image(s) are ${bytes - textBytes} bytes, `
+					+ `too many for the ${lineBytes}-byte limit for one stdin line beside ${textBytes} bytes of text; send fewer or smaller images`,
+			};
+		}
+	}
+	return result;
 }
 
 /**
@@ -445,67 +603,84 @@ const FOLD_HEADERS: Record<Exclude<FoldMode, "first">, string> = {
  * their signatures are gone, long tool results keep only their head and tail,
  * and the CLI's own prompt cache and tool bookkeeping start over. Images cannot
  * be folded into text, so they ride the same message as real image blocks;
- * their place in the narrative is marked inline.
+ * their place in the narrative is marked inline. They share the one stdin line
+ * of `lineBytes` with the text, so older ones may be left out, each marked
+ * where it was (see fitImages); the current message's never are.
  */
 export function foldHistory(
 	messages: readonly Message[], limits: SessionBridgeLimits, mode: FoldMode = "restarted", budget = limits.maxFoldedChars,
+	lineBytes = limits.maxLineBytes,
 ): FoldedHistory {
 	const foldable = messages.filter((m) => m.role !== "system");
 	if (mode === "first") {
 		const only = foldable.length === 1 ? foldable[0]! : undefined;
 		if (only?.role !== "user") mode = "joined";
 		else {
-			const found = imagesOf(only.content);
-			const suffix = found.length ? `\n[${found.length} image(s) attached to this message, included below]` : "";
-			return { text: `${textOf(only.content)}${suffix}`, images: found, omitted: 0 };
+			// The message being sent now: all its images are current.
+			const images = imagesOf(only.content).map((image) => ({ image, placeholder: FOLD_IMAGE_OMITTED }));
+			const segment = foldSegment(textOf(only.content), images, "attached to this message", true);
+			const fitted = fitImages(images, new Set(images), () => segment.text, lineBytes);
+			return { text: fitted.text, images: fitted.images, omitted: 0, imagesDropped: fitted.dropped, bytes: fitted.bytes, overflow: fitted.overflow };
 		}
 	}
 	const segments: FoldSegment[] = [];
 	const clip = (text: string, cap: number) =>
 		text.length <= cap ? text : `${text.slice(0, cap)}… [truncated]`;
+	/** Each tool call's arguments, so a dropped image can name the file it was read from. */
+	const callArgs = new Map<string, Record<string, unknown>>();
 
 	for (const message of messages) {
 		if (message.role === "system") continue; // Re-sent as the system prompt, not as history.
 		if (message.role === "user") {
-			const found = imagesOf(message.content);
-			const suffix = found.length ? `\n[${found.length} image(s) attached to this message, included below]` : "";
-			segments.push({ text: `## User\n${textOf(message.content)}${suffix}`, images: found, user: true });
+			const images = imagesOf(message.content).map((image) => ({ image, placeholder: FOLD_IMAGE_OMITTED }));
+			segments.push(foldSegment(`## User\n${textOf(message.content)}`, images, "attached to this message", true));
 		} else if (message.role === "assistant") {
 			const parts: string[] = [];
 			const text = textOf(message.content);
 			if (text) parts.push(`## Assistant\n${text}`);
 			for (const block of message.content) {
 				if (block.type === "toolCall") {
+					callArgs.set(block.id, block.arguments ?? {});
 					// The CLI's name, not pi's: a model that copies a bare name
 					// from the replay gets "No such tool available".
 					parts.push(`## Assistant tool call \`${cliToolName(block.name)}\` (id ${block.id})\n\`\`\`json\n${clip(JSON.stringify(block.arguments), limits.maxFoldedResultChars)}\n\`\`\``);
 				}
 			}
-			if (parts.length) segments.push({ text: parts.join(FOLD_SEP), images: [], user: false });
+			if (parts.length) segments.push(foldSegment(parts.join(FOLD_SEP), [], "", false));
 		} else if (message.role === "toolResult") {
-			const found = imagesOf(message.content);
-			const suffix = found.length ? `\n[${found.length} image(s) returned by this tool, included below]` : "";
+			const path = callArgs.get(message.toolCallId)?.path;
+			const placeholder = typeof path === "string" && path
+				? `[image omitted to fit the resend: ${message.toolName} of ${path}]`
+				: FOLD_IMAGE_OMITTED;
+			const images = imagesOf(message.content).map((image) => ({ image, placeholder }));
 			const label = message.isError ? "failed" : "returned";
 			const cap = REPORT_TOOL_RE.test(message.toolName) ? limits.maxFoldedReportChars : limits.maxFoldedResultChars;
-			segments.push({
-				text: `## Tool \`${cliToolName(message.toolName)}\` (id ${message.toolCallId}) ${label}\n${clipResult(textOf(message.content), cap)}${suffix}`,
-				images: found, user: false,
-			});
+			segments.push(foldSegment(
+				`## Tool \`${cliToolName(message.toolName)}\` (id ${message.toolCallId}) ${label}\n${clipResult(textOf(message.content), cap)}`,
+				images, "returned by this tool", false,
+			));
 		}
 	}
 
-	const { body, images, omitted } = fitFold(segments, budget);
-	const text = [
+	const { keep, omitted } = fitFold(segments, budget);
+	// Current: the last user message, which the model has to answer, and the
+	// newest message, which this turn delivers (a tool result, after a restart
+	// mid-loop). Their images are never dropped.
+	const lastUser = segments.findLastIndex((segment) => segment.user);
+	const current = new Set([lastUser, segments.length - 1].flatMap((i) => keep.includes(i) ? segments[i]!.images : []));
+	const header = FOLD_HEADERS[mode];
+	const render = (dropped: ReadonlySet<FoldImage>) => [
 		"<conversation-history>",
 		// The framing says so too, not only the marker in the body.
-		omitted ? `${FOLD_HEADERS[mode]} ${FOLD_CLIPPED}` : FOLD_HEADERS[mode],
+		omitted ? `${header} ${FOLD_CLIPPED}` : header,
 		"",
-		body,
+		foldBody(segments, keep, omitted, dropped),
 		"</conversation-history>",
 		"",
 		"Continue from here by answering the latest user message above.",
 	].join("\n");
-	return { text, images, omitted };
+	const fitted = fitImages(keep.flatMap((i) => segments[i]!.images), current, render, lineBytes);
+	return { text: fitted.text, images: fitted.images, omitted, imagesDropped: fitted.dropped, bytes: fitted.bytes, overflow: fitted.overflow };
 }
 
 /**
@@ -513,7 +688,7 @@ export function foldHistory(
  * Images are not counted: they ride beside the text, not in it.
  */
 export function foldSizeEstimate(messages: readonly Message[], limits: SessionBridgeLimits = LIMITS): number {
-	return foldHistory(messages, limits, "restarted", Number.POSITIVE_INFINITY).text.length;
+	return foldHistory(messages, limits, "restarted", Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY).text.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -590,6 +765,14 @@ interface TurnState {
 	dispatchTimer?: ReturnType<typeof setTimeout>;
 	signal?: AbortSignal;
 	onAbort?: () => void;
+	/** What pi asked for: a login switch sends it again. */
+	request: ClaudeTurnRequest;
+	/** The fold framing this turn's restart used (a switch before any answer is still first contact). */
+	first: boolean;
+	/** A frame reached pi: from here on a failure ends the turn rather than switching logins. */
+	surfaced: boolean;
+	/** Logins this turn already switched away from. */
+	failovers: number;
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
@@ -658,12 +841,20 @@ class CliSession {
 	 * the first child, and dropped either way.
 	 */
 	private forkSeed?: ClaudeForkPoint;
+	/** The login the live (or next) child runs on; chosen at each spawn. */
+	private login?: ClaudeLoginChoice;
+	/** The login the session last recorded (undefined: none yet); read from the hooks once. */
+	private recordedLogin?: string;
+	private recordedRead = false;
+	private readonly detector = new ClaudeFailureDetector();
+	private readonly loginHooks: () => SessionLoginHooks | undefined;
 
-	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint) {
+	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint, loginHooks: () => SessionLoginHooks | undefined = () => undefined) {
 		this.piSessionId = piSessionId;
 		this.options = options;
 		this.cwd = cwd;
 		this.forkSeed = forkSeed;
+		this.loginHooks = loginHooks;
 		this.timings = { ...TIMINGS, ...options.timings };
 		this.limits = { ...LIMITS, ...options.limits };
 	}
@@ -712,8 +903,12 @@ class CliSession {
 		}
 
 		const queue = new FrameQueue();
-		const turn: TurnState = { queue, messageComplete: false, wantsTools: false, streaming: false, signal };
+		const turn: TurnState = {
+			queue, messageComplete: false, wantsTools: false, streaming: false, signal,
+			request, first: !!(plan.restart && plan.first), surfaced: false, failovers: 0,
+		};
 		this.turn = turn;
+		this.detector.reset();
 
 		if (signal) {
 			turn.onAbort = () => { void this.abortTurn(); };
@@ -818,7 +1013,10 @@ class CliSession {
 			// Tuning data, not an anomaly, so never the onDebug sink: compare
 			// `chars` with the next message_start's input tokens to check the
 			// budget's chars/4 guess against the real fold size.
-			debugLog({ event: "fold", session: this.piSessionId, chars: folded.text.length, budget, omitted: folded.omitted, images: folded.images.length });
+			debugLog({
+				event: "fold", session: this.piSessionId, chars: folded.text.length, budget, omitted: folded.omitted,
+				imagesKept: folded.images.length, imagesDropped: folded.imagesDropped, bytes: folded.bytes,
+			});
 			// A fresh child's whole context is this one message. Over the
 			// model's window it can only fail, after a full upload; say so now.
 			// A first-contact message (pi's summary request) is never shortened:
@@ -826,6 +1024,12 @@ class CliSession {
 			const overflow = windowOverflow(folded.text.length, request);
 			if (overflow) {
 				this.failTurn(overflow);
+				return;
+			}
+			// Everything older that could go already has; what is left is the
+			// current message's images, which the line cannot take.
+			if (folded.overflow) {
+				this.failTurn(folded.overflow);
 				return;
 			}
 			this.sendUserMessage(folded.text, folded.images);
@@ -854,17 +1058,9 @@ class CliSession {
 	 * the child never heard it, so waiting for its answer would hang forever.
 	 */
 	private sendUserMessage(text: string, images: readonly ImageContent[]): void {
-		const content: Record<string, unknown>[] = [];
-		if (text) content.push({ type: "text", text });
-		for (const image of images) {
-			// stream-json user messages are Anthropic messages, so images use the
-			// Anthropic source shape rather than MCP's flat one.
-			content.push({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } });
-		}
-		if (!content.length) content.push({ type: "text", text: "" });
-		const frame = { type: "user", message: { role: "user", content } };
+		const frame = userFrame(text, images);
 		if (this.transport?.send(frame)) return;
-		const bytes = Buffer.byteLength(JSON.stringify(frame)) + 1;
+		const bytes = frameBytes(frame);
 		this.failTurn(bytes > this.limits.maxLineBytes
 			? `Claude Code cannot take this request: the message is ${bytes} bytes, over the ${this.limits.maxLineBytes}-byte limit for one stdin line`
 			: "Claude Code cannot take this request: the CLI's stdin refused the message");
@@ -893,6 +1089,7 @@ class CliSession {
 
 	private async spawnFresh(request: ClaudeTurnRequest, reason: string, resume?: string): Promise<void> {
 		if (this.started) await this.teardown(`restarting: ${reason}`);
+		this.chooseLogin();
 		this.failure = undefined;
 		this.recorded = [];
 		this.meta = undefined;
@@ -974,6 +1171,7 @@ class CliSession {
 			limits: { maxLineBytes: this.limits.maxLineBytes } satisfies ClaudeTransportLimits,
 			spawnImpl: this.options.spawnImpl,
 			signalGroupImpl: this.options.signalGroupImpl,
+			...(this.login && this.options.logins?.forcedFailure?.(this.login.id) ? { simulateFailure: this.options.logins.forcedFailure(this.login.id) } : {}),
 			hooks: {
 				onEvent: (event) => { if (current()) this.onEvent(event as unknown as Record<string, unknown>); },
 				onStderr: (text) => { if (stderr.length < 4096) stderr += text; },
@@ -993,6 +1191,8 @@ class CliSession {
 			cwd: this.cwd,
 			env: {
 				...this.options.env,
+				// The login this child runs on: CLAUDE_CONFIG_DIR, or nothing for `default`.
+				...this.login?.env,
 				MCP_TOOL_TIMEOUT: String(this.options.mcpToolTimeoutMs ?? DEFAULT_MCP_TOOL_TIMEOUT_MS),
 				// pi owns compaction. A child compacting on its own would answer
 				// from a summary pi never saw, and the next restart would re-fold
@@ -1095,6 +1295,7 @@ class CliSession {
 			this.markDesynced("Claude compacted its own context");
 			return;
 		}
+		if (this.options.logins && this.accountEvent(event)) return;
 
 		let frame: ClaudeFrame | undefined;
 		try {
@@ -1113,12 +1314,103 @@ class CliSession {
 			return;
 		}
 		this.track(frame);
+		if (frame.type !== "init") turn.surfaced = true;
 		turn.queue.push(frame);
 		if (frame.type === "result") {
 			turn.queue.end();
 			return;
 		}
 		this.checkBoundary();
+	}
+
+	// -- logins -------------------------------------------------------------
+
+	/**
+	 * The login for the next child: the current one while usable, else the session's recorded one,
+	 * else this host's first usable (ClaudeLoginSource.select). A change from what the session
+	 * recorded is reported, so the session records it.
+	 */
+	private chooseLogin(): void {
+		const logins = this.options.logins;
+		if (!logins) return;
+		// Only a real entry pins the session; one never recorded takes the order's first usable
+		// login, and records it: the session's login is known from its first turn, `default` too.
+		const recorded = this.loginHooks()?.recorded;
+		if (!this.recordedRead) { this.recordedLogin = recorded; this.recordedRead = true; }
+		try { this.login = logins.select(this.login?.id ?? recorded); }
+		catch (error) { debugLog({ event: "login-select-failed", session: this.piSessionId, error: String(error) }); return; }
+		this.announce(this.login);
+	}
+
+	/** Report the session's login to the extension (a `claude-login` entry), when it changed. */
+	private announce(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch): void {
+		if (!change && to.id === this.recordedLogin) return;
+		this.recordedLogin = to.id;
+		try { this.loginHooks()?.onChange?.(loginEntryFor(to, change)); } catch { /* the record is plumbing */ }
+	}
+
+	/**
+	 * Watch the turn's events for an account failure (transport.ts ClaudeFailureDetector). Returns
+	 * true when the event is consumed: the synthetic message that carries the failure is not an
+	 * answer, and the failed result is replaced by a switch of login when one is possible.
+	 */
+	private accountEvent(event: Record<string, unknown>): boolean {
+		const turn = this.turn;
+		if (!turn || turn.queue.isEnded()) return false;
+		const early = this.detector.observe(event);
+		if (early) { this.onAccountFailure(turn, early); return true; }
+		if (this.detector.isFailureMessage(event)) return true;
+		if (event.type !== "result") return false;
+		const failure = this.detector.settle(event);
+		if (!failure) return false;
+		this.abortPending = false;
+		this.onAccountFailure(turn, failure);
+		return true;
+	}
+
+	private onAccountFailure(turn: TurnState, failure: ClaudeAccountFailure): void {
+		const logins = this.options.logins!;
+		const from = this.login ?? logins.select();
+		(this.options.onDebug ?? debugLog)({ event: "account-failure", session: this.piSessionId, login: from.id, kind: failure.kind, surfaced: turn.surfaced });
+		const fail = () => {
+			// The child's conversation now ends in a failed exchange pi keeps as an error; the next
+			// turn starts a fresh child, on whichever login is usable then.
+			this.markDesynced(`Claude login ${from.label} failed (${failure.kind})`);
+			if (this.turn === turn && !turn.queue.isEnded()) {
+				turn.queue.push({ type: "result", outcome: "error", message: failure.message ?? (failure.kind === "limit" ? "Claude usage limit reached" : "Claude sign-in failed") });
+				turn.queue.end();
+			}
+		};
+		// Once pi has part of the answer, sending the turn again would duplicate it.
+		if (turn.surfaced || turn.failovers >= 16) { logins.recordFailure(from, failure); fail(); return; }
+		let to: ClaudeLoginChoice | undefined;
+		try { to = logins.failover(from, failure); } catch { to = undefined; }
+		if (!to) { fail(); return; }
+		turn.failovers++;
+		void this.switchLogin(turn, from, to, failure);
+	}
+
+	/** Restart the child on `to` the way a model change does, and send the turn again. */
+	private async switchLogin(turn: TurnState, from: ClaudeLoginChoice, to: ClaudeLoginChoice, failure: ClaudeAccountFailure): Promise<void> {
+		const change: ClaudeLoginSwitch = { from, to, failure, text: switchText(from, to, failure) };
+		this.login = to;
+		this.announce(to, change);
+		debugLog({ event: "login-switch", session: this.piSessionId, from: from.id, to: to.id, kind: failure.kind });
+		try {
+			await this.restart(turn.request, change.text);
+		} catch (error) {
+			if (this.turn === turn && !turn.queue.isEnded()) {
+				turn.queue.push({ type: "result", outcome: "error", message: error instanceof Error ? error.message : String(error) });
+				turn.queue.end();
+			}
+			return;
+		}
+		if (this.turn !== turn || turn.queue.isEnded()) return;
+		if (turn.signal?.aborted) { this.markDesynced("the turn was aborted while Claude switched logins"); turn.queue.end(); return; }
+		this.detector.reset();
+		this.deliver(turn.request, { restart: true, reason: change.text, results: [], users: [], first: turn.first });
+		this.recorded = transcriptFingerprint(turn.request.messages);
+		this.meta = turnMeta(turn.request, this.cwd);
 	}
 
 	/**
@@ -1361,6 +1653,8 @@ export class SessionBridge implements ClaudeSessionBridge {
 	 * sessions with different directories.
 	 */
 	private readonly cwds = new Map<string, string>();
+	/** pi session id -> its login record and change sink (setSessionLogin). */
+	private readonly logins = new Map<string, SessionLoginHooks>();
 	private readonly options: SessionBridgeOptions;
 	private readonly limits: SessionBridgeLimits;
 	/** This process's fork seed (`CLAUDE_FORK_ENV`), for its first conversation's child only. */
@@ -1391,6 +1685,15 @@ export class SessionBridge implements ClaudeSessionBridge {
 		if (session) session.cwd = cwd;
 	}
 
+	/**
+	 * Record the login a pi session last ran on (its newest `claude-login` entry) and where a
+	 * change is reported. Called from the extension's session_start handler.
+	 */
+	setSessionLogin(sessionId: string, recorded: string | undefined, onChange: (entry: ClaudeLoginEntry) => void): void {
+		if (!sessionId) return;
+		this.logins.set(sessionId, { recorded, onChange });
+	}
+
 	/** The cwd a session's child should run in, best known to worst. */
 	private cwdFor(sessionId: string): string {
 		return this.cwds.get(sessionId) ?? this.options.cwd ?? process.cwd();
@@ -1408,7 +1711,7 @@ export class SessionBridge implements ClaudeSessionBridge {
 			// one-shot requests (compaction, branch summaries) never do.
 			const seed = oneShot ? undefined : this.forkSeed;
 			if (seed) this.forkSeed = undefined;
-			session = new CliSession(key, this.options, this.cwdFor(key), seed);
+			session = new CliSession(key, this.options, this.cwdFor(key), seed, () => this.logins.get(key));
 			this.sessions.set(key, session);
 		}
 		this.reapIdle(key);
@@ -1436,6 +1739,7 @@ export class SessionBridge implements ClaudeSessionBridge {
 	/** Called from the extension's `session_shutdown` hook. */
 	async disposeSession(piSessionId: string, reason = "pi session shut down"): Promise<void> {
 		this.cwds.delete(piSessionId);
+		this.logins.delete(piSessionId);
 		const session = this.sessions.get(piSessionId);
 		if (!session) return;
 		this.sessions.delete(piSessionId);

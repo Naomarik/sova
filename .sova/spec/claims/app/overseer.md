@@ -44,12 +44,14 @@ are atomic tmp+rename.
   is never offered as a recent folder (`GET /api/cwds`, the New Session dialog's Recent folders,
   `sova_list_folders`), even if some other session was once started there.
 - **`/clear`.** A bare `/clear` is a local command recognised **only** in the Overseer's composer
-  (elsewhere it is an ordinary message). It and the head's **Clear** action call
+  (elsewhere it is an ordinary message). It and the head's **Clear** action (a button on a head
+  900px and wider, in ⋯ below that, §app.overseer/head-layout) call
   `POST /api/overseer/clear`, which never refuses: it stops a running turn, disposes the runtime,
   creates a new marked file, pushes the old id onto `history` (≤20; older ids fall off the list)
   and repoints `current`. The requesting tab lands on the new file. Other tabs that showed the
   Overseer re-resolve `#/overseer` when their socket reports the runtime was closed.
-- **History.** A **History** menu in the head lists the previous files (≤20), each row its first message (at most two lines, the rest in its tooltip) over how long ago it was active; a list taller than the window scrolls. One opens read-only at
+- **History.** A **History** menu in the head (in ⋯ as History… below a 900px head,
+  §app.overseer/head-layout) lists the previous files (≤20), each row its first message (at most two lines, the rest in its tooltip) over how long ago it was active; a list taller than the window scrolls. One opens read-only at
   `#/overseer/h/<id>` (watch view, no composer); the server refuses a chat on any Overseer file
   but the current one. Settings, standing notes and the audit log survive a clear.
 
@@ -483,7 +485,7 @@ itself.
   never hides another), each with at most 200 characters of detail and
   an in-app link. The `sova_attention` tool and `GET /api/overseer/attention` return it; the
   sidebar's Needs you region (§app.session-list/needs-you) lists its act tier, and the Overseer
-  head's counts and menus come from it.
+  head's "need you" count is its count of sessions with an act item.
 
 ## §app.overseer/seen — The seen store and unread dots
 
@@ -547,44 +549,49 @@ renders as its text, unlinked.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
   reset to defaults).
 
-## §app.overseer/finished-menu — The head's finished and drafts lists
+## §app.overseer/head-layout — The head at every width
 
-The Overseer page's head says what it watches in one meta line: "{n} sessions · {w} working ·
-{a} need you", then "{f} finished" and "{d} drafts". Each part after the first shows only when it
-is not 0. "{n} sessions", "{w} working" and "{a} need you" stay plain text; `{a}` is the digest's
-count of sessions with an act item (`OverseerInfo.badge.act`), the sessions the sidebar's Needs you
-region lists (§app.session-list/needs-you).
+The Overseer page's head is one row at every width, and it changes by the width of **its own
+box**, never the window's, so a phone, the Galaxy Z Fold's two screens and a narrow desktop pane
+(a wide sidebar, an open side pane) get the same rules. The widths are the head's inner width,
+inside its padding, as for the context readout (§chat.context-window/width-budget). From a 344px
+head to 1600px nothing in it is clipped, covered or scrolled sideways, the title reads "Overseer"
+in full, and every control on the row is at least 44px wide. The rules below never move the
+head's height, so a width change is no layout shift.
 
-- **Two menus, one digest.** App reads `GET /api/overseer/attention`
-  (§app.overseer/attention-digest) once for the whole page, every 10 seconds, the entry button's
-  own cadence (paused while the tab is hidden), and hands that read to both this head and the
-  sidebar's Needs you region; opening the page reads it once more. Both counts are the number of
-  rows their menus list from that one read, so a number always matches its list.
-- **Which sessions.** The digest's decide items, minus every session that also has an act item.
-  **Finished** lists the sessions with a reply newer than last seen (kind `finished`). **Drafts**
-  lists the sessions with an unsent draft or queued input (kinds `draft` and `queued`; queued
-  input counts as a draft). A session with both is in both menus. Each menu has **one row per
-  session**, newest first by the latest of that session's items of the menu's kind.
-- **Each count is a menu trigger**, the head's History menu's control
-  (§app.overseer/identity-and-clear) set in the meta line, so the line keeps its height: the words
-  and a chevron, after a check (finished) or a pencil (drafts). Below a 480px head the icons, the
-  chevrons and the dots before the counts go, and the counts keep their words; the plain text
-  gives way first. A trigger is named "{f} finished sessions, show list" ("1 finished session,
-  show list") or "{d} drafts, show list" ("1 draft, show list"). A count of 0 hides its trigger,
-  except while its menu is open: a list that empties under the user says so instead.
-- **Rows.** A row is its title over a quiet line — where it runs and how long ago
-  (`relativeTime`; an unknown time is left out) — and is a real link to the session (`href`), so a
-  middle-click opens a new tab. Choosing one follows the link in this tab. No row carries a kind
-  label: each menu lists one kind.
-- **States.** When the latest read failed, the menu says so ("Couldn't read the finished
-  sessions." / "Couldn't read the drafts."), gives the reason, says nothing changed, and offers
-  **Try Again** above the last rows it had. While that read runs it says "Reading the finished
-  sessions." / "Reading the drafts."; when it lands, focus moves to the first row if it went with
-  the pressed one, and a failure is announced. An empty menu says "Nothing finished right now." or
-  "No drafts right now."
-- **Capped.** The digest keeps 30 items, needs-you first. When act or decide items were cut, each
-  list ends with "Some finished sessions may not be listed: this list stops at the 30 most urgent
-  items." (drafts: "Some drafts may not be listed: …").
+- **Wide, 900px and up.** Back (below a 768px window only, as on every chat head), the title and
+  meta line, the context readout (§design.copy-deck/context-window; its full words from 1000px, its
+  percent below that), the proactivity cycle (a bell and the current mode,
+  §app.overseer/proactivity), **Ideas** and **Todos** with their icons and counts, **History** ▾ and
+  **Clear**. No ⋯.
+- **Medium, 660 to 899px** (the Fold's inner screen held upright, about 704px; a desktop window
+  about 1024px wide): History and Clear leave the row for **⋯**. The proactivity cycle keeps its
+  bell and mode; Ideas and Todos keep their words and counts, without their icons. The context
+  readout is its percent.
+- **Narrow, below 660px** (phones and the Fold's cover screen): the proactivity cycle leaves the
+  row too. Ideas and Todos are their icons with the count as a corner badge. The row is back, the
+  title and meta, Ideas, Todos and ⋯.
+- **⋯** ("Overseer actions") holds the same three items wherever it shows: **Proactivity…** (its
+  note the current mode), **History…** (its note "{n} earlier" while there are any) and **Clear**
+  (its note "Start a new conversation. This one moves to History."). It keeps an 8px gap from the
+  control before it. Proactivity… opens a screen of the three modes, each with its hint and the
+  current one checked; choosing one saves it exactly as the cycle does, and says so. History…
+  opens a screen listing the earlier conversations as the History menu does, or "No earlier
+  conversations yet.". Clear is the head's Clear action.
+- **The mode is never a bare word.** On the row the proactivity cycle shows the mode with its
+  bell; below 660px it is off the row, and ⋯ names it under Proactivity….
+- **The meta line** says what the Overseer watches, in plain text: "{n} sessions · {w} working ·
+  {a} need you", each part after the first only when it is not 0. `{a}` is the digest's count of
+  sessions with an act item (`OverseerInfo.badge.act`, §app.overseer/attention-digest), the
+  sessions the sidebar's Needs you region lists (§app.session-list/needs-you). It carries no
+  menu: who replied since you last looked is each row's unread dot (§app.overseer/seen), and a
+  session with an unsent draft is marked in the list. From a 660px head up the row leaves it at
+  least 230px, so "181 sessions · 5 working · 2 need you" shows in full; below that, or when it is
+  longer, it ends in "…".
+- **Context.** Below a 520px head the context readout leaves the row and its percentage leads the
+  meta line ("24% · 181 sessions · …"), as on every chat head.
+- **An earlier conversation** (`#/overseer/h/<id>`): back, its title and age, and History ▾ at
+  900px and up; below that, ⋯ holding History… only.
 
 ## §app.overseer/entry-button — Entry button
 
@@ -605,8 +612,10 @@ region lists (§app.session-list/needs-you).
 
 ## §app.overseer/proactivity — Proactivity
 
-Three modes, cycled with a control on the Overseer page and set in Settings: **Off**, **List Only**
-(default), **Brief Me**.
+Three modes, set on the Overseer page and in Settings: **Off**, **List Only** (default),
+**Brief Me**. On a head 660px and wider a control in the head shows the current mode and cycles to
+the next; below 660px it is ⋯ → Proactivity…, three rows with their hints and the current one
+checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ shows.
 
 - **Off:** no Needs you region in the sidebar (§app.session-list/needs-you), no briefs. The entry
   button's unread count is unaffected; the Overseer chat still works. Hint: "No Needs you list. The
@@ -731,8 +740,8 @@ for that idea that plans with the user and edits nothing.
 ## §app.overseer/ideas-panel — The Ideas panel
 
 An **Ideas** button in the Overseer page's head, with the idea count, opens a panel: beside the
-chat on a wide window, over it on a narrow one. On a narrow window the button is its icon with
-the count as a corner badge, so the head still fits.
+chat on a wide window, over it on a narrow one. Below a 660px head the button is its icon with
+the count as a corner badge, so the head still fits (§app.overseer/head-layout).
 
 - **Table of contents** grouped by namespace, with counts, one row per idea (sub-entries under their
   main entry) and a status chip each.
@@ -793,7 +802,8 @@ from chat, and the user edits it in the Todos panel (§app.overseer/todos-panel)
 
 A **Todos** button in the Overseer page's head, next to Ideas, with the count of open todos, opens a
 panel in the same place as the Ideas panel: beside the chat on a wide window, over it on a narrow
-one, where the button is its icon with the count as a corner badge. One of the two panels is open at
+one. Below a 660px head the button is its icon with the count as a corner badge
+(§app.overseer/head-layout). One of the two panels is open at
 a time: opening one closes the other. Escape or the close button closes it and returns focus to the
 button.
 

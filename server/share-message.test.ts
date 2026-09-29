@@ -29,7 +29,10 @@ const { acquireChat, BusyError, disposeAllChats } = await import("./chat-manager
 const { createShareApp, tokenLimited, tokenWindowSize } = await import("./share/routes");
 const { createShareServer } = await import("./share/listener");
 const { opaqueSenders, sweepWatchers, viewForToken } = await import("./share/hub");
-const { registerOrgRoutes, NO_SHARE_WARNING } = await import("./org-routes");
+const { registerOrgRoutes } = await import("./org-routes");
+const { LINK_WARNINGS } = await import("../shared/public-links");
+const publicLinks = await import("./public-links");
+const linksEvents = await import("./share/links-events");
 
 after(async () => {
   await disposeAllChats();
@@ -239,16 +242,27 @@ describe("the message limit is settable", () => {
     const created = (await res.json()) as { sessionId: string; link: string; linkWarning?: string };
     assert.equal(rowOf(created.sessionId).budget.messagesMax, 12);
     assert.ok(created.link.startsWith("/h/"));
-    assert.equal(created.linkWarning, NO_SHARE_WARNING);
+    assert.equal(created.linkWarning, LINK_WARNINGS.off, "no public address: the setting is named, never env variables");
     const ext = await app.request(`/api/baton/${created.sessionId}/extend`, json("POST", { by: 8 }));
     assert.equal(ext.status, 200);
     assert.equal(((await ext.json()) as { session: { budget: { messagesMax: number } } }).session.budget.messagesMax, 20);
     assert.equal((await app.request(`/api/baton/${created.sessionId}/extend`, json("POST", { by: "8" }))).status, 400);
     process.env.SOVA_SHARE_PUBLIC_URL = "https://share.example";
-    const known = (await (await app.request(`/api/baton/${created.sessionId}/link`)).json()) as { link: string; linkWarning?: string };
-    delete process.env.SOVA_SHARE_PUBLIC_URL;
+    const known = (await (await app.request(`/api/baton/${created.sessionId}/link`)).json()) as { link: string; linkWarning?: string; linkWarningCode?: string };
     assert.ok(known.link.startsWith("https://share.example/h/"));
-    assert.equal(known.linkWarning, undefined);
+    assert.equal(known.linkWarning, LINK_WARNINGS.unverified, "an address Verify has not passed");
+    assert.equal(known.linkWarningCode, "unverified");
+    publicLinks.writeServerFields({ verifiedAt: Date.now() });
+    const verified = (await (await app.request(`/api/baton/${created.sessionId}/link`)).json()) as { link: string; linkWarning?: string };
+    // The mint waits for the link-set listeners (awaitShareLinks): one that fails leaves it unconfirmed.
+    const off = linksEvents.onShareLinksChanged(() => Promise.reject(new Error("push failed")));
+    const pushFailed = (await (await app.request(`/api/baton/${created.sessionId}/link`)).json()) as { linkWarning?: string; linkWarningCode?: string };
+    off();
+    publicLinks.writeServerFields({ verifiedAt: null });
+    assert.equal(pushFailed.linkWarningCode, "unconfirmed");
+    assert.equal(pushFailed.linkWarning, LINK_WARNINGS.unconfirmed.replaceAll("{gateway}", "the gateway"));
+    delete process.env.SOVA_SHARE_PUBLIC_URL;
+    assert.equal(verified.linkWarning, undefined);
     settings.writeBatonSettings({ messagesMax: MESSAGES_DEFAULT });
   });
 });

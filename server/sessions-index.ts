@@ -12,7 +12,7 @@ import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
 import { dropGroupAssignments, readAssignments } from "./session-groups";
 import { draftCounts, draftPreview, dropDrafts, readDrafts } from "./drafts";
-import { dropSessionTitles, readSessionTitles } from "./session-titles";
+import { dropSessionTitles, memoSessionTitleRecords, readSessionTitleRecords, type StoredTitle } from "./session-titles";
 import { removeSessionAttachments } from "./attachments";
 import { cwdOverride, disposeHeldChat, getModelRuntime, isSessionBusy, pendingDialogCount } from "./chat-manager";
 import { isUnread, isViewing, readSeen, turnErrorShows } from "./seen";
@@ -615,6 +615,23 @@ function overseerOf(entry: CacheEntry): BaseSummary {
   return entry.marked && isOverseerId(entry.summary.id) ? { ...entry.summary, overseer: true } : entry.summary;
 }
 
+const gistListeners = new Set<(path: string) => void>();
+/** Called with a session's path when a read finds its summary line new or changed (the automatic
+    namer's nudge, server/session-autotitle.ts). Also on this process's first read of each file. */
+export function onSummaryLineChanged(fn: (path: string) => void): () => void {
+  gistListeners.add(fn);
+  return () => gistListeners.delete(fn);
+}
+function gistChanged(path: string): void {
+  for (const fn of gistListeners) {
+    try {
+      fn(path);
+    } catch (err) {
+      console.error("[sessions] summary-line listener failed", err);
+    }
+  }
+}
+
 async function summarize(path: string, resolveWindow?: WindowResolver): Promise<BaseSummary | null> {
   let st;
   try {
@@ -664,6 +681,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
     cache.set(path, entry);
+    if (summary.outlineGist && summary.outlineGist !== hit?.summary.outlineGist) gistChanged(path);
     return withWindow(entry, resolveWindow);
   } catch {
     return null;
@@ -716,9 +734,19 @@ function outlineOverlay(s: BaseSummary, outline: unknown): { outlineNow?: string
  * handed out, rather than in `summarize`: that result is cached per file mtime, and a rename
  * changes no byte of the file.
  */
-function withTitle(s: BaseSummary, titles: Record<string, string>): BaseSummary {
-  const override = titles[s.id];
-  return override && override !== s.title ? { ...s, title: override, originalTitle: s.title } : s;
+function withTitle(s: BaseSummary, titles: Readonly<Record<string, StoredTitle>>): BaseSummary {
+  const stored = titles[s.id];
+  if (!stored) return s;
+  // Who set it rides along even when the title equals the derived one: an explicit title is
+  // explicit whatever it says, and the list's Name sessions button must not count that row.
+  return stored.title !== s.title ? { ...s, title: stored.title, originalTitle: s.title, titleBy: stored.by } : { ...s, titleBy: stored.by };
+}
+
+/** A session's display title from what is already in memory (the cached summary and the titles
+    as last read), with no I/O; undefined when the session was never summarized here. */
+export function cachedTitleOf(path: string): string | undefined {
+  const hit = cache.get(path);
+  return hit ? withTitle(hit.summary, memoSessionTitleRecords()).title : undefined;
 }
 
 /** ms epoch of a session's last assistant reply, from the cached tail read; undefined when unknown. */
@@ -792,7 +820,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const own = readOwnLiveRecords();
   const resolveWindow = await windowResolver();
   const drafts = readDrafts();
-  const titles = readSessionTitles();
+  const titles = readSessionTitleRecords();
   const groups = readAssignments();
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
@@ -883,7 +911,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   const groupId = readAssignments()[s.id];
   const worker = await workerSessions.isWorker(s.path).catch(() => false);
   return {
-    ...withTitle(s, readSessionTitles()),
+    ...withTitle(s, readSessionTitleRecords()),
     ...outlineOverlay(s, liveOutline(l, ownRec)),
     live: liveField(l),
     workers: l?.workers ?? (ownRec ? workerCountsOf(ownRec.rec) : undefined),

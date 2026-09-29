@@ -101,6 +101,9 @@ export interface WorkerEntry {
   outcome?: "success" | "error" | "aborted";
   /** Token counts this worker has used so far. Counts only, never text; cost in USD when the backend reports one. */
   usage?: WorkerUsage;
+  /** Model replies this worker has had so far, across resumes. Top-level (not in `usage`) so the
+   *  size trimmer's usage drop keeps it. Absent = unknown, never 0 for unknown. */
+  turns?: number;
   /** Rebuilt from the owner session's durable record after a restart; no process runs for it. */
   restored?: true;
   /** For a restored worker: where `usage` came from ("none" = unavailable, never 0). */
@@ -246,6 +249,7 @@ function parseWorker(value: unknown): WorkerEntry | undefined {
     endedAt: num(value.endedAt) ? value.endedAt : undefined,
     outcome: oneOf(value.outcome, WORKER_OUTCOMES),
     usage: parseUsage(value.usage),
+    turns: count(value.turns) ? value.turns : undefined,
     restored: value.restored === true ? (true as const) : undefined,
     usageSource: oneOf(value.usageSource, WORKER_USAGE_SOURCES),
     usageAsOf: num(value.usageAsOf) ? value.usageAsOf : undefined,

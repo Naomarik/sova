@@ -6,9 +6,9 @@
  * Imports nothing at all: Sova's server and its frontend import this file (Vite bundles it for the
  * browser), so both read one shape. Nothing here throws on odd stored data.
  *
- * The tool only resolves the scope and checks the steps' shape. It never checks the steps against
- * the real diff: Sova does, assigning every hunk to exactly one step (the first ref that matches
- * it), leftovers under "Other changes".
+ * The tool resolves the scope, checks the steps' shape, and refuses steps that don't place every
+ * hunk of the diff (coverage.ts). Sova matches them again when it draws the diff, assigning every
+ * hunk to exactly one step (the first ref that matches it), leftovers under "Other changes".
  */
 
 /** The tool's name, in the loadout and on every tool result. */

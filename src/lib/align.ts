@@ -134,22 +134,22 @@ export function newestAlignRows(items: readonly TranscriptItem[]): Set<string> {
   return new Set(newest.values());
 }
 
-/** The composer chip's counts over the open documents: how many, their open questions, all their questions. */
-export function alignChipCounts(entries: readonly AlignEntry[]): { docs: number; open: number; total: number } {
+/** The composer chip's counts over the open documents: how many, their decided questions, all their live questions. */
+export function alignChipCounts(entries: readonly AlignEntry[]): { docs: number; decided: number; total: number } {
   const open = entries.filter((e) => isOpenDoc(e.doc));
   return {
     docs: open.length,
-    open: open.reduce((n, e) => n + openCount(e.doc), 0),
+    decided: open.reduce((n, e) => n + liveCount(e.doc) - openCount(e.doc), 0),
     total: open.reduce((n, e) => n + liveCount(e.doc), 0),
   };
 }
 
-/** "2 aligns · 5/15" / "1 align · 0/3". */
-export const alignChipText = (c: { docs: number; open: number; total: number }): string => `${c.docs} ${c.docs === 1 ? "align" : "aligns"} · ${c.open}/${c.total}`;
+/** "2 aligns · 10/15 decided" / "1 align · 3/3 decided". */
+export const alignChipText = (c: { docs: number; decided: number; total: number }): string => `${c.docs} ${c.docs === 1 ? "align" : "aligns"} · ${c.decided}/${c.total} decided`;
 
 /** The chip's accessible name. */
-export const alignChipLabel = (c: { docs: number; open: number; total: number }): string =>
-  `${c.docs} open ${c.docs === 1 ? "alignment" : "alignments"}, ${c.open} of ${c.total} ${c.total === 1 ? "question" : "questions"} open — show alignments`;
+export const alignChipLabel = (c: { docs: number; decided: number; total: number }): string =>
+  `${c.docs} open ${c.docs === 1 ? "alignment" : "alignments"}, ${c.decided} of ${c.total} ${c.total === 1 ? "question" : "questions"} decided — show alignments`;
 
 /**
  * The chip menu's rows: the open documents, those with an open question first, each group the

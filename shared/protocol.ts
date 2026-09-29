@@ -22,6 +22,12 @@ export interface SessionSummary {
   /** The DERIVED title — the first user message — present only while `title` is a user-set
       override that differs from it. Absent otherwise, and from older servers. */
   originalTitle?: string;
+  /** Who set the stored title (server/session-titles.ts, §app.session-list/auto-titles): "user"
+      (the UI's rename, and every title stored before provenance existed), "overseer" (its
+      sova_create_session / sova_set_session), or "auto" (Sova named it). Present whenever a title
+      is stored for this session, even one equal to the derived title; absent when none is, and
+      from older servers. "user" and "overseer" are explicit and never renamed automatically. */
+  titleBy?: SessionTitleBy;
   createdAt: string; // ISO, from header
   lastActiveAt: string; // ISO, file mtime
   /** Latest "provider/model": the model_change or assistant message closest to the end of the
@@ -818,6 +824,78 @@ export interface ClaudeCliStatus {
   error?: string;
 }
 
+// ---- Claude logins (Settings → Accounts, §app.claude-logins) ------------------------------------
+// The registry is the claude-code extension's (pi-config/extensions/claude-code/accounts.ts); these
+// are its wire shapes. Nothing here ever carries a token, a code or a credential.
+
+/** Who a login is, from Claude Code's own `.claude.json`. */
+export interface ClaudeLoginIdentity {
+  accountUuid?: string;
+  email?: string;
+  orgUuid?: string;
+  orgName?: string;
+  plan?: string;
+  rateLimitTier?: string;
+  /** The plan as people say it ("Max 20x", "Pro"), from the tier or the plan; absent when neither names one. */
+  planLabel?: string;
+}
+/** A login's standing on this host: usable, out until a limit resets, or out until signed in again. */
+export type ClaudeLoginStanding =
+  | { state: "ready" }
+  | { state: "limited"; until: number; window?: string }
+  | { state: "auth"; message?: string };
+export interface ClaudeLoginRow {
+  /** `default` (Claude Code's own directory) or `l-` and 8 hex digits. */
+  id: string;
+  label?: string;
+  identity: ClaudeLoginIdentity | null;
+  /** false: never chosen automatically. */
+  enabled: boolean;
+  standing: ClaudeLoginStanding;
+  /** Its directory holds `.credentials.json`. */
+  signedIn: boolean;
+  addedAt?: number;
+}
+/** The add-login flow (`claude auth login` for a new directory); one at a time per host. */
+export type ClaudeLoginFlowState =
+  | { state: "starting" }
+  /** The URL to open in any browser; `error` after a code the CLI refused (it keeps waiting). */
+  | { state: "waiting"; url: string; error?: string }
+  | { state: "finishing" }
+  | { state: "done"; login: ClaudeLoginRow; sharedAccount: boolean }
+  | { state: "failed"; error: string };
+/** GET /api/claude/accounts, and the answer of every change. */
+export interface ClaudeAccountsInfo {
+  /** This host as a device: its mesh id and name, else `local` / "This device". */
+  device: { id: string; label: string };
+  /** This device's logins, in its order, `default` included. */
+  logins: ClaudeLoginRow[];
+  /** Logins assigned to another device (listed, never used here). */
+  elsewhere: { id: string; device: string | null; label?: string; identity: ClaudeLoginIdentity | null }[];
+  /** The registry could not be read: only `default` is used, and nothing is written. */
+  error?: string;
+  flow: ClaudeLoginFlowState | null;
+}
+/** The chat's Claude login, as the composer foot shows it. */
+export interface ChatClaudeLogin {
+  id: string;
+  /** Its label, else its email, else "default" / its id. */
+  name: string;
+  email?: string;
+  planLabel?: string;
+  /** true: from the session's own `claude-login` entry; false: not recorded yet, so the login this
+      host would choose for the session's next start. */
+  recorded: boolean;
+  /** This host lists more than one login: only then is the choice worth showing. */
+  several: boolean;
+}
+/** PUT /api/claude/accounts/order */
+export interface ClaudeLoginOrderRequest { order: string[] }
+/** PATCH /api/claude/accounts/:id */
+export interface ClaudeLoginPatchRequest { enabled?: boolean; label?: string | null }
+/** POST /api/claude/accounts/flow/code */
+export interface ClaudeLoginCodeRequest { code: string }
+
 
 /** PUT /api/models/favorite's body. */
 export interface ModelFavoriteRequest {
@@ -1056,6 +1134,68 @@ export const GROUP_NAME_MAX = 60;
     The one place the limit is written down: the rename field's maxlength and the server's rule
     both read it from here. */
 export const SESSION_TITLE_MAX = 80;
+
+/** Who set a stored session title (SessionSummary.titleBy). */
+export type SessionTitleBy = "user" | "overseer" | "auto";
+/** What POST /api/sessions/title takes as its optional `source` (absent = "user"). Only Sova's own
+    namer writes "auto", never through that route. */
+export type SessionTitleSource = "user" | "overseer";
+
+// POST /api/sessions/auto-title AutoTitleRequest -> AutoTitleResponse (§app.session-list/auto-titles).
+// Names each path's session with the title model from Settings → Summaries → Session titles,
+// never over an explicit title. 400 bad body (at most AUTO_TITLE_MAX_PATHS paths).
+export const AUTO_TITLE_MAX_PATHS = 200;
+export interface AutoTitleRequest {
+  paths: string[];
+  /** Say what would happen, call no model and write nothing. */
+  dryRun?: boolean;
+}
+export type AutoTitleSkip =
+  /** It has a title a user or the Overseer set (or one stored before provenance existed). */
+  | "explicit"
+  | "not-found"
+  /** Not a listed main thread: an empty husk, a subagent's session, an Overseer file. */
+  | "not-listed"
+  /** No user message to name it from. */
+  | "no-input"
+  /** Neither title model can run (policy, registry, auth, CLI). */
+  | "no-model"
+  /** The models failed, or answered with no usable title. */
+  | "failed";
+export type AutoTitleOutcome =
+  | { path: string; outcome: "named"; title: string }
+  | { path: string; outcome: "would-name" }
+  | { path: string; outcome: "skipped"; reason: AutoTitleSkip; detail?: string };
+export interface AutoTitleResponse {
+  /** One per requested path, in request order. */
+  results: AutoTitleOutcome[];
+}
+
+// GET /api/settings/session-titles -> SessionTitleSettingsInfo (<state root>/session-titles-settings.json;
+//                                    missing or broken fields read as their defaults)
+// PUT /api/settings/session-titles SessionTitleSettings -> SessionTitleSettingsInfo (strict; 400 bad body)
+/** Settings → Summaries → Session titles: the automatic namer's switch, timing and models. */
+export interface SessionTitleSettings {
+  version: 1;
+  /** The background sweep (default off). The section heads' button works either way. */
+  enabled: boolean;
+  /** Minutes between sweep runs, 1–1440. */
+  intervalMinutes: number;
+  /** Minutes a session's file must have been untouched before the sweep names it, 0–1440. */
+  quietMinutes: number;
+  primary: WorkerChoice;
+  fallback: WorkerChoice | null;
+}
+export interface SessionTitleSettingsInfo {
+  settings: SessionTitleSettings;
+  defaults: SessionTitleSettings;
+  /** Every effort each backend accepts, for the rows (as DelegateSettingsInfo.backends). */
+  backends: { id: DelegateBackendId; label: string; efforts: string[] }[];
+  /** Why each configured model can't run right now, by slot; a slot that can run is absent. */
+  unusable?: { primary?: string; fallback?: string };
+  /** Absolute path of the file, for the footnote. */
+  file: string;
+}
 
 /** Longest member label, in characters, after trimming (GroupMember.label; the server trims and
     refuses a longer one with 400, while an empty one clears the label). */
@@ -1732,6 +1872,11 @@ export type ChatServerMessage =
   /** THIS chat's sandbox, sent after hello and on every change, ONLY when its runtime has the
       sandbox extension's /sandbox command. Absent = no extension: no row, no shield. */
   | ({ type: "sandbox" } & SandboxInfo)
+  /** THIS chat's Claude login (§app.claude-logins/active-login): the newest `claude-login` entry on
+      its branch, else the login this host would start it on now. Sent after hello only when this
+      host has more than one login (a hello clears the last one), and whenever a `claude-login`
+      entry is appended. `null`: this host has no Claude login it could name. */
+  | { type: "claude_login"; login: ChatClaudeLogin | null }
   /** Slash commands available in this session (sent right after hello, and again after a runtime
       reload). Same enumeration as pi rpc get_commands: extension commands, prompt templates, skills,
       after Sova's own builtin `compact` (first; an extension command of the same name is left out,
@@ -2017,6 +2162,36 @@ export interface UsageInsight {
   nextFetchAt: number | null;
   stale: boolean; // now - fetchedAt > 10 min (nothing refreshed the cache: neither this server's poller nor a TUI)
   providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai, deepseek
+  /** Every Claude login on this host, in its order, `default` (whose usage is `providers`' claude)
+      included (§app.insights/usage-cards). Absent from an older server; the page then shows the
+      one Claude card from `providers`. */
+  claudeLogins?: UsageClaudeLogin[];
+}
+/** One Claude login's card on the Usage page. Identity and standing only: never a token. */
+export interface UsageClaudeLogin {
+  /** `default` (Claude Code's own directory) or `l-` and 8 hex digits. */
+  id: string;
+  label?: string;
+  email?: string;
+  /** Logins with the same account share its usage limits; the page groups them. */
+  accountUuid?: string;
+  orgName?: string;
+  /** "Max 20x", "Pro", … (ClaudeLoginIdentity.planLabel). */
+  planLabel?: string;
+  /** When it was added (absent for `default`): names a login that has no label. */
+  addedAt?: number;
+  /** false: never chosen automatically (Settings → Accounts, Use). */
+  enabled: boolean;
+  /** Its directory holds `.credentials.json`. */
+  signedIn: boolean;
+  standing: ClaudeLoginStanding;
+  /** The login this host's next new chat runs on: the first usable one in its order. */
+  inUse: boolean;
+  /** Its reading: `id` "claude", like the provider card. A login marked as needing sign-in is not
+      fetched, so it keeps the last reading it had (or none: state "error"). */
+  usage: UsageProvider;
+  /** When `usage` was fetched (added logins; `default`'s is the file's `fetchedAt`). */
+  fetchedAt?: number;
 }
 
 /** `restored`: a worker a server restart took down, rebuilt from its durable record and transcript.
@@ -2052,6 +2227,8 @@ export interface WorkerInfo {
       reaches workers; §chat.mode-menu/workers), a resumed worker's being the ones its resume gave.
       Absent when it was given none, and from records of an older pi-config — show nothing then. */
   modes?: string[];
+  /** ms: its first spawn — kept across resumes and restarts (a restored worker: its transcript's
+      start, else its first durable record's time). */
   startedAt?: number; lastActivity?: number; endedAt?: number;
   outcome?: "success" | "error" | "aborted";
   teamId?: string;
@@ -2064,6 +2241,11 @@ export interface WorkerInfo {
   /** Tokens this worker has used so far (both backends report them). Absent for a worker that
       has spent nothing yet, and from live records written by an older pi-config. */
   usage?: TokenUsage;
+  /** Model replies this worker has had so far, across resumes (the TUI's '{n} turns'): the live
+      record's `workers[].turns`, or for a restored worker its transcript's or last snapshot's
+      count. Absent when unknown (an older writer, a record that never counted) — never 0 for
+      unknown. */
+  turns?: number;
   /** Where `usage` comes from. `transcript`: recomputed from its own transcript (exact tokens;
       cost only when the backend records one). `snapshot`: the last number the worker reported
       before the restart, true as of `usageAsOf`. `unavailable`: its transcript couldn't be read
@@ -3480,4 +3662,227 @@ export interface DiffFilePatch {
   /** As in the summary: a changed HEAD between the two requests shows up here. */
   base: DiffSide;
   head: DiffSide;
+}
+
+// ── Resource monitor (§app/resource-monitor) ─────────────────────────────────────────────────
+// GET /api/monitor → MonitorSnapshot; GET /api/monitor/history?since=<ms>&res=5s|30s → MonitorHistory.
+// Read-only. CPU percentages are of ONE core (100 = one core busy; a 16-core host tops out at 1600),
+// averaged over the last tick (5s). Memory is RSS in bytes; swap is VmSwap in bytes.
+
+/** How the measured set was chosen. `unit`: the server runs in a dedicated systemd service
+    cgroup (/proc/self/cgroup ends in `.service`), so every process in it is measured, and the
+    unit's own cgroup totals are reported. `tree`: the server's descendant tree only (dev,
+    hermetic). `none`: no /proc (not Linux): only the server's own Node numbers. */
+export type MonitorScope = "unit" | "tree" | "none";
+
+/** How a process was charged to its session/worker, strongest first. Exact: `worker-pid` the
+    runtime's in-process worker pid; `session-id` a `claude --resume/--session-id` uuid (a
+    worker's session id, or a hosted session's Claude Code provider); `live-record` a pi
+    worker's own live record; `team-env` a member-mcp helper's team env; `env` the
+    PI_SESSION_FILE pi's bash tool puts in its child's environment (a hosted session's or a pi
+    worker's tool child, and everything it started); `descendant` below a charged process;
+    `sid` a session id (setsid group) already seen under a charged process (orphans, nohup,
+    setsid). Heuristics, to be labelled as such: `exited-tools` CPU of the server's children
+    that exited between two ticks, charged to the only hosted session running a tool then;
+    `cwd` the process's cwd lies in exactly one hosted session's cwd. */
+export type MonitorVia =
+  | "worker-pid" | "session-id" | "live-record" | "team-env" | "env" | "descendant" | "sid"
+  | "exited-tools" | "cwd";
+
+/** Coarse kind of a process from its argv, parsed once per process. */
+export type MonitorProcKind =
+  | "server" | "pi-worker" | "claude-worker" | "claude-provider" | "member-mcp"
+  | "node" | "java" | "python" | "browser" | "shell" | "build" | "other";
+
+/** Linux pressure-stall `some avg10` (and `full avg10` where it exists), in percent. */
+export interface MonitorPressure {
+  cpu?: { some: number };
+  memory?: { some: number; full: number };
+  io?: { some: number; full: number };
+}
+
+export interface MonitorProc {
+  pid: number;
+  ppid: number;
+  kind: MonitorProcKind;
+  /** Short command, ≤ 120 chars: basename of argv[0] plus the telling args (`java … clojure.main`). */
+  cmd: string;
+  /** Own CPU% over the last tick, including reaped children's time (cutime/cstime). */
+  cpuPct: number;
+  rssBytes: number;
+  /** Absent until first read (VmSwap is read at most every 30s per process). */
+  swapBytes?: number;
+  /** Epoch ms the process started. */
+  startedAt: number;
+  /** Where it was charged; absent = unattributed. */
+  sessionPath?: string;
+  workerId?: string;
+  via?: MonitorVia;
+  /** Escaped/unattributed only: the process's cwd, as a hint. */
+  cwd?: string;
+}
+
+export interface MonitorWorker {
+  /** The subagents worker id (e.g. "w3"), or a synthetic key for a worker seen only by argv. */
+  id: string;
+  name?: string;
+  backend?: string;
+  /** From the live record: "working" | "waiting" | "idle" | …, as that record says. */
+  status?: string;
+  /** Epoch ms the worker went idle, when the record says. */
+  idleSince?: number;
+  /** The worker's own process, when known. */
+  pid?: number;
+  via: MonitorVia;
+  /** Whole subtree (the worker process and every descendant, plus reaped children's time). */
+  cpuPct: number;
+  rssBytes: number;
+  swapBytes: number;
+  procCount: number;
+  /** The heaviest descendants (not the worker process itself), by CPU then RSS, at most 5. */
+  top: MonitorProc[];
+}
+
+export interface MonitorSession {
+  /** The session file; absent for a group the monitor could not tie to a file. */
+  sessionPath?: string;
+  /** Session display title, when known. */
+  title?: string;
+  cwd?: string;
+  /** Hosted in this server (its tool children are the server's children). */
+  hosted: boolean;
+  /** Totals over the session's own processes and all its workers. */
+  cpuPct: number;
+  rssBytes: number;
+  swapBytes: number;
+  procCount: number;
+  /** Processes charged to the session itself, not to a worker (hosted bash tools, the Claude
+      Code provider process), heaviest first, at most 5; `own*` are their totals. */
+  own: MonitorProc[];
+  ownCpuPct: number;
+  ownRssBytes: number;
+  workers: MonitorWorker[];
+}
+
+/** Totals for a bucket of processes. For `escaped`, the totals cover only the processes no
+    session was charged for (a charged one counts in its session), while `procs` lists all. */
+export interface MonitorBucket {
+  cpuPct: number;
+  rssBytes: number;
+  swapBytes: number;
+  procCount: number;
+  /** Heaviest first, at most 20. */
+  procs: MonitorProc[];
+}
+
+export interface MonitorSampler {
+  intervalMs: number;
+  /** The last tick's own cost and the average over the last hour, in ms: the server thread's
+      CPU time spent in the tick (wall time on Node < 23.9), waits excluded. */
+  lastTickMs: number;
+  avgTickMs: number;
+  /** Ticks skipped because the previous one was still running. */
+  skipped: number;
+  ticks: number;
+  startedAt: number;
+}
+
+export interface MonitorSnapshot {
+  at: number;
+  platform: string;
+  scope: MonitorScope;
+  /** `unit` only: the unit name, e.g. "sova-runtime.service". */
+  unitName?: string;
+  cores: number;
+  host: {
+    loadavg: [number, number, number];
+    memTotalBytes: number;
+    memAvailableBytes: number;
+    swapTotalBytes: number;
+    swapFreeBytes: number;
+    pressure?: MonitorPressure;
+  };
+  /** `unit` only: the cgroup's own counters. `memory.current` includes page cache (`file`);
+      `anon` is what pushes into swap. */
+  unit?: {
+    cpuPct: number;
+    memory: { current: number; anon: number; file: number; shmem: number; peak?: number };
+    swap: { current: number; peak?: number };
+    oomKills: number;
+    pressure?: MonitorPressure;
+  };
+  /** The server process itself (Node). `cpuPct` excludes its children. */
+  server: {
+    pid: number;
+    cpuPct: number;
+    rssBytes: number;
+    heapUsedBytes: number;
+    heapTotalBytes: number;
+    /** Event-loop delay over the last tick, ms. */
+    eventLoop: { p50: number; p99: number; max: number };
+    uptimeSec: number;
+  };
+  /** Over every measured process (the unit's or the tree's), server included. */
+  totals: { cpuPct: number; rssBytes: number; swapBytes: number; procCount: number };
+  /** Heaviest first by CPU. Hosted sessions with no processes and no workers are omitted. */
+  sessions: MonitorSession[];
+  /** Workers the server runs whose session is unknown (no join matched). */
+  unownedWorkers: MonitorWorker[];
+  /** `unit` only: processes in the unit that are no longer under the server (reparented), each
+      charged to a session when sid memory or cwd can say so. */
+  escaped: MonitorBucket;
+  /** Server descendants not charged to any session or worker (e.g. esbuild, git probes). */
+  unattributed: MonitorBucket;
+  /** The heaviest processes this tick by CPU, at most 10, across everything measured. */
+  topProcs: MonitorProc[];
+  sampler: MonitorSampler;
+  /** Human notes on what this snapshot cannot see (no /proc, no unit, remote targets). */
+  notes: string[];
+}
+
+export type MonitorResolution = "5s" | "30s";
+
+/** One process in a history point: the tick's (5s) or the window's (30s) top CPU users. */
+export interface MonitorPointProc {
+  pid: number;
+  cmd: string;
+  kind: MonitorProcKind;
+  cpuPct: number;
+  rssBytes: number;
+  /** Key into `MonitorHistory.groups`; absent = unattributed. */
+  group?: string;
+  workerId?: string;
+}
+
+/** One history point. At `30s` resolution `cpuPct` is the window's mean and `cpuPctMax` its
+    highest tick; memory figures are the window's maximum. */
+export interface MonitorPoint {
+  at: number;
+  cpuPct: number;
+  cpuPctMax?: number;
+  rssBytes: number;
+  swapBytes: number;
+  /** `unit` scope only. */
+  anonBytes?: number;
+  load1: number;
+  /** Server event-loop max delay, ms. */
+  loopMaxMs: number;
+  /** Per group (session, "escaped", "unattributed", "server"): [cpuPct, rssBytes]. */
+  groups: Record<string, [number, number]>;
+  /** Per group, then per worker id: [cpuPct, rssBytes] of the worker's whole subtree. */
+  workers: Record<string, Record<string, [number, number]>>;
+  /** Top 5 by CPU. */
+  top: MonitorPointProc[];
+}
+
+export interface MonitorHistory {
+  res: MonitorResolution;
+  /** Echo of the request's `since` (clamped to what is kept). */
+  since: number;
+  /** Oldest first. */
+  points: MonitorPoint[];
+  /** Labels for every group key used in `points`. Session groups are keyed by session path. */
+  groups: Record<string, { label: string; sessionPath?: string }>;
+  /** Worker names by group key, then worker id, for the workers in `points` that had one. */
+  workerLabels?: Record<string, Record<string, string>>;
 }

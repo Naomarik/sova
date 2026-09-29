@@ -309,6 +309,8 @@ test("readWorkerManifests: newest wins per field; spec/team merge one level; leg
 	assert.equal(legacy.onActiveBranch, false);
 	const w = manifests.get("ag_02")!;
 	assert.equal(w.at, 4);
+	assert.equal(w.firstAt, 2, "the first record's time (its spawn) survives the newest-wins fold");
+	assert.equal(legacy.firstAt, 1);
 	assert.equal(w.status, "waiting");
 	assert.equal(w.spec?.model, "ollama-cloud/kimi-k3");
 	assert.equal(w.spec?.effort, "high");
@@ -320,6 +322,17 @@ test("readWorkerManifests: newest wins per field; spec/team merge one level; leg
 	assert.equal("kind" in w, false);
 	// Without activeEntryIds no branch flag is set.
 	assert.equal(readWorkerManifests(entries).manifests.get("ag_02")?.onActiveBranch, undefined);
+	// A timeless (legacy, at 0) first record gives no firstAt of its own; a later timed one does.
+	const timeless = readWorkerManifests([
+		custom(LEGACY_REGISTRY_ENTRY_TYPE, { v: 1, kind: "worker-registry", workerId: "ag_09", backend: "pi" }, "t1"),
+	]).manifests.get("ag_09")!;
+	assert.equal("firstAt" in timeless, false);
+	const later = readWorkerManifests([
+		custom(LEGACY_REGISTRY_ENTRY_TYPE, { v: 1, kind: "worker-registry", workerId: "ag_09", backend: "pi" }, "t1"),
+		custom(WORKER_MANIFEST_ENTRY_TYPE, { v: 1, kind: "worker-manifest", workerId: "ag_09", backend: "pi", at: 7 }, "t2"),
+		custom(WORKER_MANIFEST_ENTRY_TYPE, { v: 1, kind: "worker-manifest", workerId: "ag_09", backend: "pi", at: 9 }, "t3"),
+	]).manifests.get("ag_09")!;
+	assert.deepEqual([later.firstAt, later.at], [7, 9]);
 });
 
 test("readWorkerManifests: a resume record clears the ending; launch is replaced whole; interrupted vs ended", () => {

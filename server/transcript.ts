@@ -439,6 +439,15 @@ function batonRow(id: string, entry: Entry): TranscriptItem[] {
   return [];
 }
 
+/** The claude-code provider's `claude-login` entry (§app.claude-logins/failover): the login a
+    session runs on. Only a switch (it names the login it left) is a row, its notice as written;
+    the plain record renders nothing. */
+function claudeLoginRow(id: string, entry: Entry): TranscriptItem[] {
+  const d = entry.data as { from?: unknown; text?: unknown } | undefined;
+  if (!d || typeof d.from !== "string" || typeof d.text !== "string" || !d.text.trim()) return [];
+  return [item(id, "info", entry, d.text.slice(0, 300))];
+}
+
 /** A subagents team event (handover, retire, pause, resume, wrap-up): one machine row, like a
     model change, in both webapp-owned and watched sessions. Undecodable: nothing. */
 function teamEventRow(id: string, entry: Entry): TranscriptItem[] {
@@ -495,6 +504,7 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       if (entry.customType === OVERSEER_SENT_ENTRY) return overseerSentRow(id, entry);
       if (entry.customType === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, entry);
       if (entry.customType === TEAM_EVENT_TYPE) return teamEventRow(id, entry);
+      if (entry.customType === "claude-login") return claudeLoginRow(id, entry);
       if (BATON_ROWS.has(entry.customType)) return batonRow(id, entry);
       return [];
     case "custom_message":

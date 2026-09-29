@@ -22,10 +22,12 @@ import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
-import { startShareListener, stopShareListener } from "./share/listener";
+import { mountPublicLinks } from "./public-links-routes";
+import { mountShareGateway } from "./share/gateway-routes";
+import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
-import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
+import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
@@ -37,7 +39,7 @@ import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
-import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -50,7 +52,7 @@ import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_M
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
 import { runFork } from "./fork";
-import type { FanoutRequest, ForkRequest, SessionsDirInfo, WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, type FanoutRequest, type ForkRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -58,12 +60,16 @@ import { configureSession } from "./sessions-configure";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
-import { readModelPolicy, writeModelPolicy } from "./model-policy";
+import { modelDenial, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
+import { AutoTitleSweep, autoTitlePaths, nameSession, traceToFile, type NameDeps } from "./session-autotitle";
+import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
+import type { LlmRuntime } from "./decide-llm";
+import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
@@ -103,6 +109,7 @@ import { onTagsChanged } from "./session-tags";
 import { startSessionTags, tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { readLiveRecords } from "./live";
+import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
 
@@ -356,18 +363,22 @@ app.post("/api/sessions/archive", async (c) => {
 // Renames a session, in Sova ONLY (server/session-titles.ts): the id gets a stored title and
 // the .jsonl is never opened, let alone written — a session open in a TUI can be renamed here
 // without touching the file that TUI owns. `title: null` clears the override, and the derived
-// title (the first user message) comes back.
+// title (the first user message) comes back. `source` says who is setting it ("user", the default,
+// or "overseer"); either way the title is explicit, and Sova's own namer never replaces it.
 app.post("/api/sessions/title", async (c) => {
-  let body: { path?: unknown; title?: unknown };
+  let body: { path?: unknown; title?: unknown; source?: unknown };
   try {
     const parsed: unknown = await c.req.json();
     // Valid JSON is not yet a body: `null`, `7`, `"x"` and `[]` all parse, and reading `.title`
     // off any of them is a TypeError the client would see as a 500 rather than its own mistake.
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
-    body = parsed as { path?: unknown; title?: unknown };
+    body = parsed as { path?: unknown; title?: unknown; source?: unknown };
   } catch {
     return c.json({ error: "Expected JSON body { path, title }" }, 400);
   }
+  if (body.source !== undefined && body.source !== "user" && body.source !== "overseer")
+    return c.json({ error: 'source must be "user" or "overseer" (or absent, for "user")' }, 400);
+  const source: SessionTitleSource = body.source ?? "user";
   if (body.title !== null && typeof body.title !== "string") return c.json({ error: "title must be a string, or null to clear it" }, 400);
   const title = body.title === null ? null : cleanSessionTitle(body.title);
   if (body.title !== null && title === null) return c.json({ error: `title must be 1–${SESSION_TITLE_MAX} characters, and no control characters` }, 400);
@@ -378,9 +389,82 @@ app.post("/api/sessions/title", async (c) => {
   // archive mark and the group assignment are keyed by too.
   const before = await getSessionSummary(path);
   if (!before) return c.json({ error: "Session file not found" }, 404);
-  setSessionTitle(before.id, title);
+  setSessionTitle(before.id, title, source);
   const summary = await getSessionSummary(path);
   return c.json(summary ?? { ...before, title: title ?? before.originalTitle ?? before.title });
+});
+
+// Sova names sessions itself (server/session-autotitle.ts, §app.session-list/auto-titles): the
+// section heads' button calls this route, and the sweep below runs while Settings → Summaries →
+// Session titles has it on. Never over an explicit title; each host names only its own sessions.
+let claudeCliCheck: { at: number; problem: Promise<string | null> } | undefined;
+/** Why a title model can't run at all right now, or null: the policy, pi's registry and keys, the Claude Code CLI. */
+async function titleModelProblem(choice: WorkerChoice): Promise<string | null> {
+  const denied = modelDenial(readModelPolicy(), choice.backend === "pi" ? choice.model : `claude-code/${choice.model}`);
+  if (denied) return "turned off in Settings → Models";
+  if (choice.backend === "pi") {
+    const slash = choice.model.indexOf("/");
+    try {
+      const runtime = await getModelRuntime();
+      if (!runtime.getModel(choice.model.slice(0, slash), choice.model.slice(slash + 1))) return "not in pi's model registry";
+      if (!runtime.hasConfiguredAuth(choice.model.slice(0, slash))) return `no key for ${choice.model.slice(0, slash)}`;
+    } catch {
+      return "pi's model registry couldn't be read";
+    }
+    return null;
+  }
+  if (!claudeCliCheck || Date.now() - claudeCliCheck.at > 60_000)
+    claudeCliCheck = { at: Date.now(), problem: claudeCliStatus().then((st) => (st.error === undefined ? null : "the Claude Code CLI isn't installed or doesn't answer")) };
+  return claudeCliCheck.problem;
+}
+const titleDeps = (): NameDeps => ({
+  runtime: () => getModelRuntime() as unknown as Promise<LlmRuntime>,
+  env: claudeLoginEnv,
+  problem: titleModelProblem,
+  trace: traceToFile(process.env.SOVA_AUTOTITLE_TRACE),
+  settings: () => readSessionTitleSettings(),
+  summary: (path) => getSessionSummary(path),
+});
+const autoTitleSweep = new AutoTitleSweep({
+  settings: () => readSessionTitleSettings(),
+  list: listSessions,
+  // Groups Sova fanned out: those it made (autoDissolve) or seeded (a pre-flag fanout group).
+  fanoutGroups: () => new Set(readGroups().filter((g) => g.autoDissolve === true || (g.autoDissolve === undefined && g.seed)).map((g) => g.id)),
+  name: (s) => nameSession(s.path, "sweep", titleDeps()),
+  log: (line) => console.log(line),
+});
+
+app.post("/api/sessions/auto-title", async (c) => {
+  let body: { paths?: unknown; dryRun?: unknown };
+  try {
+    const parsed: unknown = await c.req.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+    body = parsed as { paths?: unknown; dryRun?: unknown };
+  } catch {
+    return c.json({ error: "Expected JSON body { paths, dryRun? }" }, 400);
+  }
+  if (!Array.isArray(body.paths) || body.paths.length === 0 || !body.paths.every((p) => typeof p === "string"))
+    return c.json({ error: "paths must be a non-empty list of session paths" }, 400);
+  if (body.paths.length > AUTO_TITLE_MAX_PATHS) return c.json({ error: `At most ${AUTO_TITLE_MAX_PATHS} paths at a time` }, 400);
+  if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
+  const raw = body.paths as string[];
+  const results = await autoTitlePaths(raw.map((p) => resolveSessionPath(p)), raw, titleDeps(), body.dryRun === true);
+  return c.json({ results });
+});
+
+app.get("/api/settings/session-titles", async (c) => c.json(await sessionTitleSettingsInfo(titleModelProblem)));
+app.put("/api/settings/session-titles", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { version: 1, enabled, intervalMinutes, quietMinutes, primary, fallback }" }, 400);
+  }
+  const parsed = parseSessionTitleSettings(body);
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  writeSessionTitleSettings(parsed);
+  autoTitleSweep.reschedule();
+  return c.json(await sessionTitleSettingsInfo(titleModelProblem));
 });
 
 // Permanently deletes transcript files from disk: sessions older than 7 or 30 days, empty
@@ -673,6 +757,10 @@ app.get("/api/settings/claude-status", async (c) => {
   return c.json(status.error === undefined ? { ...status, models: await claudeCodeModelCount() } : status);
 });
 
+// Settings → Accounts (§app.claude-logins): this host's Claude logins, their order, and adding one
+// through Claude Code's own `claude auth login`. The registry is the claude-code extension's.
+const claudeAccounts = registerClaudeAccountRoutes(app);
+
 // The mode is per session. ~/.pi/agent/mode.json is the default new sessions
 // start from; GET reads it, POST without ?path= writes it and changes no open chat. A switch never writes
 // it (chat-manager switchMode): the default moves when a caller asks for exactly that.
@@ -859,6 +947,23 @@ app.get("/api/insights/session/workers", async (c) => {
   if (!path) return c.json({ error: "Invalid or missing ?path= (must be a .jsonl under the pi sessions dir)" }, 400);
   if (!existsSync(path)) return c.json({ error: "Session file not found" }, 404);
   return c.json(await getHiddenWorkers(path), 200, { "Cache-Control": "no-store" });
+});
+
+// Resource monitor (§app/resource-monitor): the latest background sample, and its history (5s from
+// the in-memory hour, 30s from the disk log). Read-only.
+app.get("/api/monitor", (c) => {
+  const snap = resourceMonitor()?.snapshot();
+  return snap ? c.json(snap, 200, { "Cache-Control": "no-store" }) : c.json({ error: "No sample yet" }, 503);
+});
+
+app.get("/api/monitor/history", async (c) => {
+  const res = c.req.query("res") ?? "5s";
+  if (res !== "5s" && res !== "30s") return c.json({ error: "res must be 5s or 30s" }, 400);
+  const since = Number(c.req.query("since") ?? 0);
+  if (!Number.isFinite(since) || since < 0) return c.json({ error: "since must be epoch ms" }, 400);
+  const monitor = resourceMonitor();
+  if (!monitor) return c.json({ error: "Monitor not running" }, 503);
+  return c.json(await monitor.history(since, res), 200, { "Cache-Control": "no-store" });
 });
 
 // The git worktrees each listed session touches (server/worktrees.ts). Paths that aren't sessions
@@ -1133,6 +1238,10 @@ const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(
 setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
+// Public links (shared/public-links.ts): Settings → Public links under /api/public-links (main
+// listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
+mountPublicLinks(app);
+mountShareGateway(app, meshApi);
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
@@ -1212,8 +1321,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port}`);
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
-  // The share listener, only when SOVA_SHARE_HOST/SOVA_SHARE_PORT are set (§app.baton/share-listener).
-  void startShareListener();
+  // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
+  void startShareRuntime();
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler
@@ -1226,6 +1335,13 @@ attachWebSockets(server);
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
+// Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
+startResourceMonitor({
+  logDir: join(stateRoot(), "monitor"),
+  liveDir: LIVE_DIR,
+  held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
+  titleOf: cachedTitleOf,
+});
 // Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
 const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
 workspaceCommits.start();
@@ -1234,6 +1350,9 @@ startWrapupRecovery();
 // Messages a crash or kill lost stop counting against their session's limit.
 startBudgetRecount();
 startBatonMarksBackfill();
+// The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.
+autoTitleSweep.start();
+onSummaryLineChanged(() => autoTitleSweep.nudge());
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
@@ -1298,15 +1417,18 @@ async function shutdown() {
   // subagents extension's session_shutdown detaches them instead of killing them.
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
+  claudeAccounts.dispose();
   // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
   // Marked first, so a run that records how it ended says the shutdown cut it off.
   markShutdown();
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   priceRefresh.stop();
+  autoTitleSweep.stop();
+  stopResourceMonitor();
   meshLinks.stop();
   stopMesh();
-  stopShareListener();
+  stopShareRuntime();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   // Every visit with an open share socket is seen now, so the commit below carries it.
   try {

@@ -19,7 +19,7 @@ export function decisionDefaults(): DecisionSettings {
 
 /** Shown beside the fallback row as hints, never pre-selected. */
 export const DECISION_SUGGESTIONS: WorkerChoice[] = [
-  { backend: "claude-code", model: "haiku", effort: "low" },
+  { backend: "claude-code", model: "sonnet", effort: "low" },
   { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", effort: "off" },
 ];
 

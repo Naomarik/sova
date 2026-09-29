@@ -14,23 +14,26 @@ export interface GitResult {
 	code: number;
 	stdout: string;
 	stderr: string;
+	/** stdout passed `maxBuffer` and git was stopped; `stdout` is then cut short. */
+	cut?: boolean;
 }
 
-export type Git = (args: string[], cwd: string) => Promise<GitResult>;
+export type Git = (args: string[], cwd: string, opts?: { maxBuffer?: number }) => Promise<GitResult>;
 
 /** Global options on every call: no fsmonitor hook, no index refresh writes. */
 const SAFE = ["-c", "core.fsmonitor=false", "--no-optional-locks"];
 
 /** Run git with `args` in `cwd`. Never throws: a missing git, a timeout or a signal is a nonzero code. */
-export const runGit: Git = (args, cwd) =>
+export const runGit: Git = (args, cwd, opts) =>
 	new Promise((done) => {
 		execFile(
 			"git",
 			[...SAFE, ...args],
-			{ cwd, maxBuffer: 8 * 1024 * 1024, timeout: 15_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" } },
+			{ cwd, maxBuffer: opts?.maxBuffer ?? 8 * 1024 * 1024, timeout: 15_000, env: { ...process.env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" } },
 			(err, stdout, stderr) => {
 				const code = err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 1) : 0;
-				done({ code, stdout: String(stdout), stderr: String(stderr) || (err && code !== 0 && !stderr ? err.message : "") });
+				const cut = (err as { code?: unknown } | null)?.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER";
+				done({ code, stdout: String(stdout), stderr: String(stderr) || (err && code !== 0 && !stderr ? err.message : ""), ...(cut ? { cut } : {}) });
 			},
 		);
 	});

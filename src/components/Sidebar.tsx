@@ -3,7 +3,8 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
@@ -99,6 +100,7 @@ import {
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
 import { hostFilterAsk } from "../lib/mesh-details";
+import { openMonitor } from "../lib/monitor-nav";
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -801,6 +803,7 @@ function GroupBlock(props: {
           <bdi>{group().name}</bdi>
         </span>
         <span class="text-num">{count()}</span>
+        <NameSessionsButton section={`g-${group().id}`} rows={props.sessions} onDone={props.onChanged} />
         {/* The group's own actions, on its own name row. `contain` is what makes a control inside a
             <summary> possible at all: without it every click in here would toggle the section. The
             trigger is quiet until the row is hovered or something in it takes focus (base.css), and
@@ -888,6 +891,52 @@ function GroupBlock(props: {
         />
       </Show>
     </details>
+  );
+}
+
+/**
+ * A section head's Name sessions button (§app.session-list/auto-titles): shown while the section
+ * holds a row with no stored title, it asks each row's host to name those rows, then refetches
+ * the list. Nothing else is said — no toast, no undo; the titles changing is the answer. Its click
+ * and keydown stop here, so a press inside a <summary> never toggles the section.
+ */
+function NameSessionsButton(props: { section: string; rows: readonly SessionSummary[]; onDone(): void }) {
+  const rows = createMemo(() => nameableRows(props.rows));
+  const busy = () => namingIn(props.section);
+  // While it runs, the label keeps the count it was pressed with: a poll mid-run can shrink it.
+  const [pressed, setPressed] = createSignal(0);
+  const label = () => (busy() ? nameLabel(pressed(), true) : nameLabel(rows().length));
+  const press = async () => {
+    const paths = rows().map((s) => s.path);
+    if (busy() || paths.length === 0) return;
+    setPressed(paths.length);
+    setNaming(props.section, true);
+    try {
+      await nameSessions(paths, { hostOf, post: (batch) => autoTitleSessions(batch) });
+    } finally {
+      setNaming(props.section, false);
+      props.onDone();
+    }
+  };
+  return (
+    <Show when={busy() || rows().length > 0}>
+      <button
+        type="button"
+        class="button button-icon button-ghost name-sessions"
+        aria-label={label()}
+        title={label()}
+        aria-busy={busy() ? "true" : undefined}
+        disabled={busy()}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          void press();
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <Icon name="pencil" small />
+      </button>
+    </Show>
   );
 }
 
@@ -1784,6 +1833,9 @@ export function Sidebar(props: {
           >
             <Icon name="gauge" />
           </a>
+          <button type="button" class="button button-icon spine-item" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
+            <Icon name="activity" />
+          </button>
           <a
             class="button button-icon spine-item"
             href={agentsHref()}
@@ -2087,6 +2139,7 @@ export function Sidebar(props: {
                 <span class="sidebar-region-count">
                   · {query().trim() ? `${topHits().length} of ${ordinary().length - archiveTotal()}` : topHits().length}
                 </span>
+                <NameSessionsButton section="t" rows={topHits()} onDone={props.onRefresh} />
               </h2>
               <Show
                 when={topHits().length > 0}
@@ -2124,6 +2177,7 @@ export function Sidebar(props: {
                       <span class="visually-hidden">, an agent is working here</span>
                     </span>
                   </Show>
+                  <NameSessionsButton section="o" rows={orgHits()} onDone={props.onRefresh} />
                 </h2>
               </summary>
               <Show when={orgWaitingCount() > 0}>
@@ -2257,6 +2311,7 @@ export function Sidebar(props: {
                 <span class="sidebar-region-count">
                   · {query().trim() ? `${archiveHits().length} of ${archiveTotal()}` : archiveHits().length}
                 </span>
+                <NameSessionsButton section="a" rows={archiveHits()} onDone={props.onRefresh} />
               </summary>
               <For each={archiveSections()}>
                 {(d) => (
@@ -2294,18 +2349,24 @@ export function Sidebar(props: {
           <Show when={hostFilterShown()}>
             <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
           </Show>
-          <a
-            class="list-row list-row-interactive insights-row"
-            href={usageHref()}
-            aria-current={props.insightsPage === "usage" ? "page" : undefined}
-            title={glanceText() || undefined}
-            aria-label={glanceText() || undefined}
-          >
-            <Icon name="gauge" />
-            <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
-              <UsageGlance parts={glance()} />
-            </span>
-          </a>
+          {/* The monitor button takes the gear's exact markup, so the two stack in one column. */}
+          <div class="sidebar-foot-row">
+            <a
+              class="list-row list-row-interactive insights-row sidebar-foot-link"
+              href={usageHref()}
+              aria-current={props.insightsPage === "usage" ? "page" : undefined}
+              title={glanceText() || undefined}
+              aria-label={glanceText() || undefined}
+            >
+              <Icon name="gauge" />
+              <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
+                <UsageGlance parts={glance()} />
+              </span>
+            </a>
+            <button type="button" class="button button-icon sidebar-settings" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
+              <Icon name="activity" small />
+            </button>
+          </div>
           <div class="sidebar-foot-row">
             <a
               class="list-row list-row-interactive insights-row sidebar-foot-link"

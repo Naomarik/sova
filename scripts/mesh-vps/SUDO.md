@@ -33,3 +33,27 @@ systemctl --user daemon-reload && systemctl --user enable --now sova-mesh.servic
 ~/sova-mesh/app/scripts/mesh-vps/frontdoor-config.sh      # Caddyfile from Sova's GET /api/mesh/front-door
 systemctl --user enable --now sova-frontdoor.service
 ```
+
+## Optional: the public share front (only if this VPS is the share-link gateway)
+
+Sova shows the exact step for the chosen front (Settings → Public links); these are the root parts, run once.
+The front is the only public way in: it serves https://share.example.com on 443 and forwards to Sova's share port
+127.0.0.1:4802. Nothing else becomes public; 8443 and 10443 stay `tailscale serve`, NEVER funnel.
+
+```sh
+# Caddy on this host (the pinned ~/sova-mesh/bin/caddy, run as deploy): allow it to bind 80 and 443, and open them
+sudo setcap cap_net_bind_service=+ep ~deploy/sova-mesh/bin/caddy   # again after each Caddy upgrade
+sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
+
+# or Tailscale Funnel: let deploy run it, then as deploy (no sudo) funnel ONLY the share port on 443
+sudo tailscale set --operator=deploy
+#   tailscale funnel --bg --https=443 http://127.0.0.1:4802
+
+# or the host's existing web server: add the server block Sova shows, then reload it (e.g. sudo systemctl reload nginx)
+# or cloudflared: no root step (it dials out; nothing opens)
+```
+
+Check afterwards: set SHARE_FRONT in local.env, then from the laptop `scripts/mesh-vps/exposure.sh probe` (PASS: 443
+open, every Sova port including 4802 times out), and Verify in Sova. `tailscale funnel status` lists 443 only.
+Undo: `sudo setcap -r ~deploy/sova-mesh/bin/caddy`, `sudo ufw delete allow 80/tcp; sudo ufw delete allow 443/tcp`,
+`tailscale funnel --https=443 off`.

@@ -29,6 +29,12 @@ CADDY_ADMIN=${CADDY_ADMIN:-127.0.0.1:2089}
 # tailscale serve (set up by the parent, tailnet only): the front door and this host
 FRONTDOOR_SERVE_PORT=${FRONTDOOR_SERVE_PORT:-8443}
 HOST_SERVE_PORT=${HOST_SERVE_PORT:-10443}
+# The public share port (§mesh.public): Sova binds it on 127.0.0.1 when this host is the share gateway; only its
+# front (SHARE_FRONT) is ever public, on 443
+SHARE_PORT=${SHARE_PORT:-4802}
+# The public front this VPS runs for share links: empty (none, the default) | vhost | caddy | funnel | cloudflared.
+# Any front but cloudflared opens public 443, which the exposure probe then expects OPEN (cloudflared dials out)
+SHARE_FRONT=${SHARE_FRONT:-}
 
 # Node 22 LTS, official tarball, pinned by the sha256 in nodejs.org's SHASUMS256.txt
 NODE_VERSION=${NODE_VERSION:-v22.23.3}

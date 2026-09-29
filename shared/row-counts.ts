@@ -3,7 +3,7 @@
 // counts the rows it didn't send with a newest-rows-first hello (server/tail-hello.ts
 // `olderSummary`), so the two add up to the count of the whole branch. Imports nothing at runtime.
 
-import type { OlderSummary, TranscriptItem } from "./protocol";
+import type { AlignDocInfo, OlderSummary, TranscriptItem } from "./protocol";
 
 /** The user's inputs: a user row or a wake nudge (src/lib/turn.ts says why a link message isn't). */
 export const isInput = (row: Pick<TranscriptItem, "kind">): boolean => row.kind === "user" || row.kind === "wake";
@@ -26,5 +26,19 @@ export const isReplyRow = (row: Pick<TranscriptItem, "kind">): boolean => row.ki
 
 /** What the complete-list readers need to know of `rows`, the rows a client doesn't hold. */
 export function summarize(rows: readonly TranscriptItem[]): OlderSummary {
-  return { inputs: rows.filter(isInput).map((r) => r.id), messages: messageCount(rows), replies: rows.some(isReplyRow) };
+  const aligns = openAligns(rows);
+  return { inputs: rows.filter(isInput).map((r) => r.id), messages: messageCount(rows), replies: rows.some(isReplyRow), ...(aligns.length ? { aligns } : {}) };
+}
+
+/** The alignments still open in `rows`: the newest revision per document id, in the order they
+    were last touched (the fold of src/lib/align.ts `foldAlignRows`), without the done and dropped. */
+export function openAligns(rows: readonly TranscriptItem[]): NonNullable<OlderSummary["aligns"]> {
+  const docs = new Map<string, { doc: AlignDocInfo; rowId: string }>();
+  for (const it of rows) {
+    const doc = it.kind === "align" ? it.align?.doc : undefined;
+    if (!doc) continue;
+    docs.delete(doc.id);
+    docs.set(doc.id, { doc, rowId: it.id });
+  }
+  return [...docs.values()].filter((e) => e.doc.phase !== "done" && e.doc.phase !== "dropped");
 }

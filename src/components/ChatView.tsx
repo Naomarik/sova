@@ -102,7 +102,7 @@ import {
 import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
-import { entryIdOf, jumpToEntry, landExplainJump, transcriptRoot } from "../lib/jump";
+import { entryIdOf, jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
 import { anyReply, inputTotal, lastInput as lastInputOf, messageTotal, newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
@@ -276,12 +276,18 @@ export function ChatView(props: {
       .map((t) => alignRowFromDetails(t.details))
       .filter((r) => r !== undefined),
   );
-  /** The branch's alignments: the settled rows, then this run's. */
-  const aligns = createMemo(() => foldAlignRows(items() ?? [], liveAligns()));
+  /** The branch's alignments: those open above the rows held (the hello's summary), the settled
+      rows, then this run's. */
+  const aligns = createMemo(() => foldAlignRows(items() ?? [], liveAligns(), older()?.summary.aligns ?? []));
   /** Documents this run changed: their settled cards collapse to revision rows until the refetch. */
   const liveAlignIds = createMemo(() => new Set(liveAligns().flatMap((r) => (r.doc ? [r.doc.id] : []))));
   const jumpToAlign = (entry: AlignEntry) => {
     if (entry.rowId && jumpToEntry(entry.rowId, props.path)) return;
+    // A revision above the rows held: fetch down to it, then land.
+    if (entry.rowId && !items()?.some((it) => it.id === entry.rowId)) {
+      jumpWhenArrived(entry.rowId, props.path, () => toast("That alignment isn't in the transcript on screen."));
+      return;
+    }
     // A revision this run made has no transcript row yet: its live card carries the document's id.
     const card = transcriptRoot(props.path)?.querySelector<HTMLElement>(`[data-align-live="${CSS.escape(entry.doc.id)}"]`);
     if (card) card.scrollIntoView({ block: "center", behavior: "smooth" });

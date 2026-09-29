@@ -8140,6 +8140,21 @@
         "server/share-ws-hop.test.ts",
         "server/share-router.test.ts"
       ]
+    },
+    "§app.shell/viewport": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app/shell",
+        "§chat.composer/tokens"
+      ],
+      "code": [
+        "index.html",
+        "src/app.css",
+        "src/design/base.css",
+        "src/main.tsx"
+      ]
     }
   },
   "boundary": {

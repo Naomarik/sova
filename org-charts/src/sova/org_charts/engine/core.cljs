@@ -83,6 +83,12 @@
 ;; ---------------------------------------------------------------------------------------------
 ;; Engine
 
+(def sink-chart-name "sova-sink")
+
+(def sink-chart
+  "A session that takes every event and does nothing (`:absorb-unknown`, the matrix's world)."
+  (chart/statechart {} (elements/state {:id :sova.sink/top})))
+
 (def default-invoke-types #{:sova/look :sova/reply :sova/wrapup :sova/reconcile})
 
 (defn- build-env
@@ -103,8 +109,9 @@
    :level-check (fn [tool need envelope] → sentence | nil); :stamp (fn [sid event payload ctx] →
    envelope), the host's fresh envelope for a held act's release and a chart-driven act (`ctx`: the
    original act's `:by :overseer-id :project-id`, or the driving session's `:project-id`); :clock (0-arity fn, default Date.now);
-   :invoke-types; :max-microsteps (per event)."
-  [charts {:keys [on-save on-invoke-start on-invoke-stop clock invoke-types max-microsteps load-cold level-check stamp]}]
+   :invoke-types; :max-microsteps (per event); :absorb-unknown (tests: an id that exists nowhere
+   becomes a sink session instead of an error)."
+  [charts {:keys [on-save on-invoke-start on-invoke-stop clock invoke-types max-microsteps load-cold level-check stamp absorb-unknown]}]
   (let [now      (atom nil)
         clock-fn (fn [] (or @now (if clock (clock) (js/Date.now))))
         sends    (atom [])
@@ -116,12 +123,14 @@
         types    (or invoke-types default-invoke-types)
         limit    (or max-microsteps bounded/default-max-microsteps)
         env      (build-env registry queue store types record limit)]
+    (let [charts (cond-> charts absorb-unknown (assoc sink-chart-name {:chart sink-chart :version 1}))]
     (doseq [[nm {:keys [chart]}] charts]
       (sp/register-statechart! registry (keyword nm) chart))
     (atom {:charts charts :env env :queue queue :store store :now now :clock clock-fn :sends sends
            :meta meta* :record record :types types :registry registry :limit limit
            :on-save on-save :on-invoke-start on-invoke-start :on-invoke-stop on-invoke-stop
-           :load-cold load-cold :level-check level-check :stamp stamp :cx (atom nil)})))
+           :load-cold load-cold :level-check level-check :stamp stamp :absorb-unknown absorb-unknown
+           :cx (atom nil)}))))
 
 (defn- engine [eng] @eng)
 (defn- sessions* [eng] (:sessions (:store (engine eng))))
@@ -179,18 +188,30 @@
 (defn- unknown-session! [sid]
   (throw (ex-info (str "Unknown session: " sid) {:type unknown-session-type :session-id sid})))
 
+(declare start-session!)
+
+(defn- absorb!
+  "Tests (`:absorb-unknown`): start a sink session for an id that exists nowhere. The sink takes
+   every event and does nothing; it is reported under `:absorbed`."
+  [eng sid]
+  (start-session! eng sid sink-chart-name {})
+  (cx! eng :absorbed sid)
+  true)
+
 (defn- ensure-loaded!
   "True when `sid` is loaded (loading it through :load-cold if needed). Without :load-cold an
    unloaded session is false (the spike's contract: undelivered). With it, an id that exists
-   nowhere throws `:sova/unknown-session` (the call rolls back); a load-cold that throws (a broken
-   snapshot) rolls the call back with its error."
+   nowhere throws `:sova/unknown-session` (the call rolls back), or with `:absorb-unknown` becomes a
+   sink; a load-cold that throws (a broken snapshot) rolls the call back with its error."
   [eng sid]
-  (cond
-    (loaded? eng sid) true
-    (nil? (:load-cold (engine eng))) false
-    :else (if-let [text ((:load-cold (engine eng)) sid)]
-            (do (load! eng sid text) (cx! eng :loaded sid) true)
-            (unknown-session! sid))))
+  (let [{:keys [load-cold absorb-unknown]} (engine eng)]
+    (cond
+      (loaded? eng sid) true
+      (and (nil? load-cold) absorb-unknown) (absorb! eng sid)
+      (nil? load-cold) false
+      :else (if-let [text (load-cold sid)]
+              (do (load! eng sid text) (cx! eng :loaded sid) true)
+              (if absorb-unknown (absorb! eng sid) (unknown-session! sid))))))
 
 (defn- session-exists? [eng sid]
   (or (loaded? eng sid)
@@ -295,7 +316,7 @@
         (not= before-running (running? eng sid))
         (not= (select-keys before-data exported) (select-keys (data eng sid) exported)))))
 
-(declare start-session! run-directives!)
+(declare start-session! run-directives! release-now!)
 
 (defn- envelope-tags [d]
   (let [e (or d {})]
@@ -306,14 +327,33 @@
 
 (defn- base-step [eng sid event]
   (merge {:session-id sid :chart (chart-name-of eng sid) :at ((:clock (engine eng)))
-          :event (:name event) :data (:data event) :invoke-id (:invokeid event)}
+          :event (:name event) :data (:data event) :invoke-id (:invokeid event)
+          :project-id (or (:project-id (data eng sid)) (:project-id (:data event)))}
     (envelope-tags (:data event))))
+
+(defn- feed-kw [v] (when v (keyword (name v))))
+
+(defn- pseudo-transition?
+  "An initial or history default transition (no act, never classified)."
+  [c t]
+  (let [p (chart/element c (:parent t))]
+    (or (:initial? p) (= :history (:node-type p)))))
+
+(defn feed-class
+  "r8a: a step's feed class from the transitions it took: :feed when any declares `:sova/feed
+   :feed`, is a correction, or declares nothing (unclassified shows); :quiet when all are quiet or
+   none was taken."
+  [c taken]
+  (let [ts (keep (fn [id] (let [t (chart/element c id)] (when (and t (= :transition (:node-type t)) (not (pseudo-transition? c t))) t))) taken)]
+    (if (some (fn [t] (or (:sova/correction t) (not= :quiet (feed-kw (:sova/feed t))))) ts)
+      :feed
+      :quiet)))
 
 (defn- refused-step [eng sid event refusal]
   (let [c (configuration eng sid)]
     (assoc (base-step eng sid event)
       :before c :after c :changed {} :effects [] :outbox [] :refused refusal :saved false
-      :running (running? eng sid) :microsteps 0)))
+      :feed (if refusal :feed :quiet) :running (running? eng sid) :microsteps 0)))
 
 (defn- run-step!
   "Run `event` on `sid` through the chart (or `src`, a variant chart) and settle it. Returns the
@@ -332,6 +372,7 @@
          wm1       (cond-> (sp/process-event! processor env wm-in event)
                      src (assoc ::sc/statechart-src (::sc/statechart-src wm0)))
          ms        (bounded/microsteps processor)
+         taken     (bounded/taken processor)
          records   @record
          quiet?    (and (zero? ms) (empty? records)
                      (= (apply dissoc (get wm1 data-key) diff-skip) (apply dissoc bdata diff-skip)))]
@@ -352,6 +393,7 @@
                           :effects (mapv :key (:effects info)) :outbox (:effects info)
                           :holds (:holds info) :holds-ended (:released info)
                           :running (running? eng sid) :microsteps ms :saved true
+                          :feed (if src :feed (feed-class (chart-of eng sid) taken))
                           :notified (boolean notified))]
          (into [step] (run-directives! eng sid (:directives info))))))))
 
@@ -378,7 +420,8 @@
             step     {:session-id sid :chart chart-name :at now :event :sova/started :data init
                       :before [] :after (configuration eng sid) :changed (:changed info)
                       :effects (mapv :key (:effects info)) :outbox (:effects info) :holds (:holds info)
-                      :holds-ended [] :running (running? eng sid) :microsteps ms :saved true :notified notified}]
+                      :holds-ended [] :running (running? eng sid) :microsteps ms :saved true :notified notified
+                      :feed :feed :project-id (:project-id (data eng sid))}]
         (into [step] (run-directives! eng sid (:directives info)))))))
 
 (defn- watch! [eng watcher target add?]
@@ -395,7 +438,7 @@
         [{:session-id target :chart (chart-name-of eng target) :at ((:clock (engine eng)))
           :event (if add? :sova/watched :sova/unwatched) :data {:watcher watcher} :by "system"
           :before c :after c :changed {"sova/watchers" [ws ws']} :effects [] :outbox [] :holds []
-          :holds-ended [] :running (running? eng target) :microsteps 0 :saved true}]))))
+          :holds-ended [] :running (running? eng target) :microsteps 0 :saved true :feed :quiet}]))))
 
 (defn- run-directives! [eng sid dirs]
   (vec
@@ -423,6 +466,7 @@
                    (sp/send! queue env {:event (:event d) :target target :source-session-id sid
                                         :data (merge (:data d) fresh {:by "chart" :attended false})})
                    [])
+          :release-hold (release-now! eng sid (:id d))
           :watch (watch! eng sid (:target d) true)
           :unwatch (watch! eng sid (:target d) false)
           (throw (ex-info (str "Unknown directive " op) {:directive d}))))
@@ -454,7 +498,25 @@
     ;; the hold's removal must reach the snapshot even when nothing else was saved
     (if (some #(and (:saved %) (= sid (:session-id %))) all)
       all
-      (do (save! eng sid (wmem-of eng sid)) (conj all (assoc (last follow) :saved true))))))
+      (do (save! eng sid (wmem-of eng sid))
+          (conj (vec (butlast all)) (assoc (last all) :saved true :ignored false))))))
+
+(defn- release-now!
+  "q12 approve-early: release hold `id` of `sid` now (its timer cancelled), through the same path as
+   a timed release: an act is re-delivered and re-checked in full; an effect goes out."
+  [eng sid id]
+  (let [{:keys [queue env]} (engine eng)
+        hold (get-in (wmem-of eng sid) [data-key :sova/holds id])]
+    (if-not hold
+      []
+      (do (sp/cancel! queue env sid (hold-send-id id))
+          (swap! (sessions* eng) update-in [sid data-key :sova/holds] dissoc id)
+          (if (:act hold)
+            (release-act-hold! eng sid (assoc hold :approved true))
+            (do (swap! (sessions* eng) update-in [sid data-key :outbox] (fnil conj []) (:effect hold))
+                (run-step! eng sid (evts/new-event {:name :hold/released
+                                                    :data {:id id :kind (:kind hold) :what (:what hold)
+                                                           :at ((:clock (engine eng))) :by "system"}}))))))))
 
 (defn- release-hold! [eng sid event]
   (let [id   (get-in event [:data :id])
@@ -462,6 +524,18 @@
         hold (get-in wm [data-key :sova/holds id])]
     (cond
       (not hold) []                                         ; cancelled meanwhile: nothing to do
+      (and (:act hold) (policy/waits-unreviewed? hold))
+      ;; q12: a confirm-required hold waits past its end for the overseer (stall clock from :until)
+      (if (:waiting hold)
+        []
+        (do (swap! (sessions* eng) assoc-in [sid data-key :sova/holds id] (assoc hold :waiting true))
+            (let [steps (run-step! eng sid (evts/new-event {:name :hold/waiting
+                                                            :data {:id id :event (:event hold) :kind (:kind hold)
+                                                                   :what (:what hold) :at ((:clock (engine eng))) :by "system"}}))]
+              (if (some :saved steps)
+                steps
+                (do (save! eng sid (wmem-of eng sid))
+                    (into [(assoc (first steps) :saved true :ignored false :feed :feed)] (rest steps)))))))
       (:act hold)
       (do (swap! (sessions* eng) update-in [sid data-key :sova/holds] dissoc id)
           (release-act-hold! eng sid hold))
@@ -516,8 +590,10 @@
         (and f (:at-once envelope) (nil? (get-in envelope [:at-once f]))) (assoc-in [:at-once f] n)))))
 
 (defn- hold-act!
-  "Put act `event` on hold: no transition now; the engine re-delivers it at the hold's end."
-  [eng sid event orig act]
+  "Put act `event` on hold: no transition now; the engine re-delivers it at the hold's end. opts:
+   `:wait` \"hours\" and `:until` (r7: until the person's window opens), `:confirm` (q12: it waits
+   past its end for the overseer's approval, per the switch)."
+  [eng sid event orig act {:keys [wait until confirm]}]
   (let [now    ((:clock (engine eng)))
         wm0    (wmem-of eng sid)
         d0     (get wm0 data-key)
@@ -527,8 +603,10 @@
         payload (dissoc orig :at)
         view   (assoc d0 :_event {:name ename :data payload})
         hold   (cond-> {:id id :act true :event ename :data payload :kind (id-str ename)
-                        :since now :until (+ now (policy/hold-ms payload d0))
+                        :since now :until (or until (+ now (policy/hold-ms payload d0)))
                         :by (id-str (:by payload)) :scope (scope-of payload)}
+                 wait (assoc :wait wait)
+                 confirm (assoc :confirm true)
                  (:overseer-id payload) (assoc :overseer-id (:overseer-id payload))
                  (:project-id payload) (assoc :project-id (:project-id payload))
                  (:counts act) (assoc :counts (:counts act)
@@ -542,7 +620,7 @@
     (save! eng sid wm2)
     [(assoc (base-step eng sid event)
        :before c :after c :changed (:changed info) :effects [] :outbox [] :holds (:holds info)
-       :holds-ended [] :held hold :running (running? eng sid) :microsteps 0 :saved true)]))
+       :holds-ended [] :held hold :running (running? eng sid) :microsteps 0 :saved true :feed :feed)]))
 
 (defn- process-one
   "Deliver `event` (an event map) to `sid`: the steps it produced. An act is gated first (final,
@@ -563,11 +641,21 @@
             d     (:data event)]
         (if-let [r (explain-refusal eng sid ename d {:stages #{:final :level :pre}})]
           [(refused-step eng sid event r)]
-          (if (and (not (:sova/released d)) (policy/held? act d (data eng sid)))
-            (if-let [r (explain-refusal eng sid ename d {:stages #{:state :check}})]
-              [(refused-step eng sid event r)]
-              (hold-act! eng sid event orig act))
-            (run-step! eng sid event)))))))
+          (let [now     (clock)
+                view    (assoc (data eng sid) :_event {:name ename :data d})
+                window  (when-let [f (:hours act)] (f view))
+                off     (when (and (number? window) (> window now)) window)
+                held?   (and (not (:sova/released d)) (policy/held? act d (data eng sid)))
+                waits?  (and off (policy/hours-wait-by? d))]
+            (if (or held? waits?)
+              (if-let [r (explain-refusal eng sid ename d {:stages #{:state :check}})]
+                [(refused-step eng sid event r)]
+                (hold-act! eng sid event orig act
+                  (if held?
+                    {:confirm (policy/confirm-required? (or (:confirm-kind act) (id-str ename)) d)}
+                    {:wait "hours" :until off})))
+              (cond-> (run-step! eng sid event)
+                off (update 0 assoc :off-hours off)))))))))
 
 ;; ---------------------------------------------------------------------------------------------
 ;; Calls
@@ -639,6 +727,7 @@
      :invocations (vec (:invocations c))
      :spawned     (vec (:spawned c))
      :loaded      (vec (distinct (:loaded c)))
+     :absorbed    (vec (distinct (:absorbed c)))
      :stale       (vec (:stale c))
      :errors      @captured
      ;; One snapshot per session this call moved (a step, or a pending event added or removed):
@@ -1095,6 +1184,29 @@
     (q/drop-session! queue sid)
     nil))
 
+(def cold-after-ms "A settled session goes cold after a day with nothing pending (design §5.3)." (* 24 3600 1000))
+
+(defn cold-sessions
+  "Loaded sessions that may be unloaded at `now`: their chart's `:cold?` (fn [config data]) says they
+   are settled, their last event is `min-age` (default a day) old, and nothing is pending for them: no
+   effect, hold, invocation or queued event, and no loaded session they watch or are watched by is
+   warm with a pending event for them."
+  ([eng now] (cold-sessions eng now cold-after-ms))
+  ([eng now min-age]
+   (let [{:keys [queue]} (engine eng)]
+     (vec (filter (fn [sid]
+                    (let [entry (entry-of eng sid)
+                          d     (data eng sid)
+                          cold? (:cold? entry)]
+                      (and cold?
+                           (cold? (set (configuration eng sid)) d)
+                           (<= (+ (or (:now d) 0) min-age) now)
+                           (empty? (:sova/pending d))
+                           (empty? (:sova/holds d))
+                           (empty? (:sova/invocations d))
+                           (empty? (q/pending queue sid)))))
+            (session-ids eng))))))
+
 (defn generation [eng sid] (get-in @(:meta (engine eng)) [sid :generation]))
 
 (defn snapshot-meta [eng sid] (get @(:meta (engine eng)) sid))
@@ -1109,6 +1221,19 @@
     (map? v) (into {} (keep (fn [[k x]] (let [p (plain x)] (when (some? p) [k p])))) v)
     (coll? v) (vec (keep plain v))
     :else v))
+
+(defn unclassified
+  "r8a: every transition of `charts` (a registry) that declares no feed class (`:sova/feed :feed |
+   :quiet`), as `[chart transition-id event]`: an enumeration test asserts it is empty. Initial and
+   history defaults are not transitions an author writes; corrections are always :feed."
+  [charts]
+  (vec (for [[nm {:keys [chart]}] (sort-by key charts)
+             t (sort-by #(get (::sc/id-ordinals chart) (:id %)) (vals (::sc/elements-by-id chart)))
+             :when (and (= :transition (:node-type t))
+                        (not (pseudo-transition? chart t))
+                        (not (:sova/correction t))
+                        (not (#{:feed :quiet} (feed-kw (:sova/feed t)))))]
+         [nm (:id t) (event-names-of t)])))
 
 (defn chart-info
   "What a chart declares: version, storage, exported keys, acts (checks by name), states,

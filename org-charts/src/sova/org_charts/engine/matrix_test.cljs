@@ -45,3 +45,10 @@
                        :acts [[:gather/close {}]] :envelopes {"operator" {:by "operator"}}
                        :sentences #{"something else"}})]
     (is (= ["a sentence outside the catalogue"] (distinct (map :why (:failures r)))))))
+
+(deftest the-world-around-the-session-is-absorbed
+  (let [r (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check :sid "par/o1/1"
+                       :acts [[:kid/spawn {:name "k"}]] :envelopes {"operator" {:by "operator"}}
+                       :drive [[:kid/watch {:target "kid/nowhere"}]]})]
+    (is (empty? (:failures r)) "a watch of a session that exists nowhere does not throw")
+    (is (pos? (:cells r)))))

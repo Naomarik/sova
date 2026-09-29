@@ -12,10 +12,12 @@
   (:require
     [sova.org-charts.engine.core :as core]))
 
-(def sid "matrix/session")
+(def default-sid "matrix/session")
+(def ^:dynamic sid default-sid)
 
 (defn- fresh [charts opts start]
-  (let [eng (core/new-engine charts (select-keys opts [:level-check :stamp :max-microsteps]))]
+  (let [eng (core/new-engine charts (merge {:absorb-unknown true}
+                                      (select-keys opts [:level-check :stamp :max-microsteps :load-cold :absorb-unknown])))]
     (core/start! eng sid (:chart opts) start (:now opts 1000000))
     eng))
 
@@ -52,9 +54,13 @@
   "opts: `:charts` (the registry map), `:chart` (name), `:starts` [start-data …], `:drive`
    [[event payload] | [:fire ms] …], `:acts` [[event payload] …], `:envelopes` {name envelope},
    `:sentences` (set or fn), `:level-check`, `:stamp`, `:key` (fn [data] → extra state key, default
-   none: configurations only), `:max-configs` (default 5000), `:now`.
+   none: configurations only), `:max-configs` (default 5000), `:now`, `:sid` (the session under
+   test's id, default \"matrix/session\"), `:load-cold` (fn [sid] → snapshot text | nil) and
+   `:absorb-unknown` (default true: a session that exists nowhere is a sink that takes every event,
+   so the chart's sends, watches and drives to its world never throw).
    Returns `{:configs n :cells n :accepted n :refused n :failures [{…}] :reached #{configuration}}`."
   [{:keys [charts starts drive acts envelopes sentences max-configs now] :as opts}]
+  (binding [sid (or (:sid opts) default-sid)]
   (let [now      (or now 1000000)
         maxc     (or max-configs 5000)
         key-fn   (:key opts)
@@ -115,7 +121,7 @@
                       (recur (into (subvec (vec frontier) 1) @nexts))))))))))
       nil)
     {:configs @n :cells @cells :accepted @acc :refused @ref :failures @failures :reached @reached
-     :truncated (>= @n maxc)}))
+     :truncated (>= @n maxc)})))
 
 (defn clean?
   "True when the report has no failure and was not truncated."

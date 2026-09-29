@@ -10,6 +10,16 @@
    hold too. Off: only chart-started acts are held."
   true)
 
+(def operator-acts-wait-for-hours?
+  "r7 (provisional, pending q13): the operator's own clicks wait for a person's working hours too.
+   Off: they send at once, with an off-hours fact the UI shows."
+  false)
+
+(def unreviewed-holds-wait?
+  "r8/q12: a confirm-required hold (its act's kind is in the project's confirm list) waits past its
+   end until the overseer approves or cancels it. Off: it goes ahead at its end like any hold."
+  true)
+
 (def at-once-field
   "The at-once count a held act of a `:counts` kind reserves a slot in (F2)."
   {"gather" :gatherings-open "create" :coding-running})
@@ -45,3 +55,23 @@
                    [e m] acts
                    :when (:hold m)]
                [nm (str (namespace e) "/" (name e))]))))
+
+(defn hours-wait-by?
+  "r7: does an act under `envelope` wait for the person's working hours? Chart-started and the
+   overseer's unattended acts do; attended turns never; the operator's clicks per the switch."
+  [envelope]
+  (let [by (by-of envelope)]
+    (cond
+      (true? (:attended envelope)) false
+      (= "operator" by) operator-acts-wait-for-hours?
+      :else (contains? #{"chart" "overseer"} by))))
+
+(defn confirm-required?
+  "q12: is an act of confirm kind `kind` in the envelope's confirm list (`:confirm-kinds`)?"
+  [kind envelope]
+  (boolean (and kind (some #(= (name kind) (name %)) (:confirm-kinds envelope)))))
+
+(defn waits-unreviewed?
+  "Does a hold wait past its end until approved (the switch; confirm-required holds only)?"
+  [hold]
+  (boolean (and unreviewed-holds-wait? (:confirm hold) (not (:approved hold)))))

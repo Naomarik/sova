@@ -151,6 +151,12 @@
   ([kind f] (held kind f {}))
   ([kind f opts] (script {:expr (fn [_ data] (hold-ops data (effect-map kind f data) opts))})))
 
+(defn approve-hold
+  "Executable content (q12 approve-early): release hold `(id-fn data)` now; the engine re-delivers
+   the act and re-checks it in full, like a timed release."
+  [id-fn]
+  (script {:expr (fn [_ data] [(ops/assign :sova/directives (conj (vec (:sova/directives data)) {:op :release-hold :id (id-fn data)}))])}))
+
 (defn cancel-hold-ops [data id]
   [(ops/assign :sova/holds (dissoc (or (:sova/holds data) {}) id))])
 
@@ -160,6 +166,17 @@
   (script {:expr (fn [_ data] (cancel-hold-ops data (id-fn data)))}))
 
 (def no-such-hold "No held act has that id.")
+
+(defn hold-approve-correction
+  "The `:hold/approve {:id :reason}` correction (q12 approve-early), ready to place on the chart's top
+   state (declare `:hold/approve` in `:acts` with its `:needs`)."
+  ([] (hold-approve-correction {}))
+  ([attrs]
+   (correction (merge {:event :hold/approve
+                       :checks [{:name :hold-exists
+                                 :fn   (fn [data] (when-not (contains? (:sova/holds data) (:id (evt data))) no-such-hold))}]}
+                 attrs)
+     (approve-hold #(:id (evt %))))))
 
 (defn hold-cancel-correction
   "The `:hold/cancel {:id :reason}` correction, ready to place on the chart's top state (declare

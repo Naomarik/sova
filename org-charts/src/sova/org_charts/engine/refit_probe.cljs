@@ -59,6 +59,9 @@
   (statechart {}
     (state {:id :top :initial :idle}
       (dsl/hold-cancel-correction)
+      (dsl/hold-approve-correction)
+      (transition {:event :tick/quiet :sova/feed :quiet} (note :quiet))
+      (dsl/act {:event :message/send :sova/feed :feed} (note :messages))
       (transition {:event :link/moved} (note :seen))
       (transition {:event :effect/done} (note :done))
       (transition {:event :effect/failed} (note :failed))
@@ -107,7 +110,10 @@
    :offer/make   {}
    :door/open    {:pre [{:name :door-named :payload? true :fn (fn [d] (when (= "bad" (:door (dsl/evt d))) "No such door."))}]}
    :item/reopen  {:needs "L1" :tool "sova_reopen" :correction true}
-   :hold/cancel  {:needs "L0" :tool "sova_note" :correction true}})
+   :hold/cancel  {:needs "L0" :tool "sova_note" :correction true}
+   :hold/approve {:needs "L0" :tool "sova_note" :correction true}
+   :message/send {:needs "L1" :tool "sova_send" :people-facing true
+                  :hours (fn [d] (:window (dsl/evt d)))}})
 
 (def kid-chart
   (statechart {}
@@ -121,6 +127,7 @@
 (def charts
   {"refit-parent" {:chart parent-chart :version 2 :storage :portable :exported [:gathers]
                    :migrate {1 (fn [s] (update s :config #(set (replace {:waiting :idle} %))))}
-                   :acts parent-acts
+                   :acts (assoc-in parent-acts [:gather/start :confirm-kind] "gather")
                    :not-here (fn [e _ _] (str (namespace e) "/" (name e) " doesn't apply here."))}
-   "refit-kid"    {:chart kid-chart :version 1 :storage :host-local :exported [:size]}})
+   "refit-kid"    {:chart kid-chart :version 1 :storage :host-local :exported [:size]
+                   :cold? (fn [config _] (contains? config :grown))}})

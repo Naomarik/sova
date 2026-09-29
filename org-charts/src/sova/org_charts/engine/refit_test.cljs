@@ -349,7 +349,7 @@
 (deftest chart-info-lists-acts-states-and-corrections
   (let [info (core/chart-info rp/charts "refit-parent")]
     (is (= 2 (:version info)))
-    (is (= [:hold/cancel :item/reopen] (:corrections info)))
+    (is (= [:hold/approve :hold/cancel :item/reopen] (:corrections info)))
     (is (= ["door-named"] (get-in info [:acts :door/open :pre])))
     (is (some #(= {:id :timed :kind :state :parent :top} %) (:states info)))
     (is (some #(and (= [:gather/start] (:event %)) (= ["gatherings-open" "day-allowance"] (:sova/checks %))) (:transitions info)))
@@ -396,4 +396,105 @@
   (let [eng (parent (new-eng))
         r   (core/send! eng "par" :offer/make (assoc unattended :hold-ms 0) {:now t0})]
     (is (= ["offer"] (map :kind (:outbox r))) "E29")
-    (is (empty? (core/holds eng)))))
+    (is (empty? (core/holds eng)))
+    (let [r (core/send! eng "par" :offer/make (assoc unattended :hold-ms 1) {:now (+ t0 1)})]
+      (is (empty? (:outbox r)) "positive control: 1 ms is a hold…")
+      (is (= ["offer"] (map :kind (core/holds eng))) "…listed until it ends"))))
+
+(deftest settled-sessions-go-cold-after-a-day-and-load-again-on-demand
+  (let [store (atom {})
+        eng   (parent (new-eng {:load-cold (fn [sid] (get @store sid))}))
+        day   core/cold-after-ms]
+    (core/send! eng "par" :kid/spawn (assoc overseer :name "ana") {:now t0})
+    (is (= [] (core/cold-sessions eng (+ t0 day))) "new is not settled")
+    (core/send! eng "kid/ana" :kid/grow {} {:now (+ t0 1)})
+    (is (= [] (core/cold-sessions eng (+ t0 day))) "not a day yet")
+    (is (= ["kid/ana"] (core/cold-sessions eng (+ t0 1 day))))
+    (swap! store assoc "kid/ana" (core/dump eng "kid/ana"))
+    (core/unload! eng "kid/ana")
+    (core/send! eng "kid/ana" :kid/touch {} {:now (+ t0 2 day)})
+    (is (= 1 (:touched (core/data eng "kid/ana"))) "an event to a cold session loads it first")))
+
+;; ---- r8a feed class, r7 hours waits, q12 confirm-required holds and approve-early --------------------
+
+(deftest every-step-has-a-feed-class
+  (let [eng (parent (new-eng))]
+    (is (= :quiet (:feed (first (:steps (core/send! eng "par" :tick/quiet {} {:now t0}))))) "declared quiet")
+    (is (= :feed (:feed (first (:steps (core/send! eng "par" :message/send {:by "operator"} {:now t0}))))) "declared feed")
+    (is (= :feed (:feed (first (:steps (core/send! eng "par" :gather/close {:by "operator"} {:now t0}))))) "a refusal")
+    (is (= :feed (:feed (first (:steps (core/send! eng "par" :gather/start (assoc unattended :to "a") {:now t0}))))) "a held act")
+    (is (= :feed (:feed (first (:steps (core/send! eng "par" :hold/cancel {:by "operator" :id "gather/start#0"} {:now t0}))))) "a correction")
+    (is (= :feed (:feed (first (:steps (core/send! eng "par" :timed/arm {} {:now t0}))))) "unclassified shows")
+    (is (= :feed (:feed (first (:steps (core/start! eng "p2" "refit-parent" {} t0))))) "a start")
+    (is (= "p1" (:project-id (first (:steps (core/send! eng "par" :tick/quiet {:project-id "p1"} {:now t0}))))))))
+
+(deftest the-enumeration-finds-every-unclassified-transition
+  (let [u (core/unclassified rp/charts)]
+    (is (some #(= [:timed/arm] (nth % 2)) u) "timed/arm declares nothing")
+    (is (not-any? #(= [:tick/quiet] (nth % 2)) u))
+    (is (not-any? #(= [:message/send] (nth % 2)) u))
+    (is (not-any? #(= [:hold/cancel] (nth % 2)) u) "corrections are always feed")
+    (is (not-any? #(empty? (nth % 2)) (filter #(= "refit-kid" (first %)) u)) "initial transitions are not listed")))
+
+(deftest an-off-hours-act-waits-for-the-window
+  (let [eng    (parent (new-eng))
+        window (+ t0 3600000)]
+    (testing "unattended: an hours wait, listed with the holds, released when the window opens"
+      (let [r (core/send! eng "par" :message/send (assoc unattended :hold-ms 0 :window window) {:now t0})
+            h (:held (first (:steps r)))]
+        (is (= {:wait "hours" :until window} (select-keys h [:wait :until])))
+        (is (= [window] (map :until (core/holds eng))))
+        (is (= [:message/send :hold/released] (map :event (:steps (core/fire-due! eng window)))))
+        (is (= 1 (count (:messages (core/data eng "par")))))))
+    (testing "in hours (window not in the future): at once"
+      (core/send! eng "par" :message/send (assoc unattended :hold-ms 0 :window t0) {:now (+ t0 1)})
+      (is (= 2 (count (:messages (core/data eng "par"))))))
+    (testing "the operator's click goes at once, with the off-hours fact (switch off)…"
+      (let [r (core/send! eng "par" :message/send {:by "operator" :window (+ t0 7200000)} {:now (+ t0 2)})]
+        (is (= (+ t0 7200000) (:off-hours (first (:steps r)))))
+        (is (= 3 (count (:messages (core/data eng "par")))))))
+    (testing "…and waits when the switch is on"
+      (with-redefs [policy/operator-acts-wait-for-hours? true]
+        (let [r (core/send! eng "par" :message/send {:by "operator" :window (+ t0 7200000)} {:now (+ t0 3)})]
+          (is (= "hours" (:wait (:held (first (:steps r)))))))))
+    (testing "an attended turn never waits"
+      (core/send! eng "par" :message/send {:by "overseer" :attended true :window (+ t0 7200000)} {:now (+ t0 4)})
+      (is (= 4 (count (:messages (core/data eng "par"))))))))
+
+(deftest a-confirm-required-hold-waits-past-its-end-until-approved
+  (let [eng (parent (new-eng))
+        env (assoc unattended :hold-ms 1000 :confirm-kinds ["gather"])]
+    (let [h (:held (first (:steps (core/send! eng "par" :gather/start (assoc env :to "a") {:now t0}))))]
+      (is (true? (:confirm h))))
+    (let [r (core/fire-due! eng (+ t0 1000))]
+      (is (= [:hold/waiting] (map :event (:steps r))) "at its end it waits")
+      (is (in? eng "par" :idle))
+      (is (= [true] (map :waiting (core/holds eng))) "still listed, waiting (stall clock from :until)"))
+    (is (empty? (:steps (core/fire-due! eng (+ t0 99999)))) "nothing more happens by itself")
+    (is (= "A correction needs a reason: say why."
+          (:sentence (:refused (first (:steps (core/send! eng "par" :hold/approve {:by "overseer" :level "L0" :id "gather/start#0"} {:now (+ t0 100000)})))))))
+    (let [r (core/send! eng "par" :hold/approve {:by "overseer" :level "L0" :id "gather/start#0" :reason "looks right"} {:now (+ t0 100000)})]
+      (is (= [:hold/approve :gather/start :hold/released] (map :event (:steps r))))
+      (is (in? eng "par" :gathering))
+      (is (empty? (core/holds eng))))))
+
+(deftest only-listed-kinds-wait-and-the-switch-turns-waiting-off
+  (testing "a kind not in the confirm list goes ahead at its end"
+    (let [eng (parent (new-eng))]
+      (core/send! eng "par" :gather/start (assoc unattended :hold-ms 1000 :confirm-kinds ["promote"]) {:now t0})
+      (core/fire-due! eng (+ t0 1000))
+      (is (in? eng "par" :gathering))))
+  (testing "switch off: a confirm-required hold goes ahead at its end"
+    (with-redefs [policy/unreviewed-holds-wait? false]
+      (let [eng (parent (new-eng))]
+        (core/send! eng "par" :gather/start (assoc unattended :hold-ms 1000 :confirm-kinds ["gather"]) {:now t0})
+        (core/fire-due! eng (+ t0 1000))
+        (is (in? eng "par" :gathering))))))
+
+(deftest approve-early-releases-a-hold-now
+  (let [eng (parent (new-eng))]
+    (core/send! eng "par" :gather/start (assoc unattended :to "a") {:now t0})
+    (let [r (core/send! eng "par" :hold/approve {:by "operator" :id "gather/start#0"} {:now (+ t0 5)})]
+      (is (= [:hold/approve :gather/start :hold/released] (map :event (:steps r))))
+      (is (in? eng "par" :gathering))
+      (is (nil? (core/next-due-at eng)) "its timer is gone"))))

@@ -185,6 +185,7 @@
          :dump          (fn [sid] (core/dump eng sid))
          :load          (guarded (fn [sid text] (->js (core/load! eng sid text))))
          :unload        (fn [sid] (core/unload! eng sid))
+         :coldSessions  (fn [now minAge] (->js (if (some? minAge) (core/cold-sessions eng now minAge) (core/cold-sessions eng now))))
          :sessions      (fn [] (->js (core/session-ids eng)))
          :generation    (fn [sid] (core/generation eng sid))}))
 

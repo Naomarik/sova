@@ -27,7 +27,7 @@
   [e]
   (= error-type (:type (ex-data e))))
 
-(deftype StepCounter [^:mutable state ^:mutable n limit trip]
+(deftype StepCounter [^:mutable state ^:mutable n limit trip ^:mutable taken]
   IDeref
   (-deref [_] state)
   IVolatile
@@ -35,6 +35,7 @@
     (let [t (::sc/enabled-transitions v)]
       (when (and (seq t) (not (identical? t (::sc/enabled-transitions state))))
         (set! n (inc n))
+        (set! taken (into taken t))
         (when (> n limit) (trip n v))))
     (set! state v)
     v))
@@ -57,20 +58,22 @@
                          :event         (event-name event)
                          :configuration (vec (sort (map id-str (::sc/configuration wm))))
                          :transitions   (vec (map id-str (::sc/enabled-transitions wm)))})))
-        c    (->StepCounter @(::sc/vwmem env) 0 limit trip)]
+        c    (->StepCounter @(::sc/vwmem env) 0 limit trip [])]
     [(assoc env ::sc/vwmem c) c]))
 
-(deftype BoundedProcessor [limit last]
+(deftype BoundedProcessor [limit last last-taken]
   sp/Processor
   (start! [_ env statechart-src params]
     (let [[env c] (counted (impl/processing-env env statechart-src params) limit :sova/started)
           wm      (impl/initialize! env (assoc params ::sc/statechart-src statechart-src))]
       (reset! last (.-n ^StepCounter c))
+      (reset! last-taken (.-taken ^StepCounter c))
       wm))
   (process-event! [_ env wmem event]
     (let [[env c] (counted (impl/processing-env env (::sc/statechart-src wmem) wmem) limit event)
           wm      (impl/process-event! env event)]
       (reset! last (.-n ^StepCounter c))
+      (reset! last-taken (.-taken ^StepCounter c))
       wm))
   (exit! [_ env wmem skip-done-event?]
     (let [env (impl/processing-env env (::sc/statechart-src wmem) wmem)]
@@ -79,8 +82,14 @@
 
 (defn microsteps "Microsteps the last call on `processor` took." [processor] @(.-last ^BoundedProcessor processor))
 
+(defn taken
+  "The ids of the transitions the last call on `processor` took, in the order taken (the feed class
+   of a step comes from them)."
+  [processor]
+  @(.-last-taken ^BoundedProcessor processor))
+
 (defn new-processor
   "The library's v20150901 processor with at most `limit` microsteps per event (default
    `default-max-microsteps`)."
   ([] (new-processor default-max-microsteps))
-  ([limit] (->BoundedProcessor (or limit default-max-microsteps) (atom 0))))
+  ([limit] (->BoundedProcessor (or limit default-max-microsteps) (atom 0) (atom []))))

@@ -139,3 +139,13 @@
     (is (nil? (h/refusal x psid :baton/start (assoc two :card {:projects ["pr1"] :people ["p1" "p2"]}))))
     (is (nil? (h/refusal x psid :baton/start (assoc go :to "operator" :card {:projects ["pr1"]}))) "the operator is never a card item")
     (is (nil? (h/refusal x psid :baton/start (assoc one :by "operator" :via nil))) "the operator's own page asks nothing")))
+
+(deftest person-add-records-its-writer
+  (let [spawned (fn [y] (:by (:data (last (h/directives y osid)))))]
+    (is (= {:kind "operator"} (spawned (h/send! (org) osid :person/add (assoc op :person-id "p1" :person {:name "Ana"})))))
+    (is (= {:kind "referral" :session-id "s1" :entry-id "e1" :quote "Ask Carla"}
+           (spawned (h/send! (org) osid :person/add
+                      (assoc op :person-id "p2" :by-kind "referral" :session-id "s1" :entry-id "e1" :quote "Ask Carla"
+                                :person {:name "Carla" :status "proposed" :role "Accountant" :contact {:email "c@x.co"}
+                                         :referral {:why "Knows invoicing" :referred-by "p1" :session-id "s1" :quote "Ask Carla"}}))))
+        "a referral's creation lines say referral (decidesTrusted relies on it)")))

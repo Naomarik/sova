@@ -17,6 +17,7 @@
     [com.fulcrologic.statecharts.elements :refer [state transition on-entry script]]
     [com.fulcrologic.statecharts.data-model.operations :as ops]
     [sova.org-charts.charts.base :as b]
+    [sova.org-charts.charts.person :as person]
     [sova.org-charts.charts.rules.levels :as lv]
     [sova.org-charts.charts.rules.person :as rp]
     [sova.org-charts.charts.rules.refusal :as r]
@@ -54,11 +55,11 @@
 
 (defn person-add-check [data] (let [c (person-add-change data)] (when (r/refusal? c) c)))
 
-(defn- by-of [data]
-  (let [e (b/evt data)]
-    (cond-> {:kind "operator"}
-      (= "overseer" (some-> (:via e) name)) (assoc :via "overseer")
-      (:overseer-id e) (assoc :overseer-id (:overseer-id e)))))
+(defn- by-of
+  "The creation's `by`, as person/edit records it: a referral's creation lines say referral (with its
+   session, entry and quote), which reconcile's decidesTrusted relies on."
+  [data]
+  (person/change-by data))
 
 ;; ---- owner ----------------------------------------------------------------------------------------
 

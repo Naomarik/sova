@@ -168,6 +168,7 @@
                                      (for [f fields :when (contains? (:person d) f)] (ops/assign f (get-in d [:person f])))))})
           (dsl/effect :roster-history (fn [d] {:person-id (:id d) :lines (:changed d) :by (:by d)})))
         (transition {:cond (fn [_ d] (= "proposed" (:status d))) :target :proposed})
+        (transition {:cond (fn [_ d] (= "left" (:status d))) :target :left})
         (transition {:target :active}))
 
       (state {:id :proposed}

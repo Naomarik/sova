@@ -99,3 +99,8 @@
       (is (some? (h/refusal x sid :person/revert {:by "operator" :via "overseer" :row {:at 3 :field "status" :from "left" :to "active"}})))
       (is (nil? (h/refusal x sid :person/revert {:by "operator" :via "overseer" :row {:at 3 :field "role" :from "Clerk" :to "CFO"}})))))
   (is (= "A chart change may not approve or decline people." (h/refusal (born carla) sid :person/approve {:by "chart" :autonomy "L3" :roster-active true}))))
+
+(deftest a-person-created-left-starts-left
+  (let [x (born {:name "Old Timer" :status "left"})]
+    (is (h/in? x sid :left))
+    (is (= "left" (:status (h/data x sid))))))

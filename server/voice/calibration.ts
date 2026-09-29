@@ -396,9 +396,17 @@ export class Calibrator {
     const dir = deviceDir(this.o.calibrationDir(), sweep.device);
     const wavs = new Map(clips.map((c) => [c.n, new Uint8Array(readFileSync(clipFile(dir, c.n)))]));
     const refs = new Map(SENTENCES.map((s) => [s.n, s.text]));
-    // Voice detection needs Silero on disk and the engine launched with -vm.
+    // Voice detection needs Silero on disk and the engine launched with -vm. Without it the
+    // settings that use it are skipped, never decoded without it under their label.
     if (run.rows.some((r) => r.settings.vad) && !this.o.vadReady()) {
       if (await this.o.ensureVad(abort.signal)) await this.o.restartEngine();
+      if (abort.signal.aborted) return;
+      if (!this.o.vadReady()) {
+        const kept = run.rows.filter((r) => !r.settings.vad);
+        run.vadSkipped = run.rows.length - kept.length;
+        run.rows = kept;
+        run.progress.settings = kept.length;
+      }
     }
     const vadModel = this.o.vadReady();
     // Round-robin: every setting on clip 1, then every setting on clip 2, … so a slow spell of the

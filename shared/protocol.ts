@@ -4199,6 +4199,8 @@ export interface VoiceCalibrationRun {
   applied?: string;
   /** The load average was high at the start or the end: timings may be slow. */
   hostBusy?: boolean;
+  /** How many settings were skipped because the voice-detection model couldn't be fetched. */
+  vadSkipped?: number;
   error?: string;
   startedAt: number;
   finishedAt?: number;

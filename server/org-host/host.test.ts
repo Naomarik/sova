@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import type { EngineOptions } from "../org-charts";
-import { OrgHost, type OrgHostOptions } from "./index";
+import { OrgHost, OrgPayloadError, type OrgHostOptions } from "./index";
 import { scanSnapshots } from "./store";
 import { HOST_CHARTS } from "./test-chart";
 
@@ -408,5 +408,21 @@ describe("org host", () => {
     assert.equal((await again.act("p/2", "count", {}, operator)).taken, true, "the org works");
     await again.close();
   });
-});
 
+  test("a payload key the envelope carries with another value is a caller's bug: act, trial and explain throw, nothing is stepped or logged", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/1", "host-probe", {}, operator);
+    const rowsBefore = host.log.rows().length;
+    await assert.rejects(host.act("p/1", "count", { by: 5 }, operator), (e: unknown) => e instanceof OrgPayloadError && e.keys.join() === "by" && /count: payload key `by` shadows the envelope's/.test(e.message));
+    assert.throws(() => host.trial("p/1", "count", { by: 5, reason: "x" }, { ...operator, reason: "y" }), (e: unknown) => e instanceof OrgPayloadError && e.keys.join() === "by,reason");
+    assert.throws(() => host.explain("p/1", "count", { attended: false }, { by: "overseer", attended: true }), OrgPayloadError);
+    assert.equal(host.data("p/1")?.["n"], undefined, "not stepped");
+    assert.equal(host.log.rows().length, rowsBefore, "nothing logged");
+    // equal values, and a key only one side has, pass
+    assert.equal((await host.act("p/1", "count", { by: "operator", reason: "r" }, { ...operator, reason: "r" })).taken, true);
+    assert.equal((await host.act("p/1", "count", { more: 5 }, operator)).taken, true);
+    assert.equal(host.data("p/1")?.["n"], 2);
+    await host.close();
+  });
+});

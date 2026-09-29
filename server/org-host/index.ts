@@ -143,6 +143,27 @@ export class OrgWorkspaceError extends Error {
   }
 }
 
+/** A caller's bug, never a refusal: an act's payload key that the envelope also carries with another
+    value (the engine sees them merged, so one would silently hide the other: baton/extend's `by`). */
+export class OrgPayloadError extends Error {
+  readonly code = "payload-shadows-envelope";
+  constructor(readonly event: string, readonly keys: string[]) {
+    super(`${event}: payload key${keys.length > 1 ? "s" : ""} ${keys.map((k) => `\`${k}\``).join(", ")} shadow${keys.length > 1 ? "" : "s"} the envelope's.`);
+    this.name = "OrgPayloadError";
+  }
+}
+
+/** An act's engine data: payload and envelope merged. A key in both with different values throws
+    OrgPayloadError; equal values pass (a `reason` may be both). */
+export function merged(event: string, payload: Record<string, unknown>, envelope: Envelope): JsonObject {
+  const env = envelope as Record<string, unknown>;
+  const clash = Object.keys(payload ?? {}).filter(
+    (k) => env[k] !== undefined && payload[k] !== undefined && JSON.stringify(payload[k]) !== JSON.stringify(env[k]),
+  );
+  if (clash.length) throw new OrgPayloadError(event, clash);
+  return { ...payload, ...envelope } as JsonObject;
+}
+
 export class OrgHostBusyError extends Error {
   readonly code = "busy";
   constructor() {
@@ -533,7 +554,7 @@ export class OrgHost {
   actNow(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope): ActResult {
     if (this.resuming) throw new OrgHostBusyError();
     return this.guard(() => {
-      const r = this.step(() => this.engine.send(sid, event, { ...payload, ...envelope } as JsonObject, { now: this.clock() }));
+      const r = this.step(() => this.engine.send(sid, event, merged(event, payload, envelope), { now: this.clock() }));
       return this.answer(sid, event, r);
     });
   }
@@ -591,7 +612,7 @@ export class OrgHost {
 
   trial(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope): ActResult {
     try {
-      const r = this.engine.trial(sid, event, { ...payload, ...envelope } as JsonObject, { now: this.clock() });
+      const r = this.engine.trial(sid, event, merged(event, payload, envelope), { now: this.clock() });
       return { taken: r.taken, refusal: r.taken ? null : (r.refusalInfo ?? { sentence: r.refusal ?? "That can't be done now." }), result: r };
     } catch (err) {
       if (err instanceof OrgWorkspaceError) return { taken: false, refusal: err.refusal, result: null };
@@ -600,7 +621,7 @@ export class OrgHost {
   }
 
   explain(sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope): Refusal | null {
-    return this.engine.explain(sid, event, { ...payload, ...envelope } as JsonObject, { now: this.clock() });
+    return this.engine.explain(sid, event, merged(event, payload, envelope), { now: this.clock() });
   }
 
   enabledEvents(sid: string, envelope: Envelope): EnabledEvent[] {

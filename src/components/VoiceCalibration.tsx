@@ -20,6 +20,9 @@ const nameOf = (st: VoiceStatus, id: string) => {
   return m ? modelName(m) : id;
 };
 
+/** The run's button: on Parakeet there is nothing to find, only a score (same route). */
+const runLabel = (st: VoiceStatus) => (st.models.find((m) => m.id === st.activeModel)?.tunable === false ? "Score This Model" : "Find Best Settings");
+
 /** One sweep on this install: how many settings, and about how long on `clips` clips. */
 function estimate(st: VoiceStatus, clips: number): { settings: number; sec: number } {
   const active = st.models.find((m) => m.id === st.activeModel);
@@ -169,7 +172,7 @@ function Sentences(props: { st: VoiceStatus; start: number; busy: boolean; runBl
                 title={props.runBlocked ?? (enough() ? undefined : "At least 4 clips are needed.")}
                 onClick={() => enough() && !props.runBlocked && !props.busy && props.onRun()}
               >
-                Find Best Settings
+                {runLabel(props.st)}
               </button>
             </div>
           </>
@@ -411,7 +414,9 @@ function Results(props: { st: VoiceStatus; run: VoiceCalibrationRun; busy: boole
         </div>
       </Show>
       <Show when={shown().length > 0}>
-        <p class="voice-caption">Sorted by word error, then jargon, then time.</p>
+        <Show when={tunable()}>
+          <p class="voice-caption">Sorted by word error, then jargon, then time.</p>
+        </Show>
         <Show when={run().vadSkipped}>
           {(n) => <p class="voice-caption">Couldn't get the voice-detection model, so the {n()} settings that use it were skipped.</p>}
         </Show>
@@ -523,7 +528,7 @@ export function VoiceCalibration(props: { st: VoiceStatus; busy: boolean; act: A
                           title={runBlocked() ?? undefined}
                           onClick={() => !runBlocked() && !props.busy && startRun()}
                         >
-                          Find Best Settings
+                          {runLabel(props.st)}
                         </button>
                       </Show>
                       <button

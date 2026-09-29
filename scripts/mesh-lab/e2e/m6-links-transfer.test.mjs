@@ -240,7 +240,9 @@ describe("2. two hosts, no dest: the recipient answers", () => {
     const o = await waitOffer("a", L.s.a.id, of, (x) => rowOf(x, L.s.b.id).state === "declined", { what: "declined on a" });
     assert.match(rowOf(o, L.s.b.id).message ?? "", /not needed here/);
     await waitFor(() => spool("a", of).length === 0, { what: "a's spool deleted at the last decline" });
-    await waitFor(async () => (await noticeRows("a", L.s.a, of)).length >= 1, { what: "a's wake" });
+    // a may be mid-turn (b's agent answers with chatter): the wake is steered in and reaches the
+    // transcript at a's next step, which a slow model step can hold back well past 30 s.
+    await waitFor(async () => (await noticeRows("a", L.s.a, of)).length >= 1, { timeoutMs: 120000, what: "a's wake" });
     await sleep(3000);
     assert.equal((await noticeRows("a", L.s.a, of)).length, 1, "a woken once");
     await waitIdle("a", L.s.a.id).catch(() => {});

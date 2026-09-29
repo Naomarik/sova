@@ -82,7 +82,7 @@ test("the contact marker: planted and changed through person/edit, it is in the 
   assert.deepEqual(holding.map((f) => f.slice(workspaceDir.length + 1)), ["charts/person/person%2Fo1%2Fp1.edn"]);
 });
 
-test("what a log replay needs (r9) is redacted like the rest: spawn data, a start's data, a set-state patch, a report", async () => {
+test("what a log replay needs (r9) is redacted like the rest: spawn data, a start's data and envelope, a set-state patch (contact included), a report, a plain row", async () => {
   const root = mkdtempSync(join(tmpdir(), "org-host-privacy-"));
   dirs.push(root);
   const M = {
@@ -95,6 +95,10 @@ test("what a log replay needs (r9) is redacted like the rest: spawn data, a star
     patchEmail: "patch.marker@example.org",
     reportText: "REPORT-TEXT-MARKER the person's words",
     reportPhone: "+1 555 0100 992",
+    startEnvelopeEmail: "start.envelope.marker@example.org",
+    startEnvelopeMessage: "START-ENVELOPE-MESSAGE-MARKER",
+    plainText: "PLAIN-TEXT-MARKER a note's words",
+    plainEmail: "plain.marker@example.org",
   };
   const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_CHARTS as unknown as EngineOptions["charts"] });
   host.invocations.register("sova/look", {
@@ -107,7 +111,8 @@ test("what a log replay needs (r9) is redacted like the rest: spawn data, a star
   assert.equal(added.taken, true, added.refusal?.sentence);
   assert.equal((host.data("person/o1/p1")?.["contact"] as Record<string, string>)["email"], M.spawnEmail, "the person was spawned with it");
   // a host start's data, a set-state's patch and a look's report, on a project's session (so the feed shows them)
-  await host.start("p/1", "host-probe", { projectId: "prj1", contact: { email: M.startEmail }, about: M.startAbout }, { by: "operator" });
+  // the start's envelope (its row's `envelope`) is scrubbed too, not only its data (`start`)
+  await host.start("p/1", "host-probe", { projectId: "prj1", contact: { email: M.startEmail }, about: M.startAbout }, { by: "operator", contact: { email: M.startEnvelopeEmail }, message: M.startEnvelopeMessage } as never);
   const set = await host.setState("p/1", { states: ["timed"], patch: { about: M.patchAbout, message: M.patchMessage, contact: { email: M.patchEmail } }, reason: "stuck" }, { by: "overseer", attended: true });
   assert.equal(set.taken, true, set.refusal?.sentence);
   assert.equal(host.data("p/1")?.["about"], M.patchAbout, "the patch went in");
@@ -115,7 +120,11 @@ test("what a log replay needs (r9) is redacted like the rest: spawn data, a star
   await host.act("p/1", "look", {}, { by: "operator" });
   await new Promise((r) => setTimeout(r, 40));
   assert.deepEqual(host.configuration("p/1"), ["top", "idle"], "the report came back");
+  // a plain row (logAct: a note) is scrubbed like a step's
+  await host.logAct({ session: "p/1", event: "note/add", by: "operator", project: "prj1", envelope: { text: M.plainText, contact: { email: M.plainEmail } } });
   const rows = host.log.rows();
+  assert.ok(rows.some((x) => x.event === "note/add" && x.plain), "the plain row is logged");
+  assert.ok(rows.some((x) => x.event === "sova/started" && x.session === "p/1" && (x.envelope as Record<string, unknown>)["contact"] === "[contact]"), "the start's envelope is logged, scrubbed");
   assert.ok(rows.some((x) => x.event === "sova/started" && x.session === "person/o1/p1"), "the spawn is logged");
   assert.ok(rows.some((x) => x.event === "sova/started" && x.session === "p/1" && x.start), "a start's data is logged");
   assert.ok(rows.some((x) => x.event === "sova/set-state" && (x.envelope as Record<string, unknown>)["patch"]), "a patch is logged");

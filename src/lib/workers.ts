@@ -135,6 +135,23 @@ export function showWorkersLabel(working: number, split: WorkingSplit | null | u
   return `${workersWorkingLabel(working, split).replace(/…$/, "")} — show workers`;
 }
 
+/** What a count of this session's workers is called: subagents, team members, or workers for a mix. */
+const countNoun = (n: number, split: WorkingSplit | null | undefined): string => {
+  if (!split || split.members === 0) return n === 1 ? "subagent" : "subagents";
+  if (split.subagents === 0) return n === 1 ? "team member" : "team members";
+  return n === 1 ? "worker" : "workers";
+};
+
+/** "2 of 5 subagents working": the working share the subagents trigger's ring draws, in words. */
+export function workersOfLabel(working: number, total: number, split: WorkingSplit | null | undefined): string {
+  return `${working} of ${total} ${countNoun(total, split)} working`;
+}
+
+/** The trigger's accessible name for the same: "2 of 5 subagents working — show subagents". */
+export function showWorkersOfLabel(working: number, total: number, split: WorkingSplit | null | undefined): string {
+  return `${workersOfLabel(working, total, split)} — show ${!split || split.members === 0 ? "subagents" : "workers"}`;
+}
+
 /** "Team · Explain UX" for the one team behind a count, else nothing to add. */
 export const teamNote = (split: WorkingSplit | null | undefined): string | undefined =>
   split?.team && split.members > 0 ? `Team · ${split.team}` : undefined;

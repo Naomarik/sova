@@ -295,6 +295,10 @@ whole sentences quoted from `mode/spec-mode.md` by anchor, with `$core` pinned t
 spec-mode.md fails there until the brief is reviewed. Ad hoc workers and team members alike;
 remote workers and `useWorktreeConfig` workers (which load the spec mode itself) do not get it.
 
+pi workers, which run with `--no-extensions`, also load `../mode/spec-worker.ts` by `-e` (the
+mode extension's census hook alone: a census digest after a tool call that changes `git status`),
+under the same condition as the brief; it is plumbing, so the spawn summary does not list it.
+
 Claude Code workers also get the spec hooks (`../claude-code/spec-hooks.ts`) in their `--settings`,
 merged over the sandbox's: a census digest after any tool call that changes `git status`, and a
 check of the reply's `Also changes:` line at Stop. State and a log of what the hooks said live in

@@ -99,3 +99,51 @@
 .voice-ready-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
 .voice-test { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
 .voice-test-result { margin: 0; color: var(--color-ink); }
+
+/* ---- Settings → Voice: Models and This Device (§app.settings-dialog/voice-models,
+   §app.settings-dialog/voice-calibration). Inside .settings-panel; nothing overlays it. ---- */
+.voice-section { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; padding-top: var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
+.voice-section-title { margin: 0; font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
+.voice-subtitle { margin: var(--space-2) 0 0; font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.voice-caption { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+
+/* Rows: name + caption, actions at the end; the actions wrap under the name at folded width. */
+.voice-models .list-row,
+.voice-results .list-row,
+.voice-devices .list-row { flex-wrap: wrap; align-items: flex-start; padding-left: 0; padding-right: 0; }
+.voice-model-name { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; font-weight: var(--fw-medium); color: var(--color-ink); }
+.voice-model-meta { margin: var(--space-1) 0 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.voice-model-error { display: flex; align-items: flex-start; gap: var(--space-1); margin: var(--space-1) 0 0; font-size: var(--fs-caption); color: var(--status-error); }
+.voice-model-meter { margin-top: var(--space-2); max-width: 320px; }
+/* No query: the name takes at least 220px, so on a narrow panel the actions wrap under it. */
+.voice-models .list-main,
+.voice-results .list-main,
+.voice-devices .list-main { flex: 1 1 220px; }
+.voice-model-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+
+/* The calibration flow replaces the section's body. */
+.voice-cal-flow { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.voice-cal-flow-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.voice-cal-sentence { margin: 0; font-size: var(--fs-heading-m); line-height: var(--lh-heading-m); font-weight: var(--fw-medium); color: var(--color-ink); overflow-wrap: anywhere; }
+.voice-cal-recording { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink); }
+/* Recording is live: the accent fill, like the composer's mic. */
+.voice-cal-stop,
+.voice-cal-stop:hover { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); }
+.voice-cal-stop:hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+.voice-cal-outcome { margin: 0; color: var(--color-ink); }
+
+/* Results: a row opens to each clip's sentence and what was heard. */
+.voice-result-toggle {
+  display: inline-flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min);
+  padding: 0; border: 0; background: none; color: var(--color-ink); font: inherit; font-weight: var(--fw-medium); text-align: left; cursor: pointer;
+}
+.voice-result-toggle:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.voice-result-tags { display: flex; flex-wrap: wrap; gap: var(--space-2); margin: 0; }
+.voice-result-tags:empty { display: none; }
+.voice-result-clips { list-style: none; margin: var(--space-2) 0 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.voice-result-clip { padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); }
+.voice-result-ref { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.voice-diff { margin: var(--space-1) 0 0; font-family: var(--font-body); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink); overflow-wrap: anywhere; }
+/* A sign, never color alone (the diff rule). */
+.voice-diff-missed { text-decoration: line-through; background: var(--diff-del-bg); color: var(--diff-del-ink); }
+.voice-diff-extra { text-decoration: none; background: var(--diff-add-bg); color: var(--diff-add-ink); }

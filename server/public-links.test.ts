@@ -108,6 +108,36 @@ describe("the file", () => {
     assert.throws(() => statSync(store.publicLinksFile()), "a refused patch writes nothing");
   });
 
+  test("publicUrl: only the canonical bare https origin; nothing the URL parser would rewrite", () => {
+    for (const ok of ["https://share.example.com", "https://share.example.com/", "https://share.example.com:8443", "https://[::1]:8443", " https://share.example.com "])
+      assert.equal(store.parsePublicUrl(ok), ok.trim().replace(/\/$/, ""), ok);
+    const bad = [
+      "https://host\\evil",
+      "https://host\\@other",
+      "https://host\\",
+      "https://share.example.com\\",
+      "https://sha\nre.example.com",
+      "https://share.example.com\t/",
+      "https://share.example.com?",
+      "https://share.example.com#",
+      "https://share.example.com/.",
+      "https://share.example.com/%2e",
+      "https://share.example.com//",
+      "https:share.example.com",
+      "https:/share.example.com",
+      "https:///share.example.com",
+      "https://share.example.com:443",
+      "https://SHARE.example.com",
+      "HTTPS://share.example.com",
+      "https://user@share.example.com",
+      "https://:@share.example.com",
+      "https://share.example.com/x",
+      "http://share.example.com",
+    ];
+    for (const v of bad) assert.throws(() => store.parsePublicUrl(v), /publicUrl/, JSON.stringify(v));
+    assert.ok("error" in store.patchPublicLinks({ route: "self", gateway: { ...GATEWAY, publicUrl: "https://host\\" } }));
+  });
+
   test("verifiedAt is the server's, and a new address drops it", () => {
     store.patchPublicLinks({ route: "self", gateway: GATEWAY });
     store.writeServerFields({ verifiedAt: 1000 });

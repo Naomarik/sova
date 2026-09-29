@@ -35,18 +35,27 @@ function onlyKeys(v: Record<string, unknown>, keys: readonly string[], what: str
 }
 const isPort = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 65535;
 
-/** An https origin: no path, query, fragment or credentials; returned without a trailing slash. */
+/**
+ * An https origin in its canonical form: `https://<host>[:<port>]`, optionally with one trailing
+ * slash, exactly as the URL parser would print its origin (lowercase, no default port). Anything
+ * the parser would rewrite is refused rather than normalized: a backslash (read as a slash), a tab
+ * or newline (dropped), `.`/`%2e` segments, an empty `?` or `#`, missing slashes, credentials.
+ * Returned without the trailing slash.
+ */
 export function parsePublicUrl(v: unknown): string {
-  if (typeof v !== "string" || !v.trim()) return fail("publicUrl must be an https:// address");
+  const bad = "publicUrl must be just an https:// address, like https://share.example.com";
+  if (typeof v !== "string") return fail(bad);
+  const text = v.trim();
+  if (!text || /[\\\s\x00-\x1f\x7f]/.test(text)) return fail(bad);
   let u: URL;
   try {
-    u = new URL(v.trim());
+    u = new URL(text);
   } catch {
-    return fail("publicUrl must be an https:// address");
+    return fail(bad);
   }
   if (u.protocol !== "https:") fail("publicUrl must start with https://");
-  if (u.username || u.password) fail("publicUrl must not carry a user or password");
-  if ((u.pathname !== "/" && u.pathname !== "") || u.search || u.hash) fail("publicUrl must be just the address, with no path");
+  if (u.username || u.password || u.search || u.hash || u.pathname !== "/") fail(bad);
+  if (text !== u.origin && text !== `${u.origin}/`) fail(`${bad} (written ${u.origin})`);
   return u.origin;
 }
 

@@ -10,8 +10,9 @@
     <span class="icon" style="--icon: url(/icons/image.svg)"></span><span>Drop images to attach</span>
   </div>
   <form class="composer-inner" aria-label="Message the agent">
-    <!-- while streaming only -->
-    <p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>
+    <!-- while streaming only: the dot, the step's icon, the words for the tooltip and assistive tech
+         (§chat.transcript/streaming); Stopping and the rare states show their words instead of the icon -->
+    <p class="run-status"><span class="run-status-state" title="Working · running bash"><span class="live-dot"></span><span class="icon icon-sm" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="visually-hidden">Working · running bash</span></span></p>
     <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§app/subagents-pane) -->
     <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
          trigger, both at the row's right end (§chat.alignment/chip) -->
@@ -358,7 +359,12 @@ Sandbox row.
 
 Composer ground is `--color-surface` with a top border in `--color-border`, and padding
 `--space-3` / `--space-4` plus `env(safe-area-inset-bottom)`. The textarea uses `.input`: 44px
-min, `--r-md`, `--color-border-strong` border, and an accent focus border. Send is
+min, `--r-md`, `--color-border-strong` border, and an accent focus border. Its block padding is what's
+left of `--control-md` after one body line (`--fs-body` × `--lh-body`) and the two borders as
+drawn (the 1.5px stroke snaps down to 1px), split evenly, so an empty or one-line box is exactly
+44px with its text centred at every text size; each added line grows it by one line height. Empty,
+it stays one line: a placeholder longer than the box ("Steer the current turn…" beside Steer and
+Stop) is cut, not wrapped, so a turn starting never makes the composer taller. Send is
 `.button-primary` (`--color-accent` / `--color-on-accent`). Stop is `.button-destructive`
 (`--status-error` border and label, `--status-error-bg` on hover). The reason is `--fs-caption` in
 `--color-ink-2`. The model indicator borrows the pair the foot uses — the id `--fs-mono` in `--color-ink-2`, everything else

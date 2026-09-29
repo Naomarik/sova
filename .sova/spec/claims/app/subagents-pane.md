@@ -34,31 +34,39 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
 ```html
 <p class="run-status">
   <button type="button" class="run-status-link" aria-expanded="false" aria-controls="session-pane"
-          aria-label="2 subagents working — show subagents">
-    <span class="live-dot"></span>2 subagents working…
+          aria-label="2 subagents working — show subagents" title="2 subagents working — show subagents">
+    <span class="live-dot"></span>
+    <span class="icon icon-sm" style="--icon: url(/icons/worker.svg)" aria-hidden="true"></span>
+    <span class="text-num">2</span>
     <span class="icon icon-sm" style="--icon: url(/icons/chevron-right.svg)" aria-hidden="true"></span>
   </button>
 </p>
 ```
 
-- **It reads as the row it was, plus two cues.** The live dot and the words keep `.run-status`'s
-  look (caption, ink-2). A muted chevron says "opens to the right", and hover fills the whole
-  control with sunken and lifts the words to ink. It never becomes a primary or secondary
-  button: it's a status you can open, and the composer already has its one primary.
+- **An icon and a count.** The live dot while any worker works, the muted `worker.svg` icon, the
+  count of workers (working ones while any work, else every one the session has), and the chevron.
+  No words show, so the row stays one line (§chat.transcript/streaming). The words are the
+  tooltip and the accessible name. The count keeps `.run-status`'s look (caption, ink-2). A muted
+  chevron says "opens to the right", and hover fills the whole control with sunken and lifts the
+  count to ink. It never becomes a primary or secondary button: it's a status you can open, and
+  the composer already has its one primary. It never shrinks: squeezed, its words used to run
+  into the alignment chip beside it.
 - **Size.** 36px drawn with an `--r-md` fill, a 44px hit area (a `::after` 4px above and below),
   and a net 20px of layout, so the composer doesn't jump whether this row stands alone or rides
-  beside the Working label. It sits 8px left of the row's edge, so the dot lines up with the
-  Working row's dot.
-- **The count is in the label** and changes in place. The accessible name is the visible words
-  plus what the control does: "2 subagents working — show subagents".
+  beside the Working state. In the row its inline padding is 6px and it sits 6px left of where it
+  would start, so its dot lines up with a dot above or below it, and its parts sit 4px apart.
+- **The count changes in place.** The accessible name, which is also the tooltip, is the words
+  plus what the control does: "2 subagents working — show subagents"; with one team behind the
+  count, the tooltip adds "Team · {name}" on a second line. A watched session with no pane to
+  open shows the same dot, icon and count as plain text, the words visually hidden.
 
 | State | Renders |
 |---|---|
-| Parent turn running, ≥ 1 working | The Working row (§chat/transcript) **and** this trigger beside it: live dot, the counts alone — "2 subagents" · "1 subagent · 2 team members" — labelled "2 subagents working — show subagents". Working already says what's happening, so the trigger only says how many. This is how the pane is one click away mid-turn |
+| Parent turn running, ≥ 1 working | The Working state (§chat/transcript) **and** this trigger beside it: live dot, icon, the count "2" — labelled "2 subagents working — show subagents". This is how the pane is one click away mid-turn |
 | Idle, 0 workers ever | No row, no trigger. `/agents` still opens the pane, which says so |
-| Idle, ≥ 1 working | The trigger, with the live dot: "2 subagents working…" |
-| Idle, none working, ≥ 1 settled | The trigger, **no live dot**: "2 subagents", labelled "2 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
-| Hover · active | Sunken fill, ink words, chevron to ink · active also moves 1px down, like `.button` |
+| Idle, ≥ 1 working | The trigger, with the live dot: icon and "2", labelled "2 subagents working — show subagents" |
+| Idle, none working, ≥ 1 settled | The trigger, **no live dot**: icon and "2", labelled "2 subagents — show subagents". The per-worker counts and the Σ are what it's for, and they outlive the work |
+| Hover · active | Sunken fill, ink count, icons to ink · active also moves 1px down, like `.button` |
 | Focus-visible | The 2px accent ring, at `--r-md` |
 | Pane open | `aria-expanded="true"`. **No pressed styling**: the open pane beside it is the state, and a tinted trigger would be one more accent-adjacent thing in a composer that has Send. Clicking again closes the pane |
 

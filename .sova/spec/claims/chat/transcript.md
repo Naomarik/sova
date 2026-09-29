@@ -493,14 +493,26 @@ Driven by `ChatServerMessage.event`.
   `text_delta` appends into its body; `thinking_delta` feeds a streaming `.disclosure` placed
   before it. `toolcall_start` adds a `.toolcard` with the Running chip.
 - **Run status.** Above the textarea, inside `.composer-inner`:
-  `<p class="run-status"><span class="live-dot"></span>Working<span class="run-status-detail">· running bash</span></p>`.
-  The detail names the current tool, or says "· thinking" or "· writing". This is the loading
-  pattern: say what's happening. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
+  `<p class="run-status"><span class="run-status-state" title="Working · running bash"><span class="live-dot"></span><span class="icon icon-sm" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="visually-hidden">Working · running bash</span></span></p>`.
+  It is icon-only, so the row stays **one line at every width**. The pulsing dot says Working;
+  no word is shown. What the turn is doing is one icon after it: `bulb.svg` while it thinks,
+  `pencil.svg` while it writes, `wrench.svg` while it runs a tool (never the tool's name), and none
+  between blocks. The words — "Working · thinking", "Working · writing", "Working · running bash" —
+  are the state's tooltip (`title`) and its accessible name (visually hidden text), so the loading
+  pattern still says what's happening to anyone who asks or listens. **Stopping and the rare states
+  keep their words** beside the dot: "Stopping…", "Compacting context", "Retrying after a provider
+  error". They are the one part of the row that gives way: short of room they end in an ellipsis,
+  with the whole text in the tooltip. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
   and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §chat/timeline), and it
   renders whenever any of the three has something to show,
-  so an idle session with messages still has one. While the parent's own turn runs, the subagents
-  trigger rides along with the counts alone (`Working · 2 subagents…`), because the row already
-  says it is working; once the parent settles it goes back to naming them in full (`§app/subagents-pane`).
+  so an idle session with messages still has one. The subagents trigger is an icon and a count
+  (§app/subagents-pane). The triggers and the alignment chip never shrink, so none runs its words
+  into the next.
+  **Nothing moves.** The row is 20px tall whatever it carries (the triggers' net height) with its
+  own 16px bottom margin, so the textarea and the composer keep their place between idle and
+  working and as the step changes. At 344px a working row with the subagents trigger, the alignment
+  chip and the inputs trigger still fits: the row's gap and each trigger's inline padding are 6px,
+  and a trigger's parts sit 4px apart.
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.

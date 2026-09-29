@@ -428,12 +428,15 @@
     "§app.subagents-pane/trigger": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/ChatView.tsx",
         "src/components/SessionView.tsx",
         "src/lib/known-before-mount.ts",
-        "src/lib/known-before-mount.test.ts"
+        "src/lib/known-before-mount.test.ts",
+        "src/components/Composer.tsx",
+        "src/design/base.css",
+        "src/design/align-viewer.css"
       ]
     },
     "§app.subagents-pane/worker-rows": {
@@ -530,7 +533,8 @@
         "src/components/Composer.tsx",
         "src/design/base.css",
         "src/app.css",
-        "src/components/AlignChip.tsx"
+        "src/components/AlignChip.tsx",
+        "src/design/align-viewer.css"
       ]
     },
     "§chat.composer/behavior": {
@@ -575,7 +579,10 @@
     "§chat.composer/tokens": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/design/base.css"
+      ]
     },
     "§chat.context-window/exact-numbers": {
       "kind": "behavior",
@@ -1063,7 +1070,16 @@
     "§chat.transcript/streaming": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/live.ts",
+        "src/lib/live.test.ts",
+        "src/design/base.css",
+        "public/icons/bulb.svg",
+        "public/icons/wrench.svg"
+      ]
     },
     "§chat.transcript/tokens": {
       "kind": "note",
@@ -1293,7 +1309,9 @@
         "public/icons/pwa-192-maskable.png",
         "public/icons/pwa-512-maskable.png",
         "public/icons/apple-touch-icon.png",
-        "public/icons/activity.svg"
+        "public/icons/activity.svg",
+        "public/icons/bulb.svg",
+        "public/icons/wrench.svg"
       ]
     },
     "§design.ground-rules/motion": {

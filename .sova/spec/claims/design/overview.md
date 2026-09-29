@@ -39,7 +39,7 @@ stylesheets — no component library.
 | Info / unknown row | `.info-row` `.info-row-text` |
 | Report row (§chat/transcript "report") | `details.disclosure.report` `.report-summary` `.report-from` (+ `.chip`, `.disclosure-preview`) `.report-body` `.report-meta` `.report-error` |
 | Banner | `.banner` `.banner-info` `.banner-warn` `.banner-error` `.banner-success` `.banner-icon` `.banner-main` `.banner-title` `.banner-body` `.banner-action` · the row wraps: when the words would get less than 12rem beside the action, the action drops below them, everywhere a banner has one |
-| Streaming | `.live-dot` `.run-status` `.run-status-detail` `.jump-latest` · the row also hosts `button.run-status-link` triggers (§app/subagents-pane subagents, §chat/timeline inputs), both `aria-controls="session-pane"` |
+| Streaming | `.live-dot` `.run-status` `.run-status-state` `.run-status-words` `.run-status-workers` `.jump-latest` · the row also hosts `button.run-status-link` triggers (§app/subagents-pane subagents, §chat/timeline inputs), both `aria-controls="session-pane"` |
 | Composer | `.composer` `.composer-inner` `.composer-row` `.composer-input` (with `.input.textarea`) `.composer-actions` `.composer-foot` `.composer-reason` `.composer-hint` `.button-label` `.composer-drop` + `.composer[data-drop="active\|reject"]` |
 | Model indicator (§chat/composer) | `button.composer-model` (the flyout's second trigger) `.composer-model-id` `.composer-model-meta` `.composer-model-sep` `.composer-model-level` `.composer-model-caret` (+ `.live-dot`) |
 | Composer flyout (§chat/images) | `button.composer-menu-trigger` · `.model-menu.composer-flyout[popover]` `.composer-flyout-list[role=menu]` `.composer-flyout-item` (on `.mode-option`, `[role=menuitem\|menuitemradio]`) `.composer-flyout-icon` `.composer-flyout-label` `.composer-flyout-value` `.composer-flyout-meta` `.composer-flyout-chevron` `.composer-flyout-sep[role=separator]` `.composer-flyout-head` `.composer-flyout-back` (+ `.mode-option-check` `.list-group-label` `.live-dot`) |
@@ -71,7 +71,9 @@ stylesheets — no component library.
 There is **no spinner**, on purpose. The system allows one loading language per surface:
 
 - Regions that are loading get skeletons, after 300ms.
-- Work in progress gets `.live-dot` plus words (for example "Working · running bash").
+- Work in progress gets `.live-dot` plus words (for example "Working · running bash"). In the
+  composer's run-status row the words are the tooltip and the accessible name, and an icon stands
+  for them, so the row stays one line (§chat.transcript/streaming).
 - Buttons that are pending change their label (for example "Creating…") and carry
   `aria-disabled`.
 

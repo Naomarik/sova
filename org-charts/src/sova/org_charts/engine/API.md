@@ -219,3 +219,23 @@ feed rows only unless `includeQuiet`, redacted exactly like the log. It raises n
 **Matrix.** `matrix/run` takes `:sid`, `:load-cold`, `:stamp`, and `:absorb-unknown` (default true: a
 session that exists nowhere is a sink that takes every event, so a chart's world never throws).
 `core/cold-sessions` + registry `:cold?` for retention.
+
+## 8. F14 dangling links, resume problems, `rebuild --verify` (engine 6c5f38d5, 0a141345; host 00f53536, 3fa578ff)
+
+**Dangling link.** A `link/moved` to a watcher that exists nowhere is dropped: the watcher is taken off
+its source (a `sova/unwatched {watcher, dangling: true}` step) and listed under the call's
+`dangling: [{from, watcher}]`. Explicit sends and watches to an unknown session still throw.
+**Resume.** A session whose resume throws (or the past-due timers) is `host.problems()` entry
+`{kind: "resume", file, why, sessionId?}`; the rest of the org resumes.
+
+**`org-charts rebuild --verify <org>`** (r9; `pnpm org-charts rebuild --verify <org> [--workspace <dir>]`,
+`server/org-host/rebuild.ts` `verifyOrg`). Every session's log rows are replayed from `sova/started` on
+the current charts by `verifySession(sid, rows, snapshotText, {charts})` (JS API; CLJS
+`engine/rebuild`): a scratch engine where every other session is a sink; a row's timers fire before it
+(except before `sova/resumed`: the host resumes first); `sova/watched`/`unwatched` rows re-run the
+watch (`core/replay-watch!`), `sova/resumed` runs resume, `sova/set-state` runs set-state with the
+logged patch; a stamp returns the envelope of the next logged row of that event. The result is compared
+with the snapshot by `core/outline` (states, running, links, watchers, own timers, holds). → `{session,
+chart, rows, same, differences: [{what, replayed, snapshot, why}], divergence}`. Reads only, never
+restores. Log rows gain `start` (a host start's data), `invokeId`, `t` (the engine's time when `at`
+was moved on) and `plain: true` (a `logAct` row: never replayed). Set-state's event data carries `patch`.

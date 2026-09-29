@@ -5,7 +5,8 @@ Sova shows what a session changed on disk as a diff, read-only: never a working-
 a git command that changes anything. The same **changes viewer** opens from the session pane, from
 a merge card, and from the agent's `show_changes` tool, and shows one comparison the server
 chose (the session's uncommitted changes against HEAD, a tracked worktree against the point it
-branched from, or one commit against its first parent).
+branched from, or, once merged, what its merge brought in, or one commit against its first
+parent).
 
 ## §chat.changes/viewer — The changes viewer
 
@@ -79,7 +80,7 @@ and what no step names goes under Other changes.
   removed, and a **Review Changes** control beside it, which opens the viewer on them against HEAD;
   each active tracked worktree row has a **Review Changes** control at its end (below its chips
   when the pane is narrow) that opens its branch against its merge-base with the branch it came
-  from.
+  from, or, once merged, what its merge brought in.
 - A merge card (§chat.worktrees/merge-card) has a chevron that unfolds the viewer inside the card,
   on that merge's commit against its first parent; the chevron folds it again. Inside the card the
   viewer has no height or scroll area of its own: it grows with what it shows, and the transcript
@@ -111,7 +112,8 @@ extension), when the user asks to see or review changes; it replies in a sentenc
 pasting a diff. The tool is read-only. It takes a scope: `dirty` (the index
 and working tree, untracked files included, against HEAD), `worktree` (a branch against its
 merge-base with its base branch: the tracked worktree's base branch, else `master`, else `main`,
-else the branch `origin/HEAD` names, else the tracked base commit) or `commit` (one commit, which it names, against its first parent).
+else the branch `origin/HEAD` names, else the tracked base commit; once the branch is merged, what
+its merge brought in, chosen as the viewer's worktree comparison chooses it, §chat.changes/endpoint) or `commit` (one commit, which it names, against its first parent).
 For `dirty` and `worktree` it reads the tracked worktree named by branch or path, else the tracked
 worktree holding the session's cwd, else (for `worktree`) the only tracked one, else the cwd. It
 may also take a title, a list of repo-relative files or directories to limit the view to, and
@@ -147,8 +149,16 @@ The server reads every diff itself, read-only, and the client never names a ref:
 session and one of three comparisons, and the server resolves the rest. A **worktree** comparison
 is the worktree's committed branch against its merge-base with its base branch (the tracked
 worktree's base branch when that branch still exists, else master, else main, else the remote's
-default); a **commit** comparison is one commit against its first parent (a first commit against
-nothing); an **uncommitted** comparison is the working tree, staged changes included, against HEAD,
+default). Once the branch is merged, its tip is already in the base branch and that merge-base is
+the tip itself; then, when the branch has commits beyond the tracked worktree's base commit, the
+comparison is what the merge brought in: the tip against its merge-base with the parent, before
+it, of the commit that brought it in (the first commit on the base branch's first-parent history
+that contains the tip), and the header names that commit, as in "master before 4ef9f18". A base
+branch that fast-forwarded to the tip has no such commit: the tip is then compared against the
+tracked base commit when that is an ancestor of the tip, named as the commit it was created from,
+else the comparison stays empty. A branch with new commits after its merge is compared against its
+plain merge-base as before, as is one whose tip is not in the base branch at all. A **commit**
+comparison is one commit against its first parent (a first commit against nothing); an **uncommitted** comparison is the working tree, staged changes included, against HEAD,
 with untracked files shown as added and a file whose content did not change never listed. The
 folder named must be one the session already knows (its folder, its workers' folders, a
 worktree it tracked, a merged worktree's folder) or inside one; the diff covers that folder's whole

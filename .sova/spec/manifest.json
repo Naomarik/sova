@@ -6762,6 +6762,7 @@
       "evidence": "verified",
       "code": [
         "server/git-diff.ts",
+        "pi-config/extensions/worktrees/git.ts",
         "server/index.ts",
         "shared/protocol.ts",
         "server/git-diff.test.ts"
@@ -6803,7 +6804,8 @@
     "§chat.changes/show-changes-tool": {
       "kind": "behavior",
       "requires": [
-        "§chat.worktrees/entry"
+        "§chat.worktrees/entry",
+        "§chat.changes/endpoint"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -6812,6 +6814,7 @@
         "pi-config/extensions/show-changes/details.ts",
         "pi-config/extensions/show-changes/input.ts",
         "pi-config/extensions/show-changes/git.ts",
+        "pi-config/extensions/worktrees/git.ts",
         "pi-config/extensions/show-changes/details.test.ts",
         "pi-config/extensions/show-changes/git.test.ts",
         "pi-config/extensions/show-changes/index.test.ts",

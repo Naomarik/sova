@@ -6649,7 +6649,11 @@
         "pi-config/extensions/show-changes/tests/run.mjs",
         "pi-config/extensions/show-changes/tests/runtime.mjs",
         "pi-config/extensions/show-changes/README.md",
-        "pi-config/README.md"
+        "pi-config/README.md",
+        "pi-config/extensions/show-changes/coverage.ts",
+        "pi-config/extensions/show-changes/hunks.ts",
+        "pi-config/extensions/show-changes/coverage.test.ts",
+        "src/lib/show-changes-coverage.test.ts"
       ]
     },
     "§chat.changes/steps": {

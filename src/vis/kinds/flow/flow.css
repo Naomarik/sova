@@ -20,3 +20,8 @@
 .vis-flow-sections-row > .vis-flow-section + .vis-flow-section { margin: 0 0 0 11px; padding: 0 0 0 12px; border-top: 0; border-left: var(--stroke-thin) solid var(--color-border); align-self: stretch; }
 .vis .vis-flow-section-head { margin: 0 0 var(--space-1); font-size: var(--fs-caption); line-height: 18px; font-weight: var(--fw-semibold); color: var(--color-ink-2); overflow-wrap: anywhere; }
 .vis-flow-sections-row .vis-flow-section-head { white-space: nowrap; }
+/* Groups (`group "Label" a b c`): a dashed frame under the edges and nodes; its title inside at the
+   top, drawn over the edges with a halo in the frame's fill so an edge entering there doesn't cross
+   it. layout.ts' GROUP mirrors these. */
+.vis-flow-group > rect { fill: var(--color-sunken); stroke: var(--color-border-strong); stroke-width: 1; stroke-dasharray: 4 3; }
+.vis-svg .vis-flow-group-title { fill: var(--color-ink-2); font-weight: var(--fw-semibold); stroke: var(--color-sunken); stroke-width: 4px; stroke-linejoin: round; paint-order: stroke; }

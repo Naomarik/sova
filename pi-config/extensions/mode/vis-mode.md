@@ -3,7 +3,7 @@
   every `## ` section containing the stub marker (an HTML comment whose whole text is "stub") is
   dropped, then all HTML comments are stripped. So owner notes never reach the model, and neither
   does a kind that isn't drawn yet.
-  Ownership: the preamble and the two "Shared:" sections belong to the foundation. Each kind
+  Ownership: the preamble and the "Shared:" section belong to the foundation. Each kind
   section belongs to that kind's owner, who edits only that section. Keep sections short: the
   whole text is paid for on every turn. src/vis/guide.test.ts parses every example here with the
   renderer's own parser, and checks that the sections match src/vis/registry.ts (a registry `stub`
@@ -14,20 +14,16 @@
 The chat renders `vis` fences as drawings. When a picture explains faster than prose — a flow, an exchange between parties, a hierarchy, a history, numbers to compare, layers of a system, a screen's layout — draw one inline in your reply with a fenced block whose info string is `vis <kind>`. Use them when apt, not by default: at most 1–2 per reply, each small (a reader takes it in at a glance on a phone), next to prose that says what to notice. Give every visual a one-line `caption:`.
 
 Rules for every kind:
-- One statement per line. Lines starting with `#` are comments. Settings are `key: value` lines: every kind takes `title:` and `caption:`.
-- Ids are letters, digits, `_ . -`, starting with a letter. Labels with spaces go in "double quotes" (`\n` inside quotes breaks a line).
-- Any one text (a label, a note, a `title:`) is at most 200 characters; longer is cut short. A `caption:` is one short sentence on one line.
+- One statement per line; `#` starts a comment. Settings are `key: value` lines; every kind takes `title:` and `caption:` (one short sentence).
+- Ids are letters, digits, `_ . -`, starting with a letter. Labels with spaces go in "double quotes" (`\n` breaks a line); any text is at most 200 characters.
 - Tones (optional, never the only signal): `accent ok warn error info muted`.
 - The parser is strict: anything it doesn't understand shows the block as plain source with the error. Use only the syntax below.
 - Don't nest a vis fence in another fence; don't use Mermaid, PlantUML or ASCII art instead.
 
 ## Shared: emphasis
 <!-- owner: foundation. core/emphasis.ts implements this; every kind calls it. -->
-To point at the one thing that matters, add a `mark` line (at the start of a line, anywhere after the settings): `mark <target> [tone] ["short note"]`. The target is what names an item in that kind — an id, a "quoted label", a line number or a range like `3-5`; each kind below says which. The item is highlighted (tone defaults to accent); a note gets a number on the item and is listed under the drawing. Mark at most 1–3 things; a note is a phrase (under 120 characters), not a sentence. A mark whose target names nothing is dropped.
-
-## Shared: free-form limits
-<!-- owner: foundation. Enforced by kinds/frame/parse.ts (size) and srcdoc.ts (motion gate, CSP). -->
-`vis html` / `vis svg` are the fallback when no kind fits. Aim under 8K characters (the document after `title:` / `caption:`); up to 16K draws marked large, beyond that only the source shows. No network (no external scripts, fonts, images or fetches), no autoplay — nothing moves until the reader clicks, so give animations a visible Play or Step button. See § html / svg.
+To point at what matters, add a `mark` line (at the start of a line, after the settings): `mark <target> [tone] ["short note"]`. The item is highlighted (tone defaults to accent); a note gets a number and is listed under the drawing. Mark at most 1–3 things; a note is a phrase under 120 characters. Several targets share one mark and its note: `mark a, b, c "the scope set"`.
+- Targets: flow and state, a node's id or label; sequence, an actor, a message's "label" or its number (1 = the first message; notes and dividers don't count); code, a line or a range `20-23` as displayed; matrix, a row's criterion or a column's name; wireframe, see its section; any other kind, a row's (layer's, item's) label.
 
 ## flow
 <!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). Labels: kinds/flow/parse.ts decides the style per fence (a string after a chain's first id = inline style). -->
@@ -39,13 +35,15 @@ web "Browser tab" -> srv "Sova server" "WS /ws/chat" -> sdk "pi session" store
 sdk --> srv "events"
 srv -> done "Reply streamed?" decision
 done -> web "yes"
+group "One process" srv sdk
 mark sdk "one writer per session file"
 ```
 - Inline: once any line has a string right after its first id, the first string after a node that has no label yet is its label; the next string is the edge's (`srv "Sova server" "WS /ws/chat"`). After a node already labelled, a string is the edge's label (`sdk --> srv "events"`). A shape and a tone may follow: `done "Reply streamed?" decision`.
 - `node <id> "Label" ["second line"] [shape] [tone]` for a second line; shapes: `box` (default) `round` `store` `decision` `circle`. After a target with a `node` line, a string is the edge's label.
 - With no string after any line's first id, a string after a target is always the edge's label (§ state).
-- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; chains `a -> b -> c`. `dir: right` (drawn down on a phone). Under 12 nodes, short labels. `mark` a node by id or label.
-- Two small flows side by side (before/after): `== Label ==` lines start panels, each laid out alone, with its own ids (the same id in two panels is two nodes).
+- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; chains `a -> b -> c`. `dir: right` (drawn down on a phone). Under 12 nodes, short labels.
+- `group "Label" id id …` frames nodes that belong together (a process, a machine, a scope); edges cross the frame. A node is in one group at most.
+- Two separate small flows side by side (before/after): `== Label ==` lines start panels, each laid out alone, with its own ids.
 ```vis flow
 == Before ==
 app "App" -> db "Database"
@@ -66,11 +64,10 @@ note c s "keys derived from the exchange"
 mark 2 "the server commits resources here"
 ```
 - `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors; 2–4 read best on a phone. Keep message labels to a few words.
-- `mark` an actor id, a message by its "exact label", or a message by number: 1 is the first message; notes and dividers aren't counted.
 
 ## state
 <!-- owner: process member (flow's parser, layout and View; `end` sinks to the last rank). Emphasis target: state id or label. -->
-A state machine: flow syntax, but nodes default to `round`; `node s0 start` / `node done end` are the entry and exit dots. Label each edge with its event (`idle -> busy "prompt"`), so name states by id or on `node` lines, never inline. `mark` a state by id.
+A state machine: flow syntax, but nodes default to `round`; `node s0 start` / `node done end` are the entry and exit dots. Label each edge with its event (`idle -> busy "prompt"`), so name states by id or on `node` lines, never inline.
 ```vis state
 node s0 start
 s0 -> idle
@@ -90,7 +87,7 @@ Server | Hono REST, /ws/chat | one process per checkout
 Disk | session JSONL | muted
 mark Server "holds every live session"
 ```
-- Quote an item that contains a comma. Leave the items empty (`Disk | | muted`) for a label-only layer. At most 10 layers, 12 items each. `mark` a layer by its label.
+- Quote an item that contains a comma. Leave the items empty (`Disk | | muted`) for a label-only layer. At most 10 layers, 12 items each.
 
 ## tree
 <!-- owner: structure member. kinds/tree: nested HTML lists with elbow connectors. Also accepts ├── └── │ tree-drawing lines. Emphasis target: item name, first match depth first (key = path "0.2.1"). -->
@@ -102,7 +99,7 @@ src/
   main.tsx
 mark markdown.ts "the vis hook lives here"
 ```
-- Quote a name that has spaces or quotes: `"My Docs" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest. `mark` an item by its name (the first one wins).
+- Quote a name that has spaces or quotes: `"My Docs" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest.
 
 ## chart
 <!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->
@@ -117,7 +114,7 @@ mark "Bubble sort" warn "quadratic"
 ```
 - A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives and `12%` are fine; no thousands commas. At most 40 rows, 6 series.
 - Scatter rows are `label x y [tone]`, with no `series:`.
-- `type: parts`: one bar split into its rows, for a whole and its parts (a request vs the context window, a share of a limit); `of:` a capacity draws the unused rest.
+- `type: parts`: one bar split into its rows, for a whole and its parts; `of:` a capacity draws the unused rest.
 ```vis chart
 type: parts
 unit: tokens
@@ -127,7 +124,6 @@ of: 200000
 "New input" 6000
 mark "New input" "only this part is uncached"
 ```
-- `mark` a row (a point) by its label.
 
 ## timeline
 <!-- owner: data member. Emphasis target: a row's when or label (key = item index). -->
@@ -137,11 +133,10 @@ Events in order: `when | label | note (optional) | tone (optional)`; `== section
 2016 | Vue 2 | reactive templates
 mark React "components as functions of state"
 ```
-- `mark` a row by its when or its label.
 
 ## steps
 <!-- owner: data member. kinds/steps: HTML rows of chips, a status mark per row, lanes as heads; the label folds above its chain on a phone. Emphasis target: row label (key = item index). -->
-Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> step -> …`, a step being a word or a "quoted label"; `== lane ==` groups rows. No ids. `mark` a row by its label.
+Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> step -> …`, a step being a word or a "quoted label"; `== lane ==` groups rows. No ids.
 ```vis steps
 == Asking people ==
 "Simple question" ok | You -> "Maria gets a link" -> "decision recorded"
@@ -180,14 +175,14 @@ mark "Unpaid" "tap to filter"
 
 ## matrix
 <!-- owner: data member. Emphasis target: row label (key = index) or column name (key = c<index>). -->
-Options against criteria; also capabilities by level or role (a matrix, not a flow). `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text. At most 6 columns.
+Options against criteria; also capabilities by level or role (a matrix, not a flow). `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text that may end with a tone (`72% warn`; quote text ending in a tone word). At most 6 columns.
 ```vis matrix
 columns: Merge, Rebase
 Keeps original commits | yes | no "new SHAs"
 Linear history | no | yes
+Conflicts to resolve | once ok | per commit warn
 mark "Keeps original commits" "why rebase needs a force-push"
 ```
-- `mark` a row by its criterion, or a column by its name.
 
 ## code
 <!-- owner: code member. kinds/code: View.tsx (hljs via lib/markdown, sticky numbered gutter, badges), lines.ts. Emphasis target: line number or range, as displayed. -->
@@ -204,11 +199,11 @@ for (let i = 0;
   i++) total += items[i];
 ```
 - `lang:` a fence word (ts, py, rust, sql, …). `start:` the first line's number, so the numbers match the file.
-- `mark` a line number or a range like `20-23`, as displayed; a range's note goes on its first line. Marks come before `---`: everything after it is code.
+- Marks come before `---`: everything after it is code.
 
 ## html / svg
 <!-- owner: code member (free-form). kinds/frame: srcdoc.ts (CSP, tokens, base CSS, height, motion gate, script-failure flag), View.tsx; fuller examples in kinds/frame/examples/ (tested). Emphasis: not applicable. -->
-Only when none of the kinds above fits — usually something the reader should play with (a Step button through an algorithm, a slider on a parameter), or a drawing no kind covers. `vis html` is a fragment (inline `<style>` and `<script>`, no `<html>`/`<head>`); `vis svg` is one `<svg>` with a `viewBox` and no `width`, drawn at its natural size and shrunk to fit. Start with `title:` / `caption:` lines.
+Only when none of the kinds above fits — usually something the reader should play with (a Step button through an algorithm, a slider on a parameter), or a drawing no kind covers. `vis html` is a fragment (inline `<style>` and `<script>`, no `<html>`/`<head>`); `vis svg` is one `<svg>` with a `viewBox` and no `width`, drawn at its natural size and shrunk to fit. Start with `title:` / `caption:` lines. Aim under 8K characters (the document after `title:` / `caption:`); up to 16K draws marked large, beyond that only the source shows.
 ```vis html
 title: Bubble sort, one comparison at a time
 caption: Press Step: the larger of each pair moves right.
@@ -221,8 +216,8 @@ document.getElementById("s").onclick=function(){if(v[i]>v[i+1]){var t=v[i];v[i]=
 draw();
 </script>
 ```
-- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. The theme picks the hues, so in prose name a colour by what it marks ("the newest term") or draw a legend, never by hue ("orange"). Buttons, inputs and selects are already styled; the body has padding.
+- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. In prose name a colour by what it marks, never by hue. Buttons, inputs and selects are already styled; the body has padding.
 - Fit a 360px-wide phone (flex-wrap, grid with `fr`); keep it under about 500px tall.
 - Nothing moves until the reader clicks or presses a key in it: give motion a Play or Step button (in SVG, `begin="play.click"` on the animations, with a `<g id="play" role="button">`). No `setTimeout` loops.
 - Check a large draft with the `vis_check` tool before you post it.
-- It runs sandboxed: no network, no storage, no `alert`, no form submits. Handle clicks with `onclick`.
+- It runs sandboxed: no network (no external scripts, fonts, images or fetches), no storage, no `alert`, no form submits. Handle clicks with `onclick`.

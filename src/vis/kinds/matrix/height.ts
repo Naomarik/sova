@@ -7,12 +7,15 @@
  */
 
 import { estimateWidth, wrap, type Measure } from "../../core/text";
+import { TONE_ICON } from "../../icons";
 import type { MatrixCell, MatrixSpec } from "./parse";
 
 const PX = 12.5;
 const LH = 12.5 * 1.45;
 const GLYPH = 16 + 4;
 const BADGE = 18 + 4;
+/** A toned cell's chip (matrix.css): 4px padding each side, plus a 14px icon and 4px gap for the tones that have one. */
+const CHIP = (c: MatrixCell) => (!c.tone || !c.text ? 0 : (c.tone === "muted" ? 0 : 8) + (TONE_ICON[c.tone] ? 14 + 4 : 0));
 const PAD_X = 12 * 2;
 const PAD_Y = 8 * 2;
 /** matrix.css' `@container vis-matrix (max-width: 404px)`: the wrap is as wide as the body. */
@@ -46,7 +49,9 @@ const LABEL = measureAt(530);
 const HEAD = measureAt(600);
 
 const cellText = (c: MatrixCell) => c.text ?? (c.mark ? "" : "—");
-const cellLead = (c: MatrixCell) => (c.mark ? GLYPH : 0);
+/** An accent chip is set semibold (matrix.css). */
+const cellMeasure = (c: MatrixCell): Measure => (c.tone === "accent" && c.text ? HEAD : CELL);
+const cellLead = (c: MatrixCell) => (c.mark ? GLYPH : 0) + CHIP(c);
 
 /**
  * Column widths in px (padding included) for a body `width` px wide; the View sets them on a
@@ -71,8 +76,8 @@ export function matrixColumns(spec: MatrixSpec, width: number): number[] {
       const head = HEAD(name, PX) + (em.has(`c${ci}`) ? BADGE : 0);
       return {
         hard: Math.max(head, ...spec.rows.map((r) => cellLead(r.cells[ci]!) + (cellText(r.cells[ci]!) ? PX * 3 : CELL("—", PX)))),
-        soft: Math.max(head, ...spec.rows.map((r) => cellLead(r.cells[ci]!) + words(cellText(r.cells[ci]!), CELL, 90))),
-        max: Math.max(head, ...spec.rows.map((r) => cellLead(r.cells[ci]!) + CELL(cellText(r.cells[ci]!), PX))),
+        soft: Math.max(head, ...spec.rows.map((r) => cellLead(r.cells[ci]!) + words(cellText(r.cells[ci]!), cellMeasure(r.cells[ci]!), 90))),
+        max: Math.max(head, ...spec.rows.map((r) => cellLead(r.cells[ci]!) + cellMeasure(r.cells[ci]!)(cellText(r.cells[ci]!), PX))),
       };
     }),
   ].map((c) => ({ hard: Math.ceil(c.hard) + PAD_X, soft: Math.ceil(Math.max(c.hard, c.soft)) + PAD_X, max: Math.ceil(Math.max(c.hard, c.soft, c.max)) + PAD_X }));
@@ -102,7 +107,7 @@ export function estimateHeight(spec: MatrixSpec, width: number): number {
       h += 16 + (i < spec.rows.length - 1 ? 1 : 0);
       h += 8 + badged(r.label, inner, LABEL, em.has(String(i))) * LH;
       r.cells.forEach((c, ci) => {
-        h += 8 + Math.max(lines(spec.columns[ci]!, nameW), lines(cellText(c), cellW - cellLead(c))) * LH;
+        h += 8 + Math.max(lines(spec.columns[ci]!, nameW), lines(cellText(c), cellW - cellLead(c), cellMeasure(c))) * LH;
       });
     });
     return h;
@@ -112,7 +117,7 @@ export function estimateHeight(spec: MatrixSpec, width: number): number {
   let h = head * LH + PAD_Y + 1;
   spec.rows.forEach((r, i) => {
     const label = badged(r.label, w[0]!, LABEL, em.has(String(i)));
-    const cells = r.cells.map((c, ci) => lines(cellText(c), w[ci + 1]! - cellLead(c)));
+    const cells = r.cells.map((c, ci) => lines(cellText(c), w[ci + 1]! - cellLead(c), cellMeasure(c)));
     h += Math.max(label, ...cells) * LH + PAD_Y + (i < spec.rows.length - 1 ? 1 : 0);
   });
   return h;

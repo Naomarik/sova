@@ -52,12 +52,27 @@ export interface PlacedFlowEdge {
   /** Label box, center and size. */
   label?: { x: number; y: number; w: number; h: number; lines: string[] };
 }
+export interface PlacedFlowGroup {
+  label: string;
+  /** The label as drawn: whole, or cut to the frame's width with "…" (dir: right; the View adds a tooltip). */
+  title: string;
+  /** Top-left corner and size of the frame; its label sits inside, at the top. */
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
 export interface FlowLayout {
   width: number;
   height: number;
   nodes: PlacedFlowNode[];
   edges: PlacedFlowEdge[];
+  groups?: PlacedFlowGroup[];
 }
+/** A group's frame: padding around its nodes, and its label's line above them (flow.css: fs-caption semibold). */
+export const GROUP = { pad: 10, title: 18, font: 12.5 } as const;
+/** The title is set semibold; the measure is medium: room for the difference. */
+const SEMIBOLD = 1.06;
 
 interface LNode {
   key: number;
@@ -244,6 +259,24 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
     L[u]!.extra = Math.max(L[u]!.extra, extra);
   }
 
+  // ---- groups: which frame each layout node sits in (-1: none) ------------------------------
+  const groups = spec.groups ?? [];
+  const grp = new Array<number>(L.length).fill(-1);
+  groups.forEach((g, gi) => g.nodes.forEach((id) => (grp[index.get(id)!] = gi)));
+  // A frame spans its nodes' ranks. An edge's bends (and label) sit inside a frame on the ranks it
+  // spans when an end of the edge is in it (an edge enters, then runs inside); elsewhere outside.
+  const grpRanks = groups.map((_, gi) => {
+    const rs = L.filter((n) => grp[n.key] === gi).map((n) => n.rank);
+    return { from: Math.min(...rs), to: Math.max(...rs) };
+  });
+  for (const ch of chains) {
+    const ends = [grp[ch.keys[ch.keys.length - 1]!]!, grp[ch.keys[0]!]!].filter((g) => g >= 0);
+    for (const k of ch.keys.slice(1, -1)) {
+      const r = L[k]!.rank;
+      grp[k] = ends.find((g) => r >= grpRanks[g]!.from && r <= grpRanks[g]!.to) ?? -1;
+    }
+  }
+
   // ---- ordering ----------------------------------------------------------------------------
   const maxRank = Math.max(...L.map((n) => n.rank));
   const layers: number[][] = Array.from({ length: maxRank + 1 }, () => []);
@@ -261,6 +294,57 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   }
   const setOrder = () => layers.forEach((layer) => layer.forEach((k, i) => (L[k]!.order = i)));
   setOrder();
+  // A group's members sit side by side on every rank, and groups keep one left-to-right order on all
+  // ranks (else two frames would cross). The global order: each group's mean relative position.
+  let groupOrder: number[] = [];
+  const rankGroups = () => {
+    const at = groups.map((_, gi) => {
+      const ms = L.filter((n) => grp[n.key] === gi);
+      return ms.reduce((a, n) => a + (n.order + 0.5) / layers[n.rank]!.length, 0) / Math.max(1, ms.length);
+    });
+    groupOrder = groups.map((_, gi) => gi).sort((a, b) => at[a]! - at[b]! || a - b);
+  };
+  const cluster = (r: number) => {
+    if (!groups.length) return;
+    const layer = layers[r]!;
+    const blocks: { g: number; at: number; keys: number[] }[] = [];
+    const byG = new Map<number, { g: number; at: number; keys: number[] }>();
+    for (const k of layer) {
+      const g = grp[k]!;
+      if (g < 0) blocks.push({ g, at: L[k]!.order, keys: [k] });
+      else {
+        let b = byG.get(g);
+        if (!b) byG.set(g, (b = { g, at: 0, keys: [] })), blocks.push(b);
+        b.keys.push(k);
+      }
+    }
+    for (const b of byG.values()) b.at = b.keys.reduce((a, k) => a + L[k]!.order, 0) / b.keys.length;
+    blocks.sort((a, b) => a.at - b.at);
+    // The slots groups took, handed out again in the global group order.
+    const slots = blocks.map((b, i) => (b.g >= 0 ? i : -1)).filter((i) => i >= 0);
+    const inOrder = groupOrder.filter((g) => byG.has(g)).map((g) => byG.get(g)!);
+    slots.forEach((slot, j) => (blocks[slot] = inOrder[j]!));
+    layers[r] = blocks.flatMap((b) => b.keys);
+    layers[r]!.forEach((k, i) => (L[k]!.order = i));
+  };
+  const clustered = (r: number) => {
+    const seen: number[] = [];
+    let last = -2;
+    for (const k of layers[r]!) {
+      const g = grp[k]!;
+      if (g >= 0 && g !== last) {
+        if (seen.includes(g)) return false;
+        seen.push(g);
+      }
+      last = g;
+    }
+    const want = groupOrder.filter((g) => seen.includes(g));
+    return want.every((g, i) => g === seen[i]);
+  };
+  if (groups.length) {
+    rankGroups();
+    for (let r = 0; r < layers.length; r++) cluster(r);
+  }
   const crossings = () => {
     let c = 0;
     for (let r = 0; r < maxRank; r++) {
@@ -286,6 +370,7 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
     }
     layer.sort((a, b) => bary.get(a)! - bary.get(b)! || L[a]!.order - L[b]!.order);
     layer.forEach((k, i) => (L[k]!.order = i));
+    cluster(r);
   };
   const transpose = () => {
     let improved = true;
@@ -298,7 +383,7 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
           const before = crossings();
           [layer[i], layer[i + 1]] = [layer[i + 1]!, layer[i]!];
           layer.forEach((k, j) => (L[k]!.order = j));
-          if (crossings() < before) improved = true;
+          if (crossings() < before && clustered(r)) improved = true;
           else {
             [layer[i], layer[i + 1]] = [layer[i + 1]!, layer[i]!];
             layer.forEach((k, j) => (L[k]!.order = j));
@@ -321,7 +406,13 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   setOrder();
 
   // ---- placement across each rank ---------------------------------------------------------
-  const sep = (a: LNode, b: LNode) => (a.across / 2 + a.extra) + b.across / 2 + (a.real >= 0 && b.real >= 0 ? NODE_GAP : VIRTUAL_GAP);
+  const titleAcross = right ? GROUP.title : 0;
+  const framePad = (a: LNode, b: LNode) => {
+    const ga = grp[a.key]!;
+    const gb = grp[b.key]!;
+    return (ga >= 0 && ga !== gb ? GROUP.pad + NODE_GAP / 2 : 0) + (gb >= 0 && gb !== ga ? GROUP.pad + titleAcross + NODE_GAP / 2 : 0);
+  };
+  const sep = (a: LNode, b: LNode) => (a.across / 2 + a.extra) + b.across / 2 + (a.real >= 0 && b.real >= 0 ? NODE_GAP : VIRTUAL_GAP) + framePad(a, b);
   const place = (layer: number[], desired: (n: LNode) => number) => {
     if (layer.length === 0) return;
     // q_i = p_i − offset_i turns "p_{i+1} ≥ p_i + sep" into "q nondecreasing": pool adjacent violators.
@@ -350,19 +441,108 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
   }
   for (let r = 0; r <= maxRank; r++) place(layers[r]!, (n) => mean([...n.up, ...n.down], n));
 
+  // ---- groups: a frame is one rectangle over all its ranks, so every other node on those ranks
+  // must sit left or right of its span. Pushes only ever move things right (a node, a frame and
+  // what lies after them), in the one left-to-right order of groups, so this settles.
+  const titleW = groups.map((g) => measure(g.label, GROUP.font) * SEMIBOLD + 2 * GROUP.pad);
+  const span = (gi: number) => {
+    const ms = L.filter((n) => grp[n.key] === gi);
+    let lo = Math.min(...ms.map((n) => n.pos - n.across / 2)) - GROUP.pad - titleAcross;
+    let hi = Math.max(...ms.map((n) => n.pos + n.across / 2 + n.extra)) + GROUP.pad;
+    if (!right && hi - lo < titleW[gi]!) hi = lo + titleW[gi]!;
+    return { lo, hi };
+  };
+  const gap = (n: LNode) => (n.real >= 0 ? NODE_GAP : VIRTUAL_GAP) / 2;
+  const rightEdge = (n: LNode) => n.pos + n.across / 2 + n.extra;
+  const orderOf = (g: number) => (g < 0 ? -1 : groupOrder.indexOf(g));
+  /** Where frame gi sits on rank r: the index of its first node, or where it would go (nodes of groups before it, and plain nodes left of its middle, stay before it). */
+  const slot = (gi: number, r: number, mid: number) => {
+    const layer = layers[r]!;
+    const own = layer.findIndex((k) => grp[k] === gi);
+    if (own >= 0) return own;
+    let s = 0;
+    layer.forEach((k, i) => {
+      const g = grp[k]!;
+      if ((g >= 0 && orderOf(g) < orderOf(gi)) || (g < 0 && L[k]!.pos < mid)) s = i + 1;
+    });
+    return s;
+  };
+  /** Move frame gi and everything after it on its ranks right by `by`. */
+  const shiftFrame = (gi: number, by: number, mid: number) => {
+    for (let r = grpRanks[gi]!.from; r <= grpRanks[gi]!.to; r++) {
+      const layer = layers[r]!;
+      for (let i = slot(gi, r, mid); i < layer.length; i++) L[layer[i]!]!.pos += by;
+    }
+  };
+  let guard = 0;
+  for (; groups.length && guard < 100; guard++) {
+    let moved = false;
+    for (const gi of groupOrder) {
+      for (let r = grpRanks[gi]!.from; r <= grpRanks[gi]!.to; r++) {
+        const { lo, hi } = span(gi);
+        const layer = layers[r]!;
+        const at = slot(gi, r, (lo + hi) / 2);
+        let end = at;
+        while (end < layer.length && grp[layer[end]!] === gi) end++;
+        // Something before the frame reaches into it: the frame (and all after it) moves right.
+        if (at > 0) {
+          const n = L[layer[at - 1]!]!;
+          const over = rightEdge(n) + gap(n) - lo;
+          if (over > 0.5) {
+            shiftFrame(gi, over, (lo + hi) / 2);
+            moved = true;
+            continue;
+          }
+        }
+        // Something after it starts inside it: that (and all after it) moves right.
+        if (end < layer.length) {
+          const n = L[layer[end]!]!;
+          const over = hi + gap(n) - (n.pos - n.across / 2);
+          if (over > 0.5) {
+            for (let i = end; i < layer.length; i++) L[layer[i]!]!.pos += over;
+            moved = true;
+          }
+        }
+      }
+    }
+    // Two frames that share ranks: the later one in the group order moves right until they are a
+    // gap apart (a frame's width can come from a rank other than the one where they meet).
+    for (const [i, gi] of groupOrder.entries())
+      for (const hj of groupOrder.slice(i + 1)) {
+        if (grpRanks[gi]!.to < grpRanks[hj]!.from || grpRanks[hj]!.to < grpRanks[gi]!.from) continue;
+        const a = span(gi);
+        const b = span(hj);
+        const over = a.hi + NODE_GAP - b.lo;
+        if (over > 0.5 && b.hi > a.lo) {
+          shiftFrame(hj, over, (b.lo + b.hi) / 2);
+          moved = true;
+        }
+      }
+    if (!moved) break;
+  }
+
   // ---- along: rank thickness and offsets ---------------------------------------------------
   const thick = layers.map((layer) => Math.max(0, ...layer.map((k) => L[k]!.along)));
   const at: number[] = [];
   let cursor = MARGIN;
+  const before = new Array<number>(maxRank + 1).fill(0);
+  const after = new Array<number>(maxRank + 1).fill(0);
+  // Nested ranks of several frames stack their pads; one frame's title and pad sit in the gap above it.
+  grpRanks.forEach(({ from, to }) => {
+    before[from] = Math.max(before[from]!, GROUP.pad + (right ? 0 : GROUP.title));
+    after[to] = Math.max(after[to]!, GROUP.pad);
+  });
   for (let r = 0; r <= maxRank; r++) {
+    cursor += before[r]!;
     at.push(cursor + thick[r]! / 2);
-    cursor += thick[r]! + (r < maxRank ? RANK_GAP : 0);
+    cursor += thick[r]! + after[r]! + (r < maxRank ? RANK_GAP : 0);
   }
   const alongSize = cursor + MARGIN;
-  const minAcross = Math.min(...L.map((n) => n.pos - n.across / 2));
+  const frameSpans = groups.map((_, gi) => span(gi));
+  const minAcross = Math.min(...L.map((n) => n.pos - n.across / 2), ...frameSpans.map((f) => f.lo));
   const shift = MARGIN - minAcross;
   for (const n of L) n.pos += shift;
-  const acrossSize = Math.max(...L.map((n) => n.pos + n.across / 2 + n.extra)) + MARGIN;
+  const acrossSize = Math.max(...L.map((n) => n.pos + n.across / 2 + n.extra), ...frameSpans.map((f) => f.hi + shift)) + MARGIN;
 
   // ---- to screen ---------------------------------------------------------------------------
   const pt = (across: number, along: number) => (right ? { x: along, y: across } : { x: across, y: along });
@@ -440,8 +620,20 @@ export function layoutFlow(spec: FlowSpec, measure: Measure = estimateWidth, lev
     }
   }
 
+  const placedGroups: PlacedFlowGroup[] = groups.map((g, gi) => {
+    const f = frameSpans[gi]!;
+    const { from, to } = grpRanks[gi]!;
+    const a0 = at[from]! - thick[from]! / 2 - GROUP.pad - (right ? 0 : GROUP.title);
+    const a1 = at[to]! + thick[to]! / 2 + GROUP.pad;
+    const p0 = pt(f.lo + shift, a0);
+    const p1 = pt(f.hi + shift, a1);
+    const w = Math.abs(p1.x - p0.x);
+    const fit = (w - 2 * GROUP.pad) / SEMIBOLD;
+    const title = measure(g.label, GROUP.font) <= fit ? g.label : wrap(g.label, Math.max(1, fit), 1, GROUP.font, measure)[0] ?? "";
+    return { label: g.label, title, x: Math.min(p0.x, p1.x), y: Math.min(p0.y, p1.y), w, h: Math.abs(p1.y - p0.y) };
+  });
   const size = pt(acrossSize, alongSize);
-  return { width: Math.ceil(size.x), height: Math.ceil(size.y), nodes, edges: edgesOut };
+  return { width: Math.ceil(size.x), height: Math.ceil(size.y), nodes, edges: edgesOut, ...(placedGroups.length ? { groups: placedGroups } : {}) };
 }
 
 /** S-curves with tangents along the rank axis between consecutive points; straight where aligned. */

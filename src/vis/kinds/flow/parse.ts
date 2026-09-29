@@ -10,10 +10,13 @@
  * when it has no label yet (no `node` line in its panel, no earlier inline label), and the next
  * string labels the edge (`a "A" -> b "B" "edge"`, `b --> a "reply"`). Repeating a node's inline
  * label is not an edge label. Shape and tone words may follow (`gate "Approve" decision`).
+ *
+ * `group "Label" a b c` (also frame/subgraph/cluster; no arrow on the line) draws a frame around
+ * some nodes of one graph (./layout.ts keeps them together); per panel, flat, a node in one at most.
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { divider, fail, id, isTone, lines, modifiers, takeSettings, tokenize, warn, type Arrow, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
+import { divider, fail, id, isTone, lines, modifiers, takeSettings, text, tokenize, warn, type Arrow, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
 
 export const SHAPES = ["box", "round", "store", "decision", "circle", "start", "end"] as const;
 export type Shape = (typeof SHAPES)[number];
@@ -42,13 +45,24 @@ export interface FlowSpec extends VisBase {
   edges: FlowEdge[];
   /** Present only when the fence has `== label ==` lines: its panels, in order. nodes/edges hold them all. */
   sections?: FlowSection[];
+  /** Present only when the fence has `group` lines: frames drawn around some of one graph's nodes. Node keys; a node is in at most one. */
+  groups?: FlowGroup[];
+}
+export interface FlowGroup {
+  label: string;
+  nodes: string[];
 }
 /** One panel: a graph of its own. Every node and edge is in exactly one. */
 export interface FlowSection {
   label: string;
   nodes: FlowNode[];
   edges: FlowEdge[];
+  groups?: FlowGroup[];
 }
+const GROUP_WORDS = ["group", "frame", "subgraph", "cluster"];
+const MAX_GROUPS = 6;
+/** `group "Label" a b c`: a group word, one string, then ids (commas allowed), and no arrow. */
+const isGroupLine = (t: Token[]) => t[0]?.t === "word" && GROUP_WORDS.includes(t[0].v) && t[1]?.t === "str" && !t.some((x) => x.t === "arrow");
 
 const MAX_NODES = 30;
 const MAX_EDGES = 48;
@@ -81,7 +95,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     } catch {
       continue;
     }
-    if (t[0]?.t !== "word") continue;
+    if (t[0]?.t !== "word" || isGroupLine(t)) continue;
     if (t[0].v === "node") {
       if (t[1]?.t === "word") nodeLines.add(`${at}\0${t[1].v}`);
     } else if (t[1]?.t === "str") inlineStyle = true;
@@ -109,6 +123,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   };
   const hasNodeLine = (nid: string) => nodeLines.has(`${sections.length - 1}\0${nid}`);
   const declared = new Map<string, FlowNode>();
+  const groupLines: { label: string; ids: string[]; n: number; sec: number }[] = [];
   const used: string[] = [];
   // Inline-style node labels, by key (the first one wins).
   const inline = new Map<string, string>();
@@ -152,6 +167,13 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     }
     const toks = tokenize(line);
     if (toks.length === 0) continue;
+    if (isGroupLine(toks)) {
+      const ids = toks.slice(2).flatMap((t) => (t.t === "word" ? t.v.split(",").filter(Boolean) : fail(line.n, `group: after its "label", only node ids (group "Label" a b c)`)));
+      if (ids.length === 0) fail(line.n, `group "${(toks[1] as { v: string }).v}" names no nodes: group "Label" a b c`);
+      if (hasSections && sections.length === 0) fail(line.n, "put the group under a == section == line, with its nodes");
+      groupLines.push({ label: (toks[1] as { v: string }).v, ids: ids.map((x) => id({ t: "word", v: x }, line.n, "a node id")), n: line.n, sec: sections.length - 1 });
+      continue;
+    }
     const first = toks[0]!;
     if (first.t === "word" && first.v === "node") {
       const nid = id(toks[1], line.n, "a node id after node");
@@ -234,6 +256,23 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       if (nodes.length === 0) fail(sec.n, `section "${sec.label}" is empty: give it nodes, or drop the line`);
       return { label: sec.label, nodes, edges: spec.edges.filter((_, e) => edgeHome[e] === i) };
     });
+  }
+  if (groupLines.length) {
+    if (groupLines.length > MAX_GROUPS) fail(groupLines[MAX_GROUPS]!.n, `${groupLines.length} groups; at most ${MAX_GROUPS}`);
+    const inGroup = new Map<string, string>();
+    const groups = groupLines.map((g) => {
+      const nodes = g.ids.map((nid) => {
+        const k = scoped.get(`${g.sec}\0${nid}`);
+        if (k === undefined) fail(g.n, `group "${g.label}": no node ${nid}${hasSections ? " in this section" : ""}`);
+        const prev = inGroup.get(k!);
+        if (prev !== undefined) fail(g.n, `node ${nid} is in group "${prev}" and "${g.label}": a node sits in one group`);
+        inGroup.set(k!, g.label);
+        return k!;
+      });
+      return { label: text(g.label, g.n), nodes, sec: g.sec };
+    });
+    if (spec.sections) spec.sections.forEach((s, i) => { const gs = groups.filter((g) => g.sec === i).map(({ label, nodes }) => ({ label, nodes })); if (gs.length) s.groups = gs; });
+    spec.groups = groups.map(({ label, nodes }) => ({ label, nodes }));
   }
   applyMarks(spec, marks, byIdOrLabel(spec.nodes.map((n) => ({ key: n.id, id: n.id, label: n.label }))), "node");
   return spec;

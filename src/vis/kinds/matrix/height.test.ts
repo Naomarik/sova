@@ -48,3 +48,18 @@ test("matrix estimateHeight: three columns or more on a phone are one card per r
   assert.ok(cards > table * 1.5, `cards ${cards} vs table ${table}`);
   assert.ok(estimateHeight(TWO, MATRIX_NARROW) < estimateHeight(TWO, 300) + 1e-9, "two columns stay a table");
 });
+
+test("matrix cell tones: the chip's padding and icon narrow the text, so a toned cell never measures shorter", async () => {
+  const { TONE_ICON, TONE_WORD } = await import("../../icons");
+  const spec = (cell: string) => {
+    const r = parseVis("matrix", `columns: A, B\nrow | ${cell} | x`);
+    assert.ok(r.ok);
+    return r.spec as MatrixSpec;
+  };
+  const long = "a long cell text that wraps over several lines in a narrow column";
+  for (const w of [200, 390, 700]) assert.ok(estimateHeight(spec(`${long} warn`), w) >= estimateHeight(spec(long), w), `at ${w}`);
+  assert.ok(matrixColumns(spec("72% warn"), 2000)[1]! > matrixColumns(spec("72%"), 2000)[1]!, "the chip widens the column's natural width");
+  // Every tone has a spoken word; the four status tones have an icon.
+  assert.deepEqual(Object.keys(TONE_WORD).sort(), ["accent", "error", "info", "muted", "ok", "warn"]);
+  assert.deepEqual(Object.keys(TONE_ICON).sort(), ["error", "info", "ok", "warn"]);
+});

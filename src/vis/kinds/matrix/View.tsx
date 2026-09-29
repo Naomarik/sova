@@ -1,6 +1,7 @@
 /**
- * `vis matrix` view: an HTML table; marks are a glyph plus a hidden word, never hue alone. A marked
- * row or column is tinted and its header carries the note's number. From three columns up, a phone
+ * `vis matrix` view: an HTML table; marks are a glyph plus a hidden word, never hue alone, and so
+ * is a toned text cell (a chip in the tone's fill, its status icon, a hidden word). A marked row or
+ * column is tinted and its header carries the note's number. From three columns up, a phone
  * gets one card per row (column names inline) instead of a table that scrolls sideways.
  */
 import { For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
@@ -8,11 +9,13 @@ import { emphasisMap } from "../../core/emphasis";
 import { EmBadge, emClass } from "../../emphasis";
 import type { ViewProps } from "../../types";
 import { fontsLoaded } from "../../svg";
+import { TONE_ICON, TONE_WORD, visIcon } from "../../icons";
 import { clearWidths, MATRIX_NARROW, matrixColumns } from "./height";
 import type { CellMark, MatrixSpec } from "./parse";
 import "./matrix.css";
 
 const MARK_TEXT: Record<CellMark, string> = { yes: "Yes", no: "No", partial: "Partly" };
+
 
 export default function MatrixView(props: ViewProps<MatrixSpec>) {
   const em = createMemo(() => emphasisMap(props.spec));
@@ -69,8 +72,17 @@ export default function MatrixView(props: ViewProps<MatrixSpec>) {
                           <Glyph mark={c.mark!} />
                           <span class="visually-hidden">{MARK_TEXT[c.mark!]}</span>
                         </Show>
-                        <Show when={c.text}>
+                        <Show when={c.text && !c.tone}>
                           <span class="vis-cell-text">{c.text}</span>
+                        </Show>
+                        <Show when={c.text && c.tone}>
+                          <span class={`vis-cell-chip vis-tone-${c.tone}`}>
+                            <Show when={TONE_ICON[c.tone!]}>
+                              <span class="icon vis-cell-chip-icon" style={{ "--icon": `url("${visIcon(TONE_ICON[c.tone!]!)}")` }} aria-hidden="true" />
+                            </Show>
+                            <span class="vis-cell-text">{c.text}</span>
+                            <span class="visually-hidden"> ({TONE_WORD[c.tone!]})</span>
+                          </span>
                         </Show>
                         <Show when={!c.mark && !c.text}>
                           <span class="vis-cell-empty" aria-label="None">

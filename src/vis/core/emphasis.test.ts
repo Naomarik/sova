@@ -71,3 +71,55 @@ test("applyMarks leaves a spec without marks untouched", () => {
   applyMarks(spec as never, [], () => null, "x");
   assert.equal("emphasis" in spec, false);
 });
+
+test("takeMarks: commas outside quotes separate several targets; a quoted comma is one label", () => {
+  const { marks } = takeMarks(lines('mark a, b\nmark a,b,c warn "scope"\nmark "Tokyo, Japan", Paris\nmark 2, 4-5 "two"'));
+  assert.deepEqual(
+    marks.map((m) => m.targets.map((t) => [t.t, t.text])),
+    [
+      [["id", "a"], ["id", "b"]],
+      [["id", "a"], ["id", "b"], ["id", "c"]],
+      [["label", "Tokyo, Japan"], ["id", "Paris"]],
+      [["number", "2"], ["range", "4-5"]],
+    ],
+  );
+  assert.deepEqual([marks[1]!.tone, marks[1]!.note], ["warn", "scope"]);
+  assert.equal(marks[0]!.target, marks[0]!.targets[0], "target is the first of targets");
+});
+
+test("takeMarks: a stray or trailing comma is an error; mark lines, not targets, count toward 8", () => {
+  throws(() => takeMarks(lines("mark a,")), /comma needs a target on each side/);
+  throws(() => takeMarks(lines("mark a, , b")), /comma needs a target on each side/);
+  throws(() => takeMarks(lines("mark , a")), /comma needs a target on each side/);
+  const many = collectWarnings(() => takeMarks(lines(Array.from({ length: 8 }, (_, i) => `mark n${i}, m${i}, k${i}`).join("\n"))));
+  assert.equal(many.value.marks.length, 8);
+  assert.deepEqual(many.warnings, []);
+});
+
+test("resolveMarks: one mark over several targets lists its note once, the same number on each target's first item", () => {
+  const { marks } = takeMarks(lines('mark a, b, c "scope"\nmark 1-2, d ok "range and one"\nmark e "last"'));
+  const em = resolveMarks(marks, (t) => (t.t === "range" ? ["L1", "L2"] : t.text), "item");
+  assert.deepEqual(em, [
+    { key: "a", tone: "accent", note: "scope", n: 1 },
+    { key: "b", tone: "accent", note: "scope", n: 1 },
+    { key: "c", tone: "accent", note: "scope", n: 1 },
+    { key: "L1", tone: "ok", note: "range and one", n: 2 },
+    { key: "L2", tone: "ok" },
+    { key: "d", tone: "ok", note: "range and one", n: 2 },
+    { key: "e", tone: "accent", note: "last", n: 3 },
+  ]);
+  assert.deepEqual(emphasisNotes({ emphasis: em }).map((x) => [x.n, x.note]), [[1, "scope"], [2, "range and one"], [3, "last"]]);
+});
+
+test("resolveMarks: a target that names nothing is dropped with the usual warning; the rest of its line stays", () => {
+  const got = collectWarnings(() => resolveMarks(takeMarks(lines('mark a, zz, b "kept"')).marks, (t) => (t.text === "zz" ? null : t.text), "node"));
+  assert.deepEqual(got.value.map((e) => [e.key, e.n]), [["a", 1], ["b", 1]]);
+  assert.deepEqual(got.warnings, [{ line: 1, message: "mark: no node zz, dropped" }]);
+  const all = collectWarnings(() => resolveMarks(takeMarks(lines('mark x, y "gone"\nmark a "one"')).marks, (t) => (t.text === "a" ? "a" : null), "node"));
+  assert.deepEqual(all.value, [{ key: "a", tone: "accent", note: "one", n: 1 }], "a line naming nothing takes no number");
+  assert.equal(all.warnings.length, 2);
+  // An item named twice in one line is marked once; one already marked by an earlier line is kept there.
+  const dup = collectWarnings(() => resolveMarks(takeMarks(lines('mark a\nmark a, b, b "n"')).marks, (t) => t.text, "node"));
+  assert.deepEqual(dup.value, [{ key: "a", tone: "accent" }, { key: "b", tone: "accent", note: "n", n: 1 }]);
+  assert.deepEqual(dup.warnings, [{ line: 2, message: "mark a, b, b: part of it is already marked, the rest kept" }]);
+});

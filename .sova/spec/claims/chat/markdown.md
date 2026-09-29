@@ -165,8 +165,8 @@ block's source (§app.baton/outsider-view).
 
   | Fence | Draws | `mark` targets |
   |---|---|---|
-  | `vis flow` | boxes and arrows, laid out by rank | node id or label |
-  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots) | state id |
+  | `vis flow` | boxes and arrows, laid out by rank; frames around some nodes (§chat.markdown/vis-flow-groups) | node id or label |
+  | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots; frames as in flow) | state id |
   | `vis sequence` | actors, lifelines and numbered messages, with step-through | actor id or label, message number or exact label |
   | `vis layers` | a stack of labelled layers | layer label |
   | `vis tree` | an indented hierarchy | item name |
@@ -175,7 +175,7 @@ block's source (§app.baton/outsider-view).
   | `vis timeline` | dated events in order | the row's date or label |
   | `vis steps` | scenario chains with a status per row (§chat.markdown/vis-steps) | row label |
   | `vis wireframe` | low-fi screens: phone or desktop frames, wireflow arrows between screens (§chat.markdown/vis-wireframe) | a block's first text, a screen name or a block word |
-  | `vis matrix` | a comparison grid (yes / no / partial / text cells) | row label |
+  | `vis matrix` | a comparison grid (yes / no / partial / text cells, a text cell optionally toned: §chat.markdown/vis-matrix-tones) | row label or column label |
   | `vis code` | an annotated snippet: highlighted, numbered, marked lines with notes | line number or range |
   | `vis html`, `vis svg` | free-form, in a sandboxed frame (below) | — |
 
@@ -187,14 +187,19 @@ block's source (§app.baton/outsider-view).
   (`aria-pressed`, shows the fence as written, without ligatures) and **Copy** (copies the whole
   fence, announced like Copy Code); the drawing; the numbered notes; the `caption:`. Backticks in a
   caption or note render as inline code; everything else is text.
-- **Emphasis.** `mark <target> [tone] ["note"]`, at most 8 per block, notes ≤ 120 characters,
-  works in every kind. A marked item takes its tone (default accent), a heavier outline or a tinted
-  row, and the note's number as a badge; the notes are listed under the drawing in writing order.
+- **Emphasis.** `mark <target>[, <target>…] [tone] ["note"]`, at most 8 mark lines per block,
+  notes ≤ 120 characters, works in every kind. Commas outside quotes separate targets (`a, b`,
+  `a,b`; a `"quoted, label"` is one target); a stray or trailing comma is an error. A marked item
+  takes its tone (default accent), a heavier outline or a tinted row, and the note's number as a
+  badge; one mark line naming several targets lists its note once and puts the same number on the
+  first item of each target (a range still numbers only its first line); the notes are listed
+  under the drawing in writing order.
   A malformed mark line is an error. A mark that can't apply is dropped with a warning (below): a
-  target that names nothing, an item already marked (a range keeps its items not yet marked, its
+  target that names nothing (the line's other targets are kept), an item already marked (a range keeps its items not yet marked, its
   note on the first of them), a mark past the 8th. A dropped mark takes no number. A note over 120
   characters is cut to 120, with a warning. Colour is never the only signal: emphasis adds weight
-  and a number, chart series pair hue with marker and dash, matrix marks carry a word.
+  and a number, chart series pair hue with marker and dash, matrix marks carry a word, toned matrix
+  cells carry an icon and a visually hidden word, flow frames carry a title.
 - **Step-through** (sequence). The drawing starts complete; nothing plays by itself.
   **Step Through** starts at the first item; Previous / Next walk it ("Step 3 of 8", "3/8" at phone
   width, announced politely); later items are dimmed; **Show All** ends the walk.
@@ -312,7 +317,8 @@ belong to that panel. For two small graphs to compare (before/after, A vs B).
   empty or unlabelled section, a repeated section label, more than 4 sections.
 - **No regression.** A flow without `==` lines parses and draws exactly as before (no `sections`),
   and so does a sectioned flow whose ids differ across panels (every one that parsed before).
-- Frames or clusters inside one connected graph are not part of this.
+- Frames around some nodes of one connected graph are §chat.markdown/vis-flow-groups; a panel may
+  hold its own groups.
 - **Chain tones** (any `vis flow` or `vis state`, panels or not). A tone word right after an edge's
   target (after its optional quoted edge label) tones that node: `a -> miss "dead" error`; a node
   given two different tones (by a `node` line or another chain) is an error naming both.
@@ -331,6 +337,52 @@ belong to that panel. For two small graphs to compare (before/after, A vs B).
   fence with no such line reads exactly as before: a string after a target is the edge's label
   (`idle -> busy "prompt"`) and a shape word in a chain is an error. The guide teaches inline labels
   first, with an example that shows the label-then-edge pair, a return edge's label and a shape.
+
+## §chat.markdown/vis-flow-groups — `vis flow` groups: frames inside one graph
+
+A `group "Label" a b c` line in a `vis flow` or `vis state` draws a labelled **frame** around those
+nodes of one connected graph (a process, a machine, a scope). `frame`, `subgraph` and `cluster` are
+read as `group`, silently. The line has one quoted label, then node ids (commas between them
+allowed), and no arrow; it may come before or after the chains that declare its nodes. A node
+called `group` or `frame` in a chain still parses as before.
+
+- **Membership.** Flat: a node sits in at most one group; groups do not nest and take no tone or
+  mark. Edges may cross frame borders freely. Inside `== panels ==` a group line belongs to its
+  panel and names that panel's ids; each panel draws its own frames.
+- **Errors.** An id no node has (in that panel), a node in two groups, a group line with no ids,
+  anything but ids after the label, more than 6 groups in a fence, a group line before the first
+  section line of a sectioned fence.
+- **Layout.** Flow's own layered layout keeps each group's members side by side on every rank it
+  spans, groups in one left-to-right order on all ranks, and pushes every other node out of each
+  frame's rectangle: no non-member box meets a frame, every member is inside its frame, and two
+  frames never overlap, at natural size and when re-fitted to a narrow pane. An edge with one end
+  in a group runs inside that frame on the ranks the frame spans.
+- **Look.** A frame is a rounded, dashed `--color-border-strong` rectangle with a `--color-sunken`
+  fill, drawn under edges and nodes. Its title sits inside at the top (caption size, semibold),
+  drawn over the edges with a halo in the frame's fill, so it stays legible where an edge enters.
+  In `dir: right` the title is cut to the frame's width with an ellipsis, the whole label as a
+  tooltip. Share and owner pages draw a flow's frames the same way; the phone re-lays out as any
+  flow does.
+- **No regression.** A fence without group lines parses and lays out exactly as before, and a
+  chain line that uses the word as an id (`frame -> x`) is a chain, not a group.
+- **The guide** teaches it in one line under flow, and its main flow example draws one group.
+
+## §chat.markdown/vis-matrix-tones — `vis matrix` cell tones
+
+A matrix text cell may end in a tone word (`accent ok warn error info muted`): `72% warn`,
+`83% ok`. For model × metric scorecards.
+
+- **Grammar.** An unquoted text cell whose last word is a tone, with text before it, becomes that
+  text with that tone. A quoted cell stays text (`"works ok"`); `"72%" error` is the text 72% with
+  the tone error. A lone tone word (`ok`) is text. Yes/no/partial cells are unchanged: `no error`
+  is still the mark no with the note "error". An empty or `-` cell stays empty.
+- **Look.** The text sits in a chip with the tone's fill (`--vis-fill` through `vis-tone-*`), led
+  by a status icon for ok, warn, error and info (the steps kind's icons) and a visually hidden tone
+  word, so tone is never the only signal; accent is weight plus tint, muted is muted ink. A column
+  or row mark and a cell tone coexist (the chip sits inside the tinted cell). Phone cards show the
+  same chip. The height estimate counts the icon.
+- **No regression.** A matrix with no toned cell parses and draws exactly as before.
+- **The guide** teaches it in one line under matrix.
 
 ## §chat.markdown/vis-steps — `vis steps`: scenario chains
 
@@ -367,7 +419,8 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
   it names the same screen. The strings fill the block's slots left to right; the words after them,
   in any order, are a tone, `on` (checked, selected), `wide`, and for `chart` `bar|line|pie`. No ids:
   an arrow names a screen; `mark` names a block by its first text (first in the screen it is
-  written under, then anywhere), a screen by its name, or a block word.
+  written under, then anywhere), a screen by its name, or a block word. A block word written
+  before a quoted text, or before a list of targets (`mark button "Save", "Cancel"`), is ignored.
 - **Vocabulary.** The words the guide teaches: `header`, `tabs`, `tabbar`, `sidebar`, `footer`;
   `row`, `col`, `grid`, `card`, `list`, `item`, `modal`, `sheet`; `heading`, `text`, `image`,
   `avatar`, `icon`, `badge`, `stat`, `chart`, `table`, `progress`; `button`, `link`, `input`,

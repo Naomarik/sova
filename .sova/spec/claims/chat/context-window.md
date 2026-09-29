@@ -168,7 +168,8 @@ It collapses by the **head's** width (a named container on `.session-head`, with
 floor, because these rules contract):
 
 1. **Head ≥ 720px:** full, "Context 237k / 1M · 24%" (about 165px). The Overseer page's head
-   waits for 900px, its wide tier (§app.overseer/head-layout): below that it shows the percent.
+   waits for 1000px, so its meta line keeps its room (§app.overseer/head-layout): below that it
+   shows the percent.
 2. **520 to 719px:** the percent only, "24%" (or "237k", or "compacted"), still in the head.
 3. **Under 520px** (320 included):
    - The gauge leaves the head, and the percent leads the meta line: `24% · ~/webapps/sova`.

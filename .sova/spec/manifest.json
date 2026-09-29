@@ -2533,7 +2533,7 @@
     "§app.overseer/attention-digest": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/attention.ts",
         "server/live.ts",
@@ -6558,24 +6558,6 @@
         "pi-config/extensions/mode/vis-mode.md"
       ]
     },
-    "§app.overseer/drafts-menu": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "src/components/OverseerView.tsx",
-        "src/components/ActionMenu.tsx",
-        "src/lib/overseer.ts",
-        "src/lib/api.ts",
-        "src/design/base.css",
-        "src/lib/overseer.test.ts",
-        "src/App.tsx"
-      ],
-      "requires": [
-        "§app.overseer/attention-digest",
-        "§app.overseer/identity-and-clear"
-      ]
-    },
     "§app.overseer/head-layout": {
       "kind": "behavior",
       "authority": "accepted",
@@ -6584,15 +6566,14 @@
         "src/components/OverseerView.tsx",
         "src/design/base.css",
         "src/overseer-ideas.css",
-        "src/overseer-todos.css",
-        "src/components/ActionMenu.tsx"
+        "src/overseer-todos.css"
       ],
       "requires": [
         "§app.overseer/identity-and-clear",
         "§app.overseer/proactivity",
         "§app.overseer/ideas-panel",
         "§app.overseer/todos-panel",
-        "§app.overseer/drafts-menu"
+        "§app.overseer/attention-digest"
       ]
     },
     "§design.copy-deck/overseer-head": {

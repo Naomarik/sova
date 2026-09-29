@@ -787,6 +787,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
+| Meta line | "{n} sessions · {w} working · {a} need you" (1: "1 session", "1 needs you"; a part at 0 is left out) · below a 520px head "{pct}% · " leads it · no menus in it |
 | ⋯ menu | `aria-label` "Overseer actions" · `title` "Overseer actions" · `Proactivity…`, note the current mode (`Off` / `List Only` / `Brief Me`; `aria-label` "Proactivity: {mode}. Change it.") · `History…`, note "{n} earlier" while any (`aria-label` "History, {n} earlier conversations", 1: "conversation") · `Clear`, note "Start a new conversation. This one moves to History." (`aria-label` "Clear: start a new conversation") · an earlier conversation: `History…` only |
 | Proactivity screen | `Off` · `List Only` · `Brief Me`, each with its hint (§app.overseer/proactivity) as its note, the current one checked (`aria-label` "{mode}, {hint}" + " Chosen.") · done (announced): "Proactivity: {mode}. {hint}" · failed (toast): "Proactivity unchanged. {why}" |
 | History screen | its earlier conversations, each "{title}" ("No messages" when untitled) with its age · none: "No earlier conversations yet." |

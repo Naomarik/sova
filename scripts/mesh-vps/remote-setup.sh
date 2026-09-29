@@ -3,7 +3,7 @@
 #   ~/$R/node     Node $NODE_VERSION (official tarball, sha256 checked)
 #   ~/$R/bin      caddy $CADDY_VERSION (official release, sha512 checked)
 #   ~/$R/app      the git archive staged in ~/$R/app.new, swapped in (previous kept as app.prev),
-#                 then pnpm install --frozen-lockfile + vite build (pnpm via this node's corepack)
+#                 then pnpm install --frozen-lockfile + vite build, both modes (pnpm via this node's corepack)
 #   ~/$R/agent    the agent dir (PI_CODING_AGENT_DIR); auth.json created EMPTY ({}, 0600) if absent, never overwritten
 #   ~/$R/home     the isolated HOME for every build and run step (deploy's own dotfiles are never read)
 #   ~/$R/tmp      TMPDIR for every build and run step (0700): nothing of ours lands in /tmp; holds jiti's extension cache,
@@ -79,8 +79,10 @@ export HOME="$BASE/home" TMPDIR="$BASE/tmp" PATH="$BASE/node/bin:/usr/bin:/bin" 
 cd "$BASE/app"
 log "pnpm: $(corepack pnpm --version) install --frozen-lockfile"
 nice -n 10 corepack pnpm install --frozen-lockfile --reporter=append-only 2>&1 | tail -5 >&2
-log "build: vite build (typecheck runs on the laptop)"
+log "build: vite build + the share page (typecheck runs on the laptop)"
 nice -n 10 corepack pnpm exec vite build --logLevel warn >&2
+# the share page's own build (dist-share/): the share listener serves /h/ and /i/ from it
+nice -n 10 corepack pnpm exec vite build --mode share --logLevel warn >&2
 
 # --- the agent dir --------------------------------------------------------------------------------
 ln -sfn "$BASE/agent" "$BASE/app/.agent"

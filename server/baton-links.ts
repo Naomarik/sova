@@ -2,6 +2,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { nudgeMarks } from "./session-feed";
+import { shareLinksChanged } from "./share/links-events";
 import { stateRoot } from "./state-root";
 
 /**
@@ -70,6 +71,7 @@ export function mintLink(input: { orgId: string; sessionId: string; n: number; p
     expiresAt: new Date(now + LINK_TTL_MS).toISOString(),
   };
   write([...read(), rec]);
+  shareLinksChanged({ kind: "h", cause: "mint" });
   return token;
 }
 
@@ -105,7 +107,10 @@ export function revokeLinks(match: (l: LinkRecord) => boolean, now = Date.now(),
       if (why) l.revokedWhy = why;
       n++;
     }
-  if (n) write(links);
+  if (n) {
+    write(links);
+    shareLinksChanged({ kind: "h", cause: "revoke" });
+  }
   return n;
 }
 

@@ -62,6 +62,7 @@ import { DelegateSettingsSection } from "./DelegateSettings";
 import { MeshSettingsSection } from "./MeshSettings";
 import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
+import { PublicLinksSettingsSection } from "./PublicLinksSettings";
 import { PushSettingsSection } from "./PushSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
@@ -70,7 +71,7 @@ import { TypographySection } from "./TypographySection";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Eleven screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Twelve screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
@@ -84,6 +85,7 @@ const TABS = [
   { id: "organizations", label: "Organizations", icon: "network" as const },
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "mesh", label: "Mesh", icon: "branch" as const },
+  { id: "public-links", label: "Public links", icon: "external" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
 ] as const satisfies readonly { id: SettingsTab; label: string; icon: string }[];
 type TabId = (typeof TABS)[number]["id"];
@@ -267,6 +269,13 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "mesh"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-mesh" aria-labelledby="settings-tab-mesh" data-mesh-ui>
               <MeshSettingsSection />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is: the setting is read when the tab opens. Not a mesh tab:
+              a host that is its own gateway works with the mesh off. */}
+          <Show when={tab() === "public-links"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-public-links" aria-labelledby="settings-tab-public-links">
+              <PublicLinksSettingsSection />
             </div>
           </Show>
           {/* Same lifecycle as the other panels: mounted only while its tab is, so the settings

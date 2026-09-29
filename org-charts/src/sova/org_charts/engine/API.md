@@ -174,3 +174,47 @@ Returns `{:configs n :cells n :failures [...]}`; `(matrix/assert-clean! report)`
 `data` the data model, `history` {history-id #{state-ids}}, `queue` pending
 `[{:event {:name :data} :delivery-time :ordinal}]`. `(core/migrate-text registry text)` returns the
 current-version EDN; tests load a fixture of every shipped version.
+
+## 7. r7 hours waits, q12 confirm-required holds, r8a feed (engine 0393fc98, host 230005d7)
+
+**Switches** (all in `engine/hold_policy.cljc`, beside `overseer-unattended-held?`):
+`operator-acts-wait-for-hours?` (false: r7/q13), `unreviewed-holds-wait?` (true: q12). Each has a
+test that fails when flipped (engine/refit_test.cljs).
+
+**Hours waits (r7).** Act meta `:hours (fn [data] next-window-ms | nil)` (data has `:_event`; the chart
+computes it with its pure next-window fn over the person's tz/hours; nil or ≤ now = in hours). When the
+act passes every check and the window is in the future: chart-started and unattended overseer acts
+become a hold with `:wait "hours" :until <window>` (listed in `holds()`, same cancel path, same F2
+reservation, same log/privacy rules; released at the window through the full re-check like any hold);
+attended turns go at once; the operator's click goes at once unless the switch is on, and its step
+carries `:off-hours <window>` (TS `offHours`; log rows too). A policy hold and an hours wait chain: the
+policy hold's release is then checked for hours.
+
+**Confirm-required holds (q12).** The envelope carries `:confirm-kinds ["gather" "promote" …]` (TS
+`confirmKinds`, stamped from overseer.json). An act's confirm kind is its meta `:confirm-kind`
+(else its event name). A policy-held act whose kind is listed gets `:confirm true`. At its end, with
+`unreviewed-holds-wait?` on, it is NOT released: it stays in `holds()` with `:waiting true` (stall clock
+from `:until`) and the session receives `:hold/waiting {:id :event :kind :what}`, until
+`:hold/approve {:id :reason}` or `:hold/cancel {:id :reason}`. Non-listed holds release at their end as
+before.
+
+**Approve early.** `(dsl/hold-approve-correction)` on the chart's top state (declare `:hold/approve` in
+`:acts` with `:needs` and `:correction true`): releases the hold now (timer cancelled), re-delivering
+the act with a fresh stamp through the full path; then `:hold/released` or `:hold/dropped`. Works on
+any hold (effect-only holds: the effect goes out). Reason required unless `by` operator.
+
+**Feed class (r8a).** Every transition declares `:sova/feed :feed | :quiet` (strings accepted). Each
+step carries `:feed`: refusals, corrections, held acts, starts and set-state are always `:feed`; else
+`:feed` when any transition the step took is `:feed` or unclassified, `:quiet` when all are quiet.
+`(core/unclassified registry/charts)` → `[[chart transition-id events] …]` of transitions declaring
+no class (initial/history defaults excluded, corrections count as feed): the enumeration test asserts
+it is empty. Steps carry `:project-id` (session data `:project-id`, else the envelope's).
+
+**Host.** `host.feed(projectId, {since, limit, includeQuiet, newestFirst})` → `[{at, session, chart,
+event, by, before, after, effects, feed, refused?, held?, reason?}]`: the log's rows of that project,
+feed rows only unless `includeQuiet`, redacted exactly like the log. It raises nothing. Log rows gain
+`feed`, `project`, `offHours`, `held.wait`, `held.confirm`. Hold (TS) gains `wait`, `confirm`, `waiting`.
+
+**Matrix.** `matrix/run` takes `:sid`, `:load-cold`, `:stamp`, and `:absorb-unknown` (default true: a
+session that exists nowhere is a sink that takes every event, so a chart's world never throws).
+`core/cold-sessions` + registry `:cold?` for retention.

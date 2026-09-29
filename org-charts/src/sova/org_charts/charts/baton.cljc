@@ -280,6 +280,18 @@
 
 (defn person-wrote? [d] (some? (:person-wrote-at d)))
 
+(defn- reconcile-when-ended
+  "r3 (F8a): a project gathering that ends with decisions recorded asks the reconciler to run, as
+   the chart's own act at L1 (a settle session already asks, after 2 s). Once per session."
+  []
+  (on-entry {}
+    (script {:expr (fn [_ d] (when (and (seq (:decisions d)) (nil? (:conflict d)) (not (:reconcile-asked d)))
+                               (into [(ops/assign :reconcile-asked true)]
+                                 (dsl/directive-ops d {:op :drive :event :reconcile/request
+                                                       :target (b/reconciler-sid (:org-id d) (:project-id d))
+                                                       :ctx {:project-id (:project-id d)}
+                                                       :data {:delay-ms 0 :session (:session-id d)}}))))})))
+
 (defn- set-course [c] (on-entry {} (script {:expr (fn [_ _] [(ops/assign :course c)])})))
 (defn- set-reply [c] (script {:expr (fn [_ _] [(ops/assign :reply c)])}))
 
@@ -452,12 +464,14 @@
 
           (state {:id :done}
             (set-course "done")
+            (reconcile-when-ended)
             (dsl/act {:event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
               (script {:expr (fn [_ d] (ended-ops d))})
               (dsl/effect :revoke-links (fn [_] {:all true :why "closed"}))
               (reason "baton/closed" (fn [_] {}))))
           (state {:id :closed}
-            (set-course "closed")))
+            (set-course "closed")
+            (reconcile-when-ended)))
 
         ;; ── reply ─────────────────────────────────────────────────────────────────────────────
         (state {:id :reply :initial :reply-idle}

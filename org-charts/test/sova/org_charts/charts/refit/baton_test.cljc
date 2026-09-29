@@ -165,3 +165,15 @@
            (h/refusal x sid :baton/take-back {:by "operator" :via "overseer"})))
     (is (nil? (h/refusal x sid :baton/take-back {:by "operator" :via "overseer" :card {:sessions ["s1"]}})))
     (is (nil? (h/refusal x sid :baton/take-back op)) "the operator's own click needs no card")))
+
+(deftest reconcile-when-ended
+  (let [with-d (fn [x] (h/send! x sid :baton/record-decision {:by "model" :decision-id "s1:e1" :area "Pay" :statement "S" :quote "Q" :owner-areas []}))
+        drives (fn [x] (filter #(= :drive (:op %)) (h/directives x sid)))]
+    (testing "F8a: any project gathering that ends with decisions asks the reconciler (the chart's own act)"
+      (let [y (-> (start to-ana) with-d (h/send! sid :baton/close op))
+            dr (first (drives y))]
+        (is (= :reconcile/request (:event dr)))
+        (is (= "reconciler/o1/pr1" (:target dr)))
+        (is (= 1 (count (drives (h/send! y sid :wrapup/finished {}))))) "once"))
+    (is (empty? (drives (h/send! (start to-ana) sid :baton/close op))) "no decisions, no reconcile")
+    (is (empty? (drives (-> (start (assoc to-ana :conflict {:id "cf1" :area "pay"})) with-d (h/send! sid :baton/close op)))) "a settle session asks on its own")))

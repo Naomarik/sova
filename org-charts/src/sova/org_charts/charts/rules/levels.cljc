@@ -147,9 +147,8 @@
   [evt targets-fn what]
   (fn [data]
     (let [e (evt data)]
-      (when (= "overseer" (some-> (:via e) name))
+      (when-let [want (and (= "overseer" (some-> (:via e) name)) (targets-fn data))]
         (let [card (:card e)
-              want (targets-fn data)
               ok?  (and (map? card)
                         (every? (set (:people card)) (:people want))
                         (every? (set (:projects card)) (:projects want))

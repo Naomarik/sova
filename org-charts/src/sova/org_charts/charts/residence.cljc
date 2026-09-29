@@ -50,6 +50,19 @@
          :targetexpr (fn [_ d] (b/org-sid (:org-id d)))
          :content (fn [_ d] {:host-id (:host-id d) :host-name (:host-name d) :since (b/now-ms d)})}))
 
+(defn due?
+  "An hour (the commit interval) since HEAD's commit."
+  [_ d]
+  (>= (- (b/now-ms d) (or (:head-at d) 0)) (commit-every d)))
+
+(defn commit-result-ops
+  "A commit's result: HEAD's time, whether the push failed (kept in the snapshot), git's error."
+  [d]
+  (let [res (read-result d)]
+    [(ops/assign :head-at (or (:head-at res) (:head-at d) (b/now-ms d)))
+     (ops/assign :push-pending (true? (:push-failed res)))
+     (ops/assign :last-git-error (:error res))]))
+
 (defn commit-effect [message-fn]
   (dsl/effect :commit (fn [d] {:message (message-fn d)})))
 
@@ -66,7 +79,8 @@
             (transition {:cond (fn [_ d] (true? (:created d))) :target :held-here})
             (transition {:event :effect/done :cond (fn [env d] (and (holder-read? env d) (some? (elsewhere d (read-result d)))))
                          :target :held-elsewhere}
-              (script {:expr (fn [_ d] [(ops/assign :held-by (elsewhere d (read-result d)))])}))
+              (script {:expr (fn [_ d] (let [h (elsewhere d (read-result d))]
+                                         [(ops/assign :held-by h) (ops/assign :held-sentence (held-sentence h))]))}))
             (transition {:event :effect/done :cond holder-read? :target :held-here})
             ;; A fetch that fails is an unreachable remote: the clone's record alone was read.
             (transition {:event :effect/failed :cond holder-read? :target :held-here}))
@@ -77,7 +91,7 @@
           (state {:id :held-here}
             (on-entry {}
               (claim-org)
-              (script {:expr (fn [_ d] [(ops/delete :held-by)])})
+              (script {:expr (fn [_ d] [(ops/assign :held-by nil) (ops/assign :held-sentence nil)])})
               (commit-effect (fn [d] (if (:created d) (str "Create organization " (:org-name d)) (str "Attached on " (:host-name d)))))
               ;; An attach pauses every project of the repo on this host (a create pauses nothing).
               (script {:expr (fn [_ d] (when-not (:created d) (dsl/effect-ops d (dsl/effect-map :pause-overseers nil d))))}))
@@ -90,41 +104,37 @@
           ;; The engine unloads the org once this is entered and its effects ran.
           (final {:id :detached}))
 
+        ;; The hourly committer (F-012): every minute it looks; once an hour has passed since HEAD
+        ;; it commits whatever git reports changed (any writer: visits, costs, updates, ideas, notes,
+        ;; a hand edit), and with nothing to commit it pushes what the remote lacks. A write while
+        ;; it commits is in the next commit.
         (state {:id :commits :initial :clean}
-          (transition {:event :effect/done :cond (fn [_ d] (= "commit" (:kind (b/evt d))))}
-            (script {:expr (fn [_ d] (let [res (read-result d)]
-                                       [(ops/assign :head-at (or (:head-at res) (:head-at d)))
-                                        (ops/assign :push-pending (true? (:push-failed res)))
-                                        (ops/assign :last-git-error (:error res))]))}))
-          (transition {:event :effect/failed :cond (fn [_ d] (= "commit" (:kind (b/evt d))))}
-            (script {:expr (fn [_ d] [(ops/assign :last-git-error (:detail (b/evt d)))])}))
           (dsl/act {:event :commit/now :target :committing})
-
+          (transition {:event :effect/done :cond (fn [_ d] (#{"commit" "push"} (:kind (b/evt d))))}
+            (script {:expr (fn [_ d] (commit-result-ops d))}))
           (state {:id :clean}
-            (transition {:event :store/written :target :dirty})
-            ;; A push that failed is retried at the next due look, with nothing to commit.
             (on-entry {} (Send {:id :look-clean :event :commit/look :delay look-ms}))
             (on-exit {} (cancel {:sendid :look-clean}))
-            (transition {:event :commit/look :target :clean}
-              (script {:expr (fn [_ d] (when (and (:push-pending d) (>= (- (b/now-ms d) (or (:head-at d) 0)) (commit-every d)))
-                                         (dsl/effect-ops d (dsl/effect-map :push nil d))))})))
+            (transition {:event :store/written :target :dirty})
+            (transition {:event :commit/look :cond due? :target :committing})
+            (transition {:event :commit/look :target :clean}))
           (state {:id :dirty}
             (on-entry {} (Send {:id :look-dirty :event :commit/look :delay look-ms}))
             (on-exit {} (cancel {:sendid :look-dirty}))
-            (transition {:event :commit/look :cond (fn [_ d] (>= (- (b/now-ms d) (or (:head-at d) 0)) (commit-every d))) :target :committing})
+            (transition {:event :commit/look :cond due? :target :committing})
             (transition {:event :commit/look :target :dirty}))
           (state {:id :committing}
-            (on-entry {} (commit-effect (fn [_] nil)))
-            (transition {:event :effect/done :cond (fn [_ d] (= "commit" (:kind (b/evt d)))) :target :clean}
-              (script {:expr (fn [_ d] (let [res (read-result d)]
-                                         [(ops/assign :head-at (or (:head-at res) (b/now-ms d)))
-                                          (ops/assign :push-pending (true? (:push-failed res)))
-                                          (ops/assign :last-git-error (:error res))]))}))
-            (transition {:event :effect/failed :cond (fn [_ d] (= "commit" (:kind (b/evt d)))) :target :dirty}
-              (script {:expr (fn [_ d] [(ops/assign :last-git-error (:detail (b/evt d)))])}))
-            ;; a write while it commits is in the next commit
+            (on-entry {}
+              (script {:expr (fn [_ d] [(ops/assign :written-since false)])})
+              (commit-effect (fn [_] nil)))
             (transition {:event :store/written}
-              (script {:expr (fn [_ d] [(ops/assign :written-since true)])}))))))))
+              (script {:expr (fn [_ d] [(ops/assign :written-since true)])}))
+            (transition {:event :effect/done :cond (fn [_ d] (and (= "commit" (:kind (b/evt d))) (:written-since d))) :target :dirty}
+              (script {:expr (fn [_ d] (commit-result-ops d))}))
+            (transition {:event :effect/done :cond (fn [_ d] (= "commit" (:kind (b/evt d)))) :target :clean}
+              (script {:expr (fn [_ d] (commit-result-ops d))}))
+            (transition {:event :effect/failed :cond (fn [_ d] (= "commit" (:kind (b/evt d)))) :target :dirty}
+              (script {:expr (fn [_ d] [(ops/assign :last-git-error (:detail (b/evt d)))])}))))))))
 
 (def acts
   {:attach/confirm {:needs nil}
@@ -142,7 +152,7 @@
    :version  version
    :migrate  {}
    :storage  :host-local
-   :exported [:held-by :last-git-error :push-pending :head-at]
+   :exported [:held-by :held-sentence :last-git-error :push-pending :head-at]
    :acts     acts
    :not-here not-here
    :final-refusal "Unknown organization"})

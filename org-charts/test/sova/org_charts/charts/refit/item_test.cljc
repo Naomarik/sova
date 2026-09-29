@@ -92,10 +92,9 @@
 
 (deftest drive
   (let [ended (fn [lvl] (-> (start) (watch-at lvl) (baton 1 [:done] :decisions ["d1"]) (decision "d1" "pending")))]
-    (testing "L1: reconcile when a gathering ended with decisions not compared"
-      (is (= [:reconcile/request] (map :event (drives (ended "L1")))))
+    (testing "the reconcile after a gathering is the baton's own (F8a); nothing at L0 or paused"
       (is (empty? (drives (ended "L0"))))
-      (is (empty? (drives (-> (start) (watch-at "L3" :paused true) (baton 1 [:done] :decisions ["d1"]) (decision "d1" "pending")))) "paused: L0 in force"))
+      (is (empty? (drives (-> (start) (watch-at "L3" :paused true) (baton 1 [:done] :decisions ["d1"]) (decision "d1" "pending"))))))
     (testing "L2: promote in-area drafted decisions, never out of area"
       (is (some #{:decision/promote} (map :event (drives (decision (ended "L2") "d1" "drafted")))))
       (is (not (some #{:decision/promote} (map :event (drives (decision (ended "L2") "d1" "drafted" :ex {:author-owns-area false})))))))
@@ -104,7 +103,8 @@
             d (first (filter #(= :build/start (:event %)) (drives y)))]
         (is d)
         (is (= ["d1"] (get-in d [:data :decisions])))
-        (is (re-find #"S d1" (get-in d [:data :prompt]))))
+        (is (re-find #"S d1" (get-in d [:data :prompt])))
+        (is (= "Build §gap/invoicing" (get-in d [:data :title]))))
       (is (not (some #{:build/start} (map :event (drives (decision (ended "L2") "d1" "promoted")))))))
     (testing "planned gatherings start at L1, once"
       (let [x (-> (start) (watch-at "L0") (h/send! sid :gather/plan {:by "overseer" :to "p1" :public-title "T" :goal "G" :question "Q"}))]
@@ -112,6 +112,16 @@
         (let [y (watch-at x "L1")]
           (is (= [:gather/start] (map :event (drives y))))
           (is (= 1 (count (drives (watch-at y "L2")))) "not twice"))))
+    (testing "F8b: after an attempt to Ana answered nothing, Bob's plan starts and Ana's never again"
+      (let [plan (fn [x to] (h/send! x sid :gather/plan {:by "overseer" :to to :public-title "T" :goal "G" :question "Q"}))
+            x (-> (start) (watch-at "L0") (plan "p1") (plan "p2") (plan "p1"))
+            y (watch-at x "L1")
+            d1 (first (drives y))]
+        (is (= "p1" (get-in d1 [:data :to])))
+        (let [z (-> y (baton 1 [:open :with-person] :handoffs [{:to "p1"}]) (baton 1 [:closed] :handoffs [{:to "p1"}]))
+              starts (filter #(= :gather/start (:event %)) (drives z))]
+          (is (h/in? z sid :open))
+          (is (= ["p1" "p2"] (map #(get-in % [:data :to]) starts)) "the third plan (Ana again) is never started"))))
     (testing "move: close an own gathering nobody wrote in once a newer one to the same person is open"
       (let [y (-> (start) (watch-at "L1")
                   (baton 1 [:open :with-person] :handoffs [{:to "p1"}])

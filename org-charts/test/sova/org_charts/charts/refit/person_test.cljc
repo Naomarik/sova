@@ -90,3 +90,12 @@
          (:sentence (rp/referral-refusal {:name "C" :role "R" :contact {:phone "ask"} :why "w" :quote "q"} nil "Bob"))))
   (is (= "Carla was already proposed and waits for the operator's approval. Hand to the operator if you need them now."
          (:sentence (rp/referral-refusal {:name "Carla"} {:name "Carla" :status "proposed"} "Bob")))))
+
+(deftest global-overseer-and-the-chart
+  (let [x (born ana)]
+    (is (re-find #"^This reaches people or ends something: ask with sova_confirm, listing p1 in its items" (h/refusal x sid :person/leave {:by "operator" :via "overseer"})))
+    (is (nil? (h/refusal x sid :person/leave {:by "operator" :via "overseer" :card {:people ["p1"]}})))
+    (testing "a revert that sets left needs the card; another revert does not"
+      (is (some? (h/refusal x sid :person/revert {:by "operator" :via "overseer" :row {:at 3 :field "status" :from "left" :to "active"}})))
+      (is (nil? (h/refusal x sid :person/revert {:by "operator" :via "overseer" :row {:at 3 :field "role" :from "Clerk" :to "CFO"}})))))
+  (is (= "A chart change may not approve or decline people." (h/refusal (born carla) sid :person/approve {:by "chart" :autonomy "L3" :roster-active true}))))

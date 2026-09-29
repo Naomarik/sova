@@ -118,7 +118,7 @@
   "decidePerson: only the operator or the project overseer approves or declines."
   [data]
   (let [by (b/by data)]
-    (when-not (contains? #{"operator" "overseer" "chart"} by)
+    (when-not (contains? #{"operator" "overseer"} by)
       (r/refuse 409 (str "A " (or (some-> (:by-kind (b/evt data)) name) by) " change may not approve or decline people.")))))
 
 (def revert-creation "A person's creation can't be reverted; set their status to left instead.")
@@ -208,7 +208,10 @@
                     :what (fn [d] (str "Declining " (name-of d)))}
    :person/leave   {:needs nil :people-facing true
                     :card (fn [d] {:people [(:id d)]})}
-   :person/revert  {:needs nil}
+   :person/revert  {:needs nil :people-facing true
+                    ;; a revert that sets left needs the global Overseer's card (F-033, F-185)
+                    :card (fn [d] (let [{:keys [field from]} (:row (b/evt d))]
+                                    (when (and (= "status" (some-> field name)) (= "left" from)) {:people [(:id d)]})))}
    :hold/cancel    {:needs "L0" :correction true}})
 
 (defn not-here

@@ -166,19 +166,24 @@
 (defn reconcile-key [d] (str "reconcile:" (str/join "," (ri/pending-ids d))))
 (defn promote-key [d] (str "promote:" (str/join "," (ri/in-area-drafted-ids d))))
 (defn build-key [d] (str "build:" (str/join "," (ri/not-built-ids d))))
-(defn plan-key [d] (str "plan:" (count (:plans-started d))))
+(defn plan-target [p] (or (:to p) (first (:targets p))))
+
+(defn next-plan
+  "The index of the next planned gathering to start: not started yet, and not to a person whose
+   attempt on this gap ended with no decision."
+  [d]
+  (let [started (set (:plans-started d)) blocked (set (:answered-nothing-to d))]
+    (first (for [[i p] (map-indexed vector (:plans d))
+                 :when (and (not (started i)) (not (blocked (plan-target p))))]
+             i))))
+
+(defn plan-key [d] (str "plan:" (next-plan d)))
 (defn move-key [d] (str "move:" (first (ri/same-target-older d))))
 
 (defn held-act? [d event] (some #(= (str (namespace event) "/" (name event)) (str (:event %))) (vals (:sova/holds d))))
 
 (defn- drive-transitions []
-  [;; L1: reconcile when a gathering of the gap ended with decisions not compared yet
-   (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1")
-                                       (some ri/baton-ended? (vals (:batons d))) (seq (ri/pending-ids d))
-                                       (not (drove? d (reconcile-key d)))))}
-     (note-drove reconcile-key)
-     (dsl/drive {:event :reconcile/request :target (fn [d] (b/reconciler-sid (:org-id d) (:project-id d)))
-                 :data (fn [d] {:delay-ms 0 :gap (:idea-id d)})}))
+  [
    ;; L2: promote the gap's drafted decisions whose author owns the area (never out of area)
    (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L2") (seq (ri/in-area-drafted-ids d))
                                        (not (drove? d (promote-key d)))))}
@@ -196,16 +201,19 @@
                                 :title (str "Build " (:idea-id d))
                                 :decisions (ri/not-built-ids d)
                                 :prompt (ri/build-prompt d (ri/not-built-ids d))})}))
-   ;; L1: a planned gathering (filed at L0), once; never after an attempt that answered nothing
-   (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1") (b/in? env :open)
-                                       (zero? (or (:attempts d) 0)) (> (count (:plans d)) (count (:plans-started d)))
-                                       (empty? (:batons d)) (not (held-act? d :gather/start))
+   ;; L1: a planned gathering (filed at L0), each once, while the lane has no live gathering; never
+   ;; one to a person whose attempt on this gap ended with no decision (F8b: per target)
+   (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1")
+                                       (not (#{:asking :needs-operator} (lane-gathering d)))
+                                       (not (b/in? env :gather-starting))
+                                       (some? (next-plan d)) (not (held-act? d :gather/start)) (not (:plan-pending d))
                                        (not (drove? d (plan-key d)))))}
      (note-drove plan-key)
-     (script {:expr (fn [_ d] [(ops/assign :plans-started (conj (vec (:plans-started d)) (count (:plans-started d))))])})
+     ;; one planned start in flight: the next waits for its outcome (a baton, a hold, or any later event)
+     (script {:expr (fn [_ d] [(ops/assign :plans-started (conj (vec (:plans-started d)) (next-plan d))) (ops/assign :plan-pending true)])})
      (dsl/drive {:event :gather/start
-                 :data (fn [d] (let [p (nth (:plans d) (dec (count (:plans-started d))))]
-                                 (assoc p :session-id (str (:id d) "-g" (inc (count (:batons d)))))))}))
+                 :data (fn [d] (let [i (last (:plans-started d)) p (nth (:plans d) i)]
+                                 (assoc p :session-id (str (:id d) "-g" (inc i)))))}))
    ;; L1: close an own gathering nobody wrote in once a newer one to the same person is open
    (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1") (ri/same-target-older d)
                                        (not (drove? d (move-key d)))))}
@@ -215,6 +223,16 @@
                                 :owner-project (:project-id d)})}))])
 
 ;; ---- the chart -----------------------------------------------------------------------------------------
+
+(defn- answered-nothing
+  "The lane's gatherings ended with no decision: one attempt used, and their first targets are not
+   asked again by a planned gathering (r3)."
+  []
+  (script {:expr (fn [_ d] [(ops/assign :attempts (inc (or (:attempts d) 0)))
+                            (ops/assign :answered-nothing-to
+                              (vec (distinct (concat (:answered-nothing-to d)
+                                                     (keep #(let [h (first (:handoffs (ri/ex %)))] (when (not= "pool" (:to h)) (:to h))) (ri/lane-batons d))
+                                                     (mapcat #(:to (first (:offers (ri/ex %)))) (ri/lane-batons d))))))])}))
 
 (defn- group [g] (on-entry {} (script {:expr (fn [_ _] [(ops/assign :lane-group g)])})))
 
@@ -226,7 +244,9 @@
       (b/flush-transition)
 
       (parallel {:id :live}
-        (transition {:event :link/moved} (script {:expr (fn [_ d] (moved-ops d))}))
+        (transition {:event :link/moved} (script {:expr (fn [_ d] (conj (moved-ops d) (ops/assign :plan-pending false)))}))
+        (transition {:event :hold/dropped} (script {:expr (fn [_ _] [(ops/assign :plan-pending false)])}))
+        (transition {:event :hold/cancelled} (script {:expr (fn [_ _] [(ops/assign :plan-pending false)])}))
         ;; drop agrees with the idea both ways (sova_idea status dropped at L0, the panel, the operator)
         (dsl/act {:event :gap/drop :target :dropped :checks [invalid]}
           (script {:expr (fn [_ d] [(ops/assign :dropped-from (:phase d))])})
@@ -275,13 +295,13 @@
                 (transition {:cond (fn [_ d] (= :needs-operator (lane-gathering d))) :target :needs-operator})
                 (transition {:cond (fn [_ d] (and (= :ended (lane-gathering d)) (not= "none" (ri/dphase d)))) :target :deciding})
                 (transition {:cond (fn [_ d] (and (= :ended (lane-gathering d)) (= "none" (ri/dphase d)))) :target :open}
-                  (script {:expr (fn [_ d] [(ops/assign :attempts (inc (or (:attempts d) 0)))])})
+                  (answered-nothing)
                   (reason "item/answered-nothing" (fn [_] {}))))
               (state {:id :needs-operator} (mark :needs-operator) (stall-clock :needs-operator)
                 (transition {:cond (fn [_ d] (= :asking (lane-gathering d))) :target :asking})
                 (transition {:cond (fn [_ d] (and (= :ended (lane-gathering d)) (not= "none" (ri/dphase d)))) :target :deciding})
                 (transition {:cond (fn [_ d] (and (= :ended (lane-gathering d)) (= "none" (ri/dphase d)))) :target :open}
-                  (script {:expr (fn [_ d] [(ops/assign :attempts (inc (or (:attempts d) 0)))])})
+                  (answered-nothing)
                   (reason "item/answered-nothing" (fn [_] {})))))
 
             (state {:id :deciding :initial :unreconciled}

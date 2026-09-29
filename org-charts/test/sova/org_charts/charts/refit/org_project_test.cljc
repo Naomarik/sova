@@ -97,3 +97,26 @@
       (is (h/in? (h/advance! y (* 24 3600000)) psid :ready)))
     (is (= "The text leaks." (h/refusal x psid :owner-update/post (assoc po :attended true :leak "The text leaks."))))
     (is (nil? (h/refusal x psid :owner-update/post (assoc po :build-finished-at (h/now x)))) "a build that finished a turn since is a milestone")))
+
+(deftest hourly-committer
+  (let [sid "residence/o1"
+        x (-> (h/start! (h/new-host) "residence" sid {:org-id "o1" :host-id "h_me" :host-name "me" :mode "create" :commit-every-ms 3600000})
+              (h/send! sid :effect/done {:kind "commit" :result {:head-at 1700000000000}}))]
+    (is (h/in? x sid :clean))
+    (testing "F5b: a clean look once an hour passed commits whatever git says changed"
+      (is (h/in? (h/advance! x 3600000) sid :committing))
+      (is (h/in? (h/advance! x 60000) sid :clean)))
+    (testing "F5a: a write during a commit is in the next one"
+      (let [c (-> x (h/send! sid :commit/now op) (h/send! sid :store/written {}) (h/send! sid :effect/done {:kind "commit" :result {:head-at (h/now x)}}))]
+        (is (h/in? c sid :dirty))))
+    (testing "a failed push is kept in the snapshot's data"
+      (is (true? (:push-pending (h/data (-> x (h/send! sid :commit/now op) (h/send! sid :effect/done {:kind "commit" :result {:push-failed true}})) sid)))))
+    (is (re-find #"holds this organization" (:held-sentence (h/data (h/send! (h/start! (h/new-host) "residence" sid {:org-id "o1" :host-id "h_me" :mode "attach"}) sid :effect/done {:kind "read-holder" :result {:local {:host-id "h_x" :host-name "box"}}}) sid))))))
+
+(deftest build-prompt-carries-the-commit-paragraph
+  (let [bsid "build/o1/pr1/c1"
+        x (-> (h/start! (h/new-host) "build" bsid {:org-id "o1" :project-id "pr1" :session-id "c1" :kind "coding" :title "T" :prompt "Build it"})
+              (h/send! bsid :effect/done {:kind "make-worktree" :result {:branch "sova/t-abc123" :target "main"}})
+              (h/send! bsid :effect/done {:kind "set-mode"}))]
+    (is (= "Build it\n\nYou work in your own git worktree on the branch sova/t-abc123. Commit your work on this branch before you end your turn: uncommitted changes can't be merged. Before you end your turn, also merge main into your branch and resolve any conflicts."
+           (:prompt (last (h/outbox x bsid)))))))

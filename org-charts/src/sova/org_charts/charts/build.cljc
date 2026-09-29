@@ -85,6 +85,17 @@
 
 (defn coding? [d] (= "coding" (:kind d)))
 
+(defn commit-paragraph
+  "codingWorktreeParagraph, verbatim."
+  [{:keys [branch target]}]
+  (str "You work in your own git worktree on the branch " branch ". Commit your work on this branch before you end your turn: uncommitted changes can't be merged. "
+    "Before you end your turn, also merge " target " into your branch and resolve any conflicts."))
+
+(defn first-prompt
+  "codingFirstPrompt: the prompt, then (in its own worktree) the commit paragraph."
+  [d]
+  (if (:branch d) (str (:prompt d) "\n\n" (commit-paragraph d)) (:prompt d)))
+
 (def chart
   (statechart {:initial :build}
     (state {:id :build :initial :regions}
@@ -125,12 +136,15 @@
           (state {:id :setting-mode}
             (on-entry {} (dsl/effect :set-mode (fn [d] {:mode (:mode d)})))
             (transition {:event :effect/done :cond (fn [_ d] (and ((done-kind? "set-mode") nil d) (not (lv/blank? (:prompt d))))) :target :prompting})
-            (transition {:event :effect/done :cond (done-kind? "set-mode") :target :ready})
+            ;; New Coding Session: no prompt; its worktree's note is the first entry
+            (transition {:event :effect/done :cond (done-kind? "set-mode") :target :ready}
+              (script {:expr (fn [_ d] (when (:branch d)
+                                         (dsl/effect-ops d (dsl/effect-map :worktree-note (fn [_] {:text (commit-paragraph d)}) d))))}))
             ;; its mode could not be set: started, not prompted
             (transition {:event :effect/failed :cond (done-kind? "set-mode") :target :ready}
               (script {:expr (fn [_ d] [(ops/assign :mode-not-set (or (:detail (e d)) true))])})))
           (state {:id :prompting}
-            (on-entry {} (dsl/effect :first-prompt (fn [d] {:prompt (:prompt d) :branch (:branch d) :target (:target d)})))
+            (on-entry {} (dsl/effect :first-prompt (fn [d] {:prompt (first-prompt d)})))
             (transition {:event :effect/done :cond (done-kind? "first-prompt") :target :ready})
             (transition {:event :effect/failed :cond (done-kind? "first-prompt") :target :ready}
               (script {:expr (fn [_ d] [(ops/assign :prompt-error (:detail (e d)))])})))

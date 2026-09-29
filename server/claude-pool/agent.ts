@@ -99,6 +99,8 @@ export interface PoolAgentOptions {
   canHold?: () => boolean;
   now?: () => number;
   pidAlive?: (pid: number) => boolean;
+  /** Whether a lease's child pid is still a process on that login directory (accounts.ts claudeRunsOn). */
+  runsOn?: (pid: number, dir: string) => boolean;
   kill?: (pid: number, signal: NodeJS.Signals) => void;
   idleMs?: number;
   offerTtlMs?: number;
@@ -401,7 +403,7 @@ export class PoolAgent {
    * Such a process counts as busy: nothing says when it last worked.
    */
   private use(id: string): { inUse: boolean; busy: boolean; lastActiveAt: number; children: number[] } {
-    const leased = readLoginUse(this.o.agentDir, id, this.alive);
+    const leased = readLoginUse(this.o.agentDir, id, this.alive, this.now(), this.o.runsOn);
     this.procs ??= { at: this.now(), map: (this.o.procScan ?? scanClaudeProcs)() };
     const dir = join(this.o.agentDir, ACCOUNTS_DIR_NAME, id);
     const extra = (this.procs.map.get(dir) ?? []).filter((pid) => !leased.children.includes(pid) && this.alive(pid));

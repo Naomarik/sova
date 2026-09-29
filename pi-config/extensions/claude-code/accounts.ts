@@ -53,6 +53,8 @@ export const POOL_AGENT_FRESH_MS = 30_000;
 export const WANT_WAIT_MS = 30_000;
 /** How often a process rewrites its leases and releases idle users of leaving logins. */
 export const LEASE_TICK_MS = 5_000;
+/** A lease its owner has not rewritten for this long has no owner (the pid is gone or reused): only its live `claude` children count. */
+export const LEASE_STALE_MS = 60_000;
 /** What the development switch's forced limit says about its reset. */
 const DEV_LIMIT_RESET_MS = 60 * 60_000;
 /** Entries symlinked from `default`'s directory into every login's, so all share them. */
@@ -548,8 +550,25 @@ export interface LoginUse {
 	/** Live `claude` pids on the login (orphans of a dead owner included). */
 	children: number[];
 }
-export function readLoginUse(agentDir: string, id: string, alive: (pid: number) => boolean = pidAlive): LoginUse {
-	const dir = path.join(loginDir(agentDir, id), LEASES_DIR_NAME);
+/**
+ * Whether `pid` is still a process on the login directory `dir`: alive, and (Linux) its environment
+ * names `dir` as CLAUDE_CONFIG_DIR — a lease's child pid that has been reused by an unrelated
+ * process is not, so it neither holds the login nor gets stopped at a drain's cut. Elsewhere,
+ * liveness alone.
+ */
+export function claudeRunsOn(pid: number, dir: string): boolean {
+	if (!pidAlive(pid)) return false;
+	if (process.platform !== "linux") return true;
+	let env: string;
+	try { env = fs.readFileSync(`/proc/${pid}/environ`, "latin1"); } catch { return false; }
+	return `\0${env}\0`.includes(`\0CLAUDE_CONFIG_DIR=${dir}\0`);
+}
+export function readLoginUse(
+	agentDir: string, id: string, alive: (pid: number) => boolean = pidAlive, now = Date.now(),
+	runsOn: (pid: number, dir: string) => boolean = claudeRunsOn,
+): LoginUse {
+	const home = loginDir(agentDir, id);
+	const dir = path.join(home, LEASES_DIR_NAME);
 	const use: LoginUse = { inUse: false, busy: false, lastActiveAt: 0, children: [] };
 	let names: string[] = [];
 	try { names = fs.readdirSync(dir); } catch { return use; }
@@ -557,8 +576,8 @@ export function readLoginUse(agentDir: string, id: string, alive: (pid: number) 
 		if (!/^\d+\.json$/.test(name)) continue;
 		let lease: LoginLease;
 		try { lease = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
-		const kids = Array.isArray(lease.children) ? lease.children.filter((pid) => Number.isInteger(pid) && alive(pid)) : [];
-		const ownerAlive = alive(lease.owner);
+		const kids = Array.isArray(lease.children) ? [...new Set(lease.children)].filter((pid) => Number.isInteger(pid) && alive(pid) && runsOn(pid, home)) : [];
+		const ownerAlive = typeof lease.at === "number" && now - lease.at <= LEASE_STALE_MS && alive(lease.owner);
 		if (!ownerAlive && !kids.length) {
 			try { fs.rmSync(path.join(dir, name), { force: true }); } catch { /* best effort */ }
 			continue;

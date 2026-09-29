@@ -15,7 +15,7 @@ import {
   writeAccounts,
   type ClaudeAccountsFile,
 } from "../../pi-config/extensions/claude-code/accounts.ts";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { PoolAgent, scanClaudeProcs, type PoolPeer } from "./agent";
 import { INCOMING_DIR_NAME } from "./creds";
 import { emptyDoc, mergeDocs, newPoolLogin, reg } from "./doc";
@@ -340,22 +340,50 @@ describe("returning", () => {
 
   test("a login is not handed over while a process runs on it; at the cut its claude is stopped", async () => {
     const { w, d, k, clock } = await borrowed();
-    // A live process (this test's) with a busy user on L1: its lease.
-    const leases = join(d.agentDir, "claude-accounts", L1, ".sova-leases");
+    // A live process (this test's) with a busy user on L1 and its claude child: its lease, which
+    // the owner rewrites every few seconds.
+    const dir = join(d.agentDir, "claude-accounts", L1);
+    const leases = join(dir, ".sova-leases");
     mkdirSync(leases, { recursive: true });
-    writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 1, children: [process.pid], lastActiveAt: clock.now, at: clock.now }));
-    k.agent.askReturn(L1);
-    await w.syncAll();
-    await d.agent.tick();
-    assert.equal(readLeaving(d.agentDir, L1)?.reason, "user");
-    assert.ok(existsSync(credsPath(d, L1)), "still here: a process runs on it");
-    assert.deepEqual(usableOn(w, L1), [], "but no new process may take it");
-    clock.now += 16 * MIN;
-    await d.agent.tick();
-    assert.deepEqual(w.killed, [process.pid], "the cut stops the claude process still on it");
+    const claude = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: "ignore" });
+    const lease = () => writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 1, children: [claude.pid], lastActiveAt: clock.now, at: clock.now }));
+    try {
+      await new Promise((r) => setTimeout(r, 100));
+      lease();
+      k.agent.askReturn(L1);
+      await w.syncAll();
+      await d.agent.tick();
+      assert.equal(readLeaving(d.agentDir, L1)?.reason, "user");
+      assert.ok(existsSync(credsPath(d, L1)), "still here: a process runs on it");
+      assert.deepEqual(usableOn(w, L1), [], "but no new process may take it");
+      clock.now += 16 * MIN;
+      lease();
+      await d.agent.tick();
+      assert.deepEqual(w.killed, [claude.pid], "the cut stops the claude process still on it");
+    } finally {
+      claude.kill();
+    }
     rmSync(leases, { recursive: true });
     await d.agent.tick();
     assert.equal(existsSync(credsPath(d, L1)), false, "then it goes");
+    assert.equal(holder(k, L1)!.free, true);
+  });
+
+  test("a stale lease (its owner gone, its child pid reused by another process) holds nothing and nothing is stopped", async () => {
+    const { w, d, k, clock } = await borrowed();
+    const leases = join(d.agentDir, "claude-accounts", L1, ".sova-leases");
+    mkdirSync(leases, { recursive: true });
+    // A dead owner whose recorded child pid now belongs to an unrelated live process (this test's),
+    // and a live pid as owner that stopped rewriting its lease long ago (a reused owner pid).
+    const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+    writeFileSync(join(leases, `${dead}.json`), JSON.stringify({ v: 1, owner: dead, users: 1, busy: 1, children: [process.pid, process.pid], lastActiveAt: clock.now, at: clock.now }));
+    writeFileSync(join(leases, `${process.pid}.json`), JSON.stringify({ v: 1, owner: process.pid, users: 1, busy: 1, children: [], lastActiveAt: clock.now - 5 * MIN, at: clock.now - 5 * MIN }));
+    k.agent.askReturn(L1);
+    await w.syncAll();
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.deepEqual(w.killed, [], "no pid from a stale lease is signalled");
+    assert.equal(existsSync(credsPath(d, L1)), false, "the login went back without waiting for a cut");
     assert.equal(holder(k, L1)!.free, true);
   });
 

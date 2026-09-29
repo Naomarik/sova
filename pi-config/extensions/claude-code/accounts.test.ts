@@ -8,8 +8,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { spawn, spawnSync } from "node:child_process";
 import {
-	ACCOUNTS_DEV_ENV, ClaudeLogins, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, deviceOrder, ensureLoginDir,
+	ACCOUNTS_DEV_ENV, ClaudeLogins, LEASES_DIR_NAME, LEASE_STALE_MS, readLoginUse, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, deviceOrder, ensureLoginDir,
 	loginDir, loginEntryFor, parseAccounts, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 } from "./accounts.ts";
@@ -268,4 +269,35 @@ test("classifier: one api_retry is not yet a failure, and the synthetic error me
 	assert.equal(d.isFailureMessage(synthetic), true);
 	assert.equal(d.isFailureMessage(events("overloaded.ndjson")[1]!), false);
 	assert.equal(d.isFailureMessage({ type: "assistant", message: { model: "claude-opus-5-5", content: [{ type: "text", text: "usage limit reached is a phrase" }] } }), false, "a real answer mentioning limits is an answer");
+});
+
+test("leases: a dead owner's lease counts only through a live claude on that login; a reused pid or a lease left unwritten counts for nothing", { skip: process.platform !== "linux" }, async () => {
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-accounts-leases-"));
+	const id = "l-1ea5e001";
+	const dir = loginDir(agentDir, id);
+	const leases = path.join(dir, LEASES_DIR_NAME);
+	fs.mkdirSync(leases, { recursive: true });
+	const now = Date.now();
+	const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+	const lease = (owner: number, children: number[], at = now) =>
+		fs.writeFileSync(path.join(leases, `${owner}.json`), JSON.stringify({ v: 1, owner, users: 1, busy: 1, children, lastActiveAt: at, at }));
+	const orphan = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)"], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: "ignore" });
+	try {
+		await new Promise((r) => setTimeout(r, 100));
+		// The owner died, its claude runs on: the login is still in use, and that claude is the one to stop.
+		lease(dead, [orphan.pid!]);
+		assert.deepEqual(readLoginUse(agentDir, id), { inUse: true, busy: false, lastActiveAt: now, children: [orphan.pid] });
+		// The owner died and its child's pid now belongs to another process (this test's): nothing.
+		lease(dead, [process.pid]);
+		assert.deepEqual(readLoginUse(agentDir, id), { inUse: false, busy: false, lastActiveAt: 0, children: [] });
+		assert.equal(fs.existsSync(path.join(leases, `${dead}.json`)), false, "and the stale lease is cleaned up");
+		// A live owner pid whose lease was not rewritten for longer than LEASE_STALE_MS: a reused pid.
+		lease(process.pid, [], now - LEASE_STALE_MS - 1);
+		assert.equal(readLoginUse(agentDir, id, undefined, now).inUse, false);
+		lease(process.pid, [], now);
+		assert.equal(readLoginUse(agentDir, id, undefined, now).busy, true, "a fresh lease of a live owner holds the login");
+	} finally {
+		orphan.kill();
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
 });

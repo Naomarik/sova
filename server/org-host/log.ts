@@ -62,6 +62,14 @@ export interface LogRow {
   offHours?: number;
   /** The journal that wrote it (replay appends a row once). */
   j?: string;
+  /** The engine's own time, when `at` was moved on to keep it unique (a log replay runs on it). */
+  t?: number;
+  /** A host start's data, scrubbed (its envelope is who started it). */
+  start?: Json;
+  /** The run a report answers. */
+  invokeId?: string;
+  /** No chart step wrote it (`logAct`: a note, an idea, a confirm). */
+  plain?: boolean;
   [extra: string]: Json | undefined;
 }
 
@@ -134,6 +142,8 @@ export function rowOfStep(org: string, step: Step, rules: Record<string, RedactR
   };
   if (step.via) row.via = step.via;
   if (step.reason) row.reason = step.reason;
+  // the run a report answers (a log replay sends it again with it)
+  if (step.invokeId) row.invokeId = step.invokeId;
   if (step.refused) {
     row.refused = step.refused.sentence;
     if (step.refused.stage) row.refusedStage = step.refused.stage;

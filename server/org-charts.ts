@@ -307,6 +307,20 @@ interface Vendored {
   chartInfo(name: string): ChartInfo | null;
   migrateText(text: string): string;
   peekSnapshot(text: string): SnapshotPeek;
+  verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts?: Pick<EngineOptions, "charts">): SessionVerdict;
+}
+
+/** `org-charts rebuild --verify`: one session's log replayed on the current charts against its snapshot. */
+export interface SessionVerdict {
+  session: string;
+  chart: string | null;
+  /** Its log rows. */
+  rows: number;
+  same: boolean;
+  /** What differs (configuration, running, links, watchers, timers, holds), or why it can't be compared (start, snapshot). */
+  differences: { what: string; replayed?: Json; snapshot?: Json; why?: string }[];
+  /** The first step where the replay went another way, or an engine error. */
+  divergence: { at: number | null; event: string | null; why?: string; error?: string; logged?: Json; replayed?: Json; replayedEvent?: string | null } | null;
 }
 
 /** A snapshot read without loading it (cold sessions). */
@@ -403,4 +417,9 @@ export function peekSnapshot(text: string): SnapshotPeek {
 /** A snapshot's text at its chart's current version (throws when it can't be migrated). */
 export function migrateSnapshot(text: string): string {
   return lib.migrateText(text);
+}
+
+/** Replay a session's log rows (oldest first) on a scratch engine and compare with its snapshot text. Writes nothing. */
+export function verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts: Pick<EngineOptions, "charts"> = {}): SessionVerdict {
+  return typed(lib.verifySession)(sessionId, rows, snapshotText, opts);
 }

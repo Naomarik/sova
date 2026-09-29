@@ -370,8 +370,12 @@ export class OrgHost {
       .filter((s) => s.saved || s.refused || s.held)
       .map((s) => {
         const row = rowOfStep(this.orgId, s, this.rulesOf(s.chart));
-        if (s.event === "sova/started" && extra?.startEnvelope) row.envelope = scrub(extra.startEnvelope, this.rulesOf(s.chart));
+        if (s.event === "sova/started" && extra?.startEnvelope) {
+          row.start = row.envelope;
+          row.envelope = scrub(extra.startEnvelope, this.rulesOf(s.chart));
+        }
         row.at = this.uniqueAt(s.at);
+        if (row.at !== s.at) row.t = s.at;
         row.j = id;
         return { file: this.logFileFor(s.chart, row.at), row };
       });
@@ -565,7 +569,8 @@ export class OrgHost {
   async logAct(row: Record<string, unknown>): Promise<void> {
     const at = this.uniqueAt(typeof row["at"] === "number" ? (row["at"] as number) : this.clock());
     const chart = typeof row["chart"] === "string" ? (row["chart"] as string) : null;
-    const full = { feed: "feed", ...(scrub(row, this.rulesOf(chart)) as Record<string, Json>), at, org: this.orgId } as LogRow;
+    // `plain`: no chart step wrote it (a log replay skips it)
+    const full = { feed: "feed", ...(scrub(row, this.rulesOf(chart)) as Record<string, Json>), at, org: this.orgId, plain: true } as LogRow;
     const j: Journal = { id: journalId(this.clock()), at, snapshots: [], rows: [{ file: this.logFileFor(chart, at), row: full }] };
     commitJournal(this.paths.journal, j, this.durable);
   }

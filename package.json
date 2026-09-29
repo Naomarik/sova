@@ -19,6 +19,7 @@
     "dev:hermetic": "node scripts/hermetic-agent-dir.mjs && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" tsx server/index.ts",
     "prices:update": "tsx scripts/prices-update.mjs",
     "voice:install": "tsx scripts/voice.ts",
+    "org-charts": "tsx scripts/org-charts.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build && vite build --mode share",
     "start": "tsx server/index.ts",

@@ -78,6 +78,9 @@ test("environ: PI_SESSION_FILE and the team member's ids; nothing else is kept",
   ].join("\0") + "\0");
   assert.deepEqual(env, { sessionFile: "/s/a.jsonl", team: { teamId: "team_01", workerId: "ag_03" } });
   assert.deepEqual(parseEnviron("PI_SUBAGENTS_TEAM_MEMBER={broken\0PI_SESSION_FILE=\0"), {});
+  assert.deepEqual(parseEnviron("CLAUDE_PID=2885003\0CLAUDE_CODE_SESSION_ID=3586816F-1111-2222-3333-444444444444\0"),
+    { claudePid: 2885003, claudeSession: "3586816f-1111-2222-3333-444444444444" });
+  assert.deepEqual(parseEnviron("CLAUDE_PID=x\0CLAUDE_CODE_SESSION_ID=nope\0"), {});
 });
 
 test("cmdline: NUL-separated argv, and a retitled process's padded title", () => {

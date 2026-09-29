@@ -165,6 +165,8 @@ export interface MonitorOptions {
   platform?: string;
   /** Start the event-loop delay histogram (off in tests that drive ticks by hand). */
   eventLoop?: boolean;
+  /** Sova's display title for a session (asked at most once a minute per session, off the tick). */
+  titleOf?: (path: string) => Promise<string | undefined>;
 }
 
 interface ProcState {
@@ -189,6 +191,7 @@ interface ProcState {
 }
 
 const BATCH = 48;
+const LOOP_RESOLUTION_MS = 200;
 /** An idle process (two reads that found no CPU spent) is re-read every this many ticks. */
 const IDLE_EVERY = 4;
 const yieldLoop = () => new Promise<void>((r) => setImmediate(r));
@@ -238,7 +241,7 @@ export class ResourceMonitor {
   private unitName?: string;
   private bootMs = 0;
   private pageSize = 4096;
-  private serverSessionFile?: string;
+  private serverEnv: ProcEnv = {};
   private serverSid = 0;
   private firstTickAt = 0;
   private prevAt = 0;
@@ -261,6 +264,8 @@ export class ResourceMonitor {
   private treeDeepAt = 0;
   private lastPiWorkerMiss = 0;
   private snap: MonitorSnapshot | null = null;
+  private readonly titleOf?: (path: string) => Promise<string | undefined>;
+  private titles = new Map<string, { title?: string; at: number }>();
   /** The last tick's busy ms per phase, with its process and new-process counts (diagnostics). */
   lastPhases: Record<string, number> = {};
 
@@ -274,6 +279,7 @@ export class ResourceMonitor {
     this.log = new MonitorLog(opts.logDir);
     this.liveDir = opts.liveDir;
     this.plat = opts.platform ?? platform();
+    this.titleOf = opts.titleOf;
     const held = opts.held;
     this.hostedOf = opts.hosted ?? (() => {
       const out: HostedInfo[] = [...hosted.values()].map((h) => ({
@@ -288,7 +294,9 @@ export class ResourceMonitor {
       return out;
     });
     if (opts.eventLoop !== false) {
-      this.loop = monitorEventLoopDelay({ resolution: 20 });
+      // 200ms: 5 wakeups a second (20ms cost ~0.12% of a core alone). A stall still shows in
+      // `max`, which is exact; each sample includes the resolution, subtracted when reported.
+      this.loop = monitorEventLoopDelay({ resolution: LOOP_RESOLUTION_MS });
       this.loop.enable();
     }
     this.init();
@@ -308,7 +316,10 @@ export class ResourceMonitor {
     this.bootMs = (parseBootTime(readSync(join(this.procRoot, "stat")) ?? "") ?? 0) * 1000;
     const cg = parseSelfCgroup(readSync(join(this.procRoot, String(this.serverPid), "cgroup")) ?? "");
     const dir = cg ? join(this.cgroupRoot, cg.path) : undefined;
-    if (cg?.unit && dir && readSync(join(dir, "cgroup.procs")) !== null) {
+    // Only the unit's own main process may speak for the unit: a dev server started from a shell
+    // inside the unit (an agent's tool) inherits its cgroup, and must not claim its processes.
+    const parentComm = st ? readSync(join(this.procRoot, String(st.ppid), "comm"))?.trim() : undefined;
+    if (cg?.unit && dir && parentComm === "systemd" && readSync(join(dir, "cgroup.procs")) !== null) {
       this.scope = "unit";
       this.cgroupDir = dir;
       this.unitName = cg.unit;
@@ -317,7 +328,7 @@ export class ResourceMonitor {
     const rssBytes = parseStatusRss(readSync(join(this.procRoot, String(this.serverPid), "status")) ?? "");
     if (st && st.rss > 0 && rssBytes > 0) this.pageSize = 2 ** Math.round(Math.log2(rssBytes / st.rss));
     const env = readSync(join(this.procRoot, String(this.serverPid), "environ"));
-    this.serverSessionFile = env ? parseEnviron(env).sessionFile : undefined;
+    this.serverEnv = env ? parseEnviron(env) : {};
   }
 
   start(): void {
@@ -330,10 +341,33 @@ export class ResourceMonitor {
     this.timer.unref();
   }
 
+  /** Stop sampling; the 30s window in progress goes to disk now, so a restart loses none of it. */
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
     this.loop?.disable();
+    const line = this.rollup.flush();
+    if (line) {
+      try {
+        this.log.appendSync(line);
+      } catch (err) {
+        console.warn(`[monitor] final log append failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    }
+  }
+
+  /** Sova's title for each session row: cached, refreshed at most once a minute, never awaited. */
+  private refreshTitles(paths: string[], at: number): void {
+    if (!this.titleOf) return;
+    let asked = 0;
+    for (const path of paths) {
+      const t = this.titles.get(path);
+      if ((t && at - t.at < 60_000) || asked >= 5) continue;
+      asked++;
+      this.titles.set(path, { ...(t?.title ? { title: t.title } : {}), at });
+      this.titleOf(path).then((title) => this.titles.set(path, { ...(title ? { title } : {}), at }), () => {});
+    }
+    if (this.titles.size > 500) for (const [k, v] of this.titles) if (at - v.at > 3_600_000) this.titles.delete(k);
   }
 
   snapshot(): MonitorSnapshot | null {
@@ -532,7 +566,7 @@ export class ResourceMonitor {
       const liveRecordPids = this.liveRecordPids(live, hostedNow, at);
       const { owners, inTree } = attribute({
         procs: byPid, serverPid: this.serverPid, hosted: hostedNow, liveRecordPids, sids: this.sids,
-        ...(this.serverSessionFile ? { serverSessionFile: this.serverSessionFile } : {}),
+        serverEnv: this.serverEnv,
       });
       this.sids.learn(byPid, owners, at);
       // Unowned worker-looking children: a pid the runtime has not published yet; ask again
@@ -555,8 +589,9 @@ export class ResourceMonitor {
       // 6. Unit and server numbers.
       const unit = this.unitNumbers(elapsedSec);
       const mem = process.memoryUsage();
+      const lag = (ns: number) => (Number.isFinite(ns) ? Math.max(0, ns / 1e6 - LOOP_RESOLUTION_MS) : 0);
       const loopMs = this.loop
-        ? { p50: this.loop.percentile(50) / 1e6, p99: this.loop.percentile(99) / 1e6, max: this.loop.max / 1e6 }
+        ? { p50: lag(this.loop.percentile(50)), p99: lag(this.loop.percentile(99)), max: lag(this.loop.max) }
         : { p50: 0, p99: 0, max: 0 };
       this.loop?.reset();
 
@@ -771,14 +806,18 @@ export class ResourceMonitor {
       const all = [...s.own, ...[...s.workers.values()].flat()];
       const own = sum(s.own);
       sessionRows.push({
-        sessionPath: path, ...(h?.title ? { title: h.title } : {}), ...(h?.cwd ? { cwd: h.cwd } : {}), hosted: !!h,
+        sessionPath: path, ...((h?.title ?? this.titles.get(path)?.title) ? { title: h?.title ?? this.titles.get(path)!.title! } : {}), ...(h?.cwd ? { cwd: h.cwd } : {}), hosted: !!h,
         ...sum(all), own: s.own.slice(0, 5), ownCpuPct: own.cpuPct, ownRssBytes: own.rssBytes, workers,
       });
     }
     sessionRows.sort((a, b) => b.cpuPct - a.cpuPct || b.rssBytes - a.rssBytes);
+    this.refreshTitles(sessionRows.map((r) => r.sessionPath!), at);
     const unownedWorkers = [...unowned].map(([id, ps]) => workerRow(id, ps, undefined));
 
     const bucket = (ps: MonitorProc[]): MonitorBucket => ({ ...sum(ps), procs: ps.slice(0, 20) });
+    // Escaped: the totals are the uncharged ones (a charged one is counted in its session), the
+    // list shows all of them, charged ones with their session.
+    const escapedUncharged = escaped.filter((p) => !p.sessionPath && !p.workerId);
     const serverRss = server ? server.stat.rss * this.pageSize : t.mem.rss;
     const serverCpu = server ? round1(pct(fold.own.get(server.key) ?? 0)) : 0;
     const everything = sum(procs);
@@ -804,14 +843,19 @@ export class ResourceMonitor {
     addG("server", serverCpu, serverRss);
     labels.set("server", { label: "Sova server" });
     const workersH = new Map<string, Map<string, [number, number]>>();
+    const workerLabels: TickPoint["workerLabels"] = new Map();
     for (const s of sessionRows) {
       addG(s.sessionPath!, s.cpuPct, s.rssBytes);
       labels.set(s.sessionPath!, { label: s.title ?? s.sessionPath!.split("/").pop()!, sessionPath: s.sessionPath! });
-      if (s.workers.length) workersH.set(s.sessionPath!, new Map(s.workers.map((w) => [w.id, [w.cpuPct, w.rssBytes] as [number, number]])));
+      if (s.workers.length) {
+        workersH.set(s.sessionPath!, new Map(s.workers.map((w) => [w.id, [w.cpuPct, w.rssBytes] as [number, number]])));
+        const names = new Map(s.workers.filter((w) => w.name).map((w) => [w.id, w.name!]));
+        if (names.size) workerLabels.set(s.sessionPath!, names);
+      }
     }
-    const esc = escaped.filter((p) => !p.sessionPath && !p.workerId);
-    if (esc.length) {
-      addG("escaped", sum(esc).cpuPct, sum(esc).rssBytes);
+    if (escapedUncharged.length) {
+      const e = sum(escapedUncharged);
+      addG("escaped", e.cpuPct, e.rssBytes);
       labels.set("escaped", { label: "Escaped" });
     }
     const una = [...unattributed, ...[...unowned.values()].flat()];
@@ -827,7 +871,7 @@ export class ResourceMonitor {
     const point: TickPoint = {
       at, cpuPct: totals.cpuPct, rssBytes: totals.rssBytes, swapBytes: totals.swapBytes,
       ...(t.unit ? { anonBytes: t.unit.memory.anon } : {}), load1: t.host.loadavg[0], loopMaxMs: t.loopMs.max,
-      groups, workers: workersH, top, labels,
+      groups, workers: workersH, top, labels, workerLabels,
     };
     this.ring.push(point);
     this.rollup.add(point);
@@ -840,7 +884,7 @@ export class ResourceMonitor {
         eventLoop: { p50: round1000(t.loopMs.p50), p99: round1000(t.loopMs.p99), max: round1000(t.loopMs.max) },
         uptimeSec: Math.round(process.uptime()),
       },
-      totals, sessions: sessionRows, unownedWorkers, escaped: bucket(escaped), unattributed: bucket(unattributed),
+      totals, sessions: sessionRows, unownedWorkers, escaped: { ...sum(escapedUncharged), procs: escaped.slice(0, 20) }, unattributed: bucket(unattributed),
       topProcs: procs.slice(0, 10), sampler: { intervalMs: this.intervalMs, lastTickMs: 0, avgTickMs: 0, skipped: 0, ticks: 0, startedAt: 0 },
       notes,
     };

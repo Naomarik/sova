@@ -101,9 +101,9 @@ const hostedA = (over: Partial<HostedInfo> = {}): HostedInfo => ({
   path: "/s/a.jsonl", sessionId: "sess-a", cwd: "/work/a", workers: [], providerIds: [0, 1, 2].map((n) => claudeSessionId("sess-a", n)),
   toolInWindow: false, ...over,
 });
-const run = (procs: Map<number, AttribProc>, hosted: HostedInfo[], extra: { live?: Map<number, string>; sids?: SidMemory; serverSessionFile?: string } = {}) =>
+const run = (procs: Map<number, AttribProc>, hosted: HostedInfo[], extra: { live?: Map<number, string>; sids?: SidMemory; serverEnv?: { sessionFile?: string } } = {}) =>
   attribute({ procs, serverPid: SERVER, hosted, liveRecordPids: extra.live ?? new Map(), sids: extra.sids ?? new SidMemory(new Set([SERVER])),
-    ...(extra.serverSessionFile ? { serverSessionFile: extra.serverSessionFile } : {}) });
+    ...(extra.serverEnv ? { serverEnv: extra.serverEnv } : {}) });
 
 describe("attribute", () => {
   test("worker pid from the in-process event; its tool children (a JVM REPL) are its descendants", () => {
@@ -161,7 +161,7 @@ describe("attribute", () => {
     assert.deepEqual(run(procs, [hostedA()]).owners.get(600), { session: "/s/a.jsonl", via: "env" });
     assert.deepEqual(run(procs, [hostedA()]).owners.get(601), { session: "/s/a.jsonl", via: "env" });
     assert.deepEqual(run(procs, [hostedA()]).owners.get(602), { session: "/s/a.jsonl", via: "descendant" });
-    assert.equal(run(procs, [hostedA()], { serverSessionFile: "/s/a.jsonl" }).owners.get(600), undefined);
+    assert.equal(run(procs, [hostedA()], { serverEnv: { sessionFile: "/s/a.jsonl" } }).owners.get(600), undefined);
   });
 
   test("the nearest exact evidence wins over inheritance: a hosted tool that starts a pi worker's session", () => {

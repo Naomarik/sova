@@ -35,7 +35,7 @@ interface P {
 }
 
 /** Write a fake /proc (and, for `unit`, a cgroup) holding `procs`. Rewrites stat on each call. */
-function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: number }) {
+function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: number; managerComm?: string }) {
   const proc = join(root, name, "proc");
   const cg = join(root, name, "cgroup");
   mkdirSync(proc, { recursive: true });
@@ -45,6 +45,9 @@ function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: n
   mkdirSync(join(proc, "pressure"), { recursive: true });
   writeFileSync(join(proc, "pressure", "cpu"), "some avg10=7.50 avg60=1 avg300=0 total=1\n");
   const selfPath = opts.unit ? UNIT : "/user.slice/user-1000.slice/user@1000.service/app.slice/app-tmux.scope";
+  // The server's parent (pid 1 here): the service manager, unless a test says otherwise.
+  mkdirSync(join(proc, "1"), { recursive: true });
+  writeFileSync(join(proc, "1", "comm"), `${opts.managerComm ?? "systemd"}\n`);
   for (const p of procs) {
     const d = join(proc, String(p.pid));
     mkdirSync(join(d, "task", String(p.pid)), { recursive: true });
@@ -56,6 +59,7 @@ function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: n
     writeFileSync(join(d, "stat"), `${p.pid} (${p.argv[0]}) ${f.join(" ")}\n`);
     writeFileSync(join(d, "status"), `Name:\tx\nVmRSS:\t${(p.rssPages ?? 256) * 4} kB\nVmSwap:\t${p.swapKb ?? 0} kB\n`);
     writeFileSync(join(d, "cmdline"), p.argv.join("\0") + "\0");
+    writeFileSync(join(d, "comm"), `${p.argv[0]}\n`);
     writeFileSync(join(d, "environ"), Object.entries(p.env ?? {}).map(([k, v]) => `${k}=${v}`).join("\0") + "\0");
     writeFileSync(join(d, "cgroup"), `0::${selfPath}\n`);
     if (p.cwd) try { symlinkSync(p.cwd, join(d, "cwd")); } catch { /* exists */ }
@@ -63,7 +67,7 @@ function fixture(name: string, procs: P[], opts: { unit: boolean; cgroupUsec?: n
     writeFileSync(join(d, "task", String(p.pid), "children"), kids ? kids + " " : "");
   }
   // Processes no longer listed are gone.
-  for (const name of readdirSync(proc)) if (/^\d+$/.test(name) && !procs.some((p) => String(p.pid) === name)) rmSync(join(proc, name), { recursive: true });
+  for (const name of readdirSync(proc)) if (/^\d+$/.test(name) && name !== "1" && !procs.some((p) => String(p.pid) === name)) rmSync(join(proc, name), { recursive: true });
   if (opts.unit) {
     const u = join(cg, UNIT);
     mkdirSync(u, { recursive: true });
@@ -128,6 +132,8 @@ describe("sampler over a fixture /proc", () => {
     // The escaped vite is charged to the session by its env, and listed under escaped too.
     assert.ok(a.own.some((p) => p.pid === 300 && p.via === "env"));
     assert.deepEqual(s.escaped.procs.map((p) => p.pid).sort(), [300, 400]);
+    // Totals cover only the uncharged one (vite counts in its session).
+    assert.equal(s.escaped.procCount, 1);
     assert.equal(s.escaped.procs.find((p) => p.pid === 400)!.cwd, "/elsewhere");
     assert.equal(s.escaped.procs.find((p) => p.pid === 400)!.sessionPath, undefined);
     // Unit counters: anon apart from page cache.
@@ -260,6 +266,29 @@ describe("sampler over a fixture /proc", () => {
     await m.tick();
     const own = m.snapshot()!.sessions.find((x) => x.sessionPath === "/s/baton.jsonl")!.own[0]!;
     assert.deepEqual([own.pid, own.kind, own.via], [210, "claude-provider", "session-id"]);
+  });
+
+  test("a .service cgroup the server merely inherited (started from a shell in the unit) is tree scope", () => {
+    const fx = fixture("inherited", [{ pid: SERVER, ppid: 1, argv: ["node"] }], { unit: true, managerComm: "zsh" });
+    const m = new ResourceMonitor({ procRoot: fx.proc, cgroupRoot: fx.cg, logDir: join(root, "inherited-log"), serverPid: SERVER,
+      eventLoop: false, platform: "linux", hosted: () => [] });
+    assert.equal(m.scope, "tree");
+  });
+
+  test("Claude Code tool children by CLAUDE_PID / CLAUDE_CODE_SESSION_ID, even escaped; the server's own values say nothing", async () => {
+    const uuid = "3586816f-1111-2222-3333-444444444444";
+    const procs: P[] = [
+      { pid: SERVER, ppid: 1, argv: ["node"] },
+      { pid: 200, ppid: SERVER, argv: ["claude", "-p"] },
+      { pid: 310, ppid: 1511, argv: ["node", "bg.js"], env: { CLAUDE_PID: "200" } },
+      { pid: 311, ppid: 1511, argv: ["node", "bg2.js"], env: { CLAUDE_CODE_SESSION_ID: uuid } },
+    ];
+    const fx = fixture("claude-env", procs, { unit: true });
+    const m = new ResourceMonitor({ procRoot: fx.proc, cgroupRoot: fx.cg, logDir: join(root, "claude-env-log"), serverPid: SERVER,
+      eventLoop: false, platform: "linux", hosted: () => [hostedA({ workers: [{ id: "ag_01", pid: 200, sessionId: uuid }] })] });
+    await m.tick();
+    const w = m.snapshot()!.sessions[0]!.workers[0]!;
+    assert.deepEqual(w.top.map((p) => [p.pid, p.via]).sort(), [[310, "env"], [311, "env"]]);
   });
 
   test("tree scope follows the server's children; a process outside it is not measured", async () => {

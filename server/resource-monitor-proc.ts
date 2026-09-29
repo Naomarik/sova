@@ -134,13 +134,23 @@ export interface ProcEnv {
   sessionFile?: string;
   /** PI_SUBAGENTS_TEAM_MEMBER's team and worker id (member-mcp helpers, team workers). */
   team?: { teamId: string; workerId: string };
+  /** CLAUDE_CODE_SESSION_ID, set by Claude Code for its tool children: its session uuid. */
+  claudeSession?: string;
+  /** CLAUDE_PID, set by Claude Code for its tool children: the claude process. */
+  claudePid?: number;
 }
 
 /** Pick the monitor's entries out of /proc/<pid>/environ (NUL-separated). */
 export function parseEnviron(text: string): ProcEnv {
   const env: ProcEnv = {};
   for (const entry of text.split("\0")) {
-    if (entry.startsWith("PI_SESSION_FILE=")) {
+    if (entry.startsWith("CLAUDE_CODE_SESSION_ID=")) {
+      const v = entry.slice("CLAUDE_CODE_SESSION_ID=".length).toLowerCase();
+      if (UUID.test(v)) env.claudeSession = v;
+    } else if (entry.startsWith("CLAUDE_PID=")) {
+      const v = Number(entry.slice("CLAUDE_PID=".length));
+      if (Number.isSafeInteger(v) && v > 0) env.claudePid = v;
+    } else if (entry.startsWith("PI_SESSION_FILE=")) {
       const v = entry.slice("PI_SESSION_FILE=".length);
       if (v) env.sessionFile = v;
     } else if (entry.startsWith("PI_SUBAGENTS_TEAM_MEMBER=")) {

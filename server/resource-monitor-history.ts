@@ -2,6 +2,7 @@
 // of 5s ticks stored as flat numbers with labels interned once, 30s rollups appended to
 // <stateRoot>/monitor/YYYY-MM-DD.jsonl, and rotation after 3 days.
 
+import { appendFileSync, mkdirSync } from "node:fs";
 import { appendFile, mkdir, readdir, readFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
 import type { MonitorHistory, MonitorPoint, MonitorPointProc, MonitorProcKind } from "../shared/protocol";
@@ -22,6 +23,8 @@ export interface TickPoint {
   top: MonitorPointProc[];
   /** Labels for the group keys used (session title, …). */
   labels: Map<string, { label: string; sessionPath?: string }>;
+  /** group key → worker id → worker name, where known. */
+  workerLabels?: Map<string, Map<string, string>>;
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -76,7 +79,7 @@ export class MonitorRing {
   private count = 0;
   private tick = 0;
   private groups = new Interner<{ key: string; label: string; sessionPath?: string }>();
-  private workerIds = new Interner<string>();
+  private workerIds = new Interner<{ id: string; name?: string }>();
   private procs = new Interner<ProcLabel>();
   /** Tick number of each slot, for pruning the intern tables. */
   private tickOf: number[];
@@ -93,6 +96,10 @@ export class MonitorRing {
   push(p: TickPoint): void {
     const t = ++this.tick;
     const nums: number[] = [p.at, r1(p.cpuPct), p.rssBytes, p.swapBytes, p.anonBytes ?? -1, p.load1, r1(p.loopMaxMs)];
+    const wid = (g: string, w: string) => {
+      const name = p.workerLabels?.get(g)?.get(w);
+      return this.workerIds.id(`${g}\0${w}`, { id: w, ...(name ? { name } : {}) }, t);
+    };
     const gid = (key: string) => {
       const l = p.labels.get(key);
       return this.groups.id(key, { key, label: l?.label ?? key, ...(l?.sessionPath ? { sessionPath: l.sessionPath } : {}) }, t);
@@ -102,14 +109,14 @@ export class MonitorRing {
     let nw = 0;
     const wAt = nums.push(0) - 1;
     for (const [g, ws] of p.workers) for (const [w, [cpu, rss]] of ws) {
-      nums.push(gid(g), this.workerIds.id(w, w, t), r1(cpu), rss);
+      nums.push(gid(g), wid(g, w), r1(cpu), rss);
       nw++;
     }
     nums[wAt] = nw;
     nums.push(p.top.length);
     for (const q of p.top)
       nums.push(this.procs.id(`${q.pid}\0${q.cmd}`, { pid: q.pid, cmd: q.cmd, kind: q.kind }, t), r1(q.cpuPct), q.rssBytes,
-        q.group === undefined ? -1 : gid(q.group), q.workerId === undefined ? -1 : this.workerIds.id(q.workerId, q.workerId, t));
+        q.group === undefined ? -1 : gid(q.group), q.workerId === undefined || q.group === undefined ? -1 : wid(q.group, q.workerId));
     this.buf[this.head] = Float64Array.from(nums);
     this.tickOf[this.head] = t;
     this.head = (this.head + 1) % this.capacity;
@@ -130,7 +137,7 @@ export class MonitorRing {
     return n;
   }
 
-  private decode(b: Packed, groups: MonitorHistory["groups"]): MonitorPoint {
+  private decode(b: Packed, groups: MonitorHistory["groups"], workerLabels: NonNullable<MonitorHistory["workerLabels"]>): MonitorPoint {
     let i = 0;
     const at = b[i++]!, cpuPct = b[i++]!, rssBytes = b[i++]!, swapBytes = b[i++]!, anon = b[i++]!, load1 = b[i++]!, loopMaxMs = b[i++]!;
     const gkey = (id: number) => {
@@ -142,15 +149,21 @@ export class MonitorRing {
     const point: MonitorPoint = { at, cpuPct, rssBytes, swapBytes, ...(anon >= 0 ? { anonBytes: anon } : {}), load1, loopMaxMs,
       groups: {}, workers: {}, top: [] };
     for (let n = b[i++]!; n > 0; n--) point.groups[gkey(b[i++]!)] = [b[i++]!, b[i++]!];
+    const worker = (g: string, id: number) => {
+      const w = this.workerIds.get(id);
+      if (w?.name) (workerLabels[g] ??= {})[w.id] = w.name;
+      return w?.id ?? "?";
+    };
     for (let n = b[i++]!; n > 0; n--) {
-      const g = gkey(b[i++]!), w = this.workerIds.get(b[i++]!) ?? "?";
+      const g = gkey(b[i++]!), w = worker(g, b[i++]!);
       (point.workers[g] ??= {})[w] = [b[i++]!, b[i++]!];
     }
     for (let n = b[i++]!; n > 0; n--) {
       const p = this.procs.get(b[i++]!);
       const cpu = b[i++]!, rss = b[i++]!, g = b[i++]!, w = b[i++]!;
+      const group = g >= 0 ? gkey(g) : undefined;
       point.top.push({ pid: p?.pid ?? 0, cmd: p?.cmd ?? "?", kind: p?.kind ?? "other", cpuPct: cpu, rssBytes: rss,
-        ...(g >= 0 ? { group: gkey(g) } : {}), ...(w >= 0 ? { workerId: this.workerIds.get(w) ?? "?" } : {}) });
+        ...(group ? { group } : {}), ...(w >= 0 && group ? { workerId: worker(group, w) } : {}) });
     }
     return point;
   }
@@ -158,12 +171,14 @@ export class MonitorRing {
   /** Every kept tick at or after `since`, oldest first. */
   history(since: number): MonitorHistory {
     const groups: MonitorHistory["groups"] = {};
+    const workerLabels: NonNullable<MonitorHistory["workerLabels"]> = {};
     const points: MonitorPoint[] = [];
     for (let k = 0; k < this.count; k++) {
       const b = this.buf[(this.head - this.count + k + this.capacity) % this.capacity]!;
-      if (b[0]! >= since) points.push(this.decode(b, groups));
+      if (b[0]! >= since) points.push(this.decode(b, groups, workerLabels));
     }
-    return { res: "5s", since: Math.max(since, points[0]?.at ?? since), points, groups };
+    return { res: "5s", since: Math.max(since, points[0]?.at ?? since), points, groups,
+      ...(Object.keys(workerLabels).length ? { workerLabels } : {}) };
   }
 }
 
@@ -173,6 +188,7 @@ export class MonitorRing {
 export interface RollupLine extends MonitorPoint {
   v: 1;
   labels: MonitorHistory["groups"];
+  workerLabels?: MonitorHistory["workerLabels"];
 }
 
 /** Folds 5s ticks into one 30s line: mean and max CPU, max memory, mean per group/worker CPU with
@@ -192,11 +208,13 @@ export class Rollup {
     const n = ts.length;
     const max = (f: (t: TickPoint) => number) => Math.max(...ts.map(f));
     const labels: MonitorHistory["groups"] = {};
+    const workerLabels: NonNullable<MonitorHistory["workerLabels"]> = {};
     const groups: Record<string, [number, number]> = {};
     const workers: Record<string, Record<string, [number, number]>> = {};
     const procs = new Map<string, MonitorPointProc & { sum: number }>();
     for (const t of ts) {
       for (const [k, l] of t.labels) labels[k] = { label: l.label, ...(l.sessionPath ? { sessionPath: l.sessionPath } : {}) };
+      for (const [g, names] of t.workerLabels ?? []) for (const [w, name] of names) (workerLabels[g] ??= {})[w] = name;
       for (const [g, [cpu, rss]] of t.groups) {
         const cur = (groups[g] ??= [0, 0]);
         cur[0] += cpu / n;
@@ -226,7 +244,7 @@ export class Rollup {
       cpuPct: r1(ts.reduce((s, t) => s + t.cpuPct, 0) / n), cpuPctMax: r1(max((t) => t.cpuPct)),
       rssBytes: max((t) => t.rssBytes), swapBytes: max((t) => t.swapBytes), ...(anon === undefined ? {} : { anonBytes: anon }),
       load1: max((t) => t.load1), loopMaxMs: r1(max((t) => t.loopMaxMs)),
-      groups, workers, top, labels,
+      groups, workers, top, labels, ...(Object.keys(workerLabels).length ? { workerLabels } : {}),
     };
   }
 }
@@ -251,6 +269,12 @@ export class MonitorLog {
     await appendFile(join(this.dir, dayFile(line.at)), JSON.stringify(line) + "\n");
   }
 
+  /** The same, synchronously (the last line at shutdown). */
+  appendSync(line: RollupLine): void {
+    mkdirSync(this.dir, { recursive: true });
+    appendFileSync(join(this.dir, dayFile(line.at)), JSON.stringify(line) + "\n");
+  }
+
   /** Delete day files older than `keepDays` (by their date, not mtime). Returns what it removed. */
   async rotate(now = Date.now()): Promise<string[]> {
     let names: string[];
@@ -271,6 +295,7 @@ export class MonitorLog {
   /** Every line at or after `since`, oldest first, from the day files that can hold them. */
   async history(since: number, now = Date.now()): Promise<MonitorHistory> {
     const groups: MonitorHistory["groups"] = {};
+    const workerLabels: NonNullable<MonitorHistory["workerLabels"]> = {};
     const points: MonitorPoint[] = [];
     let names: string[];
     try {
@@ -291,12 +316,13 @@ export class MonitorLog {
           continue; // a torn last line from a crash
         }
         if (line?.v !== 1 || typeof line.at !== "number" || line.at < since) continue;
-        const { v: _v, labels, ...point } = line;
+        const { v: _v, labels, workerLabels: wl, ...point } = line;
         for (const [k, l] of Object.entries(labels ?? {})) groups[k] = l;
+        for (const [g, names] of Object.entries(wl ?? {})) Object.assign((workerLabels[g] ??= {}), names);
         points.push(point);
       }
     }
     points.sort((a, b) => a.at - b.at);
-    return { res: "30s", since, points, groups };
+    return { res: "30s", since, points, groups, ...(Object.keys(workerLabels).length ? { workerLabels } : {}) };
   }
 }

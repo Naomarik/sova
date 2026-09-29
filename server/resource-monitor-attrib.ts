@@ -138,9 +138,9 @@ export interface AttribProc {
 export interface AttribInput {
   procs: ReadonlyMap<number, AttribProc>;
   serverPid: number;
-  /** The server's own PI_SESSION_FILE, if it inherited one (a dev server started from a pi tool):
-      every child inherits it too, so it says nothing. */
-  serverSessionFile?: string;
+  /** The server's own environment's entries, if it inherited any (a dev server started from a pi
+      or Claude Code tool): every child inherits them too, so they say nothing. */
+  serverEnv?: ProcEnv;
   hosted: readonly HostedInfo[];
   /** pi worker pid → its own session file, from the live records (`p<pid>-*.json`). */
   liveRecordPids: ReadonlyMap<number, string>;
@@ -208,7 +208,18 @@ export function attribute(input: AttribInput): Attribution {
       });
       if (list.length === 1) return list[0];
     }
-    if (p.env.sessionFile && p.env.sessionFile !== input.serverSessionFile) {
+    // Claude Code's tool children name their claude process and session; they are nearer than
+    // PI_SESSION_FILE, which a claude started from a pi tool would pass down too.
+    const own = input.serverEnv ?? {};
+    if (p.env.claudePid && p.env.claudePid !== own.claudePid) {
+      const o = idx.byPid.get(p.env.claudePid);
+      if (o) return { ...o, via: "env" };
+    }
+    if (p.env.claudeSession && p.env.claudeSession !== own.claudeSession) {
+      const o = idx.byClaude.get(p.env.claudeSession);
+      if (o) return { ...o, via: "env" };
+    }
+    if (p.env.sessionFile && p.env.sessionFile !== own.sessionFile) {
       const o = idx.byFile.get(p.env.sessionFile);
       if (o) return o;
     }

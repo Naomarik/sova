@@ -3582,7 +3582,8 @@ export interface MonitorSession {
   workers: MonitorWorker[];
 }
 
-/** Totals for a bucket of processes. */
+/** Totals for a bucket of processes. For `escaped`, the totals cover only the processes no
+    session was charged for (a charged one counts in its session), while `procs` lists all. */
 export interface MonitorBucket {
   cpuPct: number;
   rssBytes: number;
@@ -3700,4 +3701,6 @@ export interface MonitorHistory {
   points: MonitorPoint[];
   /** Labels for every group key used in `points`. Session groups are keyed by session path. */
   groups: Record<string, { label: string; sessionPath?: string }>;
+  /** Worker names by group key, then worker id, for the workers in `points` that had one. */
+  workerLabels?: Record<string, Record<string, string>>;
 }

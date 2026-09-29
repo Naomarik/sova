@@ -1,12 +1,13 @@
 import { For, Show } from "solid-js";
 import type { OfferLink } from "../../shared/baton";
+import { openSettings } from "../lib/settings-nav";
 import { copyText } from "../lib/ui-state";
 import { Banner, CopyButton } from "./ui";
 
 export type Links = OfferLink[];
 
 /** Links minted for a new session or offer: shown once, one row per person. `warning`: why they
-    can't be opened from outside yet (no share listener on this host). `replaced`: a link a Get
+    may not open from outside yet, the server's text verbatim, with a way to Settings → Public links. `replaced`: a link a Get
     Link elsewhere turned off, said in place of its text and Copy Link. */
 export function LinksBanner(props: { links: Links; warning?: string; replaced?(link: OfferLink): boolean; onDismiss(): void }) {
   return (
@@ -37,9 +38,16 @@ export function LinksBanner(props: { links: Links; warning?: string; replaced?(l
         </span>
       }
       action={
-        <button type="button" class="button button-sm button-ghost" onClick={() => props.onDismiss()}>
-          Done
-        </button>
+        <>
+          <Show when={props.warning}>
+            <button type="button" class="button button-sm button-ghost" onClick={() => openSettings("public-links")}>
+              Open Settings
+            </button>
+          </Show>
+          <button type="button" class="button button-sm button-ghost" onClick={() => props.onDismiss()}>
+            Done
+          </button>
+        </>
       }
     />
   );

@@ -39,6 +39,8 @@ import { orgHref, orgSessionHref, orgTabHref, personHref, projectHref, startForH
 import { orgTabsOf } from "../lib/org-tabs";
 import { toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
+import { meshPeers, orgHostOf } from "../lib/mesh";
+import { orgHostOffline } from "../lib/org-host-offline";
 import { LinksBanner } from "./LinksBanner";
 import { OwnerCard } from "./OwnerCard";
 import { PersonForm } from "./PersonForm";
@@ -352,6 +354,7 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
       <Show when={org.data()}>
         {(o) => (
           <>
+            <Show when={orgHostOffline(orgHostOf(props.id), meshPeers())}>{(w) => <Banner tone="warn" title={w()} />}</Show>
             <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
             <Show when={links()}>{(l) => <LinksBanner links={l()} warning={linkWarning()} onDismiss={() => setLinks(null)} />}</Show>
             <OrgTabs org={o()} tab={tab()} />

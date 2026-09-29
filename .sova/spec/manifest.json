@@ -8100,6 +8100,46 @@
         "server/share/front.ts",
         "server/share-front.test.ts"
       ]
+    },
+    "§mesh.phone/share-page": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh/phone"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "scripts/mesh-termux/install.sh",
+        "server/mesh-termux-share.test.ts"
+      ]
+    },
+    "§mesh.public/via-answer": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/public-links-routes.ts",
+        "server/public-links.test.ts"
+      ]
+    },
+    "§mesh.public/withdrawn-hop": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/routing",
+        "§mesh.public/registry",
+        "§mesh.public/offline"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/share/router.ts",
+        "server/share/ws-hop.ts",
+        "server/share-ws-hop.test.ts",
+        "server/share-router.test.ts"
+      ]
     }
   },
   "boundary": {

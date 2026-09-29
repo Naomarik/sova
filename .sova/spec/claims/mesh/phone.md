@@ -36,6 +36,13 @@ with a message instead of switching again. Uninstalling puts the container's ori
 container holds at that moment, which may be a newer one made inside it, as
 `.credentials.json.sova-uninstall` at mode 0600; the rest of the container is untouched.
 
+## §mesh.phone/share-page — The phone builds the share page
+
+The installer builds the share page (`vite build --mode share`, into `dist-share/`) as well as the
+app. Without it, a link minted on the phone and sent through a gateway would open to a 503 "The
+share page is not built on this host." A rerun keeps the existing builds only when both are
+present for the same source. If either build is missing, it builds both again.
+
 ## §mesh.phone/awake — The phone keeps Sova awake
 
 Every start of Sova on the phone, by the installer, after a crash or kill, or at boot, takes Termux's

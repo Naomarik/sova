@@ -40,7 +40,7 @@ interface Device {
 }
 
 let world = 0;
-function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map()) {
+function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<string, number[]> = () => new Map(), apiKeysOnly: string[] = []) {
   const base = join(root, `w${++world}`);
   const devices = new Map<string, Device>();
   const killed: number[] = [];
@@ -59,10 +59,11 @@ function makeWorld(ids: string[], clock: { now: number }, procScan: () => Map<st
       syncMs: 0,
       kill: (pid) => killed.push(pid),
       procScan,
+      canHold: () => !apiKeysOnly.includes(d.id),
       crash: (step) => {
         if (devices.get(d.id)?.crashAt === step) { crashed.add(step); throw new Error(`crash at ${step}`); }
       },
-      log: () => {},
+      log: process.env.POOL_TEST_LOG ? (m: string) => console.log(`[${d.id}] ${m}`) : () => {},
     });
   // A peer as `from` reaches it: JSON on the wire, and an offline device answers nothing.
   const wire = <T>(v: T): T => JSON.parse(JSON.stringify(v));
@@ -531,5 +532,56 @@ describe("processes without a lease (started before this version, or by hand)", 
     pids = [];
     await d.agent.tick();
     assert.equal(existsSync(credsPath(d, L1)), false, "then the login goes back");
+  });
+});
+
+describe("the keeper, removal, and a device that holds no subscription login", () => {
+  test("a new keeper: the old one hands every free login over; borrowing then goes to the new one", async () => {
+    const { w, k, clock } = await pool();
+    const d = w.dev("d");
+    clock.now += 1_000; // a later edit than the pool's first keeper
+    k.agent.setKeeper("d");
+    await w.syncAll();
+    await k.agent.tick();
+    await k.agent.tick();
+    for (const id of [L1, L2]) {
+      assert.equal(existsSync(credsPath(k, id)), false, `${id} left the old keeper`);
+      assert.ok(existsSync(credsPath(d, id)), `${id} is kept by the new one`);
+      assert.deepEqual({ device: holder(d, id)!.device, free: holder(d, id)!.free }, { device: "d", free: true });
+      assert.deepEqual(usableOn(w, id), [], "kept, not used");
+    }
+    const e = w.dev("e");
+    await w.syncAll();
+    want(e);
+    await e.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["e"], "e borrows from the new keeper");
+  });
+
+  test("Remove on any device: the holder drains and deletes its copy (plain files); the login leaves the pool", async () => {
+    const { w, k } = await pool();
+    const d = w.dev("d");
+    want(d);
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"]);
+    w.dev("e").agent.remove(L1);
+    await w.syncAll();
+    await d.agent.tick();
+    await d.agent.tick();
+    assert.equal(copies(w, L1), 0, "gone everywhere");
+    assert.ok(!k.agent.view().logins.some((l) => l.id === L1), "and out of the list");
+  });
+
+  test("an API-keys-only device never borrows, and the keeper never takes a return there", async () => {
+    const clock = { now: 1_000_000 };
+    const w = makeWorld(["k", "d"], clock, () => new Map(), ["d"]);
+    const k = w.dev("k");
+    seedLogin(k, L1, "acct-one", null);
+    k.agent.migrate();
+    await w.syncAll();
+    const d = w.dev("d");
+    want(d);
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), []);
+    assert.equal(d.agent.view().apiKeysOnly, true);
   });
 });

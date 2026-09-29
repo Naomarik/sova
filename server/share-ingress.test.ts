@@ -1307,3 +1307,65 @@ test("two LocalAPI node records with the gateway's StableID: no endpoint, no cal
   });
   assert.deepEqual(c.seen, []);
 });
+
+// ---- B1 v3: a hash minted while publishing was off is no later mint's candidate ------------------
+
+test("B1v3 a link minted while off can't stand in for a later mint that was never sent: it warns", async () => {
+  clearStores();
+  setting = { version: 1, route: "off" };
+  push.startRegistryPush();
+  await mintH(WAIT); // X: minted while nothing is published
+  setting = VIA;
+  gw.bumpRouteGeneration?.();
+  push.registryRouteChanged();
+  const r = await events.awaitShareLinks(() => {
+    const t = batonLinks.mintLink({ orgId: "o1", sessionId: "s-y", n: 1, personId: "p1" });
+    batonLinks.revokeLinks((l) => l.sessionId === "s-y");
+    return t;
+  }, WAIT);
+  assert.ok(!pushed.some((snap) => snap.links.some((l) => l.h === batonLinks.hashToken(r.result))), "premise: Y was never sent");
+  assert.equal(r.outcome.warning, warn("unconfirmed"), JSON.stringify(r.outcome));
+});
+
+test("B1v3 control: after switching from off to via, a clean mint is confirmed", async () => {
+  clearStores();
+  setting = { version: 1, route: "off" };
+  push.startRegistryPush();
+  await mintH(WAIT);
+  setting = VIA;
+  gw.bumpRouteGeneration?.();
+  push.registryRouteChanged();
+  await push.pushNow();
+  assert.equal((await mintH(WAIT)).outcome.warning, null);
+});
+
+// ---- B1 v3: a hash minted while publishing was off is no later mint's candidate ------------------
+
+test("B1v3 a link minted while off can't stand in for a later mint that was never sent: it warns", async () => {
+  clearStores();
+  setting = { version: 1, route: "off" };
+  push.startRegistryPush();
+  await mintH(WAIT); // X: minted while nothing is published
+  setting = VIA;
+  gw.bumpRouteGeneration?.();
+  push.registryRouteChanged();
+  const r = await events.awaitShareLinks(() => {
+    const t = batonLinks.mintLink({ orgId: "o1", sessionId: "s-y", n: 1, personId: "p1" });
+    batonLinks.revokeLinks((l) => l.sessionId === "s-y");
+    return t;
+  }, WAIT);
+  assert.ok(!pushed.some((snap) => snap.links.some((l) => l.h === batonLinks.hashToken(r.result))), "premise: Y was never sent");
+  assert.equal(r.outcome.warning, warn("unconfirmed"), JSON.stringify(r.outcome));
+});
+
+test("B1v3 control: after switching from off to via, a clean mint is confirmed", async () => {
+  clearStores();
+  setting = { version: 1, route: "off" };
+  push.startRegistryPush();
+  await mintH(WAIT);
+  setting = VIA;
+  gw.bumpRouteGeneration?.();
+  push.registryRouteChanged();
+  await push.pushNow();
+  assert.equal((await mintH(WAIT)).outcome.warning, null);
+});

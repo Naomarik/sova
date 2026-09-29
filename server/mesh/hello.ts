@@ -3,9 +3,9 @@ import { readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import type { PeerState } from "../../shared/protocol";
-import type { MeshHelloPublic, ShareGatewayHello } from "../../shared/public-links";
-import { gatewayPublicUrl } from "../share/registry";
-import { type PeerEntry, peerUrl } from "./peers";
+import type { AdvertisedGateway, MeshHelloPublic, ShareGatewayHello } from "../../shared/public-links";
+import { gatewayPublicUrl, isPublicUrl } from "../share/registry";
+import { type PeerEntry, peerUrl, readPeers } from "./peers";
 
 // Hello: who a Sova host is and which wire contract it speaks. The fingerprint and the package
 // version are read once, on the first hello, never at import.
@@ -137,6 +137,37 @@ export function probePeer(peer: PeerEntry): Promise<ProbeResult> {
   });
   probes.set(base, { at: Date.now(), result });
   return result;
+}
+
+const peersNow = (): PeerEntry[] => {
+  const read = readPeers();
+  return read.ok ? read.config.peers : [];
+};
+
+/** The peers whose hello advertises a share gateway (§mesh.public/gateway; discovery only, whether
+    one accepts this host is its GatewayInfo). Probes through probePeer, so answers are cached.
+    Only peers answering `up`: a down or skewed one is left out, and so is a publicUrl that isn't
+    exactly an https origin (isPublicUrl). `nodeId` is the peer's StableID
+    from peers.json, never the hello's. Never throws. */
+export async function advertisedGateways(peers: () => PeerEntry[] = peersNow): Promise<AdvertisedGateway[]> {
+  let list: PeerEntry[];
+  try {
+    list = peers();
+  } catch {
+    return [];
+  }
+  const found = await Promise.all(
+    list.map(async (peer): Promise<AdvertisedGateway | null> => {
+      try {
+        const r = await probePeer(peer);
+        const url = r.state === "up" ? r.hello?.shareGateway?.publicUrl : undefined;
+        return isPublicUrl(url) ? { nodeId: peer.nodeId, peer: peer.id, publicUrl: url } : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return found.filter((g): g is AdvertisedGateway => g !== null);
 }
 
 export const peerLastSeen = (id: string): number | null => lastSeen.get(id) ?? null;

@@ -367,3 +367,51 @@ test("the hello advertises the gateway only while this host is one, outside the 
   assert.equal("shareGateway" in hello.ownHello(self), false, "an unreadable setting advertises nothing");
   rmSync(file);
 });
+
+test("advertisedGateways lists the up peers whose hello carries a valid shareGateway, with peers.json's StableID", async () => {
+  const answers: Record<string, object> = {
+    gw: { shareGateway: { publicUrl: "https://share.example.com" }, nodeId: "from-the-hello" },
+    plain: {},
+    http: { shareGateway: { publicUrl: "http://share.example.com" } },
+    path: { shareGateway: { publicUrl: "https://share.example.com/x" } },
+    junk: { shareGateway: { publicUrl: 42 } },
+    backslash: { shareGateway: { publicUrl: "https://share.example.com\\x" } },
+    slash: { shareGateway: { publicUrl: "https://share.example.com/" } },
+    port443: { shareGateway: { publicUrl: "https://share.example.com:443" } },
+    upper: { shareGateway: { publicUrl: "https://Share.example.com" } },
+    skewed: { shareGateway: { publicUrl: "https://skewed.example.com" }, protocol: "0000" },
+  };
+  // One loopback server per peer, answering its hello.
+  const servers: { close: () => void }[] = [];
+  const peers: import("./mesh/peers").PeerEntry[] = [];
+  for (const [id, extra] of Object.entries(answers)) {
+    const s = await bound(
+      createServer((req, res) => {
+        if (req.url !== "/api/peer/hello") return void res.writeHead(404).end();
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ mesh: 1, id, label: id, hostname: id, version: "0", protocol: hello.ownProtocol(), pi: "x", now: 1, ...extra }));
+      }),
+    );
+    servers.push(s);
+    peers.push({ id, label: id, nodeId: `node-${id}`, dnsName: `${id}.example.test`, url: `http://127.0.0.1:${s.port}` });
+  }
+  const dead = await bound(createServer());
+  dead.close();
+  peers.push({ id: "down", label: "down", nodeId: "node-down", dnsName: "down.example.test", url: `http://127.0.0.1:${dead.port}` });
+  try {
+    hello.clearProbes();
+    assert.deepEqual(await hello.advertisedGateways(() => peers), [{ nodeId: "node-gw", peer: "gw", publicUrl: "https://share.example.com" }]);
+    assert.deepEqual(await hello.advertisedGateways(() => []), []);
+    assert.deepEqual(
+      await hello.advertisedGateways(() => {
+        throw new Error("unreadable peers.json");
+      }),
+      [],
+      "never throws",
+    );
+    // The default reads peers.json at call time: none in this agent dir.
+    assert.deepEqual(await hello.advertisedGateways(), []);
+  } finally {
+    for (const s of servers) s.close();
+  }
+});

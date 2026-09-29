@@ -52,8 +52,13 @@ const partSize = (n, of) => Number(sh(n, `stat -c %s "$PI_CODING_AGENT_DIR/sova/
 const nonce = () => Math.random().toString(36).slice(2, 8);
 const rm = (n, ...paths) => sh(n, `rm -rf ${paths.map((p) => `"${p}"`).join(" ")}`, { timeoutMs: 10 * 60000 });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-/** The session's link rows (kind "link") whose text names `needle`. */
-const linkRows = async (host, path, needle) => (await transcript(host, path)).filter((i) => i.kind === "link" && (!needle || (i.link?.text ?? i.text).includes(needle)));
+/** The session's link rows (kind "link") that are its host's notices for offer `of` (the offer, a
+    landing, the sender's wake): by the inbox record's `offer` field, never by text, since a
+    partner's agent may quote the offer id in a message of its own. */
+const noticeRows = async (host, session, of) => {
+  const ids = new Set((await inbox(host, session.id)).filter((x) => x.dir === "in" && x.offer?.id === of).map((x) => x.id));
+  return (await transcript(host, session.path)).filter((i) => i.kind === "link" && ids.has(i.link?.messageId));
+};
 /** The transcript without its `info` rows (the model and thinking that configure wrote): what a turn adds. */
 const turnRows = async (host, path) => (await transcript(host, path)).filter((i) => i.kind !== "info");
 const sandbox = (host, s, on) => api(host, `/api/sandbox?path=${encodeURIComponent(s.path)}`, { method: "POST", body: { on }, timeoutMs: 60000 });
@@ -144,7 +149,7 @@ describe("1. two hosts, dest given: implicit accept", () => {
     const quiet = await waitOffer("a", s.a.id, of, (o) => rowOf(o, s.b.id).state === "done", { what: "b's row done on a" });
     assert.ok(quiet.snapshot?.sha256, "a snapshot");
     const bRows = await waitFor(async () => {
-      const rows = await linkRows("b", s.b.path, of);
+      const rows = await noticeRows("b", s.b, of);
       return rows.length ? rows : null;
     }, { what: "b's wake" });
     assert.equal(bRows.length, 1, "one wake on b");
@@ -162,9 +167,9 @@ describe("1. two hosts, dest given: implicit accept", () => {
     assert.match(log.out, /tree/);
 
     // The sender's single wake (every row final), and the spool gone.
-    await waitFor(async () => (await linkRows("a", s.a.path, of)).length >= 1, { what: "a's wake" });
+    await waitFor(async () => (await noticeRows("a", s.a, of)).length >= 1, { what: "a's wake" });
     await sleep(5000);
-    assert.equal((await linkRows("a", s.a.path, of)).length, 1, "a woken exactly once");
+    assert.equal((await noticeRows("a", s.a, of)).length, 1, "a woken exactly once");
     await waitFor(() => spool("a", of).length === 0, { what: "a's spool deleted" });
     assert.deepEqual(filesIn("b", "incoming").filter((f) => f.startsWith(of)), [], "b's .part deleted");
     await waitIdle("b", s.b.id).catch(() => {});
@@ -192,7 +197,7 @@ describe("2. two hosts, no dest: the recipient answers", () => {
     trees.push(["b", `${CWD}/got`]);
     // b's session was told: one link row naming the offer and how to answer it.
     const rows = await waitFor(async () => {
-      const x = await linkRows("b", L.s.b.path, of);
+      const x = await noticeRows("b", L.s.b, of);
       return x.length ? x : null;
     }, { what: "the offer message on b" });
     assert.match(rows[0].link?.text ?? rows[0].text, /link_accept/);
@@ -235,9 +240,9 @@ describe("2. two hosts, no dest: the recipient answers", () => {
     const o = await waitOffer("a", L.s.a.id, of, (x) => rowOf(x, L.s.b.id).state === "declined", { what: "declined on a" });
     assert.match(rowOf(o, L.s.b.id).message ?? "", /not needed here/);
     await waitFor(() => spool("a", of).length === 0, { what: "a's spool deleted at the last decline" });
-    await waitFor(async () => (await linkRows("a", L.s.a.path, of)).length >= 1, { what: "a's wake" });
+    await waitFor(async () => (await noticeRows("a", L.s.a, of)).length >= 1, { what: "a's wake" });
     await sleep(3000);
-    assert.equal((await linkRows("a", L.s.a.path, of)).length, 1, "a woken once");
+    assert.equal((await noticeRows("a", L.s.a, of)).length, 1, "a woken once");
     await waitIdle("a", L.s.a.id).catch(() => {});
     await waitIdle("b", L.s.b.id).catch(() => {});
   });
@@ -255,9 +260,9 @@ describe("2. two hosts, no dest: the recipient answers", () => {
     const wake = await waitInbox("a", L.s.a.id, (xs) => xs.some((x) => x.dir === "in" && x.offer?.id === of), { what: "a's wake record" });
     const state = wake.find((x) => x.dir === "in" && x.offer?.id === of).delivery?.state;
     console.log(`# a's wake was ${state}`);
-    await waitFor(async () => (await linkRows("a", L.s.a.path, of)).length >= 1, { timeoutMs: 120000, what: "a's wake on its transcript" });
+    await waitFor(async () => (await noticeRows("a", L.s.a, of)).length >= 1, { timeoutMs: 120000, what: "a's wake on its transcript" });
     await sleep(3000);
-    assert.equal((await linkRows("a", L.s.a.path, of)).length, 1, "taken in once");
+    assert.equal((await noticeRows("a", L.s.a, of)).length, 1, "taken in once");
     await waitIdle("a", L.s.a.id).catch(() => {});
     await waitIdle("b", L.s.b.id).catch(() => {});
   });
@@ -324,9 +329,9 @@ describe("3. three hosts: one offer, packed once, a result per recipient", () =>
     const want = treeHash("a", src);
     assert.equal(treeHash("b", "/root/multi-b/multi"), want);
     assert.equal(treeHash("c", "/root/multi-c/multi"), want);
-    await waitFor(async () => (await linkRows("a", s.a.path, of)).length >= 1, { what: "a's wake" });
+    await waitFor(async () => (await noticeRows("a", s.a, of)).length >= 1, { what: "a's wake" });
     await sleep(8000);
-    assert.equal((await linkRows("a", s.a.path, of)).length, 1, "a woken exactly once for two recipients");
+    assert.equal((await noticeRows("a", s.a, of)).length, 1, "a woken exactly once for two recipients");
     await waitFor(() => spool("a", of).length === 0, { what: "the spool deleted when every row is final" });
     assert.equal(outboxOf("a").length, 0, "outbox drained");
     for (const h of ["a", "b", "c"]) await waitIdle(h, s[h].id).catch(() => {});
@@ -515,7 +520,7 @@ describe("6. the gitlink warning", () => {
     assert.deepEqual(w.json.offer.warnings?.map((x) => [x.kind, x.root, x.path]), [["gitlink", "gl-wt", "gl-wt/.git"]], JSON.stringify(w.json.offer.warnings));
     assert.match(w.json.offer.warnings[0].gitdir, /gl-main\/\.git\/worktrees/);
     const rows = await waitFor(async () => {
-      const x = await linkRows("b", s.b.path, w.json.offer.id);
+      const x = await noticeRows("b", s.b, w.json.offer.id);
       return x.length ? x : null;
     }, { timeoutMs: 180000, what: "b's wake" });
     assert.match(rows[0].link?.text ?? rows[0].text, /\.git/, "the wake carries the warning");

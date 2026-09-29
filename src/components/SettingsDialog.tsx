@@ -70,10 +70,11 @@ import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { TeamSettingsSection } from "./TeamSettings";
 import { TypographySection } from "./TypographySection";
+import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Twelve screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Fourteen screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
@@ -89,6 +90,7 @@ const TABS = [
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "mesh", label: "Mesh", icon: "branch" as const },
   { id: "public-links", label: "Public links", icon: "external" as const },
+  { id: "voice", label: "Voice", icon: "mic" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
 ] as const satisfies readonly { id: SettingsTab; label: string; icon: string }[];
 type TabId = (typeof TABS)[number]["id"];
@@ -287,6 +289,13 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "public-links"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-public-links" aria-labelledby="settings-tab-public-links">
               <PublicLinksSettingsSection />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is: the voice status polls while it's open (every second
+              while setup runs), and stops with it. */}
+          <Show when={tab() === "voice"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-voice" aria-labelledby="settings-tab-voice">
+              <VoiceSettingsSection />
             </div>
           </Show>
           {/* Same lifecycle as the other panels: mounted only while its tab is, so the settings

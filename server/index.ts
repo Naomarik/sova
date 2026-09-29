@@ -22,6 +22,7 @@ import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
+import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
@@ -225,6 +226,8 @@ registerProjectOverseerRoutes(app);
 registerProjectCostRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
+// Voice input: setup, status and transcription on this host (server/voice/; §chat/voice).
+registerVoiceRoutes(app);
 
 // The sidebar's user-made groups: Sova's own grouping of
 // sessions, stored in ~/.pi/agent/sova/session-groups.json. Keyed by
@@ -1440,6 +1443,7 @@ async function shutdown() {
   meshLinks.stop();
   stopMesh();
   stopShareRuntime();
+  await stopVoice();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   // Every visit with an open share socket is seen now, so the commit below carries it.
   try {

@@ -1,4 +1,6 @@
 import type {
+  VoiceStatus,
+  VoiceTranscript,
   AutoTitleResponse,
   SessionTitleSettings,
   SessionTitleSettingsInfo,
@@ -1127,3 +1129,23 @@ export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId:
   request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
   request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+
+// ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
+
+/** The voice status, with the setup log after `since`; `size` also measures the voice folder. */
+export const getVoiceStatus = (since = 0, size = false) =>
+  request<VoiceStatus>(`/api/voice?since=${since}${size ? "&size=1" : ""}`, { cache: "no-store" });
+/** Start (or resume) setup: the detected GPU backend, or the CPU. */
+export const installVoice = (backend: "gpu" | "cpu" = "gpu") => request<VoiceStatus>("/api/voice/install", jsonInit("POST", { backend }));
+export const cancelVoiceInstall = () => request<VoiceStatus>("/api/voice/install/cancel", jsonInit("POST"));
+export const repairVoice = () => request<VoiceStatus>("/api/voice/repair", jsonInit("POST"));
+export const uninstallVoice = () => request<{ freed: number }>("/api/voice", jsonInit("DELETE"));
+/** Load whisper while the user speaks; failures surface on the transcribe. */
+export const warmVoice = () => fetch("/api/voice/warm", { method: "POST" }).catch(() => {});
+/** A 16 kHz mono WAV → its text. `hint`: the session folder's name, a prompt word. */
+export const transcribeVoice = (wav: Uint8Array, hint?: string | null) =>
+  request<VoiceTranscript>(`/api/voice/transcribe${hint ? `?hint=${encodeURIComponent(hint)}` : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "audio/wav" },
+    body: wav as Uint8Array<ArrayBuffer>,
+  });

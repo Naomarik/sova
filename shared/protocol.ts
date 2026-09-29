@@ -3942,3 +3942,87 @@ export interface MonitorHistory {
   /** Worker names by group key, then worker id, for the workers in `points` that had one. */
   workerLabels?: Record<string, Record<string, string>>;
 }
+
+// ---------------------------------------------------------------------------
+// Voice input (§chat/voice, §app.settings-dialog/voice): server/voice/. GET /api/voice is the
+// one status read, polled by the Settings → Voice tab and the composer's setup sheet.
+// ---------------------------------------------------------------------------
+
+/** Where the whisper.cpp binary runs: a GPU backend built from source, or the CPU. */
+export type VoiceBackend = "vulkan" | "metal" | "cuda" | "cpu";
+
+/** What the mic can do on this host right now. `ready` is the only state that records. */
+export type VoiceState = "unsupported" | "not-installed" | "needs-packages" | "installing" | "failed" | "ready";
+
+export type VoiceStepId = "detect" | "packages" | "source" | "build" | "model" | "selftest" | "finish";
+export type VoiceStepState = "pending" | "running" | "done" | "skipped" | "failed";
+
+export interface VoiceStep {
+  id: VoiceStepId;
+  state: VoiceStepState;
+  /** A figure while it runs: bytes of a download, or a build's percent. */
+  progress?: { done: number; total: number; unit: "bytes" | "percent" };
+  /** One short fact about how it went ("Copied from …", "Prebuilt CPU binary"). */
+  note?: string;
+  error?: string;
+}
+
+export interface VoiceInstallJob {
+  id: string;
+  /** What this job asked for: the detected GPU backend, or the CPU. */
+  mode: "gpu" | "cpu";
+  /** The backend it is building for (set after detection). */
+  backend?: VoiceBackend;
+  repair: boolean;
+  steps: VoiceStep[];
+  startedAt: number;
+  finishedAt?: number;
+  /** How it ended: ok, stopped for packages, failed at a step, or cancelled. Absent while running. */
+  outcome?: "ok" | "needs-packages" | "failed" | "cancelled";
+}
+
+export interface VoiceLogLine {
+  seq: number;
+  at: number;
+  text: string;
+}
+
+export interface VoiceInstalled {
+  backend: VoiceBackend;
+  /** The GPU the self-test saw, when it used one ("AMD Radeon 8060S Graphics"). */
+  device?: string;
+  whisper: string;
+  model: string;
+  selftestMs: number;
+  selftestText: string;
+  installedAt: number;
+}
+
+export interface VoiceStatus {
+  state: VoiceState;
+  /** Why the host can't run voice at all (state "unsupported"). */
+  reason?: string;
+  platform: { os: string; arch: string; distro?: string; packageManager?: string };
+  /** The backend a GPU setup would build for, from detection. */
+  gpu: { backend: VoiceBackend; device?: string };
+  /** A prebuilt CPU binary exists for this host: "Use CPU Instead" is offered. */
+  cpuPrebuilt: boolean;
+  /** state "needs-packages": what is missing and the one command that installs it (null: no known package manager). */
+  missing?: { packages: string[]; command: string | null };
+  /** The latest job this server ran (in memory; a restart forgets it, and the next job resumes). */
+  install?: VoiceInstallJob;
+  installed?: VoiceInstalled;
+  runtime: { running: boolean; starting: boolean; lastMs?: number; crashedOut: boolean };
+  model: { id: string; bytes: number };
+  /** Log lines after the `since` the request asked for, oldest first, and the newest seq. */
+  log: { seq: number; lines: VoiceLogLine[] };
+  /** Bytes the voice folder holds, only when asked for (`?size=1`). */
+  diskBytes?: number;
+}
+
+export interface VoiceTranscript {
+  text: string;
+  /** whisper's own time for this clip, ms. */
+  ms: number;
+  audioSec: number;
+}

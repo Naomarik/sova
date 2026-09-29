@@ -18,10 +18,11 @@
     "e2e:transcript-drift": "node scripts/e2e/transcript-drift.mjs",
     "dev:hermetic": "node scripts/hermetic-agent-dir.mjs && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" tsx server/index.ts",
     "prices:update": "tsx scripts/prices-update.mjs",
+    "voice:install": "tsx scripts/voice.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build && vite build --mode share",
     "start": "tsx server/index.ts",
-    "test": "tsx --import ./pi-config/extensions/claude-code/tests/hermetic-env.mjs --test \"server/*.test.ts\" \"server/mesh/*.test.ts\" \"server/sync/*.test.ts\" \"server/claude-pool/*.test.ts\" \"src/lib/*.test.ts\" \"src/vis/**/*.test.ts\""
+    "test": "tsx --import ./pi-config/extensions/claude-code/tests/hermetic-env.mjs --test \"server/*.test.ts\" \"server/mesh/*.test.ts\" \"server/sync/*.test.ts\" \"server/claude-pool/*.test.ts\" \"server/voice/*.test.ts\" \"src/lib/*.test.ts\" \"src/lib/voice/*.test.ts\" \"src/vis/**/*.test.ts\""
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.87.1",

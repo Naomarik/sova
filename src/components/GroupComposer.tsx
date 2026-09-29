@@ -5,6 +5,7 @@ import { createTouchMode, enterSends } from "../lib/input-mode";
 import { composerPlaceholder, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
 import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
+import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 
 /**
  * The workspace's one composer, writing to every member at once.
@@ -56,6 +57,8 @@ export function GroupComposer(props: {
   const [focused, setFocused] = createSignal(false);
   /** Tapped, Enter adds a line and Send to All sends; the placeholder drops its key hint. */
   const { touch, onPointerDown } = createTouchMode();
+  /** The same mic as a pane composer's (§chat.voice/button); its text lands in this box. */
+  const voice = createVoiceInput({ input: () => input, announce });
 
   /**
    * "In use" is focused OR holding text, derived in ONE place. It used to be pushed
@@ -64,7 +67,7 @@ export function GroupComposer(props: {
    * collapsed again on the next keystroke. A rule with three call sites is three chances to state
    * it differently.
    */
-  createEffect(() => props.onActive(focused() || !!text()));
+  createEffect(() => props.onActive(focused() || !!text() || voice.phase() !== "idle"));
 
   const targets = createMemo<Targets>(() => withGone(targetsOf(props.members), props.gone ?? []));
   /** The group's size, not the list's: a gone member is a member until it is removed. */
@@ -214,7 +217,9 @@ export function GroupComposer(props: {
           )}
         </Show>
 
+        <VoiceStrip voice={voice} />
         <div class="composer-row">
+          <VoiceButton voice={voice} />
           <label class="visually-hidden" for="group-composer-input">
             Message every member
           </label>

@@ -99,6 +99,7 @@ import {
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
 import { hostFilterAsk } from "../lib/mesh-details";
+import { openMonitor } from "../lib/monitor-nav";
 
 const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
@@ -1784,6 +1785,9 @@ export function Sidebar(props: {
           >
             <Icon name="gauge" />
           </a>
+          <button type="button" class="button button-icon spine-item" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
+            <Icon name="activity" />
+          </button>
           <a
             class="button button-icon spine-item"
             href={agentsHref()}
@@ -2294,18 +2298,24 @@ export function Sidebar(props: {
           <Show when={hostFilterShown()}>
             <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
           </Show>
-          <a
-            class="list-row list-row-interactive insights-row"
-            href={usageHref()}
-            aria-current={props.insightsPage === "usage" ? "page" : undefined}
-            title={glanceText() || undefined}
-            aria-label={glanceText() || undefined}
-          >
-            <Icon name="gauge" />
-            <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
-              <UsageGlance parts={glance()} />
-            </span>
-          </a>
+          {/* The monitor button takes the gear's exact markup, so the two stack in one column. */}
+          <div class="sidebar-foot-row">
+            <a
+              class="list-row list-row-interactive insights-row sidebar-foot-link"
+              href={usageHref()}
+              aria-current={props.insightsPage === "usage" ? "page" : undefined}
+              title={glanceText() || undefined}
+              aria-label={glanceText() || undefined}
+            >
+              <Icon name="gauge" />
+              <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
+                <UsageGlance parts={glance()} />
+              </span>
+            </a>
+            <button type="button" class="button button-icon sidebar-settings" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
+              <Icon name="activity" small />
+            </button>
+          </div>
           <div class="sidebar-foot-row">
             <a
               class="list-row list-row-interactive insights-row sidebar-foot-link"

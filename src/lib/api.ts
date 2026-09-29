@@ -67,6 +67,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
+import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -855,6 +856,12 @@ export const claimMeshLogin = (key: string) =>
 
 /** Every host's own details (shared/mesh-details.ts), this host first; mesh on only. */
 export const fetchMeshDetails = () => request<MeshDetails>("/api/mesh/details", meshReadInit(true));
+
+/** The Resource Monitor's latest tick (§app/resource-monitor); polled only while its modal is open. */
+export const fetchMonitor = () => request<MonitorSnapshot>("/api/monitor", { cache: "no-store" });
+/** Monitor history after `since` (epoch ms): the 5s ring, or the 30s rollups on disk. */
+export const fetchMonitorHistory = (since: number, res: MonitorResolution) =>
+  request<MonitorHistory>(`/api/monitor/history?since=${Math.floor(since)}&res=${res}`, { cache: "no-store" });
 
 /** Rename a host: this one, or a peer (which then tells its own peers). */
 export const putHostLabel = (id: string, label: string) =>

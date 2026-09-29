@@ -1,0 +1,154 @@
+/* The Resource Monitor modal (components/ResourceMonitor.tsx). Token values only. A Settings-like
+   .modal.modal-wide; meters are base.css's; the strip chart and the table are its own. */
+
+.monitor-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-3); }
+.monitor-body { display: flex; flex-direction: column; gap: var(--space-5); }
+
+.monitor-meters {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: var(--space-4) var(--space-5);
+}
+.monitor-tab { margin: calc(-1 * var(--space-3)) 0 0; }
+
+.monitor-section { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.monitor-section > p { margin: 0; }
+.monitor-section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: var(--space-1) var(--space-3); }
+.monitor-section-title {
+  margin: 0;
+  font-size: var(--fs-heading-s);
+  line-height: var(--lh-heading-s);
+  font-weight: var(--fw-semibold);
+  color: var(--color-ink);
+}
+
+/* ---- The strip chart: one inline SVG, no animation. Series are neutral steps, never hue:
+   the legend and the table carry the names. */
+.monitor-chart { display: flex; flex-direction: column; gap: var(--space-2); }
+.monitor-plot {
+  position: relative;
+  padding: var(--space-4) 0 var(--space-5);
+}
+.monitor-svg {
+  display: block;
+  width: 100%;
+  height: 120px;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  background: var(--color-surface);
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+.monitor-svg:focus-visible { outline: var(--focus-width) solid var(--focus-color); outline-offset: var(--focus-offset); }
+.monitor-axis { position: absolute; font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
+.monitor-axis-top { top: 0; left: 0; }
+.monitor-axis-start { bottom: 0; left: 0; }
+.monitor-axis-end { bottom: 0; right: 0; }
+.monitor-grid { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 2 4; }
+/* Each band keeps an outline, so the lightest steps never vanish into the plot. */
+.monitor-area { stroke: var(--color-border-strong); stroke-width: 1; stroke-linejoin: round; }
+.monitor-series-0 { fill: var(--color-ink-2); background: var(--color-ink-2); }
+.monitor-series-1 { fill: var(--color-ink-muted); background: var(--color-ink-muted); }
+.monitor-series-2 { fill: var(--color-border-strong); background: var(--color-border-strong); }
+.monitor-series-3 { fill: var(--color-border); background: var(--color-border); }
+.monitor-series-rest { fill: var(--color-sunken); background: var(--color-sunken); }
+.monitor-mem { fill: none; stroke: var(--color-ink); stroke-width: 1.5; stroke-dasharray: 4 3; stroke-linejoin: round; }
+/* A picked moment is a selection, not the accent's business. */
+.monitor-cross { stroke: var(--color-ink); stroke-width: 1.5; }
+
+.monitor-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.monitor-legend li { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.monitor-swatch {
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-xs);
+}
+.monitor-swatch-mem { border: 0; border-top: 1.5px dashed var(--color-ink); border-radius: 0; height: 0; }
+
+/* ---- The table: sessions, their workers, and the processes a row expands to. Numbers mono,
+   right-aligned. Under 520px of modal the swap column goes (the row's figure is in the tooltip-free
+   total anyway) so the names keep their room. */
+.monitor-table-wrap { container: monitor-table / inline-size; overflow-x: auto; min-width: 0; }
+.monitor-table { width: 100%; border-collapse: collapse; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.monitor-table th,
+.monitor-table td {
+  padding: var(--space-2) var(--space-2);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  font-weight: var(--fw-regular);
+}
+.monitor-table thead th { color: var(--color-ink-muted); font-weight: var(--fw-medium); white-space: nowrap; }
+.monitor-table .monitor-num {
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--color-ink);
+}
+.monitor-table thead .monitor-num { font-family: var(--font-body); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.monitor-row-group th[scope="row"] .monitor-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
+.monitor-row-group { background: var(--color-sunken); }
+.monitor-row-worker th[scope="row"] { padding-left: var(--space-5); }
+.monitor-row-proc th[scope="row"] { padding-left: var(--space-7); }
+.monitor-row-proc.monitor-depth-2 th[scope="row"],
+.monitor-row-proc.monitor-depth-2 td[colspan] { padding-left: calc(var(--space-7) + var(--space-5)); }
+.monitor-row-proc .monitor-num { color: var(--color-ink-2); }
+
+.monitor-name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.monitor-label { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); }
+.monitor-caption { margin-top: var(--space-1); padding-left: calc(var(--tap-min) - var(--space-2)); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.monitor-row-proc .monitor-caption,
+td.monitor-caption { padding-left: 0; }
+.monitor-cmd { font-size: var(--fs-mono); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.monitor-open { margin-left: auto; white-space: nowrap; font-size: var(--fs-caption); }
+.monitor-guess {
+  flex: none;
+  padding: 0 var(--space-2);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-full);
+  font-size: var(--fs-micro);
+  line-height: 18px;
+  color: var(--color-ink-muted);
+}
+/* The twist keeps the 44px target; negative margins let it overhang the cell's padding so the row
+   stays 44px tall. */
+.monitor-twist {
+  flex: none;
+  width: var(--tap-min);
+  min-width: var(--tap-min);
+  height: var(--tap-min);
+  min-height: var(--tap-min);
+  margin: calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) calc(-1 * var(--space-2)) calc(-1 * var(--space-2));
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  color: var(--color-ink-muted);
+}
+.monitor-twist:hover { background: var(--color-sunken); color: var(--color-ink); }
+.monitor-twist-space { flex: none; width: calc(var(--tap-min) - 2 * var(--space-2)); }
+
+@container monitor-table (max-width: 520px) {
+  .monitor-col-swap { display: none; }
+  .monitor-row-worker th[scope="row"] { padding-left: var(--space-3); }
+  .monitor-row-proc th[scope="row"] { padding-left: var(--space-5); }
+  .monitor-row-proc.monitor-depth-2 th[scope="row"],
+  .monitor-row-proc.monitor-depth-2 td[colspan] { padding-left: var(--space-6); }
+}
+
+.monitor-notes { margin: 0; padding-left: var(--space-5); font-size: var(--fs-caption); color: var(--color-ink-2); }
+.monitor-notes li + li { margin-top: var(--space-1); }
+
+.monitor-cost { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }

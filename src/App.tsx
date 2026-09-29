@@ -63,6 +63,8 @@ import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
+import { ResourceMonitor } from "./components/ResourceMonitor";
+import { closeMonitor, monitorOpen } from "./lib/monitor-nav";
 import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { type AttentionFeed, OverseerView } from "./components/OverseerView";
@@ -1248,6 +1250,10 @@ export function App() {
       {/* Opened from the sidebar's host menu or #/mesh; only while the mesh is on. */}
       <Show when={meshDetailsOpen() && meshOn()}>
         <MeshDetails onClose={closeMeshDetails} />
+      </Show>
+      {/* Opened from the sidebar foot's monitor button or the spine; it polls only while open. */}
+      <Show when={monitorOpen()}>
+        <ResourceMonitor onClose={closeMonitor} />
       </Show>
       <Show when={staleChange()}>
         {(change) => <StaleTabBanner change={change()} onDismiss={() => setStaleChange(null)} />}

@@ -103,15 +103,21 @@
 (declare create-engine*)
 
 (defn- runtime-charts
-  "`opts.charts`, {name: {version, chart}} with each chart a JS tree (`engine/js_chart.cljs`), over
-   `charts`. A shipped chart's name is refused."
+  "`opts.charts`, {name: {version, chart, storage?, exported?, acts?}} with each chart a JS tree
+   (`engine/js_chart.cljs`) and `acts` {\"ns/event\": {needs, tool, hold, counts, …}} (no checks: JS
+   charts guard with `cond`), over `charts`. A shipped chart's name is refused."
   [charts opts]
   (if-let [extra (some-> opts (unchecked-get "charts"))]
     (reduce (fn [cs nm]
               (when (contains? cs nm) (throw (js/Error. (str "Chart " nm " is already registered"))))
-              (let [c (unchecked-get extra nm)]
-                (assoc cs nm {:chart   (js-chart/build (unchecked-get c "chart") ->js ->clj)
-                              :version (unchecked-get c "version")})))
+              (let [c    (unchecked-get extra nm)
+                    meta (->clj (js-obj "storage" (unchecked-get c "storage") "exported" (unchecked-get c "exported")
+                                  "acts" (unchecked-get c "acts")))]
+                (assoc cs nm (cond-> {:chart   (js-chart/build (unchecked-get c "chart") ->js ->clj)
+                                      :version (unchecked-get c "version")}
+                               (:storage meta) (assoc :storage (keyword (:storage meta)))
+                               (:exported meta) (assoc :exported (mapv keyword (:exported meta)))
+                               (:acts meta) (assoc :acts (into {} (map (fn [[k v]] [(keyword (subs (str k) 1)) v])) (:acts meta)))))))
       charts (js-keys extra))
     charts))
 

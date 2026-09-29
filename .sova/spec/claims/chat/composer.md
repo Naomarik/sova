@@ -10,9 +10,10 @@
     <span class="icon" style="--icon: url(/icons/image.svg)"></span><span>Drop images to attach</span>
   </div>
   <form class="composer-inner" aria-label="Message the agent">
-    <!-- while streaming only: the dot, the step's icon, the words for the tooltip and assistive tech
-         (§chat.transcript/streaming); Stopping and the rare states show their words instead of the icon -->
-    <p class="run-status"><span class="run-status-state" title="Working · running bash"><span class="live-dot"></span><span class="icon icon-sm" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="visually-hidden">Working · running bash</span></span></p>
+    <!-- while streaming only: the dot, the step's icon (shown in the narrow form only) and the words
+         (shown in the wide form, visually hidden in the narrow one), §chat.transcript/streaming;
+         Stopping and the rare states show their words in both -->
+    <p class="run-status"><span class="run-status-state" title="Working · running bash"><span class="live-dot"></span><span class="icon icon-sm run-status-narrow" style="--icon: url(/icons/wrench.svg)" aria-hidden="true"></span><span class="run-status-say">Working<span class="run-status-detail">· running bash</span></span></span></p>
     <!-- or, idle with ≥ 1 worker working: the subagents trigger, button.run-status-link (§app/subagents-pane) -->
     <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
          trigger, both at the row's right end (§chat.alignment/chip) -->

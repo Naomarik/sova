@@ -298,11 +298,24 @@
 }
 /* A phone with a state chip: the context readout stays on line 1, so the gaps close to 2px and
    the side padding to 4px (as the Overseer page's head at 320px). Without this Session details
-   wrapped under line 1 at 320px, and the title shrank to "O…" by 400px. Below about 350px the
-   title still gives way first. The meta stays lined up with the title. */
+   wrapped under line 1 at 320px, and the title shrank to "O…" by 400px. Below 380px the title
+   becomes the eye (below). The meta stays lined up with the title. */
 @media (max-width: 419px) {
   .overseer-head.po-head:has(> .chip) { gap: 2px; padding-inline: var(--space-1); }
   .po-head:has(> .chip) > .session-head-main > .po-head-meta { padding-left: calc(44px + 2px); }
+}
+/* Below 380px, with a state chip, the word "Overseer" (67px) no longer fits beside the widest
+   chip ("L3 in force" leaves it 66px at 368) and the readout, so the title is the overseer's eye:
+   the word stays for AT (visually hidden) and the eye's title names it. Measured with the chip
+   texts: Working fits the word from about 340px, the level chip from about 370px. */
+.po-head-title-icon { display: none; }
+@media (max-width: 379px) {
+  .po-head:has(> .chip) .po-head-title-text {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+  .po-head:has(> .chip) .session-head-title { flex: 1 0 auto; }
+  .po-head:has(> .chip) .po-head-title-icon { display: inline-flex; align-items: center; height: 44px; }
 }
 .po-menu-state { margin: 0; padding: var(--space-2) var(--space-3); }
 /* The level rows line up: the chosen one's check, an empty 16px slot on the others. */

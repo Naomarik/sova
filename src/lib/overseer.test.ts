@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { AttentionItem, TranscriptItem } from "../../shared/protocol";
+import type { TranscriptItem } from "../../shared/protocol";
 import {
   briefBody,
   confirmAnswer,
@@ -10,7 +10,6 @@ import {
   CONFIRM_SESSIONS_SHOWN,
   createTurnOwner,
   detailsOf,
-  headDrafts,
   isBriefText,
   isOverseerHash,
   isOverseerShortcut,
@@ -123,58 +122,6 @@ test("a brief's body renders as markdown: its blockers are a list of in-app link
   assert.match(html, /<a [^>]*href="#\/s\/%2Fs%2Fg\.jsonl"[^>]*>Reply with exactly: GAMMA<\/a>/);
   assert.ok(!html.includes("](sova://"), "no raw markdown link syntax is left");
   assert.ok(!/target="_blank"/.test(html), "an in-app link opens in this tab");
-});
-
-const attention = (id: string, tier: AttentionItem["tier"], kind: AttentionItem["kind"], since: number): AttentionItem => ({
-  id,
-  path: `/s/${id}.jsonl`,
-  title: `Session ${id}`,
-  where: `~/w/${id}`,
-  tier,
-  kind,
-  since,
-  href: `#/s/${id}`,
-});
-const digestOf = (items: AttentionItem[], total = items.length) => {
-  const counts = { act: 0, decide: 0, fyi: 0 };
-  for (const i of items) counts[i.tier]++;
-  counts.fyi += total - items.length;
-  return { items, counts };
-};
-
-test("the head's drafts menu lists the decide sessions with a draft or queued input, never a finished one", () => {
-  const drafts = headDrafts(
-    digestOf([
-      attention("blocked", "act", "needs-input", 50),
-      attention("blocked", "decide", "finished", 900),
-      attention("blocked", "decide", "draft", 950),
-      attention("both", "decide", "finished", 100),
-      attention("both", "decide", "draft", 400),
-      attention("both", "decide", "queued", 450),
-      attention("replied", "decide", "finished", 300),
-      attention("queued", "decide", "queued", 200),
-      attention("running", "fyi", "working", 1000),
-    ]),
-  );
-  // A session with an act item is counted as "needs you", never in the menu; "replied" has only a finished item.
-  assert.deepEqual(
-    drafts.rows.map((r) => [r.id, r.since]),
-    [
-      ["both", 450],
-      ["queued", 200],
-    ],
-    "queued input is a draft; a session's row takes its newest draft or queued item",
-  );
-  assert.equal(new Set(drafts.rows.map((r) => r.id)).size, drafts.rows.length, "no session twice in the menu");
-  assert.equal(drafts.rows[1]!.href, "#/s/queued");
-  assert.equal(drafts.cut, false, "fyi items past the cap cost no row");
-});
-
-test("the head's drafts menu says when the digest's cap dropped act or decide items", () => {
-  const items = [attention("a", "act", "error", 1), attention("b", "decide", "draft", 2)];
-  assert.equal(headDrafts(digestOf(items, 40)).cut, false, "only fyi items were cut");
-  assert.equal(headDrafts({ items, counts: { act: 1, decide: 5, fyi: 0 } }).cut, true);
-  assert.deepEqual(headDrafts({ items: [], counts: { act: 0, decide: 0, fyi: 0 } }), { rows: [], cut: false });
 });
 
 test("confirm details: items parse tolerantly; a card without them has no items at all", () => {

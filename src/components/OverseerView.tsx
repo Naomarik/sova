@@ -1,8 +1,8 @@
-import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
-import type { AttentionDigest, OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
+import { createEffect, createMemo, createResource, createSignal, For, on, Show } from "solid-js";
+import type { OverseerInfo, OverseerProactivity, SessionSummary } from "../../shared/protocol";
 import { clearOverseer, getOverseer, getOverseerIdeas, getOverseerSettings, getOverseerTodos, putOverseerSettings } from "../lib/api";
 import { relativeTime, shortModel } from "../lib/format";
-import { type HeadList, headDrafts, nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
+import { nextProactivity, OVERSEER_HASH, overseerHistoryHref, PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import { isMainThread } from "../lib/regions";
 import { settingsOpenAt } from "../lib/settings-nav";
 import { announce, toast } from "../lib/ui-state";
@@ -22,16 +22,6 @@ const sentenceOf = (m: string) => (/[.!?]$/.test(m) ? m : `${m}.`);
 /** Words for a count of sessions: "1 session", "3 sessions". */
 const sessions = (n: number) => `${n} ${n === 1 ? "session" : "sessions"}`;
 
-/** The attention digest as App reads it for the whole page (one poll, shared with the sidebar). */
-export interface AttentionFeed {
-  data(): AttentionDigest | undefined;
-  /** Message of the latest failed read, cleared by the next success. */
-  error(): string | null;
-  /** A read is in flight. */
-  reading(): boolean;
-  refetch(): void;
-}
-
 /**
  * The Overseer's page (`#/overseer`): the ordinary chat on its current file, plus what no other
  * chat has — its own head (proactivity, History, Clear), `/clear`, quick actions, confirm cards
@@ -45,8 +35,6 @@ export function OverseerView(props: {
   /** The info a request just returned (a clear): adopt it as the latest. */
   onInfo(info: OverseerInfo): void;
   refetch(): void;
-  /** The attention digest: the head's drafts menu lists from it. */
-  attention: AttentionFeed;
   /** An earlier Overseer file to read, from `#/overseer/h/<id>`. */
   historyId: string | null;
   sessions: SessionSummary[];
@@ -66,21 +54,13 @@ export function OverseerView(props: {
   const main = createMemo(() => props.sessions.filter(isMainThread));
   const working = () => main().filter((s) => s.busy || sessionWorking(s) > 0 || s.activity?.state === "working").length;
   const act = () => props.info?.badge.act ?? 0;
-  /** The head's one line: what the Overseer is watching, as counts. "N drafts" is the menu after it. */
+  /** The head's one line: what the Overseer is watching, as counts. */
   const facts = () => {
     const parts = [`${sessions(main().length)}`];
     if (working()) parts.push(`${working()} working`);
     if (act()) parts.push(`${act()} ${act() === 1 ? "needs" : "need"} you`);
     return parts.join(" · ");
   };
-
-  // ---- Drafts: a menu read from the attention digest, so its count is its list -------------------
-  // App polls it for the whole page; opening the page reads it once more, so the menu starts fresh.
-  onMount(() => props.attention.refetch());
-  const drafts = createMemo(() => {
-    const d = props.attention.data();
-    return d ? headDrafts(d) : undefined;
-  });
 
   // ---- Ideas: the backlog the Overseer files, in a panel over the chat's right side -----------
   const [ideasOpen, setIdeasOpen] = createSignal(false);
@@ -289,10 +269,7 @@ export function OverseerView(props: {
             fallback={
               <>
                 <Show when={props.info}>{(info) => <ContextMetaPrefix path={info().path} />}</Show>
-                <span class="overseer-facts" title={facts()}>
-                  {facts()}
-                </span>
-                <HeadMenu kind={DRAFTS} list={drafts()} error={props.attention.error()} reading={props.attention.reading()} retry={props.attention.refetch} now={props.wiring.now} />
+                <span title={facts()}>{facts()}</span>
               </>
             }
           >
@@ -508,118 +485,6 @@ export function OverseerView(props: {
           );
         }}
       </Show>
-    </Show>
-  );
-}
-
-/** The words the head's count menu uses: "2 drafts" and its list. */
-interface HeadMenuKind {
-  /** The noun after the number, "draft" or "drafts": the part that gives way first on a narrow head. */
-  word(n: number): string;
-  /** The trigger's accessible name: "1 draft". */
-  name(n: number): string;
-  title: string;
-  icon: "pencil";
-  /** What a read is of: "the drafts". */
-  subject: string;
-  empty: string;
-  cut: string;
-}
-
-const DRAFTS: HeadMenuKind = {
-  word: (n) => (n === 1 ? "draft" : "drafts"),
-  name: (n) => `${n} ${n === 1 ? "draft" : "drafts"}`,
-  title: "Drafts and queued messages",
-  icon: "pencil",
-  subject: "the drafts",
-  empty: "No drafts right now.",
-  cut: "Some drafts may not be listed: this list stops at the 30 most urgent items.",
-};
-
-/**
- * One count in the head's meta line that opens the list of its sessions. Its number is its rows,
- * read from the digest poll; it is hidden at 0 unless its menu is open, where a list that emptied
- * says so instead of vanishing under the pointer.
- */
-function HeadMenu(props: { kind: HeadMenuKind; list: HeadList | undefined; error: string | null; reading: boolean; retry(): void; now: number }) {
-  const [open, setOpen] = createSignal(false);
-  const n = () => props.list?.rows.length ?? 0;
-  let body: HTMLDivElement | undefined;
-  let retried = false;
-  // After Try Again the pressed row goes with the error: put focus on the first row, and say how it went.
-  createEffect(
-    on(
-      () => props.reading,
-      (reading) => {
-        if (reading || !retried) return;
-        retried = false;
-        // A task, not a microtask: the poll stores the result after the read itself settles.
-        setTimeout(() => {
-          if (props.error) announce(`Couldn't read ${props.kind.subject}.`);
-          // Only when focus went with the pressed row: never pull it back from where the user took it.
-          const at = document.activeElement;
-          if (!body?.closest(":popover-open") || (at && at !== document.body)) return;
-          body.querySelector<HTMLElement>("[role=menuitem]")?.focus();
-        });
-      },
-      { defer: true },
-    ),
-  );
-  const note = (r: { where: string; since: number }) => [r.where, r.since ? relativeTime(r.since, props.now) : ""].filter(Boolean).join(" · ");
-  const retry = () => {
-    retried = true;
-    props.retry();
-  };
-  return (
-    <Show when={n() > 0 || open()}>
-      <span class="overseer-count-sep" aria-hidden="true">·</span>
-      {/* `contain` portals the panel out of this line, whose nowrap and caption styles would
-          otherwise reach the rows. */}
-      <ActionMenu
-        label={`${props.kind.name(n())}, show list`}
-        title={props.kind.title}
-        icon={props.kind.icon}
-        text={
-          <span>
-            {n()}
-            <span class="overseer-count-word"> {props.kind.word(n())}</span>
-          </span>
-        }
-        class="button-sm button-ghost overseer-count"
-        align="start"
-        contain
-        onToggle={setOpen}
-      >
-        {(menu) => (
-          <div class="overseer-count-list" ref={body}>
-            <Show when={props.reading && (props.error || !props.list)}>
-              <p class="mode-option-note overseer-count-state">Reading {props.kind.subject}.</p>
-            </Show>
-            <Show when={!props.reading && props.error}>
-              {(message) => (
-                <>
-                  <p class="mode-option-note overseer-count-state">
-                    Couldn't read {props.kind.subject}. {sentenceOf(message())} Nothing was changed.
-                  </p>
-                  <menu.Item label="Try Again" aria={`Read ${props.kind.subject} again`} stayOpen onRun={retry} />
-                </>
-              )}
-            </Show>
-            <Show when={props.list}>
-              {(list) => (
-                <>
-                  <For each={list().rows} fallback={<p class="mode-option-note overseer-count-state">{props.kind.empty}</p>}>
-                    {(r) => <menu.Item label={r.title} title={r.title} aria={`${r.title}, ${note(r)}`} description={note(r)} href={r.href} />}
-                  </For>
-                  <Show when={list().cut}>
-                    <p class="mode-option-note overseer-count-state">{props.kind.cut}</p>
-                  </Show>
-                </>
-              )}
-            </Show>
-          </div>
-        )}
-      </ActionMenu>
     </Show>
   );
 }

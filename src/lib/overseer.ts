@@ -1,4 +1,4 @@
-import { type AttentionDigest, OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
+import { OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
 import { isObj, str } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
 
@@ -190,45 +190,10 @@ export function overseerButtonLabel(unread: number): string {
   return unread > 0 ? `Overseer · ${unread} new ${unread === 1 ? "message" : "messages"}` : "Overseer";
 }
 
-// ---- The head's drafts list ------------------------------------------------------------------
+// ---- Polling ---------------------------------------------------------------------------------
 
 /** How often the Overseer's counts are re-read: the entry button's poll, and the attention digest's (App). */
 export const OVERSEER_POLL_MS = 10_000;
-
-/** One session in the head's "N drafts" menu. */
-export interface HeadRow {
-  id: string;
-  title: string;
-  where: string;
-  href: string;
-  /** ms epoch of its newest item of the menu's kind; 0 unknown. */
-  since: number;
-}
-
-/** The head's menu: its rows (their count is the menu's number) and whether the digest's cap may have dropped some. */
-export interface HeadList {
-  rows: HeadRow[];
-  cut: boolean;
-}
-
-/**
- * The head's drafts menu, from the attention digest's decide items of kind "draft" or "queued" (an
- * unsent draft or queued input), minus any session that also has an act item (that one is counted
- * as "needs you"). One row per session, newest first. `cut` is true when the digest's 30-item cap
- * dropped act or decide items, so the menu may be short.
- */
-export function headDrafts(digest: Pick<AttentionDigest, "items" | "counts">): HeadList {
-  const needsYou = new Set(digest.items.filter((i) => i.tier === "act").map((i) => i.id));
-  const drafts = new Map<string, HeadRow>();
-  for (const it of digest.items) {
-    if (it.tier !== "decide" || needsYou.has(it.id) || (it.kind !== "draft" && it.kind !== "queued")) continue;
-    const row = drafts.get(it.id);
-    if (row) row.since = Math.max(row.since, it.since);
-    else drafts.set(it.id, { id: it.id, title: it.title, where: it.where, href: it.href, since: it.since });
-  }
-  const cut = digest.counts.act + digest.counts.decide > digest.items.length;
-  return { rows: [...drafts.values()].sort((a, b) => b.since - a.since), cut };
-}
 
 /** Alt+O opens the Overseer. `code`, not `key`: on a Mac, Option+O types "ø". */
 export const isOverseerShortcut = (e: { altKey: boolean; ctrlKey: boolean; metaKey: boolean; shiftKey: boolean; code: string }) =>

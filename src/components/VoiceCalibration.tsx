@@ -314,7 +314,11 @@ function ScoreRow(props: { score: VoiceModelScore; name: string }) {
 function Progress(props: { st: VoiceStatus; run: VoiceCalibrationRun; act: Act }) {
   const p = () => props.run.progress;
   const pct = () => Math.round((p().done / Math.max(1, p().total)) * 100);
-  const best = () => props.run.rows[0];
+  /** Rows come in grid order while the run goes: the best so far is the fewest errors among the rows scored furthest. */
+  const best = () => {
+    const most = Math.max(0, ...props.run.rows.map((r) => r.scored));
+    return props.run.rows.filter((r) => r.scored === most && most > 0).sort((a, b) => a.errors - b.errors || a.medianMs - b.medianMs)[0];
+  };
   const score = () => props.run.grid === "score";
   return (
     <div class="voice-cal-flow">

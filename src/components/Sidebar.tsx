@@ -55,7 +55,8 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagStatusWord, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { readinessBadge, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
@@ -288,7 +289,8 @@ function SessionRow(props: {
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy() }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
   const leadMark = () => rowLeadMark(s(), props.selected);
-  const statusWord = () => tagStatusWord(s().tags);
+  /** Line 3's merge-readiness badge (src/lib/readiness.ts): the server's answer, worded. */
+  const badge = () => readinessBadge(s().readiness);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -596,12 +598,14 @@ function SessionRow(props: {
             </Show>
             <p class="list-meta" title={tagsTitle(s().tags) ?? undefined}>
               {relativeTime(s().lastActiveAt, props.now)}
-              {/* The session's status tag, between the time and the model. The topic is search-only. */}
-              <Show when={statusWord()}>
+              {/* The merge-readiness badge, between the time and the model. The topic is search-only. */}
+              <Show when={badge()}>
                 {(w) => (
                   <>
                     {" · "}
-                    <span class="session-status-word">{w()}</span>
+                    <span class="session-readiness" title={readinessTitle(s().readiness) ?? undefined}>
+                      {w()}
+                    </span>
                   </>
                 )}
               </Show>

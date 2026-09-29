@@ -5,9 +5,7 @@ import {
   type DecisionSettings,
   type SessionSummary,
   type SessionTags,
-  TAG_STATUSES,
   TAG_TOPICS,
-  type TagStatus,
   type TagTopic,
 } from "../shared/protocol";
 import { isLinkMessage } from "../shared/link-message";
@@ -17,7 +15,7 @@ import { serverRedactor } from "./overseer-redact";
 import { stateRoot } from "./state-root";
 
 /**
- * Session tags (plan §5): a topic, a status and a "throwaway" probability per session, answered
+ * Session tags (plan §5): a topic and a "throwaway" probability per session, answered
  * through the decision seam (server/decide.ts) — this module never knows which provider answered —
  * plus the user's own manual tags. Stored in `<stateRoot>/session-tags.json`, keyed by session id
  * like titles/archive/groups: a sidecar only, never a byte into a JSONL (a TUI-owned file is read
@@ -65,26 +63,15 @@ const TOPIC_RUBRIC: Record<TagTopic, string> = {
   other: "None of the above fits.",
 };
 
-const STATUS_RUBRIC: Record<TagStatus, string> = {
-  done: "The requested work is finished: `last_assistant` reports it complete and nothing is left open.",
-  in_progress: "Work is still under way or its next step is clear, and the session was active recently.",
-  abandoned: "Work stopped before it was finished and the session has not been touched for days.",
-  blocked: "Work cannot continue until the user answers a question, makes a decision, or fixes something outside the session.",
-};
-
-/** The three questions; ids are the store's contract. Built from the fixed taxonomy in the protocol. */
-export const TAG_QUESTIONS: Record<"topic" | "status" | "throwaway", Question> = {
+/** The two questions; ids are the store's contract. Built from the fixed taxonomy in the protocol.
+    There is no `status` question any more: merge readiness (server/merge-readiness.ts) answers it
+    from git and the file. Records stored with a status answer stay readable; it is never sent. */
+export const TAG_QUESTIONS: Record<"topic" | "throwaway", Question> = {
   topic: {
     type: "choice",
     instructions:
       "Which kind of work is this coding-assistant session mainly about? `title` is the user's first request; `summary` and `now` summarise the session when present; `last_assistant` is the assistant's latest reply.",
     options: Object.fromEntries(TAG_TOPICS.map((t) => [t, TOPIC_RUBRIC[t]])),
-  },
-  status: {
-    type: "choice",
-    instructions:
-      "What state is this session's work in now? `days_idle` is how many whole days have passed since its last activity; `last_assistant` is the assistant's latest reply and `last_user` the user's latest message.",
-    options: Object.fromEntries(TAG_STATUSES.map((t) => [t, STATUS_RUBRIC[t]])),
   },
   throwaway: {
     type: "boolean",
@@ -220,8 +207,7 @@ export function wireTags(rec: TagRecord | undefined): SessionTags | undefined {
   const out: SessionTags = {};
   const t = rec.answers?.topic;
   if (t?.type === "choice" && t.confidence >= TAG_CONFIDENCE_MIN && (TAG_TOPICS as readonly string[]).includes(t.choice)) out.topic = t.choice as TagTopic;
-  const s = rec.answers?.status;
-  if (s?.type === "choice" && s.confidence >= TAG_CONFIDENCE_MIN && (TAG_STATUSES as readonly string[]).includes(s.choice)) out.status = s.choice as TagStatus;
+  // A stored `status` answer (the retired status tag) is kept in the store and never sent.
   const w = rec.answers?.throwaway;
   if (w?.type === "boolean" && w.p >= THROWAWAY_P_MIN) out.throwaway = true;
   if (rec.user?.length) out.user = [...rec.user];
@@ -529,7 +515,7 @@ export class SessionTagger {
         s.sessions[row.id] = {
           at: now,
           basis: { turnId: turn.turnId, size: st.size },
-          answers: { ...(a.topic ? { topic: a.topic } : {}), ...(a.status ? { status: a.status } : {}), ...(a.throwaway ? { throwaway: a.throwaway } : {}) },
+          answers: { ...(a.topic ? { topic: a.topic } : {}), ...(a.throwaway ? { throwaway: a.throwaway } : {}) },
           provider: result.provider,
           model: result.model,
           ...(cur?.user ? { user: cur.user } : {}),

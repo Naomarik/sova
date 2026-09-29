@@ -472,7 +472,7 @@ export function DecisionSettingsSection() {
           {switchRow(
             "decisions-tags",
             "Tag sessions",
-            "Gives each session a topic and a status word you can search.",
+            "Gives each session a topic you can search.",
             () => draft()!.features.tags,
             (on) => edit((c) => (c.features.tags = on)),
             unanswered,

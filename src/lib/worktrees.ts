@@ -49,6 +49,26 @@ export function worktreeChips(w: Pick<SessionWorktreeInfo, "exists" | "hasAgentD
   return out;
 }
 
+/** The merge-readiness chip after the status chip (§chat.worktrees/readiness); none while merged,
+    which the status chip already says, and none before the server has read git. */
+export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): WorktreeChip | null {
+  const r = w.readiness;
+  if (!r || r.state === "merged") return null;
+  const why = r.why ? `${r.why[0]!.toUpperCase()}${r.why.slice(1)}.` : "";
+  switch (r.state) {
+    case "ready":
+      return { label: "Ready", tone: "success", title: why || "Ready to merge." };
+    case "waiting-approval":
+      return { label: "Waiting for your OK", tone: "info", title: `Ready to merge, and the last reply asks you. ${why}`.trim() };
+    case "in-progress":
+      return { label: "In progress", tone: "neutral", title: why || "Work is still going on here." };
+    case "blocked":
+      return { label: "Blocked", tone: "warn", title: why || "Waiting on your answers." };
+    case "stale":
+      return { label: "Stale", tone: "warn", title: why || "Merged, but not clean." };
+  }
+}
+
 /** The Session tab's line for a branch that tracks none: the section stays, and says so. */
 export const NO_WORKTREES = "This session tracks no worktrees.";
 

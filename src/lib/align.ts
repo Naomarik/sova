@@ -107,10 +107,19 @@ export interface AlignEntry {
 
 /**
  * The branch's documents: the newest snapshot per id, in the order they were last touched —
+ * the ones open above the list the view holds (the hello's or last fetch's OlderSummary.aligns),
  * the settled rows, then this run's live results on top. The same rule as the extension's fold.
  */
-export function foldAlignRows(items: readonly TranscriptItem[], live: readonly AlignRowInfo[] = []): AlignEntry[] {
+export function foldAlignRows(
+  items: readonly TranscriptItem[],
+  live: readonly AlignRowInfo[] = [],
+  older: readonly { doc: AlignDocInfo; rowId: string }[] = [],
+): AlignEntry[] {
   const docs = new Map<string, AlignEntry>();
+  for (const e of older) {
+    docs.delete(e.doc.id);
+    docs.set(e.doc.id, { doc: e.doc, rowId: e.rowId });
+  }
   for (const it of items) {
     const doc = it.kind === "align" ? it.align?.doc : undefined;
     if (!doc) continue;

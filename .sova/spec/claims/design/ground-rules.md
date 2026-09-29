@@ -140,7 +140,7 @@ and `fill="none" stroke="currentColor"`.
 | `file.svg` | Tool card for `read` / `write` / `edit` |
 | `more.svg` | Tool card for any other tool |
 | `copy.svg` | Copy Session Path, Copy Output |
-| `archive.svg` | Archive Session / Unarchive Session (session head, web sessions only, §app/session-list "Archiving"): a lidded box. New, drawn on the system grid |
+| `archive.svg` | Archive Session / Unarchive Session (Session pane, web sessions only, §app/session-list "Archiving"): a lidded box. New, drawn on the system grid |
 | `chevron-left.svg` / `chevron-right.svg` | Also: lightbox Previous Image / Next Image |
 | `check.svg` | The copy button's icon for 1.5s after a copy; the current-model mark |
 | `folder.svg` | Folder picker rows, cwd group label |
@@ -166,7 +166,15 @@ and `fill="none" stroke="currentColor"`.
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads, and the composer's subagents trigger (§app.subagents-pane/trigger) (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
 | `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the overview's `Fan Out` action card (§workspace/groups, §workspace/fanout) |
-| `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg` | Reserved. Shipped but unused in the MVP |
+| `external.svg` | Opens elsewhere: Open in New Tab (extension view), Open Directly (mesh), Open workspace, Open {n} Explanations, the Settings dialog's Public links tab |
+| `network.svg` | Organizations (its Settings tab, the overview's Organizations card); the mesh: the host filter, the Overseer's link card, a link's section in the subagents pane |
+| `building.svg` | The spine's Organizations item |
+| `eye.svg` | The Overseer: its empty-state mark and cards; Preview Owner Page / Preview as {name} |
+| `grid.svg` | Overview: the sidebar head's button on a phone (§app.shell/overview) |
+| `undo.svg` | Rewind (message actions), Unarchive, Revert (organizations) |
+| `shield.svg` | The composer's sandbox badge; the Settings dialog's Decisions tab |
+| `star.svg` | The model menu's favourite toggle; the Overseer's Ideas button |
+| `check-circle.svg`, `x-circle.svg`, `menu.svg` | Drawings only (vis): the ok / error tone icons, and wireframe icons |
 
 `/favicon.svg` is the mark on the Indigo dusk gradient, a rounded square: a linear gradient from
 `#4A43D8` at the top-left to `#1E1A5C` at the bottom-right. The middle band is white (`#FFFFFF`),

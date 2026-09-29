@@ -48,11 +48,18 @@ export function helloRows(
     const kept = prev!.slice(0, j);
     const inputs = kept.filter(isInput).map((r) => r.id);
     const at = s.inputs.length - inputs.length;
-    if (at >= 0 && inputs.every((id, i) => s.inputs[at + i] === id))
+    if (at >= 0 && inputs.every((id, i) => s.inputs[at + i] === id)) {
+      // An alignment whose newest revision is a kept row is now the list's to count.
+      const keptIds = new Set(kept.map((it) => it.id));
+      const aligns = s.aligns?.filter((a) => !keptIds.has(a.rowId));
       return {
         items: reconcileItems(prev, [...kept, ...items]),
-        older: { left: older - j, summary: { inputs: s.inputs.slice(0, at), messages: Math.max(0, s.messages - messageCount(kept)), replies: s.replies } },
+        older: {
+          left: older - j,
+          summary: { inputs: s.inputs.slice(0, at), messages: Math.max(0, s.messages - messageCount(kept)), replies: s.replies, ...(aligns?.length ? { aligns } : {}) },
+        },
       };
+    }
   }
   return { items: reconcileItems(prev, items), older: { left: older, summary: s } };
 }

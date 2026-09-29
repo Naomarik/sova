@@ -78,6 +78,28 @@ test("fold: newest per document in touch order; this run's live results on top; 
   assert.deepEqual(foldAlignRows(items, live).map((e) => [e.doc.id, e.doc.rev, e.rowId]), [["al_2", 2, undefined], ["al_1", 2, "r3"]]);
 });
 
+test("fold: alignments open above the rows held count, first; a newer held or live revision takes their place", () => {
+  const above = [
+    { doc: doc("al_1", 3, [q("q1")]), rowId: "o1" },
+    { doc: doc("al_2", 1, [q("q1"), q("q2", { decision: decided })]), rowId: "o2" },
+    { doc: doc("al_4", 2, [q("q1")]), rowId: "o4" },
+  ];
+  // Nothing held of them: the chip counts all three, in their last-touched order, each jumping to its row above.
+  const only = foldAlignRows([], [], above);
+  assert.deepEqual(only.map((e) => [e.doc.id, e.rowId]), [["al_1", "o1"], ["al_2", "o2"], ["al_4", "o4"]]);
+  assert.deepEqual(alignChipCounts(only), { docs: 3, decided: 1, total: 4 });
+  // al_1 done in the rows held, al_3 new there, al_2 dropped live: only al_4 and al_3 stay open, touched after.
+  const items = [alignItem("r1", doc("al_1", 4, [q("q1")], "done")), alignItem("r3", doc("al_3", 1, [q("q1")]))];
+  const live = [{ v: 1 as const, doc: doc("al_2", 2, [q("q1")], "dropped"), changes: [], line: "" }];
+  const all = foldAlignRows(items, live, above);
+  assert.deepEqual(all.map((e) => [e.doc.id, e.doc.rev, e.rowId]), [["al_4", 2, "o4"], ["al_1", 4, "r1"], ["al_3", 1, "r3"], ["al_2", 2, undefined]]);
+  assert.deepEqual(alignChipCounts(all), { docs: 2, decided: 0, total: 2 });
+  assert.deepEqual(alignMenuRows(all).map((e) => e.doc.id), ["al_3", "al_4"]);
+  // A live revision of an alignment above, at the same rev, keeps that row as its jump target.
+  const same = foldAlignRows([], [{ v: 1 as const, doc: doc("al_4", 2, [q("q1")]), changes: [], line: "" }], above);
+  assert.equal(same.find((e) => e.doc.id === "al_4")?.rowId, "o4");
+});
+
 test("the chip counts open documents only: '2 aligns · 1/4 decided'", () => {
   const entries = foldAlignRows([
     alignItem("r1", doc("al_1", 1, [q("q1"), q("q2", { decision: decided })])),

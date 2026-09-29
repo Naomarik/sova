@@ -26,7 +26,7 @@ unfolded (≥768)                                  folded (<768)
 ```
 
 - **A third view.** `data-view` has a third value, `workspace` (§workspace/groups): the main column is
-  `.app-workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
+  `.workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
   the resizer and the portals are unchanged, the second column keeps the same width and floor,
   and below 768px the workspace is the one column, tabs-only.
 - **Columns.** `.app` is `height: 100dvh`. At 768px and up the grid is `--sidebar-width` (320px

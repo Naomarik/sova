@@ -15,12 +15,8 @@
         <span class="text-mono">claude-opus-5</span>
       </p>
     </div>
-    <!-- worker count, linked: {n} + the worker icon, the rail's pair (§app/insights) -->
-    <a class="chip chip-count session-head-working" href="#/agents"
-       title="3 subagents working now" aria-label="3 subagents working now">
-      <span class="text-num">3</span><span class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>
     <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- live only; static, no pulse -->
-    <button class="button button-icon button-ghost session-archive" aria-label="Archive Session">…archive…</button>  <!-- web sessions only -->
+    <button class="button button-icon button-ghost session-details-open" aria-label="Session details">…info…</button>
   </header>
 
   <section class="transcript pane" id="transcript" aria-label="Transcript">
@@ -50,12 +46,9 @@
   answer renders as the machine row "Overseer chose: {answer}" (§app.overseer/dialog-answers).
 - **Copy Session Path.** Gone from the head. The path is a session fact, and it's copied from
   the session pane's Session tab instead, which is where the rest of them live.
-- **Archive Session / Unarchive Session.** Web sessions only, last in the head. Moves the
+- **Archive Session / Unarchive Session.** Web sessions only, in the Session pane, not the head. Moves the
   session between the sidebar regions (§app/session-list "Archiving"). `aria-disabled` while live and not
-  archived. It stays at every width: at a 320px head (292px inside its 16px/12px padding) the
-  head holds Back 44, the mode trigger's icon-only 44 and this 44, with 3 gaps of 12px, leaving
-  the title 124px — above its 72px floor. This is the app's only archive control, so hiding it
-  would remove archiving from phones and narrow panes.
+  archived.
 
 ## §chat.transcript/transcript-items — Transcript items (by `TranscriptItem.kind`)
 
@@ -339,7 +332,7 @@ closed, and the markdown on the left when open.
   `.disclosure-body` spacing (`--space-2` / `--space-4`, `--stroke-icon` rule) as a flex
   column with a `--space-2` gap.
 
-**Timestamps.** Take them from `raw.timestamp` when present and format as 24-hour `HH:MM` in mono.
+**Timestamps.** Take them from `raw.timestamp` when present and format as 12-hour `h:mm AM` in mono.
 If the date isn't today, prefix `Mar 4 `. Put the full ISO string in `title`.
 
 ## §chat.transcript/message-actions — Message actions
@@ -689,10 +682,13 @@ machine. Nothing that's held is virtualized.
   Rows never drawn have estimated heights, so a long jump that doesn't land in the middle aims
   again once the scroll has rested, at most twice.
 - **Counts of the whole branch.** The `hello` and the snapshot also say what the counts need of
-  the rows they don't carry: the ids of their inputs, how many messages they hold, and whether
-  any is a reply; so does each fetch, of the rows above what it returns. The inputs count, Fan
-  Out's "up to message {n}" and Undo last turn count the rows held plus those, so they're right
-  from the first `hello` on, with no older row fetched.
+  the rows they don't carry: the ids of their inputs, how many messages they hold, whether
+  any is a reply, and the alignments still open among them (each one's newest revision there,
+  and its row); so does each fetch, of the rows above what it returns. The inputs count, Fan
+  Out's "up to message {n}", Undo last turn and the composer's alignment chip
+  (§chat.alignment/chip) count the rows held plus those, so they're right from the first `hello`
+  on, with no older row fetched. A newer revision among the rows held, or live, takes an
+  alignment's place: one done or dropped there is no longer open.
 - **Opening a disclosure keeps the view.** Opening or closing a tool card, thinking, a report or
   the hidden-rows disclosure never scrolls the transcript, even while following. Following is
   re-read from where the view now is, so Jump to Latest appears if the end has gone out of view.

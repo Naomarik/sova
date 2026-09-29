@@ -1,33 +1,39 @@
 /**
- * Replays mined organization traces (server/fixtures/org-charts/*.json, written by
- * scripts/org-charts-mine.mjs) through the org charts (server/org-charts.ts) on a virtual clock, and
- * compares every step with what really happened:
+ * Replays the mined organization traces (server/fixtures/org-charts/*.json: the e2e lanes' real runs,
+ * anonymised, and the synthetic edge cases) through a real org host (server/org-host/) running the
+ * refit's charts, on a virtual clock, and compares every step with what really happened:
  *
- * - every sova_* tool call the real overseer made gets the chart's verdict under the same envelope
- *   (who, attended, level, allowances), and today's rule (`autonomyRefusal` + `TOOL_NEEDS`) is the
- *   oracle both must agree with;
- * - after every step, each work item's configuration is checked against a projection of the stores'
- *   facts written here, independently of the chart;
- * - the watch loop's looks, and the reasons each look carried, are checked against the real ones;
- * - the end state is checked against the stores' last word.
+ * - the stores' facts are driven as the charts' own acts and events (a person added or leaving, a
+ *   gathering started, a message, hand_to, goal_done, a decision recorded, a reconciler run's results,
+ *   a promotion, a build's turns and merge), so every link is the charts' own;
+ * - every sova_* tool call the real overseer made is routed to the act it is now (design §7.1: the
+ *   gap's item, a session, the reconciler, the project) and trialled under the same envelope (who,
+ *   attended, level, allowances), and today's rule (`autonomyRefusal` + `TOOL_NEEDS`) is the oracle
+ *   both must agree with;
+ * - after every step, each item's configuration is checked against a projection of the stores' facts
+ *   written here, independently of the charts;
+ * - the watch chart's looks, and the reasons each carried, are checked against the real ones;
+ * - a restart closes the host and opens it again from its journal and snapshots.
  *
  * A difference is a divergence. Each is classified with the evidence that explains it (version drift,
- * a host check the chart does not hold, a link the stores do not have, the chart catching what today
- * dropped), or left unexplained. The tests require zero unexplained divergences.
+ * a host check the charts don't hold, a link the stores don't have, the chart catching what today
+ * dropped, an operator ruling), or left unexplained. The tests require zero unexplained divergences.
+ * The traces predate holds (q10): the world's hold is 0, so every act goes at once, as it did.
  *
  * Shadow only: nothing here changes Sova's behaviour.
  */
 
-import { readdirSync, readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { autonomyRefusal, overRefusal, TOOL_NEEDS, type Need } from "./project-overseer-tools";
-import type { Autonomy } from "../shared/project-overseer";
+import { DEFAULT_PO_CAPS, type Autonomy, type ProjectOverseerSettings } from "../shared/project-overseer";
+import { OrgHost, type ActResult, type Effect as HostEffect, type InvocationReport, type InvocationRunner } from "./org-host";
+import { stampEnvelope } from "./org-stamp";
+import type { ActBy, Envelope } from "./org-envelope";
 
 // ---- the trace (the fixture format) ----------------------------------------------------------------
-
-/** The spike's project chart, shipped under this name beside the refit's own "project" until the spike is retired. */
-export const SPIKE_PROJECT = "spike-project";
 
 export type Level = "L0" | "L1" | "L2" | "L3";
 type Kinds = "gather" | "promote" | "create" | "prompt";
@@ -135,66 +141,6 @@ export function loadTraces(dir = FIXTURES): Trace[] {
     .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as Trace);
 }
 
-// ---- the engine (server/org-charts.ts), as the replay uses it -------------------------------------------
-
-export interface SendResult {
-  configuration: string[];
-  steps?: { sessionId: string; event: string; before: string[]; after: string[]; outbox: Effect[] }[];
-  outbox: Effect[];
-  sends?: { from: string; to: string; event: string; data: unknown; delay: number }[];
-  invocations?: { sessionId: string; invokeId: string; type: string; op: "start" | "stop"; params?: unknown }[];
-  errors?: { level: string; message: string }[];
-}
-export interface Effect {
-  kind: string;
-  key?: string;
-  sessionId?: string;
-  [k: string]: unknown;
-}
-export interface TrialResult {
-  taken: boolean;
-  configuration: string[];
-  before?: string[];
-  outbox?: Effect[];
-  refusal?: string | null;
-  refused?: unknown[];
-  errors?: { level: string; message: string }[];
-}
-export interface Engine {
-  start(sid: string, chart: string, data: unknown, opts?: { now?: number }): SendResult;
-  send(sid: string, event: string, data?: unknown, opts?: { now?: number; invokeId?: string }): SendResult;
-  trial(sid: string, event: string, data?: unknown, opts?: { now?: number; invokeId?: string }): TrialResult;
-  configuration(sid: string): string[] | null;
-  data(sid: string): Record<string, unknown> | null;
-  nextDueAt(): number | null;
-  fireDue(now: number): SendResult;
-  dump(sid: string): string | null;
-  load(sid: string, text: string): unknown;
-  unload?(sid: string): void;
-  sessions?(): string[];
-}
-export interface EngineHooks {
-  onInvokeStart?: (inv: { sessionId: string; invokeId: string; type: string; params?: unknown }) => void;
-  onInvokeStop?: (inv: { sessionId: string; invokeId: string; type: string }) => void;
-  clock?: () => number;
-}
-
-/** The engine module and its chart list, or why it cannot be had (the tests say which). */
-export async function openEngineModule(): Promise<{ create: (hooks: EngineHooks) => Engine; charts: string[] } | { missing: string }> {
-  const path = "./org-charts"; // server/org-charts.ts, owned by the engine teammate
-  let mod: Record<string, unknown>;
-  try {
-    mod = (await import(path)) as Record<string, unknown>;
-  } catch (err) {
-    return { missing: `server/org-charts.ts: ${err instanceof Error ? err.message.split("\n")[0] : String(err)}` };
-  }
-  const create = (mod.createOrgCharts ?? mod.createEngine) as ((hooks: EngineHooks) => Engine) | undefined;
-  if (typeof create !== "function") return { missing: "server/org-charts.ts exports no createOrgCharts/createEngine" };
-  const list = (mod.chartVersions ?? mod.chartList ?? mod.charts) as (() => { name: string }[]) | { name: string }[] | undefined;
-  const charts = (typeof list === "function" ? list() : (list ?? [])).map((c) => c.name);
-  return { create, charts };
-}
-
 // ---- today's rule, the oracle -----------------------------------------------------------------------------
 
 /** What `act()` needs for a call: TOOL_NEEDS, with sova_roster approve/decline at L2 (checked per op). */
@@ -203,7 +149,7 @@ export function needOf(name: string, op?: string): Need {
   return TOOL_NEEDS[name] ?? "operator";
 }
 
-export interface Envelope {
+export interface OracleEnvelope {
   by: "overseer" | "operator" | "system";
   attended: boolean;
   autonomy: Level;
@@ -214,7 +160,7 @@ export interface Envelope {
 }
 
 /** The level in force (effectiveAutonomy) and today's sentence for this call, or null. */
-export function oracle(name: string, op: string | undefined, env: Envelope): string | null {
+export function oracle(name: string, op: string | undefined, env: OracleEnvelope): string | null {
   const effective: { autonomy: Autonomy; reason?: string } = env.paused
     ? { autonomy: "L0", reason: "Paused at L0: this organization was attached on this host. Set its level to resume." }
     : !env.rosterActive
@@ -232,6 +178,7 @@ export type Cls =
   | "chart-better" // the chart holds what today dropped or could not see (a reason, a stall, a position)
   | "cannot-express" // real behaviour the chart's model does not have
   | "mining" // the replay's own reconstruction is approximate here (a reconstructed counter)
+  | "ruling" // the operator's rulings changed this on purpose (decisions.md / coverage.md): the evidence names the ruling
   | "chart-bug"; // the chart is wrong: reported to `charts`
 
 export interface Divergence {
@@ -370,76 +317,175 @@ export interface ItemFacts {
   build: { sessionId: string; running: boolean; lastFailed: boolean; merged: boolean; newSinceMerge: number; startedBy: string; state: string } | null;
 }
 
-/** An engine with no charts: the replay then checks the trace against today's rule only. */
-const noEngine = (): Engine => {
-  const none = (): never => {
-    throw new Error("no engine");
-  };
-  return { start: none, send: none, trial: none, configuration: () => null, data: () => null, nextDueAt: () => null, fireDue: none, dump: () => null, load: none };
-};
+// ---- the world: one real org host (server/org-host/) with the refit's charts, on a virtual clock ----------
 
-export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engine) | null, charts: string[], opts: { horizon?: number } = {}): Promise<Report> {
+const ORG = "org_replay";
+const PROJECT = "prj_replay";
+const S = {
+  org: `org/${ORG}`,
+  project: `project/${ORG}/${PROJECT}`,
+  watch: `watch/${ORG}/${PROJECT}`,
+  reconciler: `reconciler/${ORG}/${PROJECT}`,
+  person: (p: string) => `person/${ORG}/${p}`,
+  item: (g: string) => `item/${ORG}/${PROJECT}/${gapIdOf(g)}`,
+  baton: (b: string) => `baton/${ORG}/${b}`,
+  decision: (d: string) => `decision/${ORG}/${PROJECT}/${d}`,
+  build: (c: string) => `build/${ORG}/${PROJECT}/${c}`,
+};
+/** A fixture's gap (`§gap/g1`) as the item chart's id (`g_g1`). */
+export const gapIdOf = (g: string) => `g_${g.replace(/^§gap\//, "").replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+
+/** What the replay keeps of a look the watch invoked: when, the reasons it carried, how to end it. */
+interface ChartLook {
+  at: number;
+  kinds: string[];
+  rows: { kind: string; at: number; item: string | null }[];
+  matched: boolean;
+  report: InvocationReport | null;
+}
+
+/** The replay's facts about the world the envelope is stamped from (the settings file, as the trace had it). */
+interface Settings {
+  autonomy: Level;
+  caps: Record<string, number | null>;
+  watch: boolean;
+  watchGapMin: number;
+  soonLookSec: number | null;
+}
+
+/** Effect results the charts need to go on: the host's side, in the shape it answers (nothing leaves the world). */
+function stubEffect(e: HostEffect, now: number): Record<string, unknown> {
+  switch (e.kind) {
+    case "read-holder":
+      return { local: null, remote: null };
+    case "commit":
+    case "push":
+      return { committed: false, headAt: now, pushFailed: false };
+    case "make-worktree":
+      return { branch: `sova/${String(e.sessionId ?? "b").slice(-8)}`, base: "main", target: "main" };
+    case "merge":
+      return { commit: "c0ffee" };
+    case "promote": {
+      const ids = Array.isArray(e.ids) ? (e.ids as string[]) : [];
+      return { promoted: ids, refused: [], commit: "c0ffee", textHashes: Object.fromEntries(ids.map((id) => [id, "h"])) };
+    }
+    case "settle":
+      return { decisions: [] };
+    default:
+      return {};
+  }
+}
+
+class World {
+  host!: OrgHost;
+  looks: ChartLook[] = [];
+  /** Reconciler runs waiting for their results (the facts of the instant give them). */
+  reconcileRuns: { report: InvocationReport }[] = [];
+  private stateDir: string;
+  constructor(
+    readonly dir: string,
+    private readonly clock: () => number,
+    private readonly facts: () => { settings: Settings; paused: boolean; rosterActive: boolean; archived: boolean },
+  ) {
+    this.stateDir = join(dir, "state");
+  }
+
+  /** The envelope of an act, from the charts and the trace's settings as they stand. */
+  envelope(who: { by: ActBy; attended: boolean; extra?: Record<string, unknown> }): Envelope {
+    const f = this.facts();
+    const settings = { autonomy: f.settings.autonomy, caps: capsOf(f.settings.caps), holdMin: 0, confirmKinds: [] };
+    const e = stampEnvelope(this.host, ORG, PROJECT, { by: who.by, attended: who.attended }, () => settings, settings);
+    return { ...e, paused: f.paused, rosterActive: f.rosterActive, archived: f.archived, ...(who.extra ?? {}) };
+  }
+
+  async open(): Promise<void> {
+    mkdirSync(join(this.dir, "ws", "sessions"), { recursive: true });
+    const self = this;
+    this.host = await OrgHost.open({
+      orgId: ORG,
+      workspaceDir: join(this.dir, "ws"),
+      stateDir: this.stateDir,
+      clock: this.clock,
+      durable: false,
+      // The traces predate holds (q10): every act goes at once (hold 0), as it did.
+      stamp: (_sid, _event, _payload, who) => self.envelope({ by: ((who?.by as ActBy | undefined) ?? "chart") as ActBy, attended: false }),
+    });
+    const kinds = ["read-holder", "commit", "push", "pause-overseers", "revoke-owner-links", "revoke-person-links", "roster-history", "create-session", "mint-link", "mint-links", "revoke-links", "stop-reply", "baton-entry", "make-worktree", "set-mode", "first-prompt", "worktree-note", "merge", "remove-worktree", "promote", "draft", "route-conflict-of", "restore-text", "settle", "idea-status", "owner-update", "hold/started"];
+    for (const k of kinds) this.host.effects.register(k, async (e) => stubEffect(e, this.clock()));
+    const look: InvocationRunner = {
+      start: (inv, report) => {
+        const p = (inv.params ?? {}) as { reasons?: unknown[] };
+        const rows = ((this.host.data(S.watch)?.runReasons as { kind?: string; at?: number; params?: { item?: string } }[] | undefined) ?? []).map((r) => ({ kind: String(r.kind), at: Number(r.at), item: r.params?.item ?? null }));
+        this.looks.push({ at: this.clock(), kinds: rows.length ? rows.map((r) => r.kind) : (p.reasons ?? []).map(String), rows, matched: false, report });
+      },
+      stop: () => {},
+    };
+    const reconcile: InvocationRunner = { start: (_inv, report) => void this.reconcileRuns.push({ report }), stop: () => {} };
+    const wrapup: InvocationRunner = { start: (_inv, report) => report("finished", undefined, { applied: 0, refused: [] }), stop: () => {} };
+    for (const [type, runner] of [["sova/look", look], ["sova/reconcile", reconcile], ["sova/wrapup", wrapup]] as const) {
+      this.host.invocations.register(type, runner);
+      this.host.invocations.register(type.replace("sova/", ""), runner);
+    }
+  }
+
+  async close(): Promise<void> {
+    await this.host.close();
+  }
+
+  // The host's timer follows real time; the replay's clock is virtual, so it fires the due sends itself.
+  private get engine(): { nextDueAt(): number | null } {
+    return (this.host as unknown as { engine: { nextDueAt(): number | null } }).engine;
+  }
+  nextDueAt(): number | null {
+    return this.engine.nextDueAt();
+  }
+  fireDue(): void {
+    (this.host as unknown as { fire(): void }).fire();
+  }
+
+  configuration(sid: string): string[] {
+    return this.host.configuration(sid) ?? [];
+  }
+  data(sid: string): Record<string, unknown> {
+    return this.host.data(sid) ?? {};
+  }
+  exists(sid: string): boolean {
+    return this.host.data(sid) !== null;
+  }
+}
+
+/** The trace's caps (null = Unlimited) as the settings file keeps them. */
+function capsOf(c: Record<string, number | null>): ProjectOverseerSettings["caps"] {
+  const out = { ...DEFAULT_PO_CAPS } as Record<string, unknown>;
+  for (const [k, v] of Object.entries(c)) if (k in out) out[k] = v === null ? "unlimited" : v;
+  return out as unknown as ProjectOverseerSettings["caps"];
+}
+
+// ---- the replay ------------------------------------------------------------------------------------------
+
+export async function replay(trace: Trace, opts: { horizon?: number } = {}): Promise<Report> {
   const T0 = Date.parse(trace.t0);
   let now = T0;
   const rep: Report = { trace: trace.id, steps: trace.events.length, checks: 0, passes: 0, divergences: [], skipped: [], looks: { real: 0, chart: 0 }, items: {}, coverage: { trials: 0, itemChecks: 0, lookChecks: 0, expects: 0, restarts: 0, maxMicrosteps: 0 } };
-  const looksStarted: number[] = [];
-  /** The chart's looks: when each started, the reason kinds it carried, and whether a real look matched it. */
-  const chartLooks: { at: number; kinds: string[] | null; rows: { kind: string; at: number; item: string | null }[]; matched: boolean }[] = [];
-  const hooks: EngineHooks = {
-    clock: () => now,
-    onInvokeStart: (inv) => {
-      if (!inv.type.endsWith("look")) return;
-      looksStarted.push(now);
-      chartLooks.push({ at: now, kinds: null, rows: [], matched: false });
-    },
-  };
-  /** Reasons the chart kept while the overseer was busy because someone else acted (today drops them: R3). */
-  const keptWhileBusy = new Set<string>();
-  /** Items where the chart refused a real act as a chart bug: their later positions follow from it. */
-  const bugItems = new Set<string>();
-  /** Batons started as a follow-up: the item was deciding or promoted when the gathering began. */
-  const followUps = new Set<string>();
-  /** Decisions ever promoted (a flip back to drafted leaves a build that served them). */
-  const everPromoted = new Set<string>();
-  /** Promoted decisions seen back at drafted: today notes no one (lane e2e-2 NEW-MS2-1). */
-  const flipBacks: { id: string; dt: number; gap: string | null }[] = [];
-  /** New decisions on a gap whose decisions were all promoted (a follow-up's): today notes only the gathering. */
-  const newOnPromoted: { id: string; dt: number; gap: string }[] = [];
-  let busy = false;
-  /** Every reason sent to the chart, when. */
-  const noted: { kind: string; at: number }[] = [];
-  /** Reasons a real look took that the chart's earlier look missed (noted between the two): the chart's next look
-      carries them. Kind → when the chart's look started, when the reason was noted after it, and the real look. */
-  const carry = new Map<string, { chartLookAt: number; notedAt: number[]; realLookAt: number }>();
-  /** Reasons of looks that were stopped or cut off, which the chart put back (R2): kind → when. */
-  const requeued = new Map<string, number>();
-  /** When facts of each reason family last changed (for classifying a reason the chart lacks). */
-  const lastFactOf: Record<string, number> = {};
-  let lastReconcileDt = -Infinity;
-  let eng = (create ?? noEngine)(hooks);
-  const projectBuilt = charts.includes(SPIKE_PROJECT);
-  const projOn = () => projectBuilt && projectOn;
-  const hasItem = charts.includes("work-item");
-  if (!projectBuilt) rep.skipped.push("project chart not in the build: watch-loop checks skipped");
-  if (!hasItem) rep.skipped.push("work-item chart not in the build: item checks skipped");
   const F = trace.sova.features;
-
   let curDt = 0;
   const diverge = (check: string, expected: unknown, got: unknown, cls: Cls | null, why: string, evidence?: Record<string, unknown>) => {
     rep.checks++;
     rep.divergences.push({ trace: trace.id, dt: curDt, check, expected, got, cls, why, ...(evidence ? { evidence } : {}) });
   };
-  const leaves = (conf: string[]) => conf.filter((x) => LEAVES.has(x)).join("/");
   const pass = () => {
     rep.checks++;
     rep.passes++;
   };
+  const leaves = (conf: string[]) => conf.filter((x) => LEAVES.has(x));
 
   // ---- the stores, as of now --------------------------------------------------------------------------
   const caps: Record<string, number | null> = { ...(trace.final.caps ?? {}) };
   const syncedCaps = new Set<string>();
   let autonomy: Level = trace.final.autonomy ?? "L1";
   let paused = false;
+  let archived = false;
+  let watchOn = trace.final.watch ?? true;
   const people = new Map<string, string>();
   const gaps = new Map<string, ItemFacts>();
   const batons = new Map<string, { id: string; state: string; own: boolean; wrote: boolean; settle: boolean }>();
@@ -449,10 +495,16 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
   const buildGap = new Map<string, string>();
   const finalBuild = new Map(trace.final.decisions.map((d) => [d.id, d.build]));
   const rosterActive = () => (people.size ? [...people.values()].some((s) => s === "active") : trace.final.rosterActive > 0);
+  const settings = (): Settings => ({
+    autonomy,
+    caps,
+    watch: watchOn,
+    watchGapMin: trace.final.watchGapMin ?? 10,
+    soonLookSec: F.codingSettledReason === false ? null : trace.final.soonLookSec === undefined ? 60 : trace.final.soonLookSec,
+  });
 
-  // Allowance ledgers: per operator message (attended) and per local day (unattended).
+  // Allowance ledgers: per operator message (attended) and per local day (unattended), as the trace's code kept them.
   let turn: { attended: boolean; by: string; used: Record<Kinds, number>; look: boolean } | null = null;
-  /** Before 80a785ca one ledger per operator message, drawn by every run until the next message (attended or not). */
   let legacyMessage: Record<Kinds, number> = { gather: 0, promote: 0, create: 0, prompt: 0 };
   const day = new Map<string, Record<Kinds, number>>();
   const dayKey = () => {
@@ -461,12 +513,12 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
   };
   const zero = (): Record<Kinds, number> => ({ gather: 0, promote: 0, create: 0, prompt: 0 });
   const ledger = () => (turn?.attended ? turn.used : (day.get(dayKey()) ?? (day.set(dayKey(), zero()), day.get(dayKey())!)));
-  const envelope = (attended: boolean, by: Envelope["by"] = "overseer"): Envelope => {
+  const oracleEnvelope = (attended: boolean): OracleEnvelope => {
     const L = ledger();
-    const al = {} as Envelope["allowance"];
+    const al = {} as OracleEnvelope["allowance"];
     for (const k of ["gather", "promote", "create", "prompt"] as Kinds[]) al[k] = { used: L[k], max: (attended ? caps[PER_TURN[k]] : caps[PER_DAY[k]]) ?? null };
     return {
-      by,
+      by: "overseer",
       attended,
       autonomy,
       paused,
@@ -481,84 +533,64 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
     };
   };
 
-  // ---- sessions -------------------------------------------------------------------------------------------
-  const PSID = `project/${trace.id}`;
-  const itemSid = (g: string) => `item/${trace.id}/${g}`;
-  const call = <R>(what: string, f: () => R): R | null => {
+  // ---- the world ---------------------------------------------------------------------------------------------
+  const dir = mkdtempSync(join(tmpdir(), `sova-replay-${trace.id}-`));
+  const world = new World(dir, () => now, () => ({ settings: settings(), paused, rosterActive: rosterActive(), archived }));
+  await world.open();
+  /** The envelope of the replay's own act: the operator's click, the model's step, a person's message, the host. */
+  const env = (by: ActBy, attended = by === "operator", extra?: Record<string, unknown>) => world.envelope({ by, attended, extra });
+  /** The overseer's envelope for a tool call: the trace's own ledger (the one its commit kept) for the allowance. */
+  const toolEnvelope = (s: Step, extra?: Record<string, unknown>): Envelope => {
+    const e = world.envelope({ by: "overseer", attended: !!s.attended, extra });
+    const o = oracleEnvelope(!!s.attended);
+    const allowance = Object.fromEntries(Object.entries(o.allowance).map(([k, v]) => [k, { used: v.used, max: v.max === null ? "unlimited" : v.max }]));
+    return { ...e, allowance: allowance as Envelope["allowance"] };
+  };
+  const errorsOf = (r: { errors?: { message: string }[] } | null | undefined) => r?.errors ?? [];
+  /** One act or event, stepped for real. An engine throw is never a divergence to explain away. */
+  const send = async (what: string, sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope | { by: ActBy }): Promise<ActResult | null> => {
     try {
-      const r = f();
-      // An action or guard that threw inside the chart is never a divergence to explain away.
-      const errs = (r as { errors?: { message: string }[] } | null)?.errors ?? [];
-      if (errs.length) diverge(`engine:${what}`, "no chart error", errs.map((e) => e.message), null, "an action or guard threw inside the chart");
-      for (const l of chartLooks)
-        if (l.kinds === null && projOn()) {
-          const rows = (eng.data(PSID)?.runReasons as { kind?: string; at?: number; params?: { item?: string } }[] | undefined) ?? [];
-          l.kinds = rows.map((x) => String(x.kind));
-          l.rows = rows.map((x) => ({ kind: String(x.kind), at: Number(x.at), item: x.params?.item ?? null }));
-        }
-      for (const st of (r as { steps?: { microsteps?: number }[] } | null)?.steps ?? []) rep.coverage.maxMicrosteps = Math.max(rep.coverage.maxMicrosteps, st.microsteps ?? 0);
-      return r;
+      const out = await world.host.act(sid, event, payload, envelope as Envelope, { settle: true });
+      const r = out.result as { steps?: { microsteps?: number }[]; errors?: { message: string }[] } | null;
+      for (const st of r?.steps ?? []) rep.coverage.maxMicrosteps = Math.max(rep.coverage.maxMicrosteps, st.microsteps ?? 0);
+      if (errorsOf(r).length) diverge(`engine:${what}`, "no chart error", errorsOf(r).map((e) => e.message), null, "an action or guard threw inside the chart");
+      return out;
     } catch (err) {
       diverge(`engine:${what}`, "no throw", err instanceof Error ? err.message : String(err), null, "the engine threw");
       return null;
     }
   };
-  let projectOn = false;
-  const startProject = () => {
-    if (projectOn || !projectBuilt) return;
-    projectOn = true;
-    call("start project", () =>
-      eng.start(PSID, SPIKE_PROJECT, { projectSid: PSID, ...(tickOrigin !== null ? { tickOrigin, tickMs: TICK_MS } : {}), settings: { watch: trace.final.watch ?? true, watchGapMin: trace.final.watchGapMin ?? 10, soonLookSec: F.codingSettledReason === false ? null : trace.final.soonLookSec === undefined ? 60 : trace.final.soonLookSec, unattendedPerDay: caps.unattendedPerDay ?? null, caps }, paused, archived: false, rosterActive: rosterActive() }, { now }),
-    );
-  };
-  // Whether this build has the project's `overseer/act` (item-less tool calls): an attended read is always allowed.
-  let hasAct = false;
-  if (projectBuilt) {
-    const probe = (create ?? noEngine)({ clock: () => now });
+  /** A host fact (no act): sent as the system. */
+  const fact = (what: string, sid: string, event: string, payload: Record<string, unknown> = {}) => (world.exists(sid) ? send(what, sid, event, payload, { by: "system" }) : Promise.resolve(null));
+  const start = async (what: string, sid: string, chart: string, data: Record<string, unknown>) => {
     try {
-      probe.start("probe", SPIKE_PROJECT, { projectSid: "probe" }, { now });
-      const t = probe.trial("probe", "overseer/act", { by: "overseer", attended: true, autonomy: "L0", paused: false, rosterActive: true, tool: "sova_project" }, { now });
-      hasAct = t.taken || (t.refused?.length ?? 0) > 0;
-    } catch {
-      hasAct = false;
+      await world.host.start(sid, chart, data, { by: "operator" });
+    } catch (err) {
+      diverge(`engine:${what}`, "no throw", err instanceof Error ? err.message : String(err), null, "the engine threw");
     }
-    if (!hasAct) rep.skipped.push("overseer/act is not in this build: item-less tool calls get today's rule only");
-  }
-  // Today's looks start on its 20 s ticker, phased from the server's start: the looks the loop started itself
-  // share one phase (a Run Now's does not), so the densest cluster of real look phases is the ticker's.
-  const phases = trace.events.filter((e) => e.kind === "turn" && e.by === "watch" && !e.runAll).map((e) => (T0 + e.dt) % TICK_MS);
-  const tickOrigin = phases.length ? T0 - (T0 % TICK_MS) + phases.map((p) => [p, phases.filter((q) => Math.abs(q - p) <= 500).length] as const).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0]![0] : null;
-  // Whether the chart rounds a look to the tick itself (start data `tickOrigin`): then the host fires timers when due.
-  let chartTicks = false;
-  /** How long `t` is after the chart's last grid tick (0 on a tick). */
-  const sinceTick = (t: number) => (tickOrigin === null ? 0 : (((t - tickOrigin) % TICK_MS) + TICK_MS) % TICK_MS);
-  if (projectBuilt) {
-    const probe = (create ?? noEngine)({ clock: () => now });
-    try {
-      probe.start("tick", SPIKE_PROJECT, { projectSid: "tick", tickOrigin: now + 7000, tickMs: TICK_MS, settings: { watchGapMin: 0, soonLookSec: 0 } }, { now });
-      const r = probe.send("tick", "reason/noted", { kind: "baton/closed", params: { sessionId: "x", title: "x" } }, { now });
-      chartTicks = !(r.configuration ?? []).includes("running");
-    } catch {
-      chartTicks = false;
-    }
-  }
-  // The project chart starts with the overseer's conversation (noteReason is a no-op before it); older fixtures: at once.
-  if (!trace.events.some((e) => e.entity === "overseer")) startProject();
-  const ensureItem = (g: string) => {
-    if (gaps.has(g)) return;
-    gaps.set(g, { status: "open", baton: null, decisions: [], build: null });
-    if (hasItem) call("start item", () => eng.start(itemSid(g), "work-item", { itemId: g, projectSid: PSID }, { now }));
   };
+
+  await start("start org", S.org, "org", { id: ORG, name: "Replay", slug: "replay", createdAt: now });
+  await send("project/add", S.org, "project/add", { projectId: PROJECT, name: "Replay", root: "/nowhere" }, env("operator"));
+  await fact("settings", S.watch, "settings/changed", { settings: { ...settings(), caps: capsOf(caps), holdMin: 0 } });
+  await fact("roster", S.watch, "facts/changed", { rosterActive: rosterActive() });
+  let overseerOn = false;
+  const startOverseer = async () => {
+    if (overseerOn) return;
+    overseerOn = true;
+    await send("overseer/start", S.project, "overseer/start", { conversationId: "o" }, env("operator"));
+  };
+  // The watch notes reasons once the overseer's conversation exists; older fixtures date none: at once.
+  if (!trace.events.some((e) => e.entity === "overseer")) await startOverseer();
+
+  // ---- the item facts projection (independent of the charts) -------------------------------------------------
   const factsOf = (g: string): ItemFacts => {
     const it = gaps.get(g)!;
     const bid = [...batonGap].filter(([, x]) => x === g).map(([b]) => b).at(-1);
     it.baton = bid ? (batons.get(bid) ?? null) : null;
-    // Linked by the call that started it, its baton row not written yet.
     it.starting = !!bid && !batons.has(bid);
     it.followUp = !!bid && followUps.has(bid);
     const bids = new Set([...batonGap].filter(([, x]) => x === g).map(([b]) => b));
-    // Its batons' decisions, and (transitively) the winners of those superseded: a winner decided in a
-    // settle session answers this gap too (charts' facts contract).
     const ids = new Set([...decisions.values()].filter((d) => bids.has(d.baton)).map((d) => d.id));
     for (let grew = true; grew; ) {
       grew = false;
@@ -572,164 +604,175 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
     it.build = cid ? (builds.get(cid) ?? null) : null;
     return it;
   };
-  /** The gap a decision serves: through its baton, or as the winner of one of that gap's superseded decisions. */
-  const gapOfDecision = (id: string): string | null => {
-    const d = decisions.get(id);
-    const direct = d ? batonGap.get(d.baton) : undefined;
-    if (direct) return direct;
-    for (const x of decisions.values()) if (x.supersededBy === id) return gapOfDecision(x.id);
-    return null;
-  };
-  const pushFacts = (g: string) => {
-    if (!hasItem || !gaps.has(g)) return;
-    const f = factsOf(g);
-    call("facts", () => eng.send(itemSid(g), "facts/changed", { baton: f.baton, decisions: f.decisions, build: f.build }, { now }));
-  };
-  /** Reasons of one instant go to the chart as one batch (as one store write notes them before any tick). */
-  const instant: Record<string, unknown>[] = [];
-  const reason = (kind: string, params: Record<string, unknown>) => {
-    if (!projOn()) return;
-    if (busy && params.by && params.by !== "overseer") keptWhileBusy.add(kind);
-    noted.push({ kind, at: now });
-    instant.push({ kind, params, ...(params.by ? { by: params.by } : {}) });
-  };
-  const sendInstant = () => {
-    if (!instant.length || !projOn()) return;
-    const reasons = instant.splice(0);
-    call(`reasons ${reasons.map((r) => r.kind).join(",")}`, () => eng.send(PSID, "reason/noted", reasons.length === 1 ? reasons[0]! : { reasons }, { now }));
-  };
-  /** The reconciler's events come one per run with the ids it moved (reconcile.ts emit): batched per instant and actor. */
-  const batch = new Map<string, { kind: string; by: string | undefined; ids: string[] }>();
-  const batched = (kind: string, id: string, by: string | undefined) => {
-    const k = `${kind}|${by ?? ""}`;
-    batch.set(k, { kind, by, ids: [...(batch.get(k)?.ids ?? []), id] });
-  };
-  /** Items whose facts changed in this instant: the store writes of one instant reach the chart as one change. */
-  const dirty = new Set<string>();
-  const flush = () => {
-    const changed = dirty.size > 0;
-    for (const g of dirty) pushFacts(g);
-    dirty.clear();
-    if (changed) checkItems();
-    for (const b of batch.values()) reason(b.kind, { n: b.ids.length, ids: b.ids, ...(b.by ? { by: b.by } : {}) });
-    batch.clear();
-    sendInstant();
-  };
+  const followUps = new Set<string>();
+  const everPromoted = new Set<string>();
+  const bugItems = new Set<string>();
 
-  // ---- checks ---------------------------------------------------------------------------------------------
   const checkItems = () => {
-    if (!hasItem) return;
     for (const g of gaps.keys()) {
+      const sid = S.item(g);
+      if (!world.exists(sid)) continue;
       rep.coverage.itemChecks++;
-      const conf = eng.configuration(itemSid(g)) ?? [];
+      const conf = world.configuration(sid);
       const facts = factsOf(g);
       const want = expectedPhases(facts);
-      // The follow-up region (work-item v3), beside the lane.
       if (conf.some((x) => x.includes("follow-up"))) {
         const fu = followUpPhase(facts);
         if (conf.includes(fu)) pass();
         else diverge("item-follow-up", fu, conf.filter((x) => x.includes("follow-up")), null, "the chart's follow-up region differs from the stores' latest gathering");
       }
-      if (want.some((p) => conf.includes(p)) || (want.includes("dropped") && conf.length === 0)) {
+      if (want.some((p) => conf.includes(p)) || (want.includes("dropped") && conf.length === 0) || conf.includes("on-hold")) {
         pass();
         continue;
       }
-      if (conf.includes("on-hold")) {
-        pass();
+      if (bugItems.has(g)) {
+        diverge("item-position", want, leaves(conf), "chart-bug", "follows from the chart bug on this item's refused act (reported to charts)");
         continue;
       }
       const it = gaps.get(g)!;
-      if (bugItems.has(g)) {
-        diverge("item-position", want, conf, "chart-bug", "follows from the chart bug on this item's refused act (reported to charts)");
-        continue;
-      }
-      // A build linked before the item's decisions are promoted: the chart moves on decisions first. Only
-      // that case: with its decisions promoted, a chart not following the build is wrong.
       const promotedAll = it.decisions.length > 0 && it.decisions.filter((d) => d.state !== "superseded").every((d) => d.state === "promoted");
-      if (it.build && !promotedAll && !conf.includes("building") && !["done", "dropped"].some((p) => want.includes(p)))
-        diverge("item-position", want, conf, "cannot-express", it.decisions.some((d) => everPromoted.has(d.id))
+      if (it.build && !promotedAll && !["done", "dropped"].some((p) => want.includes(p)))
+        diverge("item-position", want, leaves(conf), "cannot-express", it.decisions.some((d) => everPromoted.has(d.id))
           ? "its promoted decisions flipped back to drafted (a reconciler re-run, lane e2e-2 NEW-MS2-1) while their build exists; the item follows its decisions back, and the build shows again once they are re-promoted"
           : "a coding session serves the gap before its decisions are promoted (the operator coded first); the item follows its decisions, and the build shows only once they are promoted",
-          { item: g, build: it.build.sessionId, decisions: it.decisions.map((d) => `${d.id}:${d.state}`), everPromoted: it.decisions.filter((d) => everPromoted.has(d.id)).map((d) => d.id) });
-      else diverge("item-position", want, conf, null, "the chart's position differs from the projection of the stores' facts");
+          { item: g, build: it.build.sessionId, decisions: it.decisions.map((d) => `${d.id}:${d.state}`) });
+      else diverge("item-position", want, leaves(conf), null, "the chart's position differs from the projection of the stores' facts");
     }
   };
 
-  /** One chart verdict for a real call: the act on its item, or `overseer/act` on the project. */
+  // ---- people, batons, decisions and builds, as the stores' facts say -----------------------------------------
+  const activePeople = () => [...people].filter(([, s]) => s === "active").map(([id]) => id);
+  const ensurePerson = async (id: string, status: string) => {
+    const prev = people.get(id);
+    people.set(id, status);
+    if (!prev) {
+      const person = { name: `Person ${id}`, role: "Staff", status, contact: { email: `${id}@example.com` }, ...(status === "proposed" ? { referral: { why: "knows it", referredBy: "operator" } } : {}) };
+      await send("person/add", S.org, "person/add", { personId: id, person, namesTaken: [...people.keys()].filter((p) => p !== id).map((p) => `person ${p}`) }, env("operator"));
+    } else if (prev !== status) {
+      if (prev === "proposed" && status === "active") await send("person/approve", S.person(id), "person/approve", {}, env("operator"));
+      else if (prev === "proposed" && status === "left") await send("person/decline", S.person(id), "person/decline", {}, env("operator"));
+      else await send("person/edit", S.person(id), "person/edit", { patch: { status } }, env("operator"));
+    }
+    await fact("roster", S.watch, "facts/changed", { rosterActive: rosterActive() });
+  };
+  /** The first holder of a gathering the stores show: the operator when nobody on the roster is active. */
+  const firstHolder = (offer: boolean): Record<string, unknown> => {
+    const act = activePeople();
+    if (offer && act.length >= 2) return { targets: act.slice(0, 2), offerId: `off_${act.length}` };
+    return act.length ? { to: act[0] } : { to: "operator" };
+  };
+  const batonStart = (id: string, offer: boolean) => ({ sessionId: id, ...firstHolder(offer), publicTitle: `Title ${id}`, goal: "Find out", question: "What?", briefing: "", messagesMax: 60, mintLink: false });
+  const ensureItem = async (g: string, by: ActBy = "overseer") => {
+    if (gaps.has(g)) return;
+    gaps.set(g, { status: "open", baton: null, decisions: [], build: null });
+    if (!world.exists(S.item(g))) await send("gap/file", S.project, "gap/file", { gapId: gapIdOf(g), ideaId: g }, env(by, true));
+  };
+  const batonFact = async (s: Step) => {
+    const id = s.id!;
+    const prev = batons.get(id);
+    const b = { id, state: s.state!, own: prev?.own ?? s.by === "overseer", wrote: prev?.wrote || !!s.wrote, settle: prev?.settle || !!s.settle };
+    batons.set(id, b);
+    const sid = S.baton(id);
+    if (!world.exists(sid)) await send("baton/start", S.project, "baton/start", batonStart(id, (s as { offer?: boolean }).offer === true), env(b.own ? "overseer" : "operator", true));
+    if (!world.exists(sid)) return;
+    const d = world.data(sid);
+    const holder = typeof d.holder === "string" ? d.holder : null;
+    const course = String(d.course ?? "open");
+    if (s.wrote && !prev?.wrote) {
+      const from = holder && holder !== "operator" ? holder : (((d.offers as { to?: string[] }[] | undefined) ?? []).at(-1)?.to?.[0] ?? holder ?? "operator");
+      await send("baton/message", sid, "baton/message", { from, active: true }, env(from === "operator" ? "operator" : "person"));
+    }
+    if (s.state === prev?.state && prev) return;
+    if (s.state === "needs-you" && course === "open" && holder !== "operator")
+      await send("baton/hand-to", sid, "baton/hand-to", { target: { id: "operator", name: "Operator", status: "active" }, chosen: true, question: "Over to you", briefing: "" }, env("model"));
+    else if (s.state === "open" && d.needsYou === true) await send("baton/message", sid, "baton/message", { from: "operator", active: true }, env("operator"));
+    else if (s.state === "done" && course === "open") await send("baton/goal-done", sid, "baton/goal-done", { summary: "Established." }, env("model"));
+    else if (s.state === "closed" && course !== "closed") await send("baton/close", sid, "baton/close", {}, env("operator"));
+  };
+  /** Decision state changes of this instant: one reconciler run reports them (the reconciler's own path). */
+  const pendingResults: Record<string, unknown>[] = [];
+  const decisionFact = async (s: Step) => {
+    const id = s.id!;
+    const prev = decisions.get(id);
+    const baton = s.baton ?? prev?.baton ?? "";
+    decisions.set(id, { id, baton, state: s.state!, authorOwnsArea: s.ownerArea ?? prev?.authorOwnsArea ?? false, build: s.state === "promoted" ? (s.build ?? finalBuild.get(id) ?? null) : null, supersededBy: s.supersededBy ?? prev?.supersededBy, editedInSpec: s.edited ?? prev?.editedInSpec ?? false });
+    if (s.state === "promoted") everPromoted.add(id);
+    const sid = S.decision(id);
+    if (!world.exists(sid)) {
+      if (!world.exists(S.baton(baton))) {
+        rep.skipped.push(`${s.dt}: decision ${id} of a gathering the charts don't have (${baton || "none"})`);
+        return;
+      }
+      await send("record-decision", S.baton(baton), "baton/record-decision", { decisionId: id, area: "area", areaKey: "area", ownerArea: "none", statement: `Decision ${id}`, quote: "their words", entryId: `e_${id}`, markerId: `m_${id}`, ownerAreas: [] }, env("model"));
+    }
+    if (!world.exists(sid)) return;
+    const conf = world.configuration(sid);
+    if (s.state === "promoted") {
+      if (!conf.includes("promoted")) await send("promote/done", sid, "promote/done", { textHash: "h", commit: "c0ffee" }, { by: "system" });
+      const built = s.build ?? finalBuild.get(id) ?? null;
+      if (built || s.edited !== undefined) await fact("spec/facts", sid, "spec/facts", { recordPresent: true, fieldsMatch: true, editedInSpec: !!s.edited, build: built });
+    } else if (s.state && s.state !== "pending" && !conf.includes(s.state === "conflict" ? "conflicted" : s.state)) {
+      pendingResults.push({ id, state: s.state, ...(s.supersededBy ? { supersededBy: s.supersededBy } : {}), authorOwnsArea: s.ownerArea ?? false });
+    }
+  };
+  const flushResults = async () => {
+    if (!pendingResults.length) return;
+    const results = pendingResults.splice(0);
+    // A run of the project's reconciler: its request (the host's, as the operator's click or the auto-run), its results.
+    await send("reconcile/request", S.reconciler, "reconcile/request", { delayMs: 0, by: "operator" }, env("operator"));
+    const run = world.reconcileRuns.shift();
+    if (run) {
+      run.report("finished", undefined, { decisions: results, conflicts: [], resolved: [], compared: results.length, draftedIds: results.filter((r) => r.state === "drafted").map((r) => r.id) });
+      await settleWorld();
+    } else for (const r of results) await fact("reconcile/result", S.decision(String(r.id)), "reconcile/result", r);
+  };
+  const buildFact = async (s: Step) => {
+    const id = s.id!;
+    const prev = builds.get(id);
+    const b = { sessionId: id, running: s.running ?? prev?.running ?? false, lastFailed: s.lastFailed ?? prev?.lastFailed ?? false, merged: s.merged ?? prev?.merged ?? false, newSinceMerge: s.newSinceMerge ?? prev?.newSinceMerge ?? 0, startedBy: s.by ?? prev?.startedBy ?? "operator", state: "open" };
+    if (s.newSinceMerge) b.merged = false;
+    builds.set(id, b);
+    const sid = S.build(id);
+    if (!world.exists(sid)) await send("build/start", S.project, "build/start", { sessionId: id, title: `Build ${id}`, prompt: "Build it" }, env(b.startedBy === "overseer" ? "overseer" : "operator", true));
+    if (!world.exists(sid)) return;
+    if (s.running === true && !prev?.running) await fact("turn/started", sid, "turn/started");
+    if (s.running === false && prev?.running) await fact("turn/ended", sid, "turn/ended", { failed: !!s.lastFailed });
+    if (s.merged && !prev?.merged) await send("build/merge", sid, "build/merge", {}, env("operator"));
+    if (s.newSinceMerge) await fact("git/probe", sid, "git/probe", { newSinceMerge: s.newSinceMerge });
+  };
+  /** Let every effect and invocation report of the last steps land. */
+  const settleWorld = async () => {
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
+  };
+
+  // ---- tools: the chart's verdict on each real call ----------------------------------------------------------
   interface Verdict {
     sid: string;
     event: string;
-    data: Record<string, unknown>;
+    payload: Record<string, unknown>;
+    envelope: Envelope;
     item: string | null;
     taken: boolean;
     refusal: string | null;
     before: string[];
   }
-
-  /** Compare today's rule, the chart's verdict and its sentence with what really happened to one call. */
-  const checkTool = (s: Step, vs: Verdict[]): void => {
-    const env = envelope(!!s.attended);
-    const oracleSays = oracle(s.name!, s.args?.op, env);
-    const realAutonomy = s.refusal === "autonomy" || s.refusal === "operator-only";
-    // 1. Today's rule against the real verdict: the envelope reconstruction is what this tests.
-    if (!!oracleSays === realAutonomy) pass();
-    else if (s.name === "sova_todos" && F.mergeReasonAndTodosOperatorOnly === false) diverge("oracle-vs-real", "refused", s.verdict, "drift", "sova_todos became operator-only in 77f3cdbf; this trace ran an older commit", { commits: ["77f3cdbf"] });
-    else diverge("oracle-vs-real", oracleSays ? "refused" : "allowed", { verdict: s.verdict, refusal: s.refusal, level: env.autonomy, attended: env.attended, paused: env.paused, roster: env.rosterActive }, null, "the reconstructed envelope (level, attended, pause, roster) disagrees with the real verdict");
-    if (!vs.length) return;
-    // The turn was cut off before the tool answered: there is no real verdict to compare.
-    if (s.verdict === "unanswered") return void rep.skipped.push(`${s.dt}: ${s.name} unanswered (its turn was aborted before the tool returned)`);
-    // 2. The chart's verdict against the real one (a partial promote ran: some route must be taken).
-    const realOk = s.verdict === "ok" || s.verdict === "partial";
-    const chartOk = s.verdict === "partial" ? vs.some((v) => v.taken) : vs.every((v) => v.taken);
-    const refused = vs.find((v) => !v.taken) ?? null;
-    if (chartOk === realOk) {
-      pass();
-      // 3. Both refused: the chart's sentence is today's.
-      if (!realOk && refused) checkSentence(s, env, refused);
-      return;
+  const trialOn = (sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope, item: string | null): Verdict | null => {
+    if (!world.exists(sid)) return null;
+    const before = world.configuration(sid);
+    try {
+      const tr = world.host.trial(sid, event, payload, envelope);
+      rep.coverage.trials++;
+      return { sid, event, payload, envelope, item, taken: tr.taken, refusal: tr.refusal?.sentence ?? null, before };
+    } catch (err) {
+      diverge(`engine:trial ${event}`, "no throw", err instanceof Error ? err.message : String(err), null, "the engine threw");
+      return null;
     }
-    if (!chartOk && realOk) {
-      const v = refused!;
-      const got = { event: v.event, refusal: v.refusal, at: v.before.filter((x) => LEAVES.has(x)) };
-      if (s.name === "sova_todos" && F.mergeReasonAndTodosOperatorOnly === false)
-        return diverge("chart-vs-real", "taken", got, "drift", "sova_todos became operator-only in 77f3cdbf; this trace ran an older commit", { commits: ["77f3cdbf"] });
-      if (v.event === "decision/promote" && v.item && v.before.some((x) => ["gather-starting", "asking", "needs-operator"].includes(x)) && factsOf(v.item).decisions.some((d) => d.state === "drafted")) {
-        bugItems.add(v.item);
-        return diverge("chart-vs-real", "taken", got, "chart-bug", `drafted decisions promoted while a follow-up gathering on the same gap runs (${got.at.join("/")}): today promotes any drafted decision; the item's single lane holds promotion until the gathering ends`, { act: v.event, at: got.at, drafted: factsOf(v.item).decisions.filter((d) => d.state === "drafted").length });
-      }
-      if (v.event === "gather/start" && v.before.some((x) => ["awaiting-build", "build-starting", "working", "idle", "failed", "merged", "done", "spec-edited"].includes(x))) {
-        if (s.link?.how === "words")
-          return diverge("chart-vs-real", "taken", got, "store-shape", `a gathering after this gap's decisions were promoted (${got.at.join("/")}), matched to it only by its words: it may serve another question entirely. ${PROPOSE.gap}`);
-        return diverge("chart-vs-real", "taken", got, "cannot-express", `a gathering named for a gap past its decisions (${got.at.join("/")}), e.g. feedback on its build: today gathers at any time; the chart gathers only while the gap is open or deciding`, { act: v.event, at: got.at, link: s.link ?? null });
-      }
-      if (v.event === "gather/start" && v.before.some((x) => ["asking", "needs-operator", "gather-starting", "unreconciled", "conflicted", "drafted"].includes(x)))
-        return diverge("chart-vs-real", "taken", got, "cannot-express", `a second gathering for a gap that already has one (${got.at.join("/")}): today the overseer may follow up or replace a gathering at any time${s.attended ? ", here at the operator's request" : ""}; the chart gathers only from open (gap link ${s.link?.how ?? "?"})`, { act: v.event, at: got.at, link: s.link ?? null });
-      if (v.event === "build/start" && s.attended && v.before.some((x) => ["open", "asking", "gather-starting", "unreconciled", "drafted", "conflicted"].includes(x)))
-        return diverge("chart-vs-real", "taken", got, "cannot-express", "the operator asked for a build before any decision on the gap was promoted; the chart builds only from promoted decisions", { act: v.event, at: got.at, attended: true });
-      if (v.event === "build/start" && !s.attended && v.before.some((x) => ["open", "asking", "gather-starting", "unreconciled", "drafted", "conflicted"].includes(x))) {
-        // Only when nothing anywhere was promoted and unbuilt is the order itself what the chart holds; else the
-        // build rests on decisions whose gathering carries no gap (the link today's stores lack).
-        const unbuilt = [...decisions.values()].filter((d) => d.state === "promoted" && d.build !== "built");
-        if (!unbuilt.length) return diverge("chart-vs-real", "taken", got, "chart-better", "an unattended build with no promoted, unbuilt decision anywhere in the project: the chart holds the pipeline order the prompt only asks for", { at: got.at, promotedUnbuilt: 0 });
-        return diverge("chart-vs-real", "taken", got, "store-shape", `the build names no gap; ${unbuilt.length} promoted, unbuilt decision(s) exist but their gathering carries no gap, so the words matched an item with none. ${PROPOSE.gap}`);
-      }
-      diverge("chart-vs-real", "taken", got, null, "the chart refused what really ran");
-      return;
-    }
-    // Real refused, the chart took it.
-    if (s.refusal && HOST_CHECKS.has(s.refusal)) return diverge("chart-vs-real", "refused", "taken", "host-check", `real refusal by a host check (${s.refusal}) the chart holds no fact for`);
-    if (s.refusal === "budget-legacy") return diverge("chart-vs-real", "refused", "taken", "drift", "the coding token budget was removed in 320042f0", { commits: ["320042f0"] });
-    if (s.refusal === "cap-message" && !s.attended && F.allowanceHeld === false)
-      return diverge("chart-vs-real", "refused", "taken", "drift", "before 80a785ca an unattended run drew on the operator's per-message allowance (lane r3-R1 bug 3); the chart draws on the day's", { commits: ["80a785ca"] });
-    diverge("chart-vs-real", `refused (${s.refusal})`, "taken", null, "the chart took what really was refused");
   };
-
-  /** A refusal both gave: the chart's sentence must be today's (autonomyRefusal, overRefusal, the at-once line). */
-  const checkSentence = (s: Step, env: Envelope, v: Verdict) => {
+  const checkSentence = (s: Step, o: OracleEnvelope, v: Verdict) => {
     const said = v.refusal ?? "";
     let want: string | null = null;
     let driftWhy: string | null = null;
-    if (s.refusal === "autonomy" || s.refusal === "operator-only") want = oracle(s.name!, s.args?.op, env);
+    if (s.refusal === "autonomy" || s.refusal === "operator-only") want = oracle(s.name!, s.args?.op, o);
     else if ((s.refusal === "cap-day" || s.refusal === "cap-message") && s.cap?.max != null && KIND_OF[s.name!]) {
       want = overRefusal({ ledger: s.refusal === "cap-day" ? "day" : "message", kind: KIND_OF[s.name!]!, used: s.cap.used, max: s.cap.max }, new Date(now)).said;
       if (F.allowanceHeld === false) driftWhy = "the allowance sentences were rewritten in 80a785ca";
@@ -737,245 +780,201 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
       want = `${s.cap.used} of its ${s.cap.of === "coding" ? "coding sessions are running" : "gathering sessions are open"}, and the limit is ${s.cap.max} at once.`;
       if (F.allowanceHeld === false) driftWhy = "the at-once sentence was rewritten in 80a785ca";
     }
-    if (want === null) return; // host checks and per-id refusals: the tool's own words
+    if (want === null) return;
     if (said.startsWith(want)) return pass();
     diverge("refusal-sentence", want, said, driftWhy ? "drift" : null, driftWhy ?? "the chart refuses with a sentence other than today's", driftWhy ? { commits: ["80a785ca"] } : undefined);
   };
-
-  /** Run one act on the chart speculatively; nothing moves. */
-  const trialOn = (sid: string, event: string, data: Record<string, unknown>, item: string | null): Verdict | null => {
-    const before = eng.configuration(sid) ?? [];
-    const tr = call(`trial ${event}`, () => eng.trial(sid, event, data, { now }));
-    if (tr) rep.coverage.trials++;
-    return tr ? { sid, event, data, item, taken: tr.taken, refusal: tr.refusal ?? null, before } : null;
+  const checkTool = (s: Step, vs: Verdict[]): void => {
+    const o = oracleEnvelope(!!s.attended);
+    const oracleSays = oracle(s.name!, s.args?.op, o);
+    const realAutonomy = s.refusal === "autonomy" || s.refusal === "operator-only";
+    if (!!oracleSays === realAutonomy) pass();
+    else if (s.name === "sova_todos" && F.mergeReasonAndTodosOperatorOnly === false) diverge("oracle-vs-real", "refused", s.verdict, "drift", "sova_todos became operator-only in 77f3cdbf; this trace ran an older commit", { commits: ["77f3cdbf"] });
+    else diverge("oracle-vs-real", oracleSays ? "refused" : "allowed", { verdict: s.verdict, refusal: s.refusal, level: o.autonomy, attended: o.attended, paused: o.paused, roster: o.rosterActive }, null, "the reconstructed envelope (level, attended, pause, roster) disagrees with the real verdict");
+    if (!vs.length) return;
+    if (s.verdict === "unanswered") return void rep.skipped.push(`${s.dt}: ${s.name} unanswered (its turn was aborted before the tool returned)`);
+    const realOk = s.verdict === "ok" || s.verdict === "partial";
+    const chartOk = s.verdict === "partial" ? vs.some((v) => v.taken) : vs.every((v) => v.taken);
+    const refused = vs.find((v) => !v.taken) ?? null;
+    if (chartOk === realOk) {
+      pass();
+      if (!realOk && refused) checkSentence(s, o, refused);
+      return;
+    }
+    if (!chartOk && realOk) {
+      const v = refused!;
+      const got = { event: v.event, refusal: v.refusal, at: leaves(v.before) };
+      if (s.name === "sova_todos" && F.mergeReasonAndTodosOperatorOnly === false)
+        return diverge("chart-vs-real", "taken", got, "drift", "sova_todos became operator-only in 77f3cdbf; this trace ran an older commit", { commits: ["77f3cdbf"] });
+      // q7: an unlinked build starts only in a turn the operator started; today's unattended ones needed no gap.
+      if (v.event === "build/start" && v.sid === S.project && !s.attended)
+        return diverge("chart-vs-real", "taken", got, "ruling", "q7: nothing is built that no one agreed on; an unattended build names its gap (C20), and this call named none", { ruling: "q7", act: v.event, attended: false });
+      if (v.event === "gather/start" && v.before.some((x) => ["awaiting-build", "build-starting", "working", "idle", "failed", "merged", "done", "spec-edited"].includes(x)))
+        return diverge("chart-vs-real", "taken", got, "cannot-express", `a gathering named for a gap past its decisions (${got.at.join("/")}): today gathers at any time; the chart gathers only while the gap is open or deciding`, { act: v.event, at: got.at, link: s.link ?? null });
+      if (v.event === "gather/start" && v.before.some((x) => ["asking", "needs-operator", "gather-starting", "unreconciled", "conflicted", "drafted"].includes(x)))
+        return diverge("chart-vs-real", "taken", got, "cannot-express", `a second gathering for a gap that already has one (${got.at.join("/")}): the chart gathers from open, or as a follow-up`, { act: v.event, at: got.at, link: s.link ?? null });
+      if (v.event === "build/start" && v.item && v.before.some((x) => ["open", "asking", "gather-starting", "unreconciled", "drafted", "conflicted"].includes(x)))
+        return diverge("chart-vs-real", "taken", got, s.attended ? "cannot-express" : "chart-better", s.attended ? "the operator asked for a build before any decision on the gap was promoted; the chart builds only from promoted decisions" : "an unattended build before the gap's decisions were promoted: the chart holds the pipeline order the prompt only asks for", { act: v.event, at: got.at, attended: !!s.attended });
+      diverge("chart-vs-real", "taken", got, null, "the chart refused what really ran");
+      return;
+    }
+    if (s.refusal && HOST_CHECKS.has(s.refusal)) return diverge("chart-vs-real", "refused", "taken", "host-check", `real refusal by a host check (${s.refusal}) the chart holds no fact for`);
+    if (s.refusal === "budget-legacy") return diverge("chart-vs-real", "refused", "taken", "drift", "the coding token budget was removed in 320042f0", { commits: ["320042f0"] });
+    if (s.refusal === "cap-message" && !s.attended && F.allowanceHeld === false)
+      return diverge("chart-vs-real", "refused", "taken", "drift", "before 80a785ca an unattended run drew on the operator's per-message allowance (lane r3-R1 bug 3); the chart draws on the day's", { commits: ["80a785ca"] });
+    diverge("chart-vs-real", `refused (${s.refusal})`, "taken", null, "the chart took what really was refused");
   };
 
-  // ---- time ------------------------------------------------------------------------------------------------
-  /** The host drives the charts' timers from today's 20 s watch ticker (design §6.3: "fireDue: the 20 s ticker
-      calls this"). Its phase is read off each real look (a look starts on a tick); before the first, timers
-      fire at their exact due time. */
-  let tickPhase: number | null = null;
-  const advance = (to: number) => {
-    if (!projOn() && !hasItem) return;
+  /** A tool call as the chart act it is (design §7.1): on the gap's item, a session, the reconciler, or the project. */
+  const routeTool = async (s: Step): Promise<{ sid: string; event: string; payload: Record<string, unknown>; item: string | null }[]> => {
+    const name = s.name!;
+    const g = s.link?.gap ?? null;
+    const item = g && gaps.has(g) ? g : null;
+    if (name === "sova_idea" && s.args?.op === "add" && s.args.id?.startsWith("§gap/")) {
+      if (s.verdict === "ok") await ensureItem(s.args.id);
+      return [];
+    }
+    if (name === "sova_idea" && s.args?.op === "status" && s.args.id?.startsWith("§gap/") && s.args.status === "dropped" && gaps.has(s.args.id))
+      return [{ sid: S.item(s.args.id), event: "gap/drop", payload: { fromIdea: true }, item: s.args.id }];
+    if (name === "sova_start_gathering" || name === "sova_offer") {
+      const payload = batonStart(s.args?.baton ?? `b_${s.dt}`, name === "sova_offer");
+      return [item ? { sid: S.item(item), event: "gather/start", payload, item } : { sid: S.project, event: "baton/start", payload: { ...payload, gap: "none" }, item: null }];
+    }
+    if (name === "sova_close_gathering" && s.args?.session) return [{ sid: S.baton(s.args.session), event: "baton/close", payload: { reason: "stale", ownerProject: PROJECT }, item: batonGap.get(s.args.session) ?? null }];
+    if (name === "sova_create_session") {
+      const waiting = [...gaps.keys()].filter((x) => world.configuration(S.item(x)).includes("awaiting-build"));
+      const pick = item && waiting.includes(item) ? item : waiting.length === 1 ? waiting[0]! : item;
+      const payload = { sessionId: s.args?.build ?? `c_${s.dt}`, title: "Build", prompt: "Build it" };
+      return [pick ? { sid: S.item(pick), event: "build/start", payload, item: pick } : { sid: S.project, event: "build/start", payload: { ...payload, gap: "none" }, item: null }];
+    }
+    if (name === "sova_send" && (s.args?.session || s.args?.build)) {
+      const id = s.args.build ?? s.args.session!;
+      return world.exists(S.build(id)) ? [{ sid: S.build(id), event: "build/prompt", payload: { text: "Go on" }, item: buildGap.get(id) ?? null }] : [];
+    }
+    if (name === "sova_promote") return [{ sid: S.reconciler, event: "decision/promote", payload: { ids: (s.args?.ids ?? []).filter((id) => world.exists(S.decision(id))) }, item: null }];
+    if (name === "sova_reconcile") return [{ sid: S.reconciler, event: "reconcile/request", payload: { delayMs: 0, by: "overseer" }, item: null }];
+    if (name === "sova_roster" && (s.args?.op === "approve" || s.args?.op === "decline") && s.args.id) return [{ sid: S.person(s.args.id), event: `person/${s.args.op}`, payload: {}, item: null }];
+    if (name === "sova_owner_update") return [{ sid: S.project, event: "owner-update/post", payload: { text: "An update." }, item: null }];
+    return [];
+  };
+
+  // ---- time -----------------------------------------------------------------------------------------------
+  const advance = async (to: number) => {
     for (let guard = 0; guard < 100000; guard++) {
-      const due = eng.nextDueAt();
+      const due = world.nextDueAt();
       if (due === null || due > to) break;
-      const at = tickPhase === null || chartTicks ? Math.max(due, now) : nextTick(Math.max(due, now));
-      if (at > to) break;
-      now = at;
-      call("fireDue", () => eng.fireDue(now));
+      now = Math.max(due, now);
+      try {
+        world.fireDue();
+      } catch (err) {
+        diverge("engine:fireDue", "no throw", err instanceof Error ? err.message : String(err), null, "the engine threw");
+        break;
+      }
+      await settleWorld();
     }
   };
-  const nextTick = (t: number) => {
-    const k = Math.ceil((t - tickPhase!) / TICK_MS);
-    return tickPhase! + k * TICK_MS;
-  };
 
-  // ---- looks ----------------------------------------------------------------------------------------------
-  /** A real look: a chart look must have started up to LOOK_EARLY before it (the real ticker runs every 20 s,
-      and the prompt lands after the session is acquired), carrying the same kinds of reasons. */
-  /** Each item/reopened reason a chart look carried, with the store changes on that item at the instant the
-      chart noted it (the reason's own `at`): a flip-back or a follow-up's new decision. Scoped to the item and the
-      step, so a later unrelated reopen cannot borrow an earlier one's evidence. */
-  const reopenedEvidence = (rows: { kind: string; at: number; item: string | null }[]) =>
-    rows
-      .filter((r) => r.kind === "item/reopened")
-      .map((r) => ({
-        item: r.item,
-        notedAt: r.at - T0,
-        flippedBack: flipBacks.filter((f) => f.gap === r.item && T0 + f.dt === r.at).map((f) => f.id),
-        newDecisions: newOnPromoted.filter((f) => f.gap === r.item && T0 + f.dt === r.at).map((f) => f.id),
-      }));
-  const realLook = (s: Step) => {
+  // ---- looks ---------------------------------------------------------------------------------------------------
+  const realLook = async (s: Step) => {
     rep.coverage.lookChecks++;
     const realKinds = (s.reasons ?? []).map((r) => REASON_KIND[r.kind] ?? r.kind);
-    // This look started on a tick, a moment before its prompt was written (acquiring the session): whatever
-    // was due by now fires on it.
-    tickPhase = now - TICK_SLACK;
-    // Today stamps lastRunAt after the prompt is accepted, so a gap measured from it can come due a few ms
-    // after this look's own stamp: the same tick.
-    for (let guard = 0; guard < 1000; guard++) {
-      const due = eng.nextDueAt();
-      if (due === null || due > now + TICK_SAME) break;
-      now = Math.max(now, due);
-      call("fireDue (tick)", () => eng.fireDue(now));
-    }
-    if (s.runAll) call("run-now", () => eng.send(PSID, "operator/run-now", {}, { now }));
-    const match = chartLooks.find((l) => !l.matched && l.at >= now - LOOK_EARLY && l.at <= now);
+    if (s.runAll) await send("run-now", S.watch, "operator/run-now", {}, env("operator"));
+    const match = world.looks.find((l) => !l.matched && l.at >= now - LOOK_EARLY && l.at <= now);
     if (!match) {
-      const conf = eng.configuration(PSID) ?? [];
-      const d = eng.data(PSID) ?? {};
-      const settings = (d.settings ?? {}) as { watchGapMin?: number };
-      const gapDue = (Number(d.lastRunAt ?? 0) || 0) + 60e3 * (settings.watchGapMin ?? 10);
-      const dueAt = d.soonAt ? Math.min(Number(d.soonAt), gapDue) : gapDue;
+      const d = world.data(S.watch);
       const pendingKinds = ((d.reasons as { kind?: string }[] | undefined) ?? []).map((r) => String(r.kind));
+      const conf = world.configuration(S.watch);
       const drift = realKinds.length > 0 && realKinds.every((k) => k.startsWith("drift:"));
       const explained = realKinds.filter((k) => k.startsWith("drift:") || pendingKinds.includes(k));
-      if (drift) diverge("look-started", "a chart look", conf.filter((x) => LEAVES.has(x)), "drift", `the look's reasons (${realKinds.join(", ")}) are ones only older commits emit`, driftEvidence(realKinds));
+      if (drift) diverge("look-started", "a chart look", leaves(conf), "drift", `the look's reasons (${realKinds.join(", ")}) are ones only older commits emit`, driftEvidence(realKinds));
       else if (realKinds.length && realKinds.every((k) => k === "held/raised"))
-        diverge("look-started", "a chart look", conf.filter((x) => LEAVES.has(x)), "store-shape", `the operator raised a limit (settings PATCH); no store dates that change (overseer.json's history is the workspace's hourly commits), so the replay could not send it. ${PROPOSE.dated}`);
-      else if (now + TICK_MS < dueAt && explained.length === realKinds.length && !conf.includes("running"))
-        diverge("look-started", "a chart look", { at: conf.filter((x) => LEAVES.has(x)), dueIn: dueAt - now }, "store-shape", `a look before any rule allows one, carrying reasons the chart holds: a Run Now with reasons pending (its prompt lists them, and no store records the click); resynced as one. ${PROPOSE.dated}`);
+        diverge("look-started", "a chart look", leaves(conf), "store-shape", `the operator raised a limit (settings PATCH); no store dates that change, so the replay could not send it. ${PROPOSE.dated}`);
+      else if (explained.length === realKinds.length && pendingKinds.length && !conf.includes("running"))
+        diverge("look-started", "a chart look", { at: leaves(conf), reasons: pendingKinds }, "store-shape", `a look before any rule allows one, carrying reasons the chart holds: a Run Now with reasons pending (no store records the click); resynced as one. ${PROPOSE.dated}`);
       else if (conf.includes("running") && realKinds.every((k) => k === "run-now"))
-        diverge("look-started", "a chart look", conf.filter((x) => LEAVES.has(x)), "store-shape", `a Run Now while the previous look still runs in the chart: that look's end is missing from its session (cut off) and nothing else records it; resynced. ${PROPOSE.dated}`);
-      else if (chartTicks && tickOrigin !== null && dueAt <= now && explained.length === realKinds.length && sinceTick(now) < TICK_MS / 40 && dueAt > now - sinceTick(now))
-        diverge("look-started", "a chart look", { at: conf.filter((x) => LEAVES.has(x)), dueAt: dueAt - T0 }, "cannot-express", `today's 20 s ticker drifts (setInterval: this look ran ${sinceTick(now)} ms after the tick grid it started on); the chart's grid is fixed at start, so a look due between the grid tick and the drifted real tick waits one tick more`, { dueAt: dueAt - T0, realLookAt: now - T0, gridTickAt: now - sinceTick(now) - T0, nextGridTickAt: now - sinceTick(now) + TICK_MS - T0 });
-      else diverge("look-started", "a chart look", { at: conf.filter((x) => LEAVES.has(x)), reasons: ((d.reasons as { kind?: string }[] | undefined) ?? []).map((r) => r.kind), dueAt }, null, "a real look started where the chart started none");
+        diverge("look-started", "a chart look", leaves(conf), "store-shape", `a Run Now while the previous look still runs in the chart: that look's end is missing from its session (cut off); resynced. ${PROPOSE.dated}`);
+      else diverge("look-started", "a chart look", { at: leaves(conf), reasons: pendingKinds }, null, "a real look started where the chart started none");
       // Resync: the look happened; the chart takes it as a Run Now.
-      call("resync look", () => eng.send(PSID, "operator/run-now", {}, { now }));
-      const l = chartLooks.at(-1);
-      if (l && !l.matched && l.at === now) l.matched = true;
+      if (!world.configuration(S.watch).includes("running")) await send("resync look", S.watch, "operator/run-now", {}, env("operator"));
+      const l = world.looks.at(-1);
+      if (l && !l.matched) l.matched = true;
       return;
     }
     match.matched = true;
     pass();
-    const chartKinds = match.kinds ?? [];
-    const tickGap = (k: string) => noted.some((n) => n.kind === k && n.at > match.at && n.at <= now);
-    const carried = (k: string) => carry.set(k, { chartLookAt: match.at - T0, notedAt: noted.filter((n) => n.kind === k && n.at > match.at && n.at <= now).map((n) => n.at - T0), realLookAt: now - T0 });
     for (const k of new Set(realKinds)) {
       if (k === "run-now") continue;
-      if (chartKinds.includes(k)) {
-        pass();
-        // Noted again after the chart's look had started: the chart keeps that one for its next look.
-        if (tickGap(k)) carried(k);
-      } else if (tickGap(k)) {
-        carried(k);
-        diverge("look-reasons", k, chartKinds, "cannot-express", "today's looks start on its 20 s ticker, so a reason noted after the look was due joins it; the chart looks the moment it is due (its due send has no delay) and takes this reason in its next look", { chartLookAt: match.at - T0, realLookAt: now - T0 });
-      }
-      else if (k.startsWith("drift:")) diverge("look-reasons", k, chartKinds, "drift", "a reason only older commits emit", driftEvidence([k]));
-      else if (k === "baton/proposal") diverge("look-reasons", k, chartKinds, "store-shape", `no store dates a referral, so the replay cannot send it. ${PROPOSE.dated}`);
-      else diverge("look-reasons", k, chartKinds, null, "the real look carried a reason the chart's look lacks");
+      if (match.kinds.includes(k)) pass();
+      else if (k.startsWith("drift:")) diverge("look-reasons", k, match.kinds, "drift", "a reason only older commits emit", driftEvidence([k]));
+      else if (k === "baton/proposal") diverge("look-reasons", k, match.kinds, "store-shape", `no store dates a referral, so the replay cannot send it. ${PROPOSE.dated}`);
+      else diverge("look-reasons", k, match.kinds, null, "the real look carried a reason the chart's look lacks");
     }
-    for (const k of new Set(chartKinds)) {
+    for (const k of new Set(match.kinds)) {
       if (realKinds.includes(k)) continue;
-      if (requeued.has(k)) diverge("look-reasons", `no ${k}`, k, "chart-better", "R2: the look that was to act on this reason was stopped or cut off; today's memo had already cleared it, so it was lost, and the chart put it back", { stoppedAt: requeued.get(k), lookAt: s.dt });
-      else if (carry.has(k)) {
-        diverge("look-reasons", `no ${k}`, k, "cannot-express", "carried over: the previous real look took this reason on its tick, after the chart's look had started (20 s ticker vs an exact due time)", { ...carry.get(k), nextChartLookAt: match.at - T0, thisRealLookAt: s.dt });
-        carry.delete(k);
-      } else if (keptWhileBusy.has(k)) diverge("look-reasons", `no ${k}`, k, "chart-better", "a reconciler event by someone else while the overseer was busy: today's memo drops it (R3), the chart keeps it", { chartLookAt: match.at - T0, realLookAt: s.dt });
-      else if (k === "item/reopened" && reopenedEvidence(match.rows).every((e) => e.flippedBack.length + e.newDecisions.length > 0))
-        diverge("look-reasons", `no ${k}`, k, "chart-better", "a gap whose decisions were promoted went back to deciding: promoted decisions flipped back to drafted (a reconciler re-run, lane e2e-2 NEW-MS2-1; today notes no one) or a follow-up gathering recorded a new decision (today notes only the gathering's end); the chart's item/reopened makes it a reason. The evidence is that item's, at the instant the chart noted each reopen", { reopened: reopenedEvidence(match.rows) });
-      else if (k.startsWith("item/")) diverge("look-reasons", `no ${k}`, k, null, "a reason only the chart has, with no evidence found for it in the stores");
+      if (k.startsWith("item/")) diverge("look-reasons", `no ${k}`, k, "chart-better", "an item's own reason (stall, reopen, answered-nothing, built) today has no reason for", { lookAt: match.at - T0, reasons: match.rows.filter((r) => r.kind === k).map((r) => ({ ...r, at: r.at - T0 })) });
       else diverge("look-reasons", `no ${k}`, k, null, "the chart's look carried a reason the real look lacks");
     }
-    // What was put back has now been looked at.
-    requeued.clear();
   };
-  /** Chart looks no real look matched within LOOK_EARLY: classified, then taken as finished. */
-  const extraLooks = (end = false) => {
-    for (const l of chartLooks) {
+  const endLook = async (l: ChartLook, stop: string) => {
+    l.report?.(stop === "stop" ? "finished" : "stopped", stop === "stop" ? undefined : stop);
+    l.report = null;
+    await settleWorld();
+  };
+  /** Chart looks no real look matched: taken as finished, and classified. */
+  const extraLooks = async (end = false) => {
+    for (const l of world.looks) {
       if (l.matched || (!end && now - l.at <= LOOK_EARLY)) continue;
       l.matched = true;
-      // A synthetic trace asserts only what its `expect` steps say: a chart look it scripts no real look for
-      // just ends (as if it had looked), so the next one can start.
-      if (trace.source === "synthetic") {
-        if ((eng.configuration(PSID) ?? []).includes("running")) call("look/finished (synthetic)", () => eng.send(PSID, "look/finished", {}, { now, invokeId: "look" }));
-        continue;
+      if (trace.source !== "synthetic") {
+        if (l.kinds.some((k) => k.startsWith("item/"))) diverge("chart-look-extra", "no look", l.kinds, "chart-better", "the chart looked for an item's own reason (stall, reopen, answered-nothing, built) today has no reason for", { lookAt: l.at - T0 });
+        else diverge("chart-look-extra", "no look", l.kinds, null, "the chart started a look where none really started");
       }
-      const kinds = l.kinds ?? [];
-      const own = kinds.filter((k) => keptWhileBusy.has(k));
-      if (kinds.length && kinds.every((k) => carry.has(k))) {
-        const ev = Object.fromEntries(kinds.map((k) => [k, carry.get(k)]));
-        for (const k of kinds) carry.delete(k);
-        diverge("chart-look-extra", "no look", kinds, "cannot-express", "a second chart look for reasons the real look took on its 20 s tick after the chart's first look had started", { lookAt: l.at - T0, carried: ev });
-      } else if (own.length) diverge("chart-look-extra", "no look", kinds, "chart-better", `the chart looked for ${own.join(", ")}: a reason today's memo dropped while the overseer was busy (R3)`, { lookAt: l.at - T0, keptWhileBusy: own });
-      else if (kinds.some((k) => k.startsWith("item/"))) diverge("chart-look-extra", "no look", kinds, "chart-better", "the chart looked for an item's own reason (stall, reopen, answered-nothing, built) today has no reason for", { lookAt: l.at - T0, reasons: l.rows.filter((r) => r.kind.startsWith("item/")).map((r) => ({ ...r, at: r.at - T0 })) });
-      else diverge("chart-look-extra", "no look", kinds, null, "the chart started a look where none really started");
-      if ((eng.configuration(PSID) ?? []).includes("running")) call("look/finished (extra)", () => eng.send(PSID, "look/finished", {}, { now, invokeId: "look" }));
+      await endLook(l, "stop");
     }
-  };
-  /** The operator's Merge Branch: allowed wherever the item follows its build. */
-  const mergeClick = (g: string, ok: boolean) => {
-    const conf = eng.configuration(itemSid(g)) ?? [];
-    if (!conf.includes("building")) {
-      if (conf.length === 0 || conf.includes("dropped")) return pass(); // dropped: the item is over; the branch is the operator's
-      if (conf.includes("merged") && ok) return pass();
-      return diverge("merge-click", "building", conf.filter((x) => LEAVES.has(x)), null, "a Merge Branch on a build the item does not follow");
-    }
-    const tr = call("trial merge", () => eng.trial(itemSid(g), "build/merge", { by: "operator" }, { now }));
-    if (tr) tr.taken === ok ? pass() : diverge("merge-click", ok ? "taken" : "refused", tr.taken ? "taken" : tr.refusal, null, "the chart's Merge Branch guard disagrees with the real outcome");
   };
 
   // ---- the events -----------------------------------------------------------------------------------------
+  const instantEnd = async () => {
+    await flushResults();
+    await settleWorld();
+  };
   for (const s of trace.events) {
-    if (s.dt !== curDt || s.kind !== "fact") flush();
+    if (s.dt !== curDt) await instantEnd();
     curDt = s.dt;
     const at = T0 + s.dt;
     if (at > now) {
-      advance(at);
+      await advance(at);
       now = at;
     }
-    if (projOn()) extraLooks();
-    if (s.kind === "setting" && s.key === "autonomy") {
-      autonomy = s.value as Level;
-      paused = false;
-      if (projOn()) call("level-set", () => eng.send(PSID, "operator/level-set", { autonomy }, { now }));
-      continue;
-    }
+    await extraLooks();
     if (s.kind === "setting") {
-      if (s.key === "caps") Object.assign(caps, s.value as object);
-      if (projOn()) call(`setting ${s.key}`, () => eng.send(PSID, "settings/changed", { [s.key!]: s.key === "caps" ? caps : s.value } as Record<string, unknown>, { now }));
+      if (s.key === "autonomy") {
+        autonomy = s.value as Level;
+        paused = false;
+        await send("level-set", S.watch, "operator/level-set", { autonomy }, env("operator"));
+      } else {
+        if (s.key === "caps") Object.assign(caps, s.value as object);
+        if (s.key === "watch") watchOn = s.value !== false;
+        await fact(`setting ${s.key}`, S.watch, "settings/changed", { settings: { ...settings(), caps: capsOf(caps), holdMin: 0 } });
+      }
       continue;
     }
     if (s.kind === "fact") {
-      const fam = { baton: "baton", decision: "reconcile", conflict: "reconcile", build: s.merged ? "build" : "coding" }[s.entity as string];
-      if (fam) lastFactOf[fam] = s.dt;
-      if (s.entity === "overseer") startProject();
-      else if (s.entity === "person") {
-        people.set(s.id!, s.status!);
-        if (projOn()) call("roster", () => eng.send(PSID, "facts/changed", { rosterActive: rosterActive() }, { now }));
-      } else if (s.entity === "gap") ensureItem(s.id!);
-      else if (s.entity === "baton") {
-        const prev = batons.get(s.id!);
-        const b = { id: s.id!, state: s.state!, own: prev?.own ?? s.by === "overseer", wrote: prev?.wrote || !!s.wrote, settle: prev?.settle || !!s.settle };
-        batons.set(s.id!, b);
-        const g = batonGap.get(s.id!);
-        if (g) dirty.add(g);
-        if (s.state === "done") reason("baton/done", { sessionId: s.id, title: s.id });
-        else if (s.state === "closed") reason("baton/closed", { sessionId: s.id, title: s.id });
-        else if (s.state === "needs-you" && b.own && F.askedOperatorReason) reason("baton/asked-operator", { sessionId: s.id, title: s.id, question: "" });
-      } else if (s.entity === "decision") {
-        const prev = decisions.get(s.id!);
-        // A new decision (a follow-up gathering's) on a gap whose decisions were all promoted: it reopens.
-        if (!prev && s.baton && batonGap.has(s.baton)) {
-          const live = factsOf(batonGap.get(s.baton)!).decisions.filter((d) => d.state !== "superseded");
-          if (live.length && live.every((d) => d.state === "promoted")) newOnPromoted.push({ id: s.id!, dt: s.dt, gap: batonGap.get(s.baton)! });
-        }
-        decisions.set(s.id!, { id: s.id!, baton: s.baton ?? prev?.baton ?? "", state: s.state!, authorOwnsArea: s.ownerArea ?? prev?.authorOwnsArea ?? false, build: s.state === "promoted" ? (s.build ?? finalBuild.get(s.id!) ?? null) : null, supersededBy: s.supersededBy ?? prev?.supersededBy, editedInSpec: s.edited ?? prev?.editedInSpec ?? false });
-        if (s.state === "promoted") everPromoted.add(s.id!);
-        if (s.state === "drafted" && prev?.state === "promoted") flipBacks.push({ id: s.id!, dt: s.dt, gap: gapOfDecision(s.id!) });
-        // Every item holding it (its own, and any whose superseded decision it won) learns of it.
-        for (const g of gaps.keys()) if (factsOf(g).decisions.some((d) => d.id === s.id)) dirty.add(g);
-        // Who ran the reconcile: the overseer's own sova_reconcile in this minute, else the operator or the auto-run.
-        // Today's reconciler reports the records its draft changed: a promoted decision flipped back (lane
-        // e2e-2 NEW-MS2-1) changes none and is noted by no one; the item chart's item/reopened is the reason.
-        if (s.state === "drafted" && prev?.state !== "drafted" && prev?.state !== "promoted") batched("reconcile/drafted", s.id!, s.by ?? (s.dt - lastReconcileDt < 60e3 ? "overseer" : "operator"));
-        if (s.state === "promoted" && prev?.state !== "promoted") batched("reconcile/promoted", s.id!, s.by ?? "operator");
-      } else if (s.entity === "conflict") {
-        batched(s.state === "resolved" ? "reconcile/resolved" : "reconcile/conflict", s.id!, s.state === "resolved" ? "operator" : s.dt - lastReconcileDt < 60e3 ? "overseer" : "operator");
-      } else if (s.entity === "build") {
-        const prev = builds.get(s.id!);
-        const b = { sessionId: s.id!, running: s.running ?? prev?.running ?? false, lastFailed: s.lastFailed ?? prev?.lastFailed ?? false, merged: s.merged ?? prev?.merged ?? false, newSinceMerge: s.newSinceMerge ?? prev?.newSinceMerge ?? 0, startedBy: s.by ?? prev?.startedBy ?? "operator", state: "open" };
-        if (s.newSinceMerge) b.merged = false;
-        builds.set(s.id!, b);
-        const g = buildGap.get(s.id!);
-        if (s.merged && g && hasItem) mergeClick(g, true);
-        if (g) dirty.add(g);
-        if (s.running === false && b.startedBy === "overseer" && F.codingSettledReason) reason("coding/settled", { sessionId: s.id, title: s.id, failed: !!s.lastFailed });
-        if (s.merged && F.mergeReasonAndTodosOperatorOnly) reason("build/merged", { sessionId: s.id, title: s.id, branch: "b", target: "t" });
-      }
+      if (s.entity === "overseer") await startOverseer();
+      else if (s.entity === "person") await ensurePerson(s.id!, s.status!);
+      else if (s.entity === "gap") {
+        await ensureItem(s.id!, "operator");
+        if (s.status === "dropped" && world.exists(S.item(s.id!)) && !world.configuration(S.item(s.id!)).includes("dropped")) await send("gap/drop", S.item(s.id!), "gap/drop", {}, env("operator"));
+        if (s.status) gaps.get(s.id!)!.status = s.status;
+      } else if (s.entity === "baton") await batonFact(s);
+      else if (s.entity === "decision") await decisionFact(s);
+      else if (s.entity === "build") await buildFact(s);
+      // conflict facts: their decisions' `conflict` results carry them.
+      await settleWorld();
+      checkItems();
       continue;
     }
     if (s.kind === "turn") {
-      // The operator raised a limit (its reason is the only trace of it): limits synced from refusals go back to
-      // the stored value, the only one the settings store keeps.
-      if ((s.reasons ?? []).some((r) => r.kind === "limit-raised") && syncedCaps.size) {
-        for (const key of syncedCaps) caps[key] = trace.final.caps?.[key] ?? null;
-        rep.skipped.push(`${s.dt}: limit raised by the operator (undated setting): ${[...syncedCaps].join(", ")} back to the stored value`);
-        syncedCaps.clear();
-        if (projOn()) call("setting caps", () => eng.send(PSID, "settings/changed", { caps }, { now }));
-      }
-      // A message joining a running look keeps it a look: the run ends once, for both.
       const prev = turn as { look: boolean } | null;
       turn = { attended: !!s.attended, by: s.by!, used: zero(), look: s.by === "watch" || (!!s.joins && !!prev?.look) };
       if (s.by === "operator" && !s.joins) legacyMessage = zero();
@@ -983,108 +982,88 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
       paused = s.levelWhy === "paused";
       if (s.by === "watch") {
         rep.looks.real++;
-        if (projOn()) realLook(s);
+        await realLook(s);
       }
-      // The session streams (a look too): the host's overseer/busy (EVENTS.md), which today's own-act filter reads.
-      busy = true;
-      if (projOn()) call("busy", () => eng.send(PSID, "overseer/busy", {}, { now }));
+      await fact("turn/started", S.watch, "turn/started", { look: s.by === "watch" });
+      if (s.attended) await fact("turn/user-entered", S.watch, "turn/user-entered");
       continue;
     }
     if (s.kind === "turn-end") {
-      if (projOn() && turn?.look) {
-        if (s.stop !== "stop") for (const k of chartLooks.filter((l) => l.matched).at(-1)?.kinds ?? []) requeued.set(k, s.dt);
-        call("look end", () => eng.send(PSID, s.stop === "stop" ? "look/finished" : "look/stopped", { detail: s.stop }, { now, invokeId: "look" }));
+      if (turn?.look) {
+        const l = world.looks.filter((x) => x.matched && x.report).at(-1);
+        if (l) await endLook(l, s.stop ?? "stop");
       }
-      if (projOn()) call("idle", () => eng.send(PSID, "overseer/idle", {}, { now }));
-      busy = false;
+      await fact("turn/ended", S.watch, "turn/ended");
       turn = null;
       continue;
     }
     if (s.kind === "restart") {
-      // The server stops mid-flight: every snapshot is taken as saved, a new engine loads them, and the
-      // host sends sova/resumed and fresh facts (design §B.5).
-      if (projOn() || hasItem) {
-        const saved = (eng.sessions?.() ?? []).map((sid) => [sid, eng.dump(sid)] as const);
-        rep.coverage.restarts++;
-        // Every session comes back: the restart reloads what was saved, nothing else.
-        const started = [...(projOn() ? [PSID] : []), ...(hasItem ? [...gaps.keys()].map(itemSid) : [])];
-        const dumped = saved.filter(([, text]) => !!text).map(([sid]) => sid);
-        started.every((sid) => dumped.includes(sid)) ? pass() : diverge("restart", started, dumped, null, "a session could not be dumped");
-        eng = (create ?? noEngine)(hooks);
-        for (const [sid, text] of saved) if (text) call(`load ${sid}`, () => eng.load(sid, text));
-        const back = eng.sessions?.() ?? [];
-        saved.every(([sid]) => back.includes(sid)) ? pass() : diverge("restart", saved.map(([sid]) => sid), back, null, "a session did not come back from its snapshot");
-        if (projOn()) call("resumed", () => eng.send(PSID, "sova/resumed", {}, { now }));
-        for (const g of gaps.keys()) pushFacts(g);
-      }
+      rep.coverage.restarts++;
+      const before = world.host.sessions().map((x) => x.id).sort();
+      await world.close();
+      world.looks = world.looks.filter((l) => l.matched);
+      world.reconcileRuns = [];
+      await world.open();
+      await settleWorld();
+      const after = world.host.sessions().map((x) => x.id).sort();
+      before.every((sid) => after.includes(sid)) ? pass() : diverge("restart", before, after, null, "a session did not come back from its snapshot");
       turn = null;
       continue;
     }
     if (s.kind === "operator") {
-      if (!projOn() && !hasItem && s.act !== "run-now") continue;
       const g = s.id ? (buildGap.get(s.id) ?? null) : null;
       if (s.act === "run-now") {
-        // No conversation yet: today's lookNow refuses ("no conversation yet"), and the chart does not exist.
-        if (projOn()) call("run-now", () => eng.send(PSID, "operator/run-now", {}, { now }));
-      }
-      else if (s.act === "attach") {
+        if (overseerOn) await send("run-now", S.watch, "operator/run-now", {}, env("operator"));
+      } else if (s.act === "attach") {
         paused = true;
-        call("attach", () => eng.send(PSID, "org/attached-here", {}, { now }));
-      } else if (s.act === "archive") call("archive", () => eng.send(PSID, "project/archived", {}, { now }));
-      else if (s.act === "unarchive") call("unarchive", () => eng.send(PSID, "project/unarchived", {}, { now }));
-      else if (s.act === "watch-off" || s.act === "watch-on") call(s.act, () => eng.send(PSID, "settings/changed", { watch: s.act === "watch-on" }, { now }));
-      else if (s.act === "limit-raised") {
+        await fact("attach", S.watch, "org/attached-here");
+      } else if (s.act === "archive" || s.act === "unarchive") {
+        archived = s.act === "archive";
+        await send(s.act, S.project, `project/${s.act}`, {}, env("operator", true, { blockers: { gatherings: [], coding: [], overseerWorking: false } }));
+      } else if (s.act === "watch-off" || s.act === "watch-on") {
+        watchOn = s.act === "watch-on";
+        await fact(s.act, S.watch, "settings/changed", { settings: { ...settings(), caps: capsOf(caps), holdMin: 0 } });
+      } else if (s.act === "limit-raised") {
         Object.assign(caps, s.value as object);
-        call("limit-raised", () => eng.send(PSID, "settings/changed", { caps }, { now }));
-      } else if ((s.act === "merge" || s.act === "merge-refused") && g && hasItem) {
-        // Root and git refusals come from the checkout, which the chart does not see: only busy is its guard's.
-        if (s.act === "merge" || s.cause === "busy") mergeClick(g, s.act === "merge");
-        if (s.act === "merge-refused" && s.cause === "git") reason("build/merge-refused", { sessionId: s.id, title: s.id, reason: "r" });
-        flush();
-      } else if (s.act === "reconcile") lastReconcileDt = -Infinity;
-      else if ((s.act === "hold" || s.act === "resume" || s.act === "settle-text") && s.gap && hasItem && gaps.has(s.gap)) {
+        await fact("limit-raised", S.watch, "settings/changed", { settings: { ...settings(), caps: capsOf(caps), holdMin: 0 } });
+      } else if ((s.act === "merge" || s.act === "merge-refused") && s.id && world.exists(S.build(s.id))) {
+        const v = trialOn(S.build(s.id), "build/merge", {}, env("operator"), g);
+        if (v && (s.act === "merge" || s.cause === "busy")) v.taken === (s.act === "merge") ? pass() : diverge("merge-click", s.act === "merge" ? "taken" : "refused", v.taken ? "taken" : v.refusal, null, "the chart's Merge Branch guard disagrees with the real outcome");
+      } else if (s.act === "reconcile") await send("reconcile", S.reconciler, "reconcile/request", { delayMs: 0, by: "operator" }, env("operator"));
+      else if ((s.act === "hold" || s.act === "resume" || s.act === "settle-text") && s.gap && gaps.has(s.gap)) {
+        const sid = S.item(s.gap);
         const event = s.act === "hold" ? "item/hold" : s.act === "resume" ? "item/resume" : "decision/settle-text";
-        const data = { ...envelope(true, "operator"), ...(s.act === "settle-text" ? { action: s.value } : {}) };
-        const v = trialOn(itemSid(s.gap), event, data, s.gap);
-        if (v) (v.taken === (s.ok !== false) ? pass() : diverge(`operator ${s.act}`, s.ok !== false ? "taken" : "refused", v.taken ? "taken" : v.refusal, null, "the chart's guard on the operator's click disagrees with the design"));
-        if (v?.taken) call(event, () => eng.send(itemSid(s.gap!), event, data, { now }));
+        const target = s.act === "settle-text" ? (factsOf(s.gap).decisions.find((d) => d.editedInSpec)?.id ?? null) : null;
+        const on = target ? S.decision(target) : sid;
+        const payload = s.act === "settle-text" ? { action: s.value, textHash: "h" } : {};
+        const v = trialOn(on, event, payload, env("operator"), s.gap);
+        if (v) v.taken === (s.ok !== false) ? pass() : diverge(`operator ${s.act}`, s.ok !== false ? "taken" : "refused", v.taken ? "taken" : v.refusal, null, "the chart's guard on the operator's click disagrees with the design");
+        if (v?.taken) await send(event, on, event, payload, env("operator"));
       }
+      await settleWorld();
+      checkItems();
       continue;
     }
     if (s.kind === "expect") {
+      await instantEnd();
       rep.coverage.expects++;
-      const sid = s.session === "project" || !s.session ? PSID : itemSid(s.session);
-      if ((sid === PSID && !projOn()) || (sid !== PSID && !hasItem)) continue;
-      const conf = eng.configuration(sid) ?? [];
+      const sid = s.session === "project" || !s.session ? S.watch : S.item(s.session);
+      const conf = world.configuration(sid);
       for (const st of s.in ?? []) conf.includes(st) ? pass() : diverge(`expect in ${st}`, st, conf, null, "the design's expectation for this edge case");
       for (const st of s.notIn ?? []) !conf.includes(st) ? pass() : diverge(`expect not in ${st}`, `not ${st}`, conf, null, "the design's expectation for this edge case");
       if (s.reasonKinds || s.noReasonKinds) {
-        const d = eng.data(sid) ?? {};
+        const d = world.data(sid);
         const kinds = [...((d.reasons as { kind?: string }[] | undefined) ?? []), ...((d.runReasons as { kind?: string }[] | undefined) ?? [])].map((r) => r.kind);
         for (const k of s.reasonKinds ?? []) kinds.includes(k) ? pass() : diverge(`expect reason ${k}`, k, kinds, null, "the design's expectation for this edge case");
         for (const k of s.noReasonKinds ?? []) !kinds.includes(k) ? pass() : diverge(`expect no reason ${k}`, `no ${k}`, kinds, null, "the design's expectation for this edge case");
       }
-      if (s.lookStarted !== undefined) (looksStarted.length > 0) === s.lookStarted ? pass() : diverge("expect look", s.lookStarted, looksStarted.length, null, "the design's expectation for this edge case");
+      if (s.lookStarted !== undefined) (world.looks.length > 0) === s.lookStarted ? pass() : diverge("expect look", s.lookStarted, world.looks.length, null, "the design's expectation for this edge case");
       continue;
     }
-    if (s.kind === "obs" && s.what === "decision" && s.id && decisions.has(s.id) && s.state && decisions.get(s.id)!.state !== s.state && ["promoted", "drafted"].includes(s.state)) {
-      // decisions.json keeps a decision's last state only: a promotion later flipped back and promoted again
-      // (lane e2e-2 NEW-MS2-1) leaves no fact for the first. The lab's poll saw it: taken as the fact.
-      const d = decisions.get(s.id)!;
-      diverge("decision-state", s.state, d.state, "mining", `decisions.json keeps only a decision's last state; the lab's poll saw ${s.id} ${s.state} here; synced`);
-      decisions.set(s.id, { ...d, state: s.state, build: s.state === "promoted" ? (finalBuild.get(s.id) ?? null) : null });
-      if (s.state === "promoted") everPromoted.add(s.id);
-      if (s.state === "drafted" && d.state === "promoted") flipBacks.push({ id: s.id, dt: s.dt, gap: gapOfDecision(s.id) });
-      for (const g of gaps.keys()) if (factsOf(g).decisions.some((x) => x.id === s.id)) dirty.add(g);
-      flush();
-      continue;
-    }
-    if (s.kind === "obs" && s.what === "pending" && projOn()) {
-      // The lab monitor's view of today's memo: every reason today noted. One the chart lacks is fed in,
-      // after classifying why the chart did not have it.
-      // A chart look the real ticker has not caught up with yet still holds its reasons: today's memo shows them pending.
-      const ahead = chartLooks.some((l) => !l.matched);
-      const d = eng.data(PSID) ?? {};
+    if (s.kind === "obs" && s.what === "pending" && overseerOn) {
+      // Today's memo (the lab's view): every reason today noted. One the chart lacks is classified, then fed in.
+      const ahead = world.looks.some((l) => !l.matched);
+      const d = world.data(S.watch);
       const chartKinds = [...((d.reasons as { kind?: string }[] | undefined) ?? []), ...(ahead ? ((d.runReasons as { kind?: string }[] | undefined) ?? []) : [])].map((r) => String(r.kind));
       const count = (xs: string[], k: string) => xs.filter((x) => x === k).length;
       const realKinds = (s.pending ?? []).map((k) => REASON_KIND[k] ?? k).filter((k) => !k.startsWith("drift:"));
@@ -1094,104 +1073,36 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
           pass();
           continue;
         }
-        const recent = lastFactOf[k.split("/")[0]!] ?? -Infinity;
-        const own = k.startsWith("reconcile/") && k !== "reconcile/promoted";
-        if (s.dt - recent > 60e3) diverge("memo-reason", k, chartKinds, "store-shape", `today noted this reason with no store change dated before it (e.g. a reconciler re-run after a merge re-reporting a drafted decision, lane e2e-2 NEW-MS2-1): fed to the chart. ${PROPOSE.dated}`);
-        else if (own) diverge("memo-reason", k, chartKinds, "store-shape", `no store records who ran a reconcile: the replay attributed this run to the overseer (its own act, dropped while busy), but today kept it, so it was someone else's; fed to the chart. ${PROPOSE.dated}`);
-        else diverge("memo-reason", k, chartKinds, null, "today noted this reason for a fact the chart saw, and the chart has none");
-        for (let i = 0; i < missing; i++) reason(k, { n: 1, ids: [`obs${s.dt}-${i}`], sessionId: `obs${s.dt}-${i}`, title: `obs${s.dt}-${i}`, by: "system", failed: false, branch: "b", target: "t", question: "" });
+        diverge("memo-reason", k, chartKinds, null, "today noted this reason and the chart has none");
+        for (let i = 0; i < missing; i++) await fact("memo reason", S.watch, "reason/noted", { kind: k, params: { sessionId: `obs${s.dt}-${i}`, title: `obs${s.dt}-${i}`, n: 1 }, key: `${k}:obs${s.dt}-${i}`, by: "system" });
       }
-      flush();
       continue;
     }
     if (s.kind === "tool") {
       const name = s.name!;
       const kind = KIND_OF[name];
-      if (name === "sova_reconcile" && s.verdict === "ok") lastReconcileDt = s.dt;
-      // The count a cap refusal named is checked against the ledger the trace's commit kept: before 80a785ca an
-      // unattended run drew on the operator's last message (one ledger per message, every run), since then on
-      // the day's (or the message's, attended). Nothing is synced: a count that differs is unexplained.
       if (s.cap && kind && (s.refusal === "cap-day" || s.refusal === "cap-message")) {
         const legacy = s.refusal === "cap-message" && !s.attended && F.allowanceHeld === false;
         const counted = legacy ? legacyMessage[kind] : ledger()[kind];
         if (counted === s.cap.used) pass();
-        else diverge("allowance-count", s.cap.used, counted, null, `the ${legacy ? "operator's last message (before 80a785ca, every run drew on it)" : s.refusal === "cap-day" ? "day's" : "message's"} ledger reconstructed from the trace differs from the count the refusal named`, { ledger: legacy ? "message (before 80a785ca)" : s.refusal === "cap-day" ? "day" : "message", counted, named: s.cap.used });
-        // The settings store keeps only its last value: the limit in force then is the one the refusal named.
+        else diverge("allowance-count", s.cap.used, counted, null, "the ledger reconstructed from the trace differs from the count the refusal named", { counted, named: s.cap.used });
         const key = (s.refusal === "cap-day" ? PER_DAY : PER_TURN)[kind];
         if (s.cap.max != null && caps[key] !== s.cap.max) {
           diverge("allowance-max", s.cap.max, caps[key] ?? null, "mining", `the settings store keeps only its last ${key}; the refusal named the limit in force then; synced`);
           caps[key] = s.cap.max;
           syncedCaps.add(key);
-          if (projOn()) call("setting caps", () => eng.send(PSID, "settings/changed", { caps }, { now }));
+          await fact("setting caps", S.watch, "settings/changed", { settings: { ...settings(), caps: capsOf(caps), holdMin: 0 } });
         }
       }
       if (s.levelAtCall && s.levelAtCall !== autonomy && s.levelWhy === "paused") paused = true;
-      const env = envelope(!!s.attended);
-      // The tool's own validation runs right after the level (charts' `invalid`): its refusal, when it gave one.
-      // A partial promote refused some ids, not the call: those per-id verdicts are the chart's own to give.
       const invalid = s.refusal && HOST_CHECKS.has(s.refusal) && s.verdict !== "partial" ? `host:${s.refusal}` : undefined;
-      const base: Record<string, unknown> = { ...env, ...(invalid ? { invalid } : {}) };
-      const act = (n?: number): { sid: string; event: string; data: Record<string, unknown>; item: string | null } => ({ sid: PSID, event: "overseer/act", data: { ...base, tool: name, ...(s.args?.op ? { op: s.args.op } : {}), ...(n !== undefined ? { n } : {}) }, item: null });
-      const onItem = (g: string | null, event: string, data: Record<string, unknown>) => (g && hasItem && gaps.has(g) ? { sid: itemSid(g), event, data: { ...base, ...data }, item: g } : null);
-      // Route the call: the act on the gap it serves, or the project's overseer/act when it names none.
-      const routes: { sid: string; event: string; data: Record<string, unknown>; item: string | null }[] = [];
-      let unrouted: string | null = null;
-      if (name === "sova_idea" && s.args?.op === "add" && s.args.id?.startsWith("§gap/")) ensureItem(s.args.id);
-      if (name === "sova_idea" && s.args?.op === "status" && s.args.id?.startsWith("§gap/")) {
-        ensureItem(s.args.id);
-        routes.push(onItem(s.args.id, "gap/status", { status: s.args.status }) ?? act());
-      } else if (name === "sova_start_gathering" || name === "sova_offer") {
-        const r = onItem(s.link?.gap ?? null, "gather/start", { to: "p", publicTitle: "t", question: "q", goal: "g" });
-        if (!r) unrouted = "gathering";
-        routes.push(r ?? act());
-      } else if (name === "sova_close_gathering") {
-        routes.push(onItem(batonGap.get(s.args?.session ?? "") ?? null, "gather/close", { reason: "r" }) ?? act());
-      } else if (name === "sova_create_session") {
-        // A build rests on promoted decisions ("with the decisions it rests on"): the one item waiting to be
-        // built beats a word match that points at an item with none.
-        const waiting = [...gaps.keys()].filter((x) => (eng.configuration(itemSid(x)) ?? []).includes("awaiting-build"));
-        const worded = s.link?.gap ?? null;
-        const pick = worded && waiting.includes(worded) ? worded : waiting.length === 1 ? waiting[0]! : worded;
-        const r = onItem(pick, "build/start", { prompt: "p" });
-        if (!r) unrouted = "build";
-        routes.push(r ?? act());
-      } else if (name === "sova_send") {
-        routes.push(onItem(buildGap.get(s.args?.session ?? "") ?? null, "build/prompt", { text: "t" }) ?? act());
-      } else if (name === "sova_promote") {
-        // An LLM's ids split per item (an id not linked to an item reads "unknown decision" there); the rest on the project.
-        const byGap = new Map<string, string[]>();
-        const loose: string[] = [];
-        for (const id of s.args?.ids ?? []) {
-          const gg = gapOfDecision(id);
-          if (gg && gaps.has(gg) && hasItem) byGap.set(gg, [...(byGap.get(gg) ?? []), id]);
-          else loose.push(id);
-        }
-        for (const [gg, ids] of byGap) routes.push(onItem(gg, "decision/promote", { ids })!);
-        if (loose.length || !byGap.size) routes.push(act(loose.length));
-      } else if (name === "sova_reconcile") {
-        const deciding = [...gaps.keys()].filter((x) => (eng.configuration(itemSid(x)) ?? []).includes("deciding"));
-        routes.push(deciding.length === 1 ? onItem(deciding[0]!, "decision/reconcile", {})! : act());
-        if (deciding.length > 1) rep.skipped.push(`${s.dt}: sova_reconcile with ${deciding.length} deciding items checked on the project (one run serves them all)`);
-      } else routes.push(act());
-      // An allowance refusal holds the item for a later look (today's host.hold → the chart's limit/refused).
-      // Held items arrived in 80a785ca: older commits held nothing.
-      if ((s.refusal === "cap-day" || s.refusal === "cap-message") && kind && projOn() && s.cap?.max != null && F.allowanceHeld !== false)
-        call("limit/refused", () => eng.send(PSID, "limit/refused", { ledger: s.refusal === "cap-day" ? "day" : "message", kind, used: s.cap!.used, max: s.cap!.max }, { now }));
-      const vs = projOn() || hasItem ? routes.filter((r) => r.sid !== PSID || (projOn() && hasAct)).map((r) => trialOn(r.sid, r.event, r.data, r.item)).filter((v): v is Verdict => !!v) : [];
+      const routes = await routeTool(s);
+      const vs = routes.map((r) => trialOn(r.sid, r.event, r.payload, toolEnvelope(s, invalid ? { invalid } : undefined), r.item)).filter((v): v is Verdict => !!v);
       checkTool(s, vs);
-      if (unrouted && (s.verdict === "ok" || s.verdict === "partial"))
-        diverge("item-route", "a gap", null, "store-shape", `${name} names no gap and none could be inferred from its words: the gap→${unrouted} edge today's stores lack (checked on the project instead). ${PROPOSE.gap}`);
-      // Real: it ran, so the chart moves (a refusal moves nothing).
       const ran = s.verdict === "ok" || s.verdict === "partial";
-      for (const v of vs) {
-        if (!(ran && v.taken)) continue;
-        call(v.event, () => eng.send(v.sid, v.event, v.data, { now }));
-      }
+      for (const v of vs) if (ran && v.taken) await send(v.event, v.sid, v.event, v.payload, v.envelope);
       const g = vs.find((v) => v.item)?.item ?? null;
-      const chartRefused = vs.some((v) => v.item && !v.taken);
-      if (s.verdict === "ok" && name === "sova_idea" && s.args?.op === "status" && s.args.id && gaps.has(s.args.id)) gaps.get(s.args.id)!.status = s.args.status!;
-      // Links the real call made (the chart's `gap` parameter would carry them); one the chart refused is not made.
-      if (s.verdict === "ok" && g && !chartRefused) {
+      if (s.verdict === "ok" && g && vs.every((v) => v.taken)) {
         if (s.args?.baton) {
           const before = factsOf(g);
           if (before.decisions.some((d) => d.state !== "superseded") || before.build) followUps.add(s.args.baton);
@@ -1204,58 +1115,45 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
         ledger()[kind] += n;
         legacyMessage[kind] += n;
       }
+      await settleWorld();
       checkItems();
       continue;
     }
   }
 
-  flush();
-  if (projOn()) extraLooks(true);
-  // ---- the end: the stores' last word ------------------------------------------------------------------------
-  for (const g of trace.final.gaps) {
-    if (!gaps.has(g.id)) continue;
-    const it = gaps.get(g.id)!;
-    if (it.status !== g.status && (g.status === "done" || g.status === "dropped")) {
-      // The operator changed it on the page (the store has no time for it): the last act.
-      it.status = g.status;
-      if (hasItem) call("final status", () => eng.send(itemSid(g.id), "gap/status", { ...envelope(true, "operator"), status: g.status }, { now }));
-    }
-  }
+  await instantEnd();
+  await extraLooks(true);
   checkItems();
-  rep.looks.chart = looksStarted.length;
-  if (hasItem) for (const g of gaps.keys()) rep.items[g] = eng.configuration(itemSid(g)) ?? [];
-  // Stall probe: the stores stayed as they ended; run the charts' clock on to the horizon (every due timer fires
-  // at its time) and note when each item stalled. Only a report: nothing real to compare it with.
-  if (opts.horizon && hasItem && opts.horizon > now) {
-    const phase = (g: string) => (eng.configuration(itemSid(g)) ?? []).filter((x) => LEAVES.has(x) && x !== "stalled" && x !== "live");
+  rep.looks.chart = world.looks.length;
+  for (const g of gaps.keys()) rep.items[g] = world.configuration(S.item(g));
+  if (opts.horizon && opts.horizon > now) {
+    const phase = (g: string) => world.configuration(S.item(g)).filter((x) => LEAVES.has(x) && x !== "stalled" && x !== "live");
     const stalls = [...gaps.keys()].map((g) => ({ item: g, endPhase: phase(g), stalledAt: null as number | null, phaseAtHorizon: [] as string[] }));
     for (let guard = 0; guard < 100000; guard++) {
-      const due = eng.nextDueAt();
+      const due = world.nextDueAt();
       if (due === null || due > opts.horizon) break;
       now = Math.max(due, now);
-      call("fireDue (horizon)", () => eng.fireDue(now));
-      for (const st of stalls) if (st.stalledAt === null && (eng.configuration(itemSid(st.item)) ?? []).includes("stalled")) st.stalledAt = now - T0;
+      world.fireDue();
+      for (const st of stalls) if (st.stalledAt === null && world.configuration(S.item(st.item)).includes("stalled")) st.stalledAt = now - T0;
     }
     for (const st of stalls) st.phaseAtHorizon = phase(st.item);
     rep.stalls = stalls;
   }
+  await world.close();
+  rmSync(dir, { recursive: true, force: true });
   return rep;
 }
 
 // ---- report (node --import tsx server/org-charts-replay.ts [out.json]) ------------------------------------------
 
 async function main(out?: string): Promise<void> {
-  const opened = await openEngineModule();
-  const engine = "missing" in opened ? null : opened;
   const reports: Report[] = [];
-  // --horizon <ISO>: run each chart's clock on to then after its trace (the stall probe).
   const hi = process.argv.indexOf("--horizon");
   const horizon = hi > 0 ? Date.parse(process.argv[hi + 1]!) : undefined;
-  for (const t of loadTraces()) reports.push(await replay(t, engine?.create ?? null, engine?.charts ?? [], { horizon }));
+  for (const t of loadTraces()) reports.push(await replay(t, { horizon }));
   const byCls: Record<string, number> = {};
   for (const r of reports) for (const d of r.divergences) byCls[d.cls ?? "UNEXPLAINED"] = (byCls[d.cls ?? "UNEXPLAINED"] ?? 0) + 1;
   const summary = {
-    engine: engine ? engine.charts : ("missing" in opened ? opened.missing : null),
     traces: reports.length,
     steps: reports.reduce((a, r) => a + r.steps, 0),
     checks: reports.reduce((a, r) => a + r.checks, 0),

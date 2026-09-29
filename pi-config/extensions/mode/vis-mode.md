@@ -11,7 +11,7 @@
 -->
 # Minor mode: vis
 
-The chat renders `vis` fences as drawings. When a picture explains faster than prose — a flow, an exchange between parties, a hierarchy, a history, numbers to compare, layers of a system — draw one inline in your reply with a fenced block whose info string is `vis <kind>`. Use them when apt, not by default: at most 1–2 per reply, each small (a reader takes it in at a glance on a phone), next to prose that says what to notice. Give every visual a one-line `caption:`.
+The chat renders `vis` fences as drawings. When a picture explains faster than prose — a flow, an exchange between parties, a hierarchy, a history, numbers to compare, layers of a system, a screen's layout — draw one inline in your reply with a fenced block whose info string is `vis <kind>`. Use them when apt, not by default: at most 1–2 per reply, each small (a reader takes it in at a glance on a phone), next to prose that says what to notice. Give every visual a one-line `caption:`.
 
 Rules for every kind:
 - One statement per line. Lines starting with `#` are comments. Settings are `key: value` lines: every kind takes `title:` and `caption:`.
@@ -31,7 +31,7 @@ To point at the one thing that matters, add a `mark` line (at the start of a lin
 
 ## flow
 <!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). Labels: kinds/flow/parse.ts decides the style per fence (a string after a chain's first id = inline style). -->
-Boxes and arrows: architecture, pipelines, request paths, decisions. Laid out automatically. Label nodes inline, where you first use them:
+Boxes and arrows: architecture, pipelines, request paths, decisions. Laid out automatically. A page or screen layout is a wireframe, not a flow. Label nodes inline, where you first use them:
 ```vis flow
 title: How a prompt reaches the model
 caption: The server owns the session; the browser only streams.
@@ -148,6 +148,35 @@ Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> s
 "Tony vs Bob" warn | "$5k vs $10k" -> "Tony settles"
 mark "Tony vs Bob" "settle step not run yet"
 ```
+
+## wireframe
+<!-- owner: structure member. kinds/wireframe: DOM blocks, SVG arrow overlay. Emphasis target: a block's first text (the screen it is written under first), a screen name. -->
+Low-fi screens: what sits where on a phone or desktop page; several screens show a flow, before/after or states. One block per line: a word, its "text"s, then optional words; indent a block to put it inside the one above.
+```vis wireframe
+title: Invoices on a phone
+caption: Totals first; tapping an invoice opens it.
+screen "Invoices"
+header "Invoices"
+  icon "search"
+row
+  stat "Unpaid" "AED —" warn
+  stat "Paid this month" "AED —"
+tabs "All, Unpaid, Paid"
+list
+  item "Invoice no." "customer · due date" "AED —" -> "Invoice"
+  item "Invoice no." "customer · due date" "AED —"
+button "New invoice" accent
+screen "Invoice"
+header "Invoice no."
+  icon "back"
+card "Amount due" "AED —"
+  button "Send reminder" accent
+mark "Unpaid" "tap to filter"
+```
+- Blocks: `header "Title"`, `tabs "A, B, C"` (`*B` selects B), `tabbar "A, B, C"`, `sidebar`, `footer`; `row` (up to 4), `col`, `grid`, `card "Title" ["subtitle"]`, `list` of `item "Title" ["detail"] ["right"]`, `modal "Title"`, `sheet "Title"`; `heading`, `text`, `image "what it shows"`, `avatar`, `icon "name"`, `badge`, `stat "Label" "value"`, `chart "Label" [bar|line|pie]`, `table "Col, Col"` (its `item`s are rows), `progress "Label" "60%"`; `button`, `link`, `input "Label" ["value"] ["hint"]`, `search`, `select`, `checkbox`, `toggle`, `radio`; `empty "Message"`, `loading`, `alert "Message"`, `toast`.
+- Words after the texts: a tone (`accent`: the main action; `error` on an input: its hint is the error), `on` (checked, selected), `wide`.
+- `screen "Name" [phone|desktop]` starts a screen (up to 6; `device: desktop` sets the default). `-> "Name"` after a block: the screen a tap opens. `mark` a block by its first text or a screen by its name.
+- Only the words and numbers you were given; else a placeholder ("Name", "Order no.", "AED —"). Never make up prices, IDs, dates or times.
 
 ## matrix
 <!-- owner: data member. Emphasis target: row label (key = index) or column name (key = c<index>). -->

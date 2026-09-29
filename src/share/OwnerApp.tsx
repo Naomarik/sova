@@ -37,6 +37,9 @@ async function load(r: OwnerRoute): Promise<OwnerAnswer> {
     throw new OwnerLoadError(body.code === "missing" && r.kind !== "home" ? "missing" : "unknown");
   }
   if (res.status === 429) throw new OwnerLoadError("busy");
+  // A public gateway's answer for a host that is offline (§mesh.public/offline): the page keeps
+  // what it shows and reads again.
+  if (res.status === 503) throw new OwnerLoadError("offline");
   if (!res.ok) throw new OwnerLoadError("failed");
   return (await res.json()) as OwnerAnswer;
 }

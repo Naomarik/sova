@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { hostname } from "node:os";
 import { VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
-import type { MeshHello, PeerState } from "../../shared/protocol";
+import type { PeerState } from "../../shared/protocol";
+import type { MeshHelloPublic, ShareGatewayHello } from "../../shared/public-links";
+import { gatewayPublicUrl } from "../share/registry";
 import { type PeerEntry, peerUrl } from "./peers";
 
 // Hello: who a Sova host is and which wire contract it speaks. The fingerprint and the package
@@ -52,7 +54,21 @@ function ownBuild(): string | undefined {
   return buildCache.build;
 }
 
-export function ownHello(self: { id: string; label: string }, nodeId?: string): MeshHello {
+// The public-links gateway advertisement (§mesh.public/gateway): an optional field outside
+// MeshHello, so the fingerprint (sha256 of shared/protocol.ts) is unchanged and an older host just
+// ignores it. Discovery only: whether this gateway accepts a given host is GatewayInfo, asked by
+// that host. Only a host whose route is "self" with a gateway setting advertises.
+function ownShareGateway(): ShareGatewayHello {
+  let publicUrl: string | null = null;
+  try {
+    publicUrl = gatewayPublicUrl();
+  } catch {
+    // an unreadable setting advertises nothing; the hello itself must never fail
+  }
+  return publicUrl ? { shareGateway: { publicUrl } } : {};
+}
+
+export function ownHello(self: { id: string; label: string }, nodeId?: string): MeshHelloPublic {
   const { protocol, version } = ownFingerprint();
   const build = ownBuild();
   return {
@@ -65,6 +81,7 @@ export function ownHello(self: { id: string; label: string }, nodeId?: string): 
     pi: PI_VERSION,
     ...(build ? { build } : {}),
     ...(nodeId ? { nodeId } : {}),
+    ...ownShareGateway(),
     now: Date.now(),
   };
 }
@@ -73,7 +90,8 @@ export const ownProtocol = (): string => ownFingerprint().protocol;
 
 export interface ProbeResult {
   state: PeerState;
-  hello?: MeshHello;
+  /** A gateway's hello also carries `shareGateway` (optional; an older host omits it). */
+  hello?: MeshHelloPublic;
   error?: string;
   /** Round trip of an answered hello, ms (this host's measure; never on the wire). */
   ms?: number;
@@ -92,7 +110,7 @@ export async function probeHello(base: string): Promise<ProbeResult> {
       await res.body?.cancel();
       return { state: "down", error: `hello answered ${res.status}` };
     }
-    const hello = (await res.json()) as MeshHello;
+    const hello = (await res.json()) as MeshHelloPublic;
     const ms = Math.round(performance.now() - t0);
     if (hello?.mesh !== 1 || typeof hello.protocol !== "string") return { state: "down", error: "not a Sova hello" };
     if (hello.protocol !== ownProtocol()) return { state: "skewed", hello, error: `protocol ${hello.protocol}, this host ${ownProtocol()}`, ms };

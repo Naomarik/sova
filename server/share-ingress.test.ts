@@ -60,6 +60,9 @@ type Reply = { status: number; body: unknown } | null;
 const DESK_URL = "https://desk-share.example.com";
 const urlOf = (node: string) => (node === "nDESK" ? DESK_URL : PUBLIC_URL);
 let setting: PublicLinksFile | null = VIA;
+let addrMode = false;
+/** Hold or rewrite the fixed client's endpoint resolution. */
+let endpointHook: ((p: PeerEntry, base: string) => Promise<string | null>) | null = null;
 let peers: PeerEntry[] = [GATEWAY, OTHER];
 let pushed: RegistrySnapshot[] = [];
 /** The StableID each snapshot in `pushed` went to. */
@@ -87,12 +90,16 @@ async function pushReply(node: string, snap: RegistrySnapshot): Promise<Reply> {
 const fakeDeps: Record<string, unknown> = {
   readSetting: () => setting,
   peers: () => peers,
-  addressMode: () => false,
-  // the fixed client
-  endpoint: async (p: PeerEntry) => `http://gw-${p.nodeId}.test`,
+  addressMode: () => addrMode,
+  // the fixed client: an endpoint per StableID, carrying the entry's port and name (so a changed
+  // entry is a changed endpoint); a test may hold it (endpointHook)
+  endpoint: async (p: PeerEntry) => {
+    const base = `http://gw-${p.nodeId}.${p.dnsName.replace(/[^A-Za-z0-9-]/g, "-")}.test:${new URL(peerUrl(p)).port || "80"}`;
+    return endpointHook ? endpointHook(p, base) : base;
+  },
   call: async (url: string, init?: RequestInit): Promise<Reply> => {
     calls.push(url);
-    const m = /^http:\/\/gw-([^./]+)\.test(\/.*)$/.exec(url);
+    const m = /^http:\/\/gw-([^./]+)\.[^/]*\.test(?::\d+)?(\/.*)$/.exec(url);
     if (!m) return null;
     const [, node, path] = m as unknown as [string, string, string];
     if (path === "/api/peer/hello") return helloReply(node);
@@ -134,6 +141,8 @@ afterEach(() => {
   infoReply = async (n) => infoOk(n);
   answer = async (s, node) => ({ ok: true, seq: s.seq, publicUrl: urlOf(node) });
   rawReply = null;
+  endpointHook = null;
+  addrMode = false;
   whoisNode = null;
   setIdentity(fakeIdentity);
 });
@@ -220,13 +229,13 @@ test("viaGatewayStatus is null unless the route is via", async () => {
 });
 
 test("noteAck: ok learns the URL and acceptance; not-accepted; null is unreachable", () => {
-  gw.noteAck(GATEWAY, { ok: true, seq: 1, publicUrl: PUBLIC_URL }, true);
+  gw.noteAck(gw.currentTarget()!, { ok: true, seq: 1, publicUrl: PUBLIC_URL }, true);
   assert.equal(gw.viaGatewayStatus()?.publicUrl, PUBLIC_URL);
   assert.equal(gw.viaGatewayStatus()?.accepting, true);
   assert.equal(gw.viaGatewayStatus()?.reachable, true);
-  gw.noteAck(GATEWAY, { ok: false, error: "not-accepted" }, true);
+  gw.noteAck(gw.currentTarget()!, { ok: false, error: "not-accepted" }, true);
   assert.equal(gw.viaGatewayStatus()?.accepting, false);
-  gw.noteAck(GATEWAY, null, false);
+  gw.noteAck(gw.currentTarget()!, null, false);
   assert.equal(gw.viaGatewayStatus()?.reachable, false);
 });
 
@@ -234,7 +243,7 @@ test("the gateway client never writes public-links.json", async () => {
   const file = join(stateRoot(), "public-links.json");
   rmSync(file, { force: true });
   await gw.refreshGateway();
-  gw.noteAck(GATEWAY, { ok: true, seq: 1, publicUrl: PUBLIC_URL }, true);
+  gw.noteAck(gw.currentTarget()!, { ok: true, seq: 1, publicUrl: PUBLIC_URL }, true);
   assert.throws(() => statSync(file), "no file appeared");
 });
 
@@ -1109,4 +1118,192 @@ test("B5 address mode: the entry's own tailnet IP; none, no call", async () => {
       for (const u of c.seen) assert.equal(new URL(u).hostname, want, u);
     }
   }
+});
+
+// =================================================================================================
+// M4 re-review (astra v2): B1, B3 and B4's remaining windows.
+// =================================================================================================
+
+// ---- B1 v2: a mint gone before its listener ran never counts as confirmed ------------------------
+
+test("B1v2(a) an owner link rotated by a second mint in the same tick: the first (never sent) warns", async () => {
+  clearStores();
+  push.startRegistryPush();
+  await push.pushNow();
+  const pA = events.awaitShareLinks(() => personLinks.mintOwnerLink("oRot", "pRot").token, WAIT);
+  const pB = events.awaitShareLinks(() => personLinks.mintOwnerLink("oRot", "pRot").token, WAIT);
+  const [a] = await Promise.all([pA, pB]);
+  const hashA = batonLinks.hashToken(a.result);
+  assert.ok(!pushed.some((snap) => snap.links.some((l) => l.h === hashA)), "premise: no snapshot carried A");
+  assert.equal(a.outcome.warning, warn("unconfirmed"), JSON.stringify(a.outcome));
+});
+
+test("B1v2(b) a mint revoked in the same tick, before any listener ran: it warns", async () => {
+  clearStores();
+  push.startRegistryPush();
+  await push.pushNow();
+  const r = await events.awaitShareLinks(() => {
+    const t = batonLinks.mintLink({ orgId: "o1", sessionId: "s-gone", n: 1, personId: "p1" });
+    batonLinks.revokeLinks((l) => l.sessionId === "s-gone");
+    return t;
+  }, WAIT);
+  assert.ok(!pushed.some((snap) => snap.links.some((l) => l.h === batonLinks.hashToken(r.result))), "premise: never sent");
+  assert.equal(r.outcome.warning, warn("unconfirmed"), JSON.stringify(r.outcome));
+});
+
+test("B1v2 control: one clean mint alone is confirmed", async () => {
+  clearStores();
+  push.startRegistryPush();
+  await push.pushNow();
+  assert.equal((await mintH(WAIT)).outcome.warning, null);
+});
+
+test("B1v2 control: two unrelated clean mints in one tick are both confirmed", async () => {
+  clearStores();
+  push.startRegistryPush();
+  await push.pushNow();
+  const m = mintTwo();
+  const [a, b] = await Promise.all([m.pa, m.pb]);
+  assert.equal(a.outcome.warning, null, JSON.stringify(a.outcome));
+  assert.equal(b.outcome.warning, null, JSON.stringify(b.outcome));
+});
+
+// ---- B3 v2: a target withdrawn while its address is being resolved gets no call ------------------
+
+/** Hold the endpoint of calls for `node`; `resolve()` releases every held one. */
+function holdEndpoint(node: string) {
+  const waiting: (() => void)[] = [];
+  let asked = 0;
+  endpointHook = async (p, base) => {
+    if (p.nodeId !== node || released) return base;
+    asked++;
+    await new Promise<void>((r) => waiting.push(r));
+    return base;
+  };
+  let released = false;
+  return {
+    asked: () => asked,
+    resolve: () => {
+      released = true;
+      for (const w of waiting.splice(0)) w();
+    },
+  };
+}
+const callsTo = (pattern: RegExp, from = 0) => calls.slice(from).filter((u) => pattern.test(u));
+async function until(cond: () => boolean, what: string, ms = 2000) {
+  const end = Date.now() + ms;
+  while (!cond()) {
+    if (Date.now() > end) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+const settleAll = async () => {
+  for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 10));
+};
+
+test("B3v2(a) via A → B while A's endpoint resolves: zero calls to A, B gets the snapshot, no A status", async () => {
+  clearStores();
+  push.startRegistryPush();
+  await push.pushNow();
+  const held = holdEndpoint("nGW");
+  const p = mintH(WAIT);
+  await until(() => held.asked() > 0, "A's endpoint asked");
+  setting = { version: 1, route: { via: { nodeId: "nDESK" } } };
+  gw.bumpRouteGeneration?.();
+  push.registryRouteChanged();
+  const mark = calls.length;
+  held.resolve();
+  await p;
+  await settleAll();
+  assert.deepEqual(callsTo(/gw-nGW\./, mark), [], "nothing went to A after it was withdrawn");
+  assert.ok(pushedTo.includes("nDESK"), "B got a snapshot");
+  assert.notEqual(gw.viaGatewayStatus()?.publicUrl, PUBLIC_URL, "no A status");
+});
+
+test("B3v2(b) via A → off while A's endpoint resolves: zero calls to A, the mint warns", async () => {
+  clearStores();
+  push.startRegistryPush();
+  await push.pushNow();
+  const held = holdEndpoint("nGW");
+  const p = mintH(WAIT);
+  await until(() => held.asked() > 0, "A's endpoint asked");
+  setting = { version: 1, route: "off" };
+  gw.bumpRouteGeneration?.();
+  push.registryRouteChanged();
+  const mark = calls.length;
+  held.resolve();
+  const { outcome } = await p;
+  await settleAll();
+  assert.deepEqual(callsTo(/gw-nGW\./, mark), [], "nothing went to A");
+  assert.ok(outcome.warning, `warned: ${JSON.stringify(outcome)}`);
+});
+
+test("B3v2(c) the same node's peer-listener port changed while its endpoint resolves: no call to the old port; the next send uses the new one", async () => {
+  clearStores();
+  peers = [{ ...GATEWAY, url: "http://100.64.0.2:4801" }, OTHER];
+  push.startRegistryPush();
+  await push.pushNow();
+  const held = holdEndpoint("nGW");
+  const p = mintH(WAIT);
+  await until(() => held.asked() > 0, "the endpoint asked");
+  peers = [{ ...GATEWAY, url: "http://100.64.0.2:4899" }, OTHER];
+  const mark = calls.length;
+  held.resolve();
+  await p;
+  await push.pushNow();
+  await settleAll();
+  assert.deepEqual(callsTo(/:4801\//, mark), [], "nothing to the old port");
+  assert.ok(callsTo(/:4899\/api\/peer\/share-gateway\/links$/, mark).length > 0, "the next send went to the new port");
+});
+
+test("B3v2(d) address mode: the entry's pinned address changed while its endpoint resolves: no call to the old pin", async () => {
+  clearStores();
+  addrMode = true;
+  push.startRegistryPush();
+  await push.pushNow();
+  const held = holdEndpoint("nGW");
+  const p = mintH(WAIT);
+  await until(() => held.asked() > 0, "the endpoint asked");
+  peers = [{ ...GATEWAY, dnsName: "100.64.0.7" }, OTHER];
+  const mark = calls.length;
+  held.resolve();
+  await p;
+  await push.pushNow();
+  await settleAll();
+  assert.deepEqual(callsTo(/100-64-0-2\./, mark), [], "nothing to the old pin");
+  assert.ok(callsTo(/100-64-0-7\..*\/api\/peer\/share-gateway\/links$/, mark).length > 0, "the next send went to the new pin");
+});
+
+// ---- B4 v2: URL spellings that normalization would erase ----------------------------------------
+
+test("B4v2 parseAck and parseInfo refuse a publicUrl that only becomes an origin after normalization", () => {
+  const bad = ["https://share.example.com/private/..", "https://share.example.com/%2e", "https:share.example.com", "https://share.example.com\\private", "https://share.example.com\\"];
+  for (const u of bad) {
+    assert.equal(gw.parseAck({ status: 200, body: { ok: true, seq: 1, publicUrl: u } }), null, `ack ${u}`);
+    assert.equal(gw.parseInfo({ status: 200, body: { publicUrl: u, accepting: true, seq: null } }), null, `info ${u}`);
+  }
+  for (const u of ["https://share.example.com", "https://share.example.com/"]) {
+    assert.equal((gw.parseAck({ status: 200, body: { ok: true, seq: 1, publicUrl: u } }) as { publicUrl?: string } | null)?.publicUrl, PUBLIC_URL, `ack ${u}`);
+    assert.equal((gw.parseInfo({ status: 200, body: { publicUrl: u, accepting: true, seq: null } }) as { publicUrl?: string } | null)?.publicUrl, PUBLIC_URL, `info ${u}`);
+  }
+});
+
+// ---- non-blocking: an ambiguous StableID in LocalAPI ---------------------------------------------
+
+test("two LocalAPI node records with the gateway's StableID: no endpoint, no call", async () => {
+  peers = [EVIL, OTHER];
+  statusWith([
+    { nodeId: "nGW", addresses: ["100.64.0.2"] },
+    { nodeId: "nGW", addresses: ["100.64.0.12"] },
+  ]);
+  const c = anyCall();
+  await withDefaults(["endpoint", "hello", "info", "push"], async () => {
+    const undo = gw.setGatewayDeps({ call: c.call } as never);
+    try {
+      await gw.refreshGateway();
+    } finally {
+      undo();
+    }
+  });
+  assert.deepEqual(c.seen, []);
 });

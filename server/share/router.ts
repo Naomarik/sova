@@ -15,7 +15,7 @@ import { acceptsNode, type GatewayRegistry, gatewayPublicUrl, gatewaySetting, ty
 import { SHARE_DIST } from "./routes";
 import { stripForwarded } from "./security";
 import { onPublicLinksChanged } from "./setting-events";
-import { createWsHop, type WsHop } from "./ws-hop";
+import { createWsHop, WS_HOP_WITHDRAW_GRACE_MS, type WsHop } from "./ws-hop";
 
 /**
  * A gateway's router (§mesh.public/routing): the share listener's `dispatch` and `upgrade`. The
@@ -86,6 +86,8 @@ export interface GatewayRouterOptions {
   assetMaxBytes?: number;
   /** 0: no timer (tests call `sweep`). */
   sweepMs?: number;
+  /** How long a `/ws/h` hop whose host withdrew its row waits for that host's own close. */
+  withdrawGraceMs?: number;
   httpTotal?: number;
 }
 
@@ -427,10 +429,22 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
 
   const sweep = (): void => {
     for (const entry of [...active]) if (entry.still() !== "same") entry.kill();
+    // A row its own host withdrew (a newer snapshot without it: revoked or expired there) while
+    // that host is still live and accepted: its /ws/h hops wait for the host's own close (4410
+    // after a revoke), §mesh.public/withdrawn-hop. Any other lost route closes at once.
+    const v = view();
+    const withdrawn = new Set<string>();
     wsHop.closeWhere((key) => {
       const [nodeId, h, port] = key.split(" ");
-      return holds(nodeId!, h!, "h", Number(port)) !== "same";
+      const standing = holds(nodeId!, h!, "h", Number(port));
+      if (standing === "same") return false;
+      if (standing === "gone" && v?.byNode.has(nodeId!)) {
+        withdrawn.add(key);
+        return false;
+      }
+      return true;
     });
+    if (withdrawn.size) wsHop.drainWhere((key) => withdrawn.has(key), opts.withdrawGraceMs ?? WS_HOP_WITHDRAW_GRACE_MS);
     void sweepAddresses().catch(() => {});
   };
   const unsubscribe = [registry.onChange(sweep), onPublicLinksChanged(() => sweep())];

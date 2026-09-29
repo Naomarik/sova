@@ -27,6 +27,9 @@ import { hopLost, offlineUpgrade } from "./offline";
  *   (`upstreamMaxPayload`), and a message over it ends the hop like a lost host. The origin's own
  *   closes (4410 gone, 4000 opened elsewhere, 1000) are passed on; anything else closes the page's
  *   socket with HOP_LOST_CLOSE, and the page reconnects with backoff.
+ * - A hop whose host withdrew its row (drainWhere, §mesh.public/withdrawn-hop) is not cut at once:
+ *   the page's messages stop going up, the host's still come down, and the host's own close (4410
+ *   after a revoke) passes through; with none within the grace, the page gets HOP_LOST_CLOSE.
  * - One idempotent cleanup per hop, attached before the dial, releases its slot and ends both
  *   sides on every path: a rejected or abandoned page handshake, a failed or closed upstream, a
  *   revocation (closeWhere) and dispose().
@@ -42,6 +45,8 @@ export const WS_HOPS_TOTAL = 256;
 export const WS_HOP_DIAL_MS = 10_000;
 /** The upstream client's message cap: not the page's 1 KB, but not unlimited either. */
 export const WS_HOP_UPSTREAM_MAX_PAYLOAD = 16 * 1024 * 1024;
+/** How long a hop whose host withdrew its row waits for that host's own close. */
+export const WS_HOP_WITHDRAW_GRACE_MS = 3000;
 /** Bytes a page may send while its upstream is dialed (it has no reason to send any). */
 const EARLY_MAX = 64 * 1024;
 /** Upstream messages held while the page's handshake completes. */
@@ -79,6 +84,10 @@ export interface WsHop {
   /** End every hop whose key matches: an open page gets HOP_LOST_CLOSE, a dialing one 503, and
       the upstream is terminated either way. */
   closeWhere(match: (key: string) => boolean): void;
+  /** Every hop whose key matches waits up to `graceMs` for its host's own close, passing nothing
+      more up from the page; then it ends as closeWhere does. A hop still dialing ends at once,
+      and a hop already waiting keeps its first deadline. */
+  drainWhere(match: (key: string) => boolean, graceMs: number): void;
   /** End every hop as closeWhere does, and answer every later forward 503 without dialing. */
   dispose(): void;
 }
@@ -126,6 +135,7 @@ type PageEnd = "gone" | "offline" | "not-found" | "lost" | { status: number } | 
 interface Hop {
   key: string;
   end(page: PageEnd): void;
+  drain(graceMs: number): void;
 }
 
 export function createWsHop(opts: WsHopOptions = {}): WsHop {
@@ -148,6 +158,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
     let up: WebSocket | null = null;
     let page: WebSocket | null = null;
     let ended = false;
+    let draining: ReturnType<typeof setTimeout> | null = null;
     const pending: { data: RawData; binary: boolean }[] = [];
     const early: Buffer[] = [];
     let earlySize = 0;
@@ -172,6 +183,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
       end(how) {
         if (ended) return;
         ended = true;
+        if (draining) clearTimeout(draining);
         const set = hops.get(key);
         if (set?.delete(hop)) {
           open--;
@@ -193,6 +205,12 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
         else if (typeof how === "object" && "status" in how)
           refuse(socket, how.status, { error: how.status === 410 ? "This link is no longer active." : how.status === 429 ? "Too many requests" : "Unknown link." });
         else socket.destroy();
+      },
+      drain(graceMs) {
+        if (ended || draining) return;
+        if (!page) return hop.end("lost");
+        draining = setTimeout(() => hop.end("lost"), graceMs);
+        draining.unref?.();
       },
     };
     let set = hops.get(key);
@@ -254,7 +272,7 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
         socket.off("close", onGone);
         ws.on("error", () => {}); // an oversized frame: ws closes with 1009 by itself
         ws.on("message", (data: RawData, binary: boolean) => {
-          if (u.readyState === u.OPEN) u.send(data, { binary });
+          if (!draining && u.readyState === u.OPEN) u.send(data, { binary });
         });
         ws.on("close", () => hop.end("gone"));
         for (const m of pending.splice(0)) ws.send(m.data, { binary: m.binary });
@@ -266,11 +284,16 @@ export function createWsHop(opts: WsHopOptions = {}): WsHop {
     for (const [key, set] of [...hops]) if (match(key)) for (const hop of [...set]) hop.end("lost");
   };
 
+  const drainWhere: WsHop["drainWhere"] = (match, graceMs) => {
+    for (const [key, set] of [...hops]) if (match(key)) for (const hop of [...set]) hop.drain(graceMs);
+  };
+
   return {
     forward,
     count: (key) => hops.get(key)?.size ?? 0,
     total: () => open,
     closeWhere,
+    drainWhere,
     dispose() {
       disposed = true;
       closeWhere(() => true);

@@ -118,7 +118,8 @@
       "requires": [
         "§app.insights/usage-refresh",
         "§app.claude-logins/device-order",
-        "§app.claude-logins/registry"
+        "§app.claude-logins/registry",
+        "§app.claude-logins/pool"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -130,7 +131,9 @@
         "shared/protocol.ts",
         "src/design/base.css",
         "server/insights-claude-logins.test.ts",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/lib/claude-login-groups.ts",
+        "src/lib/claude-login-groups.test.ts"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
@@ -7038,7 +7041,9 @@
         "src/lib/claude-pool.ts",
         "src/components/MeshView.tsx",
         "server/claude-pool/index.ts",
-        "src/lib/claude-pool.test.ts"
+        "src/lib/claude-pool.test.ts",
+        "src/lib/claude-login-groups.ts",
+        "src/lib/claude-login-groups.test.ts"
       ],
       "requires": [
         "§app.claude-logins/add-remove",
@@ -7100,7 +7105,10 @@
         "src/lib/api.ts",
         "server/claude-accounts.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
-        "server/insights-claude-logins.test.ts"
+        "server/insights-claude-logins.test.ts",
+        "src/lib/claude-login-groups.ts",
+        "src/lib/claude-login-groups.test.ts",
+        "src/design/base.css"
       ]
     },
     "§app.claude-logins/failover": {
@@ -7134,7 +7142,11 @@
         "server/claude-accounts.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
         "src/components/AccountsSettings.tsx",
-        "server/claude-pool/agent.ts"
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/doc.ts",
+        "src/lib/claude-login-groups.ts",
+        "src/lib/claude-login-groups.test.ts",
+        "server/claude-pool/agent.test.ts"
       ]
     },
     "§app.claude-logins/spawn-selection": {

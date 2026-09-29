@@ -26,12 +26,12 @@ test("Settings opens at the tab asked for, and closes", () => {
   closeSettings();
 });
 
-test("Modes sits after Models, Teams after Modes, Overseer after Teams and Decisions after Overseer in the rail, and the dialog's rail is this list", () => {
-  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "modes", "teams", "overseer", "decisions", "summaries", "organizations", "themes", "mesh", "experimental"]);
+test("Modes sits after Models, Teams after Modes, Overseer after Teams and Decisions after Overseer, Public links after Mesh in the rail, and the dialog's rail is this list", () => {
+  assert.deepEqual([...SETTINGS_TABS], ["general", "models", "modes", "teams", "overseer", "decisions", "summaries", "organizations", "themes", "mesh", "public-links", "experimental"]);
   // The dialog's own TABS must be the same ids in the same order (it is `satisfies`-typed against
   // SettingsTab, which catches an unknown id but not a missing or reordered one).
   const dialog = readFileSync(new URL("../components/SettingsDialog.tsx", import.meta.url), "utf8");
-  const ids = [...dialog.matchAll(/\{ id: "([a-z]+)", label: "[^"]+", icon: "[a-z-]+" as const \}/g)].map((m) => m[1]);
+  const ids = [...dialog.matchAll(/\{ id: "([a-z-]+)", label: "[^"]+", icon: "[a-z-]+" as const \}/g)].map((m) => m[1]);
   assert.deepEqual(ids, [...SETTINGS_TABS]);
 });
 

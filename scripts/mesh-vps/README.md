@@ -11,7 +11,14 @@ self id is never rewritten, since host filters and the front-door order referenc
 extension cache, re-warmed by `run-warm.sh` / `warm-extensions.mjs` after each build and at each unit start, so the first
 session never stalls Sova compiling 16 extensions), `sova-mesh.env` (SOVA_SYNC_CLAUDE_DIR = `home/.claude`, 0700: the Claude Code store that login sync fills), `Caddyfile`.
 Ports: Sova main 127.0.0.1:4800; peer listener <vps-tailnet-ip>:4801 (only while peers.json lists a peer);
-front door Caddy 127.0.0.1:4890 (admin 127.0.0.1:2089). Nothing binds the public interface.
+front door Caddy 127.0.0.1:4890 (admin 127.0.0.1:2089); share links 127.0.0.1:4802 when this host is the share gateway.
+Nothing of Sova's binds the public interface.
+
+Public share links (optional): in Sova, Settings → Public links → "This host is the gateway", with a public address
+(https://share.example.com) and a front. Sova shows the front's one-time step and a Verify button; it never runs the
+step and never writes the front's config. The public front is separate from the private front door (4890 / 8443),
+which stays tailnet only. Set SHARE_FRONT in local.env to the front you chose so `exposure.sh probe` expects 443 open;
+every Sova port, 4802 included, must still time out. The front's root step, if any, is in SUDO.md.
 
 From the laptop:
 - `deploy.sh [--rev <sha>] [--claude-bin <path>]`: stream `git archive <sha>` over ssh, install Node/Caddy, pnpm install
@@ -22,7 +29,8 @@ From the laptop:
 - `smoke.sh [--keep-peers]`: start Sova by hand, check health, mesh off = no peer port, PUT peers.json (the
   laptop's team server; self.id must be $VPS_ID, loginKinds not pinned) → the peer listener binds the tailnet IP only, exposure probe, stop, and compare the
   production state (listening sockets + `systemctl is-active` of PROD_UNITS, if set) before and after.
-- `exposure.sh probe`: public 4800/4801/4890/2089/8443/10443 must time out (VPS_CONTROL_PORTS, if set, are controls that must connect). ssh goes over the tailnet
+- `exposure.sh probe`: public 4800/4801/4802/4890/2089/8443/10443 must time out (VPS_CONTROL_PORTS, if set, are controls that must connect;
+  with SHARE_FRONT = vhost, caddy or funnel, 443 is one too). ssh goes over the tailnet
   ($VPS_SSH).
 
 Tailnet URLs (tailscale serve, set by the parent; tailnet only): front door

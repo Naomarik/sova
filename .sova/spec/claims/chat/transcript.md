@@ -497,34 +497,39 @@ Driven by `ChatServerMessage.event`.
   It is **one line at every width**, in one of two forms picked by the composer's own width (its
   `composer` container, with a `@media` floor). Both forms' markup is always there; CSS alone
   picks, so nothing moves when one gives way to the other.
-  - **Wide** (a composer 569px wide or more): words. The pulsing dot, "Working", and the detail
+  - **Wide** (a composer 620px wide or more): words. The pulsing dot, "Working", and the detail
     in mono, muted: "· running bash", "· thinking", "· writing", nothing between blocks. This is
     the loading pattern: say what's happening. A detail longer than the room (a long tool name)
     ends in an ellipsis rather than pushing anything; the whole text is the tooltip.
-  - **Narrow** (under 569px): icons. The dot says Working and one icon after it says what the turn
+  - **Narrow** (under 620px): icons. The dot says Working and one icon after it says what the turn
     is doing: `bulb.svg` while it thinks, `pencil.svg` while it writes, `wrench.svg` while it runs
     a tool (never the tool's name), none between blocks. The same words are visually hidden and are
     the tooltip.
-  569px is measured, not chosen: it is the narrowest composer content width where the whole wide
-  row — "● Working · running agent_spawn", "● 1 subagent ›", "1 align · 8/8", "3 inputs ›" — fits
-  with nothing truncated at the Medium text size. So the desktop and the Fold's open portrait and
-  open landscape at 933px get words; phones, the cover screen and the open landscape at 816px get
-  icons.
+  620px is measured, not chosen: it is the narrowest composer content width where the whole wide
+  row — "● Working · running agent_spawn", "● 1 subagent ›", "1 align · 0/8 decided",
+  "3 inputs ›" — fits with nothing truncated at the Medium text size. So the desktop and the Fold's
+  open portrait at 704px get words; phones, the cover screen, the open portrait at 616px and both
+  open landscapes (933px and 816px, beside the sidebar) get icons.
   **Screen readers hear the words once in either form**: the one words span is visible in the wide
   form and visually hidden in the narrow one, and the icon is `aria-hidden`.
   **Stopping and the rare states keep their words in both forms**, beside the dot: "Stopping…",
   "Compacting context", "Retrying after a provider error". Short of room they end in an ellipsis,
-  with the whole text in the tooltip. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
+  with the whole text in the tooltip; in the narrow form they give way first, down to about 4em of
+  their words. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
   and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §chat/timeline), and it
   renders whenever any of the three has something to show,
   so an idle session with messages still has one. The subagents trigger follows the same two forms
-  (words wide, an icon and a count narrow, §app/subagents-pane). The triggers and the alignment
-  chip never shrink, so none runs its words into the next.
+  (words wide, an icon and a count narrow, §app/subagents-pane). The triggers never shrink, so none
+  runs its words into the next. The alignment chip doesn't either, except in the narrow form once
+  nothing else can give: its count then ends in an ellipsis ("1 align · 0/8…"), its full text still
+  its accessible name. At 344px that is every state with the subagents trigger and the inputs
+  trigger beside it; at 390px only a rare state's.
   **Nothing moves.** The row is 20px tall whatever it carries (the triggers' net height) with its
   own 16px bottom margin, so the textarea and the composer keep their place between idle and
   working and as the step changes. The row's gap and each trigger's inline padding are 8px in the
   wide form; in the narrow one they are 6px and a trigger's parts sit 4px apart, so a working row
-  with the subagents trigger, the alignment chip and the inputs trigger still fits at 344px.
+  with the subagents trigger, the alignment chip and the inputs trigger stays on one line inside
+  the composer at 344px.
 - **End of turn** (`agent_settled`, or `agent_end` if that's all you get). Remove the live dots
   and the run status. Replace the optimistic items with the server's canonical ones if it sends
   them. Announce "Reply finished." in the polite live region; announce nothing per delta.

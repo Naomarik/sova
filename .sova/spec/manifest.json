@@ -6029,7 +6029,8 @@
         "src/components/ChatView.tsx",
         "src/lib/align.ts",
         "src/lib/align.test.ts",
-        "src/design/align-viewer.css"
+        "src/design/align-viewer.css",
+        "src/design/base.css"
       ],
       "requires": [
         "§chat.alignment/card",

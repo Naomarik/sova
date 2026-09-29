@@ -47,7 +47,7 @@ right end, and the row renders whenever any of streaming, workers or inputs has 
 ```
 
 - **Words when there's room, an icon and a count when there isn't.** It follows the run-status
-  row's two forms (§chat.transcript/streaming, switched at a 569px composer). Wide, it is the
+  row's two forms (§chat.transcript/streaming, switched at a 620px composer). Wide, it is the
   live dot while any worker works, the words — "2 subagents working…", or the counts alone while
   the parent's own turn runs ("2 subagents" · "1 subagent · 2 team members"), "2 subagents" once
   all have settled — and the chevron. Narrow, the words give way to the muted `worker.svg` icon and

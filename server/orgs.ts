@@ -1,16 +1,11 @@
 import { randomBytes } from "node:crypto";
-import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AttentionItem } from "../shared/protocol";
 import {
   ORG_ABOUT_MAX,
-  PERSON_ITEM_MAX,
-  PERSON_LIST_MAX,
   PERSON_NAME_MAX,
-  PERSON_TEXT_MAX,
-  PROFILE_FIELDS,
-  type ChangeWriter,
-  type Competence,
+  type ChangeVia,
   type Org,
   type OrgBatonRow,
   type OrgChange,
@@ -18,39 +13,38 @@ import {
   type OrgProject,
   type OrgsInfo,
   type OrgSummary,
+  type NamedChange,
+  type OwnerChange,
   type Person,
   type PersonContact,
   type PersonInput,
-  type PersonReferral,
   type PersonStatus,
   type ProfileChange,
-  type ProfileField,
-  type NamedChange,
-  type OwnerChange,
   type StakeholderChange,
-  type ChangeVia,
 } from "../shared/orgs";
-import { heldElsewhere, heldSentence, hostIdentity, readHolder, writeHeld, writeReleased } from "./org-holder";
+import { actOrThrow, closeOrgHost, envelopeFor, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, type OrgHostApi } from "./org-engine";
+import type { Envelope } from "./org-envelope";
+import { hostIdentity } from "./org-holder";
+import { OrgHost } from "./org-host";
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
-import { commitEveryMs, type CommitTarget } from "./workspace-commits";
-import { commitAll, gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-git";
+import { commitEveryMs } from "./workspace-commits";
+import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-git";
 
 /**
  * Organizations (§app/organizations). Two layers:
  *
  * - This host's index, `<stateRoot>/orgs.json`: which orgs are ATTACHED here (resident) and where
- *   their workspace repos are, which project overseers are paused since an attach, plus the
- *   operator's display name. Host state, never committed.
- * - Each org's workspace repo: `org.json`, `about.md` and `org-history.jsonl` (the org's About text
- *   and its history), `roster.json`, `roster-history.jsonl`, `projects.json`,
- *   `baton.json` (server/baton.ts), `sessions/` (baton and project-overseer transcripts) and
- *   `projects/<pid>/` (decisions, conflicts, the project overseer's files). It is the org's whole
- *   portable state, committed hourly (server/workspace-commits.ts); nothing secret is ever written there.
+ *   their workspace repos are, plus the operator's display name. Host state, never committed.
+ * - Each org's workspace repo: its charts (`charts/`: every lifecycle — the org, its people and
+ *   projects, gatherings, decisions, builds — and the transition log; server/org-engine.ts opens one
+ *   engine per attached org), `about.md` and `org-history.jsonl` (the org's About text and its
+ *   history), `roster-history.jsonl` (profile values, written by the person chart's effect),
+ *   `sessions/` (baton and project-overseer transcripts) and `projects/<pid>/` (the project
+ *   overseer's plain files). Committed hourly by the residence chart; nothing secret is ever there.
  *
- * Writes are atomic (tmp + rename; `*.tmp` is in the repo's .gitignore). The roster's history is
- * appended BEFORE the roster is rewritten, so a crash between the two leaves a history that says
- * more than the roster, never less.
+ * Reads answer today's shapes from the charts in memory (q1: no state file is written). Writes are
+ * acts the charts take or refuse with today's sentences.
  */
 
 export class OrgError extends Error {
@@ -74,9 +68,6 @@ interface IndexEntry {
   id: string;
   dir: string;
   attachedAt: string;
-  /** Set by an attach (a restore or a move): the projects whose overseer is paused at L0 on this
-      host until the operator sets its level here again. Absent for an org created here. */
-  pausedOverseers?: string[];
 }
 interface OrgIndex {
   version: number;
@@ -101,6 +92,9 @@ function readJson(file: string): unknown {
   }
 }
 
+/** An engine time (epoch ms) as the wire's ISO string; "" when absent. */
+export const isoOf = (v: unknown): string => (typeof v === "number" && Number.isFinite(v) ? new Date(v).toISOString() : typeof v === "string" ? v : "");
+
 // ---- the host index ------------------------------------------------------------------------------
 
 let indexCache: { mtimeMs: number; index: OrgIndex; roots: string[] } | null = null;
@@ -110,13 +104,7 @@ function loadIndex(): OrgIndex {
   const orgs: IndexEntry[] = [];
   if (isObj(raw) && Array.isArray(raw.orgs))
     for (const o of raw.orgs)
-      if (isObj(o) && typeof o.id === "string" && typeof o.dir === "string")
-        orgs.push({
-          id: o.id,
-          dir: o.dir,
-          attachedAt: typeof o.attachedAt === "string" ? o.attachedAt : "",
-          ...(Array.isArray(o.pausedOverseers) ? { pausedOverseers: o.pausedOverseers.filter((x): x is string => typeof x === "string") } : {}),
-        });
+      if (isObj(o) && typeof o.id === "string" && typeof o.dir === "string") orgs.push({ id: o.id, dir: o.dir, attachedAt: typeof o.attachedAt === "string" ? o.attachedAt : "" });
   const name = isObj(raw) && isObj(raw.operator) && typeof raw.operator.name === "string" && raw.operator.name.trim() ? raw.operator.name.trim() : "Operator";
   return { version: INDEX_VERSION, operator: { name }, orgs };
 }
@@ -225,136 +213,170 @@ export async function workspaceDirProblem(dir: string, sovaRoot = SOVA_ROOT, wor
   return base !== root && within(base, root) && within(canonical, base) ? null : refused;
 }
 
-// ---- org files ---------------------------------------------------------------------------------------
+// ---- the org's engine ---------------------------------------------------------------------------------
 
-const orgFile = (dir: string) => join(dir, "org.json");
-const rosterFile = (dir: string) => join(dir, "roster.json");
-const historyFile = (dir: string) => join(dir, "roster-history.jsonl");
-const projectsFile = (dir: string) => join(dir, "projects.json");
+export const orgSid = (orgId: string) => `org/${orgId}`;
+export const residenceSid = (orgId: string) => `residence/${orgId}`;
+export const personSid = (orgId: string, pid: string) => `person/${orgId}/${pid}`;
+export const projectSid = (orgId: string, pid: string) => `project/${orgId}/${pid}`;
+export const watchSid = (orgId: string, pid: string) => `watch/${orgId}/${pid}`;
 
-function readOrgFile(dir: string): Org | null {
-  const raw = readJson(orgFile(dir));
-  if (!isObj(raw) || typeof raw.id !== "string" || typeof raw.name !== "string") return null;
-  const cleared = raw.ownerCleared;
-  return {
-    id: raw.id,
-    name: raw.name,
-    slug: typeof raw.slug === "string" ? raw.slug : slugOf(raw.name),
-    createdAt: typeof raw.createdAt === "string" ? raw.createdAt : "",
-    ...(typeof raw.owner === "string" && raw.owner ? { owner: raw.owner } : {}),
-    ...(Array.isArray(raw.ownerHistory) ? { ownerHistory: raw.ownerHistory.filter((c): c is OwnerChange => isObj(c) && typeof c.at === "string") } : {}),
-    ...(isObj(cleared) && typeof cleared.personId === "string" && typeof cleared.name === "string" && typeof cleared.at === "string"
-      ? { ownerCleared: { personId: cleared.personId, name: cleared.name, at: cleared.at } }
-      : {}),
-  };
+/** The org id a workspace's org snapshot names (`charts/org/<org%2F<id>>.edn`), or null: not a workspace repo. */
+export function orgIdIn(dir: string): string | null {
+  let files: string[];
+  try {
+    files = readdirSync(join(dir, "charts", "org"));
+  } catch {
+    return null;
+  }
+  for (const f of files) {
+    if (!f.endsWith(".edn")) continue;
+    const sid = decodeURIComponent(f.slice(0, -4));
+    if (sid.startsWith("org/") && sid.length > 4) return sid.slice(4);
+  }
+  return null;
 }
 
-function writeOrgFile(dir: string, org: Org): void {
-  writeJson(orgFile(dir), { version: 1, ...org });
+/** Open an org's engine; the org charts' effect handlers (history lines, links, commits) are registered
+    on it first (loaded here, not imported above: that module imports this one). */
+async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
+  await import("./org-effects");
+  return openOrgHost({ orgId, workspaceDir: dir, stateDir: stateRoot() });
 }
 
-export function readOrg(orgId: string): Org {
-  const dir = orgDir(orgId);
-  const org = readOrgFile(dir);
-  if (!org) throw new OrgError(`The workspace repo at ${dir} has no readable org.json`, 409);
-  return org;
+/** Open every attached org's engine (server start). One that fails is logged; its pages say why. */
+export async function openAttachedOrgs(): Promise<void> {
+  for (const o of readIndex().orgs)
+    try {
+      await openHost(o.id, o.dir);
+    } catch (err) {
+      console.warn(`[orgs] ${o.id}: ${err instanceof Error ? err.message : String(err)}`);
+    }
 }
 
-/** Every attached org's workspace repo, for the hourly committer. */
-export const attachedWorkspaces = (): CommitTarget[] => readIndex().orgs.map((o) => ({ id: o.id, dir: o.dir }));
+/** Every attached org's workspace repo (the shutdown commit). */
+export const attachedWorkspaces = (): { id: string; dir: string }[] => readIndex().orgs.map((o) => ({ id: o.id, dir: o.dir }));
 
-/** When the project's overseer was paused by an attach on this host (ISO), or null: not paused. */
-export function overseerPausedSince(orgId: string, projectId: string): string | null {
-  const e = readIndex().orgs.find((o) => o.id === orgId);
-  return e?.pausedOverseers?.includes(projectId) ? e.attachedAt || new Date(0).toISOString() : null;
-}
+/** The operator's own act, or theirs made through the global Overseer (§app.overseer/org-attribution). */
+export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: string };
+const OPERATOR_BY: OperatorBy = { kind: "operator" };
 
-/** The operator set the project overseer's level on this host: it is no longer paused. */
-export function resumeOverseer(orgId: string, projectId: string): void {
-  const index = readIndex();
-  const e = index.orgs.find((o) => o.id === orgId);
-  if (!e?.pausedOverseers?.includes(projectId)) return;
-  writeIndex({ ...index, orgs: index.orgs.map((o) => (o.id === orgId ? { ...o, pausedOverseers: o.pausedOverseers!.filter((x) => x !== projectId) } : o)) });
+/** The envelope of the operator's act (never level-checked: the charts pass the operator's acts). */
+export function operatorEnvelope(orgId: string, projectId: string | null, by: OperatorBy = OPERATOR_BY, extra: Record<string, unknown> = {}): Envelope {
+  return { ...envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}) }), ...extra };
 }
 
 /** Run after an attach: the modules that keep host-local state about the org's sessions (titles,
-    origin, the write guard) re-derive it from the repo. server/baton.ts and project-overseer.ts
-    register; they import this module, so the dependency stays one-way. */
+    origin, the write guard) re-derive it from the repo. They import this module, so the dependency
+    stays one-way. */
 const attachHooks: ((orgId: string, dir: string) => void)[] = [];
 export function onOrgAttached(fn: (orgId: string, dir: string) => void): void {
   attachHooks.push(fn);
 }
 
-/** Someone's status became `left` (an edit, a revert, a declined referral): server/baton-loadout.ts
-    registers what that does to the sessions they take part in. Called after the roster is written. */
+/** Someone's status became `left` (an edit, a revert, a decline): the host's own part of the cascade
+    (a running reply stopped) for the modules that register. The charts do theirs in the same step. */
 const leftHooks: ((orgId: string, personId: string) => void)[] = [];
 export function onPersonLeft(fn: (orgId: string, personId: string) => void): void {
   leftHooks.push(fn);
 }
+onOrgChange((orgId, change) => {
+  for (const s of change.steps) {
+    if (!s.sessionId.startsWith("person/") || s.before.includes("left") || !s.after.includes("left")) continue;
+    const pid = s.sessionId.split("/")[2] ?? "";
+    for (const fn of leftHooks)
+      try {
+        fn(orgId, pid);
+      } catch (err) {
+        console.warn(`[orgs] left hook failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+  }
+});
+
+function checkName(name: unknown): string {
+  const n = typeof name === "string" ? name.trim() : "";
+  if (!n || n.length > PERSON_NAME_MAX) throw new OrgError(`name must be 1–${PERSON_NAME_MAX} characters`);
+  return n;
+}
 
 export async function createOrg(input: { name: unknown; dir?: unknown }): Promise<Org> {
-  const name = typeof input.name === "string" ? input.name.trim() : "";
-  if (!name || name.length > PERSON_NAME_MAX) throw new OrgError(`name must be 1–${PERSON_NAME_MAX} characters`);
+  const name = checkName(input.name);
   const id = shortId("org_");
   const slug = slugOf(name);
   let dir = typeof input.dir === "string" && input.dir.trim() ? resolve(input.dir.trim()) : join(defaultWorkspacesDir(), slug);
   if (!(typeof input.dir === "string" && input.dir.trim()) && existsSync(dir)) dir = join(defaultWorkspacesDir(), `${slug}-${id.slice(4)}`);
   const problem = await workspaceDirProblem(dir);
   if (problem) throw new OrgError(problem);
-  if (existsSync(orgFile(dir))) throw new OrgError("That dir already holds an organization: attach it instead.", 409);
+  if (orgIdIn(dir)) throw new OrgError("That dir already holds an organization: attach it instead.", 409);
   mkdirSync(join(dir, "sessions"), { recursive: true });
   // Its own repo, even when the dir sits inside another one (the hermetic .agent/ is inside Sova's).
   if (!existsSync(join(dir, ".git"))) await initRepo(dir);
-  const org: Org = { id, name, slug, createdAt: new Date().toISOString() };
-  writeOrgFile(dir, org);
-  writeJson(rosterFile(dir), { version: 1, people: [] });
-  writeJson(projectsFile(dir), { version: 1, projects: [] });
   if (!existsSync(historyFile(dir))) writeFileSync(historyFile(dir), "");
   // sessions/ must be in the first commit so a clone has it: git keeps no empty dirs.
   if (!existsSync(join(dir, "sessions", ".gitkeep"))) writeFileSync(join(dir, "sessions", ".gitkeep"), "");
-  writeHeld(dir);
   const index = readIndex();
-  writeIndex({ ...index, orgs: [...index.orgs, { id, dir, attachedAt: org.createdAt }] });
-  await commitAll(dir, `Create organization ${name}`);
-  return org;
+  const createdAt = Date.now();
+  writeIndex({ ...index, orgs: [...index.orgs, { id, dir, attachedAt: new Date(createdAt).toISOString() }] });
+  OrgHost.forgetLocal(id, stateRoot());
+  const host = await openHost(id, dir);
+  await host.start(orgSid(id), "org", { id, name, slug, createdAt }, { by: "operator" });
+  // This host holds it from the start; the first commit is the residence's own.
+  const me = hostIdentity();
+  const r = await host.start(residenceSid(id), "residence", { orgId: id, orgName: name, hostId: me.id, hostName: me.name, mode: "create", commitEveryMs: commitEveryMs() }, { by: "system" });
+  await host.settle(r);
+  return readOrg(id);
 }
 
 /**
  * Attach an existing workspace repo (a restored clone) to this host. Another host holding it
  * (§app.organizations/holder) refuses with `code: "held"` unless `confirm`; attached, this host
- * holds it, committed and pushed at once.
+ * holds it, committed and pushed at once, and every project's overseer waits at L0 until the
+ * operator sets its level here. Host-local state starts fresh (a restore starts it fresh).
  */
 export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Promise<Org> {
   const dir = typeof input.dir === "string" ? resolve(input.dir.trim()) : "";
   if (!dir) throw new OrgError("dir is required");
   const problem = await workspaceDirProblem(dir);
   if (problem) throw new OrgError(problem);
-  const org = readOrgFile(dir);
-  if (!org) throw new OrgError("No org.json in that dir: not a workspace repo.");
-  const index = readIndex();
-  if (index.orgs.some((o) => o.id === org.id)) throw new OrgError("That organization is already attached here.", 409);
-  if (input.confirm !== true) {
-    const held = await heldElsewhere(dir);
-    if (held) throw new OrgError(heldSentence(held), 409, "held");
-  }
+  const id = orgIdIn(dir);
+  if (!id) throw new OrgError("No organization in that dir: not a workspace repo.");
+  if (readIndex().orgs.some((o) => o.id === id)) throw new OrgError("That organization is already attached here.", 409);
   mkdirSync(join(dir, "sessions"), { recursive: true });
-  // A restore or a move: every project overseer waits at L0 until the operator sets its level on this host.
-  const paused = readProjectsFile(dir).map((p) => p.id);
-  writeIndex({ ...index, orgs: [...index.orgs, { id: org.id, dir, attachedAt: new Date().toISOString(), pausedOverseers: paused }] });
+  OrgHost.forgetLocal(id, stateRoot());
+  const host = await openHost(id, dir);
+  const org = host.data(orgSid(id));
+  if (!org) {
+    await closeOrgHost(id);
+    throw new OrgError("No organization in that dir: not a workspace repo.");
+  }
+  const me = hostIdentity();
+  await host.settle(await host.start(residenceSid(id), "residence", { orgId: id, orgName: String(org.name ?? id), hostId: me.id, hostName: me.name, mode: "attach", commitEveryMs: commitEveryMs() }, { by: "system" }));
+  if (host.configuration(residenceSid(id))?.includes("held-elsewhere")) {
+    if (input.confirm !== true) {
+      const sentence = String(host.data(residenceSid(id))?.heldSentence ?? "Another host holds this organization.");
+      await closeOrgHost(id);
+      throw new OrgError(sentence, 409, "held");
+    }
+    const out = await host.act(residenceSid(id), "attach/confirm", {}, { by: "operator" }, { settle: true });
+    if (!out.taken) {
+      await closeOrgHost(id);
+      throw new OrgError(out.refusal?.sentence ?? "That can't be done now.", 409);
+    }
+  }
+  const index = readIndex();
+  writeIndex({ ...index, orgs: [...index.orgs, { id, dir, attachedAt: new Date().toISOString() }] });
   for (const hook of attachHooks)
     try {
-      hook(org.id, dir);
+      hook(id, dir);
     } catch (err) {
       console.warn(`[orgs] after attach: ${err instanceof Error ? err.message : String(err)}`);
     }
-  writeHeld(dir);
-  await commitAll(dir, `Attached on ${hostIdentity().name}`);
-  return org;
+  return readOrg(id);
 }
 
 /**
- * Remove the org from this host's index at once; then release it in the repo (§app.organizations/
- * holder), committed and pushed, best effort: a move's attach elsewhere then asks nothing.
+ * Remove the org from this host's index at once; the residence releases it in the repo
+ * (§app.organizations/holder), committed and pushed, best effort, and turns the owner link off.
  */
 export async function detachOrg(orgId: string): Promise<void> {
   const index = readIndex();
@@ -362,37 +384,123 @@ export async function detachOrg(orgId: string): Promise<void> {
   if (!entry) throw new OrgError("Unknown organization", 404);
   writeIndex({ ...index, orgs: index.orgs.filter((o) => o.id !== orgId) });
   try {
-    if (readHolder(entry.dir)?.host?.id !== hostIdentity().id) return;
-    writeReleased(entry.dir);
-    const out = await commitAll(entry.dir, `Released by ${hostIdentity().name}`);
-    if (out.error) console.warn(`[orgs] detach ${orgId}: ${out.error}`);
+    if (isOrgHostOpen(orgId)) {
+      const out = await hostOf(orgId).act(residenceSid(orgId), "org/detach", {}, { by: "operator" }, { settle: true });
+      for (const e of out.effects ?? []) if (e.error) console.warn(`[orgs] detach ${orgId}: ${e.error}`);
+    }
   } catch (err) {
     console.warn(`[orgs] detach ${orgId}: ${err instanceof Error ? err.message : String(err)}`);
+  } finally {
+    await closeOrgHost(orgId);
   }
 }
 
-/** The operator's own write, or theirs made through the global Overseer (§app.overseer/org-attribution). */
-export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: string };
-const OPERATOR_BY: OperatorBy = { kind: "operator" };
-
-export function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }, by: OperatorBy = OPERATOR_BY): Org {
-  const dir = orgDir(orgId);
-  const org = readOrg(orgId);
-  const about = patch.about === undefined ? undefined : cleanAbout(patch.about);
-  if (patch.name !== undefined) {
-    const name = typeof patch.name === "string" ? patch.name.trim() : "";
-    if (!name || name.length > PERSON_NAME_MAX) throw new OrgError(`name must be 1–${PERSON_NAME_MAX} characters`);
-    org.name = name;
-    writeOrgFile(dir, org);
+/** The residence's commit look sees a change in the repo (a plain file written): `store/written`, when it is clean. */
+export function noteWorkspaceWrite(orgId: string): void {
+  try {
+    const host = hostOf(orgId);
+    if (host.configuration(residenceSid(orgId))?.includes("clean")) void host.act(residenceSid(orgId), "store/written", {}, { by: "system" });
+  } catch {
+    // not open here: nothing to commit
   }
-  if (about !== undefined) writeAbout(dir, about, undefined, by);
-  return org;
+}
+
+// ---- reads (the charts, as the wire shapes them) -------------------------------------------------------
+
+function orgOfData(orgId: string, d: Record<string, unknown>): Org {
+  const cleared = d.ownerCleared as Record<string, unknown> | undefined;
+  const history = Array.isArray(d.ownerHistory) ? (d.ownerHistory as Record<string, unknown>[]) : [];
+  return {
+    id: orgId,
+    name: String(d.name ?? orgId),
+    slug: typeof d.slug === "string" ? d.slug : slugOf(String(d.name ?? orgId)),
+    createdAt: isoOf(d.createdAt),
+    ...(typeof d.owner === "string" && d.owner ? { owner: d.owner } : {}),
+    ...(history.length
+      ? { ownerHistory: history.map((h) => ({ at: isoOf(h.at), from: (h.from as string | null) ?? null, to: (h.to as string | null) ?? null, why: h.why as OwnerChange["why"], ...(h.via === "overseer" ? { via: "overseer" as const } : {}) })) }
+      : {}),
+    ...(isObj(cleared) && typeof cleared.personId === "string" ? { ownerCleared: { personId: cleared.personId, name: String(cleared.name ?? ""), at: isoOf(cleared.at) } } : {}),
+  };
+}
+
+export function readOrg(orgId: string): Org {
+  const dir = orgDir(orgId);
+  const d = hostOf(orgId).data(orgSid(orgId));
+  if (!d) throw new OrgError(`The workspace repo at ${dir} has no readable organization`, 409);
+  return orgOfData(orgId, d);
+}
+
+const STATUSES: readonly PersonStatus[] = ["proposed", "active", "left"];
+const statusOf = (configuration: readonly string[], data: Record<string, unknown>): PersonStatus =>
+  STATUSES.find((s) => configuration.includes(s)) ?? (STATUSES.includes(data.status as PersonStatus) ? (data.status as PersonStatus) : "active");
+
+function personOf(orgId: string, s: { configuration: string[]; data: Record<string, unknown> }): Person {
+  const d = s.data;
+  return {
+    id: String(d.id),
+    orgId,
+    name: String(d.name ?? ""),
+    status: statusOf(s.configuration, d),
+    contact: (isObj(d.contact) ? d.contact : {}) as PersonContact,
+    role: String(d.role ?? ""),
+    decides: Array.isArray(d.decides) ? (d.decides as string[]) : [],
+    skills: Array.isArray(d.skills) ? (d.skills as string[]) : [],
+    competence: (isObj(d.competence) ? d.competence : {}) as Person["competence"],
+    language: String(d.language ?? ""),
+    voice: String(d.voice ?? ""),
+    ...(isObj(d.referral) ? { referral: d.referral as unknown as NonNullable<Person["referral"]> } : {}),
+  };
+}
+
+/** The roster, in the order people were added (their first history line). */
+export function readRoster(orgId: string): Person[] {
+  const people = hostOf(orgId)
+    .sessions("person")
+    .map((s) => personOf(orgId, s));
+  const order = historyOrder(orgDir(orgId));
+  return people.sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity) || a.id.localeCompare(b.id));
+}
+
+export function findPerson(orgId: string, personId: string): Person | undefined {
+  const s = hostOf(orgId).sessions("person").find((x) => x.id === personSid(orgId, personId));
+  return s ? personOf(orgId, s) : undefined;
+}
+
+function projectOf(orgId: string, d: Record<string, unknown>, configuration: readonly string[]): OrgProject {
+  const archived = d.archived as Record<string, unknown> | undefined;
+  const cleared = d.stakeholderCleared as Record<string, unknown> | undefined;
+  const history = Array.isArray(d.stakeholderHistory) ? (d.stakeholderHistory as Record<string, unknown>[]) : [];
+  const spec = d.spec as { frozen?: unknown } | undefined;
+  return {
+    id: String(d.id),
+    orgId,
+    name: String(d.name ?? ""),
+    root: String(d.root ?? ""),
+    origin: "manual",
+    createdAt: isoOf(d.createdAt),
+    ...(isObj(spec) && typeof spec.frozen === "boolean" ? { spec: { frozen: spec.frozen } } : {}),
+    ...(typeof d.stakeholder === "string" && d.stakeholder ? { stakeholder: d.stakeholder } : {}),
+    ...(history.length
+      ? { stakeholderHistory: history.map((h): StakeholderChange => ({ at: isoOf(h.at), from: (h.from as string | null) ?? null, to: (h.to as string | null) ?? null, why: h.why as StakeholderChange["why"], ...(h.via === "overseer" ? { via: "overseer" as const } : {}) })) }
+      : {}),
+    ...(isObj(cleared) && typeof cleared.personId === "string" ? { stakeholderCleared: { personId: cleared.personId, name: String(cleared.name ?? ""), at: isoOf(cleared.at) } } : {}),
+    ...(d.ownerHidden === true ? { ownerHidden: true } : {}),
+    ...(configuration.includes("archived") && isObj(archived) ? { archived: { at: isoOf(archived.at), ...(archived.via === "overseer" ? { via: "overseer" as const } : {}) } } : {}),
+  };
+}
+
+/** The org's projects, oldest first. */
+export function readProjects(orgId: string): OrgProject[] {
+  return hostOf(orgId)
+    .sessions("project")
+    .map((s) => projectOf(orgId, s.data, s.configuration))
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
 }
 
 // ---- the org's About text (§app.organizations/about) ------------------------------------------------
 //
-// The operator's context for the org's project overseers, and for nothing else. It is its own file,
-// never a field of `Org`, so nothing that reads the org carries it; readOrgAbout is its one reader,
+// The operator's context for the org's project overseers, and for nothing else. Plain data, never in
+// a chart: its own file, so nothing that reads the org carries it; readOrgAbout is its one reader,
 // called only by orgDetail (the operator's page) and the project overseer's prompt
 // (server/org-about-privacy.test.ts fails on any other).
 
@@ -446,7 +554,7 @@ export function readOrgHistory(orgId: string): OrgChange[] {
 }
 
 /** THE writer of about.md: one history line first, then the file (blank removes it). The same text writes nothing. */
-function writeAbout(dir: string, to: string, revertOf?: string, by: OperatorBy = OPERATOR_BY): void {
+function writeAbout(orgId: string, dir: string, to: string, revertOf?: string, by: OperatorBy = OPERATOR_BY): void {
   const from = readAboutFile(dir).trim();
   if (from === to) return;
   const history = readOrgHistoryFile(dir);
@@ -461,6 +569,7 @@ function writeAbout(dir: string, to: string, revertOf?: string, by: OperatorBy =
     writeFileSync(tmp, to);
     renameSync(tmp, aboutFile(dir));
   }
+  noteWorkspaceWrite(orgId);
 }
 
 /** Set the About text back to history line `at`'s `from`, as a new operator change. */
@@ -468,116 +577,191 @@ export function revertOrgChange(orgId: string, at: string, by: OperatorBy = OPER
   const dir = orgDir(orgId);
   const line = readOrgHistoryFile(dir).find((c) => c.at === at);
   if (!line) throw new OrgError("No such change", 404);
-  writeAbout(dir, line.from, at, by);
+  writeAbout(orgId, dir, line.from, at, by);
 }
 
-// ---- roster ------------------------------------------------------------------------------------------
-
-function readRosterFile(dir: string): { people: Person[]; problem?: string } {
-  const raw = readJson(rosterFile(dir));
-  if (raw === undefined) return existsSync(rosterFile(dir)) ? { people: [], problem: "roster.json does not parse" } : { people: [] };
-  if (!isObj(raw) || !Array.isArray(raw.people)) return { people: [], problem: "roster.json has no people list" };
-  const people: Person[] = [];
-  for (const p of raw.people) if (isObj(p) && typeof p.id === "string" && typeof p.name === "string") people.push(p as unknown as Person);
-  return { people };
+export async function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }, by: OperatorBy = OPERATOR_BY): Promise<Org> {
+  const dir = orgDir(orgId);
+  readOrg(orgId);
+  const about = patch.about === undefined ? undefined : cleanAbout(patch.about);
+  if (patch.name !== undefined) await actOrThrow(orgId, orgSid(orgId), "org/rename", { name: patch.name }, operatorEnvelope(orgId, null, by));
+  if (about !== undefined) writeAbout(orgId, dir, about, undefined, by);
+  return readOrg(orgId);
 }
 
-export function readRoster(orgId: string): Person[] {
-  return readRosterFile(orgDir(orgId)).people;
-}
+// ---- profile history (§app.organizations/history-and-revert) --------------------------------------------
+//
+// `roster-history.jsonl`: plain data with today's rules, append-only, the one place (with the charts'
+// person data) that holds profile values. The person chart's `roster-history` effect writes it
+// (server/org-effects.ts, appendHistory); nothing else does.
 
-export function findPerson(orgId: string, personId: string): Person | undefined {
-  return readRoster(orgId).find((p) => p.id === personId);
-}
+const historyFile = (dir: string) => join(dir, "roster-history.jsonl");
 
-/** The fields each writer may set (§app.organizations/field-authority). "referral" may only
-    create a proposed person, with exactly these. */
-export const FIELD_AUTHORITY: Record<ChangeWriter, ReadonlySet<ProfileField>> = {
-  operator: new Set(PROFILE_FIELDS),
-  wrapup: new Set<ProfileField>(["skills", "competence", "language", "voice"]),
-  overseer: new Set<ProfileField>(["skills", "competence", "language", "voice"]),
-  referral: new Set<ProfileField>(["name", "status", "contact", "role", "decides", "referral"]),
-};
+let historyCache: { dir: string; mtimeMs: number; size: number; rows: ProfileChange[] } | null = null;
 
-const str = (v: unknown, field: string, max: number): string => {
-  if (typeof v !== "string") throw new OrgError(`${field} must be text`);
-  const t = v.trim();
-  if (t.length > max) throw new OrgError(`${field} must be at most ${max} characters`);
-  return t;
-};
-
-const list = (v: unknown, field: string): string[] => {
-  if (!Array.isArray(v)) throw new OrgError(`${field} must be a list`);
-  const out: string[] = [];
-  for (const x of v) {
-    const t = str(x, `${field} item`, PERSON_ITEM_MAX);
-    if (t && !out.some((o) => o.toLowerCase() === t.toLowerCase())) out.push(t);
+function readHistoryFile(dir: string): ProfileChange[] {
+  let st;
+  try {
+    st = statSync(historyFile(dir));
+  } catch {
+    return [];
   }
-  if (out.length > PERSON_LIST_MAX) throw new OrgError(`${field} must have at most ${PERSON_LIST_MAX} items`);
+  if (historyCache && historyCache.dir === dir && historyCache.mtimeMs === st.mtimeMs && historyCache.size === st.size) return historyCache.rows;
+  let text: string;
+  try {
+    text = readFileSync(historyFile(dir), "utf8");
+  } catch {
+    return [];
+  }
+  const out: ProfileChange[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const c = JSON.parse(line);
+      if (isObj(c) && typeof c.at === "string" && typeof c.personId === "string" && typeof c.field === "string") out.push(c as unknown as ProfileChange);
+    } catch {
+      // a torn line: skip
+    }
+  }
+  historyCache = { dir, mtimeMs: st.mtimeMs, size: st.size, rows: out };
   return out;
-};
-
-const CONTACT_KEYS = ["email", "phone", "whatsapp", "other"] as const;
-
-/** One field's value, cleaned, or an OrgError. Pure. */
-export function cleanField(field: ProfileField, v: unknown): unknown {
-  switch (field) {
-    case "name": {
-      const n = str(v, "name", PERSON_NAME_MAX);
-      if (!n) throw new OrgError("name is required");
-      return n;
-    }
-    case "status":
-      if (v !== "active" && v !== "proposed" && v !== "left") throw new OrgError("status must be active, proposed or left");
-      return v;
-    case "contact": {
-      if (!isObj(v)) throw new OrgError("contact must be an object");
-      const c: PersonContact = {};
-      for (const k of CONTACT_KEYS) if (v[k] !== undefined && v[k] !== null) {
-        const t = str(v[k], `contact.${k}`, 200);
-        if (t) c[k] = t;
-      }
-      return c;
-    }
-    case "role":
-      return str(v, "role", PERSON_TEXT_MAX);
-    case "voice":
-      return str(v, "voice", PERSON_TEXT_MAX);
-    case "language": {
-      const t = str(v, "language", 35);
-      if (t && !/^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$/.test(t)) throw new OrgError("language must be a BCP-47 tag such as es-CO");
-      return t;
-    }
-    case "decides": {
-      const out = list(v, "decides");
-      // An area key keeps letters only: "*" or "2024" would silently mean the area "general".
-      const bad = out.find((x) => !/[a-z]/.test(x.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase()));
-      if (bad !== undefined) throw new OrgError(`“${bad}” names no decision area: use words, like “website”.`);
-      return out;
-    }
-    case "skills":
-      return list(v, "skills");
-    case "competence": {
-      if (!isObj(v)) throw new OrgError("competence must be an object");
-      const out: Record<string, Competence> = {};
-      for (const [k, c] of Object.entries(v)) {
-        const key = str(k, "competence skill", PERSON_ITEM_MAX);
-        if (!isObj(c) || ![1, 2, 3, 4, 5].includes(c.level as number) || typeof c.n !== "number" || c.n < 0) throw new OrgError(`competence.${key} must be {level 1–5, n ≥ 0}`);
-        out[key] = { level: c.level as Competence["level"], n: Math.floor(c.n) };
-      }
-      if (Object.keys(out).length > PERSON_LIST_MAX) throw new OrgError(`competence must have at most ${PERSON_LIST_MAX} skills`);
-      return out;
-    }
-    case "referral": {
-      if (v === null) return null;
-      if (!isObj(v)) throw new OrgError("referral must be an object");
-      const r: PersonReferral = { why: str(v.why ?? "", "referral.why", PERSON_TEXT_MAX), referredBy: str(v.referredBy ?? "", "referral.referredBy", PERSON_NAME_MAX) };
-      if (typeof v.sessionId === "string" && v.sessionId) r.sessionId = v.sessionId;
-      if (typeof v.quote === "string" && v.quote.trim()) r.quote = str(v.quote, "referral.quote", PERSON_TEXT_MAX);
-      return r;
-    }
-  }
 }
+
+/** personId → the index of their first history line (their creation). */
+function historyOrder(dir: string): Map<string, number> {
+  const order = new Map<string, number>();
+  readHistoryFile(dir).forEach((c, i) => {
+    if (!order.has(c.personId)) order.set(c.personId, i);
+  });
+  return order;
+}
+
+/** The history, oldest first (the effect's idempotency key, kept on each line, is not part of it). */
+export function readHistory(orgId: string, personId?: string): ProfileChange[] {
+  const all = readHistoryFile(orgDir(orgId)).map((c) => {
+    const { key: _key, ...rest } = c as ProfileChange & { key?: string };
+    return rest;
+  });
+  return personId ? all.filter((c) => c.personId === personId) : all;
+}
+
+/**
+ * Append one change's lines (the person chart's `roster-history` effect): each `at` unique per org
+ * (bumped 1 ms on a clash, as today), in the order given. Idempotent by the effect's key: a key
+ * already written (an effect run again after a restart) appends nothing.
+ */
+export function appendHistory(orgId: string, input: { personId: string; lines: { field: string; from: unknown; to: unknown }[]; by: ProfileChange["by"]; revertOf?: string | null; key?: string }): ProfileChange[] {
+  const dir = orgDir(orgId);
+  const history = readHistoryFile(dir);
+  if (input.key && history.some((c) => (c as ProfileChange & { key?: string }).key === input.key)) return [];
+  let t = Date.now();
+  const lastAt = history.length ? Date.parse(history[history.length - 1]!.at) : 0;
+  if (t <= lastAt) t = lastAt + 1;
+  const rows = input.lines.map(
+    (l, i): ProfileChange => ({
+      at: new Date(t + i).toISOString(),
+      personId: input.personId,
+      field: l.field as ProfileChange["field"],
+      from: l.from ?? null,
+      to: l.to ?? null,
+      by: input.by,
+      ...(input.revertOf ? { revertOf: input.revertOf } : {}),
+      ...(input.key ? { key: input.key } : {}),
+    }),
+  );
+  if (!rows.length) return [];
+  appendFileSync(historyFile(dir), `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+  return rows;
+}
+
+/** The roster's history across people, newest first, with each person's current name. */
+export function recentChanges(orgId: string, limit = 50, roster: Person[] = readRoster(orgId)): NamedChange[] {
+  const names = new Map(roster.map((p) => [p.id, p.name]));
+  return readHistory(orgId)
+    .slice(-Math.max(1, Math.min(limit, 500)))
+    .reverse()
+    .map((c) => ({ ...c, name: names.get(c.personId) ?? "Someone" }));
+}
+
+// ---- roster writes (§app.organizations/roster, /field-authority, /referrals) --------------------------------
+
+/** Lowercased names of the people other than `except` who have not left (the duplicate-name check). */
+export function namesTaken(orgId: string, except?: string): string[] {
+  return readRoster(orgId)
+    .filter((p) => p.id !== except && p.status !== "left")
+    .map((p) => p.name.toLowerCase());
+}
+
+/** Roster writes answer once their effects ran (the history line is written, links are off). */
+const SETTLE = { settle: true } as const;
+
+/** Who writes, as the person chart reads it: the writer kind and its provenance. */
+function writerPayload(by: ProfileChange["by"]): Record<string, unknown> {
+  return {
+    byKind: by.kind,
+    ...(by.sessionId ? { sessionId: by.sessionId } : {}),
+    ...(by.entryId ? { entryId: by.entryId } : {}),
+    ...(by.quote ? { quote: by.quote } : {}),
+  };
+}
+
+function writerEnvelope(orgId: string, by: ProfileChange["by"]): Envelope {
+  if (by.kind === "operator") return operatorEnvelope(orgId, null, { kind: "operator", ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}) });
+  const actor = by.kind === "wrapup" ? "wrapup" : by.kind === "overseer" ? "overseer" : "model";
+  return envelopeFor(orgId, null, { by: actor, attended: false });
+}
+
+/** Add a person (the operator's; `referral` creates a proposed one). Returns the person as stored. */
+export async function addPerson(orgId: string, input: PersonInput, by: ProfileChange["by"] = { kind: "operator" }): Promise<Person> {
+  const personId = shortId("p_");
+  await actOrThrow(orgId, orgSid(orgId), "person/add", { personId, person: input, namesTaken: namesTaken(orgId), ...writerPayload(by) }, writerEnvelope(orgId, by), SETTLE);
+  return findPerson(orgId, personId)!;
+}
+
+/**
+ * Change a person as `by` (the operator's PATCH, a wrap-up's profile update, a project overseer's
+ * steering fields): the person chart checks field authority and every cap, and routes a status in
+ * the patch to its one transition (C10). Returns the person as stored.
+ */
+export async function applyChange(orgId: string, personId: string, patch: Record<string, unknown>, by: ProfileChange["by"]): Promise<Person> {
+  const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
+  if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
+  await actOrThrow(orgId, personSid(orgId, personId), "person/edit", { patch: clean, namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, writerEnvelope(orgId, by), SETTLE);
+  return findPerson(orgId, personId)!;
+}
+
+/**
+ * Settle a referral (§app.organizations/referrals): a PROPOSED person becomes active (approve) or
+ * left (decline; the referral stays on them). The operator, or the project overseer at its level
+ * (by.kind "overseer": the one status write that writer may make, only from proposed).
+ */
+export async function decidePerson(orgId: string, personId: string, approve: boolean, by: ProfileChange["by"] = { kind: "operator" }, envelope?: Envelope): Promise<Person> {
+  if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
+  await actOrThrow(orgId, personSid(orgId, personId), approve ? "person/approve" : "person/decline", { namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, envelope ?? writerEnvelope(orgId, by), SETTLE);
+  return findPerson(orgId, personId)!;
+}
+export const approvePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, true, by);
+export const declinePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, false, by);
+
+/** Someone leaves (the global Overseer's `leave`, behind a confirm card). */
+export async function leavePerson(orgId: string, personId: string, by: OperatorBy = OPERATOR_BY, extra: Record<string, unknown> = {}): Promise<Person> {
+  if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
+  await actOrThrow(orgId, personSid(orgId, personId), "person/leave", { namesTaken: namesTaken(orgId, personId) }, operatorEnvelope(orgId, null, by, extra), SETTLE);
+  return findPerson(orgId, personId)!;
+}
+
+/** Set the field of history line `at` back to that line's `from`, as a new operator change (C6: only while the field still holds its `to`). */
+export async function revertChange(orgId: string, personId: string, at: string, by: OperatorBy = OPERATOR_BY, extra: Record<string, unknown> = {}): Promise<Person> {
+  const line = readHistory(orgId, personId).find((c) => c.at === at);
+  if (!line) throw new OrgError("No such change", 404);
+  if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
+  await actOrThrow(orgId, personSid(orgId, personId), "person/revert", { row: { at: line.at, field: line.field, from: line.from, to: line.to }, namesTaken: namesTaken(orgId, personId) }, operatorEnvelope(orgId, null, by, extra), SETTLE);
+  return findPerson(orgId, personId)!;
+}
+
+// The referral tool's own "what is still missing" answer (server/baton-loadout.ts); the person chart
+// makes the same checks when the person is written.
+const CONTACT_KEYS = ["email", "phone", "whatsapp", "other"] as const;
 
 /**
  * Contact values that are not a way to reach anyone (a model filling the field with "ask Tony for
@@ -605,162 +789,11 @@ export function proposedGaps(p: Pick<Person, "name" | "contact" | "role" | "refe
   return gaps;
 }
 
-const EMPTY_PERSON = (id: string, orgId: string): Person => ({
-  id,
-  orgId,
-  name: "",
-  status: "active",
-  contact: {},
-  role: "",
-  decides: [],
-  skills: [],
-  competence: {},
-  language: "",
-  voice: "",
-});
-
-function readHistoryFile(dir: string): ProfileChange[] {
-  let text: string;
-  try {
-    text = readFileSync(historyFile(dir), "utf8");
-  } catch {
-    return [];
-  }
-  const out: ProfileChange[] = [];
-  for (const line of text.split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const c = JSON.parse(line);
-      if (isObj(c) && typeof c.at === "string" && typeof c.personId === "string" && typeof c.field === "string") out.push(c as unknown as ProfileChange);
-    } catch {
-      // a torn line: skip
-    }
-  }
-  return out;
+/** A person as an act's `target` stamp (the charts can't read another session's status). */
+export function targetOf(orgId: string, personId: unknown): { id: string; name: string; status: PersonStatus; referral?: unknown } | null {
+  const p = typeof personId === "string" ? findPerson(orgId, personId) : undefined;
+  return p ? { id: p.id, name: p.name, status: p.status, ...(p.referral ? { referral: p.referral } : {}) } : null;
 }
-
-export function readHistory(orgId: string, personId?: string): ProfileChange[] {
-  const all = readHistoryFile(orgDir(orgId));
-  return personId ? all.filter((c) => c.personId === personId) : all;
-}
-
-const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
-
-/**
- * THE writer of the roster: create (personId null) or change a person, as `by`. Checks the field
- * authority first (a field outside the writer's set refuses the whole change and writes nothing),
- * cleans every value, validates the result (a proposed person must be complete), appends one
- * history line per changed field, then rewrites roster.json. Returns the person as stored.
- */
-export function applyChange(
-  orgId: string,
-  personId: string | null,
-  patch: Record<string, unknown>,
-  by: ProfileChange["by"],
-  extra?: { revertOf?: string; decision?: true },
-): Person {
-  const dir = orgDir(orgId);
-  const allowed = FIELD_AUTHORITY[by.kind];
-  if (!allowed) throw new OrgError(`Unknown writer: ${String(by.kind)}`);
-  const fields = Object.keys(patch).filter((k) => patch[k] !== undefined);
-  for (const f of fields) {
-    if (!(PROFILE_FIELDS as readonly string[]).includes(f)) throw new OrgError(`Unknown field: ${f}`);
-    // decidePerson's one exception: the project overseer may settle a referral's status.
-    const decision = extra?.decision && by.kind === "overseer" && f === "status" && fields.length === 1;
-    if (!allowed.has(f as ProfileField) && !decision) throw new OrgError(`A ${by.kind} change may not write ${f}.`, 409);
-  }
-  const { people, problem } = readRosterFile(dir);
-  if (problem) throw new OrgError(`The roster can't be changed: ${problem}`, 409);
-  const creating = personId === null;
-  if (by.kind === "referral" && (!creating || patch.status !== "proposed")) throw new OrgError("A referral may only create a proposed person.", 409);
-  const current = creating ? EMPTY_PERSON(shortId("p_"), orgId) : people.find((p) => p.id === personId);
-  if (!current) throw new OrgError("Unknown person", 404);
-  if (extra?.decision && current.status !== "proposed") throw new OrgError(`${current.name} is not waiting for approval.`, 409);
-  const next: Person = structuredClone(current);
-  const changed: { field: ProfileField; from: unknown; to: unknown }[] = [];
-  for (const f of fields as ProfileField[]) {
-    const to = cleanField(f, patch[f]);
-    const from = (current as unknown as Record<string, unknown>)[f];
-    if (!creating && same(from, to)) continue;
-    if (creating && (to === "" || same(to, []) || same(to, {}) || to === null)) continue;
-    changed.push({ field: f, from: creating ? null : (from ?? null), to });
-    if (to === null) delete (next as unknown as Record<string, unknown>)[f];
-    else (next as unknown as Record<string, unknown>)[f] = to;
-  }
-  if (!next.name) throw new OrgError("name is required");
-  if (creating && !changed.some((c) => c.field === "status")) changed.push({ field: "status", from: null, to: next.status });
-  if (next.status === "proposed") {
-    const gaps = proposedGaps(next);
-    if (gaps.length) throw new OrgError(`A proposed person needs ${gaps.join(", ")}.`);
-  }
-  // A referral is written by a model from an outsider's words: its contact must be a real channel.
-  if (by.kind === "referral") {
-    const bad = contactProblems(next.contact);
-    if (bad.length) throw new OrgError(`A referral needs a real way to reach them: ${bad.join("; ")}.`);
-  }
-  if (!changed.length) return current;
-  if (people.some((p) => p.id !== next.id && p.name.toLowerCase() === next.name.toLowerCase() && p.status !== "left"))
-    throw new OrgError(`${next.name} is already on the roster.`, 409);
-  // History first: the roster is the fold of it, and a crash must never leave a change unexplained.
-  const history = readHistoryFile(dir);
-  let t = Date.now();
-  const lastAt = history.length ? Date.parse(history[history.length - 1]!.at) : 0;
-  if (t <= lastAt) t = lastAt + 1;
-  const lines = changed.map((c, i) => {
-    const line: ProfileChange = {
-      at: new Date(t + i).toISOString(),
-      personId: next.id,
-      field: c.field,
-      from: c.from,
-      to: c.to,
-      by,
-      ...(extra?.revertOf ? { revertOf: extra.revertOf } : {}),
-    };
-    return JSON.stringify(line);
-  });
-  appendFileSync(historyFile(dir), `${lines.join("\n")}\n`);
-  const nextPeople = creating ? [...people, next] : people.map((p) => (p.id === next.id ? next : p));
-  writeJson(rosterFile(dir), { version: 1, people: nextPeople });
-  // A main stakeholder who left no longer decides anything: their projects have none until the operator picks one.
-  if (!creating && current.status !== "left" && next.status === "left") clearStakeholder(dir, next);
-  // The org's owner who left reads nothing any more: the org has none until the operator picks one.
-  if (!creating && current.status !== "left" && next.status === "left") clearOwner(dir, next);
-  if (!creating && current.status !== "left" && next.status === "left")
-    for (const fn of leftHooks) {
-      try {
-        fn(orgId, next.id);
-      } catch (err) {
-        console.warn(`[orgs] left hook failed: ${err instanceof Error ? err.message : String(err)}`);
-      }
-    }
-  return next;
-}
-
-export const addPerson = (orgId: string, input: PersonInput, by: ProfileChange["by"] = { kind: "operator" }): Person =>
-  applyChange(orgId, null, input as unknown as Record<string, unknown>, by);
-
-/**
- * Settle a referral (§app.organizations/referrals): a PROPOSED person becomes active (approve) or
- * left (decline; the referral stays on them, so the roster remembers who was turned down and
- * why). The operator, or the project overseer at its autonomy level (by.kind "overseer": the one
- * status write that writer may make, only from proposed).
- */
-export function decidePerson(orgId: string, personId: string, approve: boolean, by: ProfileChange["by"] = { kind: "operator" }): Person {
-  if (by.kind !== "operator" && by.kind !== "overseer") throw new OrgError(`A ${by.kind} change may not approve or decline people.`, 409);
-  return applyChange(orgId, personId, { status: approve ? "active" : "left" }, by, { decision: true });
-}
-export const approvePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, true, by);
-export const declinePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, false, by);
-
-/** Set the field of history line `at` back to that line's `from`, as a new operator change. */
-export function revertChange(orgId: string, personId: string, at: string, by: OperatorBy = OPERATOR_BY): Person {
-  const line = readHistory(orgId, personId).find((c) => c.at === at);
-  if (!line) throw new OrgError("No such change", 404);
-  if (line.from === null && line.field === "name") throw new OrgError("A person's creation can't be reverted; set their status to left instead.", 409);
-  return applyChange(orgId, personId, { [line.field]: line.from ?? emptyOf(line.field) }, { ...by }, { revertOf: at });
-}
-
-const emptyOf = (f: ProfileField): unknown => (f === "decides" || f === "skills" ? [] : f === "contact" || f === "competence" ? {} : f === "referral" ? null : "");
 
 // ---- prompt partition and redaction (§app.organizations/privacy) ------------------------------------------
 
@@ -775,8 +808,8 @@ export function stakeholderAttention(): AttentionItem[] {
     let projects: OrgProject[];
     let orgName = "";
     try {
-      projects = readProjectsFile(o.dir);
-      orgName = readOrgFile(o.dir)?.name ?? "";
+      projects = readProjects(o.id);
+      orgName = readOrg(o.id).name;
     } catch {
       continue;
     }
@@ -850,28 +883,19 @@ export function publicTerms(roster: readonly Person[]): string[] {
   return roster.flatMap((p) => [p.name, p.role, ...p.decides]).filter(Boolean);
 }
 
-// ---- projects (the minimal registry a baton session needs; §app.organizations/projects) ------------------
+// ---- projects (§app.organizations/projects, /archive, /stakeholder) ------------------------------------------
 
-function readProjectsFile(dir: string): OrgProject[] {
-  const raw = readJson(projectsFile(dir));
-  if (!isObj(raw) || !Array.isArray(raw.projects)) return [];
-  return raw.projects.filter((p): p is OrgProject => isObj(p) && typeof p.id === "string" && typeof p.name === "string" && typeof p.root === "string");
-}
-
-export function readProjects(orgId: string): OrgProject[] {
-  return readProjectsFile(orgDir(orgId));
-}
-
-function cleanRoot(v: unknown): string {
+/** Why a project root can't be used, or null (the act's `invalid` stamp: the charts can't read the disk). */
+export function rootProblem(v: unknown): string | null {
   const root = typeof v === "string" ? v.trim() : "";
-  if (!root || !isAbsolute(root)) throw new OrgError("root must be an absolute path");
+  if (!root || !isAbsolute(root)) return "root must be an absolute path";
   let st;
   try {
     st = statSync(root);
   } catch {
-    throw new OrgError(`No such directory: ${root}`);
+    return `No such directory: ${root}`;
   }
-  if (!st.isDirectory()) throw new OrgError(`Not a directory: ${root}`);
+  if (!st.isDirectory()) return `Not a directory: ${root}`;
   // The project overseer reads its root: never an org's workspace (every project's transcripts, the
   // roster's contacts), whichever holds the other, nor a folder of Sova's own state. (A root that
   // holds Sova's state, a hermetic worktree's `.agent`, is allowed: the tools exclude it.)
@@ -879,106 +903,87 @@ function cleanRoot(v: unknown): string {
   const under = (a: string, b: string) => a === b || a.startsWith(b.endsWith(sep) ? b : b + sep);
   const state = canonicalDir(stateRoot());
   if (under(real, state) || readIndex().orgs.map((o) => canonicalDir(o.dir)).some((w) => under(real, w) || under(w, real)))
-    throw new OrgError("A project root must not be, hold or sit inside an organization's workspace, nor sit inside Sova's own state folder.");
-  return resolve(root);
+    return "A project root must not be, hold or sit inside an organization's workspace, nor sit inside Sova's own state folder.";
+  return null;
 }
 
-export function addProject(orgId: string, input: { name: unknown; root: unknown }): OrgProject {
-  const dir = orgDir(orgId);
-  const name = typeof input.name === "string" ? input.name.trim() : "";
-  if (!name || name.length > PERSON_NAME_MAX) throw new OrgError(`name must be 1–${PERSON_NAME_MAX} characters`);
-  const root = cleanRoot(input.root);
-  const projects = readProjectsFile(dir);
-  const project: OrgProject = { id: shortId("prj_"), orgId, name, root, origin: "manual", createdAt: new Date().toISOString() };
-  writeJson(projectsFile(dir), { version: 1, projects: [...projects, project] });
-  return project;
+export async function addProject(orgId: string, input: { name: unknown; root: unknown }): Promise<OrgProject> {
+  readOrg(orgId);
+  const projectId = shortId("prj_");
+  const invalid = rootProblem(input.root);
+  const root = typeof input.root === "string" ? resolve(input.root.trim() || "/") : "";
+  await actOrThrow(orgId, orgSid(orgId), "project/add", { projectId, name: typeof input.name === "string" ? input.name : "", root, ...(invalid ? { invalid } : {}) }, operatorEnvelope(orgId, null));
+  return readProjects(orgId).find((p) => p.id === projectId)!;
 }
 
-/** Most stakeholder changes kept per project. */
-const STAKEHOLDER_HISTORY_MAX = 50;
-
-function noteStakeholder(p: OrgProject, to: string | null, why: StakeholderChange["why"], at = new Date().toISOString(), via?: ChangeVia): void {
-  const from = p.stakeholder ?? null;
-  if (from === to) return;
-  p.stakeholder = to;
-  p.stakeholderHistory = [...(p.stakeholderHistory ?? []), { at, from, to, why, ...(via ? { via } : {}) }].slice(-STAKEHOLDER_HISTORY_MAX);
+/** The project, or a 404. */
+export function projectById(orgId: string, projectId: string): OrgProject {
+  const p = readProjects(orgId).find((x) => x.id === projectId);
+  if (!p) throw new OrgError("Unknown project", 404);
+  return p;
 }
 
-/** `person` left the org: every project they were the main stakeholder of has none now, and says why. */
-function clearStakeholder(dir: string, person: Person): void {
-  const projects = readProjectsFile(dir);
-  const at = new Date().toISOString();
-  let changed = false;
-  for (const p of projects) {
-    if (p.stakeholder !== person.id) continue;
-    noteStakeholder(p, null, "left", at);
-    p.stakeholderCleared = { personId: person.id, name: person.name, at };
-    changed = true;
-  }
-  if (changed) writeJson(projectsFile(dir), { version: 1, projects });
-}
-
-export function patchProject(
+export async function patchProject(
   orgId: string,
   projectId: string,
   patch: { name?: unknown; root?: unknown; spec?: unknown; stakeholder?: unknown; ownerHidden?: unknown },
   by: OperatorBy = OPERATOR_BY,
-): OrgProject {
-  const dir = orgDir(orgId);
-  const projects = readProjectsFile(dir);
-  const p = projects.find((x) => x.id === projectId);
-  if (!p) throw new OrgError("Unknown project", 404);
-  if (patch.name !== undefined) {
-    const name = typeof patch.name === "string" ? patch.name.trim() : "";
-    if (!name || name.length > PERSON_NAME_MAX) throw new OrgError(`name must be 1–${PERSON_NAME_MAX} characters`);
-    p.name = name;
+): Promise<OrgProject> {
+  projectById(orgId, projectId);
+  // Every part is checked before anything is written: a PATCH is refused whole, in today's order.
+  const edit: Record<string, unknown> = {};
+  if (patch.name !== undefined) edit.name = checkName(patch.name);
+  if (patch.root !== undefined) {
+    const why = rootProblem(patch.root);
+    if (why) throw new OrgError(why);
+    edit.root = resolve(String(patch.root).trim());
   }
-  if (patch.root !== undefined) p.root = cleanRoot(patch.root);
+  let frozen: boolean | undefined;
   if (patch.spec !== undefined) {
-    const frozen = (patch.spec as { frozen?: unknown } | null)?.frozen;
-    if (typeof frozen !== "boolean") throw new OrgError("spec must be { frozen: boolean }");
-    p.spec = { frozen };
+    const f = (patch.spec as { frozen?: unknown } | null)?.frozen;
+    if (typeof f !== "boolean") throw new OrgError("spec must be { frozen: boolean }");
+    frozen = f;
   }
-  if (patch.stakeholder !== undefined) {
-    const to = patch.stakeholder;
-    if (to !== null) {
-      const person = typeof to === "string" ? readRosterFile(dir).people.find((x) => x.id === to) : undefined;
-      if (!person || person.status !== "active") throw new OrgError("Only an active person on the roster can be a project's main stakeholder.");
-    }
-    noteStakeholder(p, (to as string | null) ?? null, "operator", undefined, by.via);
-    // The operator has answered: whatever it says now, the "pick one" item is done.
-    delete p.stakeholderCleared;
+  if (patch.stakeholder !== undefined && patch.stakeholder !== null) {
+    const p = typeof patch.stakeholder === "string" ? findPerson(orgId, patch.stakeholder) : undefined;
+    if (!p || p.status !== "active") throw new OrgError("Only an active person on the roster can be a project's main stakeholder.");
   }
   if (patch.ownerHidden !== undefined) {
     if (typeof patch.ownerHidden !== "boolean") throw new OrgError("ownerHidden must be true or false");
-    if (patch.ownerHidden) p.ownerHidden = true;
-    else delete p.ownerHidden;
+    edit.ownerHidden = patch.ownerHidden;
   }
-  writeJson(projectsFile(dir), { version: 1, projects });
-  return p;
+  const sid = projectSid(orgId, projectId);
+  if (Object.keys(edit).length) await actOrThrow(orgId, sid, "project/edit", edit, operatorEnvelope(orgId, projectId, by));
+  if (frozen !== undefined) await actOrThrow(orgId, sid, "spec/freeze", { frozen }, operatorEnvelope(orgId, projectId, by));
+  if (patch.stakeholder !== undefined) {
+    const personId = (patch.stakeholder as string | null) ?? null;
+    await actOrThrow(orgId, sid, "stakeholder/set", { personId, target: targetOf(orgId, personId) }, operatorEnvelope(orgId, projectId, by));
+  }
+  return projectById(orgId, projectId);
+}
+
+/** What must be stopped before a project is archived, as the archive act's `blockers` stamp. */
+export interface ArchiveBlockers {
+  gatherings: string[];
+  coding: string[];
+  overseerWorking: boolean;
 }
 
 /**
- * Archive or unarchive a project (§app.organizations/archive): `archived: {at, via?}` in
- * projects.json, or removed. The same state again writes nothing. What must be stopped first is the
- * route's to check (server/org-routes.ts), which knows the sessions; this is the store's write.
+ * Archive or unarchive a project (§app.organizations/archive). The project chart refuses an archive
+ * while anything is open ("Stop these first: …", from `blockers`, which the caller reads: the
+ * sessions' titles and runtimes are host facts); the same state again writes nothing.
  */
-export function setProjectArchived(orgId: string, projectId: string, archived: boolean, by: OperatorBy = OPERATOR_BY): { project: OrgProject; changed: boolean } {
-  const dir = orgDir(orgId);
-  const projects = readProjectsFile(dir);
-  const p = projects.find((x) => x.id === projectId);
-  if (!p) throw new OrgError("Unknown project", 404);
-  if (!!p.archived === archived) return { project: p, changed: false };
-  if (archived) p.archived = { at: new Date().toISOString(), ...(by.via ? { via: by.via } : {}) };
-  else delete p.archived;
-  writeJson(projectsFile(dir), { version: 1, projects });
-  return { project: p, changed: true };
+export async function setProjectArchived(orgId: string, projectId: string, archived: boolean, by: OperatorBy = OPERATOR_BY, blockers?: ArchiveBlockers, extra: Record<string, unknown> = {}): Promise<OrgProject> {
+  projectById(orgId, projectId);
+  await actOrThrow(orgId, projectSid(orgId, projectId), archived ? "project/archive" : "project/unarchive", archived ? { blockers: blockers ?? { gatherings: [], coding: [], overseerWorking: false } } : {}, operatorEnvelope(orgId, projectId, by, extra));
+  return projectById(orgId, projectId);
 }
 
 /** Whether the project is archived (false for an unknown one). */
 export function projectArchived(orgId: string, projectId: string): boolean {
   try {
-    return !!readProjects(orgId).find((p) => p.id === projectId)?.archived;
+    return !!hostOf(orgId).configuration(projectSid(orgId, projectId))?.includes("archived");
   } catch {
     return false;
   }
@@ -995,55 +1000,40 @@ export function assertNotArchived(orgId: string, projectId: string): void {
   if (p?.archived) throw new OrgError(archivedRefusal(p.name), 409);
 }
 
+/** When the project's overseer was paused by an attach on this host (ISO), or null: not paused. */
+export function overseerPausedSince(orgId: string, projectId: string): string | null {
+  try {
+    const host = hostOf(orgId);
+    if (!host.configuration(watchSid(orgId, projectId))?.includes("paused")) return null;
+    return readIndex().orgs.find((o) => o.id === orgId)?.attachedAt || new Date(0).toISOString();
+  } catch {
+    return null;
+  }
+}
+
+/** The operator set the project overseer's level on this host: an attach's pause ends (any level). */
+export async function resumeOverseer(orgId: string, projectId: string): Promise<void> {
+  const host = hostOf(orgId);
+  if (!host.configuration(watchSid(orgId, projectId))) return;
+  await host.act(watchSid(orgId, projectId), "operator/level-set", {}, operatorEnvelope(orgId, projectId));
+}
+
 // ---- the org's owner (§app.owner-page/owner) ------------------------------------------------------------------
-
-/** Most owner changes kept per org. */
-const OWNER_HISTORY_MAX = 50;
-
-function noteOwner(org: Org, to: string | null, why: OwnerChange["why"], at = new Date().toISOString(), via?: ChangeVia): boolean {
-  const from = org.owner ?? null;
-  if (from === to) return false;
-  if (to) org.owner = to;
-  else delete org.owner;
-  org.ownerHistory = [...(org.ownerHistory ?? []), { at, from, to, why, ...(via ? { via } : {}) }].slice(-OWNER_HISTORY_MAX);
-  return true;
-}
-
-/** `person` left the org: when they were its owner, it has none now, and says why. */
-function clearOwner(dir: string, person: Person): void {
-  const org = readOrgFile(dir);
-  if (!org || org.owner !== person.id) return;
-  const at = new Date().toISOString();
-  noteOwner(org, null, "left", at);
-  org.ownerCleared = { personId: person.id, name: person.name, at };
-  writeOrgFile(dir, org);
-}
 
 /** The org's owner now: an active roster person, or null. */
 export function ownerOf(orgId: string): Person | null {
   const org = readOrg(orgId);
   if (!org.owner) return null;
-  const p = readRoster(orgId).find((x) => x.id === org.owner);
+  const p = findPerson(orgId, org.owner);
   return p && p.status === "active" ? p : null;
 }
 
-/** THE writer of the owner: the operator only (§app.organizations/field-authority). Only an active
-    roster person, or null (none). Returns the previous owner's id. */
-export function setOrgOwner(orgId: string, personId: unknown, by: OperatorBy = OPERATOR_BY): { from: string | null; to: string | null } {
-  const dir = orgDir(orgId);
-  const org = readOrg(orgId);
-  if (personId !== null) {
-    const person = typeof personId === "string" ? readRosterFile(dir).people.find((x) => x.id === personId) : undefined;
-    if (!person || person.status !== "active") throw new OrgError("Only an active person on the roster can be the owner.");
-  }
-  const from = org.owner ?? null;
-  const to = (personId as string | null) ?? null;
-  const changed = noteOwner(org, to, "operator", undefined, by.via);
-  // The operator has answered: whatever it says now, "pick one" is done.
-  const hadCleared = !!org.ownerCleared;
-  delete org.ownerCleared;
-  if (changed || hadCleared) writeOrgFile(dir, org);
-  return { from, to };
+/** THE writer of the owner: the operator only. Only an active roster person, or null (none). Returns the previous owner's id. */
+export async function setOrgOwner(orgId: string, personId: unknown, by: OperatorBy = OPERATOR_BY): Promise<{ from: string | null; to: string | null }> {
+  const from = readOrg(orgId).owner ?? null;
+  if (personId !== null && typeof personId !== "string") throw new OrgError("Only an active person on the roster can be the owner.");
+  await actOrThrow(orgId, orgSid(orgId), "owner/set", { personId, target: targetOf(orgId, personId) }, operatorEnvelope(orgId, null, by), SETTLE);
+  return { from, to: (personId as string | null) ?? null };
 }
 
 // ---- read models for the routes -------------------------------------------------------------------------
@@ -1060,19 +1050,18 @@ export function setOpenBatonCounter(fn: (orgId: string) => number, rows?: (orgId
 export function orgSummaries(): OrgSummary[] {
   const out: OrgSummary[] = [];
   for (const e of readIndex().orgs) {
-    const org = readOrgFile(e.dir);
-    if (!org) continue;
-    const projects = readProjectsFile(e.dir);
+    let org: Org;
+    let projects: OrgProject[];
+    let people: number;
+    try {
+      org = readOrg(e.id);
+      projects = readProjects(e.id);
+      people = hostOf(e.id).sessions("person").length;
+    } catch {
+      continue;
+    }
     const archived = projects.filter((p) => p.archived).length;
-    out.push({
-      ...org,
-      id: e.id,
-      dir: e.dir,
-      people: readRosterFile(e.dir).people.length,
-      projects: projects.length - archived,
-      ...(archived ? { archivedProjects: archived } : {}),
-      openBatons: openBatonCount(e.id),
-    });
+    out.push({ ...org, id: e.id, dir: e.dir, people, projects: projects.length - archived, ...(archived ? { archivedProjects: archived } : {}), openBatons: openBatonCount(e.id) });
   }
   return out;
 }
@@ -1081,41 +1070,40 @@ export function orgsInfo(): OrgsInfo {
   return { operator: readIndex().operator, orgs: orgSummaries(), defaultDir: defaultWorkspacesDir() };
 }
 
+/** The workspace's file problems, one sentence each (the page's banner and the Workspace dot). */
+function problemsOf(orgId: string, dir: string): string[] {
+  try {
+    return hostOf(orgId)
+      .problems()
+      .map((p) => `${relative(dir, p.file).startsWith("..") ? p.file : relative(dir, p.file)} can't be read: ${p.why}`);
+  } catch (err) {
+    return [err instanceof Error ? err.message : String(err)];
+  }
+}
+
 export async function orgDetail(orgId: string): Promise<OrgDetail> {
   const dir = orgDir(orgId);
-  const problems: string[] = [];
-  const org = readOrgFile(dir);
-  if (!org) problems.push("org.json is missing or does not parse");
-  const roster = readRosterFile(dir);
-  if (roster.problem) problems.push(roster.problem);
-  const projectList = readProjectsFile(dir);
+  const org = readOrg(orgId);
+  const roster = readRoster(orgId);
+  const projectList = readProjects(orgId);
   const about = readOrgAbout(orgId);
   return {
-    ...(org ?? { id: orgId, name: orgId, slug: orgId, createdAt: "" }),
+    ...org,
     id: orgId,
     dir,
-    people: roster.people.length,
+    people: roster.length,
     projects: projectList.filter((p) => !p.archived).length,
     ...(projectList.some((p) => p.archived) ? { archivedProjects: projectList.filter((p) => p.archived).length } : {}),
     openBatons: openBatonCount(orgId),
-    roster: roster.people,
+    roster,
     projectList,
     batons: batonRows(orgId),
     git: { ...(await gitStatus(dir)), commitEveryMs: commitEveryMs() },
-    recentChanges: recentChanges(orgId, 20, roster.people),
-    problems,
+    recentChanges: recentChanges(orgId, 20, roster),
+    problems: problemsOf(orgId, dir),
     ...(about ? { about } : {}),
     aboutHistory: readOrgHistory(orgId).slice(-ABOUT_HISTORY_ON_DETAIL).reverse(),
   };
-}
-
-/** The roster's history across people, newest first, with each person's current name. */
-export function recentChanges(orgId: string, limit = 50, roster: Person[] = readRoster(orgId)): NamedChange[] {
-  const names = new Map(roster.map((p) => [p.id, p.name]));
-  return readHistory(orgId)
-    .slice(-Math.max(1, Math.min(limit, 500)))
-    .reverse()
-    .map((c) => ({ ...c, name: names.get(c.personId) ?? "Someone" }));
 }
 
 export type { PersonStatus };

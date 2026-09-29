@@ -19,8 +19,10 @@ import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
-import { attachedWorkspaces } from "./orgs";
-import { WorkspaceCommitter } from "./workspace-commits";
+import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
+import { startWorkspaceProbe } from "./org-effects";
+import { closeAllOrgHosts } from "./org-engine";
+import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { mountPublicLinks } from "./public-links-routes";
@@ -1342,6 +1344,9 @@ const linkOrigin = (port: number) => `http://${HOST === "0.0.0.0" || HOST === ":
 // Known before listen when the port is fixed, so no runtime opened meanwhile misses the flag.
 if (PORT) setLinkOrigin(linkOrigin(PORT));
 
+// Every attached org's engine opens before the first request (its pages and share links read it).
+await openAttachedOrgs();
+
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
@@ -1369,9 +1374,9 @@ startResourceMonitor({
   held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
   titleOf: cachedTitleOf,
 });
-// Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
-const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
-workspaceCommits.start();
+// Every attached org's workspace repo: its residence chart commits it at most hourly when anything
+// changed, then pushes; a plain file written outside the charts is seen within a minute.
+startWorkspaceProbe();
 // A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
 startWrapupRecovery();
 // Messages a crash or kill lost stop counting against their session's limit.
@@ -1466,8 +1471,8 @@ async function shutdown() {
     console.warn(`[server] visit flush failed: ${err instanceof Error ? err.message : String(err)}`);
   }
   // After the runtimes' last writes: whatever changed in a workspace repo since its last commit.
-  workspaceCommits.stop();
-  await Promise.race([workspaceCommits.flush("shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);
+  await closeAllOrgHosts().catch(() => {});
+  await Promise.race([flushWorkspaces(attachedWorkspaces(), "shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);

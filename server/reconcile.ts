@@ -375,9 +375,9 @@ export function specStatusOf(orgId: string, projectId: string): SpecStatus {
 }
 
 /** PATCH …/spec {frozen}: stored on the project (projects.json). */
-export function setFrozen(orgId: string, projectId: string, frozen: boolean): SpecStatus {
+export async function setFrozen(orgId: string, projectId: string, frozen: boolean): Promise<SpecStatus> {
   projectOf(orgId, projectId);
-  patchProject(orgId, projectId, { spec: { frozen } });
+  await patchProject(orgId, projectId, { spec: { frozen } });
   const store = readDecisionStore(orgId, projectId);
   if (frozen) {
     store.lastPromotedSpec = specHash(projectOf(orgId, projectId).root);

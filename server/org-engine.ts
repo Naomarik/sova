@@ -2,7 +2,7 @@ import type { Refusal, StampContext } from "./org-charts";
 import { OrgHost, type ActResult, type HostChange } from "./org-host";
 import { OrgError } from "./orgs";
 import type { ActBy, Envelope } from "./org-envelope";
-import { projectOfSession, stampEnvelope } from "./org-stamp";
+import { projectOfSession, stampEnvelope, type StampWho } from "./org-stamp";
 import { defaultPoSettings, projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 
 /**
@@ -22,7 +22,7 @@ export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocat
     tests may hand in a fake with the same shape. */
 export type OrgHostApi = Pick<
   OrgHost,
-  "effects" | "invocations" | "log" | "act" | "actNow" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
+  "paths" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
 >;
 
 export interface OpenOptions {
@@ -134,9 +134,15 @@ export function refusalError(r: Refusal): OrgError {
   return new OrgError(r.sentence, status, r.code ?? undefined);
 }
 
+/** The envelope for an act of `who` on the org's project (null: an org-level act), from the charts as they stand now. */
+export function envelopeFor(orgId: string, projectId: string | null, who: StampWho): Envelope {
+  const host = hostOf(orgId);
+  return stampEnvelope(host, orgId, projectId, who, (pid) => readPoSettings(projectOverseerPaths(orgId, pid)), defaultPoSettings());
+}
+
 /** Send an act; a refusal throws as the route answers it. Returns the host's result. */
-export async function actOrThrow(orgId: string, sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope | Record<string, unknown>): Promise<ActResult> {
-  const out = await hostOf(orgId).act(sid, event, payload, envelope);
+export async function actOrThrow(orgId: string, sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope | Record<string, unknown>, opts: { settle?: boolean } = {}): Promise<ActResult> {
+  const out = await hostOf(orgId).act(sid, event, payload, envelope, opts);
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
   return out;
 }

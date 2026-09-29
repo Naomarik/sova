@@ -41,6 +41,7 @@ import { baseCodingMode, codingModeChoice, describeCodingMode, type ModeRequest 
 import { baseAbilities, overseerAbilities } from "./gathering-abilities";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, WorktreeRefusal } from "./project-worktrees";
 import {
+  type ArchiveBlockers,
   archivedOverseerRefusal,
   assertNotArchived,
   decidePerson,
@@ -408,7 +409,7 @@ export async function patchProjectOverseer(orgId: string, projectId: string, bod
   const s = patchPoSettings(p, body, (next, patch) => fitThinking(next, patch, models, loadDefaults().model ?? null));
   releaseRaised(orgId, projectId, before, s);
   // Setting the level on this host (any level, the same one too) ends the pause an attach put on it.
-  if ((body as { autonomy?: unknown }).autonomy !== undefined) resumeOverseer(orgId, projectId);
+  if ((body as { autonomy?: unknown }).autonomy !== undefined) await resumeOverseer(orgId, projectId);
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   const chat = path ? heldChat(path) : undefined;
@@ -1120,31 +1121,27 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
 
 // ---- archive: what must stop first (§app.organizations/archive) -------------------------------------------
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
 /**
- * What is open in the project now, one phrase each, in the refusal's words: its gathering sessions
- * and offers not done or closed, its coding sessions mid-turn or with workers running, a turn of its
- * overseer. Empty: nothing stops an archive.
+ * What is open in the project, for the archive act's `blockers` stamp (§app.organizations/archive):
+ * its open gathering sessions' titles, its coding sessions mid-turn or with workers running, and
+ * whether its overseer is working. The project chart words the refusal ("Stop these first: …").
  */
-export async function archiveBlockers(orgId: string, projectId: string): Promise<string[]> {
-  const out: string[] = [];
-  const open = projectBatons(orgId, projectId).filter((b) => b.state === "open" || b.state === "needs-you");
-  if (open.length) out.push(`${plural(open.length, "gathering session", "gathering sessions")} open (${open.map((b) => b.publicTitle).join(", ")})`);
+export async function archiveBlockers(orgId: string, projectId: string): Promise<ArchiveBlockers> {
+  const gatherings = projectBatons(orgId, projectId)
+    .filter((b) => b.state === "open" || b.state === "needs-you")
+    .map((b) => b.publicTitle);
   const p = projectOverseerPaths(orgId, projectId);
   const known = indexedSessionPaths();
-  const running: string[] = [];
+  const coding: string[] = [];
   for (const r of readStarted(p)) {
     if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
     const path = known.get(r.sessionId) ?? (r.path && existsSync(r.path) ? r.path : null);
     if (!path || !(isSessionBusy(path) || workingSubagents(path) > 0)) continue;
-    running.push(readSessionTitles()[r.sessionId] || r.title || (await getSessionSummary(path).catch(() => null))?.title || r.sessionId);
+    coding.push(readSessionTitles()[r.sessionId] || r.title || (await getSessionSummary(path).catch(() => null))?.title || r.sessionId);
   }
-  if (running.length) out.push(`${plural(running.length, "coding session", "coding sessions")} running (${running.join(", ")})`);
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
-  if (path && isSessionBusy(path)) out.push("its overseer is working");
-  return out;
+  return { gatherings, coding, overseerWorking: !!(path && isSessionBusy(path)) };
 }
 
 // ---- the global Overseer's message route (§app.overseer/org-project-overseers) -----------------------------

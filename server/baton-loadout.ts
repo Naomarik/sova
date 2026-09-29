@@ -57,7 +57,7 @@ import { handoffChosen } from "./baton-guards";
 import { authorNotes, labelAuthors, streamingText } from "./baton-view";
 import { runWrapup, wantsWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
 import { acquireChat, BusyError, type ChatSession, isSessionBusy, RefusedError, registerSpecialLoadout } from "./chat-manager";
-import { applyChange, contactProblems, holderSteering, onPersonLeft, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, publicTerms, readRoster } from "./orgs";
+import { addPerson, contactProblems, holderSteering, onPersonLeft, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, publicTerms, readRoster } from "./orgs";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { refreshShare, streamShare } from "./share/hub";
 import { loadDefaults } from "./web-defaults";
@@ -520,9 +520,8 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
           throw new Error(`Not recorded yet: still missing ${gaps.join(", ")}. Ask ${referrerName} for it, then call propose_roster_edit again with everything.`);
         let person;
         try {
-          person = applyChange(
+          person = await addPerson(
             row.orgId,
-            null,
             {
               name,
               status: "proposed",

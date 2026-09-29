@@ -104,7 +104,7 @@ export function registerDecisionRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const frozen = (await body(c)).frozen;
       if (typeof frozen !== "boolean") throw new OrgError("Expected { frozen: boolean }");
-      return c.json(setFrozen(p(c, "id"), p(c, "pid"), frozen));
+      return c.json(await setFrozen(p(c, "id"), p(c, "pid"), frozen));
     }),
   );
 }

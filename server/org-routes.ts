@@ -22,6 +22,7 @@ import {
   orgDir,
   orgsInfo,
   OrgError,
+  operatorEnvelope,
   patchOrg,
   patchProject,
   readHistory,
@@ -31,6 +32,7 @@ import {
   recentChanges,
   revertChange,
   revertOrgChange,
+  residenceSid,
   setOperatorName,
   setProjectArchived,
   type OperatorBy,
@@ -49,7 +51,8 @@ import type { OwnerLinkResult } from "../shared/owner";
 import { mintOwnerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
 import { ownerView } from "./owner-page";
 import { readUpdates, withdrawUpdate } from "./project-updates";
-import { commitAll, setRemote } from "./workspace-git";
+import { setRemote } from "./workspace-git";
+import { actOrThrow } from "./org-engine";
 
 /**
  * The operator's routes for organizations and baton sessions (§app/organizations, §app/baton). On
@@ -322,7 +325,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id",
     handle(async (c) => {
       const b = await body(c);
-      patchOrg(p(c, "id"), { name: b.name, about: b.about }, operatorBy(c));
+      await patchOrg(p(c, "id"), { name: b.name, about: b.about }, operatorBy(c));
       return c.json(await orgPage(p(c, "id")));
     }),
   );
@@ -349,9 +352,14 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/commit",
     handle(async (c) => {
       const id = p(c, "id");
-      const out = await commitAll(orgDir(id), `Commit now (${readOrg(id).name})`);
+      // The residence commits at once (its `commit` effect); the answer is what that commit did.
+      const act = await actOrThrow(id, residenceSid(id), "commit/now", { message: `Commit now (${readOrg(id).name})` }, operatorEnvelope(id, null, operatorBy(c)), { settle: true });
+      const done = act.effects?.find((e) => e.kind === "commit");
+      if (!done) return c.json({ error: "Nothing was committed: the workspace's commit did not run." }, 502);
+      if (done.error) return c.json({ error: done.error }, 502);
+      const out = (done.result ?? {}) as { committed?: boolean; sha?: string; pushed?: boolean; error?: string };
       if (out.error) return c.json({ error: out.error }, 502);
-      const commit: CommitNowOutcome = { committed: out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}) };
+      const commit: CommitNowOutcome = { committed: !!out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}) };
       return c.json({ ...(await orgPage(id)), commit });
     }),
   );
@@ -369,7 +377,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people",
     handle(async (c) => {
       const id = p(c, "id");
-      addPerson(id, (await body(c)) as unknown as PersonInput, operatorBy(c));
+      await addPerson(id, (await body(c)) as unknown as PersonInput, operatorBy(c));
       return c.json(await orgPage(id), 201);
     }),
   );
@@ -377,7 +385,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid",
     handle(async (c) => {
       const id = p(c, "id");
-      applyChange(id, p(c, "pid"), await body(c), operatorBy(c));
+      await applyChange(id, p(c, "pid"), await body(c), operatorBy(c));
       nudgeMarks(); // a renamed or re-statused person may be a baton holder or a waiting referral
       return c.json(await orgPage(id));
     }),
@@ -386,7 +394,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid/approve",
     handle(async (c) => {
       const id = p(c, "id");
-      approvePerson(id, p(c, "pid"), operatorBy(c));
+      await approvePerson(id, p(c, "pid"), operatorBy(c));
       nudgeMarks(); // the session that proposed them loses its Approve item: re-diff the list now
       return c.json(await orgPage(id));
     }),
@@ -395,7 +403,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid/decline",
     handle(async (c) => {
       const id = p(c, "id");
-      declinePerson(id, p(c, "pid"), operatorBy(c));
+      await declinePerson(id, p(c, "pid"), operatorBy(c));
       nudgeMarks();
       return c.json(await orgPage(id));
     }),
@@ -440,7 +448,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const at = (await body(c)).at;
       if (typeof at !== "string") throw new OrgError("at is required");
-      revertChange(id, p(c, "pid"), at, operatorBy(c));
+      await revertChange(id, p(c, "pid"), at, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
@@ -449,7 +457,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      addProject(id, { name: b.name, root: b.root });
+      await addProject(id, { name: b.name, root: b.root });
       return c.json(await orgPage(id), 201);
     }),
   );
@@ -458,7 +466,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      patchProject(id, p(c, "pid"), {
+      await patchProject(id, p(c, "pid"), {
         name: b.name,
         root: b.root,
         ...(b.spec !== undefined ? { spec: b.spec } : {}),
@@ -474,13 +482,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const pid = p(c, "pid");
-      const project = readProjects(id).find((x) => x.id === pid);
-      if (!project) throw new OrgError("Unknown project", 404);
-      if (!project.archived) {
-        const open = await archiveBlockers(id, pid);
-        if (open.length) throw new OrgError(`Stop these first: ${open.join("; ")}.`, 409);
-      }
-      setProjectArchived(id, pid, true, operatorBy(c));
+      if (!readProjects(id).some((x) => x.id === pid)) throw new OrgError("Unknown project", 404);
+      await setProjectArchived(id, pid, true, operatorBy(c), await archiveBlockers(id, pid));
       nudgeMarks(); // its sessions leave the Organizations region: re-diff the list now
       return c.json(await orgPage(id));
     }),
@@ -489,7 +492,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/projects/:pid/unarchive",
     handle(async (c) => {
       const id = p(c, "id");
-      setProjectArchived(id, p(c, "pid"), false, operatorBy(c));
+      await setProjectArchived(id, p(c, "pid"), false, operatorBy(c));
       nudgeMarks();
       return c.json(await orgPage(id));
     }),
@@ -503,7 +506,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const b = await body(c);
       if (!("personId" in b)) throw new OrgError("personId is required (null: no owner)");
-      setOwner(id, b.personId, operatorBy(c));
+      await setOwner(id, b.personId, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );

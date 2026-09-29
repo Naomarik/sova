@@ -53,7 +53,7 @@ describe("organizations", async () => {
     assert.equal(resolveSessionPath(join(dir, "sessions", "nested", "a.jsonl")), null, "only directly inside");
   });
 
-  test("the field-authority table: every writer × every field", () => {
+  test("the field-authority table: every writer × every field", async () => {
     const allowed: Record<ChangeWriter, ProfileField[]> = {
       operator: [...PROFILE_FIELDS],
       wrapup: ["skills", "competence", "language", "voice"],
@@ -62,60 +62,63 @@ describe("organizations", async () => {
     };
     for (const kind of ["operator", "wrapup", "overseer", "referral"] as ChangeWriter[])
       for (const field of PROFILE_FIELDS) {
-        const p = orgs.addPerson(org.id, { name: `P ${kind} ${field}`, role: "r", contact: { email: "a@b.c" } });
+        const p = await orgs.addPerson(org.id, { name: `P ${kind} ${field}`, role: "r", contact: { email: "a@b.c" } });
         const before = orgs.readHistory(org.id).length;
         const patch = field === "name" ? { name: `${p.name} two` } : { [field]: VALUE[field] };
         const ok = allowed[kind].includes(field);
         if (ok) {
-          orgs.applyChange(org.id, p.id, patch, { kind });
+          await orgs.applyChange(org.id, p.id, patch, { kind });
           assert.equal(orgs.readHistory(org.id).length, before + 1, `${kind} may write ${field}: one history line`);
         } else {
-          assert.throws(() => orgs.applyChange(org.id, p.id, patch, { kind }), orgs.OrgError, `${kind} may not write ${field}`);
+          // Today's order: field authority first; a referral's own fields then meet "only create".
+          const referralField = ["name", "status", "contact", "role", "decides", "referral"].includes(field);
+          const sentence = kind === "referral" && referralField ? "A referral may only create a proposed person." : `A ${kind} change may not write ${field}.`;
+          await assert.rejects(orgs.applyChange(org.id, p.id, patch, { kind }), (e: unknown) => e instanceof orgs.OrgError && e.status === 409 && e.message === sentence, `${kind} may not write ${field}`);
           assert.equal(orgs.readHistory(org.id).length, before, `a refused ${kind} change of ${field} appends nothing`);
         }
       }
   });
 
-  test("a referral only creates a proposed person, and a proposed person must be complete", () => {
+  test("a referral only creates a proposed person, and a proposed person must be complete", async () => {
     const complete = { name: "Bob Ref", status: "proposed" as const, role: "Accountant", contact: { phone: "+1 555 010 0199" }, referral: { why: "Does the books", referredBy: "Tony" } };
-    const bob = orgs.applyChange(org.id, null, complete, { kind: "referral", sessionId: "s1", quote: "ask Bob" });
+    const bob = await orgs.addPerson(org.id, complete, { kind: "referral", sessionId: "s1", quote: "ask Bob" });
     assert.equal(bob.status, "proposed");
-    assert.throws(() => orgs.applyChange(org.id, null, { ...complete, name: "Active Ref", status: "active" }, { kind: "referral" }), /only create a proposed/);
-    assert.throws(() => orgs.applyChange(org.id, bob.id, { role: "x" }, { kind: "referral" }), orgs.OrgError);
+    await assert.rejects(orgs.addPerson(org.id, { ...complete, name: "Active Ref", status: "active" }, { kind: "referral" }), { message: "A referral may only create a proposed person." });
+    await assert.rejects(orgs.applyChange(org.id, bob.id, { role: "x" }, { kind: "referral" }), orgs.OrgError);
     for (const drop of ["contact", "role", "referral"] as const) {
       const partial: Record<string, unknown> = { ...complete, name: `Missing ${drop}` };
       delete partial[drop];
-      assert.throws(() => orgs.addPerson(org.id, partial as never), /A proposed person needs/, `without ${drop}`);
+      await assert.rejects(orgs.addPerson(org.id, partial as never), /A proposed person needs/, `without ${drop}`);
     }
-    assert.throws(() => orgs.addPerson(org.id, { ...complete, name: "No why", referral: { why: "", referredBy: "x" } }), /why they were referred/);
+    await assert.rejects(orgs.addPerson(org.id, { ...complete, name: "No why", referral: { why: "", referredBy: "x" } }), /why they were referred/);
     // Making an active person proposed later is held to the same rule.
-    const al = orgs.addPerson(org.id, { name: "Al", role: "r" });
-    assert.throws(() => orgs.applyChange(org.id, al.id, { status: "proposed" }, { kind: "operator" }), /A proposed person needs/);
+    const al = await orgs.addPerson(org.id, { name: "Al", role: "r" });
+    await assert.rejects(orgs.applyChange(org.id, al.id, { status: "proposed" }, { kind: "operator" }), /A proposed person needs/);
   });
 
-  test("a decides entry with no letter names no area: refused, never filed under \"general\"", () => {
-    for (const bad of ["*", "-", "2024"]) assert.throws(() => orgs.addPerson(org.id, { name: `Star ${bad}`, decides: ["website", bad] }), { message: `“${bad}” names no decision area: use words, like “website”.` });
-    assert.deepEqual(orgs.addPerson(org.id, { name: "Ok Areas", decides: ["Café", "site structure / pages"] }).decides, ["Café", "site structure / pages"]);
+  test("a decides entry with no letter names no area: refused, never filed under \"general\"", async () => {
+    for (const bad of ["*", "-", "2024"]) await assert.rejects(orgs.addPerson(org.id, { name: `Star ${bad}`, decides: ["website", bad] }), { message: `“${bad}” names no decision area: use words, like “website”.` });
+    assert.deepEqual((await orgs.addPerson(org.id, { name: "Ok Areas", decides: ["Café", "site structure / pages"] })).decides, ["Café", "site structure / pages"]);
   });
 
-  test("the main stakeholder: operator-set, active people only, history kept; cleared when they leave, with a Needs-you item until any save", () => {
+  test("the main stakeholder: operator-set, active people only, history kept; cleared when they leave, with a Needs-you item until any save", async () => {
     mkdirSync(join(root, "site"), { recursive: true });
-    const pr = orgs.addProject(org.id, { name: "Website", root: join(root, "site") });
-    const alp = orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["website"] });
-    const prop = orgs.addPerson(org.id, { name: "Prop Osed", status: "proposed", role: "x", contact: { email: "p@example.com" }, referral: { why: "w", referredBy: alp.id } }, { kind: "referral" });
+    const pr = await orgs.addProject(org.id, { name: "Website", root: join(root, "site") });
+    const alp = await orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["website"] });
+    const prop = await orgs.addPerson(org.id, { name: "Prop Osed", status: "proposed", role: "x", contact: { email: "p@example.com" }, referral: { why: "w", referredBy: alp.id } }, { kind: "referral" });
     const refusal = { message: "Only an active person on the roster can be a project's main stakeholder." };
-    for (const bad of ["p_nobody00", prop.id, 42]) assert.throws(() => orgs.patchProject(org.id, pr.id, { stakeholder: bad }), refusal, String(bad));
+    for (const bad of ["p_nobody00", prop.id, 42]) await assert.rejects(orgs.patchProject(org.id, pr.id, { stakeholder: bad }), refusal, String(bad));
     const project = () => orgs.readProjects(org.id).find((x) => x.id === pr.id)!;
     assert.equal(project().stakeholder, undefined, "a refusal writes nothing");
-    orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
-    orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
+    await orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
+    await orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
     assert.equal(project().stakeholder, alp.id);
     assert.deepEqual(project().stakeholderHistory?.map((h) => [h.from, h.to, h.why]), [[null, alp.id, "operator"]], "a save that changes nothing adds no line");
     assert.equal(orgs.stakeholderOf(org.id, pr.id), alp.id);
     assert.deepEqual(orgs.stakeholderAttention(), []);
     // They leave: cleared at once, with the why, and one decide-tier item for the project.
-    orgs.applyChange(org.id, alp.id, { status: "left" }, { kind: "operator" });
-    assert.equal(project().stakeholder, null);
+    await orgs.applyChange(org.id, alp.id, { status: "left" }, { kind: "operator" });
+    assert.equal(project().stakeholder, undefined);
     assert.deepEqual(project().stakeholderHistory?.map((h) => [h.from, h.to, h.why]), [[null, alp.id, "operator"], [alp.id, null, "left"]]);
     assert.deepEqual({ ...project().stakeholderCleared, at: "" }, { personId: alp.id, name: "Alperen", at: "" });
     const items = orgs.stakeholderAttention().filter((i) => i.id === `project-stakeholder:${pr.id}`);
@@ -124,34 +127,79 @@ describe("organizations", async () => {
       [["decide", "project-stakeholder", "Pick a main stakeholder for Website: Alperen left the organization.", `#/orgs/${org.id}/projects/${pr.id}`, pr.id]],
     );
     // Choosing None answers it too.
-    orgs.patchProject(org.id, pr.id, { stakeholder: null });
+    await orgs.patchProject(org.id, pr.id, { stakeholder: null });
     assert.equal(project().stakeholderCleared, undefined);
     assert.deepEqual(orgs.stakeholderAttention().filter((i) => i.id === `project-stakeholder:${pr.id}`), []);
-    assert.throws(() => orgs.patchProject(org.id, pr.id, { stakeholder: alp.id }), refusal, "someone who left can't be picked");
+    await assert.rejects(orgs.patchProject(org.id, pr.id, { stakeholder: alp.id }), refusal, "someone who left can't be picked");
   });
 
-  test("caps are refused, never cut", () => {
-    assert.throws(() => orgs.addPerson(org.id, { name: "Long", voice: "x".repeat(301) }), /at most 300/);
-    assert.throws(() => orgs.addPerson(org.id, { name: "Many", skills: Array.from({ length: 13 }, (_, i) => `s${i}`) }), /at most 12/);
-    assert.throws(() => orgs.addPerson(org.id, { name: "Wide", decides: ["y".repeat(41)] }), /at most 40/);
-    assert.throws(() => orgs.addPerson(org.id, { name: "Lang", language: "not a tag!" }), /BCP-47/);
+  test("caps are refused (400), never cut", async () => {
+    const bad = (re: RegExp) => (e: unknown) => e instanceof orgs.OrgError && e.status === 400 && re.test(e.message);
+    await assert.rejects(orgs.addPerson(org.id, { name: "Long", voice: "x".repeat(301) }), bad(/at most 300/));
+    await assert.rejects(orgs.addPerson(org.id, { name: "Many", skills: Array.from({ length: 13 }, (_, i) => `s${i}`) }), bad(/at most 12/));
+    await assert.rejects(orgs.addPerson(org.id, { name: "Wide", decides: ["y".repeat(41)] }), bad(/at most 40/));
+    await assert.rejects(orgs.addPerson(org.id, { name: "Lang", language: "not a tag!" }), bad(/BCP-47/));
   });
 
-  test("revert writes a new change back to the old value, and history is never edited", () => {
-    const p = orgs.addPerson(org.id, { name: "Rita", voice: "Warm." });
-    orgs.applyChange(org.id, p.id, { voice: "Cold." }, { kind: "wrapup", sessionId: "s", quote: "q" });
+  test("revert writes a new change back to the old value, and history is never edited", async () => {
+    const p = await orgs.addPerson(org.id, { name: "Rita", voice: "Warm." });
+    await orgs.applyChange(org.id, p.id, { voice: "Cold." }, { kind: "wrapup", sessionId: "s", quote: "q" });
     const change = orgs.readHistory(org.id, p.id).find((c) => c.field === "voice" && c.to === "Cold.")!;
     const before = readFileSync(join(dir, "roster-history.jsonl"), "utf8");
-    const back = orgs.revertChange(org.id, p.id, change.at);
+    const back = await orgs.revertChange(org.id, p.id, change.at);
     assert.equal(back.voice, "Warm.");
     const after = readFileSync(join(dir, "roster-history.jsonl"), "utf8");
     assert.ok(after.startsWith(before), "appended only");
     const last = orgs.readHistory(org.id, p.id).at(-1)!;
     assert.deepEqual([last.field, last.from, last.to, last.revertOf, last.by.kind], ["voice", "Cold.", "Warm.", change.at, "operator"]);
+    await assert.rejects(orgs.revertChange(org.id, p.id, "1999-01-01T00:00:00.000Z"), (e: unknown) => e instanceof orgs.OrgError && e.status === 404 && e.message === "No such change");
+    const created = orgs.readHistory(org.id, p.id).find((c) => c.field === "name")!;
+    await assert.rejects(orgs.revertChange(org.id, p.id, created.at), { message: "A person's creation can't be reverted; set their status to left instead." });
   });
 
-  test("prompt partition: contact never, steering only for the holder, redaction phrases ≥ 16 chars", () => {
-    const p = orgs.addPerson(org.id, { name: "Tina", role: "IT", decides: ["servers"], skills: ["SQL", "Windows Server administration"], voice: "Short answers, please.", contact: { email: "tina@example.com" } });
+  test("C6: reverting a change the field no longer holds is refused (409), and nothing is written", async () => {
+    const p = await orgs.addPerson(org.id, { name: "Stale Row", role: "One" });
+    await orgs.applyChange(org.id, p.id, { role: "Two" }, { kind: "operator" });
+    const first = orgs.readHistory(org.id, p.id).find((c) => c.field === "role" && c.to === "Two")!;
+    await orgs.applyChange(org.id, p.id, { role: "Three" }, { kind: "operator" });
+    const lines = orgs.readHistory(org.id).length;
+    await assert.rejects(
+      orgs.revertChange(org.id, p.id, first.at),
+      (e: unknown) => e instanceof orgs.OrgError && e.status === 409 && e.message === "Stale Row's role has changed since then, so reverting this would undo a later change. Revert the latest change instead.",
+    );
+    assert.equal(orgs.findPerson(org.id, p.id)!.role, "Three");
+    assert.equal(orgs.readHistory(org.id).length, lines);
+    // The newest change of the field still reverts.
+    const latest = orgs.readHistory(org.id, p.id).filter((c) => c.field === "role").at(-1)!;
+    assert.equal((await orgs.revertChange(org.id, p.id, latest.at)).role, "Two");
+  });
+
+  test("a status move is one transition per pair, with its history line (C10)", async () => {
+    const p = await orgs.addPerson(org.id, { name: "Moves", role: "r", contact: { email: "m@example.com" } });
+    await orgs.applyChange(org.id, p.id, { status: "left" }, { kind: "operator" });
+    assert.equal(orgs.findPerson(org.id, p.id)!.status, "left");
+    await orgs.applyChange(org.id, p.id, { status: "active" }, { kind: "operator" });
+    assert.equal(orgs.findPerson(org.id, p.id)!.status, "active");
+    const statuses = orgs.readHistory(org.id, p.id).filter((c) => c.field === "status").map((c) => [c.from, c.to]);
+    assert.deepEqual(statuses, [[null, "active"], ["active", "left"], ["left", "active"]]);
+    await assert.rejects(orgs.approvePerson(org.id, p.id), { message: "Moves is not waiting for approval." });
+  });
+
+  test("a duplicate name is refused (409); someone who left frees their name", async () => {
+    const a = await orgs.addPerson(org.id, { name: "Twin" });
+    await assert.rejects(orgs.addPerson(org.id, { name: "twin" }), (e: unknown) => e instanceof orgs.OrgError && e.status === 409 && e.message === "twin is already on the roster.");
+    await orgs.applyChange(org.id, a.id, { status: "left" }, { kind: "operator" });
+    assert.equal((await orgs.addPerson(org.id, { name: "Twin" })).status, "active");
+  });
+
+  test("q1: no state file is written in the workspace (only charts, the plain files and git)", () => {
+    for (const f of ["org.json", "roster.json", "projects.json", "holder.json", "baton.json"]) assert.equal(existsSync(join(dir, f)), false, f);
+    assert.ok(existsSync(join(dir, "charts", "org")), "the org chart's snapshot");
+    assert.ok(existsSync(join(dir, "roster-history.jsonl")));
+  });
+
+  test("prompt partition: contact never, steering only for the holder, redaction phrases ≥ 16 chars", async () => {
+    const p = await orgs.addPerson(org.id, { name: "Tina", role: "IT", decides: ["servers"], skills: ["SQL", "Windows Server administration"], voice: "Short answers, please.", contact: { email: "tina@example.com" } });
     assert.ok(!orgs.participantLine(p).includes("tina@example.com") && !orgs.participantLine(p).includes("Short answers"));
     assert.match(orgs.participantLine(p), /Tina.*IT.*servers/);
     const steering = orgs.holderSteering(p);
@@ -217,33 +265,33 @@ describe("About this organization (§app.organizations/about)", () => {
     assert.deepEqual(d.aboutHistory, []);
   });
 
-  test("a save writes about.md trimmed, history first; the same text appends nothing", () => {
-    orgs.patchOrg(org.id, { about: "  They pay late.\n" });
+  test("a save writes about.md trimmed, history first; the same text appends nothing", async () => {
+    await orgs.patchOrg(org.id, { about: "  They pay late.\n" });
     assert.equal(readFileSync(join(dir, "about.md"), "utf8"), "They pay late.");
     assert.equal(orgs.readOrgAbout(org.id), "They pay late.");
     const lines = orgs.readOrgHistory(org.id);
     assert.equal(lines.length, 1);
     assert.deepEqual([lines[0]!.field, lines[0]!.from, lines[0]!.to, lines[0]!.by], ["about", "", "They pay late.", { kind: "operator" }]);
     const before = historyText();
-    orgs.patchOrg(org.id, { about: "They pay late." });
+    await orgs.patchOrg(org.id, { about: "They pay late." });
     assert.equal(historyText(), before, "no change, no line");
   });
 
   test("the cap: 4,000 characters saved, 4,001 refused and nothing written", async () => {
     const before = historyText();
-    assert.throws(() => orgs.patchOrg(org.id, { about: "x".repeat(4001) }), /at most 4,000 characters/);
+    await assert.rejects(orgs.patchOrg(org.id, { about: "x".repeat(4001) }), /at most 4,000 characters/);
     assert.equal(historyText(), before);
     const res = await call("PATCH", "", { about: "y".repeat(4001) });
     assert.equal(res.status, 400);
     assert.match(((await res.json()) as { error: string }).error, /at most 4,000 characters/);
     assert.equal((await call("PATCH", "", { about: "z".repeat(4000) })).status, 200);
     assert.equal(orgs.readOrgAbout(org.id).length, 4000);
-    assert.throws(() => orgs.patchOrg(org.id, { about: 7 }), /about must be text/);
+    await assert.rejects(orgs.patchOrg(org.id, { about: 7 }), /about must be text/);
   });
 
-  test("a blank save removes the file and records the clearing", () => {
-    orgs.patchOrg(org.id, { about: "Short again." });
-    orgs.patchOrg(org.id, { about: "   " });
+  test("a blank save removes the file and records the clearing", async () => {
+    await orgs.patchOrg(org.id, { about: "Short again." });
+    await orgs.patchOrg(org.id, { about: "   " });
     assert.equal(existsSync(join(dir, "about.md")), false);
     assert.equal(orgs.readOrgAbout(org.id), "");
     const last = orgs.readOrgHistory(org.id).at(-1)!;
@@ -251,8 +299,8 @@ describe("About this organization (§app.organizations/about)", () => {
   });
 
   test("Revert writes a new change back to the line's from; a revert of a revert; history only grows; `at` is unique", async () => {
-    orgs.patchOrg(org.id, { about: "First." });
-    orgs.patchOrg(org.id, { about: "Second." });
+    await orgs.patchOrg(org.id, { about: "First." });
+    await orgs.patchOrg(org.id, { about: "Second." });
     const second = orgs.readOrgHistory(org.id).at(-1)!;
     const before = historyText();
     const res = await call("POST", "/about/revert", { at: second.at });
@@ -270,7 +318,7 @@ describe("About this organization (§app.organizations/about)", () => {
   });
 
   test("the detail carries the text and the last 20 lines, newest first; the summary and the org never carry it", async () => {
-    for (let i = 0; i < 22; i++) orgs.patchOrg(org.id, { about: `Version ${i}` });
+    for (let i = 0; i < 22; i++) await orgs.patchOrg(org.id, { about: `Version ${i}` });
     const d = await orgs.orgDetail(org.id);
     assert.equal(d.about, "Version 21");
     assert.equal(d.aboutHistory!.length, 20);
@@ -287,21 +335,16 @@ describe("About this organization (§app.organizations/about)", () => {
     assert.equal(orgs.readOrgHistory(org.id).length, lines);
   });
 
-  test("org.json's old notes field is gone: ignored on read, dropped at the next write, ignored in a PATCH", async () => {
-    const raw = JSON.parse(readFileSync(join(dir, "org.json"), "utf8"));
-    writeFileSync(join(dir, "org.json"), JSON.stringify({ ...raw, notes: "OLD-NOTES" }));
-    assert.ok(!("notes" in orgs.readOrg(org.id)));
-    assert.ok(!JSON.stringify(await orgs.orgDetail(org.id)).includes("OLD-NOTES"));
+  test("a PATCH names only name and about: anything else in the body is ignored", async () => {
     assert.equal((await call("PATCH", "", { name: "About Co Ltd", notes: "NEW-NOTES" })).status, 200);
-    const now = readFileSync(join(dir, "org.json"), "utf8");
-    assert.ok(!now.includes("OLD-NOTES") && !now.includes("NEW-NOTES"));
+    assert.ok(!JSON.stringify(await orgs.orgDetail(org.id)).includes("NEW-NOTES"));
     assert.equal(orgs.readOrg(org.id).name, "About Co Ltd");
   });
 
-  test("the name alone leaves the text and its history alone", () => {
+  test("the name alone leaves the text and its history alone", async () => {
     const before = historyText();
     const about = orgs.readOrgAbout(org.id);
-    orgs.patchOrg(org.id, { name: "About Co" });
+    await orgs.patchOrg(org.id, { name: "About Co" });
     assert.equal(historyText(), before);
     assert.equal(orgs.readOrgAbout(org.id), about);
   });

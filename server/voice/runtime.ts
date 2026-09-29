@@ -1,6 +1,9 @@
-// The whisper-server supervisor (§chat.voice/runtime): spawned on demand at a free loopback port,
-// requests serialized, unloaded after 15 idle minutes, restarted with backoff after a crash and
-// given up on after 3 crashes in a minute. Never started at Sova boot.
+// The speech-server supervisor (§chat.voice/runtime): spawned on demand at a free loopback port,
+// requests serialized with dictation ahead of calibration, unloaded after 15 idle minutes,
+// restarted with backoff after a crash and given up on after 3 crashes in a minute. Never started
+// at Sova boot. Two engines sit behind it: whisper.cpp's whisper-server, and transcribe.cpp
+// through sova-transcribe-host (server/voice/transcribe-host.c), which answers the same
+// /health and /inference.
 
 import { spawn as nodeSpawn, type ChildProcess } from "node:child_process";
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -8,11 +11,63 @@ import { createServer } from "node:net";
 import { cpus } from "node:os";
 import { dirname } from "node:path";
 
+export type EngineId = "whisper" | "transcribe";
+
 export interface RuntimeConfig {
+  /** Absent: whisper. */
+  engine?: EngineId;
   binary: string;
   model: string;
   /** A CPU install: `--no-gpu`. */
   cpu: boolean;
+  /** whisper: the Silero model for `-vm`, when installed (a request with `vad` fails without it). */
+  vadModel?: string;
+}
+
+/** How one engine is launched and asked. */
+export interface Engine {
+  args(cfg: RuntimeConfig, port: number, threads: number): string[];
+  /** The /inference request for one clip; `fields` are whisper's per-request form fields. */
+  request(wav: Uint8Array, fields: Record<string, string>): { body: BodyInit; headers?: Record<string, string> };
+}
+
+export const ENGINES: Record<EngineId, Engine> = {
+  whisper: {
+    args(cfg, port, threads) {
+      const args = ["--host", "127.0.0.1", "--port", String(port), "-m", cfg.model, "-t", String(threads), "--inference-path", "/inference"];
+      if (cfg.vadModel) args.push("-vm", cfg.vadModel);
+      if (cfg.cpu) args.push("--no-gpu");
+      return args;
+    },
+    request(wav, fields) {
+      const fd = new FormData();
+      fd.append("file", new Blob([wav as Uint8Array<ArrayBuffer>], { type: "audio/wav" }), "clip.wav");
+      fd.append("temperature", "0");
+      fd.append("response_format", "json");
+      for (const [k, v] of Object.entries(fields)) fd.append(k, v);
+      return { body: fd };
+    },
+  },
+  transcribe: {
+    args(cfg, port, threads) {
+      const args = ["--host", "127.0.0.1", "--port", String(port), "-m", cfg.model, "-t", String(threads), "--inference-path", "/inference"];
+      if (cfg.cpu) args.push("--no-gpu");
+      return args;
+    },
+    // No prompt, beam or VAD: the WAV is the whole request.
+    request(wav) {
+      return { body: new Blob([wav as Uint8Array<ArrayBuffer>], { type: "audio/wav" }), headers: { "Content-Type": "audio/wav" } };
+    },
+  },
+};
+
+/** What one clip asks for. A bare string is a prompt with every other setting at its default. */
+export interface TranscribeRequest {
+  /** whisper's per-request form fields beyond temperature and response_format. */
+  fields?: Record<string, string>;
+  /** dictation goes before any waiting calibration clip, and only dictation counts toward the queue cap. */
+  lane?: "dictation" | "sweep";
+  timeoutMs?: number;
 }
 
 export interface RuntimeDeps {
@@ -78,10 +133,13 @@ export class WhisperRuntime {
   private readonly expected = new WeakSet<ChildProcess>();
   private crashes: number[] = [];
   private crashedOut = false;
+  /** Dictation clips queued or running. */
   private active = 0;
-  private chain: Promise<unknown> = Promise.resolve();
+  private readonly queue: { lane: "dictation" | "sweep"; run: () => Promise<void> }[] = [];
+  private busy = false;
   private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private tail: string[] = [];
+  private runningEngine: EngineId = "whisper";
   private lastMs: number | undefined;
   private readonly spawnImpl: typeof nodeSpawn;
   private readonly fetchImpl: typeof fetch;
@@ -121,44 +179,83 @@ export class WhisperRuntime {
     this.ensure().catch(() => {});
   }
 
-  async transcribe(wav: Uint8Array, prompt: string, timeoutMs = 120_000): Promise<{ text: string; ms: number }> {
+  /** A dictation clip is waiting or running: a calibration sweep shows "paused for dictation". */
+  dictationWaiting(): boolean {
+    return this.active > 0;
+  }
+
+  /** The engine of the running (or next) child. */
+  engine(): EngineId {
+    return this.config()?.engine ?? "whisper";
+  }
+
+  async transcribe(wav: Uint8Array, request: string | TranscribeRequest, timeoutMs?: number): Promise<{ text: string; ms: number }> {
+    const req: TranscribeRequest = typeof request === "string" ? { fields: request ? { prompt: request } : {} } : request;
+    const lane = req.lane ?? "dictation";
+    const timeout = timeoutMs ?? req.timeoutMs ?? 120_000;
     if (!this.config()) throw new RuntimeError(409, "Voice isn't set up on this host.");
-    if (this.active >= MAX_ACTIVE) throw new RuntimeError(503, "Two clips are already waiting. Try again in a moment.");
-    this.active++;
-    const run = this.chain.then(async () => {
-      try {
-        await this.ensure();
-        const fd = new FormData();
-        fd.append("file", new Blob([wav as Uint8Array<ArrayBuffer>], { type: "audio/wav" }), "clip.wav");
-        fd.append("temperature", "0");
-        fd.append("response_format", "json");
-        if (prompt) fd.append("prompt", prompt);
-        const t0 = performance.now();
-        let res: Response;
-        try {
-          res = await this.fetchImpl(`http://127.0.0.1:${this.port}/inference`, { method: "POST", body: fd, signal: AbortSignal.timeout(timeoutMs) });
-        } catch (err) {
-          throw new RuntimeError(503, (err as Error).name === "TimeoutError" ? "whisper-server didn't answer in time." : "whisper-server stopped unexpectedly.");
-        }
-        const body = await res.text().catch(() => "");
-        const ms = Math.round(performance.now() - t0);
-        if (!res.ok) throw new RuntimeError(503, `whisper-server answered ${res.status}: ${body.replace(/\s+/g, " ").slice(0, 200)}`);
-        let json: { text?: unknown; error?: unknown };
-        try {
-          json = JSON.parse(body) as typeof json;
-        } catch {
-          throw new RuntimeError(503, "whisper-server answered with something other than JSON.");
-        }
-        if (typeof json.error === "string") throw new RuntimeError(503, `whisper-server: ${json.error}`);
-        this.lastMs = ms;
-        return { text: String(json.text ?? ""), ms };
-      } finally {
-        this.active--;
-        this.touch();
-      }
+    if (lane === "dictation" && this.active >= MAX_ACTIVE) throw new RuntimeError(503, "Two clips are already waiting. Try again in a moment.");
+    if (lane === "dictation") this.active++;
+    return new Promise((resolve, reject) => {
+      this.queue.push({ lane, run: () => this.infer(wav, req.fields ?? {}, timeout, lane).then(resolve, reject) });
+      this.pump();
     });
-    this.chain = run.catch(() => {});
-    return run;
+  }
+
+  /** Restart the child at its next idle moment, behind any waiting dictation: after Silero first
+      arrives, so the next start carries `-vm`. Nothing running: nothing to do. */
+  restartWhenIdle(): Promise<void> {
+    return new Promise((resolve) => {
+      this.queue.push({ lane: "sweep", run: () => this.stop().then(resolve, resolve) });
+      this.pump();
+    });
+  }
+
+  /** Run the next clip: any dictation first, then calibration's. One at a time. */
+  private pump(): void {
+    if (this.busy) return;
+    const at = this.queue.findIndex((q) => q.lane === "dictation");
+    const [next] = this.queue.splice(at >= 0 ? at : 0, 1);
+    if (!next) return;
+    this.busy = true;
+    void next.run().finally(() => {
+      this.busy = false;
+      this.pump();
+    });
+  }
+
+  private async infer(wav: Uint8Array, fields: Record<string, string>, timeoutMs: number, lane: "dictation" | "sweep"): Promise<{ text: string; ms: number }> {
+    try {
+      await this.ensure();
+      const engine = ENGINES[this.runningEngine];
+      const { body, headers } = engine.request(wav, fields);
+      const t0 = performance.now();
+      let res: Response;
+      try {
+        res = await this.fetchImpl(`http://127.0.0.1:${this.port}/inference`, { method: "POST", body, headers, signal: AbortSignal.timeout(timeoutMs) });
+      } catch (err) {
+        const timedOut = (err as Error).name === "TimeoutError";
+        // A calibration clip stuck in a fallback loop would hold the server's lock past its
+        // timeout, and dictation behind it: restart the child instead (an expected stop).
+        if (timedOut && lane === "sweep") await this.stop();
+        throw new RuntimeError(503, timedOut ? "whisper-server didn't answer in time." : "whisper-server stopped unexpectedly.");
+      }
+      const answer = await res.text().catch(() => "");
+      const ms = Math.round(performance.now() - t0);
+      if (!res.ok) throw new RuntimeError(503, `whisper-server answered ${res.status}: ${answer.replace(/\s+/g, " ").slice(0, 200)}`);
+      let json: { text?: unknown; error?: unknown };
+      try {
+        json = JSON.parse(answer) as typeof json;
+      } catch {
+        throw new RuntimeError(503, "whisper-server answered with something other than JSON.");
+      }
+      if (typeof json.error === "string") throw new RuntimeError(503, `whisper-server: ${json.error}`);
+      if (lane === "dictation") this.lastMs = ms;
+      return { text: String(json.text ?? ""), ms };
+    } finally {
+      if (lane === "dictation") this.active--;
+      this.touch();
+    }
   }
 
   /** Stop the child (idle unload, uninstall, shutdown). */
@@ -206,7 +303,7 @@ export class WhisperRuntime {
   private touch(): void {
     clearTimeout(this.idleTimer);
     this.idleTimer = setTimeout(() => {
-      if (this.active === 0) void this.stop();
+      if (this.active === 0 && !this.busy && this.queue.length === 0) void this.stop();
     }, this.deps.idleMs ?? IDLE_MS);
     this.idleTimer.unref?.();
   }
@@ -231,14 +328,14 @@ export class WhisperRuntime {
     if (n > 0) await new Promise((r) => setTimeout(r, backoff[Math.min(n, backoff.length) - 1]));
     const port = await freePort();
     const threads = Math.max(1, Math.min(8, cpus().length));
-    const args = ["--host", "127.0.0.1", "--port", String(port), "-m", cfg.model, "-t", String(threads), "--inference-path", "/inference"];
-    if (cfg.cpu) args.push("--no-gpu");
+    const args = ENGINES[cfg.engine ?? "whisper"].args(cfg, port, threads);
     mkdirSync(dirname(this.deps.logFile), { recursive: true });
     writeFileSync(this.deps.logFile, `# ${new Date().toISOString()} ${cfg.binary} ${args.join(" ")}\n`);
     this.tail = [];
     const child = this.spawnImpl(cfg.binary, args, { stdio: ["ignore", "pipe", "pipe"], env: this.deps.env ?? process.env, shell: false });
     this.child = child;
     this.port = port;
+    this.runningEngine = cfg.engine ?? "whisper";
     const onData = (d: Buffer) => {
       const text = d.toString("utf8");
       try {

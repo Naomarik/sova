@@ -31,19 +31,28 @@ const sizeOf = (f: string): number => {
   }
 };
 
-async function hashFile(file: string, hash: Hash, signal?: AbortSignal): Promise<void> {
+async function hashFile(file: string, hash: Hash, signal?: AbortSignal, onProgress?: (done: number) => void): Promise<void> {
+  let done = 0;
+  let lastTick = 0;
   await pipeline(createReadStream(file), async function* (src) {
     for await (const chunk of src) {
       if (signal?.aborted) throw signal.reason ?? new Error("aborted");
       hash.update(chunk as Buffer);
+      done += (chunk as Buffer).length;
+      const now = Date.now();
+      if (onProgress && now - lastTick > 250) {
+        lastTick = now;
+        onProgress(done);
+      }
     }
   });
+  onProgress?.(done);
 }
 
-/** sha256 of a whole file, streamed. */
-export async function sha256File(file: string, signal?: AbortSignal): Promise<string> {
+/** sha256 of a whole file, streamed; `onProgress` gets the bytes hashed so far. */
+export async function sha256File(file: string, signal?: AbortSignal, onProgress?: (done: number) => void): Promise<string> {
   const h = createHash("sha256");
-  await hashFile(file, h, signal);
+  await hashFile(file, h, signal, onProgress);
   return h.digest("hex");
 }
 

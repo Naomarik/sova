@@ -1,9 +1,11 @@
 #!/usr/bin/env node
 // A stand-in for whisper.cpp's whisper-server, like scripts/fake-claude.mjs is for `claude`: the
 // argv voice passes, /health, and a POST /inference that answers canned text. Never loads a model.
+// With FAKE_WHISPER_ENGINE=transcribe it stands in for sova-transcribe-host (Parakeet) instead:
+// /inference takes the raw WAV body and no fields (SOVA_VOICE_TRANSCRIBE_BIN points here).
 //
-//   --host H --port P -m MODEL -t N --inference-path /inference [--no-gpu]   (as whisper-server)
-//   --help                                                                    (exits 0)
+//   --host H --port P -m MODEL -t N --inference-path /inference [-vm VAD] [--no-gpu]   (as whisper-server)
+//   --help                                                                              (exits 0)
 //
 // Knobs (environment):
 //   FAKE_WHISPER_TEXT        the transcript (default: "Open Sova, and run the type check in the worktree.")
@@ -11,7 +13,11 @@
 //   FAKE_WHISPER_DELAY_MS    how long each /inference takes (default 0)
 //   FAKE_WHISPER_CRASH       "start": exit 1 at once · "inference": exit 1 on the first /inference
 //   FAKE_WHISPER_HANG        "health": never answer /health · "inference": never answer /inference
-//   FAKE_WHISPER_LOG         a file to append each request to (JSON lines: {path, fields, bytes})
+//   FAKE_WHISPER_TEXT_BY     JSON {"<field>=<value>": text, …}: the first entry a request's fields
+//                            match answers instead (e.g. {"beam_size=5": "…"}), so settings score apart
+//   FAKE_WHISPER_ENGINE      "transcribe": the Parakeet host's surface (raw WAV body, no fields)
+//   FAKE_TRANSCRIBE_TEXT     the transcript in that mode (default: "Open sofa and run the type check in the work tree.")
+//   FAKE_WHISPER_LOG         a file to append each request to (JSON lines: {path, argv, fields, bytes, contentType})
 //   FAKE_WHISPER_DEVICE      print a Vulkan device line like the real server ("ggml_vulkan: 0 = …")
 
 import { appendFileSync } from "node:fs";
@@ -30,7 +36,14 @@ const host = arg("--host", "127.0.0.1");
 const port = Number(arg("--port", "8080"));
 const inferencePath = arg("--inference-path", "/inference");
 const env = process.env;
-const text = env.FAKE_WHISPER_TEXT ?? "Open Sova, and run the type check in the worktree.";
+const engine = env.FAKE_WHISPER_ENGINE === "transcribe" ? "transcribe" : "whisper";
+const text =
+  engine === "transcribe"
+    ? (env.FAKE_TRANSCRIBE_TEXT ?? "Open sofa and run the type check in the work tree.")
+    : (env.FAKE_WHISPER_TEXT ?? "Open Sova, and run the type check in the worktree.");
+const textBy = env.FAKE_WHISPER_TEXT_BY ? Object.entries(JSON.parse(env.FAKE_WHISPER_TEXT_BY)) : [];
+/** whisper-server answers a `vad` request with 500 when it was started without -vm. */
+const vadModel = arg("-vm", arg("--vad-model", null));
 const loadMs = Number(env.FAKE_WHISPER_LOAD_MS ?? 0);
 const delayMs = Number(env.FAKE_WHISPER_DELAY_MS ?? 0);
 
@@ -79,15 +92,29 @@ const server = createServer((req, res) => {
     if (req.method === "POST" && req.url === inferencePath) {
       inferences++;
       const body = Buffer.concat(chunks);
-      const parsed = parseMultipart(body, req.headers["content-type"]);
-      if (env.FAKE_WHISPER_LOG) appendFileSync(env.FAKE_WHISPER_LOG, `${JSON.stringify({ path: req.url, fields: parsed.fields, bytes: parsed.fileBytes })}\n`);
+      const contentType = req.headers["content-type"] ?? "";
+      const parsed = engine === "transcribe" ? { fields: {}, fileBytes: body.length } : parseMultipart(body, contentType);
+      if (env.FAKE_WHISPER_LOG) appendFileSync(env.FAKE_WHISPER_LOG, `${JSON.stringify({ path: req.url, argv, fields: parsed.fields, bytes: parsed.fileBytes, contentType })}\n`);
       if (env.FAKE_WHISPER_CRASH === "inference" && inferences === 1) {
         console.error("fake whisper-server: crashing on inference");
         process.exit(1);
       }
       if (env.FAKE_WHISPER_HANG === "inference") return;
+      if (engine === "transcribe" && !contentType.startsWith("audio/wav")) {
+        res.writeHead(400, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "a WAV body with a Content-Length is required" }));
+        return;
+      }
+      if (engine === "whisper" && parsed.fields.vad === "true" && !vadModel) {
+        res.writeHead(500, { "Content-Type": "application/json" }).end(JSON.stringify({ error: "failed to process audio" }));
+        return;
+      }
+      const hit = textBy.find(([k]) => {
+        const [f, v] = k.split("=");
+        return parsed.fields[f] === v;
+      });
+      const answer = hit ? String(hit[1]) : text;
       setTimeout(() => {
-        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ text: ` ${text}\n` }));
+        res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ text: ` ${answer}\n` }));
       }, delayMs);
       return;
     }

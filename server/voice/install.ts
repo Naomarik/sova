@@ -22,14 +22,15 @@ import {
   appendFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { VoiceBackend, VoiceInstallJob, VoiceInstalled, VoiceLogLine, VoiceStep, VoiceStepId } from "../../shared/protocol";
 import { stateRoot } from "../state-root";
 import { download, sha256File } from "./download";
 import { detect, missingFor, packageCommand, planFor, voicePath, type BuildPlan, type Detection, type Probe } from "./platform";
-import { MODEL, PREBUILT, PREBUILT_TAG, SELFTEST_WORDS, WHISPER_SOURCE_DIR, WHISPER_SOURCE_URL, WHISPER_TAG, HOTWORDS } from "./pins";
-import { gpuFromLog, WhisperRuntime } from "./runtime";
+import { CATALOG, catalogModel, DEFAULT_MODEL, PREBUILT, PREBUILT_TAG, SELFTEST_WORDS, TRANSCRIBE_CPP, VAD_MODEL, WHISPER_SOURCE_DIR, WHISPER_SOURCE_URL, WHISPER_TAG, HOTWORDS, type CatalogModel } from "./pins";
+import { gpuFromLog, WhisperRuntime, type RuntimeConfig } from "./runtime";
+import { activeModelId } from "./settings";
 import { cleanTranscript } from "./wav";
 
 export const STEP_IDS: VoiceStepId[] = ["detect", "packages", "source", "build", "model", "selftest", "finish"];
@@ -44,6 +45,8 @@ export const STEP_LABELS: Record<VoiceStepId, string> = {
 };
 
 export const SELFTEST_WAV = fileURLToPath(new URL("./selftest.wav", import.meta.url));
+/** The C source setup compiles against transcribe.cpp's library (Parakeet's engine). */
+export const TRANSCRIBE_HOST_C = fileURLToPath(new URL("./transcribe-host.c", import.meta.url));
 
 /** `<state root>/voice`, or SOVA_VOICE_DIR. Read per call: tests move PI_CODING_AGENT_DIR. */
 export const voiceDir = (): string => process.env.SOVA_VOICE_DIR || join(stateRoot(), "voice");
@@ -59,10 +62,38 @@ export function voicePaths(dir = voiceDir()) {
     installFile: join(dir, "install.json"),
     lockFile: join(dir, "install.lock"),
     runtimeFile: join(dir, "runtime.json"),
-    modelFile: join(dir, "models", MODEL.file),
+    settingsFile: join(dir, "settings.json"),
+    calibration: join(dir, "calibration"),
+    vadFile: join(dir, "models", VAD_MODEL.file),
+    /** transcribe.cpp's library folder, where its host program is compiled too. */
+    transcribeDir: join(dir, "bin", `transcribe-${TRANSCRIBE_CPP.tag}`),
+    transcribeHost: join(dir, "bin", `transcribe-${TRANSCRIBE_CPP.tag}`, "sova-transcribe-host"),
+    /** The active model's file (settings.json names it; the default when it doesn't). */
+    get modelFile() {
+      return join(dir, "models", activeModel(this).file);
+    },
   };
 }
 export type VoicePaths = ReturnType<typeof voicePaths>;
+
+/** The catalog entry this host dictates with. */
+export function activeModel(paths: { settingsFile: string }): CatalogModel {
+  return catalogModel(activeModelId(paths.settingsFile)) ?? DEFAULT_MODEL;
+}
+
+export const modelFileOf = (paths: VoicePaths, m: { file: string }) => join(paths.models, m.file);
+
+/** Whether an entry's file is here at its full size (the size is the cheap check; Repair hashes). */
+export function modelPresent(paths: VoicePaths, m: { file: string; bytes: number }): boolean {
+  try {
+    return statSync(modelFileOf(paths, m)).size === m.bytes;
+  } catch {
+    return false;
+  }
+}
+
+/** transcribe.cpp ships a Linux x86_64 build only. */
+export const transcribeSupported = (platform: string = process.platform, arch: string = process.arch) => platform === "linux" && arch === "x64";
 
 /** install.json: what "ready" means. Paths are relative to the voice folder, so a moved folder still reads. */
 export interface InstallRecord extends VoiceInstalled {
@@ -77,13 +108,14 @@ export function readInstall(paths: VoicePaths): InstallRecord | null {
     const rec = JSON.parse(readFileSync(paths.installFile, "utf8")) as InstallRecord;
     if (rec.version !== 1 || typeof rec.binary !== "string" || typeof rec.model !== "string") return null;
     if (!existsSync(join(paths.dir, rec.binary)) || !existsSync(paths.modelFile)) return null;
+    if (activeModel(paths).engine === "transcribe" && !existsSync(paths.transcribeHost)) return null;
     return rec;
   } catch {
     return null;
   }
 }
 
-/** Folders already holding a verified copy of the model, checked by size and sha256 before any
+/** Folders already holding a verified copy of a model, checked by size and sha256 before any
     download. SOVA_VOICE_IMPORT_DIRS (path-list) replaces the default, the voice-lab spike's cache. */
 export function importDirs(): string[] {
   const env = process.env.SOVA_VOICE_IMPORT_DIRS;
@@ -239,7 +271,7 @@ export class VoiceInstaller {
   private async run(job: VoiceInstallJob, signal: AbortSignal): Promise<void> {
     const paths = this.paths();
     mkdirSync(paths.dir, { recursive: true });
-    this.log(`${job.repair ? "Repair" : "Setup"} started (${job.mode === "cpu" ? "CPU" : "GPU"}), whisper.cpp ${WHISPER_TAG}, ${MODEL.id}`);
+    this.log(`${job.repair ? "Repair" : "Setup"} started (${job.mode === "cpu" ? "CPU" : "GPU"}), whisper.cpp ${WHISPER_TAG}, ${activeModel(paths).id}`);
     try {
       await this.opts.onStart?.();
     } catch {
@@ -555,90 +587,42 @@ export const DEFAULT_STEPS: Record<VoiceStepId, StepFn> = {
   },
 
   async model(ctx) {
-    const dest = ctx.paths.modelFile;
-    mkdirSync(ctx.paths.models, { recursive: true });
-    if (existsSync(dest) && statSync(dest).size === MODEL.bytes) {
-      if (!ctx.repair) {
-        ctx.note("Already done");
-        return "skipped";
+    const active = activeModel(ctx.paths);
+    let result: StepResult = "skipped";
+    if (ctx.repair) {
+      // Every downloaded model, not just the active one: a bad file is deleted, and only the
+      // active one is fetched again now.
+      for (const m of CATALOG) {
+        if (m.id === active.id || !modelPresent(ctx.paths, m)) continue;
+        ctx.log(`  re-hashing ${m.file}`);
+        if ((await sha256File(modelFileOf(ctx.paths, m), ctx.signal)) !== m.sha256) {
+          ctx.log(`  ${m.file}'s sha256 is wrong; deleted it. Download it again in Settings → Voice.`);
+          rmSync(modelFileOf(ctx.paths, m), { force: true });
+        }
       }
-      ctx.log("  re-hashing the model");
-      if ((await sha256File(dest, ctx.signal)) === MODEL.sha256) {
-        ctx.note("Checked");
-        return "skipped";
-      }
-      ctx.log("  the model's sha256 is wrong; fetching it again");
-      rmSync(dest, { force: true });
-    } else if (existsSync(dest)) {
-      rmSync(dest, { force: true });
     }
-    for (const dir of importDirs()) {
-      const cand = join(dir, MODEL.file);
-      try {
-        if (!existsSync(cand) || statSync(cand).size !== MODEL.bytes) continue;
-      } catch {
-        continue;
-      }
-      ctx.log(`  checking ${tilde(cand)}`);
-      if ((await sha256File(cand, ctx.signal)) !== MODEL.sha256) {
-        ctx.log("  its sha256 doesn't match; not using it");
-        continue;
-      }
-      const part = `${dest}.import-${process.pid}`;
-      // A reflink where the file system has them, else a plain copy. Never a hardlink: the
-      // source folder isn't ours, and a link would tie its file to ours.
-      copyFileSync(cand, part, constants.COPYFILE_FICLONE);
-      renameSync(part, dest);
-      ctx.note(`Copied from ${tilde(dir)}`);
-      return "done";
+    const got = await ensureFile(active, modelFileOf(ctx.paths, active), ctx);
+    if (got.result === "done") result = "done";
+    if (got.importedFrom) ctx.note(`Copied from ${tilde(got.importedFrom)}`);
+    else if (got.result === "skipped") ctx.note(ctx.repair ? "Checked" : "Already done");
+    if (active.engine === "transcribe") {
+      if ((await ensureTranscribeEngine(ctx.paths, ctx)) === "done") result = "done";
     }
-    const have = existsSync(`${dest}.part`) ? statSync(`${dest}.part`).size : 0;
-    try {
-      const fsInfo = statfsSync(ctx.paths.models);
-      const free = Number(fsInfo.bavail) * Number(fsInfo.bsize);
-      const need = MODEL.bytes - have + 50e6;
-      if (free < need) throw new Error(`Not enough disk space: the model needs ${mb(need)} and ${tilde(ctx.paths.models)} has ${mb(free)} free`);
-    } catch (err) {
-      if ((err as Error).message.startsWith("Not enough")) throw err;
-    }
-    ctx.log(`  downloading ${MODEL.url}${have ? ` (resuming at ${mb(have)})` : ""}`);
-    await download({ url: MODEL.url, dest, bytes: MODEL.bytes, sha256: MODEL.sha256, signal: ctx.signal, onProgress: (d, t) => ctx.progress(d, t, "bytes") });
-    return "done";
+    return result;
   },
 
   async selftest(ctx) {
     const plan = ctx.plan!;
-    const binary = binaryFor(ctx.paths, plan);
+    const active = activeModel(ctx.paths);
     const cpu = plan.kind === "prebuilt" || plan.backend === "cpu";
-    const rt = new WhisperRuntime(() => ({ binary, model: ctx.paths.modelFile, cpu }), {
-      logFile: join(ctx.paths.logs, "selftest-server.log"),
-      runtimeFile: join(ctx.paths.dir, "selftest-runtime.json"),
-      backoffMs: [0],
-      env: { ...process.env, PATH: voicePath() },
-    });
-    const onAbort = () => void rt.stop();
-    ctx.signal.addEventListener("abort", onAbort, { once: true });
-    try {
-      const wav = readFileSync(SELFTEST_WAV);
-      const prompt = `${HOTWORDS.join(", ")}.`;
-      const first = await rt.transcribe(wav, prompt);
-      const warm = await rt.transcribe(wav, prompt);
-      const text = cleanTranscript(warm.text);
-      const words = text.toLowerCase();
-      const heard = SELFTEST_WORDS.filter((w) => words.includes(w)).length;
-      ctx.log(`  heard “${text}” in ${warm.ms} ms (first run ${first.ms} ms)`);
-      if (heard < 2) throw new Error(`The self-test heard “${text || "nothing"}”, not the test sentence`);
-      const gpu = gpuFromLog(rt.logTail());
-      const backend: VoiceBackend = cpu ? "cpu" : gpu.gpu ? plan.backend : "cpu";
-      if (!cpu && !gpu.gpu) ctx.log("  the log shows no GPU in use: reporting CPU");
-      ctx.job.backend = backend;
-      selftestResults.set(ctx.job.id, { ms: warm.ms, text, device: backend !== "cpu" ? gpu.device : undefined, backend });
-      ctx.note(`${(warm.ms / 1000).toFixed(1)} s · ${backendLabel(backend)}${backend !== "cpu" && gpu.device ? ` · ${gpu.device}` : ""}`);
-      return "done";
-    } finally {
-      ctx.signal.removeEventListener("abort", onAbort);
-      await rt.stop();
-    }
+    const cfg = runtimeConfigFor(ctx.paths, active, binaryFor(ctx.paths, plan), cpu);
+    const st = await selfTest(cfg, ctx.paths, ctx.signal, (t) => ctx.log(t));
+    const backend: VoiceBackend = cpu ? "cpu" : st.gpu ? plan.backend : "cpu";
+    if (!cpu && !st.gpu) ctx.log("  the log shows no GPU in use: reporting CPU");
+    ctx.job.backend = backend;
+    selftestResults.set(ctx.job.id, { ms: st.ms, text: st.text, device: backend !== "cpu" ? st.device : undefined, backend });
+    ctx.note(`${(st.ms / 1000).toFixed(1)} s · ${backendLabel(backend)}${backend !== "cpu" && st.device ? ` · ${st.device}` : ""}`);
+    return "done";
   },
 
   async finish(ctx) {
@@ -650,8 +634,8 @@ export const DEFAULT_STEPS: Record<VoiceStepId, StepFn> = {
       version: 1,
       backend: st?.backend ?? ctx.job.backend ?? "cpu",
       whisper: plan.kind === "prebuilt" ? PREBUILT_TAG : WHISPER_TAG,
-      model: MODEL.id,
-      sha256: MODEL.sha256,
+      model: activeModel(ctx.paths).id,
+      sha256: activeModel(ctx.paths).sha256,
       binary: binary.slice(ctx.paths.dir.length + 1),
       cpu: plan.kind === "prebuilt" || plan.backend === "cpu",
       selftestMs: st?.ms ?? 0,
@@ -671,3 +655,182 @@ const selftestResults = new Map<string, { ms: number; text: string; device: stri
 
 /** The step list as the UI shows it before any job ran. */
 export const pendingSteps = (): VoiceStep[] => STEP_IDS.map((id) => ({ id, state: "pending" }));
+
+// ---- models, engines and the self-test, shared by setup and the model jobs ----------------------
+
+/** What a file fetch reports into: a setup step's context, or a model job's. */
+export interface FetchContext {
+  signal: AbortSignal;
+  repair?: boolean;
+  log(text: string): void;
+  progress(done: number, total: number, unit: "bytes" | "percent"): void;
+  /** Which part is running: an import's hash, the download, or the hash of a file already here. */
+  phase?(phase: "import" | "download" | "verify"): void;
+}
+
+/**
+ * One pinned file into place: kept when it's already here (hashed again on a repair), else copied
+ * from an import folder holding a verified copy, else downloaded (resumable, streaming sha256).
+ */
+export async function ensureFile(
+  entry: { file: string; url: string; bytes: number; sha256: string },
+  dest: string,
+  ctx: FetchContext,
+): Promise<{ result: "done" | "skipped"; importedFrom?: string }> {
+  mkdirSync(dirname(dest), { recursive: true });
+  if (existsSync(dest) && statSync(dest).size === entry.bytes) {
+    if (!ctx.repair) return { result: "skipped" };
+    ctx.phase?.("verify");
+    ctx.log(`  re-hashing ${entry.file}`);
+    if ((await sha256File(dest, ctx.signal, (d) => ctx.progress(d, entry.bytes, "bytes"))) === entry.sha256) return { result: "skipped" };
+    ctx.log(`  ${entry.file}'s sha256 is wrong; fetching it again`);
+    rmSync(dest, { force: true });
+  } else if (existsSync(dest)) {
+    rmSync(dest, { force: true });
+  }
+  const names = [...new Set([entry.file, basename(new URL(entry.url).pathname)])];
+  for (const dir of importDirs()) {
+    for (const name of names) {
+      const cand = join(dir, name);
+      try {
+        if (!existsSync(cand) || statSync(cand).size !== entry.bytes) continue;
+      } catch {
+        continue;
+      }
+      ctx.phase?.("import");
+      ctx.log(`  checking ${tilde(cand)}`);
+      if ((await sha256File(cand, ctx.signal, (d) => ctx.progress(d, entry.bytes, "bytes"))) !== entry.sha256) {
+        ctx.log("  its sha256 doesn't match; not using it");
+        continue;
+      }
+      const part = `${dest}.import-${process.pid}`;
+      // A reflink where the file system has them, else a plain copy. Never a hardlink: the
+      // source folder isn't ours, and a link would tie its file to ours.
+      copyFileSync(cand, part, constants.COPYFILE_FICLONE);
+      renameSync(part, dest);
+      return { result: "done", importedFrom: dir };
+    }
+  }
+  const have = existsSync(`${dest}.part`) ? statSync(`${dest}.part`).size : 0;
+  const free = freeBytes(dirname(dest));
+  const need = entry.bytes - have + 50e6;
+  if (free !== null && free < need) throw new Error(`Not enough disk space: ${entry.file} needs ${mb(need)} and ${tilde(dirname(dest))} has ${mb(free)} free`);
+  ctx.phase?.("download");
+  ctx.log(`  downloading ${entry.url}${have ? ` (resuming at ${mb(have)})` : ""}`);
+  await download({ url: entry.url, dest, bytes: entry.bytes, sha256: entry.sha256, signal: ctx.signal, onProgress: (d, t) => ctx.progress(d, t, "bytes") });
+  return { result: "done" };
+}
+
+/** Free bytes on the disk holding `dir` (or its nearest existing parent), or null when unknown. */
+export function freeBytes(dir: string): number | null {
+  let at = dir;
+  while (!existsSync(at) && dirname(at) !== at) at = dirname(at);
+  try {
+    const fsInfo = statfsSync(at);
+    return Number(fsInfo.bavail) * Number(fsInfo.bsize);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * transcribe.cpp for Parakeet: its prebuilt release (library only) and the header of the same
+ * tag, both pinned, then server/voice/transcribe-host.c compiled beside the library with `cc`.
+ */
+export async function ensureTranscribeEngine(paths: VoicePaths, ctx: FetchContext): Promise<"done" | "skipped"> {
+  if (existsSync(paths.transcribeHost) && (!ctx.repair || (await probeBinary(paths.transcribeHost, ctx.signal)))) return "skipped";
+  if (!transcribeSupported()) throw new Error("transcribe.cpp has a Linux x86_64 build only, so Parakeet can't run on this host");
+  const cc = ["cc", "gcc", "clang"].find((c) => systemWhich(c));
+  if (!cc) throw new Error("Parakeet needs a C compiler to set up transcribe.cpp. Install gcc, then try again");
+  const tarball = join(paths.downloads, `transcribe-${TRANSCRIBE_CPP.tag}-${TRANSCRIBE_CPP.platform}.tar.gz`);
+  mkdirSync(paths.downloads, { recursive: true });
+  if (!existsSync(tarball)) {
+    ctx.phase?.("download");
+    ctx.log(`  downloading ${TRANSCRIBE_CPP.url}`);
+    await download({ url: TRANSCRIBE_CPP.url, dest: tarball, bytes: TRANSCRIBE_CPP.bytes, sha256: TRANSCRIBE_CPP.sha256, signal: ctx.signal, onProgress: (d, t) => ctx.progress(d, t, "bytes") });
+  }
+  mkdirSync(paths.bin, { recursive: true });
+  const log = (l: string) => ctx.log(`  ${l}`);
+  try {
+    await extractInto(tarball, paths.transcribeDir, TRANSCRIBE_CPP.dir, ctx.signal, log);
+  } catch (err) {
+    rmSync(tarball, { force: true });
+    throw err;
+  }
+  const header = join(paths.transcribeDir, "transcribe.h");
+  ctx.log(`  downloading ${TRANSCRIBE_CPP.headerUrl}`);
+  await download({ url: TRANSCRIBE_CPP.headerUrl, dest: header, bytes: TRANSCRIBE_CPP.headerBytes, sha256: TRANSCRIBE_CPP.headerSha256, signal: ctx.signal });
+  const tmp = `${paths.transcribeHost}.tmp-${process.pid}`;
+  ctx.log(`  compiling sova-transcribe-host with ${cc}`);
+  await runCommand(
+    [cc, "-O2", "-std=gnu11", "-o", tmp, TRANSCRIBE_HOST_C, `-I${paths.transcribeDir}`, `-L${paths.transcribeDir}`, "-ltranscribe", "-Wl,-rpath,$ORIGIN"],
+    { signal: ctx.signal, onLine: log },
+  );
+  chmodSync(tmp, 0o755);
+  renameSync(tmp, paths.transcribeHost);
+  return "done";
+}
+
+const systemWhich = (cmd: string): boolean => voicePath().split(":").some((d) => d && existsSync(join(d, cmd)));
+
+async function extractInto(tarball: string, into: string, expectDir: string, signal: AbortSignal, log: (l: string) => void): Promise<void> {
+  const tmp = join(dirname(into), `.extract-${process.pid}`);
+  rmSync(tmp, { recursive: true, force: true });
+  mkdirSync(tmp, { recursive: true });
+  await runCommand(["tar", "-xzf", tarball, "-C", tmp], { signal, onLine: log });
+  const got = join(tmp, expectDir);
+  if (!existsSync(got)) throw new Error(`The archive didn't hold ${expectDir}`);
+  rmSync(into, { recursive: true, force: true });
+  renameSync(got, into);
+  rmSync(tmp, { recursive: true, force: true });
+}
+
+/** How the runtime runs one catalog model: its engine's program, the model file, and Silero for whisper. */
+export function runtimeConfigFor(paths: VoicePaths, m: CatalogModel, whisperBinary: string, cpu: boolean): RuntimeConfig {
+  if (m.engine === "transcribe") return { engine: "transcribe", binary: paths.transcribeHost, model: modelFileOf(paths, m), cpu };
+  const cfg: RuntimeConfig = { engine: "whisper", binary: whisperBinary, model: modelFileOf(paths, m), cpu };
+  if (modelPresent(paths, VAD_MODEL)) cfg.vadModel = paths.vadFile;
+  return cfg;
+}
+
+export interface SelftestResult {
+  ms: number;
+  firstMs: number;
+  text: string;
+  gpu: boolean;
+  device?: string;
+}
+
+/**
+ * The self-test: a throwaway server on this config transcribes the test clip twice (the first
+ * run loads), and passes when it heard 2 of the clip's words. Throws with what it heard otherwise.
+ */
+export async function selfTest(cfg: RuntimeConfig, paths: VoicePaths, signal: AbortSignal, log: (text: string) => void, o: { onWarm?(): void } = {}): Promise<SelftestResult> {
+  const rt = new WhisperRuntime(() => cfg, {
+    logFile: join(paths.logs, "selftest-server.log"),
+    runtimeFile: join(paths.dir, "selftest-runtime.json"),
+    backoffMs: [0],
+    env: { ...process.env, PATH: voicePath() },
+  });
+  const onAbort = () => void rt.stop();
+  signal.addEventListener("abort", onAbort, { once: true });
+  try {
+    const wav = readFileSync(SELFTEST_WAV);
+    const prompt = `${HOTWORDS.join(", ")}.`;
+    const first = await rt.transcribe(wav, prompt);
+    const warm = await rt.transcribe(wav, prompt);
+    o.onWarm?.();
+    const text = cleanTranscript(warm.text);
+    const words = text.toLowerCase();
+    const heard = SELFTEST_WORDS.filter((w) => words.includes(w)).length;
+    log(`  heard “${text}” in ${warm.ms} ms (first run ${first.ms} ms)`);
+    if (heard < 2) throw new Error(`The self-test heard “${text || "nothing"}”, not the test sentence`);
+    const gpu = gpuFromLog(rt.logTail());
+    const out: SelftestResult = { ms: warm.ms, firstMs: first.ms, text, gpu: gpu.gpu };
+    if (gpu.device) out.device = gpu.device;
+    return out;
+  } finally {
+    signal.removeEventListener("abort", onAbort);
+    await rt.stop();
+  }
+}

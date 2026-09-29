@@ -199,6 +199,13 @@ static void serve(int fd, struct transcribe_session * session, const char * infe
         char * msg = json_text("error", transcribe_status_string(st));
         respond(fd, 500, "Internal Server Error", msg ? msg : "{\"error\":\"failed\"}");
         free(msg);
+        // A backend failure leaves the session unusable: exit, and the runtime's crash handling
+        // starts a fresh process (and gives up after 3 in a minute).
+        if (st == TRANSCRIBE_ERR_BACKEND) {
+            fprintf(stderr, "error: transcribe_run: %s; exiting\n", transcribe_status_string(st));
+            close(fd);
+            exit(1);
+        }
         return;
     }
     const char * text = transcribe_full_text(session);

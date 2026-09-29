@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js"
 import { SESSION_TITLE_MAX, type SessionSummary } from "../../shared/protocol";
 import { assignSessionGroup, setSessionArchived } from "../lib/api";
 import { renameSession } from "../lib/session-actions";
+import { inPlaceTitleEnd } from "../lib/title-field";
 import {
   archiveSummary,
   beginSelectionAction,
@@ -36,10 +37,17 @@ export function TitleField(props: {
   /** The hint the field is described by (default: the toolbar's own). */
   describedBy?: string;
   /** Leaving the field saves what's in it, and cancels when it's empty — the in-place rename of a
-      row, where a field left open under a moving list would be lost. The toolbar's stays open. */
+      row, where a field left open under a moving list would be lost. The toolbar's stays open.
+      Such a field also cancels, on Enter or leaving, when it still holds the title it opened with
+      (`inPlaceTitleEnd`): the row's title may have moved under it. */
   blurSaves?: boolean;
 }) {
+  const opened = props.initial;
   const [value, setValue] = createSignal(props.initial);
+  const end = (via: "enter" | "leave") => {
+    const r = inPlaceTitleEnd(opened, value(), via);
+    return () => (r ? props.onDone(r.save) : props.onCancel());
+  };
   let input!: HTMLInputElement;
   let settled = false;
   const finish = (act: () => void) => {
@@ -53,7 +61,7 @@ export function TitleField(props: {
       aria-label={props.label}
       onSubmit={(e) => {
         e.preventDefault();
-        finish(() => props.onDone(value().trim() ? value().trim() : null));
+        finish(props.blurSaves ? end("enter") : () => props.onDone(value().trim() ? value().trim() : null));
       }}
     >
       <input
@@ -82,8 +90,7 @@ export function TitleField(props: {
           if (!props.blurSaves) return;
           // Onto the field's own Save button: the submit settles it.
           if (e.relatedTarget instanceof Node && e.currentTarget.form?.contains(e.relatedTarget)) return;
-          const v = value().trim();
-          finish(() => (v ? props.onDone(v) : props.onCancel()));
+          finish(end("leave"));
         }}
       />
       <button type="submit" class="button button-sm">

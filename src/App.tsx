@@ -291,7 +291,7 @@ export function App() {
   const extId = createMemo(() => extRoute()?.id ?? null);
   /** The extension asked to fill the window (ext-contract §3.7); ExtensionView owns it. */
   const [extMaximized, setExtMaximized] = createSignal(false);
-  /** Team card to scroll to on `#/agents/<teamKey>` (or a bare team id from an older link). */
+  /** Team whose session's pane opens on Agents, on `#/agents/<teamKey>` (or a bare team id from an older link). */
   const focusTeam = () => {
     const r = insightsRoute();
     return r?.page === "agents" ? r.team : null;
@@ -839,6 +839,14 @@ export function App() {
     setActiveTab(path, "session");
     setSubagents({ path, selected: null, board: true });
   };
+  /** The Agents board's team chips and team links: that pane in place, on its Agents tab. Never
+      closes it: on that session already, it only switches the tab. */
+  const openAgentsFor = (path: string) => {
+    setActiveTab(path, "agents");
+    if (subagentsPath() === path) return;
+    subagentsTrigger = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setSubagents({ path, selected: null, board: true });
+  };
   /** The Agents board's Open Subagents: open the session, then its pane on the Agents tab.
       Route first: the pane only opens beside a session that is on screen. */
   const openSubagentsFor = (path: string) => {
@@ -1014,6 +1022,7 @@ export function App() {
                     onOpenSubagents={openSubagentsFor}
                     detailsPath={boardPanePath()}
                     onOpenDetails={openDetailsFor}
+                    onOpenAgents={openAgentsFor}
                   />
                 </Match>
                 {/* Every /explain page as a card (#/explanations[/<sessionId>]). */}

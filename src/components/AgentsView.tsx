@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { AgentsInsight, ContextInfo, SessionSummary, TeamInfo, TeamMember, WorkerInfo, WorktreeStatus } from "../../shared/protocol";
-import { fetchWorktrees } from "../lib/api";
+import { newestTopics, topicTime } from "../../shared/outline-order";
+import type { AgentsInsight, ContextInfo, OutlineTopic, SessionSummary, WorktreeStatus } from "../../shared/protocol";
+import { fetchSessionInsight, fetchWorktrees } from "../lib/api";
 import {
   BOARD_FILTERS,
   BOARD_PAGE,
@@ -12,7 +13,9 @@ import {
   gistTitle,
   inDefaultScope,
   money,
-  soloWorkers,
+  ROW_TOPICS,
+  rowDetail,
+  rowHasDetail,
   sortRows,
   STATE_WORD,
   teamForLink,
@@ -26,8 +29,8 @@ import {
   WORKTREES_POLL_MS,
   worktreePathsKey,
 } from "../lib/agents-board";
-import { clockTime, compactModel, relativeTime, shortModel, stampAgo, tildePath } from "../lib/format";
-import { agentsHref, memberBadges, memberStatus, type MemberStatus, orderedMembers, splitTeamEvents, teamAnchor, teamFresh, teamHeadingId, teamKey, teamPause } from "../lib/insights";
+import { compactModel, relativeTime, tildePath } from "../lib/format";
+import { agentsHref, teamKey } from "../lib/insights";
 import type { Poll } from "../lib/poll";
 import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession, renameSession } from "../lib/session-actions";
@@ -40,7 +43,7 @@ import "../agents-board.css";
 import { ActionMenu } from "./ActionMenu";
 import { ContextRing } from "./ContextRing";
 import { MoveToGroupMenu } from "./Groups";
-import { InsightsPage, iso, ListSkeleton } from "./InsightsPage";
+import { InsightsPage, ListSkeleton } from "./InsightsPage";
 import { TitleField } from "./SelectionToolbar";
 import { sessionHref } from "./Sidebar";
 import { Chip, CountChip, Icon, type Tone } from "./ui";
@@ -56,14 +59,14 @@ interface BoardCtx {
   toggle(path: string): void;
   renaming(path: string): boolean;
   setRenaming(path: string | null): void;
-  /** The team a `#/agents/<key>` link named, by key. */
-  linkedTeam: string | null;
   onRefresh(): void;
   onArchiveChanged(path: string, archived: boolean): void;
   onOpenSubagents(path: string): void;
   /** The session whose Session details pane is open beside the board, if any. */
   detailsPath: string | null;
   onOpenDetails(path: string): void;
+  /** That session's Session details pane, on its Agents tab: a team chip's click. */
+  onOpenAgents(path: string): void;
 }
 
 const STATE_TONE: Record<BoardRow["state"], Tone | "accent" | undefined> = { working: "accent", "needs-you": "warn", idle: undefined, archived: undefined };
@@ -194,145 +197,6 @@ function TreesCell(props: { trees: WorktreeStatus[] | undefined; down: boolean }
   );
 }
 
-/** The started stamp's hover: the full local date and time. */
-const fullStamp = (t: number) =>
-  new Date(t).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", second: "2-digit" });
-
-/** One worker, one line: name, badges, then in mono its id, model, when it started and its turns;
-    the preview while working, status. */
-function WorkerLine(props: {
-  name: string;
-  badges?: { label: string; title?: string }[];
-  ejected?: boolean;
-  worker: WorkerInfo | null;
-  id: string;
-  model?: string | null;
-  /** ms: its first spawn (a history team's member: when it joined). Nothing shows when unknown. */
-  startedAt?: number;
-  now: number;
-  status: MemberStatus;
-  owns?: string[];
-}) {
-  const w = () => props.worker;
-  const turns = () => w()?.turns;
-  return (
-    <li class="board-worker" title={props.owns?.length ? `Owns: ${props.owns.join(", ")}` : undefined}>
-      <span class="board-worker-name">{props.name}</span>
-      <For each={props.badges ?? []}>{(b) => <CountChip title={b.title}>{b.label}</CountChip>}</For>
-      <Show when={props.ejected}>
-        <Chip>Ejected</Chip>
-      </Show>
-      <span class="board-worker-meta text-mono">
-        <span>{props.id}</span>
-        <Show when={shortModel(props.model)}>{(m) => <> · <span>{m()}</span></>}</Show>
-        <Show when={props.startedAt}>
-          {(t) => (
-            <>
-              {" · "}
-              <span>
-                <time datetime={iso(t())} title={`Started ${fullStamp(t())}`}>{stampAgo(t(), props.now)}</time>
-              </span>
-            </>
-          )}
-        </Show>
-        <Show when={turns() !== undefined}>
-          {" · "}
-          <span title="Model replies so far">{turns() === 1 ? "1 turn" : `${turns()} turns`}</span>
-        </Show>
-      </span>
-      <span class="board-worker-preview" title={w()?.working ? w()?.preview : undefined}>
-        {w()?.working ? (w()?.preview ?? "") : ""}
-        <Show when={props.status.asOf}>
-          {(t) => (
-            <span class="text-muted">
-              as of <span class="text-mono">{clockTime(iso(t()))}</span>
-            </span>
-          )}
-        </Show>
-        <Show when={props.status.failed}>
-          <span class="text-muted"> · last task failed</span>
-        </Show>
-      </span>
-      <Chip tone={props.status.tone} live={props.status.live}>
-        {props.status.text}
-      </Chip>
-    </li>
-  );
-}
-
-/** A team inside its session's row: head, objective, members one line each, then its events. */
-function TeamBlock(props: { team: TeamInfo; ctx: BoardCtx }) {
-  const key = () => teamKey(props.team);
-  const live = () => props.team.live && teamFresh(props.ctx.agents, props.team);
-  const events = () => splitTeamEvents(props.team);
-  return (
-    <section
-      class="team-group board-team"
-      classList={{ "board-team-linked": props.ctx.linkedTeam === key() }}
-      id={teamAnchor(key())}
-      aria-labelledby={teamHeadingId(key())}
-      tabindex="-1"
-    >
-      <h4 class="board-team-head" id={teamHeadingId(key())}>
-        <Icon name="worker" small />
-        <span class="board-team-name">{props.team.name}</span>
-        <span class="text-mono text-muted">{props.team.id}</span>
-        <Show when={teamPause(props.team)}>
-          {(p) => (
-            <Chip tone="warn" title={p().detail ?? p().text}>
-              Paused
-            </Chip>
-          )}
-        </Show>
-        <Show when={props.team.working > 0}>
-          <CountChip>{props.team.working} working</CountChip>
-        </Show>
-      </h4>
-      <Show when={props.team.objective}>
-        <p class="board-team-objective" title={capTitle(props.team.objective)}>
-          {props.team.objective}
-        </p>
-      </Show>
-      <ul class="board-worker-list">
-        <For each={orderedMembers(props.team)}>
-          {(m: TeamMember) => (
-            <WorkerLine
-              name={m.role}
-              badges={memberBadges(m, props.team)}
-              ejected={m.ejectedAt !== undefined}
-              worker={m.worker}
-              id={m.workerId}
-              model={m.worker?.model ?? m.model}
-              startedAt={m.worker?.startedAt ?? (m.addedAt > 0 ? m.addedAt : undefined)}
-              now={props.ctx.now}
-              status={memberStatus(m, live())}
-              owns={m.ownedPaths}
-            />
-          )}
-        </For>
-      </ul>
-      <Show when={props.team.events?.length}>
-        <details class="board-team-events">
-          <summary>
-            <Icon name="chevron-right" small class="icon-twist" />
-            Events ({props.team.events!.length})
-          </summary>
-          <ul class="team-event-list">
-            <For each={[...events().earlier, ...events().recent]}>
-              {(e) => (
-                <li class="team-event" title={e.detail}>
-                  <span class="text-mono team-event-time">{clockTime(e.at)}</span>
-                  <span class="team-event-text">{e.text}</span>
-                </li>
-              )}
-            </For>
-          </ul>
-        </details>
-      </Show>
-    </section>
-  );
-}
-
 /** One tree in the open row: branch, path, the reading, lines, and uncommitted work in words. */
 function TreeLine(props: { tree: WorktreeStatus }) {
   const t = () => props.tree;
@@ -353,6 +217,90 @@ function TreeLine(props: { tree: WorktreeStatus }) {
       </Show>
       <span class="board-tree-path text-mono text-muted">{tildePath(t().path, home())}</span>
     </li>
+  );
+}
+
+/** The topics an open row lists: read once when it opens, kept while it stays open, never polled. */
+type RowTopics = { kind: "reading" } | { kind: "failed" } | { kind: "read"; topics: OutlineTopic[] };
+
+/** The open row: what the session is about and where it stands. Mounted only while the row is open. */
+function RowDetailView(props: { row: BoardRow; ctx: BoardCtx; id: string }) {
+  const s = () => props.row.session;
+  const d = createMemo(() => rowDetail(props.row, props.ctx.treesOf(s().path)));
+  const [topics, setTopics] = createSignal<RowTopics | null>(null);
+  // Once per opening: a row whose outline has topics reads their headings, nothing else does.
+  if (d().topics) {
+    let alive = true;
+    onCleanup(() => (alive = false));
+    setTopics({ kind: "reading" });
+    fetchSessionInsight(s().path).then(
+      (res) => alive && setTopics({ kind: "read", topics: newestTopics(res.outline?.topics ?? []).slice(0, ROW_TOPICS) }),
+      () => alive && setTopics({ kind: "failed" }),
+    );
+  }
+  return (
+    <Show when={rowHasDetail(d())}>
+      <div class="board-detail" id={props.id}>
+        <Show when={d().reason}>
+          {(why) => (
+            <p class="board-reason">
+              <Icon name="alert-circle" small />
+              {why()}
+            </p>
+          )}
+        </Show>
+        <Show when={d().questions}>
+          {(q) => (
+            <p class="board-note">
+              <Icon name="chat" small />
+              {q()}
+            </p>
+          )}
+        </Show>
+        <Show when={d().error}>
+          {(err) => (
+            <p class="board-note board-note-error">
+              <Icon name="alert-circle" small />
+              {err()}
+            </p>
+          )}
+        </Show>
+        <Show when={d().now}>{(now) => <p class="board-now">{now()}</p>}</Show>
+        <Show when={topics()}>
+          {(t) => (
+            <Switch>
+              <Match when={t().kind === "reading"}>
+                <p class="board-none">Reading topics…</p>
+              </Match>
+              <Match when={t().kind === "failed"}>
+                <p class="board-none">Couldn't read the topics.</p>
+              </Match>
+              <Match when={t().kind === "read" && (t() as Extract<RowTopics, { kind: "read" }>).topics.length > 0 && (t() as Extract<RowTopics, { kind: "read" }>)}>
+                {(r) => (
+                  <ul class="board-topic-list" aria-label="Recent topics">
+                    <For each={r().topics}>
+                      {(topic) => (
+                        <li class="board-topic">
+                          <span class="board-topic-heading" title={topic.heading}>
+                            {topic.heading}
+                          </span>
+                          <span class="board-topic-when">{relativeTime(topicTime(topic), props.ctx.now)}</span>
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                )}
+              </Match>
+            </Switch>
+          )}
+        </Show>
+        <Show when={d().trees.length > 0}>
+          <ul class="board-tree-list" aria-label="Worktrees">
+            <For each={d().trees}>{(t) => <TreeLine tree={t} />}</For>
+          </ul>
+        </Show>
+      </div>
+    </Show>
   );
 }
 
@@ -473,6 +421,8 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
   const s = () => r().session;
   const trees = () => props.ctx.treesOf(s().path);
   const open = () => props.ctx.expanded(s().path);
+  /** The twist shows only when the open row has something to say. */
+  const hasDetail = createMemo(() => rowHasDetail(rowDetail(r(), trees())));
   const detailId = () => `board-detail-${s().id}`;
   const detailsOpen = () => props.ctx.detailsPath === s().path;
   const gist = () => summaryLineOf(s());
@@ -494,43 +444,47 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
     props.ctx.setRenaming(null);
     if (await renameSession(s(), title)) props.ctx.onRefresh();
   };
-  /** A press on the row's bare surface (not a control) opens or closes it: the phone's tap. */
-  const onLineClick = (e: MouseEvent) => {
-    if ((e.target as Element).closest("a, button, input, textarea, select, form, [role=menuitem], summary")) return;
-    props.ctx.toggle(s().path);
+  /**
+   * A click anywhere on the row that isn't a control opens the session, as Open does. Controls
+   * keep their own action, the rename field and its hint never open it, and neither does a click
+   * that ends a text selection in the row, one with a modifier, or one on a menu panel the row
+   * owns (a popover: it paints in the top layer but stays in the row's DOM).
+   */
+  const onRowClick = (e: MouseEvent & { currentTarget: HTMLLIElement }) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const target = e.target as Element;
+    if (!e.currentTarget.contains(target)) return;
+    if (target.closest("a, button, input, textarea, select, label, form, summary, [role=menuitem], [popover], .board-rename")) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed && sel.anchorNode && e.currentTarget.contains(sel.anchorNode)) return;
+    location.hash = sessionHref(s().path);
   };
   const workersLine = () => (r().total > 0 ? `${r().working}/${r().total} working` : "");
 
   return (
-    <li class="board-row" data-state={r().state} classList={{ "board-row-open": open() }}>
-      <div class="board-line" onClick={onLineClick}>
+    <li class="board-row" id={`board-row-${s().id}`} data-state={r().state} classList={{ "board-row-open": open() && hasDetail() }} onClick={onRowClick}>
+      <div class="board-line">
         <div class="board-cell board-session">
           <span class="board-rail" aria-hidden="true" />
-          <button
-            type="button"
-            class="button button-icon button-ghost board-twist"
-            aria-expanded={open() ? "true" : "false"}
-            aria-controls={detailId()}
-            aria-label={`${open() ? "Hide" : "Show"} workers and worktrees of ${quoted(s().title)}`}
-            onClick={() => props.ctx.toggle(s().path)}
-          >
-            <Icon name="chevron-right" small class="board-twist-icon" />
-          </button>
+          <Show when={hasDetail()} fallback={<span class="board-twist-gap" aria-hidden="true" />}>
+            <button
+              type="button"
+              class="button button-icon button-ghost board-twist"
+              aria-expanded={open() ? "true" : "false"}
+              aria-controls={detailId()}
+              aria-label={`${open() ? "Hide" : "Show"} where ${quoted(s().title)} stands`}
+              title={open() ? "Hide details" : "Show details"}
+              onClick={() => props.ctx.toggle(s().path)}
+            >
+              <Icon name="chevron-right" small class="board-twist-icon" />
+            </button>
+          </Show>
           <div class="board-session-main">
             <Show
               when={props.ctx.renaming(s().path)}
               fallback={
                 <p class="board-title-line">
-                  <button
-                    type="button"
-                    class="board-title board-title-edit"
-                    title={s().originalTitle ? `Rename. Originally ${quoted(s().originalTitle!)}` : "Rename this session in Sova"}
-                    onClick={() => props.ctx.setRenaming(s().path)}
-                  >
-                    <span class="visually-hidden">Rename: </span>
-                    {s().title}
-                  </button>
-                  <span class="board-title board-title-text" title={s().title}>
+                  <span class="board-title" title={s().originalTitle ? `${s().title}\nOriginally ${quoted(s().originalTitle!)}` : s().title}>
                     {s().title}
                   </span>
                   <StateChip row={r()} class="board-state-inline" />
@@ -587,9 +541,18 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
           </Show>
           <For each={r().teams}>
             {(t) => (
-              <CountChip href={agentsHref(teamKey(t))} title={t.objective ? capTitle(`${t.name}: ${t.objective}`) : t.name}>
+              <a
+                class="chip chip-count"
+                href={agentsHref(teamKey(t))}
+                title={t.objective ? capTitle(`${t.name}: ${t.objective}`) : t.name}
+                onClick={(e) => {
+                  if (e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                  e.preventDefault();
+                  props.ctx.onOpenAgents(s().path);
+                }}
+              >
                 {t.name}
-              </CountChip>
+              </a>
             )}
           </For>
           <Show when={r().spend !== null}>
@@ -640,58 +603,18 @@ function BoardRowView(props: { row: BoardRow; ctx: BoardCtx }) {
       </div>
 
       <Show when={open()}>
-        <div class="board-detail" id={detailId()}>
-          <Show when={r().reason}>
-            {(why) => (
-              <p class="board-reason">
-                <Icon name="alert-circle" small />
-                {why()}
-              </p>
-            )}
-          </Show>
-          <Show when={soloWorkers(r().agent).length > 0}>
-            <ul class="board-worker-list" aria-label="Workers">
-              <For each={soloWorkers(r().agent)}>
-                {(w) => (
-                  <WorkerLine
-                    name={w.name}
-                    worker={w}
-                    id={w.id}
-                    model={w.model}
-                    startedAt={w.startedAt}
-                    now={props.ctx.now}
-                    status={memberStatus({ workerId: w.id, role: w.name, orchestrator: false, backend: w.backend ?? "", ownedPaths: [], addedAt: 0, worker: w }, !!r().agent?.fresh)}
-                  />
-                )}
-              </For>
-            </ul>
-          </Show>
-          <For each={r().teams}>{(t) => <TeamBlock team={t} ctx={props.ctx} />}</For>
-          <Show when={trees()?.length}>
-            <ul class="board-tree-list" aria-label="Worktrees">
-              <For each={trees()}>{(t) => <TreeLine tree={t} />}</For>
-            </ul>
-          </Show>
-          <Show when={r().total === 0 && !trees()?.length}>
-            <p class="board-none">
-              {STATE_WORD[r().state]} · no workers{trees() ? " and no worktree" : ""}.
-            </p>
-          </Show>
-          <Show when={r().total > 0 && !r().agent}>
-            <p class="board-none">Its workers are listed while a pi runs it.</p>
-          </Show>
-        </div>
+        <RowDetailView row={r()} ctx={props.ctx} id={detailId()} />
       </Show>
     </li>
   );
 }
 
-/** `#/agents`: every session on one board, its workers, team and worktrees folded inside. */
+/** `#/agents`: every session on one board; what it's about, where it stands and its worktrees folded inside. */
 export function AgentsView(props: {
   agents: Poll<AgentsInsight>;
   sessions: SessionSummary[] | undefined;
   now: number;
-  /** Team to focus (from `#/agents/<teamKey>`): its session opens and the team is scrolled to. */
+  /** Team a `#/agents/<teamKey>` link names: its session stays on the board and its pane opens on Agents. */
   focusTeam: string | null;
   titleRef(el: HTMLHeadingElement): void;
   onRefresh(): void;
@@ -699,6 +622,7 @@ export function AgentsView(props: {
   onOpenSubagents(path: string): void;
   detailsPath: string | null;
   onOpenDetails(path: string): void;
+  onOpenAgents(path: string): void;
 }) {
   const [filter, setFilter] = createSignal<BoardFilter | null>(null);
   const [query, setQuery] = createSignal("");
@@ -720,7 +644,6 @@ export function AgentsView(props: {
     const t = key ? teamForLink(props.agents.data(), key) : null;
     return t ? `${teamKey(t)}\n${t.parentPath}` : null;
   });
-  const linkedKey = () => linked()?.split("\n")[0] ?? null;
   const pinned = () => linked()?.split("\n")[1] ?? null;
 
   const shown = createMemo(() => visibleRows(rows(), { filter: filter(), query: query(), treesOf, pinned: pinned() }));
@@ -775,21 +698,18 @@ export function AgentsView(props: {
     const v = linked();
     return v && byPath().has(v.split("\n")[1]!) ? v : null;
   });
-  // Open the linked team's session and bring the team into view, once per link: polls don't steal focus.
+  // Open the linked team's session's pane on Agents and bring its row into view, once per link:
+  // polls don't open it again.
   let focused: string | null = null;
   createEffect(
     on(linkReady, (v) => {
       const key = props.focusTeam;
       if (!v || !key || key === focused) return;
-      const [teamKeyNow, parent] = v.split("\n") as [string, string];
-      setOpen((s) => (s.has(parent) ? s : new Set([...s, parent])));
-      requestAnimationFrame(() => {
-        const el = document.getElementById(teamAnchor(teamKeyNow));
-        if (!el) return;
-        focused = key;
-        el.scrollIntoView({ block: "center" });
-        el.focus({ preventScroll: true });
-      });
+      focused = key;
+      const row = byPath().get(v.split("\n")[1]!);
+      if (!row) return;
+      props.onOpenAgents(row.session.path);
+      requestAnimationFrame(() => document.getElementById(`board-row-${row.session.id}`)?.scrollIntoView({ block: "nearest" }));
     }),
   );
 
@@ -813,9 +733,6 @@ export function AgentsView(props: {
       }),
     renaming: (p) => renaming() === p,
     setRenaming,
-    get linkedTeam() {
-      return linkedKey();
-    },
     onRefresh: () => props.onRefresh(),
     onArchiveChanged: (p, a) => props.onArchiveChanged(p, a),
     onOpenSubagents: (p) => props.onOpenSubagents(p),
@@ -823,6 +740,7 @@ export function AgentsView(props: {
       return props.detailsPath;
     },
     onOpenDetails: (p) => props.onOpenDetails(p),
+    onOpenAgents: (p) => props.onOpenAgents(p),
   };
 
   const meta = () => (props.sessions ? totalsLine(totals()) : undefined);

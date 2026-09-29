@@ -13,7 +13,8 @@ import {
   matchesSearch,
   money,
   passesFilter,
-  soloWorkers,
+  rowDetail,
+  rowHasDetail,
   sortRows,
   teamForLink,
   totalsLine,
@@ -194,16 +195,8 @@ test("gist as title: one line within the limit, and nothing when it already is t
   assert.ok(long.endsWith("…"));
 });
 
-test("workers outside a team, working first; a team link finds its team by key or bare id", () => {
-  const a = agent("/s/a.jsonl", {
-    workers: [
-      { id: "ag_1", name: "old", status: "done", working: false, lastActivity: 5 },
-      { id: "ag_2", name: "member", status: "running", working: true, teamId: "team_01" },
-      { id: "ag_3", name: "busy", status: "running", working: true, lastActivity: 1 },
-    ],
-    teams: [team("team_01", "/s/a.jsonl", 10)],
-  });
-  assert.deepEqual(soloWorkers(a).map((w) => w.id), ["ag_3", "ag_1"]);
+test("a team link finds its team by key or bare id", () => {
+  const a = agent("/s/a.jsonl", { teams: [team("team_01", "/s/a.jsonl", 10)] });
   const b = agent("/s/b.jsonl", { teams: [team("team_01", "/s/b.jsonl", 20)] });
   const data = insight([a, b]);
   assert.equal(teamForLink(data, teamKey(a.teams[0]!))?.parentPath, "/s/a.jsonl", "the exact key");
@@ -215,4 +208,48 @@ test("tree lines: both counts when the branch changes any; nothing for +0 −0 o
   assert.deepEqual(treeLines(tree("/t", { added: 3, removed: 0 })), { added: 3, removed: 0 });
   assert.equal(treeLines(tree("/t", { added: 0, removed: 0 })), null);
   assert.equal(treeLines(tree("/t", { added: 3 })), null);
+});
+
+test("the open row: what it's about and where it stands, never the same fact twice", () => {
+  const plain = boardRows([sess("a")], undefined, noBusy)[0]!;
+  const empty = rowDetail(plain, [tree("/t")]);
+  assert.equal(rowHasDetail(empty), false, "an idle session with one clean tree has nothing to say: no twist");
+  assert.deepEqual(empty.trees, [], "one clean tree is the cell already");
+  assert.equal(rowHasDetail(rowDetail(plain, undefined)), false, "trees not read yet");
+
+  const dirty = rowDetail(plain, [tree("/t", { dirty: true })]);
+  assert.equal(dirty.trees.length, 1, "one dirty tree gets its line");
+  assert.equal(rowDetail(plain, [tree("/t"), tree("/u")]).trees.length, 2, "2 trees get their lines");
+
+  const topics = boardRows([sess("b", { outlineTopics: 3 })], undefined, noBusy)[0]!;
+  assert.equal(rowDetail(topics, []).topics, true);
+  assert.equal(rowHasDetail(rowDetail(topics, [])), true, "topics known from the list count");
+  const noTopics = boardRows([sess("c", { outlineTopics: 0, outlineNow: "  " })], undefined, noBusy)[0]!;
+  assert.equal(rowHasDetail(rowDetail(noTopics, [])), false, "0 topics and a blank now line say nothing");
+
+  const now = boardRows([sess("d", { outlineNow: "Wiring the dropdown" })], undefined, noBusy)[0]!;
+  assert.equal(rowDetail(now, []).now, "Wiring the dropdown");
+
+  // The reason already says the error: no second line for it.
+  const failed = boardRows([sess("e", { turnError: { message: "rate limit" } })], undefined, noBusy)[0]!;
+  const f = rowDetail(failed, []);
+  assert.equal(f.reason, "Last turn failed: rate limit");
+  assert.equal(f.error, null);
+
+  // Waiting on input wins the reason; the error and the question still get their own lines.
+  const both = boardRows(
+    [sess("g", { activity: { state: "needs-input" }, turnError: {}, align: { openDocs: 1, openQuestions: 1, questionDocs: 1, lead: { id: "al_2", title: "Dropdown" } } })],
+    undefined,
+    noBusy,
+  )[0]!;
+  const g = rowDetail(both, []);
+  assert.equal(g.reason, "Waiting on your input.");
+  assert.equal(g.error, "Last turn failed.");
+  assert.equal(g.questions, "1 open question in al_2 Dropdown");
+
+  // The questions are the reason: said once.
+  const asks = boardRows([sess("h", { align: { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_2", title: "Dropdown" } } })], undefined, noBusy)[0]!;
+  const h = rowDetail(asks, []);
+  assert.equal(h.reason, "2 open questions in al_2 Dropdown");
+  assert.equal(h.questions, null);
 });

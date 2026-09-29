@@ -2,7 +2,7 @@
 // Everything here is pure — which rows a scope or filter shows, how they sort, what the head
 // totals say, and the words a worktree reading turns into — so it runs under `tsx --test`.
 
-import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorkerInfo, WorktreeStatus } from "../../shared/protocol";
+import type { AgentsInsight, LiveAgentSession, SessionSummary, TeamInfo, WorktreeStatus } from "../../shared/protocol";
 import { SESSION_TITLE_MAX } from "../../shared/protocol";
 import { teamKey } from "./insights";
 import { isMainThread, isTopSession } from "./regions";
@@ -275,7 +275,48 @@ export function treeTitle(t: WorktreeStatus): string {
 }
 
 // ---------------------------------------------------------------------------
-// Titles, workers, teams
+// The open row
+
+/** Topic headings an open row lists, newest first. */
+export const ROW_TOPICS = 5;
+
+/** What a row's open row says, each part null (or empty) when it has none. */
+export interface RowDetail {
+  reason: string | null;
+  /** "1 open question in al_2 …", unless the reason already says it. */
+  questions: string | null;
+  /** The last turn's error, unless the reason already says it. */
+  error: string | null;
+  /** The full now line, which the gist cuts to one line. */
+  now: string | null;
+  /** Its outline has topics: the open row reads their headings when it opens. */
+  topics: boolean;
+  /** Worktree lines: only with 2 or more trees, or one with uncommitted changes. */
+  trees: WorktreeStatus[];
+}
+
+/** The open row's parts, from what the list and the worktrees poll already hold (topics are a count until read). */
+export function rowDetail(r: Pick<BoardRow, "session" | "reason">, trees: readonly WorktreeStatus[] | undefined): RowDetail {
+  const s = r.session;
+  const a = s.align;
+  const q = a && a.openQuestions > 0 ? signalTitle({ kind: "questions", worker: false, align: a }) : null;
+  const err = s.turnError ? (s.turnError.message ? `Last turn failed: ${s.turnError.message}` : "Last turn failed.") : null;
+  const list = trees ?? [];
+  return {
+    reason: r.reason,
+    questions: q && q !== r.reason ? q : null,
+    error: err && err !== r.reason ? err : null,
+    now: s.outlineNow?.trim() || null,
+    topics: (s.outlineTopics ?? 0) > 0,
+    trees: list.length > 1 || list.some((t) => t.dirty) ? [...list] : [],
+  };
+}
+
+/** Whether the open row has anything to say: the twist shows only then. */
+export const rowHasDetail = (d: RowDetail): boolean => !!(d.reason || d.questions || d.error || d.now || d.topics || d.trees.length);
+
+// ---------------------------------------------------------------------------
+// Titles, teams
 
 /** The gist as a title: one line, within the title limit; null when there's none or it IS the title. */
 export function gistTitle(s: Pick<SessionSummary, "title" | "outlineGist" | "outlineNow">): string | null {
@@ -283,12 +324,6 @@ export function gistTitle(s: Pick<SessionSummary, "title" | "outlineGist" | "out
   if (!line) return null;
   const cut = line.length > SESSION_TITLE_MAX ? `${line.slice(0, SESSION_TITLE_MAX - 1).trimEnd()}…` : line;
   return cut === s.title ? null : cut;
-}
-
-/** Workers of a row that aren't in one of its teams, working first. */
-export function soloWorkers(agent: Pick<LiveAgentSession, "workers"> | null): WorkerInfo[] {
-  const list = (agent?.workers ?? []).filter((w) => !w.teamId);
-  return [...list].sort((a, b) => Number(b.working) - Number(a.working) || (b.lastActivity ?? b.startedAt ?? 0) - (a.lastActivity ?? a.startedAt ?? 0));
 }
 
 /**

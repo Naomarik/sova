@@ -65,6 +65,8 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
   const [arrows, setArrows] = createSignal<Arrow[]>([]);
   const [overflow, setOverflow] = createSignal(false);
   const [current, setCurrent] = createSignal(0);
+  /** The screen buttons' row has no room for the current one's name (under about 6ch): every button is its number. */
+  const [numbersOnly, setNumbersOnly] = createSignal(false);
   /** The pane's width (the scroller's), once laid out: what fitStrip fits to. */
   const [width, setWidth] = createSignal(0);
   const fit = createMemo(() => (width() > 0 ? fitStrip(spec, width()) : undefined));
@@ -193,6 +195,25 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
   createEffect(() => {
     const b = navRow?.children[current()] as HTMLElement | undefined;
     if (b && navRow) navRow.scrollLeft = Math.max(0, Math.min(navRow.scrollLeft, b.offsetLeft - navRow.offsetLeft - 4), b.offsetLeft - navRow.offsetLeft + b.offsetWidth - navRow.clientWidth + 4);
+  });
+
+  // Room for the current button's name: the row less the other buttons (numbers on a phone), the gaps and its own number.
+  // Only where the others already hide their names (wireframe.css); wider, every button is named and the row scrolls.
+  const fitNames = () => {
+    if (!navRow) return;
+    const buttons = [...navRow.children] as HTMLElement[];
+    const other = buttons.find((b) => b.getAttribute("aria-current") !== "true");
+    const name = other?.querySelector<HTMLElement>(".vis-wf-nav-name");
+    if (!other || !name || getComputedStyle(name).display !== "none") return setNumbersOnly(false);
+    const gap = parseFloat(getComputedStyle(navRow).columnGap) || 0;
+    // A number-only button, the current one's width without its name; at least 44px (numbers-only may narrow them, wireframe.css).
+    const own = Math.max(other.offsetWidth, 44);
+    const room = navRow.clientWidth - buttons.length * own - (buttons.length - 1) * gap - gap;
+    setNumbersOnly(room < 3 * parseFloat(getComputedStyle(name).fontSize)); // ~6ch
+  };
+  createEffect(() => {
+    width();
+    if (overflow()) queueMicrotask(fitNames);
   });
 
   onMount(() => {
@@ -749,8 +770,8 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
     <div class="vis-wf" classList={{ "vis-wf-many": many }}>
       <Show when={many && overflow()}>
         <div class="vis-wf-nav">
-          {/* On a phone only the current screen shows its name here; the others are their numbers. */}
-          <div class="vis-wf-nav-screens" ref={navRow} role="group" aria-label="Screens">
+          {/* On a phone only the current screen shows its name here, and none where it has no room; the others are their numbers. */}
+          <div class="vis-wf-nav-screens" classList={{ "vis-wf-numbers": numbersOnly() }} ref={navRow} role="group" aria-label="Screens">
             <For each={spec.screens}>
               {(_, i) => (
                 <button

@@ -47,7 +47,7 @@ export default function FlowView(props: ViewProps<FlowSpec>) {
   );
 }
 
-/** One laid-out graph: group frames, edges, their labels, then the nodes on top. */
+/** One laid-out graph: group frames, edges, their labels, the frames' titles, then the nodes on top. */
 function FlowDrawing(props: { layout: FlowLayout; em: Map<string, Emphasis>; label: string }) {
   const arrow = useMarkerId();
   return (
@@ -62,9 +62,6 @@ function FlowDrawing(props: { layout: FlowLayout; em: Map<string, Emphasis>; lab
           <g class="vis-flow-group">
             <title>{g.label}</title>
             <rect x={g.x} y={g.y} width={g.w} height={g.h} rx="8" />
-            <text x={g.x + GROUP.pad} y={g.y + GROUP.title / 2 + 2} dominant-baseline="central" font-size={String(GROUP.font)}>
-              {g.title}
-            </text>
           </g>
         )}
       </For>
@@ -87,6 +84,15 @@ function FlowDrawing(props: { layout: FlowLayout; em: Map<string, Emphasis>; lab
             <rect x={e.label!.x - e.label!.w / 2} y={e.label!.y - e.label!.h / 2} width={e.label!.w} height={e.label!.h} rx="4" />
             <Lines lines={e.label!.lines} x={e.label!.x} y={e.label!.y} size={FLOW_FONT.edge} lh={15} />
           </g>
+        )}
+      </For>
+      {/* Frame titles over the edges (their halo keeps them legible where an edge enters), under the nodes. */}
+      <For each={props.layout.groups ?? []}>
+        {(g) => (
+          <text class="vis-flow-group-title" x={g.x + GROUP.pad} y={g.y + GROUP.title / 2 + 2} dominant-baseline="central" font-size={String(GROUP.font)}>
+            <title>{g.label}</title>
+            {g.title}
+          </text>
         )}
       </For>
       <For each={props.layout.nodes}>{(n) => <Node n={n} em={props.em.get(n.id)} />}</For>

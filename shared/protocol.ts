@@ -3481,3 +3481,217 @@ export interface DiffFilePatch {
   base: DiffSide;
   head: DiffSide;
 }
+
+// ── Resource monitor (§app/resource-monitor) ─────────────────────────────────────────────────
+// GET /api/monitor → MonitorSnapshot; GET /api/monitor/history?since=<ms>&res=5s|30s → MonitorHistory.
+// Read-only. CPU percentages are of ONE core (100 = one core busy; a 16-core host tops out at 1600),
+// averaged over the last tick (5s). Memory is RSS in bytes; swap is VmSwap in bytes.
+
+/** How the measured set was chosen. `unit`: the server runs in a dedicated systemd service
+    cgroup (/proc/self/cgroup ends in `.service`), so every process in it is measured, and the
+    unit's own cgroup totals are reported. `tree`: the server's descendant tree only (dev,
+    hermetic). `none`: no /proc (not Linux): only the server's own Node numbers. */
+export type MonitorScope = "unit" | "tree" | "none";
+
+/** How a process was charged to its session/worker, strongest first. Everything but `cwd` is
+    exact: `worker-pid` the runtime's in-process worker pid; `live-record` a pi worker's own live
+    record; `session-id` a `claude --resume/--session-id` uuid; `team-env` a member-mcp helper's
+    team env; `hosted` a direct child of the server started by a hosted session's tool (matched
+    by its session cwd once, when no other hosted session shares that cwd); `descendant` below
+    a charged process; `sid` a session/process group already seen under a charged process
+    (orphans, nohup, setsid). `cwd` is a heuristic: the process's cwd lies in a session's cwd. */
+export type MonitorVia = "worker-pid" | "live-record" | "session-id" | "team-env" | "hosted" | "descendant" | "sid" | "cwd";
+
+/** Coarse kind of a process from its argv, parsed once per process. */
+export type MonitorProcKind =
+  | "server" | "pi-worker" | "claude-worker" | "claude-provider" | "member-mcp"
+  | "node" | "java" | "python" | "browser" | "shell" | "build" | "other";
+
+/** Linux pressure-stall `some avg10` (and `full avg10` where it exists), in percent. */
+export interface MonitorPressure {
+  cpu?: { some: number };
+  memory?: { some: number; full: number };
+  io?: { some: number; full: number };
+}
+
+export interface MonitorProc {
+  pid: number;
+  ppid: number;
+  kind: MonitorProcKind;
+  /** Short command, ≤ 120 chars: basename of argv[0] plus the telling args (`java … clojure.main`). */
+  cmd: string;
+  /** Own CPU% over the last tick, including reaped children's time (cutime/cstime). */
+  cpuPct: number;
+  rssBytes: number;
+  /** Absent until first read (VmSwap is read at most every 30s per process). */
+  swapBytes?: number;
+  /** Epoch ms the process started. */
+  startedAt: number;
+  /** Where it was charged; absent = unattributed. */
+  sessionPath?: string;
+  workerId?: string;
+  via?: MonitorVia;
+  /** Escaped/unattributed only: the process's cwd, as a hint. */
+  cwd?: string;
+}
+
+export interface MonitorWorker {
+  /** The subagents worker id (e.g. "w3"), or a synthetic key for a worker seen only by argv. */
+  id: string;
+  name?: string;
+  backend?: string;
+  /** From the live record: "working" | "waiting" | "idle" | …, as that record says. */
+  status?: string;
+  /** Epoch ms the worker went idle, when the record says. */
+  idleSince?: number;
+  /** The worker's own process, when known. */
+  pid?: number;
+  via: MonitorVia;
+  /** Whole subtree (the worker process and every descendant, plus reaped children's time). */
+  cpuPct: number;
+  rssBytes: number;
+  swapBytes: number;
+  procCount: number;
+  /** The heaviest descendants (not the worker process itself), by CPU then RSS, at most 5. */
+  top: MonitorProc[];
+}
+
+export interface MonitorSession {
+  /** The session file; absent for a group the monitor could not tie to a file. */
+  sessionPath?: string;
+  /** Session display title, when known. */
+  title?: string;
+  cwd?: string;
+  /** Hosted in this server (its tool children are the server's children). */
+  hosted: boolean;
+  /** Totals over the session's own processes and all its workers. */
+  cpuPct: number;
+  rssBytes: number;
+  swapBytes: number;
+  procCount: number;
+  /** Processes charged to the session itself, not to a worker (hosted bash tools, the Claude
+      Code provider process), heaviest first, at most 5; `own*` are their totals. */
+  own: MonitorProc[];
+  ownCpuPct: number;
+  ownRssBytes: number;
+  workers: MonitorWorker[];
+}
+
+/** Totals for a bucket of processes. */
+export interface MonitorBucket {
+  cpuPct: number;
+  rssBytes: number;
+  swapBytes: number;
+  procCount: number;
+  /** Heaviest first, at most 20. */
+  procs: MonitorProc[];
+}
+
+export interface MonitorSampler {
+  intervalMs: number;
+  /** Wall time of the last tick and the average over the ring, in ms. */
+  lastTickMs: number;
+  avgTickMs: number;
+  /** Ticks skipped because the previous one was still running. */
+  skipped: number;
+  ticks: number;
+  startedAt: number;
+}
+
+export interface MonitorSnapshot {
+  at: number;
+  platform: string;
+  scope: MonitorScope;
+  /** `unit` only: the unit name, e.g. "sova-runtime.service". */
+  unitName?: string;
+  cores: number;
+  host: {
+    loadavg: [number, number, number];
+    memTotalBytes: number;
+    memAvailableBytes: number;
+    swapTotalBytes: number;
+    swapFreeBytes: number;
+    pressure?: MonitorPressure;
+  };
+  /** `unit` only: the cgroup's own counters. `memory.current` includes page cache (`file`);
+      `anon` is what pushes into swap. */
+  unit?: {
+    cpuPct: number;
+    memory: { current: number; anon: number; file: number; shmem: number; peak?: number };
+    swap: { current: number; peak?: number };
+    oomKills: number;
+    pressure?: MonitorPressure;
+  };
+  /** The server process itself (Node). `cpuPct` excludes its children. */
+  server: {
+    pid: number;
+    cpuPct: number;
+    rssBytes: number;
+    heapUsedBytes: number;
+    heapTotalBytes: number;
+    /** Event-loop delay over the last tick, ms. */
+    eventLoop: { p50: number; p99: number; max: number };
+    uptimeSec: number;
+  };
+  /** Over every measured process (the unit's or the tree's), server included. */
+  totals: { cpuPct: number; rssBytes: number; swapBytes: number; procCount: number };
+  /** Heaviest first by CPU. Hosted sessions with no processes and no workers are omitted. */
+  sessions: MonitorSession[];
+  /** Workers the server runs whose session is unknown (no join matched). */
+  unownedWorkers: MonitorWorker[];
+  /** `unit` only: processes in the unit that are no longer under the server (reparented), each
+      charged to a session when sid memory or cwd can say so. */
+  escaped: MonitorBucket;
+  /** Server descendants not charged to any session or worker (e.g. esbuild, git probes). */
+  unattributed: MonitorBucket;
+  /** The heaviest processes this tick by CPU, at most 10, across everything measured. */
+  topProcs: MonitorProc[];
+  sampler: MonitorSampler;
+  /** Human notes on what this snapshot cannot see (no /proc, no unit, remote targets). */
+  notes: string[];
+}
+
+export type MonitorResolution = "5s" | "30s";
+
+/** One process in a history point: the tick's (5s) or the window's (30s) top CPU users. */
+export interface MonitorPointProc {
+  pid: number;
+  cmd: string;
+  kind: MonitorProcKind;
+  cpuPct: number;
+  rssBytes: number;
+  /** Key into `MonitorHistory.groups`; absent = unattributed. */
+  group?: string;
+  workerId?: string;
+}
+
+/** One history point. At `30s` resolution `cpuPct` is the window's mean and `cpuPctMax` its
+    highest tick; memory figures are the window's maximum. */
+export interface MonitorPoint {
+  at: number;
+  cpuPct: number;
+  cpuPctMax?: number;
+  rssBytes: number;
+  swapBytes: number;
+  /** `unit` scope only. */
+  anonBytes?: number;
+  load1: number;
+  /** Server event-loop max delay, ms. */
+  loopMaxMs: number;
+  /** Per group (session, "escaped", "unattributed", "server"): [cpuPct, rssBytes]. */
+  groups: Record<string, [number, number]>;
+  /** Per group, then per worker id: [cpuPct, rssBytes] of the worker's whole subtree. */
+  workers: Record<string, Record<string, [number, number]>>;
+  /** Top 5 by CPU. */
+  top: MonitorPointProc[];
+}
+
+export interface MonitorHistory {
+  res: MonitorResolution;
+  /** Echo of the request's `since` (clamped to what is kept). */
+  since: number;
+  /** Oldest first. */
+  points: MonitorPoint[];
+  /** Labels for every group key used in `points`. Session groups are keyed by session path. */
+  groups: Record<string, { label: string; sessionPath?: string }>;
+}

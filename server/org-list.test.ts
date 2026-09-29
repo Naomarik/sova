@@ -41,8 +41,8 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
   const quiet = await orgs.createOrg({ name: "Quiet", dir: join(root, "ws-quiet") });
   const busy = await orgs.createOrg({ name: "Busy", dir: join(root, "ws-busy") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(busy.id, { name: "Portal", root: join(root, "proj") });
-  const tony = orgs.addPerson(busy.id, { name: "Tony Reyes", role: "IT" });
+  const project = await orgs.addProject(busy.id, { name: "Portal", root: join(root, "proj") });
+  const tony = await orgs.addPerson(busy.id, { name: "Tony Reyes", role: "IT" });
 
   test("a fresh org waits on nothing and was last active when created (or its first roster write)", async () => {
     const q = (await list()).find((o) => o.id === quiet.id)!;
@@ -54,7 +54,7 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
     baton.createBaton({ orgId: busy.id, projectId: project.id, to: OPERATOR, publicTitle: "Mine", goal: "g" });
     baton.createBaton({ orgId: busy.id, projectId: project.id, to: tony.id, publicTitle: "No link", goal: "g", mintLink: false });
     baton.createBaton({ orgId: busy.id, projectId: project.id, to: tony.id, publicTitle: "Linked", goal: "g" });
-    orgs.addPerson(busy.id, { name: "Bob Ref", status: "proposed", role: "Accountant", contact: { phone: "+1 555 010 0199" }, referral: { why: "Does the books", referredBy: "operator" } });
+    await orgs.addPerson(busy.id, { name: "Bob Ref", status: "proposed", role: "Accountant", contact: { phone: "+1 555 010 0199" }, referral: { why: "Does the books", referredBy: "operator" } });
     const all = await list();
     const b = all.find((o) => o.id === busy.id)!;
     assert.deepEqual(b.needsYou, { replies: 1, links: 1, proposals: 1, conflicts: 0, stakeholders: 0, ownerLink: 0 });
@@ -93,13 +93,13 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
 test("a project whose main stakeholder left counts once in its org's needsYou, until the operator saves the select", async () => {
   const org = await orgs.createOrg({ name: "Left", dir: join(root, "ws-left") });
   mkdirSync(join(root, "proj-left"));
-  const pr = orgs.addProject(org.id, { name: "Site", root: join(root, "proj-left") });
-  const alp = orgs.addPerson(org.id, { name: "Alperen", role: "Owner" });
-  orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
+  const pr = await orgs.addProject(org.id, { name: "Site", root: join(root, "proj-left") });
+  const alp = await orgs.addPerson(org.id, { name: "Alperen", role: "Owner" });
+  await orgs.patchProject(org.id, pr.id, { stakeholder: alp.id });
   const count = async () => (await list()).find((o) => o.id === org.id)!.needsYou?.stakeholders;
   assert.equal(await count(), 0);
-  orgs.applyChange(org.id, alp.id, { status: "left" }, { kind: "operator" });
+  await orgs.applyChange(org.id, alp.id, { status: "left" }, { kind: "operator" });
   assert.equal(await count(), 1);
-  orgs.patchProject(org.id, pr.id, { stakeholder: null });
+  await orgs.patchProject(org.id, pr.id, { stakeholder: null });
   assert.equal(await count(), 0);
 });

@@ -34,9 +34,9 @@ const tab = (c: string) => c.repeat(22);
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
-const maria = orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
 const file = join(orgs.orgDir(org.id), visits.VISITS_FILE);
 const lines = (): Record<string, unknown>[] => {
   try {

@@ -183,10 +183,10 @@ function leaksContact(s: string): string | null {
 describe("the organization tools (§app.overseer/org-tools)", async () => {
   const org = await orgs.createOrg({ name: "Qorvex Holdings", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
-  const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT", decides: ["servers"], contact: { email: CONTACT, phone: PHONE } });
-  const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
-  orgs.patchOrg(org.id, { about: ABOUT });
+  const project = await orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT", decides: ["servers"], contact: { email: CONTACT, phone: PHONE } });
+  const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
+  await orgs.patchOrg(org.id, { about: ABOUT });
   // A hand-off session with a link minted (the page's way), a person typing their own contact, and a referral call.
   const withLink = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Servers", goal: "Where it runs" });
   const TOKEN = withLink.token!;
@@ -407,7 +407,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const viaPrompt = await overseer.promptSession(path, "hello", OVERSEER_ID);
     assert.deepEqual(viaPrompt, { ok: false, status: 409, error: "That is a project overseer's own conversation." });
     mkdirSync(join(root, "proj-b"), { recursive: true });
-    const other = orgs.addProject(org.id, { name: "Fresh", root: join(root, "proj-b") });
+    const other = await orgs.addProject(org.id, { name: "Fresh", root: join(root, "proj-b") });
     const none = await overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${other.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(none.status, 409);
     // The Overseer's own cap bounds repeats: at the limit nothing is sent.
@@ -446,9 +446,11 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
 describe("archive a project (§app.organizations/archive)", async () => {
   const org = await orgs.createOrg({ name: "Archivers", dir: join(root, "ws2") });
   mkdirSync(join(root, "proj2"));
-  const project = orgs.addProject(org.id, { name: "Old Site", root: join(root, "proj2") });
-  const kim = orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
-  const archive = () => overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/archive`, { method: "POST" });
+  const project = await orgs.addProject(org.id, { name: "Old Site", root: join(root, "proj2") });
+  const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
+  // As the tool sends it: in the turn a confirm card listing the project started (the chart checks the card first).
+  const archive = () =>
+    overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/archive`, { method: "POST", headers: { [tools.OVERSEER_CARD_HEADER]: JSON.stringify({ projects: [project.id] }) } });
 
   test("refused while a gathering session is open, naming it; nothing written", async () => {
     const open = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Hosting", goal: "g", mintLink: false });
@@ -507,10 +509,10 @@ describe("archive a project (§app.organizations/archive)", async () => {
 
   test("its composer is closed while archived (the project overseer's own)", async () => {
     const { path } = await po.ensureProjectOverseer(org.id, project.id);
-    orgs.setProjectArchived(org.id, project.id, true);
+    await orgs.setProjectArchived(org.id, project.id, true);
     const chat = await acquireChat(path);
     assert.equal(chat.specialEntry?.composerClosed?.(path), "Old Site is archived. Unarchive it to use its overseer.");
-    orgs.setProjectArchived(org.id, project.id, false);
+    await orgs.setProjectArchived(org.id, project.id, false);
     assert.equal(chat.specialEntry?.composerClosed?.(path), null);
   });
 });
@@ -518,8 +520,8 @@ describe("archive a project (§app.organizations/archive)", async () => {
 describe("the confirm card: people and projects, and the click that opens a confirmed turn", async () => {
   const org = await orgs.createOrg({ name: "Cardco", dir: join(root, "ws3") });
   mkdirSync(join(root, "proj3"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj3") });
-  const lee = orgs.addPerson(org.id, { name: "Lee Chan", role: "Design" });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj3") });
+  const lee = await orgs.addPerson(org.id, { name: "Lee Chan", role: "Design" });
   const { orgConfirmLookup } = await import("./overseer-org-tools");
   const lookup = { session: async () => null, isSelf: () => false, idea: () => null, todo: () => null, ...orgConfirmLookup };
   const refusal = (m: string) => new Error(m);

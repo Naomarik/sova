@@ -4,6 +4,9 @@ import {
   AT_ONCE_MAX,
   AUTONOMY_LEVELS,
   capProblem,
+  CONFIRM_KINDS,
+  confirmKindsProblem,
+  DEFAULT_CONFIRM_KINDS,
   DEFAULT_AUTONOMY,
   DEFAULT_PO_CAPS,
   DEFAULT_HOLD_MIN,
@@ -25,6 +28,7 @@ import {
 } from "../shared/project-overseer";
 import type { OrgProject, Person } from "../shared/orgs";
 import type { OverseerState } from "../shared/protocol";
+import { setProjectSettingsSource } from "./org-engine";
 import { EXTRA_PROMPT_MAX, HISTORY_MAX, readOverseerState, writeAtomic, writeOverseerState } from "./overseer-store";
 import { orgDir, OrgError, orgOfSessionPath, readProjects } from "./orgs";
 import { checkAbilitiesPatch, parseAbilities } from "./gathering-abilities";
@@ -113,6 +117,7 @@ export function defaultPoSettings(): ProjectOverseerSettings {
     soonLookSec: DEFAULT_SOON_LOOK_SEC,
     watch: true,
     holdMin: DEFAULT_HOLD_MIN,
+    confirmKinds: [...DEFAULT_CONFIRM_KINDS],
     extraSystemPrompt: "",
   };
 }
@@ -157,6 +162,8 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     watch: typeof raw.watch === "boolean" ? raw.watch : d.watch,
     // Over the maximum still means "as long as allowed"; any other bad value, the default.
     holdMin: typeof raw.holdMin === "number" && Number.isInteger(raw.holdMin) && raw.holdMin > HOLD_MIN_MAX ? HOLD_MIN_MAX : holdProblem(raw.holdMin) === null ? (raw.holdMin as number) : d.holdMin,
+    // An unknown kind (a newer host's) is dropped; anything else unreadable, the default.
+    confirmKinds: Array.isArray(raw.confirmKinds) ? CONFIRM_KINDS.filter((k) => (raw.confirmKinds as unknown[]).includes(k)) : [...d.confirmKinds],
     extraSystemPrompt: typeof raw.extraSystemPrompt === "string" ? raw.extraSystemPrompt.slice(0, EXTRA_PROMPT_MAX) : "",
   };
 }
@@ -251,6 +258,11 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     const why = holdProblem(patch.holdMin);
     if (why) throw new OrgError(why);
     next.holdMin = patch.holdMin;
+  }
+  if (patch.confirmKinds !== undefined) {
+    const why = confirmKindsProblem(patch.confirmKinds);
+    if (why) throw new OrgError(why);
+    next.confirmKinds = CONFIRM_KINDS.filter((k) => patch.confirmKinds!.includes(k));
   }
   if (patch.extraSystemPrompt !== undefined) {
     if (typeof patch.extraSystemPrompt !== "string" || patch.extraSystemPrompt.length > EXTRA_PROMPT_MAX)
@@ -546,3 +558,6 @@ export function sessionIdOfFile(path: string): string {
   const i = b.indexOf("_");
   return i >= 0 ? b.slice(i + 1) : b;
 }
+
+// The org engine stamps every act with its project's settings as read now.
+setProjectSettingsSource({ read: (orgId, projectId, workspace) => readPoSettings(projectOverseerPaths(orgId, projectId, workspace)), defaults: defaultPoSettings });

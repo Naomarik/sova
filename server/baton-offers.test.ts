@@ -30,10 +30,10 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
-const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
-const carlos = orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
+const carlos = await orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
 const events: { type: string; sessionId: string }[] = [];
 onBatonEvent((e) => events.push({ type: e.type, sessionId: e.sessionId }));
 
@@ -217,18 +217,19 @@ describe("referrals", () => {
     await assert.rejects(call({ name: "Bob Smith", role: "x", contact: { email: "b@example.com" }, why: "y", quote: "z" }), /already proposed/);
   });
 
-  test("approve and decline: operator or project overseer, only from proposed; the wrap-up never", () => {
+  test("approve and decline: operator or project overseer, only from proposed; the wrap-up never", async () => {
     const bob = orgs.readRoster(org.id).find((p) => p.name === "Bob Smith")!;
-    assert.throws(() => orgs.decidePerson(org.id, bob.id, true, { kind: "wrapup" }), /may not approve/);
-    assert.throws(() => orgs.applyChange(org.id, bob.id, { status: "active" }, { kind: "overseer" }), /may not write status/, "no status writes outside a decision");
-    const approved = orgs.approvePerson(org.id, bob.id, { kind: "overseer", sessionId: "po-1" });
+    await assert.rejects(orgs.decidePerson(org.id, bob.id, true, { kind: "wrapup" }), /may not approve/);
+    await assert.rejects(orgs.applyChange(org.id, bob.id, { status: "active" }, { kind: "overseer" }), /may not write status/, "no status writes outside a decision");
+    // In a turn the operator started (an unattended approval needs L2 and waits in a hold).
+    const approved = await orgs.decidePerson(org.id, bob.id, true, { kind: "overseer", sessionId: "po-1" }, (await import("./org-engine")).envelopeFor(org.id, project.id, { by: "overseer", attended: true }));
     assert.equal(approved.status, "active");
     assert.equal(orgs.readHistory(org.id, bob.id).at(-1)!.by.kind, "overseer");
-    assert.throws(() => orgs.declinePerson(org.id, bob.id), /not waiting for approval/);
+    await assert.rejects(orgs.declinePerson(org.id, bob.id), /not waiting for approval/);
     assert.equal(baton.batonSummaryField(c.path)!.proposals, undefined, "no longer waiting");
     // Decline keeps the referral and marks them left.
-    const eve = orgs.addPerson(org.id, { name: "Eve", status: "proposed", role: "Ops", contact: { phone: "1" }, referral: { why: "w", referredBy: tony.id } });
-    const declined = orgs.declinePerson(org.id, eve.id);
+    const eve = await orgs.addPerson(org.id, { name: "Eve", status: "proposed", role: "Ops", contact: { phone: "1" }, referral: { why: "w", referredBy: tony.id } });
+    const declined = await orgs.declinePerson(org.id, eve.id);
     assert.equal(declined.status, "left");
     assert.equal(declined.referral?.why, "w");
     assert.match((baton.resolveTarget(orgs.readRoster(org.id), "Eve", "Omar") as { error: string }).error, /declined/);
@@ -270,8 +271,8 @@ describe("the wrap-up's writer", () => {
     assert.equal(wrap.statesLanguage("Hola, prefiero español por favor"), true);
     assert.equal(wrap.statesLanguage("We run everything on Xero and I write SQL daily"), false, "a message in English states nothing");
     const d = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Lang", goal: "g" });
-    const ana = orgs.addPerson(org.id, { name: "Ana", role: "Ops", language: "es-CO" });
-    const ben = orgs.addPerson(org.id, { name: "Ben", role: "Ops" });
+    const ana = await orgs.addPerson(org.id, { name: "Ana", role: "Ops", language: "es-CO" });
+    const ben = await orgs.addPerson(org.id, { name: "Ben", role: "Ops" });
     baton.handTo(d.sessionId, ana.id, "q", "", new Date());
     baton.handTo(d.sessionId, ben.id, "q", "", new Date());
     const br = [
@@ -328,7 +329,7 @@ describe("the wrap-up's writer", () => {
     const line = orgs.readHistory(org.id, maria.id).at(-1)!;
     assert.deepEqual(line.by, { kind: "wrapup", sessionId: c.sessionId, entryId: "u2", quote: "prefiero español por favor" });
     // One-click revert of an autonomous change.
-    orgs.revertChange(org.id, maria.id, line.at);
+    await orgs.revertChange(org.id, maria.id, line.at);
     assert.equal(orgs.readRoster(org.id).find((p) => p.id === maria.id)!.language, "");
     const feed = orgs.recentChanges(org.id, 3);
     assert.equal(feed[0]!.revertOf, line.at);
@@ -381,7 +382,7 @@ describe("routes: spawn-for-person, owner, handoff", () => {
   });
 
   test("approve/decline/changes routes; /handoff refuses a proposed person", async () => {
-    const zed = orgs.addPerson(org.id, { name: "Zed", status: "proposed", role: "Ops", contact: { email: "z@example.com" }, referral: { why: "w", referredBy: OPERATOR } });
+    const zed = await orgs.addPerson(org.id, { name: "Zed", status: "proposed", role: "Ops", contact: { email: "z@example.com" }, referral: { why: "w", referredBy: OPERATOR } });
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Hand", goal: "g" });
     const refused = await json("POST", `/api/baton/${c.sessionId}/handoff`, { to: zed.id, question: "q" });
     assert.equal(refused.status, 409);
@@ -428,14 +429,14 @@ describe("the operator's transcript", async () => {
 });
 
 describe("referral contacts", () => {
-  test("a placeholder is no contact channel; real ones pass", () => {
+  test("a placeholder is no contact channel; real ones pass", async () => {
     assert.deepEqual(orgs.contactProblems({ email: "ask Tony for Bob Smith's contact" }), ["the email is not an email address"]);
     assert.deepEqual(orgs.contactProblems({ phone: "unknown" }), ["the phone is not a phone number"]);
     assert.deepEqual(orgs.contactProblems({ whatsapp: "12 34" }), ["the WhatsApp is not a phone number"]);
     assert.deepEqual(orgs.contactProblems({ other: "ask around" }), ["the other channel names no handle or number"]);
     assert.deepEqual(orgs.contactProblems({ email: "bob@gate.example", phone: "+57 (300) 123-4567", other: "Slack: @bob" }), []);
-    assert.throws(
-      () => orgs.applyChange(org.id, null, { name: "Placeholder Pete", status: "proposed", role: "x", contact: { email: "ask Tony" }, referral: { why: "w", referredBy: tony.id } }, { kind: "referral" }),
+    await assert.rejects(
+      orgs.addPerson(org.id, { name: "Placeholder Pete", status: "proposed", role: "x", contact: { email: "ask Tony" }, referral: { why: "w", referredBy: tony.id } }, { kind: "referral" }),
       /real way to reach them/,
     );
   });

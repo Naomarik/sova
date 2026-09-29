@@ -55,8 +55,8 @@ describe("decisions routes", async () => {
   const b = await orgs.createOrg({ name: "Org B", dir: join(tmp, "wb") });
   mkdirSync(join(tmp, "pa"));
   mkdirSync(join(tmp, "pb"));
-  const pa = orgs.addProject(a.id, { name: "A", root: join(tmp, "pa") });
-  const pb = orgs.addProject(b.id, { name: "B", root: join(tmp, "pb") });
+  const pa = await orgs.addProject(a.id, { name: "A", root: join(tmp, "pa") });
+  const pb = await orgs.addProject(b.id, { name: "B", root: join(tmp, "pb") });
 
   test("an unknown org or project is 404, and a project is reachable only under its own org", async () => {
     assert.equal((await call("GET", `/api/orgs/org_nope/projects/${pa.id}/decisions`)).status, 404);
@@ -102,7 +102,7 @@ describe("decisions routes", async () => {
   });
 
   test("PATCH …/decisions/:did {ownerArea}: a string is required; an unknown decision is 404, another project's too; the choices come with the list", async () => {
-    orgs.addPerson(a.id, { name: "Ana", role: "Lead", decides: ["website"] });
+    await orgs.addPerson(a.id, { name: "Ana", role: "Lead", decides: ["website"] });
     const base = `/api/orgs/${a.id}/projects/${pa.id}`;
     assert.equal((await call("PATCH", `${base}/decisions/x:y`, { ownerArea: 5 })).status, 400);
     assert.equal((await call("PATCH", `${base}/decisions/x:y`, {})).status, 400);

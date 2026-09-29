@@ -607,15 +607,25 @@ const str = (description: string, extra: Record<string, unknown> = {}) => ({ typ
 const int = (description: string, extra: Record<string, unknown> = {}) => ({ type: "integer", description, ...extra });
 const bool = (description: string) => ({ type: "boolean", description });
 
+/** The confirm card whose click opened this turn, on every route call the tools make: the org charts
+    check that a people-facing act's targets are on it (§app.overseer/org-people-facing). Read by a
+    route only next to the sender mark (org-routes operatorBy). */
+export const OVERSEER_CARD_HEADER = "x-sova-overseer-card";
+export function cardHeader(items: readonly SovaConfirmItem[]): string {
+  const ids = (kind: SovaConfirmItem["kind"]) => items.filter((i) => i.kind === kind).map((i) => i.id);
+  return JSON.stringify({ people: ids("person"), projects: ids("project"), sessions: ids("session") });
+}
+
 /**
  * Build the Overseer's tool set. `limits` is shared with the extension that resets it per turn.
  * Every tool's `promptSnippet` is its one line in the prompt's catalogue ({{TOOLS}}).
  */
 export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redactor: () => Redactor = serverRedactor): Tool[] {
   async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<{ status: number; json: any }> {
+    const card = host.confirmed();
     const res = await host.request(path, {
       method,
-      headers: { "content-type": "application/json", ...headers },
+      headers: { "content-type": "application/json", ...(card ? { [OVERSEER_CARD_HEADER]: cardHeader(card) } : {}), ...headers },
       ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
     });
     let json: any = null;

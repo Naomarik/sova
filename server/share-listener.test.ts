@@ -70,9 +70,9 @@ test("limits: 10 messages a minute per token; the per-address limiter; the proxy
 describe("the share server", async () => {
   const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-  const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
-  const maria = orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+  const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
   const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "SECRET-GOAL" });
   // The registry moves, and the transcript gets the entry hand_to writes (here by hand, no runtime).
   const { n } = baton.handTo(c.sessionId, maria.id, "Format?", "for Maria");
@@ -158,7 +158,7 @@ describe("the share server", async () => {
   });
 
   test("an offer: 'taken' for the others while one holds the lease (409, code taken, holder unnamed); 410 once withdrawn", async () => {
-    const carlos = orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
+    const carlos = await orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
     const o = baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id, carlos.id], publicTitle: "Offer", goal: "g", question: "Who hosts?" });
     const tok = (id: string) => o.links!.find((l) => l.personId === id)!.token;
     const pooled = await (await fetch(`${base}/api/h/${tok(maria.id)}`)).json();

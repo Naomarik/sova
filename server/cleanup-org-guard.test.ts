@@ -41,8 +41,8 @@ function file(dir: string, id: string, cwd: string, days: number, text?: string)
 
 const org = await orgs.createOrg({ name: "Guarded", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
 const wsDir = orgs.orgDir(org.id);
 const wsSessions = join(wsDir, "sessions");
 

@@ -41,9 +41,9 @@ after(async () => {
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
-const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
 const start = (to: string | string[], extra: Record<string, unknown> = {}) =>
   baton.createBaton({ orgId: org.id, projectId: project.id, to, publicTitle: "Hosting", goal: "Find the server", ...extra });
 const rowOf = (sid: string) => baton.batonById(sid)!.row;

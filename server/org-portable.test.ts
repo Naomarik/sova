@@ -42,7 +42,7 @@ const git = (dir: string, ...args: string[]) => execFileSync("git", ["-C", dir, 
 describe("the overseer's started list moves from the host-local memo into the repo", async () => {
   const org = await orgs.createOrg({ name: "Migrate", dir: join(root, "ws-m") });
   mkdirSync(join(root, "proj-m"));
-  const project = orgs.addProject(org.id, { name: "M", root: join(root, "proj-m") });
+  const project = await orgs.addProject(org.id, { name: "M", root: join(root, "proj-m") });
   const p = store.projectOverseerPaths(org.id, project.id);
   const legacy = [
     { sessionId: "s-gather", kind: "gathering", createdAt: "2026-09-01T00:00:00.000Z" },
@@ -97,17 +97,17 @@ describe("the overseer's started list moves from the host-local memo into the re
 describe("clone + attach = the whole organization", async () => {
   const a = await orgs.createOrg({ name: "Northwind Traders", dir: join(root, "ws-a") });
   const aDir = orgs.orgDir(a.id);
-  const tony = orgs.addPerson(a.id, { name: "Tony Reyes", role: "Finance", contact: { email: "tony@example.com" }, decides: ["payroll"] });
-  orgs.applyChange(a.id, tony.id, { skills: ["SAP"] }, { kind: "wrapup", sessionId: "s", quote: "I run SAP" });
+  const tony = await orgs.addPerson(a.id, { name: "Tony Reyes", role: "Finance", contact: { email: "tony@example.com" }, decides: ["payroll"] });
+  await orgs.applyChange(a.id, tony.id, { skills: ["SAP"] }, { kind: "wrapup", sessionId: "s", quote: "I run SAP" });
   mkdirSync(join(root, "proj-a"));
-  const project = orgs.addProject(a.id, { name: "Portal", root: join(root, "proj-a") });
+  const project = await orgs.addProject(a.id, { name: "Portal", root: join(root, "proj-a") });
   const c1 = baton.createBaton({ orgId: a.id, projectId: project.id, to: tony.id, publicTitle: "Payroll day", goal: "Find the payroll day" });
   const again = baton.rotateLink(c1.sessionId);
   const overseer = await po.ensureProjectOverseer(a.id, project.id);
   const pA = store.projectOverseerPaths(a.id, project.id);
   store.noteStarted(pA, c1.sessionId, "gathering");
   await po.patchProjectOverseer(a.id, project.id, { autonomy: "L2" });
-  orgs.patchOrg(a.id, { about: "Northwind closes its books on the 5th." });
+  await orgs.patchOrg(a.id, { about: "Northwind closes its books on the 5th." });
   const tokens = [c1.token!, again.token];
   // Tony opened his link once (§app.baton/visits): the log is in the repo and moves with it.
   const UA = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) Version/18.0 Mobile/15E148 Safari/604.1";
@@ -117,7 +117,7 @@ describe("clone + attach = the whole organization", async () => {
   assert.equal((await commitAll(aDir, "test commit")).committed, true);
   const bDir = join(root, "ws-b");
   execFileSync("git", ["clone", "-q", aDir, bDir]);
-  orgs.detachOrg(a.id);
+  await orgs.detachOrg(a.id);
   // The old host's copy is gone: the headers' cwds (ws-a, proj-a) no longer exist here.
   renameSync(aDir, join(root, "ws-a-gone"));
   mkdirSync(join(root, "proj-b"));
@@ -129,7 +129,7 @@ describe("clone + attach = the whole organization", async () => {
   }
 
   const b = await orgs.attachOrg({ dir: bDir });
-  orgs.patchProject(b.id, project.id, { root: join(root, "proj-b") });
+  await orgs.patchProject(b.id, project.id, { root: join(root, "proj-b") });
 
   test("the repo holds every file of the org's state", () => {
     const files = git(bDir, "ls-files").split("\n");
@@ -165,7 +165,7 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(resumed.paused, null);
     assert.equal(resumed.effective.autonomy, "L2");
     // Another settings change does not count as setting the level: only autonomy resumes.
-    orgs.detachOrg(b.id);
+    await orgs.detachOrg(b.id);
     await orgs.attachOrg({ dir: bDir });
     await po.patchProjectOverseer(b.id, project.id, { watch: false });
     assert.ok((await po.projectOverseerInfo(b.id, project.id)).paused, "a watch toggle leaves it paused");
@@ -175,7 +175,7 @@ describe("clone + attach = the whole organization", async () => {
   test("an org created on this host is not paused", async () => {
     const fresh = await orgs.createOrg({ name: "Fresh", dir: join(root, "ws-fresh") });
     mkdirSync(join(root, "proj-f"));
-    const pr = orgs.addProject(fresh.id, { name: "F", root: join(root, "proj-f") });
+    const pr = await orgs.addProject(fresh.id, { name: "F", root: join(root, "proj-f") });
     assert.equal(orgs.overseerPausedSince(fresh.id, pr.id), null);
   });
 

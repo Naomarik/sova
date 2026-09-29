@@ -22,8 +22,8 @@ after(() => rmSync(root, { recursive: true, force: true }));
 describe("stale wrap-up rows", async () => {
   const org = await orgs.createOrg({ name: "Rec", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "P", root: join(root, "proj") });
-  const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+  const project = await orgs.addProject(org.id, { name: "P", root: join(root, "proj") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
   const mk = (wrapup: WrapupInfo) => {
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "t", goal: "g" });
     baton.markDone(c.sessionId, new Date());

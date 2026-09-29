@@ -33,8 +33,8 @@ after(async () => {
 describe("a baton session's runtime", async () => {
   const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-  const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT", voice: "Direct and technical, short lists." });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT", voice: "Direct and technical, short lists." });
   const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server" });
 
   test("opens as a baton session: exactly its tools, the wrap-up's inactive, only Sova's inline extension", async () => {

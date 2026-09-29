@@ -40,10 +40,10 @@ after(async () => {
 const org = await orgs.createOrg({ name: "Gate Archery", dir: join(root, "ws") });
 mkdirSync(join(root, "a"));
 mkdirSync(join(root, "b"));
-const pa = orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
-const pb = orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
-const alp = orgs.addPerson(org.id, { name: "Alperen Kaya", role: "Director" });
-const kim = orgs.addPerson(org.id, { name: "Kim Lee", role: "Coach", voice: "Warm and patient, likes examples", contact: { email: "kim.lee@example.test" } });
+const pa = await orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
+const pb = await orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
+const alp = await orgs.addPerson(org.id, { name: "Alperen Kaya", role: "Director" });
+const kim = await orgs.addPerson(org.id, { name: "Kim Lee", role: "Coach", voice: "Warm and patient, likes examples", contact: { email: "kim.lee@example.test" } });
 
 const app = new Hono();
 registerOrgRoutes(app);
@@ -91,8 +91,8 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
   });
 
   test("each private source refuses the post, never quoted", async () => {
-    orgs.setOrgOwner(org.id, alp.id);
-    orgs.patchOrg(org.id, { about: "They are selling the academy next spring and must not hear of it." });
+    await orgs.setOrgOwner(org.id, alp.id);
+    await orgs.patchOrg(org.id, { about: "They are selling the academy next spring and must not hear of it." });
     writeNotes("Kim tends to overpromise on delivery dates, check with Bob.\n", store.projectOverseerPaths(org.id, pa.id).notes);
     baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "Find out whether Kim will accept weekend shifts quietly", mintLink: false });
     const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";

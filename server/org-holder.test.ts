@@ -30,7 +30,7 @@ const holderIn = (dir: string, id: string, rev?: string) =>
   holderOfSnapshot(`org/${id}`, rev ? git(dir, "show", `${rev}:${orgSnapshotPath(id)}`) : git(dir, "show", `HEAD:${orgSnapshotPath(id)}`));
 
 /** "laptop" holds org `id` (an engine of its own, in its own state dir) and pushes it to `remote`. */
-async function laptopRepo(id: string, remote: string): Promise<{ dir: string; host: InstanceType<typeof OrgHost> }> {
+async function laptopRepo(id: string, remote: string): Promise<{ dir: string; host: Awaited<ReturnType<typeof OrgHost.open>> }> {
   const dir = join(root, `laptop-${id}`);
   mkdirSync(join(dir, "sessions"), { recursive: true });
   git(root, "init", "-q", "-b", "main", dir);
@@ -44,7 +44,7 @@ async function laptopRepo(id: string, remote: string): Promise<{ dir: string; ho
   git(dir, "push", "-q", "origin", "main");
   return { dir, host };
 }
-async function laptopSays(l: { dir: string; host: InstanceType<typeof OrgHost> }, id: string, event: "holder/claim" | "holder/release", message: string): Promise<void> {
+async function laptopSays(l: { dir: string; host: Awaited<ReturnType<typeof OrgHost.open>> }, id: string, event: "holder/claim" | "holder/release", message: string): Promise<void> {
   await l.host.act(`org/${id}`, event, event === "holder/claim" ? { ...LAPTOP, since: SINCE + 7_200_000 } : { hostId: LAPTOP.hostId }, { by: "system" });
   git(l.dir, "add", "-A");
   git(l.dir, "commit", "-q", "-m", message);

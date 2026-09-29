@@ -166,6 +166,18 @@ export const HOLD_CHOICES = [0, 2, 5, 10, 30, 60] as const;
 export const holdProblem = (v: unknown): string | null =>
   typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= HOLD_MIN_MAX ? null : `The hold must be a whole number of minutes from 0 to ${HOLD_MIN_MAX} (0: no hold).`;
 
+/** The act kinds an unattended act of the project's may be marked with "needs overseer confirmation"
+    (r8(4), q12): such an act, once held, waits past its hold until the overseer approves or cancels it.
+    Each is an act's `:confirm-kind` in the charts. Display order. */
+export const CONFIRM_KINDS = ["message", "gather", "offer", "close", "promote", "build", "prompt", "owner-update", "roster-approve", "roster-decline"] as const;
+export type ConfirmKind = (typeof CONFIRM_KINDS)[number];
+/** Every kind reaches a person or the client's code, so every one is on by default. */
+export const DEFAULT_CONFIRM_KINDS: readonly ConfirmKind[] = CONFIRM_KINDS;
+export const confirmKindsProblem = (v: unknown): string | null =>
+  Array.isArray(v) && v.every((k) => (CONFIRM_KINDS as readonly unknown[]).includes(k)) && new Set(v).size === v.length
+    ? null
+    : `confirmKinds must list act kinds from: ${CONFIRM_KINDS.join(", ")}.`;
+
 /**
  * Something a refusal held for later (host-local, in the watch memo): `key` is `day:<kind>`,
  * `message:<kind>` or `looks`; `retryAt` (ISO) is when the watch loop turns it into a
@@ -223,10 +235,12 @@ export interface ProjectOverseerSettings {
   /** An act that reaches a person or the client's code waits this many minutes in its hold, where
       the operator (Needs you) or the overseer may cancel it (0–1440; 0 = no hold). */
   holdMin: number;
+  /** The act kinds that, held, wait for the overseer's confirmation (CONFIRM_KINDS; default all). */
+  confirmKinds: ConfirmKind[];
   extraSystemPrompt: string;
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "extraSystemPrompt">> & {
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "confirmKinds" | "extraSystemPrompt">> & {
   caps?: Partial<ProjectOverseerCaps>;
 };
 

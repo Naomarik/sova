@@ -23,7 +23,7 @@ import {
   type StakeholderChange,
 } from "../shared/orgs";
 import { actOrThrow, closeOrgHost, envelopeFor, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, type OrgHostApi } from "./org-engine";
-import type { Envelope } from "./org-envelope";
+import type { Envelope, EnvelopeCard } from "./org-envelope";
 import { hostIdentity } from "./org-holder";
 import { OrgHost } from "./org-host";
 import { setExtraSessionRoots } from "./paths";
@@ -47,16 +47,8 @@ import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-g
  * acts the charts take or refuse with today's sentences.
  */
 
-export class OrgError extends Error {
-  constructor(
-    message: string,
-    readonly status: 400 | 404 | 409 | 410 = 400,
-    /** A refusal the client acts on by name (`held`: attach an org another host holds). */
-    readonly code?: string,
-  ) {
-    super(message);
-  }
-}
+import { OrgError } from "./org-error";
+export { OrgError };
 
 const INDEX_VERSION = 1;
 const indexFile = () => join(stateRoot(), "orgs.json");
@@ -241,6 +233,7 @@ export function orgIdIn(dir: string): string | null {
     on it first (loaded here, not imported above: that module imports this one). */
 async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
   await import("./org-effects");
+  await import("./project-overseer-store"); // the settings every act is stamped with
   return openOrgHost({ orgId, workspaceDir: dir, stateDir: stateRoot() });
 }
 
@@ -258,12 +251,13 @@ export async function openAttachedOrgs(): Promise<void> {
 export const attachedWorkspaces = (): { id: string; dir: string }[] => readIndex().orgs.map((o) => ({ id: o.id, dir: o.dir }));
 
 /** The operator's own act, or theirs made through the global Overseer (§app.overseer/org-attribution). */
-export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: string };
+/** `card`: the confirm card of the global Overseer's turn (every target of a people-facing act must be on it). */
+export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: string; card?: EnvelopeCard };
 const OPERATOR_BY: OperatorBy = { kind: "operator" };
 
 /** The envelope of the operator's act (never level-checked: the charts pass the operator's acts). */
 export function operatorEnvelope(orgId: string, projectId: string | null, by: OperatorBy = OPERATOR_BY, extra: Record<string, unknown> = {}): Envelope {
-  return { ...envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}) }), ...extra };
+  return { ...envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}), ...(by.card ? { card: by.card } : {}) }), ...extra };
 }
 
 /** Run after an attach: the modules that keep host-local state about the org's sessions (titles,
@@ -395,6 +389,12 @@ export async function detachOrg(orgId: string): Promise<void> {
   }
 }
 
+/** The engine of an attached org: 404 when this host has no such org (before "its engine is not open"). */
+function orgHost(orgId: string): OrgHostApi {
+  orgDir(orgId);
+  return hostOf(orgId);
+}
+
 // ---- reads (the charts, as the wire shapes them) -------------------------------------------------------
 
 function orgOfData(orgId: string, d: Record<string, unknown>): Org {
@@ -415,7 +415,7 @@ function orgOfData(orgId: string, d: Record<string, unknown>): Org {
 
 export function readOrg(orgId: string): Org {
   const dir = orgDir(orgId);
-  const d = hostOf(orgId).data(orgSid(orgId));
+  const d = orgHost(orgId).data(orgSid(orgId));
   if (!d) throw new OrgError(`The workspace repo at ${dir} has no readable organization`, 409);
   return orgOfData(orgId, d);
 }
@@ -444,7 +444,7 @@ function personOf(orgId: string, s: { configuration: string[]; data: Record<stri
 
 /** The roster, in the order people were added (their first history line). */
 export function readRoster(orgId: string): Person[] {
-  const people = hostOf(orgId)
+  const people = orgHost(orgId)
     .sessions("person")
     .map((s) => personOf(orgId, s));
   const order = historyOrder(orgDir(orgId));
@@ -452,7 +452,7 @@ export function readRoster(orgId: string): Person[] {
 }
 
 export function findPerson(orgId: string, personId: string): Person | undefined {
-  const s = hostOf(orgId).sessions("person").find((x) => x.id === personSid(orgId, personId));
+  const s = orgHost(orgId).sessions("person").find((x) => x.id === personSid(orgId, personId));
   return s ? personOf(orgId, s) : undefined;
 }
 
@@ -481,7 +481,7 @@ function projectOf(orgId: string, d: Record<string, unknown>, configuration: rea
 
 /** The org's projects, oldest first. */
 export function readProjects(orgId: string): OrgProject[] {
-  return hostOf(orgId)
+  return orgHost(orgId)
     .sessions("project")
     .map((s) => projectOf(orgId, s.data, s.configuration))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
@@ -972,7 +972,7 @@ export async function setProjectArchived(orgId: string, projectId: string, archi
 /** Whether the project is archived (false for an unknown one). */
 export function projectArchived(orgId: string, projectId: string): boolean {
   try {
-    return !!hostOf(orgId).configuration(projectSid(orgId, projectId))?.includes("archived");
+    return !!orgHost(orgId).configuration(projectSid(orgId, projectId))?.includes("archived");
   } catch {
     return false;
   }
@@ -992,7 +992,7 @@ export function assertNotArchived(orgId: string, projectId: string): void {
 /** When the project's overseer was paused by an attach on this host (ISO), or null: not paused. */
 export function overseerPausedSince(orgId: string, projectId: string): string | null {
   try {
-    const host = hostOf(orgId);
+    const host = orgHost(orgId);
     if (!host.configuration(watchSid(orgId, projectId))?.includes("paused")) return null;
     return readIndex().orgs.find((o) => o.id === orgId)?.attachedAt || new Date(0).toISOString();
   } catch {
@@ -1002,7 +1002,7 @@ export function overseerPausedSince(orgId: string, projectId: string): string | 
 
 /** The operator set the project overseer's level on this host: an attach's pause ends (any level). */
 export async function resumeOverseer(orgId: string, projectId: string): Promise<void> {
-  const host = hostOf(orgId);
+  const host = orgHost(orgId);
   if (!host.configuration(watchSid(orgId, projectId))) return;
   await host.act(watchSid(orgId, projectId), "operator/level-set", {}, operatorEnvelope(orgId, projectId));
 }
@@ -1045,7 +1045,7 @@ export function orgSummaries(): OrgSummary[] {
     try {
       org = readOrg(e.id);
       projects = readProjects(e.id);
-      people = hostOf(e.id).sessions("person").length;
+      people = orgHost(e.id).sessions("person").length;
     } catch {
       continue;
     }
@@ -1062,7 +1062,7 @@ export function orgsInfo(): OrgsInfo {
 /** The workspace's file problems, one sentence each (the page's banner and the Workspace dot). */
 function problemsOf(orgId: string, dir: string): string[] {
   try {
-    return hostOf(orgId)
+    return orgHost(orgId)
       .problems()
       .map((p) => `${relative(dir, p.file).startsWith("..") ? p.file : relative(dir, p.file)} can't be read: ${p.why}`);
   } catch (err) {

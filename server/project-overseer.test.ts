@@ -41,7 +41,7 @@ after(async () => {
 describe("a project overseer", async () => {
   const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
 
   test("GET before the first open: no conversation, L0 while the roster is empty", async () => {
     const info = await po.projectOverseerInfo(org.id, project.id);
@@ -145,7 +145,7 @@ describe("a project overseer", async () => {
   });
 
   test("with an active person on the roster the setting is in force", async () => {
-    orgs.addPerson(org.id, { name: "Tony", role: "IT", decides: ["invoicing"] });
+    await orgs.addPerson(org.id, { name: "Tony", role: "IT", decides: ["invoicing"] });
     const info = await po.projectOverseerInfo(org.id, project.id);
     assert.equal(info.effective.autonomy, "L2");
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
@@ -165,7 +165,7 @@ describe("its reach: the project root only", async () => {
   writeFileSync(join(projRoot, "README.md"), "inside\n");
   writeFileSync(join(box, "outside.txt"), "outside\n");
   const org = await orgs.createOrg({ name: "Reach", dir: join(root, "ws4") });
-  const project = orgs.addProject(org.id, { name: "Reach", root: projRoot });
+  const project = await orgs.addProject(org.id, { name: "Reach", root: projRoot });
   const text = (r: { content: { type: string; text?: string }[] }) => r.content.map((c) => c.text ?? "").join("");
   const run = async (name: string, params: Record<string, unknown>) => {
     const chat = await acquireChat((await po.ensureProjectOverseer(org.id, project.id)).path);
@@ -192,20 +192,20 @@ describe("its reach: the project root only", async () => {
     assert.match(chat.session.systemPrompt, /PROJECT context/);
   });
 
-  test("a project root may not be, hold or sit inside an org's workspace, nor sit inside Sova's state", () => {
+  test("a project root may not be, hold or sit inside an org's workspace, nor sit inside Sova's state", async () => {
     mkdirSync(join(root, "ws4", "inner"), { recursive: true });
     mkdirSync(join(agentDir, "sova", "x"), { recursive: true });
     for (const bad of [join(root, "ws4"), join(root, "ws4", "inner"), root, join(agentDir, "sova", "x")])
-      assert.throws(() => orgs.addProject(org.id, { name: "Bad", root: bad }), /must not be, hold or sit inside/, bad);
-    assert.throws(() => orgs.patchProject(org.id, project.id, { root: join(root, "ws4") }), /must not be/);
-    assert.equal(orgs.addProject(org.id, { name: "Beside", root: box }).root, box, "beside the workspace is fine");
+      await assert.rejects(orgs.addProject(org.id, { name: "Bad", root: bad }), /must not be, hold or sit inside/, bad);
+    await assert.rejects(orgs.patchProject(org.id, project.id, { root: join(root, "ws4") }), /must not be/);
+    assert.equal((await orgs.addProject(org.id, { name: "Beside", root: box })).root, box, "beside the workspace is fine");
   });
 });
 
 describe("the operator's to-dos and ideas are their own list, never a reason to look", async () => {
   const org = await orgs.createOrg({ name: "Queue", dir: join(root, "ws5") });
   mkdirSync(join(root, "proj5"));
-  const project = orgs.addProject(org.id, { name: "Queue", root: join(root, "proj5") });
+  const project = await orgs.addProject(org.id, { name: "Queue", root: join(root, "proj5") });
   await po.ensureProjectOverseer(org.id, project.id);
   const p = store.projectOverseerPaths(org.id, project.id);
   const { Hono } = await import("hono");
@@ -234,8 +234,8 @@ describe("the operator's to-dos and ideas are their own list, never a reason to 
 describe("its gathering sessions, as the person sees them", async () => {
   const org = await orgs.createOrg({ name: "Acme Team", dir: join(root, "ws2") });
   mkdirSync(join(root, "proj2"));
-  const project = orgs.addProject(org.id, { name: "Books", root: join(root, "proj2") });
-  const tony = orgs.addPerson(org.id, { name: "Tony", role: "Finance", decides: ["invoicing"] });
+  const project = await orgs.addProject(org.id, { name: "Books", root: join(root, "proj2") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony", role: "Finance", decides: ["invoicing"] });
   await po.ensureProjectOverseer(org.id, project.id);
   await po.patchProjectOverseer(org.id, project.id, { model: "ollama-cloud/own-model", thinking: "low" });
 
@@ -316,12 +316,12 @@ describe("its gathering sessions, as the person sees them", async () => {
     }
   });
 
-  test("the prompt names the project's main stakeholder while they are active", () => {
-    orgs.patchProject(org.id, project.id, { stakeholder: tony.id });
+  test("the prompt names the project's main stakeholder while they are active", async () => {
+    await orgs.patchProject(org.id, project.id, { stakeholder: tony.id });
     try {
       assert.match(po.renderProjectOverseerPrompt(org.id, project.id, []), /Main stakeholder: Tony: decides every area of this project that no one else on the roster decides\./);
     } finally {
-      orgs.patchProject(org.id, project.id, { stakeholder: null });
+      await orgs.patchProject(org.id, project.id, { stakeholder: null });
     }
     assert.doesNotMatch(po.renderProjectOverseerPrompt(org.id, project.id, []), /Main stakeholder/);
   });
@@ -366,9 +366,9 @@ describe("promotion: an out-of-area decision is never the overseer's", async () 
   const { BATON_DECISION_ENTRY } = await import("../shared/baton");
   const org = await orgs.createOrg({ name: "Acme", dir: join(root, "ws3") });
   mkdirSync(join(root, "proj3"));
-  const project = orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj3") });
-  orgs.addPerson(org.id, { name: "Tony", role: "Finance", decides: ["invoicing"] });
-  const ana = orgs.addPerson(org.id, { name: "Ana", role: "IT", decides: ["hosting"] });
+  const project = await orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj3") });
+  await orgs.addPerson(org.id, { name: "Tony", role: "Finance", decides: ["invoicing"] });
+  const ana = await orgs.addPerson(org.id, { name: "Ana", role: "IT", decides: ["hosting"] });
   await po.ensureProjectOverseer(org.id, project.id);
   // A person with no say over invoicing states an invoicing rule in her own gathering session.
   const b = baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Hosting", goal: "g", question: "q" });
@@ -462,8 +462,8 @@ describe("limits: Unlimited, at once, pace (§app.project-overseer/limits)", () 
 describe("limits through PATCH, held items and their retry", async () => {
   const org = await orgs.createOrg({ name: "Knobs", dir: join(root, "ws-knobs") });
   mkdirSync(join(root, "proj-knobs"));
-  const project = orgs.addProject(org.id, { name: "Shop", root: join(root, "proj-knobs") });
-  orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["menu"] });
+  const project = await orgs.addProject(org.id, { name: "Shop", root: join(root, "proj-knobs") });
+  await orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["menu"] });
   await po.ensureProjectOverseer(org.id, project.id);
   const p = store.projectOverseerPaths(org.id, project.id);
 
@@ -656,7 +656,7 @@ describe("thinking levels a model doesn't offer", () => {
 describe("the org's About text in its prompt (§app.organizations/about)", async () => {
   const org = await orgs.createOrg({ name: "Aboutco", dir: join(root, "ws6") });
   mkdirSync(join(root, "proj6"));
-  const project = orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj6") });
+  const project = await orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj6") });
   await po.ensureProjectOverseer(org.id, project.id);
   const HEAD = "# About this organization (written by the operator)";
   const EXTRA = "# The operator's extra instructions";
@@ -669,7 +669,7 @@ describe("the org's About text in its prompt (§app.organizations/about)", async
   });
 
   test("after the fixed prompt, before the extra instructions; re-read at every render", async () => {
-    orgs.patchOrg(org.id, { about: "ABOUT-ONE: they close the books on the 5th." });
+    await orgs.patchOrg(org.id, { about: "ABOUT-ONE: they close the books on the 5th." });
     await po.patchProjectOverseer(org.id, project.id, { extraSystemPrompt: "EXTRA-ONE: be terse." });
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
     const at = prompt.indexOf(HEAD);
@@ -678,25 +678,25 @@ describe("the org's About text in its prompt (§app.organizations/about)", async
     assert.ok(prompt.indexOf("ABOUT-ONE") > at && prompt.indexOf("ABOUT-ONE") < prompt.indexOf(EXTRA));
     assert.match(prompt, /The operator wrote this about Aboutco, for you only\./);
     assert.match(prompt, /The project's extra instructions below take precedence over it\./);
-    orgs.patchOrg(org.id, { about: "ABOUT-TWO" });
+    await orgs.patchOrg(org.id, { about: "ABOUT-TWO" });
     const next = po.renderProjectOverseerPrompt(org.id, project.id, []);
     assert.ok(next.includes("ABOUT-TWO") && !next.includes("ABOUT-ONE"), "the next run reads the new text");
     await po.patchProjectOverseer(org.id, project.id, { extraSystemPrompt: "" });
     assert.ok(po.renderProjectOverseerPrompt(org.id, project.id, []).trimEnd().endsWith("ABOUT-TWO"), "last when there are no extra instructions");
   });
 
-  test("clipped to 4,000 characters; secrets redacted", () => {
+  test("clipped to 4,000 characters; secrets redacted", async () => {
     writeFileSync(join(orgs.orgDir(org.id), "about.md"), `${"a".repeat(3999)}BCDEF`);
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);
     assert.ok(prompt.includes(`${"a".repeat(3999)}B`) && !prompt.includes("BC"), "only the first 4,000 characters");
     const key = "rdAboutKey-7fQ2mZ9xL4vN8pR1sT6uW3yA5bC0dE";
     writeFileSync(join(agentDir, "auth.json"), JSON.stringify({ about: { type: "api_key", key } }));
-    orgs.patchOrg(org.id, { about: `The staging key is ${key}.` });
+    await orgs.patchOrg(org.id, { about: `The staging key is ${key}.` });
     const redacted = po.renderProjectOverseerPrompt(org.id, project.id, []);
     assert.ok(!redacted.includes(key), "a secret is redacted");
     assert.match(redacted, /The staging key is \S+\./);
     rmSync(join(agentDir, "auth.json"));
-    orgs.patchOrg(org.id, { about: "" });
+    await orgs.patchOrg(org.id, { about: "" });
     assert.ok(!po.renderProjectOverseerPrompt(org.id, project.id, []).includes(HEAD), "cleared: the section goes");
   });
 });

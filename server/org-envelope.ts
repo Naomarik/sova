@@ -43,6 +43,8 @@ export interface Envelope {
   card?: EnvelopeCard;
   /** How long a held act waits (the project's holdMin, in ms; 0 = no hold). */
   holdMs: number;
+  /** The act kinds whose held acts wait for the overseer's confirmation (overseer.json, r8(4)). */
+  confirmKinds: string[];
   turnId?: string;
   /** The project the act belongs to (the facts above are its); absent for an org-level act. The
       engine keeps it with a held act, so the act is stamped for the same project at its release. */
@@ -64,7 +66,7 @@ export interface EnvelopeInput {
   via?: "overseer";
   overseerId?: string;
   attended: boolean;
-  settings: Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin">;
+  settings: Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">;
   paused: boolean;
   rosterActive: boolean;
   archived: boolean;
@@ -100,6 +102,7 @@ export function buildEnvelope(i: EnvelopeInput): Envelope {
     atOnce: { gatheringsOpen: i.gatheringsOpen, gatheringsCap: caps.gatheringsOpen, codingRunning: i.codingRunning, codingCap: caps.codingRunning },
     ...(i.card ? { card: i.card } : {}),
     holdMs: i.settings.holdMin * 60_000,
+    confirmKinds: [...i.settings.confirmKinds],
     ...(i.turnId ? { turnId: i.turnId } : {}),
     ...(i.projectId ? { projectId: i.projectId } : {}),
   };

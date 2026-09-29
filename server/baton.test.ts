@@ -46,11 +46,11 @@ describe("baton sessions", async () => {
   const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
   const dir = orgs.orgDir(org.id);
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-  const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
-  const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
-  orgs.addPerson(org.id, { name: "Bob", status: "proposed", role: "Accountant", contact: { email: "b@x.y" }, referral: { why: "books", referredBy: "Maria" } });
-  orgs.addPerson(org.id, { name: "Old Timer", status: "left" });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+  const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
+  await orgs.addPerson(org.id, { name: "Bob", status: "proposed", role: "Accountant", contact: { email: "b@x.y" }, referral: { why: "books", referredBy: "Maria" } });
+  await orgs.addPerson(org.id, { name: "Old Timer", status: "left" });
 
   test("hand-off targets: active people by id or exact name, the operator; everyone else refused with what to do", () => {
     const roster = orgs.readRoster(org.id);
@@ -193,8 +193,8 @@ describe("after a restart each open session's count is the messages in its trans
   const { recountBudgets } = await import("./baton-recount");
   const org = await orgs.createOrg({ name: "Recount", dir: join(root, "ws-recount") });
   mkdirSync(join(root, "proj-recount"));
-  const project = orgs.addProject(org.id, { name: "P", root: join(root, "proj-recount") });
-  const tony = orgs.addPerson(org.id, { name: "Tony Recount", role: "IT" });
+  const project = await orgs.addProject(org.id, { name: "P", root: join(root, "proj-recount") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony Recount", role: "IT" });
   const userRows = (path: string, n: number) => {
     let parent = readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l)).at(-1).id;
     for (let i = 0; i < n; i++) {

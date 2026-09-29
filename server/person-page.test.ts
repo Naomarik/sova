@@ -28,12 +28,12 @@ after(() => rmSync(root, { recursive: true, force: true }));
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "a"));
 mkdirSync(join(root, "b"));
-const pa = orgs.addProject(org.id, { name: "Portal", root: join(root, "a") });
-const pb = orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
-const kim = orgs.addPerson(org.id, { name: "Kim", role: "Ops" });
-const bob = orgs.addPerson(org.id, { name: "Bob", role: "IT" });
-const cara = orgs.addPerson(org.id, { name: "Cara", role: "CEO" });
-const dee = orgs.addPerson(org.id, { name: "Dee", role: "Legal" });
+const pa = await orgs.addProject(org.id, { name: "Portal", root: join(root, "a") });
+const pb = await orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
+const kim = await orgs.addPerson(org.id, { name: "Kim", role: "Ops" });
+const bob = await orgs.addPerson(org.id, { name: "Bob", role: "IT" });
+const cara = await orgs.addPerson(org.id, { name: "Cara", role: "CEO" });
+const dee = await orgs.addPerson(org.id, { name: "Dee", role: "Legal" });
 
 let seq = 0;
 const append = (path: string, customType: string, data: object, at = new Date().toISOString()) => {
@@ -50,7 +50,7 @@ append(s1.path, BATON_DECISION_ENTRY, { area: "Hosting", statement: "We host on 
 baton.handTo(s1.sessionId, bob.id, "Which box?", "");
 const bobS1 = baton.rotateLink(s1.sessionId).token;
 // Kim proposed Pat from s1.
-const pat = orgs.applyChange(org.id, null, { name: "Pat", role: "Finance", status: "proposed", contact: { email: "pat@example.test" }, referral: { why: "knows invoices", referredBy: kim.id, sessionId: s1.sessionId } }, { kind: "referral", sessionId: s1.sessionId });
+const pat = await orgs.addPerson(org.id, { name: "Pat", role: "Finance", status: "proposed", contact: { email: "pat@example.test" }, referral: { why: "knows invoices", referredBy: kim.id, sessionId: s1.sessionId } }, { kind: "referral", sessionId: s1.sessionId });
 writeConflicts(org.id, pa.id, [
   { id: "cf_aaaaaaaa", orgId: org.id, projectId: pa.id, areaKey: "hosting", a: `${s1.sessionId}:x3`, b: "other", p: 0.9, routedTo: kim.id, routeReason: "Kim decides hosting", batonSessionId: s1.sessionId, state: "open", createdAt: "2026-09-21T00:00:00.000Z" },
 ]);

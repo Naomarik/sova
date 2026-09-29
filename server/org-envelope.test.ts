@@ -7,7 +7,7 @@ const caps: ProjectOverseerCaps = { ...DEFAULT_PO_CAPS, gatherPerTurn: 3, gather
 const base = (over: Partial<EnvelopeInput> = {}): EnvelopeInput => ({
   by: "overseer",
   attended: false,
-  settings: { autonomy: "L2", caps, holdMin: 10 },
+  settings: { autonomy: "L2", caps, holdMin: 10, confirmKinds: ["gather", "promote"] },
   paused: false,
   rosterActive: true,
   archived: false,
@@ -39,7 +39,10 @@ describe("buildEnvelope (design §4.1)", () => {
     assert.deepEqual(e.atOnce, { gatheringsOpen: 2, gatheringsCap: 5, codingRunning: 1, codingCap: 2 });
     assert.equal(e.autonomy, "L2");
     assert.equal(e.holdMs, 600_000);
-    assert.equal(buildEnvelope(base({ settings: { autonomy: "L2", caps, holdMin: 0 } })).holdMs, 0);
+    assert.equal(buildEnvelope(base({ settings: { autonomy: "L2", caps, holdMin: 0, confirmKinds: [] } })).holdMs, 0);
+    // r8(4): the project's confirmation checklist, as overseer.json has it.
+    assert.deepEqual(buildEnvelope(base()).confirmKinds, ["gather", "promote"]);
+    assert.deepEqual(buildEnvelope(base({ settings: { autonomy: "L2", caps, holdMin: 0, confirmKinds: [] } })).confirmKinds, []);
   });
 
   test("the facts pass through as given; optional fields only when set", () => {

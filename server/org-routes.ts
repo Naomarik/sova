@@ -38,6 +38,8 @@ import {
   type OperatorBy,
 } from "./orgs";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
+import { OVERSEER_CARD_HEADER } from "./overseer-tools";
+import type { EnvelopeCard } from "./org-envelope";
 import { archiveBlockers } from "./project-overseer";
 import { resolveSessionPath } from "./paths";
 import { refreshShare } from "./share/hub";
@@ -270,7 +272,21 @@ function lastOpenedOf(orgId: string): { lastOpened?: Record<string, { at?: strin
  */
 export function operatorBy(c: Context): OperatorBy {
   const overseerId = overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
-  return overseerId ? { kind: "operator", via: "overseer", overseerId } : { kind: "operator" };
+  if (!overseerId) return { kind: "operator" };
+  const card = cardOf(c.req.header(OVERSEER_CARD_HEADER));
+  return { kind: "operator", via: "overseer", overseerId, ...(card ? { card } : {}) };
+}
+
+/** The confirm card the Overseer's tool call carried (overseer-tools cardHeader); null when none or unreadable. */
+function cardOf(header: string | undefined): EnvelopeCard | null {
+  if (!header) return null;
+  try {
+    const v = JSON.parse(header) as Record<string, unknown>;
+    const ids = (k: string) => (Array.isArray(v[k]) ? (v[k] as unknown[]).filter((x): x is string => typeof x === "string") : []);
+    return { people: ids("people"), projects: ids("projects"), sessions: ids("sessions") };
+  } catch {
+    return null;
+  }
 }
 
 /** A route param ("" when absent: every lookup then answers 404). */

@@ -89,15 +89,15 @@ const M = {
 const org = await orgs.createOrg({ name: "Gate Archery", dir: join(root, "ws") });
 const ws = orgs.orgDir(org.id);
 for (const d of ["a", "b"]) mkdirSync(join(root, d));
-const pa = orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
-const pb = orgs.addProject(org.id, { name: M.offProject, root: join(root, "b") });
-const alp = orgs.addPerson(org.id, {
+const pa = await orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
+const pb = await orgs.addProject(org.id, { name: M.offProject, root: join(root, "b") });
+const alp = await orgs.addPerson(org.id, {
   name: "Alperen Kaya",
   role: M.ownerRole,
   contact: { email: M.ownerEmail },
   voice: "Formal, short sentences, owner voice",
 });
-const kim = orgs.addPerson(org.id, {
+const kim = await orgs.addPerson(org.id, {
   name: "Kim Lee",
   role: M.role,
   decides: [M.decides],
@@ -106,15 +106,14 @@ const kim = orgs.addPerson(org.id, {
   language: M.language,
   contact: { email: M.email, phone: M.phone, whatsapp: M.whatsapp, other: M.other },
 });
-orgs.applyChange(org.id, kim.id, { competence: { [M.competence]: { level: 4, n: 2 } } }, { kind: "operator" });
-const pat = orgs.applyChange(
+await orgs.applyChange(org.id, kim.id, { competence: { [M.competence]: { level: 4, n: 2 } } }, { kind: "operator" });
+const pat = await orgs.addPerson(
   org.id,
-  null,
   { name: M.proposed, role: "Finance", status: "proposed", contact: { email: "pat@example.test" }, referral: { why: M.referralWhy, referredBy: kim.id, quote: M.referralQuote } },
   { kind: "referral" },
 );
-orgs.patchOrg(org.id, { about: `${M.about}. They pay late.` });
-orgs.setOrgOwner(org.id, alp.id);
+await orgs.patchOrg(org.id, { about: `${M.about}. They pay late.` });
+await orgs.setOrgOwner(org.id, alp.id);
 
 let seq = 0;
 const line = (path: string, entry: Record<string, unknown>) => {
@@ -157,7 +156,7 @@ said(s3.path, kim.id, M.hiddenText);
 baton.setHiddenFromOwner(s3.sessionId, true);
 // On a switched-off project.
 const s4 = baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: M.offTitle, goal: "g" });
-orgs.patchProject(org.id, pb.id, { ownerHidden: true });
+await orgs.patchProject(org.id, pb.id, { ownerHidden: true });
 // A conflict with a candid routing reason.
 const ds = listDecisions(org.id, pa.id).decisions;
 writeConflicts(org.id, pa.id, [

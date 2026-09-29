@@ -1,9 +1,9 @@
 import type { Refusal, StampContext } from "./org-charts";
 import { OrgHost, type ActResult, type HostChange } from "./org-host";
-import { OrgError } from "./orgs";
+import { OrgError } from "./org-error";
 import type { ActBy, Envelope } from "./org-envelope";
 import { projectOfSession, stampEnvelope, type StampWho } from "./org-stamp";
-import { defaultPoSettings, projectOverseerPaths, readPoSettings } from "./project-overseer-store";
+import type { ProjectOverseerSettings } from "../shared/project-overseer";
 
 /**
  * The org engines of this host (design §2 "one org, one queue"): one OrgHost (server/org-host/, the
@@ -24,6 +24,19 @@ export type OrgHostApi = Pick<
   OrgHost,
   "paths" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
 >;
+
+/** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
+    registers it as it loads. Injected, so this module imports nothing that imports server/orgs.ts
+    (orgs registers its change listener here as it loads). */
+type SettingsPart = Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">;
+let settingsSource: { read(orgId: string, projectId: string, workspaceDir?: string): SettingsPart; defaults(): SettingsPart } | null = null;
+export function setProjectSettingsSource(source: NonNullable<typeof settingsSource>): void {
+  settingsSource = source;
+}
+function settingsOf(): NonNullable<typeof settingsSource> {
+  if (!settingsSource) throw new Error("The project settings reader is not loaded (server/project-overseer-store.ts).");
+  return settingsSource;
+}
 
 export interface OpenOptions {
   orgId: string;
@@ -81,7 +94,8 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
     const stamp: Stamp = (sid, _event, payload, who) => {
       if (!self) throw new Error("The org engine stamped before it opened.");
       const pid = stampProject(self, sid, payload, who);
-      return stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings());
+      const settings = settingsOf();
+      return stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
     };
     const host = await opener({ ...opts, stamp });
     self = host;
@@ -137,7 +151,8 @@ export function refusalError(r: Refusal): OrgError {
 /** The envelope for an act of `who` on the org's project (null: an org-level act), from the charts as they stand now. */
 export function envelopeFor(orgId: string, projectId: string | null, who: StampWho): Envelope {
   const host = hostOf(orgId);
-  return stampEnvelope(host, orgId, projectId, who, (pid) => readPoSettings(projectOverseerPaths(orgId, pid)), defaultPoSettings());
+  const settings = settingsOf();
+  return stampEnvelope(host, orgId, projectId, who, (pid) => settings.read(orgId, pid), settings.defaults());
 }
 
 /** Send an act; a refusal throws as the route answers it. Returns the host's result. */

@@ -51,9 +51,9 @@ describe("SessionSummary.org", async () => {
   const ws = orgs.orgDir(org.id);
   const wsSessions = join(ws, "sessions");
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Rakiba site", root: join(root, "proj") });
-  const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
-  const maria = orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
+  const project = await orgs.addProject(org.id, { name: "Rakiba site", root: join(root, "proj") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+  const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
 
   const gathering = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "g" });
   const offer = baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Payroll", goal: "g" });
@@ -109,9 +109,9 @@ describe("SessionSummary.org", async () => {
     assert.equal(isOrgSession(coding.path, coding.id), true, "the group routes refuse it");
   });
 
-  test("names follow renames at the next read; a project gone from projects.json keeps its id, loses its name", () => {
-    orgs.patchOrg(org.id, { name: "Mamluk" });
-    orgs.patchProject(org.id, project.id, { name: "Rakiba" });
+  test("names follow renames at the next read; a project gone from projects.json keeps its id, loses its name", async () => {
+    await orgs.patchOrg(org.id, { name: "Mamluk" });
+    await orgs.patchProject(org.id, project.id, { name: "Rakiba" });
     assert.deepEqual(orgLookup().of(coding.path, coding.id), { orgId: org.id, orgName: "Mamluk", projectId: project.id, projectName: "Rakiba", kind: "coding" });
     const other = orgLookup().of(coding.path, "not-started");
     assert.equal(other, undefined);
@@ -166,7 +166,7 @@ describe("SessionSummary.org", async () => {
   });
 
   test("a detached org classifies nothing: its files and coding sessions read as they did before", async () => {
-    orgs.detachOrg(org.id);
+    await orgs.detachOrg(org.id);
     const list = await byPath();
     for (const f of [coding.path, operatorCoding.path]) assert.equal(list.get(f)?.org, undefined);
     assert.equal(list.has(current.path), false, "the workspace is no longer a session root");

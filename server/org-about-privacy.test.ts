@@ -33,7 +33,7 @@ const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-m
 const { readView, viewForToken } = await import("./share/hub");
 const { createShareServer } = await import("./share/listener");
 const { listSessions } = await import("./sessions-index");
-const { WorkspaceCommitter } = await import("./workspace-commits");
+const { hostOf } = await import("./org-engine");
 const { settled } = await import("./workspace-git");
 const { addTodo, readTodos } = await import("./overseer-todos");
 const store = await import("./project-overseer-store");
@@ -164,11 +164,11 @@ function decided(file: string, by: string, area: string, statement: string): voi
 describe("the About text reaches the project overseer's prompt and nothing else", async () => {
   const org = await orgs.createOrg({ name: "Qorvex Holdings", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
-  const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
-  const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
-  const ana = orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
-  orgs.patchOrg(org.id, { about: ABOUT });
+  const project = await orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
+  const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
+  const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+  const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
+  await orgs.patchOrg(org.id, { about: ABOUT });
   await po.ensureProjectOverseer(org.id, project.id);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -301,10 +301,11 @@ describe("the About text reaches the project overseer's prompt and nothing else"
 
   test("a workspace commit's message names about.md by path only", async () => {
     const dir = orgs.orgDir(org.id);
-    orgs.patchOrg(org.id, { about: `${ABOUT} Again.` });
+    await orgs.patchOrg(org.id, { about: `${ABOUT} Again.` });
     await settled(dir);
-    const outcome = await new WorkspaceCommitter(() => [{ id: org.id, dir }], { everyMs: 0 }).tick();
-    assert.ok(outcome.some((o) => o && !("error" in o && o.error)), JSON.stringify(outcome));
+    // The residence's commit with no message of its own: the hourly one, naming what changed.
+    const out = await hostOf(org.id).act(orgs.residenceSid(org.id), "commit/now", {}, { by: "operator" }, { settle: true });
+    assert.ok(out.taken && (out.effects ?? []).some((e) => e.kind === "commit" && !e.error), JSON.stringify(out.effects));
     const messages = execFileSync("git", ["-C", dir, "log", "--format=%B"], { encoding: "utf8" });
     assert.match(messages, /about\.md/);
     assert.ok(!leaks(messages), "no commit message carries it");

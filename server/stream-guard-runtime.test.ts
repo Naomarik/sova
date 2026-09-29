@@ -169,8 +169,8 @@ describe("the stream guard against a runaway stream (real provider path, local s
   describe("a baton session's wrap-up", async () => {
     const org = await orgs.createOrg({ name: "Guard", dir: join(root, "ws") });
     mkdirSync(join(root, "bproj"), { recursive: true });
-    const project = orgs.addProject(org.id, { name: "P", root: join(root, "bproj") });
-    const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+    const project = await orgs.addProject(org.id, { name: "P", root: join(root, "bproj") });
+    const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server", model: "stub/runaway" });
 
     before(async () => {
@@ -226,8 +226,8 @@ describe("the stream guard against a runaway stream (real provider path, local s
   describe("a wrap-up cut off by a stop, not the guard", async () => {
     const org = await orgs.createOrg({ name: "Cut", dir: join(root, "ws-cut") });
     mkdirSync(join(root, "cproj"), { recursive: true });
-    const project = orgs.addProject(org.id, { name: "P", root: join(root, "cproj") });
-    const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+    const project = await orgs.addProject(org.id, { name: "P", root: join(root, "cproj") });
+    const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server", model: "stub/runaway" });
     const app = new Hono();
     registerWrapupRoutes(app);

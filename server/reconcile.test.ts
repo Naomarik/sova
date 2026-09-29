@@ -255,15 +255,16 @@ describe("decisions → conflicts → draft → promotion", async () => {
   const org = await orgs.createOrg({ name: "Gate", dir: join(tmp, "ws") });
   const client = join(tmp, "client");
   mkdirSync(client);
-  const project = orgs.addProject(org.id, { name: "Portal", root: client });
-  const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT", decides: ["hosting"] });
-  const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
-  const carlos = orgs.addPerson(org.id, { name: "Carlos Gate", role: "CEO", decides: ["invoicing"] });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: client });
+  const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT", decides: ["hosting"] });
+  const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
+  const carlos = await orgs.addPerson(org.id, { name: "Carlos Gate", role: "CEO", decides: ["invoicing"] });
   // A say over "bank access" that only a referral asserted, approved by a project overseer (not the operator): self-asserted.
-  const bob = orgs.addPerson(org.id, { name: "Bob", status: "proposed", role: "Bank liaison", decides: ["bank access"], contact: { email: "bob@example.com" }, referral: { why: "bank", referredBy: tony.id } }, { kind: "referral" });
-  orgs.approvePerson(org.id, bob.id, { kind: "overseer" });
+  const bob = await orgs.addPerson(org.id, { name: "Bob", status: "proposed", role: "Bank liaison", decides: ["bank access"], contact: { email: "bob@example.com" }, referral: { why: "bank", referredBy: tony.id } }, { kind: "referral" });
+  // In a turn the operator started (an unattended approval needs L2 and waits in a hold).
+  await orgs.decidePerson(org.id, bob.id, true, { kind: "overseer" }, (await import("./org-engine")).envelopeFor(org.id, project.id, { by: "overseer", attended: true }));
   // The same kind of referral, approved by the operator: the say counts.
-  const eve = orgs.addPerson(org.id, { name: "Eve", status: "proposed", role: "Office manager", decides: ["parking"], contact: { email: "eve@example.com" }, referral: { why: "office", referredBy: maria.id } }, { kind: "referral" });
+  const eve = await orgs.addPerson(org.id, { name: "Eve", status: "proposed", role: "Office manager", decides: ["parking"], contact: { email: "eve@example.com" }, referral: { why: "office", referredBy: maria.id } }, { kind: "referral" });
   const s1 = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Payroll", goal: "g" });
   const s2 = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "g" });
   const f1 = s1.path;
@@ -545,7 +546,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     let st = reconcile.specStatusOf(org.id, project.id);
     assert.equal(st.frozen, false);
     assert.equal(st.editedOutside, undefined);
-    st = reconcile.setFrozen(org.id, project.id, true);
+    st = await reconcile.setFrozen(org.id, project.id, true);
     assert.equal(st.frozen, true);
     assert.equal(st.editedOutside, false);
     assert.equal(orgs.readProjects(org.id).find((p) => p.id === project.id)!.spec?.frozen, true, "stored on the project");
@@ -563,7 +564,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     writeFileSync(mf, JSON.stringify(m));
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, true);
     writeFileSync(mf, mbytes);
-    reconcile.setFrozen(org.id, project.id, false);
+    await reconcile.setFrozen(org.id, project.id, false);
     writeFileSync(md, `${bytes}\nA hand edit.\n`);
     assert.equal(reconcile.specStatusOf(org.id, project.id).editedOutside, undefined);
     writeFileSync(md, bytes);
@@ -589,11 +590,11 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(r.info.decisions.find((d) => d.id === a)!.state, "promoted");
   });
 
-  test("a referred person's say counts only once the operator approved them", () => {
+  test("a referred person's say counts only once the operator approved them", async () => {
     const person = (id: string) => orgs.readRoster(org.id).find((p) => p.id === id)!;
     assert.equal(reconcile.decidesTrusted(org.id, person(bob.id), "bank-access"), false, "approved by an overseer: self-asserted");
     assert.equal(reconcile.decidesTrusted(org.id, person(eve.id), "parking"), false, "not approved yet");
-    orgs.approvePerson(org.id, eve.id, { kind: "operator" });
+    await orgs.approvePerson(org.id, eve.id, { kind: "operator" });
     assert.equal(reconcile.decidesTrusted(org.id, person(eve.id), "parking"), true, "approved by the operator");
     assert.equal(reconcile.decidesTrusted(org.id, person(carlos.id), "invoicing"), true, "set by the operator");
     const roster = orgs.readRoster(org.id);
@@ -632,7 +633,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
       const lunch = `${s1.sessionId}:${say(f1, maria.id, "l", { area: "lunch breaks", statement: "Lunch is an hour.", quote: "an hour" }).markerId}`;
       let info = await reconcile.reconcileProject(org.id, project.id, { route: false });
       assert.equal(info.decisions.find((d) => d.id === lunch)!.authorOwnsArea, false, "no stakeholder yet: out of area");
-      orgs.patchProject(org.id, project.id, { stakeholder: maria.id });
+      await orgs.patchProject(org.id, project.id, { stakeholder: maria.id });
       info = reconcile.listDecisions(org.id, project.id);
       assert.equal(info.decisions.find((d) => d.id === lunch)!.authorOwnsArea, true, "nobody decides lunch breaks by name: Maria does");
       assert.deepEqual((await reconcile.promoteDecisions(org.id, project.id, [lunch], { by: "overseer" })).promoted, [lunch], "the overseer promotes it");
@@ -654,7 +655,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
       const again = baton.batonById(info.conflicts.find((k) => k.id === c.id)!.batonSessionId!)!.row;
       assert.deepEqual([again.model, again.thinking], ["prov/gather", "low"]);
     } finally {
-      orgs.patchProject(org.id, project.id, { stakeholder: null });
+      await orgs.patchProject(org.id, project.id, { stakeholder: null });
     }
   });
 
@@ -762,10 +763,10 @@ describe("restatements, confirmations and resolutions that say something else", 
   const org = await orgs.createOrg({ name: "Gate", dir: join(tmp, "ws-restate") });
   const client = join(tmp, "client-restate");
   mkdirSync(client);
-  const project = orgs.addProject(org.id, { name: "Invoices", root: client });
-  const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "CFO" });
-  const bob = orgs.addPerson(org.id, { name: "Bob Chen", role: "IT" });
-  const owner = orgs.addPerson(org.id, { name: "Carla Diaz", role: "CEO", decides: ["terms"] });
+  const project = await orgs.addProject(org.id, { name: "Invoices", root: client });
+  const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "CFO" });
+  const bob = await orgs.addPerson(org.id, { name: "Bob Chen", role: "IT" });
+  const owner = await orgs.addPerson(org.id, { name: "Carla Diaz", role: "CEO", decides: ["terms"] });
   const st = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Terms", goal: "g" });
   const sb = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Terms", goal: "g" });
   const byId = () => new Map(reconcile.listDecisions(org.id, project.id).decisions.map((d) => [d.id, d]));
@@ -850,8 +851,8 @@ describe("a fold of a fold", async () => {
   const org = await orgs.createOrg({ name: "Gate", dir: join(tmp, "ws-fold2") });
   const client = join(tmp, "client-fold2");
   mkdirSync(client);
-  const project = orgs.addProject(org.id, { name: "Lunch", root: client });
-  const kim = orgs.addPerson(org.id, { name: "Kim Park", role: "Office", decides: ["lunch"] });
+  const project = await orgs.addProject(org.id, { name: "Lunch", root: client });
+  const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Office", decides: ["lunch"] });
   const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Lunch", goal: "g" });
 
   test("promoting the kept decision carries the quotes of what was folded into what was folded into it, once each", async () => {
@@ -884,9 +885,9 @@ describe("a multi-owner project routes by owner area", async () => {
   const org = await orgs.createOrg({ name: "Studio", dir: join(tmp, "ws-owner") });
   const client = join(tmp, "client-owner");
   mkdirSync(client);
-  const project = orgs.addProject(org.id, { name: "Site", root: client });
-  const alp = orgs.addPerson(org.id, { name: "Alperen", role: "Founder", decides: ["website", "branding"] });
-  const bob = orgs.addPerson(org.id, { name: "Bob Tan", role: "Accountant", decides: ["invoicing"] });
+  const project = await orgs.addProject(org.id, { name: "Site", root: client });
+  const alp = await orgs.addPerson(org.id, { name: "Alperen", role: "Founder", decides: ["website", "branding"] });
+  const bob = await orgs.addPerson(org.id, { name: "Bob Tan", role: "Accountant", decides: ["invoicing"] });
   const s1 = baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Site", goal: "g" });
   const s2 = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Billing", goal: "g" });
   const id = (sid: string, m: { markerId?: string }) => `${sid}:${m.markerId}`;
@@ -977,8 +978,8 @@ describe("the decisions layer owns only its fields", async () => {
   const org = await orgs.createOrg({ name: "Garage", dir: join(tmp, "ws-layers") });
   const client = join(tmp, "client-layers");
   mkdirSync(client);
-  const project = orgs.addProject(org.id, { name: "Invoices", root: client });
-  const kim = orgs.addPerson(org.id, { name: "Kim Park", role: "Finance", decides: ["invoicing"] });
+  const project = await orgs.addProject(org.id, { name: "Invoices", root: client });
+  const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Finance", decides: ["invoicing"] });
   const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Invoices", goal: "g" });
   const md = join(client, ".sova", "spec", "claims", "requirements", "invoicing.md");
   const manifestFile = join(client, ".sova", "spec", "manifest.json");

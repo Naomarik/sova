@@ -42,7 +42,7 @@ type LastRun = NonNullable<ReturnType<typeof store.readMemo>["lastRun"]>;
 describe("the overseer's last run says how it ended", async () => {
   const org = await orgs.createOrg({ name: "Runs", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
   const p = store.projectOverseerPaths(org.id, project.id);
   let path = "";
 
@@ -115,12 +115,12 @@ describe("the overseer's last run says how it ended", async () => {
  */
 describe("a story that needs 4 gathering sessions goes on by itself", async () => {
   const org = await orgs.createOrg({ name: "Story", dir: join(root, "ws2") });
-  orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["menu", "hours"] });
+  await orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["menu", "hours"] });
   const gather = JSON.stringify({ person: "Alperen", public_title: "Opening hours", goal: "Settle the opening hours.", question: "When should the shop open?" });
 
   async function setUp(name: string) {
     mkdirSync(join(root, name));
-    const project = orgs.addProject(org.id, { name, root: join(root, name) });
+    const project = await orgs.addProject(org.id, { name, root: join(root, name) });
     const p = store.projectOverseerPaths(org.id, project.id);
     const { path } = await po.ensureProjectOverseer(org.id, project.id);
     const chat = await acquireChat(path);

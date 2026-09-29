@@ -15,7 +15,7 @@ function fakeHost(sessions: SessionInfo[]) {
   };
 }
 const s = (id: string, chart: string, configuration: string[], data: Record<string, unknown> = {}): SessionInfo => ({ id, chart, configuration, data, running: true });
-const settings = { autonomy: "L3" as const, caps: { ...DEFAULT_PO_CAPS }, holdMin: 5 };
+const settings = { autonomy: "L3" as const, caps: { ...DEFAULT_PO_CAPS }, holdMin: 5, confirmKinds: ["message" as const] };
 
 describe("stamping an envelope from the charts as they stand", () => {
   const world = () => [

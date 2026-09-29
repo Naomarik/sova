@@ -71,9 +71,9 @@ describe("a project's cost (§app/project-costs)", async () => {
   const org = await orgs.createOrg({ name: "Costs", dir: join(tmp, "ws") });
   const client = join(tmp, "client");
   mkdirSync(client);
-  const project = orgs.addProject(org.id, { name: "Portal", root: client });
-  const other = orgs.addProject(org.id, { name: "Other", root: client });
-  const maria = orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: client });
+  const other = await orgs.addProject(org.id, { name: "Other", root: client });
+  const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
   const ws = orgs.orgDir(org.id);
   const pp = store.projectOverseerPaths(org.id, project.id);
   const lp = ledger.ledgerPaths(org.id, project.id);

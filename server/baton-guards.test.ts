@@ -24,11 +24,11 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 const org = await orgs.createOrg({ name: "Gate Capital", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Invoices", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "CFO", decides: ["finance approvals"] });
-const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Accounts payable clerk" });
-const bob = orgs.addPerson(org.id, { name: "Bob Chen", role: "IT administrator", decides: ["it systems"] });
-const nadia = orgs.addPerson(org.id, { name: "Nadia Haddad", role: "Head of Procurement", decides: ["vendor contracts"] });
+const project = await orgs.addProject(org.id, { name: "Invoices", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "CFO", decides: ["finance approvals"] });
+const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Accounts payable clerk" });
+const bob = await orgs.addPerson(org.id, { name: "Bob Chen", role: "IT administrator", decides: ["it systems"] });
+const nadia = await orgs.addPerson(org.id, { name: "Nadia Haddad", role: "Head of Procurement", decides: ["vendor contracts"] });
 
 let seq = 0;
 const user = (by: string, text: string) => {
@@ -142,8 +142,8 @@ describe("the wrap-up records what people say about themselves", () => {
   });
 
   test("everyone who wrote and has no language gets the one they wrote in; a set one and a model's wrong guess don't change", async () => {
-    const ana = orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Ops", language: "es-CO" });
-    const kim = orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
+    const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Ops", language: "es-CO" });
+    const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Lang", goal: "g" });
     baton.handTo(c.sessionId, ana.id, "q", "", new Date());
     const branch = [
@@ -173,8 +173,8 @@ describe("the wrap-up records what people say about themselves", () => {
 describe("profile phrases are hidden, ordinary words are not", () => {
   test("the share page keeps titles, roles, areas and people's own words; the model's repeat of a voice is blanked", async () => {
     // A skill that is an area name, a skill inside a job title, and a voice: only the voice is private.
-    orgs.applyChange(org.id, bob.id, { skills: ["finance approvals", "Microsoft 365 administration"] }, { kind: "operator" });
-    orgs.applyChange(org.id, maria.id, { skills: ["Accounts payable"], voice: "Wants short bullet points, no jargon" }, { kind: "operator" });
+    await orgs.applyChange(org.id, bob.id, { skills: ["finance approvals", "Microsoft 365 administration"] }, { kind: "operator" });
+    await orgs.applyChange(org.id, maria.id, { skills: ["Accounts payable"], voice: "Wants short bullet points, no jargon" }, { kind: "operator" });
     const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Settle: finance approvals", goal: "g" });
     const lines = [
       ...user(maria.id, "I only do Accounts payable, keep it short please."),
@@ -197,7 +197,7 @@ describe("profile phrases are hidden, ordinary words are not", () => {
     assert.match(r.text, /Noted: \[redacted\]\.$/, "the model repeating her voice word for word");
   });
 
-  test("the model sees the holder's own words as written; only its earlier repeat of a secret phrase is blanked", () => {
+  test("the model sees the holder's own words as written; only its earlier repeat of a secret phrase is blanked", async () => {
     const row = { orgId: org.id, holder: bob.id, publicTitle: "Notes" };
     const messages = [
       { role: "user", content: [{ type: "text", text: "Repeat back: my main areas are Microsoft 365 administration and finance approvals." }] },
@@ -206,7 +206,7 @@ describe("profile phrases are hidden, ordinary words are not", () => {
     const phrases = holderPhrases(row, messages);
     assert.deepEqual(phrases, [], "an area name and words he wrote himself are no secrets");
     assert.equal(redactContext(messages, phrases), messages);
-    orgs.applyChange(org.id, bob.id, { voice: "Terse; hates small talk and long emails" }, { kind: "operator" });
+    await orgs.applyChange(org.id, bob.id, { voice: "Terse; hates small talk and long emails" }, { kind: "operator" });
     const leaked = [...messages, { role: "assistant", content: [{ type: "text", text: "Noted, you are Terse; hates small talk and long emails" }] }];
     const out = redactContext(leaked, holderPhrases(row, leaked)) as any[];
     assert.equal(out[0].content[0].text, messages[0]!.content[0]!.text);

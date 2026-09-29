@@ -50,8 +50,8 @@ export function stampEnvelope(
   orgId: string,
   projectId: string | null,
   who: StampWho,
-  settings: (projectId: string) => Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin">,
-  fallback: Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin">,
+  settings: (projectId: string) => Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">,
+  fallback: Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin" | "confirmKinds">,
 ): Envelope {
   const people = host.sessions("person");
   const rosterActive = people.some((p) => p.configuration.includes("active"));

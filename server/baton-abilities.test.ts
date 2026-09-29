@@ -33,8 +33,8 @@ after(async () => {
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tahir = orgs.addPerson(org.id, { name: "Tahir", role: "Finance" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tahir = await orgs.addPerson(org.id, { name: "Tahir", role: "Finance" });
 const app = new Hono();
 registerOrgRoutes(app);
 const post = (path: string, body?: unknown) => app.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });

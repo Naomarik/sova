@@ -3,7 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
-import { DEFAULT_HOLD_MIN, HOLD_MIN_MAX, holdProblem } from "../shared/project-overseer";
+import { CONFIRM_KINDS, DEFAULT_CONFIRM_KINDS, DEFAULT_HOLD_MIN, HOLD_MIN_MAX, holdProblem } from "../shared/project-overseer";
 import { OrgError } from "./orgs";
 import { parsePoSettings, patchPoSettings, readPoSettings, type ProjectOverseerPaths } from "./project-overseer-store";
 
@@ -75,5 +75,31 @@ describe("holdMin: how long a held act waits (§app.project-overseer/holds)", ()
       );
       assert.equal(readFileSync(p.settings, "utf8"), before, "nothing written, the valid key of the same PATCH neither");
     }
+  });
+});
+
+describe("confirmKinds: the act kinds that wait for the overseer's confirmation (r8(4))", () => {
+  test("every people- or code-facing kind is on by default, in display order", () => {
+    assert.deepEqual(CONFIRM_KINDS, ["message", "gather", "offer", "close", "promote", "build", "prompt", "owner-update", "roster-approve", "roster-decline"]);
+    assert.deepEqual(DEFAULT_CONFIRM_KINDS, CONFIRM_KINDS);
+    assert.deepEqual(parsePoSettings(undefined).confirmKinds, [...CONFIRM_KINDS]);
+    assert.deepEqual(parsePoSettings({ autonomy: "L2" }).confirmKinds, [...CONFIRM_KINDS]);
+  });
+
+  test("the file: a list is kept in display order, an unknown kind dropped, anything else the default", () => {
+    assert.deepEqual(parsePoSettings({ confirmKinds: [] }).confirmKinds, []);
+    assert.deepEqual(parsePoSettings({ confirmKinds: ["promote", "message", "someday"] }).confirmKinds, ["message", "promote"]);
+    assert.deepEqual(parsePoSettings({ confirmKinds: "all" }).confirmKinds, [...CONFIRM_KINDS]);
+  });
+
+  test("a patch: known kinds only, each once; stored in display order", () => {
+    const dir = join(root, "confirm");
+    const p = pathsIn(dir);
+    patchPoSettings(p, { confirmKinds: ["build", "gather"] });
+    assert.deepEqual(readPoSettings(p).confirmKinds, ["gather", "build"]);
+    assert.deepEqual(JSON.parse(readFileSync(p.settings, "utf8")).confirmKinds, ["gather", "build"]);
+    for (const bad of [["gather", "gather"], ["nope"], "gather", [1]])
+      assert.throws(() => patchPoSettings(p, { confirmKinds: bad as never }), (e: unknown) => e instanceof OrgError && e.status === 400 && /confirmKinds must list act kinds from: message, gather/.test(e.message));
+    assert.deepEqual(readPoSettings(p).confirmKinds, ["gather", "build"], "a refused patch writes nothing");
   });
 });

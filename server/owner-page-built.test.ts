@@ -43,8 +43,8 @@ git("commit", "-q", "-am", "again 2");
 git("checkout", "-q", "main");
 
 const org = await orgs.createOrg({ name: "Builds Co", dir: join(root, "ws") });
-const p = orgs.addProject(org.id, { name: "Shop", root: repo });
-const kim = orgs.addPerson(org.id, { name: "Kim Lee", role: "Coach" });
+const p = await orgs.addProject(org.id, { name: "Shop", root: repo });
+const kim = await orgs.addPerson(org.id, { name: "Kim Lee", role: "Coach" });
 owner.setOwner(org.id, kim.id);
 const ws = orgs.orgDir(org.id);
 mkdirSync(join(ws, "projects", p.id, "overseer"), { recursive: true });

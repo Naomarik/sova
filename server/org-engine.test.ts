@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { after, beforeEach, describe, test } from "node:test";
 import { stampProject, actOrThrow, closeOrgHost, hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, openOrgHost, refusalError, resetOrgHostsForTest, setOrgHostOpener, type ActResult, type HostChange, type OrgHostApi } from "./org-engine";
 import { OrgError } from "./orgs";
+import "./project-overseer-store"; // registers the settings every act is stamped with, as the server loads it
 
 /** A host that records what it was asked and answers `next`. */
 function fakeHost(next: () => ActResult = () => ({ taken: true, refusal: null, result: null })) {
@@ -156,7 +157,7 @@ describe("refusals as the routes answer them", () => {
     await openOrgHost(opts("org_r"));
     const out = await actOrThrow("org_r", "person/org_r/p_1", "person/approve", { personId: "p_1" }, { by: "operator" });
     assert.deepEqual(out.effects?.[0]?.result, { ok: 1 });
-    assert.deepEqual(f.calls[0], ["person/org_r/p_1", "person/approve", { personId: "p_1" }, { by: "operator" }]);
+    assert.deepEqual(f.calls[0]?.slice(0, 4), ["person/org_r/p_1", "person/approve", { personId: "p_1" }, { by: "operator" }]);
     answer = { taken: false, refusal: { sentence: "Ana is not waiting for approval.", status: 409 }, result: null };
     await assert.rejects(actOrThrow("org_r", "person/org_r/p_1", "person/approve", {}, { by: "operator" }), (e: unknown) => e instanceof OrgError && e.status === 409 && e.message === "Ana is not waiting for approval.");
     answer = { taken: false, refusal: null, result: null };

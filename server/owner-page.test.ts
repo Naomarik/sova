@@ -5,7 +5,7 @@
 // /i/ shapes and dead-link answers, and Owner page visits. A throwaway PI_CODING_AGENT_DIR and
 // workspace in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
-import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -39,13 +39,13 @@ after(() => {
 const org = await orgs.createOrg({ name: "Gate Archery", dir: join(root, "ws") });
 const ws = orgs.orgDir(org.id);
 for (const d of ["a", "b", "c"]) mkdirSync(join(root, d));
-const pa = orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
-const pb = orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
-const pc = orgs.addProject(org.id, { name: "Secret move", root: join(root, "c") });
-const alp = orgs.addPerson(org.id, { name: "Alperen Kaya", role: "Director" });
-const kim = orgs.addPerson(org.id, { name: "Kim Lee", role: "Coach" });
-const bob = orgs.addPerson(org.id, { name: "Bob Stone", role: "IT" });
-const cara = orgs.addPerson(org.id, { name: "Cara Diaz", role: "Front desk" });
+const pa = await orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
+const pb = await orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
+const pc = await orgs.addProject(org.id, { name: "Secret move", root: join(root, "c") });
+const alp = await orgs.addPerson(org.id, { name: "Alperen Kaya", role: "Director" });
+const kim = await orgs.addPerson(org.id, { name: "Kim Lee", role: "Coach" });
+const bob = await orgs.addPerson(org.id, { name: "Bob Stone", role: "IT" });
+const cara = await orgs.addPerson(org.id, { name: "Cara Diaz", role: "Front desk" });
 
 let seq = 0;
 const append = (path: string, customType: string, data: object, at = new Date().toISOString()) => {
@@ -92,7 +92,7 @@ writeFileSync(
 );
 // Secret move: switched off the owner's page.
 baton.createBaton({ orgId: org.id, projectId: pc.id, to: kim.id, publicTitle: "OFF-PROJECT-TITLE", goal: "g" });
-orgs.patchProject(org.id, pc.id, { ownerHidden: true });
+await orgs.patchProject(org.id, pc.id, { ownerHidden: true });
 
 const app = new Hono();
 registerOrgRoutes(app);
@@ -110,7 +110,7 @@ const tokenOf = (link: string) => link.slice(link.indexOf("/i/") + 3);
 
 describe("the owner (§app.owner-page/owner)", () => {
   test("only an active roster person; proposed and unknown refused", async () => {
-    const pat = orgs.applyChange(org.id, null, { name: "Pat", role: "Finance", status: "proposed", contact: { email: "pat@example.test" }, referral: { why: "x", referredBy: kim.id } }, { kind: "referral" });
+    const pat = await orgs.addPerson(org.id, { name: "Pat", role: "Finance", status: "proposed", contact: { email: "pat@example.test" }, referral: { why: "x", referredBy: kim.id } }, { kind: "referral" });
     for (const personId of [pat.id, "p_nobody00", 42]) {
       const r = await call<{ error: string }>("PUT", `/api/orgs/${org.id}/owner`, { personId });
       assert.equal(r.status, 400);
@@ -151,8 +151,10 @@ describe("the owner (§app.owner-page/owner)", () => {
     const text = readFileSync(file, "utf8");
     assert.ok(!text.includes(first) && !text.includes(second), "tokens are never stored");
     assert.ok(!file.startsWith(ws));
-    const git = readFileSync(join(ws, "org.json"), "utf8");
-    assert.ok(!git.includes(plinks.findPersonLink(second)!.hash), "no hash in the workspace");
+    // The org's snapshot and every other file of the workspace repo (q1: no org.json any more).
+    const hash = plinks.findPersonLink(second)!.hash;
+    for (const f of readdirSync(ws, { recursive: true, encoding: "utf8" }))
+      if (!f.startsWith(".git") && statSync(join(ws, f)).isFile()) assert.ok(!readFileSync(join(ws, f), "utf8").includes(hash), `no hash in the workspace (${f})`);
     assert.deepEqual(plinks.ownerLinksOf(org.id).map((l) => [l.gen, l.revokedWhy ?? "live"]), [
       [1, "rotated"],
       [2, "live"],
@@ -177,10 +179,10 @@ describe("the owner (§app.owner-page/owner)", () => {
   });
 
   test("leaving clears the owner (with ownerCleared) and turns their link off; setting again clears ownerCleared", async () => {
-    const tmp = orgs.addPerson(org.id, { name: "Temp Owner" });
+    const tmp = await orgs.addPerson(org.id, { name: "Temp Owner" });
     await call("PUT", `/api/orgs/${org.id}/owner`, { personId: tmp.id });
     const { token } = plinks.mintOwnerLink(org.id, tmp.id);
-    orgs.applyChange(org.id, tmp.id, { status: "left" }, { kind: "operator" });
+    await orgs.applyChange(org.id, tmp.id, { status: "left" }, { kind: "operator" });
     const o = orgs.readOrg(org.id);
     assert.equal(o.owner, undefined);
     assert.equal(o.ownerCleared?.personId, tmp.id);

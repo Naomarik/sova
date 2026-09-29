@@ -25,9 +25,9 @@ after(() => rmSync(root, { recursive: true, force: true }));
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const sara = orgs.addPerson(org.id, { name: "Sara Haddad", role: "Owner" });
-const ali = orgs.addPerson(org.id, { name: "Ali Nasser", role: "IT" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const sara = await orgs.addPerson(org.id, { name: "Sara Haddad", role: "Owner" });
+const ali = await orgs.addPerson(org.id, { name: "Ali Nasser", role: "IT" });
 const start = (to: string | string[], extra: Record<string, unknown> = {}) =>
   baton.createBaton({ orgId: org.id, projectId: project.id, to, publicTitle: "Logo", goal: "Which logo?", ...extra });
 const field = (path: string) => baton.batonSummaryField(path)!;

@@ -63,11 +63,11 @@ describe("a project's coding sessions", async () => {
   git(client, "init", "-q", "-b", "master");
   git(client, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "add", "-A");
   git(client, "-c", "user.email=t@example.invalid", "-c", "user.name=T", "-c", "commit.gpgsign=false", "commit", "-q", "-m", "init");
-  const project = orgs.addProject(org.id, { name: "Portal", root: client });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: client });
   const plainRoot = join(tmp, "plain");
   mkdirSync(plainRoot);
-  const plain = orgs.addProject(org.id, { name: "Plain", root: plainRoot });
-  orgs.addPerson(org.id, { name: "Tony", role: "IT", voice: "Direct." });
+  const plain = await orgs.addProject(org.id, { name: "Plain", root: plainRoot });
+  await orgs.addPerson(org.id, { name: "Tony", role: "IT", voice: "Direct." });
 
   let started: { path: string; sessionId: string } | null = null;
 

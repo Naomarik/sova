@@ -389,7 +389,7 @@ describe("deliverLinkMessage: the refusals, before any runtime opens", () => {
   test("an organization's session: one of a project's coding sessions, by its started.json row", async () => {
     const org = await orgs.createOrg({ name: "Link Org", dir: join(agentDir, "org-ws") });
     mkdirSync(join(agentDir, "proj"), { recursive: true });
-    const project = orgs.addProject(org.id, { name: "Proj", root: join(agentDir, "proj") });
+    const project = await orgs.addProject(org.id, { name: "Proj", root: join(agentDir, "proj") });
     const path = plainSession();
     const hourAgo = new Date(Date.now() - 3_600_000);
     utimesSync(path, hourAgo, hourAgo);

@@ -133,8 +133,15 @@ describe("clone + attach = the whole organization", async () => {
 
   test("the repo holds every file of the org's state", () => {
     const files = git(bDir, "ls-files").split("\n");
-    const want = ["org.json", "about.md", "org-history.jsonl", "roster.json", "roster-history.jsonl", "projects.json", "baton.json", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
+    // The charts' snapshots and transition log hold the state (q1): no projection file is written.
+    const want = ["about.md", "org-history.jsonl", "roster-history.jsonl", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
     for (const f of want) assert.ok(files.includes(f), f);
+    const snapshot = (chart: string, sid: string) => `charts/${chart}/${encodeURIComponent(sid)}.edn`;
+    for (const f of [snapshot("org", `org/${a.id}`), snapshot("person", `person/${a.id}/${tony.id}`), snapshot("project", `project/${a.id}/${project.id}`)]) assert.ok(files.includes(f), f);
+    assert.ok(files.some((f) => /^charts\/log\/\d{4}-\d{2}\.jsonl$/.test(f)), "the transition log");
+    for (const f of ["org.json", "roster.json", "projects.json", "holder.json"]) assert.ok(!files.includes(f), `no ${f}`);
+    // Host-local charts (the residence, the watches) stay on the host.
+    assert.ok(!files.some((f) => f.startsWith("charts/residence/") || f.startsWith("charts/watch/")), "nothing host-local");
     for (const f of ["overseer.json", "state.json", "started.json"]) assert.ok(files.includes(`projects/${project.id}/overseer/${f}`), f);
     assert.ok(files.some((f) => f.startsWith("sessions/") && f.endsWith(`_${overseer.id}.jsonl`)), "the overseer's transcript");
   });

@@ -570,11 +570,44 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Needs packages | **This host needs {n} packages to build whisper.cpp.** Run this on the Sova host, then check again. Sova never runs sudo. · `Copy Command` (after: "Copied.") · `Check Again` (primary) · `Use CPU Instead` · no known package manager: "Install these, then check again: {list}." |
 | Failed | **Setup stopped at {step, lowercase}.** {error}. Everything before it is kept. · `Retry` · `Use CPU Instead` · `Show Log` / `Hide Log` |
 | Cancelled | Setup cancelled. Everything done so far is kept; Set Up Voice picks up where it stopped. |
-| Ready status line | a success chip `Ready`, then `{Vulkan · device} · self-test {s} s · large-v3-turbo q5_0 · {size} on disk · {Loaded \| Loading \| Not loaded}` |
+| Ready status line | a success chip `Ready`, then `{Vulkan · device} · self-test {s} s · {engine} {active model}, e.g. whisper.cpp large-v3-turbo q5_0 · {size} on disk · {Loaded \| Loading \| Not loaded}` |
 | Ready (sheet) | Voice is ready. Tap the mic to dictate. · `Close` |
 | Test Microphone | `Test Microphone` · recording: `Stop ({s} s)` · then `Transcribing…` · result: "Heard: “{text}” ({s} s)" · nothing: "Heard nothing." |
-| Repair | `Repair` — "Checks every file again and reruns the self-test." |
-| Uninstall | `Uninstall Voice` · confirm (banner-warn): **Uninstall voice?** "The voice folder ({size}) goes away: whisper.cpp, the model, and the logs. System packages stay installed." · `Cancel` · `Uninstall` (destructive) |
+| Repair | `Repair` — "Checks every file again, every model included, and reruns the self-test." |
+| Uninstall | `Uninstall Voice` · confirm (banner-warn): **Uninstall voice?** "The voice folder ({size}) goes away: whisper.cpp, {transcribe.cpp, }{n} models, the calibration clips, and the logs. System packages stay installed." (1 model: `the model`) · `Cancel` · `Uninstall` (destructive) |
+| Models heading · caption | Models · "One model runs for the whole host. Each device keeps its own settings for each model." |
+| Model row | `{name} · {quant}` · caption `{size} · {English only \| English and 99 more} · {state}` · default row chip `Recommended` |
+| Model row states | Not downloaded · `{done} of {total} MB` · Checking the file… {n}% · Copied from {folder} · Downloaded · chip `In Use` with `self-test {s} s` · `Testing…` |
+| Model row actions | `Download` · `Cancel Download` · `Use This Model` · `Delete Model` · `Retry` |
+| Parakeet row | name as any row, `Parakeet TDT 0.6B v2 · q8_0` · caption `730 MB · English only · transcribe.cpp · No prompt or voice detection · {state}` · needs packages: **Parakeet needs {n} packages to build its engine.** Run this on the Sova host, then check again. · `Copy Command` · `Check Again` · no known package manager: "Install these, then check again: {list}." |
+| Download disabled | Another download is running. · Needs {size}; this disk has {free} free. |
+| Download meter label | Downloading |
+| Use This Model disabled during a sweep | Stop Calibration first. |
+| Download failed | The download didn't match its checksum and was deleted. Download it again. · other errors: **Couldn't download {name}.** {error}. Nothing else changed. |
+| Switch failed | {name} didn't pass the self-test (heard "{text}"). Still using {old name}. |
+| No Delete on the model in use (`title`) | Switch to another model first. |
+| Delete confirm (banner-warn) | **Delete {name}?** "Its {size} file goes away. Its calibration results stay, in case you download it again." · `Cancel` · `Delete` (destructive) |
+| Disk line | `{n} models · {size} on disk · {free} free on this disk` (1: `1 model`) |
+| This Device heading | This Device · "This device: {label}" (installed app: `{label} (app)`) |
+| This device, not calibrated | {model} uses the defaults on this device. Calibrating takes a few minutes: you read 6 sentences, then we try {24 \| 8} settings on them. · `Calibrate This Device` |
+| This device, calibrated | Calibrated {date} on {n} clips · {p}% word error · {s} s per clip. · `Calibrate Again` · `Delete Clips` · confirm (banner-warn): **Delete this device's clips?** "Its {n} recorded sentences and their results go. Its saved settings stay." · `Cancel` · `Delete Clips` (destructive) |
+| This device, Parakeet active | Parakeet has no settings to tune. Calibrating scores it on your clips, to compare with the whisper models. · scored: "Scored {date} on {n} clips · {p}% word error · {s} s per clip." · `Calibrate This Device` (or `Calibrate Again`) |
+| Other devices | Other devices · row `{label}` · caption `seen {relative time} · calibrated for {models}` · `Forget` · confirm: **Forget {label}?** "Its settings and calibration clips go. It dictates with the defaults until it's calibrated again." · `Cancel` · `Forget` (destructive) |
+| Sentence step | eyebrow `Sentence {i} of {n}` (the passage: `Passage`, "Optional. About 35 seconds.") · `Record Sentence` · recording: `Stop Recording`, `Recording {m:ss}` · after: "Got {s} s." · `Next Sentence` · `Record Again` · `Skip Sentence` · top right `Cancel Calibration` |
+| Sentence problems | Didn't catch any speech. Record it again. · Recording stopped when the app went to the background. Record this sentence again. · At least 4 clips are needed. |
+| Find Best Settings | `Find Best Settings` · estimate: "{n} settings × {c} clips ≈ {time} on {backend}" |
+| Sweep progress | Trying setting {i} of {n} · clip {j} of {c} · `{p}%` · About {time} left. · Best so far: {p}% word error · {s} s per clip. · Paused for dictation. · "You can close Settings; the run keeps going on this host." · `Stop Calibration` |
+| Sweep on Parakeet | the run button reads `Score This Model` (not `Find Best Settings`) · Parakeet has no settings to try. Scoring it on your {c} clips. · progress `Clip {j} of {c}` · its results show no sort caption |
+| Another device sweeping (`Find Best Settings` disabled) | Calibration is running for {label}. |
+| Host busy (banner-warn on the results) | **The host was busy during calibration.** Timings may be slower than usual; word error isn't affected. Run it again when the host is quiet for truer times. |
+| Results caption | Sorted by word error, then jargon, then time. |
+| Voice detection skipped (results, caption) | Couldn't get the voice-detection model, so the {n} settings that use it were skipped. |
+| Results row | `{settings in words, e.g. beam 5 · hotword sentence · voice detection on · no fallback}` · `{p}% word error` · `{h} of {n} jargon` · `{s} s per clip` · labels `Best` · `Current` · open: "Read: {reference}" / "Heard: {text}", missed words `−`, extra words `+`, a jargon word heard in the wrong case `~` (`title`: Heard in the wrong case) |
+| Applied | Saved the best settings for this device on {model}. · `Revert to Previous` · other rows: `Use These Settings` · after a revert: "Back to the previous settings." |
+| Current won | Your current settings scored best. Nothing changed. · `Done` (returns the section to rest) |
+| Stopped | Stopped after {i} of {n} settings. Nothing was saved; pick a row to use it. |
+| Parakeet score | a results row labelled with the row name, `Parakeet TDT 0.6B v2 · q8_0` · `{p}% word error` · `{h} of {n} jargon` · `{s} s per clip` · "Parakeet has no settings, so nothing is saved." |
+| Sweep failed | **Calibration stopped at setting {i} of {n}.** {error}. Your clips are kept; Find Best Settings tries again. (on Parakeet: **Scoring stopped at clip {j} of {c}.** {error}. Your clips are kept; Score This Model tries again.) |
 | Crashed too often | whisper-server stopped 3 times in a minute. Repair to try again. |
 | Load failed (banner-error) | **Couldn't read the voice status.** {message} |
 | A press refused (banner-error) | **That didn't work.** {server message} — e.g. "Setup is already running." |

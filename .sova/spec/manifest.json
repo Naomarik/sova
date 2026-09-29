@@ -7416,7 +7416,7 @@
     "§app.settings-dialog/voice": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/voice/install.ts",
         "server/voice/install.test.ts",
@@ -7434,7 +7434,9 @@
         "src/lib/settings-nav.ts",
         "src/lib/settings-nav.test.ts",
         "src/design/voice.css",
-        "package.json"
+        "package.json",
+        "src/lib/voice/format.ts",
+        "server/voice/models.ts"
       ],
       "requires": [
         "§app/settings-dialog",
@@ -7510,7 +7512,10 @@
         "server/voice/runtime.test.ts",
         "scripts/fake-whisper-server.mjs",
         "server/voice/service.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/voice/transcribe-host.c",
+        "server/voice/install.ts",
+        "server/voice/service-devices.test.ts"
       ],
       "requires": []
     },
@@ -7541,10 +7546,14 @@
         "server/voice/service.test.ts",
         "server/voice/pins.ts",
         "server/index.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "server/voice/settings.ts",
+        "server/voice/service-devices.test.ts",
+        "src/lib/api.ts"
       ],
       "requires": [
-        "§chat.voice/runtime"
+        "§chat.voice/runtime",
+        "§chat.voice/decoding"
       ]
     },
     "§chat/voice": {
@@ -7562,7 +7571,10 @@
       "evidence": "verified",
       "code": [
         "src/components/VoiceSetup.tsx",
-        "src/lib/voice/format.ts"
+        "src/lib/voice/format.ts",
+        "src/components/VoiceModels.tsx",
+        "src/components/VoiceCalibration.tsx",
+        "src/lib/voice/voice.test.ts"
       ]
     },
     "§chat.composer/file-index-deadline": {
@@ -7973,6 +7985,84 @@
         "§mesh.peers/address-identity",
         "§mesh.peers/off",
         "§mesh/phone"
+      ]
+    },
+    "§app.settings-dialog/voice-calibration": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/calibration.ts",
+        "server/voice/calibration.test.ts",
+        "server/voice/service.ts",
+        "server/voice/service-devices.test.ts",
+        "shared/protocol.ts",
+        "src/lib/api.ts",
+        "src/lib/voice/format.ts",
+        "src/lib/voice/voice.test.ts",
+        "src/components/VoiceCalibration.tsx",
+        "src/components/VoiceSetup.tsx",
+        "src/design/voice.css"
+      ],
+      "requires": [
+        "§app.settings-dialog/voice",
+        "§app.settings-dialog/voice-models",
+        "§app.settings-dialog/one-height",
+        "§chat.voice/capture",
+        "§chat.voice/decoding",
+        "§chat.voice/runtime",
+        "§design.copy-deck/settings-voice"
+      ]
+    },
+    "§app.settings-dialog/voice-models": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/pins.ts",
+        "server/voice/pins.test.ts",
+        "server/voice/models.ts",
+        "server/voice/models.test.ts",
+        "server/voice/install.ts",
+        "server/voice/download.ts",
+        "server/voice/service.ts",
+        "server/voice/service-devices.test.ts",
+        "server/voice/transcribe-host.c",
+        "scripts/voice.ts",
+        "shared/protocol.ts",
+        "src/lib/api.ts",
+        "src/lib/voice/format.ts",
+        "src/components/VoiceModels.tsx",
+        "src/components/VoiceSetup.tsx",
+        "src/design/voice.css"
+      ],
+      "requires": [
+        "§app.settings-dialog/voice",
+        "§chat.voice/runtime",
+        "§chat.voice/decoding",
+        "§design.copy-deck/settings-voice"
+      ]
+    },
+    "§chat.voice/decoding": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/settings.ts",
+        "server/voice/settings.test.ts",
+        "server/voice/service.ts",
+        "server/voice/runtime.ts",
+        "server/voice/pins.ts",
+        "server/voice/service-devices.test.ts",
+        "shared/protocol.ts",
+        "src/lib/voice/device.ts",
+        "src/lib/push.ts",
+        "src/lib/storage-keys.ts",
+        "src/lib/api.ts",
+        "src/components/VoiceInput.tsx"
+      ],
+      "requires": [
+        "§chat.voice/runtime"
       ]
     }
   },

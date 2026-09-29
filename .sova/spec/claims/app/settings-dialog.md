@@ -611,11 +611,13 @@ extension's `context-window.ts`).
 ## §app.settings-dialog/voice — Voice
 
 The Voice tab sets up and looks after this host's dictation engine (§chat/voice): whisper.cpp
-`v1.9.4` and the model `ggml-large-v3-turbo-q5_0` (574,041,195 bytes, pinned sha256
-`394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2`; there is no model picker).
-It is the machine's, not this browser's: everything lives under `<state root>/voice/`
-(`SOVA_VOICE_DIR` overrides it), so any client — desktop or phone — sees the same install and the
-same progress. The composer's mic opens the same setup as a sheet when voice isn't ready; both
+`v1.9.4` and the default model `ggml-large-v3-turbo-q5_0` (574,041,195 bytes, pinned sha256
+`394221709cd5ad1f40c46e6031ca61bce88931e6e088c188294c6d5a55ffa7e2`), which setup installs. Other
+models come from a pinned catalog in the Models section (§app.settings-dialog/voice-models). The
+install and the active model are the machine's, not this browser's: everything lives under
+`<state root>/voice/` (`SOVA_VOICE_DIR` overrides it), so any client — desktop or phone — sees the
+same install and the same progress. How this device decodes, and its calibration, are the
+device's own (§chat.voice/decoding, §app.settings-dialog/voice-calibration). The composer's mic opens the same setup as a sheet when voice isn't ready; both
 render one view.
 
 - **Before setup** the view says what will happen — the GPU backend detected (Vulkan, Metal or
@@ -654,17 +656,163 @@ render one view.
 - **The log** — the job's recent lines, 24-hour times, in a collapsible block (`Show Log`), read
   with `GET /api/voice?since=<seq>`. The tab and the sheet poll that every second while a job runs
   and every 10 seconds otherwise, only while mounted.
-- **Ready**, the tab shows one status line — backend and device, the self-test time, the model,
-  disk used, and whether the engine is loaded — then `Test Microphone` (records up to 3 seconds and
-  shows the transcript, inserting nothing), `Repair` (runs every step again with verification
-  forced: the model re-hashed, the binary probed, a fresh self-test; voice isn't ready until it
-  passes) and `Uninstall Voice`
-  (destructive; a confirmation says the voice folder and its size go away and system packages stay
-  installed).
+- **Ready**, the tab shows one status line — backend and device, the self-test time, the active
+  model and its engine, disk used, and whether the engine is loaded — then `Test Microphone` (records up to 3
+  seconds and shows the transcript, inserting nothing), the **Models** section
+  (§app.settings-dialog/voice-models), the **This Device** section with calibration
+  (§app.settings-dialog/voice-calibration), and last, apart from everything else, `Repair` (runs
+  every step again with verification forced: every downloaded model re-hashed — a wrong one is
+  deleted, and only the active one fetched again — the binaries probed, a fresh self-test on the
+  active model; voice isn't ready until it passes) and `Uninstall Voice`
+  (destructive; a confirmation says the voice folder and its size go away — whisper.cpp,
+  transcribe.cpp when Parakeet was downloaded, every model, the kept calibration clips and the logs
+  — and system packages stay installed).
 - **CLI.** `pnpm run voice:install [status|install|repair|uninstall] [--cpu] [--yes] [--dir <path>]`
   runs the same job with a console reporter, for a headless host; it refuses while a server holds
-  the lock.
+  the lock. `pnpm run voice:install models [list | download <id>|--all | delete <id> | use <id> |
+  test <id>|--all]` does the Models section's jobs the same way; `test` self-tests a downloaded model
+  without switching to it and reports its time and GPU memory.
 - **Knobs** for tests and odd hosts: `SOVA_VOICE_DIR` (the folder), `SOVA_VOICE_PATH` (the PATH
   detection and the build use), `SOVA_VOICE_IMPORT_DIRS` (the folders the import checks, `:`-separated),
-  `SOVA_VOICE_IDLE_MS` (the idle unload), and `SOVA_VOICE_WHISPER_BIN` (a stand-in server, such as
-  `scripts/fake-whisper-server.mjs`, which makes voice ready without an install).
+  `SOVA_VOICE_IDLE_MS` (the idle unload), `SOVA_VOICE_WHISPER_BIN` (a stand-in server, such as
+  `scripts/fake-whisper-server.mjs`, which makes voice ready without an install),
+  `SOVA_VOICE_WHISPER_GPU=1` (that stand-in counts as a GPU install, so calibration uses the GPU
+  grid), and `SOVA_VOICE_TRANSCRIBE_BIN` (a stand-in for Parakeet's host; the same fake server
+  answers as it when its model ends in `.gguf`).
+
+## §app.settings-dialog/voice-models — Voice models
+
+The Models section of the Ready view: a pinned catalog of speech models this host can download,
+verify, switch to and delete. One model is active for the whole host (§chat.voice/runtime); every
+device follows it, each with its own saved settings for that model or the defaults
+(§chat.voice/decoding).
+
+**The catalog** is pinned in code, every size and sha256 checked against its source on the day it
+was written, like the rest of the pins. There is no remote list, and no network request happens
+until a press.
+
+| Model | Engine | Download | Languages |
+|---|---|---|---|
+| large-v3-turbo · q5_0 (default, `Recommended`) | whisper.cpp | 574 MB | English and 99 more |
+| large-v3-turbo · q8_0 | whisper.cpp | 874 MB | English and 99 more |
+| large-v3-turbo · f16 | whisper.cpp | 1.62 GB | English and 99 more |
+| large-v3 · q5_0 | whisper.cpp | 1.08 GB | English and 99 more |
+| distil-large-v3.5 · f16 | whisper.cpp | 1.52 GB | English only |
+| Parakeet TDT 0.6B v2 · q8_0 | transcribe.cpp | 751 MB: the 730 MB model and the 22 MB engine | English only |
+
+Parakeet appears only on a Linux x86_64 host, where transcribe.cpp's prebuilt release runs. It takes
+no prompt and no voice detection, so it can't be tuned: calibration scores it but never changes its
+settings (§app.settings-dialog/voice-calibration). The Silero voice-detection model is part of the
+catalog but not a row (§chat.voice/decoding).
+
+- **Rows.** A `.list`, one row per model, smallest first, each at least 44px, its actions wrapping
+  under the name at folded width. A row shows the name and quantization, then a caption: size,
+  languages and state. States: not downloaded (`Download`) · downloading (the figure, then a meter,
+  then `Cancel Download`) · checking (the streaming hash's percent) · downloaded (`Use This Model`,
+  `Delete Model`) · in use (a chip `In Use`, and the self-test time) · failed (the reason, `Retry`).
+- **Download** is a job like setup: it survives the browser closing and a server restart resumes
+  it. It uses setup's model step — an import first (a file of the exact size and sha256 in a known
+  folder is copied, and the row says where from), then a ranged, resumable download with a
+  streaming sha256; a mismatch deletes the file and fails. Free disk space is checked first: with
+  less than the model's size plus 50 MB free, `Download` is `aria-disabled` and says what it needs.
+  Parakeet's first download also fetches the transcribe.cpp release (pinned size and sha256) and
+  compiles Sova's small host for it with the host's C compiler, and the disk check counts both.
+  Without a C compiler the row stops in **needs packages**, showing the same one-line command and
+  `Copy Command` and `Check Again` as setup's Packages step; Sova never runs `sudo`. One
+  job at a time, under setup's lock: while one runs, the other rows' `Download` is `aria-disabled`
+  with the reason. `POST /api/voice/models/<id>/download` (202; 409 while a job runs or the id is
+  unknown); `POST /api/voice/models/cancel` cancels the one running model job.
+- **Switch.** `Use This Model` (`POST /api/voice/models/<id>/use`, 202) stops the engine, starts
+  the chosen model and runs the self-test on it; the row says `Testing…` meanwhile. Every model,
+  Parakeet included, passes on the same rule, which needs no prompt: a non-empty transcript with at
+  least 2 of the self-test clip's 4 words, case ignored. Then the model becomes active for the
+  whole host. If it
+  fails, the old model stays active and the row says so, with what it heard. Refused (409) for a
+  model not downloaded, while any job runs, and while a calibration sweep runs.
+- **Delete.** `Delete Model` (destructive, outline, never beside the primary) confirms inline in a
+  banner-warn; the file and any partial download go. Calibration results for that model stay, in
+  case it comes back. The model in use has no Delete; its row's `title` says to switch first.
+  `DELETE /api/voice/models/<id>` answers `{freed}`, and 409 for the active model or one
+  downloading.
+- **Disk line.** One caption under the list: how many models are on disk, their total size, and
+  the free space on the voice folder's disk.
+
+## §app.settings-dialog/voice-calibration — Voice calibration
+
+The **This Device** section of the Ready view finds the best decoding settings for the device
+you're using, on the active model, from sentences you read aloud with known text, and saves them
+for this device (§chat.voice/decoding). Everything happens inside the scrolling panel: the flow
+replaces the section's body, and nothing opens over Settings (§app.settings-dialog/one-height).
+
+- **The section, at rest.** "This device: {label}", then whether it is calibrated for the active
+  model (when, on how many clips, its word error and time per clip) or uses the defaults, then
+  `Calibrate This Device` (or `Calibrate Again`), and `Delete Clips` when clips are kept
+  (destructive, inline confirm). Below it,
+  the other devices that have saved settings, each with its label, when it was last seen, the
+  models it's calibrated for, and `Forget` (inline confirm; its settings and clips go). An
+  unsupported browser context (§chat.voice/button) disables `Calibrate This Device` with the same
+  reason in its `title`.
+- **Sentences.** Six fixed sentences, each with its reference text, five of them using Sova's
+  jargon (Sova, worktree, Overseer, statechart, subagent) and one with none, as the control; then an
+  optional passage of about 35 seconds. Shown one at a time, large, under "Sentence {i} of {n}",
+  with no highlighting. The reference texts avoid digits and times, so normalization can't move a
+  score.
+- **Recording** is the composer's: tap to start, tap to stop, with the same capture pipeline
+  (§chat.voice/capture), `startCapture` called synchronously in the press. While recording, the
+  button is accent-filled `Stop Recording` with the stop glyph, and the time and the level (number
+  first, then the bar) show under the sentence. A sentence stops itself at 20 s, the passage at
+  60 s. On stop the clip uploads at once (`PUT /api/voice/calibration/clips/<n>?device=<id>`, the
+  same WAV checks as transcribe, replacing any earlier take), then `Next Sentence`, `Record Again`,
+  `Skip Sentence`. A clip whose level never rose above the speech threshold isn't uploaded; the
+  line says so. If the page goes to the background mid-recording, the take is dropped (a cut
+  sentence is worse than none) and the line says to record it again. `Esc` while recording cancels
+  the recording only, never Settings. `Cancel Calibration` leaves the flow and keeps the clips
+  already uploaded.
+- **Kept clips.** A device's clips are kept on this host under `<state root>/voice/calibration/<device id>/`,
+  so it can be calibrated again on another model without reading again. They come only from that
+  device and are scored only for it. `Delete Clips` (`DELETE /api/voice/calibration/clips?device=<id>`)
+  removes this device's clips and runs; `DELETE /api/voice/calibration/clips/<n>?device=<id>` removes one take.
+  Forget and Uninstall remove them too.
+- **The sweep.** `Find Best Settings` (primary; needs at least 4 clips) starts a server job
+  (`POST /api/voice/calibration/run?device=<id>`, 202), after an estimate of how long it takes. On
+  a GPU install it tries 24 settings — prompt {none, hotword list, hotword sentence} × beam {1, 5} ×
+  voice detection {off, on} × fallback {0.2, none} — and on a CPU install 8 — prompt {list,
+  sentence} × beam {1, 5} × fallback {0.2, none}, voice detection off. The device's current
+  settings are always among them, run first and again last; clips go round-robin, and each
+  setting's time is its median. It runs through the dictation-first lane (§chat.voice/runtime), so
+  dictating on any device keeps working and the progress says "Paused for dictation." meanwhile.
+  Progress: which setting of how many, a meter, time left, and the best so far. You can close
+  Settings: the job keeps going on this host, and reopening shows it. `Stop Calibration` keeps what
+  has been scored. One sweep runs on the host at a time: while another device's runs, `Find Best
+  Settings` is `aria-disabled` with the reason (recording still works). A model switch is refused
+  while it runs. On Parakeet there is nothing to sweep:
+  the job is one scoring run of the clips, giving one results row.
+- **Scoring.** Word error is the normalized word error rate against the reference (case and
+  punctuation ignored). Jargon hits count each jargon word heard as written — edge punctuation and a
+  possessive 's don't matter ("Sova's" counts), a hyphen does ("sub-agent" misses) — and "Sova"
+  counts only capitalized. The best setting has the fewest word errors; among settings within 1
+  word of it, more jargon hits win, then fewer errors, then the shorter time per clip. A setting
+  scored on fewer clips (a stopped run) ranks after every fully scored one.
+- **Voice detection unavailable.** If the Silero model can't be fetched, the sweep skips the
+  settings with voice detection on and the results say so; it never scores them without it.
+- **Results** as `.list` rows, not a table: the top 5 plus the current settings, always shown and
+  labelled `Current`. A row reads its settings in words, then word error, jargon hits ("{h} of
+  {n}") and time per clip. Opening a row shows each clip's reference and what was heard, missed
+  words marked `−`, extra words `+`, and a jargon word heard in the wrong case `~` (a sign, never
+  color alone). The caption says the order in
+  one sentence.
+- **A busy host.** When the host was busy during the sweep, the results carry a banner-warn saying
+  the times may be slower than usual and word error isn't affected.
+- **Applied automatically.** When the sweep completes, the server saves the best setting at once
+  for this device and the active model, and the results say so with `Revert to Previous`
+  (`POST /api/voice/calibration/revert?device=<id>`), which puts back what was saved before. Any
+  other row has `Use These Settings`, which saves that row
+  (`POST /api/voice/calibration/apply?device=<id>` with the chosen row). If the current settings scored best, nothing changes and the results say so. A
+  stopped or failed sweep applies nothing; its rows still offer `Use These Settings`, which
+  saves that row's settings as chosen, with no calibration summary (only a completed run gives one). On Parakeet
+  nothing is applied: its score is one row labelled with the model, shown beside the device's
+  results for the whisper models, to compare. The scores shown for other models, Parakeet included, come only from
+  each model's last completed run; a stopped or failed run never supplies one. A new run replaces the device's results for that
+  model; there is no separate discard.
+- **No Save.** Applying, reverting, forgetting and model jobs are immediate actions, like
+  Uninstall: Voice has no staged form and no part in the footer's Save (§app.settings-dialog/save-bar).

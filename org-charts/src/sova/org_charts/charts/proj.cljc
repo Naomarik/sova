@@ -178,6 +178,12 @@
       (dsl/act {:event :spec/freeze :checks [invalid]}
         (script {:expr (fn [_ d] [(ops/assign :spec {:frozen (true? (:frozen (b/evt d)))})])}))
 
+      ;; A gap the overseer files (`sova_idea add §gap/…`, L0) is an item; the operator's ideas never are.
+      (dsl/act {:event :gap/file :checks [invalid]}
+        (dsl/spawn {:chart "item" :link :project :watch? false
+                    :id (fn [d] (b/item-sid (:org-id d) (:id d) (:gap-id (b/evt d))))
+                    :data (fn [d] {:org-id (:org-id d) :project-id (:id d) :id (:gap-id (b/evt d)) :idea-id (:idea-id (b/evt d))})}))
+
       ;; Item-less starts (the gap-less ones): a gathering…
       (dsl/act {:event :baton/start :checks [not-archived invalid gather-cap]}
         (dsl/spawn {:chart "baton" :link :project :id (fn [d] (b/baton-sid (:org-id d) (:session-id (b/evt d)))) :data baton-data})
@@ -267,6 +273,7 @@
    :overseer/start    {:needs nil}
    :overseer/clear    {:needs nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
    :stakeholder/set   {:needs nil}
+   :gap/file          {:needs "L0" :tool "sova_idea"}
    :baton/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true
                        :what (fn [d] (str "A gathering session \"" (:public-title (b/evt d)) "\""))}
    :build/start       {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true

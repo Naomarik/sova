@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { completeSuffix, deferredIds, lastLine, parseAlsoChanges, parseAlsoChangesLine, plumbingPaths, stripAlsoChanges } from "./also-changes.ts";
+import { completeSuffix, deferredIds, landingGate, lastLine, parseAlsoChanges, parseAlsoChangesLine, plumbingPaths, stripAlsoChanges } from "./also-changes.ts";
 
 test("M3-B-s2-3's line verbatim: a § inside a description is not named", () => {
 	const line =
@@ -60,4 +60,12 @@ test("Plumbing and Deferred lines: a reason is required; Deferred takes the § g
 	].join("\n");
 	assert.deepEqual(plumbingPaths(reply), ["pi-config/extensions/usage-status/severity.ts", "scripts/x.sh"]);
 	assert.deepEqual(deferredIds(reply), ["§app.links/public", "§app.links/expiry"]);
+});
+
+test("landingGate: core's --landing shapes; Plumbing and Deferred lines clear them", () => {
+	const lists = { unmappedChanged: [{ path: "pi-config/x/index.ts", status: "M" }, { path: "src/gone.ts", status: "D" }], unpromotedDrafts: [{ draft: "links", worktree: "/w", ids: ["§app.links/public"] }] };
+	assert.deepEqual(landingGate("Merged.\nAlso changes: none", lists), { ok: false, missingPlumbing: ["pi-config/x/index.ts", "src/gone.ts"], missingDeferral: ["§app.links/public"] });
+	const reply = "Merged.\nPlumbing: pi-config/x/index.ts, src/gone.ts — dead helper removed\nDeferred: §app.links/public — copy review pending\nAlso changes: none";
+	assert.deepEqual(landingGate(reply, lists), { ok: true, missingPlumbing: [], missingDeferral: [] });
+	assert.ok(landingGate("x", {}).ok);
 });

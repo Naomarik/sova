@@ -149,3 +149,26 @@ export function deferredIds(reply: string): string[] {
 	}
 	return out;
 }
+
+export interface LandingGate {
+	ok: boolean;
+	/** Unmapped changed paths no `Plumbing:` line names. */
+	missingPlumbing: string[];
+	/** Unpromoted records' § no `Deferred:` line names. */
+	missingDeferral: string[];
+}
+
+/**
+ * The landing gate on a reply (merge and promote turns): each changed file no claim maps needs a
+ * `Plumbing: <path> — <why>` line (or a claim mapping it, which removes it from `unmappedChanged`), and
+ * each unpromoted draft record's § a `Deferred: §X — <why>` line. Shapes as core's `foreign --landing`.
+ */
+export function landingGate(reply: string, lists: { unmappedChanged?: readonly { path: string }[] | readonly string[]; unpromotedDrafts?: readonly { ids: readonly string[] }[] }): LandingGate {
+	const plumbing = plumbingPaths(reply);
+	const deferred = deferredIds(reply);
+	const paths = (lists.unmappedChanged ?? []).map((e) => (typeof e === "string" ? e : e.path));
+	const ids = [...new Set((lists.unpromotedDrafts ?? []).flatMap((d) => d.ids))];
+	const missingPlumbing = [...new Set(paths)].filter((p) => !plumbing.includes(p));
+	const missingDeferral = ids.filter((id) => !deferred.includes(id));
+	return { ok: !missingPlumbing.length && !missingDeferral.length, missingPlumbing, missingDeferral };
+}

@@ -19,7 +19,7 @@
  * (CensusState), so a caller whose hooks are separate processes can keep it in a file.
  */
 import { spawn } from "node:child_process";
-import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { posix } from "node:path";
 import { ALSO_CHANGES_OVERRIDE, deferredIds, lastLine, looksLikeAlsoChanges, parseAlsoChanges, parseAlsoChangesLine, plumbingPaths } from "./also-changes.ts";
 
@@ -1158,4 +1158,60 @@ export function driftNote(toolName: string, input: unknown, content: unknown): s
 	const warnings = driftWarningsIn(textOf(content));
 	if (!warnings.length) return undefined;
 	return `${CHECK_TAG} promote's drift warnings (a warning, not a block): ${warnings.map((w, i) => `(${i + 1}) ${w}`).join(" ")}\nFor each: change the stale § in a draft and promote (name it in \`Also changes:\`), or say why it stays.`;
+}
+
+// ── The workers' ledger (M4) ─────────────────────────────────────────────────
+
+/** The env var the spawn path sets on every spec-on worker and member: the parent's ledger file. */
+export const LEDGER_ENV = "SOVA_SPEC_LEDGER";
+
+/** One git operation a worker's hooks saw move a HEAD, as a line of the parent's ledger. */
+export interface LedgerEntry {
+	v: 1;
+	/** ms since the epoch. */
+	at: number;
+	actor: { runtime: "pi" | "claude-code"; session?: string };
+	/** The tree top the HEAD moved in. */
+	top: string;
+	before: string;
+	after: string;
+	kind: "commit" | "merge" | "promote" | "ff" | "rebase" | "reset";
+	/** For a merge: the target branch (when known). */
+	target?: string;
+	ref?: string;
+}
+
+/** The ledger file of a parent session: `<agentDir>/sova/spec-ledger/<parentSessionId>.jsonl`. */
+export function ledgerPath(agentDir: string, parentSessionId: string): string {
+	return join(agentDir, "sova", "spec-ledger", `${parentSessionId.replace(/[^\w.-]/g, "_")}.jsonl`);
+}
+
+/** Append one entry (creating the file); never throws. */
+export function appendLedger(path: string, entry: LedgerEntry): void {
+	try {
+		mkdirSync(dirname(path), { recursive: true });
+		appendFileSync(path, `${JSON.stringify(entry)}\n`);
+	} catch {
+		// The ledger is best effort: a worker's op then counts only through the parent's own tree compare.
+	}
+}
+
+/** Entries at or after `since` (ms); malformed lines skipped; [] without a file. */
+export function readLedger(path: string, since = 0): LedgerEntry[] {
+	let text: string;
+	try {
+		text = readFileSync(path, "utf8");
+	} catch {
+		return [];
+	}
+	const out: LedgerEntry[] = [];
+	for (const line of text.split("\n")) {
+		try {
+			const e = JSON.parse(line) as LedgerEntry;
+			if (e?.v === 1 && typeof e.top === "string" && typeof e.before === "string" && typeof e.after === "string" && typeof e.at === "number" && e.at >= since) out.push(e);
+		} catch {
+			// a partial or foreign line
+		}
+	}
+	return out;
 }

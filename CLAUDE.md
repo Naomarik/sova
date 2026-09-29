@@ -108,15 +108,18 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   And `src/components/Thread.tsx` imports `pi-config/extensions/show-changes/details.ts` at
   runtime (`SHOW_CHANGES_TOOL` and the strict check `normalizeShowChangesDetails`, for the
   `show_changes` tool's details `{v: 1, scope, title?, paths?, steps?}`, its scope named like
-  `DiffScope` minus `sessionPath`; the tool checks the steps' shape only, Sova places every hunk
-  against the real diff); `src/lib/changes-view.ts` and `src/components/ChangesViewer.tsx` import
+  `DiffScope` minus `sessionPath`; the tool refuses a diff of more than one hunk unless its steps
+  place every hunk, with its own copy of the viewer's matching in `coverage.ts`, and Sova places
+  every hunk again when it draws the diff); `src/lib/changes-view.ts` and `src/components/ChangesViewer.tsx` import
   only its types (`import type`, erased from the bundle). Vite bundles
   them for the browser, so each must import nothing at all. So an edit to any of these can break Sova's
   typecheck. Keep them pi-runtime-free (node builtins and, for the mode trio and the protocol set,
   each other only), and import nothing else from pi-config at runtime. `minor.ts` also reads its sibling `spec-mode.md` once at load, and
   refuses to load if that file's shell block is malformed. One test-only exception: `server/claude-models.test.ts` imports
   `pi-config/extensions/claude-code/transport.ts` (builtins only) to pin the server's Claude
-  model-discovery argv to the extension's; beyond that, `context-window.ts`, `accounts.ts` and the
+  model-discovery argv to the extension's, and `src/lib/show-changes-coverage.test.ts` imports
+  `pi-config/extensions/show-changes/coverage.ts` (imports nothing) to pin the tool's hunk matching
+  to `src/lib/changes-steps.ts`'s; beyond that, `context-window.ts`, `accounts.ts` and the
   protocol set above, the server never imports claude-code. `argv.ts` is also the quoting boundary: every path that reaches a far shell is
   single-quote-escaped there, and callers spawn its argv without a local shell. The web mode switch calls that extension's
   `/mode` command handler directly (`ChatSession.applyMode`), so its arguments are a contract too.

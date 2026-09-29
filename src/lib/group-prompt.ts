@@ -181,10 +181,11 @@ export function partialAfterRetry(was: PartialState, accepted: readonly string[]
  * carries availability and changes as members start and finish turns; a placeholder that moved
  * with it would rewrite itself under the caret, and "Ask all 3 members…" would become "Ask all 2
  * members…" while someone typed. `members` is the whole group; a group of one asks about "this
- * member" because "all 1 members" is not a sentence.
+ * member" because "all 1 members" is not a sentence. The key hint rides along exactly when Enter
+ * sends (not in touch mode).
  */
-export function composerPlaceholder(members: number, folded: boolean): string {
+export function composerPlaceholder(members: number, enterSends: boolean): string {
   if (members === 1) return "Ask this member…";
   const ask = `Ask all ${members} members…`;
-  return folded ? ask : `${ask}—Enter sends, Shift+Enter adds a line`;
+  return enterSends ? `${ask}—Enter sends, Shift+Enter adds a line` : ask;
 }

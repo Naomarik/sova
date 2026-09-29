@@ -27,7 +27,8 @@ FROM deps AS plain
 LABEL sova.mesh-lab=1
 COPY . /sova
 # The frontend only (no tsc): a lab run must not be blocked by a typecheck error mid-branch.
-RUN pnpm exec vite build >/dev/null
+# Both builds, as the VPS deploy does: the share listener serves /h/ and /i/ from dist-share/.
+RUN pnpm exec vite build >/dev/null && pnpm exec vite build --mode share >/dev/null
 COPY scripts/mesh-lab/host/entrypoint.sh /usr/local/bin/lab-entrypoint
 COPY scripts/mesh-lab/host/fixture-session.mjs /usr/local/lib/lab/fixture-session.mjs
 RUN chmod 0755 /usr/local/bin/lab-entrypoint && mkdir -p /root/work

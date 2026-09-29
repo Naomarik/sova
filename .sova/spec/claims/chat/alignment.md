@@ -296,16 +296,18 @@ an `align` call: it is the message, not its working.
 ## §chat.alignment/chip — The chip in the composer
 
 In a chat's composer, the run-status row carries an alignment chip **immediately left of the
-Inputs trigger** (§chat/composer): "{n} aligns · {open}/{total}" ("1 align · 2/5"), where `n` is
-the open alignments on the branch and `open`/`total` count their open and all their live (not
-dropped) questions. It is omitted when no alignment is open, and the row shows for it alone. The
-chip and the Inputs trigger sit together at the row's right end.
+Inputs trigger** (§chat/composer): "{n} aligns · {decided}/{total} decided" ("1 align · 5/7 decided"), where
+`n` is the open alignments on the branch and `decided`/`total` count their decided and all their
+live (not dropped) questions, the same counts the rows show. It is omitted when no alignment is open, and the row shows for it alone. The
+chip and the Inputs trigger sit together at the row's right end. In a narrow composer's run-status
+row (§chat.transcript/streaming) it is the one control that may give way: when nothing else can,
+its count ends in an ellipsis ("1 align · 0/8…"), and its accessible name keeps the whole count.
 
 ```html
 <button type="button" class="run-status-link run-status-align" aria-haspopup="menu" aria-expanded="false"
-        aria-label="2 open alignments, 5 of 15 questions open — show alignments">
+        aria-label="2 open alignments, 10 of 15 questions decided — show alignments">
   <span class="icon icon-sm" style="--icon:url(/icons/chat.svg)" aria-hidden="true"></span>
-  <span class="text-num">2 aligns · 5/15</span>
+  <span class="text-num">2 aligns · 10/15 decided</span>
   <span class="icon icon-sm" style="--icon:url(/icons/chevron-down.svg)" aria-hidden="true"></span>
 </button>
 <div class="model-menu action-menu align-menu" popover="auto" role="menu" aria-label="Open alignments">

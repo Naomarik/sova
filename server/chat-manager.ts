@@ -43,6 +43,7 @@ import { attachStreamGuard, capsFor, type StreamTrip } from "./stream-guard";
 import { targetOfCwd } from "./targets";
 import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
+import { monitorExtension } from "./resource-monitor";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -111,7 +112,11 @@ async function servicesForCwd(
     cwd,
     modelRuntime,
     extensionFlagValues: extensionFlagsFor(cwd, outline, !!resourceLoaderOptions?.noExtensions),
-    ...(resourceLoaderOptions ? { resourceLoaderOptions } : {}),
+    // An ordinary session gets the resource monitor's listener (which session this runtime hosts,
+    // its workers' pids, when its tools run; §app.resource-monitor/attribution). A special loadout
+    // (Overseer, baton, project overseer) keeps exactly its own: it runs no shell and no workers,
+    // and the monitor finds its Claude Code provider through the held sessions instead.
+    resourceLoaderOptions: resourceLoaderOptions ?? { extensionFactories: [{ name: "sova-resource-monitor", factory: monitorExtension }] },
   });
 }
 

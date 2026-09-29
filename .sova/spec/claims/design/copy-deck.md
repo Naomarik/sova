@@ -147,11 +147,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | State | Copy |
 |---|---|
 | Label (visually hidden) | Message |
-| Placeholder, idle | ≥768: Ask pi to…—Enter sends, Shift+Enter adds a line · <768 and read only: Ask pi to… |
-| Placeholder, streaming | ≥768: Steer the current turn…—Enter sends, Shift+Enter adds a line · <768: Steer the current turn… |
+| Placeholder, idle | Enter sends: Ask pi to…—Enter sends, Shift+Enter adds a line · touch mode (§chat.composer/behavior) and read only: Ask pi to… |
+| Placeholder, streaming | Enter sends: Steer the current turn…—Enter sends, Shift+Enter adds a line · touch mode: Steer the current turn… |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
-| Run status | `Working` + detail: `· thinking` / `· writing` / `· running {tool}` · stopping: `Stopping…` · while ≥ 1 worker runs, the subagents trigger beside it with the counts only: `2 subagents` · `1 subagent · 2 team members` |
-| Alignment chip (§chat.alignment/chip) | `{n} aligns · {open}/{total}` (1: `1 align · …`) · `aria-label` "{n} open alignments, {open} of {total} questions open — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
+| Run status | Wide composer (≥ 620px): `Working` + detail: `· thinking` / `· writing` / `· running {tool}`, and beside it the subagents trigger with the counts only: `2 subagents` · `1 subagent · 2 team members`. Narrow: no visible words, the dot and the step's icon, and the trigger as an icon and a count (`2`); the same words are the tooltip and accessible name · in both: `Stopping…` · `Compacting context` · `Retrying after a provider error` · trigger name: `2 subagents working — show subagents` |
+| Alignment chip (§chat.alignment/chip) | `{n} aligns · {decided}/{total} decided` (1: `1 align · …`) · `aria-label` "{n} open alignments, {decided} of {total} questions decided — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
 | Staged recommendations (§chat.alignment/card) | `Taking your recommendation: {al_N} {q1}, {q3}` (alignments joined by "; ") · group label "Staged recommendations" · `Clear Picks` |
 | Reason: TUI-live | Read only while this session is open in the TUI. |
 | Reason: busy (server `code:"busy"`) | pi is busy with another turn. Send when it finishes. |
@@ -333,7 +333,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Listbox `aria-label` | Commands |
 | Row name | /{name} |
 | Source chip | ext · prompt · skill |
-| Empty | 0 commands match “/{query}”. Enter sends it as a message. |
+| Empty | 0 commands match “/{query}”. Enter sends it as a message. · touch mode (§chat.composer/behavior): 0 commands match “/{query}”. |
 | Foot (≥768) | `Enter` or `Tab` to insert · `Esc` to close |
 | Announce | {n} commands available. · empty: 0 commands match. |
 | Thread row after sending | Ran `/{name} {args}` |
@@ -614,7 +614,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Member chips | `Working` (live dot, mid-turn — the split row's only at-a-glance sign of who is still running; the tab strip's dot covers tabs mode) · `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
 | Member composer reasons | "This session is open in a terminal, so Sova won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
 | Member file gone | **This session's file is gone.** Its transcript was deleted outside Sova, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |
-| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (below 768: "Ask all {n} members…"; 1 member: "Ask this member…") · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
+| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (in touch mode, where Enter adds a line: "Ask all {n} members…"; 1 member: "Ask this member…") · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
 | Group composer Send | `Send to All` · in flight `Sending…` · 1 member: `Send` |
 | Group composer targets line | `{n} of {m} members` then the excluded reasons, counted: `· 1 mid-turn` · `· 2 open in a terminal` · `· 1 archived` · `· 1 can't be opened` · `· 1 busy` · `· 1 file gone`. All available: `{n} members` alone |
 | Group composer off | 0 available: Send is `aria-disabled`, reason "No member can take a message right now." · 0 members: the composer isn't rendered |
@@ -782,6 +782,16 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Status strip, line 1 | "Last looked on its own {time}{tail}." or "It hasn't looked on its own yet." + " Waiting to look at {n} things." (1: "1 thing"; `title`: the reasons) · paused by an attach: the reason, then `Resume at {level}` · empty roster: the reason |
 | Status strip, lines 2–3 | the project page's readout ("Today on its own: …") and waiting sentences (§design.copy-deck/project-limits) · below 480px: `Details` toggles them |
 | Read-only line (earlier conversation) | "An earlier conversation. Read only." |
+
+## §design.copy-deck/overseer-head — The Overseer · page head (§app.overseer/head-layout)
+
+| Where | Copy |
+|---|---|
+| Meta line | "{n} sessions · {w} working · {a} need you" (1: "1 session", "1 needs you"; a part at 0 is left out) · below a 520px head "{pct}% · " leads it · no menus in it |
+| ⋯ menu | `aria-label` "Overseer actions" · `title` "Overseer actions" · `Proactivity…`, note the current mode (`Off` / `List Only` / `Brief Me`; `aria-label` "Proactivity: {mode}. Change it.") · `History…`, note "{n} earlier" while any (`aria-label` "History, {n} earlier conversations", 1: "conversation") · `Clear`, note "Start a new conversation. This one moves to History." (`aria-label` "Clear: start a new conversation") · an earlier conversation: `History…` only |
+| Proactivity screen | `Off` · `List Only` · `Brief Me`, each with its hint (§app.overseer/proactivity) as its note, the current one checked (`aria-label` "{mode}, {hint}" + " Chosen.") · done (announced): "Proactivity: {mode}. {hint}" · failed (toast): "Proactivity unchanged. {why}" |
+| History screen | its earlier conversations, each "{title}" ("No messages" when untitled) with its age · none: "No earlier conversations yet." |
+| Clear | done (announced): "Cleared. The previous conversation is in History." · failed (toast): "Couldn't clear the Overseer. {why}" |
 
 ## §design.copy-deck/overseer-orgs — The Overseer in organizations (§app.overseer/org-tools, §app.organizations/archive)
 

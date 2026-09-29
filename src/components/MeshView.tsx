@@ -1,6 +1,7 @@
-import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { ApiError, claimMeshLogin, fetchFrontDoor, fetchMesh, fetchMeshCandidates, fetchMeshLogins, getMeshSettings, putMeshPeers, putMeshSettings } from "../lib/api";
 import { copyText } from "../lib/ui-state";
+import { loadPublicLinks, meshChipText, publicLinksInfo, stateChip } from "../lib/public-links";
 import { relativeTime } from "../lib/format";
 import {
   claimable,
@@ -84,6 +85,8 @@ function cardSummary(peers: PeerStatus[]): { chip: string; tone?: "success" | "w
  */
 export function MeshCard() {
   const summary = () => cardSummary(meshPeers());
+  // The Public links chip: this host's route, read once here; Settings' saves keep it current.
+  onMount(() => void loadPublicLinks());
   return (
     <section class="explain-section" aria-labelledby="mesh-section-title" data-mesh-ui>
       <h2 class="explain-section-head" id="mesh-section-title">
@@ -96,6 +99,7 @@ export function MeshCard() {
               <span class="icon ext-card-icon" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
               <h3 class="ext-card-title">Hosts</h3>
               <Chip tone={summary().tone}>{summary().chip}</Chip>
+              <Show when={meshChipText(publicLinksInfo())}>{(text) => <Chip tone={stateChip(publicLinksInfo()!.share).tone}>{text()}</Chip>}</Show>
             </div>
             <p class="ext-card-body">{summary().line}</p>
             <Show when={summary().problem}>{(problem) => <p class="ext-card-error">{problem()}</p>}</Show>

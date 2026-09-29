@@ -22,10 +22,12 @@ import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
-import { startShareListener, stopShareListener } from "./share/listener";
+import { mountPublicLinks } from "./public-links-routes";
+import { mountShareGateway } from "./share/gateway-routes";
+import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
-import { canonicalPath, resolveSessionPath, SESSIONS_DIR } from "./paths";
+import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
 import { setFavorite } from "./model-favorites";
@@ -37,7 +39,7 @@ import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
-import { archiveSession, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -104,6 +106,7 @@ import { onTagsChanged } from "./session-tags";
 import { startSessionTags, tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { readLiveRecords } from "./live";
+import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
 
@@ -866,6 +869,23 @@ app.get("/api/insights/session/workers", async (c) => {
   return c.json(await getHiddenWorkers(path), 200, { "Cache-Control": "no-store" });
 });
 
+// Resource monitor (§app/resource-monitor): the latest background sample, and its history (5s from
+// the in-memory hour, 30s from the disk log). Read-only.
+app.get("/api/monitor", (c) => {
+  const snap = resourceMonitor()?.snapshot();
+  return snap ? c.json(snap, 200, { "Cache-Control": "no-store" }) : c.json({ error: "No sample yet" }, 503);
+});
+
+app.get("/api/monitor/history", async (c) => {
+  const res = c.req.query("res") ?? "5s";
+  if (res !== "5s" && res !== "30s") return c.json({ error: "res must be 5s or 30s" }, 400);
+  const since = Number(c.req.query("since") ?? 0);
+  if (!Number.isFinite(since) || since < 0) return c.json({ error: "since must be epoch ms" }, 400);
+  const monitor = resourceMonitor();
+  if (!monitor) return c.json({ error: "Monitor not running" }, 503);
+  return c.json(await monitor.history(since, res), 200, { "Cache-Control": "no-store" });
+});
+
 // The git worktrees each listed session touches (server/worktrees.ts). Paths that aren't sessions
 // come back with trees: []; git failures are a tree's `error`, never a 500.
 app.get("/api/insights/worktrees", async (c) => {
@@ -1138,6 +1158,10 @@ const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(
 setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
+// Public links (shared/public-links.ts): Settings → Public links under /api/public-links (main
+// listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
+mountPublicLinks(app);
+mountShareGateway(app, meshApi);
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
@@ -1217,8 +1241,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port}`);
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
-  // The share listener, only when SOVA_SHARE_HOST/SOVA_SHARE_PORT are set (§app.baton/share-listener).
-  void startShareListener();
+  // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
+  void startShareRuntime();
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler
@@ -1231,6 +1255,13 @@ attachWebSockets(server);
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
+// Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
+startResourceMonitor({
+  logDir: join(stateRoot(), "monitor"),
+  liveDir: LIVE_DIR,
+  held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
+  titleOf: cachedTitleOf,
+});
 // Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
 const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
 workspaceCommits.start();
@@ -1310,9 +1341,10 @@ async function shutdown() {
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   priceRefresh.stop();
+  stopResourceMonitor();
   meshLinks.stop();
   stopMesh();
-  stopShareListener();
+  stopShareRuntime();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   // Every visit with an open share socket is seen now, so the commit below carries it.
   try {

@@ -101,14 +101,16 @@ The textarea gains these attributes, and keeps them only while the menu is open:
 - **Active option.** The first row becomes active whenever the results change.
 - **Empty result.** Keep the menu open, drop the list, and show
   `<p class="command-menu-empty">0 commands match “/{query}”. Enter sends it as a message.</p>`.
-  While it's empty, `Enter` is **not** intercepted: it sends, as the copy says.
+  In touch mode (§chat.composer/behavior) the second sentence is dropped: Enter adds a line there,
+  so the copy doesn't promise a send. While it's empty, `Enter` is **not** intercepted: it does
+  what `Enter` does in the composer.
 
 ## §chat.slash-commands/keyboard-and-mouse — Keyboard and mouse
 
 | Input | Does |
 |---|---|
 | `↓` / `↑` | Moves the active option, wrapping. It never moves the caret while the menu is open |
-| `Enter` / `Tab` | Replaces the token with `/{name} ` (with a trailing space) and closes the menu. The caret lands after the space, so arguments come next. `Enter` doesn't send; the *next* `Enter` does |
+| `Enter` / `Tab` | Replaces the token with `/{name} ` (with a trailing space) and closes the menu. The caret lands after the space, so arguments come next. `Enter` doesn't send; the *next* `Enter` does what `Enter` does in the composer (§chat.composer/behavior) |
 | `Esc` | Closes the menu and leaves the text unchanged. It doesn't blur the textarea or clear the draft |
 | Typing | Keeps filtering. A space or a caret move out of the token closes the menu |
 | `Shift+Enter` | Newline as usual. The newline ends the token, so the menu closes |
@@ -204,7 +206,7 @@ and again when the count changes, at most once a second. When there are none, an
   Those two are still listed and inserted like any other command — the runtime registers them —
   but Enter runs them here, clears the draft, and adds no row to the thread: the pane opening is
   the result. Once the whole text is a bare local command the menu closes, and Enter runs it
-  rather than inserting a match (`/new` would otherwise pick `btw:new`); a partial token like
+  when Enter would send (in touch mode it adds a line, and Send runs it) rather than inserting a match (`/new` would otherwise pick `btw:new`); a partial token like
   `/ne` still opens it. Anything with arguments belongs to the runtime and goes through
   untouched. **Bare `/tree` and bare `/timeline` (§chat/timeline)** both open the session pane on Timeline
   the same way — draft cleared, no row in the thread — `/tree` with **Inputs Only** on (your own

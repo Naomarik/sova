@@ -78,17 +78,17 @@ test("fold: newest per document in touch order; this run's live results on top; 
   assert.deepEqual(foldAlignRows(items, live).map((e) => [e.doc.id, e.doc.rev, e.rowId]), [["al_2", 2, undefined], ["al_1", 2, "r3"]]);
 });
 
-test("the chip counts open documents only: '2 aligns · 3/4'", () => {
+test("the chip counts open documents only: '2 aligns · 1/4 decided'", () => {
   const entries = foldAlignRows([
     alignItem("r1", doc("al_1", 1, [q("q1"), q("q2", { decision: decided })])),
     alignItem("r2", doc("al_2", 1, [q("q1"), q("q2")])),
     alignItem("r3", doc("al_3", 1, [q("q1")], "done")),
   ]);
   const c = alignChipCounts(entries);
-  assert.deepEqual(c, { docs: 2, open: 3, total: 4 });
-  assert.equal(alignChipText(c), "2 aligns · 3/4");
-  assert.equal(alignChipText({ docs: 1, open: 0, total: 3 }), "1 align · 0/3");
-  assert.equal(alignChipLabel(c), "2 open alignments, 3 of 4 questions open — show alignments");
+  assert.deepEqual(c, { docs: 2, decided: 1, total: 4 });
+  assert.equal(alignChipText(c), "2 aligns · 1/4 decided");
+  assert.equal(alignChipText({ docs: 1, decided: 3, total: 3 }), "1 align · 3/3 decided");
+  assert.equal(alignChipLabel(c), "2 open alignments, 1 of 4 questions decided — show alignments");
 });
 
 test("menu rows: open documents only, those still asking first, each group last touched first", () => {

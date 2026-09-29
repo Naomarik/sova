@@ -803,7 +803,10 @@ export function registerSubagents(
 			status: a.status,
 			...(a.model === undefined ? {} : { model: a.model }),
 			preview: (a.error || a.finalOutput() || "No response yet.").slice(0, WORKER_PREVIEW_CHARS),
-			// Additive presence fields (still version 1). Never cwd, pid, or task text.
+			// Additive presence fields (still version 1). Never cwd or task text.
+			// The live process's pid is in-process only: the sessions extension's decodeSnapshot
+			// whitelists fields and never writes it to the live record; Sova's resource monitor reads it.
+			...(a.processAlive && Number.isSafeInteger(a.pid) && a.pid! > 0 ? { pid: a.pid } : {}),
 			...(typeof a.backend === "string" && a.backend ? { backend: a.backend } : {}),
 			// Transcript path and backend session id only, never the transcript itself.
 			...(typeof a.sessionFile === "string" && a.sessionFile ? { sessionFile: a.sessionFile } : {}),

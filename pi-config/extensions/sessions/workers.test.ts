@@ -143,6 +143,10 @@ test("additive fields pass through; invalid values are omitted without rejecting
 	h.events.emit(WORKERS_SNAPSHOT_EVENT, { version: 1, workers: [{ ...worker("error"), backend: 7, startedAt: "1",
 		lastActivity: Number.NaN, endedAt: Infinity, outcome: "meh", unknownKey: { mutable: true } }] });
 	assert.deepEqual(changes.at(-1), [worker("error")]);
+	// The subagents event carries the live pid in-process (Sova's resource monitor); it never
+	// reaches the record, whatever its value.
+	h.snapshot([{ ...worker("running"), pid: 4242 } as WorkerSummary]);
+	assert.deepEqual(changes.at(-1), [worker("running")]);
 	for (const outcome of ["error", "aborted"] as const) {
 		h.snapshot([{ ...worker("killed"), outcome }]);
 		assert.equal(changes.at(-1)![0].outcome, outcome);

@@ -69,6 +69,7 @@ import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
+import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
 import type { ModelPolicy } from "./model-policy";
 import type {
@@ -873,6 +874,12 @@ export const claimMeshLogin = (key: string) =>
 /** Every host's own details (shared/mesh-details.ts), this host first; mesh on only. */
 export const fetchMeshDetails = () => request<MeshDetails>("/api/mesh/details", meshReadInit(true));
 
+/** The Resource Monitor's latest tick (§app/resource-monitor); polled only while its modal is open. */
+export const fetchMonitor = () => request<MonitorSnapshot>("/api/monitor", { cache: "no-store" });
+/** Monitor history after `since` (epoch ms): the 5s ring, or the 30s rollups on disk. */
+export const fetchMonitorHistory = (since: number, res: MonitorResolution) =>
+  request<MonitorHistory>(`/api/monitor/history?since=${Math.floor(since)}&res=${res}`, { cache: "no-store" });
+
 /** Rename a host: this one, or a peer (which then tells its own peers). */
 export const putHostLabel = (id: string, label: string) =>
   request<HostRenameResult>("/api/mesh/label", {
@@ -1004,13 +1011,13 @@ export const setBatonAbilities = (sid: string, abilities: Partial<GatheringAbili
 export const getBatonSettings = () => request<BatonSettings>("/api/baton/settings");
 export const putBatonSettings = (settings: BatonSettings) => request<BatonSettings>("/api/baton/settings", jsonInit("PUT", settings));
 export const offerBaton = (sid: string, to: string[], question?: string, briefing?: string) =>
-  request<{ links: OfferLink[]; info?: BatonInfo }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
+  request<{ links: OfferLink[]; info?: BatonInfo; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/offer`, jsonInit("POST", { to, ...(question ? { question } : {}), ...(briefing ? { briefing } : {}) }));
 export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${encodeURIComponent(sid)}/offer/withdraw`, jsonInit("POST"));
 /** A fresh link for one invitee of the open offer (their older one stops working). */
 export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
-  request<{ info?: BatonInfo; link?: string; at?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
+  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
 export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
 export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
 export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);

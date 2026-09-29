@@ -35,6 +35,7 @@ function project(): { root: string; stateDir: string } {
 	}));
 	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a thing.\n");
 	write(root, "src/a.txt", "a\n");
+	write(root, ".gitignore", ".hook-state/\n.sova/spec/drafts/\n");
 	git(root, "init", "-q", "-b", "main");
 	git(root, "-c", "user.email=t@t", "-c", "user.name=t", "add", ".");
 	git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "base");
@@ -291,4 +292,163 @@ test("the script entry: reads the event on stdin, prints Claude's JSON, and neve
 	const bad = spawnSync(process.execPath, [SPEC_HOOK_SCRIPT, "post", "--core", CORE, "--state", stateDir], { input: "not json", encoding: "utf8" });
 	assert.equal(bad.status, 0);
 	assert.equal(bad.stdout, "");
+});
+
+// ---------------------------------------------------------------------------
+// Phase 3: landings by tree (M5), the landing gate (M1), own claims (M2), the ledger (M4), the shared parser (M3)
+// ---------------------------------------------------------------------------
+const C = ["-c", "user.email=t@t", "-c", "user.name=t"];
+const readJson = (file: string) => JSON.parse(fs.readFileSync(file, "utf8"));
+function editManifest(root: string, fn: (claims: Record<string, any>) => void): void {
+	const file = path.join(root, ".sova/spec/manifest.json");
+	const m = readJson(file);
+	fn(m.claims);
+	fs.writeFileSync(file, JSON.stringify(m));
+}
+/** The project plus a worktree on `feat` that rewords §app/x; the worker's session runs in the worktree. */
+function withWorktree(): { root: string; wt: string; stateDir: string } {
+	const p = project();
+	const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "spec-hooks-wt-")), "wt");
+	roots.push(path.dirname(wt));
+	git(p.root, "worktree", "add", "-q", "-b", "feat", wt);
+	write(wt, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a better thing.\n");
+	git(wt, ...C, "commit", "-qam", "feat: reword x");
+	return { ...p, wt, stateDir: path.join(path.dirname(wt), ".hook-state") };
+}
+
+test("cross-tree fast-forward: a worker in its worktree runs `cd <root> && git merge`; the root's reflog gives the landing", async () => {
+	const { root, wt, stateDir } = withWorktree();
+	const o = { core: CORE, stateDir };
+	await runHook("turn", event(wt, {}), o);
+	git(root, "merge", "-q", "--ff-only", "feat");
+	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
+	const turn = readState(statePath(stateDir, "s1")!).turn;
+	assert.deepEqual([turn.landed, turn.foreign], [true, ["§app/x"]]);
+	assert.equal(turn.landings?.[0]?.kind, "ff");
+	const out = await runHook("stop", event(wt, { last_assistant_message: "Merged.\nAlso changes: none" }), o) as any;
+	assert.equal(out?.decision, "block");
+	assert.equal(await runHook("stop", event(wt, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded", stop_hook_active: true }), o), undefined);
+});
+
+test("cross-tree non-ff with `git -C <root>` while master moved: only the branch's §, never master's", async () => {
+	const { root, wt, stateDir } = withWorktree();
+	const o = { core: CORE, stateDir };
+	editManifest(root, (c) => { c["§app/w"] = { kind: "note" }; });
+	write(root, ".sova/spec/claims/app/w.md", "# §app/w\n\nW.\n");
+	git(root, ...C, "add", "."); git(root, ...C, "commit", "-qm", "master: w");
+	await runHook("turn", event(wt, {}), o);
+	git(root, ...C, "merge", "-q", "--no-ff", "-m", "merge feat", "feat");
+	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `git -C ${root} merge --no-ff -m "merge feat" feat` } }), o);
+	const turn = readState(statePath(stateDir, "s1")!).turn;
+	assert.deepEqual([turn.landed, turn.foreign, turn.landings?.[0]?.kind], [true, ["§app/x"], "merge"]);
+	assert.equal(await runHook("stop", event(wt, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded" }), o), undefined);
+});
+
+test("two merges in one turn (one command): the list is the union of both landings", async () => {
+	const { root, stateDir } = project();
+	const o = { core: CORE, stateDir };
+	editManifest(root, (c) => { c["§app/w"] = { kind: "note" }; });
+	write(root, ".sova/spec/claims/app/w.md", "# §app/w\n\nW.\n");
+	git(root, ...C, "add", "."); git(root, ...C, "commit", "-qm", "w");
+	for (const [b, f, t] of [["a", "x", "X does a better thing."], ["b", "w", "W, reworded."]]) {
+		git(root, "checkout", "-qb", b!);
+		write(root, `.sova/spec/claims/app/${f}.md`, `# §app/${f}\n\n${t}\n`);
+		git(root, ...C, "commit", "-qam", b!);
+		git(root, "checkout", "-q", "main");
+	}
+	await runHook("turn", event(root, {}), o);
+	git(root, ...C, "merge", "-q", "--no-edit", "a");
+	git(root, ...C, "merge", "-q", "--no-edit", "b");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git merge --no-edit a && git merge --no-edit b" } }), o);
+	const turn = readState(statePath(stateDir, "s1")!).turn;
+	assert.deepEqual([turn.foreign, turn.landings?.length], [["§app/w", "§app/x"], 2]);
+	const out = await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded" }), o) as any;
+	assert.match(out?.reason ?? "", /omits §app\/w/);
+});
+
+test("the s2-3 comma line: a § inside a description is not named, so it is no extra", async () => {
+	const { root, stateDir } = b3();
+	const o = { core: CORE, stateDir };
+	git(root, "checkout", "-q", "main");
+	await runHook("turn", event(root, {}), o);
+	git(root, ...C, "merge", "-q", "--no-edit", "feat");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git merge --no-edit feat" } }), o);
+	const line = "Merged.\nAlso changes: §app/x — gains a new child claim, §app/w (a new behavior under it)";
+	assert.equal(await runHook("stop", event(root, { last_assistant_message: line }), o), undefined);
+});
+
+test("the landing gate: an unmapped file needs a Plumbing line and an unpromoted draft record a Deferred line (public-links shape)", async () => {
+	const { root, wt, stateDir } = withWorktree();
+	const o = { core: CORE, stateDir };
+	const draft = path.join(CORE, "sova-spec-draft.mjs");
+	assert.equal(spawnSync(process.execPath, [draft, "new", "links", "--write", "--root", wt]).status, 0);
+	write(wt, ".sova/spec/drafts/links/spec/claims/app/x.md", "# §app/x\n\nX links out.\n");
+	write(wt, "scripts/links.sh", "echo\n");
+	write(wt, "src/a.txt", "links\n");
+	git(wt, ...C, "add", "-A"); git(wt, ...C, "commit", "-qm", "links, spec deferred");
+	await runHook("turn", event(wt, {}), o);
+	git(root, "merge", "-q", "--ff-only", "feat");
+	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
+	const l = readState(statePath(stateDir, "s1")!).turn.landings![0]!;
+	assert.deepEqual([l.unmapped, l.unpromoted.map((d) => d.ids), l.advisory], [["scripts/links.sh"], [["§app/x"]], []]);
+	const bare = await runHook("stop", event(wt, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded" }), o) as any;
+	assert.equal(bare?.decision, "block");
+	assert.match(bare.reason, /scripts\/links\.sh changed and no claim maps it/);
+	assert.match(bare.reason, /left unpromoted: §app\/x/);
+	const ok = "Merged.\nPlumbing: scripts/links.sh — a dev helper\nDeferred: §app/x — the links prose waits for review\nAlso changes: §app/x — reworded";
+	assert.equal(await runHook("stop", event(wt, { last_assistant_message: ok, stop_hook_active: true }), o), undefined);
+});
+
+test("M3-B-s2-2: a claim the task created and promoted earlier, relabelled after merging master in, is never demanded at the ff merge", async () => {
+	const { root, wt, stateDir } = withWorktree();
+	const o = { core: CORE, stateDir };
+	// Turn 1 (earlier): the branch creates §app/y and commits it.
+	editManifest(wt, (c) => { c["§app/y"] = { kind: "behavior", requires: [], code: ["src/y.txt"] }; });
+	write(wt, ".sova/spec/claims/app/y.md", "# §app/y\n\nY is new.\n");
+	write(wt, "src/y.txt", "y\n");
+	git(wt, ...C, "add", "-A"); git(wt, ...C, "commit", "-qm", "spec: y");
+	// Master moves (another task), the branch merges it in, then relabels §app/y.
+	write(root, "src/a.txt", "master\n");
+	git(root, ...C, "commit", "-qam", "master: a");
+	git(wt, ...C, "merge", "-q", "--no-edit", "main");
+	editManifest(wt, (c) => { c["§app/y"].evidence = "verified"; });
+	git(wt, ...C, "commit", "-qam", "relabel y");
+	await runHook("turn", event(wt, {}), o);
+	git(root, "merge", "-q", "--ff-only", "feat");
+	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
+	const turn = readState(statePath(stateDir, "s1")!).turn;
+	assert.deepEqual(turn.foreign, ["§app/x"], "§app/y is the task's own (absent at the tip and the fork point)");
+	assert.equal(await runHook("stop", event(wt, { last_assistant_message: "Merged.\nAlso changes: §app/x — reworded" }), o), undefined);
+});
+
+test("the ledger: each git operation a worker's hook sees is appended for the parent (SOVA_SPEC_LEDGER)", async () => {
+	const { root, stateDir } = project();
+	const ledger = path.join(stateDir, "ledger.jsonl");
+	const o = { core: CORE, stateDir, ledger };
+	await runHook("turn", event(root, {}), o);
+	const before = git(root, "rev-parse", "HEAD");
+	write(root, "src/a.txt", "b\n");
+	git(root, ...C, "commit", "-qam", "code");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git commit -qam code" } }), o);
+	const lines = fs.readFileSync(ledger, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+	assert.equal(lines.length, 1);
+	assert.deepEqual([lines[0].v, lines[0].actor, lines[0].top, lines[0].before, lines[0].after, lines[0].kind], [1, { runtime: "claude-code", session: "s1" }, fs.realpathSync(root), before, git(root, "rev-parse", "HEAD"), "commit"]);
+	const settings = specHookSettings({ node: "node", coreDir: "/c", stateDir: "/s", ledger: "/l/x.jsonl" }) as any;
+	assert.match(settings.hooks.Stop[0].hooks[0].command, / --ledger \/l\/x\.jsonl$/);
+});
+
+test("a deleted mapped file lands in its claim: advisory (never an extra), not unmapped", async () => {
+	const { root, stateDir } = project();
+	const o = { core: CORE, stateDir };
+	git(root, "checkout", "-qb", "feat");
+	git(root, "rm", "-q", "src/a.txt");
+	git(root, ...C, "commit", "-qm", "drop a");
+	git(root, "checkout", "-q", "main");
+	await runHook("turn", event(root, {}), o);
+	git(root, ...C, "merge", "-q", "--no-ff", "-m", "m", "feat");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "git merge --no-ff -m m feat" } }), o);
+	const l = readState(statePath(stateDir, "s1")!).turn.landings![0]!;
+	assert.deepEqual([l.unmapped, l.advisory], [[], ["§app/x"]]);
+	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: §app/x — its file is gone" }), o), undefined);
+	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: none" }), o), undefined);
 });

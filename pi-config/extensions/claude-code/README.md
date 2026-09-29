@@ -215,15 +215,23 @@ See [docs/protocol-probes.md](docs/protocol-probes.md).
 path installs it for code-writing workers of a spec-on session, as `hooks` in the one `--settings`
 JSON (`withClaudeSettings` merges into the sandbox's settings; flag settings, hooks included, apply
 under `--setting-sources ""`, probed with CLI 2.1.282). Each hook is `node spec-hooks.ts
-<turn|post|stop> --core <spec/core> --state <dir>`, a fresh process per event with plain-JSON state
-per Claude session:
+<turn|post|stop> --core <spec/core> --state <dir> [--ledger <file>]`, a fresh process per event with
+plain-JSON state per Claude session:
 
-- `UserPromptSubmit`: the turn's baseline (`git status`, HEAD).
+- `UserPromptSubmit`: the turn's baseline (`git status`, HEAD, the HEAD of every worktree of the
+  repository, and the default branch's tip: the task's own claims are absent there and at the fork point).
 - `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta; its
-  `[spec census]` digest comes back as `additionalContext`. A `promote --write` (its `alsoChanges`;
-  without `--json`, the spec changed since just before it) or a `git merge` that moves the default
-  branch (spec-guard's `defaultBranch`: `origin/HEAD`, else `master`, else `main`; `sova-spec.mjs foreign` over that branch's move) records the
-  turn's foreign §. Merging master into a feature branch lands nothing: those § are master's own.
+  `[spec census]` digest comes back as `additionalContext`. Every tree a Bash command works in (its
+  cwd, each `cd <dir>`, `git -C <dir>`, a promote's `--root`) is looked at: the HEAD reflog entries
+  since the last look are its git operations, each HEAD before → after (never `HEAD^1`), so a merge
+  into master in the root from a worktree, fast-forward or not, and several merges in one command
+  each count; a tree first seen mid-turn keeps only the kinds the command's own git verbs make.
+  Each operation is appended to the parent's ledger (`--ledger`, else `SOVA_SPEC_LEDGER`;
+  `{v: 1, at, actor: {runtime: "claude-code", session}, top, before, after, kind, target?}`) and
+  judged by spec-guard's `judgeOp`, as the pi session's check does: merging master into a feature
+  branch lands nothing; a merge, a promote (with its `alsoChanges`) or a committed promotion lands its
+  foreign §, the task's own claims out, and the landing lists (unmapped files, unpromoted drafts,
+  § whose code changed under unchanged prose).
   The same call runs the pi session's write guard (spec-guard's helpers; "before" is the tree the
   previous hook call saw): an edit of the current `manifest.json` or `claims/**`, or a shell command
   that writes them and is neither a draft tool nor git, gets "you wrote the current spec directly";
@@ -231,7 +239,10 @@ per Claude session:
   a rebase under way, else the exact old tip to restore with a clean tree, then merge master in).
 - `Stop`: after a promote or merge, the last line must name every computed foreign § (or carry the
   override line, which excuses only an omission); a § named beyond a list Git fully computed is an
-  extra, never excused. The reply is sent back up to twice. Otherwise a warning, sent back once: a
+  extra, never excused, except a § whose code changed under unchanged prose (advisory). The landing
+  gate: each changed file no claim in the current spec maps needs a `Plumbing: <path> — <why>` line,
+  and each draft record still unpromoted (status read again at Stop) a `Deferred: §X — <why>` line.
+  The line is parsed by `mode/also-changes.ts`, the one grammar. The reply is sent back up to twice. Otherwise a warning, sent back once: a
   writing turn without the exact `Also changes:` line, a non-writing turn with one, a line omitting
   a foreign § the turn's draft edits, or a named § the census never saw touched. Drafts are
   gitignored: a draft edit (found by mtime) counts as writing, and its foreign § come from

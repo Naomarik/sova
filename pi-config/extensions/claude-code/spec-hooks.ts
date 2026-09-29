@@ -12,12 +12,17 @@
  * - UserPromptSubmit (`turn`): a turn starts; the work tree now is its baseline (gitView).
  * - PostToolUse (`post`, any tool, Bash included): the census step (censusStep, the same one the pi
  *   session runs) on a git-status delta, its `[spec census]` digest returned as additionalContext;
- *   notes whether the turn wrote, and the foreign § a `promote --write` lists (`alsoChanges`) or a
- *   `git merge` into the default branch landed (`sova-spec.mjs foreign`, that branch before vs after; a merge of
- *   master into a feature branch lands nothing).
+ *   notes whether the turn wrote. Each tree a command works in (its cwd, every `cd <dir>` and
+ *   `git -C <dir>`) keeps its HEAD from the last look; the HEAD reflog since then gives each git
+ *   operation there as before → after (never HEAD^1), so a merge into master in the root from a
+ *   worktree, fast-forward or not, and several merges in one command all count. Each operation goes to
+ *   the parent's ledger (SOVA_SPEC_LEDGER) and is judged by spec-guard's judgeOp, as the pi check does:
+ *   a merge of master into a feature branch lands nothing; a merge or promote lands its foreign §
+ *   (the task's own claims out) and the landing gate's lists.
  * - Stop (`stop`): the reply's last line against the turn. After a promote or a merge the computed
- *   foreign list is the authority: every § in it must be named, and the reply is sent back (block)
- *   until it is or it carries the override line, at most MERGE_BLOCKS times. Elsewhere a miss is a
+ *   foreign list is the authority: every § in it must be named, each changed file no claim maps needs a
+ *   `Plumbing:` line, and each draft record left unpromoted a `Deferred:` line; the reply is sent back
+ *   (block) until it does, at most MERGE_BLOCKS times. Elsewhere a miss is a
  *   warning, sent back once and then let through: a turn that wrote without the exact line, one
  *   that wrote nothing with it, a line omitting a foreign § the turn's draft edits, or one naming a
  *   § the census never saw touched. Drafts are gitignored, so their edits are found by mtime
@@ -30,9 +35,10 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	CHECK_TAG, censusStep, checkAlsoChanges, currentSpecPath, defaultBranch, describeProblem, directWriteNote, evidenceCommits, rebaseUnderway, rewriteNote, sanctionedSpecWrite, draftForeign, draftStamps, draftsTouched, findSpecRoot, foreignBetween, freshCensusState, gitCommits, gitMerges, gitView,
-	lastLine, localIO, parseAlsoChanges, promoteWrites, repromptText, viewChanged, type CensusState, type GitView, type SpecIO,
+	CHECK_TAG, LEDGER_ENV, appendLedger, censusStep, checkAlsoChanges, commandDirs, commandRoot, currentSpecPath, defaultBranch, describeProblem, directWriteNote, evidenceCommits, headAt, judgeOp, rebaseUnderway, rewriteNote, sanctionedSpecWrite, draftForeign, draftStamps, draftsTouched, findSpecRoot, freshCensusState, gitCommits, gitView,
+	localIO, promoteWrites, repromptText, viewChanged, type CensusState, type GitView, type LedgerEntry, type OpLanding, type SpecIO,
 } from "../mode/spec-guard.ts";
+import { lastLine, parseAlsoChanges } from "../mode/also-changes.ts";
 
 export const SPEC_HOOK_SCRIPT = fileURLToPath(import.meta.url);
 /** Hook timeout, seconds: a census over a large tree stays well under it. */
@@ -49,11 +55,11 @@ interface HookMatcher { matcher?: string; hooks: HookEntry[] }
 
 const shellQuote = (value: string): string => /^[A-Za-z0-9_./-]+$/.test(value) ? value : `'${value.replace(/'/g, "'\\''")}'`;
 
-/** The `hooks` settings block for the three events, run by `node` (the parent's runtime). */
-export function specHookSettings(o: { node: string; coreDir: string; stateDir: string; script?: string }): Settings {
+/** The `hooks` settings block for the three events, run by `node` (the parent's runtime); `ledger`: the parent's ledger file. */
+export function specHookSettings(o: { node: string; coreDir: string; stateDir: string; script?: string; ledger?: string }): Settings {
 	const command = (event: string): HookEntry => ({
 		type: "command",
-		command: [o.node, o.script ?? SPEC_HOOK_SCRIPT, event, "--core", o.coreDir, "--state", o.stateDir].map(shellQuote).join(" "),
+		command: [o.node, o.script ?? SPEC_HOOK_SCRIPT, event, "--core", o.coreDir, "--state", o.stateDir, ...(o.ledger ? ["--ledger", o.ledger] : [])].map(shellQuote).join(" "),
 		timeout: HOOK_TIMEOUT_S,
 	});
 	return {
@@ -108,6 +114,23 @@ export interface TurnState {
 	partial?: boolean;
 	/** Stop-hook send-backs this turn. */
 	blocks: number;
+	/** HEAD of each tree top at the last look (ms `lookedAt`): the base of the next operation there. */
+	heads?: Record<string, string>;
+	lookedAt?: number;
+	/** The default branch's tip when the turn started: the task's own claims are absent there and at the fork point. */
+	tip?: string;
+	/** The turn's landings, each with the gate's lists (unmapped paths, unpromoted drafts, advisory §). */
+	landings?: TurnLanding[];
+}
+export interface TurnLanding {
+	top: string;
+	before: string;
+	after: string;
+	kind: OpLanding["kind"];
+	root?: string;
+	unmapped: string[];
+	unpromoted: { draft: string; worktree?: string; ids: string[] }[];
+	advisory: string[];
 }
 export interface HookState {
 	version: 1;
@@ -166,7 +189,7 @@ export interface HookInput {
 	stop_hook_active?: boolean;
 	last_assistant_message?: string;
 }
-export interface HookContext { core: string; state: HookState; io: SpecIO }
+export interface HookContext { core: string; state: HookState; io: SpecIO; ledger?: string; session?: string }
 /** What Claude reads from stdout; undefined = print nothing. */
 export type HookOutput = Record<string, unknown> | undefined;
 
@@ -177,7 +200,12 @@ export async function onTurn(input: HookInput, ctx: HookContext): Promise<HookOu
 	const cwd = input.cwd ?? process.cwd();
 	const view = await gitView(cwd, ctx.io);
 	const root = await findSpecRoot(cwd, (p) => ctx.io.exists(p));
-	ctx.state.turn = { ...freshTurn(), id: input.prompt_id, view, head: view?.head, ...(root ? { root, drafts: await draftStamps(root, ctx.io) } : {}) };
+	const main = view ? await defaultBranch(view.top, ctx.io).catch(() => undefined) : undefined;
+	const tip = main ? await ctx.io.exec("git", ["rev-parse", "--verify", "-q", `refs/heads/${main}`], { cwd: view!.top, timeout: 10_000 }).catch(() => undefined) : undefined;
+	ctx.state.turn = {
+		...freshTurn(), id: input.prompt_id, view, head: view?.head, ...(root ? { root, drafts: await draftStamps(root, ctx.io) } : {}),
+		heads: { ...(view ? await worktreeHeads(view.top, ctx.io) : {}), ...(view?.head ? { [await realTop(view.top)]: view.head } : {}) }, lookedAt: Date.now(), ...(tip?.code === 0 && tip.stdout.trim() ? { tip: tip.stdout.trim() } : {}),
+	};
 	ctx.state.census = (await censusStep(ctx.state.census, { cwd, toolName: "", input: undefined }, ctx.core, ctx.io)).state;
 	return undefined;
 }
@@ -194,26 +222,7 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 	const view = await gitView(cwd, ctx.io);
 	if (WRITE_TOOLS.has(tool) || viewChanged(before, view) || (command && gitCommits(command))) turn.wrote = true;
 	turn.view = view ?? before;
-	if (command && view) {
-		const root = await findSpecRoot(cwd, (p) => ctx.io.exists(p));
-		if (root && promoteWrites(command)) {
-			// The promote's own list; without --json output, what the spec changed since just before it (never since the
-			// turn began: a `git merge master` earlier in the turn brought master's § in, and they are not this promote's).
-			const listed = alsoChangesOf((input.tool_response as { stdout?: unknown } | undefined)?.stdout);
-			const base = before?.head ?? turn.head;
-			const computed = listed ?? (base ? await foreignBetween(root, base, undefined, ctx.core, ctx.io) : undefined);
-			turn.landed = turn.wrote = true;
-			if (!computed) turn.partial = true;
-			turn.foreign = union(turn.foreign, computed ?? []);
-		}
-		// A merge lands only on the default branch; merging master INTO a feature branch brings master's own § in.
-		if (root && gitMerges(command) && before?.head && view.head && view.head !== before.head && (await landsOnTarget(view.top, ctx.io))) {
-			turn.landed = turn.wrote = true;
-			const merged = await foreignBetween(root, before.head, view.head, ctx.core, ctx.io);
-			if (!merged) turn.partial = true;
-			turn.foreign = union(turn.foreign, merged ?? []);
-		}
-	}
+	if (command) await landOps(command, cwd, input.tool_response, ctx).catch(() => { turn.partial = true; });
 	const g = await writeGuard(tool, input, cwd, before, view, ctx).catch(() => ({ text: undefined, lost: [] as string[] }));
 	const guard = g.text;
 	const step = await censusStep(state.census, { cwd, toolName: tool, input: input.tool_input ?? {}, commands: state.commands, sessionStart: state.sessionStart, orphansSaid: g.lost }, ctx.core, ctx.io);
@@ -224,12 +233,182 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 	return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } };
 }
 
-/** The checkout at `top` is on the default branch (spec-guard's defaultBranch: origin/HEAD, else master, else main). */
-export async function landsOnTarget(top: string, io: SpecIO): Promise<boolean> {
-	const branch = await io.exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: top, timeout: 10_000 }).catch(() => undefined);
-	if (!branch || branch.code !== 0) return false;
-	const target = await defaultBranch(top, io).catch(() => undefined);
-	return !!target && branch.stdout.trim() === target;
+/** Every worktree of the repository at `top` and its HEAD: a merge into another checkout then has its base. */
+export async function worktreeHeads(top: string, io: SpecIO): Promise<Record<string, string>> {
+	const r = await io.exec("git", ["worktree", "list", "--porcelain"], { cwd: top, timeout: 10_000 }).catch(() => undefined);
+	const out: Record<string, string> = {};
+	if (!r || r.code !== 0) return out;
+	for (const block of r.stdout.split("\n\n")) {
+		const lines = block.split("\n");
+		const tree = lines.find((l) => l.startsWith("worktree "))?.slice(9);
+		const head = lines.find((l) => l.startsWith("HEAD "))?.slice(5);
+		if (tree && head) out[await realTop(tree)] = head;
+	}
+	return out;
+}
+const realTop = async (p: string): Promise<string> => { try { return await fs.promises.realpath(p); } catch { return p; } };
+
+/** The operation kinds a shell command's own git verbs can make: a tree first seen now keeps only those. */
+export function commandKinds(command: string): Set<OpLanding["kind"]> {
+	const kinds = new Set<OpLanding["kind"]>();
+	const verb = (v: string) => new RegExp(String.raw`\bgit\b(?:\s+-[Cc]\s+\S+|\s+-c\s+\S+)*\s+${v}\b`).test(command);
+	if (verb("merge") || verb("pull")) { kinds.add("merge"); kinds.add("ff"); }
+	if (verb("commit") || verb("cherry-pick") || verb("revert") || verb("am")) { kinds.add("commit"); kinds.add("merge"); }
+	if (verb("rebase") || verb("pull")) kinds.add("rebase");
+	if (verb("reset")) kinds.add("reset");
+	return kinds;
+}
+
+/** One HEAD reflog entry: the commit HEAD moved to, when (s), and git's subject for it. */
+export interface ReflogEntry { sha: string; at: number; subject: string }
+
+/** A tree's HEAD reflog, newest first (at most `n`). */
+export async function headReflog(top: string, io: SpecIO, n = 50): Promise<ReflogEntry[]> {
+	const r = await io.exec("git", ["log", "-g", "--date=unix", `-n${n}`, "--format=%H%x09%gd%x09%gs", "HEAD"], { cwd: top, timeout: 10_000 }).catch(() => undefined);
+	if (!r || r.code !== 0) return [];
+	return r.stdout.split("\n").filter(Boolean).map((l) => {
+		const [sha, sel, ...rest] = l.split("\t");
+		return { sha: sha!, at: Number(/@\{(\d+)\}/.exec(sel ?? "")?.[1] ?? 0), subject: rest.join("\t") };
+	});
+}
+
+/** The kind of operation a reflog subject records, or undefined for one that lands nothing (a checkout). */
+export function reflogKind(subject: string): OpLanding["kind"] | undefined {
+	if (/^(merge|pull)\b[^:]*: Fast-forward/.test(subject)) return "ff";
+	if (/^(merge|pull)\b/.test(subject) || /^commit \(merge\)/.test(subject)) return "merge";
+	if (/^commit\b/.test(subject) || /^cherry-pick\b/.test(subject) || /^revert\b/.test(subject)) return "commit";
+	if (/^rebase\b/.test(subject)) return "rebase";
+	if (/^reset\b/.test(subject)) return "reset";
+	return undefined;
+}
+
+/**
+ * The operations that moved HEAD in `top` since the last look: the reflog entries after the one that was HEAD then
+ * (`was`, seen no later than `since` ms), each as the HEAD before it → after it. With no `was` (a tree first seen
+ * now), entries newer than `since`. Checkouts and switches move HEAD but land nothing, so they are skipped.
+ */
+export function opsSince(entries: readonly ReflogEntry[], was: string | undefined, since: number): { before: string; after: string; kind: OpLanding["kind"]; subject: string }[] {
+	const sec = Math.floor(since / 1000);
+	let stop = entries.findIndex((e) => (was ? e.sha === was && e.at <= sec : e.at < sec));
+	if (stop < 0) stop = entries.length - (was ? 0 : 1);
+	const out: { before: string; after: string; kind: OpLanding["kind"]; subject: string }[] = [];
+	for (let i = stop - 1; i >= 0; i--) {
+		const kind = reflogKind(entries[i]!.subject);
+		const before = entries[i + 1]?.sha;
+		if (kind && before && before !== entries[i]!.sha) out.push({ before, after: entries[i]!.sha, kind, subject: entries[i]!.subject });
+	}
+	return out;
+}
+
+/**
+ * After a shell command: every git operation it made in each tree it works in (the cwd, `cd`, `git -C`, a promote's
+ * `--root`), from that tree's HEAD reflog; each appended to the parent's ledger and judged (judgeOp). A landing
+ * (a merge that isn't master absorbed, a promote, a committed promotion) makes the turn a landing one: its foreign §
+ * join the turn's list and its gate lists are kept for Stop. A promote's own `alsoChanges` joins the list too.
+ */
+export async function landOps(command: string, cwd: string, response: unknown, ctx: HookContext): Promise<void> {
+	const turn = ctx.state.turn;
+	const heads = (turn.heads ??= {});
+	const since = turn.lookedAt ?? 0;
+	const promote = promoteWrites(command);
+	const dirs = [...new Set([cwd, ...commandDirs(command, cwd), ...(promote && commandRoot(command) ? [path.resolve(cwd, commandRoot(command)!)] : [])])];
+	const ops: OpLanding[] = [];
+	const seen = new Set<string>();
+	for (const dir of dirs) {
+		const found = await headAt(dir, ctx.io);
+		const at = found && { ...found, top: await realTop(found.top) };
+		if (!at || seen.has(at.top)) continue;
+		seen.add(at.top);
+		const was = heads[at.top];
+		if (was !== at.head || !was) {
+			const allowed = commandKinds(command);
+			const moved = opsSince(await headReflog(at.top, ctx.io), was, since).filter((m) => was || allowed.has(m.kind));
+			if (!moved.length && was && was !== at.head && /\bgit\b/.test(command)) ops.push({ top: at.top, before: was, after: at.head, kind: gitCommits(command) ? "commit" : "merge" });
+			for (const m of moved) ops.push({ top: at.top, before: m.before, after: m.after, kind: m.kind });
+		}
+		heads[at.top] = at.head;
+		if (promote && path.resolve(dir) === path.resolve(cwd, commandRoot(command) ?? cwd)) ops.push({ top: at.top, before: at.head, after: at.head, kind: "promote" });
+	}
+	turn.lookedAt = Date.now();
+	if (ops.length) turn.wrote = true;
+	for (const op of ops) {
+		if (ctx.ledger) {
+			const target = op.kind === "merge" || op.kind === "ff" ? (await ctx.io.exec("git", ["symbolic-ref", "-q", "--short", "HEAD"], { cwd: op.top, timeout: 10_000 }).catch(() => undefined))?.stdout.trim() : undefined;
+			const entry: LedgerEntry = { v: 1, at: Date.now(), actor: { runtime: "claude-code", ...(ctx.session ? { session: ctx.session } : {}) }, top: op.top, before: op.before, after: op.after, kind: op.kind, ...(target ? { target } : {}) };
+			appendLedger(ctx.ledger, entry);
+		}
+		if (op.kind === "rebase" || op.kind === "reset") continue;
+		const j = await judgeOp(op, ctx.core, ctx.io, turn.tip);
+		if (!j.landing) continue;
+		turn.landed = turn.wrote = true;
+		if (!j.foreign) turn.partial = true;
+		turn.foreign = union(turn.foreign, j.foreign ?? []);
+		const listed = op.kind === "promote" ? alsoChangesOf((response as { stdout?: unknown } | undefined)?.stdout) : undefined;
+		if (listed) turn.foreign = union(turn.foreign, listed);
+		const l = j.lists;
+		if (!l) { turn.partial = true; continue; }
+		const promoted = op.kind === "promote" ? landingOf((response as { stdout?: unknown } | undefined)?.stdout) : undefined;
+		(turn.landings ??= []).push({
+			top: op.top, before: op.before, after: op.after, kind: op.kind, root: await findSpecRoot(op.top, (p) => ctx.io.exists(p)),
+			unmapped: [...new Set([...l.unmappedChanged.map((u) => u.path), ...(promoted?.unmapped ?? [])])].sort(),
+			unpromoted: [...l.unpromotedDrafts, ...(promoted?.unpromoted ?? [])],
+			advisory: [...new Set([...l.mappedUntouched.map((m) => m.id), ...(promoted?.advisory ?? [])])].sort(),
+		});
+	}
+}
+
+/** The landing lists of a `promote … --json` result. */
+function landingOf(stdout: unknown): { unmapped: string[]; unpromoted: TurnLanding["unpromoted"]; advisory: string[] } | undefined {
+	if (typeof stdout !== "string") return undefined;
+	try {
+		const v = JSON.parse(stdout);
+		if (!Array.isArray(v?.unmappedChanged)) return undefined;
+		return {
+			unmapped: v.unmappedChanged.map((u: { path?: unknown }) => u?.path).filter((p: unknown): p is string => typeof p === "string"),
+			unpromoted: (Array.isArray(v.unpromotedDrafts) ? v.unpromotedDrafts : []).filter((d: { ids?: unknown }) => Array.isArray(d?.ids)),
+			advisory: (Array.isArray(v.mappedUntouched) ? v.mappedUntouched : []).map((m: { id?: unknown }) => m?.id).filter((x: unknown): x is string => typeof x === "string"),
+		};
+	} catch { return undefined; }
+}
+
+/**
+ * The gate's lists as they stand at Stop: a file some claim in the current spec now maps is no longer unmapped,
+ * and a draft record promoted since the landing is no longer unpromoted (each draft's status read again).
+ */
+export async function gateNow(landings: readonly TurnLanding[], core: string, io: SpecIO): Promise<{ unmapped: string[]; unpromoted: string[]; advisory: string[] }> {
+	const unmapped = new Set<string>(), unpromoted = new Set<string>(), advisory = new Set<string>();
+	const mapped = new Map<string, Set<string>>();
+	const statusOf = new Map<string, Set<string> | undefined>();
+	for (const l of landings) {
+		for (const id of l.advisory) advisory.add(id);
+		if (l.root && !mapped.has(l.root)) {
+			const set = new Set<string>();
+			try {
+				const m = JSON.parse(await io.readFile(path.join(l.root, ".sova/spec/manifest.json")));
+				for (const rec of Object.values(m?.claims ?? {}) as { code?: unknown }[]) for (const c of Array.isArray(rec?.code) ? rec.code : []) if (typeof c === "string") set.add(path.posix.normalize(c));
+			} catch { /* no current spec: nothing newly mapped */ }
+			mapped.set(l.root, set);
+		}
+		// Paths are relative to the spec root, as the core reports them and claims map them.
+		for (const p of l.unmapped) if (!mapped.get(l.root ?? "")?.has(p)) unmapped.add(p);
+		for (const d of l.unpromoted) {
+			const where = d.worktree ?? l.root ?? l.top;
+			const key = `${where}\0${d.draft}`;
+			if (!statusOf.has(key)) {
+				const r = await io.exec("node", [path.join(core, "sova-spec-draft.mjs"), "status", d.draft, "--root", where, "--json"], { cwd: where, timeout: 30_000 }).catch(() => undefined);
+				let open: Set<string> | undefined;
+				try {
+					const s = JSON.parse(r?.stdout ?? "");
+					const promoted = new Set<string>((Array.isArray(s?.promotions) ? s.promotions : []).flatMap((x: { ids?: unknown }) => (Array.isArray(x?.ids) ? x.ids : [])));
+					open = new Set((Array.isArray(s?.ids) ? s.ids : []).filter((i: { id: string; current: string }) => i.current === "pending" || (i.current === "conflict" && !promoted.has(i.id))).map((i: { id: string }) => i.id));
+				} catch { open = undefined; }
+				statusOf.set(key, open);
+			}
+			const open = statusOf.get(key);
+			for (const id of d.ids) if (!open || open.has(id)) unpromoted.add(id);
+		}
+	}
+	return { unmapped: [...unmapped].sort(), unpromoted: [...unpromoted].sort(), advisory: [...advisory].sort() };
 }
 
 /**
@@ -285,17 +464,21 @@ export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOu
 	if (drafted) turn.wrote = true;
 	if (turn.landed) {
 		// The computed list is the authority: sent back until it is named (or an omission overridden), boundedly.
-		// When Git computed all of it, a § named beyond it is an extra, which no override excuses.
+		// When Git computed all of it, a § named beyond it (and beyond the advisory § whose code changed) is an extra,
+		// which no override excuses. The landing gate: unmapped files need a Plumbing line, unpromoted records a Deferred one.
 		const foreign = union(turn.foreign, drafted ?? []);
-		const check = checkAlsoChanges(reply, { required: true, foreign, exact: !turn.partial });
-		if (check.ok || turn.blocks >= MERGE_BLOCKS) return undefined;
+		if (turn.blocks >= MERGE_BLOCKS) return undefined;
+		const gate = await gateNow(turn.landings ?? [], ctx.core, ctx.io);
+		const check = checkAlsoChanges(reply, { required: true, foreign, exact: !turn.partial, advisory: gate.advisory, unmapped: gate.unmapped, unpromoted: gate.unpromoted });
+		if (check.ok) return undefined;
 		return block(repromptText(check, foreign, "promoted or merged"));
 	}
 	// Elsewhere a warning: sent back once (stop_hook_active marks the retry), then let through.
 	if (input.stop_hook_active || turn.blocks >= 1) return undefined;
 	const ids = parseAlsoChanges(lastLine(reply));
 	if (!turn.wrote) {
-		return ids === undefined ? undefined
+		const qa = checkAlsoChanges(reply, { required: false, foreign: [], forbidden: true });
+		return qa.ok ? undefined
 			: block(`${CHECK_TAG} This turn changed no files, so its reply carries no \`Also changes:\` line; drop it. If it is right because you did change files, repeat your reply unchanged.`);
 	}
 	// Census foreign § may be plumbing (none is fine); a foreign § the turn's draft edits is not.
@@ -313,10 +496,11 @@ export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOu
 }
 
 /** One hook call: read the state, run the event, write the state, log what was said. */
-export async function runHook(event: string, input: HookInput, o: { core: string; stateDir: string; io?: SpecIO }): Promise<HookOutput> {
+export async function runHook(event: string, input: HookInput, o: { core: string; stateDir: string; io?: SpecIO; ledger?: string }): Promise<HookOutput> {
 	const file = input.session_id ? statePath(o.stateDir, input.session_id) : undefined;
 	if (!file) return undefined;
-	const ctx: HookContext = { core: o.core, state: readState(file), io: o.io ?? localIO };
+	const ledger = o.ledger ?? process.env[LEDGER_ENV];
+	const ctx: HookContext = { core: o.core, state: readState(file), io: o.io ?? localIO, ...(ledger ? { ledger } : {}), session: input.session_id };
 	const out = event === "turn" ? await onTurn(input, ctx) : event === "post" ? await onPost(input, ctx) : event === "stop" ? await onStop(input, ctx) : undefined;
 	writeState(file, ctx.state);
 	if (out) fs.appendFileSync(file.replace(/\.json$/, ".log.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), event, tool: input.tool_name, out })}\n`, { mode: 0o600 });
@@ -326,12 +510,12 @@ export async function runHook(event: string, input: HookInput, o: { core: string
 async function main(argv: string[]): Promise<void> {
 	const event = argv[0] ?? "";
 	const flag = (name: string) => { const i = argv.indexOf(name); return i > 0 ? argv[i + 1] : undefined; };
-	const core = flag("--core"), stateDir = flag("--state");
+	const core = flag("--core"), stateDir = flag("--state"), ledger = flag("--ledger");
 	if (!core || !stateDir) return;
 	const chunks: Buffer[] = [];
 	for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
 	const input = JSON.parse(Buffer.concat(chunks).toString("utf8")) as HookInput;
-	const out = await runHook(event, input, { core, stateDir });
+	const out = await runHook(event, input, { core, stateDir, ...(ledger ? { ledger } : {}) });
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 

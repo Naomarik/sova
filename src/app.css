@@ -450,6 +450,22 @@ html, body, #root { height: 100%; }
 .org-label .org-link:hover,
 .org-label .org-link:focus-visible { color: var(--color-ink); }
 .org-label .org-link .icon { width: 16px; height: 16px; }
+/* A section head's Name sessions button (§app.session-list/auto-titles): quiet like a group's `⋯`,
+   muted until hovered or focused, with the full 44px target and a 16px glyph. At the end of a
+   region head it hangs into the head's right padding, like Groups' `+`; on a group's head it sits
+   before the `⋯`, which already takes that place. Present only while there is something to name. */
+.name-sessions {
+  flex: none;
+  color: var(--color-ink-muted);
+  transition: color var(--dur-fast) var(--ease-standard);
+}
+.name-sessions .icon { width: 16px; height: 16px; }
+.name-sessions:hover,
+.name-sessions:focus-visible { color: var(--color-ink); }
+.sidebar-region-head > .name-sessions {
+  margin-left: auto;
+  margin-right: calc(var(--space-4) * -1 + var(--space-1));
+}
 /* Projects: sticky labels, not sections — one level of sticking inside the pane. */
 .org-project {
   padding-left: calc(var(--space-1) / 2);

@@ -29,7 +29,9 @@ test("layers: mark a layer by its label; errors say what to write", () => {
     assert.equal(r.ok, false);
     return (r as { message: string }).message;
   };
-  assert.match(err("Browser | a\nmark Server"), /no layer Server/);
+  const r = parseVis("layers", "Browser | a\nmark Server");
+  assert.ok(r.ok);
+  assert.deepEqual(r.warnings, [{ line: 2, message: "mark: no layer Server, dropped" }]);
   assert.match(err("Browser"), /a layer is/);
   assert.match(err("Browser | a | b | c | d"), /a layer is/);
 });

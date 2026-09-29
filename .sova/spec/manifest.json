@@ -254,7 +254,13 @@
         "src/lib/session-selection.ts",
         "src/lib/session-selection.test.ts",
         "src/components/SelectionToolbar.tsx",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "server/session-titles.ts",
+        "server/session-titles.test.ts",
+        "server/sessions-index.ts",
+        "server/index.ts",
+        "server/overseer-tools.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.session-list/states": {
@@ -450,7 +456,9 @@
         "src/lib/known-before-mount.test.ts",
         "src/components/Composer.tsx",
         "src/design/base.css",
-        "src/design/align-viewer.css"
+        "src/design/align-viewer.css",
+        "src/lib/workers.ts",
+        "src/lib/workers.test.ts"
       ]
     },
     "§app.subagents-pane/worker-rows": {
@@ -3403,7 +3411,8 @@
         "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "server/team-defaults.test.ts"
       ]
     },
     "§teams.defaults/handover": {
@@ -3717,7 +3726,15 @@
         "src/lib/summarizer-draft.ts",
         "src/lib/summarizer-form.ts",
         "src/lib/settings-draft.ts",
-        "server/topic-outline-settings.ts"
+        "server/topic-outline-settings.ts",
+        "server/topic-outline-settings.test.ts",
+        "src/components/SessionTitleSettings.tsx",
+        "src/lib/session-title-settings-draft.ts",
+        "src/lib/session-title-settings-form.ts",
+        "src/components/SettingsDialog.tsx",
+        "server/session-titles-settings.ts",
+        "server/session-titles-settings.test.ts",
+        "src/lib/session-title-settings-form.test.ts"
       ]
     },
     "§app.baton/attribution": {
@@ -6332,7 +6349,11 @@
         "src/lib/fences.ts",
         "src/vis/share-views.ts",
         "src/share/vis.tsx",
-        "src/vis/share-markdown.test.ts"
+        "src/vis/share-markdown.test.ts",
+        "src/vis/golden.test.ts",
+        "src/vis/golden.json",
+        "server/vis-check.ts",
+        "server/vis-check.test.ts"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
@@ -6574,7 +6595,8 @@
         "src/vis/kinds/flow/View.tsx",
         "src/vis/kinds/flow/flow.css",
         "src/vis/kinds/flow/layout.ts",
-        "pi-config/extensions/mode/vis-mode.md"
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/guide.test.ts"
       ]
     },
     "§chat.markdown/vis-parts": {
@@ -7096,6 +7118,29 @@
       "code": [
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/README.md"
+      ]
+    },
+    "§app.session-list/auto-titles": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/selecting-several-sessions",
+        "§app.settings-dialog/summaries",
+        "§app.decisions/push",
+        "§mesh.remote-sessions/list"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-autotitle.ts",
+        "server/session-autotitle.test.ts",
+        "server/decide-llm.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/auto-title.ts",
+        "src/lib/auto-title.test.ts",
+        "src/lib/api.ts",
+        "src/components/Sidebar.tsx",
+        "src/app.css"
       ]
     }
   },

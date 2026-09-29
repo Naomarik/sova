@@ -13,6 +13,14 @@ const err = (kind: string, body: string) => {
   assert.equal(r.ok, false, `expected an error for:\n${body}`);
   return r as { ok: false; line: number; message: string };
 };
+/** A fence that still draws: its first warning (parse.ts). */
+const warning = (kind: string, body: string) => {
+  const r = parseVis(kind, body);
+  if (!r.ok) assert.fail(`expected a drawing with a warning, got line ${r.line}: ${r.message}`);
+  assert.ok(r.warnings.length, `expected a warning for:\n${body}`);
+  assert.deepEqual(r.spec.warnings, r.warnings, "the spec carries the same warnings");
+  return r.warnings[0]!;
+};
 
 test("chart: series, gaps, tones, log scale, percent", () => {
   const s = ok<ChartSpec>("chart", 'type: line\nseries: "Merge sort", Quicksort\nscale: log\nunit: ms\n1k 0.1 0.08\n"1M" 150 -\n10M 1_900 1.5e3');
@@ -42,7 +50,7 @@ test("chart: scatter rows are label x y, with an optional tone; no series", () =
 test("chart: mark a row by its label; the note is numbered", () => {
   const s = ok<ChartSpec>("chart", '"Quicksort" 120\n"Bubble sort" 9800\nmark "Bubble sort" warn "quadratic"');
   assert.deepEqual(s.emphasis, [{ key: "1", tone: "warn", note: "quadratic", n: 1 }]);
-  assert.match(err("chart", 'a 1\nmark "b"').message, /no row "b"/);
+  assert.match(warning("chart", 'a 1\nmark "b"').message, /no row "b", dropped/);
 });
 
 test("chart: stacked bars refuse a log scale; quoted series names keep their spaces", () => {

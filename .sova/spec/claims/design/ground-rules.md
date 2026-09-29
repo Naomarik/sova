@@ -225,8 +225,10 @@ sidebar row's rail `TUI` chip (§app/session-list), the spine's `.spine-dot-live
 (§chat/transcript). Both chips take `.chip-accent` **without**
 `.chip-live`. A TUI holding a file open is
 *ownership*, and a count of them is a tally; neither is work in flight. What moves is our own
-run: Busy in a row, the composer's `.run-status` live dot, a Running tool card, and a
-live-sourced Working chip. This inverts the rule this file used to state ("the pulse belongs to
+run: Busy in a row, the composer's `.run-status` live dot — one per row, leading it, for the whole
+session's work in flight, its turn and its subagents alike — a Running tool card, and a
+live-sourced Working chip. The subagents trigger's ring meter beside it never animates, not even
+its fill changing: the arc's length is its state. This inverts the rule this file used to state ("the pulse belongs to
 Live alone"), and it is the reason the pulse now means something: it stops when the work does.
 
 No typing cursor blinks, and streamed text simply appears. `tokens.css` turns off every animation

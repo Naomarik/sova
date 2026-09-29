@@ -195,7 +195,7 @@ describe("routes", () => {
     const info = decisionsInfo(rt);
     assert.equal(JSON.stringify(info).includes(KEY), false);
     assert.equal(info.key.present, true);
-    assert.deepEqual(info.suggestions.map((s) => s.model), ["haiku", "ollama-cloud/deepseek-v4.1-flash"]);
+    assert.deepEqual(info.suggestions.map((s) => s.model), ["sonnet", "ollama-cloud/deepseek-v4.1-flash"]);
     assert.equal(info.settings.fallback, null);
   });
   test("PUT key: a rejected key is not stored (422, DecisionKeyInfo body); a good one is, status ok", async () => {

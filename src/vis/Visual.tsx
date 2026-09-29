@@ -31,6 +31,7 @@ export function Visual(props: { kind: string; spec: VisBase; fence: string; body
       spec={props.spec}
       view={viewFor(props.kind)}
       hidden={source()}
+      warnings
       actions={
         <>
           <button class="button button-sm button-ghost vis-action" type="button" aria-pressed={source()} onClick={() => setSource(!source())}>

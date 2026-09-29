@@ -1,0 +1,1975 @@
+[
+ {
+  "from": "guide",
+  "kind": "flow",
+  "body": "title: How a prompt reaches the model\ncaption: The server owns the session; the browser only streams.\nnode web \"Browser tab\" round\nnode srv \"Sova server\" \"Hono + ws\" accent\nnode sdk \"pi session\" store\nnode done \"Reply streamed?\" decision\nweb -> srv \"WS /ws/chat\" -> sdk \"prompt()\"\nsdk --> srv \"events\"\nsrv -> done\ndone -> web \"yes\"\nmark sdk \"one writer per session file\"\n",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "web",
+     "label": "Browser tab",
+     "shape": "round"
+    },
+    {
+     "id": "srv",
+     "label": "Sova server",
+     "note": "Hono + ws",
+     "shape": "box",
+     "tone": "accent"
+    },
+    {
+     "id": "sdk",
+     "label": "pi session",
+     "shape": "store"
+    },
+    {
+     "id": "done",
+     "label": "Reply streamed?",
+     "shape": "decision"
+    }
+   ],
+   "edges": [
+    {
+     "from": "web",
+     "to": "srv",
+     "label": "WS /ws/chat",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "srv",
+     "to": "sdk",
+     "label": "prompt()",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "sdk",
+     "to": "srv",
+     "label": "events",
+     "dashed": true,
+     "both": false
+    },
+    {
+     "from": "srv",
+     "to": "done",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "done",
+     "to": "web",
+     "label": "yes",
+     "dashed": false,
+     "both": false
+    }
+   ],
+   "title": "How a prompt reaches the model",
+   "caption": "The server owns the session; the browser only streams.",
+   "emphasis": [
+    {
+     "key": "sdk",
+     "tone": "accent",
+     "note": "one writer per session file",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "flow",
+  "body": "== Merge ==\nm1 -> m2 -> merged\n== Rebase ==\nr1 -> r2\n",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "m1",
+     "label": "m1",
+     "shape": "box"
+    },
+    {
+     "id": "m2",
+     "label": "m2",
+     "shape": "box"
+    },
+    {
+     "id": "merged",
+     "label": "merged",
+     "shape": "box"
+    },
+    {
+     "id": "r1",
+     "label": "r1",
+     "shape": "box"
+    },
+    {
+     "id": "r2",
+     "label": "r2",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "m1",
+     "to": "m2",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "m2",
+     "to": "merged",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "r1",
+     "to": "r2",
+     "dashed": false,
+     "both": false
+    }
+   ],
+   "sections": [
+    {
+     "label": "Merge",
+     "nodes": [
+      {
+       "id": "m1",
+       "label": "m1",
+       "shape": "box"
+      },
+      {
+       "id": "m2",
+       "label": "m2",
+       "shape": "box"
+      },
+      {
+       "id": "merged",
+       "label": "merged",
+       "shape": "box"
+      }
+     ],
+     "edges": [
+      {
+       "from": "m1",
+       "to": "m2",
+       "dashed": false,
+       "both": false
+      },
+      {
+       "from": "m2",
+       "to": "merged",
+       "dashed": false,
+       "both": false
+      }
+     ]
+    },
+    {
+     "label": "Rebase",
+     "nodes": [
+      {
+       "id": "r1",
+       "label": "r1",
+       "shape": "box"
+      },
+      {
+       "id": "r2",
+       "label": "r2",
+       "shape": "box"
+      }
+     ],
+     "edges": [
+      {
+       "from": "r1",
+       "to": "r2",
+       "dashed": false,
+       "both": false
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "sequence",
+  "body": "actor c \"Client\"\nactor s \"Server\"\nc -> s \"SYN\"\ns --> c \"SYN-ACK\"\n== TLS ==\nnote c s \"keys derived from the exchange\"\nmark 2 \"the server commits resources here\"\n",
+  "spec": {
+   "kind": "sequence",
+   "actors": [
+    {
+     "id": "c",
+     "label": "Client"
+    },
+    {
+     "id": "s",
+     "label": "Server"
+    }
+   ],
+   "steps": [
+    {
+     "type": "msg",
+     "from": "c",
+     "to": "s",
+     "label": "SYN",
+     "dashed": false
+    },
+    {
+     "type": "msg",
+     "from": "s",
+     "to": "c",
+     "label": "SYN-ACK",
+     "dashed": true
+    },
+    {
+     "type": "divider",
+     "label": "TLS"
+    },
+    {
+     "type": "note",
+     "over": [
+      "c",
+      "s"
+     ],
+     "text": "keys derived from the exchange"
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "step:1",
+     "tone": "accent",
+     "note": "the server commits resources here",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "state",
+  "body": "node s0 start\ns0 -> idle\nidle -> busy \"prompt\"\nbusy -> idle \"settled\"\nbusy -> failed \"error\"\nmark failed error \"retried once, then shown\"\n",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "s0",
+     "label": "s0",
+     "shape": "start"
+    },
+    {
+     "id": "idle",
+     "label": "idle",
+     "shape": "round"
+    },
+    {
+     "id": "busy",
+     "label": "busy",
+     "shape": "round"
+    },
+    {
+     "id": "failed",
+     "label": "failed",
+     "shape": "round"
+    }
+   ],
+   "edges": [
+    {
+     "from": "s0",
+     "to": "idle",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "idle",
+     "to": "busy",
+     "label": "prompt",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "busy",
+     "to": "idle",
+     "label": "settled",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "busy",
+     "to": "failed",
+     "label": "error",
+     "dashed": false,
+     "both": false
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "failed",
+     "tone": "error",
+     "note": "retried once, then shown",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "layers",
+  "body": "title: Where a chat message lives\nBrowser | Solid app, service worker | accent\nServer | Hono REST, /ws/chat | one process per checkout\nDisk | session JSONL | muted\nmark Server \"holds every live session\"\n",
+  "spec": {
+   "kind": "layers",
+   "layers": [
+    {
+     "label": "Browser",
+     "items": [
+      "Solid app",
+      "service worker"
+     ],
+     "tone": "accent"
+    },
+    {
+     "label": "Server",
+     "items": [
+      "Hono REST",
+      "/ws/chat"
+     ],
+     "note": "one process per checkout"
+    },
+    {
+     "label": "Disk",
+     "items": [
+      "session JSONL"
+     ],
+     "tone": "muted"
+    }
+   ],
+   "title": "Where a chat message lives",
+   "emphasis": [
+    {
+     "key": "1",
+     "tone": "accent",
+     "note": "holds every live session",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "tree",
+  "body": "src/\n  lib/\n    markdown.ts \"renders fences\"\n  main.tsx\nmark markdown.ts \"the vis hook lives here\"\n",
+  "spec": {
+   "kind": "tree",
+   "roots": [
+    {
+     "key": "0",
+     "name": "src/",
+     "children": [
+      {
+       "key": "0.0",
+       "name": "lib/",
+       "children": [
+        {
+         "key": "0.0.0",
+         "name": "markdown.ts",
+         "children": [],
+         "note": "renders fences"
+        }
+       ]
+      },
+      {
+       "key": "0.1",
+       "name": "main.tsx",
+       "children": []
+      }
+     ]
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "0.0.0",
+     "tone": "accent",
+     "note": "the vis hook lives here",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "chart",
+  "body": "type: bar\nunit: ms\n\"Quicksort\" 120\n\"Merge sort\" 150\n\"Bubble sort\" 9800\nmark \"Bubble sort\" warn \"quadratic\"\n",
+  "spec": {
+   "kind": "chart",
+   "type": "bar",
+   "scale": "linear",
+   "series": [],
+   "rows": [
+    {
+     "label": "Quicksort",
+     "values": [
+      120
+     ]
+    },
+    {
+     "label": "Merge sort",
+     "values": [
+      150
+     ]
+    },
+    {
+     "label": "Bubble sort",
+     "values": [
+      9800
+     ]
+    }
+   ],
+   "unit": "ms",
+   "emphasis": [
+    {
+     "key": "2",
+     "tone": "warn",
+     "note": "quadratic",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "chart",
+  "body": "type: parts\nunit: tokens\nof: 200000\n\"System prompt\" 9000 muted\n\"Earlier turns (cached)\" 60000 info\n\"New input\" 6000\nmark \"New input\" \"only this part is uncached\"\n",
+  "spec": {
+   "kind": "chart",
+   "type": "parts",
+   "scale": "linear",
+   "series": [],
+   "rows": [
+    {
+     "label": "System prompt",
+     "values": [
+      9000
+     ],
+     "tone": "muted"
+    },
+    {
+     "label": "Earlier turns (cached)",
+     "values": [
+      60000
+     ],
+     "tone": "info"
+    },
+    {
+     "label": "New input",
+     "values": [
+      6000
+     ]
+    }
+   ],
+   "unit": "tokens",
+   "of": 200000,
+   "emphasis": [
+    {
+     "key": "2",
+     "tone": "accent",
+     "note": "only this part is uncached",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "timeline",
+  "body": "2013 | React | virtual DOM\n2016 | Vue 2 | reactive templates\nmark React \"components as functions of state\"\n",
+  "spec": {
+   "kind": "timeline",
+   "items": [
+    {
+     "type": "event",
+     "when": "2013",
+     "label": "React",
+     "note": "virtual DOM"
+    },
+    {
+     "type": "event",
+     "when": "2016",
+     "label": "Vue 2",
+     "note": "reactive templates"
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "0",
+     "tone": "accent",
+     "note": "components as functions of state",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "steps",
+  "body": "== Asking people ==\n\"Simple question\" ok | You -> \"Maria gets a link\" -> \"decision recorded\"\n\"Tony vs Bob\" warn | \"$5k vs $10k\" -> \"Tony settles\"\nmark \"Tony vs Bob\" \"settle step not run yet\"\n",
+  "spec": {
+   "kind": "steps",
+   "items": [
+    {
+     "type": "lane",
+     "label": "Asking people"
+    },
+    {
+     "type": "row",
+     "label": "Simple question",
+     "tone": "ok",
+     "steps": [
+      "You",
+      "Maria gets a link",
+      "decision recorded"
+     ]
+    },
+    {
+     "type": "row",
+     "label": "Tony vs Bob",
+     "tone": "warn",
+     "steps": [
+      "$5k vs $10k",
+      "Tony settles"
+     ]
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "2",
+     "tone": "accent",
+     "note": "settle step not run yet",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "matrix",
+  "body": "columns: Merge, Rebase\nKeeps original commits | yes | no \"new SHAs\"\nLinear history | no | yes\nmark \"Keeps original commits\" \"why rebase needs a force-push\"\n",
+  "spec": {
+   "kind": "matrix",
+   "columns": [
+    "Merge",
+    "Rebase"
+   ],
+   "rows": [
+    {
+     "label": "Keeps original commits",
+     "cells": [
+      {
+       "mark": "yes"
+      },
+      {
+       "mark": "no",
+       "text": "new SHAs"
+      }
+     ]
+    },
+    {
+     "label": "Linear history",
+     "cells": [
+      {
+       "mark": "no"
+      },
+      {
+       "mark": "yes"
+      }
+     ]
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "0",
+     "tone": "accent",
+     "note": "why rebase needs a force-push",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "code",
+  "body": "title: The off-by-one\nlang: ts\nstart: 12\nmark 13 error \"<= reads one past the end\"\nmark 14 \"adds undefined, so total is NaN\"\n---\nfor (let i = 0;\n  i <= items.length;\n  i++) total += items[i];\n",
+  "spec": {
+   "kind": "code",
+   "start": 12,
+   "lines": [
+    "for (let i = 0;",
+    "  i <= items.length;",
+    "  i++) total += items[i];"
+   ],
+   "title": "The off-by-one",
+   "lang": "ts",
+   "emphasis": [
+    {
+     "key": "13",
+     "tone": "error",
+     "note": "<= reads one past the end",
+     "n": 1
+    },
+    {
+     "key": "14",
+     "tone": "accent",
+     "note": "adds undefined, so total is NaN",
+     "n": 2
+    }
+   ]
+  }
+ },
+ {
+  "from": "guide",
+  "kind": "html",
+  "body": "title: Bubble sort, one comparison at a time\ncaption: Press Step: the larger of each pair moves right.\n<style>#bars{display:flex;gap:4px;align-items:end;height:80px}#bars div{flex:1;background:var(--color-accent-tint);border:1.5px solid var(--color-accent);border-radius:4px}#bars .cmp{background:var(--status-warn-bg);border-color:var(--status-warn)}</style>\n<div id=\"bars\"></div>\n<p><button id=\"step\">Step</button> <span id=\"msg\"></span></p>\n<script>\nvar v=[5,2,8,1,9,3],i=0,bars=document.getElementById(\"bars\");\nfunction draw(){bars.innerHTML=v.map(function(x,k){return '<div class=\"'+(k===i||k===i+1?'cmp':'')+'\" style=\"height:'+x*10+'%\"></div>'}).join(\"\")}\ndocument.getElementById(\"step\").onclick=function(){\n  var swap=v[i]>v[i+1];if(swap){var t=v[i];v[i]=v[i+1];v[i+1]=t}\n  document.getElementById(\"msg\").textContent=swap?\"Swapped.\":\"In order.\";\n  i=(i+1)%(v.length-1);draw();\n};\ndraw();\n</script>\n",
+  "spec": {
+   "kind": "html",
+   "source": "<style>#bars{display:flex;gap:4px;align-items:end;height:80px}#bars div{flex:1;background:var(--color-accent-tint);border:1.5px solid var(--color-accent);border-radius:4px}#bars .cmp{background:var(--status-warn-bg);border-color:var(--status-warn)}</style>\n<div id=\"bars\"></div>\n<p><button id=\"step\">Step</button> <span id=\"msg\"></span></p>\n<script>\nvar v=[5,2,8,1,9,3],i=0,bars=document.getElementById(\"bars\");\nfunction draw(){bars.innerHTML=v.map(function(x,k){return '<div class=\"'+(k===i||k===i+1?'cmp':'')+'\" style=\"height:'+x*10+'%\"></div>'}).join(\"\")}\ndocument.getElementById(\"step\").onclick=function(){\n  var swap=v[i]>v[i+1];if(swap){var t=v[i];v[i]=v[i+1];v[i+1]=t}\n  document.getElementById(\"msg\").textContent=swap?\"Swapped.\":\"In order.\";\n  i=(i+1)%(v.length-1);draw();\n};\ndraw();\n</script>",
+   "title": "Bubble sort, one comparison at a time",
+   "caption": "Press Step: the larger of each pair moves right."
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "flow",
+  "body": "a -> b \"edge one\" -> c \"edge two\"\nc --> a \"back\"",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "a",
+     "label": "a",
+     "shape": "box"
+    },
+    {
+     "id": "b",
+     "label": "b",
+     "shape": "box"
+    },
+    {
+     "id": "c",
+     "label": "c",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "a",
+     "to": "b",
+     "label": "edge one",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "b",
+     "to": "c",
+     "label": "edge two",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "c",
+     "to": "a",
+     "label": "back",
+     "dashed": true,
+     "both": false
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "flow",
+  "body": "node a \"Alpha\" round\nnode b \"Beta\" \"second line\" store warn\na -> b \"go\" -> c\nc <-> a\nmark b \"the store\"\nmark \"Alpha\" muted",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "a",
+     "label": "Alpha",
+     "shape": "round"
+    },
+    {
+     "id": "b",
+     "label": "Beta",
+     "note": "second line",
+     "shape": "store",
+     "tone": "warn"
+    },
+    {
+     "id": "c",
+     "label": "c",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "a",
+     "to": "b",
+     "label": "go",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "b",
+     "to": "c",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "c",
+     "to": "a",
+     "dashed": false,
+     "both": true
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "b",
+     "tone": "accent",
+     "note": "the store",
+     "n": 1
+    },
+    {
+     "key": "a",
+     "tone": "muted"
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "flow",
+  "body": "dir: right\nweb -> srv \"WS /ws/chat\" -> sdk \"prompt()\"\nsdk --> srv \"events\" info\nsrv -> done\ndone -> web \"yes\"",
+  "spec": {
+   "kind": "flow",
+   "dir": "right",
+   "nodes": [
+    {
+     "id": "web",
+     "label": "web",
+     "shape": "box"
+    },
+    {
+     "id": "srv",
+     "label": "srv",
+     "shape": "box",
+     "tone": "info"
+    },
+    {
+     "id": "sdk",
+     "label": "sdk",
+     "shape": "box"
+    },
+    {
+     "id": "done",
+     "label": "done",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "web",
+     "to": "srv",
+     "label": "WS /ws/chat",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "srv",
+     "to": "sdk",
+     "label": "prompt()",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "sdk",
+     "to": "srv",
+     "label": "events",
+     "dashed": true,
+     "both": false
+    },
+    {
+     "from": "srv",
+     "to": "done",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "done",
+     "to": "web",
+     "label": "yes",
+     "dashed": false,
+     "both": false
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "flow",
+  "body": "toggle -> newhead \"<mode> head rewritten\" -> miss \"cache prefix dead\" error -> resend \"re-send\"",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "toggle",
+     "label": "toggle",
+     "shape": "box"
+    },
+    {
+     "id": "newhead",
+     "label": "newhead",
+     "shape": "box"
+    },
+    {
+     "id": "miss",
+     "label": "miss",
+     "shape": "box",
+     "tone": "error"
+    },
+    {
+     "id": "resend",
+     "label": "resend",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "toggle",
+     "to": "newhead",
+     "label": "<mode> head rewritten",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "newhead",
+     "to": "miss",
+     "label": "cache prefix dead",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "miss",
+     "to": "resend",
+     "label": "re-send",
+     "dashed": false,
+     "both": false
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "flow",
+  "body": "== Before ==\nnode a1 \"Old\" muted\na1 -> b1 \"calls\"\n== After ==\nnode a2 \"New\" accent\na2 -> b2 \"calls\" -> c2\nmark b1\nmark c2 \"added\"",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "a1",
+     "label": "Old",
+     "shape": "box",
+     "tone": "muted"
+    },
+    {
+     "id": "a2",
+     "label": "New",
+     "shape": "box",
+     "tone": "accent"
+    },
+    {
+     "id": "b1",
+     "label": "b1",
+     "shape": "box"
+    },
+    {
+     "id": "b2",
+     "label": "b2",
+     "shape": "box"
+    },
+    {
+     "id": "c2",
+     "label": "c2",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "a1",
+     "to": "b1",
+     "label": "calls",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "a2",
+     "to": "b2",
+     "label": "calls",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "b2",
+     "to": "c2",
+     "dashed": false,
+     "both": false
+    }
+   ],
+   "sections": [
+    {
+     "label": "Before",
+     "nodes": [
+      {
+       "id": "a1",
+       "label": "Old",
+       "shape": "box",
+       "tone": "muted"
+      },
+      {
+       "id": "b1",
+       "label": "b1",
+       "shape": "box"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a1",
+       "to": "b1",
+       "label": "calls",
+       "dashed": false,
+       "both": false
+      }
+     ]
+    },
+    {
+     "label": "After",
+     "nodes": [
+      {
+       "id": "a2",
+       "label": "New",
+       "shape": "box",
+       "tone": "accent"
+      },
+      {
+       "id": "b2",
+       "label": "b2",
+       "shape": "box"
+      },
+      {
+       "id": "c2",
+       "label": "c2",
+       "shape": "box"
+      }
+     ],
+     "edges": [
+      {
+       "from": "a2",
+       "to": "b2",
+       "label": "calls",
+       "dashed": false,
+       "both": false
+      },
+      {
+       "from": "b2",
+       "to": "c2",
+       "dashed": false,
+       "both": false
+      }
+     ]
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "b1",
+     "tone": "accent"
+    },
+    {
+     "key": "c2",
+     "tone": "accent",
+     "note": "added",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "flow",
+  "body": "== A ==\nx -> y warn\n== B ==\np -> q\n== C ==\nr <--> s",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "x",
+     "label": "x",
+     "shape": "box"
+    },
+    {
+     "id": "y",
+     "label": "y",
+     "shape": "box",
+     "tone": "warn"
+    },
+    {
+     "id": "p",
+     "label": "p",
+     "shape": "box"
+    },
+    {
+     "id": "q",
+     "label": "q",
+     "shape": "box"
+    },
+    {
+     "id": "r",
+     "label": "r",
+     "shape": "box"
+    },
+    {
+     "id": "s",
+     "label": "s",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "x",
+     "to": "y",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "p",
+     "to": "q",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "r",
+     "to": "s",
+     "dashed": true,
+     "both": true
+    }
+   ],
+   "sections": [
+    {
+     "label": "A",
+     "nodes": [
+      {
+       "id": "x",
+       "label": "x",
+       "shape": "box"
+      },
+      {
+       "id": "y",
+       "label": "y",
+       "shape": "box",
+       "tone": "warn"
+      }
+     ],
+     "edges": [
+      {
+       "from": "x",
+       "to": "y",
+       "dashed": false,
+       "both": false
+      }
+     ]
+    },
+    {
+     "label": "B",
+     "nodes": [
+      {
+       "id": "p",
+       "label": "p",
+       "shape": "box"
+      },
+      {
+       "id": "q",
+       "label": "q",
+       "shape": "box"
+      }
+     ],
+     "edges": [
+      {
+       "from": "p",
+       "to": "q",
+       "dashed": false,
+       "both": false
+      }
+     ]
+    },
+    {
+     "label": "C",
+     "nodes": [
+      {
+       "id": "r",
+       "label": "r",
+       "shape": "box"
+      },
+      {
+       "id": "s",
+       "label": "s",
+       "shape": "box"
+      }
+     ],
+     "edges": [
+      {
+       "from": "r",
+       "to": "s",
+       "dashed": true,
+       "both": true
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "flow",
+  "body": "title: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\ncaption: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\nnode a \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"\na -> b \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx\"",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "a",
+     "label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+     "shape": "box"
+    },
+    {
+     "id": "b",
+     "label": "b",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "a",
+     "to": "b",
+     "label": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+     "dashed": false,
+     "both": false
+    }
+   ],
+   "title": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+   "caption": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "flow",
+  "body": "a-b->c-->d\nd -> a-b",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "a-b",
+     "label": "a-b",
+     "shape": "box"
+    },
+    {
+     "id": "c",
+     "label": "c",
+     "shape": "box"
+    },
+    {
+     "id": "d",
+     "label": "d",
+     "shape": "box"
+    }
+   ],
+   "edges": [
+    {
+     "from": "a-b",
+     "to": "c",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "c",
+     "to": "d",
+     "dashed": true,
+     "both": false
+    },
+    {
+     "from": "d",
+     "to": "a-b",
+     "dashed": false,
+     "both": false
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "state",
+  "body": "node s0 start\nnode done end\ns0 -> idle\nidle -> busy \"prompt\"\nbusy -> idle \"settled\"\nbusy -> failed \"error\" error\nfailed -> done\nmark failed error \"retried once\"",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "s0",
+     "label": "s0",
+     "shape": "start"
+    },
+    {
+     "id": "done",
+     "label": "done",
+     "shape": "end"
+    },
+    {
+     "id": "idle",
+     "label": "idle",
+     "shape": "round"
+    },
+    {
+     "id": "busy",
+     "label": "busy",
+     "shape": "round"
+    },
+    {
+     "id": "failed",
+     "label": "failed",
+     "shape": "round",
+     "tone": "error"
+    }
+   ],
+   "edges": [
+    {
+     "from": "s0",
+     "to": "idle",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "idle",
+     "to": "busy",
+     "label": "prompt",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "busy",
+     "to": "idle",
+     "label": "settled",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "busy",
+     "to": "failed",
+     "label": "error",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "failed",
+     "to": "done",
+     "dashed": false,
+     "both": false
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "failed",
+     "tone": "error",
+     "note": "retried once",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "state",
+  "body": "== Old ==\nnode s0 start\ns0 -> a \"go\"\n== New ==\nnode s1 start\ns1 -> b \"go\" ok",
+  "spec": {
+   "kind": "flow",
+   "dir": "down",
+   "nodes": [
+    {
+     "id": "s0",
+     "label": "s0",
+     "shape": "start"
+    },
+    {
+     "id": "s1",
+     "label": "s1",
+     "shape": "start"
+    },
+    {
+     "id": "a",
+     "label": "a",
+     "shape": "round"
+    },
+    {
+     "id": "b",
+     "label": "b",
+     "shape": "round",
+     "tone": "ok"
+    }
+   ],
+   "edges": [
+    {
+     "from": "s0",
+     "to": "a",
+     "label": "go",
+     "dashed": false,
+     "both": false
+    },
+    {
+     "from": "s1",
+     "to": "b",
+     "label": "go",
+     "dashed": false,
+     "both": false
+    }
+   ],
+   "sections": [
+    {
+     "label": "Old",
+     "nodes": [
+      {
+       "id": "s0",
+       "label": "s0",
+       "shape": "start"
+      },
+      {
+       "id": "a",
+       "label": "a",
+       "shape": "round"
+      }
+     ],
+     "edges": [
+      {
+       "from": "s0",
+       "to": "a",
+       "label": "go",
+       "dashed": false,
+       "both": false
+      }
+     ]
+    },
+    {
+     "label": "New",
+     "nodes": [
+      {
+       "id": "s1",
+       "label": "s1",
+       "shape": "start"
+      },
+      {
+       "id": "b",
+       "label": "b",
+       "shape": "round",
+       "tone": "ok"
+      }
+     ],
+     "edges": [
+      {
+       "from": "s1",
+       "to": "b",
+       "label": "go",
+       "dashed": false,
+       "both": false
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "sequence",
+  "body": "actor c \"Client\"\nactor s \"Server\" accent\nc -> s \"SYN\"\nnote c \"waits\"\ns --> c \"SYN-ACK\"\n== TLS ==\nnote c s \"keys\"\nc -> s \"ACK\"\nc -> c \"self\"\nmark 2 warn \"second message\"\nmark 3\nmark s\nmark \"Client\" muted",
+  "spec": {
+   "kind": "sequence",
+   "actors": [
+    {
+     "id": "c",
+     "label": "Client"
+    },
+    {
+     "id": "s",
+     "label": "Server",
+     "tone": "accent"
+    }
+   ],
+   "steps": [
+    {
+     "type": "msg",
+     "from": "c",
+     "to": "s",
+     "label": "SYN",
+     "dashed": false
+    },
+    {
+     "type": "note",
+     "over": [
+      "c"
+     ],
+     "text": "waits"
+    },
+    {
+     "type": "msg",
+     "from": "s",
+     "to": "c",
+     "label": "SYN-ACK",
+     "dashed": true
+    },
+    {
+     "type": "divider",
+     "label": "TLS"
+    },
+    {
+     "type": "note",
+     "over": [
+      "c",
+      "s"
+     ],
+     "text": "keys"
+    },
+    {
+     "type": "msg",
+     "from": "c",
+     "to": "s",
+     "label": "ACK",
+     "dashed": false
+    },
+    {
+     "type": "msg",
+     "from": "c",
+     "to": "c",
+     "label": "self",
+     "dashed": false
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "step:2",
+     "tone": "warn",
+     "note": "second message",
+     "n": 1
+    },
+    {
+     "key": "step:5",
+     "tone": "accent"
+    },
+    {
+     "key": "actor:s",
+     "tone": "accent"
+    },
+    {
+     "key": "actor:c",
+     "tone": "muted"
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "sequence",
+  "body": "a -> b \"one\"\nnote a \"n\"\nb -> a \"two\"\n== div ==\na -> b \"three\"\nmark 1 \"first\"\nmark 3 error",
+  "spec": {
+   "kind": "sequence",
+   "actors": [
+    {
+     "id": "a",
+     "label": "a"
+    },
+    {
+     "id": "b",
+     "label": "b"
+    }
+   ],
+   "steps": [
+    {
+     "type": "msg",
+     "from": "a",
+     "to": "b",
+     "label": "one",
+     "dashed": false
+    },
+    {
+     "type": "note",
+     "over": [
+      "a"
+     ],
+     "text": "n"
+    },
+    {
+     "type": "msg",
+     "from": "b",
+     "to": "a",
+     "label": "two",
+     "dashed": false
+    },
+    {
+     "type": "divider",
+     "label": "div"
+    },
+    {
+     "type": "msg",
+     "from": "a",
+     "to": "b",
+     "label": "three",
+     "dashed": false
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "step:0",
+     "tone": "accent",
+     "note": "first",
+     "n": 1
+    },
+    {
+     "key": "step:4",
+     "tone": "error"
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "steps",
+  "body": "== Lane one ==\n\"Simple question\" ok | You -> \"Maria gets a link\" -> \"decision recorded\"\nBare words label warn | a b -> \"c d\" -> e\n== Lane two ==\n'Single quoted' | x -> y\nmark \"Simple question\" \"note\"",
+  "spec": {
+   "kind": "steps",
+   "items": [
+    {
+     "type": "lane",
+     "label": "Lane one"
+    },
+    {
+     "type": "row",
+     "label": "Simple question",
+     "tone": "ok",
+     "steps": [
+      "You",
+      "Maria gets a link",
+      "decision recorded"
+     ]
+    },
+    {
+     "type": "row",
+     "label": "Bare words label",
+     "tone": "warn",
+     "steps": [
+      "a b",
+      "c d",
+      "e"
+     ]
+    },
+    {
+     "type": "lane",
+     "label": "Lane two"
+    },
+    {
+     "type": "row",
+     "label": "'Single quoted'",
+     "steps": [
+      "x",
+      "y"
+     ]
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "1",
+     "tone": "accent",
+     "note": "note",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "layers",
+  "body": "title: Stack\nBrowser | Solid app, \"Service worker, PWA\" | accent\nServer | Hono, ws | REST + 2 sockets\nDisk | | muted\nmark Server \"holds sessions\"",
+  "spec": {
+   "kind": "layers",
+   "layers": [
+    {
+     "label": "Browser",
+     "items": [
+      "Solid app",
+      "Service worker, PWA"
+     ],
+     "tone": "accent"
+    },
+    {
+     "label": "Server",
+     "items": [
+      "Hono",
+      "ws"
+     ],
+     "note": "REST + 2 sockets"
+    },
+    {
+     "label": "Disk",
+     "items": [],
+     "tone": "muted"
+    }
+   ],
+   "title": "Stack",
+   "emphasis": [
+    {
+     "key": "1",
+     "tone": "accent",
+     "note": "holds sessions",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "tree",
+  "body": "src/\n  lib/\n    markdown.ts \"renders fences\" accent\n  main.tsx warn\n\"My Docs\"\nmark markdown.ts \"here\"\nmark \"My Docs\" muted",
+  "spec": {
+   "kind": "tree",
+   "roots": [
+    {
+     "key": "0",
+     "name": "src/",
+     "children": [
+      {
+       "key": "0.0",
+       "name": "lib/",
+       "children": [
+        {
+         "key": "0.0.0",
+         "name": "markdown.ts",
+         "children": [],
+         "note": "renders fences",
+         "tone": "accent"
+        }
+       ]
+      },
+      {
+       "key": "0.1",
+       "name": "main.tsx",
+       "children": [],
+       "tone": "warn"
+      }
+     ]
+    },
+    {
+     "key": "1",
+     "name": "My Docs",
+     "children": []
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "0.0.0",
+     "tone": "accent",
+     "note": "here",
+     "n": 1
+    },
+    {
+     "key": "1",
+     "tone": "muted"
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "chart",
+  "body": "type: bar\nunit: ms\n\"Quicksort\" 120\n\"Merge sort\" 150 ok\n\"Bubble sort\" 9800\nmark \"Bubble sort\" warn \"quadratic\"",
+  "spec": {
+   "kind": "chart",
+   "type": "bar",
+   "scale": "linear",
+   "series": [],
+   "rows": [
+    {
+     "label": "Quicksort",
+     "values": [
+      120
+     ]
+    },
+    {
+     "label": "Merge sort",
+     "values": [
+      150
+     ],
+     "tone": "ok"
+    },
+    {
+     "label": "Bubble sort",
+     "values": [
+      9800
+     ]
+    }
+   ],
+   "unit": "ms",
+   "emphasis": [
+    {
+     "key": "2",
+     "tone": "warn",
+     "note": "quadratic",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "chart",
+  "body": "type: line\nseries: A, \"B b\"\none 1 2\ntwo 2 -\nthree 4 5\nmark two",
+  "spec": {
+   "kind": "chart",
+   "type": "line",
+   "scale": "linear",
+   "series": [
+    "A",
+    "B b"
+   ],
+   "rows": [
+    {
+     "label": "one",
+     "values": [
+      1,
+      2
+     ]
+    },
+    {
+     "label": "two",
+     "values": [
+      2,
+      null
+     ]
+    },
+    {
+     "label": "three",
+     "values": [
+      4,
+      5
+     ]
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "1",
+     "tone": "accent"
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "chart",
+  "body": "type: parts\nunit: tokens\nof: 1000\nsys 100 muted\nnew 50\nmark new \"uncached\"",
+  "spec": {
+   "kind": "chart",
+   "type": "parts",
+   "scale": "linear",
+   "series": [],
+   "rows": [
+    {
+     "label": "sys",
+     "values": [
+      100
+     ],
+     "tone": "muted"
+    },
+    {
+     "label": "new",
+     "values": [
+      50
+     ]
+    }
+   ],
+   "unit": "tokens",
+   "of": 1000,
+   "emphasis": [
+    {
+     "key": "1",
+     "tone": "accent",
+     "note": "uncached",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "timeline",
+  "body": "== 2010s ==\n2010 | Backbone | MV*\n2013 | React | accent\n2016 | Vue 2 | reactivity | ok\nmark 2013 \"first\"\nmark \"Vue 2\" error",
+  "spec": {
+   "kind": "timeline",
+   "items": [
+    {
+     "type": "section",
+     "label": "2010s"
+    },
+    {
+     "type": "event",
+     "when": "2010",
+     "label": "Backbone",
+     "note": "MV*"
+    },
+    {
+     "type": "event",
+     "when": "2013",
+     "label": "React",
+     "tone": "accent"
+    },
+    {
+     "type": "event",
+     "when": "2016",
+     "label": "Vue 2",
+     "note": "reactivity",
+     "tone": "ok"
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "2",
+     "tone": "accent",
+     "note": "first",
+     "n": 1
+    },
+    {
+     "key": "3",
+     "tone": "error"
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "matrix",
+  "body": "columns: Merge, Rebase\nKeeps commits | yes | no \"new SHAs\"\nLinear | no | yes\nWhen | shared | -\nmark \"Linear\" \"the point\"\nmark Rebase info",
+  "spec": {
+   "kind": "matrix",
+   "columns": [
+    "Merge",
+    "Rebase"
+   ],
+   "rows": [
+    {
+     "label": "Keeps commits",
+     "cells": [
+      {
+       "mark": "yes"
+      },
+      {
+       "mark": "no",
+       "text": "new SHAs"
+      }
+     ]
+    },
+    {
+     "label": "Linear",
+     "cells": [
+      {
+       "mark": "no"
+      },
+      {
+       "mark": "yes"
+      }
+     ]
+    },
+    {
+     "label": "When",
+     "cells": [
+      {
+       "text": "shared"
+      },
+      {}
+     ]
+    }
+   ],
+   "emphasis": [
+    {
+     "key": "1",
+     "tone": "accent",
+     "note": "the point",
+     "n": 1
+    },
+    {
+     "key": "c1",
+     "tone": "info"
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "code",
+  "body": "title: Off by one\nlang: ts\nstart: 12\nmark 13 error \"reads past the end\"\nmark 14-15 warn\n---\nfor (let i = 0;\n  i <= n;\n  i++) total += x[i];\n# not a comment\n}",
+  "spec": {
+   "kind": "code",
+   "start": 12,
+   "lines": [
+    "for (let i = 0;",
+    "  i <= n;",
+    "  i++) total += x[i];",
+    "# not a comment",
+    "}"
+   ],
+   "title": "Off by one",
+   "lang": "ts",
+   "emphasis": [
+    {
+     "key": "13",
+     "tone": "error",
+     "note": "reads past the end",
+     "n": 1
+    },
+    {
+     "key": "14",
+     "tone": "warn"
+    },
+    {
+     "key": "15",
+     "tone": "warn"
+    }
+   ]
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "html",
+  "body": "title: Small\ncaption: \"Press Step\"\n<div id=\"a\">é ü ñ 日本</div>\n<script>var i=0</script>",
+  "spec": {
+   "kind": "html",
+   "source": "<div id=\"a\">é ü ñ 日本</div>\n<script>var i=0</script>",
+   "title": "Small",
+   "caption": "Press Step"
+  }
+ },
+ {
+  "from": "synthetic",
+  "kind": "svg",
+  "body": "<svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\"/></svg>",
+  "spec": {
+   "kind": "svg",
+   "source": "<svg viewBox=\"0 0 10 10\"><circle cx=\"5\" cy=\"5\" r=\"4\"/></svg>"
+  }
+ }
+]

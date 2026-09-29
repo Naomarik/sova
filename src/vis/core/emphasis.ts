@@ -10,9 +10,13 @@
  * then `resolveMarks` with a function that turns a target into its own item key(s); the result goes
  * in `spec.emphasis`. The figure shell lists the notes under the drawing, numbered; a View puts the
  * matching number badge (and the `vis-em` class) on each marked item via `emphasisMap`.
+ *
+ * A malformed mark line is an error. A well-formed one that can't apply is dropped with a warning
+ * (the figure still draws): a target that names nothing, an item already marked, marks past the 8th.
+ * A note over 120 characters is cut, with a warning.
  */
 
-import { fail, isTone, tokenize, type Emphasis, type Line, type Tone } from "./grammar";
+import { clip, fail, isTone, tokenize, warn, type Emphasis, type Line, type Tone } from "./grammar";
 
 export const MAX_MARKS = 8;
 export const MAX_NOTE = 120;
@@ -55,8 +59,8 @@ export function takeMarks(ls: Line[]): { rest: Line[]; marks: RawMark[] } {
     for (const tok of toks.slice(1)) {
       if (tok.t === "str") {
         if (mark.note !== undefined) fail(line.n, "mark takes one note");
-        if (tok.v.length > MAX_NOTE) fail(line.n, `a mark's note is at most ${MAX_NOTE} characters: keep it to a phrase`);
-        mark.note = tok.v;
+        if (tok.v.length > MAX_NOTE) warn(line.n, `mark note over ${MAX_NOTE} characters, shortened`);
+        mark.note = clip(tok.v, MAX_NOTE);
       } else if (tok.t === "word" && isTone(tok.v)) {
         if (mark.tone) fail(line.n, "mark takes one tone");
         mark.tone = tok.v;
@@ -64,13 +68,17 @@ export function takeMarks(ls: Line[]): { rest: Line[]; marks: RawMark[] } {
     }
     marks.push(mark);
   }
-  if (marks.length > MAX_MARKS) fail(marks[MAX_MARKS]!.line, `${marks.length} marks; at most ${MAX_MARKS}: emphasis only works when it's rare`);
+  if (marks.length > MAX_MARKS) {
+    for (const m of marks.slice(MAX_MARKS)) warn(m.line, `mark past the ${MAX_MARKS}th, dropped: emphasis only works when it's rare`);
+    marks.length = MAX_MARKS;
+  }
   return { rest, marks };
 }
 
 /**
  * Resolve marks against a kind's items. `resolve` returns the item key(s) a target names, or null
- * when it names nothing (an error naming `what`, e.g. "node"). Marking one item twice is an error.
+ * when it names nothing. A mark that names nothing (`what`, e.g. "node", goes in the warning) is
+ * dropped; an item already marked keeps its first mark. Both warn.
  */
 export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget) => string | string[] | null, what: string): Emphasis[] {
   const out: Emphasis[] = [];
@@ -78,13 +86,19 @@ export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget) => 
   let n = 0;
   for (const m of marks) {
     const got = resolve(m.target);
-    const keys = got === null ? [] : Array.isArray(got) ? got : [got];
-    if (keys.length === 0) fail(m.line, `mark: no ${what} ${m.target.t === "label" ? `"${m.target.text}"` : m.target.text}`);
+    const named = got === null ? [] : Array.isArray(got) ? got : [got];
+    const target = m.target.t === "label" ? `"${m.target.text}"` : m.target.text;
+    if (named.length === 0) {
+      warn(m.line, `mark: no ${what} ${target}, dropped`);
+      continue;
+    }
+    const keys = named.filter((key) => !seen.has(key));
+    if (keys.length < named.length) warn(m.line, keys.length ? `mark ${target}: part of it is already marked, the rest kept` : `mark ${target}: already marked, dropped`);
+    if (keys.length === 0) continue;
     const number = m.note !== undefined ? ++n : undefined;
     keys.forEach((key, i) => {
-      if (seen.has(key)) fail(m.line, `mark: ${what} ${key} is marked twice`);
       seen.add(key);
-      // A range's note and number belong to its first item; the rest are highlighted only.
+      // A range's note and number belong to its first (unmarked) item; the rest are highlighted only.
       out.push({ key, tone: m.tone ?? "accent", ...(i === 0 && m.note !== undefined ? { note: m.note, n: number } : {}) });
     });
   }
@@ -112,5 +126,7 @@ export function byIdOrLabel(items: { key: string; id?: string; label: string }[]
 
 /** The one call a kind makes after parsing its items: resolve its marks into `spec.emphasis`. */
 export function applyMarks(spec: { emphasis?: Emphasis[] }, marks: RawMark[], resolve: (target: MarkTarget) => string | string[] | null, what: string): void {
-  if (marks.length) spec.emphasis = resolveMarks(marks, resolve, what);
+  if (!marks.length) return;
+  const emphasis = resolveMarks(marks, resolve, what);
+  if (emphasis.length) spec.emphasis = emphasis;
 }

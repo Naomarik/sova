@@ -20,7 +20,6 @@ import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
-import { startWorkspaceProbe } from "./org-effects";
 import { closeAllOrgHosts } from "./org-engine";
 import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
@@ -1374,9 +1373,7 @@ startResourceMonitor({
   held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
   titleOf: cachedTitleOf,
 });
-// Every attached org's workspace repo: its residence chart commits it at most hourly when anything
-// changed, then pushes; a plain file written outside the charts is seen within a minute.
-startWorkspaceProbe();
+// Every attached org's workspace repo: its residence chart commits whatever changed at most hourly, then pushes.
 // A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
 startWrapupRecovery();
 // Messages a crash or kill lost stop counting against their session's limit.

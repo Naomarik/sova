@@ -395,16 +395,6 @@ export async function detachOrg(orgId: string): Promise<void> {
   }
 }
 
-/** The residence's commit look sees a change in the repo (a plain file written): `store/written`, when it is clean. */
-export function noteWorkspaceWrite(orgId: string): void {
-  try {
-    const host = hostOf(orgId);
-    if (host.configuration(residenceSid(orgId))?.includes("clean")) void host.act(residenceSid(orgId), "store/written", {}, { by: "system" });
-  } catch {
-    // not open here: nothing to commit
-  }
-}
-
 // ---- reads (the charts, as the wire shapes them) -------------------------------------------------------
 
 function orgOfData(orgId: string, d: Record<string, unknown>): Org {
@@ -554,7 +544,7 @@ export function readOrgHistory(orgId: string): OrgChange[] {
 }
 
 /** THE writer of about.md: one history line first, then the file (blank removes it). The same text writes nothing. */
-function writeAbout(orgId: string, dir: string, to: string, revertOf?: string, by: OperatorBy = OPERATOR_BY): void {
+function writeAbout(dir: string, to: string, revertOf?: string, by: OperatorBy = OPERATOR_BY): void {
   const from = readAboutFile(dir).trim();
   if (from === to) return;
   const history = readOrgHistoryFile(dir);
@@ -569,7 +559,6 @@ function writeAbout(orgId: string, dir: string, to: string, revertOf?: string, b
     writeFileSync(tmp, to);
     renameSync(tmp, aboutFile(dir));
   }
-  noteWorkspaceWrite(orgId);
 }
 
 /** Set the About text back to history line `at`'s `from`, as a new operator change. */
@@ -577,7 +566,7 @@ export function revertOrgChange(orgId: string, at: string, by: OperatorBy = OPER
   const dir = orgDir(orgId);
   const line = readOrgHistoryFile(dir).find((c) => c.at === at);
   if (!line) throw new OrgError("No such change", 404);
-  writeAbout(orgId, dir, line.from, at, by);
+  writeAbout(dir, line.from, at, by);
 }
 
 export async function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }, by: OperatorBy = OPERATOR_BY): Promise<Org> {
@@ -585,7 +574,7 @@ export async function patchOrg(orgId: string, patch: { name?: unknown; about?: u
   readOrg(orgId);
   const about = patch.about === undefined ? undefined : cleanAbout(patch.about);
   if (patch.name !== undefined) await actOrThrow(orgId, orgSid(orgId), "org/rename", { name: patch.name }, operatorEnvelope(orgId, null, by));
-  if (about !== undefined) writeAbout(orgId, dir, about, undefined, by);
+  if (about !== undefined) writeAbout(dir, about, undefined, by);
   return readOrg(orgId);
 }
 

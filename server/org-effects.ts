@@ -1,9 +1,9 @@
 import { dirname } from "node:path";
 import type { ProfileChange } from "../shared/orgs";
 import { revokeLinks } from "./baton-links";
-import { hostOf, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
+import { onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
 import { hostIdentity, named, parseHolder, remoteHolder } from "./org-holder";
-import { appendHistory, noteWorkspaceWrite, orgSid, readIndex, residenceSid, watchSid } from "./orgs";
+import { appendHistory, orgSid, readIndex, watchSid } from "./orgs";
 import { revokeOwnerLinks } from "./owner";
 import { revokePersonLinks } from "./person-links";
 import { refreshShare } from "./share/hub";
@@ -99,7 +99,6 @@ export function registerOrgEffects(host: OrgHostApi, orgId: string): void {
       ...(typeof e.revertOf === "string" ? { revertOf: e.revertOf } : {}),
       key: e.key,
     });
-    noteWorkspaceWrite(orgId);
     return { written: rows.length };
   });
 }
@@ -114,25 +113,3 @@ function dirOfOpen(host: OrgHostApi, orgId: string): string {
 }
 
 onOrgHostOpened(registerOrgEffects);
-
-// ---- the residence's view of the repo -----------------------------------------------------------------
-
-/** Every minute: a repo with changes the charts didn't see (a plain file: visits, costs, notes…) tells its residence. */
-export const WORKSPACE_LOOK_MS = 60_000;
-
-let probe: NodeJS.Timeout | null = null;
-export function startWorkspaceProbe(): void {
-  if (probe) return;
-  probe = setInterval(() => {
-    for (const o of readIndex().orgs)
-      void (async () => {
-        try {
-          if (!hostOf(o.id).configuration(residenceSid(o.id))?.includes("clean")) return;
-          if ((await changedPaths(o.dir)).length) noteWorkspaceWrite(o.id);
-        } catch {
-          // not open: nothing to commit
-        }
-      })();
-  }, WORKSPACE_LOOK_MS);
-  probe.unref?.();
-}

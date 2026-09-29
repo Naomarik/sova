@@ -72,13 +72,17 @@ describe("atOnceCounts: from chart states", () => {
     ];
     assert.equal(atOnceCounts(sessions, P).gatheringsOpen, 2);
   });
-  test("coding: its own builds whose turn is working; never operator-coding or idle ones", () => {
+  test("coding: its own builds whose turn is working or whose workers still run; never operator-coding or idle ones without workers", () => {
     const sessions = [
       s("build", ["turn", "working"], { projectId: P, kind: "coding" }),
+      s("build", ["turn", "idle"], { projectId: P, kind: "coding", workers: 2 }),
+      s("build", ["turn", "failed"], { projectId: P, kind: "coding", workers: 1 }),
+      s("build", ["turn", "idle"], { projectId: P, kind: "coding", workers: 0 }),
       s("build", ["turn", "idle"], { projectId: P, kind: "coding" }),
+      s("build", ["turn", "idle"], { projectId: P, kind: "operator-coding", workers: 3 }),
       s("build", ["turn", "working"], { projectId: P, kind: "operator-coding" }),
       s("build", ["turn", "working"], { projectId: "prj_b", kind: "coding" }),
     ];
-    assert.deepEqual(atOnceCounts(sessions, P), { gatheringsOpen: 0, codingRunning: 1 });
+    assert.deepEqual(atOnceCounts(sessions, P), { gatheringsOpen: 0, codingRunning: 3 });
   });
 });

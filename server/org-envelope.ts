@@ -108,7 +108,8 @@ export interface SessionRead {
 /**
  * The at-once counts, from chart states (never a separately kept number): this project overseer's
  * gathering sessions that are open (settle sessions it owns included, as today), and its own coding
- * sessions (kind `coding`, never the operator's) whose turn is working. Pure.
+ * sessions (kind `coding`, never the operator's) that run: their turn is working, or their turn
+ * ended while their workers still run (`workers`, the build's exported count). Pure.
  */
 export function atOnceCounts(sessions: readonly SessionRead[], projectId: string): { gatheringsOpen: number; codingRunning: number } {
   let gatheringsOpen = 0;
@@ -119,7 +120,8 @@ export function atOnceCounts(sessions: readonly SessionRead[], projectId: string
       const owner = s.data.owner as { overseerOf?: unknown } | undefined;
       if (typeof owner === "object" && owner !== null && owner.overseerOf === projectId && s.configuration.includes("open")) gatheringsOpen++;
     } else if (s.chart === "build") {
-      if (s.data.kind === "coding" && s.configuration.includes("working")) codingRunning++;
+      const workers = typeof s.data.workers === "number" ? s.data.workers : 0;
+      if (s.data.kind === "coding" && (s.configuration.includes("working") || workers > 0)) codingRunning++;
     }
   }
   return { gatheringsOpen, codingRunning };

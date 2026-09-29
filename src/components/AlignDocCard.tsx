@@ -133,7 +133,7 @@ export function AlignDocCard(props: { doc: AlignDocInfo; line?: string }) {
               Go With Recommendations
             </button>
             <span class="align-doc-foot-hint" id={hintId}>
-              {goBlocked() ?? "Or tick some and answer the rest below."}
+              {goBlocked() ?? "Or pick some answers and type the rest below."}
             </span>
           </div>
         )}

@@ -348,7 +348,10 @@ export function liveRows(s: MonitorSnapshot): GroupRow[] {
       ...procRow(p),
       chargedTo: p.sessionPath ? `${titles.get(p.sessionPath) ?? "Untitled session"}${p.workerId ? ` · ${p.workerId}` : ""}` : undefined,
     }));
-    rows.push({ ...row, key: ESCAPED_GROUP, label: "Escaped processes", caption: "In the unit, no longer under the server", kind: "escaped" });
+    // The bucket's totals are the uncharged ones; a charged process counts once, in its session.
+    const charged = s.escaped.procs.filter((p) => p.sessionPath).length;
+    const caption = `In the unit, no longer under the server${charged ? `; ${charged} also counted in ${charged === 1 ? "its session" : "their sessions"} above` : ""}`;
+    rows.push({ ...row, key: ESCAPED_GROUP, label: "Escaped processes", caption, kind: "escaped" });
   }
   if (s.unattributed.procCount) rows.push({ ...bucketRow(s.unattributed), key: UNATTRIBUTED_GROUP, label: "Not attributed", kind: "unattributed" });
   return rows;
@@ -451,11 +454,14 @@ export function livePids(s: MonitorSnapshot): Set<number> {
   s.topProcs.forEach(add);
   const extra = (s as { livePids?: unknown }).livePids;
   if (Array.isArray(extra)) for (const p of extra) if (typeof p === "number") out.add(p);
+  // pid 0 is the synthetic "(exited tool children)" line: nothing alive to match against.
+  out.delete(0);
   return out;
 }
 
 /**
- * Processes that were among a tick's top CPU users in the window and aren't running now: the
+ * Processes that were among a tick's top CPU users in the window and that the snapshot doesn't
+ * list now (it lists only the heaviest, so an idle survivor can appear here too): the
  * builds, test runs and probes that came and went. Runs of the same command by the same worker
  * fold into one row, heaviest first. Short-lived work that never made a tick's top 5 still counts
  * in its worker's CPU (through its parent's reaped-children time), just not by name here.

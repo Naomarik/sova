@@ -192,6 +192,7 @@ test("live rows: sessions heaviest first, workers heaviest first, then server an
   assert.equal(heavy.procs[0]!.via, "cwd");
   const escaped = rows.at(-1)!;
   assert.equal(escaped.procs[0]!.chargedTo, "Heavy · w3");
+  assert.equal(escaped.caption, "In the unit, no longer under the server; 1 also counted in its session above");
   // Tree scope has no escaped bucket to show.
   assert.ok(!liveRows(snapshot({ scope: "tree", unit: undefined })).some((r) => r.kind === "escaped"));
 });
@@ -380,4 +381,13 @@ test("a gone worker keeps its name from the history; a live one from the snapsho
   assert.equal(chargedTo({ group: "/s/heavy.jsonl", workerId: "w9" }, { "/s/heavy.jsonl": { label: "Heavy" } }, nameOf), "Heavy · w9");
   const rows = rowsAt(point(1, { "/s/old.jsonl": [5, MB] }, { workers: { "/s/old.jsonl": { ag_01: [5, MB] } } }), {}, undefined, { "/s/old.jsonl": { ag_01: "jvm-runner" } });
   assert.equal(rows[0]!.workers[0]!.label, "jvm-runner");
+});
+
+test("the synthetic pid 0 (exited tool children) is never taken for a live process", () => {
+  const s = snapshot();
+  s.sessions[0]!.own = [proc(0, "(exited tool children)", 4, 0, { via: "exited-tools" })];
+  assert.ok(!livePids(s).has(0));
+  const t = transient([point(1, {}, { top: [{ pid: 0, cmd: "(exited tool children)", kind: "other", cpuPct: 30, rssBytes: 0, group: "/s/light.jsonl" }] })], livePids(s));
+  assert.equal(t[0]!.cmd, "(exited tool children)");
+  assert.equal(isHeuristic(liveRows(s).find((r) => r.label === "Light")!.procs[0]!.via), true);
 });

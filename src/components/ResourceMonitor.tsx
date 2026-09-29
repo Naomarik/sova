@@ -202,7 +202,7 @@ export function ResourceMonitor(props: { onClose(): void; titleOf?: TitleOf }) {
                       <h3 class="monitor-section-title" id="monitor-transient-title">
                         Transient work in this window
                       </h3>
-                      <p class="text-caption text-muted">Processes that were among a tick's busiest and aren't running now.</p>
+                      <p class="text-caption text-muted">Processes that were among a tick's busiest earlier in this hour and aren't among the busiest now.</p>
                       <div class="monitor-table-wrap">
                         <table class="monitor-table">
                           <thead>
@@ -557,7 +557,7 @@ function ProcLine(props: { p: ProcRow; depth: 1 | 2 }) {
     <tr class="monitor-row-proc" classList={{ "monitor-depth-2": props.depth === 2 }}>
       <th scope="row">
         <div class="monitor-name">
-          <span class="monitor-cmd text-mono" title={`pid ${props.p.pid}`}>
+          <span class="monitor-cmd text-mono" title={props.p.pid ? `pid ${props.p.pid}` : undefined}>
             {props.p.cmd}
           </span>
           <Show when={isHeuristic(props.p.via)}>

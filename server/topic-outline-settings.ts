@@ -25,8 +25,8 @@ const BACKENDS: readonly SummarizerBackend[] = ["claude-code", "pi"];
  * budget over, so the written file behaves like the defaults did.
  */
 const DEFAULT_SUMMARIZERS: Record<string, unknown>[] = [
-  { backend: "claude-code", model: "haiku", timeoutMs: 45_000, maxBudgetUsd: 0.05 },
   { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60_000 },
+  { backend: "claude-code", model: "sonnet", timeoutMs: 45_000, maxBudgetUsd: 0.05 },
 ];
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);

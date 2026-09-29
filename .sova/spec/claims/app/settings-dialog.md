@@ -216,7 +216,7 @@ The file is `~/.pi/agent/topic-outline.json` (shown in the footnote), shared wit
 terminal. The TUI and every runtime read it once per session, at session start, so **a change
 applies to sessions started afterwards, here and in the terminal**, and the panel says so. A
 missing file, or one naming no usable summarizer, reads as the extension's built-in chain —
-Claude Code `haiku`, then pi `ollama-cloud/deepseek-v4.1-flash` — and, while nothing is staged,
+pi `ollama-cloud/deepseek-v4.1-flash`, then Claude Code `sonnet` — and, while nothing is staged,
 the section heading says those are the built-in models, beside its Reset to Defaults.
 
 - **Choices, not free text.** Model lists are Delegate's (`GET /api/settings/delegate/options`).

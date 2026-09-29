@@ -199,12 +199,13 @@ function inWords(t: number, now: number): string {
 
 /**
  * A held act's sentence, whatever it waits on: the hold (r2's sentence), a person's working hours
- * (r7), or, past its hold, the overseer's review (r8, with the stall clock).
+ * (r7), or, past its hold, the overseer's approval (r8: an act on the project's confirm list waits
+ * for the overseer to approve or cancel it; the stall clock runs from the hold's end).
  */
 export function heldWaitLine(h: HeldWait, now: number): string {
   const what = stripStop(h.what);
   if (h.reviewSince !== undefined) {
-    return `${what} is waiting for the overseer's review, for ${duration(Math.max(0, now - h.reviewSince))}. Cancel it, or it goes ahead once the overseer looks.`;
+    return `${what} waits for the overseer to approve it (${duration(Math.max(0, now - h.reviewSince))} so far). Cancel it here, or it goes ahead when the overseer approves.`;
   }
   if (h.wait === "hours") {
     const rel = inWords(h.goesAt, now);

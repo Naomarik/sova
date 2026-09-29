@@ -2799,7 +2799,7 @@ export interface AttentionItem {
     wait?: "hold" | "hours";
     /** An hours wait's person, by display name. */
     person?: string;
-    /** ms epoch: the hold ended and it waits for the overseer's review (r8); the row's stall clock runs from here. */
+    /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
     reviewSince?: number;
   };
 }

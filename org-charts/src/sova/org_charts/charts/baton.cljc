@@ -383,6 +383,14 @@
         (entry-effect "proposal" (fn [d] {:person-id (:person-id (e d)) :name (:name (e d)) :role (:role (e d)) :why (:why (e d)) :by (or (:holder d) operator)}))
         (reason "baton/proposal" (fn [d] {:key (:person-id (e d))})))
 
+      ;; sova_send into this gathering session (the overseer's or a chart's text to its agent, which
+      ;; reaches the person): L3, held when unattended, counts a prompt; the host's `invalid` carries
+      ;; its session checks (archived, delivery)
+      (dsl/act {:event :baton/send :checks [(lv/invalid-check b/evt)
+                                            (fn [d] (when (lv/blank? (:text (e d))) (r/refuse 400 "text must not be blank.")))
+                                            (lv/cap-check "prompt" (constantly 1) b/evt)]}
+        (dsl/effect :send-prompt (fn [d] (select-keys (e d) [:text :delivery])))
+        (b/ledger :ledger/take "prompt" (constantly 1)))
       (dsl/act {:event :baton/hide :checks [(lv/invalid-check b/evt)]}
         (script {:expr (fn [_ d] [(ops/assign :hidden-from-owner (true? (:hidden (e d))))])}))
       (dsl/act {:event :baton/abilities :checks [(mk rb/abilities-refusal)]}
@@ -554,7 +562,9 @@
    :baton/goal-done       {:needs nil}
    :baton/record-decision {:needs nil}
    :baton/propose         {:needs nil}
-   :baton/message         {:needs nil :confirm-kind "message"}
+   :baton/message         {:needs nil}
+   :baton/send            {:needs "L3" :tool "sova_send" :people-facing true :counts "prompt" :hold true :confirm-kind "message"
+                           :what (fn [d] (str "A message into \"" (:public-title d) "\""))}
    :baton/take-back       {:needs nil :people-facing true :card (fn [d] {:sessions [(:session-id d)]})}
    :baton/handoff         {:needs nil :people-facing true :card (fn [d] {:sessions [(:session-id d)] :people [(get-in (e d) [:target :id])]})}
    :baton/offer           {:needs nil :people-facing true :confirm-kind "offer" :card (fn [d] {:sessions [(:session-id d)] :people (mapv :id (:targets (e d)))})}

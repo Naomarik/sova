@@ -272,6 +272,9 @@
 (def chart
   (statechart {:initial :watch}
     (state {:id :watch :initial :regions}
+      ;; The watch watches its project (archived, has-overseer, name): the engine sends one
+      ;; link/moved at once, so the facts are right from the start.
+      (on-entry {} (dsl/watch (fn [d] (b/project-sid (:org-id d) (:project-id d)))))
       ;; Facts from the host (the roster's active people, the settings file as read) and the project.
       (transition {:event :facts/changed}
         (script {:expr (fn [_ d] (let [e (b/evt d)]

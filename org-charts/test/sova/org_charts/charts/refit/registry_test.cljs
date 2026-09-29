@@ -27,7 +27,7 @@
     (is (every? confirm-kinds declared))))
 
 (deftest the-kind-of-each-act
-  (is (= {["baton" :baton/message] "message" ["baton" :baton/offer] "offer" ["baton" :baton/close] "close"
+  (is (= {["baton" :baton/send] "message" ["baton" :baton/offer] "offer" ["baton" :baton/close] "close"
           ["project" :baton/start] "gather" ["item" :gather/start] "gather"
           ["project" :build/start] "build" ["item" :build/start] "build" ["build" :build/prompt] "prompt"
           ["reconciler" :decision/promote] "promote" ["project" :owner-update/post] "owner-update"

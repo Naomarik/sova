@@ -12,7 +12,7 @@ import {
 	resultError, resultMatches, textBlocksText, textDelta,
 	type ClaudeToolPermissionRequest, type ControlAck, type Deferred,
 } from "./transport.ts";
-import { switchText, type ClaudeAccountFailure, type ClaudeLoginChoice } from "./accounts.ts";
+import { switchText, type ClaudeAccountFailure, type ClaudeLoginChoice, type LoginUser } from "./accounts.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
 
@@ -97,6 +97,12 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 export interface ClaudeWorkerLogins {
 	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): ClaudeLoginChoice | undefined;
 	forcedFailure?(id: string): ClaudeAccountFailure | undefined;
+	/** The pool (accounts.ts): the failed login goes back, and the next one may be borrowed. */
+	failoverAsync?(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): Promise<ClaudeLoginChoice | undefined>;
+	/** The login a worker moves to when its own leaves this device (borrowing if need be). */
+	acquire?(current?: string): Promise<ClaudeLoginChoice>;
+	/** Record the worker's use of its login (the lease), and how to move it off when the login leaves. */
+	track?(id: string, user: LoginUser): { done(): void; active(): void };
 }
 export type ClaudeRunnerHandlers = WorkerHandlers;
 interface Task {
@@ -113,6 +119,12 @@ interface Task {
 	kind: "task" | "steer";
 	/** The worker used a tool during this task: a switch says the message was interrupted. */
 	progressed?: boolean;
+	/** A pool failover is choosing the next login (async): later failure signals wait for it. */
+	failoverPending?: boolean;
+	/** The pool found no login: the failure ends the task as before. */
+	noFailover?: boolean;
+	/** The failed result swallowed while the choice was pending, to settle the task after all. */
+	heldResult?: Record<string, any>;
 }
 const TIMINGS: ClaudeRunnerTimings = {
 	requestTimeoutMs: 30000, permissionTimeoutMs: 60000, settlementTimeoutMs: 15000,
@@ -171,6 +183,8 @@ export class ClaudeRunner implements Worker {
 	private switching = false;
 	/** Processes this worker has started for login switches. */
 	private respawns = 0;
+	/** The current process's lease on its login (accounts.ts LoginUsers). */
+	private lease?: { done(): void; active(): void };
 	/** Private 0700 directory for files Claude reads at startup (system prompt, mcp.json). */
 	private readonly privateFiles = new ClaudePrivateFiles();
 	private stopping = false;
@@ -300,7 +314,23 @@ export class ClaudeRunner implements Worker {
 		if (o.forkSession || o.extensions?.length || o.allowNestedExtensions) {
 			this.fail("Claude runner does not support Pi forks or nested extensions"); return;
 		}
+		if (o.logins?.acquire && this.login) { void this.startOnAcquired(o.logins.acquire.bind(o.logins)); return; }
 		if (!this.launch(o.resume?.sessionId, o.env)) return;
+		void this.initialize();
+	}
+	/** In the pool, a worker that would start on `default` borrows a login first (accounts.ts acquire). */
+	private async startOnAcquired(acquire: (current?: string) => Promise<ClaudeLoginChoice>): Promise<void> {
+		let env = this.options.env;
+		try {
+			const to = await acquire(this.login?.id);
+			if (to.id !== this.login?.id) {
+				this.login = to;
+				env = { ...this.options.env, ...to.env };
+				if (!to.env.CLAUDE_CONFIG_DIR) delete env.CLAUDE_CONFIG_DIR;
+			}
+		} catch { /* start on the login chosen at creation */ }
+		if (this.stopping || this.closed) return;
+		if (!this.launch(this.options.resume?.sessionId, env)) return;
 		void this.initialize();
 	}
 
@@ -323,7 +353,65 @@ export class ClaudeRunner implements Worker {
 		try {
 			this.transport.launch(o.executable ?? "claude", args, { cwd: o.cwd, env });
 		} catch (error) { this.fail(`Spawn failed: ${String(error)}`); return false; }
+		this.trackLogin();
 		return true;
+	}
+
+	/**
+	 * Lease the process's login while it runs: the pool sees the worker on it, and when the login
+	 * starts leaving this device an idle worker moves to the next login (relocate), a busy one as
+	 * soon as its task settles.
+	 */
+	private trackLogin(): void {
+		const logins = this.options.logins;
+		const login = this.login;
+		const transport = this.transport;
+		if (!logins?.track || !login || this.options.adopt) return;
+		let lease: { done(): void; active(): void } | undefined;
+		try {
+			lease = logins.track(login.id, {
+				busy: () => this.transport === transport && (!!this.active || this.switching || this.redirecting),
+				release: () => { if (this.transport === transport) return this.relocate(); },
+				pid: () => transport.pid,
+			});
+		} catch { return; }
+		this.lease?.done();
+		this.lease = lease;
+		void transport.whenClosed.then(() => { lease?.done(); if (this.lease === lease) this.lease = undefined; });
+	}
+
+	/**
+	 * The worker's login is leaving this device while it is idle: stop its process and start one on
+	 * the next login (`--resume` of the same session), with nothing sent. A worker that is busy by
+	 * now is released again after its task (the lease ticker asks once more).
+	 */
+	private async relocate(): Promise<void> {
+		const logins = this.options.logins;
+		if (!logins?.acquire || this.switching || this.stopping || this.closed || this.leaderExited || this.active || this.redirecting || !this.sessionId || !this.initialized) return;
+		const from = this.login;
+		let to: ClaudeLoginChoice | undefined;
+		try { to = await logins.acquire(); } catch { to = undefined; }
+		if (!to || to.id === from?.id || this.switching || this.stopping || this.closed || this.leaderExited || this.active || this.redirecting) return;
+		this.switching = true;
+		this.initialized = false;
+		this.cancelPermissions();
+		this.push("system", `Claude: moved ${from?.label ?? "?"} → ${to.label} (the login left this device)`);
+		const old = this.transport;
+		try { await old.shutdown(); await old.whenClosed; } catch { /* gone either way */ }
+		this.privateFiles.cleanup();
+		if (this.stopping) { this.switching = false; this.close(null, null); return; }
+		this.login = to;
+		const env = { ...this.options.env, ...to.env };
+		if (!to.env.CLAUDE_CONFIG_DIR) delete env.CLAUDE_CONFIG_DIR;
+		this.transport = this.makeTransport(this.options.respawnImpl);
+		this.switching = false;
+		if (!this.launch(this.sessionId, env)) return;
+		const ok = await this.transport.control("initialize");
+		if (this.stopping || this.closed || this.leaderExited) return;
+		if (!ok) { this.fail(`Claude initialize failed after moving to ${to.label}`); return; }
+		this.privateFiles.releaseSystemPrompt();
+		this.initialized = true;
+		this.drainQueue();
 	}
 
 	/** Transport state the worker's own guards read. */
@@ -355,6 +443,7 @@ export class ClaudeRunner implements Worker {
 			}, this.timings.requestTimeoutMs),
 		};
 		this.active = task; this.initialOwed = false; this.notificationPending = true; this.idleAnnounced = false;
+		this.lease?.active();
 		this.status = "running"; this.taskOutcome = undefined; this.error = undefined;
 		this.permissionDenials = []; this.output = ""; this.partial = undefined; this.lastAssistant = undefined;
 		this.detector.reset();
@@ -537,22 +626,44 @@ export class ClaudeRunner implements Worker {
 	 * when no login is left or the worker is going away: the task then ends as before.
 	 */
 	private failover(task: Task, failure: ClaudeAccountFailure, result?: Record<string, any>): boolean {
+		if (task.noFailover) return false;
+		if (task.failoverPending) { if (result) task.heldResult = result; return true; }
 		if (this.switching || this.stopping || this.redirecting || task.cancelled || !this.sessionId || this.respawns >= 16) return false;
 		const from = this.login!;
+		const logins = this.options.logins!;
+		if (logins.failoverAsync) {
+			// The pool: `from` goes back, and the next login may be borrowed first. The failed result
+			// waits; with no login found it settles the task as it would have.
+			task.failoverPending = true;
+			if (result) task.heldResult = result;
+			void logins.failoverAsync(from, failure).catch(() => undefined).then((to) => {
+				task.failoverPending = false;
+				if (this.active !== task || this.stopping || this.closed || this.leaderExited) return;
+				if (!to || this.switching || this.redirecting || task.cancelled) {
+					task.noFailover = true;
+					if (task.heldResult) this.event(task.heldResult);
+					return;
+				}
+				this.switchTo(task, from, to, failure);
+			});
+			return true;
+		}
 		let to: ClaudeLoginChoice | undefined;
-		try { to = this.options.logins!.failover(from, failure); } catch { to = undefined; }
+		try { to = logins.failover(from, failure); } catch { to = undefined; }
 		if (!to) return false;
+		this.switchTo(task, from, to, failure);
+		return true;
+	}
+	private switchTo(task: Task, from: ClaudeLoginChoice, to: ClaudeLoginChoice, failure: ClaudeAccountFailure): void {
 		this.respawns++;
 		this.switching = true;
 		this.initialized = false;
 		// The failed result's usage is left out: its modelUsage can be empty, and the resumed
 		// process reports the whole session again (usageScope "session").
-		void result;
 		clearTimeout(task.acceptTimer);
 		this.cancelPermissions();
 		this.push("system", switchText(from, to, failure));
 		void this.respawnOn(task, to);
-		return true;
 	}
 	private async respawnOn(task: Task, to: ClaudeLoginChoice): Promise<void> {
 		const old = this.transport;

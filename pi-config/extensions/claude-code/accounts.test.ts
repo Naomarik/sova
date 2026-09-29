@@ -124,10 +124,15 @@ test("device id: SOVA_DEVICE_ID, else the mesh self id, else local; order follow
 		logins: [login(A, "1"), login(B, "2", { device: "laptop" }), login(C, "3", { device: "phone" })],
 		devices: { laptop: { order: [B, C, "default"] } },
 	};
-	// C is the phone's: never used on the laptop, even if its order names it.
-	assert.deepEqual(deviceOrder(file, "laptop"), [B, "default", A]);
-	assert.deepEqual(deviceOrder(file, "phone"), ["default", A, C], "no entry for phone: default first, then its own and local logins by age");
-	assert.deepEqual(deviceOrder({ ...file, devices: {} }, "laptop"), ["default", A, B]);
+	// C is the phone's: never used on the laptop, even if its order names it. `default` is always
+	// last (Claude Code's own login is the last resort), wherever an order places it.
+	assert.deepEqual(deviceOrder(file, "laptop"), [B, A, "default"]);
+	assert.deepEqual(deviceOrder(file, "phone"), [A, C, "default"], "no entry for phone: its own and local logins by age, then default");
+	assert.deepEqual(deviceOrder({ ...file, devices: {} }, "laptop"), [A, B, "default"]);
+	// The pool (mesh on): a login kept here for lending (`device: null`) is never used here; off, it is.
+	const kept: ClaudeAccountsFile = { version: 1, logins: [login(A, "1", { device: null }), login(B, "2", { device: "laptop" })], devices: {} };
+	assert.deepEqual(deviceOrder(kept, "laptop", true), [B, "default"]);
+	assert.deepEqual(deviceOrder(kept, "laptop", false), [A, B, "default"]);
 });
 
 test("selection: first usable login in order; the recorded one while usable; disabled is skipped", (t) => {

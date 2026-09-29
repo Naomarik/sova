@@ -68,6 +68,28 @@ children, model discovery) runs on one Claude login, chosen by `accounts.ts`:
   `--resume` on the new login; the interrupted message is sent again and the
   worker's transcript gets the notice. With no usable login left, the failure
   ends the turn or task as before.
+- `default` always comes last in a device's order: Claude Code's own login is
+  the last resort.
+
+**The pool (mesh on).** When `<agent dir>/sova/peers.json` lists a peer, Sova's
+server pools the added logins of every device (`server/claude-pool/`): a login
+is on one device at a time, and a registry login's `device` is the device that
+holds it (`null`: kept here for lending, never run). This extension honours the
+pool's marks at every spawn:
+
+- `<login dir>/.sova-leaving`: the login is on its way to another device. It is
+  never chosen; an idle chat child on it is torn down and an idle worker moves
+  to the next login (`--resume`), a busy one as soon as its turn or task ends.
+- `<login dir>/.sova-leases/<pid>.json`: which processes of this host still run
+  `claude` on the login (`LoginUsers`, rewritten every 5 s), so the server
+  hands a login over only once none does.
+- A spawn with nothing but `default` usable writes a borrow request
+  (`<agent dir>/claude-pool/wants/`) and waits up to 30 s for the server to
+  borrow one (`acquire`), but only while the server's heartbeat
+  (`claude-pool/agent.json`) is fresh. On a failure, `failoverAsync` marks the
+  login leaving (the server returns it to the keeper with its standing) and
+  moves on to the next login held here, else a borrowed one (not of the same
+  account on a limit), else `default`.
 
 Development switch: with `SOVA_CLAUDE_ACCOUNTS_DEV=1`,
 `<agent dir>/claude-accounts-dev.json` (`{"forceLimit": [ids], "forceAuth": [ids]}`)

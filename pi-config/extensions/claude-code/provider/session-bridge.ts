@@ -33,7 +33,7 @@ import {
 } from "../transport.ts";
 import {
 	loginEntryFor, switchText,
-	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginEntry, type ClaudeLoginSwitch,
+	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginEntry, type ClaudeLoginSwitch, type LoginUser,
 } from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
@@ -224,6 +224,14 @@ export interface ClaudeLoginSource {
 	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): ClaudeLoginChoice | undefined;
 	recordFailure(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): void;
 	forcedFailure?(id: string): ClaudeAccountFailure | undefined;
+	/** `select`, borrowing from the pool first when nothing but `default` is usable here. */
+	acquire?(current?: string): Promise<ClaudeLoginChoice>;
+	/** `failover` in the pool: the failed login goes back, and the next one may be borrowed. */
+	failoverAsync?(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): Promise<ClaudeLoginChoice | undefined>;
+	/** The login is on its way to another device: a child on it restarts on the next login. */
+	leaving?(id: string): boolean;
+	/** Record a child's use of a login (its lease) and how to release it when the login leaves. */
+	track?(id: string, user: LoginUser): { done(): void; active(): void };
 }
 
 /** A pi session's login bookkeeping (setSessionLogin). */
@@ -697,6 +705,8 @@ class CliSession {
 	private recordedRead = false;
 	private readonly detector = new ClaudeFailureDetector();
 	private readonly loginHooks: () => SessionLoginHooks | undefined;
+	/** The live child's lease on its login (accounts.ts LoginUsers), while it runs on an added one. */
+	private lease?: { done(): void; active(): void };
 
 	constructor(piSessionId: string, options: SessionBridgeOptions, cwd: string, forkSeed?: ClaudeForkPoint, loginHooks: () => SessionLoginHooks | undefined = () => undefined) {
 		this.piSessionId = piSessionId;
@@ -758,6 +768,7 @@ class CliSession {
 		};
 		this.turn = turn;
 		this.detector.reset();
+		this.lease?.active();
 
 		if (signal) {
 			turn.onAbort = () => { void this.abortTurn(); };
@@ -781,6 +792,7 @@ class CliSession {
 			if (!drained && !signal?.aborted) this.markDesynced("pi abandoned the turn mid-message");
 			this.armHeldTimer();
 			this.lastUsed = Date.now();
+			this.lease?.active();
 		}
 	}
 
@@ -799,6 +811,11 @@ class CliSession {
 		}
 		if (this.desynced) {
 			return { restart: true, reason: `the CLI fell out of step with pi: ${this.desynced}`, results: [], users: [] };
+		}
+		if (this.login && this.options.logins?.leaving?.(this.login.id)) {
+			// Its login is going to another device: nothing may keep running on it (a refresh here
+			// would rotate the copy that moves). The restart takes the next login.
+			return { restart: true, reason: `Claude login ${this.login.label} is leaving this device`, results: [], users: [] };
 		}
 		if (this.abortPending) {
 			// Its late result would otherwise end this turn.
@@ -937,7 +954,7 @@ class CliSession {
 
 	private async spawnFresh(request: ClaudeTurnRequest, reason: string, resume?: string): Promise<void> {
 		if (this.started) await this.teardown(`restarting: ${reason}`);
-		this.chooseLogin();
+		await this.chooseLogin();
 		this.failure = undefined;
 		this.recorded = [];
 		this.meta = undefined;
@@ -1050,6 +1067,7 @@ class CliSession {
 			},
 		});
 		this.started = true;
+		this.trackLogin(transport);
 
 		const fields: Record<string, unknown> = { sdkMcpServers: [MCP_SERVER_NAME] };
 		if (this.options.sendSystemPrompt !== false && request.systemPrompt) {
@@ -1178,16 +1196,39 @@ class CliSession {
 	 * else this host's first usable (ClaudeLoginSource.select). A change from what the session
 	 * recorded is reported, so the session records it.
 	 */
-	private chooseLogin(): void {
+	private async chooseLogin(): Promise<void> {
 		const logins = this.options.logins;
 		if (!logins) return;
 		// Only a real entry pins the session; one never recorded takes the order's first usable
 		// login, and records it: the session's login is known from its first turn, `default` too.
 		const recorded = this.loginHooks()?.recorded;
 		if (!this.recordedRead) { this.recordedLogin = recorded; this.recordedRead = true; }
-		try { this.login = logins.select(this.login?.id ?? recorded); }
+		const current = this.login?.id ?? recorded;
+		// In the pool, a device with nothing but `default` borrows a login first (accounts.ts acquire).
+		try { this.login = logins.acquire ? await logins.acquire(current) : logins.select(current); }
 		catch (error) { debugLog({ event: "login-select-failed", session: this.piSessionId, error: String(error) }); return; }
 		this.announce(this.login);
+	}
+
+	/**
+	 * Lease the child's login while the child lives: the pool sees it in use, and a login that
+	 * starts leaving gets this child torn down once it is idle (its next turn restarts elsewhere).
+	 */
+	private trackLogin(transport: ClaudeTransport): void {
+		const logins = this.options.logins;
+		const login = this.login;
+		if (!logins?.track || !login) return;
+		let lease: { done(): void; active(): void } | undefined;
+		try {
+			lease = logins.track(login.id, {
+				busy: () => this.transport === transport && this.isBusy(),
+				release: async () => { if (this.transport === transport && !this.isBusy()) await this.teardown(`Claude login ${login.label} is leaving this device`); },
+				pid: () => transport.pid,
+			});
+		} catch { return; }
+		this.lease?.done();
+		this.lease = lease;
+		void transport.whenClosed.then(() => { lease?.done(); if (this.lease === lease) this.lease = undefined; });
 	}
 
 	/** Report the session's login to the extension (a `claude-login` entry), when it changed. */
@@ -1231,6 +1272,17 @@ class CliSession {
 		};
 		// Once pi has part of the answer, sending the turn again would duplicate it.
 		if (turn.surfaced || turn.failovers >= 16) { logins.recordFailure(from, failure); fail(); return; }
+		if (logins.failoverAsync) {
+			// The pool: `from` goes back to the keeper, and the next login may have to be borrowed
+			// first. The turn waits; nothing of it reached pi yet.
+			turn.failovers++;
+			void logins.failoverAsync(from, failure).catch(() => undefined).then((to) => {
+				if (this.turn !== turn || turn.queue.isEnded()) return;
+				if (!to) { fail(); return; }
+				void this.switchLogin(turn, from, to, failure);
+			});
+			return;
+		}
 		let to: ClaudeLoginChoice | undefined;
 		try { to = logins.failover(from, failure); } catch { to = undefined; }
 		if (!to) { fail(); return; }

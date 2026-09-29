@@ -150,7 +150,7 @@ test("a limit before anything streamed moves the turn to the next login and answ
 
 test("a session records the login it starts on, default included, and a recorded one is not recorded again", { timeout: 8000 }, async (t) => {
 	const s = setup(t, () => ANSWER("ok"));
-	updateAccounts(s.agentDir, (a) => { a.devices.local = { order: ["default", A, B] }; });
+	updateAccounts(s.agentDir, (a) => { for (const l of a.logins) l.enabled = false; });
 	await collect(s.bridge.runTurn(request([user("hi")])));
 	assert.equal(s.loginOf(s.children[0]!), "default");
 	assert.deepEqual(s.entries.map((e) => [e.login, e.from]), [["default", undefined]], "the first turn records its login, even default");

@@ -73,6 +73,8 @@ export function createClaudeCliSummarizer(spec: SummarizerSpec, claudeBin: strin
           reject(new SummarizerError(`failed to spawn claude: ${String(error)}`));
           return;
         }
+        // Its login may not leave this device while it runs (claude-code accounts.ts leases).
+        try { hostLogins().leaseChild(env as Record<string, string | undefined>, child); } catch { /* no lease */ }
         const settle = (error: Error | undefined, value?: SummarizerResult) => {
           if (settled) return;
           settled = true;

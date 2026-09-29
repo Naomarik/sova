@@ -2214,7 +2214,8 @@ export interface UsageInsight {
   stale: boolean; // now - fetchedAt > 10 min (nothing refreshed the cache: neither this server's poller nor a TUI)
   providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai, deepseek
   /** Every Claude login on this host, in its order, `default` (whose usage is `providers`' claude)
-      included (§app.insights/usage-cards). Absent from an older server; the page then shows the
+      included; with the pool on, the pool's logins first, in its order, each with its `holder`
+      (§app.insights/usage-cards). Absent from an older server; the page then shows the
       one Claude card from `providers`. */
   claudeLogins?: UsageClaudeLogin[];
 }
@@ -2241,8 +2242,12 @@ export interface UsageClaudeLogin {
   /** Its reading: `id` "claude", like the provider card. A login marked as needing sign-in is not
       fetched, so it keeps the last reading it had (or none: state "error"). */
   usage: UsageProvider;
-  /** When `usage` was fetched (added logins; `default`'s is the file's `fetchedAt`). */
+  /** When `usage` was fetched (added logins; `default`'s is the file's `fetchedAt`; a pool login
+      held elsewhere: when its holder published it). */
   fetchedAt?: number;
+  /** While the pool is on, where the login is (not for `default`). A login held by another device
+      (or kept free) reads its holder's published figures (5-hour and 7-day), or none. */
+  holder?: { label: string; self: boolean; free: boolean; stuck: boolean };
 }
 
 /** `restored`: a worker a server restart took down, rebuilt from its durable record and transcript.

@@ -54,8 +54,12 @@
     },
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ]
     },
     "§app.insights/subagent-cards": {
       "kind": "behavior",
@@ -1276,7 +1280,8 @@
         "public/icons/pwa-512.png",
         "public/icons/pwa-192-maskable.png",
         "public/icons/pwa-512-maskable.png",
-        "public/icons/apple-touch-icon.png"
+        "public/icons/apple-touch-icon.png",
+        "public/icons/activity.svg"
       ]
     },
     "§design.ground-rules/motion": {
@@ -6778,6 +6783,115 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§app.resource-monitor/attribution": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.resource-monitor/sampling-and-history"
+      ],
+      "code": [
+        "server/resource-monitor-attrib.ts",
+        "server/resource-monitor-proc.ts",
+        "server/resource-monitor.ts",
+        "server/chat-manager.ts",
+        "shared/protocol.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "server/resource-monitor-attrib.test.ts",
+        "server/resource-monitor-proc.test.ts"
+      ]
+    },
+    "§app.resource-monitor/entry-button": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.insights/sidebar-foot",
+        "§app.session-list/spine",
+        "§app/settings-dialog"
+      ],
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/App.tsx",
+        "src/lib/monitor-nav.ts",
+        "src/components/ui.tsx",
+        "public/icons/activity.svg",
+        "src/design/base.css"
+      ]
+    },
+    "§app.resource-monitor/lightness-budget": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.resource-monitor/sampling-and-history"
+      ],
+      "code": [
+        "server/resource-monitor.ts",
+        "server/resource-monitor-proc.ts",
+        "server/resource-monitor.test.ts"
+      ]
+    },
+    "§app.resource-monitor/platform-fallback": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.resource-monitor/sampling-and-history"
+      ],
+      "code": [
+        "server/resource-monitor.ts",
+        "server/resource-monitor-proc.ts",
+        "src/lib/monitor-view.ts"
+      ]
+    },
+    "§app.resource-monitor/sampling-and-history": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [],
+      "code": [
+        "server/resource-monitor.ts",
+        "server/resource-monitor-proc.ts",
+        "server/resource-monitor-attrib.ts",
+        "server/resource-monitor-history.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "server/resource-monitor-history.test.ts",
+        "server/resource-monitor.test.ts",
+        "server/resource-monitor.integration.test.ts"
+      ]
+    },
+    "§app.resource-monitor/screen": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.resource-monitor/sampling-and-history",
+        "§app.resource-monitor/attribution",
+        "§app.resource-monitor/platform-fallback",
+        "§app/settings-dialog"
+      ],
+      "code": [
+        "src/components/ResourceMonitor.tsx",
+        "src/lib/monitor-view.ts",
+        "src/lib/monitor-view.test.ts",
+        "src/monitor.css",
+        "src/lib/api.ts",
+        "server/session-titles.ts",
+        "server/sessions-index.ts"
+      ]
+    },
+    "§app/resource-monitor": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "shared/protocol.ts",
+        "server/resource-monitor.ts",
+        "src/components/ResourceMonitor.tsx"
+      ]
     }
   },
   "boundary": {

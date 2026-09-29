@@ -39,18 +39,23 @@ working worker is never the one it leaves out.
 ```html
 <!-- after nav.sidebar-list, outside the pane -->
 <div class="sidebar-foot">
-  <a class="list-row list-row-interactive insights-row" href="#/usage" aria-current="page"
-     title="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%"
-     aria-label="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%">
-    <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
-    <span class="insights-row-text usage-glance">
-      <span class="usage-glance-item"><span class="usage-glance-tag">C</span><span class="text-num">47%</span></span>
-      <span class="usage-glance-item usage-glance-item-high"><span class="usage-glance-tag">O</span><span class="text-num">95%</span></span>
-      <span class="usage-glance-item usage-glance-item-stale"><span class="usage-glance-tag">OL</span><span class="text-num">80%</span></span>
-      <span class="usage-glance-item"><span class="usage-glance-tag">Z</span><span class="text-num">0%</span></span>
-      <span class="usage-glance-item"><span class="usage-glance-tag">DS</span><span class="text-num">$4</span></span>
-    </span>
-  </a>
+  <div class="sidebar-foot-row">
+    <a class="list-row list-row-interactive insights-row sidebar-foot-link" href="#/usage" aria-current="page"
+       title="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%"
+       aria-label="Usage: Claude 7-day 47%, OpenAI 7-day 95%, Ollama Cloud Monthly 80%, Z.ai 5-hour 0%">
+      <span class="icon" style="--icon: url(/icons/gauge.svg)" aria-hidden="true"></span>
+      <span class="insights-row-text usage-glance">
+        <span class="usage-glance-item"><span class="usage-glance-tag">C</span><span class="text-num">47%</span></span>
+        <span class="usage-glance-item usage-glance-item-high"><span class="usage-glance-tag">O</span><span class="text-num">95%</span></span>
+        <span class="usage-glance-item usage-glance-item-stale"><span class="usage-glance-tag">OL</span><span class="text-num">80%</span></span>
+        <span class="usage-glance-item"><span class="usage-glance-tag">Z</span><span class="text-num">0%</span></span>
+        <span class="usage-glance-item"><span class="usage-glance-tag">DS</span><span class="text-num">$4</span></span>
+      </span>
+    </a>
+    <!-- the Resource monitor button, §app.resource-monitor/entry-button -->
+    <button type="button" class="button button-icon sidebar-settings"
+            title="Resource monitor" aria-label="Resource monitor">…activity…</button>
+  </div>
   <!-- aria-current on #/agents and #/agents/* -->
   <a class="list-row list-row-interactive insights-row" href="#/agents"
      title="6 active agents in 4 sessions, 2 teams" aria-label="6 active agents in 4 sessions, 2 teams">
@@ -61,10 +66,14 @@ working worker is never the one it leaves out.
 ```
 
 The foot holds **two stacked 44px rows, and both are always present**, so the layout never
-jumps. `.list-row`'s bottom border divides them. A single row split into two links was
-rejected: 288px divided in two truncates "Claude 5-hour 96%". Neither row has a chevron. They're
-whole-row links with a hover state and the `aria-current` tint, like session rows, and the Usage
-glance needs the room.
+jumps. Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
+right end — the **Resource monitor** button on the Usage row (§app.resource-monitor/entry-button),
+the Settings gear on the Agents row (§app/settings-dialog) — with one class between them, so the
+two buttons stack in one column. The link's own bottom border divides the rows, and the row draws
+the same line under its button, so the divider runs the full width. A single row split into two
+links was rejected: 288px divided in two truncates "Claude 5-hour 96%". Neither row has a chevron.
+They're whole-row links with a hover state and the `aria-current` tint, like session rows, and the
+Usage glance needs the room.
 
 - **Usage row, a glance at every provider:**
   - One segment per provider, in the fixed order Claude, OpenAI, Ollama Cloud, Z.ai, DeepSeek.
@@ -93,12 +102,15 @@ glance needs the room.
   - **Full text.** The row's `title` and `aria-label` spell everything out, e.g. "Usage: Claude
     7-day 47%, …, DeepSeek balance $4.29" (the exact amount, not the rounded one); nothing is
     appended for a stale file.
-  - **Width.** Measured in the 320px sidebar (the glance box is 259px at a 1440px viewport):
-    a real five-provider reading (`C 83% O 97% OL 90% Z 8% DS $4`) is 226px and fits. The fifth
-    segment does spend the slack — all four windows at 100% plus `DS $4` is 263px, so the worst
-    case now overruns by a few px and `.usage-glance` clips it (it never wraps). Rounding the
-    balance to whole units is what keeps the common case comfortable; `DS $4.29` would cost
-    another ~20px.
+  - **Width.** The monitor button takes 52px of the row, so the glance is **tightened**:
+    segments sit `--space-2` apart (twice the tag-to-number gap, so each still reads as one
+    pair), and the link's right padding drops to `--space-2`, since the button carries its own
+    air around its icon. Measured in the 320px sidebar at a 1440px viewport, the glance box is
+    215px: a real five-provider reading (`C 83% O 97% OL 90% Z 8% DS $4`) is 210px and fits, and
+    so does `C 34% O 1% OL 31% Z 3% DS $0` (202px). All four windows at 100% plus `DS $4` is
+    247px, so the worst case overruns and `.usage-glance` clips it (it never wraps); the full
+    reading stays in the row's `title` and `aria-label`. Rounding the balance to whole units is
+    what keeps the common case inside; `DS $4.29` would cost another ~20px.
 - **Agents row, what is live right now:** `{agents} agents · {sessions} sessions · {teams} teams`.
   Any segment at 0 is dropped, and with nothing live at all the row reads the plain word
   "Agents". The numbers come from `activeAgentCounts` in `src/lib/workers.ts`, and each one is

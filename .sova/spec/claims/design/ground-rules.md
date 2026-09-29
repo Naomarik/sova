@@ -158,6 +158,7 @@ and `fill="none" stroke="currentColor"`.
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
 | `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview. A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
 | `gauge.svg` | Usage: the sidebar foot's Usage row. Sova's own, drawn on the system grid |
+| `activity.svg` | Resource monitor: the button at the right end of the sidebar foot's Usage row, and its spine item (§app.resource-monitor/entry-button). A pulse line: flat, one sharp peak and trough, flat again. New, drawn on the system grid |
 | `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§chat/mode-menu). Three tracks with an offset handle each. New, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)

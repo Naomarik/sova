@@ -1,4 +1,6 @@
 import type {
+  VoiceStatus,
+  VoiceTranscript,
   AutoTitleResponse,
   SessionTitleSettings,
   SessionTitleSettingsInfo,
@@ -7,6 +9,7 @@ import type {
   AttentionDigest,
   ChatModeResult,
   ClaudeAccountsInfo,
+  ClaudePoolInfo,
   ClaudeCliStatus,
   ClaudeLoginFlowState,
   ContextInfo,
@@ -71,6 +74,7 @@ import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } f
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
+import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
@@ -216,7 +220,17 @@ export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/te
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
 export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
 /** Start `claude auth login` for a new login; answers once its sign-in URL is out. */
-export const startClaudeLogin = () => request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST" });
+/** Add a login, or (with `login`) sign an existing one in again on this device. */
+export const startClaudeLogin = (login?: string) =>
+  request<ClaudeLoginFlowState>("/api/claude/accounts/flow", { method: "POST", ...(login ? { body: JSON.stringify({ login }) } : {}) });
+export const setClaudePoolKeeper = (device: string) =>
+  request<ClaudePoolInfo>("/api/claude/pool/keeper", { method: "PUT", body: JSON.stringify({ device }) });
+export const pinClaudePoolLogin = (id: string, pin: string | null) =>
+  request<ClaudePoolInfo>(`/api/claude/pool/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify({ pin }) });
+export const returnClaudePoolLogin = (id: string) =>
+  request<ClaudePoolInfo>(`/api/claude/pool/${encodeURIComponent(id)}/return`, { method: "POST" });
+export const putClaudePoolOrder = (order: string[]) =>
+  request<ClaudePoolInfo>("/api/claude/pool/order", { method: "PUT", body: JSON.stringify({ order }) });
 /** The code the sign-in page showed; answers once Claude Code finished (or refused it). */
 export const sendClaudeLoginCode = (code: string) =>
   request<ClaudeLoginFlowState>("/api/claude/accounts/flow/code", { method: "POST", body: JSON.stringify({ code }) });
@@ -895,6 +909,17 @@ export const claimMeshLogin = (key: string) =>
 /** Every host's own details (shared/mesh-details.ts), this host first; mesh on only. */
 export const fetchMeshDetails = () => request<MeshDetails>("/api/mesh/details", meshReadInit(true));
 
+/** Where each peer's build sits against this host's boot build, and the last resync job per host (§mesh.peers/resync). */
+export const fetchMeshResync = () => request<MeshResync>("/api/mesh/resync", { cache: "no-store" });
+
+/** Deploy this host's boot build to a peer that is behind: `commit` is the one the sheet showed, refused once it isn't. */
+export const startMeshResync = (id: string, commit: string) =>
+  request<ResyncJob>(`/api/mesh/resync/${encodeURIComponent(id)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ commit } satisfies ResyncStart),
+  });
+
 /** The Resource Monitor's latest tick (§app/resource-monitor); polled only while its modal is open. */
 export const fetchMonitor = () => request<MonitorSnapshot>("/api/monitor", { cache: "no-store" });
 /** Monitor history after `since` (epoch ms): the 5s ring, or the 30s rollups on disk. */
@@ -1104,3 +1129,23 @@ export const mergeCodingWorktree = (orgId: string, projectId: string, sessionId:
   request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/merge`, jsonInit("POST", { sessionId }));
 export const removeCodingWorktree = (orgId: string, projectId: string, sessionId: string) =>
   request<ProjectOverseerInfo>(`${overseerBase(orgId, projectId)}/worktrees/remove`, jsonInit("POST", { sessionId }));
+
+// ---- voice input (§chat/voice, §app.settings-dialog/voice) ---------------------------------------
+
+/** The voice status, with the setup log after `since`; `size` also measures the voice folder. */
+export const getVoiceStatus = (since = 0, size = false) =>
+  request<VoiceStatus>(`/api/voice?since=${since}${size ? "&size=1" : ""}`, { cache: "no-store" });
+/** Start (or resume) setup: the detected GPU backend, or the CPU. */
+export const installVoice = (backend: "gpu" | "cpu" = "gpu") => request<VoiceStatus>("/api/voice/install", jsonInit("POST", { backend }));
+export const cancelVoiceInstall = () => request<VoiceStatus>("/api/voice/install/cancel", jsonInit("POST"));
+export const repairVoice = () => request<VoiceStatus>("/api/voice/repair", jsonInit("POST"));
+export const uninstallVoice = () => request<{ freed: number }>("/api/voice", jsonInit("DELETE"));
+/** Load whisper while the user speaks; failures surface on the transcribe. */
+export const warmVoice = () => fetch("/api/voice/warm", { method: "POST" }).catch(() => {});
+/** A 16 kHz mono WAV → its text. `hint`: the session folder's name, a prompt word. */
+export const transcribeVoice = (wav: Uint8Array, hint?: string | null) =>
+  request<VoiceTranscript>(`/api/voice/transcribe${hint ? `?hint=${encodeURIComponent(hint)}` : ""}`, {
+    method: "POST",
+    headers: { "Content-Type": "audio/wav" },
+    body: wav as Uint8Array<ArrayBuffer>,
+  });

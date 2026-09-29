@@ -14,6 +14,7 @@ import type {
 } from "../../shared/mesh-details";
 import { activityOf, readLiveRecords, type RawLiveRecord, WORKING_FRESH_MS, workerCountsOf } from "../live";
 import { stateRoot } from "../state-root";
+import { bootBuild } from "./build-id";
 import { BatteryReader, buildCommit, ClaudeFinder, cores, deviceType, diskOf, loadAverages, type Machine, machineUptime, memory, modelName, realMachine } from "./details-collect";
 import { DEFAULT_SERVE_PORT, frontDoorOrder, noBrowserIds } from "./front-door";
 import { ownHello, peerLastSeen, PROBE_TIMEOUT_MS, probePeer } from "./hello";
@@ -91,14 +92,39 @@ function frontDoorOf(config: PeersConfig, dnsName: string | null): (id: string) 
 }
 
 /**
- * What stays put while Sova runs: build commit, model and device type. The device type waits for
+ * What stays put while Sova runs: build commit (the one recorded at boot, mesh/build-id.ts; read
+ * here only when nothing was recorded), model and device type. The device type waits for
  * the first battery reading everywhere but Android (Termux:API can hang; sysfs and pmset can't): a
  * Mac or a Linux laptop whose firmware names no chassis is told apart by its battery.
  */
 export async function fixedFacts(machine: Machine, battery: BatteryReader): Promise<{ commit?: string; model?: string; device: HostDetails["identity"]["device"] }> {
   const [b, model] = await Promise.all([battery.read(machine.platform !== "android"), modelName(machine)]);
-  const commit = buildCommit(machine, ROOT);
+  const boot = bootBuild();
+  const commit = boot ? boot.commit : buildCommit(machine, ROOT);
   return { ...(commit ? { commit } : {}), ...(model ? { model } : {}), device: deviceType(machine, !!b.battery) };
+}
+
+/** A peer's own details (over the peer hop), or why there are none. Never throws. */
+export async function fetchPeerDetails(mesh: Pick<MeshApi, "peerFetch">, p: PeerEntry): Promise<Pick<MeshHostDetails, "details" | "unavailable" | "error">> {
+  try {
+    // Inside the page's 4 s read deadline, after a probe of up to 2.5 s.
+    const res = await mesh.peerFetch(p.id, "/api/peer/details", { signal: AbortSignal.timeout(DETAILS_TIMEOUT_MS) });
+    if (res.status === 404) {
+      await res.body?.cancel();
+      return { unavailable: "update" };
+    }
+    if (!res.ok) {
+      await res.body?.cancel();
+      return res.status === 403 ? { unavailable: "refused" } : { unavailable: "down", error: `answered ${res.status}` };
+    }
+    const d = (await res.json()) as HostDetails;
+    // A later format (details: 2) is still read for what this build knows; garbage is not.
+    if (typeof d !== "object" || d === null || typeof d.details !== "number" || !d.identity || !d.versions) return { unavailable: "update", error: "not a details answer" };
+    return { details: d };
+  } catch (err) {
+    const e = err as Error & { cause?: { code?: string } };
+    return { unavailable: "down", error: e.name === "TimeoutError" ? "no answer in time" : (e.cause?.code ?? e.message) };
+  }
 }
 
 export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, machine: Machine = realMachine, claude = new ClaudeFinder()): void {
@@ -150,28 +176,7 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
     };
   }
 
-  /** A peer's own details, or why there are none. */
-  async function peerDetails(p: PeerEntry): Promise<Pick<MeshHostDetails, "details" | "unavailable" | "error">> {
-    try {
-      // Inside the page's 4 s read deadline, after a probe of up to 2.5 s.
-      const res = await mesh.peerFetch(p.id, "/api/peer/details", { signal: AbortSignal.timeout(DETAILS_TIMEOUT_MS) });
-      if (res.status === 404) {
-        await res.body?.cancel();
-        return { unavailable: "update" };
-      }
-      if (!res.ok) {
-        await res.body?.cancel();
-        return res.status === 403 ? { unavailable: "refused" } : { unavailable: "down", error: `answered ${res.status}` };
-      }
-      const d = (await res.json()) as HostDetails;
-      // A later format (details: 2) is still read for what this build knows; garbage is not.
-      if (typeof d !== "object" || d === null || typeof d.details !== "number" || !d.identity || !d.versions) return { unavailable: "update", error: "not a details answer" };
-      return { details: d };
-    } catch (err) {
-      const e = err as Error & { cause?: { code?: string } };
-      return { unavailable: "down", error: e.name === "TimeoutError" ? "no answer in time" : (e.cause?.code ?? e.message) };
-    }
-  }
+  const peerDetails = (p: PeerEntry) => fetchPeerDetails(mesh, p);
 
   async function meshDetails(asked: PeersConfig): Promise<MeshDetails> {
     const node = mesh.selfNode();

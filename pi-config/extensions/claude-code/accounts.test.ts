@@ -8,12 +8,14 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
+import { spawn, spawnSync } from "node:child_process";
 import {
-	ACCOUNTS_DEV_ENV, ClaudeLogins, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, deviceOrder, ensureLoginDir,
+	ACCOUNTS_DEV_ENV, ClaudeLogins, LEASES_DIR_NAME, LEASE_STALE_MS, readLoginUse, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, claudeBaseEnv, claudeJsonPath,
+	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount,
 	loginDir, loginEntryFor, parseAccounts, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 } from "./accounts.ts";
-import { classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
+import { claudeEnv, classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
 
 const FIXTURES = fileURLToPath(new URL("./tests/fixtures/failures/", import.meta.url));
 const events = (name: string) => fs.readFileSync(path.join(FIXTURES, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -87,6 +89,72 @@ test("a login's directory is 0700 and links the shared entries to default's, pro
 	assert.throws(() => loginDir(s.agentDir, "../escape"), /Not a login id/);
 });
 
+test("an inherited CLAUDE_CONFIG_DIR naming a login's directory is not default: ~/.claude is, and the login's links stay", (t) => {
+	const s = sandbox(t);
+	assert.ok(os.homedir().startsWith(process.env.SOVA_TEST_HOME ?? "\0"), "the throwaway home");
+	const home = path.join(os.homedir(), ".claude");
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "acct-1")], devices: { local: { order: [A] } } });
+	const dirA = ensureLoginDir(s.agentDir, A, home);
+	const links = () => SHARED_ENTRIES.map((n) => { try { return fs.readlinkSync(path.join(dirA, n)); } catch { return null; } });
+	const before = links();
+	assert.equal(before[0], path.join(home, "projects"));
+	// As a pi started inside a Sova-spawned worker on A: its agent dir, and CLAUDE_CONFIG_DIR = A's dir.
+	const env = { PI_CODING_AGENT_DIR: s.agentDir, CLAUDE_CONFIG_DIR: dirA } as NodeJS.ProcessEnv;
+	const logins = new ClaudeLogins({ agentDir: s.agentDir, env });
+	assert.equal(logins.defaultDir, home);
+	assert.equal(defaultClaudeDir(env), home);
+	assert.equal(claudeJsonPath(logins.defaultDir, true, env), path.join(os.homedir(), ".claude.json"));
+	// Through a link to the agent dir, and a trailing slash, it is still A's directory.
+	const alias = path.join(s.root, "alias");
+	fs.symlinkSync(s.agentDir, alias);
+	assert.equal(defaultClaudeDir({ PI_CODING_AGENT_DIR: s.agentDir, CLAUDE_CONFIG_DIR: `${path.join(alias, "claude-accounts", A)}/` }), home);
+	// Under pi's default ~/.pi/agent too, whatever the effective agent dir is.
+	const piDefault = path.join(os.homedir(), ".pi", "agent", "claude-accounts", B);
+	assert.equal(defaultClaudeDir({ PI_CODING_AGENT_DIR: s.agentDir, CLAUDE_CONFIG_DIR: piDefault }), home);
+	// Claude Code's own directory elsewhere is still default's.
+	assert.equal(defaultClaudeDir({ PI_CODING_AGENT_DIR: s.agentDir, CLAUDE_CONFIG_DIR: s.claudeDir }), s.claudeDir);
+	// Using A repairs its links against ~/.claude's entries, never against itself.
+	assert.equal(logins.select().id, A);
+	assert.deepEqual(links(), before, "A's shared links are untouched");
+	// A spawn on default starts without the login's directory; one on A sets it explicitly.
+	assert.equal(claudeBaseEnv(env).CLAUDE_CONFIG_DIR, undefined);
+	assert.equal(claudeBaseEnv({ ...env, CLAUDE_CONFIG_DIR: s.claudeDir }).CLAUDE_CONFIG_DIR, s.claudeDir);
+	const inherited = process.env.CLAUDE_CONFIG_DIR;
+	process.env.CLAUDE_CONFIG_DIR = piDefault;
+	try {
+		assert.equal(claudeEnv({}).CLAUDE_CONFIG_DIR, undefined, "a default spawn does not run on the inherited login");
+		assert.equal(claudeEnv({ CLAUDE_CONFIG_DIR: dirA }).CLAUDE_CONFIG_DIR, dirA);
+	} finally {
+		if (inherited === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = inherited;
+	}
+});
+
+test("a login's directory: a wrong link is re-pointed; a link into the login itself is refused", (t) => {
+	const s = sandbox(t);
+	const dir = ensureLoginDir(s.agentDir, A, s.claudeDir);
+	// A projects link to another directory (a symlink to a directory) is replaced, not kept.
+	const elsewhere = path.join(s.root, "elsewhere");
+	fs.mkdirSync(elsewhere);
+	fs.writeFileSync(path.join(elsewhere, "keep.jsonl"), "{}\n");
+	fs.unlinkSync(path.join(dir, "projects"));
+	fs.symlinkSync(elsewhere, path.join(dir, "projects"));
+	ensureLoginDir(s.agentDir, A, s.claudeDir);
+	assert.equal(fs.readlinkSync(path.join(dir, "projects")), path.join(s.claudeDir, "projects"));
+	assert.ok(fs.existsSync(path.join(elsewhere, "keep.jsonl")), "the old target's contents are untouched");
+	// Default's directory given as a login's own (or another login's): refused before any write.
+	const dirB = loginDir(s.agentDir, B);
+	assert.throws(() => ensureLoginDir(s.agentDir, B, dirB), /cannot be a login's directory/);
+	assert.ok(!fs.existsSync(dirB), "nothing is created for the refused login");
+	assert.throws(() => ensureLoginDir(s.agentDir, A, dir), /cannot be a login's directory/);
+	assert.equal(fs.readlinkSync(path.join(dir, "projects")), path.join(s.claudeDir, "projects"));
+	// A shared entry of default's that resolves into the login's own directory is not linked.
+	fs.mkdirSync(path.join(dir, "own-agents"));
+	fs.symlinkSync(path.join(dir, "own-agents"), path.join(s.claudeDir, "agents"));
+	ensureLoginDir(s.agentDir, A, s.claudeDir);
+	assert.ok(!fs.existsSync(path.join(dir, "agents")) && !isLink(path.join(dir, "agents")), "no link back into the login");
+});
+const isLink = (p: string): boolean => { try { return fs.lstatSync(p).isSymbolicLink(); } catch { return false; } };
+
 test("identity comes from oauthAccount and never carries a token", (t) => {
 	const s = sandbox(t);
 	const file = path.join(s.root, ".claude.json");
@@ -124,10 +192,32 @@ test("device id: SOVA_DEVICE_ID, else the mesh self id, else local; order follow
 		logins: [login(A, "1"), login(B, "2", { device: "laptop" }), login(C, "3", { device: "phone" })],
 		devices: { laptop: { order: [B, C, "default"] } },
 	};
-	// C is the phone's: never used on the laptop, even if its order names it.
-	assert.deepEqual(deviceOrder(file, "laptop"), [B, "default", A]);
-	assert.deepEqual(deviceOrder(file, "phone"), ["default", A, C], "no entry for phone: default first, then its own and local logins by age");
-	assert.deepEqual(deviceOrder({ ...file, devices: {} }, "laptop"), ["default", A, B]);
+	// C is the phone's: never used on the laptop, even if its order names it. `default` is always
+	// last (Claude Code's own login is the last resort), wherever an order places it.
+	assert.deepEqual(deviceOrder(file, "laptop"), [B, A, "default"]);
+	assert.deepEqual(deviceOrder(file, "phone"), [A, C, "default"], "no entry for phone: its own and local logins by age, then default");
+	assert.deepEqual(deviceOrder({ ...file, devices: {} }, "laptop"), [A, B, "default"]);
+	// The pool (mesh on): a login kept here for lending (`device: null`) is never used here; off, it is.
+	const kept: ClaudeAccountsFile = { version: 1, logins: [login(A, "1", { device: null }), login(B, "2", { device: "laptop" })], devices: {} };
+	assert.deepEqual(deviceOrder(kept, "laptop", true), [B, "default"]);
+	assert.deepEqual(deviceOrder(kept, "laptop", false), [A, B, "default"]);
+});
+
+test("accounts, then logins: every order keeps an account's logins together, where its first falls", (t) => {
+	const accountOf = (id: string) => ({ [A]: "acct-1", [B]: "acct-2", [C]: "acct-1" } as Record<string, string | undefined>)[id];
+	assert.deepEqual(groupByAccount([A, B, C], accountOf), [A, C, B]);
+	assert.deepEqual(groupByAccount([B, C, "l-0000000d", A], accountOf), [B, C, A, "l-0000000d"], "a login with no account is its own, in its place");
+	assert.deepEqual(groupByAccount([A, C, B], accountOf), [A, C, B], "an order already grouped is kept as it is");
+	// The user's order splits account 1 (A, then B of account 2, then C): the device reads it grouped.
+	const file: ClaudeAccountsFile = { version: 1, logins: [login(A, "acct-1"), login(B, "acct-2"), login(C, "acct-1")], devices: { local: { order: [A, "default", B, C] } } };
+	assert.deepEqual(deviceOrder(file, "local"), [A, C, B, "default"]);
+	// So a failed sign-in moves to the account's next login first, and a limit skips the account.
+	const s = sandbox(t);
+	writeAccounts(s.agentDir, file);
+	const dirA = ensureLoginDir(s.agentDir, A, s.claudeDir);
+	fs.writeFileSync(path.join(dirA, ".credentials.json"), "{}");
+	assert.equal(s.logins.failover(s.logins.select(), { kind: "auth" })?.id, C);
+	assert.equal(s.logins.failover(s.logins.select(), { kind: "limit" })?.id, B);
 });
 
 test("selection: first usable login in order; the recorded one while usable; disabled is skipped", (t) => {
@@ -263,4 +353,35 @@ test("classifier: one api_retry is not yet a failure, and the synthetic error me
 	assert.equal(d.isFailureMessage(synthetic), true);
 	assert.equal(d.isFailureMessage(events("overloaded.ndjson")[1]!), false);
 	assert.equal(d.isFailureMessage({ type: "assistant", message: { model: "claude-opus-5-5", content: [{ type: "text", text: "usage limit reached is a phrase" }] } }), false, "a real answer mentioning limits is an answer");
+});
+
+test("leases: a dead owner's lease counts only through a live claude on that login; a reused pid or a lease left unwritten counts for nothing", { skip: process.platform !== "linux" }, async () => {
+	const agentDir = fs.mkdtempSync(path.join(os.tmpdir(), "claude-accounts-leases-"));
+	const id = "l-1ea5e001";
+	const dir = loginDir(agentDir, id);
+	const leases = path.join(dir, LEASES_DIR_NAME);
+	fs.mkdirSync(leases, { recursive: true });
+	const now = Date.now();
+	const dead = spawnSync(process.execPath, ["-e", "0"]).pid!;
+	const lease = (owner: number, children: number[], at = now) =>
+		fs.writeFileSync(path.join(leases, `${owner}.json`), JSON.stringify({ v: 1, owner, users: 1, busy: 1, children, lastActiveAt: at, at }));
+	const orphan = spawn(process.execPath, ["-e", "setTimeout(() => {}, 20000)"], { env: { ...process.env, CLAUDE_CONFIG_DIR: dir }, stdio: "ignore" });
+	try {
+		await new Promise((r) => setTimeout(r, 100));
+		// The owner died, its claude runs on: the login is still in use, and that claude is the one to stop.
+		lease(dead, [orphan.pid!]);
+		assert.deepEqual(readLoginUse(agentDir, id), { inUse: true, busy: false, lastActiveAt: now, children: [orphan.pid] });
+		// The owner died and its child's pid now belongs to another process (this test's): nothing.
+		lease(dead, [process.pid]);
+		assert.deepEqual(readLoginUse(agentDir, id), { inUse: false, busy: false, lastActiveAt: 0, children: [] });
+		assert.equal(fs.existsSync(path.join(leases, `${dead}.json`)), false, "and the stale lease is cleaned up");
+		// A live owner pid whose lease was not rewritten for longer than LEASE_STALE_MS: a reused pid.
+		lease(process.pid, [], now - LEASE_STALE_MS - 1);
+		assert.equal(readLoginUse(agentDir, id, undefined, now).inUse, false);
+		lease(process.pid, [], now);
+		assert.equal(readLoginUse(agentDir, id, undefined, now).busy, true, "a fresh lease of a live owner holds the login");
+	} finally {
+		orphan.kill();
+		fs.rmSync(agentDir, { recursive: true, force: true });
+	}
 });

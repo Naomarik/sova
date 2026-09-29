@@ -95,7 +95,12 @@ import {
 	type RemoteSessionEvent,
 } from "../remote/workers.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
+import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
+import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
+import { LEDGER_ENV, ledgerPath } from "../mode/spec-guard.ts";
+import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
+import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
 
 const MAX_LIVE = 12;
@@ -266,14 +271,24 @@ export const MEMBER_EXTENSION = path.join(SELF_DIR, "member.ts");
  * tell it from a user session (see worker-mark.ts). Never user-facing, like MEMBER_EXTENSION.
  */
 export const MARKER_EXTENSION = path.join(SELF_DIR, "worker-mark.ts");
-/** The spawn summary names the extensions a worker was given; the marker is plumbing, not one of them. */
-const listedExtensions = (worker: Worker): string[] => worker.extensions.filter((source) => source !== MARKER_EXTENSION);
+/**
+ * The spec census hook for pi workers (mode/spec-worker.ts, a sibling extension): a code-writing pi worker
+ * of a spec-on session loads it with `-e`, under the same condition as the worker spec brief, since workers
+ * run with --no-extensions and so never have the mode extension's own census hook.
+ */
+export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "spec-worker.ts"));
+/** The spawn summary names the extensions a worker was given; the marker and the spec hook are plumbing, not among them. */
+const listedExtensions = (worker: Worker): string[] => worker.extensions.filter((source) => source !== MARKER_EXTENSION && source !== SPEC_WORKER_EXTENSION);
 /**
  * The same member tools as a stdio MCP server for claude-code members (the CLI
  * launches it from a per-worker mcp.json; Claude sees mcp__team__<tool>). It is
  * run under the current runtime, which executes .ts files directly.
  */
 export const MEMBER_MCP = path.join(SELF_DIR, "member-mcp.ts");
+/** The trusted spec tools (pi-config/extensions/spec/core/) a spec-on worker's brief and hooks name. */
+export const SPEC_CORE_DIR = realpathOr(path.join(SELF_DIR, "..", "spec", "core"));
+/** Under the agent dir: the claude-code spec hooks' per-session state and event log. */
+export const SPEC_HOOK_STATE = "spec-hooks";
 /**
  * The remote extension (a sibling directory, never under SELF_DIR). A pi worker of a remote
  * session loads it with `-e` and `--target <name>`, so its bash/read/write/edit/ls/find/grep run
@@ -598,6 +613,16 @@ export function registerSubagents(
 		sandboxState = e;
 	});
 	pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
+	// The session's active modes (pi-config's mode extension, announced on every change): while spec
+	// is on, a code-writing worker gets the spec census and line check (the hooks, or spec-worker.ts), and
+	// the worker spec brief when its mode prompt (below) doesn't already carry the spec block.
+	let specOn = false;
+	const unregisterModeStateListener = pi.events?.on(MODE_STATE_EVENT, (data: unknown) => {
+		const e = data as ModeStateEvent | undefined;
+		if (!e || e.version !== 1 || !Array.isArray(e.minorModes)) return;
+		specOn = e.minorModes.includes("spec");
+	});
+	pi.events?.emit(MODE_DISCOVER_EVENT, { version: 1 });
 	// What this session's workers get of its modes (the mode extension's MODE_WORKER_EVENT,
 	// §chat.mode-menu/workers): the newest announcement, appended at spawn as it is. Nothing here
 	// interprets the text; without the mode extension there is none.
@@ -1113,6 +1138,8 @@ export function registerSubagents(
 			// gets them from that tree's mode extension (below), never twice.
 			const modes = request.team?.members[index]?.duty === "monitor" || spec.useWorktreeConfig ? undefined : modesNow;
 			const modePrompt = modes?.prompt;
+			// The mode prompt already carries spec mode's whole worker block: the brief would repeat it.
+			const specInPrompt = Boolean(modePrompt && modes?.minorModes.includes("spec"));
 			const backendId = spec.backend ?? "pi";
 			// Remote session: the worker's cwd is a FAR path; its local cwd is the placeholder that
 			// stands for it (created if the spec names another far directory), which exists but is
@@ -1178,10 +1205,22 @@ export function registerSubagents(
 						env: { MCP_TOOL_TIMEOUT: String(REMOTE_MCP_TOOL_TIMEOUT_MS) },
 					};
 				}
+				// Spec on: a code-writing Claude worker gets the hooks that run census after each tool call and
+				// check its reply's last line (claude-code/spec-hooks.ts), and the brief unless its mode prompt
+				// carries the spec block. Remote workers' files are on the target, out of the local tools' reach.
+				if (specOn && !remote && backendId === "claude-code" && writesCode(prepared.tools ?? spec.tools ?? DEFAULT_CLAUDE_TOOLS)) {
+					const settingsJson = (prepared as { settingsJson?: string }).settingsJson;
+					prepared = {
+						...prepared,
+						...(specInPrompt ? {} : { systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n") }),
+						// Its git operations go to this session's ledger, so the parent counts a worker's commit in its own tree.
+						settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE), ledger: ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) })),
+					} as typeof prepared;
+				}
 				// Last, after the brief and any remote instructions: the prompt the runner uses is this one.
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
 				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
-					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp,
+					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp, ledger: undefined,
 					givenModes: modePrompt ? [...modes!.minorModes] : [] };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
@@ -1214,7 +1253,10 @@ export function registerSubagents(
 			// Its worktree's own agent dir (§chat.worktrees/worktree-config): that tree's mode extension,
 			// loaded by path (discovery stays off), in normal mode with the spec minor mode.
 			const treeConfig = spec.useWorktreeConfig && tree ? worktreeConfig(tree.path, cwd) : undefined;
-			const sources = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(own ?? [])];
+			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
+			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
+			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
+			const sources = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
 			// A pi worker inside a tracked worktree writes only there: the sandbox extension's scope for
 			// that root, whether the parent's sandbox is on (narrowed) or off (write-only).
@@ -1242,10 +1284,13 @@ export function registerSubagents(
 				tools,
 				extensions,
 				forkSession,
-				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") || undefined,
+				systemPrompt: [definition?.systemPrompt, spec.systemPrompt, specWorker && !specInPrompt ? workerSpecBrief(SPEC_CORE_DIR) : undefined, modePrompt].filter(Boolean).join("\n\n") || undefined,
 				flags: piFlags,
 				remoteMcp: undefined,
 				treeConfig,
+				// A spec-on pi worker (the census hook, or its worktree's whole mode extension) logs its git
+				// operations to this session's ledger (mode/spec-guard.ts LEDGER_ENV).
+				ledger: specOn && !remote && (specWorker || treeConfig) ? ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) : undefined,
 				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
 				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
 			};
@@ -1263,7 +1308,7 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, givenModes }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, ledger, givenModes }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1274,8 +1319,9 @@ export function registerSubagents(
 					// server's own environment, never the CLI's.
 					const memberVars = teamMember ? memberEnv(request.team!, teamMember, id) : undefined;
 					// A worker on its worktree's agent dir: pi resolves everything there (never written to disk).
-					const env = treeConfig ? { ...memberVars, ...treeConfig.env } : memberVars;
 					const tooling = teamMember ? memberTooling(spec.backend ?? "pi") : "none";
+					const baseEnv = treeConfig ? { ...memberVars, ...treeConfig.env } : tooling === "pi" ? memberVars : undefined;
+					const env = ledger ? { ...baseEnv, [LEDGER_ENV]: ledger } : baseEnv;
 					const name = (spec.count ?? 1) > 1 ? `${base}-${i + 1}` : base;
 					// Hosted: the runner's spawnImpl starts a detached host instead of the worker itself.
 					const hostedWorker = !resuming && hosting.active();
@@ -1312,7 +1358,7 @@ export function registerSubagents(
 							...(flags ? { flags } : {}),
 							...backendPrepared,
 							backend: spec.backend ?? "pi",
-							...(env && (tooling === "pi" || treeConfig) ? { env } : {}),
+							...(env ? { env } : {}),
 							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
 							...(Object.keys(mcpServers).length ? { mcpServers } : {}),
 							...hosted,
@@ -3470,6 +3516,7 @@ export function registerSubagents(
 		unregisterRemoteListener?.();
 		unregisterSandboxListener?.();
 		unregisterModeListener?.();
+		unregisterModeStateListener?.();
 		unregisterDialogListener?.();
 		backends.clear();
 		activeCtx = undefined;

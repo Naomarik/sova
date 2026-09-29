@@ -20,18 +20,27 @@
     <!-- with an open alignment: the alignment chip, a menu button immediately left of the Inputs
          trigger, both at the row's right end (§chat.alignment/chip) -->
 
-    <!-- ticked alignment recommendations, staged for the next send (§chat.alignment/card);
+    <!-- answers picked on an alignment card (recommendations ticked, options picked), staged for
+         the next send (§chat.alignment/card); each question reads "rec" or its option's letter;
          omit when there are none -->
-    <div class="align-picks" role="group" aria-label="Staged recommendations">
+    <div class="align-picks" role="group" aria-label="Staged answers">
       <span class="icon icon-sm" style="--icon: url(/icons/check.svg)" aria-hidden="true"></span>
-      <span class="align-picks-text">Taking your recommendation: <span class="text-mono">al_3 q1, q3; al_4 q2</span></span>
+      <span class="align-picks-text">Answering: <span class="text-mono">al_3 q1 rec, q2 b; al_4 q2 rec</span></span>
       <button class="button button-icon button-ghost" type="button" aria-label="Clear Picks" title="Clear Picks">…close…</button>
     </div>
+
+    <!-- dictation, while recording, transcribing or showing a dictation error; omit otherwise
+         (§chat.voice/states) -->
+    <div class="voice-strip" role="group" aria-label="Dictation">…Recording 0:07, the level, Cancel Recording…</div>
 
     <!-- pending attachments; omit the <ul> when there are none; see §chat/images -->
     <ul class="attachments" aria-label="Attachments">…</ul>
 
     <div class="composer-row">
+      <!-- the mic, first in the row; hidden when read only (§chat.voice/button) -->
+      <button class="button button-icon button-ghost voice-button" type="button" aria-label="Dictate" title="Dictate">
+        <span class="icon" style="--icon: url(/icons/mic.svg)" aria-hidden="true"></span>
+      </button>
       <!-- the one flyout trigger; the menu itself is below -->
       <button class="button button-icon button-ghost composer-menu-trigger" type="button" id="composer-menu-trigger"
               aria-label="More Actions" title="More Actions" aria-haspopup="menu" aria-expanded="false"
@@ -137,10 +146,13 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   sends, see Keys). `Stop`
   (`.button-destructive`, outlined, never filled, one word so the button stays narrow) sends
   `{type:"abort"}`. Show it only while streaming, after Steer. `Esc` does **not** abort, to prevent
-  accidental stops.
+  accidental stops. While a dictation is recording, `Esc` cancels the recording and nothing else
+  (§chat.voice/states).
 - **After Stop.** The status reads "Stopping…" until the turn settles. Then the run status
   disappears, and an info row says "Stopped by you at `14:08`."
-- **Focus.** Returns to the textarea after Send, Steer, or Stop.
+- **Focus.** Returns to the textarea after Send, Steer, or Stop. The mic never moves focus: its
+  press keeps the textarea's focus and selection, and dictated text lands at the caret
+  (§chat.voice/insertion) as part of the draft.
 - **Drafts** are never discarded. The draft survives disable/enable, reconnects, and errors, and
   it survives a reload too. Each session's draft lives in two places:
   - **In memory, per session path.** This is the authority within a tab, so switching sessions
@@ -187,8 +199,13 @@ the skill's copy ladder.
 | Model switch pending (§chat/model-menu) | enabled | Send `aria-disabled` until `{type:"model"}` or an error | `clock` — "Switching model…" |
 | Server `error` with `code:"busy"` | enabled | Send `aria-disabled` until the next `agent_settled` | `attention` — "pi is busy with another turn. Send when it finishes." |
 
-Send is enabled by typed text, an attachment, **or ticked alignment recommendations alone**
-(§chat.alignment/card): with ticks and no text it sends just their line. With ticks staged, a
+The mic (§chat.voice/button) follows the textarea, not Send: it is hidden when the session is live
+in a TUI, and works in every other row above, because dictating is typing. On its own it is
+`aria-disabled` only where the browser can't record (not a secure context, or no microphone API),
+with that reason in its `title` rather than in `.composer-reason`.
+
+Send is enabled by typed text, an attachment, **or answers picked on an alignment card alone**
+(§chat.alignment/card): with picks and no text it sends just their line. With picks staged, a
 typed local command (`/new`, `/tree`, `/agents`…) is sent as text after them, not run.
 
 Use `aria-disabled="true"` rather than `disabled` on buttons whose reason matters. That keeps them
@@ -198,8 +215,8 @@ read-only live case.
 
 ## §chat.composer/composer-flyout — Composer flyout
 
-Everything you do to a session that isn't typing lives behind one ghost `plus` button, first in
-`.composer-row`. It replaced the two icon buttons that used to sit there (Attach Images and
+Everything you do to a session that isn't typing lives behind one ghost `plus` button in
+`.composer-row`, right after the mic (§chat.voice/button). It replaced the two icon buttons that used to sit there (Attach Images and
 Commands) and took the model trigger and the session's own facts out of the head (§chat/transcript): the
 composer is where the session is acted on, and the head is for reading.
 
@@ -390,9 +407,28 @@ menu keeps its own 360px cap.
 - **Contrast.** On-accent on accent (Send) is 5.61 (dark) and 6.81 (light). The control border
   (border-strong on surface) is 3.47 and 3.61, clearing 3:1. Error on surface (Stop) is 5.42
   and 6.01.
+- **Mic.** An icon-only 44×44 button named by `aria-label` ("Dictate", "Stop Recording" while
+  recording, "Transcribing" while busy). Its states read from the end state — the accent fill, the
+  stop glyph and the strip's word "Recording" — never from the live dot alone, and each is
+  announced through the polite region (§chat.voice/states).
 - **Stop placement.** It sits to the right of Steer, last in the row, with an `--space-2` gap. One
   word plus the square glyph makes it narrower than the primary it follows, so the destructive
   action reads as the smaller, secondary one. It's the only time the two appear together.
 
 ---
 
+## §chat.composer/file-index-deadline — The @ menu's folder read has a time limit
+
+The @ menu lists the session folder's files from `GET /api/files?cwd=…` (`server/files.ts`). One
+request spends one budget of 6 seconds on every stat, git call and directory read. When the budget
+runs out:
+
+- before there is any file to show (the folder's own stat, a git listing that never answered, or a
+  walk that had read nothing), the answer is 504, "Reading this folder took too long — try the
+  menu again", never a listing and never an empty one;
+- when a walk of a folder outside git already has files, the answer is those files marked partial
+  (`truncated`), never presented as the whole folder.
+
+Neither answer is cached. A listing is cached for 30 seconds only when it was read within the
+budget, and a read that finishes after the budget ran out never reaches the cache, so the next
+open reads the folder again.

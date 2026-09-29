@@ -26,7 +26,8 @@ mesh goes off.
 
 Each host answers for itself, over the peer listener and its gate: name, MagicDNS name and tailnet
 addresses, OS and device type (phone, laptop, desktop, server; a Linux machine whose firmware names
-no chassis type is a laptop if it has a battery) and model; Sova version and commit, pi and Node
+no chassis type is a laptop if it has a battery) and model; Sova version and commit (the commit it
+booted from, recorded at boot, §mesh.peers/resync, not the checkout's `HEAD` now), pi and Node
 versions, and whether its protocol matches this host's; Sova and machine uptime; CPU cores and load
 (where the OS shows it), memory used and total, free disk where Sova keeps its data, battery and
 charging (on a phone only with Termux:API; without it the dialog says how to get it); session count,

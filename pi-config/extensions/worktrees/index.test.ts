@@ -235,3 +235,31 @@ test("a merge made outside this session's turns gets no card", async () => {
 		r.done();
 	}
 });
+
+test("in a spec project the merge note names the foreign § and warnings, and worktrees:merged carries them", async () => {
+	const r = repo();
+	try {
+		const seen: unknown[] = [];
+		const calls: unknown[] = [];
+		const f = fakePi();
+		f.pi.events.on("worktrees:merged", (d: unknown) => seen.push(d));
+		worktrees(f.pi, { specReport: async (_git, req) => (calls.push(req), { foreign: ["§app/list"], warnings: ["draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not"] }) });
+		const c = f.ctx(r.main);
+		await f.fire("session_start", c);
+		await f.call(c, { action: "create", name: "s" });
+		const t = join(r.root, ".worktrees", "repo-s");
+		const before = sh(r.main, "rev-parse", "master");
+		writeFileSync(join(t, "s.txt"), "s\n");
+		sh(t, "add", "s.txt");
+		sh(t, "commit", "-q", "-m", "s");
+		const out = await f.call(c, { action: "merge", path: t });
+		const tip = sh(r.main, "rev-parse", "master");
+		assert.deepEqual(calls, [{ path: t, branch: "feat/s", before, after: tip, branchSha: tip, onDefault: true }], "into master, the default branch (q14)");
+		assert.match(out.content[0].text, /\(fast-forward\)\.\nForeign § this merge changes: §app\/list\nSpec warning: draft d has 1 unpromoted record/);
+		assert.equal(f.messages[0]!.content, `Merged feat/s into master at ${tip.slice(0, 7)}, 1 commit, +1 −0\nForeign § this merge changes: §app/list\nSpec warning: draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not`);
+		assert.deepEqual(Object.keys(f.messages[0]!.details as object).sort(), ["added", "branch", "commits", "fastForward", "how", "path", "removed", "sha", "target", "version"], "the card's details are unchanged");
+		assert.deepEqual(seen, [{ version: 1, path: t, branch: "feat/s", target: "master", sha: tip, how: "tool", spec: true, foreign: ["§app/list"], warnings: ["draft d has 1 unpromoted record (§a/b): promote what shipped, or say why not"], before, after: tip, worktree: t }]);
+	} finally {
+		r.done();
+	}
+});

@@ -1,0 +1,28 @@
+{"v":1,"id":"real-13","source":"e2e-lane","note":"Mined from a real run and anonymized (scripts/org-charts-mine.mjs): ids are per-trace tokens, times are ms from the first event, no text.","t0":"2026-09-27T09:47:00.000Z","hosts":1,"sova":{"commit":"8128e12b","how":"worktree-by-date","features":{"askedOperatorReason":false,"codingSettledReason":false,"noDecisionRecordedReason":false,"allowanceHeld":false,"mergeReasonAndTodosOperatorOnly":false,"noTokenBudget":false}},
+"events": [
+{"dt":19108,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":2438140,"kind":"fact","entity":"overseer","id":"o","state":"exists"},
+{"dt":2447702,"kind":"fact","entity":"baton","id":"b1","state":"open","by":"operator","offer":false,"settle":false},
+{"dt":2455096,"kind":"fact","entity":"decision","id":"d1","state":"pending","ownerArea":true,"baton":"b1"},
+{"dt":2458006,"kind":"fact","entity":"person","id":"p2","status":"active"},
+{"dt":2466000,"kind":"setting","key":"autonomy","value":"L3","src":"git"},
+{"dt":2669515,"kind":"fact","entity":"decision","id":"d2","state":"pending","ownerArea":true,"baton":"b1"},
+{"dt":2669515,"kind":"fact","entity":"decision","id":"d3","state":"pending","ownerArea":true,"baton":"b1"},
+{"dt":2672165,"kind":"fact","entity":"person","id":"p2","status":"left"},
+{"dt":2698406,"kind":"fact","entity":"decision","id":"d4","state":"pending","ownerArea":true,"baton":"b1"},
+{"dt":2731161,"kind":"turn","by":"operator","attended":true,"level":"L3","reasons":[]},
+{"dt":2734460,"kind":"tool","name":"sova_reconcile","attended":true,"level":"L3","verdict":"ok"},
+{"dt":2734464,"kind":"fact","entity":"decision","id":"d1","state":"conflict","derived":"conflict-created","baton":"b1"},
+{"dt":2734464,"kind":"fact","entity":"decision","id":"d2","state":"drafted","derived":"reconcile-after","baton":"b1"},
+{"dt":2734464,"kind":"fact","entity":"decision","id":"d3","state":"drafted","derived":"reconcile-after","baton":"b1"},
+{"dt":2734464,"kind":"fact","entity":"decision","id":"d4","state":"conflict","derived":"conflict-created","baton":"b1"},
+{"dt":2734464,"kind":"fact","entity":"conflict","settleBaton":"b2","id":"k1","state":"open"},
+{"dt":2743929,"kind":"fact","entity":"baton","id":"b2","state":"open","by":"overseer","offer":false,"settle":false},
+{"dt":2746627,"kind":"tool","name":"sova_decisions","attended":true,"level":"L3","verdict":"ok"},
+{"dt":2755531,"kind":"tool","name":"sova_promote","attended":true,"level":"L3","verdict":"ok","args":{"ids":["d2","d3"]}},
+{"dt":2756365,"kind":"fact","entity":"decision","id":"d2","state":"promoted","by":"overseer","baton":"b1"},
+{"dt":2756365,"kind":"fact","entity":"decision","id":"d3","state":"promoted","by":"overseer","baton":"b1"},
+{"dt":2768623,"kind":"turn-end","stop":"stop"}
+],
+"final": {"autonomy":"L3","watch":true,"caps":{"gatherPerTurn":3,"gatheringsOpen":5,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"codingRunning":2,"unattendedPerDay":12},"watchGapMin":null,"archived":false,"rosterActive":1,"gaps":[],"batons":[{"id":"b1","state":"open","owner":"operator","wrote":false},{"id":"b2","state":"open","owner":"overseer","wrote":false}],"decisions":[{"id":"d1","baton":"b1","state":"conflict","build":null},{"id":"d2","baton":"b1","state":"promoted","build":null},{"id":"d3","baton":"b1","state":"promoted","build":null},{"id":"d4","baton":"b1","state":"conflict","build":null}],"builds":[],"hosts":[{"host":"h1","paused":false,"lastRun":null,"looks":0,"held":[],"pending":[]}]}
+}

@@ -5,10 +5,14 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { visibleWidth } from "@earendil-works/pi-tui";
 import * as os from "node:os";
-import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
+import { CLAUDE_CODE_EXTENSION, MARKER_EXTENSION, SPEC_CORE_DIR, SPEC_WORKER_EXTENSION, SPEC_HOOK_STATE, MEMBER_EXTENSION, MEMBER_MCP, REMOTE_EXTENSION, REMOTE_MCP, REMOTE_MCP_TOOL_TIMEOUT_MS, registerSubagents, boundedText, installedPackageDir, type SubagentsOptions } from "./index.ts";
 import { CLAUDE_PROVIDER_FLAG } from "../claude-code/provider/index.ts";
 import { placeholderDir } from "../remote/argv.ts";
 import { REMOTE_MCP_ENV, REMOTE_MCP_SERVER_NAME, REMOTE_SESSION_EVENT, decodeRemoteMcpIdentity } from "../remote/workers.ts";
+import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
+import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
+import { LEDGER_ENV } from "../mode/spec-guard.ts";
+import { workerSpecBrief } from "./spec-brief.ts";
 import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "../mode/events.ts";
 import workerMarkExtension from "./worker-mark.ts";
@@ -3681,6 +3685,75 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 	}
 });
 
+const STATE_SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
+const STATE_SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
+
+test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, merged over the sandbox's settings", async () => {
+	const bus = eventBus();
+	let asked = 0;
+	bus.on(MODE_DISCOVER_EVENT, (data: any) => { if (data?.version === 1) asked++; });
+	const h = harness(bus);
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	const brief = workerSpecBrief(SPEC_CORE_DIR);
+	try {
+		assert.equal(asked, 1, "the mode state is asked for at load");
+		await h.call("agent_spawn", { prompt: "pi task" });
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
+		assert.equal(h.workers[0].systemPrompt, undefined, "spec off: no brief");
+		assert.ok(!h.workers[0].extensions.includes(SPEC_WORKER_EXTENSION), "spec off: no census hook");
+		assert.ok(!("settingsJson" in created[0]), "spec off: no hooks");
+
+		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
+		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
+		assert.equal(h.workers[1].systemPrompt, `Be terse.\n\n${brief}`);
+		// pi workers run with --no-extensions: the census hook comes in by -e, a sibling of subagents/.
+		assert.deepEqual(h.workers[1].extensions, [MARKER_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.equal(SPEC_WORKER_EXTENSION, fs.realpathSync(path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "mode", "spec-worker.ts")));
+		// Its git operations go to this session's ledger (M4); spec off, none.
+		const ledger = h.workers[1].env?.[LEDGER_ENV];
+		assert.ok(typeof ledger === "string" && ledger.startsWith(path.join(NO_AGENT_DIR, "sova", "spec-ledger") + path.sep) && ledger.endsWith(".jsonl"), String(ledger));
+		assert.equal(h.workers[0].env?.[LEDGER_ENV], undefined);
+		await h.call("agent_spawn", { prompt: "reader", tools: ["read", "grep"] });
+		assert.equal(h.workers[2].systemPrompt, undefined, "a worker that cannot write gets no brief");
+		assert.deepEqual(h.workers[2].extensions, [MARKER_EXTENSION], "nor the census hook");
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
+		const claude = created[1];
+		assert.equal(claude.systemPrompt, `Own words.\n\n${brief}`);
+		const hooks = JSON.parse(claude.settingsJson).hooks;
+		assert.deepEqual(Object.keys(hooks).sort(), ["PostToolUse", "Stop", "UserPromptSubmit"]);
+		const post = hooks.PostToolUse[0];
+		assert.equal(post.matcher, "*", "after ANY tool, Bash included");
+		assert.ok(post.hooks[0].command.includes(SPEC_HOOK_SCRIPT) && post.hooks[0].command.includes(" post --core "));
+		assert.ok(post.hooks[0].command.includes(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE)), "state under the agent dir");
+		assert.ok(post.hooks[0].command.includes(` --ledger ${ledger}`), "the hooks write the same ledger");
+		await h.call("agent_spawn", { prompt: "claude reader", backend: "claude-code", tools: ["Read"] });
+		assert.ok(!("settingsJson" in created[2]) && created[2].systemPrompt === undefined, "a read-only claude worker gets neither");
+
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
+		const merged = JSON.parse(created[3].settingsJson);
+		assert.deepEqual(merged.sandbox, { enabled: true }, "the sandbox's settings stay");
+		assert.ok(merged.hooks.Stop, "and the hooks join them");
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
+
+		await h.call("team_create", { name: "T", objective: "o", members: [
+			{ role: "a", prompt: "p", backend: "claude-code", model: "sonnet" },
+			{ role: "b", prompt: "p", backend: "pi" },
+		] });
+		assert.ok(created[4].systemPrompt.endsWith(brief) && JSON.parse(created[4].settingsJson).hooks, "a claude member");
+		assert.ok(h.workers.at(-1).systemPrompt.endsWith(brief), "a pi member");
+		assert.deepEqual(h.workers.at(-1).extensions, [MARKER_EXTENSION, SPEC_WORKER_EXTENSION, MEMBER_EXTENSION], "a pi member gets the census hook too");
+		assert.equal(h.workers.at(-1).env?.[LEDGER_ENV], ledger, "and the ledger, beside its member identity");
+		assert.ok(Object.keys(h.workers.at(-1).env).length > 1);
+
+		h.bus.emit(MODE_STATE_EVENT, { ...STATE_SPEC_ON, version: 2 });
+		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_OFF);
+		await h.call("agent_spawn", { prompt: "pi task" });
+		assert.equal(h.workers.at(-1).systemPrompt, undefined, "spec switched off: no brief again");
+		assert.ok(!h.workers.at(-1).extensions.includes(SPEC_WORKER_EXTENSION), "nor the census hook");
+	} finally { await h.close(); }
+});
 // ── The parent's worker modes (§chat.mode-menu/workers) ─────────────────────
 
 const WORKER_BLOCK = "# Minor mode: spec (worker form, test)";
@@ -3792,4 +3865,23 @@ test("worker marker: says it is a worker at load and to anyone who asks later (a
 	bus.emit(WORKER_ROLE_DISCOVER_EVENT, { version: 2 });
 	assert.equal(heard.length, 2, "an unknown question version is ignored");
 	assert.doesNotThrow(() => workerMarkExtension({ on() {} } as any), "no bus: inert");
+});
+
+test("spec on with the parent's worker modes (mode:worker) too: the spec block comes once, from the mode prompt; the census hook, hooks and ledger stay", async () => {
+	const h = harness();
+	const created: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
+	const brief = workerSpecBrief(SPEC_CORE_DIR);
+	try {
+		h.bus.emit(MODE_STATE_EVENT, STATE_SPEC_ON);
+		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
+		await h.call("agent_spawn", { prompt: "pi task", systemPrompt: "Be terse." });
+		assert.equal(h.workers[0].systemPrompt, `Be terse.\n\n${WORKER_BLOCK}`, "the mode prompt, no brief on top");
+		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION, SPEC_WORKER_EXTENSION]);
+		assert.ok(typeof h.workers[0].env?.[LEDGER_ENV] === "string");
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "Own words." });
+		assert.equal(created[0].systemPrompt, `Own words.\n\n${WORKER_BLOCK}`);
+		assert.ok(!created[0].systemPrompt.includes(brief));
+		assert.ok(JSON.parse(created[0].settingsJson).hooks.Stop, "the hooks still come");
+	} finally { await h.close(); }
 });

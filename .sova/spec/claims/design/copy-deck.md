@@ -21,7 +21,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Folder head, an agent at work in it | Busy's dot, wordless, pulsing · `title`: "An agent is working in this folder" · hidden clause in the heading: ", an agent is working here" |
 | Row unread dot (line 1) | wordless accent dot · hidden: "New activity. " |
 | Row turn-error mark (line 1, in the unread dot's place; §app.overseer/seen) | wordless alert circle in error · hidden: "Turn failed. " · `title`: "The last turn stopped with an error: {message}" · without a message: "The last turn stopped with an error." |
-| Row needs-you mark (line 1, after the unread dot or turn-error mark; one per row, §chat.alignment/session-mark, §app.decisions/attention-signals) | open questions: speech bubble + `{n}` · hidden "{n} open questions. " (1: "1 open question. ") · `title` "{n} open questions in {m} alignments" (1 alignment: "{n} open questions in {al_N} {title}") · otherwise a wordless glyph · hidden: looping "May be looping. " · a stuck subagent "A subagent may be stuck. " · `title`: "The last turn looks like it went in circles." · "A subagent looks stuck." |
+| Row needs-you mark (line 1, after the unread dot or turn-error mark; one per row, §chat.alignment/session-mark, §app.decisions/attention-signals) | open questions: the accent count `{n}` alone, no glyph (the count is aria-hidden) · hidden "{n} open questions. " (1: "1 open question. ") · `title` "{n} open questions in {m} alignments" (1 alignment: "{n} open questions in {al_N} {title}") · otherwise a wordless glyph · hidden: looping "May be looping. " · a stuck subagent "A subagent may be stuck. " · `title`: "The last turn looks like it went in circles." · "A subagent looks stuck." |
 | Row meta title, when tagged | Topic: {topic word} · status: {status word} (tagged automatically) · without a topic: Status: {status word} (tagged automatically) |
 | Row status word (line 3, between time and model) | done · in progress · abandoned · blocked (lowercase) |
 | Topic words (search; §app.decisions/session-tags) | feature · bug fix · refactor · tests · docs · infra · research · planning · review · data · config · experiment · chore · other |
@@ -99,7 +99,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Wake nudge card, closed | `Wake nudge {id}` · {reason, or blank} · `fired {HH:MM}` (· `{late} late`, only when overdue) |
 | Wake nudge card, open | the fired message, verbatim, all four lines |
 | Wake nudge in Inputs Only / the Timeline | {reason}, or `Wake nudge {id}` when it carries none |
-| Alignment card, answerable (§chat.alignment/card) | button `Go With Recommendations` · hint "Or tick some and answer the rest below." · its reasons: the composer's blocked reason · "Wait for the turn to end." · "Send or clear your draft first." · checkbox name "Take the recommendation for {qN}." · sends `{al_N}: go with your recommendations for every open question, and go ahead.` · ticks send `{al_N}: take your recommendation on {q1}, {q2} and {q3}.` (one line per alignment) |
+| Alignment card, answerable (§chat.alignment/card) | button `Go With Recommendations` · hint "Or pick some answers and type the rest below." · its reasons: the composer's blocked reason · "Wait for the turn to end." · "Send or clear your draft first." · checkbox name "Take the recommendation for {qN}." · sends `{al_N}: go with your recommendations for every open question, and go ahead.` · ticks send `{al_N}: take your recommendation on {q1}, {q2} and {q3}.` · option picks send `{al_N}: my answers: 1b — {label}; 3b — {label}.`, after ticks `… {q3}. My answers: 2b — {label}.` (one line per alignment) · option radio name "Answer {qN} with {letter}: {label}" · staged row above the composer (group "Staged answers") `Answering: {al_N} q1 b, q2 rec; {al_M} q2 rec` · `Clear Picks` |
 | Alignment card (§chat.alignment/card) | eyebrow `{al_N} · Alignment · v{rev}` · status chips (none while aligning) Confirmed · Implementing · Done · Dropped · meta `{k} of {n} open` (none: `No questions yet`; none left open: `All {n} decided`) · `· {change line}` · question chips Open · Decided · Dropped · option letters `a` `b` `c`… · `Recommended` (small caps, no colon) `{letter} — {label}`, `{why}` on the next line (names an option) / `Recommended` `{choice}`, `{why}` on the next line · `Decided: {text} · you` / `· accepted recommendation` · `Dropped: {why}` · sections `Findings · {n}` · `Approach · {n}` · `Rejected · {n}` |
 | Alignment revision row | `{al_N} v{rev} {title} · {change line}` · change words (the extension's `changeLine`, joined by " · "): created · created from file · +q11 +f4 · q3, title edited · −f2 −a1 · q1, q3 decided · q1, q2 accepted · q3 reopened · q3 dropped · → implementing · → done · → open · dropped |
 | Alignment exempt row | No alignment needed: {why} |
@@ -158,6 +158,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Reason: connecting / reconnecting / gave up | see Connection above |
 | Busy fallback, when the message was already typed and rejected | the draft stays in the textarea (not cleared), plus the busy reason. No banner |
 | Turn error banner (in thread) | **The turn stopped with an error.** {message}. Your messages are kept. Send again to retry. |
+| Mic (§chat/voice) | `aria-label`/`title`: Dictate · recording: Stop Recording · transcribing: Transcribing · setting up: `Dictate — setting up voice, {n}%` · not set up: `title` "Dictate · Voice isn't set up on this host yet" · unsupported: `title` "Voice needs HTTPS or localhost." (no microphone API: "This browser can't record audio.") |
+| Dictation strip | Starting the mic… · `Recording {m:ss}` · `Recording {m:ss} · {s} s left` · `Transcribing {m:ss}…` · Cancel Recording · group label "Dictation" |
+| Dictation errors (strip; `Try Again` where the clip is kept, then Dismiss) | Mic blocked: "The browser blocked the microphone. Allow it for this site, then try again." · no mic: "No microphone found." · other: "Couldn't start the microphone. {message}." · nothing heard: "Didn't catch any speech. Nothing was inserted." · empty transcript: "Heard audio but no words. Nothing was inserted." · failed: "Couldn't transcribe the clip. {reason}. Your recording is kept." · voice removed meanwhile: "Voice isn't set up on this host anymore." |
+| Dictation, backgrounded (toast and announcement) | Recording stopped when the app went to the background. Transcribed {m:ss}. |
+| Dictation announcements | Recording. · Recording cancelled. · Transcribing. · `Inserted {n} words.` (1: `Inserted 1 word.`) · `{s} seconds left.` at 0:30 |
 | SR announcements | Working. · Reply finished. · The turn stopped with an error. (once per error, and it replaces that turn's "Reply finished." — an errored turn still settles, and two endings would read as two turns) |
 
 ## §design.copy-deck/composer-flyout — Composer flyout
@@ -302,10 +307,10 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Label (head ≥720px) | Context |
-| Value | `{tokens} / {window} · {pct}%` (e.g. `237k / 1M · 24%`) · window unknown: `{tokens}` |
-| Narrow (head <720px, and the meta line <520px) | `{pct}%` · window unknown: `{tokens}` |
-| Compacted | compacted |
+| Head ≥720px, beside the ring | `{tokens} / {window}` (e.g. `222k / 1M`) · window unknown: `{tokens}`, no ring |
+| Head <720px, beside the ring | `{tokens}` (e.g. `222k`) · window unknown: `{tokens}`, no ring |
+| Percent | never shown in the head; only in the Title / AT sentence below |
+| Compacted | compacted (no ring) |
 | Title / AT, with a window | Context: {tokens, comma thousands} of {window} tokens ({pct}%), as of the last reply. |
 | Title / AT, window unknown | Context: {tokens} tokens, as of the last reply. This model's limit is unknown. |
 | Title / AT, compacted | Context was compacted. The next reply reports the new size. |
@@ -399,7 +404,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Teams empty, some sessions live | **{n} pi sessions running. None of them has a team.** (n = 1: **1 pi session running. It has no team.**) Teams you create in pi show up here while their session runs. |
 | Teams empty, none live | not shown: the whole Agents page is the 0-live empty state above |
 | Subagents empty | Section omitted |
-| Aggregate chips | sidebar rail: `{n}` + worker icon · session head, linked: Team · {n} working (→ `#/agents/{teamId}`) or `{n}` + worker icon, `.session-head-working` (→ `#/agents`), its words in `title`/`aria-label`: "{n} subagents working now" |
+| Aggregate chips | sidebar rail: `{n}` + worker icon · session head: none |
 | Current goal summary | Current goal · {now} · {n} topics (1 topic) |
 | Current goal state line | Updated {rel} · stale adds: " · behind the latest messages" · failed-keeping-last adds: " · the last update failed, so this is the previous summary" · updating/drafting: "Updating" + live dot |
 | Current goal jump | Jump to Message |
@@ -550,6 +555,29 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Missing theme fell back (banner) | `{id}` isn't there anymore, so you're back on Dark. |
 | Loading | skeleton rows — no copy |
 
+
+## §design.copy-deck/settings-voice — Settings · Voice (§app.settings-dialog/voice)
+
+| Where | Copy |
+|---|---|
+| Tab | Voice |
+| Sheet title (from the mic) · tab heading | Set up voice · Voice |
+| Before setup | "Dictation runs on this Sova host, not in the browser. Setup builds whisper.cpp for {Vulkan · device} (a few minutes), downloads the 574 MB speech model, and tests it. Audio never leaves this host." · no GPU backend: "Dictation runs on this Sova host, not in the browser. Setup uses a prebuilt whisper.cpp for the CPU (no prebuilt: builds whisper.cpp for the CPU (a few minutes)), downloads the 574 MB speech model, and tests it. No GPU backend was found, so each clip takes longer; the self-test shows how long. Audio never leaves this host." · primary `Set Up Voice` |
+| Unsupported host | Voice setup supports Linux and macOS hosts. This host runs {os}. |
+| Steps | Detect this host · Check packages · Get whisper.cpp · Build whisper.cpp · Get the model · Self-test · Finish · state words: Waiting · Running · Done · Skipped · Failed |
+| Step notes | `{done} of {total} MB` · `{n}%` · Copied from {folder} · Already done · Prebuilt CPU binary |
+| Installing | `Setting up voice · step {i} of 7` · `Cancel Setup` |
+| Needs packages | **This host needs {n} packages to build whisper.cpp.** Run this on the Sova host, then check again. Sova never runs sudo. · `Copy Command` (after: "Copied.") · `Check Again` (primary) · `Use CPU Instead` · no known package manager: "Install these, then check again: {list}." |
+| Failed | **Setup stopped at {step, lowercase}.** {error}. Everything before it is kept. · `Retry` · `Use CPU Instead` · `Show Log` / `Hide Log` |
+| Cancelled | Setup cancelled. Everything done so far is kept; Set Up Voice picks up where it stopped. |
+| Ready status line | a success chip `Ready`, then `{Vulkan · device} · self-test {s} s · large-v3-turbo q5_0 · {size} on disk · {Loaded \| Loading \| Not loaded}` |
+| Ready (sheet) | Voice is ready. Tap the mic to dictate. · `Close` |
+| Test Microphone | `Test Microphone` · recording: `Stop ({s} s)` · then `Transcribing…` · result: "Heard: “{text}” ({s} s)" · nothing: "Heard nothing." |
+| Repair | `Repair` — "Checks every file again and reruns the self-test." |
+| Uninstall | `Uninstall Voice` · confirm (banner-warn): **Uninstall voice?** "The voice folder ({size}) goes away: whisper.cpp, the model, and the logs. System packages stay installed." · `Cancel` · `Uninstall` (destructive) |
+| Crashed too often | whisper-server stopped 3 times in a minute. Repair to try again. |
+| Load failed (banner-error) | **Couldn't read the voice status.** {message} |
+| A press refused (banner-error) | **That didn't work.** {server message} — e.g. "Setup is already running." |
 
 ## §design.copy-deck/timeline-tab — Timeline tab (§chat/timeline)
 
@@ -808,6 +836,56 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Archived, refused (server) | "{project} is archived. Unarchive it first." · the overseer: "{project} is archived. Unarchive it to use its overseer." |
 | Projects tab | disclosure `Archived Projects ({n})` (collapsed; absent with none) · row: the project link · "archived {relative time}" · `Unarchive` (ghost) · every project archived, in place of "No projects yet…": "The 1 project here is archived. Unarchive one below, or add a project." / "All {n} projects here are archived. Unarchive one below, or add a project." |
 | Overseer tool refusals and notes (the model reads them; the action log keeps the refusals) | "This reaches people or ends something: ask with sova_confirm, listing {what} in its items, and act in the turn the user's click starts." · "Only the Overseer sends here. Write in the overseer's own composer." (403) · "Send words; use op clear to clear it." · "That folder is an organization's workspace; read it with sova_orgs and sova_read_session." · "No link was made: Needs you asks you to send {name} their link." |
+
+## §design.copy-deck/public-links — Public links (§mesh/public)
+
+`{gateway}` is the gateway peer's name, `{host}` a host's name, `{url}` a public address, `{port}`
+a port, `{var}` an environment variable's name, `{reason}` the answer's own sentence. The public
+page never names a host or a person.
+
+**Settings → Public links (§mesh.public/panel)**
+
+| Where | Copy |
+|---|---|
+| Title · line | Public links · People you send a link to open it at this address. |
+| State chip | `Off` · `Not verified` (warn) · `Verified` (success) · `Unreachable` (error) |
+| Address row | Address · {url}, or `None` · source `Set by environment ({var})` / `From this setting` / `From {gateway}` / `Bound address` |
+| Route legend and choices | Where links open · `Off` "Links work only on your own devices." · `This host is the gateway` "This host serves every public link, including those from hosts that go through it." · `Through {gateway}` "Links from this host open at {gateway}'s address. {gateway} must be on for them to open." |
+| Gateway fields | Public address · Front (`Your web server` · `Caddy on this host` · `Tailscale Funnel` · `Cloudflare Tunnel`) · Local port · Accept links from (`All hosts` · `These hosts`) |
+| Pinned field hint | Set by environment ({var}). Change it there, then restart Sova. |
+| Front steps | heading "Set up the front once" · "Anything that serves {url} and forwards to 127.0.0.1:{port} works. Sova doesn't run this step for you." · chip `Needs root` · `Copy Step`, toast "Copied the step." · before a save: "Save Changes to see the step for this setting." |
+| Verify | `Verify Address` (`Verifying…`) · blocked: "Save the gateway setting first." / "Save the new address first." · passed: "Verified {time}. {url} reaches this gateway." · failed (error banner): **Couldn't reach {url}.** {reason} Links still open on your devices. Check the front, then verify again. ({reason} else "It answered {status}", else "No answer") |
+| Verify reasons (server) | Timed out · Couldn't connect · It redirects; the front must forward, not redirect · Got {status}, not Sova's answer · Something else answered, not Sova · The public address must start with https:// · The public address must have no path, query or login · No public address is set. |
+| Routed hosts | heading "Hosts sending links here" · row `{n} links` (`1 link`) · `Last push {time}` / `Never pushed` · `Up` / `Down` / `Not accepted` · none: "No other host sends its links here yet." |
+| Through | "Links open only while {gateway} is on. Keep a client's organization on an always-on host." · Ingress port |
+| Field errors | Enter the public address. · The public address must start with https://. · Enter the public address as https://share.example.com. · The public address is a host only, with no path. · The local port is a whole number from 1 to 65535. · Pick the gateway. · The ingress port is a whole number from 1 to 65535. (the save bar: "Public links: {error}") |
+| Read and save failures (error banner) | **Couldn't read the public links setting.** Nothing was changed. {reason} · **Couldn't save the public links setting.** {reason} Your saved setting is unchanged. |
+| Mesh card chip (§mesh.ui/card) | `Public links: gateway` · `Public links: through {gateway}` |
+
+**`linkWarning` (§app.baton/links; `linkWarningCode` names it; the server's text, shown verbatim, with `Open Settings`)**
+
+| Code | Copy |
+|---|---|
+| (verified) | none |
+| `off` | This link can't be opened from outside yet. Turn on public links in Settings → Public links. |
+| `unverified` | This link may not open from outside yet. Verify the address in Settings → Public links. |
+| `unreachable` | {gateway} can't be reached, so this link won't open until it's back. |
+| `not-accepted` | {gateway} doesn't accept links from this host yet. Add this host in {gateway}'s Settings → Public links. |
+| `unconfirmed` | This link isn't public yet. We'll keep sending it to {gateway}, and it opens once {gateway} confirms. |
+| `sleeps` (defined; no server path sets it yet) | This link opens only while this host is awake. |
+
+{gateway} is "the gateway" when the peer isn't known; a sentence that starts with it starts with a
+capital. The baton strip's standing notice, while a person or an offer holds the session and no
+address is set, is the `off` text.
+
+**Elsewhere**
+
+| Where | Copy |
+|---|---|
+| Org page, its host down (warn banner, §app.organizations/host-offline) | {host} is offline, so its links can't be opened. |
+| Offline page shell (§mesh.public/offline) | title "Not available right now" · heading "This page can't be opened right now." · "The computer it lives on is offline. Try again in a minute." |
+| Offline API body | `{error: "offline", retryAfter: 60}` |
+| Share page, offline | Reconnecting. Your draft is kept. · a send refused: "Not sent. The page is offline; your message is still here." |
 
 ## §design.copy-deck/owner-page — Owner page (§app/owner-page)
 

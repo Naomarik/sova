@@ -82,8 +82,25 @@
 .host-menu-panel .mode-option-check { margin-top: 0; }
 .host-menu-sep { height: 1px; margin: var(--space-1) 0; background: var(--color-border); }
 .host-filter-up { color: var(--status-success); }
+.host-filter-skewed { color: var(--status-warn); }
 .host-filter-down { color: var(--status-error); }
-.host-filter-state { color: var(--status-error); font-size: var(--fs-micro); }
+.host-filter-state { font-size: var(--fs-micro); white-space: nowrap; }
+/* A host on another version (§mesh.peers/resync): where its build sits, under its name, in caption
+   muted; Resync beside the row as its own menu item. The panel may grow a little for the line. */
+@media (min-width: 768px) {
+  .model-menu.action-menu.host-menu-panel { max-width: min(320px, calc(100vw - var(--space-6))); }
+}
+.host-menu-row { display: flex; align-items: center; gap: var(--space-1); }
+.host-menu-row > .host-menu-option { flex: 1; min-width: 0; }
+.host-menu-option-main { display: flex; flex-direction: column; min-width: 0; }
+.host-menu-resync-line { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.host-menu-resync { flex: none; margin-right: var(--space-2); }
+.host-menu-note { margin: 0; padding: var(--space-1) var(--space-3) var(--space-2); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+
+/* The resync confirm sheet: the modal's column, its notes in caption muted, the script's tail in mono. */
+.mesh-resync-body p { margin: 0; }
+.mesh-resync-note { font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.mesh-resync-log { max-height: 14rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* The stale-tab banner floats over the app's top edge: it concerns the whole tab, not one pane.
    Under Sova's dialogs and toasts (50+), over the app's own chrome. */

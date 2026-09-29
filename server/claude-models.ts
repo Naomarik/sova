@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
-import { claudeLoginEnv } from "./claude-accounts";
+import { claudeBaseSpawnEnv, claudeLoginEnv } from "./claude-accounts";
 import { randomUUID } from "node:crypto";
 import { StringDecoder } from "node:string_decoder";
 
@@ -75,7 +75,7 @@ export function parseClaudeModels(value: unknown): ClaudeModel[] {
 export function discoverClaudeModels(options: ClaudeDiscoveryOptions = {}): Promise<ClaudeModel[]> {
   // Every `claude` runs on one login (§app.claude-logins/spawn-selection); discovery makes no model
   // request, but its initialize answer is the login's.
-  const env = { ...process.env, ...(options.loginEnv ?? claudeLoginEnv()) };
+  const env = { ...claudeBaseSpawnEnv(), ...(options.loginEnv ?? claudeLoginEnv()) };
   // The same env hygiene as the extension: these make the CLI think it runs inside Claude Code.
   delete env.CLAUDECODE;
   delete env.CLAUDE_CODE_ENTRYPOINT;

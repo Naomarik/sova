@@ -391,7 +391,8 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
     layout is the message), and several screens sit in a sideways scroll-snap strip that scrolls
     only between screens. A row of screen buttons ("1 Before", "2 After") sits above it, one line,
     with ‹ › at its end; in a figure 420px wide or less it shows the numbers and the current
-    screen's name, without ‹ ›. It appears only while the strip scrolls. A figure opens on screen 1.
+    screen's name, without ‹ ›, and numbers only (each button still named for assistive tech) when
+    fewer than about 6 characters of that name would fit. It appears only while the strip scrolls. A figure opens on screen 1.
     The current screen (`aria-current`) is the one picked by a button, chip or ‹ › while it stays
     whole in view (a scroll, swipe or key by the reader drops the pick), otherwise the one the reader has scrolled to, and the last at the strip's end;
     ‹ › step from it, moving to a screen already in view without scrolling.

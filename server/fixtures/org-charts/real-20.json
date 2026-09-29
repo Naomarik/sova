@@ -1,0 +1,20 @@
+{"v":1,"id":"real-20","source":"e2e-lane","note":"Mined from a real run and anonymized (scripts/org-charts-mine.mjs): ids are per-trace tokens, times are ms from the first event, no text.","t0":"2026-09-27T14:17:00.000Z","hosts":1,"sova":{"commit":"740461a3","how":"lane","features":{"askedOperatorReason":false,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":false,"mergeReasonAndTodosOperatorOnly":false,"noTokenBudget":false}},
+"events": [
+{"dt":46000,"kind":"restart","src":"server.log"},
+{"dt":53000,"kind":"restart","src":"server.log"},
+{"dt":72000,"kind":"restart","src":"server.log"},
+{"dt":162000,"kind":"restart","src":"server.log"},
+{"dt":349000,"kind":"restart","src":"server.log"},
+{"dt":2253713,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":2253742,"kind":"fact","entity":"overseer","id":"o","state":"exists"},
+{"dt":2253785,"kind":"turn","by":"operator","attended":true,"level":"L1","reasons":[]},
+{"dt":2253791,"kind":"tool","name":"sova_read_session","attended":true,"level":"L1","verdict":"error","refusal":"validation"},
+{"dt":2253791,"kind":"tool","name":"sova_list_sessions","attended":true,"level":"L1","verdict":"ok"},
+{"dt":2253791,"kind":"tool","name":"sova_roster","attended":true,"level":"L1","verdict":"error","refusal":"validation"},
+{"dt":2253828,"kind":"turn-end","stop":"stop"},
+{"dt":2276995,"kind":"turn","by":"operator","attended":true,"level":"L1","reasons":[]},
+{"dt":2276998,"kind":"turn-end","stop":"stop"},
+{"dt":2342000,"kind":"setting","key":"autonomy","value":"L1","src":"git"}
+],
+"final": {"autonomy":"L1","watch":false,"caps":{"gatherPerTurn":3,"gatheringsOpen":5,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"codingRunning":2,"unattendedPerDay":12},"watchGapMin":null,"archived":false,"rosterActive":1,"gaps":[],"batons":[],"decisions":[],"builds":[],"hosts":[{"host":"h1","paused":false,"lastRun":null,"looks":0,"held":[],"pending":[]}]}
+}

@@ -22,6 +22,7 @@ import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
+import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
@@ -75,12 +76,15 @@ import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
 import { attachWebSockets, upgradeSovaSocket } from "./ws";
 import { meshApi, meshRoutes, startMesh, stopMesh } from "./mesh";
+import { captureBootBuild } from "./mesh/build-id";
 import { mountDetails } from "./mesh/details";
+import { mountResync } from "./mesh/resync";
 import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import { mountLinks } from "./mesh/links-routes";
 import { deliverLinkMessage, heldSessionPath, notifyLinksChanged, setLinkOrigin, setLinksSource } from "./link-delivery";
 import { mountSync } from "./sync";
+import { mountClaudePool } from "./claude-pool";
 import { markSeen } from "./seen";
 import {
   attentionForWire,
@@ -222,6 +226,8 @@ registerProjectOverseerRoutes(app);
 registerProjectCostRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
+// Voice input: setup, status and transcription on this host (server/voice/; §chat/voice).
+registerVoiceRoutes(app);
 
 // The sidebar's user-made groups: Sova's own grouping of
 // sessions, stored in ~/.pi/agent/sova/session-groups.json. Keyed by
@@ -1208,6 +1214,13 @@ app.get("/api/extensions", async (c) => c.json(await listExtensions()));
 meshRoutes(app);
 // Host-to-host sync (server/sync/): routes under /api/peer/* and mesh hooks only; OFF, inert.
 const sync = mountSync(app, meshApi);
+// The pool of Claude logins (server/claude-pool/): /api/peer/claude-pool/*, /api/claude/pool/*; OFF, inert.
+mountClaudePool(app, meshApi);
+// The build this process runs, recorded once now: commit, tracked-files dirty state and protocol
+// together (server/mesh/build-id.ts), so the details and the hello name it however the checkout moves.
+void captureBootBuild();
+// Resync a peer that is behind to this build (server/mesh/resync.ts): /api/mesh/resync*; OFF, 404.
+const meshResync = mountResync(app, meshApi);
 // Per-host details and rename (server/mesh/details.ts): /api/mesh/details|label, /api/peer/*; OFF, 404.
 mountDetails(app, meshApi, {
   sessions: async () => (await listSessionFiles()).length,
@@ -1418,6 +1431,7 @@ async function shutdown() {
   // No-op for the default inline transport. See pi-config/extensions/subagents/hosting.ts.
   (globalThis as Record<symbol, unknown>)[Symbol.for("sova:detach-workers")] = true;
   claudeAccounts.dispose();
+  meshResync.dispose();
   // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
   // Marked first, so a run that records how it ended says the shutdown cut it off.
   markShutdown();
@@ -1429,6 +1443,7 @@ async function shutdown() {
   meshLinks.stop();
   stopMesh();
   stopShareRuntime();
+  await stopVoice();
   await Promise.race([disposeAllChats(), new Promise((r) => setTimeout(r, 3000))]);
   // Every visit with an open share socket is seen now, so the commit below carries it.
   try {

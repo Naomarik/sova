@@ -1,4 +1,5 @@
 // No terminal or model request: exercise installed Pi's real confirm/abort behavior.
+import './hermetic-env.mjs'; // first: never the inherited agent dir / Claude directory
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { jiti, packageDir } from '../../subagents/tests/runtime.mjs';

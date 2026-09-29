@@ -6,11 +6,14 @@ import { stampTime } from "./format";
 import {
   authCaption,
   balanceBreakdown,
-  claudeLoginGroups,
+  accountReading,
+  claudeAccountLoginsCaption,
+  claudeAccounts,
+  claudeAccountSubtitle,
+  claudeLoginHolder,
   claudeLoginName,
   claudeLoginNote,
   claudeLoginStanding,
-  claudeLoginSubtitle,
   claudeLoginTitle,
   claudeReading,
   extraUsageMeter,
@@ -328,20 +331,63 @@ const login = (over: Partial<UsageClaudeLogin> & Pick<UsageClaudeLogin, "id">): 
   ...over,
 });
 
-test("a Claude login's card is titled by its email and says what it is under it", () => {
+test("an account card is titled by its email, its caption says the plan and a lone login's name", () => {
   const own = login({ id: "default", email: "own@example.com", planLabel: "Max 20x" });
   assert.equal(claudeLoginTitle(own), "own@example.com");
-  assert.equal(claudeLoginSubtitle(own), "Claude · Max 20x · Claude Code's own login");
+  assert.equal(claudeAccountSubtitle([own]), "Claude \u00b7 Max 20x \u00b7 Claude Code's own login");
   const spare = login({ id: "l-0000000a", email: "spare@example.com", label: "Spare" });
-  assert.equal(claudeLoginSubtitle(spare), "Claude · Spare");
-  const now = Date.parse("2026-09-29T10:00:00Z");
-  const unnamed = login({ id: "l-0000000c", email: "own@example.com", addedAt: now - 86_400_000 });
-  assert.equal(claudeLoginSubtitle(unnamed, now, true), "Claude · Login added Sep 28", "beside another login of its account, when it was added tells them apart");
-  assert.equal(claudeLoginSubtitle(unnamed, now), "Claude", "alone in its account, the email says enough");
-  assert.equal(claudeLoginName(login({ id: "l-0000000d" })), "Added login");
+  assert.equal(claudeAccountSubtitle([spare]), "Claude \u00b7 Spare");
+  const unnamed = login({ id: "l-0000000c", email: "own@example.com", addedAt: 5 });
+  assert.equal(claudeAccountSubtitle([unnamed]), "Claude", "alone and unnamed, the email says enough");
+  assert.equal(claudeAccountSubtitle([unnamed, login({ id: "l-0000000d", email: "own@example.com", label: "Lab", planLabel: "Max 5x" })]), "Claude \u00b7 Max 5x", "several logins: the list names them");
   assert.equal(claudeLoginTitle(login({ id: "default" })), "Claude Code's own login");
-  assert.equal(claudeLoginSubtitle(login({ id: "default" })), "Claude", "no email: the title already names it");
+  assert.equal(claudeAccountSubtitle([login({ id: "default" })]), "Claude", "no email: the title already names it");
   assert.equal(claudeLoginTitle(login({ id: "l-0000000b", label: "Lab" })), "Lab");
+});
+
+test("a login inside its account is named by its label, else Login N by when it was added", () => {
+  const first = login({ id: "l-0000000b", accountUuid: "acct-1", addedAt: 100 });
+  const second = login({ id: "l-0000000a", accountUuid: "acct-1", addedAt: 200 });
+  const own = login({ id: "default", accountUuid: "acct-1" });
+  // Listed second first (a moved order): the numbers still follow when each was added.
+  const account = [second, own, first];
+  assert.deepEqual(account.map((l) => claudeLoginName(l, account)), ["Login 2", "Claude Code's own login", "Login 1"]);
+  const renamed = { ...second, label: "Work laptop" };
+  assert.equal(claudeLoginName(renamed, [renamed, first]), "Work laptop");
+  assert.equal(claudeLoginName(first, [renamed, first]), "Login 1", "a rename doesn't renumber the others");
+});
+
+test("the logins caption counts the pool's logins, never Claude Code's own", () => {
+  const pooled = (id: string) => login({ id, holder: { label: "Desk", self: true, free: false, stuck: false } });
+  assert.equal(claudeAccountLoginsCaption([pooled("l-0000000a"), pooled("l-000000a2")]), "2 logins in the pool");
+  assert.equal(claudeAccountLoginsCaption([pooled("l-0000000a")]), "1 login in the pool");
+  assert.equal(claudeAccountLoginsCaption([pooled("l-0000000a"), login({ id: "default" })]), "1 login in the pool", "default is listed, not counted");
+  assert.equal(claudeAccountLoginsCaption([login({ id: "default" })]), null, "the pool is on, but default is never in it: no list");
+  assert.equal(claudeAccountLoginsCaption([login({ id: "l-0000000a" }), login({ id: "l-000000a2" })]), "2 logins on this device");
+  assert.equal(claudeAccountLoginsCaption([login({ id: "l-0000000a" })]), null);
+});
+
+test("a pool login's place reads like Settings → Accounts' holder chip", () => {
+  const at = (holder: UsageClaudeLogin["holder"]) => claudeLoginHolder(login({ id: "l-0000000a", holder }));
+  assert.deepEqual(at({ label: "Desk", self: true, free: false, stuck: false }), { tone: "accent", text: "This device" });
+  assert.deepEqual(at({ label: "Laptop", self: false, free: false, stuck: false }), { tone: "info", text: "Laptop" });
+  assert.deepEqual(at({ label: "Desk", self: false, free: true, stuck: false }), { tone: "success", text: "Free" });
+  assert.deepEqual(at({ label: "Phone", self: false, free: false, stuck: true }), { tone: "warn", text: "Stuck on Phone" });
+  assert.equal(at(undefined), null, "mesh off: no place to say");
+});
+
+test("an account's one reading is its freshest, whichever login read it", () => {
+  const older = provider({ id: "claude", windows: [{ label: "5h", pct: 20 }] });
+  const newer = provider({ id: "claude", windows: [{ label: "5h", pct: 30 }] });
+  const unread = provider({ id: "claude", state: "error", windows: [], error: "not read yet" });
+  const a = login({ id: "l-0000000a", usage: older, fetchedAt: 100 });
+  const b = login({ id: "l-0000000b", usage: newer, fetchedAt: 200 });
+  const c = login({ id: "l-0000000c", usage: unread, inUse: true });
+  assert.equal(accountReading([a, b, c]).usage, newer);
+  assert.equal(accountReading([a, b, c]).login, b);
+  assert.equal(accountReading([c, a]).usage, older, "a login never read doesn't hide its account's reading");
+  const d = login({ id: "l-0000000d", usage: unread });
+  assert.equal(accountReading([d, c]).login, c, "nothing read: the login in use speaks, for its note");
 });
 
 test("a login's standing reads as Settings → Accounts says it", () => {
@@ -355,15 +401,41 @@ test("a login's standing reads as Settings → Accounts says it", () => {
   assert.equal(claudeLoginStanding(login({ id: "default", signedIn: false }), now).text, "Ready", "default's sign-in is the provider's own note");
 });
 
+test("the standing never says Ready under a head chip that says Rate-limited", () => {
+  // The user's case: Claude Code's own login recorded ready, its 5-hour window at 100% for 6 more minutes.
+  const now = Date.parse("2026-09-29T10:00:00Z");
+  const resets = now + 6 * 60_000;
+  const full = provider({ id: "claude", windows: [{ label: "5h", pct: 100, resetsAt: new Date(resets).toISOString() }, { label: "7d", pct: 59 }] });
+  const own = login({ id: "default", usage: full });
+  assert.deepEqual(providerChip(full, now), { tone: "warn", text: "Rate-limited" });
+  assert.deepEqual(claudeLoginStanding(own, now), { tone: "warn", text: `Limited until ${stampTime(resets, now)}`, title: "Its 5-hour window is used up" });
+  // Another login of the account, read by the account's reading.
+  assert.equal(claudeLoginStanding(login({ id: "l-0000000a" }), now, full).text, `Limited until ${stampTime(resets, now)}`);
+  // An Off login of a full account: the quota is the newer fact.
+  assert.equal(claudeLoginStanding(login({ id: "l-0000000a", enabled: false }), now, full).text, `Limited until ${stampTime(resets, now)}`);
+  // Once the reset has passed, neither says limited: the reading describes a window that's gone.
+  const later = resets + 60_000;
+  assert.equal(providerChip(full, later), null);
+  assert.equal(claudeLoginStanding(own, later).text, "Ready");
+  // A recorded limit keeps its own words.
+  const until = now + 3_600_000;
+  assert.equal(claudeLoginStanding(login({ id: "default", usage: full, standing: { state: "limited", until } }), now).text, `Limited until ${stampTime(until, now)}`);
+  // A full window with no reset time never invents one.
+  assert.equal(claudeLoginStanding(login({ id: "default", usage: provider({ id: "claude", windows: [{ label: "5h", pct: 100 }] }) }), now).text, "Ready");
+  assert.deepEqual(providerChip(provider({ id: "claude", windows: [{ label: "5h", pct: 100 }] }), now), { tone: "warn", text: "Rate-limited" });
+});
+
 test("a login card without meters says why when the reason is the login's", () => {
   const empty = provider({ id: "claude", state: "error", windows: [], error: "not read yet" });
   assert.match(claudeLoginNote(login({ id: "l-0000000a", usage: empty }))!, /^Not read yet/);
   assert.match(claudeLoginNote(login({ id: "l-0000000a", usage: empty, standing: { state: "auth" } }))!, /^Not fetched while this login needs signing in again/);
   assert.equal(claudeLoginNote(login({ id: "l-0000000a", usage: empty, fetchedAt: 5 })), null, "read before: the provider's own error note");
   assert.equal(claudeLoginNote(login({ id: "l-0000000a" })), null, "meters: nothing to say");
+  assert.match(claudeLoginNote(login({ id: "l-0000000a", usage: empty, holder: { label: "Desk", self: false, free: true, stuck: false } }))!, /^Not read while it is free/);
+  assert.match(claudeLoginNote(login({ id: "l-0000000a", usage: empty, holder: { label: "Laptop", self: false, free: false, stuck: false } }))!, /once Laptop publishes a reading/);
 });
 
-test("logins of one account sit together, in the order the first of them has", () => {
+test("logins of one account share one card, where the first of them falls", () => {
   const ids = (groups: UsageClaudeLogin[][]) => groups.map((g) => g.map((l) => l.id));
   const logins = [
     login({ id: "l-0000000b", accountUuid: "acct-2" }),
@@ -371,7 +443,7 @@ test("logins of one account sit together, in the order the first of them has", (
     login({ id: "l-0000000c" }),
     login({ id: "l-0000000a", accountUuid: "acct-1" }),
   ];
-  assert.deepEqual(ids(claudeLoginGroups(logins)), [["l-0000000b"], ["default", "l-0000000a"], ["l-0000000c"]]);
+  assert.deepEqual(ids(claudeAccounts(logins)), [["l-0000000b"], ["default", "l-0000000a"], ["l-0000000c"]]);
 });
 
 // §app.insights/sidebar-foot: which Claude login the foot and the summary lead read.
@@ -422,4 +494,19 @@ test("usageSummary: Claude's sentence speaks for the login in use, not a limited
   // One login: the sentence keeps its plain name.
   const one: UsageInsight = { ...u, claudeLogins: [login({ id: "default", inUse: true, usage: LIMITED })] };
   assert.equal(usageSummary(one, NOW), "Claude's 5-hour window is rate-limited.");
+});
+
+test("claudeReading: a login in use that has no reading of its own reads its account's", () => {
+  // Two logins of one account: the second is in use, only the first has been read.
+  const u: UsageInsight = {
+    ...usage([LIMITED]),
+    claudeLogins: [
+      login({ id: "l-0000000a", email: "a@example.com", accountUuid: "acct-a", usage: SPARE_READING, fetchedAt: 100 }),
+      login({ id: "l-000000a2", email: "a@example.com", accountUuid: "acct-a", inUse: true, usage: provider({ id: "claude", state: "error", windows: [], error: "not read yet" }) }),
+      login({ id: "default", email: "b@example.com", accountUuid: "acct-b", usage: LIMITED }),
+    ],
+  };
+  assert.equal(claudeReading(u)!.usage, SPARE_READING);
+  assert.equal(usageGlance(u)[0]!.full, "Claude (a@example.com) 7-day 61%");
+  assert.equal(claudeReading(u, "default")!.usage, LIMITED);
 });

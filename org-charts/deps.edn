@@ -1,0 +1,6 @@
+{:paths ["src" "test"]
+ :deps  {org.clojure/clojurescript     {:mvn/version "1.12.134"}
+         com.fulcrologic/statecharts   {:mvn/version "1.4.0-RC18"}}
+ :aliases
+ {;; clojure -Srepro -M:build -m shadow.cljs.devtools.cli release lib (-Srepro: a user :shadow alias must not leak in)
+  :build {:extra-deps {thheller/shadow-cljs {:mvn/version "3.3.6"}}}}}

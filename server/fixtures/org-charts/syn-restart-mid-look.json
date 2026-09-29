@@ -1,0 +1,12 @@
+{"v":1,"id":"syn-restart-mid-look","source":"synthetic","note":"Synthetic: the server restarts while a look runs; the reasons it was for must not be lost (R2)","t0":"2026-09-28T10:00:00Z","hosts":1,"sova":{"commit":null,"how":"synthetic","features":{"askedOperatorReason":true,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":true,"mergeReasonAndTodosOperatorOnly":true,"noTokenBudget":true}},
+"events": [
+{"dt":0,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":1000,"kind":"fact","entity":"baton","id":"b1","state":"open","by":"operator"},
+{"dt":120000,"kind":"fact","entity":"baton","id":"b1","state":"done","wrote":true},
+{"dt":200000,"kind":"expect","session":"project","in":["running"],"lookStarted":true},
+{"dt":200000,"kind":"turn","by":"watch","attended":false,"level":"L3","reasons":[{"kind":"gathering-done","soon":true}]},
+{"dt":220000,"kind":"restart"},
+{"dt":221000,"kind":"expect","session":"project","notIn":["running"],"reasonKinds":["baton/done"]}
+],
+"final": {"autonomy":"L3","watch":true,"caps":{"gatherPerTurn":3,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"gatherPerDay":4,"promotePerDay":60,"createPerDay":4,"promptsPerDay":12,"unattendedPerDay":12,"gatheringsOpen":5,"codingRunning":2},"watchGapMin":10,"soonLookSec":60,"archived":false,"rosterActive":1,"gaps":[],"batons":[],"decisions":[],"builds":[],"hosts":[]}
+}

@@ -8,7 +8,8 @@ node sova-spec.mjs check                [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
-node sova-spec.mjs census --changed [--base REV] [--related] [--root DIR] [--spec DIR] [--json]
+node sova-spec.mjs census --changed [--base REV] [--related] [--own-base REV]... [--root DIR] [--spec DIR] [--json]
+node sova-spec.mjs foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...] [--root DIR] [--json]
 ```
 
 `--spec` picks which spec graph to read. It's a directory relative to the project root, and it
@@ -123,10 +124,16 @@ to the project root. New fields are only ever added. Other tools read this outpu
   lie outside the boundary.
 - **census --changed**: checks only the files a task changed. Those are the files that differ between
   `--base` (default `HEAD`) and the working tree, plus untracked files that aren't ignored.
-  Deletions are dropped. Git runs as read-only plumbing, without a shell. The boundary rules are
+  Deleted files are kept: `deleted: [path]` lists them; a deleted file a record maps is a `claimed`
+  (or `mappedOutside`) entry with `deleted: true`, so its ids are touched; a deleted unmapped file has
+  nothing to claim and is never `unclaimed`. Git runs as read-only plumbing, without a shell. The boundary rules are
   the same. `census` then holds `mode: "changed"`, `base: {rev, commit}`, `changed` (the count),
   `claimed: [{path, claims}]`, `unclaimed`, `outside` (changed files beyond the boundary, which
-  aren't failures) and `symlinks`. Each unclaimed file is a `changed-unclaimed` warning. With no
+  aren't failures), `mappedOutside: [{path, claims}]` (the `outside` files some record's `code`
+  maps: never unclaimed, never a warning, but their ids are touched and foreign like any claimed
+  file's, since the boundary is not widened), `orphanedEvidence: [{draft, commit, ids}]` (commit
+  evidence in `.sova/spec/drafts/*/draft.json` that `HEAD` doesn't contain, as after a rebase; one
+  `evidence-orphaned` note each, never a warning) and `symlinks`. Each unclaimed file is a `changed-unclaimed` warning. With no
   boundary it still lists the claimed files, but `unclaimed` and `outside` are null.
 - **census --changed --related**: adds `touched: [{id, kind, labels?, created, file, lines, files, requires,
   consumers: [{id, depth}]}]`, one entry per id that claims a changed file, sorted by id. `files`
@@ -149,7 +156,40 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `--related`, each `touched` entry has `created: true|false` and each touched id that is not
   created is a `touched-foreign` note `{id}`; human output marks entries `; created` or `; foreign`.
   Human output prints the summary before the touched list. Notes never change the exit code; plain
-  `census` and `check` are unchanged.
+  `census` and `check` are unchanged. With `--own-base REV` (repeatable), the task's own ids (absent
+  at every one of those revisions) are never foreign; the census gets `own` and `ownBases`.
+- **foreign --base REV [--head REV]**: the § a range of history changes, for a merge's or a
+  promotion's `Also changes:` line. It reads `.sova/spec` at each revision from Git objects
+  (read-only `ls-tree` and `cat-file --batch`; no checkout), or from the working tree when
+  `--head` is omitted; with `--spec DIR` (no `--head`) the working-tree head is that graph, a
+  draft's `spec/`, so a turn can name the foreign § its draft edits. An id is in `foreign` when its prose span's text or its canonical record
+  differs, when it is deleted, or when it is an H1 on both sides that gains a new H2
+  (`child-added`, with `children`), and it is not created in the range (an id head records and
+  base does not). A revision without a spec is an empty graph. Output: `base: {rev, commit}`,
+  `head: {rev, commit}` (or `{rev: null, worktree: true}`), `foreign: [id]`, `changes: [{id, change,
+  children?}]` (`change` joins `text`, `record`, `child-added` with `+`, or is `deleted`),
+  `created: [id]`. A bad revision is `bad-rev` and no Git is `not-git`, both exit 2; `--spec` with
+  `--head` is a usage error. Human output ends `Foreign § changed: §a, §b` (or `none`).
+  For a merge, `--base` is the TARGET's tip before the merge and `--head` its tip after, never the
+  branch's start: a branch that merged the target in carries the target's own § (another task's),
+  and they are not what the merge lands. A deleted id whose body (all but its heading) reappears under
+  a created id carries `renamedTo`; it stays foreign.
+- **The task's own claims (`--own-base REV`, repeatable).** An id absent from the spec at every
+  own base (the task's fork point from the default branch, the default branch's tip when the task's
+  run started, a worktree's recorded base) is the task's own: created by it, in this range or an
+  earlier one. Own ids leave `foreign` and `changes`; `own: [id]` lists those the range touched or
+  created and `ownBases: [{rev, commit}]` the bases. Master's own new claims exist on its tip, so
+  they are never own.
+- **Landing lists (`--landing`).** What a merge or promotion lands besides §: `unmappedChanged:
+  [{path, status, inBoundary}]` (files the range changed, deletions included, `A|M|D|T`, no renames,
+  minus `.sova/`, that no claim's `code` maps in the head spec, or in the `--spec` draft);
+  `mappedUntouched: [{id, files}]` (ids, neither foreign, created nor own, whose mapped code the range
+  changed: advisory); `unpromotedDrafts: [{draft, worktree, ids}]` (draft records `pending`, or in
+  `conflict` without the draft ever promoting them, in each worktree whose HEAD the range brings in:
+  an ancestor of head and not of base, never the default branch's own checkout; with no `--head`, the
+  root's drafts; and each `--drafts DIR` project root; read with `sova-spec-draft.mjs status`, at most
+  20 drafts); `handResolved: [{commit, ids}]` (when head is a merge commit, ids whose text or record
+  differs from every parent's: a hand resolution, see `git show --cc`). None of them changes the exit.
 - **§a.b ids.** `scope` and `impact` read `§a.b` (not a § identifier) as `§a/b`, with an `id-alias`
   note; an unknown result is `unknown-id` as usual.
 
@@ -174,7 +214,9 @@ themselves:
   `.sova/spec/drafts/NAME/`. Promotion checks the draft and the merged candidate with
   `check --spec` before it writes anything. A project with no `.sova/spec` starts here: `new`
   begins from an empty baseline, `{"formatVersion": 1, "claims": {}}`. So there's no separate
-  `init`, and docs are written piecemeal as features are worked on. See `../DRAFTS.md`.
+  `init`, and docs are written piecemeal as features are worked on. `merge-manifest` merges a
+  conflicted `manifest.json` record by record (as a Git merge driver it writes Git's `%A` file,
+  the one write outside `.sova/spec/`). See `../DRAFTS.md`.
 - `sova-spec-review.mjs` handles review evidence. Its `prepare --write` stores the exact bytes of
   a closure's inputs, `record` stores a reviewer's conclusion, and `status` rechecks them. It
   writes only under `.sova/spec/reviews/`. See `../README.md`.

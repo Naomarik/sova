@@ -6,7 +6,8 @@
  *
  * A LOGIN is one Claude Code config directory with its own `.credentials.json` (one refresh
  * chain). Several logins may share one Claude account (`accountUuid`). Claude Code's own
- * directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR`) is the implicit login `default`: never stored,
+ * directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR` unless that names an added login's directory) is
+ * the implicit login `default`: never stored,
  * never moved, never written here. Claude Code stays the only program that signs in, refreshes
  * and signs out; nothing here reads a token.
  *
@@ -15,6 +16,13 @@
  *
  * Absent registry = only `default`. Malformed registry = only `default`, plus the error, and the
  * file is never overwritten by a reader.
+ *
+ * The pool (phase 2, while the mesh is on): a login's registry `device` is the device that HOLDS
+ * it (`null` = kept here, free, for lending by this host as the keeper; never run here). Sova's
+ * pool agent (server/claude-pool/) moves logins between devices; this file gives it what every
+ * `claude` spawn must honour: `.sova-leaving` (a login on its way out is never chosen), the
+ * per-process leases under `.sova-leases/` (which processes still run on a login), and the
+ * borrow requests (`claude-pool/wants/`) a spawn with no usable login writes and waits on.
  */
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -34,6 +42,20 @@ export const LOCAL_DEVICE_ID = "local";
 export const ACCOUNTS_DEV_ENV = "SOVA_CLAUDE_ACCOUNTS_DEV";
 /** A limit with no reset time keeps its logins out this long. */
 export const DEFAULT_LIMIT_COOLDOWN_MS = 15 * 60_000;
+/** A login on its way to another device: `<login dir>/.sova-leaving` `{v: 1, at, reason}`. */
+export const LEAVING_FILE_NAME = ".sova-leaving";
+/** Per-process leases: `<login dir>/.sova-leases/<owner pid>.json`. */
+export const LEASES_DIR_NAME = ".sova-leases";
+/** `<agent dir>/claude-pool/`: the pool agent's heartbeat (`agent.json`) and borrow requests (`wants/`). */
+export const POOL_DIR_NAME = "claude-pool";
+/** A heartbeat older than this means no pool agent runs here: nothing waits for a borrow. */
+export const POOL_AGENT_FRESH_MS = 30_000;
+/** How long a spawn waits for its borrow. */
+export const WANT_WAIT_MS = 30_000;
+/** How often a process rewrites its leases and releases idle users of leaving logins. */
+export const LEASE_TICK_MS = 5_000;
+/** A lease its owner has not rewritten for this long has no owner (the pid is gone or reused): only its live `claude` children count. */
+export const LEASE_STALE_MS = 60_000;
 /** What the development switch's forced limit says about its reset. */
 const DEV_LIMIT_RESET_MS = 60 * 60_000;
 /** Entries symlinked from `default`'s directory into every login's, so all share them. */
@@ -139,14 +161,55 @@ export function defaultAgentDir(env: NodeJS.ProcessEnv = process.env): string {
 	if (raw.startsWith("~/")) return path.join(os.homedir(), raw.slice(2));
 	return raw;
 }
-/** Claude Code's own directory: `$CLAUDE_CONFIG_DIR`, else `~/.claude`. */
-export function defaultClaudeDir(env: NodeJS.ProcessEnv = process.env): string {
-	return env.CLAUDE_CONFIG_DIR?.trim() || path.join(os.homedir(), ".claude");
+/** `realpath` where the path exists, else the path resolved. */
+function realOrResolved(p: string): string {
+	try { return fs.realpathSync(p); } catch { return path.resolve(p); }
+}
+/** Whether `p` is `root` or inside it, comparing both as given and as resolved through links. */
+function within(p: string, root: string): boolean {
+	for (const r of new Set([path.resolve(root), realOrResolved(root)])) {
+		for (const q of new Set([path.resolve(p), realOrResolved(p)])) {
+			const rel = path.relative(r, q);
+			if (!rel.startsWith("..") && !path.isAbsolute(rel)) return true;
+		}
+	}
+	return false;
+}
+/**
+ * Whether `dir` lies under an added login's `claude-accounts/`: of `agentDir` when given, of the
+ * effective agent dir, and of pi's default `~/.pi/agent` (the dirs the sandbox protects).
+ */
+export function underLoginsDir(dir: string, env: NodeJS.ProcessEnv = process.env, agentDir?: string): boolean {
+	const agents = new Set([...(agentDir ? [agentDir] : []), defaultAgentDir(env), path.join(os.homedir(), ".pi", "agent")]);
+	return [...agents].some((a) => within(dir, path.join(a, ACCOUNTS_DIR_NAME)));
+}
+/**
+ * `$CLAUDE_CONFIG_DIR` as Claude Code's own directory, or undefined. An inherited one that names an
+ * added login's directory is not: a Sova-spawned `claude` (and any pi started under it) runs with
+ * that, and taking it for `default` would run `default` on a pool login without a lease.
+ */
+export function ownClaudeConfigDir(env: NodeJS.ProcessEnv = process.env, agentDir?: string): string | undefined {
+	const raw = env.CLAUDE_CONFIG_DIR?.trim();
+	return raw && !underLoginsDir(raw, env, agentDir) ? raw : undefined;
+}
+/** Claude Code's own directory: `$CLAUDE_CONFIG_DIR` (unless a login's directory), else `~/.claude`. */
+export function defaultClaudeDir(env: NodeJS.ProcessEnv = process.env, agentDir?: string): string {
+	return ownClaudeConfigDir(env, agentDir) ?? path.join(os.homedir(), ".claude");
 }
 /** Where Claude Code keeps `.claude.json` for a directory: inside it, except `~/.claude.json` for the unset default. */
-export function claudeJsonPath(dir: string, isDefault: boolean, env: NodeJS.ProcessEnv = process.env): string {
-	if (isDefault && !env.CLAUDE_CONFIG_DIR?.trim()) return path.join(os.homedir(), ".claude.json");
+export function claudeJsonPath(dir: string, isDefault: boolean, env: NodeJS.ProcessEnv = process.env, agentDir?: string): string {
+	if (isDefault && !ownClaudeConfigDir(env, agentDir)) return path.join(os.homedir(), ".claude.json");
 	return path.join(dir, ".claude.json");
+}
+/**
+ * The environment a `claude` spawn starts from: `env` without an inherited `CLAUDE_CONFIG_DIR`
+ * that names a login's directory, so a spawn on `default` (whose choice sets nothing) runs on
+ * Claude Code's own directory. A chosen login's `CLAUDE_CONFIG_DIR` is merged over this.
+ */
+export function claudeBaseEnv(env: NodeJS.ProcessEnv = process.env, agentDir?: string): NodeJS.ProcessEnv {
+	const out = { ...env };
+	if (out.CLAUDE_CONFIG_DIR !== undefined && !ownClaudeConfigDir(out, agentDir)) delete out.CLAUDE_CONFIG_DIR;
+	return out;
 }
 export const accountsPath = (agentDir: string): string => path.join(agentDir, ACCOUNTS_FILE_NAME);
 export const accountsStatePath = (agentDir: string): string => path.join(agentDir, ACCOUNTS_STATE_FILE_NAME);
@@ -295,19 +358,53 @@ export function thisDeviceId(agentDir: string, env: NodeJS.ProcessEnv = process.
 /** Whether a login assigned to `assigned` belongs to this device (`local` always does). */
 export const assignedHere = (assigned: string | null, device: string): boolean =>
 	assigned !== null && (assigned === device || assigned === LOCAL_DEVICE_ID);
+/**
+ * Whether the pool is on: the mesh is on (`<agent dir>/sova/peers.json` lists a peer), the same
+ * rule as the server's. Off, this host is its own keeper and holder: every login here is used.
+ */
+export function poolActive(agentDir: string): boolean {
+	try {
+		const peers = JSON.parse(fs.readFileSync(path.join(agentDir, "sova", "peers.json"), "utf8"));
+		return Array.isArray(peers?.peers) && peers.peers.length > 0;
+	} catch { return false; }
+}
+/** Whether this device may run a login whose registry `device` is `held`: held here, or (pool off) kept here. */
+export const heldHere = (held: string | null, device: string, pool: boolean): boolean =>
+	assignedHere(held, device) || (!pool && held === null);
 /** This device's entry: under its id, else under `local` (written before it had a mesh id). */
 export function deviceEntry(accounts: ClaudeAccountsFile, device: string): ClaudeDeviceEntry | undefined {
 	return accounts.devices[device] ?? accounts.devices[LOCAL_DEVICE_ID];
 }
 /**
- * The ids this device tries, in order: its order's logins that are assigned here (and `default`),
- * then every other login assigned here, oldest first. `default` leads unless the order places it.
+ * Accounts, then logins: `ids` with the logins of one account (`accountUuid`) together, each
+ * account where its first login falls, its logins in their order. A login with no known account
+ * is an account of its own. Every order (a device's, the pool's) is read through this.
  */
-export function deviceOrder(accounts: ClaudeAccountsFile, device: string): string[] {
-	const here = accounts.logins.filter((l) => assignedHere(l.device, device)).sort((a, b) => a.addedAt - b.addedAt).map((l) => l.id);
-	const listed = (deviceEntry(accounts, device)?.order ?? []).filter((id) => id === DEFAULT_LOGIN_ID || here.includes(id));
+export function groupByAccount(ids: readonly string[], accountOf: (id: string) => string | undefined): string[] {
+	const groups: string[][] = [];
+	const byAccount = new Map<string, string[]>();
+	for (const id of ids) {
+		const account = accountOf(id);
+		const group = account ? byAccount.get(account) : undefined;
+		if (group) { group.push(id); continue; }
+		const fresh = [id];
+		groups.push(fresh);
+		if (account) byAccount.set(account, fresh);
+	}
+	return groups.flat();
+}
+/**
+ * The ids this device tries, in order: its order's logins that it holds, then every other login it
+ * holds, oldest first, each account's logins together (`groupByAccount`), then `default` — always
+ * last: Claude Code's own login is the last resort.
+ * `pool` (the mesh is on): only logins held here count; off, logins kept here (`device: null`) too.
+ */
+export function deviceOrder(accounts: ClaudeAccountsFile, device: string, pool = false): string[] {
+	const here = accounts.logins.filter((l) => heldHere(l.device, device, pool)).sort((a, b) => a.addedAt - b.addedAt).map((l) => l.id);
+	const listed = (deviceEntry(accounts, device)?.order ?? []).filter((id) => id !== DEFAULT_LOGIN_ID && here.includes(id));
 	const rest = here.filter((id) => !listed.includes(id));
-	return listed.includes(DEFAULT_LOGIN_ID) ? [...listed, ...rest] : [DEFAULT_LOGIN_ID, ...listed, ...rest];
+	const accountOf = (id: string) => accounts.logins.find((l) => l.id === id)?.identity?.accountUuid;
+	return [...groupByAccount([...listed, ...rest], accountOf), DEFAULT_LOGIN_ID];
 }
 export function loginEnabled(accounts: ClaudeAccountsFile, device: string, id: string): boolean {
 	if (id === DEFAULT_LOGIN_ID) return deviceEntry(accounts, device)?.defaultEnabled !== false;
@@ -322,23 +419,28 @@ export function loginEnabled(accounts: ClaudeAccountsFile, device: string, id: s
  * Create (0700) the login's directory and link the shared entries to `default`'s directory. Each
  * link is made only when its target exists, except `projects/`, which is created in `default`'s
  * directory if missing: every login must write its session records there. An existing link that
- * points elsewhere is replaced; a real file or directory is left alone.
+ * points elsewhere is replaced (unlinked, never removed recursively); a real file or directory is
+ * left alone. A `defaultDir` under `claude-accounts/` is refused before anything is written, and no
+ * link is made whose target resolves into the login's own directory.
  */
 export function ensureLoginDir(agentDir: string, id: string, defaultDir: string): string {
 	const dir = loginDir(agentDir, id);
+	if (within(defaultDir, path.join(agentDir, ACCOUNTS_DIR_NAME))) {
+		throw new Error(`Claude Code's own directory cannot be a login's directory: ${defaultDir}`);
+	}
 	fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 	try { fs.chmodSync(dir, 0o700); } catch { /* best effort */ }
 	for (const name of SHARED_ENTRIES) {
 		const target = path.join(defaultDir, name);
 		const link = path.join(dir, name);
 		if (name === "projects" && !fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
-		if (!fs.existsSync(target)) continue;
+		if (!fs.existsSync(target) || within(target, dir)) continue;
 		let stat: fs.Stats | undefined;
 		try { stat = fs.lstatSync(link); } catch { stat = undefined; }
 		if (stat && !stat.isSymbolicLink()) continue;
 		if (stat) {
 			if (fs.readlinkSync(link) === target) continue;
-			fs.rmSync(link, { force: true });
+			fs.unlinkSync(link);
 		}
 		fs.symlinkSync(target, link);
 	}
@@ -453,6 +555,226 @@ export function readiness(standing: ClaudeLoginStanding | undefined, dir: string
 }
 
 // ---------------------------------------------------------------------------
+// The pool's marks on a login: leaving, leases, borrow requests
+// ---------------------------------------------------------------------------
+
+/** Why a login is leaving this device. */
+export type LeavingReason = "limit" | "auth" | "user" | "pin" | "idle" | "keeper" | "removed" | "superseded";
+export interface LoginLeaving { v: 1; at: number; reason: LeavingReason }
+const LEAVING_REASONS: readonly LeavingReason[] = ["limit", "auth", "user", "pin", "idle", "keeper", "removed", "superseded"];
+
+/** The login's `.sova-leaving` mark, or undefined. Unreadable = leaving (fail closed). */
+export function readLeaving(agentDir: string, id: string): LoginLeaving | undefined {
+	let raw: string;
+	try { raw = fs.readFileSync(path.join(loginDir(agentDir, id), LEAVING_FILE_NAME), "utf8"); }
+	catch (error) { return (error as NodeJS.ErrnoException).code === "ENOENT" ? undefined : { v: 1, at: 0, reason: "user" }; }
+	try {
+		const json = JSON.parse(raw);
+		return { v: 1, at: typeof json?.at === "number" ? json.at : 0, reason: LEAVING_REASONS.includes(json?.reason) ? json.reason : "user" };
+	} catch { return { v: 1, at: 0, reason: "user" }; }
+}
+/** Mark a login as leaving (kept if already marked: the first reason stands). */
+export function markLeaving(agentDir: string, id: string, reason: LeavingReason, now = Date.now()): LoginLeaving {
+	const existing = readLeaving(agentDir, id);
+	if (existing) return existing;
+	const mark: LoginLeaving = { v: 1, at: now, reason };
+	const dir = loginDir(agentDir, id);
+	if (fs.existsSync(dir)) writeJsonAtomic(path.join(dir, LEAVING_FILE_NAME), mark, 0o600);
+	return mark;
+}
+export function clearLeaving(agentDir: string, id: string): void {
+	try { fs.rmSync(path.join(loginDir(agentDir, id), LEAVING_FILE_NAME), { force: true }); } catch { /* gone */ }
+}
+
+/** Whether a process exists (a zombie counts; EPERM = someone else's, alive). */
+export function pidAlive(pid: number): boolean {
+	if (!Number.isInteger(pid) || pid <= 0) return false;
+	try { process.kill(pid, 0); return true; }
+	catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; }
+}
+
+/** One process's use of one login: `<login dir>/.sova-leases/<owner pid>.json`. */
+export interface LoginLease {
+	v: 1;
+	owner: number;
+	/** Users registered (a chat child, a worker, a one-shot). */
+	users: number;
+	/** Of those, in a turn or task now. */
+	busy: number;
+	/** The `claude` process ids those users run. */
+	children: number[];
+	/** Last time any of them was busy (ms epoch). */
+	lastActiveAt: number;
+	/** When the owner last wrote this file. */
+	at: number;
+}
+/** Every process's use of a login, as the pool agent reads it. */
+export interface LoginUse {
+	/** Some process on this host still runs (or keeps) `claude` on the login. */
+	inUse: boolean;
+	busy: boolean;
+	lastActiveAt: number;
+	/** Live `claude` pids on the login (orphans of a dead owner included). */
+	children: number[];
+}
+/**
+ * Whether `pid` is still a process on the login directory `dir`: alive, and (Linux) its environment
+ * names `dir` as CLAUDE_CONFIG_DIR — a lease's child pid that has been reused by an unrelated
+ * process is not, so it neither holds the login nor gets stopped at a drain's cut. Elsewhere,
+ * liveness alone.
+ */
+export function claudeRunsOn(pid: number, dir: string): boolean {
+	if (!pidAlive(pid)) return false;
+	if (process.platform !== "linux") return true;
+	let env: string;
+	try { env = fs.readFileSync(`/proc/${pid}/environ`, "latin1"); } catch { return false; }
+	return `\0${env}\0`.includes(`\0CLAUDE_CONFIG_DIR=${dir}\0`);
+}
+export function readLoginUse(
+	agentDir: string, id: string, alive: (pid: number) => boolean = pidAlive, now = Date.now(),
+	runsOn: (pid: number, dir: string) => boolean = claudeRunsOn,
+): LoginUse {
+	const home = loginDir(agentDir, id);
+	const dir = path.join(home, LEASES_DIR_NAME);
+	const use: LoginUse = { inUse: false, busy: false, lastActiveAt: 0, children: [] };
+	let names: string[] = [];
+	try { names = fs.readdirSync(dir); } catch { return use; }
+	for (const name of names) {
+		if (!/^\d+\.json$/.test(name)) continue;
+		let lease: LoginLease;
+		try { lease = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8")); } catch { continue; }
+		const kids = Array.isArray(lease.children) ? [...new Set(lease.children)].filter((pid) => Number.isInteger(pid) && alive(pid) && runsOn(pid, home)) : [];
+		const ownerAlive = typeof lease.at === "number" && now - lease.at <= LEASE_STALE_MS && alive(lease.owner);
+		if (!ownerAlive && !kids.length) {
+			try { fs.rmSync(path.join(dir, name), { force: true }); } catch { /* best effort */ }
+			continue;
+		}
+		if (typeof lease.lastActiveAt === "number") use.lastActiveAt = Math.max(use.lastActiveAt, lease.lastActiveAt);
+		if (ownerAlive && lease.users > 0) use.inUse = true;
+		if (ownerAlive && lease.busy > 0) use.busy = true;
+		if (kids.length) { use.inUse = true; use.children.push(...kids); }
+	}
+	return use;
+}
+
+/** Something in this process that runs `claude` on a login (a chat child, a worker, a one-shot). */
+export interface LoginUser {
+	busy(): boolean;
+	/** Stop using the login (the login is leaving): called once, only while not busy. */
+	release(): void | Promise<void>;
+	/** The `claude` pid it runs now, if any. */
+	pid(): number | undefined;
+}
+interface Registered { agentDir: string; login: string; user: LoginUser; lastActiveAt: number; released: boolean }
+
+/**
+ * This process's users of added logins, per login: writes their leases and, every LEASE_TICK_MS,
+ * releases the idle users of a login that is leaving. One per process (a `globalThis` singleton,
+ * like the bridge), so a `/reload` never forks it.
+ */
+export class LoginUsers {
+	private readonly users = new Set<Registered>();
+	private timer?: ReturnType<typeof setInterval>;
+	private readonly now: () => number;
+	private readonly tickMs: number;
+	constructor(now: () => number = Date.now, tickMs = LEASE_TICK_MS) {
+		this.now = now;
+		this.tickMs = tickMs;
+	}
+
+	/** Register a user of `login` (never `default`); the returned function unregisters it. */
+	add(agentDir: string, login: string, user: LoginUser): { done(): void; active(): void } {
+		const entry: Registered = { agentDir, login, user, lastActiveAt: this.now(), released: false };
+		this.users.add(entry);
+		this.write(agentDir, login);
+		this.arm();
+		return {
+			done: () => { if (this.users.delete(entry)) this.write(agentDir, login); if (!this.users.size) this.disarm(); },
+			active: () => { entry.lastActiveAt = this.now(); this.write(agentDir, login); },
+		};
+	}
+	/** Rewrite every lease and release idle users of leaving logins; the ticker calls it. */
+	tick(): void {
+		const keys = new Map<string, { agentDir: string; login: string }>();
+		for (const entry of this.users) {
+			keys.set(`${entry.agentDir}\u0000${entry.login}`, entry);
+			if (entry.user.busy()) { entry.lastActiveAt = this.now(); continue; }
+			if (entry.released) continue;
+			let leaving: LoginLeaving | undefined;
+			try { leaving = readLeaving(entry.agentDir, entry.login); } catch { leaving = undefined; }
+			if (!leaving) continue;
+			entry.released = true;
+			try { void Promise.resolve(entry.user.release()).catch(() => { /* the owner reports it */ }); } catch { /* ditto */ }
+		}
+		for (const { agentDir, login } of keys.values()) this.write(agentDir, login);
+	}
+	private write(agentDir: string, login: string): void {
+		const mine = [...this.users].filter((u) => u.agentDir === agentDir && u.login === login);
+		let file: string;
+		try { file = path.join(loginDir(agentDir, login), LEASES_DIR_NAME, `${process.pid}.json`); } catch { return; }
+		try {
+			if (!mine.length) { fs.rmSync(file, { force: true }); return; }
+			if (!fs.existsSync(loginDir(agentDir, login))) return;
+			const lease: LoginLease = {
+				v: 1, owner: process.pid, users: mine.length,
+				busy: mine.filter((u) => { try { return u.user.busy(); } catch { return false; } }).length,
+				children: mine.map((u) => u.user.pid()).filter((pid): pid is number => typeof pid === "number"),
+				lastActiveAt: Math.max(...mine.map((u) => u.lastActiveAt)),
+				at: this.now(),
+			};
+			writeJsonAtomic(file, lease, 0o600);
+		} catch { /* a lease we cannot write: the drain's bound still applies */ }
+	}
+	private arm(): void {
+		if (this.timer) return;
+		this.timer = setInterval(() => this.tick(), this.tickMs);
+		this.timer.unref?.();
+	}
+	private disarm(): void {
+		if (this.timer) clearInterval(this.timer);
+		this.timer = undefined;
+	}
+	/** Tests: how many users are registered. */
+	get size(): number { return this.users.size; }
+}
+const LOGIN_USERS = Symbol.for("pi-config.claude-code.login-users");
+/** The process-wide LoginUsers. */
+export function loginUsers(): LoginUsers {
+	const host = globalThis as unknown as Record<symbol, LoginUsers | undefined>;
+	return host[LOGIN_USERS] ??= new LoginUsers();
+}
+
+/** A borrow request: `<agent dir>/claude-pool/wants/<pid>-<rand>.json`. */
+export interface LoginWant { v: 1; at: number; pid: number; excludeAccounts?: string[]; excludeLogins?: string[] }
+export const wantsDir = (agentDir: string): string => path.join(agentDir, POOL_DIR_NAME, "wants");
+export const poolAgentPath = (agentDir: string): string => path.join(agentDir, POOL_DIR_NAME, "agent.json");
+/** Whether this host's pool agent (Sova's server, mesh on) is running: its heartbeat is fresh and its pid alive. */
+export function poolAgentAlive(agentDir: string, now = Date.now()): boolean {
+	try {
+		const beat = JSON.parse(fs.readFileSync(poolAgentPath(agentDir), "utf8"));
+		return typeof beat?.at === "number" && now - beat.at < POOL_AGENT_FRESH_MS && pidAlive(beat.pid);
+	} catch { return false; }
+}
+export function readWants(agentDir: string): Array<{ file: string; want: LoginWant }> {
+	const dir = wantsDir(agentDir);
+	let names: string[] = [];
+	try { names = fs.readdirSync(dir); } catch { return []; }
+	const out: Array<{ file: string; want: LoginWant }> = [];
+	for (const name of names.sort()) {
+		if (!name.endsWith(".json")) continue;
+		const file = path.join(dir, name);
+		try {
+			const w = JSON.parse(fs.readFileSync(file, "utf8"));
+			if (typeof w?.at !== "number" || typeof w?.pid !== "number") continue;
+			const list = (v: unknown) => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 64) : undefined;
+			out.push({ file, want: { v: 1, at: w.at, pid: w.pid, ...(list(w.excludeAccounts) ? { excludeAccounts: list(w.excludeAccounts)! } : {}), ...(list(w.excludeLogins) ? { excludeLogins: list(w.excludeLogins)! } : {}) } });
+		} catch { /* half-written or gone */ }
+	}
+	return out;
+}
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// ---------------------------------------------------------------------------
 // Notices
 // ---------------------------------------------------------------------------
 
@@ -484,6 +806,12 @@ export interface ClaudeLoginsOptions {
 	agentDir?: string;
 	env?: NodeJS.ProcessEnv;
 	now?: () => number;
+	/** How long a spawn waits for a borrow (WANT_WAIT_MS). */
+	wantWaitMs?: number;
+	/** How often it looks while it waits. */
+	wantPollMs?: number;
+	/** Where users are tracked (the process-wide loginUsers() by default). */
+	users?: LoginUsers;
 }
 
 /**
@@ -494,22 +822,31 @@ export class ClaudeLogins {
 	readonly agentDir: string;
 	private readonly env: NodeJS.ProcessEnv;
 	private readonly now: () => number;
+	private readonly wantWaitMs: number;
+	private readonly wantPollMs: number;
+	private readonly users: () => LoginUsers;
 	constructor(options: ClaudeLoginsOptions = {}) {
 		this.env = options.env ?? process.env;
 		this.agentDir = options.agentDir ?? defaultAgentDir(this.env);
 		this.now = options.now ?? Date.now;
+		this.wantWaitMs = options.wantWaitMs ?? WANT_WAIT_MS;
+		this.wantPollMs = options.wantPollMs ?? 250;
+		this.users = options.users ? () => options.users! : loginUsers;
 	}
-	get defaultDir(): string { return defaultClaudeDir(this.env); }
+	/** Whether the pool is on here (the mesh is): only logins held here are used. */
+	get pool(): boolean { return poolActive(this.agentDir); }
+	get defaultDir(): string { return defaultClaudeDir(this.env, this.agentDir); }
 	get device(): string { return thisDeviceId(this.agentDir, this.env); }
 	accounts(): ClaudeAccountsFile { return readAccounts(this.agentDir).value; }
 	dirOf(id: string): string { return id === DEFAULT_LOGIN_ID ? this.defaultDir : loginDir(this.agentDir, id); }
 	identityOf(id: string, accounts = this.accounts()): ClaudeLoginIdentity | null {
-		if (id === DEFAULT_LOGIN_ID) return readIdentityFile(claudeJsonPath(this.defaultDir, true, this.env));
+		if (id === DEFAULT_LOGIN_ID) return readIdentityFile(claudeJsonPath(this.defaultDir, true, this.env, this.agentDir));
 		return accounts.logins.find((l) => l.id === id)?.identity ?? null;
 	}
 	/** The choice for an id this host may use, or undefined. */
 	choice(id: string, accounts = this.accounts()): ClaudeLoginChoice | undefined {
-		if (id !== DEFAULT_LOGIN_ID && !accounts.logins.some((l) => l.id === id && assignedHere(l.device, this.device))) return undefined;
+		const pool = this.pool;
+		if (id !== DEFAULT_LOGIN_ID && !accounts.logins.some((l) => l.id === id && heldHere(l.device, this.device, pool))) return undefined;
 		const identity = this.identityOf(id, accounts);
 		const record = accounts.logins.find((l) => l.id === id);
 		const label = record?.label ?? identity?.email ?? (id === DEFAULT_LOGIN_ID ? "default" : id);
@@ -520,12 +857,34 @@ export class ClaudeLogins {
 			...(identity?.accountUuid ? { accountUuid: identity.accountUuid } : {}),
 		};
 	}
-	order(accounts = this.accounts()): string[] { return deviceOrder(accounts, this.device); }
+	order(accounts = this.accounts()): string[] { return deviceOrder(accounts, this.device, this.pool); }
+	/** Whether a login is on its way to another device (`.sova-leaving`): never chosen then. */
+	leaving(id: string): boolean {
+		if (id === DEFAULT_LOGIN_ID || !isLoginId(id)) return false;
+		return readLeaving(this.agentDir, id) !== undefined;
+	}
+	/**
+	 * Lease a short-lived `claude` (model discovery, the summarizer) spawned with `env`: it counts
+	 * as busy on its login until it exits, so no login leaves under it. Nothing for `default`.
+	 */
+	leaseChild(env: Record<string, string | undefined>, child: { pid?: number; once(event: "exit", listener: () => void): unknown }): void {
+		const dir = env.CLAUDE_CONFIG_DIR;
+		if (!dir || path.dirname(dir) !== path.join(this.agentDir, ACCOUNTS_DIR_NAME) || !isLoginId(path.basename(dir))) return;
+		try {
+			const lease = this.track(path.basename(dir), { busy: () => true, release: () => { /* it ends by itself */ }, pid: () => child.pid });
+			child.once("exit", () => lease.done());
+		} catch { /* no lease: the drain's bound still applies */ }
+	}
+	/** Register a process's use of a login (a chat child, a worker): its lease, and its release when the login leaves. */
+	track(id: string, user: LoginUser): { done(): void; active(): void } {
+		if (id === DEFAULT_LOGIN_ID || !isLoginId(id)) return { done() { /* default never moves */ }, active() { /* ditto */ } };
+		return this.users().add(this.agentDir, id, user);
+	}
 	readinessOf(id: string, state = readAccountsState(this.agentDir)): ClaudeLoginReadiness {
 		return readiness(state.logins[id], this.dirOf(id), this.now());
 	}
 	private usable(id: string, accounts: ClaudeAccountsFile, state: ClaudeAccountsState): boolean {
-		return loginEnabled(accounts, this.device, id) && this.readinessOf(id, state).state === "ready";
+		return loginEnabled(accounts, this.device, id) && this.readinessOf(id, state).state === "ready" && !this.leaving(id);
 	}
 	/**
 	 * The login a spawn runs on: `current` while it is still usable here, else the first usable
@@ -552,15 +911,79 @@ export class ClaudeLogins {
 	 */
 	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): ClaudeLoginChoice | undefined {
 		this.recordFailure(from, failure);
+		const next = this.nextAfter(from, failure, true);
+		return next ? this.choice(next) : undefined;
+	}
+	/** The next usable login after `from` in this device's order (`default` only when `withDefault`). */
+	private nextAfter(from: ClaudeLoginChoice, failure: ClaudeAccountFailure, withDefault: boolean): string | undefined {
 		const accounts = this.accounts();
 		const state = readAccountsState(this.agentDir);
 		const account = from.accountUuid;
-		const next = this.order(accounts).find((id) => {
+		return this.order(accounts).find((id) => {
 			if (id === from.id || !this.usable(id, accounts, state)) return false;
+			if (!withDefault && id === DEFAULT_LOGIN_ID) return false;
 			if (failure.kind === "limit" && account && this.identityOf(id, accounts)?.accountUuid === account) return false;
 			return true;
 		});
-		return next ? this.choice(next, accounts) : undefined;
+	}
+	/** The first usable added login held here, not excluded; undefined when there is none. */
+	private firstHeld(excludeAccounts: readonly string[] = [], excludeLogins: readonly string[] = []): string | undefined {
+		const accounts = this.accounts();
+		const state = readAccountsState(this.agentDir);
+		return this.order(accounts).find((id) => id !== DEFAULT_LOGIN_ID && !excludeLogins.includes(id)
+			&& this.usable(id, accounts, state)
+			&& !(excludeAccounts.length && excludeAccounts.includes(this.identityOf(id, accounts)?.accountUuid ?? "\u0000")));
+	}
+	/**
+	 * `select`, but a spawn that would fall back to `default` (no usable added login held here)
+	 * first asks this host's pool agent to borrow one and waits for it (only while the pool is on
+	 * and the agent runs). What chat children and workers start on.
+	 */
+	async acquire(current?: string): Promise<ClaudeLoginChoice> {
+		const accounts = this.accounts();
+		const id = this.selectId(current, accounts);
+		if (id !== DEFAULT_LOGIN_ID && this.usable(id, accounts, readAccountsState(this.agentDir))) return this.select(current);
+		if (this.firstHeld() === undefined && this.pool && poolAgentAlive(this.agentDir, this.now())) await this.borrow({});
+		return this.select(current);
+	}
+	/**
+	 * A failure on `from` while the pool is on: `from` goes back (it leaves this device, with its
+	 * standing), and the turn moves to the next usable login held here, else to one borrowed now
+	 * (not of the same account on a limit), else to `default`. With the pool off: `failover`.
+	 */
+	async failoverAsync(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): Promise<ClaudeLoginChoice | undefined> {
+		if (!this.pool) return this.failover(from, failure);
+		this.recordFailure(from, failure);
+		if (from.id !== DEFAULT_LOGIN_ID && isLoginId(from.id)) {
+			try { markLeaving(this.agentDir, from.id, failure.kind, this.now()); } catch { /* the agent sees the standing */ }
+		}
+		const excludeAccounts = failure.kind === "limit" && from.accountUuid ? [from.accountUuid] : [];
+		let next = this.nextAfter(from, failure, false);
+		if (!next && poolAgentAlive(this.agentDir, this.now())) {
+			await this.borrow({ excludeAccounts, excludeLogins: [from.id] });
+			next = this.nextAfter(from, failure, false);
+		}
+		next ??= this.nextAfter(from, failure, true);
+		return next ? this.choice(next) : undefined;
+	}
+	/** Write a borrow request and wait until a usable login is held here, the agent answered, or the wait ends. */
+	private async borrow(want: { excludeAccounts?: string[]; excludeLogins?: string[] }): Promise<void> {
+		const dir = wantsDir(this.agentDir);
+		const file = path.join(dir, `${process.pid}-${randomBytes(4).toString("hex")}.json`);
+		try {
+			fs.mkdirSync(dir, { recursive: true });
+			writeJsonAtomic(file, { v: 1, at: this.now(), pid: process.pid, ...want } satisfies LoginWant, 0o600);
+		} catch { return; }
+		const until = Date.now() + this.wantWaitMs;
+		try {
+			while (Date.now() < until) {
+				if (this.firstHeld(want.excludeAccounts, want.excludeLogins) !== undefined) return;
+				if (!fs.existsSync(file)) return; // the agent answered: borrowed (seen above next time) or none to lend
+				await sleep(this.wantPollMs);
+			}
+		} finally {
+			try { fs.rmSync(file, { force: true }); } catch { /* gone */ }
+		}
 	}
 	recordFailure(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): void {
 		const now = this.now();

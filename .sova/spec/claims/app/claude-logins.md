@@ -10,8 +10,11 @@ program that signs in, refreshes and signs out: Sova runs `claude` in the login'
 never reads or writes a token itself.
 
 Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR` when the server has one) is
-the implicit login `default`. It is always present, never moved, and never written by any of
-this. With no other login added, everything behaves as before: every `claude` process runs on
+the implicit login `default`. A `$CLAUDE_CONFIG_DIR` that names an added login's directory (anything
+under `claude-accounts/` of the agent dir or of pi's default `~/.pi/agent`, followed through links)
+is not: that is what every `claude` Sova runs on an added login passes down to its tools, so a
+process started under one (a pi, a Sova) takes `~/.claude` for `default`. It is always present, never moved, never in the pool
+(§app.claude-logins/pool), never written by any of this, and always the device's last resort. With no other login added, everything behaves as before: every `claude` process runs on
 `default`; a Claude Code chat's first turn records that it runs on `default` in a hidden entry,
 which nothing shows.
 
@@ -33,7 +36,8 @@ is the subscription (`subscriptionType`, else the organization type without its 
 such as `max`), never the billing type (`stripe_subscription`); every surface shows it as people
 say it, from the rate-limit tier when it names one ("Max 20x"), else from the plan ("Max",
 "Pro"), and shows no plan for anything else. The identity names no token. `default`'s identity is read the same way from Claude Code's own
-`.claude.json` (`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json`), and never stored.
+`.claude.json` (`~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json` when that directory is
+`default`'s), and never stored.
 
 A login's directory is `<agent dir>/claude-accounts/<id>/`, mode 0700, derived from the id and
 never stored. Inside it, `projects/`, `settings.json`, `CLAUDE.md`, `agents/`, `commands/`,
@@ -41,15 +45,32 @@ never stored. Inside it, `projects/`, `settings.json`, `CLAUDE.md`, `agents/`, `
 when it exists there; `projects/` always, created there if missing). So every login writes its
 Claude session records into the one shared `projects/`: `--resume` after a switch finds the
 session, and every transcript and usage reader keeps reading one place. The links are repaired
-whenever a login is used.
+whenever a login is used: a repair replaces a link that points elsewhere (the link itself, never
+what it pointed to), leaves a real file or directory alone, never makes a link whose target lies
+inside the login's own directory, and refuses a `default` directory that is itself under
+`claude-accounts/`, before writing anything.
 
-**Devices.** A login is assigned to at most one device (`device`), and each device has its own
-ordered list of logins (`devices[<device id>].order`, which may include `default`, and
+**Devices.** A login is assigned to at most one device (`device`): the device that holds it. While
+the mesh is on, `null` means this host keeps it free for lending (§app.claude-logins/keeper) and
+never runs it; with the mesh off, a login kept here is used like one assigned here. Each device has
+its own ordered list of logins (`devices[<device id>].order`, which may include `default`, and
 `defaultEnabled`). This host's device id is `SOVA_DEVICE_ID` when set, else its mesh id (`self.id`
 in `<agent dir>/sova/peers.json`) when it has one, else `local`; a login assigned to `local`
 belongs to this host, and a device entry kept under `local` moves to the mesh id at the next change. Only logins
 assigned to this host are ever used here. A login this host has no order entry for comes after the
-ordered ones, in the order they were added; `default` comes first unless the order places it.
+ordered ones, in the order they were added; `default` always comes last, wherever the order places
+it: Claude Code's own login is the last resort.
+
+**Accounts, then logins.** Every order — a device's, and the pool's (§app.claude-logins/pool) —
+keeps the logins of one account (the same `accountUuid`) together: each account sits where its
+first login falls, and its logins follow in their order; a login with no known account is an
+account of its own. An order saved or merged that splits an account is read that way, so every
+reader (selection, failover, lending, both pages) sees one order: accounts first, then the logins
+inside each. After a failed sign-in, the next login tried is therefore the same account's next one.
+
+**Names.** A login's name is its `label`; without one it is "Login N", N being its place among
+its account's logins by when they were added (the oldest is "Login 1"); `default` is "Claude
+Code's own login". A label is at most 80 characters; an empty one is removed.
 
 ## §app.claude-logins/add-remove — Adding and removing a login
 
@@ -61,7 +82,11 @@ variables that would override a login (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKE
 code is written to the process as one line; a code Claude Code refuses as malformed ("Invalid
 code") keeps the flow waiting for another. Once Claude Code exits successfully and the directory
 holds `.credentials.json`, the login is added to the registry, assigned to this host,
-appended to its order, enabled, and shown with its email, organization and plan. A flow that
+appended to its order, enabled, and shown with its email, organization and plan; while the mesh is
+on it joins the pool, held by this device. **Sign In Again** on a login of the pool runs the same
+flow for that login's id (`POST /api/claude/accounts/flow` `{login}`) in a fresh directory, moves the
+new credentials into the login's directory here on success, and makes this device its holder
+(§app.claude-logins/stuck). A flow that
 fails, is cancelled, or is left alone for 10 minutes kills the process and deletes the new
 directory; nothing is added. At most one flow runs at a time.
 
@@ -70,28 +95,43 @@ shares that account's usage limits, so it only helps when the other login's sign
 
 **Remove** asks first, then runs `claude auth logout` in the login's directory (bounded; its
 failure does not stop the removal), deletes the directory, and drops the login from the registry
-and from every device's order. `default` cannot be removed.
+and from every device's order. While the mesh is on it also removes the login from the pool; when
+another device holds it, that device stops every process on it and deletes its copy as plain files,
+without signing out. `default` cannot be removed.
 
 ## §app.claude-logins/device-order — This device's order, and which logins it may use
 
-Settings → Accounts lists this host's logins in its order, `default` included, each with its
-label or email, organization and plan; a login that shares its account with another row says so,
-and that the two share usage limits. Each row can move up or down, be switched off or on (**Use**,
-`enabled`; off = never chosen automatically), and be removed (not `default`). A row shows the
-login's standing on this host as a chip: **Ready**, **Off**, **Limited until** a time (`resetsAt`),
-**Sign in again**, or **Not signed in** (its directory holds no credentials). A limited or
-sign-in-again row has **Clear**, which forgets that standing. Every change is saved at once.
+With the mesh off, Settings → Accounts lists this host's added logins in its order as **one block
+per account** (§app.claude-logins/registry, **Accounts, then logins**): the block's head names the
+account (its email, else "Unknown account"), its organization and plan, and, with more than one
+login, "{n} logins share one quota"; its **Up** / **Down** move the whole account. Inside, each
+login is a compact row: its name (§app.claude-logins/registry, **Names**) and "added {date}",
+its standing chip, and its controls; with more than one login in the account, its own **Up** /
+**Down** move it inside the account only. The name is renamed in place: **Rename** turns it into a
+field with **Save Name** and **Cancel**; Enter or **Save Name** saves it as the login's `label`
+(`PATCH /api/claude/accounts/:id` `{label}`), Escape or **Cancel** leaves it (and Settings stays
+open), and an empty name goes back to "Login N". A login's controls are named with its account
+("Rename Login 1 of a@example.com"), so two accounts' "Login 1" never share a name. A login can be
+switched off or on (**Use**, `enabled`; off = never chosen automatically) and removed. Its standing on this host is a chip: **Ready**, **Off**, **Limited until** a time
+(`resetsAt`), **Sign in again**, or **Not signed in** (its directory holds no credentials). A
+limited or sign-in-again login has **Clear**, which forgets that standing. Under the blocks,
+**This device's own login** lists `default` (always last) with its email, organization and plan,
+its standing, **Use** and **Clear**, and, when its account is also one of the blocks, that it shares
+that account's quota. Every change is saved at once.
 
 ## §app.claude-logins/spawn-selection — Every `claude` process runs on one login
 
 Every `claude` process Sova or its extensions start runs on exactly one login, by setting
-`CLAUDE_CONFIG_DIR` to that login's directory (or leaving the environment as it was, for
-`default`): the Claude Code chat provider's child for a session, claude-code workers (including a
+`CLAUDE_CONFIG_DIR` to that login's directory (or, for `default`, leaving the environment as it
+was, less an inherited `CLAUDE_CONFIG_DIR` that names an added login's directory): the Claude Code chat provider's child for a session, claude-code workers (including a
 worker's detached host), model discovery (the extension's and the server's), the server's
 `claude --version` check, and the topic-outline summarizer.
 
-The login is **this host's first usable login in its order**: enabled, assigned here, and neither
-limited nor needing sign-in. A chat session records the login its child runs on in a hidden
+The login is **this host's first usable login in its order**: enabled, assigned here, neither
+limited nor needing sign-in, and not leaving this device (§app.claude-logins/drain). While the mesh
+is on, a chat's child or a worker that would otherwise start on `default` (nothing else usable here)
+first asks this host's Sova to borrow a login (§app.claude-logins/borrow-return) and waits for it, up
+to 30 seconds and only while that Sova's pool agent runs. A chat session records the login its child runs on in a hidden
 `claude-login` custom entry (`{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}`),
 written when the session's child first starts on a login (`default` included: a session with no
 entry records the login it starts on) and whenever the login then differs from the session's last
@@ -122,7 +162,10 @@ to see whether it has recovered.
 
 On a failure, a chat turn or a claude-code worker moves to the next usable login in this host's
 order, skipping, for a limit, every login of the same account (an auth failure may move to another
-login of the same account):
+login of the same account). While the mesh is on, the failed login also goes back to the keeper
+with its standing (§app.claude-logins/borrow-return), and when no other added login is usable here
+the next one is borrowed first (not of the same account on a limit); `default` comes only after
+that:
 
 - **Chat session.** If the provider has not yet streamed anything for the turn, the session's
   child is restarted on the new login the way a model change restarts it (the history folded into
@@ -182,7 +225,7 @@ its first usable login in the device's order.
 
 A tab in Settings, **Accounts**, between Models and Modes. Its **Claude Logins** section says that
 every Claude process on this device (its mesh name, or "This device") runs on the first ready
-login in the order, then lists the logins (§app.claude-logins/device-order); Remove asks inline
+login in the order, then lists the logins by account (§app.claude-logins/device-order); Remove asks inline
 what goes away and what stays. Under the list, **Add a login** (§app.claude-logins/add-remove) is
 a panel with four states: starting ("Starting Claude Code's sign-in…"); waiting for the code (the
 URL as a link with **Copy Link**, a **Code** field, **Finish Sign-In** and **Cancel**, and the
@@ -191,8 +234,119 @@ plan, whether it shares an account already here, and **Done**); failed (the reas
 added.", **Close** and **Try Again**). Closing Settings cancels a flow still waiting for its code.
 No token or credential is ever shown or sent to the browser.
 
+**While the mesh is on** the section is the pool (§app.claude-logins/pool): an intro that every
+device shares these logins, one at a time, borrowed from the keeper and given back after a limit,
+on request or after 30 minutes idle, with Claude Code's own login as each device's last resort; a
+**Keeper** select (every device, this one marked, an offline one marked; a hint that says what the
+keeper does, or that nobody can borrow while it is offline); then every login of the pool in the
+pool's order, as one block per account like the mesh-off list (§app.claude-logins/device-order):
+the head with the account's email, organization, plan, "{n} logins share one quota" and the
+account's latest published usage ("5h 42% · weekly 18%", its logins sharing one quota), and **Up**
+/ **Down** for the whole account; each login a compact row with its name and "added {date}" (renamed
+in place the same way; the label is the pool's, so every device shows it and the device holding the
+login writes it into its registry), a move under way ("Leaving this device (hit its limit):
+waiting for its Claude processes to finish", "Returning after the current turn", …), a holder chip
+(**This device**, the holding device's name, **Free**, or **Stuck on** a device) and its standing
+chip, and the controls: a pin select (**No pin** / **Pin to** each device), **Return** (a held login
+not already leaving), **Sign In Again** (stuck, or needing sign-in), Up / Down inside its account
+(with more than one login), **Use**, **Clear** and **Remove** (which says it leaves the pool on
+every device). Under it,
+**This device's own login** lists `default` with its standing and **Use**. **Add a login** says the
+new login starts on this device and joins the pool. The Mesh page names, on each host's line, the
+login it holds ("Claude: {email}", "+N" for more) or "No Claude login", as a link that opens this
+tab.
+
 REST, reachable like the other settings routes: `GET /api/claude/accounts`,
 `POST /api/claude/accounts/flow` (start), `POST /api/claude/accounts/flow/code` `{code}`,
 `DELETE /api/claude/accounts/flow`, `PUT /api/claude/accounts/order` `{order}`,
 `PATCH /api/claude/accounts/:id` `{enabled?, label?}`, `POST /api/claude/accounts/:id/clear` and
-`DELETE /api/claude/accounts/:id`. A malformed registry answers 409 to every change.
+`DELETE /api/claude/accounts/:id`; while the mesh is on, also `PUT /api/claude/pool/keeper`
+`{device}`, `PUT /api/claude/pool/order` `{order}`, `PATCH /api/claude/pool/:id` `{pin}` and
+`POST /api/claude/pool/:id/return` (409 while the mesh is off), and `GET /api/claude/accounts`
+carries the pool (`pool`). A malformed registry answers 409 to every change.
+
+## §app.claude-logins/pool — One pool of logins across the mesh
+
+While the mesh is on (§mesh.peers/off), the added Claude logins of every device form **one pool**.
+A login (one refresh chain) is on exactly one device at a time: never copied to a second device
+while it can run there. The pool is a document every device keeps and syncs over the peer
+listener: each login's identity (email, account, organization, plan; never a token), label,
+**Use**, pin, standing (limited until a time, or needs sign-in, as its last holder reported it),
+the holder's latest usage reading, and its **holder**: the device that has its credentials and
+whether that device uses it (**held**) or keeps it for lending (**free**). It also records the
+pool's order and which device is the **keeper**. Each field merges on its own, the newest edit
+winning, so edits made on two devices to different fields or logins both survive; the holder
+merges by a counter that only the device that has the credentials advances, so every device
+converges on the true holder. A login can be added from any device; it starts held by that device.
+The pool's order keeps each account's logins together (§app.claude-logins/registry). A device
+follows the document for the logins it holds: their label, **Use** and order (the pool's order)
+are written into its registry when they differ, so a rename, a switch or a move made on any device
+reaches the spawns and the chats of the device that runs the login.
+
+## §app.claude-logins/keeper — The keeper
+
+One device, the **keeper**, stores the credentials of every free login and never runs `claude` on
+them. The user chooses it in Settings → Accounts; by default it is the device that already had
+logins when the pool was first formed (the desktop that runs Sova), else the first device that adds
+one. When the keeper changes, the old keeper hands each free login it keeps to the new one, the same
+way a login is returned. While the keeper is offline no device can borrow; devices that hold a login
+keep working on it.
+
+## §app.claude-logins/borrow-return — Borrowing and returning, safe across crashes
+
+A device that needs Claude and holds no usable login **borrows** a free one from the keeper, with no
+per-device setup: the keeper offers the first free login in the pool's order that is enabled, not
+pinned to another device, not limited (its account's limit not yet reset) and not needing sign-in —
+a login pinned to the asking device first — and the credentials travel host to host over the peer
+listener only, never through a browser. The move is two-phase: the borrower stores the offered
+credentials aside, unused, and only after the keeper confirms, having dropped and deleted its own
+copy, does the borrower start using them. A device **returns** its login with its current
+(possibly refreshed) credentials on a usage limit or a failed sign-in, when the user asks (after
+the current turn), when it is pinned to another device, or when it has been idle for 30 minutes.
+Before a login leaves a device, no new `claude` process there may take it and every running one
+must stop (§app.claude-logins/drain); the device then sends it to the keeper and, once the keeper
+has stored it, deletes its own copy as plain files — never `claude auth logout`. Each device keeps
+a journal of every step it has started, so a crash or a lost reply at any step is finished or undone
+when it restarts or the other device comes back: at no point can two devices run the same login,
+and at no point is a login lost. A return the keeper cannot take yet (offline) waits, with the
+login unused, and is retried when the keeper comes back.
+
+## §app.claude-logins/drain — Every process on a login stops before it leaves
+
+Every process that runs `claude` on an added login — a chat's child (in Sova or in a TUI), a
+claude-code worker, model discovery, the topic summarizer — is tracked per login, with whether it
+is in the middle of a turn. On Linux, a `claude` process that keeps no such record (one started
+before this version, or by hand with `CLAUDE_CONFIG_DIR` set to the login's directory) is found by
+that variable and counts as busy: its login is not lent, not returned for idleness, and at a cut it
+is stopped too. When a login starts leaving a device, a chat's idle child on it is
+stopped (its next turn starts on the device's next login, as after a model change), an idle worker
+restarts on the next login with `--resume` of its own session, and a busy one does the same as soon
+as its turn or task ends. A login leaves once none of them runs on it. If some still do after a
+bound (2 minutes after a limit, a failed sign-in or idleness; 15 minutes when the user asked or a
+pin moved it), their `claude` processes are stopped and each continues on the next login.
+What a process that has exited left behind holds nothing: its record counts only while its owner
+still renews it (at least once a minute) or, on Linux, through a `claude` process that still runs
+on that login's directory — a process id since reused by anything else is neither counted nor
+stopped.
+
+## §app.claude-logins/idle-pin — Idle return and pinning
+
+A held login that no `claude` process on its device has used for 30 minutes goes back to the
+keeper. **Pin** ("always give this login to device X") is the only per-device setting: the keeper
+lends a pinned login only to its device, that device takes it as soon as it is free and ready, a
+device holding a login pinned elsewhere returns it after the current turn, and a pinned login is
+never returned for idleness (a limit still returns it; its device takes it back after the reset).
+
+## §app.claude-logins/stuck — A holder that went away
+
+A login held by a device that is offline is shown **Stuck on** that device. Nobody reclaims it: it
+becomes free again when that device comes back (and returns it), or when the user signs that login
+in again on another device, which then holds it; the offline device, once back, deletes its old copy
+(after stopping every process on it) instead of returning it.
+
+## §app.claude-logins/migration — Forming the pool from existing logins
+
+When the mesh is on and the pool first forms, every login already on a device stays there, held by
+that device, in its order, and that device becomes the keeper if none is chosen. Nothing is signed
+out, moved or deleted by forming the pool. With the mesh off there is no pool: the device is its own
+keeper and holder, and every login on it is used as before (§app.claude-logins/spawn-selection).

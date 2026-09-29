@@ -42,7 +42,10 @@ children, model discovery) runs on one Claude login, chosen by `accounts.ts`:
 
 - A login is one Claude Code config directory with its own `.credentials.json`.
   Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR`) is the
-  implicit login `default`. Added logins live in
+  implicit login `default` — except an inherited `$CLAUDE_CONFIG_DIR` that names
+  an added login's directory (a process started under a `claude` on one, such
+  as a pi in a worker's shell): then `default` is `~/.claude`, and its spawns
+  drop that variable. Added logins live in
   `<agent dir>/claude-accounts/<id>/` (0700), with `projects/`, `settings.json`,
   `CLAUDE.md`, `agents`, `commands`, `skills` and `plugins` symlinked to
   `default`'s, so every login writes its session records into one `projects/`.
@@ -68,6 +71,28 @@ children, model discovery) runs on one Claude login, chosen by `accounts.ts`:
   `--resume` on the new login; the interrupted message is sent again and the
   worker's transcript gets the notice. With no usable login left, the failure
   ends the turn or task as before.
+- `default` always comes last in a device's order: Claude Code's own login is
+  the last resort.
+
+**The pool (mesh on).** When `<agent dir>/sova/peers.json` lists a peer, Sova's
+server pools the added logins of every device (`server/claude-pool/`): a login
+is on one device at a time, and a registry login's `device` is the device that
+holds it (`null`: kept here for lending, never run). This extension honours the
+pool's marks at every spawn:
+
+- `<login dir>/.sova-leaving`: the login is on its way to another device. It is
+  never chosen; an idle chat child on it is torn down and an idle worker moves
+  to the next login (`--resume`), a busy one as soon as its turn or task ends.
+- `<login dir>/.sova-leases/<pid>.json`: which processes of this host still run
+  `claude` on the login (`LoginUsers`, rewritten every 5 s), so the server
+  hands a login over only once none does.
+- A spawn with nothing but `default` usable writes a borrow request
+  (`<agent dir>/claude-pool/wants/`) and waits up to 30 s for the server to
+  borrow one (`acquire`), but only while the server's heartbeat
+  (`claude-pool/agent.json`) is fresh. On a failure, `failoverAsync` marks the
+  login leaving (the server returns it to the keeper with its standing) and
+  moves on to the next login held here, else a borrowed one (not of the same
+  account on a limit), else `default`.
 
 Development switch: with `SOVA_CLAUDE_ACCOUNTS_DEV=1`,
 `<agent dir>/claude-accounts-dev.json` (`{"forceLimit": [ids], "forceAuth": [ids]}`)
@@ -249,6 +274,49 @@ Usage comes from terminal results without repeatedly summing cumulative cost.
 Protocol behavior is version-sensitive; live probes used Claude Code 2.1.276 and
 2.1.277.
 See [docs/protocol-probes.md](docs/protocol-probes.md).
+
+## Spec hooks
+
+`spec-hooks.ts` is the worker half of the spec guard (`mode/spec-guard.ts`). The subagents spawn
+path installs it for code-writing workers of a spec-on session, as `hooks` in the one `--settings`
+JSON (`withClaudeSettings` merges into the sandbox's settings; flag settings, hooks included, apply
+under `--setting-sources ""`, probed with CLI 2.1.282). Each hook is `node spec-hooks.ts
+<turn|post|stop> --core <spec/core> --state <dir> [--ledger <file>]`, a fresh process per event with
+plain-JSON state per Claude session:
+
+- `UserPromptSubmit`: the turn's baseline (`git status`, HEAD, the HEAD of every worktree of the
+  repository, and the default branch's tip: the task's own claims are absent there and at the fork point).
+- `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta; its
+  `[spec census]` digest comes back as `additionalContext`. Every tree a Bash command works in (its
+  cwd, each `cd <dir>`, `git -C <dir>`, a promote's `--root`) is looked at: the HEAD reflog entries
+  since the last look are its git operations, each HEAD before → after (never `HEAD^1`), so a merge
+  into master in the root from a worktree, fast-forward or not, and several merges in one command
+  each count; a tree first seen mid-turn keeps only the kinds the command's own git verbs make.
+  Each operation is appended to the parent's ledger (`--ledger`, else `SOVA_SPEC_LEDGER`;
+  `{v: 1, at, actor: {runtime: "claude-code", session}, top, before, after, kind, target?}`) and
+  judged by spec-guard's `judgeOp`, as the pi session's check does: merging master into a feature
+  branch lands nothing; a merge, a promote (with its `alsoChanges`) or a committed promotion lands its
+  foreign §, the task's own claims out, and the landing lists (unmapped files, unpromoted drafts,
+  § whose code changed under unchanged prose).
+  The same call runs the pi session's write guard (spec-guard's helpers; "before" is the tree the
+  previous hook call saw): an edit of the current `manifest.json` or `claims/**`, or a shell command
+  that writes them and is neither a draft tool nor git, gets "you wrote the current spec directly";
+  a git operation after which a draft's evidence commit left the branch gets the rebase note (abort
+  a rebase under way, else the exact old tip to restore with a clean tree, then merge master in).
+- `Stop`: after a promote or merge, the last line must name every computed foreign § (or carry the
+  override line, which excuses only an omission); a § named beyond a list Git fully computed is an
+  extra, never excused, except a § whose code changed under unchanged prose (advisory). The landing
+  gate: each changed file no claim in the current spec maps needs a `Plumbing: <path> — <why>` line,
+  and each draft record still unpromoted (status read again at Stop) a `Deferred: §X — <why>` line,
+  except after a landing on the default branch, where no Deferred line passes it: only a promotion or
+  the override line.
+  The line is parsed by `mode/also-changes.ts`, the one grammar. The reply is sent back up to twice. Otherwise a warning, sent back once: a
+  writing turn without the exact `Also changes:` line, a non-writing turn with one, a line omitting
+  a foreign § the turn's draft edits, or a named § the census never saw touched. Drafts are
+  gitignored: a draft edit (found by mtime) counts as writing, and its foreign § come from
+  `foreign --spec` against the draft's base commit.
+
+A hook that fails prints nothing and exits 0.
 
 ## Claude Code as pi models (experimental provider)
 

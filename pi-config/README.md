@@ -176,7 +176,7 @@ node --test install.test.mjs
 cd extensions/subagents && node tests/run.mjs && node tests/smoke.mjs && node tests/team-smoke.mjs
 cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node tests/ui-permissions.mjs
 cd extensions/extension-toggle && node --test index.test.ts
-cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts && node tests/smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs
+cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts spec-guard.test.ts also-changes.test.ts && node tests/smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
@@ -187,7 +187,7 @@ cd extensions/usage-status && node --test fetch.test.ts
 cd extensions/remote && node --test argv.test.ts
 cd extensions/link && node --test client.test.ts && node tests/run.mjs
 cd extensions/sandbox && node --test tests/*.unit.test.ts tests/unit/*.unit.test.ts && node tests/run.mjs
-cd extensions/worktrees && node --test state.test.ts git.test.ts && node tests/run.mjs
+cd extensions/worktrees && node --test state.test.ts git.test.ts spec.test.ts && node tests/run.mjs
 cd extensions/show-changes && node --test details.test.ts git.test.ts coverage.test.ts && node tests/run.mjs
 cd extensions/explain && node tests/run.mjs && node tests/smoke.mjs
 cd extensions/topic-outline && node test.mjs

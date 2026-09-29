@@ -99,7 +99,8 @@ no chevron and no Review Changes control.
 ## §chat.changes/show-changes-card — The agent's show_changes card
 
 A `show_changes` tool result renders as a card, not a tool row: the comparison it names, its
-title when it has one, how many steps the agent wrote, and a **Review Changes** control that opens
+title when it has one, how many steps the agent wrote, how many paths the agent limited it to
+("· limited to N path(s)", only when it named any), and a **Review Changes** control that opens
 the viewer on that comparison with the agent's steps. A result whose details Sova can't read
 stays an ordinary tool row.
 

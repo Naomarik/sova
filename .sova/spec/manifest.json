@@ -118,7 +118,8 @@
       "requires": [
         "§app.insights/usage-refresh",
         "§app.claude-logins/device-order",
-        "§app.claude-logins/registry"
+        "§app.claude-logins/registry",
+        "§app.claude-logins/pool"
       ],
       "authority": "accepted",
       "evidence": "verified",
@@ -130,7 +131,9 @@
         "shared/protocol.ts",
         "src/design/base.css",
         "server/insights-claude-logins.test.ts",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/lib/claude-login-groups.ts",
+        "src/lib/claude-login-groups.test.ts"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
@@ -347,7 +350,10 @@
     "§app.shell/remote-session-chips": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/RemoteStatus.tsx"
+      ]
     },
     "§app.shell/resizing-the-sessions-pane": {
       "kind": "behavior",
@@ -389,8 +395,9 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "server/claude-transcript.ts",
-        "server/claude-transcript.test.ts"
+        "pi-config/extensions/claude-code/runner.ts",
+        "server/claude-transcript.test.ts",
+        "server/claude-transcript.ts"
       ]
     },
     "§app.subagents-pane/head": {
@@ -525,7 +532,7 @@
     "§app/settings-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
@@ -550,8 +557,12 @@
     },
     "§chat.composer/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Composer.tsx",
+        "src/components/VoiceInput.tsx"
+      ]
     },
     "§chat.composer/anatomy": {
       "kind": "behavior",
@@ -569,7 +580,9 @@
         "src/design/base.css",
         "src/app.css",
         "src/components/AlignChip.tsx",
-        "src/design/align-viewer.css"
+        "src/design/align-viewer.css",
+        "src/components/VoiceInput.tsx",
+        "src/design/voice.css"
       ]
     },
     "§chat.composer/behavior": {
@@ -578,7 +591,8 @@
         "src/components/Composer.tsx",
         "src/components/ModelMenu.tsx",
         "src/lib/input-mode.ts",
-        "src/lib/input-mode.test.ts"
+        "src/lib/input-mode.test.ts",
+        "src/components/VoiceInput.tsx"
       ],
       "requires": [
         "§chat.images/composer-attachments"
@@ -598,7 +612,8 @@
         "src/components/ChatView.tsx",
         "src/components/ComposerMenu.tsx",
         "src/lib/api.ts",
-        "src/lib/sandbox.ts"
+        "src/lib/sandbox.ts",
+        "src/components/Composer.tsx"
       ]
     },
     "§chat.composer/disabled-states": {
@@ -608,7 +623,8 @@
       "code": [
         "src/components/ChatView.tsx",
         "src/components/Composer.tsx",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "src/components/VoiceInput.tsx"
       ]
     },
     "§chat.composer/tokens": {
@@ -626,8 +642,12 @@
     },
     "§chat.context-window/format": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/design/base.css"
+      ]
     },
     "§chat.context-window/honesty": {
       "kind": "behavior",
@@ -641,12 +661,21 @@
     "§chat.context-window/markup": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/OverseerView.tsx"
+      ]
     },
     "§chat.context-window/plain-text-not-a-meter": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/design/base.css"
+      ]
     },
     "§chat.context-window/sidebar-ring": {
       "kind": "behavior",
@@ -669,12 +698,16 @@
         "src/components/ContextGauge.tsx"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§chat.context-window/steps-toward-the-limit": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ContextGauge.tsx",
+        "src/design/base.css"
+      ]
     },
     "§chat.context-window/tokens": {
       "kind": "note",
@@ -686,7 +719,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/app.css"
       ]
     },
     "§chat.images/composer-attachments": {
@@ -1026,7 +1060,8 @@
       "code": [
         "src/components/Thread.tsx",
         "server/transcript.ts",
-        "src/components/SessionDetails.tsx"
+        "src/components/SessionDetails.tsx",
+        "src/components/SessionView.tsx"
       ]
     },
     "§chat.transcript/landing-page": {
@@ -1205,7 +1240,11 @@
     "§design.copy-deck/composer": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/VoiceInput.tsx",
+        "src/lib/voice/format.ts"
+      ]
     },
     "§design.copy-deck/composer-flyout": {
       "kind": "note",
@@ -1226,8 +1265,8 @@
     },
     "§design.copy-deck/context-window": {
       "kind": "note",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed"
     },
     "§design.copy-deck/fanout": {
       "kind": "note",
@@ -1346,7 +1385,8 @@
         "public/icons/apple-touch-icon.png",
         "public/icons/activity.svg",
         "public/icons/bulb.svg",
-        "public/icons/wrench.svg"
+        "public/icons/wrench.svg",
+        "public/icons/mic.svg"
       ]
     },
     "§design.ground-rules/motion": {
@@ -1579,7 +1619,8 @@
         "src/components/GroupComposer.tsx",
         "src/lib/group-prompt.ts",
         "src/lib/group-prompt.test.ts",
-        "src/lib/input-mode.ts"
+        "src/lib/input-mode.ts",
+        "src/components/VoiceInput.tsx"
       ]
     },
     "§workspace.groups/tokens": {
@@ -1946,10 +1987,11 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "pi-config/extensions/claude-code/provider/session-bridge.ts",
-        "pi-config/extensions/claude-code/provider/session-records.ts"
+        "pi-config/extensions/claude-code/provider/session-records.ts",
+        "pi-config/extensions/claude-code/provider/fork-point.ts"
       ]
     },
     "§app.worker-restore/restore": {
@@ -2150,7 +2192,9 @@
       "evidence": "verified",
       "code": [
         "server/mesh/hello.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "shared/mesh-resync.ts",
+        "server/mesh/build-id.ts"
       ]
     },
     "§mesh.peers/listener": {
@@ -2194,6 +2238,8 @@
         "src/components/MeshHostMenu.tsx",
         "src/components/Sidebar.tsx",
         "src/lib/mesh.ts",
+        "src/lib/mesh-details.ts",
+        "src/lib/mesh-details.test.ts",
         "src/mesh.css",
         "src/components/ui.tsx",
         "public/icons/network.svg"
@@ -2272,7 +2318,8 @@
         "src/components/MeshView.tsx",
         "server/sync/logins-merge.test.ts",
         "server/sync/logins-stores.test.ts",
-        "server/sync/logins.test.ts"
+        "server/sync/logins.test.ts",
+        "server/sync/index.test.ts"
       ]
     },
     "§mesh.ui/card": {
@@ -2294,6 +2341,7 @@
       "evidence": "verified",
       "code": [
         "src/components/MeshView.tsx",
+        "src/lib/claude-pool.ts",
         "src/lib/mesh.ts",
         "src/mesh.css"
       ]
@@ -3257,7 +3305,8 @@
         "server/mesh/peers.ts",
         "server/mesh/hello.ts",
         "server/mesh/details.test.ts",
-        "server/mesh/details-collect.test.ts"
+        "server/mesh/details-collect.test.ts",
+        "server/mesh/build-id.ts"
       ]
     },
     "§mesh.details/rename": {
@@ -3554,9 +3603,10 @@
     "§mesh/vps": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "scripts/mesh-vps/deploy.sh"
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-vps/remote-setup.sh"
       ]
     },
     "§mesh.phone/claude-store": {
@@ -3575,9 +3625,10 @@
     "§mesh/phone": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
-        "scripts/mesh-termux/install.sh"
+        "scripts/mesh-termux/install.sh",
+        "scripts/mesh-termux/deploy.sh"
       ],
       "requires": []
     },
@@ -3867,7 +3918,9 @@
         "server/share/routes.ts",
         "server/share/listener.ts",
         "src/share/ShareApp.tsx",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "server/public-links.test.ts",
+        "src/components/OwnerCard.tsx"
       ]
     },
     "§app.baton/needs-you": {
@@ -3983,7 +4036,9 @@
         "server/visits.ts",
         "server/visits.test.ts",
         "src/share/visit-tab.ts",
-        "src/share/ShareApp.tsx"
+        "src/share/ShareApp.tsx",
+        "server/share/edge.ts",
+        "server/public-links.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -4641,6 +4696,8 @@
         "pi-config/extensions/worktrees/git.ts",
         "pi-config/extensions/worktrees/index.test.ts",
         "pi-config/extensions/worktrees/git.test.ts",
+        "pi-config/extensions/worktrees/spec.ts",
+        "pi-config/extensions/worktrees/spec.test.ts",
         "pi-config/extensions/worktrees/state.ts",
         "server/transcript.ts",
         "server/worktrees-state.ts",
@@ -5837,7 +5894,7 @@
     "§app.project-overseer/page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/components/ProjectOverseerHead.tsx",
         "src/components/SessionView.tsx",
@@ -6124,7 +6181,7 @@
     "§chat.alignment/session-mark": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/align-state.ts",
         "server/align-state.test.ts",
@@ -7009,7 +7066,13 @@
         "server/claude-accounts.ts",
         "server/index.ts",
         "shared/protocol.ts",
-        "src/lib/settings-nav.test.ts"
+        "src/lib/settings-nav.test.ts",
+        "src/lib/claude-pool.ts",
+        "src/components/MeshView.tsx",
+        "server/claude-pool/index.ts",
+        "src/lib/claude-pool.test.ts",
+        "src/lib/claude-login-groups.ts",
+        "src/lib/claude-login-groups.test.ts"
       ],
       "requires": [
         "§app.claude-logins/add-remove",
@@ -7053,7 +7116,8 @@
         "src/components/AccountsSettings.tsx",
         "src/lib/api.ts",
         "server/claude-accounts.test.ts",
-        "scripts/fake-claude.mjs"
+        "scripts/fake-claude.mjs",
+        "server/claude-pool/agent.ts"
       ]
     },
     "§app.claude-logins/device-order": {
@@ -7069,7 +7133,11 @@
         "src/components/AccountsSettings.tsx",
         "src/lib/api.ts",
         "server/claude-accounts.test.ts",
-        "pi-config/extensions/claude-code/accounts.test.ts"
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/insights-claude-logins.test.ts",
+        "src/lib/claude-login-groups.ts",
+        "src/lib/claude-login-groups.test.ts",
+        "src/design/base.css"
       ]
     },
     "§app.claude-logins/failover": {
@@ -7089,7 +7157,8 @@
         "pi-config/extensions/claude-code/provider/login-failover.test.ts",
         "pi-config/extensions/claude-code/runner-failover.test.ts",
         "server/claude-accounts.test.ts",
-        "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson"
+        "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson",
+        "server/claude-pool/agent.ts"
       ]
     },
     "§app.claude-logins/registry": {
@@ -7101,7 +7170,12 @@
         "pi-config/extensions/claude-code/accounts.ts",
         "server/claude-accounts.ts",
         "pi-config/extensions/claude-code/accounts.test.ts",
-        "src/components/AccountsSettings.tsx"
+        "src/components/AccountsSettings.tsx",
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/doc.ts",
+        "src/lib/claude-login-groups.ts",
+        "src/lib/claude-login-groups.test.ts",
+        "server/claude-pool/agent.test.ts"
       ]
     },
     "§app.claude-logins/spawn-selection": {
@@ -7124,7 +7198,9 @@
         "server/claude-accounts.ts",
         "server/claude-models.ts",
         "server/claude-status.ts",
-        "pi-config/extensions/claude-code/provider/login-failover.test.ts"
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
       ]
     },
     "§app/claude-logins": {
@@ -7178,6 +7254,592 @@
         "src/vis/views.ts",
         "src/vis/share-views.ts",
         "pi-config/extensions/mode/vis-mode.md"
+      ]
+    },
+    "§app.claude-logins/borrow-return": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/pool",
+        "§app.claude-logins/keeper",
+        "§app.claude-logins/drain"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/creds.ts",
+        "server/claude-pool/journal.ts",
+        "server/claude-pool/index.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "server/claude-pool/agent.test.ts",
+        "scripts/claude-pool-e2e/run.mjs",
+        "scripts/fake-claude.mjs"
+      ]
+    },
+    "§app.claude-logins/drain": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/spawn-selection"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/models.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/topic-outline/summarizers/claude-cli.ts",
+        "server/claude-pool/agent.test.ts",
+        "server/claude-pool/agent.ts"
+      ]
+    },
+    "§app.claude-logins/idle-pin": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/borrow-return"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/index.ts",
+        "src/components/AccountsSettings.tsx",
+        "server/claude-pool/agent.test.ts"
+      ]
+    },
+    "§app.claude-logins/keeper": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/pool"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/index.ts",
+        "src/components/AccountsSettings.tsx",
+        "server/claude-pool/agent.test.ts"
+      ]
+    },
+    "§app.claude-logins/migration": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/pool",
+        "§app.claude-logins/registry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "pi-config/extensions/claude-code/accounts.ts",
+        "server/claude-pool/agent.test.ts"
+      ]
+    },
+    "§app.claude-logins/pool": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/registry",
+        "§mesh.peers/off"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/doc.ts",
+        "server/claude-pool/agent.ts",
+        "server/claude-pool/index.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "server/claude-pool/agent.test.ts",
+        "scripts/claude-pool-e2e/run.mjs"
+      ]
+    },
+    "§app.claude-logins/stuck": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/borrow-return"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/claude-pool/agent.ts",
+        "server/claude-accounts.ts",
+        "src/lib/claude-pool.ts",
+        "src/components/AccountsSettings.tsx",
+        "server/claude-pool/agent.test.ts",
+        "src/lib/claude-pool.test.ts"
+      ]
+    },
+    "§mesh.peers/resync": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.peers/hello",
+        "§mesh.peers/health",
+        "§mesh.peers/listener",
+        "§mesh.details/fields",
+        "§mesh.remote-sessions/host-filter",
+        "§mesh/vps",
+        "§mesh/phone"
+      ],
+      "code": [
+        "server/mesh/resync.ts",
+        "server/mesh/build-id.ts",
+        "shared/mesh-resync.ts",
+        "server/mesh/resync.test.ts",
+        "server/mesh/build-id.test.ts",
+        "src/components/MeshHostMenu.tsx",
+        "src/components/MeshResyncSheet.tsx",
+        "src/lib/mesh-resync.ts",
+        "src/lib/mesh-resync.test.ts",
+        "src/lib/api.ts",
+        "src/mesh.css",
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-termux/deploy.sh",
+        "server/index.ts"
+      ]
+    },
+    "§app.settings-dialog/voice": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/install.ts",
+        "server/voice/install.test.ts",
+        "server/voice/platform.ts",
+        "server/voice/platform.test.ts",
+        "server/voice/download.ts",
+        "server/voice/download.test.ts",
+        "server/voice/pins.ts",
+        "server/voice/selftest.wav",
+        "server/voice/service.ts",
+        "scripts/voice.ts",
+        "src/components/VoiceSetup.tsx",
+        "src/lib/voice/status.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts",
+        "src/design/voice.css",
+        "package.json"
+      ],
+      "requires": [
+        "§app/settings-dialog",
+        "§chat.voice/runtime",
+        "§design.copy-deck/settings-voice"
+      ]
+    },
+    "§chat.voice/button": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/VoiceInput.tsx",
+        "src/components/Composer.tsx",
+        "src/components/GroupComposer.tsx",
+        "public/icons/mic.svg",
+        "src/design/voice.css",
+        "src/lib/voice/format.ts",
+        "src/lib/voice/status.ts",
+        "src/components/ui.tsx"
+      ],
+      "requires": [
+        "§app.settings-dialog/voice",
+        "§design.copy-deck/composer"
+      ]
+    },
+    "§chat.voice/capture": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/voice/capture.ts",
+        "src/lib/voice/wav.ts",
+        "public/voice-capture-worklet.js",
+        "src/lib/api.ts",
+        "src/lib/voice/voice.test.ts"
+      ],
+      "requires": []
+    },
+    "§chat.voice/insertion": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/voice/insert.ts",
+        "src/components/VoiceInput.tsx",
+        "src/lib/voice/voice.test.ts"
+      ],
+      "requires": [
+        "§chat.composer/behavior"
+      ]
+    },
+    "§chat.voice/mobile-lifecycle": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/voice/capture.ts",
+        "src/components/VoiceInput.tsx",
+        "src/lib/voice/format.ts"
+      ],
+      "requires": [
+        "§chat.voice/capture",
+        "§chat.voice/insertion"
+      ]
+    },
+    "§chat.voice/runtime": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/runtime.ts",
+        "server/voice/runtime.test.ts",
+        "scripts/fake-whisper-server.mjs",
+        "server/voice/service.ts",
+        "server/index.ts"
+      ],
+      "requires": []
+    },
+    "§chat.voice/states": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/VoiceInput.tsx",
+        "src/design/voice.css",
+        "src/lib/voice/format.ts",
+        "src/lib/voice/wav.ts",
+        "src/lib/voice/voice.test.ts"
+      ],
+      "requires": [
+        "§chat.voice/button",
+        "§design.copy-deck/composer"
+      ]
+    },
+    "§chat.voice/transcribe": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/service.ts",
+        "server/voice/wav.ts",
+        "server/voice/wav.test.ts",
+        "server/voice/service.test.ts",
+        "server/voice/pins.ts",
+        "server/index.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§chat.voice/runtime"
+      ]
+    },
+    "§chat/voice": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/VoiceInput.tsx",
+        "server/voice/service.ts"
+      ]
+    },
+    "§design.copy-deck/settings-voice": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/VoiceSetup.tsx",
+        "src/lib/voice/format.ts"
+      ]
+    },
+    "§chat.composer/file-index-deadline": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/files.ts",
+        "server/files.test.ts"
+      ]
+    },
+    "§design.copy-deck/public-links": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
+    },
+    "§mesh.public/forwarded-for": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/security.ts",
+        "server/share/router.ts",
+        "server/share/edge.ts",
+        "server/share/front.ts",
+        "server/share-security.test.ts"
+      ]
+    },
+    "§mesh.public/front": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/front.ts",
+        "server/public-links-routes.ts",
+        "server/share-front.test.ts"
+      ]
+    },
+    "§mesh.public/gateway": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§mesh.peers/hello"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/registry.ts",
+        "server/share/gateway-routes.ts",
+        "server/mesh/hello.ts",
+        "server/public-links-routes.ts",
+        "server/share-registry.test.ts",
+        "server/share-offline.test.ts"
+      ]
+    },
+    "§mesh.public/ingress": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§mesh.peers/address-identity",
+        "§app.baton/share-listener"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/ingress.ts",
+        "server/mesh/gate.ts",
+        "server/share/edge.ts",
+        "server/share/gateway-client.ts",
+        "server/share-ingress.test.ts",
+        "server/share-security.test.ts"
+      ]
+    },
+    "§mesh.public/offline": {
+      "kind": "behavior",
+      "requires": [
+        "§design.copy-deck/public-links"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/offline.ts",
+        "server/share/router.ts",
+        "server/share/ws-hop.ts",
+        "src/share/ShareApp.tsx",
+        "src/share/OwnerApp.tsx",
+        "shared/public-links.ts",
+        "server/share-offline.test.ts",
+        "server/share-router.test.ts"
+      ]
+    },
+    "§mesh.public/panel": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§app.settings-dialog/save-bar",
+        "§design.copy-deck/public-links"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PublicLinksSettings.tsx",
+        "src/lib/public-links.ts",
+        "src/lib/public-links.test.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/components/MeshView.tsx"
+      ]
+    },
+    "§mesh.public/registry": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/gateway",
+        "§mesh.public/setting"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/registry.ts",
+        "server/share/registry-validation.ts",
+        "server/share/registry-push.ts",
+        "server/share/gateway-routes.ts",
+        "server/share/gateway-client.ts",
+        "server/share/links-events.ts",
+        "shared/public-links.ts",
+        "server/share-registry.test.ts",
+        "server/share-ingress.test.ts",
+        "server/share-security.test.ts",
+        "server/share-edge.test.ts"
+      ]
+    },
+    "§mesh.public/routing": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/registry",
+        "§mesh.public/forwarded-for",
+        "§mesh.public/offline"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/router.ts",
+        "server/share/destination.ts",
+        "server/share/ws-hop.ts",
+        "server/share/edge.ts",
+        "server/share-router.test.ts",
+        "server/share-destination.test.ts",
+        "server/share-ws-hop.test.ts",
+        "server/share-offline.test.ts"
+      ]
+    },
+    "§mesh.public/setting": {
+      "kind": "behavior",
+      "requires": [
+        "§app.baton/share-listener"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/public-links.ts",
+        "server/public-links-routes.ts",
+        "server/share/listener.ts",
+        "server/share/runtime.ts",
+        "server/share/setting-events.ts",
+        "server/share/gateway-client.ts",
+        "shared/public-links.ts",
+        "server/public-links.test.ts",
+        "server/share-edge.test.ts"
+      ]
+    },
+    "§mesh/public": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/public-links.ts",
+        "server/share/runtime.ts"
+      ]
+    },
+    "§app.organizations/host-offline": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/org-host-offline.ts",
+        "src/lib/org-host-offline.test.ts",
+        "src/components/OrgsView.tsx"
+      ]
+    },
+    "§app.project-overseer/org-charts": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "org-charts/.gitignore",
+        "org-charts/CHARTS.md",
+        "org-charts/EVENTS.md",
+        "org-charts/SPIKE.md",
+        "org-charts/bench/bench.mjs",
+        "org-charts/deps.edn",
+        "org-charts/package.json",
+        "org-charts/shadow-cljs.edn",
+        "org-charts/src/sova/org_charts/api.cljs",
+        "org-charts/src/sova/org_charts/charts/common.cljc",
+        "org-charts/src/sova/org_charts/charts/events.cljc",
+        "org-charts/src/sova/org_charts/charts/facts.cljc",
+        "org-charts/src/sova/org_charts/charts/guards.cljc",
+        "org-charts/src/sova/org_charts/charts/project.cljc",
+        "org-charts/src/sova/org_charts/charts/reasons.cljc",
+        "org-charts/src/sova/org_charts/charts/work_item.cljc",
+        "org-charts/src/sova/org_charts/engine/bounded.cljs",
+        "org-charts/src/sova/org_charts/engine/build_hooks.clj",
+        "org-charts/src/sova/org_charts/engine/core.cljs",
+        "org-charts/src/sova/org_charts/engine/core_test.cljs",
+        "org-charts/src/sova/org_charts/engine/js_chart.cljs",
+        "org-charts/src/sova/org_charts/engine/no_spec.cljc",
+        "org-charts/src/sova/org_charts/engine/probe.cljs",
+        "org-charts/src/sova/org_charts/engine/queue.cljs",
+        "org-charts/src/sova/org_charts/engine/timbre_shim.cljc",
+        "org-charts/test/sova/org_charts/charts/harness.cljc",
+        "org-charts/test/sova/org_charts/charts/project_test.cljc",
+        "org-charts/test/sova/org_charts/charts/work_item_matrix_test.cljc",
+        "org-charts/test/sova/org_charts/charts/work_item_rules_test.cljc",
+        "scripts/build-org-charts.mjs",
+        "scripts/org-charts-mine.mjs",
+        "server/fixtures/org-charts-engine/probe-chart.ts",
+        "server/fixtures/org-charts/real-01.json",
+        "server/fixtures/org-charts/real-02.json",
+        "server/fixtures/org-charts/real-03.json",
+        "server/fixtures/org-charts/real-04.json",
+        "server/fixtures/org-charts/real-05.json",
+        "server/fixtures/org-charts/real-06.json",
+        "server/fixtures/org-charts/real-07.json",
+        "server/fixtures/org-charts/real-08.json",
+        "server/fixtures/org-charts/real-09.json",
+        "server/fixtures/org-charts/real-10.json",
+        "server/fixtures/org-charts/real-11.json",
+        "server/fixtures/org-charts/real-12.json",
+        "server/fixtures/org-charts/real-13.json",
+        "server/fixtures/org-charts/real-14.json",
+        "server/fixtures/org-charts/real-15.json",
+        "server/fixtures/org-charts/real-16.json",
+        "server/fixtures/org-charts/real-17.json",
+        "server/fixtures/org-charts/real-18.json",
+        "server/fixtures/org-charts/real-19.json",
+        "server/fixtures/org-charts/real-20.json",
+        "server/fixtures/org-charts/real-21.json",
+        "server/fixtures/org-charts/real-22.json",
+        "server/fixtures/org-charts/real-23.json",
+        "server/fixtures/org-charts/real-24.json",
+        "server/fixtures/org-charts/real-25.json",
+        "server/fixtures/org-charts/real-26.json",
+        "server/fixtures/org-charts/real-27.json",
+        "server/fixtures/org-charts/real-28.json",
+        "server/fixtures/org-charts/syn-archive-during-look.json",
+        "server/fixtures/org-charts/syn-baton-done-then-closed.json",
+        "server/fixtures/org-charts/syn-build-failed-l3.json",
+        "server/fixtures/org-charts/syn-cap-at-midnight.json",
+        "server/fixtures/org-charts/syn-conflict-two-gaps.json",
+        "server/fixtures/org-charts/syn-empty-roster.json",
+        "server/fixtures/org-charts/syn-gap-dropped-mid-build.json",
+        "server/fixtures/org-charts/syn-hold-resume.json",
+        "server/fixtures/org-charts/syn-limit-raised.json",
+        "server/fixtures/org-charts/syn-merge-refused.json",
+        "server/fixtures/org-charts/syn-new-commits-after-merge.json",
+        "server/fixtures/org-charts/syn-own-reason-while-streaming.json",
+        "server/fixtures/org-charts/syn-pause-by-attach.json",
+        "server/fixtures/org-charts/syn-promote-two-gaps.json",
+        "server/fixtures/org-charts/syn-reason-while-streaming.json",
+        "server/fixtures/org-charts/syn-restart-mid-look.json",
+        "server/fixtures/org-charts/syn-soon-off.json",
+        "server/fixtures/org-charts/syn-spec-edited-keep.json",
+        "server/fixtures/org-charts/syn-stall-after-days.json",
+        "server/fixtures/org-charts/syn-two-hosts.json",
+        "server/fixtures/org-charts/syn-watch-off-run-now.json",
+        "server/org-charts-replay.test.ts",
+        "server/org-charts-replay.ts",
+        "server/org-charts.test.ts",
+        "server/org-charts.ts",
+        "server/vendor/org-charts.d.ts",
+        "server/vendor/org-charts.js"
+      ],
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.project-overseer/watch-loop"
       ]
     }
   },

@@ -14,11 +14,12 @@ d=core/sova-spec-draft.mjs   # or the installed copy; see README.md for the path
 node $d new NAME [--purpose TEXT] [--write]              --root DIR [--json]
 node $d status NAME                                     --root DIR [--json]
 node $d diff NAME [--against base|current]              --root DIR [--json]
-node $d check NAME                                      --root DIR [--json]
+node $d check NAME [--base REV]                         --root DIR [--json]
 node $d evidence NAME --id '§x' [--id …] --by WHO --verification TEXT \
         (--commit REV | --snapshot | --doc-only) [--path P]… [--log FILE] [--write]   --root DIR [--json]
 node $d promote NAME (--id '§x'… | --all) [--meta KEY]… [--file PATH]… [--plan SHA] [--write]  --root DIR [--json]
 node $d recover [--write]                               --root DIR [--json]
+node $d merge-manifest [--base F --ours F --theirs F] [--write]   --root DIR [--json]
 ```
 
 Nothing is written without `--write`. Quote IDs, because `§` is not a shell word character.
@@ -63,7 +64,21 @@ The machine can't tell which label is correct.
 1. **`new NAME --write`**, then edit `spec/`. `check NAME` runs the core over the draft graph
    (`sova-spec.mjs check --spec .sova/spec/drafts/NAME/spec`). `status` and `diff` compare
    the draft against the baseline, or against current with `diff --against current`. None of
-   these writes, and current stays byte-identical.
+   these writes, and current stays byte-identical. `check` also reports drift (`drift`):
+   - `removed-phrase-elsewhere` (warn): a two- or three-word phrase the draft removed from one §
+     that one to five other § still say. The same fact written twice and edited once. Also a
+     quantity it removed (a number with a comparator or unit: `≥80%`, `90%`, `20s`) that another
+     § states with a rare word near both (in at most a tenth of the §; one word for a comparison,
+     two for a bare unit, reported as `near`), so a different meter's `80%` stays quiet. Rarity is
+     the only tie, so it can miss a restatement worded differently, and on a very small spec it
+     is weaker.
+   - `cited-prose-unchanged` (warn) and `code-changed-prose-unchanged` (note): a § whose mapped
+     `code` changed since the draft's base commit (`base.commit`, recorded by `new` in a Git
+     project; `--base REV` overrides) while the draft leaves its prose as it was. It warns when a
+     line the draft edited cites that §. `drift-base-unknown` (note): an older draft with no base
+     commit and no `--base`.
+   - `evidence-not-ancestor` (warn, `evidenceNotAncestor`): an evidence commit that is gone or
+     not an ancestor of `HEAD`, usually a rebase after evidence.
 2. **Implement the change and verify it.** The tool never does this part.
 3. **`evidence`** records, for each changed ID, what was verified and against which
    implementation bytes:
@@ -84,7 +99,15 @@ The machine can't tell which label is correct.
      present `--path`. For a deletion, the inputs may be absent.
 4. **`promote`** previews the change and prints a `plan` hash. Then run
    `promote … --plan <hash> --write`. `--write` without `--plan` is allowed, but `--plan`
-   refuses the write (`plan-changed`) if anything moved since you looked.
+   refuses the write (`plan-changed`) if anything moved since you looked. Preview and write both
+   print `alsoChanges`: the foreign § the promotion changes, i.e. every selected ID current already
+   has, plus each current H1 that gains a new H2 (`alsoChangesDetail: [{id, change, children?}]`,
+   `change` one of `text`, `record`, `text+record`, `deleted`, `file`, `child-added`). That list,
+   not memory, is what the reply's `Also changes:` line names. They also print `driftWarnings`,
+   the `check` warnings above (never a refusal), so drift shows even when nobody ran `check`.
+   Evidence on a commit that is gone or not an ancestor of `HEAD` (a rebase after evidence) is
+   refused as `evidence-not-ancestor`: never rebase after evidence; re-record evidence on the
+   current commit, or merge master in instead.
 
 ## What promotion checks, all before any write
 
@@ -142,6 +165,29 @@ fails closed with `lock-occupied` if the lock's contents changed, or if another 
 lock between the removal and the retake. The other writer's lock is left alone. No other command
 ever removes a lock. If the holder is on another host, check by hand, then delete
 `.sova/spec/drafts/.lock`.
+
+## A manifest conflict in a Git merge
+
+`merge-manifest` merges `.sova/spec/manifest.json` record by record: each claim record and each
+top-level key takes the side that changed it. The same key changed differently on both sides is
+refused (`manifest-conflict`, exit 1, `conflicts: [{key, kind}]`) and nothing is written. Claim prose
+files are never touched: a `claims/` conflict is resolved by hand or by re-applying one side in a new
+draft. Keys keep ours' order; the output is 2-space JSON, as promotion writes it.
+
+- **During a conflicted `git merge`** (index stages 2 and 3 exist): `merge-manifest` previews,
+  `merge-manifest --write` writes the merged manifest to the working tree. It never stages; run
+  `sova-spec.mjs check`, resolve `claims/`, then `git add .sova/spec/manifest.json`. Outside a
+  conflict it refuses (`not-conflicted`).
+- **As a Git merge driver**, so the conflict never happens:
+
+  ```sh
+  echo '.sova/spec/manifest.json merge=sova-spec-manifest' >> .gitattributes
+  git config merge.sova-spec-manifest.driver \
+    'node "<core>/sova-spec-draft.mjs" merge-manifest --root . --base %O --ours %A --theirs %B --write'
+  ```
+
+  Git runs it at the repository top; it writes `%A` on success and exits 1 on a same-key conflict,
+  which Git reports as a conflict with ours' bytes in place.
 
 ## Limits, stated plainly
 

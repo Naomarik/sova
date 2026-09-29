@@ -12,7 +12,7 @@ import { test } from "node:test";
 import type { Message, Tool } from "@earendil-works/pi-ai";
 import { SessionBridge } from "./session-bridge.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
-import { ACCOUNTS_DEV_ENV, ClaudeLogins, loginDir, updateAccounts, writeAccounts, type ClaudeLoginEntry } from "../accounts.ts";
+import { ACCOUNTS_DEV_ENV, ClaudeLogins, loginDir, loginUsers, markLeaving, readLeaving, updateAccounts, writeAccounts, type ClaudeLoginEntry } from "../accounts.ts";
 
 /** A CLI child that answers initialize, and answers each user message with `reply(frame)`'s events. */
 class FakeCli extends EventEmitter {
@@ -77,13 +77,18 @@ const user = (text: string): Message => ({ role: "user", content: text, timestam
 const request = (messages: Message[]): ClaudeTurnRequest => ({ model: "sonnet", sessionId: "pi-session-1", tools, messages });
 const A = "l-0000000a", B = "l-0000000b";
 
-function setup(t: { after: (fn: () => void) => void }, replyFor: (login: string, n: number) => Record<string, any>[], env: Record<string, string> = {}) {
+function setup(t: { after: (fn: () => void) => void }, replyFor: (login: string, n: number) => Record<string, any>[], env: Record<string, string> = {}, pool = false) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude-login-failover-"));
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 	const agentDir = path.join(root, "agent");
 	const claudeDir = path.join(root, "claude");
 	fs.mkdirSync(path.join(claudeDir, "projects"), { recursive: true });
 	fs.mkdirSync(agentDir, { recursive: true });
+	if (pool) {
+		// The mesh is on: the pool's paths (leaving marks, failoverAsync).
+		fs.mkdirSync(path.join(agentDir, "sova"));
+		fs.writeFileSync(path.join(agentDir, "sova", "peers.json"), JSON.stringify({ version: 1, self: { id: "local", label: "Desk" }, peers: [{ id: "vps", label: "Vps", nodeId: "n-vps", dnsName: "vps.example.invalid" }] }));
+	}
 	writeAccounts(agentDir, {
 		version: 1,
 		logins: [
@@ -150,7 +155,7 @@ test("a limit before anything streamed moves the turn to the next login and answ
 
 test("a session records the login it starts on, default included, and a recorded one is not recorded again", { timeout: 8000 }, async (t) => {
 	const s = setup(t, () => ANSWER("ok"));
-	updateAccounts(s.agentDir, (a) => { a.devices.local = { order: ["default", A, B] }; });
+	updateAccounts(s.agentDir, (a) => { for (const l of a.logins) l.enabled = false; });
 	await collect(s.bridge.runTurn(request([user("hi")])));
 	assert.equal(s.loginOf(s.children[0]!), "default");
 	assert.deepEqual(s.entries.map((e) => [e.login, e.from]), [["default", undefined]], "the first turn records its login, even default");
@@ -190,4 +195,30 @@ test("the development switch makes a login fail without sending the message", { 
 	assert.equal(s.children[0]!.users.length, 0, "A's CLI never received the message");
 	assert.equal(s.loginOf(s.children[1]!), B);
 	assert.ok(texts(frames).includes("real answer"));
+});
+
+test("the pool: a limit marks the login leaving and the same turn answers on the next login", { timeout: 8000 }, async (t) => {
+	const s = setup(t, (login) => login === A ? LIMIT(Math.floor(Date.now() / 1000) + 3600) : ANSWER("ok from B"), {}, true);
+	const frames = await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal((frames.at(-1) as any).type, "result");
+	assert.notEqual((frames.at(-1) as any).outcome, "error", "the turn succeeded, on B");
+	assert.equal(s.loginOf(s.children.at(-1)!), B);
+	assert.equal(readLeaving(s.agentDir, A)?.reason, "limit", "A goes back to the keeper");
+	assert.ok(s.entries.some((e) => e.from === A && e.login === B && e.reason === "limit"));
+});
+
+test("the pool: an idle chat child whose login leaves is torn down, and the next turn starts on the next login", { timeout: 8000 }, async (t) => {
+	const s = setup(t, () => ANSWER("ok"), {}, true);
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), A);
+	const lease = path.join(loginDir(s.agentDir, A), ".sova-leases", `${process.pid}.json`);
+	assert.ok(fs.existsSync(lease), "the child holds a lease on A");
+	markLeaving(s.agentDir, A, "user");
+	loginUsers().tick();
+	for (let i = 0; i < 200 && !s.children[0]!.exited; i++) await new Promise((r) => setTimeout(r, 5));
+	assert.equal(s.children[0]!.exited, true, "the idle child on A was stopped");
+	for (let i = 0; i < 200 && fs.existsSync(lease); i++) await new Promise((r) => setTimeout(r, 5));
+	assert.equal(fs.existsSync(lease), false, "and its lease is gone: A can leave");
+	await collect(s.bridge.runTurn(request([user("hi"), { role: "assistant", content: [{ type: "text", text: "ok" }], api: "x", provider: "x", model: "x", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 } as any, user("again")])));
+	assert.equal(s.loginOf(s.children[1]!), B, "the next turn starts on B");
 });

@@ -151,7 +151,8 @@ and `fill="none" stroke="currentColor"`.
 | `bell.svg` | The wake-nudge card in the transcript (§chat/transcript) |
 | `refresh.svg` | Refresh Usage / Refresh Agents: the icon button in the insights head (§app/insights). While a refresh it started is in flight it's `aria-disabled` and `aria-busy`. The session list has no refresh button: it updates live |
 | `arrow-right.svg` | Send |
-| `stop.svg` | Stop (composer): a rounded square |
+| `stop.svg` | Stop (composer): a rounded square; also the mic button while recording (Stop Recording) |
+| `mic.svg` | Dictate: the composer's mic button and the Settings dialog's Voice tab (§chat/voice). A capsule microphone on a stand arc with a short stem and base. New, drawn on the system grid |
 | `chat.svg` | Empty-state mark (no session selected) |
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
 | `command.svg` | Commands button (composer, §chat/slash-commands): a `/` in a rounded square. New, drawn on the system grid |

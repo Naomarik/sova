@@ -96,8 +96,8 @@ Usage glance needs the room.
     chat that has not recorded one yet, a TUI-watched session, a workspace pane that isn't a chat,
     and every page with no session open. Only with neither (an older server without
     `claudeLogins`, or no login ready) does it read `providers`' `claude`, Claude Code's own
-    login. Its reading is that login's card on the Usage page, so the number follows a failover
-    in the same poll. The visible segment stays `C 61%`: the glance has no room for a name. With
+    login. Its reading is that login's account card on the Usage page (the account's freshest
+    reading: its logins share one quota), so the number follows a failover in the same poll. The visible segment stays `C 61%`: the glance has no room for a name. With
     more than one login, the row's `title` and `aria-label` name it after "Claude", by its card
     title (its email, else its label): "Usage: Claude (spare@example.com) 7-day 61%, OpenAI
     7-day 14%". With one login nothing is named, as before.
@@ -162,13 +162,10 @@ ellipsis.
     left rail (`.session-rail-count`), under the row's state, when `live?.workers?.working ≥ 1`.
     Hidden at 0 or when absent. `.session-rail-count-live` pulses the icon only, and only on a
     row with no Busy dot, whose pulse would otherwise be a second moving thing.
-  - **Session head:** a link chip before Live. With a live team it stays worded —
-    `<a class="chip chip-count" href="#/agents/{teamId}">Team · {n} working</a>`, pointing at
-    the busiest live team when there are several. Without a team it matches the rail's
-    vocabulary: `<a class="chip chip-count session-head-working" href="#/agents">{n}<span
-    class="icon icon-sm" style="--icon:url(/icons/worker.svg)"></span></a>`,
-    `aria-label`/`title` "{n} subagents working now",
-    the word carried by the label rather than the box. The icon inside a `.chip-count` is 12px.
+  - **Session head:** no chip at all, working or not, team or not. The count is already the
+    sidebar row's rail count and the Agents foot row's, and the head's row goes to the title and
+    the context readout (§chat.context-window/width-budget). The Agents page, the composer's
+    subagents trigger and the subagents pane keep their own counts.
   - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in
     the row's link — and now it sits outside the link, in the rail, as a `tabindex="-1"` button.
     The foot's Agents row is still the way to the page from the sidebar.
@@ -265,30 +262,43 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
 - **Cards.** There's one card per `providers[]` entry, in the order given: Claude, OpenAI,
   Ollama Cloud, Z.ai, DeepSeek. Z.ai follows the system like every other provider: no brand color, and
   the title is "Z.ai"; so does DeepSeek, titled "DeepSeek".
-- **Claude: one card per login.** When the payload carries `claudeLogins` (every Claude login on
-  this device, §app/claude-logins, in the device's order, `default` included), Claude's place
-  holds one card per login instead of the single Claude card; an older server without the field
-  gets the single card.
-  - The title is the login's email (else its label, else "Claude Code's own login"), wrapping
-    rather than overflowing. Under it, the caption reads "Claude · {plan}" with the plan as people
-    say it ("Max 20x", "Pro"; never a billing type such as `stripe_subscription`), then the
-    login's name: "Claude Code's own login" for `default`, else its label, else — only beside
-    another login of its account, where the email can't tell them apart — "Login added {date}".
-  - The body opens with the login's standing on this device as a chip, in Settings → Accounts'
-    words (§app.claude-logins/device-order): **Ready**, **Off**, **Limited until** a time,
-    **Sign in again**, or **Not signed in**. The login a new chat would start on — the first
-    usable one in the device's order — adds a neutral `.chip.chip-count` "In use for new chats".
-  - Then its usage exactly like any provider card: meters, head chip, notes, the sign-in caption
-    (from that login's own `.credentials.json`). `default`'s reading is `providers`' `claude`; an
-    added login's is its own entry in the cache's `claudeAccounts`
-    (§app.insights/usage-refresh). A login never read yet says "Not read yet. Its usage shows at
-    the next refresh."; a login marked as needing sign-in is not fetched, keeps its last reading,
-    and without one says it is not fetched until Claude Code has signed it in again.
-  - **Grouped by account.** Logins with the same `accountUuid` share one account's usage limits,
-    so their cards sit together, where the first of them falls in the order, under a full-width
-    muted head "{email} · {n} logins, one account"; each of their cards ends with the caption
-    "Same account as {the others' names}: they share these limits." A login with no account, or alone
-    in its account, has no head.
+- **Claude: one card per account.** When the payload carries `claudeLogins` (every Claude login on
+  this device, §app/claude-logins, in the device's order, `default` included; while the mesh is on,
+  also every other login of the pool, §app.claude-logins/pool, each with its `holder`), Claude's
+  place holds one card per **account** instead of the single Claude card: logins with the same
+  `accountUuid` share one account's usage limits, so they share one card, where the first of them
+  falls in the order (§app.claude-logins/registry, **Accounts, then logins**). A login with no
+  account is a card of its own. An older server without the field gets the single card.
+  - The title is the account's email (else the login's label, else "Claude Code's own login"),
+    wrapping rather than overflowing. Under it, the caption reads "Claude · {plan}" with the plan
+    as people say it ("Max 20x", "Pro"; never a billing type such as `stripe_subscription`), then,
+    for an account of one login, that login's name when it has one worth saying: "Claude Code's
+    own login" for `default`, else its label.
+  - The account's usage is shown **once**, exactly like any provider card: meters, head chip,
+    notes. Its reading is the freshest one among its logins (an added login's own entry in the
+    cache's `claudeAccounts`, `default`'s `providers`' `claude`, or, for a login another device
+    holds, the figures its holder published to the pool: 5-hour and 7-day), since they all read the
+    same quota (§app.insights/usage-refresh). An account of one login keeps that login's sign-in
+    caption (from its own `.credentials.json`). With no reading at all, a login never read yet says
+    "Not read yet. Its usage shows at the next refresh."; a login marked as needing sign-in is not
+    fetched and, without a kept reading, says it is not fetched until Claude Code has signed it in
+    again.
+  - **Its logins.** The body then lists the account's logins, compactly, under a caption "{n}
+    logins in the pool" (the account's logins the pool has; `default` is never one of them, so it
+    is listed but not counted) or, with none in the pool, "{n} logins on this device" — for an
+    account of one login only when that login is in the pool ("1 login in the pool"). Each row: the login's name
+    (§app.claude-logins/registry, **Names**), its standing chip, where it is while the mesh is on
+    (**This device**, the holding device's name, **Free**, or **Stuck on** a device), and, for the
+    login a new chat would start on — the first usable one in the device's order — a neutral
+    `.chip.chip-count` "In use for new chats". An account of one login outside the pool (mesh off,
+    or `default`) shows its standing and that chip above the meters instead, with no list.
+  - **Standing.** The chip speaks Settings → Accounts' words (§app.claude-logins/device-order):
+    **Ready**, **Off**, **Limited until** a time, **Sign in again**, or **Not signed in** — and it
+    never contradicts the head chip: a login whose recorded standing is ready while the account's
+    reading has a window at 100% whose reset is still ahead reads **Limited until** that reset
+    (the reading is the newer fact: the host only records a limit once a spawn has run into it). A
+    window whose reset has passed counts for neither the head chip nor the standing: it describes a
+    window that is gone.
 - **Scoped and active windows (any provider).**
   - A window with a `scope` is labeled `{window} {scope}`, e.g. "7-day Fable", the same form as
     "7-day Opus". It stays in source order, so Claude reads 5-hour, 7-day, 7-day Fable.
@@ -326,8 +336,8 @@ Both pages share one shell: a `.session-head` and a `.insights.pane` containing
   - **Fill color.** The fill is neutral. It gets `.meter-fill-warn` at ≥80% and
     `.meter-fill-error` at ≥100%. That matches the extension's own footer threshold, and it
     always pairs with the head chip.
-- **Head chip.** The worst window decides it. The words follow the skill's model-availability
-  severities:
+- **Head chip.** The worst window decides it. A window whose reset has already passed (the meter
+  is a ghost) decides nothing. The words follow the skill's model-availability severities:
 
   | Condition | Chip |
   |---|---|

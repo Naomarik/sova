@@ -5,21 +5,26 @@ How full the model's context is, as of the last reply. The data is `ContextInfo
 { tokens, window | null }`, or `null` when there's no assistant turn yet. It appears in the
 session head in **chat and watch** views.
 
-## §chat.context-window/plain-text-not-a-meter — Plain text, not a meter
+## §chat.context-window/plain-text-not-a-meter — A token count with the list's ring, not a meter
 
-The readout is plain text. The skill's `.meter` puts the number first and the bar second, but in
-a 56px head a 6px bar says less than "24%" and costs a line. So it's the number alone.
-Closeness to the limit is carried by the number, then by hue, and at the top step by a glyph
-too, so it never rests on hue alone.
+The readout is a token count with the list's 12px ring beside it (§chat.context-window/sidebar-ring),
+never a bar and never the ring alone. The skill's `.meter` puts a 6px bar under its number, and
+in a 56px head that costs a line; the ring sits on the row. The count says how much is in
+context, "222k", and from a 720px head also what it is out of, "222k / 1M". The share is the
+ring's arc: **no percent is shown in the head.** The percent is said in the `title`, to AT
+(§chat.context-window/exact-numbers) and in Session details, all in the one sentence.
+Closeness to the limit is carried by the arc, then by the hue of the ring and the count, and at
+the top step by a glyph too, so it never rests on hue alone.
 
 ## §chat.context-window/sidebar-ring — The list ring: a deliberate exception
 
-**A ring is a bar**, and the rule above says the context readout is never one. Two list rows get
-one anyway: the session row (§app/session-list, line 3) and the subagents pane's worker row
-(§app.subagents-pane/worker-rows, line 1). The subagents pane's view head borrows the same ring,
-always followed by the percent in words (§app.subagents-pane/transcript-view), so it is not a
-ring standing alone. This is the exception, stated once, with what buys it, and it covers exactly
-those:
+**A ring is a bar**, and the rule above says the context readout is never one standing alone.
+Two list rows get one alone anyway: the session row (§app/session-list, line 3) and the
+subagents pane's worker row (§app.subagents-pane/worker-rows, line 1). The heads borrow the same
+ring but never alone: the session heads put the token count beside it
+(§chat.context-window/markup), and the subagents pane's view head the percent in words
+(§app.subagents-pane/transcript-view). This is the exception, stated once, with what buys it,
+and it covers exactly those rows:
 
 - **It is list-scale, where text is not affordable.** The head has 56px and a full line to spend;
   a row's meta line has 250px already holding a timestamp and a model id, and 279 of them scroll
@@ -73,8 +78,11 @@ and on some sessions they visibly differ:
 
 ## §chat.context-window/markup — Markup
 
-It goes after `.session-head-main`, **before** the mode trigger in chat, or before the `TUI` chip
-in watch. A second copy leads the meta line for narrow heads, and CSS shows one or the other.
+It goes after `.session-head-main`, **before** the remote and `TUI` chips and Session details. It
+is the only copy: the meta line carries no context. The same markup sits in every head that shows
+a session's fill: the chat and watch head, a workspace pane's head (§workspace.groups/a-pane), the
+Overseer page's head (§app.overseer/head-layout) and a project overseer's head
+(§app.project-overseer/page).
 
 ```html
 <header class="session-head">
@@ -82,8 +90,6 @@ in watch. A second copy leads the meta line for narrow heads, and CSS shows one 
   <div class="session-head-main">
     <h1 class="session-head-title" …>…</h1>
     <p class="session-head-meta">
-      <span class="context-meta {context-warn|context-error}" aria-hidden="true">24%</span>
-      <span class="context-meta" aria-hidden="true">·</span>
       <span class="text-mono" title="{cwd}">~/webapps/sova</span>
       …
     </p>
@@ -91,18 +97,18 @@ in watch. A second copy leads the meta line for narrow heads, and CSS shows one 
   <span class="context-gauge {context-warn|context-error|context-compacted}" title="{exact sentence}">
     <!-- ≥95% only: -->
     <span class="icon icon-sm" style="--icon: url(/icons/alert-circle.svg)" aria-hidden="true"></span>
-    <span class="context-label" aria-hidden="true">Context</span>
-    <span class="context-value" aria-hidden="true">237k / 1M · 24%</span>
-    <span class="context-pct" aria-hidden="true">24%</span>
+    <!-- with a window, never when compacted: the list's ring -->
+    <span class="context-ring {context-warn|context-error}" title="{exact sentence}"><svg aria-hidden="true">…</svg></span>
+    <span class="context-value" aria-hidden="true">222k<span class="context-of"> / 1M</span></span>
   </span>
   <span class="visually-hidden" id="context-desc">{exact sentence}</span>
-  …mode trigger (chat) or TUI chip (watch)… archive…
+  …remote chips… TUI chip… Session details…
 </header>
 ```
 
-**AT.** All the visible context text is `aria-hidden`, because CSS hides one copy or the other.
-The fact reaches AT through **one** sentence, `#context-desc`, which sits outside both copies and
-is never hidden. Point the head title at it with
+**AT.** All the visible context text is `aria-hidden`, because CSS drops the window on a narrow
+head. The fact reaches AT through **one** sentence, `#context-desc`, which sits outside the
+readout and is never hidden. Point the head title at it with
 `<h1 class="session-head-title" aria-describedby="context-desc" …>`. When nothing is shown (no
 reply yet), omit both the sentence and the `aria-describedby`.
 
@@ -114,12 +120,13 @@ reply yet), omit both the sentence and the `aria-describedby`.
 | Under 10k | `8.4k` | 1 decimal, and a trailing `.0` is dropped (`8k`) |
 | 10k to under 1M | `237k` | whole thousands, rounded. A value that rounds to `1000k` shows as `1M` |
 | 1M and up | `1M`, `1.5M`, `2.1M` | 1 decimal, `.0` dropped. 1,048,576 shows as `1M` |
-| Percent | `24%` | `floor(tokens / window × 100)`, so it never shows 100% before the limit is actually reached. `<1%` when above 0 and under 1. Over the window it shows the real value (`103%`) |
-| Full | `237k / 1M · 24%` | tokens / window · percent |
-| Window unknown | `237k` | tokens only: no percent, no color steps |
+| Percent (the sentence only, never the head) | `24%` | `floor(tokens / window × 100)`, so it never shows 100% before the limit is actually reached. `<1%` when above 0 and under 1. Over the window it shows the real value (`103%`) |
+| Head 720px and up | `222k / 1M` | tokens / window, beside the ring |
+| Head under 720px | `222k` | tokens, beside the ring |
+| Window unknown | `237k` | tokens only at every width: no ring, no color steps |
 
-The numbers are mono (`--font-mono`, `--fs-mono`) with tabular numerals, in `--color-ink-2`. The
-word "Context" is `--fs-caption` in `--color-ink-muted`.
+The numbers are mono (`--font-mono`, `--fs-mono`) with tabular numerals, in `--color-ink-2`.
+"compacted" is `--fs-caption` body type in `--color-ink-muted`.
 
 ## §chat.context-window/steps-toward-the-limit — Steps toward the limit
 
@@ -127,9 +134,10 @@ word "Context" is `--fs-caption` in `--color-ink-muted`.
 |---|---|---|---|
 | under 80% | none | `--color-ink-2` | — |
 | 80% and up | `.context-warn` | `--status-warn` (6.42 dark / 5.93 light on the head's surface) | — |
-| 95% and up | `.context-error` | `--status-error` (5.42 / 6.01) | The `alert-circle` glyph before "Context" |
+| 95% and up | `.context-error` | `--status-error` (5.42 / 6.01) | The `alert-circle` glyph before the ring |
 
-Thresholds use the exact ratio, not the rounded percent. The meta-line copy takes the same class.
+Thresholds use the exact ratio, not the rounded percent. The head's ring fill and token count
+take the same class.
 
 ## §chat.context-window/exact-numbers — Exact numbers (title and AT)
 
@@ -145,8 +153,9 @@ thousands.
 
 | State | Shows |
 |---|---|
-| No assistant turn yet (`null` and no compaction row) | **Nothing.** No gauge and no meta copy. The empty state (§chat/transcript) already says "Nothing sent yet", and a "No replies yet" readout would repeat an absence |
-| Just compacted (`null` after a compaction row) | `.context-gauge.context-compacted`: "Context" plus "compacted" (in body type, muted). Narrow shows `compacted` in the meta line |
+| No assistant turn yet (`null` and no compaction row) | **Nothing.** No readout and no sentence. The empty state (§chat/transcript) already says "Nothing sent yet", and a "No replies yet" readout would repeat an absence |
+| Just compacted (`null` after a compaction row) | `.context-gauge.context-compacted`: the word "compacted" (in body type, muted), no ring, at every width |
+| Window unknown | The token count ("237k") alone, no ring, at every width |
 | Streaming | It keeps the last reply's value until the turn ends, then updates. It never animates and never pulses |
 | Watch view | Same rules, from the same data |
 
@@ -164,29 +173,25 @@ live reply as it ends, and the sidebar ring read from the file's tail.
 
 ## §chat.context-window/width-budget — Width budget: what collapses first
 
-It collapses by the **head's** width (a named container on `.session-head`, with an `@media`
+The readout stays in the head row at **every** width, 320 included, and never moves to the meta
+line. It narrows by the **head's** width (a named container on `.session-head`, with an `@media`
 floor, because these rules contract):
 
-1. **Head ≥ 720px:** full, "Context 237k / 1M · 24%" (about 165px). The Overseer page's head
-   waits for 1000px, so its meta line keeps its room (§app.overseer/head-layout): below that it
-   shows the percent.
-2. **520 to 719px:** the percent only, "24%" (or "237k", or "compacted"), still in the head.
-3. **Under 520px** (320 included):
-   - The gauge leaves the head, and the percent leads the meta line: `24% · ~/webapps/sova`.
-   - The cwd truncates first.
-   - The head holds back, the mode trigger (icon-only) and Archive, so the title keeps about
-     124px at 320.
+1. **Head ≥ 720px:** the ring and "222k / 1M" (about 90px). The Overseer page's head follows the
+   same step.
+2. **Under 720px** (the Fold's cover screen, about 412px, and 320 included): the ring and
+   "222k" (about 50px). A window-less "237k" and "compacted" read the same at every width.
+3. A workspace pane's 40px head (§workspace.groups/a-pane) is never a 720px head: it shows the
+   short form at every width.
 
-Order of sacrifice: the context label and fraction, then the context's place in the head, then
-the cwd. The title is the last thing to shrink. The model isn't in this budget at all anymore:
-it lives in the composer flyout (§chat/images), which is full-width at every size.
+Under 520px the cwd truncates first; the title block keeps its floor (below). Order of
+sacrifice: the window, then the cwd. The title is the last thing to shrink. The model isn't in
+this budget at all anymore: it lives in the composer flyout (§chat/images), which is full-width
+at every size. The session head carries no subagents or team chip (§app/insights), so nothing
+else competes with the readout for the row.
 
-Three more head rules cover every head, not just chat:
+Two more head rules cover every head, not just chat:
 
-- **Aggregate chip.** Under 520px of head width, the head's aggregate `Team · {n} working` /
-  `{n}` + worker-icon link chip (§app/insights) is hidden. It repeats the sidebar row's rail count and the
-  Agents foot row. Before this rule, a watched live session with a team at 320 had back, Team
-  chip, Live, and copy, and that left the title block about 0px wide.
 - **Floor.** `.session-head-main` has `min-width: 72px`. Whatever else lands in the head later,
   the title and meta line can't collapse to nothing. Extra chips overflow before the title
   disappears, and each new head chip needs its own narrow rule.

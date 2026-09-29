@@ -1,0 +1,45 @@
+;; Built with the JVM via deps.edn (no npm install needed): see scripts/build-org-charts.mjs.
+{:source-paths ["src" "test"]
+ :builds {;; The vendored bundle: one ESM file, copied to server/vendor/org-charts.js.
+          :lib  {:target           :esm
+                 :output-dir       "out/lib"
+                 :runtime          :node
+                 :modules          {:org-charts {:exports {createEngine sova.org-charts.api/create-engine
+                                                           charts       sova.org-charts.api/chart-list}}}
+                 ;; reproducible output: a fixed gensym counter and a sequential compile
+                 :build-hooks      [(sova.org-charts.engine.build-hooks/fixed-gensym-counter)]
+                 :compiler-options {:optimizations :advanced
+                                    :output-feature-set :es2020
+                                    :source-map false
+                                    :parallel-build false
+                                    ;; a chart or api referring to a missing var must not ship
+                                    :warnings-as-errors {:warning-types #{:undeclared-var :undeclared-ns :fn-arity}}}
+                 ;; Guardrails is off, but its malli/spec namespaces (malli, expound, cljs.spec,
+                 ;; cljs.pprint, edamame: ~390 KB) are still required and cannot be dead-code
+                 ;; eliminated. Guardrails' own documented remedy: alias them to its no-op ns.
+                 ;; The same for timbre (and the encore it drags in: ~33 KB) and cljs.spec (~8 KB): in-repo
+                 ;; stand-ins that keep what the engine uses (engine/timbre_shim.cljc, engine/no_spec.cljc).
+                 :build-options    {:ns-aliases {com.fulcrologic.guardrails.malli.core com.fulcrologic.guardrails.noop
+                                                 com.fulcrologic.guardrails.core       com.fulcrologic.guardrails.noop
+                                                 taoensso.timbre                       sova.org-charts.engine.timbre-shim
+                                                 cljs.spec.alpha                       sova.org-charts.engine.no-spec
+                                                 clojure.spec.alpha                    sova.org-charts.engine.no-spec}}
+                 :release          {:compiler-options {:closure-defines {goog.DEBUG false}}}}
+          ;; For SPIKE.md's size comparison only: the same bundle without the guardrails no-op alias.
+          :lib-baseline {:target           :esm
+                         :output-dir       "out/baseline"
+                         :runtime          :node
+                         :modules          {:org-charts {:exports {createEngine sova.org-charts.api/create-engine
+                                                                   charts       sova.org-charts.api/chart-list}}}
+                         :compiler-options {:optimizations :advanced
+                                            :output-feature-set :es2020
+                                            :source-map false}
+                         :release          {:compiler-options {:closure-defines {goog.DEBUG false}}}}
+          ;; CLJS tests under Node: engine behaviour and the charts.
+          ;; Timbre is aliased here too, so the suite runs the shim that ships (spec is not: the tests'
+          ;; malli and guardrails use it).
+          :test {:target    :node-test
+                 :build-options {:ns-aliases {taoensso.timbre sova.org-charts.engine.timbre-shim}}
+                 :output-to "out/test/node-tests.cjs"
+                 :ns-regexp "-test$"
+                 :autorun   false}}}

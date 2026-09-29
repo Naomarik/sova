@@ -180,5 +180,16 @@ count and one past the highest launch whose Claude record exists on disk
 in a row, because a failed launch can leave a gap. A restarted server therefore never collides
 with its own earlier launches, however many there were. The collision probe (33 tries) stays as
 a safety net. Nothing new is written to the pi
-session for this, and the bridge still never resumes a Claude session: pi's transcript remains
+session for this, and a restarted bridge never resumes a Claude session: pi's transcript remains
 the truth, re-sent by folding as before.
+
+The one resume is a fork. When `/explain` forks a session whose model runs on the claude-code
+provider, the parent's bridge hands the child a fork point (in `PI_CLAUDE_CODE_FORK`): its live
+CLI session id, how many pi messages that session has heard, and their fingerprint. It offers
+one only while its CLI child is running, idle, in step with pi and has heard at least one
+message. The child's bridge tries it once, for its first CLI launch, and resumes the parent's
+record into a new one (`--resume <parent> --fork-session`), sending only the new user messages,
+so its first request starts from the parent's cached prefix. It folds as before instead when the
+cwd differs, when its transcript doesn't start with exactly that prefix, when what follows holds
+a tool result or no user message, when the request is a one-shot (compaction or a branch
+summary), or when the CLI fails to resume the record.

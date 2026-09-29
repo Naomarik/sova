@@ -31,8 +31,8 @@ In chat sessions it sits in the composer foot (§chat/composer), at the right en
 indicator, the disabled reason, then this. It's in reach of the message it affects, next to the
 model and thinking level that also shape the next turn. A watched (TUI) session has no composer
 foot to show it in, and nothing to show anyway: the TUI keeps its mode in memory, so we can't say
-what it's using. The session head's right side keeps the context gauge, the subagents or team
-chip and the info button (§chat/context-window); it carries no mode.
+what it's using. The session head's right side keeps the context readout, the remote and `TUI`
+chips and the info button (§chat/context-window); it carries no mode.
 
 The Overseer is the one chat without it: it is always in the normal mode with no minor modes
 (§app.overseer/hosting), so there is nothing to switch, and its **Quick Actions** button takes

@@ -1,0 +1,19 @@
+{"v":1,"id":"syn-hold-resume","source":"synthetic","note":"Synthetic: the operator holds an item; facts that land meanwhile are taken, and resume returns it where they put it","t0":"2026-09-28T10:00:00Z","hosts":1,"sova":{"commit":null,"how":"synthetic","features":{"askedOperatorReason":true,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":true,"mergeReasonAndTodosOperatorOnly":true,"noTokenBudget":true}},
+"events": [
+{"dt":0,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":1000,"kind":"fact","entity":"gap","id":"§gap/g1","status":"open"},
+{"dt":2000,"kind":"turn","by":"operator","attended":true,"level":"L3","reasons":[]},
+{"dt":3000,"kind":"tool","name":"sova_start_gathering","attended":true,"level":"L3","verdict":"ok","args":{"baton":"b1"},"link":{"gap":"§gap/g1","how":"named"}},
+{"dt":3005,"kind":"fact","entity":"baton","id":"b1","state":"open","by":"overseer"},
+{"dt":5000,"kind":"turn-end","stop":"stop"},
+{"dt":6000,"kind":"expect","session":"§gap/g1","in":["asking"]},
+{"dt":120000,"kind":"operator","act":"hold","gap":"§gap/g1"},
+{"dt":120001,"kind":"expect","session":"§gap/g1","in":["on-hold"]},
+{"dt":180000,"kind":"fact","entity":"decision","id":"d1","baton":"b1","state":"pending","ownerArea":true},
+{"dt":240000,"kind":"fact","entity":"baton","id":"b1","state":"done","wrote":true},
+{"dt":240001,"kind":"expect","session":"§gap/g1","in":["on-hold"],"notIn":["asking","unreconciled"]},
+{"dt":300000,"kind":"operator","act":"resume","gap":"§gap/g1"},
+{"dt":300001,"kind":"expect","session":"§gap/g1","in":["unreconciled"],"notIn":["on-hold"]}
+],
+"final": {"autonomy":"L3","watch":true,"caps":{"gatherPerTurn":3,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"gatherPerDay":4,"promotePerDay":60,"createPerDay":4,"promptsPerDay":12,"unattendedPerDay":12,"gatheringsOpen":5,"codingRunning":2},"watchGapMin":10,"soonLookSec":60,"archived":false,"rosterActive":1,"gaps":[],"batons":[],"decisions":[],"builds":[],"hosts":[]}
+}

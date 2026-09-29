@@ -108,12 +108,24 @@ recorded: after each turn the extension checks every active worktree's branch wi
 `git merge-base --is-ancestor` against its target, and a branch that became merged during the
 turn is recorded as `detected`. The record appends an extension message whose text the model
 reads as one line — "Merged feat/x into master at abc1234, 5 commits, +120 −30" — and the
-worktree's status becomes `merged`. The message never starts a turn; one sent while a turn runs
+worktree's status becomes `merged`. In a project with a spec (`.sova/spec/`), that text and the
+`worktree merge` answer go on with a line naming the § the merge changed that it didn't create,
+computed from the spec's history across the merge — "Foreign § this merge changes: §a, §b", or
+"none" — then, when the merge deleted or renamed §, a line naming them ("Deleted § (still
+foreign): §x, §y → §z"), a line naming the § whose mapped code the merge changed while their
+prose didn't ("Code changed under unchanged §: …", to read, not a required name), and one
+"Spec warning: …" line each for the changed files no claim maps (each needs a claim or a
+"Plumbing: <path> — <why>" line in the reply), a draft with records never promoted in the
+worktree or in another worktree whose branch the merge brings in (into the repository's default
+branch, master or main: promote them now, since no "Deferred:" line passes there; into any other
+branch: promote them, or name the § left stale on a "Deferred: §… — <why>" line), a merge commit that resolved § by hand (they differ from
+both parents), an evidence commit the branch no longer contains, and code committed after the
+branch's last spec commit. Those lines never change the card. The message never starts a turn; one sent while a turn runs
 lands when that turn ends. A branch with no commits beyond its base is never "merged". The TUI
 draws it as a card, and Sova's transcript renders a **merge card**: the worktree path, branch,
 target branch, resulting commit, commit count, lines added and removed, and whether it was a
 fast-forward or a merge commit; a detected one also says "seen after the turn". Details Sova
-can't read render as the plain line.
+can't read render as the plain text.
 
 A tool merge's commit is the target's new tip, and its count and lines are the target's own change.
 For a merge seen after a turn, the commit is the first one on the target's first-parent history

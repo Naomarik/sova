@@ -295,11 +295,9 @@ html, body, #root { height: 100%; }
 }
 .workspace-pane-head > .chip { flex-shrink: 1; min-width: 0; overflow: hidden; }
 .workspace-pane-tools { flex: none; display: flex; align-items: center; gap: var(--space-1); }
-/* A pane is never a 720px head: the gauge takes its percent-only step here at
-   every width (base.css does the same under 900px for the session head). */
-.workspace-pane-head .context-label,
-.workspace-pane-head .context-value { display: none; }
-.workspace-pane-head .context-pct { display: inline; }
+/* A pane is never a 720px head: the context readout keeps its short step
+   (ring and "222k", no window) at every width, as under 720px in base.css. */
+.workspace-pane-head .context-of { display: none; }
 
 /* The Promoted chip: an undo for the gesture, sitting in the head beside the
    layout toggle until it is used or the tab forgets it. */

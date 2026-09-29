@@ -140,15 +140,91 @@ writer**).
   the agent directory (`<agent dir>/extensions/spec/core/`, resolved like pi's
   own agent dir: an exact `~` or a leading `~/` is home), always through that
   `sh` recipe, never a guessed path. A copy inside the
-  project is read and asked about first. The reply ends with one exact line,
+  project is read and asked about first. A reply on a turn that edited,
+  committed, promoted or merged ends with one exact line,
   `Also changes: §X — <what>` or `Also changes: none`, nothing after it: it
-  names foreign § only, never the task's new claims, and notes (the
-  exemption, a gap) go above it. A request, hook, helper or CSS class is
-  plumbing and never flags. Prompt-only: no widget, command or
-  entry of its own. See `../spec/README.md`.
+  names foreign § only, never the task's new claims (a § the user asked for
+  is still foreign), and notes (the exemption, a gap) go above it; a turn
+  that only answered writes none. A request, hook, helper or CSS class is
+  plumbing and never flags. No widget, command or entry of its own, but two
+  mechanical checks (`spec-guard.ts`, plain node, shared with the Claude Code
+  workers' hooks), silent without a spec, Git or the trusted tools, and in a
+  remote session:
+  - **Census on a Git delta.** After any tool call, bash included, each work
+    tree the call writes in (the cwd, a command's `cd`/`git -C`/`--root`, an
+    edit's file) has its `git status` (paths and mtimes) compared with what the
+    session saw; its baseline is taken at the run's start or just before the
+    first call that touches it. When a path is new
+    (a commit's files count too), `census --changed --base <session-start
+    HEAD> --own-base …` runs (`--spec` the draft this session created, else
+    the newest one created since the session started, else in a linked
+    worktree its newest) and, on the first in-boundary change,
+    each new file in the boundary or mapped outside it, or a new foreign §, a
+    short `[spec census]` digest is appended to that tool result, with a
+    "No draft yet" line while there is none. The same digest says, on the call
+    that did it, when the current spec (`manifest.json`, `claims/**`) was
+    written by hand: an edit or write call on it, or a shell command that is
+    neither a draft tool nor git and changed it; and when a git operation
+    rewrote a commit a draft's evidence names (a rebase, reset or amend: the
+    commit was on the branch before the call and isn't after), with the
+    way back: `git rebase --abort` while the rebase is under way, else, with
+    no uncommitted changes, `git reset --hard <the exact old tip>` (the census
+    relay, which has no sha, says to find it in `git reflog`); then merge
+    master in instead. Both look at the trees the call works in (`cd`, `git -C`).
+    Evidence commits `census --changed` reports as orphaned (`orphanedEvidence`)
+    that the guard didn't already name are relayed once; a manifest conflict
+    during a rebase says to abort it rather than run merge-manifest. A
+    promote call's `driftWarnings` (a removed quantity another § still states)
+    are relayed on its result as a `[spec check]` warning, never a block.
+    `PI_SPEC_CENSUS_HOOK=0` turns it off.
+  - **The `Also changes:` line.** One grammar and parser (`also-changes.ts`, no
+    imports; the Claude Code Stop hook and the A/B scorer use it too): items
+    separated by `;`, each led by the § it names (`, /d` completes from the
+    preceding full id), a § inside a description never named, a broken line a
+    format error of its own. At the end of a run (`agent_before_settle`):
+    - **Landings**, each judged on its own range (`judgeOp`): this session's
+      commits, merges (worktree tool, bash, fast-forward; a `worktrees:merged`
+      event's `before`/`after`/`top`) and promotes; an interrupted run's
+      (checked with the next run); and its workers' from the ledger
+      (`SOVA_SPEC_LEDGER`, one JSONL file per parent session, appended by
+      `spec-worker.ts` and the Claude Code hooks), taken in a run that relays
+      a worker or changes something itself. A merge that only brought the
+      default branch into another branch is absorbed, not landed.
+    - **The list** is the union of their `sova-spec.mjs foreign` lists, the
+      task's own claims out (`--own-base`: absent at the default tip at run
+      start and at the fork point), plus the session tree's uncommitted
+      changes and edited drafts. Tracked worktrees join only in a relay run,
+      from where the last run that took them left them; a Q&A run leaves them
+      (and the ledger) for later, so a background promotion forces no line.
+    - **The landing gate** (`foreign --landing`): each changed file no claim
+      maps needs a `Plumbing: <path> — <why>` line, each unpromoted draft
+      record's § a `Deferred: §X — <why>` line, except at a landing on the
+      default branch, where only a promotion or the override line passes
+      it; § whose mapped code changed with their text untouched may be named
+      without being extras.
+    - A landing run is re-prompted (hidden `spec-check` message) up to twice,
+      as the Stop hook; a line on a Q&A run once; any other wrong line gets a
+      warning, on screen and as a hidden note with the next prompt. A
+      `manifest.json` Git holds in conflict is named with the `merge-manifest`
+      command. `Spec check override: <why>` above the last line excuses an
+      omission only, never an extra. A check that fails says so, to the model
+      too. `PI_SPEC_CHECK=0` turns it off.
+
+  - **In pi workers.** Workers start with `--no-extensions`, so the mode
+    extension is absent there; the subagents spawn path loads
+    `spec-worker.ts` (`-e`) into every code-writing pi worker and member a
+    spec-on session spawns: the same census digest (forbidden writes
+    included), the same turn-end line check over its own operations and tree
+    (landings re-prompted twice, anything else once), and a ledger entry per
+    git operation for the parent.
+
+  See `../spec/README.md`.
 
 Like the major mode, the prompt is read per turn, so toggles apply from the
-next prompt. Unknown names hand-edited into `minorModes` are dropped on load.
+next prompt. The active triple (`mode`, `strict`, `minorModes`) is published
+on `pi.events` as `mode:state` (`state.ts` `MODE_STATE_EVENT`) on every change,
+and again on `mode:discover`: the subagents extension reads it to brief the
+workers a spec-on session spawns. Unknown names hand-edited into `minorModes` are dropped on load.
 Toggle them from the palette's Mode category or with `/mode <minor> [on|off]`.
 
 ### Alignments
@@ -523,4 +599,8 @@ node tests/smoke.mjs          # real index.ts against a fake pi host, no model r
 node tests/wake-turn.mjs      # real pi session + scripted provider: same prompt whoever starts the turn
 node tests/note-turn.mjs      # real pi session + scripted provider: a minor toggle keeps the head; notes, reopen, compaction
 node tests/align-turn.mjs     # real pi session + scripted provider: the align tool, its hidden notes (per prompt, after a compaction) and the settle nudge
+node --test also-changes.test.ts # the Also-changes grammar (s2-3's line, suffix ids, format errors), Plumbing/Deferred lines, landingGate
+node --test spec-guard.test.ts # the spec checks: census per tree (real Git + spec tools), judgeOp (M3-B-s2-2's own claim), the ledger, command detection
+node tests/spec-turn.mjs      # real pi session + scripted provider: census digest, forbidden writes, landings (two merges, Plumbing, Deferred, a worker's ledger commit), Q&A line, re-prompts, mode:state
+node tests/spec-worker.mjs    # real pi session loading only spec-worker.ts (a pi worker's -e): the census digest; the turn-end check (edit, promote x2, Q&A line) and its ledger entry
 ```

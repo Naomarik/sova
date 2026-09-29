@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import type { ClaudeCliStatus } from "../shared/protocol";
-import { claudeLoginEnv } from "./claude-accounts";
+import { claudeBaseSpawnEnv, claudeLoginEnv } from "./claude-accounts";
 
 /**
  * Is the Claude Code CLI on this machine, and which version?
@@ -20,7 +20,7 @@ export function claudeCliStatus(executable = "claude"): Promise<ClaudeCliStatus>
     // The same env hygiene the extension uses (pi-config/extensions/claude-code/models.ts): these
     // two make the CLI think it is running inside Claude Code, which changes how it behaves.
     // On this host's first usable Claude login, like every `claude` (§app.claude-logins/spawn-selection).
-    const env = { ...process.env, ...claudeLoginEnv() };
+    const env = { ...claudeBaseSpawnEnv(), ...claudeLoginEnv() };
     delete env.CLAUDECODE;
     delete env.CLAUDE_CODE_ENTRYPOINT;
 

@@ -11,16 +11,10 @@ const stateOf = (path: string) => sessionContext()[path] ?? null;
 
 const stepOf = (s: ContextInfo | "compacted") => (s === "compacted" ? "" : contextStep(s.tokens, s.window));
 
-/** The short form: "24%", or "237k" without a window, or "compacted". */
+/** The worker readout's short form: "24%", or "237k" without a window, or "compacted". */
 function shortText(s: ContextInfo | "compacted"): string {
   if (s === "compacted") return "compacted";
   return s.window ? `${formatPercent(s.tokens, s.window)}%` : formatTokens(s.tokens);
-}
-
-/** The full value: "237k / 1M · 24%", or "237k" without a window, or "compacted". */
-function fullText(s: ContextInfo | "compacted"): string {
-  if (s === "compacted") return "compacted";
-  return s.window ? `${formatTokens(s.tokens)} / ${formatTokens(s.window)} · ${formatPercent(s.tokens, s.window)}%` : formatTokens(s.tokens);
 }
 
 /** `aria-describedby` for the session title: only while a context sentence exists. The sentence
@@ -28,34 +22,35 @@ function fullText(s: ContextInfo | "compacted"): string {
 export const contextDescribedBy = (path: string, scope?: PaneScope) =>
   stateOf(path) ? (scope ? paneScopedId(scope, "context-desc") : "context-desc") : undefined;
 
-/** The readout itself, one copy of the markup for every place that shows it. Its visible parts
-    are aria-hidden: the caller gives AT the one sentence. */
-function Gauge(props: { s: ContextInfo | "compacted"; class?: string }) {
+/** The head's readout: the list's ring (with a window, never when compacted) and the token count,
+    "222k", with " / 1M" that CSS shows only on a 720px head. No percent: that is the title's.
+    Its visible parts are aria-hidden: the caller gives AT the one sentence. */
+function Gauge(props: { s: ContextInfo | "compacted" }) {
+  const info = () => (props.s === "compacted" ? null : props.s);
   return (
-    <span
-      class={`context-gauge ${props.s === "compacted" ? "context-compacted" : stepOf(props.s)} ${props.class ?? ""}`.trim()}
-      title={contextSentence(props.s)}
-    >
+    <span class={`context-gauge ${props.s === "compacted" ? "context-compacted" : stepOf(props.s)}`.trim()} title={contextSentence(props.s)}>
       <Show when={stepOf(props.s) === "context-error"}>
         <Icon name="alert-circle" small />
       </Show>
-      <span class="context-label" aria-hidden="true">
-        Context
-      </span>
+      <Show when={info()?.window ? info() : null}>{(c) => <ContextRing info={c()} />}</Show>
       <span class="context-value" aria-hidden="true">
-        {fullText(props.s)}
-      </span>
-      <span class="context-pct" aria-hidden="true">
-        {shortText(props.s)}
+        <Show when={info()} fallback="compacted">
+          {(c) => (
+            <>
+              {formatTokens(c().tokens)}
+              <Show when={c().window}>{(w) => <span class="context-of"> / {formatTokens(w())}</span>}</Show>
+            </>
+          )}
+        </Show>
       </span>
     </span>
   );
 }
 
 /**
- * The head's context readout: plain text, never a bar, never animated. All
- * visible copies are aria-hidden; AT gets the one #context-desc sentence. CSS collapses it by the
- * head's width (full → percent → moves to the meta line).
+ * The context readout of every session head (chat, watch, workspace pane, both overseers):
+ * never a bar alone, never animated, always in the head row. Its visible parts are aria-hidden;
+ * AT gets the one #context-desc sentence.
  */
 export function ContextGauge(props: { path: string }) {
   const paneId = usePaneId();
@@ -83,7 +78,19 @@ export function ContextReadout(props: { state: ContextInfo | "compacted"; class?
   const ring = () => (props.state !== "compacted" && props.state.window ? props.state : null);
   return (
     <span class="context-readout">
-      <Show when={ring()} fallback={<Gauge s={props.state} class={props.class} />}>
+      <Show
+        when={ring()}
+        fallback={
+          <span class={`context-gauge ${props.state === "compacted" ? "context-compacted" : ""} ${props.class ?? ""}`.trim()} title={contextSentence(props.state)}>
+            <span class="context-label" aria-hidden="true">
+              Context
+            </span>
+            <span class="context-value" aria-hidden="true">
+              {shortText(props.state)}
+            </span>
+          </span>
+        }
+      >
         {(c) => (
           <span class={`context-compact ${stepOf(c())} ${props.class ?? ""}`.trim()} title={contextSentence(c())}>
             <ContextRing info={c()} />
@@ -95,23 +102,5 @@ export function ContextReadout(props: { state: ContextInfo | "compacted"; class?
       </Show>
       <span class="visually-hidden">{contextSentence(props.state)}</span>
     </span>
-  );
-}
-
-/** The meta-line copy for narrow heads ("24% · ~/cwd"); CSS shows it only under 520px. */
-export function ContextMetaPrefix(props: { path: string }) {
-  return (
-    <Show when={stateOf(props.path)}>
-      {(s) => (
-        <>
-          <span class={`context-meta ${stepOf(s())}`.trim()} aria-hidden="true">
-            {shortText(s())}
-          </span>
-          <span class="context-meta" aria-hidden="true">
-            ·
-          </span>
-        </>
-      )}
-    </Show>
   );
 }

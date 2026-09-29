@@ -1,4 +1,5 @@
 // Run with the existing installed Pi runtime; no second dependency tree.
+import './hermetic-env.mjs'; // first: never the inherited agent dir / Claude directory
 import { readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { jiti } from '../../subagents/tests/runtime.mjs';

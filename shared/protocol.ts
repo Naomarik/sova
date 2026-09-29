@@ -875,7 +875,58 @@ export interface ClaudeAccountsInfo {
   /** The registry could not be read: only `default` is used, and nothing is written. */
   error?: string;
   flow: ClaudeLoginFlowState | null;
+  /** The pool of logins across the mesh (§app.claude-logins/pool); absent while the mesh is off. */
+  pool?: ClaudePoolInfo;
 }
+/** A device of the mesh, as the pool shows it. */
+export interface ClaudePoolDevice {
+  id: string;
+  label: string;
+  self: boolean;
+  /** Reachable now (this device always is). */
+  up: boolean;
+  /** Logins it holds and uses (not the free ones it keeps). */
+  logins: string[];
+}
+/** Where a login is. `stuck`: held by a device that is offline (nobody reclaims it). */
+export interface ClaudePoolHolder {
+  device: string;
+  label: string;
+  free: boolean;
+  stuck: boolean;
+  /** When it got there (the holder's clock). */
+  since: number;
+}
+export interface ClaudePoolLogin {
+  id: string;
+  label?: string;
+  identity: ClaudeLoginIdentity | null;
+  addedAt: number;
+  enabled: boolean;
+  holder: ClaudePoolHolder;
+  /** "Always give this login to" that device. */
+  pin: string | null;
+  /** As the login's last holder reported it. */
+  standing: ClaudeLoginStanding;
+  usage?: { fiveHour?: number; fiveHourResetsAt?: number; sevenDay?: number; sevenDayResetsAt?: number; at: number };
+  /** A move this device has under way for it (its own journal). */
+  moving?: { op: "lend" | "borrow" | "leave"; state: string; reason?: string; peer?: string };
+  /** Return was asked and the holder has not returned it yet. */
+  returnAsked?: boolean;
+}
+export interface ClaudePoolInfo {
+  self: string;
+  keeper: { id: string | null; label: string; up: boolean };
+  devices: ClaudePoolDevice[];
+  /** Every login of the pool, in the pool's order. */
+  logins: ClaudePoolLogin[];
+  /** This device never holds a subscription login (it syncs API keys only). */
+  apiKeysOnly?: boolean;
+}
+/** PUT /api/claude/pool/keeper */
+export interface ClaudePoolKeeperRequest { device: string }
+/** PATCH /api/claude/pool/:id */
+export interface ClaudePoolLoginPatch { pin?: string | null }
 /** The chat's Claude login, as the composer foot shows it. */
 export interface ChatClaudeLogin {
   id: string;
@@ -2163,7 +2214,8 @@ export interface UsageInsight {
   stale: boolean; // now - fetchedAt > 10 min (nothing refreshed the cache: neither this server's poller nor a TUI)
   providers: UsageProvider[]; // fixed order: claude, openai, ollama, zai, deepseek
   /** Every Claude login on this host, in its order, `default` (whose usage is `providers`' claude)
-      included (§app.insights/usage-cards). Absent from an older server; the page then shows the
+      included; with the pool on, the pool's logins first, in its order, each with its `holder`
+      (§app.insights/usage-cards). Absent from an older server; the page then shows the
       one Claude card from `providers`. */
   claudeLogins?: UsageClaudeLogin[];
 }
@@ -2190,8 +2242,12 @@ export interface UsageClaudeLogin {
   /** Its reading: `id` "claude", like the provider card. A login marked as needing sign-in is not
       fetched, so it keeps the last reading it had (or none: state "error"). */
   usage: UsageProvider;
-  /** When `usage` was fetched (added logins; `default`'s is the file's `fetchedAt`). */
+  /** When `usage` was fetched (added logins; `default`'s is the file's `fetchedAt`; a pool login
+      held elsewhere: when its holder published it). */
   fetchedAt?: number;
+  /** While the pool is on, where the login is (not for `default`). A login held by another device
+      (or kept free) reads its holder's published figures (5-hour and 7-day), or none. */
+  holder?: { label: string; self: boolean; free: boolean; stuck: boolean };
 }
 
 /** `restored`: a worker a server restart took down, rebuilt from its durable record and transcript.
@@ -3885,4 +3941,88 @@ export interface MonitorHistory {
   groups: Record<string, { label: string; sessionPath?: string }>;
   /** Worker names by group key, then worker id, for the workers in `points` that had one. */
   workerLabels?: Record<string, Record<string, string>>;
+}
+
+// ---------------------------------------------------------------------------
+// Voice input (§chat/voice, §app.settings-dialog/voice): server/voice/. GET /api/voice is the
+// one status read, polled by the Settings → Voice tab and the composer's setup sheet.
+// ---------------------------------------------------------------------------
+
+/** Where the whisper.cpp binary runs: a GPU backend built from source, or the CPU. */
+export type VoiceBackend = "vulkan" | "metal" | "cuda" | "cpu";
+
+/** What the mic can do on this host right now. `ready` is the only state that records. */
+export type VoiceState = "unsupported" | "not-installed" | "needs-packages" | "installing" | "failed" | "ready";
+
+export type VoiceStepId = "detect" | "packages" | "source" | "build" | "model" | "selftest" | "finish";
+export type VoiceStepState = "pending" | "running" | "done" | "skipped" | "failed";
+
+export interface VoiceStep {
+  id: VoiceStepId;
+  state: VoiceStepState;
+  /** A figure while it runs: bytes of a download, or a build's percent. */
+  progress?: { done: number; total: number; unit: "bytes" | "percent" };
+  /** One short fact about how it went ("Copied from …", "Prebuilt CPU binary"). */
+  note?: string;
+  error?: string;
+}
+
+export interface VoiceInstallJob {
+  id: string;
+  /** What this job asked for: the detected GPU backend, or the CPU. */
+  mode: "gpu" | "cpu";
+  /** The backend it is building for (set after detection). */
+  backend?: VoiceBackend;
+  repair: boolean;
+  steps: VoiceStep[];
+  startedAt: number;
+  finishedAt?: number;
+  /** How it ended: ok, stopped for packages, failed at a step, or cancelled. Absent while running. */
+  outcome?: "ok" | "needs-packages" | "failed" | "cancelled";
+}
+
+export interface VoiceLogLine {
+  seq: number;
+  at: number;
+  text: string;
+}
+
+export interface VoiceInstalled {
+  backend: VoiceBackend;
+  /** The GPU the self-test saw, when it used one ("AMD Radeon 8060S Graphics"). */
+  device?: string;
+  whisper: string;
+  model: string;
+  selftestMs: number;
+  selftestText: string;
+  installedAt: number;
+}
+
+export interface VoiceStatus {
+  state: VoiceState;
+  /** Why the host can't run voice at all (state "unsupported"). */
+  reason?: string;
+  platform: { os: string; arch: string; distro?: string; packageManager?: string };
+  /** The backend a GPU setup would build for, from detection. */
+  gpu: { backend: VoiceBackend; device?: string };
+  /** A prebuilt CPU binary exists for this host: "Use CPU Instead" is offered. */
+  cpuPrebuilt: boolean;
+  /** state "needs-packages": what is missing and the one command that installs it (null: no known package manager). */
+  missing?: { packages: string[]; command: string | null };
+  /** The latest job this server ran (in memory; a restart forgets it, and the next job resumes). */
+  install?: VoiceInstallJob;
+  installed?: VoiceInstalled;
+  runtime: { running: boolean; starting: boolean; lastMs?: number; crashedOut: boolean };
+  model: { id: string; bytes: number };
+  /** Log lines after the `since` the request asked for, oldest first, and the newest seq. */
+  log: { seq: number; lines: VoiceLogLine[] };
+  /** Bytes the voice folder holds, only when asked for (`?size=1`). */
+  diskBytes?: number;
+}
+
+export interface VoiceTranscript {
+  text: string;
+  /** whisper's own time for this clip, ms. */
+  ms: number;
+  audioSec: number;
 }

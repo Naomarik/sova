@@ -389,7 +389,11 @@ member at once.
 ```html
 <footer class="composer group-composer" id="group-composer">
   <form class="composer-inner" aria-label="Message every member">
+    <!-- dictation strip while recording or transcribing (§chat.voice/states) -->
     <div class="composer-row">
+      <!-- the same mic as a pane composer's, first in the row (§chat.voice/button); dictated text
+           lands in this box -->
+      <button class="button button-icon button-ghost voice-button" type="button" aria-label="Dictate" title="Dictate">…mic…</button>
       <label class="visually-hidden" for="group-composer-input">Message every member</label>
       <textarea class="input textarea composer-input" id="group-composer-input" rows="1"
                 placeholder="Ask all 4 members…—Enter sends, Shift+Enter adds a line" enterkeyhint="send"

@@ -1,0 +1,101 @@
+/* ---- VOICE INPUT (§chat/voice, §app.settings-dialog/voice). The mic in .composer-row, the one
+   dictation strip above the row, and the setup view the sheet and Settings → Voice share. ---- */
+
+/* The mic: a ghost 44px square like the plus beside it. Recording is live, so it takes the accent
+   fill — the end state carries the meaning, never the pulse (reduced motion stills it). */
+.voice-button { position: relative; flex: none; }
+.voice-button[data-voice="recording"],
+.voice-button[data-voice="recording"]:hover,
+.voice-button[data-voice="recording"]:active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-on-accent);
+}
+.voice-button[data-voice="recording"]:hover { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+.voice-button[aria-disabled="true"] { cursor: default; color: var(--color-ink-muted); }
+.voice-button[aria-disabled="true"]:hover { background: transparent; }
+/* Setting up: a thin ring around the glyph, filled clockwise as the job goes. Static. */
+.voice-ring { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.voice-ring-track { stroke: var(--color-border); stroke-width: 2; }
+.voice-ring-fill { stroke: var(--color-accent); stroke-width: 2; stroke-linecap: round; }
+
+/* The strip: where .align-picks sits, one row, never a control in .composer-row itself. */
+.voice-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-2);
+}
+.voice-strip > .live-dot { margin-left: var(--space-2); }
+.voice-strip-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.voice-strip[data-voice="recording"] .voice-strip-text { color: var(--color-ink); font-weight: var(--fw-medium); }
+.voice-strip-error { white-space: normal; color: var(--color-ink); }
+.voice-strip > .icon { color: var(--status-error); margin-left: var(--space-2); }
+.voice-strip > .button-icon { flex: none; }
+/* The level: the number first, then the bar (a meter is never a bar alone). */
+.voice-level { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
+.voice-level-num { min-width: 3ch; text-align: right; font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.voice-level-track { width: 64px; height: 6px; border-radius: var(--r-full); background: var(--color-sunken); overflow: hidden; }
+.voice-level-fill { display: block; height: 100%; background: var(--color-accent); transition: width var(--dur-fast) linear; }
+@container composer (max-width: 379px) {
+  .voice-level-track { width: 36px; }
+}
+
+/* ---- Setup view ---- */
+.voice-setup { display: flex; flex-direction: column; gap: var(--space-3); min-width: 0; }
+.voice-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.voice-progress-line { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.voice-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.voice-step {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  column-gap: var(--space-2);
+  align-items: center;
+  min-height: 28px;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+}
+.voice-step-mark { display: inline-flex; justify-content: center; align-items: center; color: var(--color-ink-muted); }
+.voice-step[data-state="done"] .voice-step-mark,
+.voice-step[data-state="skipped"] .voice-step-mark { color: var(--status-success); }
+.voice-step[data-state="failed"] .voice-step-mark { color: var(--status-error); }
+.voice-step-label { color: var(--color-ink); }
+.voice-step[data-state="pending"] .voice-step-label { color: var(--color-ink-muted); }
+.voice-step-state { color: var(--color-ink-2); }
+.voice-step[data-state="failed"] .voice-step-state { color: var(--status-error); }
+.voice-step-detail { grid-column: 2 / -1; font-size: var(--fs-mono); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.voice-needs { display: flex; flex-direction: column; gap: var(--space-2); }
+.voice-needs-title { margin: 0; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.voice-command {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.voice-log { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.voice-log-lines {
+  align-self: stretch;
+  max-height: 240px;
+  margin: 0;
+  padding: var(--space-3);
+  overflow: auto;
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  color: var(--color-ink-2);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.voice-ready-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.voice-test { display: flex; flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.voice-test-result { margin: 0; color: var(--color-ink); }

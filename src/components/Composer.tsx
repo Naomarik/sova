@@ -58,6 +58,7 @@ import { ModeMenu, type ModeControl } from "./ModeMenu";
 import { Icon, type IconName } from "./ui";
 import type { RunDetail, RunStep } from "../lib/live";
 import { hostOf } from "../lib/mesh";
+import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 
 /** The session pane's element id: ONE pane, five tabs, so every trigger controls the same id. */
 const PANE_ID = "session-pane";
@@ -187,7 +188,7 @@ export function Composer(props: {
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
-  /** Recommendations ticked on an alignment card (§chat.alignment/card), staged for the next send:
+  /** Answers picked on an alignment card (§chat.alignment/card), staged for the next send:
       the row names them, and `compose` puts their line ahead of the typed text in one message. */
   picks?: { label: string; compose(text: string): string; clear(): void } | null;
   /** Whether the draft holds anything to send (text or an attachment), as it changes. */
@@ -241,9 +242,15 @@ export function Composer(props: {
    * this composer is focused or holds a draft — a pane with text must keep it visible, and the one
    * you are typing in must not shrink under you.
    */
-  const collapsed = () => !!scope.id && groupComposerActive() && !focused() && !text();
+  const collapsed = () => !!scope.id && groupComposerActive() && !focused() && !text() && voice.phase() === "idle";
   const paneId = (base: string) => paneScopedId(scope, base);
   const announce = usePaneAnnounce();
+  /** Dictation into this box (§chat/voice): the mic in the row, its strip above it. */
+  const voice = createVoiceInput({
+    input: () => input,
+    hint: () => props.cwd?.split("/").filter(Boolean).pop() ?? null,
+    announce,
+  });
 
   /** Any local write (typing, send's clear, a restore) makes this tab's text the authority, so a
       stored draft still on its way from the server must not replace it. */
@@ -934,10 +941,10 @@ export function Composer(props: {
 
         <Show when={props.picks}>
           {(p) => (
-            <div class="align-picks" role="group" aria-label="Staged recommendations">
+            <div class="align-picks" role="group" aria-label="Staged answers">
               <Icon name="check" small />
-              <span class="align-picks-text" title={`Taking your recommendation: ${p().label}`}>
-                Taking your recommendation: <span class="text-mono">{p().label}</span>
+              <span class="align-picks-text" title={`Answering: ${p().label}`}>
+                Answering: <span class="text-mono">{p().label}</span>
               </span>
               <button type="button" class="button button-icon button-ghost" aria-label="Clear Picks" title="Clear Picks" onClick={() => p().clear()}>
                 <Icon name="close" small />
@@ -945,6 +952,7 @@ export function Composer(props: {
             </div>
           )}
         </Show>
+        <VoiceStrip voice={voice} />
         <Show when={images().length > 0 || rejected().length > 0}>
           <ul class="attachments" aria-label="Attachments" ref={list}>
             <For each={images()}>
@@ -994,6 +1002,10 @@ export function Composer(props: {
         </Show>
 
         <div class="composer-row">
+          {/* The mic first, left of the plus; gone with the textarea's writability (§chat.voice/button). */}
+          <Show when={!props.readOnly}>
+            <VoiceButton voice={voice} />
+          </Show>
           {/* One flyout in place of the old Attach and Commands buttons. */}
           <ComposerMenu
             disabled={disabled()}

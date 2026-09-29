@@ -1,0 +1,110 @@
+import assert from "node:assert/strict";
+import { describe, it } from "node:test";
+import type { VoiceStatus } from "../../../shared/protocol";
+import { backgroundSentence, clock, jobPercent, micErrorSentence, readyLine, recordingText, stepFigure, unsupportedReason } from "./format";
+import { spacedInsert, splice, targetRange, wordCount } from "./insert";
+import { encodeWav, joinBatches, levelOf } from "./wav";
+
+describe("insertion", () => {
+  const ins = (value: string, at: number, text: string, end = at) => {
+    const r = { start: at, end };
+    return splice(value, r, spacedInsert(value, r, text));
+  };
+  it("spaces itself from words on either side", () => {
+    assert.deepEqual(ins("fix thebug", 7, "the "), { value: "fix the the bug", caret: 12 });
+    assert.deepEqual(ins("hello", 5, " world"), { value: "hello world", caret: 11 });
+    assert.deepEqual(ins("world", 0, "hello"), { value: "hello world", caret: 6 });
+    assert.deepEqual(ins("", 0, "  hello  "), { value: "hello", caret: 5 });
+  });
+  it("adds no space where whitespace already is", () => {
+    assert.deepEqual(ins("a \nb", 2, "x"), { value: "a x\nb", caret: 3 });
+    assert.deepEqual(ins("line\n", 5, "next"), { value: "line\nnext", caret: 9 });
+  });
+  it("replaces a selection", () => {
+    assert.deepEqual(ins("say OLD now", 4, "new", 7), { value: "say new now", caret: 7 });
+  });
+  it("an empty transcript inserts nothing", () => {
+    assert.equal(spacedInsert("abc", { start: 1, end: 1 }, "   "), "");
+  });
+  it("target: the live caret when focused, the saved one over unchanged text, else the end", () => {
+    const saved = { start: 2, end: 2, focused: true, value: "abcd" };
+    assert.deepEqual(targetRange("abcd", { start: 1, end: 3, focused: true }, saved), { start: 1, end: 3 });
+    assert.deepEqual(targetRange("abcd", { start: 4, end: 4, focused: false }, saved), { start: 2, end: 2 });
+    assert.deepEqual(targetRange("abcdX", { start: 5, end: 5, focused: false }, saved), { start: 5, end: 5 });
+    assert.deepEqual(targetRange("abcd", { start: 0, end: 0, focused: false }, { ...saved, focused: false }), { start: 4, end: 4 });
+    assert.deepEqual(targetRange("ab", { start: 9, end: 12, focused: true }, null), { start: 2, end: 2 });
+  });
+  it("counts words", () => {
+    assert.equal(wordCount(" Open Sova,  and run it. "), 5);
+    assert.equal(wordCount(""), 0);
+  });
+});
+
+describe("wav", () => {
+  it("encodes 16-bit mono 16 kHz with the right header and clamps", () => {
+    const wav = encodeWav(new Float32Array([0, 1, -1, 2, -2, 0.5]));
+    const v = new DataView(wav.buffer);
+    const s = (o: number, n: number) => String.fromCharCode(...wav.subarray(o, o + n));
+    assert.equal(s(0, 4), "RIFF");
+    assert.equal(s(8, 4), "WAVE");
+    assert.equal(v.getUint16(22, true), 1);
+    assert.equal(v.getUint32(24, true), 16000);
+    assert.equal(v.getUint16(34, true), 16);
+    assert.equal(v.getUint32(40, true), 12);
+    assert.deepEqual([0, 1, 2, 3, 4, 5].map((i) => v.getInt16(44 + i * 2, true)), [0, 32767, -32768, 32767, -32768, 16383]);
+    assert.equal(wav.byteLength, 44 + 12);
+  });
+  it("joins batches in order", () => {
+    assert.deepEqual([...joinBatches([new Float32Array([1, 2]), new Float32Array([3])])], [1, 2, 3]);
+  });
+  it("level: silence is near 0, speech in the middle, never past 100", () => {
+    assert.equal(levelOf(0), 0);
+    assert.ok(levelOf(0.001) < 10);
+    const speech = levelOf(0.05);
+    assert.ok(speech > 30 && speech < 70, `${speech}`);
+    assert.equal(levelOf(4), 100);
+  });
+});
+
+describe("voice copy", () => {
+  it("clock and the recording strip's countdown", () => {
+    assert.equal(clock(7.9), "0:07");
+    assert.equal(clock(272), "4:32");
+    assert.equal(recordingText(12, 300), "Recording 0:12");
+    assert.equal(recordingText(271, 300), "Recording 4:31 · 29 s left");
+    assert.equal(backgroundSentence(12.4), "Recording stopped when the app went to the background. Transcribed 0:12.");
+  });
+  it("unsupported reasons", () => {
+    assert.equal(unsupportedReason({ secure: false, getUserMedia: true, audioContext: true }), "Voice needs HTTPS or localhost.");
+    assert.equal(unsupportedReason({ secure: true, getUserMedia: false, audioContext: true }), "This browser can't record audio.");
+    assert.equal(unsupportedReason({ secure: true, getUserMedia: true, audioContext: true }), null);
+  });
+  it("mic errors", () => {
+    assert.match(micErrorSentence({ name: "NotAllowedError" }), /blocked the microphone/);
+    assert.equal(micErrorSentence({ name: "NotFoundError" }), "No microphone found.");
+    assert.equal(micErrorSentence(new Error("boom")), "Couldn't start the microphone. boom.");
+  });
+  it("step figures and the job's percent", () => {
+    assert.equal(stepFigure({ id: "model", state: "running", progress: { done: 212e6, total: 574_041_195, unit: "bytes" } }), "212 of 574 MB");
+    assert.equal(stepFigure({ id: "build", state: "running", progress: { done: 43, total: 100, unit: "percent" } }), "43%");
+    assert.equal(stepFigure({ id: "build", state: "running" }), null);
+    const steps = [
+      { id: "detect", state: "done" },
+      { id: "packages", state: "done" },
+      { id: "source", state: "skipped" },
+      { id: "build", state: "running", progress: { done: 50, total: 100, unit: "percent" } },
+      { id: "model", state: "pending" },
+      { id: "selftest", state: "pending" },
+      { id: "finish", state: "pending" },
+    ] as const;
+    assert.equal(jobPercent([...steps]), 50);
+  });
+  it("ready line", () => {
+    const s = {
+      installed: { backend: "vulkan", device: "AMD Radeon 8060S Graphics", whisper: "v1.9.4", model: "m", selftestMs: 412, selftestText: "", installedAt: 0 },
+      runtime: { running: false, starting: false, crashedOut: false },
+      diskBytes: 575e6,
+    } as unknown as VoiceStatus;
+    assert.equal(readyLine(s), "Ready · Vulkan · AMD Radeon 8060S Graphics · self-test 0.4 s · large-v3-turbo q5_0 · 575 MB on disk · Not loaded");
+  });
+});

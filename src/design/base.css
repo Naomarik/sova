@@ -3814,14 +3814,14 @@ a.group-option { color: inherit; text-decoration: none; }
 .hljs-emphasis { font-style: normal; text-decoration: underline; text-decoration-color: var(--color-border-strong); }
 
 
-/* ---- CONTEXT WINDOW. Plain text, not a meter: number first and
-   only — a 6px bar in a 56px head says less than "24%". It sits in the
-   head before the mode trigger (chat) / Live chip (watch) and collapses
-   with the HEAD's width, not the window's:
-     ≥720  "Context 237k / 1M · 24%"
-     ≥520  "24%"
-     <520  leaves the head; .context-meta shows "24%" first in the meta line
-   These rules contract, so each container query has a @media floor. ---- */
+/* ---- CONTEXT WINDOW. The token count with the list's ring beside it,
+   never a bar alone and never a percent (that is the title's sentence).
+   It sits in the head before the remote/TUI chips and stays in the row
+   at every width; the HEAD's width, not the window's, decides the words:
+     ≥720  ◔ "222k / 1M"
+     <720  ◔ "222k"
+   Without a window: "237k", no ring; compacted: "compacted", no ring.
+   These rules contract, so the container query has a @media floor. ---- */
 
 .session-head { container: session-head / inline-size; }
 .context-gauge {
@@ -3841,10 +3841,9 @@ a.group-option { color: inherit; text-decoration: none; }
   font-variant-numeric: tabular-nums;
   color: var(--color-ink-2);
 }
-.context-pct { display: none; }
-.context-meta { display: none; flex: none; }
-/* Toward the limit: the number is the fact, the hue repeats it; ≥95% also
-   gets the alert glyph so it never rests on hue alone. */
+/* Toward the limit: the arc and the number are the fact, the hue repeats
+   it; ≥95% also gets the alert glyph so it never rests on hue alone.
+   .context-meta is the fan-out dialog's fill (app.css), stepped the same. */
 .context-warn .context-value,
 .context-warn .context-pct,
 .context-meta.context-warn { color: var(--status-warn); }
@@ -3855,27 +3854,13 @@ a.group-option { color: inherit; text-decoration: none; }
 .context-compacted .context-value { font-family: var(--font-body); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 
 @container session-head (max-width: 719px) {
-  .context-label, .context-value { display: none; }
-  .context-pct { display: inline; }
-}
-@container session-head (max-width: 519px) {
-  .context-gauge { display: none; }
-  .context-meta { display: inline; }
-  /* The head's aggregate "Team · n working" link chip repeats the
-     sidebar row chip and the Agents foot row; on a narrow head it goes. */
-  .session-head > .chip-count { display: none; }
+  .context-of { display: none; }
 }
 /* Floor: whatever else lands in the head, the title block never collapses
    to nothing — extra chips overflow before the title disappears. */
 .session-head-main { min-width: 72px; }
 @media (max-width: 719px) {
-  .context-label, .context-value { display: none; }
-  .context-pct { display: inline; }
-}
-@media (max-width: 519px) {
-  .context-gauge { display: none; }
-  .context-meta { display: inline; }
-  .session-head > .chip-count { display: none; }
+  .context-of { display: none; }
 }
 
 
@@ -4245,12 +4230,17 @@ a.group-option { color: inherit; text-decoration: none; }
 .usage-card-plan,
 .usage-card-caption { margin: 0; }
 .usage-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); }
-/* A Claude login's card (§app.insights/usage-cards): the email is the title, so it may wrap
-   anywhere rather than overflow; its standing chips lead the body. Logins of one account get a
-   quiet full-width head over their cards. */
+/* A Claude account's card (§app.insights/usage-cards): the email is the title, so it may wrap
+   anywhere rather than overflow. Its logins follow the meters as compact rows divided by hairlines:
+   the name, then its chips (they wrap under the name on a narrow card). */
 .usage-login-title { white-space: normal; overflow-wrap: anywhere; }
 .usage-login-standing { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); margin: 0; }
-.usage-account-head { grid-column: 1 / -1; margin: var(--space-2) 0 calc(var(--space-2) * -1); }
+.usage-logins { display: flex; flex-direction: column; gap: var(--space-1); }
+.usage-logins-caption { margin: 0; }
+.usage-logins-list { list-style: none; margin: 0; padding: 0; }
+.usage-logins-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-3); padding: var(--space-2) 0; border-top: 1px solid var(--color-border); }
+.usage-logins-row:last-child { padding-bottom: 0; }
+.usage-logins-name { color: var(--color-ink); font-weight: var(--fw-medium); overflow-wrap: anywhere; min-width: 0; }
 .usage-note code { font-family: var(--font-mono); font-size: var(--fs-mono); }
 
 /* Deep link #/agents/<teamId> focuses the team's group (tabindex -1); ring on :focus,
@@ -4335,19 +4325,6 @@ a.group-option { color: inherit; text-decoration: none; }
    keeps the icon at chip scale. */
 .chip-count .icon { width: 12px; height: 12px; }
 
-/* The session head's compact worker count: the figure and the worker icon are
-   one unit, so the gap is tighter than the chip's own --space-1, and the icon
-   sits a step behind the figure in muted ink. It's a link, so on hover both
-   move to ink together. */
-.session-head-working { gap: 2px; }
-.session-head-working .icon {
-  width: 12px;
-  height: 12px;
-  color: var(--color-ink-muted);
-  transition: color var(--dur-fast) var(--ease-standard);
-}
-.session-head-working:hover .icon,
-.session-head-working:focus-visible .icon { color: inherit; }
 a.chip { text-decoration: none; }
 a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
 
@@ -4992,15 +4969,11 @@ button.subagents-usage:focus-visible { outline: var(--focus-ring); outline-offse
 
 /* The view head's context readout, compact: the list's ring and the percent ("◔ 6%"), the full
    sentence in the title, so the meta line holds one row at a normal pane width. Without a window
-   or just after a compaction there is no ring to draw, and the gauge's words stay ("Context 64k",
-   "Context compacted"). It is in no .session-head, so the head's width floors are undone here. */
+   or just after a compaction there is no ring to draw, and the words stay ("Context 64k",
+   "Context compacted"). */
 .context-readout { display: inline-flex; }
 .context-readout > .context-gauge { display: inline-flex; font-size: inherit; }
-.context-readout .context-label,
-.context-readout .context-value { display: inline; }
-.context-readout .context-gauge .context-pct { display: none; }
 .context-compact { display: inline-flex; align-items: center; gap: var(--space-1); }
-.context-compact .context-pct { display: inline; }
 
 /* A restored worker's note under the head: what the restart did, and Resume Worker when this
    server can do it. Sunken, like other context strips; the button sits at the end. */
@@ -5506,21 +5479,11 @@ a.subagent-row { text-decoration: none; }
 .overseer-page-head > .overseer-more { display: none; }
 .overseer-mode-spacer { flex: none; width: 16px; height: 16px; }
 /* The meta line's facts ("181 sessions · 5 working · 2 need you", about 240px) show in full from
-   a 660px head up, so the row gives them the room: below 1000 the context readout is its percent
-   (its full words stay in its title), and below 900 Ideas and Todos drop their icons (their words
+   a 660px head up, so the row gives them the room: below 720 the context readout drops its window
+   (the CONTEXT WINDOW rules, as on every head), and below 900 Ideas and Todos drop their icons (their words
    say what they are) and the ghost buttons keep 4px of side padding (the head's 12px gap still
    parts their words). Each tier's floor follows its query and the narrowest tier comes last: a
    later floor for a wider tier would undo a narrower tier's rule. */
-@container session-head (max-width: 999px) {
-  .overseer-page-head .context-label,
-  .overseer-page-head .context-value { display: none; }
-  .overseer-page-head .context-pct { display: inline; }
-}
-@media (max-width: 999px) {
-  .overseer-page-head .context-label,
-  .overseer-page-head .context-value { display: none; }
-  .overseer-page-head .context-pct { display: inline; }
-}
 @container session-head (max-width: 899px) {
   .overseer-page-head > .overseer-wide { display: none; }
   .overseer-page-head > .overseer-more { display: inline-flex; }
@@ -5544,6 +5507,14 @@ a.subagent-row { text-decoration: none; }
   .overseer-page-head > .overseer-mid { display: none; }
   .overseer-page-head .overseer-ideas-toggle > .icon,
   .overseer-page-head .overseer-todos-toggle > .icon { display: inline-block; }
+}
+/* A 320px phone: the context readout stays on the row, so the gaps close past
+   overseer-ideas.css's to 2px (the 44px ghost targets already part their icons) and the side
+   padding to 4px; ⋯ keeps its 8px gap. The title block takes what is left. A media query for
+   the same reason as that one: at these widths the head is the window's width. */
+@media (max-width: 359px) {
+  .overseer-head.overseer-page-head { gap: 2px; padding-inline: var(--space-1); }
+  .overseer-head.overseer-page-head > .overseer-more { margin-left: calc(var(--space-2) - 2px); }
 }
 
 /* The Overseer's empty thread: a live fact, then the absence. */
@@ -5743,6 +5714,30 @@ a.subagent-row { text-decoration: none; }
 .accounts-login-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .accounts-login-toggle { gap: var(--space-2); }
 .accounts-login-confirm { flex-basis: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+/* One block per account (§app.claude-logins/device-order): the account's head (email, plan, how
+   many logins share its quota, Up / Down for the account), then its logins as compact sub-rows
+   divided by hairlines instead of boxes of their own. */
+.accounts-accounts { list-style: none; margin: 0 0 var(--space-3); padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+.accounts-account { border: 1px solid var(--color-border); border-radius: var(--r-lg); background: var(--color-surface); padding: var(--space-2) var(--space-3); }
+.accounts-account-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); padding-bottom: var(--space-2); }
+.accounts-account-name { color: var(--color-ink); font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.accounts-account-logins { list-style: none; margin: 0; padding: 0; }
+.accounts-account-logins .accounts-login { border: 0; border-top: 1px solid var(--color-border); border-radius: 0; background: none; padding: var(--space-2) 0; }
+.accounts-login-title { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 var(--space-2); }
+.accounts-rename { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-rename .input { flex: 1 1 12rem; min-width: 0; }
+/* The pool (mesh on): the keeper choice, each row's holder + standing chips, its pin, and this
+   device's own login under its own heading. */
+.accounts-keeper { display: flex; flex-direction: column; gap: var(--space-1); margin: 0 0 var(--space-3); }
+.accounts-keeper-field { max-width: 22rem; }
+.accounts-keeper .field-hint { margin: 0; }
+.accounts-login-chips { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.accounts-pin { flex: 0 1 12rem; min-width: 9rem; }
+/* Mesh page: the Claude login a host holds, on its meta line; it opens Settings → Accounts. */
+.mesh-login-link { display: inline-block; max-width: 100%; min-height: var(--tap-min); margin: calc((var(--tap-min) - 1.45em) / -2) 0; padding: 0; border: 0; background: none; color: var(--color-accent); font: inherit; line-height: var(--tap-min); text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; cursor: pointer; }
+.mesh-login-link:hover { text-decoration: underline; }
+.mesh-login-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-xs); }
+.accounts-own-title { margin: var(--space-4) 0 var(--space-2); font-size: var(--fs-heading-s); line-height: var(--lh-heading-s); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .accounts-flow { display: flex; flex-direction: column; gap: var(--space-3); }
 .accounts-flow-url { margin: 0; display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
 .accounts-flow-url a { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: var(--fs-caption); }

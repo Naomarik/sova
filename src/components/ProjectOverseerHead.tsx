@@ -195,7 +195,12 @@ export function ProjectOverseerHead(props: {
         </a>
         <div class="session-head-main">
           <h1 class="session-head-title" tabindex="-1" ref={props.titleRef} title={s().title} aria-describedby={contextDescribedBy(props.path)}>
-            Overseer
+            {/* A phone with a state chip shows the eye instead of the word (orgs.css); the word
+                stays for AT, and the eye's title names it. */}
+            <span class="po-head-title-text">Overseer</span>
+            <span class="po-head-title-icon" title={`Overseer · ${projectName()}`}>
+              <Icon name="eye" small />
+            </span>
           </h1>
           <p class="session-head-meta po-head-meta">
             <a class="po-head-project" href={projectHref(c.orgId, c.projectId)} title={`Open the ${projectName()} page`}>

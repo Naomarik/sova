@@ -22,6 +22,12 @@
   .vis-wf-nav-button { min-width: 44px; justify-content: center; }
   .vis-wf-nav-button[aria-current="true"] { flex: 0 1 auto; }
   .vis-wf-nav-button:not([aria-current="true"]) .vis-wf-nav-name { display: none; }
+  /* No room for the current name either (View.tsx): numbers only; the screen's label under the row names it. */
+  .vis-wf-numbers .vis-wf-nav-name { display: none; }
+  /* Numbers only and still a few px short: the buttons share the row down to 36px each, their tap areas
+     spanning the gaps between them (44px at a 261px share column's six), before the row scrolls. */
+  .vis-wf-numbers .vis-wf-nav-button { flex: 0 1 44px; min-width: 36px; }
+  .vis-wf-numbers .vis-wf-nav-button::after { inset: -4px calc(var(--space-1) / -2); }
 }
 .vis-wf-nav-button {
   display: inline-flex; align-items: center; gap: var(--space-1);

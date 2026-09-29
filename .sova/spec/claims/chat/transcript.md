@@ -39,8 +39,8 @@
 - **Head title.** Uses `.session-head-title`, a single line with the full text in `title`. The
   `h1` is sized as a heading-s on purpose: the page is dense and the title is chrome, not a
   display headline.
-- **What the head holds.** Back, the title block, the context gauge (§chat/context-window), the mode switch
-  (§chat/mode-menu), the working count and the `TUI` chip, and Archive. Nothing else: the model and the session's
+- **What the head holds.** Back, the title block, the context readout (§chat/context-window), the remote
+  chips, the `TUI` chip and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
   own facts moved into the composer (§chat/composer, §chat/images), which is where the session is acted on.
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in

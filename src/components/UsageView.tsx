@@ -3,13 +3,16 @@ import type { UsageBalance, UsageClaudeLogin, UsageInsight, UsageProvider, Usage
 import { refreshUsage } from "../lib/api";
 import { duration, relativeIn, relativeTime } from "../lib/format";
 import {
+  accountReading,
   authCaption,
   balanceBreakdown,
-  claudeLoginGroups,
+  claudeAccountLoginsCaption,
+  claudeAccounts,
+  claudeAccountSubtitle,
+  claudeLoginHolder,
   claudeLoginName,
   claudeLoginNote,
   claudeLoginStanding,
-  claudeLoginSubtitle,
   claudeLoginTitle,
   extraUsageMeter,
   meterReset,
@@ -153,9 +156,11 @@ function UsageCard(props: {
   note?: string | null;
   /** After the sign-in caption. */
   foot?: JSX.Element;
+  /** No sign-in caption: the reading is one of several logins', each with its own sign-in. */
+  noSignIn?: boolean;
 }) {
   const problem = (): UsageLine | null => (props.note ? { rest: props.note } : providerProblem(props.p, props.now));
-  const signIn = () => authCaption(props.p, props.now);
+  const signIn = () => (props.noSignIn ? null : authCaption(props.p, props.now));
   const headId = () => props.headId ?? `u-${props.p.id}`;
   return (
     <article class="card usage-card" aria-labelledby={headId()}>
@@ -166,7 +171,7 @@ function UsageCard(props: {
           </h3>
           <Show when={props.plan ?? planLabel(props.p)}>{(plan) => <p class="usage-card-plan text-caption text-muted">{plan()}</p>}</Show>
         </div>
-        <Show when={providerChip(props.p)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
+        <Show when={providerChip(props.p, props.now)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
       </header>
       <div class="card-body">
         {props.lead}
@@ -208,56 +213,82 @@ function UsageCard(props: {
   );
 }
 
-/** One Claude login: its email as the title, its standing on this device, then its usage like any card. */
-function ClaudeLoginCard(props: { l: UsageClaudeLogin; now: number; shares: UsageClaudeLogin[] }) {
-  const standing = () => claudeLoginStanding(props.l, props.now);
+/** A login's standing chip, and "In use for new chats" on the one a new chat starts on. */
+function LoginChips(props: { l: UsageClaudeLogin; now: number; reading: UsageProvider }) {
+  const standing = () => claudeLoginStanding(props.l, props.now, props.reading);
+  return (
+    <>
+      <Chip tone={standing().tone} title={standing().title}>
+        {standing().text}
+      </Chip>
+      <Show when={claudeLoginHolder(props.l)}>
+        {(h) => (
+          <Chip tone={h().tone} title="Where this login is">
+            {h().text}
+          </Chip>
+        )}
+      </Show>
+      <Show when={props.l.inUse}>
+        <span class="chip chip-count" title="The first ready login in this device's order: new chats start on it">
+          In use for new chats
+        </span>
+      </Show>
+    </>
+  );
+}
+
+/**
+ * One Claude account (§app.insights/usage-cards): its email as the title, its usage once (the
+ * freshest reading of its logins, which share one quota), then its logins as compact rows — or,
+ * for an account of one login outside the pool, that login's chips above the meters.
+ */
+function ClaudeAccountCard(props: { account: UsageClaudeLogin[]; now: number }) {
+  const reading = () => accountReading(props.account);
+  const first = () => props.account[0]!;
+  const caption = () => claudeAccountLoginsCaption(props.account);
+  const listed = () => caption() !== null;
   return (
     <UsageCard
-      p={props.l.usage}
+      p={reading().usage}
       now={props.now}
-      title={claudeLoginTitle(props.l)}
-      plan={claudeLoginSubtitle(props.l, props.now, props.shares.length > 0)}
-      headId={`u-claude-${props.l.id}`}
-      note={claudeLoginNote(props.l)}
+      title={claudeLoginTitle(first())}
+      plan={claudeAccountSubtitle(props.account)}
+      headId={`u-claude-${first().id}`}
+      note={claudeLoginNote(reading().login)}
+      noSignIn={props.account.length > 1}
       lead={
-        <p class="usage-login-standing">
-          <Chip tone={standing().tone} title={standing().title}>
-            {standing().text}
-          </Chip>
-          <Show when={props.l.inUse}>
-            <span class="chip chip-count" title="The first ready login in this device's order: new chats start on it">
-              In use for new chats
-            </span>
-          </Show>
-        </p>
+        <Show when={!listed()}>
+          <p class="usage-login-standing">
+            <LoginChips l={first()} now={props.now} reading={reading().usage} />
+          </p>
+        </Show>
       }
       foot={
-        <Show when={props.shares.length}>
-          <p class="usage-card-caption text-caption text-muted">
-            Same account as {props.shares.map((o) => claudeLoginName(o, props.now)).join(", ")}: they share these limits.
-          </p>
+        <Show when={listed()}>
+          <div class="usage-logins">
+            <p class="usage-logins-caption text-caption text-muted">{caption()}</p>
+            <ul class="usage-logins-list">
+              <For each={props.account}>
+                {(l) => (
+                  <li class="usage-logins-row" data-login={l.id}>
+                    <span class="usage-logins-name">{claudeLoginName(l, props.account)}</span>
+                    <span class="usage-login-standing">
+                      <LoginChips l={l} now={props.now} reading={reading().usage} />
+                    </span>
+                  </li>
+                )}
+              </For>
+            </ul>
+          </div>
         </Show>
       }
     />
   );
 }
 
-/** Claude's cards: one per login on this device, logins of one account together under its head. */
-function ClaudeLoginCards(props: { logins: UsageClaudeLogin[]; now: number }) {
-  return (
-    <For each={claudeLoginGroups(props.logins)}>
-      {(group) => (
-        <>
-          <Show when={group.length > 1}>
-            <h3 class="usage-account-head text-caption text-muted">
-              {claudeLoginTitle(group[0]!)} · {group.length} logins, one account
-            </h3>
-          </Show>
-          <For each={group}>{(l) => <ClaudeLoginCard l={l} now={props.now} shares={group.filter((o) => o.id !== l.id)} />}</For>
-        </>
-      )}
-    </For>
-  );
+/** Claude's cards: one per account, in the order its first login has on this device. */
+function ClaudeAccountCards(props: { logins: UsageClaudeLogin[]; now: number }) {
+  return <For each={claudeAccounts(props.logins)}>{(account) => <ClaudeAccountCard account={account} now={props.now} />}</For>;
 }
 
 /** The page body, directly in `.insights-inner`: the h1 already names it, so no section head. */
@@ -323,7 +354,7 @@ function UsageBody(props: {
               <For each={data().providers}>
                 {(p) => (
                   <Show when={p.id === "claude" && data().claudeLogins?.length ? data().claudeLogins : null} fallback={<UsageCard p={p} now={props.now} />}>
-                    {(logins) => <ClaudeLoginCards logins={logins()} now={props.now} />}
+                    {(logins) => <ClaudeAccountCards logins={logins()} now={props.now} />}
                   </Show>
                 )}
               </For>

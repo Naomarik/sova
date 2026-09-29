@@ -3493,14 +3493,19 @@ export interface DiffFilePatch {
     hermetic). `none`: no /proc (not Linux): only the server's own Node numbers. */
 export type MonitorScope = "unit" | "tree" | "none";
 
-/** How a process was charged to its session/worker, strongest first. Everything but `cwd` is
-    exact: `worker-pid` the runtime's in-process worker pid; `live-record` a pi worker's own live
-    record; `session-id` a `claude --resume/--session-id` uuid; `team-env` a member-mcp helper's
-    team env; `hosted` a direct child of the server started by a hosted session's tool (matched
-    by its session cwd once, when no other hosted session shares that cwd); `descendant` below
-    a charged process; `sid` a session/process group already seen under a charged process
-    (orphans, nohup, setsid). `cwd` is a heuristic: the process's cwd lies in a session's cwd. */
-export type MonitorVia = "worker-pid" | "live-record" | "session-id" | "team-env" | "hosted" | "descendant" | "sid" | "cwd";
+/** How a process was charged to its session/worker, strongest first. Exact: `worker-pid` the
+    runtime's in-process worker pid; `session-id` a `claude --resume/--session-id` uuid (a
+    worker's session id, or a hosted session's Claude Code provider); `live-record` a pi
+    worker's own live record; `team-env` a member-mcp helper's team env; `env` the
+    PI_SESSION_FILE pi's bash tool puts in its child's environment (a hosted session's or a pi
+    worker's tool child, and everything it started); `descendant` below a charged process;
+    `sid` a session id (setsid group) already seen under a charged process (orphans, nohup,
+    setsid). Heuristics, to be labelled as such: `exited-tools` CPU of the server's children
+    that exited between two ticks, charged to the only hosted session running a tool then;
+    `cwd` the process's cwd lies in exactly one hosted session's cwd. */
+export type MonitorVia =
+  | "worker-pid" | "session-id" | "live-record" | "team-env" | "env" | "descendant" | "sid"
+  | "exited-tools" | "cwd";
 
 /** Coarse kind of a process from its argv, parsed once per process. */
 export type MonitorProcKind =

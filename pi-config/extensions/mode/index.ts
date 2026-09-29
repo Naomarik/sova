@@ -1081,6 +1081,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			const landed: string[] = [];
 			const conflicts: string[] = [];
 			const ids = new Set(specRun.mergeForeign);
+			// The list is exact (a § the line names beyond it is an extra) when Git computed every part of
+			// it and at least one part exists: a worktree merge's list, or a changed tree's.
+			let exact = true;
+			let gitBased = specRun.merged;
 			// Each tree, the session's and every tracked worktree: a worker's edit, commit or promotion
 			// there is this turn's too. A current spec that changed is a promotion landing: blocking.
 			const errors: string[] = [];
@@ -1089,15 +1093,18 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			for (const fresh of specRun.trees) {
 				const carried = settledTrees.get(fresh.view.top);
 				const tree = carried && (fresh.view.top !== cwdTop || relay) ? carried : fresh;
-				// The session's own tree, attributed per operation: what each of this session's commits,
-				// merges and promotions landed there (HEAD just before vs just after), plus its uncommitted
-				// changes. Another actor's commit on that branch meanwhile is never this turn's. A run that
-				// relays a worker's report compares the whole tree, as the worker left it.
-				const t = fresh.view.top === cwdTop && !relay ? await opsTurn(fresh, specRun.ops.get(fresh.view.top) ?? [], SPEC_CORE) : await treeTurn(tree, SPEC_CORE);
+				// The session's own tree: its HEAD's movement counts only through this session's own
+				// operations there (HEAD just before vs just after each commit, merge, promotion), plus its
+				// uncommitted changes (since the last run settled, in a run that relays a worker). Another
+				// actor's commit on that branch is never this turn's. Workers' ground is the tracked worktrees:
+				// each is compared whole, from where the last run left it.
+				const t = fresh.view.top === cwdTop ? await opsTurn(tree, specRun.ops.get(fresh.view.top) ?? [], SPEC_CORE) : await treeTurn(tree, SPEC_CORE);
 				if (t.error) errors.push(t.error);
 				if (t.conflict) conflicts.push(t.conflict);
 				if (!t.changed) continue;
 				changed = true;
+				if (t.foreign) gitBased = true;
+				else exact = false;
 				if (t.specChanged) landed.push(basename(tree.view.top));
 				for (const id of t.foreign ?? []) ids.add(id);
 			}
@@ -1105,14 +1112,16 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			// A root a promote --write named outside those trees.
 			for (const [dir, base] of specRun.roots) {
 				if (specRun.trees.some((t) => t.root === dir)) continue;
-				for (const id of (await foreignBetween(dir, base, undefined, SPEC_CORE)) ?? []) ids.add(id);
+				const listed = await foreignBetween(dir, base, undefined, SPEC_CORE);
+				if (!listed) exact = false;
+				for (const id of listed ?? []) ids.add(id);
 			}
 			// A worker's report naming a § that arrived in this run makes it a change turn (the line is
 			// required), but Git stays the authority for the list: a report names the worker's whole task,
 			// not what this turn landed (B2 merge-4: a merge of master into the branch landed nothing).
 			if (reportedAlsoChanges(ctx.sessionManager.getBranch().slice(specRun.branchAt))) changed = true;
 			const foreign = [...ids].sort();
-			const check = checkAlsoChanges(lastReplyText, { required: changed, foreign });
+			const check = checkAlsoChanges(lastReplyText, { required: changed, foreign, exact: exact && gitBased });
 			if (check.ok && !conflicts.length) return;
 			const blocking = specRun.merged || specRun.promoted || landed.length > 0;
 			if (blocking && !check.ok && !specReprompted) {

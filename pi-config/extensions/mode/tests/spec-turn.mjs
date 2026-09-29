@@ -419,6 +419,38 @@ try {
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the third party's §app/other, before or after the merge, is not this turn's");
 	git("worktree", "remove", "--force", wt8);
 
+	// M2-B-v21-1 (a): a worker promotes in a tracked worktree while the session is idle, and a third party
+	// commits spec on master in the ROOT tree; the relay run lists only the worktree's §. (b): the reply
+	// names an extra § with an override line; the override never excuses an extra: one re-prompt.
+	const wt9 = path.join(scratch, "wt9");
+	const wt9Git = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt9, ...args]).status, 0, `git ${args.join(" ")}`);
+	mkdirSync(wt9, { recursive: true });
+	wt9Git("init", "-q");
+	for (const rel of [".sova/spec/manifest.json", ".sova/spec/claims/app/shell.md", ".sova/spec/claims/app/other.md", "src/App.tsx"]) {
+		mkdirSync(path.dirname(path.join(wt9, rel)), { recursive: true });
+		writeFileSync(path.join(wt9, rel), spawnSync("git", ["-C", cwd, "show", `HEAD:${rel}`], { encoding: "utf8" }).stdout);
+	}
+	wt9Git("add", "-A");
+	wt9Git("commit", "-qm", "base");
+	hostPi.events.emit("worktrees:state", { version: 1, active: [wt, wt2, wt3, wt4, wt5, wt6, wt7, wt9] });
+	script.push({ text: "The worker is running." });
+	await session.prompt("have a worker do it in wt9");
+	writeFileSync(path.join(wt9, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, wt9 worker.\n");
+	wt9Git("commit", "-qam", "spec: promoted by the worker");
+	put(".sova/spec/claims/app/other.md", "# §app/other\n\nOther, third party during the worker.\n");
+	git("commit", "-qam", "spec: a third party on master");
+	at = requests.length;
+	const before9 = checks().length;
+	script.push(
+		{ text: `Done.\n${"Spec check override:"} §app/other is what users see change too\nAlso changes: §app/shell — wt9; §app/other — users see it` },
+		{ text: "Done.\nAlso changes: §app/shell — wt9" },
+	);
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_09 finished", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 2, "the override did not pass an extra: one re-prompt");
+	assert.equal(checks().length, before9 + 1);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the third party's §app/other on master is not listed");
+	assert.match(checks().at(-1).content, /§app\/other isn't changed by this diff: if its user-visible behavior changed, update its claim in a draft and promote; otherwise drop it from the line/);
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

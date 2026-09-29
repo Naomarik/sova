@@ -488,13 +488,15 @@ export function stripAlsoChanges(text: string): string {
 	return lines.join("\n").trimEnd();
 }
 
-export type AlsoChangesProblem = "missing" | "not-last" | "malformed" | "omits" | "none-but-changed";
+export type AlsoChangesProblem = "missing" | "not-last" | "malformed" | "omits" | "none-but-changed" | "extra";
 
 export interface AlsoChangesCheck {
 	ok: boolean;
 	problem?: AlsoChangesProblem;
 	/** Computed foreign § the line doesn't name. */
 	missing: string[];
+	/** § the line names that the computed list doesn't (checked only when the list is `exact`). */
+	extra: string[];
 	/** The reply carries the override line. */
 	overridden: boolean;
 }
@@ -502,11 +504,15 @@ export interface AlsoChangesCheck {
 /**
  * Check a reply's last line. `required`: the turn edited, committed, promoted or merged; a turn that
  * didn't needs no line (and spec-mode.md says not to write one). `foreign`: computed from Git; every one
- * must be named. An override line above the last line (ALSO_CHANGES_OVERRIDE) passes a wrong list.
+ * must be named. `exact`: that list is complete, so a § the line names beyond it is an extra (a claim
+ * this diff doesn't change, or the task's own new one).
+ * The override line above the last line (ALSO_CHANGES_OVERRIDE) excuses only an OMISSION: a computed §
+ * the agent shows it must not name (one this task created in an earlier merge, say). It never excuses an
+ * extra: a § whose behavior changed gets its claim updated in a draft and promoted, never just named.
  */
-export function checkAlsoChanges(reply: string, options: { required: boolean; foreign: readonly string[] }): AlsoChangesCheck {
+export function checkAlsoChanges(reply: string, options: { required: boolean; foreign: readonly string[]; exact?: boolean }): AlsoChangesCheck {
 	const overridden = reply.split("\n").some((l) => l.trim().startsWith(ALSO_CHANGES_OVERRIDE) && l.trim().length > ALSO_CHANGES_OVERRIDE.length + 1);
-	const pass: AlsoChangesCheck = { ok: true, missing: [], overridden };
+	const pass: AlsoChangesCheck = { ok: true, missing: [], extra: [], overridden };
 	if (!options.required) return pass;
 	const line = lastLine(reply);
 	const ids = parseAlsoChanges(line);
@@ -516,11 +522,13 @@ export function checkAlsoChanges(reply: string, options: { required: boolean; fo
 			: reply.split("\n").some((l) => parseAlsoChanges(l.trim()) !== undefined)
 				? "not-last"
 				: "missing";
-		return { ok: false, problem, missing: [...options.foreign], overridden };
+		return { ok: false, problem, missing: [...options.foreign], extra: [], overridden };
 	}
 	const missing = options.foreign.filter((id) => !ids.includes(id));
-	if (!missing.length) return pass;
-	return { ok: overridden, problem: ids.length ? "omits" : "none-but-changed", missing, overridden };
+	const extra = options.exact ? ids.filter((id) => !options.foreign.includes(id)) : [];
+	if (!missing.length && !extra.length) return pass;
+	const problem: AlsoChangesProblem = missing.length ? (ids.length ? "omits" : "none-but-changed") : "extra";
+	return { ok: overridden && !extra.length, problem, missing, extra, overridden };
 }
 
 const PROBLEM_TEXT: Record<AlsoChangesProblem, string> = {
@@ -529,13 +537,21 @@ const PROBLEM_TEXT: Record<AlsoChangesProblem, string> = {
 	malformed: 'your last line is not exactly "Also changes: §X — <what>; …" or "Also changes: none"',
 	omits: "your `Also changes:` line omits",
 	"none-but-changed": "your line says none, but it lands",
+	extra: "",
 };
 
-/** One sentence naming what's wrong, for the re-prompt and the warning. */
+/** The sentence for § a line names beyond the computed list; the override never excuses it. */
+export const extraText = (ids: readonly string[]): string =>
+	`${ids.join(", ")} ${ids.length === 1 ? "isn't" : "aren't"} changed by this diff: if its user-visible behavior changed, update its claim in a draft and promote; otherwise drop it from the line`;
+
+/** What's wrong, for the re-prompt and the warning: the omission (if any), then the extras (if any). */
 export function describeProblem(check: AlsoChangesCheck): string {
 	if (!check.problem) return "";
-	const base = PROBLEM_TEXT[check.problem];
-	return check.problem === "omits" || check.problem === "none-but-changed" ? `${base} ${check.missing.join(", ")}` : base;
+	const parts: string[] = [];
+	if (check.problem === "omits" || check.problem === "none-but-changed") parts.push(`${PROBLEM_TEXT[check.problem]} ${check.missing.join(", ")}`);
+	else if (check.problem !== "extra") parts.push(PROBLEM_TEXT[check.problem]);
+	if (check.extra.length) parts.push(extraText(check.extra));
+	return parts.join("; ");
 }
 
 /** The hidden message that re-prompts a merge/promote turn once. */
@@ -545,8 +561,8 @@ export function repromptText(check: AlsoChangesCheck, foreign: readonly string[]
 	return [
 		`${CHECK_TAG} This turn ${what}. The foreign § it lands, computed from Git: ${list}.`,
 		`${describeProblem(check)}.`,
-		`Reply again, briefly, ending with exactly this last line, nothing after it: "${shape}". A § the user asked you to change is still foreign; a worker's reported § count too.`,
-		`If the computed list is wrong (for example a § this task created in an earlier merge), say why on a line "${ALSO_CHANGES_OVERRIDE} <why>" right above the last line.`,
+		`Reply again, briefly, ending with exactly this last line, nothing after it: "${shape}". A § the user asked you to change is still foreign.`,
+		`If a computed § must not be named (for example one this task created in an earlier merge), say why on a line "${ALSO_CHANGES_OVERRIDE} <why>" right above the last line; it never excuses naming a § the list lacks.`,
 	].join("\n");
 }
 

@@ -448,6 +448,7 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Before finishing:\n(- .*\n)*- Your reply's last line on a turn that edited, committed, promoted or merged, exempt work included, is exactly "Also changes: §X — <what>; §Y — <what>" or "Also changes: none", nothing after; a turn that only answered writes none\. It names foreign § only, never your new claims; an addition under one is that §'s change, and a § the user asked for is still foreign\./, "the handoff line is a finishing step on change turns, exempt work included; none on a Q&A turn");
 	assert.match(spec, /A merge or promote turn names every foreign § it lands, even if already reported, workers' included: copy the list `worktree merge` or `promote --write` prints/, "merge and promote turns copy the computed list");
 	assert.match(spec, /"Spec check override: <why>"/);
+	assert.match(spec, /A check returns a line that omits one or names one the list lacks; "Spec check override: <why>" right above the last line excuses only an omission you show is wrong\./, "the override never adds a §");
 	assert.ok(spec.includes(SPEC_CHECK_OVERRIDE), "the prompt spells the override the check accepts");
 	assert.ok(spec.includes(`A \`${DIGEST_TAG}\` note on a tool result is this census`), "the automatic census is named by its tag");
 	assert.match(spec, /While coding, exempt work included, run `census --changed` \(/);

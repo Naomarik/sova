@@ -15,6 +15,8 @@ import {
 	checkAlsoChanges,
 	commandRoot,
 	coreDir,
+	describeProblem,
+	extraText,
 	DIGEST_TAG,
 	digest,
 	draftForeign,
@@ -479,4 +481,21 @@ test("digest: a changed file outside the boundary that no claim maps gets one li
 	assert.ok(!text?.includes(".sova/spec/claims/app/a.md is outside"), "the spec's own files are not behavior");
 	assert.equal(digest(v, ["README.md"], { reported: true, foreign: [] }, true), undefined, "only new files: said once per file");
 	assert.equal(digest(censusView({ outside: null }), ["a.ts"], { reported: false, foreign: [] }, true), undefined, "no boundary: nothing is outside");
+});
+
+test("checkAlsoChanges exact: a § beyond the computed list is an extra the override never excuses; the override still excuses an omission", () => {
+	const foreign = ["§a/one"];
+	const extra = checkAlsoChanges("x\nAlso changes: §a/one — y; §b/two — z", { required: true, foreign, exact: true });
+	assert.equal(extra.ok, false);
+	assert.equal(extra.problem, "extra");
+	assert.deepEqual(extra.extra, ["§b/two"]);
+	assert.equal(describeProblem(extra), extraText(["§b/two"]));
+	assert.equal(extraText(["§b/two"]), "§b/two isn't changed by this diff: if its user-visible behavior changed, update its claim in a draft and promote; otherwise drop it from the line");
+	const overridden = checkAlsoChanges(`x\n${ALSO_CHANGES_OVERRIDE} users see §b/two change\nAlso changes: §a/one — y; §b/two — z`, { required: true, foreign, exact: true });
+	assert.equal(overridden.ok, false, "an override never adds a §");
+	assert.ok(checkAlsoChanges("x\nAlso changes: §a/one — y; §b/two — z", { required: true, foreign }).ok, "without exact, extras aren't judged");
+	const omitted = checkAlsoChanges(`x\n${ALSO_CHANGES_OVERRIDE} §c/three was created by this task's earlier merge\nAlso changes: §a/one — y`, { required: true, foreign: ["§a/one", "§c/three"], exact: true });
+	assert.ok(omitted.ok, "the override still excuses an omission");
+	const both = checkAlsoChanges("x\nAlso changes: §b/two — z", { required: true, foreign, exact: true });
+	assert.equal(describeProblem(both), `your \`Also changes:\` line omits §a/one; ${extraText(["§b/two"])}`);
 });

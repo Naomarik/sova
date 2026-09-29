@@ -9,7 +9,7 @@ import type { ThemeInfo, ThemeList } from "../../shared/protocol";
 /** Just enough DOM for the store: it writes custom properties, one attribute, and one meta tag. */
 const style = new Map<string, string>();
 const attributes = new Map<string, string>();
-const meta = { content: "#1E1E26", setAttribute: (_: string, v: string) => void (meta.content = v) };
+const meta = { content: "unset", setAttribute: (_: string, v: string) => void (meta.content = v) };
 const store = new Map<string, string>();
 
 Object.assign(globalThis, {
@@ -41,8 +41,8 @@ const reset = () => {
   style.clear();
   attributes.clear();
   store.clear();
-  meta.content = "#1E1E26";
   clearTheme();
+  meta.content = "unset"; // no expected value, so a paint that skips the meta can't pass
   clearTypography();
   setTextSize("medium");
   store.clear(); // clearTypography persists "nothing" by removing the key; start every test empty
@@ -67,7 +67,7 @@ test("applyTheme writes each key onto the property CSS_PROPERTY names, verbatim"
   assert.equal(style.get("--color-accent"), "rgb(189, 147, 249)"); // spacing and case as authored
   assert.equal(style.get("--font-body"), '"Inter", sans-serif');
   assert.equal(attributes.get("data-theme"), "dark");
-  assert.equal(meta.content, "#282a36");
+  assert.equal(meta.content, "#2C2C38", "no surface token: the dark base's surface, not its bg");
   assert.equal(activeThemeId(), "dracula");
   assert.deepEqual(JSON.parse(store.get(THEME_KEY)!).id, "dracula");
 });
@@ -83,13 +83,35 @@ test("applyTheme drops the previous theme's keys: no value outlives the theme th
 
 test("clearTheme leaves no attribute at all — that is what renders the default dark", () => {
   reset();
-  applyTheme({ id: "dracula", base: "dark", tokens: info().tokens });
+  applyTheme({ id: "dracula", base: "dark", tokens: { ...info().tokens, surface: "#44475a" } });
   clearTheme();
   assert.equal(style.size, 0);
   assert.equal(attributes.has("data-theme"), false);
   assert.equal(store.has(THEME_KEY), false);
   assert.equal(activeThemeId(), "dark");
-  assert.equal(meta.content, "#1E1E26");
+  assert.equal(meta.content, "#2C2C38");
+});
+
+test("the chrome color is the theme's surface (the header), verbatim — not its bg", () => {
+  reset();
+  applyTheme({ id: "tokyo-night-moon", base: "dark", tokens: { bg: "#222436", surface: "rgb(46, 50, 75)" } });
+  assert.equal(meta.content, "rgb(46, 50, 75)");
+});
+
+test("a light theme with no surface gets the light base's surface", () => {
+  reset();
+  applyTheme({ id: "paper", base: "light", tokens: { bg: "#f5f5f0" } });
+  assert.equal(meta.content, "#FFFFFF");
+});
+
+test("boot: the stored theme's surface is on the meta before any fetch", () => {
+  reset();
+  store.set(THEME_KEY, JSON.stringify({ id: "nord-light", base: "light", tokens: { surface: "#eceff4" } }));
+  applyStoredTheme();
+  assert.equal(meta.content, "#eceff4");
+  store.clear();
+  applyStoredTheme();
+  assert.equal(meta.content, "#2C2C38", "nothing stored: the default dark surface");
 });
 
 test("reconcileTheme: an id that no longer resolves falls back to dark and names itself", () => {

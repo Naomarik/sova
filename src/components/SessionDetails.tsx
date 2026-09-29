@@ -414,8 +414,17 @@ function RepositorySection(props: { path: string; cwd?: string; now: number; cha
       </Switch>
       <Show when={repo() && repo()!.filesTotal > 0 && props.cwd}>
         {(cwd) => (
-          <div class="cluster">
-            <button type="button" class="button button-sm" title="Every uncommitted change, against HEAD. Nothing is changed." onClick={() => setReviewing(true)}>
+          <div class="git-review">
+            <div class="git-review-text">
+              <p class="git-review-title">Uncommitted changes</p>
+              <p class="text-caption text-muted">{filesHeadline(repo()!)}</p>
+            </div>
+            <button
+              type="button"
+              class="button button-sm git-review-action"
+              title="Every uncommitted change, against HEAD. Nothing is changed."
+              onClick={() => setReviewing(true)}
+            >
               Review Changes
             </button>
             <Show when={reviewing()}>
@@ -496,23 +505,21 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?:
             )}
           </Show>
         </div>
-        <Show when={w().status === "active" && w().exists}>
-          <div class="cluster">
-            <button
-              type="button"
-              class="button button-sm"
-              aria-label={`Review Changes on ${w().branch}`}
-              title="The branch's commits against where it left its base branch. Nothing is changed."
-              onClick={() => setReviewing(true)}
-            >
-              Review Changes
-            </button>
-          </div>
-          <Show when={reviewing()}>
-            <ChangesDialog scope={{ kind: "worktree", sessionPath: props.path, worktreePath: w().path }} cwd={props.cwd} onClose={() => setReviewing(false)} />
-          </Show>
-        </Show>
       </div>
+      <Show when={w().status === "active" && w().exists}>
+        <button
+          type="button"
+          class="button button-sm worktree-row-action"
+          aria-label={`Review Changes on ${w().branch}`}
+          title="The branch's commits against where it left its base branch. Nothing is changed."
+          onClick={() => setReviewing(true)}
+        >
+          Review Changes
+        </button>
+        <Show when={reviewing()}>
+          <ChangesDialog scope={{ kind: "worktree", sessionPath: props.path, worktreePath: w().path }} cwd={props.cwd} onClose={() => setReviewing(false)} />
+        </Show>
+      </Show>
     </li>
   );
 }

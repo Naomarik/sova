@@ -9,6 +9,7 @@ import { withLongContextVariants } from "./context-window.ts";
 import { discoverClaudeModels } from "./models.ts";
 import { PermissionQueue } from "./permissions.ts";
 import { registerClaudeCodeProvider } from "./provider/index.ts";
+import { hostLogins, type ClaudeLoginChoice } from "./accounts.ts";
 
 function validate(spec: BackendSpec): void {
 	// The runner would otherwise fail this asynchronously, after the batch started.
@@ -99,7 +100,15 @@ export function registerClaudeCode(pi: ExtensionAPI): void {
 		},
 		create(options, handlers) {
 			if (stopped) throw new Error("Claude backend is shutting down.");
-			return new ClaudeRunner(options as ClaudeSpawnOptions, handlers);
+			// Every worker follows this host's order of Claude logins, and moves on along it on a
+			// usage limit or a failed sign-in (accounts.ts). An adopted worker keeps the process it has.
+			const spawn = options as ClaudeSpawnOptions;
+			if (spawn.adopt) return new ClaudeRunner(spawn, handlers);
+			const logins = hostLogins();
+			let login: ClaudeLoginChoice | undefined;
+			try { login = logins.select(); } catch { login = undefined; }
+			const env = login?.env.CLAUDE_CONFIG_DIR ? { ...spawn.env, ...login.env } : spawn.env;
+			return new ClaudeRunner({ ...spawn, ...(env ? { env } : {}), ...(login ? { login, logins } : {}) }, handlers);
 		},
 	};
 	const unregister = registerBackend(pi.events, backend);

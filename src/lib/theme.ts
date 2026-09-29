@@ -134,7 +134,7 @@ function paint(theme: StoredTheme | null): void {
   }
   for (const [property, value] of Object.entries(typographyProperties(typography()))) root.style.setProperty(property, value);
   for (const [property, value] of Object.entries(textSizeProperties(textSize(), theme?.tokens ?? {}))) root.style.setProperty(property, value);
-  setMetaThemeColor(theme?.tokens.bg ?? DEFAULT_THEME_COLOR);
+  setMetaThemeColor(theme ? (theme.tokens.surface ?? BASE_SURFACE[theme.base]) : BASE_SURFACE.dark);
   worn = theme;
 }
 
@@ -164,10 +164,12 @@ export function clearTypography(): void {
   setTypography({ text: null, mono: null });
 }
 
-/** `dark`'s `bg` as index.html ships it — what the chrome color goes back to. */
-const DEFAULT_THEME_COLOR = "#1E1E26";
+/** Each base's `--color-surface` as tokens.css defines it — the chrome color for a theme that
+    doesn't set `surface`. `dark`'s is also what index.html ships and what no theme goes back to. */
+const BASE_SURFACE: Record<ThemeBase, string> = { dark: "#2C2C38", light: "#FFFFFF" };
 
-/** The browser chrome color, so a themed page doesn't sit under the default theme's bar. */
+/** The browser chrome color (the Android status bar), matched to the header's surface so the
+    bar and the head under it read as one band. */
 function setMetaThemeColor(value: string): void {
   const meta = document.querySelector('meta[name="theme-color"]');
   if (meta && value) meta.setAttribute("content", value);

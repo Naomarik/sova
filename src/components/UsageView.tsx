@@ -1,10 +1,16 @@
-import { createSignal, For, Match, Show, Switch } from "solid-js";
-import type { UsageBalance, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
+import { createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import type { UsageBalance, UsageClaudeLogin, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import { refreshUsage } from "../lib/api";
 import { duration, relativeIn, relativeTime } from "../lib/format";
 import {
   authCaption,
   balanceBreakdown,
+  claudeLoginGroups,
+  claudeLoginName,
+  claudeLoginNote,
+  claudeLoginStanding,
+  claudeLoginSubtitle,
+  claudeLoginTitle,
   extraUsageMeter,
   meterReset,
   meterTone,
@@ -134,22 +140,36 @@ function UsageText(props: { line: UsageLine }) {
  * One provider's card: name, plan subtitle and chip in the head; its meters (or balance) and
  * notes in the body, or the one note that replaces them when the provider isn't ok.
  */
-function UsageCard(props: { p: UsageProvider; now: number }) {
-  const problem = () => providerProblem(props.p, props.now);
+function UsageCard(props: {
+  p: UsageProvider;
+  now: number;
+  /** A Claude login's card: its own title, caption and id instead of the provider's. */
+  title?: string;
+  plan?: string;
+  headId?: string;
+  /** Before the meters: a login's standing. */
+  lead?: JSX.Element;
+  /** Replaces the provider's own note when the card has no meters for a reason of its own. */
+  note?: string | null;
+  /** After the sign-in caption. */
+  foot?: JSX.Element;
+}) {
+  const problem = (): UsageLine | null => (props.note ? { rest: props.note } : providerProblem(props.p, props.now));
   const signIn = () => authCaption(props.p, props.now);
-  const headId = () => `u-${props.p.id}`;
+  const headId = () => props.headId ?? `u-${props.p.id}`;
   return (
     <article class="card usage-card" aria-labelledby={headId()}>
       <header class="card-head">
         <div class="usage-card-heading">
-          <h3 class="card-title" id={headId()}>
-            {PROVIDER_NAME[props.p.id]}
+          <h3 class="card-title" classList={{ "usage-login-title": !!props.title }} id={headId()}>
+            {props.title ?? PROVIDER_NAME[props.p.id]}
           </h3>
-          <Show when={planLabel(props.p)}>{(plan) => <p class="usage-card-plan text-caption text-muted">{plan()}</p>}</Show>
+          <Show when={props.plan ?? planLabel(props.p)}>{(plan) => <p class="usage-card-plan text-caption text-muted">{plan()}</p>}</Show>
         </div>
         <Show when={providerChip(props.p)}>{(c) => <Chip tone={c().tone}>{c().text}</Chip>}</Show>
       </header>
       <div class="card-body">
+        {props.lead}
         <Show
           when={problem()}
           fallback={
@@ -182,8 +202,61 @@ function UsageCard(props: { p: UsageProvider; now: number }) {
             </p>
           )}
         </Show>
+        {props.foot}
       </div>
     </article>
+  );
+}
+
+/** One Claude login: its email as the title, its standing on this device, then its usage like any card. */
+function ClaudeLoginCard(props: { l: UsageClaudeLogin; now: number; shares: UsageClaudeLogin[] }) {
+  const standing = () => claudeLoginStanding(props.l, props.now);
+  return (
+    <UsageCard
+      p={props.l.usage}
+      now={props.now}
+      title={claudeLoginTitle(props.l)}
+      plan={claudeLoginSubtitle(props.l, props.now, props.shares.length > 0)}
+      headId={`u-claude-${props.l.id}`}
+      note={claudeLoginNote(props.l)}
+      lead={
+        <p class="usage-login-standing">
+          <Chip tone={standing().tone} title={standing().title}>
+            {standing().text}
+          </Chip>
+          <Show when={props.l.inUse}>
+            <span class="chip chip-count" title="The first ready login in this device's order: new chats start on it">
+              In use for new chats
+            </span>
+          </Show>
+        </p>
+      }
+      foot={
+        <Show when={props.shares.length}>
+          <p class="usage-card-caption text-caption text-muted">
+            Same account as {props.shares.map((o) => claudeLoginName(o, props.now)).join(", ")}: they share these limits.
+          </p>
+        </Show>
+      }
+    />
+  );
+}
+
+/** Claude's cards: one per login on this device, logins of one account together under its head. */
+function ClaudeLoginCards(props: { logins: UsageClaudeLogin[]; now: number }) {
+  return (
+    <For each={claudeLoginGroups(props.logins)}>
+      {(group) => (
+        <>
+          <Show when={group.length > 1}>
+            <h3 class="usage-account-head text-caption text-muted">
+              {claudeLoginTitle(group[0]!)} · {group.length} logins, one account
+            </h3>
+          </Show>
+          <For each={group}>{(l) => <ClaudeLoginCard l={l} now={props.now} shares={group.filter((o) => o.id !== l.id)} />}</For>
+        </>
+      )}
+    </For>
   );
 }
 
@@ -245,7 +318,13 @@ function UsageBody(props: {
             </Show>
             <Show when={usageSummary(data(), props.now)}>{(lead) => <p class="usage-lead">{lead()}</p>}</Show>
             <div class="insights-grid">
-              <For each={data().providers}>{(p) => <UsageCard p={p} now={props.now} />}</For>
+              <For each={data().providers}>
+                {(p) => (
+                  <Show when={p.id === "claude" && data().claudeLogins?.length ? data().claudeLogins : null} fallback={<UsageCard p={p} now={props.now} />}>
+                    {(logins) => <ClaudeLoginCards logins={logins()} now={props.now} />}
+                  </Show>
+                )}
+              </For>
             </div>
           </>
         )}

@@ -74,10 +74,12 @@ and what no step names goes under Other changes.
 
 ## §chat.changes/entry — Where the viewer opens
 
-- The session pane's Session tab: the Repository section has a **Review Changes** control while
-  the folder has uncommitted changes, which opens the viewer on them against HEAD; each active
-  tracked worktree row has a **Review Changes** control that opens its branch against its
-  merge-base with the branch it came from.
+- The session pane's Session tab: while the folder has uncommitted changes, the Repository section
+  has an **Uncommitted changes** line with how many paths changed and their lines added and
+  removed, and a **Review Changes** control beside it, which opens the viewer on them against HEAD;
+  each active tracked worktree row has a **Review Changes** control at its end (below its chips
+  when the pane is narrow) that opens its branch against its merge-base with the branch it came
+  from.
 - A merge card (§chat.worktrees/merge-card) has a chevron that unfolds the viewer inside the card,
   on that merge's commit against its first parent; the chevron folds it again. Inside the card the
   viewer has no height or scroll area of its own: it grows with what it shows, and the transcript

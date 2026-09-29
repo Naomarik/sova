@@ -191,8 +191,11 @@
 .align-rev > .disclosure-body { display: grid; gap: var(--space-2); max-width: var(--measure); }
 
 /* The composer's alignment chip (§chat.alignment/chip) sits right before the Inputs trigger; the
-   pair is pushed to the row's right end together. */
-.run-status-align { margin-left: auto; }
+   pair is pushed to the row's right end together. Whatever comes before the chip takes the auto
+   margin, so the chip keeps the triggers' -8px offset when the row is full. */
+.run-status > .run-status-align { margin-left: calc(var(--run-status-pad) * -1); }
+.run-status > .run-status-align:first-child { margin-left: auto; }
+.run-status > :has(+ .run-status-align) { margin-right: auto; }
 /* The ticked recommendations staged above the composer (§chat.composer/anatomy): one removable row,
    sent with the next message. */
 .align-picks {

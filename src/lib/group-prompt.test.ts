@@ -143,13 +143,13 @@ test("a retry that reaches every straggler closes the report", () => {
   assert.equal(partialAfterRetry(was, ["b"]), null);
 });
 
-test("the placeholder names the group's size, not who is available, and drops the key hint when folded", () => {
-  assert.equal(composerPlaceholder(4, false), "Ask all 4 members…—Enter sends, Shift+Enter adds a line");
-  assert.equal(composerPlaceholder(4, true), "Ask all 4 members…");
-  assert.equal(composerPlaceholder(1, false), "Ask this member…");
+test("the placeholder names the group's size, not who is available, and drops the key hint when Enter doesn't send", () => {
+  assert.equal(composerPlaceholder(4, true), "Ask all 4 members…—Enter sends, Shift+Enter adds a line");
+  assert.equal(composerPlaceholder(4, false), "Ask all 4 members…");
+  assert.equal(composerPlaceholder(1, true), "Ask this member…");
   // The count is the group's, so a member going mid-turn does not rewrite the box under the caret:
   // three members, none of them available, still reads "all 3".
-  assert.equal(composerPlaceholder(3, true), "Ask all 3 members…");
+  assert.equal(composerPlaceholder(3, false), "Ask all 3 members…");
 });
 
 test("withGone folds file-gone members in under missing, counted in the group's size", () => {

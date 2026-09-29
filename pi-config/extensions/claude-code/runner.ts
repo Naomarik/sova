@@ -7,11 +7,12 @@
 import { randomUUID } from "node:crypto";
 import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from "./policy.ts";
 import {
-	applyResultUsage, buildClaudeArgv, ClaudePrivateFiles, ClaudeTransport, contextTokensFrom, deferred,
+	applyResultUsage, buildClaudeArgv, ClaudeFailureDetector, ClaudePrivateFiles, ClaudeTransport, contextTokensFrom, deferred,
 	isMessageStart, isUncorrelatedResult, mcpServerFailure, parseCanUseTool, permissionDenialsFrom, record,
 	resultError, resultMatches, textBlocksText, textDelta,
 	type ClaudeToolPermissionRequest, type ControlAck, type Deferred,
 } from "./transport.ts";
+import { switchText, type ClaudeAccountFailure, type ClaudeLoginChoice } from "./accounts.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
 
@@ -79,6 +80,23 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 	signalGroupImpl?: (pid: number, signal: NodeJS.Signals) => void;
 	timings?: Partial<ClaudeRunnerTimings>;
 	limits?: Partial<ClaudeRunnerLimits>;
+	/** The login this worker starts on; its `env` is already merged into `env`. */
+	login?: ClaudeLoginChoice;
+	/**
+	 * The host's logins (accounts.ts ClaudeLogins): on a usage limit or a failed sign-in the worker
+	 * moves to the next one with `--resume`. Absent: a failure ends the task, as before.
+	 */
+	logins?: ClaudeWorkerLogins;
+	/**
+	 * How a failover's replacement process is spawned. Undefined = a plain local spawn: a worker
+	 * that ran under a detached host continues without one (the host's files belong to its first process).
+	 */
+	respawnImpl?: SpawnOptions["spawnImpl"];
+}
+/** What a worker needs of the host's logins; accounts.ts ClaudeLogins is the real one. */
+export interface ClaudeWorkerLogins {
+	failover(from: ClaudeLoginChoice, failure: ClaudeAccountFailure): ClaudeLoginChoice | undefined;
+	forcedFailure?(id: string): ClaudeAccountFailure | undefined;
 }
 export type ClaudeRunnerHandlers = WorkerHandlers;
 interface Task {
@@ -90,6 +108,11 @@ interface Task {
 	cancelled: boolean;
 	/** The user message was never written to stdin. */
 	unsent?: boolean;
+	/** The message, for sending again after a login switch. */
+	message: string;
+	kind: "task" | "steer";
+	/** The worker used a tool during this task: a switch says the message was interrupted. */
+	progressed?: boolean;
 }
 const TIMINGS: ClaudeRunnerTimings = {
 	requestTimeoutMs: 30000, permissionTimeoutMs: 60000, settlementTimeoutMs: 15000,
@@ -138,8 +161,16 @@ export class ClaudeRunner implements Worker {
 	permissionDenials: { toolName: string; toolUseId?: string }[] = [];
 	private readonly timings: ClaudeRunnerTimings;
 	private readonly limits: ClaudeRunnerLimits;
-	/** CLI process, framing, control channel and shutdown escalation. */
-	private readonly transport: ClaudeTransport;
+	/** CLI process, framing, control channel and shutdown escalation; replaced on a login switch. */
+	private transport: ClaudeTransport;
+	private readonly closedState = deferred<void>();
+	/** The login the current process runs on. */
+	login?: ClaudeLoginChoice;
+	private readonly detector = new ClaudeFailureDetector();
+	/** Between stopping a failed login's process and starting its replacement. */
+	private switching = false;
+	/** Processes this worker has started for login switches. */
+	private respawns = 0;
 	/** Private 0700 directory for files Claude reads at startup (system prompt, mcp.json). */
 	private readonly privateFiles = new ClaudePrivateFiles();
 	private stopping = false;
@@ -180,31 +211,44 @@ export class ClaudeRunner implements Worker {
 		for (const value of [...Object.values(this.timings), ...Object.values(this.limits)]) {
 			if (!Number.isSafeInteger(value) || value <= 0) throw new Error("Runner limits/timings must be positive integers");
 		}
-		this.transport = new ClaudeTransport({
-			timings: this.timings,
-			limits: this.limits,
-			spawnImpl: options.spawnImpl,
-			signalGroupImpl: options.signalGroupImpl,
-			hooks: {
-				onEvent: (event) => this.event(event as Record<string, any>),
-				onStderr: (text) => { this.lastStderr = text; this.push("error", text); },
-				onProtocolError: (message) => this.fail(message),
-				onStdinError: (message) => { if (!this.stopping) this.fail(message); },
-				onProcessError: (message) => this.fail(message),
-				onSpawned: (pid) => { this.processAlive = true; this.pid = pid; },
-				onLeaderExit: () => { this.processAlive = false; this.cancelPermissions(); },
-				onActivity: () => this.touch(),
-				beforeEof: () => this.abortActiveWork(),
-				onInterruptStart: () => { if (this.active) this.active.cancelled = true; this.cancelPermissions(); },
-				onInterruptSettled: (ack) => this.afterInterrupt(ack),
-				onClose: (code, signal) => this.close(code, signal),
-			},
-		});
-		this.whenClosed = this.transport.whenClosed;
+		this.login = options.login;
+		this.transport = this.makeTransport(options.spawnImpl);
+		this.whenClosed = this.closedState.promise;
 		if (options.adopt) this.sessionId = options.adopt.sessionId;
 		else if (options.resume) this.sessionId = options.resume.sessionId;
 		// Defer callbacks until the owner has stored the constructed runner.
 		queueMicrotask(() => (options.adopt ? this.adopt() : this.start()));
+	}
+
+	/**
+	 * One process's transport. Its hooks act only while it is the worker's current one: a process
+	 * being replaced after a login switch dies without failing, closing or notifying the worker.
+	 */
+	private makeTransport(spawnImpl: ClaudeSpawnOptions["spawnImpl"]): ClaudeTransport {
+		const forced = this.login && this.options.logins?.forcedFailure?.(this.login.id);
+		const transport: ClaudeTransport = new ClaudeTransport({
+			timings: this.timings,
+			limits: this.limits,
+			spawnImpl,
+			signalGroupImpl: this.options.signalGroupImpl,
+			...(forced ? { simulateFailure: forced } : {}),
+			hooks: {
+				onEvent: (event) => { if (mine()) this.event(event as Record<string, any>); },
+				onStderr: (text) => { if (mine()) { this.lastStderr = text; this.push("error", text); } },
+				onProtocolError: (message) => { if (mine()) this.fail(message); },
+				onStdinError: (message) => { if (mine() && !this.stopping) this.fail(message); },
+				onProcessError: (message) => { if (mine()) this.fail(message); },
+				onSpawned: (pid) => { if (this.transport === transport) { this.processAlive = true; this.pid = pid; } },
+				onLeaderExit: () => { if (mine()) { this.processAlive = false; this.cancelPermissions(); } },
+				onActivity: () => { if (mine()) this.touch(); },
+				beforeEof: () => mine() ? this.abortActiveWork() : Promise.resolve(),
+				onInterruptStart: () => { if (mine()) { if (this.active) this.active.cancelled = true; this.cancelPermissions(); } },
+				onInterruptSettled: (ack) => { if (mine()) this.afterInterrupt(ack); },
+				onClose: (code, signal) => { if (mine()) this.close(code, signal); },
+			},
+		});
+		const mine = (): boolean => this.transport === transport && !this.switching;
+		return transport;
 	}
 
 	/** True while the transport delivers output an earlier manager already consumed. */
@@ -256,28 +300,35 @@ export class ClaudeRunner implements Worker {
 		if (o.forkSession || o.extensions?.length || o.allowNestedExtensions) {
 			this.fail("Claude runner does not support Pi forks or nested extensions"); return;
 		}
+		if (!this.launch(o.resume?.sessionId, o.env)) return;
+		void this.initialize();
+	}
+
+	/** Build the argv and private files, then spawn the current transport. False once failed. */
+	private launch(resume: string | undefined, env: Record<string, string> | undefined): boolean {
+		const o = this.options;
 		const permissionMode = o.permissionMode ?? "bypassPermissions";
 		const hostPermissions = permissionMode !== "bypassPermissions" && !!o.onPermission;
 		const built = buildClaudeArgv({
 			permissionMode, permissionModes: CLAUDE_PERMISSION_MODES, hostPermissions,
 			model: o.model, effort: o.effort, tools: o.tools, allowedTools: o.allowedTools,
-			mcpServers: o.mcpServers, env: o.env, maxBudgetUsd: o.maxBudgetUsd, settingsJson: o.settingsJson,
-			...(o.resume ? { resume: o.resume.sessionId } : {}),
+			mcpServers: o.mcpServers, env, maxBudgetUsd: o.maxBudgetUsd, settingsJson: o.settingsJson,
+			...(resume ? { resume } : {}),
 		});
-		if (built.error !== undefined) { this.fail(built.error); return; }
+		if (built.error !== undefined) { this.fail(built.error); return false; }
 		const args = built.args;
 		try {
 			args.push(...this.privateFiles.write({ tmpDir: o.tmpDir, systemPrompt: o.systemPrompt, mcpServers: built.mcpServers }));
-		} catch (error) { this.fail((error as Error).message); return; }
+		} catch (error) { this.fail((error as Error).message); return false; }
 		try {
-			this.transport.launch(o.executable ?? "claude", args, { cwd: o.cwd, env: o.env });
-		} catch (error) { this.fail(`Spawn failed: ${String(error)}`); return; }
-		void this.initialize();
+			this.transport.launch(o.executable ?? "claude", args, { cwd: o.cwd, env });
+		} catch (error) { this.fail(`Spawn failed: ${String(error)}`); return false; }
+		return true;
 	}
 
 	/** Transport state the worker's own guards read. */
-	private get closed(): boolean { return this.transport.isClosed(); }
-	private get leaderExited(): boolean { return this.transport.hasExited(); }
+	private get closed(): boolean { return !this.switching && this.transport.isClosed(); }
+	private get leaderExited(): boolean { return !this.switching && this.transport.hasExited(); }
 
 	private async initialize(): Promise<void> {
 		const ok = await this.transport.control("initialize");
@@ -298,7 +349,7 @@ export class ClaudeRunner implements Worker {
 	/** adoptedId: the task was sent by an earlier manager and is only being re-created here (never re-sent). */
 	private dispatch(message: string, kind: "task" | "steer", adoptedId?: string): Task {
 		const task: Task = {
-			id: adoptedId ?? randomUUID(), accepted: deferred<boolean>(), settled: deferred<boolean>(), cancelled: false,
+			id: adoptedId ?? randomUUID(), accepted: deferred<boolean>(), settled: deferred<boolean>(), cancelled: false, message, kind,
 			acceptTimer: setTimeout(() => {
 				if (this.active === task) this.fail("User delivery unknown: no correlated replay/result before timeout");
 			}, this.timings.requestTimeoutMs),
@@ -306,6 +357,7 @@ export class ClaudeRunner implements Worker {
 		this.active = task; this.initialOwed = false; this.notificationPending = true; this.idleAnnounced = false;
 		this.status = "running"; this.taskOutcome = undefined; this.error = undefined;
 		this.permissionDenials = []; this.output = ""; this.partial = undefined; this.lastAssistant = undefined;
+		this.detector.reset();
 		this.push(kind, message);
 		if (adoptedId) {
 			clearTimeout(task.acceptTimer); task.accepted.resolve(true);
@@ -324,6 +376,11 @@ export class ClaudeRunner implements Worker {
 		if (e.type === "control_cancel_request") {
 			this.replayedPermissions.delete(e.request_id);
 			this.permissions.get(e.request_id)?.controller.abort(); return;
+		}
+		if (this.options.logins && this.login && this.active && !this.options.adopt) {
+			const early = this.detector.observe(e);
+			if (early && this.failover(this.active, early)) return;
+			if (e.type === "assistant" && Array.isArray(e.message?.content) && e.message.content.some((b: any) => b?.type === "tool_use")) this.active.progressed = true;
 		}
 		if (typeof e.session_id === "string") {
 			if (this.sessionId && this.sessionId !== e.session_id) { this.fail("Claude session identity changed unexpectedly"); return; }
@@ -359,6 +416,10 @@ export class ClaudeRunner implements Worker {
 				return;
 			}
 			clearTimeout(task.acceptTimer); task.accepted.resolve(true);
+			if (this.options.logins && this.login && !this.options.adopt && this.status !== "error") {
+				const failure = this.detector.settle(e);
+				if (failure && this.failover(task, failure, e)) return;
+			}
 			if (typeof e.result === "string") {
 				this.output = this.clip(e.result);
 				if (this.partial) this.replaceText(this.partial, this.output);
@@ -467,6 +528,60 @@ export class ClaudeRunner implements Worker {
 		// interrupt wait for the precise protocol boundary.
 		this.notifySettled();
 		queueMicrotask(() => this.drainQueue());
+	}
+
+	/**
+	 * A usage limit or a failed sign-in on this worker's login: move to the next usable login (the
+	 * host's order; ClaudeWorkerLogins.failover records the failure), stop this process, start one
+	 * with `--resume` of the same Claude session on the new login, and send the message again. False
+	 * when no login is left or the worker is going away: the task then ends as before.
+	 */
+	private failover(task: Task, failure: ClaudeAccountFailure, result?: Record<string, any>): boolean {
+		if (this.switching || this.stopping || this.redirecting || task.cancelled || !this.sessionId || this.respawns >= 16) return false;
+		const from = this.login!;
+		let to: ClaudeLoginChoice | undefined;
+		try { to = this.options.logins!.failover(from, failure); } catch { to = undefined; }
+		if (!to) return false;
+		this.respawns++;
+		this.switching = true;
+		this.initialized = false;
+		// The failed result's usage is left out: its modelUsage can be empty, and the resumed
+		// process reports the whole session again (usageScope "session").
+		void result;
+		clearTimeout(task.acceptTimer);
+		this.cancelPermissions();
+		this.push("system", switchText(from, to, failure));
+		void this.respawnOn(task, to);
+		return true;
+	}
+	private async respawnOn(task: Task, to: ClaudeLoginChoice): Promise<void> {
+		const old = this.transport;
+		try { await old.shutdown(); await old.whenClosed; } catch { /* it is gone either way */ }
+		this.privateFiles.cleanup();
+		// The task the old process failed settles quietly; its message goes out again below.
+		if (this.active === task) this.active = undefined;
+		task.accepted.resolve(true); task.settled.resolve(true);
+		if (this.stopping) {
+			// Killed while switching: the old process's close was withheld, so close now, on it.
+			this.switching = false;
+			this.close(null, null);
+			return;
+		}
+		this.login = to;
+		const env = { ...this.options.env, ...to.env };
+		if (!to.env.CLAUDE_CONFIG_DIR) delete env.CLAUDE_CONFIG_DIR;
+		this.transport = this.makeTransport(this.options.respawnImpl);
+		this.switching = false;
+		if (!this.launch(this.sessionId, env)) return;
+		const ok = await this.transport.control("initialize");
+		if (this.stopping || this.closed || this.leaderExited) return;
+		if (!ok) { this.fail(`Claude initialize failed after switching to ${to.label}`); return; }
+		this.privateFiles.releaseSystemPrompt();
+		this.initialized = true;
+		const again = task.progressed
+			? `[Your previous turn was interrupted: its Claude login was switched (${to.label}). Continue where you left off. The interrupted message was:]\n\n${task.message}`
+			: task.message;
+		this.dispatch(again.length <= this.limits.maxInputChars ? again : task.message, task.kind);
 	}
 
 	private permission(e: Record<string, any>): void {
@@ -678,6 +793,7 @@ export class ClaudeRunner implements Worker {
 			this.initialOwed = false; this.taskOutcome = this.stopping && this.status !== "error" ? "aborted" : "error";
 			}
 		this.endedAt = Date.now(); this.notifySettled(); this.touch(); this.handlers.onExit(this);
+		this.closedState.resolve();
 	}
 	isFinished(): boolean { return this.closed; }
 	/** Teardown in flight or process exited, not yet closed; see Worker.isStopping. */

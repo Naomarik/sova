@@ -1,11 +1,17 @@
 // Run: npx tsx --test src/lib/insights.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { UsageInsight, UsageProvider } from "../../shared/protocol";
+import type { UsageClaudeLogin, UsageInsight, UsageProvider } from "../../shared/protocol";
 import { stampTime } from "./format";
 import {
   authCaption,
   balanceBreakdown,
+  claudeLoginGroups,
+  claudeLoginName,
+  claudeLoginNote,
+  claudeLoginStanding,
+  claudeLoginSubtitle,
+  claudeLoginTitle,
   extraUsageMeter,
   meterReset,
   money,
@@ -310,4 +316,59 @@ test("providerProblem expired: soft only when the token timed out and the refres
   assert.deepEqual(expired(claudeAuth({ expiresAt: NOW + 2 * H })), hard, "refused before its expiry: revoked");
   assert.deepEqual(expired(claudeAuth({})), hard, "no expiry known");
   assert.deepEqual(expired({ kind: "oauth", source: "pi", expiresAt: NOW + H }, "openai"), { ...hard, code: "pi /login" });
+});
+
+const login = (over: Partial<UsageClaudeLogin> & Pick<UsageClaudeLogin, "id">): UsageClaudeLogin => ({
+  enabled: true,
+  signedIn: true,
+  standing: { state: "ready" },
+  inUse: false,
+  usage: provider({ id: "claude", windows: [{ label: "5h", pct: 10 }] }),
+  ...over,
+});
+
+test("a Claude login's card is titled by its email and says what it is under it", () => {
+  const own = login({ id: "default", email: "own@example.com", planLabel: "Max 20x" });
+  assert.equal(claudeLoginTitle(own), "own@example.com");
+  assert.equal(claudeLoginSubtitle(own), "Claude · Max 20x · Claude Code's own login");
+  const spare = login({ id: "l-0000000a", email: "spare@example.com", label: "Spare" });
+  assert.equal(claudeLoginSubtitle(spare), "Claude · Spare");
+  const now = Date.parse("2026-09-29T10:00:00Z");
+  const unnamed = login({ id: "l-0000000c", email: "own@example.com", addedAt: now - 86_400_000 });
+  assert.equal(claudeLoginSubtitle(unnamed, now, true), "Claude · Login added Sep 28", "beside another login of its account, when it was added tells them apart");
+  assert.equal(claudeLoginSubtitle(unnamed, now), "Claude", "alone in its account, the email says enough");
+  assert.equal(claudeLoginName(login({ id: "l-0000000d" })), "Added login");
+  assert.equal(claudeLoginTitle(login({ id: "default" })), "Claude Code's own login");
+  assert.equal(claudeLoginSubtitle(login({ id: "default" })), "Claude", "no email: the title already names it");
+  assert.equal(claudeLoginTitle(login({ id: "l-0000000b", label: "Lab" })), "Lab");
+});
+
+test("a login's standing reads as Settings → Accounts says it", () => {
+  const now = Date.parse("2026-09-29T10:00:00Z");
+  assert.deepEqual(claudeLoginStanding(login({ id: "default" }), now), { tone: "success", text: "Ready" });
+  assert.equal(claudeLoginStanding(login({ id: "l-0000000a", enabled: false }), now).text, "Off");
+  const until = now + 3_600_000;
+  assert.deepEqual(claudeLoginStanding(login({ id: "l-0000000a", standing: { state: "limited", until, window: "five_hour" } }), now), { tone: "warn", text: `Limited until ${stampTime(until, now)}`, title: "5h limit" });
+  assert.equal(claudeLoginStanding(login({ id: "l-0000000a", standing: { state: "auth" } }), now).text, "Sign in again");
+  assert.equal(claudeLoginStanding(login({ id: "l-0000000a", signedIn: false }), now).text, "Not signed in");
+  assert.equal(claudeLoginStanding(login({ id: "default", signedIn: false }), now).text, "Ready", "default's sign-in is the provider's own note");
+});
+
+test("a login card without meters says why when the reason is the login's", () => {
+  const empty = provider({ id: "claude", state: "error", windows: [], error: "not read yet" });
+  assert.match(claudeLoginNote(login({ id: "l-0000000a", usage: empty }))!, /^Not read yet/);
+  assert.match(claudeLoginNote(login({ id: "l-0000000a", usage: empty, standing: { state: "auth" } }))!, /^Not fetched while this login needs signing in again/);
+  assert.equal(claudeLoginNote(login({ id: "l-0000000a", usage: empty, fetchedAt: 5 })), null, "read before: the provider's own error note");
+  assert.equal(claudeLoginNote(login({ id: "l-0000000a" })), null, "meters: nothing to say");
+});
+
+test("logins of one account sit together, in the order the first of them has", () => {
+  const ids = (groups: UsageClaudeLogin[][]) => groups.map((g) => g.map((l) => l.id));
+  const logins = [
+    login({ id: "l-0000000b", accountUuid: "acct-2" }),
+    login({ id: "default", accountUuid: "acct-1" }),
+    login({ id: "l-0000000c" }),
+    login({ id: "l-0000000a", accountUuid: "acct-1" }),
+  ];
+  assert.deepEqual(ids(claudeLoginGroups(logins)), [["l-0000000b"], ["default", "l-0000000a"], ["l-0000000c"]]);
 });

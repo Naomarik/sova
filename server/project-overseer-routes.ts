@@ -8,7 +8,8 @@ import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdea
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
 import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, noteReason, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem, startCoding } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
-import { shareInfo } from "./share/listener";
+import { awaitShareLinks } from "./share/links-events";
+import { linkUrl as shareLinkUrl, linkWarning } from "./share/listener";
 
 /**
  * The operator's routes for project overseers (§app/project-overseer; the list is in
@@ -17,7 +18,8 @@ import { shareInfo } from "./share/listener";
  */
 
 const NO_STORE = { "Cache-Control": "no-store" };
-const linkUrl = (token: string): string => `${shareInfo().publicUrl ?? ""}/h/${token}`;
+/** A hand-off link as the operator copies it (the one helper, server/share/listener.ts). */
+const linkUrl = (token: string): string => shareLinkUrl("h", token);
 
 async function body(c: Context): Promise<Record<string, unknown>> {
   try {
@@ -198,7 +200,9 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     const b = (await body(c)) as unknown as ItemSendInput;
     const to = b.to;
     if (!(typeof to === "string" && to) && !(Array.isArray(to) && to.length && to.every((x) => typeof x === "string"))) return c.json({ error: "to must be a person id or a list of them" }, 400);
-    return c.json(await sendItem(p.orgId, p.projectId, b, linkUrl), 201);
+    // A minted link carries its warning when it may not open from outside (§app.baton/links).
+    const { result, outcome } = await awaitShareLinks(() => sendItem(p.orgId, p.projectId, b, linkUrl));
+    return c.json({ ...result, ...(result.links.length ? linkWarning(outcome) : {}) }, 201);
   }));
   app.post(`${base}/items/code`, handle(async (c) => {
     const p = pathsOf(c);

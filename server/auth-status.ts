@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { defaultClaudeDir } from "../pi-config/extensions/claude-code/accounts.ts";
 import type { UsageAuth, UsageProvider } from "../shared/protocol";
 
 // What each usage provider's sign-in says, for the Usage page: expiry times and when it was last
@@ -10,16 +11,16 @@ import type { UsageAuth, UsageProvider } from "../shared/protocol";
 // changes, and a parse keeps numbers and flags only, so no token string outlives the read and
 // none can reach the wire.
 
-/** The credential files, HOME-based like fetch.ts's (which ignores CLAUDE_CONFIG_DIR too). */
+/** The credential files fetch.ts reads: Claude Code's own directory ($CLAUDE_CONFIG_DIR, else ~/.claude), pi's and the Codex CLI's. */
 export interface AuthStatusPaths {
   claudeCreds: string;
   piAuth: string;
   codexAuth: string;
 }
 
-export function defaultAuthPaths(home = homedir()): AuthStatusPaths {
+export function defaultAuthPaths(home = homedir(), claudeDir = defaultClaudeDir()): AuthStatusPaths {
   return {
-    claudeCreds: join(home, ".claude/.credentials.json"),
+    claudeCreds: join(claudeDir, ".credentials.json"),
     piAuth: join(home, ".pi/agent/auth.json"),
     codexAuth: join(home, ".codex/auth.json"),
   };
@@ -113,16 +114,24 @@ export async function readAuthStatus(paths: AuthStatusPaths = defaultAuthPaths()
     factsOf(paths.codexAuth, codexFacts),
   ]);
   const out: Partial<Record<UsageProvider["id"], UsageAuth>> = {};
-  if (claude) {
-    // The mtime is the renewal time only while it agrees with an 8h lifetime ending at expiresAt;
-    // a CLI that changed the lifetime, or a file touched for another reason, gets no renewal time.
-    const agrees = claude.expiresAt !== undefined && Math.abs(claude.mtimeMs - (claude.expiresAt - CLAUDE_TOKEN_LIFETIME_MS)) <= RENEWAL_AGREEMENT_MS;
-    out.claude = oauth("claude-cli", { ...claude, refreshedAt: agrees ? Math.round(claude.mtimeMs) : undefined }, now);
-  }
+  if (claude) out.claude = claudeAuth(claude, now);
   if (pi?.openai) out.openai = oauth("pi", pi.openai, now);
   else if (codex) out.openai = oauth("codex-cli", codex, now);
   for (const id of pi?.apiKeys ?? []) out[id] = { kind: "apiKey" };
   return out;
+}
+
+function claudeAuth(claude: ClaudeFacts, now: number): UsageAuth {
+  // The mtime is the renewal time only while it agrees with an 8h lifetime ending at expiresAt;
+  // a CLI that changed the lifetime, or a file touched for another reason, gets no renewal time.
+  const agrees = claude.expiresAt !== undefined && Math.abs(claude.mtimeMs - (claude.expiresAt - CLAUDE_TOKEN_LIFETIME_MS)) <= RENEWAL_AGREEMENT_MS;
+  return oauth("claude-cli", { ...claude, refreshedAt: agrees ? Math.round(claude.mtimeMs) : undefined }, now);
+}
+
+/** One Claude login's sign-in, from `<dir>/.credentials.json` (an added login's directory), read the same way as Claude Code's own. */
+export async function readClaudeLoginAuth(dir: string, now = Date.now()): Promise<UsageAuth | undefined> {
+  const facts = await factsOf(join(dir, ".credentials.json"), claudeFacts);
+  return facts ? claudeAuth(facts, now) : undefined;
 }
 
 /** Tests: forget every memoized file. */

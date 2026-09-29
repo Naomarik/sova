@@ -163,9 +163,10 @@ writer**).
     written by hand: an edit or write call on it, or a shell command that is
     neither a draft tool nor git and changed it; and when a git operation
     rewrote a commit a draft's evidence names (a rebase, reset or amend: the
-    commit was on the branch before the call and isn't after), with the way
-    back (`git rebase --abort`, or `git reset --hard <old>`) and "merge master
-    in instead". Both look at the trees the call works in (`cd`, `git -C`).
+    commit was on the branch before the call and isn't after), with the
+    way on (`git rebase --abort` and merge master in while the rebase is under
+    way; once finished, re-record evidence on the commit HEAD has and merge,
+    never rebase, from then on). Both look at the trees the call works in (`cd`, `git -C`).
     Evidence commits `census --changed` reports as orphaned (`orphanedEvidence`)
     that the guard didn't already name are relayed once; a manifest conflict
     during a rebase says to abort it rather than run merge-manifest. A

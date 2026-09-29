@@ -992,15 +992,17 @@ export async function evidenceCommits(root: string, io: SpecIO = localIO): Promi
 const lostText = (lost: readonly EvidenceCommit[]): string =>
 	`${DIGEST_TAG} never rebase after evidence (PROMOTE.md): ${lost.map((e) => `draft ${e.draft}'s evidence commit ${e.commit.slice(0, 12)}${e.ids.length ? ` (${capped(e.ids, ID_CAP)})` : ""}`).join("; ")} is no longer on this branch.`;
 
-/** The write guard's line, on the call that rewrote the commits: the exact way back. */
-export function rewriteNote(lost: readonly EvidenceCommit[], old: string, rebasing: boolean): string {
-	const fix = rebasing ? "Abort (`git rebase --abort`)" : `Restore the branch (\`git reset --hard ${old.slice(0, 12)}\`)`;
-	return `${lostText(lost)} ${fix} and merge master in instead.`;
+const REBASE_ABORT = "Abort it (`git rebase --abort`) and merge master in instead.";
+const REWRITE_DONE = "It finished: re-record evidence on the commit HEAD has, and from now on merge master in, never rebase.";
+
+/** The write guard's line, on the call that rewrote the commits: abort a rebase under way, else the tool's own recovery. */
+export function rewriteNote(lost: readonly EvidenceCommit[], rebasing: boolean): string {
+	return `${lostText(lost)} ${rebasing ? REBASE_ABORT : REWRITE_DONE}`;
 }
 
 /** The census's line for evidence HEAD lacks (census `orphanedEvidence`), when the write guard didn't say it. */
 export const orphanNote = (lost: readonly EvidenceCommit[]): string =>
-	`${lostText(lost)} A rebase under way: abort it (\`git rebase --abort\`); a finished one: restore the old tip (\`git reflog\`; \`git reset --hard ORIG_HEAD\` right after it). Either way merge master in instead, and re-record evidence on the commit HEAD has.`;
+	`${lostText(lost)} If a rebase is under way: ${REBASE_ABORT} If not: ${REWRITE_DONE}`;
 
 /** The current-spec files Git shows changed in a tree, with their mtimes. */
 async function specFiles(top: string, io: SpecIO, signal?: AbortSignal): Promise<Record<string, number>> {
@@ -1080,7 +1082,7 @@ export class SpecWriteGuard {
 					if ((await git(["merge-base", "--is-ancestor", e.commit, tree.head])).code === 0 && (await git(["merge-base", "--is-ancestor", e.commit, now])).code !== 0) lost.push(e);
 				if (!lost.length) continue;
 				said.push(...lost.map((e) => e.commit));
-				notes.push(rewriteNote(lost, tree.head, await rebaseUnderway(tree.top, this.io, call.signal)));
+				notes.push(rewriteNote(lost, await rebaseUnderway(tree.top, this.io, call.signal)));
 			}
 			return notes.length ? notes.join("\n") : undefined;
 		} catch {

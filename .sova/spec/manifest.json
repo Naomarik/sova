@@ -7544,6 +7544,16 @@
         "src/components/VoiceSetup.tsx",
         "src/lib/voice/format.ts"
       ]
+    },
+    "§chat.composer/file-index-deadline": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/files.ts",
+        "server/files.test.ts"
+      ]
     }
   },
   "boundary": {

@@ -68,9 +68,10 @@ test("a stub kind in the registry is a stub section in the guide, and only then"
   }
 });
 
-test("the shared sections exist: emphasis and the free-form limits", () => {
+test("the shared section exists (emphasis), and the free-form limits are in html / svg", () => {
   const shared = sections.filter((s) => s.heading.startsWith("Shared:")).map((s) => s.heading);
-  assert.deepEqual(shared, ["Shared: emphasis", "Shared: free-form limits"]);
+  assert.deepEqual(shared, ["Shared: emphasis"]);
+  assert.match(sections.find((s) => s.heading === "html / svg")!.text, /Aim under 8K characters/);
   assert.match(GUIDE, /mark <target> \[tone\] \["short note"\]/, "the emphasis syntax as core/emphasis.ts parses it");
   assert.match(GUIDE, /Aim under 8K characters \(the document after `title:` \/ `caption:`\); up to 16K draws marked large/);
   assert.equal(FRAME_SOFT_CHARS, 8 * 1024);

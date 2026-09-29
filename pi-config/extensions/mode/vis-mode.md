@@ -3,7 +3,7 @@
   every `## ` section containing the stub marker (an HTML comment whose whole text is "stub") is
   dropped, then all HTML comments are stripped. So owner notes never reach the model, and neither
   does a kind that isn't drawn yet.
-  Ownership: the preamble and the two "Shared:" sections belong to the foundation. Each kind
+  Ownership: the preamble and the "Shared:" section belong to the foundation. Each kind
   section belongs to that kind's owner, who edits only that section. Keep sections short: the
   whole text is paid for on every turn. src/vis/guide.test.ts parses every example here with the
   renderer's own parser, and checks that the sections match src/vis/registry.ts (a registry `stub`
@@ -24,10 +24,6 @@ Rules for every kind:
 <!-- owner: foundation. core/emphasis.ts implements this; every kind calls it. -->
 To point at what matters, add a `mark` line (at the start of a line, after the settings): `mark <target> [tone] ["short note"]`. The item is highlighted (tone defaults to accent); a note gets a number and is listed under the drawing. Mark at most 1–3 things; a note is a phrase under 120 characters. Several targets share one mark and its note: `mark a, b, c "the scope set"`.
 - Targets: flow and state, a node's id or label; sequence, an actor, a message's "label" or its number (1 = the first message; notes and dividers don't count); code, a line or a range `20-23` as displayed; matrix, a row's criterion or a column's name; wireframe, see its section; any other kind, a row's (layer's, item's) label.
-
-## Shared: free-form limits
-<!-- owner: foundation. Enforced by kinds/frame/parse.ts (size) and srcdoc.ts (motion gate, CSP). -->
-`vis html` / `vis svg` are the fallback when no kind fits. Aim under 8K characters (the document after `title:` / `caption:`); up to 16K draws marked large, beyond that only the source shows. No network (no external scripts, fonts, images or fetches), no autoplay — nothing moves until the reader clicks, so give animations a visible Play or Step button. See § html / svg.
 
 ## flow
 <!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). Labels: kinds/flow/parse.ts decides the style per fence (a string after a chain's first id = inline style). -->
@@ -207,7 +203,7 @@ for (let i = 0;
 
 ## html / svg
 <!-- owner: code member (free-form). kinds/frame: srcdoc.ts (CSP, tokens, base CSS, height, motion gate, script-failure flag), View.tsx; fuller examples in kinds/frame/examples/ (tested). Emphasis: not applicable. -->
-Only when none of the kinds above fits — usually something the reader should play with (a Step button through an algorithm, a slider on a parameter), or a drawing no kind covers. `vis html` is a fragment (inline `<style>` and `<script>`, no `<html>`/`<head>`); `vis svg` is one `<svg>` with a `viewBox` and no `width`, drawn at its natural size and shrunk to fit. Start with `title:` / `caption:` lines.
+Only when none of the kinds above fits — usually something the reader should play with (a Step button through an algorithm, a slider on a parameter), or a drawing no kind covers. `vis html` is a fragment (inline `<style>` and `<script>`, no `<html>`/`<head>`); `vis svg` is one `<svg>` with a `viewBox` and no `width`, drawn at its natural size and shrunk to fit. Start with `title:` / `caption:` lines. Aim under 8K characters (the document after `title:` / `caption:`); up to 16K draws marked large, beyond that only the source shows.
 ```vis html
 title: Bubble sort, one comparison at a time
 caption: Press Step: the larger of each pair moves right.
@@ -224,4 +220,4 @@ draw();
 - Fit a 360px-wide phone (flex-wrap, grid with `fr`); keep it under about 500px tall.
 - Nothing moves until the reader clicks or presses a key in it: give motion a Play or Step button (in SVG, `begin="play.click"` on the animations, with a `<g id="play" role="button">`). No `setTimeout` loops.
 - Check a large draft with the `vis_check` tool before you post it.
-- It runs sandboxed: no network, no storage, no `alert`, no form submits. Handle clicks with `onclick`.
+- It runs sandboxed: no network (no external scripts, fonts, images or fetches), no storage, no `alert`, no form submits. Handle clicks with `onclick`.

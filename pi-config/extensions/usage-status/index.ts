@@ -16,7 +16,7 @@ import * as fsSync from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ClaudeLogins, DEFAULT_LOGIN_ID, planLabel, recordedLogin } from "../claude-code/accounts.ts";
-import { type CacheFile, type ClaudeData, describeErrors, errMessage, refreshCache, type Window } from "./fetch";
+import { type CacheFile, type ClaudeData, describeErrors, errMessage, firstReadyLogin, refreshCache, type Window } from "./fetch";
 
 const HOME = os.homedir();
 
@@ -554,7 +554,7 @@ function createFooter(ctx: ExtensionContext, getCache: () => CacheFile | undefin
 		const info = {
 			branch: ttl(() => readGitBranch(ctx.cwd)),
 			autoCompact: ttl(() => readAutoCompact(ctx.cwd, ctx.isProjectTrusted())),
-			claudeLogin: ttl(() => recordedLogin(ctx.sessionManager.getBranch())),
+			claudeLogin: ttl(() => recordedLogin(ctx.sessionManager.getBranch()) ?? firstReadyLogin()),
 		};
 		const unsubscribe = footerData?.onBranchChange(() => tui.requestRender());
 		let lastLines: string[] = [];

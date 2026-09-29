@@ -386,8 +386,12 @@ function Results(props: { st: VoiceStatus; run: VoiceCalibrationRun; busy: boole
       <Show when={run().phase === "failed"}>
         <Banner
           tone="error"
-          title={`Calibration stopped at setting ${run().progress.setting} of ${run().progress.settings}.`}
-          body={`${(run().error ?? "Unknown error").replace(/\.$/, "")}. Your clips are kept; Find Best Settings tries again.`}
+          title={
+            tunable()
+              ? `Calibration stopped at setting ${run().progress.setting} of ${run().progress.settings}.`
+              : `Scoring stopped at clip ${run().progress.clip} of ${run().progress.clips}.`
+          }
+          body={`${(run().error ?? "Unknown error").replace(/\.$/, "")}. Your clips are kept; ${tunable() ? "Find Best Settings" : "Score This Model"} tries again.`}
         />
       </Show>
       <Show when={run().hostBusy}>

@@ -243,7 +243,7 @@ test("reportedAlsoChanges: a worker's line in a custom message or a worker tool'
 	assert.equal(reportedAlsoChanges([]), undefined);
 	const complete = { type: "custom_message", customType: "subagent-complete", content: "Worker done.\nAlso changes: §chat.sandbox/toggle — new wording" };
 	assert.deepEqual(reportedAlsoChanges([complete]), ["§chat.sandbox/toggle"]);
-	assert.deepEqual(reportedAlsoChanges([{ type: "custom_message", customType: "team-report", content: [{ type: "text", text: "ok\nAlso changes: none" }] }]), [], "none is still a report");
+	assert.equal(reportedAlsoChanges([{ type: "custom_message", customType: "team-report", content: [{ type: "text", text: "ok\nAlso changes: none" }] }]), undefined, "a planning worker's none is no change turn");
 	const spawn = { type: "message", message: { role: "toolResult", toolName: "agent_spawn", content: [{ type: "text", text: "report\nAlso changes: §a/b — x" }] } };
 	assert.deepEqual(reportedAlsoChanges([spawn, complete]), ["§a/b", "§chat.sandbox/toggle"]);
 	const bash = { type: "message", message: { role: "toolResult", toolName: "bash", content: [{ type: "text", text: "Also changes: §x/y — grep hit" }] } };
@@ -328,6 +328,91 @@ test("a manifest.json in a Git conflict: the census says to run merge-manifest, 
 		assert.equal((await censusStep(state, { cwd: repo, toolName: "read", input: {} }, CORE)).result.text, undefined, "said once per conflict");
 		const turn = await treeTurn(tree!, CORE);
 		assert.match(turn.conflict ?? "", /merge-manifest/);
+	} finally {
+		rmSync(repo, { recursive: true, force: true });
+	}
+});
+
+test("B3's shape: merging master into the branch lands nothing; the landing merge's list is only the branch's §", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const dir = mkdtempSync(join(scratchRoot, "spec-b3-"));
+	const main = join(dir, "main");
+	const wt = join(dir, "wt");
+	try {
+		const put = (at: string, rel: string, text: string) => {
+			mkdirSync(dirname(join(at, rel)), { recursive: true });
+			writeFileSync(join(at, rel), text);
+		};
+		const git = (at: string, ...args: string[]) => {
+			const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", at, ...args], { encoding: "utf8" });
+			assert.equal(r.status, 0, `git ${args.join(" ")}: ${r.stderr}`);
+		};
+		const claims = { "§app/a": { kind: "surface", code: ["src/a.ts"] }, "§app/b": { kind: "surface", code: ["src/b.ts"] } };
+		put(main, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }));
+		put(main, ".sova/spec/claims/app/a.md", "# §app/a\n\nA.\n");
+		put(main, ".sova/spec/claims/app/b.md", "# §app/b\n\nB.\n");
+		put(main, ".sova/spec/.gitignore", "/drafts/\n");
+		put(main, "src/a.ts", "a\n");
+		put(main, "src/b.ts", "b\n");
+		git(main, "init", "-q", "-b", "master");
+		git(main, "add", "-A");
+		git(main, "commit", "-qm", "base");
+		git(main, "worktree", "add", "-q", "-b", "feat/x", wt);
+		// The branch changes §app/a; another task changes §app/b on master meanwhile.
+		put(wt, ".sova/spec/claims/app/a.md", "# §app/a\n\nA, by the branch.\n");
+		git(wt, "commit", "-qam", "branch spec");
+		put(main, ".sova/spec/claims/app/b.md", "# §app/b\n\nB, by the other task.\n");
+		git(main, "commit", "-qam", "other task spec");
+
+		// A turn that only merges master into the branch: nothing lands, nothing is foreign.
+		const branchStart = await treeStart(wt);
+		git(wt, "merge", "--no-edit", "-q", "master");
+		const absorbed = await treeTurn(branchStart!, CORE);
+		assert.equal(absorbed.changed, true);
+		assert.equal(absorbed.specChanged, false, "an absorbed merge is no promotion of this branch's");
+		assert.deepEqual(absorbed.foreign, []);
+
+		// Later in the same run the branch changes its own § again: only that one is listed.
+		put(wt, ".sova/spec/claims/app/a.md", "# §app/a\n\nA, by the branch, again.\n");
+		git(wt, "commit", "-qam", "branch spec 2");
+		const mixed = await treeTurn(branchStart!, CORE);
+		assert.equal(mixed.specChanged, true);
+		assert.deepEqual(mixed.foreign, ["§app/a"], "master's §app/b, absorbed, is not the branch's");
+
+		// The landing merge into master (fast-forward): the target's own diff, §app/a only.
+		const mainStart = await treeStart(main);
+		git(main, "merge", "--ff-only", "-q", "feat/x");
+		const landed = await treeTurn(mainStart!, CORE);
+		assert.equal(landed.specChanged, true);
+		assert.deepEqual(landed.foreign, ["§app/a"]);
+	} finally {
+		spawnSync("git", ["-C", main, "worktree", "remove", "--force", wt]);
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("a merge commit into master (no fast-forward) lands the branch's §: the target keeps its whole diff", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const repo = mkdtempSync(join(scratchRoot, "spec-noff-"));
+	try {
+		const put = (rel: string, text: string) => {
+			mkdirSync(dirname(join(repo, rel)), { recursive: true });
+			writeFileSync(join(repo, rel), text);
+		};
+		const git = (...args: string[]) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args]).status, 0, args.join(" "));
+		put(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, claims: { "§app/a": { kind: "surface", code: ["src/a.ts"] } } }));
+		put(".sova/spec/claims/app/a.md", "# §app/a\n\nA.\n");
+		put("src/a.ts", "a\n");
+		git("init", "-q", "-b", "master");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+		git("checkout", "-qb", "feat/y");
+		put(".sova/spec/claims/app/a.md", "# §app/a\n\nA, y.\n");
+		git("commit", "-qam", "y");
+		git("checkout", "-q", "master");
+		const start = await treeStart(repo);
+		git("merge", "--no-ff", "--no-edit", "-q", "feat/y");
+		assert.deepEqual((await treeTurn(start!, CORE)).foreign, ["§app/a"]);
 	} finally {
 		rmSync(repo, { recursive: true, force: true });
 	}

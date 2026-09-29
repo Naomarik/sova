@@ -221,6 +221,29 @@ try {
 	assert.match(checks().at(-1).content, /changed the current spec in wt2/);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell/);
 
+	// A planning turn (B3 01:45): a worktree is created (empty) and a planning worker reports
+	// "Also changes: none"; the reply has no line. Not a change turn: no warning, now or with the next prompt.
+	const wt3 = path.join(scratch, "wt3");
+	const createEmpty = () => {
+		mkdirSync(wt3, { recursive: true });
+		spawnSync("git", ["-C", wt3, "init", "-q"]);
+		spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-C", wt3, "commit", "-q", "--allow-empty", "-m", "base"]);
+		hostPi.events.emit("worktrees:state", { version: 1, active: [wt, wt2, wt3] });
+	};
+	const warns = () => specChecks().filter((e) => /Your previous reply/.test(e.content)).length;
+	const warnsBefore = warns();
+	const reprompts = checks().length;
+	at = requests.length;
+	script.push({ effect: createEmpty, tool: "bash", args: { command: "true" } }, { text: "Planned; the worker will start once you confirm." });
+	await session.prompt("plan it in a new worktree");
+	script.push({ text: "Noted the plan." });
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "Planner done: a plan, no edits.\nAlso changes: none", display: true }, { triggerTurn: true });
+	script.push({ text: "It is a plan." });
+	await session.prompt("what did the planner say?");
+	assert.equal(requests.length, at + 4, "no continuation anywhere");
+	assert.equal(checks().length, reprompts);
+	assert.equal(warns(), warnsBefore, "no warning for a planning turn or a worker's none");
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

@@ -679,6 +679,64 @@ export async function treeStart(dir: string, io: SpecIO = localIO): Promise<Tree
 	return { view, ...(root ? { root } : {}), drafts: root ? await draftStamps(root, io) : {} };
 }
 
+/** The repo's default branch: origin/HEAD's target, else `master`, else `main`; undefined when none exists. */
+export async function defaultBranch(top: string, io: SpecIO = localIO): Promise<string | undefined> {
+	const git = (args: string[]) => io.exec("git", args, { cwd: top, timeout: TOOL_TIMEOUT_MS });
+	const origin = (await git(["symbolic-ref", "-q", "--short", "refs/remotes/origin/HEAD"])).stdout.trim();
+	if (origin) return origin.replace(/^origin\//, "");
+	for (const name of ["master", "main"]) if ((await git(["rev-parse", "--verify", "-q", `refs/heads/${name}`])).code === 0) return name;
+	return undefined;
+}
+
+/**
+ * What a tree's current spec landed from `base` to its work tree (`head` its HEAD now). A merge lands
+ * the TARGET's own diff: on the default branch the whole diff is what landed. On any other branch a
+ * merge that brought the default branch in (its second parent is an ancestor of the default branch's
+ * tip) is absorbed, not landed: it is no spec change of this tree's, and its § drop out of the list
+ * unless a commit of the branch's own, or an uncommitted change, changes them too.
+ */
+export async function landedSpec(
+	top: string,
+	root: string,
+	base: string,
+	head: string | null,
+	dirtySpec: boolean,
+	isSpec: (path: string) => boolean,
+	core: string,
+	io: SpecIO = localIO,
+): Promise<{ specChanged: boolean; foreign?: string[] }> {
+	const git = (args: string[]) => io.exec("git", args, { cwd: top, timeout: TOOL_TIMEOUT_MS });
+	const touches = async (from: string, to: string) => {
+		const diff = await git(["diff", "--name-only", "-z", from, to]);
+		return diff.code === 0 && diff.stdout.split("\0").some(isSpec);
+	};
+	const all = async () => foreignBetween(root, base, undefined, core, io);
+	if (!head || head === base) return dirtySpec ? { specChanged: true, foreign: await all() } : { specChanged: false, foreign: [] };
+	const main = await defaultBranch(top, io);
+	const branch = (await git(["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
+	if (!main || branch === main) {
+		const specChanged = dirtySpec || (await touches(base, head));
+		return specChanged ? { specChanged, foreign: await all() } : { specChanged, foreign: [] };
+	}
+	const tip = (await git(["rev-parse", "--verify", "-q", `refs/heads/${main}`])).stdout.trim();
+	const commits = (await git(["rev-list", "--first-parent", "--parents", `${base}..${head}`])).stdout.trim().split("\n").filter(Boolean);
+	const absorbed = new Set<string>();
+	const own = new Set<string>();
+	let ownTouched = dirtySpec;
+	for (const line of commits) {
+		const [commit, parent, merged] = line.split(" ");
+		if (!commit || !parent || !(await touches(parent, commit))) continue;
+		const absorbing = Boolean(merged && tip && (await git(["merge-base", "--is-ancestor", merged, tip])).code === 0);
+		if (!absorbing) ownTouched = true;
+		for (const id of (await foreignBetween(root, parent, commit, core, io)) ?? []) (absorbing ? absorbed : own).add(id);
+	}
+	if (!ownTouched) return { specChanged: false, foreign: [] };
+	const every = await all();
+	if (!every || !absorbed.size) return { specChanged: true, ...(every ? { foreign: every } : {}) };
+	const uncommitted = dirtySpec ? ((await foreignBetween(root, head, undefined, core, io)) ?? []) : [];
+	return { specChanged: true, foreign: every.filter((id) => !absorbed.has(id) || own.has(id) || uncommitted.includes(id)) };
+}
+
 /** Compare a tree with how the run found it. Never throws. */
 export async function treeTurn(start: TreeStart, core: string, io: SpecIO = localIO): Promise<TreeTurn> {
 	try {
@@ -690,19 +748,16 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 		if (!changed || !end) return { changed, specChanged: false, foreign: [], ...conflict };
 		const specRel = start.root ? relative(start.view.top, join(start.root, SPEC_REL)) : SPEC_REL;
 		const isSpec = (p: string) => p.startsWith(`${specRel}/`) && !p.startsWith(`${specRel}/drafts/`);
-		let specChanged = Object.entries(end.files).some(([p, m]) => isSpec(p) && start.view.files[p] !== m);
+		const dirtySpec = Object.entries(end.files).some(([p, m]) => isSpec(p) && start.view.files[p] !== m);
 		const base = start.view.head;
-		if (!specChanged && base && end.head && end.head !== base) {
-			const diff = await io.exec("git", ["diff", "--name-only", "-z", base, end.head], { cwd: end.top, timeout: TOOL_TIMEOUT_MS });
-			specChanged = diff.code === 0 && diff.stdout.split("\0").some(isSpec);
-		}
-		if (!start.root || !base) return { changed, specChanged, ...conflict };
+		if (!start.root || !base) return { changed, specChanged: dirtySpec, ...conflict };
+		const landed = await landedSpec(end.top, start.root, base, end.head, dirtySpec, isSpec, core, io);
+		const specChanged = landed.specChanged;
 		const ids = new Set<string>();
 		let known = false;
-		const current = specChanged ? await foreignBetween(start.root, base, undefined, core, io) : [];
-		if (current) {
+		if (landed.foreign) {
 			known = true;
-			for (const id of current) ids.add(id);
+			for (const id of landed.foreign) ids.add(id);
 		}
 		for (const name of drafts) {
 			const edited = await draftForeign(start.root, name, core, io, undefined, base);
@@ -727,7 +782,7 @@ const textOf = (content: unknown): string =>
 /**
  * `Also changes:` lines a worker's report carried into the parent's session: a custom message (a
  * subagent's completion, a team report) or the result of a tool that runs workers. Returns the §
- * they name, or undefined when none carried a line. Not the user's words, and not other tools' output.
+ * they name, or undefined when none named one ("none" reports no change). Not the user's words, and not other tools' output.
  */
 export function reportedAlsoChanges(entries: readonly unknown[]): string[] | undefined {
 	let found = false;
@@ -739,7 +794,8 @@ export function reportedAlsoChanges(entries: readonly unknown[]): string[] | und
 		else if (e.type === "message" && e.message?.role === "toolResult" && /agent|team|subagent|worker/i.test(e.message.toolName ?? "")) text = textOf(e.message.content);
 		for (const line of text.split("\n")) {
 			const named = parseAlsoChanges(line.trim());
-			if (named === undefined) continue;
+			// "Also changes: none" (a planning worker's, say) makes no change turn; a named § does.
+			if (!named?.length) continue;
 			found = true;
 			for (const id of named) ids.add(id);
 		}

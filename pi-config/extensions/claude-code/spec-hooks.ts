@@ -30,7 +30,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	CHECK_TAG, censusStep, checkAlsoChanges, describeProblem, draftForeign, draftStamps, draftsTouched, findSpecRoot, foreignBetween, freshCensusState, gitCommits, gitMerges, gitView,
+	CHECK_TAG, censusStep, checkAlsoChanges, defaultBranch, describeProblem, draftForeign, draftStamps, draftsTouched, findSpecRoot, foreignBetween, freshCensusState, gitCommits, gitMerges, gitView,
 	lastLine, localIO, parseAlsoChanges, promoteWrites, repromptText, viewChanged, type CensusState, type GitView, type SpecIO,
 } from "../mode/spec-guard.ts";
 
@@ -216,13 +216,12 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 	return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: step.result.text } };
 }
 
-/** The checkout at `top` is on the default target branch: `master` where the repository has it, else `main`. */
+/** The checkout at `top` is on the default branch (spec-guard's defaultBranch: origin/HEAD, else master, else main). */
 export async function landsOnTarget(top: string, io: SpecIO): Promise<boolean> {
-	const opts = { cwd: top, timeout: 10_000 };
-	const branch = await io.exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], opts).catch(() => undefined);
+	const branch = await io.exec("git", ["symbolic-ref", "--quiet", "--short", "HEAD"], { cwd: top, timeout: 10_000 }).catch(() => undefined);
 	if (!branch || branch.code !== 0) return false;
-	const hasMaster = (await io.exec("git", ["rev-parse", "--verify", "--quiet", "refs/heads/master"], opts).catch(() => undefined))?.code === 0;
-	return branch.stdout.trim() === (hasMaster ? "master" : "main");
+	const target = await defaultBranch(top, io).catch(() => undefined);
+	return !!target && branch.stdout.trim() === target;
 }
 
 /** The foreign § the drafts this turn edited change (a draft edit is a write git can't see). */

@@ -222,7 +222,7 @@ per Claude session:
 - `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta; its
   `[spec census]` digest comes back as `additionalContext`. A `promote --write` (its `alsoChanges`;
   without `--json`, the spec changed since just before it) or a `git merge` that moves the default
-  branch (`master`, else `main`: `sova-spec.mjs foreign` over that branch's move) records the
+  branch (spec-guard's `defaultBranch`: `origin/HEAD`, else `master`, else `main`; `sova-spec.mjs foreign` over that branch's move) records the
   turn's foreign §. Merging master into a feature branch lands nothing: those § are master's own.
 - `Stop`: after a promote or merge, the last line must name every computed foreign § (or carry the
   override line); the reply is sent back up to twice. Otherwise a warning, sent back once: a

@@ -45,6 +45,8 @@ test("guides: every front forwards to the share port, root steps marked", () => 
     ],
   );
 
+  assert.ok(funnel.notes?.some((n) => n.startsWith("Preview: it isn't confirmed yet")), "funnel carries its preview warning");
+
   const cf = frontGuide(setting("cloudflared"));
   assert.ok(cf.steps.every((s) => !s.root));
   assert.match(cf.steps[1]!.text, /hostname: share\.example\.com\n {4}service: http:\/\/127\.0\.0\.1:4802\n {2}- service: http_status:404/);

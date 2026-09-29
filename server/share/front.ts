@@ -77,6 +77,7 @@ export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
         notes: [
           "The public address is this machine's ts.net name, and Funnel must be allowed for it in the tailnet policy.",
           "Funnel only ever the share port: never the main, peer or front door ports.",
+          "Preview: it isn't confirmed yet that Funnel passes on each visitor's address or keeps live updates open. Use Verify after setting it up.",
         ],
       };
     case "cloudflared":

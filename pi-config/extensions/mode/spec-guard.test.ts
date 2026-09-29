@@ -27,6 +27,7 @@ import {
 	lastLine,
 	localIO,
 	NO_DRAFT_NOTE,
+	unmappedNote,
 	parseAlsoChanges,
 	parsePorcelain,
 	promoteWrites,
@@ -198,7 +199,8 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 		const after = (toolName = "bash") => hook.after({ cwd: project, toolName, input: { command: "cat > f <<EOF" } });
 		assert.deepEqual(await hook.prime(project), {}, "the baseline says nothing");
 		put("README.md", "changed\n");
-		assert.deepEqual(await after(), {}, "a change outside the boundary is silent");
+		const outside = await after();
+		assert.equal(outside.text, `${DIGEST_TAG} 0 changed file(s) in the boundary, 0 unclaimed; 0 foreign § touched.\n${unmappedNote("README.md")}`, "a change outside the boundary no claim maps: one line");
 		put("src/App.tsx", "2\n");
 		const first = await after("read");
 		assert.ok(first.text?.startsWith(DIGEST_TAG), `first in-boundary change: ${JSON.stringify(first)}`);
@@ -466,4 +468,15 @@ test("a new child inserted right above a sibling's heading flags the parent (chi
 	} finally {
 		rmSync(repo, { recursive: true, force: true });
 	}
+});
+
+test("digest: a changed file outside the boundary that no claim maps gets one line, once; mapped ones and the spec's own files don't", () => {
+	const v = censusView({ outside: ["pi-config/usage-status/index.ts", "pi-config/x.ts", ".sova/spec/claims/app/a.md"], mappedOutside: [{ path: "pi-config/x.ts", claims: ["§app/worker"] }] });
+	const text = digest(v, ["pi-config/usage-status/index.ts", "pi-config/x.ts", ".sova/spec/claims/app/a.md"], { reported: false, foreign: [] }, true);
+	assert.ok(text?.includes(unmappedNote("pi-config/usage-status/index.ts")));
+	assert.equal(unmappedNote("f"), "f is outside the boundary and no claim maps it: if it changes user-visible behavior, spec it (a claim that lists it in `code`), else say it's plumbing.");
+	assert.ok(!text?.includes(unmappedNote("pi-config/x.ts")), "a mapped file has its own line");
+	assert.ok(!text?.includes(".sova/spec/claims/app/a.md is outside"), "the spec's own files are not behavior");
+	assert.equal(digest(v, ["README.md"], { reported: true, foreign: [] }, true), undefined, "only new files: said once per file");
+	assert.equal(digest(censusView({ outside: null }), ["a.ts"], { reported: false, foreign: [] }, true), undefined, "no boundary: nothing is outside");
 });

@@ -223,6 +223,8 @@ export interface CensusView {
 	unclaimed: string[] | null;
 	/** Changed files outside the boundary that a claim's `code` maps. */
 	mappedOutside: { path: string; claims: string[] }[];
+	/** Changed files outside the boundary (mapped or not); null without a boundary. */
+	outside?: string[] | null;
 	childUnderForeign: { id: string; parent: string }[];
 }
 
@@ -247,6 +249,7 @@ export function parseCensus(stdout: string): CensusView | undefined {
 		claimed: pathClaims(c.claimed),
 		unclaimed: Array.isArray(c.unclaimed) ? (c.unclaimed as string[]) : null,
 		mappedOutside: pathClaims(c.mappedOutside),
+		outside: Array.isArray(c.outside) ? (c.outside as string[]) : null,
 		childUnderForeign: Array.isArray(c.childUnderForeign) ? (c.childUnderForeign as { id: string; parent: string }[]) : [],
 	};
 }
@@ -298,12 +301,17 @@ export function ranCensus(toolName: string, input: unknown): boolean {
 const capped = (items: readonly string[], cap: number): string =>
 	items.length > cap ? `${items.slice(0, cap).join(", ")} (+${items.length - cap} more)` : items.join(", ");
 
+/** The line for a changed file outside the boundary that no claim maps. */
+export const unmappedNote = (file: string): string =>
+	`${file} is outside the boundary and no claim maps it: if it changes user-visible behavior, spec it (a claim that lists it in \`code\`), else say it's plumbing.`;
+
 export const NO_DRAFT_NOTE =
 	"No draft yet: a behaviour change needs its claim sentence in a draft before code (`sova-spec-draft.mjs new <name> --write`, then edit the claim); work that changes no behaviour: say you claim the exemption, decided from `scope` output.";
 
 /**
  * The digest for the files new since the last look, or undefined when there is nothing to say: a first
- * in-boundary change, a new file in the boundary or mapped by a claim, or a new foreign §.
+ * in-boundary change, a new file in the boundary or mapped by a claim, a new file outside the boundary
+ * that no claim maps (it may still change behavior: said once per file), or a new foreign §.
  */
 export function digest(v: CensusView, fresh: readonly string[], state: Pick<CensusState, "reported" | "foreign">, hasDraft: boolean): string | undefined {
 	const inBoundary = new Map<string, string>();
@@ -313,7 +321,9 @@ export function digest(v: CensusView, fresh: readonly string[], state: Pick<Cens
 	const freshIn = fresh.filter((p) => inBoundary.has(p));
 	const newForeign = v.foreign.filter((id) => !state.foreign.includes(id));
 	const first = !state.reported && inBoundary.size > 0;
-	if (!first && !freshIn.length && !newForeign.length) return undefined;
+	// Outside the boundary and no claim maps it: the spec's own files never count.
+	const unmapped = fresh.filter((p) => v.outside?.includes(p) && !inBoundary.has(p) && !p.startsWith(".sova/"));
+	if (!first && !freshIn.length && !newForeign.length && !unmapped.length) return undefined;
 	const unclaimed = v.unclaimed?.length ?? 0;
 	const lines = [
 		`${DIGEST_TAG} ${v.claimed.length + unclaimed} changed file(s) in the boundary, ${unclaimed} unclaimed; ${v.foreign.length} foreign § touched` +
@@ -324,6 +334,8 @@ export function digest(v: CensusView, fresh: readonly string[], state: Pick<Cens
 		const shown = freshIn.slice(0, FILE_CAP).map((p) => `${p} → ${inBoundary.get(p)}`);
 		lines.push(`New: ${shown.join("; ")}${freshIn.length > FILE_CAP ? ` (+${freshIn.length - FILE_CAP} more)` : ""}`);
 	}
+	for (const p of unmapped.slice(0, FILE_CAP)) lines.push(unmappedNote(p));
+	if (unmapped.length > FILE_CAP) lines.push(`(+${unmapped.length - FILE_CAP} more such files)`);
 	if (newForeign.length) lines.push(`Foreign §: ${capped(newForeign, ID_CAP)}`, `Rule: ${v.foreignNote}.`);
 	if (v.childUnderForeign.length) lines.push(`New claims under a foreign §: ${capped(v.childUnderForeign.map((p) => `${p.id} → ${p.parent}`), ID_CAP)}`);
 	return lines.join("\n");

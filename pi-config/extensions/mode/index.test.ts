@@ -453,7 +453,8 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /While coding, exempt work included, run `census --changed` \(/);
 	assert.match(spec, /Trusted tools: start each bash command with exactly this, never a guessed path:\n\n```sh\n/, "the recipe, not a hard-coded agent dir");
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
-	assert.ok(spec.split(/\s+/).length <= 940, "short enough to ride every turn");
+	assert.ok(spec.split(/\s+/).length <= 960, "short enough to ride every turn");
+	assert.match(spec, /A changed file outside the boundary that no claim maps still counts: if it changes user-visible behavior, spec it with a claim listing it in `code`\./, "the boundary is not an exemption");
 });
 
 test("mode helpers", () => {

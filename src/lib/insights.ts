@@ -3,6 +3,7 @@
 
 import type { AgentsInsight, TeamEvent, TeamInfo, TeamMember, UsageAuth, UsageBalance, UsageClaudeLogin, UsageInsight, UsageProvider, UsageWindow } from "../../shared/protocol";
 import type { Tone } from "../components/ui";
+import { accountGroups, type LoginFacts, loginName } from "./claude-login-groups";
 import { clockTime, duration, relativeTime, shortDate, stampTime, thousands } from "./format";
 import { isHostSession } from "./workers";
 
@@ -86,16 +87,21 @@ export function meterTone(w: UsageWindow): "warn" | "error" | null {
   return null;
 }
 
+/** Whether a window's reset has already passed at `now` (its reading describes a window that's gone). */
+const resetPassed = (w: UsageWindow, now: number) => resetWhen(w.resetsAt, now)?.past === true;
+
 /**
  * Card head chip for a provider: the worst window decides. Null when no limit applies.
  * A credit provider (DeepSeek) has a balance and no windows, so only the funding rule can fire.
+ * With `now`, a window whose reset has passed decides nothing (its meter is a ghost).
  */
-export function providerChip(p: UsageProvider): { tone?: Tone; text: string } | null {
+export function providerChip(p: UsageProvider, now?: number): { tone?: Tone; text: string } | null {
   if (p.balance && !p.balance.available) return { tone: "error", text: "Out of credit" };
-  const full = p.windows.filter((w) => w.pct >= 100);
+  const windows = now === undefined ? p.windows : p.windows.filter((w) => !resetPassed(w, now));
+  const full = windows.filter((w) => w.pct >= 100);
   if (full.some((w) => !isShortWindow(w))) return { tone: "error", text: "Quota used" };
   if (full.length > 0) return { tone: "warn", text: "Rate-limited" };
-  if (p.windows.some((w) => w.pct >= 80)) return { tone: "warn", text: "Near limit" };
+  if (windows.some((w) => w.pct >= 80)) return { tone: "warn", text: "Near limit" };
   return null;
 }
 
@@ -208,67 +214,114 @@ export function planLabel(p: UsageProvider): string | null {
   return /plan$/i.test(name) ? name : `${name} plan`;
 }
 
-// ---- Claude logins (§app.insights/usage-cards): one card per login, grouped by account ----------
+// ---- Claude logins (§app.insights/usage-cards): one card per account, its logins inside ----------
 
-/** A login card's title: its email, else its label, else what `default` is. */
+/** An account card's title (and a login's, for the foot's words): its email, else its label, else what `default` is. */
 export function claudeLoginTitle(l: UsageClaudeLogin): string {
   return l.email ?? l.label ?? (l.id === "default" ? "Claude Code's own login" : l.id);
 }
 
-/** What tells a login from another of the same email: "Claude Code's own login", its label, else when it was added. */
-export function claudeLoginName(l: UsageClaudeLogin, now = Date.now()): string {
-  if (l.id === "default") return "Claude Code's own login";
-  if (l.label) return l.label;
-  return l.addedAt !== undefined ? `Login added ${shortDate(l.addedAt, now)}` : "Added login";
+/** What the grouping and naming read of a Usage login. */
+export const usageLoginFacts = (l: UsageClaudeLogin): LoginFacts => ({
+  id: l.id,
+  ...(l.label ? { label: l.label } : {}),
+  ...(l.addedAt !== undefined ? { addedAt: l.addedAt } : {}),
+  ...(l.accountUuid ? { account: l.accountUuid } : {}),
+});
+
+/** The Usage page's Claude cards: one per account, in the order its first login has. */
+export function claudeAccounts(logins: UsageClaudeLogin[]): UsageClaudeLogin[][] {
+  return accountGroups(logins, usageLoginFacts).map((g) => g.logins);
+}
+
+/** A login's name inside its account (§app.claude-logins/registry, Names). */
+export function claudeLoginName(l: UsageClaudeLogin, account: readonly UsageClaudeLogin[]): string {
+  return loginName(usageLoginFacts(l), account.map(usageLoginFacts));
 }
 
 /**
- * The caption under the title: "Claude · Max 20x", then, when the title is the email, the login's
- * own name: `default`'s or its label always, when it was added only beside another login of its
- * account (`shared`), where the email alone can't tell them apart.
+ * The account's one reading: the freshest among its logins that has one (they all read the same
+ * quota), else the reading of the login in use, else of its first login. `login` is whose it is.
  */
-export function claudeLoginSubtitle(l: UsageClaudeLogin, now = Date.now(), shared = false): string {
-  const name = l.id === "default" || l.label || shared ? claudeLoginName(l, now) : null;
-  return ["Claude", l.planLabel, l.email && name !== l.email ? name : null].filter(Boolean).join(" · ");
+export function accountReading(account: readonly UsageClaudeLogin[]): { usage: UsageProvider; login: UsageClaudeLogin } {
+  const read = account.filter((l) => l.usage.windows.length > 0 || l.usage.balance);
+  const best = read.reduce<UsageClaudeLogin | undefined>((a, l) => (!a || (l.fetchedAt ?? -1) > (a.fetchedAt ?? -1) ? l : a), undefined);
+  const login = best ?? account.find((l) => l.inUse) ?? account[0]!;
+  return { usage: login.usage, login };
+}
+
+/**
+ * The account card's caption: "Claude · {plan}", then, for an account of one login, that login's
+ * name when it says something the title doesn't (`default`, or a label).
+ */
+export function claudeAccountSubtitle(account: readonly UsageClaudeLogin[]): string {
+  const only = account.length === 1 ? account[0]! : null;
+  const name = only && (only.id === "default" || only.label) ? claudeLoginName(only, account) : null;
+  const plan = account.find((l) => l.planLabel)?.planLabel;
+  return ["Claude", plan, only && name !== claudeLoginTitle(only) ? name : null].filter(Boolean).join(" \u00b7 ");
+}
+
+/**
+ * Over an account's list of logins: "2 logins in the pool" (its logins the pool has — never
+ * `default`), else "2 logins on this device"; null for an account of one login outside the pool,
+ * which lists none.
+ */
+export function claudeAccountLoginsCaption(account: readonly UsageClaudeLogin[]): string | null {
+  const logins = (n: number) => `${n} login${n === 1 ? "" : "s"}`;
+  const pooled = account.filter((l) => l.holder).length;
+  if (pooled > 0) return `${logins(pooled)} in the pool`;
+  return account.length > 1 ? `${logins(account.length)} on this device` : null;
+}
+
+/** Where a pool login is, in Settings → Accounts' words (claude-pool.ts holderChip); null for one no pool describes. */
+export function claudeLoginHolder(l: UsageClaudeLogin): { tone: Tone | "accent"; text: string } | null {
+  const h = l.holder;
+  if (!h) return null;
+  if (h.stuck) return { tone: "warn", text: `Stuck on ${h.label}` };
+  if (h.free) return { tone: "success", text: "Free" };
+  if (h.self) return { tone: "accent", text: "This device" };
+  return { tone: "info", text: h.label };
 }
 
 const LIMIT_WINDOWS: Record<string, string> = { five_hour: "5h limit", seven_day: "Weekly limit", seven_day_opus: "Weekly Opus limit", seven_day_sonnet: "Weekly Sonnet limit" };
 
-/** The login's standing on this host, in Settings → Accounts' words. */
-export function claudeLoginStanding(l: UsageClaudeLogin, now: number): { tone?: Tone; text: string; title?: string } {
+/** The window of `reading` at 100% whose reset is still ahead (the one resetting last), or null. */
+function fullWindow(reading: UsageProvider | undefined, now: number): { w: UsageWindow; until: number } | null {
+  let out: { w: UsageWindow; until: number } | null = null;
+  for (const w of reading?.windows ?? []) {
+    const until = w.resetsAt ? Date.parse(w.resetsAt) : NaN;
+    if (w.pct >= 100 && until > now && (!out || until > out.until)) out = { w, until };
+  }
+  return out;
+}
+
+/**
+ * The login's standing on this host, in Settings → Accounts' words. `reading` is its account's
+ * reading: a login recorded as ready whose account has a window at 100%, reset still ahead, is
+ * limited until then, like the card's head chip says — the host records a limit only once a spawn
+ * runs into it, and the reading is the newer fact.
+ */
+export function claudeLoginStanding(l: UsageClaudeLogin, now: number, reading: UsageProvider = l.usage): { tone?: Tone; text: string; title?: string } {
   if (!l.signedIn && l.id !== "default") return { tone: "error", text: "Not signed in" };
   const s = l.standing;
   if (s.state === "limited") return { tone: "warn", text: `Limited until ${stampTime(s.until, now)}`, title: LIMIT_WINDOWS[s.window ?? ""] ?? "Usage limit" };
   if (s.state === "auth") return { tone: "error", text: "Sign in again", ...(s.message ? { title: s.message } : {}) };
+  const full = fullWindow(reading, now);
+  if (full) return { tone: "warn", text: `Limited until ${stampTime(full.until, now)}`, title: `Its ${windowLabel(full.w)} window is used up` };
   if (!l.enabled) return { text: "Off", title: "Never chosen automatically (Settings → Accounts)" };
   return { tone: "success", text: "Ready" };
 }
 
-/** Why a login card has no meters, when that is about the login rather than the provider's answer. */
+/** Why an account card has no meters, when that is about its login rather than the provider's answer. */
 export function claudeLoginNote(l: UsageClaudeLogin): string | null {
   if (l.usage.windows.length > 0) return null;
   if (l.standing.state === "auth") return "Not fetched while this login needs signing in again. Its usage shows once Claude Code has signed it in.";
-  if (l.id !== "default" && l.fetchedAt === undefined && l.usage.state === "error" && l.usage.error === "not read yet") return "Not read yet. Its usage shows at the next refresh.";
-  return null;
-}
-
-/**
- * The cards in account groups: logins sharing an `accountUuid` share its usage limits, so they sit
- * together, in the order the first of them has on this device. A login with no account is its own group.
- */
-export function claudeLoginGroups(logins: UsageClaudeLogin[]): UsageClaudeLogin[][] {
-  const groups: UsageClaudeLogin[][] = [];
-  const byAccount = new Map<string, UsageClaudeLogin[]>();
-  for (const l of logins) {
-    const g = l.accountUuid ? byAccount.get(l.accountUuid) : undefined;
-    if (g) g.push(l);
-    else {
-      const fresh = [l];
-      groups.push(fresh);
-      if (l.accountUuid) byAccount.set(l.accountUuid, fresh);
-    }
+  if (l.id !== "default" && l.fetchedAt === undefined && l.usage.state === "error" && l.usage.error === "not read yet") {
+    if (l.holder?.free) return "Not read while it is free. Its usage shows once a device borrows it.";
+    if (l.holder && !l.holder.self) return `Not read yet. Its usage shows once ${l.holder.label} publishes a reading.`;
+    return "Not read yet. Its usage shows at the next refresh.";
   }
-  return groups;
+  return null;
 }
 
 /** Claude's extra-usage meter, when it's switched on: a quota fill when there's a reading, else "On". */
@@ -320,14 +373,16 @@ function providerSentence(p: UsageProvider, now: number, name = PROVIDER_NAME[p.
  * The Claude reading the foot and the summary lead speak for (§app.insights/sidebar-foot): the
  * login `loginId` names (the open chat's recorded login), else the one in use for new chats (the
  * first ready in this device's order), else `providers`' own claude — Claude Code's own login,
- * which is all an older server sends. `name` is "Claude", or with several logins
+ * which is all an older server sends. The reading is that login's account card's (the account's
+ * freshest: its logins share one quota). `name` is "Claude", or with several logins
  * "Claude ({the login's card title})", so the words say whose reading it is.
  */
 export function claudeReading(u: UsageInsight, loginId?: string | null): { usage: UsageProvider; name: string } | null {
   const own = u.providers.find((p) => p.id === "claude");
   const logins = u.claudeLogins ?? [];
   const login = (loginId ? logins.find((l) => l.id === loginId) : undefined) ?? logins.find((l) => l.inUse);
-  const usage = login?.usage ?? own;
+  // Its account's card: the account's freshest reading (its logins share one quota).
+  const usage = login ? accountReading(claudeAccounts(logins).find((a) => a.includes(login))!).usage : own;
   if (!usage) return null;
   const name = login && logins.length > 1 ? `${PROVIDER_NAME.claude} (${claudeLoginTitle(login)})` : PROVIDER_NAME.claude;
   return { usage, name };

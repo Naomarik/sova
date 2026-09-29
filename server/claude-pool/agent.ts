@@ -8,6 +8,7 @@ import {
   isLoginId,
   markLeaving,
   pidAlive,
+  planLabel,
   poolAgentPath,
   readAccounts,
   readAccountsState,
@@ -365,6 +366,7 @@ export class PoolAgent {
       this.expireOffers();
       this.sweepIncoming();
       this.publishUsage();
+      this.followDoc();
     } catch (err) {
       this.log(`tick: ${(err as Error).message}`);
     } finally {
@@ -897,6 +899,37 @@ export class PoolAgent {
     });
   }
 
+  /**
+   * The registry follows the document for the logins this device has (held, or kept free): their
+   * label, Use and the pool's order, edited on any device, reach this device's spawns and chats.
+   * Written only when something differs.
+   */
+  private followDoc(): void {
+    const read = readAccounts(this.o.agentDir);
+    if (read.state === "malformed") return;
+    const doc = this.doc();
+    const order = poolOrder(doc);
+    const a = read.value;
+    const differs = (l: (typeof a.logins)[number]): boolean => {
+      const p = doc.logins[l.id];
+      return !!p && !p.removed.value && ((p.label.value ?? undefined) !== l.label || p.enabled.value !== l.enabled);
+    };
+    const mine = a.devices[this.self]?.order ?? [];
+    const wanted = [...order.filter((id) => a.logins.some((l) => l.id === id)), ...mine.filter((id) => !order.includes(id))];
+    const reorder = wanted.some((id, i) => mine[i] !== id) || mine.length !== wanted.length;
+    if (!a.logins.some(differs) && !reorder) return;
+    updateAccounts(this.o.agentDir, (next) => {
+      for (const l of next.logins) {
+        const p = doc.logins[l.id];
+        if (!p || p.removed.value) continue;
+        if (p.label.value) l.label = p.label.value;
+        else delete l.label;
+        l.enabled = p.enabled.value;
+      }
+      if (reorder) next.devices[this.self] = { ...next.devices[this.self], order: wanted };
+    });
+  }
+
   /** Staged copies with no journal op are leftovers of a cancelled borrow: delete them. */
   private sweepIncoming(): void {
     const dir = join(this.o.agentDir, ACCOUNTS_DIR_NAME, INCOMING_DIR_NAME);
@@ -979,7 +1012,7 @@ export class PoolAgent {
       return {
         id,
         ...(l.label.value ? { label: l.label.value } : {}),
-        identity: l.identity,
+        identity: l.identity && planLabel(l.identity) ? { ...l.identity, planLabel: planLabel(l.identity) } : l.identity,
         addedAt: l.addedAt,
         enabled: l.enabled.value,
         holder: { device: l.holder.device, label: label(l.holder.device), free: l.holder.free, stuck: !l.holder.free && !up(l.holder.device), since: l.holder.at },

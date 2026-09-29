@@ -61,6 +61,17 @@ assigned to this host are ever used here. A login this host has no order entry f
 ordered ones, in the order they were added; `default` always comes last, wherever the order places
 it: Claude Code's own login is the last resort.
 
+**Accounts, then logins.** Every order — a device's, and the pool's (§app.claude-logins/pool) —
+keeps the logins of one account (the same `accountUuid`) together: each account sits where its
+first login falls, and its logins follow in their order; a login with no known account is an
+account of its own. An order saved or merged that splits an account is read that way, so every
+reader (selection, failover, lending, both pages) sees one order: accounts first, then the logins
+inside each. After a failed sign-in, the next login tried is therefore the same account's next one.
+
+**Names.** A login's name is its `label`; without one it is "Login N", N being its place among
+its account's logins by when they were added (the oldest is "Login 1"); `default` is "Claude
+Code's own login". A label is at most 80 characters; an empty one is removed.
+
 ## §app.claude-logins/add-remove — Adding and removing a login
 
 Settings → Accounts → **Add login** starts `claude auth login --claudeai` for a new login
@@ -90,14 +101,23 @@ without signing out. `default` cannot be removed.
 
 ## §app.claude-logins/device-order — This device's order, and which logins it may use
 
-With the mesh off, Settings → Accounts lists this host's logins in its order, `default` (always
-last) included, each with its
-label or email, organization and plan; a login that shares its account with another row says so,
-and that the two share usage limits. Each row can move up or down, be switched off or on (**Use**,
-`enabled`; off = never chosen automatically), and be removed (not `default`). A row shows the
-login's standing on this host as a chip: **Ready**, **Off**, **Limited until** a time (`resetsAt`),
-**Sign in again**, or **Not signed in** (its directory holds no credentials). A limited or
-sign-in-again row has **Clear**, which forgets that standing. Every change is saved at once.
+With the mesh off, Settings → Accounts lists this host's added logins in its order as **one block
+per account** (§app.claude-logins/registry, **Accounts, then logins**): the block's head names the
+account (its email, else "Unknown account"), its organization and plan, and, with more than one
+login, "{n} logins share one quota"; its **Up** / **Down** move the whole account. Inside, each
+login is a compact row: its name (§app.claude-logins/registry, **Names**) and "added {date}",
+its standing chip, and its controls; with more than one login in the account, its own **Up** /
+**Down** move it inside the account only. The name is renamed in place: **Rename** turns it into a
+field with **Save Name** and **Cancel**; Enter or **Save Name** saves it as the login's `label`
+(`PATCH /api/claude/accounts/:id` `{label}`), Escape or **Cancel** leaves it (and Settings stays
+open), and an empty name goes back to "Login N". A login's controls are named with its account
+("Rename Login 1 of a@example.com"), so two accounts' "Login 1" never share a name. A login can be
+switched off or on (**Use**, `enabled`; off = never chosen automatically) and removed. Its standing on this host is a chip: **Ready**, **Off**, **Limited until** a time
+(`resetsAt`), **Sign in again**, or **Not signed in** (its directory holds no credentials). A
+limited or sign-in-again login has **Clear**, which forgets that standing. Under the blocks,
+**This device's own login** lists `default` (always last) with its email, organization and plan,
+its standing, **Use** and **Clear**, and, when its account is also one of the blocks, that it shares
+that account's quota. Every change is saved at once.
 
 ## §app.claude-logins/spawn-selection — Every `claude` process runs on one login
 
@@ -205,7 +225,7 @@ its first usable login in the device's order.
 
 A tab in Settings, **Accounts**, between Models and Modes. Its **Claude Logins** section says that
 every Claude process on this device (its mesh name, or "This device") runs on the first ready
-login in the order, then lists the logins (§app.claude-logins/device-order); Remove asks inline
+login in the order, then lists the logins by account (§app.claude-logins/device-order); Remove asks inline
 what goes away and what stays. Under the list, **Add a login** (§app.claude-logins/add-remove) is
 a panel with four states: starting ("Starting Claude Code's sign-in…"); waiting for the code (the
 URL as a link with **Copy Link**, a **Code** field, **Finish Sign-In** and **Cancel**, and the
@@ -218,14 +238,19 @@ No token or credential is ever shown or sent to the browser.
 device shares these logins, one at a time, borrowed from the keeper and given back after a limit,
 on request or after 30 minutes idle, with Claude Code's own login as each device's last resort; a
 **Keeper** select (every device, this one marked, an offline one marked; a hint that says what the
-keeper does, or that nobody can borrow while it is offline); then ONE list of every login in the
-pool's order, each row with its email (or label), organization and plan, the shared-account note,
-its usage when its holder published one, a move under way ("Leaving this device (hit its limit):
+keeper does, or that nobody can borrow while it is offline); then every login of the pool in the
+pool's order, as one block per account like the mesh-off list (§app.claude-logins/device-order):
+the head with the account's email, organization, plan, "{n} logins share one quota" and the
+account's latest published usage ("5h 42% · weekly 18%", its logins sharing one quota), and **Up**
+/ **Down** for the whole account; each login a compact row with its name and "added {date}" (renamed
+in place the same way; the label is the pool's, so every device shows it and the device holding the
+login writes it into its registry), a move under way ("Leaving this device (hit its limit):
 waiting for its Claude processes to finish", "Returning after the current turn", …), a holder chip
 (**This device**, the holding device's name, **Free**, or **Stuck on** a device) and its standing
 chip, and the controls: a pin select (**No pin** / **Pin to** each device), **Return** (a held login
-not already leaving), **Sign In Again** (stuck, or needing sign-in), Up / Down (the pool's order),
-**Use**, **Clear** and **Remove** (which says it leaves the pool on every device). Under it,
+not already leaving), **Sign In Again** (stuck, or needing sign-in), Up / Down inside its account
+(with more than one login), **Use**, **Clear** and **Remove** (which says it leaves the pool on
+every device). Under it,
 **This device's own login** lists `default` with its standing and **Use**. **Add a login** says the
 new login starts on this device and joins the pool. The Mesh page names, on each host's line, the
 login it holds ("Claude: {email}", "+N" for more) or "No Claude login", as a link that opens this
@@ -253,6 +278,10 @@ pool's order and which device is the **keeper**. Each field merges on its own, t
 winning, so edits made on two devices to different fields or logins both survive; the holder
 merges by a counter that only the device that has the credentials advances, so every device
 converges on the true holder. A login can be added from any device; it starts held by that device.
+The pool's order keeps each account's logins together (§app.claude-logins/registry). A device
+follows the document for the logins it holds: their label, **Use** and order (the pool's order)
+are written into its registry when they differ, so a rename, a switch or a move made on any device
+reaches the spawns and the chats of the device that runs the login.
 
 ## §app.claude-logins/keeper — The keeper
 

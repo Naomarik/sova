@@ -376,15 +376,35 @@ export function deviceEntry(accounts: ClaudeAccountsFile, device: string): Claud
 	return accounts.devices[device] ?? accounts.devices[LOCAL_DEVICE_ID];
 }
 /**
+ * Accounts, then logins: `ids` with the logins of one account (`accountUuid`) together, each
+ * account where its first login falls, its logins in their order. A login with no known account
+ * is an account of its own. Every order (a device's, the pool's) is read through this.
+ */
+export function groupByAccount(ids: readonly string[], accountOf: (id: string) => string | undefined): string[] {
+	const groups: string[][] = [];
+	const byAccount = new Map<string, string[]>();
+	for (const id of ids) {
+		const account = accountOf(id);
+		const group = account ? byAccount.get(account) : undefined;
+		if (group) { group.push(id); continue; }
+		const fresh = [id];
+		groups.push(fresh);
+		if (account) byAccount.set(account, fresh);
+	}
+	return groups.flat();
+}
+/**
  * The ids this device tries, in order: its order's logins that it holds, then every other login it
- * holds, oldest first, then `default` — always last: Claude Code's own login is the last resort.
+ * holds, oldest first, each account's logins together (`groupByAccount`), then `default` — always
+ * last: Claude Code's own login is the last resort.
  * `pool` (the mesh is on): only logins held here count; off, logins kept here (`device: null`) too.
  */
 export function deviceOrder(accounts: ClaudeAccountsFile, device: string, pool = false): string[] {
 	const here = accounts.logins.filter((l) => heldHere(l.device, device, pool)).sort((a, b) => a.addedAt - b.addedAt).map((l) => l.id);
 	const listed = (deviceEntry(accounts, device)?.order ?? []).filter((id) => id !== DEFAULT_LOGIN_ID && here.includes(id));
 	const rest = here.filter((id) => !listed.includes(id));
-	return [...listed, ...rest, DEFAULT_LOGIN_ID];
+	const accountOf = (id: string) => accounts.logins.find((l) => l.id === id)?.identity?.accountUuid;
+	return [...groupByAccount([...listed, ...rest], accountOf), DEFAULT_LOGIN_ID];
 }
 export function loginEnabled(accounts: ClaudeAccountsFile, device: string, id: string): boolean {
 	if (id === DEFAULT_LOGIN_ID) return deviceEntry(accounts, device)?.defaultEnabled !== false;

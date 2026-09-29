@@ -1,5 +1,5 @@
-import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
-import type { ClaudeAccountsInfo, ClaudeLoginFlowState, ClaudeLoginRow, ClaudeLoginStanding, ClaudePoolInfo, ClaudePoolLogin } from "../../shared/protocol";
+import { createResource, createSignal, For, type JSX, onCleanup, Show } from "solid-js";
+import type { ClaudeAccountsInfo, ClaudeLoginFlowState, ClaudeLoginIdentity, ClaudeLoginRow, ClaudeLoginStanding, ClaudePoolInfo, ClaudePoolLogin } from "../../shared/protocol";
 import {
   cancelClaudeLogin,
   clearClaudeLogin,
@@ -14,9 +14,10 @@ import {
   setClaudePoolKeeper,
   startClaudeLogin,
 } from "../lib/api";
+import { type AccountGroup, accountGroups, addedText, type LoginFacts, loginName, moveAccount, moveLogin, sharedQuotaText } from "../lib/claude-login-groups";
 import { holderChip, movingText, poolActions, usageText } from "../lib/claude-pool";
 import { stampTime } from "../lib/format";
-import { Banner, Chip } from "./ui";
+import { Banner, Chip, Icon } from "./ui";
 import { RetryButton, sentence } from "./WorkerSlotRow";
 
 /** What a row is called: its label, else its email, else what it is. */
@@ -59,34 +60,247 @@ function Standing(props: { login: { id: string; standing: ClaudeLoginStanding; e
   );
 }
 
-const poolName = (l: ClaudePoolLogin): string => l.label ?? l.identity?.email ?? l.id;
+/** What the account blocks read of a login, from either wire shape. */
+const loginFacts = (l: { id: string; label?: string; addedAt?: number; identity: ClaudeLoginIdentity | null }): LoginFacts => ({
+  id: l.id,
+  ...(l.label ? { label: l.label } : {}),
+  ...(l.addedAt !== undefined ? { addedAt: l.addedAt } : {}),
+  ...(l.identity?.accountUuid ? { account: l.identity.accountUuid } : {}),
+});
 
 /**
- * The pool (§app.claude-logins/pool, mesh on): every login of every device in one list, where
- * each one is (this device, another, Free, Stuck), its pin, and the keeper choice.
+ * One account (§app.claude-logins/device-order): its email, organization, plan and how many logins
+ * share its quota, Up / Down for the whole account, then its logins as compact rows (`children`).
  */
-function PoolLogins(props: {
-  pool: ClaudePoolInfo;
+function AccountBlock(props: {
+  identity: ClaudeLoginIdentity | null;
+  count: number;
+  index: number;
+  total: number;
   busy: boolean;
-  act: (what: string, fn: () => Promise<unknown>) => void;
-  onSignIn: (id: string) => void;
+  /** The account's latest usage, when the pool has one. */
+  usage?: string;
+  onMove: (by: -1 | 1) => void;
+  children: JSX.Element;
+}) {
+  const title = () => props.identity?.email ?? "Unknown account";
+  const facts = () => [props.identity?.orgName, props.identity?.planLabel, sharedQuotaText(props.count)].filter(Boolean).join(" · ");
+  return (
+    <li class="accounts-account">
+      <div class="accounts-account-head">
+        <div class="accounts-login-text">
+          <span class="accounts-account-name">{title()}</span>
+          <Show when={facts()}>
+            <span class="accounts-login-fact">{facts()}</span>
+          </Show>
+          <Show when={props.usage}>{(u) => <span class="accounts-login-fact text-num">{u()}</span>}</Show>
+        </div>
+        <Show when={props.total > 1}>
+          <span class="accounts-login-actions">
+            <button type="button" class="button button-sm button-ghost" aria-label={`Move ${title()} up`} disabled={props.busy || props.index === 0} onClick={() => props.onMove(-1)}>
+              Up
+            </button>
+            <button
+              type="button"
+              class="button button-sm button-ghost"
+              aria-label={`Move ${title()} down`}
+              disabled={props.busy || props.index === props.total - 1}
+              onClick={() => props.onMove(1)}
+            >
+              Down
+            </button>
+          </span>
+        </Show>
+      </div>
+      <ol class="accounts-account-logins">{props.children}</ol>
+    </li>
+  );
+}
+
+/**
+ * A login inside its account: its name (renamed in place: its `label`), when it was added, its
+ * chips, and its controls — `before` (the pool's pin, Return, Sign In Again), Up / Down inside the
+ * account, Use, Clear, Remove.
+ */
+function LoginRow(props: {
+  id: string;
+  name: string;
+  /** Its account's email: controls are named "Login 1 of a@example.com", unique across accounts. */
+  account?: string;
+  label?: string;
+  addedAt?: number;
+  busy: boolean;
+  chips: JSX.Element;
+  facts?: JSX.Element;
+  before?: JSX.Element;
+  index: number;
+  count: number;
+  onMove: (by: -1 | 1) => void;
+  enabled: boolean;
+  onToggle: (enabled: boolean) => void;
+  clearable: boolean;
+  onClear: () => void;
+  onRename: (label: string | null) => void;
+  /** What Remove's confirmation says goes away and what stays. */
+  removeText: string;
+  onRemove: () => void;
+}) {
+  const [naming, setNaming] = createSignal(false);
+  const [draft, setDraft] = createSignal("");
+  const [confirm, setConfirm] = createSignal(false);
+  let renameButton: HTMLButtonElement | undefined;
+  const startRename = () => {
+    setDraft(props.label ?? "");
+    setNaming(true);
+  };
+  const stopRename = () => {
+    setNaming(false);
+    queueMicrotask(() => renameButton?.focus());
+  };
+  const save = () => {
+    const next = draft().trim();
+    if (next !== (props.label ?? "")) props.onRename(next || null);
+    stopRename();
+  };
+  const added = () => addedText(props.addedAt);
+  const called = () => (props.account ? `${props.name} of ${props.account}` : props.name);
+  return (
+    <li class="accounts-login" data-login={props.id}>
+      <div class="accounts-login-text">
+        <Show
+          when={naming()}
+          fallback={
+            <span class="accounts-login-title">
+              <span class="accounts-login-name">{props.name}</span>
+              <Show when={added()}>{(a) => <span class="accounts-login-fact">{a()}</span>}</Show>
+            </span>
+          }
+        >
+          <form
+            class="accounts-rename"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save();
+            }}
+          >
+            <input
+              class="input"
+              maxlength={80}
+              value={draft()}
+              placeholder={props.name}
+              aria-label={`Name of ${called()}`}
+              ref={(el) => queueMicrotask(() => el.select())}
+              onInput={(e) => setDraft(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") {
+                  e.stopPropagation();
+                  stopRename();
+                }
+              }}
+            />
+            <span class="button-row">
+              <button type="submit" class="button button-primary button-sm" disabled={props.busy}>
+                Save Name
+              </button>
+              <button type="button" class="button button-ghost button-sm" onClick={stopRename}>
+                Cancel
+              </button>
+            </span>
+          </form>
+        </Show>
+        {props.facts}
+      </div>
+      <span class="accounts-login-chips">{props.chips}</span>
+      <div class="accounts-login-actions">
+        <Show when={!naming()}>
+          <button type="button" class="button button-sm button-ghost" aria-label={`Rename ${called()}`} disabled={props.busy} ref={renameButton} onClick={startRename}>
+            <Icon name="pencil" small />
+            Rename
+          </button>
+        </Show>
+        {props.before}
+        <Show when={props.count > 1}>
+          <button type="button" class="button button-sm button-ghost" aria-label={`Move ${called()} up`} disabled={props.busy || props.index === 0} onClick={() => props.onMove(-1)}>
+            Up
+          </button>
+          <button
+            type="button"
+            class="button button-sm button-ghost"
+            aria-label={`Move ${called()} down`}
+            disabled={props.busy || props.index === props.count - 1}
+            onClick={() => props.onMove(1)}
+          >
+            Down
+          </button>
+        </Show>
+        <label class="toggle toggle-switch accounts-login-toggle">
+          <span>Use</span>
+          <input type="checkbox" checked={props.enabled} disabled={props.busy} aria-label={`Use ${called()}`} onChange={(e) => props.onToggle(e.currentTarget.checked)} />
+          <span class="toggle-box" />
+        </label>
+        <Show when={props.clearable}>
+          <button type="button" class="button button-sm" disabled={props.busy} onClick={() => props.onClear()}>
+            Clear
+          </button>
+        </Show>
+        <button type="button" class="button button-sm button-destructive" aria-label={`Remove ${called()}`} disabled={props.busy} onClick={() => setConfirm(true)}>
+          Remove
+        </button>
+      </div>
+      <Show when={confirm()}>
+        <div class="accounts-login-confirm" role="group" aria-label={`Remove ${called()}`}>
+          <p class="field-hint">{props.removeText}</p>
+          <span class="button-row">
+            <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              class="button button-sm button-destructive"
+              disabled={props.busy}
+              onClick={() => {
+                setConfirm(false);
+                props.onRemove();
+              }}
+            >
+              Remove Login
+            </button>
+          </span>
+        </div>
+      </Show>
+    </li>
+  );
+}
+
+/** The login actions both lists share: they save at once and answer the whole tab. */
+interface LoginActions {
+  busy: boolean;
   onToggle: (id: string, enabled: boolean) => void;
   onClear: (id: string) => void;
   onRemove: (id: string) => void;
+  onRename: (id: string, label: string | null) => void;
+}
+
+/** "5h 42% · weekly 18%" of the account's latest published reading (its logins share one quota). */
+function accountUsage(logins: readonly ClaudePoolLogin[]): string | undefined {
+  const latest = logins.filter((l) => usageText(l)).sort((a, b) => b.usage!.at - a.usage!.at)[0];
+  return latest ? usageText(latest) : undefined;
+}
+
+/**
+ * The pool (§app.claude-logins/pool, mesh on): every login of every device, one block per
+ * account, each login with where it is (this device, another, Free, Stuck), its pin, and the
+ * keeper choice.
+ */
+function PoolLogins(props: LoginActions & {
+  pool: ClaudePoolInfo;
+  act: (what: string, fn: () => Promise<unknown>) => void;
+  onSignIn: (id: string) => void;
 }) {
-  const [confirm, setConfirm] = createSignal<string | null>(null);
   const deviceLabel = (id: string) => props.pool.devices.find((d) => d.id === id)?.label ?? id;
-  const sameAccount = (l: ClaudePoolLogin) => {
-    const uuid = l.identity?.accountUuid;
-    if (!uuid) return [];
-    return props.pool.logins.filter((o) => o.id !== l.id && o.identity?.accountUuid === uuid).map(poolName);
-  };
-  const move = (i: number, by: -1 | 1) => {
-    const ids = props.pool.logins.map((l) => l.id);
-    const j = i + by;
-    if (j < 0 || j >= ids.length) return;
-    [ids[i], ids[j]] = [ids[j]!, ids[i]!];
-    props.act(`order-${ids[j]}`, () => putClaudePoolOrder(ids));
+  const groups = (): AccountGroup<ClaudePoolLogin>[] => accountGroups(props.pool.logins, loginFacts);
+  const order = (ids: string[] | null) => {
+    if (ids) props.act("order", () => putClaudePoolOrder(ids));
   };
   return (
     <>
@@ -132,119 +346,97 @@ function PoolLogins(props: {
         when={props.pool.logins.length > 0}
         fallback={<p class="field-hint">No logins in the pool yet. Add one below: it starts on this device and goes back to the keeper when it's idle.</p>}
       >
-        <ol class="accounts-logins" data-testid="claude-pool">
-          <For each={props.pool.logins}>
-            {(l, idx) => {
-              const chip = () => holderChip(l, props.pool.self);
-              const acts = () => poolActions(l);
-              return (
-                <li class="accounts-login" data-login={l.id}>
-                  <div class="accounts-login-text">
-                    <span class="accounts-login-name">{poolName(l)}</span>
-                    <span class="accounts-login-fact">{[l.label && l.identity?.email, l.identity?.orgName, l.identity?.planLabel].filter(Boolean).join(" · ")}</span>
-                    <Show when={sameAccount(l).length > 0}>
-                      <span class="accounts-login-fact">Same account as {sameAccount(l).join(", ")}: shares its usage limits.</span>
-                    </Show>
-                    <Show when={usageText(l)}>{(u) => <span class="accounts-login-fact text-num">{u()}</span>}</Show>
-                    <Show when={movingText(l)}>{(m) => <span class="accounts-login-fact">{m()}</span>}</Show>
-                  </div>
-                  <span class="accounts-login-chips">
-                    <Chip tone={chip().tone} title={chip().title}>
-                      {chip().text}
-                    </Chip>
-                    <Standing login={l} />
-                  </span>
-                  <div class="accounts-login-actions">
-                    <label class="accounts-pin">
-                      <span class="visually-hidden">Always give {poolName(l)} to</span>
-                      <span class="select-wrap">
-                        <select
-                          class="select"
-                          aria-label={`Always give ${poolName(l)} to`}
-                          disabled={props.busy}
-                          onChange={(e) => props.act(`pin-${l.id}`, () => pinClaudePoolLogin(l.id, e.currentTarget.value || null))}
-                        >
-                          <option value="" selected={!l.pin}>
-                            No pin
-                          </option>
-                          <For each={props.pool.devices}>
-                            {(d) => (
-                              <option value={d.id} selected={d.id === l.pin}>
-                                Pin to {d.label}
-                              </option>
-                            )}
-                          </For>
-                        </select>
-                      </span>
-                    </label>
-                    <Show when={acts().returnable}>
-                      <button
-                        type="button"
-                        class="button button-sm"
-                        disabled={props.busy}
-                        title={`${deviceLabel(l.holder.device)} returns it to the keeper after its current turn.`}
-                        onClick={() => props.act(`return-${l.id}`, () => returnClaudePoolLogin(l.id))}
-                      >
-                        Return
-                      </button>
-                    </Show>
-                    <Show when={acts().signIn}>
-                      <button type="button" class="button button-sm" disabled={props.busy} onClick={() => props.onSignIn(l.id)}>
-                        Sign In Again
-                      </button>
-                    </Show>
-                    <button type="button" class="button button-sm button-ghost" aria-label={`Move ${poolName(l)} up`} disabled={props.busy || idx() === 0} onClick={() => move(idx(), -1)}>
-                      Up
-                    </button>
-                    <button
-                      type="button"
-                      class="button button-sm button-ghost"
-                      aria-label={`Move ${poolName(l)} down`}
-                      disabled={props.busy || idx() === props.pool.logins.length - 1}
-                      onClick={() => move(idx(), 1)}
-                    >
-                      Down
-                    </button>
-                    <label class="toggle toggle-switch accounts-login-toggle">
-                      <span>Use</span>
-                      <input type="checkbox" checked={l.enabled} disabled={props.busy} aria-label={`Use ${poolName(l)}`} onChange={(e) => props.onToggle(l.id, e.currentTarget.checked)} />
-                      <span class="toggle-box" />
-                    </label>
-                    <Show when={l.standing.state !== "ready"}>
-                      <button type="button" class="button button-sm" disabled={props.busy} onClick={() => props.onClear(l.id)}>
-                        Clear
-                      </button>
-                    </Show>
-                    <button type="button" class="button button-sm button-destructive" aria-label={`Remove ${poolName(l)}`} disabled={props.busy} onClick={() => setConfirm(l.id)}>
-                      Remove
-                    </button>
-                  </div>
-                  <Show when={confirm() === l.id}>
-                    <div class="accounts-login-confirm" role="group" aria-label={`Remove ${poolName(l)}`}>
-                      <p class="field-hint">
-                        {poolName(l)} leaves the pool on every device: the device that has it stops its Claude processes on it and deletes its copy. Transcripts stay.
-                      </p>
-                      <span class="button-row">
-                        <button type="button" class="button button-sm button-ghost" onClick={() => setConfirm(null)}>
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          class="button button-sm button-destructive"
-                          disabled={props.busy}
-                          onClick={() => {
-                            setConfirm(null);
-                            props.onRemove(l.id);
-                          }}
-                        >
-                          Remove Login
-                        </button>
-                      </span>
-                    </div>
-                  </Show>
-                </li>
-              );
-            }}
+        <ol class="accounts-accounts" data-testid="claude-pool">
+          <For each={groups()}>
+            {(group, gi) => (
+              <AccountBlock
+                identity={group.logins[0]!.identity}
+                count={group.logins.length}
+                index={gi()}
+                total={groups().length}
+                busy={props.busy}
+                usage={accountUsage(group.logins)}
+                onMove={(by) => order(moveAccount(groups(), gi(), by, loginFacts))}
+              >
+                <For each={group.logins}>
+                  {(l, li) => {
+                    const chip = () => holderChip(l, props.pool.self);
+                    const acts = () => poolActions(l);
+                    const name = () => loginName(loginFacts(l), group.logins.map(loginFacts));
+                    return (
+                      <LoginRow
+                        id={l.id}
+                        name={name()}
+                        {...(l.identity?.email ? { account: l.identity.email } : {})}
+                        {...(l.label ? { label: l.label } : {})}
+                        addedAt={l.addedAt}
+                        busy={props.busy}
+                        chips={
+                          <>
+                            <Chip tone={chip().tone} title={chip().title}>
+                              {chip().text}
+                            </Chip>
+                            <Standing login={l} />
+                          </>
+                        }
+                        facts={<Show when={movingText(l)}>{(m) => <span class="accounts-login-fact">{m()}</span>}</Show>}
+                        before={
+                          <>
+                            <label class="accounts-pin">
+                              <span class="select-wrap">
+                                <select
+                                  class="select"
+                                  aria-label={`Always give ${name()}${l.identity?.email ? ` of ${l.identity.email}` : ""} to`}
+                                  disabled={props.busy}
+                                  onChange={(e) => props.act(`pin-${l.id}`, () => pinClaudePoolLogin(l.id, e.currentTarget.value || null))}
+                                >
+                                  <option value="" selected={!l.pin}>
+                                    No pin
+                                  </option>
+                                  <For each={props.pool.devices}>
+                                    {(d) => (
+                                      <option value={d.id} selected={d.id === l.pin}>
+                                        Pin to {d.label}
+                                      </option>
+                                    )}
+                                  </For>
+                                </select>
+                              </span>
+                            </label>
+                            <Show when={acts().returnable}>
+                              <button
+                                type="button"
+                                class="button button-sm"
+                                disabled={props.busy}
+                                title={`${deviceLabel(l.holder.device)} returns it to the keeper after its current turn.`}
+                                onClick={() => props.act(`return-${l.id}`, () => returnClaudePoolLogin(l.id))}
+                              >
+                                Return
+                              </button>
+                            </Show>
+                            <Show when={acts().signIn}>
+                              <button type="button" class="button button-sm" disabled={props.busy} onClick={() => props.onSignIn(l.id)}>
+                                Sign In Again
+                              </button>
+                            </Show>
+                          </>
+                        }
+                        index={li()}
+                        count={group.logins.length}
+                        onMove={(by) => order(moveLogin(groups(), gi(), li(), by, loginFacts))}
+                        enabled={l.enabled}
+                        onToggle={(enabled) => props.onToggle(l.id, enabled)}
+                        clearable={l.standing.state !== "ready"}
+                        onClear={() => props.onClear(l.id)}
+                        onRename={(label) => props.onRename(l.id, label)}
+                        removeText={`${name()} leaves the pool on every device: the device that has it stops its Claude processes on it and deletes its copy. Transcripts stay.`}
+                        onRemove={() => props.onRemove(l.id)}
+                      />
+                    );
+                  }}
+                </For>
+              </AccountBlock>
+            )}
           </For>
         </ol>
       </Show>
@@ -252,18 +444,70 @@ function PoolLogins(props: {
   );
 }
 
+/** The mesh-off list (§app.claude-logins/device-order): this device's added logins, one block per account, in its order. */
+function LocalLogins(props: LoginActions & { logins: ClaudeLoginRow[]; onOrder: (ids: string[]) => void }) {
+  const groups = (): AccountGroup<ClaudeLoginRow>[] => accountGroups(props.logins, loginFacts);
+  const order = (ids: string[] | null) => {
+    if (ids) props.onOrder(ids);
+  };
+  return (
+    <Show when={props.logins.length > 0}>
+      <ol class="accounts-accounts" data-testid="claude-logins">
+        <For each={groups()}>
+          {(group, gi) => (
+            <AccountBlock
+              identity={group.logins[0]!.identity}
+              count={group.logins.length}
+              index={gi()}
+              total={groups().length}
+              busy={props.busy}
+              onMove={(by) => order(moveAccount(groups(), gi(), by, loginFacts))}
+            >
+              <For each={group.logins}>
+                {(l, li) => {
+                  const name = () => loginName(loginFacts(l), group.logins.map(loginFacts));
+                  return (
+                    <LoginRow
+                      id={l.id}
+                      name={name()}
+                      {...(l.identity?.email ? { account: l.identity.email } : {})}
+                      {...(l.label ? { label: l.label } : {})}
+                      {...(l.addedAt !== undefined ? { addedAt: l.addedAt } : {})}
+                      busy={props.busy}
+                      chips={<Standing login={l} />}
+                      index={li()}
+                      count={group.logins.length}
+                      onMove={(by) => order(moveLogin(groups(), gi(), li(), by, loginFacts))}
+                      enabled={l.enabled}
+                      onToggle={(enabled) => props.onToggle(l.id, enabled)}
+                      clearable={l.standing.state !== "ready"}
+                      onClear={() => props.onClear(l.id)}
+                      onRename={(label) => props.onRename(l.id, label)}
+                      removeText={`Sova signs ${name()} out of Claude Code and deletes its directory. Its sessions' transcripts stay; work on it moves to the next login.`}
+                      onRemove={() => props.onRemove(l.id)}
+                    />
+                  );
+                }}
+              </For>
+            </AccountBlock>
+          )}
+        </For>
+      </ol>
+    </Show>
+  );
+}
+
 /**
- * Settings → Accounts (§app.claude-logins): this device's Claude logins in the order every Claude
- * process tries them, and adding one through Claude Code's own sign-in. Every change saves at once.
- * With the mesh on, the pool's one list (PoolLogins) comes first, and this device's own Claude Code
- * login, its last resort, after it.
+ * Settings → Accounts (§app.claude-logins): this device's Claude logins by account, in the order
+ * every Claude process tries them, and adding one through Claude Code's own sign-in. Every change
+ * saves at once. With the mesh on, the pool's blocks (PoolLogins) come first; either way this
+ * device's own Claude Code login, its last resort, comes after them.
  */
 export function AccountsSettingsSection() {
   const [info, { mutate, refetch }] = createResource(getClaudeAccounts);
   const loaded = () => (info.error ? undefined : info());
   const [busy, setBusy] = createSignal<string | null>(null);
   const [actionError, setActionError] = createSignal<string | null>(null);
-  const [confirmRemove, setConfirmRemove] = createSignal<string | null>(null);
 
   const run = async (what: string, fn: () => Promise<ClaudeAccountsInfo>) => {
     setBusy(what);
@@ -278,8 +522,6 @@ export function AccountsSettingsSection() {
     }
   };
 
-  /** The phase-1 list: every login here in its order; with the pool, only Claude Code's own (the rest is the pool's). */
-  const rows = () => (loaded()?.pool ? loaded()!.logins.filter((l) => l.id === "default") : loaded()?.logins ?? []);
   /** A pool action: it answers the pool, so the whole tab is read again. */
   const act = async (what: string, fn: () => Promise<unknown>) => {
     setBusy(what);
@@ -294,20 +536,24 @@ export function AccountsSettingsSection() {
     }
   };
 
-  const move = (i: number, by: -1 | 1) => {
-    const ids = loaded()!.logins.map((l) => l.id);
-    const j = i + by;
-    if (j < 0 || j >= ids.length) return;
-    [ids[i], ids[j]] = [ids[j]!, ids[i]!];
-    void run(`move-${ids[j]}`, () => putClaudeLoginOrder(ids));
+  /** Claude Code's own login here. */
+  const own = () => loaded()?.logins.find((l) => l.id === "default");
+  /** The mesh-off list: every added login here, in its order (with the pool, the pool's blocks list them). */
+  const added = () => (loaded()?.pool ? [] : (loaded()?.logins ?? []).filter((l) => l.id !== "default"));
+  /** The block `default` shares its account with, by email: they share one quota. */
+  const ownShares = () => {
+    const uuid = own()?.identity?.accountUuid;
+    if (!uuid) return null;
+    const others = loaded()?.pool?.logins ?? added();
+    return others.some((l) => l.identity?.accountUuid === uuid) ? own()!.identity?.email ?? null : null;
+  };
+  const actions: Omit<LoginActions, "busy"> = {
+    onToggle: (id, enabled) => void run(`enable-${id}`, () => patchClaudeLogin(id, { enabled })),
+    onClear: (id) => void run(`clear-${id}`, () => clearClaudeLogin(id)),
+    onRemove: (id) => void run(`remove-${id}`, () => removeClaudeLogin(id)),
+    onRename: (id, label) => void run(`label-${id}`, () => patchClaudeLogin(id, { label })),
   };
 
-  /** The other rows of the same account, by name: they share its usage limits. */
-  const sameAccount = (l: ClaudeLoginRow) => {
-    const uuid = l.identity?.accountUuid;
-    if (!uuid) return [];
-    return loaded()!.logins.filter((o) => o.id !== l.id && o.identity?.accountUuid === uuid).map(nameOf);
-  };
 
   // -- the add-login flow --
   const [flow, setFlow] = createSignal<ClaudeLoginFlowState | null>(null);
@@ -411,102 +657,57 @@ export function AccountsSettingsSection() {
                   busy={!!busy()}
                   act={(what, fn) => void act(what, fn)}
                   onSignIn={(id) => void startFlow(id)}
-                  onToggle={(id, enabled) => void run(`enable-${id}`, () => patchClaudeLogin(id, { enabled }))}
-                  onClear={(id) => void run(`clear-${id}`, () => clearClaudeLogin(id))}
-                  onRemove={(id) => void run(`remove-${id}`, () => removeClaudeLogin(id))}
+                  onToggle={actions.onToggle}
+                  onClear={actions.onClear}
+                  onRemove={actions.onRemove}
+                  onRename={actions.onRename}
                 />
               )}
             </Show>
-            <Show when={i().pool}>
-              <h4 class="accounts-own-title">This device's own login</h4>
-            </Show>
-            <ol class="accounts-logins" data-testid="claude-logins">
-              <For each={rows()}>
-                {(l, idx) => (
-                  <li class="accounts-login" data-login={l.id}>
-                    <div class="accounts-login-text">
-                      <span class="accounts-login-name">{nameOf(l)}</span>
-                      <span class="accounts-login-fact">{factsOf(l)}</span>
-                      <Show when={sameAccount(l).length > 0}>
-                        <span class="accounts-login-fact">Same account as {sameAccount(l).join(", ")}: shares its usage limits.</span>
-                      </Show>
-                    </div>
-                    <Standing login={l} />
-                    <div class="accounts-login-actions">
-                      <button
-                        type="button"
-                        class="button button-sm button-ghost"
-                        aria-label={`Move ${nameOf(l)} up`}
-                        disabled={!!busy() || idx() === 0}
-                        onClick={() => move(idx(), -1)}
-                      >
-                        Up
-                      </button>
-                      <button
-                        type="button"
-                        class="button button-sm button-ghost"
-                        aria-label={`Move ${nameOf(l)} down`}
-                        disabled={!!busy() || idx() === rows().length - 1}
-                        onClick={() => move(idx(), 1)}
-                      >
-                        Down
-                      </button>
-                      <label class="toggle toggle-switch accounts-login-toggle">
-                        <span>Use</span>
-                        <input
-                          type="checkbox"
-                          checked={l.enabled}
-                          disabled={!!busy()}
-                          aria-label={`Use ${nameOf(l)}`}
-                          onChange={(e) => void run(`enable-${l.id}`, () => patchClaudeLogin(l.id, { enabled: e.currentTarget.checked }))}
-                        />
-                        <span class="toggle-box" />
-                      </label>
-                      <Show when={l.standing.state !== "ready"}>
-                        <button type="button" class="button button-sm" disabled={!!busy()} onClick={() => void run(`clear-${l.id}`, () => clearClaudeLogin(l.id))}>
-                          Clear
-                        </button>
-                      </Show>
-                      <Show when={l.id !== "default"}>
-                        <button
-                          type="button"
-                          class="button button-sm button-destructive"
-                          aria-label={`Remove ${nameOf(l)}`}
-                          disabled={!!busy()}
-                          onClick={() => setConfirmRemove(l.id)}
-                        >
-                          Remove
-                        </button>
-                      </Show>
-                    </div>
-                    <Show when={confirmRemove() === l.id}>
-                      <div class="accounts-login-confirm" role="group" aria-label={`Remove ${nameOf(l)}`}>
-                        <p class="field-hint">
-                          Sova signs {nameOf(l)} out of Claude Code and deletes its directory. Its sessions' transcripts stay; work on it moves
-                          to the next login.
-                        </p>
-                        <span class="button-row">
-                          <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmRemove(null)}>
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            class="button button-sm button-destructive"
-                            disabled={!!busy()}
-                            onClick={() => {
-                              setConfirmRemove(null);
-                              void run(`remove-${l.id}`, () => removeClaudeLogin(l.id));
-                            }}
-                          >
-                            Remove Login
-                          </button>
-                        </span>
+            <LocalLogins
+              logins={added()}
+              busy={!!busy()}
+              onOrder={(ids) => void run("order", () => putClaudeLoginOrder([...ids, "default"]))}
+              onToggle={actions.onToggle}
+              onClear={actions.onClear}
+              onRemove={actions.onRemove}
+              onRename={actions.onRename}
+            />
+            <Show when={own()}>
+              {(l) => (
+                <>
+                  <h4 class="accounts-own-title">This device's own login</h4>
+                  <ol class="accounts-logins">
+                    <li class="accounts-login" data-login="default">
+                      <div class="accounts-login-text">
+                        <span class="accounts-login-name">{nameOf(l())}</span>
+                        <span class="accounts-login-fact">{factsOf(l())}</span>
+                        <Show when={ownShares()}>{(email) => <span class="accounts-login-fact">Same account as {email()} above: they share one quota.</span>}</Show>
                       </div>
-                    </Show>
-                  </li>
-                )}
-              </For>
-            </ol>
+                      <Standing login={l()} />
+                      <div class="accounts-login-actions">
+                        <label class="toggle toggle-switch accounts-login-toggle">
+                          <span>Use</span>
+                          <input
+                            type="checkbox"
+                            checked={l().enabled}
+                            disabled={!!busy()}
+                            aria-label={`Use ${nameOf(l())}`}
+                            onChange={(e) => actions.onToggle("default", e.currentTarget.checked)}
+                          />
+                          <span class="toggle-box" />
+                        </label>
+                        <Show when={l().standing.state !== "ready"}>
+                          <button type="button" class="button button-sm" disabled={!!busy()} onClick={() => actions.onClear("default")}>
+                            Clear
+                          </button>
+                        </Show>
+                      </div>
+                    </li>
+                  </ol>
+                </>
+              )}
+            </Show>
             <Show when={!i().pool && i().elsewhere.length > 0}>
               <p class="field-hint">
                 {i().elsewhere.length} other {i().elsewhere.length === 1 ? "login belongs" : "logins belong"} to another device and{" "}

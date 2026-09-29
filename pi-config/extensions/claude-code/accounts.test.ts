@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
 import {
 	ACCOUNTS_DEV_ENV, ClaudeLogins, LEASES_DIR_NAME, LEASE_STALE_MS, readLoginUse, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, claudeBaseEnv, claudeJsonPath,
-	defaultClaudeDir, deviceOrder, ensureLoginDir,
+	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount,
 	loginDir, loginEntryFor, parseAccounts, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 } from "./accounts.ts";
@@ -201,6 +201,23 @@ test("device id: SOVA_DEVICE_ID, else the mesh self id, else local; order follow
 	const kept: ClaudeAccountsFile = { version: 1, logins: [login(A, "1", { device: null }), login(B, "2", { device: "laptop" })], devices: {} };
 	assert.deepEqual(deviceOrder(kept, "laptop", true), [B, "default"]);
 	assert.deepEqual(deviceOrder(kept, "laptop", false), [A, B, "default"]);
+});
+
+test("accounts, then logins: every order keeps an account's logins together, where its first falls", (t) => {
+	const accountOf = (id: string) => ({ [A]: "acct-1", [B]: "acct-2", [C]: "acct-1" } as Record<string, string | undefined>)[id];
+	assert.deepEqual(groupByAccount([A, B, C], accountOf), [A, C, B]);
+	assert.deepEqual(groupByAccount([B, C, "l-0000000d", A], accountOf), [B, C, A, "l-0000000d"], "a login with no account is its own, in its place");
+	assert.deepEqual(groupByAccount([A, C, B], accountOf), [A, C, B], "an order already grouped is kept as it is");
+	// The user's order splits account 1 (A, then B of account 2, then C): the device reads it grouped.
+	const file: ClaudeAccountsFile = { version: 1, logins: [login(A, "acct-1"), login(B, "acct-2"), login(C, "acct-1")], devices: { local: { order: [A, "default", B, C] } } };
+	assert.deepEqual(deviceOrder(file, "local"), [A, C, B, "default"]);
+	// So a failed sign-in moves to the account's next login first, and a limit skips the account.
+	const s = sandbox(t);
+	writeAccounts(s.agentDir, file);
+	const dirA = ensureLoginDir(s.agentDir, A, s.claudeDir);
+	fs.writeFileSync(path.join(dirA, ".credentials.json"), "{}");
+	assert.equal(s.logins.failover(s.logins.select(), { kind: "auth" })?.id, C);
+	assert.equal(s.logins.failover(s.logins.select(), { kind: "limit" })?.id, B);
 });
 
 test("selection: first usable login in order; the recorded one while usable; disabled is skipped", (t) => {

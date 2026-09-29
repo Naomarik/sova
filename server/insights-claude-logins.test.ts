@@ -125,3 +125,42 @@ test("with the pool on (mesh on), the login in use is one this device holds: nev
     rmSync(join(agentDir, "sova"), { recursive: true, force: true });
   }
 });
+
+test("with the pool: every login of the pool in the pool's order, each with where it is; one held elsewhere reads its holder's figures", async () => {
+  const { claudeLoginCards } = await import("./insights");
+  const own = { id: "claude" as const, state: "ok" as const, windows: [{ label: "5h", pct: 100 }] };
+  const identity = (account: string, email: string) => ({ accountUuid: account, email, planLabel: "Max 20x" });
+  const rows = [
+    { id: A, identity: identity("acct-a", "a@example.com"), enabled: true, standing: { state: "ready" as const }, signedIn: true, addedAt: 1, label: "Old name" },
+    { id: "default", identity: identity("acct-b", "b@example.com"), enabled: true, standing: { state: "ready" as const }, signedIn: true },
+  ];
+  const holder = (device: string, label: string, free = false, stuck = false) => ({ device, label, free, stuck, since: 1 });
+  const pool = {
+    self: "desk",
+    keeper: { id: "desk", label: "Desk", up: true },
+    devices: [],
+    logins: [
+      { id: A, label: "Desk login", identity: identity("acct-a", "a@example.com"), addedAt: 1, enabled: true, holder: holder("desk", "Desk"), pin: null, standing: { state: "ready" as const } },
+      { id: B, identity: identity("acct-a", "a@example.com"), addedAt: 2, enabled: true, holder: holder("laptop", "Laptop"), pin: null, standing: { state: "ready" as const }, usage: { fiveHour: 12, fiveHourResetsAt: 5_000, sevenDay: 3, at: 4_000 } },
+      { id: C, identity: identity("acct-c", "c@example.com"), addedAt: 3, enabled: false, holder: holder("desk", "Desk", true), pin: null, standing: { state: "limited" as const, until: 9_000 } },
+    ],
+  };
+  const cards = claudeLoginCards(rows, A, own, 1000, { [A]: { usage: { id: "claude", state: "ok", windows: [{ label: "5h", pct: 9 }] }, fetchedAt: 900 } }, {}, pool);
+  assert.deepEqual(cards.map((c) => c.id), [A, B, C, "default"], "the pool's order, then default");
+  const [a, b, c, d] = cards as [typeof cards[0], typeof cards[0], typeof cards[0], typeof cards[0]];
+  assert.equal(a.label, "Desk login", "the pool's label wins over the registry's copy");
+  assert.deepEqual(a.holder, { label: "Desk", self: true, free: false, stuck: false });
+  assert.equal(a.inUse, true);
+  assert.deepEqual(a.usage.windows.map((w) => w.pct), [9], "held here: its own reading");
+  assert.deepEqual(b.holder, { label: "Laptop", self: false, free: false, stuck: false });
+  assert.deepEqual(b.usage.windows.map((w) => [w.label, w.pct, w.resetsAt]), [["5h", 12, new Date(5_000).toISOString()], ["7d", 3, undefined]]);
+  assert.equal(b.fetchedAt, 4_000, "when its holder published it");
+  assert.equal(b.accountUuid, "acct-a");
+  assert.deepEqual(c.holder, { label: "Desk", self: false, free: true, stuck: false }, "kept free here is not 'this device'");
+  assert.equal(c.usage.error, "not read yet");
+  assert.equal(c.standing.state, "limited");
+  assert.equal(c.enabled, false);
+  assert.equal(d.holder, undefined, "default is never in the pool");
+  // Mesh off: no pool, no holder.
+  assert.deepEqual(claudeLoginCards(rows, A, own, 1000, undefined, {}).map((x) => x.holder), [undefined, undefined]);
+});

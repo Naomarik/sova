@@ -23,6 +23,8 @@ import type {
   TokenUsage,
   TokenUsageTotal,
   ClaudeLoginRow,
+  ClaudePoolInfo,
+  ClaudePoolLogin,
   UsageClaudeLogin,
   UsageInsight,
   UsageBalance,
@@ -268,10 +270,12 @@ function parseUsage(text: string): ParsedUsage | null {
 }
 
 /**
- * The Usage page's Claude cards: every login on this host (its order), with its identity, its
+ * The Usage page's Claude logins: every login on this host (its order), with its identity, its
  * standing and whether a new chat would run on it; `default`'s reading is the provider card's
  * (`claude`), an added login's is its `claudeAccounts` entry. A login the cache has no entry for
- * yet reads "not read yet".
+ * yet reads "not read yet". While the pool is on (`pool`), every login of the pool comes first, in
+ * the pool's order, each with where it is; one held elsewhere (or kept free) reads the figures its
+ * holder published, or "not read yet". The page folds them into one card per account.
  */
 export function claudeLoginCards(
   rows: ClaudeLoginRow[],
@@ -280,8 +284,9 @@ export function claudeLoginCards(
   ownFetchedAt: number | null,
   accounts: Record<string, ClaudeAccountReading> | undefined,
   auth: Record<string, UsageProvider["auth"]>,
+  pool?: ClaudePoolInfo,
 ): UsageClaudeLogin[] {
-  return rows.map((r) => {
+  const here = rows.map((r): UsageClaudeLogin => {
     const reading = r.id === "default" ? { usage: own, ...(ownFetchedAt !== null ? { fetchedAt: ownFetchedAt } : {}) } : accounts?.[r.id];
     let usage: UsageProvider = reading?.usage ?? { id: "claude", state: "error", windows: [], error: "not read yet" };
     const a = r.id === "default" ? undefined : auth[r.id];
@@ -303,19 +308,58 @@ export function claudeLoginCards(
       ...(reading?.fetchedAt !== undefined ? { fetchedAt: reading.fetchedAt } : {}),
     };
   });
+  if (!pool) return here;
+  const pooled = pool.logins.map((l): UsageClaudeLogin => {
+    const holder = { label: l.holder.label, self: l.holder.device === pool.self && !l.holder.free, free: l.holder.free, stuck: l.holder.stuck };
+    const mine = here.find((c) => c.id === l.id);
+    if (mine) {
+      const { label: _, ...rest } = mine;
+      return { ...rest, ...(l.label ? { label: l.label } : {}), holder };
+    }
+    return { ...poolReading(l), holder };
+  });
+  return [...pooled, ...here.filter((c) => !pool.logins.some((l) => l.id === c.id))];
+}
+
+/** A pool login this device does not use: its identity, the pool's standing and its holder's published figures. */
+function poolReading(l: ClaudePoolLogin): Omit<UsageClaudeLogin, "holder"> {
+  const u = l.usage;
+  const at = (ms: number | undefined) => (ms !== undefined ? { resetsAt: new Date(ms).toISOString() } : {});
+  const windows: UsageWindow[] = [
+    ...(u?.fiveHour !== undefined ? [{ label: "5h", pct: u.fiveHour, ...at(u.fiveHourResetsAt) }] : []),
+    ...(u?.sevenDay !== undefined ? [{ label: "7d", pct: u.sevenDay, ...at(u.sevenDayResetsAt) }] : []),
+  ];
+  const i = l.identity;
+  return {
+    id: l.id,
+    ...(l.label ? { label: l.label } : {}),
+    ...(i?.email ? { email: i.email } : {}),
+    ...(i?.accountUuid ? { accountUuid: i.accountUuid } : {}),
+    ...(i?.orgName ? { orgName: i.orgName } : {}),
+    ...(i?.planLabel ? { planLabel: i.planLabel } : {}),
+    addedAt: l.addedAt,
+    enabled: l.enabled,
+    // Its holder has its credentials; whether they still work is its standing.
+    signedIn: true,
+    standing: l.standing,
+    inUse: false,
+    usage: windows.length ? { id: "claude", state: "ok", windows } : { id: "claude", state: "error", windows: [], error: "not read yet" },
+    ...(windows.length && u ? { fetchedAt: u.at } : {}),
+  };
 }
 
 let claudeAccountsService: ClaudeAccountsService | null = null;
 
-/** This host's Claude logins as cards, or undefined when the registry can't be listed at all. */
+/** This host's Claude logins (and, with the pool on, the pool's), or undefined when the registry can't be listed at all. */
 async function readClaudeLogins(own: UsageProvider, ownFetchedAt: number | null, accounts: Record<string, ClaudeAccountReading> | undefined): Promise<UsageClaudeLogin[] | undefined> {
   try {
     claudeAccountsService ??= new ClaudeAccountsService();
     const service = claudeAccountsService;
-    const rows = service.info().logins;
+    const info = service.info();
+    const rows = info.logins;
     const auth: Record<string, UsageProvider["auth"]> = {};
     for (const r of rows) if (r.id !== "default") auth[r.id] = await readClaudeLoginAuth(service.dirOf(r.id));
-    return claudeLoginCards(rows, service.inUse(), own, ownFetchedAt, accounts, auth);
+    return claudeLoginCards(rows, service.inUse(), own, ownFetchedAt, accounts, auth, info.pool);
   } catch (err) {
     warnOnce("claude-logins", `Claude logins unreadable for the Usage page: ${(err as Error).message}`);
     return undefined;

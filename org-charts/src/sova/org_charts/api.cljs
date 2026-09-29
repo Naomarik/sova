@@ -174,6 +174,7 @@
          :holds         (fn [sid] (->js (if (some? sid) (core/holds eng sid) (core/holds eng))))
          :nextDueAt     (fn [except] (core/next-due-at eng (when except (set except))))
          :dueSessions   (fn [now] (->js (core/due-sessions eng now)))
+         :setAside      (fn [sids] (core/set-aside! eng (vec sids)))
          :fireDue       (guarded (fn [now opts]
                                    (let [only (opt opts "only") except (opt opts "except")]
                                      (->js (core/fire-due! eng now (cond-> {}

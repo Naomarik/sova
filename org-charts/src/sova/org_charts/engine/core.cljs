@@ -130,7 +130,7 @@
            :meta meta* :record record :types types :registry registry :limit limit
            :on-save on-save :on-invoke-start on-invoke-start :on-invoke-stop on-invoke-stop
            :load-cold load-cold :level-check level-check :stamp stamp :absorb-unknown absorb-unknown
-           :cx (atom nil)}))))
+           :aside (atom #{}) :cx (atom nil)}))))
 
 (defn- engine [eng] @eng)
 (defn- sessions* [eng] (:sessions (:store (engine eng))))
@@ -779,7 +779,8 @@
 (defn- call
   "Run `f` (the call's own steps; returns them), then drain. opts: `:due-first` (deliver what is due
    before `f`: W5), `:rollback` (a trial: compute the result, then put everything back),
-   `:own-only` (drain only events this call queued: resume), `:targets` (a pred on session ids: deliver
+   `:own-only` (drain only events this call queued: resume); what was due for a session `set-aside!`
+   is never delivered; `:targets` (a pred on session ids: deliver
    only what was due for them, plus whatever the call itself queues). A call that throws changes nothing:
    sessions, generations and the queue are put back; no callback has run."
   [eng now {:keys [due-first rollback own-only targets]} f]
@@ -787,12 +788,16 @@
   (let [saved (save-state eng)
         mark  (q/ordinal (:queue (engine eng)))]
     (try
-      (let [[log0 u0] (if due-first (drain! eng [] nil) [[] []])
-            log1      (into log0 (f))
+      (let [aside     @(:aside (engine eng))
             mine?     (fn [e] (> (q/event-ordinal e) mark))
+            ;; what was due for a session set aside waits (the call's own events are delivered)
+            ok?       (fn [e] (or (mine? e) (not (contains? aside (:target e)))))
+            [log0 u0] (if due-first (drain! eng [] (when (seq aside) ok?)) [[] []])
+            log1      (into log0 (f))
             [log2 u1] (drain! eng log1 (cond own-only mine?
                                              ;; `:targets`: what was due for those sessions, and whatever the call queues
-                                             targets (fn [e] (or (mine? e) (targets (:target e))))))
+                                             targets (fn [e] (or (mine? e) (and (ok? e) (targets (:target e)))))
+                                             (seq aside) ok?))
             res       (end-call! eng log2 (into u0 u1) saved (boolean rollback))]
         (if rollback (restore! eng saved) (fire-callbacks! eng res))
         res)
@@ -839,10 +844,18 @@
         []))))
 
 (defn next-due-at
-  "Earliest delivery time of a pending event for a loaded session (not in `except`), or nil."
+  "Earliest delivery time of a pending event for a loaded session (not in `except`, not set aside), or nil."
   ([eng] (next-due-at eng nil))
   ([eng except]
-   (first (q/next-due (:queue (engine eng)) #(and (loaded? eng %) (not (contains? except %)))))))
+   (let [aside @(:aside (engine eng))]
+     (first (q/next-due (:queue (engine eng)) #(and (loaded? eng %) (not (contains? except %)) (not (contains? aside %))))))))
+
+(defn set-aside!
+  "Sessions whose due events no call delivers (nor counts in `next-due-at`) until taken off: the host's
+   answer to a timer whose step throws, which would otherwise fail every call (W5 fires what is due
+   first). Events a call itself queues for them are still delivered."
+  [eng sids]
+  (reset! (:aside (engine eng)) (set sids)))
 
 (defn due-sessions
   "The loaded sessions with an event due at or before `now`, sorted."

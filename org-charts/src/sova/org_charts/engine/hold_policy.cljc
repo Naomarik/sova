@@ -74,4 +74,4 @@
 (defn waits-unreviewed?
   "Does a hold wait past its end until approved (the switch; confirm-required holds only)?"
   [hold]
-  (boolean (and unreviewed-holds-wait? (:confirm hold) (not (:approved hold)))))
+  (boolean (and unreviewed-holds-wait? (:confirm hold))))

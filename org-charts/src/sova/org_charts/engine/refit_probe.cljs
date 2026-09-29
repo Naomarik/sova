@@ -83,13 +83,15 @@
           (script {:expr (fn [_ d] [(ops/assign :gathers (inc (:gathers d 0)))])})
           (dsl/effect :gather (fn [d] {:to (:to (dsl/evt d))})))
         (dsl/act {:event :drive/go} (dsl/drive {:event :gather/start :data (fn [_] {:to "auto"})}))
+        (dsl/act {:event :drive/message} (dsl/drive {:event :message/send :data (fn [d] {:window (:window (dsl/evt d))})}))
         (dsl/act {:event :offer/make}
           (dsl/held :offer (fn [_] {:to "x"}) {:while-in :idle :what "Offer to x"}))
         (dsl/act {:event :door/open :cond (fn [_ d] (:door-ok d)) :sova/refusal "The door is shut."})
         (transition {:event :timed/arm :target :timed}))
       (state {:id :gathering}
         (dsl/act {:event :gather/close :target :idle})
-        (dsl/correction {:event :item/reopen :target :idle}))
+        ;; declared quiet on purpose: a correction always feeds (r8a), whatever it declares
+        (dsl/correction {:event :item/reopen :target :idle :sova/feed :quiet}))
       (state {:id :timed}
         (on-entry {} (Send {:id :t :event :timed/fired :delay 1000}))
         (on-exit {} (cancel {:sendid :t}))
@@ -107,6 +109,7 @@
                       :count (fn [d] (count (:ids (dsl/evt d))))}
    :build/start  {:needs "L3" :tool "sova_create_session" :hold true :counts "create"}
    :drive/go     {}
+   :drive/message {}
    :offer/make   {}
    :door/open    {:pre [{:name :door-named :payload? true :fn (fn [d] (when (= "bad" (:door (dsl/evt d))) "No such door."))}]}
    :item/reopen  {:needs "L1" :tool "sova_reopen" :correction true}

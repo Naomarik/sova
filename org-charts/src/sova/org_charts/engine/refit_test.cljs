@@ -397,6 +397,8 @@
         r   (core/send! eng "par" :offer/make (assoc unattended :hold-ms 0) {:now t0})]
     (is (= ["offer"] (map :kind (:outbox r))) "E29")
     (is (empty? (core/holds eng)))
+    (is (= [:offer/make] (map :event (:steps r))) "no hold was made: no :hold/released step")
+    (is (not-any? :held (:steps r)))
     (let [r (core/send! eng "par" :offer/make (assoc unattended :hold-ms 1) {:now (+ t0 1)})]
       (is (empty? (:outbox r)) "positive control: 1 ms is a hold…")
       (is (= ["offer"] (map :kind (core/holds eng))) "…listed until it ends"))))
@@ -503,3 +505,36 @@
   (is (true? policy/overseer-unattended-held?) "r4/r6, decided (q11)")
   (is (false? policy/operator-acts-wait-for-hours?) "r7, decided (q13)")
   (is (true? policy/unreviewed-holds-wait?) "q12"))
+
+;; ---- eng3 survivors: R04, R17, R12 ------------------------------------------------------------------
+
+(deftest a-chart-driven-act-waits-for-the-window
+  (let [eng    (parent (new-eng {:stamp (fn [_ _ _ _] {:level "L3" :project-id "p1"})}))
+        window (+ t0 3600000)
+        r      (core/send! eng "par" :drive/message {:by "system" :window window} {:now t0})]
+    (is (= [:drive/message :message/send] (map :event (:steps r))))
+    (is (= {:wait "hours" :until window :by "chart"} (select-keys (:held (second (:steps r))) [:wait :until :by]))
+      "R04: by chart, off hours: an hours wait")
+    (is (empty? (:messages (core/data eng "par"))))
+    (core/fire-due! eng window)
+    (is (= 1 (count (:messages (core/data eng "par")))))))
+
+(deftest a-waiting-hold-keeps-its-session-warm
+  (let [charts (assoc-in rp/charts ["refit-parent" :cold?] (fn [c _] (contains? c :idle)))
+        eng    (core/new-engine charts {:level-check rp/level-check})
+        day    core/cold-after-ms]
+    (core/start! eng "par" "refit-parent" {} t0)
+    (core/send! eng "par" :gather/start (assoc unattended :hold-ms 1000 :confirm-kinds ["gather"]) {:now t0})
+    (core/fire-due! eng (+ t0 1000))
+    (is (= [true] (map :waiting (core/holds eng))))
+    (is (nil? (core/next-due-at eng)) "no timer left: only the hold itself pends")
+    (is (= [] (core/cold-sessions eng (+ t0 1000 day day))) "R17: a pending hold keeps it warm")
+    (core/send! eng "par" :hold/cancel {:by "operator" :id "gather/start#0"} {:now (+ t0 2000)})
+    (is (= ["par"] (core/cold-sessions eng (+ t0 2000 day day))))))
+
+(deftest a-correction-always-feeds-whatever-it-declares
+  (let [eng (parent (new-eng))]
+    (core/send! eng "par" :gather/start (assoc overseer :to "a" :attended true) {:now t0})
+    (let [step (first (:steps (core/send! eng "par" :item/reopen (assoc overseer :reason "wrong phase") {:now (+ t0 1)})))]
+      (is (in? eng "par" :idle))
+      (is (= :feed (:feed step)) "R12: declared :quiet, still :feed"))))

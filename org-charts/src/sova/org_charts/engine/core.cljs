@@ -512,7 +512,7 @@
       (do (sp/cancel! queue env sid (hold-send-id id))
           (swap! (sessions* eng) update-in [sid data-key :sova/holds] dissoc id)
           (if (:act hold)
-            (release-act-hold! eng sid (assoc hold :approved true))
+            (release-act-hold! eng sid hold)
             (do (swap! (sessions* eng) update-in [sid data-key :outbox] (fnil conj []) (:effect hold))
                 (run-step! eng sid (evts/new-event {:name :hold/released
                                                     :data {:id id :kind (:kind hold) :what (:what hold)

@@ -169,7 +169,10 @@ writer**).
     checked against the foreign § computed from Git: the worktrees merge
     event's list, plus `sova-spec.mjs foreign --base <HEAD at the run's start>`
     for the session's tree and for each root a `promote --write` named, plus
-    for each tree the spec that landed there: on the default branch its whole
+    for the session's own tree only what its own operations landed (for each
+    commit, merge or promotion it ran there, HEAD just before vs just after;
+    another actor's commit meanwhile is never the turn's) plus its uncommitted
+    changes; for each tracked worktree the spec that landed there: on the default branch its whole
     diff; on another branch a merge that brought the default branch in is
     absorbed, not landed (its § drop out), plus
     `foreign --spec <draft>` against its `base.commit` for each draft the run

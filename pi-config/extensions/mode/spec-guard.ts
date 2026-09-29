@@ -730,13 +730,15 @@ export async function landedSpec(
 	isSpec: (path: string) => boolean,
 	core: string,
 	io: SpecIO = localIO,
+	options: { committed?: boolean } = {},
 ): Promise<{ specChanged: boolean; foreign?: string[] }> {
 	const git = (args: string[]) => io.exec("git", args, { cwd: top, timeout: TOOL_TIMEOUT_MS });
 	const touches = async (from: string, to: string) => {
 		const diff = await git(["diff", "--name-only", "-z", from, to]);
 		return diff.code === 0 && diff.stdout.split("\0").some(isSpec);
 	};
-	const all = async () => foreignBetween(root, base, undefined, core, io);
+	// committed: the range base..head itself (one operation's), never the work tree.
+	const all = async () => foreignBetween(root, base, options.committed && head ? head : undefined, core, io);
 	if (!head || head === base) return dirtySpec ? { specChanged: true, foreign: await all() } : { specChanged: false, foreign: [] };
 	const main = await defaultBranch(top, io);
 	const branch = (await git(["symbolic-ref", "-q", "--short", "HEAD"])).stdout.trim();
@@ -800,6 +802,53 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 		return { changed, specChanged, ...(known ? { foreign: [...ids].sort() } : {}), ...conflict };
 	} catch (error) {
 		return { changed: false, specChanged: false, error: `${start.view.top}: ${error instanceof Error ? error.message : String(error)}` };
+	}
+}
+
+/** A directory's work-tree top and HEAD (two cheap rev-parses, no status), or undefined outside Git. */
+export async function headAt(dir: string, io: SpecIO = localIO): Promise<{ top: string; head: string } | undefined> {
+	try {
+		const top = await io.exec("git", ["rev-parse", "--show-toplevel"], { cwd: dir, timeout: TOOL_TIMEOUT_MS });
+		const head = await io.exec("git", ["rev-parse", "--verify", "-q", "HEAD"], { cwd: dir, timeout: TOOL_TIMEOUT_MS });
+		return top.code === 0 && head.code === 0 ? { top: top.stdout.trim(), head: head.stdout.trim() } : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** One git operation of this session's in a tree: HEAD just before it and just after. */
+export interface OpRange {
+	before: string;
+	after: string;
+}
+
+/**
+ * The session's own tree, attributed per operation: its uncommitted changes as treeTurn sees them
+ * (HEAD's movement ignored), plus, for each git operation this session ran there (a commit, merge or
+ * promotion), what landed between the HEAD just before it and just after it. A commit another actor
+ * lands on the same branch meanwhile falls outside every range, so it is never this turn's.
+ */
+export async function opsTurn(start: TreeStart, ranges: readonly OpRange[], core: string, io: SpecIO = localIO): Promise<TreeTurn> {
+	const base = await treeTurn(start, core, io, { commits: false });
+	const moved = ranges.filter((r) => r.before && r.after && r.before !== r.after);
+	if (!moved.length || base.error || !start.root) return moved.length ? { ...base, changed: true } : base;
+	try {
+		const specRel = relative(start.view.top, join(start.root, SPEC_REL));
+		const isSpec = (p: string) => p.startsWith(`${specRel}/`) && !p.startsWith(`${specRel}/drafts/`);
+		let specChanged = base.specChanged;
+		const ids = new Set(base.foreign ?? []);
+		let known = base.foreign !== undefined;
+		for (const r of moved) {
+			const landed = await landedSpec(start.view.top, start.root, r.before, r.after, false, isSpec, core, io, { committed: true });
+			if (landed.specChanged) specChanged = true;
+			if (landed.foreign) {
+				known = true;
+				for (const id of landed.foreign) ids.add(id);
+			}
+		}
+		return { ...base, changed: true, specChanged, ...(known ? { foreign: [...ids].sort() } : {}) };
+	} catch (error) {
+		return { ...base, changed: true, error: `${start.view.top}: ${error instanceof Error ? error.message : String(error)}` };
 	}
 }
 

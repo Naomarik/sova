@@ -394,6 +394,31 @@ try {
 	assert.equal(checks().length, before7 + 1);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "another task's §app/other on master is not this turn's");
 
+	// Per-operation ranges: the parent itself merges a branch into master in its root checkout while a
+	// third party commits spec changes on master in the same run, before and after the merge. The
+	// merge's range (HEAD just before vs just after) is what landed: only the branch's §app/shell.
+	const wt8 = path.join(scratch, "wt8");
+	git("worktree", "add", "-q", "-b", "feat8", wt8);
+	writeFileSync(path.join(wt8, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, feat8.\n");
+	assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt8, "commit", "-qam", "feat8 spec"]).status, 0);
+	const thirdParty = (text) => () => {
+		put(".sova/spec/claims/app/other.md", `# §app/other\n\n${text}\n`);
+		git("commit", "-qam", `spec: a third party (${text})`);
+	};
+	at = requests.length;
+	const before8 = checks().length;
+	script.push(
+		{ effect: thirdParty("Other, before the merge."), tool: "bash", args: { command: "git merge --no-ff --no-edit feat8" } },
+		{ effect: thirdParty("Other, after the merge."), text: "Merged.\nAlso changes: none" },
+		{ text: "Merged.\nAlso changes: §app/shell — feat8" },
+	);
+	await session.prompt("merge feat8 into master");
+	assert.equal(requests.length, at + 3, "one re-prompt");
+	assert.equal(checks().length, before8 + 1);
+	assert.match(checks().at(-1).content, /changed the current spec in /);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the third party's §app/other, before or after the merge, is not this turn's");
+	git("worktree", "remove", "--force", wt8);
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

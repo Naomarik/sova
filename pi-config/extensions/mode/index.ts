@@ -83,6 +83,9 @@ import {
 	CHECK_TAG,
 	checkAlsoChanges,
 	commandDirs,
+	headAt,
+	opsTurn,
+	type OpRange,
 	commandRoot,
 	describeProblem,
 	foreignBetween,
@@ -959,8 +962,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		branchAt: number;
 		/** The session's own tree (its top), as opposed to the worktrees it tracks. */
 		cwdTop?: string;
-		/** Directories this session's own actions wrote in (edit/write paths, git commit/merge, promote, worktree merge). */
-		ownDirs: string[];
+		/** This session's own git operations (commit, merge, promote, worktree merge) per tree top: HEAD before and after. */
+		ops: Map<string, OpRange[]>;
+		/** Operations under way, by tool call: each tree's HEAD just before. */
+		opening: Map<string, { top: string; before: string }[]>;
 		/** Snapshots of worktrees the session started tracking during the run (created or attached mid-run). */
 		pending: Promise<void>[];
 		changed: boolean;
@@ -970,10 +975,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		roots: Map<string, string>;
 		/** Foreign § the worktrees extension computed for this run's merges. */
 		mergeForeign: string[];
-	} = { trees: [], branchAt: 0, pending: [], ownDirs: [], changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
+	} = { trees: [], branchAt: 0, pending: [], ops: new Map(), opening: new Map(), changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
 	let specReprompted = false;
 	const resetSpecRun = () => {
-		specRun = { trees: [], branchAt: 0, pending: [], ownDirs: [], changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
+		specRun = { trees: [], branchAt: 0, pending: [], ops: new Map(), opening: new Map(), changed: false, merged: false, promoted: false, roots: new Map(), mergeForeign: [] };
 		specReprompted = false;
 	};
 	/**
@@ -1014,8 +1019,19 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	});
 
 	pi.on("tool_call", async (event, ctx) => {
-		if (!specOn() || event.toolName !== "bash") return;
-		const command = (event.input as { command?: unknown } | undefined)?.command;
+		if (!specOn()) return;
+		// An operation of this session's that can move a HEAD: note each tree's HEAD just before it.
+		const input = event.input as { command?: unknown; action?: unknown } | undefined;
+		const cmd = event.toolName === "bash" && typeof input?.command === "string" ? input.command : undefined;
+		const dirs = cmd && (gitCommits(cmd) || gitMerges(cmd) || promoteWrites(cmd)) ? commandDirs(cmd, ctx.cwd) : event.toolName === "worktree" && input?.action === "merge" ? [ctx.cwd] : [];
+		const opening: { top: string; before: string }[] = [];
+		for (const dir of dirs) {
+			const at = await headAt(resolve(ctx.cwd, dir));
+			if (at && !opening.some((o) => o.top === at.top)) opening.push({ top: at.top, before: at.head });
+		}
+		if (opening.length) specRun.opening.set(event.toolCallId, opening);
+		if (event.toolName !== "bash") return;
+		const command = cmd;
 		if (typeof command !== "string" || !promoteWrites(command)) return;
 		// The promote's base: HEAD of the spec root it writes, before it runs (it may commit in the same call).
 		const root = resolve(ctx.cwd, commandRoot(command) ?? ".");
@@ -1028,20 +1044,20 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (!specOn()) return;
 		if (!event.isError) {
 			const command = event.toolName === "bash" ? (event.input as { command?: unknown } | undefined)?.command : undefined;
-			if (event.toolName === "edit" || event.toolName === "write") {
-				specRun.changed = true;
-				const file = (event.input as { path?: unknown } | undefined)?.path;
-				if (typeof file === "string") specRun.ownDirs.push(resolve(ctx.cwd, file));
-			}
+			if (event.toolName === "edit" || event.toolName === "write") specRun.changed = true;
 			if (typeof command === "string") {
-				const commits = gitCommits(command) || gitMerges(command);
-				if (commits) specRun.changed = true;
+				if (gitCommits(command) || gitMerges(command)) specRun.changed = true;
 				if (promoteWrites(command)) specRun.changed = specRun.promoted = true;
-				if (commits || promoteWrites(command)) specRun.ownDirs.push(...commandDirs(command, ctx.cwd).map((d) => resolve(d)));
 			}
-			if (event.toolName === "worktree" && (event.input as { action?: unknown } | undefined)?.action === "merge") {
-				specRun.changed = specRun.merged = true;
-				specRun.ownDirs.push(ctx.cwd);
+			if (event.toolName === "worktree" && (event.input as { action?: unknown } | undefined)?.action === "merge") specRun.changed = specRun.merged = true;
+		}
+		// The operation's range in each tree it touched: HEAD just before vs just after (failed ones too).
+		const opening = specRun.opening.get(event.toolCallId);
+		if (opening) {
+			specRun.opening.delete(event.toolCallId);
+			for (const o of opening) {
+				const at = await headAt(o.top);
+				if (at && at.head !== o.before) specRun.ops.set(o.top, [...(specRun.ops.get(o.top) ?? []), { before: o.before, after: at.head }]);
 			}
 		}
 		if (process.env.PI_SPEC_CENSUS_HOOK === "0") return;
@@ -1073,11 +1089,11 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			for (const fresh of specRun.trees) {
 				const carried = settledTrees.get(fresh.view.top);
 				const tree = carried && (fresh.view.top !== cwdTop || relay) ? carried : fresh;
-				// The session's own tree: a commit there counts only when this session made it (or relays a
-				// worker's report); another task landing on master meanwhile is not this turn's.
-				const top = fresh.view.top;
-				const own = fresh.view.top !== cwdTop || relay || specRun.ownDirs.some((d) => d === top || d.startsWith(`${top}/`));
-				const t = await treeTurn(tree, SPEC_CORE, undefined, { commits: own });
+				// The session's own tree, attributed per operation: what each of this session's commits,
+				// merges and promotions landed there (HEAD just before vs just after), plus its uncommitted
+				// changes. Another actor's commit on that branch meanwhile is never this turn's. A run that
+				// relays a worker's report compares the whole tree, as the worker left it.
+				const t = fresh.view.top === cwdTop && !relay ? await opsTurn(fresh, specRun.ops.get(fresh.view.top) ?? [], SPEC_CORE) : await treeTurn(tree, SPEC_CORE);
 				if (t.error) errors.push(t.error);
 				if (t.conflict) conflicts.push(t.conflict);
 				if (!t.changed) continue;

@@ -327,6 +327,36 @@ try {
 	await session.prompt("status?");
 	assert.equal(checks().length, before5 + 1);
 
+	// M1-B-v21-2/-3: the same background commit, but the relay run also does work of its own (here an
+	// edit in the session's tree), which used to make it a change turn with an EMPTY Git list: a
+	// deferred warning without the landed §. Now: one re-prompt naming them.
+	const wt6 = path.join(scratch, "wt6");
+	const wt6Git = (...args) => assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", wt6, ...args]).status, 0, `git ${args.join(" ")}`);
+	mkdirSync(wt6, { recursive: true });
+	wt6Git("init", "-q");
+	for (const rel of [".sova/spec/manifest.json", ".sova/spec/claims/app/shell.md", "src/App.tsx"]) {
+		mkdirSync(path.dirname(path.join(wt6, rel)), { recursive: true });
+		writeFileSync(path.join(wt6, rel), spawnSync("git", ["-C", cwd, "show", `HEAD:${rel}`], { encoding: "utf8" }).stdout);
+	}
+	wt6Git("add", "-A");
+	wt6Git("commit", "-qm", "base");
+	hostPi.events.emit("worktrees:state", { version: 1, active: [wt, wt2, wt3, wt4, wt5, wt6] });
+	script.push({ text: "The worker is running." });
+	await session.prompt("have a worker do it in wt6");
+	const before6 = checks().length;
+	writeFileSync(path.join(wt6, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, wt6 worker.\n");
+	wt6Git("commit", "-qam", "spec: promoted by a background worker");
+	at = requests.length;
+	script.push(
+		{ tool: "bash", args: { command: "printf 'relay\\n' > notes-relay.txt" } },
+		{ text: "Checked the worker's work. Say when you want it merged." },
+		{ text: "Done.\nAlso changes: §app/shell — wt6 worker" },
+	);
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_03 finished", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 3, "a re-prompt, not a deferred warning");
+	assert.equal(checks().length, before6 + 1);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the list is not empty");
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

@@ -6653,7 +6653,8 @@
         "src/components/ChatView.tsx",
         "src/components/WatchView.tsx",
         "src/components/ChangesViewer.tsx",
-        "src/components/ChangesViewer.css"
+        "src/components/ChangesViewer.css",
+        "src/app.css"
       ]
     },
     "§chat.changes/show-changes-card": {

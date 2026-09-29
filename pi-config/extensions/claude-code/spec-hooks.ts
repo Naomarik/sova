@@ -35,7 +35,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	CHECK_TAG, LEDGER_ENV, appendLedger, censusStep, checkAlsoChanges, commandDirs, commandRoot, currentSpecPath, defaultBranch, describeProblem, directWriteNote, evidenceCommits, headAt, judgeOp, rebaseUnderway, rewriteNote, sanctionedSpecWrite, draftForeign, draftStamps, draftsTouched, findSpecRoot, freshCensusState, gitCommits, gitView,
+	CHECK_TAG, LANDING_REPROMPTS, LEDGER_ENV, appendLedger, censusStep, checkAlsoChanges, commandDirs, commandRoot, currentSpecPath, defaultBranch, describeProblem, directWriteNote, evidenceCommits, headAt, judgeOp, rebaseUnderway, rewriteNote, sanctionedSpecWrite, draftForeign, draftStamps, draftsTouched, findSpecRoot, freshCensusState, gitCommits, gitView,
 	localIO, promoteWrites, repromptText, viewChanged, type CensusState, type GitView, type LedgerEntry, type OpLanding, type SpecIO,
 } from "../mode/spec-guard.ts";
 import { lastLine, parseAlsoChanges } from "../mode/also-changes.ts";
@@ -43,8 +43,8 @@ import { lastLine, parseAlsoChanges } from "../mode/also-changes.ts";
 export const SPEC_HOOK_SCRIPT = fileURLToPath(import.meta.url);
 /** Hook timeout, seconds: a census over a large tree stays well under it. */
 const HOOK_TIMEOUT_S = 60;
-/** How many times a merge/promote turn's reply is sent back before it is let through. */
-export const MERGE_BLOCKS = 2;
+/** How many times a merge/promote turn's reply is sent back before it is let through: the pi check's own count. */
+export const MERGE_BLOCKS = LANDING_REPROMPTS;
 /** Tools that never write: no git status for them. */
 const READ_ONLY = new Set(["Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "TodoWrite", "BashOutput"]);
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);

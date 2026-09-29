@@ -6,9 +6,12 @@ import {
   capProblem,
   DEFAULT_AUTONOMY,
   DEFAULT_PO_CAPS,
+  DEFAULT_HOLD_MIN,
   DEFAULT_SOON_LOOK_SEC,
   DEFAULT_WATCH_GAP_MIN,
   gapProblem,
+  holdProblem,
+  HOLD_MIN_MAX,
   isAtOnce,
   soonProblem,
   type HeldItem,
@@ -109,6 +112,7 @@ export function defaultPoSettings(): ProjectOverseerSettings {
     watchGapMin: DEFAULT_WATCH_GAP_MIN,
     soonLookSec: DEFAULT_SOON_LOOK_SEC,
     watch: true,
+    holdMin: DEFAULT_HOLD_MIN,
     extraSystemPrompt: "",
   };
 }
@@ -151,6 +155,8 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     watchGapMin: gapProblem(raw.watchGapMin) === null ? (raw.watchGapMin as number) : d.watchGapMin,
     soonLookSec: "soonLookSec" in raw && soonProblem(raw.soonLookSec) === null ? (raw.soonLookSec as number | null) : d.soonLookSec,
     watch: typeof raw.watch === "boolean" ? raw.watch : d.watch,
+    // Over the maximum still means "as long as allowed"; any other bad value, the default.
+    holdMin: typeof raw.holdMin === "number" && Number.isInteger(raw.holdMin) && raw.holdMin > HOLD_MIN_MAX ? HOLD_MIN_MAX : holdProblem(raw.holdMin) === null ? (raw.holdMin as number) : d.holdMin,
     extraSystemPrompt: typeof raw.extraSystemPrompt === "string" ? raw.extraSystemPrompt.slice(0, EXTRA_PROMPT_MAX) : "",
   };
 }
@@ -240,6 +246,11 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
   if (patch.watch !== undefined) {
     if (typeof patch.watch !== "boolean") throw new OrgError("watch must be true or false");
     next.watch = patch.watch;
+  }
+  if (patch.holdMin !== undefined) {
+    const why = holdProblem(patch.holdMin);
+    if (why) throw new OrgError(why);
+    next.holdMin = patch.holdMin;
   }
   if (patch.extraSystemPrompt !== undefined) {
     if (typeof patch.extraSystemPrompt !== "string" || patch.extraSystemPrompt.length > EXTRA_PROMPT_MAX)

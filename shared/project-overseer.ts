@@ -158,6 +158,14 @@ export const gapProblem = (v: unknown): string | null =>
 export const soonProblem = (v: unknown): string | null =>
   v === null || (typeof v === "number" && Number.isInteger(v) && v >= 30 && v <= 3600) ? null : "The soon look must be a whole number of seconds from 30 to 3600, or Off.";
 
+/** How long an act that reaches a person or the client's code waits in its hold before it goes ahead
+    (minutes; 0 = no hold: it goes ahead at once). */
+export const DEFAULT_HOLD_MIN = 10;
+export const HOLD_MIN_MAX = 1440;
+export const HOLD_CHOICES = [0, 2, 5, 10, 30, 60] as const;
+export const holdProblem = (v: unknown): string | null =>
+  typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= HOLD_MIN_MAX ? null : `The hold must be a whole number of minutes from 0 to ${HOLD_MIN_MAX} (0: no hold).`;
+
 /**
  * Something a refusal held for later (host-local, in the watch memo): `key` is `day:<kind>`,
  * `message:<kind>` or `looks`; `retryAt` (ISO) is when the watch loop turns it into a
@@ -212,10 +220,13 @@ export interface ProjectOverseerSettings {
   soonLookSec: number | null;
   /** The watch loop runs for this project. */
   watch: boolean;
+  /** An act that reaches a person or the client's code waits this many minutes in its hold, where
+      the operator (Needs you) or the overseer may cancel it (0–1440; 0 = no hold). */
+  holdMin: number;
   extraSystemPrompt: string;
 }
 
-export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "extraSystemPrompt">> & {
+export type ProjectOverseerPatch = Partial<Pick<ProjectOverseerSettings, "autonomy" | "model" | "thinking" | "codingModel" | "codingThinking" | "codingMode" | "gatheringModel" | "gatheringThinking" | "gatheringAbilities" | "watchGapMin" | "soonLookSec" | "watch" | "holdMin" | "extraSystemPrompt">> & {
   caps?: Partial<ProjectOverseerCaps>;
 };
 

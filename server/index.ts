@@ -39,7 +39,7 @@ import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
 import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
-import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived } from "./sessions-index";
+import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
 import { cleanSessionTitle, SESSION_TITLE_MAX, setSessionTitle } from "./session-titles";
 import { contextForBranch, normalizeEntries, readActiveBranch } from "./transcript";
 import { checkTmpImage, deleteAttachment, MAX_ATTACHMENT_BYTES, readTmpImage, saveUploadedImage, sessionAttachmentsDir, UploadError } from "./attachments";
@@ -52,7 +52,7 @@ import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_M
 import { promptGroup } from "./group-prompt";
 import { runFanout } from "./fanout";
 import { runFork } from "./fork";
-import type { FanoutRequest, ForkRequest, SessionsDirInfo, WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, type FanoutRequest, type ForkRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -60,13 +60,16 @@ import { configureSession } from "./sessions-configure";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
-import { readModelPolicy, writeModelPolicy } from "./model-policy";
+import { modelDenial, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
-import { registerClaudeAccountRoutes } from "./claude-accounts";
+import { AutoTitleSweep, autoTitlePaths, nameSession, traceToFile, type NameDeps } from "./session-autotitle";
+import { parseSessionTitleSettings, readSessionTitleSettings, sessionTitleSettingsInfo, writeSessionTitleSettings } from "./session-titles-settings";
+import type { LlmRuntime } from "./decide-llm";
+import { claudeLoginEnv, registerClaudeAccountRoutes } from "./claude-accounts";
 import { modeInfo, parseModeRequest, readMode } from "./mode-state";
 import { parseSandboxBody } from "./sandbox-state";
 import { WORKER_ID_RE } from "./worker-resume";
@@ -361,18 +364,22 @@ app.post("/api/sessions/archive", async (c) => {
 // Renames a session, in Sova ONLY (server/session-titles.ts): the id gets a stored title and
 // the .jsonl is never opened, let alone written — a session open in a TUI can be renamed here
 // without touching the file that TUI owns. `title: null` clears the override, and the derived
-// title (the first user message) comes back.
+// title (the first user message) comes back. `source` says who is setting it ("user", the default,
+// or "overseer"); either way the title is explicit, and Sova's own namer never replaces it.
 app.post("/api/sessions/title", async (c) => {
-  let body: { path?: unknown; title?: unknown };
+  let body: { path?: unknown; title?: unknown; source?: unknown };
   try {
     const parsed: unknown = await c.req.json();
     // Valid JSON is not yet a body: `null`, `7`, `"x"` and `[]` all parse, and reading `.title`
     // off any of them is a TypeError the client would see as a 500 rather than its own mistake.
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
-    body = parsed as { path?: unknown; title?: unknown };
+    body = parsed as { path?: unknown; title?: unknown; source?: unknown };
   } catch {
     return c.json({ error: "Expected JSON body { path, title }" }, 400);
   }
+  if (body.source !== undefined && body.source !== "user" && body.source !== "overseer")
+    return c.json({ error: 'source must be "user" or "overseer" (or absent, for "user")' }, 400);
+  const source: SessionTitleSource = body.source ?? "user";
   if (body.title !== null && typeof body.title !== "string") return c.json({ error: "title must be a string, or null to clear it" }, 400);
   const title = body.title === null ? null : cleanSessionTitle(body.title);
   if (body.title !== null && title === null) return c.json({ error: `title must be 1–${SESSION_TITLE_MAX} characters, and no control characters` }, 400);
@@ -383,9 +390,82 @@ app.post("/api/sessions/title", async (c) => {
   // archive mark and the group assignment are keyed by too.
   const before = await getSessionSummary(path);
   if (!before) return c.json({ error: "Session file not found" }, 404);
-  setSessionTitle(before.id, title);
+  setSessionTitle(before.id, title, source);
   const summary = await getSessionSummary(path);
   return c.json(summary ?? { ...before, title: title ?? before.originalTitle ?? before.title });
+});
+
+// Sova names sessions itself (server/session-autotitle.ts, §app.session-list/auto-titles): the
+// section heads' button calls this route, and the sweep below runs while Settings → Summaries →
+// Session titles has it on. Never over an explicit title; each host names only its own sessions.
+let claudeCliCheck: { at: number; problem: Promise<string | null> } | undefined;
+/** Why a title model can't run at all right now, or null: the policy, pi's registry and keys, the Claude Code CLI. */
+async function titleModelProblem(choice: WorkerChoice): Promise<string | null> {
+  const denied = modelDenial(readModelPolicy(), choice.backend === "pi" ? choice.model : `claude-code/${choice.model}`);
+  if (denied) return "turned off in Settings → Models";
+  if (choice.backend === "pi") {
+    const slash = choice.model.indexOf("/");
+    try {
+      const runtime = await getModelRuntime();
+      if (!runtime.getModel(choice.model.slice(0, slash), choice.model.slice(slash + 1))) return "not in pi's model registry";
+      if (!runtime.hasConfiguredAuth(choice.model.slice(0, slash))) return `no key for ${choice.model.slice(0, slash)}`;
+    } catch {
+      return "pi's model registry couldn't be read";
+    }
+    return null;
+  }
+  if (!claudeCliCheck || Date.now() - claudeCliCheck.at > 60_000)
+    claudeCliCheck = { at: Date.now(), problem: claudeCliStatus().then((st) => (st.error === undefined ? null : "the Claude Code CLI isn't installed or doesn't answer")) };
+  return claudeCliCheck.problem;
+}
+const titleDeps = (): NameDeps => ({
+  runtime: () => getModelRuntime() as unknown as Promise<LlmRuntime>,
+  env: claudeLoginEnv,
+  problem: titleModelProblem,
+  trace: traceToFile(process.env.SOVA_AUTOTITLE_TRACE),
+  settings: () => readSessionTitleSettings(),
+  summary: (path) => getSessionSummary(path),
+});
+const autoTitleSweep = new AutoTitleSweep({
+  settings: () => readSessionTitleSettings(),
+  list: listSessions,
+  // Groups Sova fanned out: those it made (autoDissolve) or seeded (a pre-flag fanout group).
+  fanoutGroups: () => new Set(readGroups().filter((g) => g.autoDissolve === true || (g.autoDissolve === undefined && g.seed)).map((g) => g.id)),
+  name: (s) => nameSession(s.path, "sweep", titleDeps()),
+  log: (line) => console.log(line),
+});
+
+app.post("/api/sessions/auto-title", async (c) => {
+  let body: { paths?: unknown; dryRun?: unknown };
+  try {
+    const parsed: unknown = await c.req.json();
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("not an object");
+    body = parsed as { paths?: unknown; dryRun?: unknown };
+  } catch {
+    return c.json({ error: "Expected JSON body { paths, dryRun? }" }, 400);
+  }
+  if (!Array.isArray(body.paths) || body.paths.length === 0 || !body.paths.every((p) => typeof p === "string"))
+    return c.json({ error: "paths must be a non-empty list of session paths" }, 400);
+  if (body.paths.length > AUTO_TITLE_MAX_PATHS) return c.json({ error: `At most ${AUTO_TITLE_MAX_PATHS} paths at a time` }, 400);
+  if (body.dryRun !== undefined && typeof body.dryRun !== "boolean") return c.json({ error: "dryRun must be true or false" }, 400);
+  const raw = body.paths as string[];
+  const results = await autoTitlePaths(raw.map((p) => resolveSessionPath(p)), raw, titleDeps(), body.dryRun === true);
+  return c.json({ results });
+});
+
+app.get("/api/settings/session-titles", async (c) => c.json(await sessionTitleSettingsInfo(titleModelProblem)));
+app.put("/api/settings/session-titles", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected JSON body { version: 1, enabled, intervalMinutes, quietMinutes, primary, fallback }" }, 400);
+  }
+  const parsed = parseSessionTitleSettings(body);
+  if ("error" in parsed) return c.json({ error: parsed.error }, 400);
+  writeSessionTitleSettings(parsed);
+  autoTitleSweep.reschedule();
+  return c.json(await sessionTitleSettingsInfo(titleModelProblem));
 });
 
 // Permanently deletes transcript files from disk: sessions older than 7 or 30 days, empty
@@ -1273,6 +1353,9 @@ startWrapupRecovery();
 // Messages a crash or kill lost stop counting against their session's limit.
 startBudgetRecount();
 startBatonMarksBackfill();
+// The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.
+autoTitleSweep.start();
+onSummaryLineChanged(() => autoTitleSweep.nudge());
 
 // Decisions (Settings → Decisions; both features off by default, and then nothing is ever sent).
 // The list's decision overlays are pushed on /ws/watch?feed=sessions (server/session-feed.ts);
@@ -1344,6 +1427,7 @@ async function shutdown() {
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   priceRefresh.stop();
+  autoTitleSweep.stop();
   stopResourceMonitor();
   meshLinks.stop();
   stopMesh();

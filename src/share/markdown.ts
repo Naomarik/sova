@@ -17,7 +17,7 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
 md.disable("image");
 
 /** The drawings a share or owner page draws (§app.baton/outsider-view): the business kinds. */
-export const SHARE_VIS_KINDS: ReadonlySet<string> = new Set(["flow", "chart", "matrix", "timeline", "tree", "steps", "layers"]);
+export const SHARE_VIS_KINDS: ReadonlySet<string> = new Set(["flow", "chart", "matrix", "timeline", "tree", "steps", "wireframe", "layers"]);
 export const BROKEN_DRAWING = "A drawing couldn't be shown here.";
 
 export interface ShareVisual {

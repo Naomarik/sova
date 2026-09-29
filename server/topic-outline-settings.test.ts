@@ -22,8 +22,8 @@ const { readSummarizerSettings, writeSummarizerSettings, parseSummarizerSettings
 );
 
 const DEFAULTS = {
-  primary: { backend: "claude-code", model: "haiku" },
-  fallback: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash" },
+  primary: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash" },
+  fallback: { backend: "claude-code", model: "sonnet" },
 };
 /** A file shaped like the user's real one, with keys this screen must never touch. */
 const FULL = {
@@ -158,16 +158,16 @@ test("a kept entry keeps fields this screen doesn't know", () => {
 
 test("saving what is already there leaves the file's values unchanged", () => {
   put(FULL);
-  writeSummarizerSettings(DEFAULTS);
+  writeSummarizerSettings({ primary: { backend: "claude-code", model: "haiku" }, fallback: { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash" } });
   assert.deepEqual(stored(), FULL);
 });
 
 test("with no file, keeping a default keeps the default's timeout and budget", () => {
-  const result = writeSummarizerSettings({ primary: { backend: "claude-code", model: "haiku" }, fallback: { backend: "pi", model: "a/b" } });
+  const result = writeSummarizerSettings({ primary: { backend: "claude-code", model: "sonnet" }, fallback: { backend: "pi", model: "a/b" } });
   assert.ok(!("error" in result));
   assert.equal(result.usingDefaults, false);
   assert.deepEqual(stored(), {
-    summarizers: [{ backend: "claude-code", model: "haiku", timeoutMs: 45000, maxBudgetUsd: 0.05 }, { backend: "pi", model: "a/b" }],
+    summarizers: [{ backend: "claude-code", model: "sonnet", timeoutMs: 45000, maxBudgetUsd: 0.05 }, { backend: "pi", model: "a/b" }],
   });
 });
 
@@ -190,8 +190,8 @@ test("Reset to Defaults after a change writes the default entries, timeout and b
   const result = writeSummarizerSettings(DEFAULTS);
   assert.ok(!("error" in result));
   assert.deepEqual(stored().summarizers, [
-    { backend: "claude-code", model: "haiku", timeoutMs: 45000, maxBudgetUsd: 0.05 },
     { backend: "pi", model: "ollama-cloud/deepseek-v4.1-flash", timeoutMs: 60000 },
+    { backend: "claude-code", model: "sonnet", timeoutMs: 45000, maxBudgetUsd: 0.05 },
   ]);
   assert.equal(stored().claudeBin, FULL.claudeBin);
 });

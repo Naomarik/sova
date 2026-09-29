@@ -1,4 +1,7 @@
 import type {
+  AutoTitleResponse,
+  SessionTitleSettings,
+  SessionTitleSettingsInfo,
   AgentsInsight,
   SessionsDirInfo,
   AttentionDigest,
@@ -249,6 +252,24 @@ export const getSummarizerSettings = () => request<SummarizerSettingsInfo>("/api
 /** Replace the chain; the file's other keys stay. Sessions started afterwards, here and in the TUI, use it. */
 export const putSummarizerSettings = (settings: SummarizerSettings) =>
   request<SummarizerSettingsInfo>("/api/settings/summarizer", { method: "PUT", body: JSON.stringify(settings) });
+
+/** Settings → Summaries → Session titles: the automatic namer's switch, timing and models (Sova's own file). */
+export const getSessionTitleSettings = () => request<SessionTitleSettingsInfo>("/api/settings/session-titles");
+
+/** Replace the whole file; the sweep picks it up at once. */
+export const putSessionTitleSettings = (settings: SessionTitleSettings) =>
+  request<SessionTitleSettingsInfo>("/api/settings/session-titles", { method: "PUT", body: JSON.stringify(settings) });
+
+/**
+ * Name these sessions with the host's title model (§app.session-list/auto-titles). All `paths`
+ * must live on one host: `request` sends them to that host, as with every path-named route.
+ */
+export const autoTitleSessions = (paths: string[], dryRun = false) =>
+  request<AutoTitleResponse>("/api/sessions/auto-title", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(dryRun ? { paths, dryRun } : { paths }),
+  });
 
 /** One session by id, listed or not (the list omits sessions with no user message). 404: no file has that id. */
 export const getSessionSummaryById = (id: string) => request<SessionSummary>(`/api/sessions/summary?id=${encodeURIComponent(id)}`);

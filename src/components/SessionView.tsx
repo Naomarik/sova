@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Match, on, onCleanup, Show, Switch, type JSX } from "solid-js";
-import type { SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
+import type { ChatClaudeLogin, SessionSummary, TeamInfo, WorkerInfo } from "../../shared/protocol";
 import { agentsFeed } from "../lib/agents-feed";
 import { agentsHref, teamKey, teamPause, teamPulse } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
@@ -86,6 +86,9 @@ export function SessionView(props: {
   onInsight(path: string, insight: PaneInsight | null): void;
   /** This chat's live subagents and its Σ; null list as the chat goes away. */
   onWorkers(path: string, workers: WorkerInfo[] | null, usage: UsageTotalView | null): void;
+  /** This chat's Claude login (ChatView's "claude_login"), keyed by path like onWorkers; null as
+      the chat reconnects or goes away. */
+  onClaudeLogin?(path: string, login: ChatClaudeLogin | null): void;
   /** This chat's turn-error state, keyed by path like onWorkers: the latest
    *  turn-error message, or null when there is none. State, not events — the workspace's roll-up
    *  pairs a word with colour without panning every pane, and without it a failed member reads
@@ -448,7 +451,10 @@ export function SessionView(props: {
               </Match>
               <Match when={d.mode === "chat" && d}>
                 {(c) => {
-                  onCleanup(() => props.onWorkers(path, null, null));
+                  onCleanup(() => {
+                    props.onWorkers(path, null, null);
+                    props.onClaudeLogin?.(path, null);
+                  });
                   return (
                     <ChatView
                       path={path}
@@ -476,6 +482,7 @@ export function SessionView(props: {
                         reloadInsight();
                       }}
                       onWorkers={(w, usage) => props.onWorkers(path, w, usage)}
+                      onClaudeLogin={props.onClaudeLogin ? (login) => props.onClaudeLogin!(path, login) : undefined}
                       onTurnError={props.onTurnError ? (m) => props.onTurnError!(path, m) : undefined}
                       onShowWorkers={() => props.toggleSubagents(path)}
                       workersOpen={props.paneOn(path, "agents")}

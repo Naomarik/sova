@@ -3,7 +3,8 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
@@ -802,6 +803,7 @@ function GroupBlock(props: {
           <bdi>{group().name}</bdi>
         </span>
         <span class="text-num">{count()}</span>
+        <NameSessionsButton section={`g-${group().id}`} rows={props.sessions} onDone={props.onChanged} />
         {/* The group's own actions, on its own name row. `contain` is what makes a control inside a
             <summary> possible at all: without it every click in here would toggle the section. The
             trigger is quiet until the row is hovered or something in it takes focus (base.css), and
@@ -889,6 +891,52 @@ function GroupBlock(props: {
         />
       </Show>
     </details>
+  );
+}
+
+/**
+ * A section head's Name sessions button (§app.session-list/auto-titles): shown while the section
+ * holds a row with no stored title, it asks each row's host to name those rows, then refetches
+ * the list. Nothing else is said — no toast, no undo; the titles changing is the answer. Its click
+ * and keydown stop here, so a press inside a <summary> never toggles the section.
+ */
+function NameSessionsButton(props: { section: string; rows: readonly SessionSummary[]; onDone(): void }) {
+  const rows = createMemo(() => nameableRows(props.rows));
+  const busy = () => namingIn(props.section);
+  // While it runs, the label keeps the count it was pressed with: a poll mid-run can shrink it.
+  const [pressed, setPressed] = createSignal(0);
+  const label = () => (busy() ? nameLabel(pressed(), true) : nameLabel(rows().length));
+  const press = async () => {
+    const paths = rows().map((s) => s.path);
+    if (busy() || paths.length === 0) return;
+    setPressed(paths.length);
+    setNaming(props.section, true);
+    try {
+      await nameSessions(paths, { hostOf, post: (batch) => autoTitleSessions(batch) });
+    } finally {
+      setNaming(props.section, false);
+      props.onDone();
+    }
+  };
+  return (
+    <Show when={busy() || rows().length > 0}>
+      <button
+        type="button"
+        class="button button-icon button-ghost name-sessions"
+        aria-label={label()}
+        title={label()}
+        aria-busy={busy() ? "true" : undefined}
+        disabled={busy()}
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          void press();
+        }}
+        onKeyDown={(e) => e.stopPropagation()}
+      >
+        <Icon name="pencil" small />
+      </button>
+    </Show>
   );
 }
 
@@ -995,6 +1043,9 @@ export function Sidebar(props: {
   onArchiveChanged(path: string, archived: boolean): void;
   onNew(): void;
   usage: UsageInsight | undefined;
+  /** The open chat's recorded Claude login, whose reading the glance's C shows; absent: the login
+      in use for new chats. */
+  claudeLogin?: string | null;
   agents: AgentsInsight | undefined;
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
@@ -1483,7 +1534,7 @@ export function Sidebar(props: {
     writeKey(sessionStorage, archiveDateKey(d.id), open ? "1" : "0");
   };
   const liveCount = () => all().filter((s) => s.live).length;
-  const glance = createMemo(() => usageGlance(props.usage));
+  const glance = createMemo(() => usageGlance(props.usage, props.claudeLogin));
   /** The foot's usage glance in full words, for its tooltip and accessible name. */
   const glanceText = () => (glance().length ? `Usage: ${glance().map((p) => p.full).join(", ")}` : "");
 
@@ -2091,6 +2142,7 @@ export function Sidebar(props: {
                 <span class="sidebar-region-count">
                   · {query().trim() ? `${topHits().length} of ${ordinary().length - archiveTotal()}` : topHits().length}
                 </span>
+                <NameSessionsButton section="t" rows={topHits()} onDone={props.onRefresh} />
               </h2>
               <Show
                 when={topHits().length > 0}
@@ -2128,6 +2180,7 @@ export function Sidebar(props: {
                       <span class="visually-hidden">, an agent is working here</span>
                     </span>
                   </Show>
+                  <NameSessionsButton section="o" rows={orgHits()} onDone={props.onRefresh} />
                 </h2>
               </summary>
               <Show when={orgWaitingCount() > 0}>
@@ -2261,6 +2314,7 @@ export function Sidebar(props: {
                 <span class="sidebar-region-count">
                   · {query().trim() ? `${archiveHits().length} of ${archiveTotal()}` : archiveHits().length}
                 </span>
+                <NameSessionsButton section="a" rows={archiveHits()} onDone={props.onRefresh} />
               </summary>
               <For each={archiveSections()}>
                 {(d) => (

@@ -402,7 +402,8 @@ divergence is stated, and are confirmed by `docs/protocol-probes.md`.
 - **Rebuild on divergence is lossy and cache-cold** (see above); a turn right
   after a rewind or compaction pays a full re-send. The fold budget is a
   2.2-characters-per-token estimate; with `PI_CLAUDE_CODE_DEBUG=1` each fold's size and budget are
-  logged (`event: "fold"`) to compare with the next call's input tokens.
+  logged (`event: "fold"`) to compare with the next call's input tokens, with
+  the images kept and dropped to fit the 4 MiB stdin line and its final bytes.
 - **Policy drift.** The control protocol is undocumented and version-sensitive;
   probes cover 2.1.276–2.1.278 only. A CLI update can change frame shapes or
   the permission handling that `--allowedTools mcp__sova` relies on; the bridge

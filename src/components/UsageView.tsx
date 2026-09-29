@@ -264,6 +264,8 @@ function ClaudeLoginCards(props: { logins: UsageClaudeLogin[]; now: number }) {
 function UsageBody(props: {
   usage: Poll<UsageInsight>;
   now: number;
+  /** The open chat's recorded Claude login, for the summary lead (as the sidebar foot). */
+  claudeLogin?: string | null;
   /** Why the last Refresh Usage failed, until one succeeds. */
   refreshError: string | null;
   refreshing: boolean;
@@ -316,7 +318,7 @@ function UsageBody(props: {
                 <Banner tone="warn" icon="clock" title={`Usage is ${duration(age())} old.`} body={`Couldn't refresh: ${failure()}`} action={retry()} />
               )}
             </Show>
-            <Show when={usageSummary(data(), props.now)}>{(lead) => <p class="usage-lead">{lead()}</p>}</Show>
+            <Show when={usageSummary(data(), props.now, props.claudeLogin)}>{(lead) => <p class="usage-lead">{lead()}</p>}</Show>
             <div class="insights-grid">
               <For each={data().providers}>
                 {(p) => (
@@ -334,7 +336,7 @@ function UsageBody(props: {
 }
 
 /** `#/usage`: subscription usage limits, from the usage-status extension's cache file. */
-export function UsageView(props: { usage: Poll<UsageInsight>; now: number; titleRef(el: HTMLHeadingElement): void }) {
+export function UsageView(props: { usage: Poll<UsageInsight>; now: number; claudeLogin?: string | null; titleRef(el: HTMLHeadingElement): void }) {
   const fetchedAt = () => props.usage.data()?.fetchedAt ?? null;
   /** " · next refresh in 3m" while the cache's next fetch is ahead; a passed one says nothing. */
   const nextRefresh = () => {
@@ -379,7 +381,7 @@ export function UsageView(props: { usage: Poll<UsageInsight>; now: number; title
       busy={!props.usage.data() && props.usage.pending()}
       titleRef={props.titleRef}
     >
-      <UsageBody usage={props.usage} now={props.now} refreshError={refreshError()} refreshing={refreshing()} onRefresh={() => void refresh()} />
+      <UsageBody usage={props.usage} now={props.now} claudeLogin={props.claudeLogin} refreshError={refreshError()} refreshing={refreshing()} onRefresh={() => void refresh()} />
     </InsightsPage>
   );
 }

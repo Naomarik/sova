@@ -1059,6 +1059,20 @@ the same everywhere a session is named, and clearing it has something to go back
 capped at `SESSION_TITLE_MAX` (80, the derived title's own cap), trimmed, whitespace collapsed to
 one line; a deleted session's title is forgotten with its file.
 
+**Every stored title says who set it.** The store is version 2: `titles[id]` is either a bare
+string, a title from before provenance existed, or `{title, by, at}` with `by` one of `user`,
+`overseer` or `auto` and `at` the ms epoch it was set. The route takes an optional `source`
+(`user` or `overseer`, anything else is a 400): the UI sends none, so `user`, and the Overseer's
+`sova_create_session` and `sova_set_session` send `overseer`, on this host and on a peer (an older
+peer ignores the field and stores a `user` title, which protects it just the same). Nobody but
+the automatic namer (§app.session-list/auto-titles) writes `auto`. **A title is explicit when a
+user or the Overseer set it, and every bare string counts as explicit** — so every title stored
+before this rule is protected, whoever really set it. Every summary carries the stored title's
+provenance as `titleBy` (`user`, `overseer` or `auto`; a bare string reads `user`), present
+whenever a title is stored for the session, even one that equals the derived title. Clearing
+deletes the entry whatever set it; nothing remembers that a title was cleared, so a cleared session
+is unnamed again, and the automatic namer may name it.
+
 **Accessibility.** `Escape` leaves selection mode from anywhere outside a text field (inside one it
 belongs to the field: search clears, the rename field cancels). "Text field" means a caret, not
 merely an `<input>`: a row's checkbox is an input too, and Escape pressed on one — the likeliest
@@ -1067,6 +1081,93 @@ place for a keyboard to be in this mode — leaves the mode like Escape anywhere
 `<input type="checkbox">` inside its label, named "Select {title}". The toolbar is a `role="group"`
 labelled "Selected sessions", its count is a polite live region, and every disabled control carries
 the reason it is disabled before it is pressed, never after. Every target in the mode is 44px.
+
+## §app.session-list/auto-titles — Automatic session titles
+
+A session is named by its first message until someone renames it, and a first message is a
+question or an instruction, not a name. So Sova can name sessions itself, the way the Overseer does
+when asked: one short title per session from what the session became, written into Sova's own
+title store (§app.session-list/selecting-several-sessions) as an `auto` title. Never into the
+`.jsonl`, and **never over an explicit title**: a title a user or the Overseer set, or any title
+stored before provenance existed, is never replaced, by the sweep or by the button.
+
+**Two ways in.** A background **sweep**, off by default and switched on in Settings → Summaries
+(§app.settings-dialog/summaries), names sessions as they settle. A **Name sessions** button on
+section heads names a section's unnamed rows on demand, whether the sweep is on or not. Both use
+the same title call and the same writer (`server/session-autotitle.ts`).
+
+**The title call.** One model call per session, with a primary and an optional fallback from
+Settings (one attempt each, in order, no retry loop), each obeying the model policy's global switch
+like the summary line: a model turned off in Settings → Models is skipped. The system prompt is
+the title rules alone (2 to 7 words, at most 60 characters, sentence case, name the work rather
+than the process, never name the app); **no Sova or agent system prompt goes with it**, and the
+user message holds only:
+
+- the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge or
+  a partner's link message is not one, as for the derived title);
+- its summary line (the last topic-outline snapshot's `overall`) and that snapshot's topic
+  headings, each with at most 2 of its bullets;
+- or, with no summary line (the button only), its first 3 user messages instead.
+
+**The session's current title is never in it**, whatever set it. On pi the call is
+`completeSimple` with that system prompt and one user message, temperature 0 and no reasoning
+unless the row's effort asks for it; on Claude Code it is `claude -p` in an empty temporary
+folder with `--system-prompt`, no tools, no setting sources, no MCP servers, no session
+persistence and no JSON schema, on this host's Claude login. The reply is one JSON object
+`{"title": "…"}`; the title is kept only if, cleaned like a typed title (trimmed, one line), it is
+2 to 9 words and at most 60 characters, with a trailing period or wrapping quotes dropped.
+Anything else leaves the session as it was.
+
+**The write is race-safe.** A title is written as `{title, by: "auto", at}` only if, on a fresh
+read of the store at write time, the session still has no explicit title. A title the user or the
+Overseer set while the call was out wins, and the model's answer is dropped.
+
+**The sweep** runs on this host, for this host's sessions, while its switch is on:
+
+- **When.** Every *interval* (default 5 minutes), and also shortly after a session's summary line
+  changes (a nudge, scheduled for when that session will have been quiet long enough). Turning the
+  switch on starts a run at once.
+- **Which.** A session with no stored title at all, with a summary line, quiet for the *quiet
+  period* (default 5 minutes, by its file's modification time), and none of: archived by hand, an
+  empty husk, a subagent's or team member's own session, a member of a fanout group Sova made, an
+  Overseer or project overseer file. Most recently active first.
+- **How much.** At most 10 sessions per run, 2 at a time. Existing unnamed sessions are backfilled
+  the same way, 10 per run, until none is left.
+- **Once.** A session the sweep named has a stored title, so no later run looks at it again, and a
+  later change to its summary line does not rename it. A session the models answered with no usable
+  title, or failed on for any other reason, is not tried again until its summary line changes
+  (remembered by this server process).
+- **Backoff.** When every model tried fails for quota, a rate limit or auth, the run stops, and
+  the sweep waits 30 minutes before its next one. When no model can run at all, the run stops.
+- **Silent.** The sweep shows nothing but the titles themselves: no toast, no notification. An
+  open sidebar picks them up through the session feed, which counts a changed title as a changed
+  row (§app.decisions/push).
+
+**The button.** On the heads of Live & web, each user group, Organizations and the Archive, a
+quiet 44px ghost icon button (`pencil`) at the head's right end, before a group's `⋯`, shown only
+while that section holds at least 1 **nameable** row: a row with no stored title (no `titleBy`,
+no `originalTitle`) that is not a draft-only row. Its `aria-label` and `title` are "Name {n}
+sessions" ("Name 1 session"), counting the section's rows as the search shows them, each session
+once. A press sends exactly those rows; while it runs the button is disabled, `aria-busy`, and
+titled "Naming {n} sessions…". When it returns the list is fetched again and the rows show their
+new titles. **No toast, no undo**: a title the user doesn't like is renamed or cleared like any
+other (§app.session-list/selecting-several-sessions). A click or keypress on the button inside a
+`<summary>` never toggles its section. A row the model failed on stays nameable, so a second press
+tries it again.
+
+`POST /api/sessions/auto-title {paths, dryRun?}` (at most 200 paths) answers
+`{results: [{path, outcome, title?, reason?}]}` in request order, 4 sessions at a time: `named`
+with the title, `would-name` on a dry run, or `skipped` with a reason — `explicit` (it has a title
+a user or the Overseer set), `not-found`, `not-listed` (a husk, a worker's session, an Overseer
+file), `no-input` (nothing to name it from), `no-model` (no title model can run) or `failed` (the
+models failed, or answered with no usable title). The route may name an archived session and one
+with no summary line, and **may redo an `auto` title**, never an explicit one; the button itself
+sends only unnamed rows.
+
+**Mesh.** Each host names its own sessions, with its own settings, models and keys. The button
+splits a section's rows by host and sends each peer's rows to that peer
+(`/peer/<id>/api/sessions/auto-title`, the usual routing); a peer whose Sova predates the route
+answers 404, and its rows are skipped silently. Each host's sweep follows that host's own switch.
 
 ## §app.session-list/regions-top-and-archive — Regions: top and Archive
 

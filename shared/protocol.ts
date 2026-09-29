@@ -22,6 +22,12 @@ export interface SessionSummary {
   /** The DERIVED title — the first user message — present only while `title` is a user-set
       override that differs from it. Absent otherwise, and from older servers. */
   originalTitle?: string;
+  /** Who set the stored title (server/session-titles.ts, §app.session-list/auto-titles): "user"
+      (the UI's rename, and every title stored before provenance existed), "overseer" (its
+      sova_create_session / sova_set_session), or "auto" (Sova named it). Present whenever a title
+      is stored for this session, even one equal to the derived title; absent when none is, and
+      from older servers. "user" and "overseer" are explicit and never renamed automatically. */
+  titleBy?: SessionTitleBy;
   createdAt: string; // ISO, from header
   lastActiveAt: string; // ISO, file mtime
   /** Latest "provider/model": the model_change or assistant message closest to the end of the
@@ -1179,6 +1185,68 @@ export const GROUP_NAME_MAX = 60;
     The one place the limit is written down: the rename field's maxlength and the server's rule
     both read it from here. */
 export const SESSION_TITLE_MAX = 80;
+
+/** Who set a stored session title (SessionSummary.titleBy). */
+export type SessionTitleBy = "user" | "overseer" | "auto";
+/** What POST /api/sessions/title takes as its optional `source` (absent = "user"). Only Sova's own
+    namer writes "auto", never through that route. */
+export type SessionTitleSource = "user" | "overseer";
+
+// POST /api/sessions/auto-title AutoTitleRequest -> AutoTitleResponse (§app.session-list/auto-titles).
+// Names each path's session with the title model from Settings → Summaries → Session titles,
+// never over an explicit title. 400 bad body (at most AUTO_TITLE_MAX_PATHS paths).
+export const AUTO_TITLE_MAX_PATHS = 200;
+export interface AutoTitleRequest {
+  paths: string[];
+  /** Say what would happen, call no model and write nothing. */
+  dryRun?: boolean;
+}
+export type AutoTitleSkip =
+  /** It has a title a user or the Overseer set (or one stored before provenance existed). */
+  | "explicit"
+  | "not-found"
+  /** Not a listed main thread: an empty husk, a subagent's session, an Overseer file. */
+  | "not-listed"
+  /** No user message to name it from. */
+  | "no-input"
+  /** Neither title model can run (policy, registry, auth, CLI). */
+  | "no-model"
+  /** The models failed, or answered with no usable title. */
+  | "failed";
+export type AutoTitleOutcome =
+  | { path: string; outcome: "named"; title: string }
+  | { path: string; outcome: "would-name" }
+  | { path: string; outcome: "skipped"; reason: AutoTitleSkip; detail?: string };
+export interface AutoTitleResponse {
+  /** One per requested path, in request order. */
+  results: AutoTitleOutcome[];
+}
+
+// GET /api/settings/session-titles -> SessionTitleSettingsInfo (<state root>/session-titles-settings.json;
+//                                    missing or broken fields read as their defaults)
+// PUT /api/settings/session-titles SessionTitleSettings -> SessionTitleSettingsInfo (strict; 400 bad body)
+/** Settings → Summaries → Session titles: the automatic namer's switch, timing and models. */
+export interface SessionTitleSettings {
+  version: 1;
+  /** The background sweep (default off). The section heads' button works either way. */
+  enabled: boolean;
+  /** Minutes between sweep runs, 1–1440. */
+  intervalMinutes: number;
+  /** Minutes a session's file must have been untouched before the sweep names it, 0–1440. */
+  quietMinutes: number;
+  primary: WorkerChoice;
+  fallback: WorkerChoice | null;
+}
+export interface SessionTitleSettingsInfo {
+  settings: SessionTitleSettings;
+  defaults: SessionTitleSettings;
+  /** Every effort each backend accepts, for the rows (as DelegateSettingsInfo.backends). */
+  backends: { id: DelegateBackendId; label: string; efforts: string[] }[];
+  /** Why each configured model can't run right now, by slot; a slot that can run is absent. */
+  unusable?: { primary?: string; fallback?: string };
+  /** Absolute path of the file, for the footnote. */
+  file: string;
+}
 
 /** Longest member label, in characters, after trimming (GroupMember.label; the server trims and
     refuses a longer one with 400, while an empty one clears the label). */

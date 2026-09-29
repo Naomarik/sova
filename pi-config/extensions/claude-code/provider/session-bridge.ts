@@ -132,10 +132,20 @@ export const MIN_FOLD_CHARS = 64 * 1024;
 /**
  * The largest fold budget. The folded history is ONE stream-json stdin line,
  * and the transport refuses a line over `maxLineBytes` (4 MiB); JSON escaping
- * and multi-byte text make bytes outrun characters, and images ride the same
- * line. Raise it only once a live probe shows the CLI takes a bigger line.
+ * and multi-byte text make bytes outrun characters. Images ride the same line
+ * but are not counted here: they get their own byte budget, whatever of the
+ * line the serialized text leaves (see foldHistory). Raise it only once a live
+ * probe shows the CLI takes a bigger line.
  */
 export const MAX_FOLD_CHARS = 2 * 1024 * 1024;
+/**
+ * Bytes of the stdin line a fold leaves unspent. The transport refuses a line
+ * when it plus whatever is still queued on the pipe passes `maxLineBytes`, and
+ * the image budget is set before the omission placeholders are written into
+ * the text, so the fold aims this far under the limit. 64 KiB is under 2% of
+ * the 4 MiB line, and holds hundreds of placeholders or a queued control request.
+ */
+export const FOLD_LINE_HEADROOM = 64 * 1024;
 
 /** What sizes a fold: the model's window and output cap, and what else shares the window. */
 export interface FoldBudgetInput {
@@ -382,6 +392,12 @@ export interface FoldedHistory {
 	images: ImageContent[];
 	/** Messages left out to fit the budget; 0 when the history fits. */
 	omitted: number;
+	/** Images of kept messages left out to fit the stdin line, each replaced by a placeholder. */
+	imagesDropped: number;
+	/** Bytes of the stdin line this fold makes; undefined when no line limit applied. */
+	bytes?: number;
+	/** Why this fold can never be sent: the current message's own images are over the line. */
+	overflow?: string;
 }
 
 /** A tool as the CLI names it: the model only knows `mcp__sova__<name>`. */
@@ -389,11 +405,70 @@ function cliToolName(name: string): string {
 	return name.startsWith(MCP_TOOL_PREFIX) ? name : `${MCP_TOOL_PREFIX}${name}`;
 }
 
+/** An image in the Anthropic source shape: stream-json user messages are Anthropic messages, not MCP's flat one. */
+function imageBlock(image: ImageContent): Record<string, unknown> {
+	return { type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } };
+}
+
+/** One stream-json user message: its text, then its images. */
+function userFrame(text: string, images: readonly ImageContent[]): Record<string, unknown> {
+	const content: Record<string, unknown>[] = [];
+	if (text) content.push({ type: "text", text });
+	for (const image of images) content.push(imageBlock(image));
+	if (!content.length) content.push({ type: "text", text: "" });
+	return { type: "user", message: { role: "user", content } };
+}
+
+/** Bytes of the stdin line the transport writes for a frame, measured as it measures them (newline included). */
+function frameBytes(frame: unknown): number {
+	return Buffer.byteLength(JSON.stringify(frame)) + 1;
+}
+
+/** What one image adds to a frame: its block and the comma before it. */
+function imageBytes(image: ImageContent): number {
+	return Buffer.byteLength(JSON.stringify(imageBlock(image))) + 1;
+}
+
+/** An image of a folded message, and what stands in its place if it has to go. */
+interface FoldImage {
+	image: ImageContent;
+	placeholder: string;
+}
+
 /** One folded pi message: its rendered text, and the images it carried. */
 interface FoldSegment {
+	/** The message as it reads with every image kept: what fitFold sizes. */
 	text: string;
-	images: ImageContent[];
+	/** The message without its image note. */
+	head: string;
+	images: FoldImage[];
+	/** Where the image note says the images came from. */
+	origin: string;
 	user: boolean;
+}
+
+/** Stands in for a dropped image whose origin is not known. */
+const FOLD_IMAGE_OMITTED = "[image omitted to fit the resend]";
+
+function imageNote(count: number, origin: string): string {
+	return `[${count} image(s) ${origin}, included below]`;
+}
+
+function foldSegment(head: string, images: FoldImage[], origin: string, user: boolean): FoldSegment {
+	return { text: images.length ? `${head}\n${imageNote(images.length, origin)}` : head, head, images, origin, user };
+}
+
+/**
+ * A segment's text once `dropped` images are left out: each dropped one is a
+ * placeholder line where the note would have counted it, and the note counts
+ * only the images still included below.
+ */
+function segmentText(segment: FoldSegment, dropped: ReadonlySet<FoldImage>): string {
+	if (!segment.images.some((image) => dropped.has(image))) return segment.text;
+	const lines = [segment.head, ...segment.images.filter((image) => dropped.has(image)).map((image) => image.placeholder)];
+	const kept = segment.images.length - lines.length + 1;
+	if (kept) lines.push(imageNote(kept, segment.origin));
+	return lines.join("\n");
 }
 
 /** Added to the header of a fold that had to leave messages out. */
@@ -405,19 +480,17 @@ const FOLD_SEP = "\n\n";
 const FOLD_MARKER_RESERVE = 256;
 
 /**
- * Keep what fits in `budget` characters, dropping the OLDEST messages first.
+ * Which messages fit in `budget` characters, dropping the OLDEST first; the
+ * indices come back in order.
  *
  * The last user message is always kept whole: it is what the model has to
  * answer. The first user message (usually the task) is kept next if it takes
  * no more than a quarter of the budget. Then the newest messages, walking back
- * from the end until the next one would not fit. The body opens with a marker
- * saying how much is missing, and a gap in the middle gets its own marker.
+ * from the end until the next one would not fit.
  */
-function fitFold(segments: readonly FoldSegment[], budget: number): { body: string; images: ImageContent[]; omitted: number } {
+function fitFold(segments: readonly FoldSegment[], budget: number): { keep: number[]; omitted: number } {
 	const total = segments.reduce((sum, segment) => sum + segment.text.length, 0) + FOLD_SEP.length * Math.max(0, segments.length - 1);
-	if (total <= budget) {
-		return { body: segments.map((segment) => segment.text).join(FOLD_SEP), images: segments.flatMap((segment) => segment.images), omitted: 0 };
-	}
+	if (total <= budget) return { keep: segments.map((_, i) => i), omitted: 0 };
 	const keep = new Set<number>();
 	let used = FOLD_MARKER_RESERVE;
 	const take = (i: number) => { keep.add(i); used += segments[i]!.text.length + FOLD_SEP.length; };
@@ -431,21 +504,82 @@ function fitFold(segments: readonly FoldSegment[], budget: number): { body: stri
 		if (!fits(i)) break;
 		take(i);
 	}
+	return { keep: [...keep].sort((x, y) => x - y), omitted: segments.length - keep.size };
+}
 
-	const omitted = segments.length - keep.size;
+/**
+ * The body of a fold: the kept messages, and when some were left out, a
+ * marker at the head saying how many and one for each gap in the middle.
+ */
+function foldBody(segments: readonly FoldSegment[], keep: readonly number[], omitted: number, dropped: ReadonlySet<FoldImage>): string {
+	if (!omitted) return keep.map((i) => segmentText(segments[i]!, dropped)).join(FOLD_SEP);
 	const parts = [`[${omitted} earlier message(s) omitted to fit the context window]`];
-	const images: ImageContent[] = [];
-	let gap = 0;
-	let seenKept = false;
-	for (let i = 0; i < segments.length; i++) {
-		if (!keep.has(i)) { gap++; continue; }
+	let previous = -1;
+	for (const i of keep) {
 		// A leading gap is what the opening marker already says.
-		if (gap && seenKept) parts.push(`[… ${gap} message(s) omitted here …]`);
-		gap = 0; seenKept = true;
-		parts.push(segments[i]!.text);
-		images.push(...segments[i]!.images);
+		if (previous >= 0 && i - previous > 1) parts.push(`[… ${i - previous - 1} message(s) omitted here …]`);
+		previous = i;
+		parts.push(segmentText(segments[i]!, dropped));
 	}
-	return { body: parts.join(FOLD_SEP), images, omitted };
+	return parts.join(FOLD_SEP);
+}
+
+/**
+ * Keep what images fit in the one stdin line beside the text, NEWEST first.
+ *
+ * `images` run oldest to newest; `current` are the ones the model is being
+ * asked about now, and are never dropped. The text is sized first, since it
+ * is the history itself; the images get what its serialized bytes leave of
+ * `lineBytes` less FOLD_LINE_HEADROOM, walking back from the newest until one
+ * does not fit, and every older one goes with it. Then the real frame is
+ * measured: placeholders lengthen the text, so while it is still over, the
+ * oldest image still kept goes too. The images are the line's bulk (21
+ * screenshots in one real session were 4.18 MB of base64 against 112K
+ * characters of text), and without this every restart of such a session
+ * failed on a line the transport refuses.
+ */
+function fitImages(
+	images: readonly FoldImage[], current: ReadonlySet<FoldImage>, render: (dropped: ReadonlySet<FoldImage>) => string, lineBytes: number,
+): { text: string; images: ImageContent[]; dropped: number; bytes?: number; overflow?: string } {
+	const dropped = new Set<FoldImage>();
+	const kept = () => images.filter((image) => !dropped.has(image)).map((image) => image.image);
+	if (!Number.isFinite(lineBytes)) return { text: render(dropped), images: kept(), dropped: 0 };
+	const target = lineBytes - FOLD_LINE_HEADROOM;
+	let room = target - frameBytes(userFrame(render(dropped), []));
+	for (const image of current) room -= imageBytes(image.image);
+	let full = false;
+	for (let i = images.length - 1; i >= 0; i--) {
+		const image = images[i]!;
+		if (current.has(image)) continue;
+		const cost = imageBytes(image.image);
+		if (!full && cost <= room) room -= cost;
+		else { full = true; dropped.add(image); }
+	}
+	let text = render(dropped);
+	let bytes = frameBytes(userFrame(text, kept()));
+	while (bytes > target) {
+		const oldest = images.find((image) => !current.has(image) && !dropped.has(image));
+		if (!oldest) break;
+		dropped.add(oldest);
+		text = render(dropped);
+		bytes = frameBytes(userFrame(text, kept()));
+	}
+	const result = { text, images: kept(), dropped: dropped.size, bytes };
+	// Only the current message's images are left beside the text. If the text
+	// alone would fit, they are what the line cannot take: say so, rather than
+	// the transport's generic refusal. Text over the line alone is not an image
+	// problem, and the transport says that as before.
+	if (bytes > lineBytes && result.images.length) {
+		const textBytes = frameBytes(userFrame(text, []));
+		if (textBytes <= lineBytes) {
+			return {
+				...result,
+				overflow: `Claude Code cannot take this request: the current message's ${result.images.length} image(s) are ${bytes - textBytes} bytes, `
+					+ `too many for the ${lineBytes}-byte limit for one stdin line beside ${textBytes} bytes of text; send fewer or smaller images`,
+			};
+		}
+	}
+	return result;
 }
 
 /**
@@ -477,67 +611,84 @@ const FOLD_HEADERS: Record<Exclude<FoldMode, "first">, string> = {
  * their signatures are gone, long tool results keep only their head and tail,
  * and the CLI's own prompt cache and tool bookkeeping start over. Images cannot
  * be folded into text, so they ride the same message as real image blocks;
- * their place in the narrative is marked inline.
+ * their place in the narrative is marked inline. They share the one stdin line
+ * of `lineBytes` with the text, so older ones may be left out, each marked
+ * where it was (see fitImages); the current message's never are.
  */
 export function foldHistory(
 	messages: readonly Message[], limits: SessionBridgeLimits, mode: FoldMode = "restarted", budget = limits.maxFoldedChars,
+	lineBytes = limits.maxLineBytes,
 ): FoldedHistory {
 	const foldable = messages.filter((m) => m.role !== "system");
 	if (mode === "first") {
 		const only = foldable.length === 1 ? foldable[0]! : undefined;
 		if (only?.role !== "user") mode = "joined";
 		else {
-			const found = imagesOf(only.content);
-			const suffix = found.length ? `\n[${found.length} image(s) attached to this message, included below]` : "";
-			return { text: `${textOf(only.content)}${suffix}`, images: found, omitted: 0 };
+			// The message being sent now: all its images are current.
+			const images = imagesOf(only.content).map((image) => ({ image, placeholder: FOLD_IMAGE_OMITTED }));
+			const segment = foldSegment(textOf(only.content), images, "attached to this message", true);
+			const fitted = fitImages(images, new Set(images), () => segment.text, lineBytes);
+			return { text: fitted.text, images: fitted.images, omitted: 0, imagesDropped: fitted.dropped, bytes: fitted.bytes, overflow: fitted.overflow };
 		}
 	}
 	const segments: FoldSegment[] = [];
 	const clip = (text: string, cap: number) =>
 		text.length <= cap ? text : `${text.slice(0, cap)}… [truncated]`;
+	/** Each tool call's arguments, so a dropped image can name the file it was read from. */
+	const callArgs = new Map<string, Record<string, unknown>>();
 
 	for (const message of messages) {
 		if (message.role === "system") continue; // Re-sent as the system prompt, not as history.
 		if (message.role === "user") {
-			const found = imagesOf(message.content);
-			const suffix = found.length ? `\n[${found.length} image(s) attached to this message, included below]` : "";
-			segments.push({ text: `## User\n${textOf(message.content)}${suffix}`, images: found, user: true });
+			const images = imagesOf(message.content).map((image) => ({ image, placeholder: FOLD_IMAGE_OMITTED }));
+			segments.push(foldSegment(`## User\n${textOf(message.content)}`, images, "attached to this message", true));
 		} else if (message.role === "assistant") {
 			const parts: string[] = [];
 			const text = textOf(message.content);
 			if (text) parts.push(`## Assistant\n${text}`);
 			for (const block of message.content) {
 				if (block.type === "toolCall") {
+					callArgs.set(block.id, block.arguments ?? {});
 					// The CLI's name, not pi's: a model that copies a bare name
 					// from the replay gets "No such tool available".
 					parts.push(`## Assistant tool call \`${cliToolName(block.name)}\` (id ${block.id})\n\`\`\`json\n${clip(JSON.stringify(block.arguments), limits.maxFoldedResultChars)}\n\`\`\``);
 				}
 			}
-			if (parts.length) segments.push({ text: parts.join(FOLD_SEP), images: [], user: false });
+			if (parts.length) segments.push(foldSegment(parts.join(FOLD_SEP), [], "", false));
 		} else if (message.role === "toolResult") {
-			const found = imagesOf(message.content);
-			const suffix = found.length ? `\n[${found.length} image(s) returned by this tool, included below]` : "";
+			const path = callArgs.get(message.toolCallId)?.path;
+			const placeholder = typeof path === "string" && path
+				? `[image omitted to fit the resend: ${message.toolName} of ${path}]`
+				: FOLD_IMAGE_OMITTED;
+			const images = imagesOf(message.content).map((image) => ({ image, placeholder }));
 			const label = message.isError ? "failed" : "returned";
 			const cap = REPORT_TOOL_RE.test(message.toolName) ? limits.maxFoldedReportChars : limits.maxFoldedResultChars;
-			segments.push({
-				text: `## Tool \`${cliToolName(message.toolName)}\` (id ${message.toolCallId}) ${label}\n${clipResult(textOf(message.content), cap)}${suffix}`,
-				images: found, user: false,
-			});
+			segments.push(foldSegment(
+				`## Tool \`${cliToolName(message.toolName)}\` (id ${message.toolCallId}) ${label}\n${clipResult(textOf(message.content), cap)}`,
+				images, "returned by this tool", false,
+			));
 		}
 	}
 
-	const { body, images, omitted } = fitFold(segments, budget);
-	const text = [
+	const { keep, omitted } = fitFold(segments, budget);
+	// Current: the last user message, which the model has to answer, and the
+	// newest message, which this turn delivers (a tool result, after a restart
+	// mid-loop). Their images are never dropped.
+	const lastUser = segments.findLastIndex((segment) => segment.user);
+	const current = new Set([lastUser, segments.length - 1].flatMap((i) => keep.includes(i) ? segments[i]!.images : []));
+	const header = FOLD_HEADERS[mode];
+	const render = (dropped: ReadonlySet<FoldImage>) => [
 		"<conversation-history>",
 		// The framing says so too, not only the marker in the body.
-		omitted ? `${FOLD_HEADERS[mode]} ${FOLD_CLIPPED}` : FOLD_HEADERS[mode],
+		omitted ? `${header} ${FOLD_CLIPPED}` : header,
 		"",
-		body,
+		foldBody(segments, keep, omitted, dropped),
 		"</conversation-history>",
 		"",
 		"Continue from here by answering the latest user message above.",
 	].join("\n");
-	return { text, images, omitted };
+	const fitted = fitImages(keep.flatMap((i) => segments[i]!.images), current, render, lineBytes);
+	return { text: fitted.text, images: fitted.images, omitted, imagesDropped: fitted.dropped, bytes: fitted.bytes, overflow: fitted.overflow };
 }
 
 /**
@@ -545,7 +696,7 @@ export function foldHistory(
  * Images are not counted: they ride beside the text, not in it.
  */
 export function foldSizeEstimate(messages: readonly Message[], limits: SessionBridgeLimits = LIMITS): number {
-	return foldHistory(messages, limits, "restarted", Number.POSITIVE_INFINITY).text.length;
+	return foldHistory(messages, limits, "restarted", Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY).text.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -879,7 +1030,10 @@ class CliSession {
 			// Tuning data, not an anomaly, so never the onDebug sink: compare
 			// `chars` with the next message_start's input tokens to check the
 			// budget's chars/4 guess against the real fold size.
-			debugLog({ event: "fold", session: this.piSessionId, chars: folded.text.length, budget, omitted: folded.omitted, images: folded.images.length });
+			debugLog({
+				event: "fold", session: this.piSessionId, chars: folded.text.length, budget, omitted: folded.omitted,
+				imagesKept: folded.images.length, imagesDropped: folded.imagesDropped, bytes: folded.bytes,
+			});
 			// A fresh child's whole context is this one message. Over the
 			// model's window it can only fail, after a full upload; say so now.
 			// A first-contact message (pi's summary request) is never shortened:
@@ -887,6 +1041,12 @@ class CliSession {
 			const overflow = windowOverflow(folded.text.length, request);
 			if (overflow) {
 				this.failTurn(overflow);
+				return;
+			}
+			// Everything older that could go already has; what is left is the
+			// current message's images, which the line cannot take.
+			if (folded.overflow) {
+				this.failTurn(folded.overflow);
 				return;
 			}
 			this.sendUserMessage(folded.text, folded.images);
@@ -915,17 +1075,9 @@ class CliSession {
 	 * the child never heard it, so waiting for its answer would hang forever.
 	 */
 	private sendUserMessage(text: string, images: readonly ImageContent[]): void {
-		const content: Record<string, unknown>[] = [];
-		if (text) content.push({ type: "text", text });
-		for (const image of images) {
-			// stream-json user messages are Anthropic messages, so images use the
-			// Anthropic source shape rather than MCP's flat one.
-			content.push({ type: "image", source: { type: "base64", media_type: image.mimeType, data: image.data } });
-		}
-		if (!content.length) content.push({ type: "text", text: "" });
-		const frame = { type: "user", message: { role: "user", content } };
+		const frame = userFrame(text, images);
 		if (this.transport?.send(frame)) return;
-		const bytes = Buffer.byteLength(JSON.stringify(frame)) + 1;
+		const bytes = frameBytes(frame);
 		this.failTurn(bytes > this.limits.maxLineBytes
 			? `Claude Code cannot take this request: the message is ${bytes} bytes, over the ${this.limits.maxLineBytes}-byte limit for one stdin line`
 			: "Claude Code cannot take this request: the CLI's stdin refused the message");

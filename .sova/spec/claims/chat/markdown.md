@@ -157,8 +157,8 @@ Don't import a highlight.js stylesheet. These rules are the whole theme, and the
 A fenced block whose info string is `vis <kind>` is a **drawing**, not code. Sova draws it with its
 own Solid/SVG code (`src/vis/`): no diagram or chart dependency, and **model HTML or SVG never
 enters the app's DOM**. Assistant-text rows only (§chat/markdown's scope), and the replies on share
-and owner pages, which draw only `chart`, `flow`, `matrix`, `timeline`, `tree`, `steps` and
-`layers`, with no Source or Copy and no frames, and show one quiet line instead of a broken
+and owner pages, which draw only `chart`, `flow`, `matrix`, `timeline`, `tree`, `steps`,
+`wireframe` and `layers`, with no Source or Copy and no frames, and show one quiet line instead of a broken
 block's source (§app.baton/outsider-view).
 
 - **Kinds.** One registry (`src/vis/registry.ts`) lists every fence word; nothing else is drawn:
@@ -174,6 +174,7 @@ block's source (§app.baton/outsider-view).
   | `vis chart` | bar (grouped via `series:`, stacked), line, scatter; linear or log axis; parts (§chat.markdown/vis-parts) | row label |
   | `vis timeline` | dated events in order | the row's date or label |
   | `vis steps` | scenario chains with a status per row (§chat.markdown/vis-steps) | row label |
+  | `vis wireframe` | low-fi screens: phone or desktop frames, wireflow arrows between screens (§chat.markdown/vis-wireframe) | a block's first text, a screen name or a block word |
   | `vis matrix` | a comparison grid (yes / no / partial / text cells) | row label |
   | `vis code` | an annotated snippet: highlighted, numbered, marked lines with notes | line number or range |
   | `vis html`, `vis svg` | free-form, in a sandboxed frame (below) | — |
@@ -352,6 +353,76 @@ A kind for scenarios or journeys as chains, each with a status. HTML, `src/vis/k
   words, an arrow other than `->`, an empty or unlabelled lane, more than 10 steps in a row, 16 rows
   or 6 lanes.
 - **Height.** Estimated from steps.css' fixed metrics before it draws.
+
+## §chat.markdown/vis-wireframe — `vis wireframe`: low-fi screens and wireflows
+
+A kind for a screen's layout: what sits where on a phone or desktop page, one or more screens, the
+taps between them, before/after and states. DOM blocks with an SVG arrow overlay,
+`src/vis/kinds/wireframe/`; the parser is DOM-free (the server's vis check runs it).
+
+- **Syntax.** Settings `title:`, `caption:`, `device: phone|desktop` (default phone). Then one block
+  per line: `<word> ["text"]… [words] [-> "Screen"]`. A line indented more than the one above sits
+  inside the nearest less-indented line, so any indent width works. `screen "Name" [phone|desktop]`
+  starts a screen (optional for one screen); `== Name ==` does too, and a `screen` line right after
+  it names the same screen. The strings fill the block's slots left to right; the words after them,
+  in any order, are a tone, `on` (checked, selected), `wide`, and for `chart` `bar|line|pie`. No ids:
+  an arrow names a screen; `mark` names a block by its first text (first in the screen it is
+  written under, then anywhere), a screen by its name, or a block word.
+- **Vocabulary.** The words the guide teaches: `header`, `tabs`, `tabbar`, `sidebar`, `footer`;
+  `row`, `col`, `grid`, `card`, `list`, `item`, `modal`, `sheet`; `heading`, `text`, `image`,
+  `avatar`, `icon`, `badge`, `stat`, `chart`, `table`, `progress`; `button`, `link`, `input`,
+  `search`, `select`, `checkbox`, `toggle`, `radio`; `empty`, `loading`, `alert`, `toast`.
+  `divider` draws but isn't taught. Common synonyms map silently (`navbar` → header, `dialog` → modal, `switch` →
+  toggle, `primary` → accent, …). A word that is none of these draws as a plain box tagged with the
+  word, which may hold blocks.
+- **Page chrome.** A `header` sits at the top of its screen, its title first and the blocks inside
+  it at its right; a back, menu or left-arrow `icon` goes before the title. On a desktop screen
+  whose first block is a `header` and which has a `sidebar`, the header spans the frame, with the
+  sidebar and the page below it.
+  A `heading`'s first blocks, when they are a `button`, `link` or `icon`, sit at its right; the
+  rest of what it holds is its section, below it. `tabbar` and
+  `footer` sit at the bottom.
+- **Screens.** Up to 6, each in a phone frame (240–300px) or a desktop frame (560–760px), both
+  fluid with the figure, side by side in a strip. A frame never pans inside itself:
+  - When the strip fits at those widths, it draws as is.
+  - Otherwise, several screens that fit at 75% or more of their narrowest widths draw scaled as a
+    whole, with no scroll.
+  - Otherwise each frame wider than the figure is scaled down to fit it (small text is accepted: the
+    layout is the message), and several screens sit in a sideways scroll-snap strip that scrolls
+    only between screens. A row of screen buttons ("1 Before", "2 After") sits above it, one line,
+    with ‹ › at its end; in a figure 420px wide or less it shows the numbers and the current
+    screen's name, without ‹ ›. It appears only while the strip scrolls. A figure opens on screen 1.
+    The current screen (`aria-current`) is the one picked by a button, chip or ‹ › while it stays
+    whole in view (a scroll, swipe or key by the reader drops the pick), otherwise the one the reader has scrolled to, and the last at the strip's end;
+    ‹ › step from it, moving to a screen already in view without scrolling.
+  A `modal` or `sheet` draws over its screen with a scrim; a `toast` floats over it without one.
+- **Wireflow.** `-> "Name"` at the end of a block's line (or alone on the next line, for the block
+  above it, or for the screen before any block) is the screen a tap opens; `"A" -> "B"` alone on a line links two screens. It draws a "→ 2 Name"
+  chip on the block, a button that scrolls to and focuses that screen, and an SVG arrow from the
+  block to the screen: a curve into the next screen, and a backward or skipping one through a lane
+  beside the frames, never across a screen's content; arrow ends spread along the target's edge,
+  and in a dense diagram (more than five backward or skipping arrows) lanes are shared. A scrolling strip narrower than 600px draws
+  no arrows; the chips carry the targets. A name matches a screen exactly, else by a prefix that
+  only one other screen has, else by its number. An arrow to a screen not drawn, or to a prefix
+  several screens share (with a warning), is a "→ Name" chip with no arrow; an arrow to its own
+  screen is dropped.
+- **Hit targets.** The chips and the screen buttons are real controls with a 44px target. A chip's
+  target scales with its frame (to 33px at the smallest whole-strip scale, 0.75); where frames are
+  scaled down one at a time the screen buttons, never scaled, are the 44px route to every screen.
+  The drawn controls are pictures and stay small.
+- **Look.** Theme tokens only, light and dark; no gradients. Icons come from Sova's own icon set, never a
+  library (an unknown name, or one the set lacks, draws a neutral dot); an image is a crossed box with its text. Marks take the shared
+  emphasis ring and number (§chat.markdown/visuals).
+- **Warnings, not errors.** Unknown words, stray words, unknown settings, a block under a leaf
+  (drawn after it), limits (6 screens, 80 blocks, 6 levels, 6 tabs or table columns, 12 table
+  rows), a screen-to-screen line (`"A" -> "B"`) naming a screen not drawn (dropped), all draw
+  with a warning.
+- **Errors.** The kind's own: a block line that starts with neither a word nor a "text" (ASCII
+  art, HTML), an unclosed quote on a block line (a quote that closes on a later line, spanning at most 12 lines
+  in all, is joined into one text, with a warning), and nothing to draw; plus a malformed `mark` line,
+  as in every kind (§chat.markdown/visuals). Settings are read as text and never fail.
+- **Height.** Reserved before it draws from wireframe.css' metrics (frame widths, nav row, row
+  wrapping), within about 15% of the rendered height, so a drawing doesn't shift the thread.
 
 ## §chat.markdown/accessibility — Accessibility
 

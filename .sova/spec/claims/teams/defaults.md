@@ -18,8 +18,9 @@ they did before this surface existed.
   resumeMarginMinutes}, instructions}`, `handover {retireTimeoutMinutes}`. A worker tuple is
   `{backend, model, effort?}`; `fallback` is a tuple or `null`. A key the file leaves out takes
   the built-in default (coordinator `claude-code`/`opus[1m]`/`medium`, monitor
-  `claude-code`/`haiku`/`medium`, context 60 %, every 10 minutes, pause at 90 %, resume margin 5
-  minutes, retire after 10 minutes); a key it states must be valid.
+  `pi`/`ollama-cloud/deepseek-v4.1-flash` with fallback `claude-code`/`sonnet`/`low`, context 60 %,
+  every 10 minutes, pause at 90 %, resume margin 5 minutes, retire after 10 minutes); a key it
+  states must be valid.
 - **Strict.** Anything else is **malformed**: unparseable JSON, a version other than 1, an
   unknown key, a wrong type, a backend other than `pi` or `claude-code` (only those load member
   tools), a pi model not in `provider/id` form, an effort outside

@@ -545,7 +545,7 @@ for that call with a warning line in the result; the extension never writes the 
 ```json
 {"version":1,
  "coordinator":{"enabled":true,"role":"coordinator","primary":{"backend":"claude-code","model":"opus[1m]","effort":"medium"},"fallback":null,"instructions":""},
- "monitor":{"enabled":true,"role":"monitor","primary":{"backend":"claude-code","model":"haiku","effort":"medium"},"fallback":null,"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
+ "monitor":{"enabled":true,"role":"monitor","primary":{"backend":"pi","model":"ollama-cloud/deepseek-v4.1-flash","effort":"low"},"fallback":{"backend":"claude-code","model":"sonnet","effort":"low"},"contextPct":60,"everyMinutes":10,"usage":{"enabled":true,"pausePct":90,"resumeMarginMinutes":5},"instructions":""},
  "handover":{"retireTimeoutMinutes":10}}
 ```
 

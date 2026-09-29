@@ -16,7 +16,7 @@ import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { type Api, type AssistantMessageEvent, type Model, normalizeContext, Type, type Message, type Tool } from "@earendil-works/pi-ai";
 import {
-	claudeSessionId, FOLD_CHARS_PER_TOKEN, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, MIN_FOLD_CHARS,
+	claudeSessionId, FOLD_CHARS_PER_TOKEN, FOLD_LINE_HEADROOM, foldBudgetChars, foldHistory, foldSizeEstimate, getSessionBridge, isPrefix, LIMITS, MAX_FOLD_CHARS, MIN_FOLD_CHARS,
 	resetSessionBridge, SessionBridge, transcriptFingerprint, uuidv5, windowOverflow,
 } from "./session-bridge.ts";
 import { streamClaudeCode } from "./stream.ts";
@@ -1617,6 +1617,120 @@ test("images of dropped messages are dropped with them; kept ones stay in order"
 	assert.deepEqual(folded.images.map((i) => i.data), ["NEW"]);
 });
 
+/** A `read` of `path` that returned one image, as its call and its result. */
+function readImage(id: string, path: string, data: string): Message[] {
+	return [
+		assistantWithCall(id, "read", { path }),
+		{ role: "toolResult", toolCallId: id, toolName: "read", content: [{ type: "text", text: "Read image file [image/png]" }, { type: "image", data, mimeType: "image/png" }], isError: false, timestamp: 3 } as Message,
+	];
+}
+const imageData = (tag: string, size: number) => `${tag}${"A".repeat(size - tag.length)}`;
+/** Bytes one image adds to the stdin line: its Anthropic block and a comma. */
+const imageCost = (data: string) => Buffer.byteLength(JSON.stringify({ type: "image", source: { type: "base64", media_type: "image/png", data } })) + 1;
+/** Bytes of the stdin line for a fold, as the transport counts them. */
+const lineOf = (folded: { text: string; images: { data: string; mimeType: string }[] }) => Buffer.byteLength(JSON.stringify({
+	type: "user", message: { role: "user", content: [{ type: "text", text: folded.text }, ...folded.images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mimeType, data: i.data } }))] },
+})) + 1;
+
+test("a resend with 21 screenshots over the 4 MiB line keeps the newest and the new message's image, and fits", () => {
+	// The real failure: 21 read screenshots (4.18 MB of base64) plus ~112K characters of text made a 4,409,161-byte line.
+	const history: Message[] = [user(`TASK ${"t".repeat(2_000)}`)];
+	for (let i = 0; i < 20; i++) history.push(...readImage(`toolu_${i}`, `/shots/${i}.png`, imageData(`SHOT-${i}-`, 199_000)), assistantWithCall(`toolu_x${i}`, "bash", { command: "x".repeat(5_000) }));
+	history.push({ role: "user", content: [{ type: "text", text: "and this one?" }, { type: "image", data: imageData("USER-", 199_000), mimeType: "image/png" }], timestamp: 9 });
+	const all = foldHistory(history, LIMITS, "restarted", MAX_FOLD_CHARS, Number.POSITIVE_INFINITY);
+	assert.ok(lineOf(all) > LIMITS.maxLineBytes, `the unbudgeted fold is over the line: ${lineOf(all)}`);
+	const folded = foldHistory(history, LIMITS, "restarted", MAX_FOLD_CHARS);
+	assert.equal(folded.overflow, undefined);
+	assert.equal(folded.bytes, lineOf(folded));
+	assert.ok(folded.bytes! <= LIMITS.maxLineBytes - FOLD_LINE_HEADROOM, `${folded.bytes}`);
+	assert.equal(folded.images.at(-1)!.data.slice(0, 5), "USER-", "the new message's image is kept, last");
+	const kept = folded.images.slice(0, -1).map((i) => Number(/^SHOT-(\d+)-/.exec(i.data)![1]));
+	assert.ok(kept.length >= 15, `${kept.length}`);
+	assert.deepEqual(kept, Array.from({ length: kept.length }, (_, n) => 20 - kept.length + n), "the newest screenshots, in order");
+	assert.equal(folded.imagesDropped, 20 - kept.length);
+	for (let i = 0; i < 20; i++) {
+		const placeholder = `[image omitted to fit the resend: read of /shots/${i}.png]`;
+		const result = new RegExp(`\\(id toolu_${i}\\) returned\\nRead image file \\[image/png\\]\\n(.*)`).exec(folded.text)![1];
+		assert.equal(result, kept.includes(i) ? "[1 image(s) returned by this tool, included below]" : placeholder, `result ${i}`);
+	}
+	assert.match(folded.text, /## User\nand this one\?\n\[1 image\(s\) attached to this message, included below\]/);
+});
+
+test("a dropped image with no known origin gets the generic placeholder, and a mixed note counts only what is kept", () => {
+	const limits = { ...LIMITS, maxLineBytes: FOLD_LINE_HEADROOM + 40_000 };
+	const history: Message[] = [
+		{ role: "user", content: [{ type: "text", text: "old" }, { type: "image", data: imageData("OLD-", 30_000), mimeType: "image/png" }], timestamp: 1 },
+		{ role: "toolResult", toolCallId: "toolu_orphan", toolName: "screenshot", content: [
+			{ type: "text", text: "two" }, { type: "image", data: imageData("A-", 10_000), mimeType: "image/png" }, { type: "image", data: imageData("B-", 10_000), mimeType: "image/png" },
+		], isError: false, timestamp: 3 } as Message,
+		user("now"),
+	];
+	const folded = foldHistory(history, limits);
+	assert.deepEqual(folded.images.map((i) => i.data.slice(0, 2)), ["A-", "B-"]);
+	assert.match(folded.text, /## User\nold\n\[image omitted to fit the resend\]\n\n/);
+	assert.match(folded.text, /returned\ntwo\n\[2 image\(s\) returned by this tool, included below\]/);
+	// Tighter: the newer of the two stays, the older becomes a placeholder beside a note of one.
+	const tight = foldHistory(history, { ...limits, maxLineBytes: FOLD_LINE_HEADROOM + 13_000 });
+	assert.deepEqual(tight.images.map((i) => i.data.slice(0, 2)), ["B-"]);
+	assert.match(tight.text, /returned\ntwo\n\[image omitted to fit the resend\]\n\[1 image\(s\) returned by this tool, included below\]/);
+	assert.equal(tight.imagesDropped, 2);
+});
+
+test("the current message's images are never dropped, whether it is the last user message or a tool result", () => {
+	const limits = { ...LIMITS, maxLineBytes: FOLD_LINE_HEADROOM + 100_000 };
+	const older = [...readImage("toolu_1", "/a.png", imageData("OLDER-", 20_000)), ...readImage("toolu_2", "/b.png", imageData("NEWER-", 20_000))];
+	const mine = { role: "user", content: [{ type: "text", text: "look" }, ...[1, 2, 3].map((n) => ({ type: "image", data: imageData(`MINE-${n}-`, 30_000), mimeType: "image/png" }))], timestamp: 9 } as Message;
+	const folded = foldHistory([user("go"), ...older, mine], limits);
+	assert.deepEqual(folded.images.map((i) => i.data.slice(0, 7)), ["MINE-1-", "MINE-2-", "MINE-3-"], "all three kept though they leave no room");
+	assert.equal(folded.imagesDropped, 2);
+	assert.equal(folded.overflow, undefined, "they fit, so nothing fails");
+	assert.match(folded.text, /\[image omitted to fit the resend: read of \/a\.png\][\s\S]*\[image omitted to fit the resend: read of \/b\.png\]/);
+	// A restart mid-loop delivers a tool result: its image is current, and so is the last user message's.
+	const [call, result] = readImage("toolu_3", "/c.png", imageData("RESULT-", 30_000));
+	const midLoop = foldHistory([user("go"), ...older, mine, call!, result!], { ...LIMITS, maxLineBytes: FOLD_LINE_HEADROOM + 60_000 });
+	assert.deepEqual(midLoop.images.map((i) => i.data.slice(0, 7)), ["MINE-1-", "MINE-2-", "MINE-3-", "RESULT-"]);
+	assert.equal(midLoop.imagesDropped, 2);
+});
+
+test("the current message's images alone over the line fail with an error that says so", () => {
+	const limits = { ...LIMITS, maxLineBytes: FOLD_LINE_HEADROOM + 50_000 };
+	const mine = { role: "user", content: [{ type: "text", text: "look" }, ...[1, 2].map((n) => ({ type: "image", data: imageData(`MINE-${n}-`, 60_000), mimeType: "image/png" }))], timestamp: 9 } as Message;
+	const restarted = foldHistory([user("go"), ...readImage("toolu_1", "/a.png", imageData("OLD-", 1_000)), mine], limits);
+	assert.equal(restarted.imagesDropped, 1, "everything droppable went first");
+	assert.match(restarted.overflow ?? "", /^Claude Code cannot take this request: the current message's 2 image\(s\) are \d+ bytes, too many for the 115536-byte limit for one stdin line/);
+	const first = foldHistory([mine], limits, "first");
+	assert.deepEqual(first.images.map((i) => i.data.slice(0, 7)), ["MINE-1-", "MINE-2-"]);
+	assert.match(first.overflow ?? "", /the current message's 2 image\(s\)/);
+	// Text over the line alone is not the images' fault: the transport's generic refusal stands.
+	assert.equal(foldHistory([mine], { ...limits, maxLineBytes: 10 }, "first").overflow, undefined);
+	// A first message that fits is sent as-is, images and all.
+	const fits = foldHistory([mine], { ...LIMITS }, "first");
+	assert.equal(fits.overflow, undefined);
+	assert.equal(fits.text, "look\n[2 image(s) attached to this message, included below]");
+	assert.equal(fits.imagesDropped, 0);
+});
+
+test("when escaped placeholders push the measured line over, older images go until it fits", () => {
+	// Backslashes double in JSON, so each placeholder costs twice its characters, and the
+	// image budget was set before any placeholder was written.
+	const path = `C:${"\\".repeat(3_000)}shot.png`;
+	const history: Message[] = [user("go")];
+	for (let i = 0; i < 12; i++) history.push(...readImage(`toolu_${i}`, `${path}${i}`, imageData(`IMG-${i}-`, 20_000)));
+	history.push(user("now"));
+	const cost = imageCost(imageData("IMG-0-", 20_000));
+	const text = foldHistory(history, LIMITS, "restarted", LIMITS.maxFoldedChars, Number.POSITIVE_INFINITY).text;
+	const textLine = lineOf({ text, images: [] });
+	// Room for exactly 5 images by the text-first estimate.
+	const maxLineBytes = FOLD_LINE_HEADROOM + textLine + 5 * cost + 1_000;
+	const folded = foldHistory(history, { ...LIMITS, maxLineBytes });
+	assert.ok(folded.imagesDropped > 7, `the estimate dropped 7; the measured line dropped ${folded.imagesDropped}`);
+	assert.equal(folded.bytes, lineOf(folded));
+	assert.ok(folded.bytes! <= maxLineBytes - FOLD_LINE_HEADROOM, `${folded.bytes} > ${maxLineBytes - FOLD_LINE_HEADROOM}`);
+	const kept = folded.images.map((i) => Number(/^IMG-(\d+)-/.exec(i.data)![1]));
+	assert.deepEqual(kept, Array.from({ length: kept.length }, (_, n) => 12 - kept.length + n), "still the newest");
+	assert.equal(folded.overflow, undefined);
+});
+
 test("folded tool calls and results carry the CLI's full tool names, never doubled", () => {
 	const folded = foldHistory([
 		user("go"),
@@ -1817,6 +1931,40 @@ test("an oversized message fails the turn through stream.ts as an error pi repor
 	assert.equal(last?.type, "error");
 	assert.match(last?.type === "error" ? last.error.errorMessage ?? "" : "", /stdin line/);
 	await bridge.disposeAll();
+});
+
+test("a resend over the line drops old images and is sent; the current message's images alone over it fail at once", { timeout: 8000 }, async () => {
+	const limits = { maxLineBytes: FOLD_LINE_HEADROOM + 100_000 };
+	const history: Message[] = [user("go")];
+	for (let i = 0; i < 20; i++) history.push(...readImage(`toolu_${i}`, `/shots/${i}.png`, imageData(`SHOT-${i}-`, 20_000)));
+	history.push({ role: "user", content: [{ type: "text", text: "now" }, { type: "image", data: imageData("USER-", 20_000), mimeType: "image/png" }], timestamp: 9 });
+	const { bridge, children } = harness({ limits });
+	await collectAfter(bridge.runTurn(request(history)), async () => {
+		const cli = await child(children, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+		const sent = await cli.waitFor((f) => f.type === "user");
+		assert.ok(Buffer.byteLength(JSON.stringify(sent)) + 1 <= limits.maxLineBytes - FOLD_LINE_HEADROOM);
+		const images = sent.message.content.filter((c: any) => c.type === "image").map((c: any) => c.source.data.slice(0, 8));
+		assert.equal(images.at(-1), "USER-AAA");
+		assert.ok(images.length > 1 && images.length < 21, `${images.length}`);
+		assert.match(sent.message.content[0].text, /\[image omitted to fit the resend: read of \/shots\/0\.png\]/);
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	await bridge.disposeAll();
+
+	const big = { role: "user", content: [{ type: "text", text: "look" }, { type: "image", data: imageData("BIG-", 170_000), mimeType: "image/png" }], timestamp: 9 } as Message;
+	const { bridge: failing, children: failingChildren } = harness({ limits });
+	const frames = await collectAfter(failing.runTurn(request([...history.slice(0, -1), big], { sessionId: "pi-session-big" })), async () => {
+		const cli = await child(failingChildren, 1);
+		await cli.waitFor((f) => f.request?.subtype === "initialize");
+		await cli.handshake();
+	});
+	const last = frames.at(-1);
+	assert.equal(last?.type === "result" && last.outcome, "error");
+	assert.match(last?.type === "result" ? last.message ?? "" : "", /the current message's 1 image\(s\) are \d+ bytes, too many for the 165536-byte limit for one stdin line/);
+	assert.ok(!failingChildren[0]!.sent.some((f) => f.type === "user"), "nothing was sent");
+	await failing.disposeAll();
 });
 
 test("a request over the model's window fails at once with the sizes, not after an upload", { timeout: 8000 }, async () => {

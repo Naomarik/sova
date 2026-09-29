@@ -169,9 +169,13 @@ its first usable login in the device's order.
   every hello, only on a device with several logins (a hello clears the last one), and whenever a
   `claude-login` entry is appended, so a failover moves the indicator in the same turn. A switch
   still shows its note row.
-- **TUI.** The usage-status footer shows the Claude usage of the session's login (its newest
-  `claude-login` entry): an added login's own reading from `claudeAccounts`, else Claude Code's
-  own. Its `/usage` screen lists Claude Code's own login and then each added one, each titled
+- **TUI.** The usage-status footer shows the Claude usage of the session's login: its newest
+  `claude-login` entry, else — before the session's first Claude turn — the login this device
+  would start it on now (its first usable login, as above; Claude Code's own only when the
+  registry can't be read). An added login's reading is its own entry in `claudeAccounts`;
+  `default`'s is the cache's `claude`.
+- **Usage readouts.** The sidebar foot's usage glance and the Usage page's summary lead read the
+  same login for the chat on screen (§app.insights/sidebar-foot). Its `/usage` screen lists Claude Code's own login and then each added one, each titled
   "Claude · {email}" with its plan.
 
 ## §app.claude-logins/accounts-tab — Settings → Accounts

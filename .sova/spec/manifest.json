@@ -58,7 +58,19 @@
       "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/insights.ts",
+        "src/lib/insights.test.ts",
+        "src/App.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/GroupView.tsx"
+      ],
+      "requires": [
+        "§app.claude-logins/active-login",
+        "§app.insights/usage-cards",
+        "§app.resource-monitor/entry-button",
+        "§app/settings-dialog"
       ]
     },
     "§app.insights/subagent-cards": {
@@ -117,7 +129,8 @@
         "server/insights.ts",
         "shared/protocol.ts",
         "src/design/base.css",
-        "server/insights-claude-logins.test.ts"
+        "server/insights-claude-logins.test.ts",
+        "src/App.tsx"
       ]
     },
     "§app.insights/usage-page-and-agents-page": {
@@ -254,7 +267,13 @@
         "src/lib/session-selection.ts",
         "src/lib/session-selection.test.ts",
         "src/components/SelectionToolbar.tsx",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "server/session-titles.ts",
+        "server/session-titles.test.ts",
+        "server/sessions-index.ts",
+        "server/index.ts",
+        "server/overseer-tools.ts",
+        "shared/protocol.ts"
       ]
     },
     "§app.session-list/states": {
@@ -3405,7 +3424,8 @@
         "pi-config/extensions/subagents/member-mcp.ts",
         "pi-config/extensions/subagents/coordination.ts",
         "pi-config/extensions/subagents/team-defaults.ts",
-        "pi-config/extensions/subagents/README.md"
+        "pi-config/extensions/subagents/README.md",
+        "server/team-defaults.test.ts"
       ]
     },
     "§teams.defaults/handover": {
@@ -3719,7 +3739,15 @@
         "src/lib/summarizer-draft.ts",
         "src/lib/summarizer-form.ts",
         "src/lib/settings-draft.ts",
-        "server/topic-outline-settings.ts"
+        "server/topic-outline-settings.ts",
+        "server/topic-outline-settings.test.ts",
+        "src/components/SessionTitleSettings.tsx",
+        "src/lib/session-title-settings-draft.ts",
+        "src/lib/session-title-settings-form.ts",
+        "src/components/SettingsDialog.tsx",
+        "server/session-titles-settings.ts",
+        "server/session-titles-settings.test.ts",
+        "src/lib/session-title-settings-form.test.ts"
       ]
     },
     "§app.baton/attribution": {
@@ -3928,7 +3956,8 @@
         "src/share/thread.tsx",
         "src/share/thread.css",
         "src/vis/share-markdown.test.ts",
-        "src/vis/share-views.ts"
+        "src/vis/share-views.ts",
+        "src/share/vis-icons.ts"
       ],
       "requires": [
         "§app.organizations/privacy"
@@ -7005,7 +7034,9 @@
         "src/design/base.css",
         "pi-config/extensions/usage-status/index.ts",
         "server/claude-login-state.test.ts",
-        "src/lib/claude-login.test.ts"
+        "src/lib/claude-login.test.ts",
+        "pi-config/extensions/usage-status/fetch.ts",
+        "pi-config/extensions/usage-status/fetch.test.ts"
       ]
     },
     "§app.claude-logins/add-remove": {
@@ -7103,6 +7134,50 @@
       "code": [
         "pi-config/extensions/claude-code/accounts.ts",
         "pi-config/extensions/claude-code/README.md"
+      ]
+    },
+    "§app.session-list/auto-titles": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/selecting-several-sessions",
+        "§app.settings-dialog/summaries",
+        "§app.decisions/push",
+        "§mesh.remote-sessions/list"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-autotitle.ts",
+        "server/session-autotitle.test.ts",
+        "server/decide-llm.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/auto-title.ts",
+        "src/lib/auto-title.test.ts",
+        "src/lib/api.ts",
+        "src/components/Sidebar.tsx",
+        "src/app.css"
+      ]
+    },
+    "§chat.markdown/vis-wireframe": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/wireframe/parse.ts",
+        "src/vis/kinds/wireframe/parse.test.ts",
+        "src/vis/kinds/wireframe/layout.ts",
+        "src/vis/kinds/wireframe/layout.test.ts",
+        "src/vis/kinds/wireframe/icons.ts",
+        "src/vis/kinds/wireframe/View.tsx",
+        "src/vis/kinds/wireframe/wireframe.css",
+        "src/vis/registry.ts",
+        "src/vis/views.ts",
+        "src/vis/share-views.ts",
+        "pi-config/extensions/mode/vis-mode.md"
       ]
     }
   },

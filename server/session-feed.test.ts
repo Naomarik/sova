@@ -89,6 +89,8 @@ describe("D3: list_changed, for what the marks can't carry", () => {
     assert.equal(listChanged(map(base), map([row("a", { busy: true }), row("b")])), true);
     assert.equal(listChanged(map(base), map([row("a", { activity: { state: "working" } }), row("b")])), true);
     assert.equal(listChanged(map(base), map([row("a", { lastActiveAt: "later" }), row("b")])), true);
+    // A stored title changes in Sova's title store, not the file: the automatic namer's, the Overseer's.
+    assert.equal(listChanged(map(base), map([row("a", { title: "Named by Sova", titleBy: "auto" }), row("b")])), true);
     // A baton row changes in the org's registry/roster, not its file: an approved referral, a new holder.
     const held = { holder: "Tony", state: "open" as const };
     const waiting = { ...held, proposals: [{ personId: "p_b", name: "Bob", role: "IT", by: "Tony", since: 1 }] };

@@ -590,11 +590,11 @@ test("SpecWriteGuard (M2-B-s2-1's shape): a rebase after evidence and a hand edi
 		const reset = await bash("h", `git -C ${wt} reset -q --hard HEAD~2`, () => git(wt, "reset", "-q", "--hard", "HEAD~2"));
 		// A census that didn't see the guard's line relays census --changed orphanedEvidence, once.
 		const relayed = (await later.after({ cwd: wt, toolName: "bash", input: {} })).text ?? "";
-		assert.match(relayed, new RegExp(`never rebase after evidence \\(PROMOTE\\.md\\): draft d's evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. If a rebase is under way: Abort it \\(\`git rebase --abort\`\\) and merge master in instead\\. If not: It finished: re-record evidence on the commit HEAD has, and from now on merge master in, never rebase\\.`));
+		assert.match(relayed, new RegExp(`never rebase after evidence \\(PROMOTE\\.md\\): draft d's evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. If a rebase is under way: Abort it \\(\`git rebase --abort\`\\) and merge master in instead\\. If not: find the pre-rebase tip in \`git reflog\`\\. With no uncommitted changes \\(commit them first\\), restore the old tip: \`git reset --hard <that tip>\`; then merge master in instead\\.`));
+		assert.doesNotMatch(relayed, /ORIG_HEAD/);
 		put(wt, "src/c.ts", "c\n");
 		assert.doesNotMatch((await later.after({ cwd: wt, toolName: "bash", input: {} })).text ?? "", /is no longer on this branch/, "said once");
-		assert.match(reset ?? "", new RegExp(`evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. It finished: re-record evidence on the commit HEAD has, and from now on merge master in, never rebase\\.$`));
-		assert.doesNotMatch(reset ?? "", /reset --hard/, "no destructive advice");
+		assert.match(reset ?? "", new RegExp(`evidence commit ${code.slice(0, 12)} \\(§a/x\\) is no longer on this branch\\. With no uncommitted changes \\(commit them first\\), restore the old tip: \`git reset --hard ${tip}\`; then merge master in instead\\.$`));
 		// A commit on top keeps the evidence: silent.
 		git(wt, "reset", "-q", "--hard", tip);
 		assert.equal(await bash("k", `cd ${wt} && git commit -q --allow-empty -m more`, () => git(wt, "commit", "-q", "--allow-empty", "-m", "more")), undefined);

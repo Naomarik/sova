@@ -4,8 +4,7 @@
     [cljs.test :refer [deftest is testing]]
     [cljs.reader :as reader]
     [com.fulcrologic.statecharts.algorithms.v20150901-validation :as validation]
-    [sova.org-charts.charts.project :as project]
-    [sova.org-charts.charts.work-item :as work-item]
+    [sova.org-charts.charts.registry :as registry]
     [sova.org-charts.engine.bounded :as bounded]
     [sova.org-charts.engine.core :as core]
     [sova.org-charts.engine.probe :as probe]))
@@ -353,7 +352,7 @@
 
 (deftest the-charts-pass-the-librarys-validation
   (testing "the engine registers charts without the library's check (fixed at build time): this is that check"
-    (doseq [[nm c] {"project" project/chart "work-item" work-item/chart "engine-probe" probe/chart}]
+    (doseq [[nm c] (assoc (update-vals registry/charts :chart) "engine-probe" probe/chart)]
       (is (= [] (vec (validation/problems c))) nm))))
 
 (deftest a-snapshot-is-plain-edn-and-a-uuid-round-trips

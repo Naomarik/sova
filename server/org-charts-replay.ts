@@ -974,7 +974,18 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     rep.coverage.lookChecks++;
     const realKinds = (s.reasons ?? []).map((r) => REASON_KIND[r.kind] ?? r.kind);
     if (s.runAll) await send("run-now", S.watch, "operator/run-now", {}, env("operator"));
-    const match = world.looks.find((l) => !l.matched && l.at >= now - LOOK_EARLY && l.at <= now);
+    let match = world.looks.find((l) => !l.matched && l.at >= now - LOOK_EARLY && l.at <= now);
+    // The chart's looks start on 20 s ticks of its own phase (tick-origin 0), today's on the ticker's: a look due
+    // on the chart's next tick is this one. The replay's clock moves to it (at most one tick).
+    if (!match && world.configuration(S.watch).includes("waiting")) {
+      const until = now + TICK_MS;
+      for (let due = world.nextDueAt(); !match && due !== null && due <= until; due = world.nextDueAt()) {
+        now = Math.max(due, now);
+        world.fireDue();
+        await settleWorld();
+        match = world.looks.find((l) => !l.matched && l.at >= now - LOOK_EARLY - TICK_MS && l.at <= now);
+      }
+    }
     if (!match) {
       const d = world.data(S.watch);
       const pendingKinds = ((d.reasons as { kind?: string }[] | undefined) ?? []).map((r) => String(r.kind));

@@ -364,8 +364,10 @@ export function readIdentityFile(file: string): ClaudeLoginIdentity | null {
 	put("email", a.emailAddress);
 	put("orgUuid", a.organizationUuid);
 	put("orgName", a.organizationName);
-	put("plan", a.subscriptionType ?? a.billingType);
-	put("rateLimitTier", a.organizationRateLimitTier ?? a.rateLimitTier);
+	// The plan as `claude auth status` names it ("max"): subscriptionType, else the organization's
+	// type without its `claude_` prefix. `billingType` ("stripe_subscription") is how it is paid, not a plan.
+	put("plan", a.subscriptionType ?? (typeof a.organizationType === "string" ? a.organizationType.replace(/^claude_/, "") : undefined));
+	put("rateLimitTier", a.organizationRateLimitTier ?? a.userRateLimitTier ?? a.rateLimitTier);
 	return Object.keys(identity).length ? identity : null;
 }
 /** `claude auth status --json` for a directory: the fallback identity (no account uuid there). */
@@ -383,6 +385,18 @@ export function readIdentityFromStatus(dir: string, executable = "claude", timeo
 		if (str(json.subscriptionType)) identity.plan = json.subscriptionType;
 		return Object.keys(identity).length ? identity : null;
 	} catch { return null; }
+}
+const PLAN_NAMES: Record<string, string> = { free: "Free", pro: "Pro", max: "Max", team: "Team", enterprise: "Enterprise" };
+/**
+ * A login's plan as people say it: "Max 20x" from a rate-limit tier (`default_claude_max_20x`),
+ * else "Max" / "Pro" / … from the plan. Undefined for anything else (a billing type such as
+ * `stripe_subscription`, which an older registry may hold as its plan).
+ */
+export function planLabel(identity: ClaudeLoginIdentity | null | undefined): string | undefined {
+	const tier = identity?.rateLimitTier?.toLowerCase().match(/(?:^|_)(pro|max|team|enterprise)(?:_(\d+)x)?$/);
+	if (tier) return `${PLAN_NAMES[tier[1]!]}${tier[2] ? ` ${tier[2]}x` : ""}`;
+	const plan = identity?.plan?.toLowerCase().replace(/^claude_/, "");
+	return plan ? PLAN_NAMES[plan] : undefined;
 }
 export function credentialsMtime(dir: string): number | undefined {
 	try { return fs.statSync(path.join(dir, ".credentials.json")).mtimeMs; } catch { return undefined; }
@@ -520,13 +534,16 @@ export class ClaudeLogins {
 	 */
 	select(current?: string): ClaudeLoginChoice {
 		const accounts = this.accounts();
+		return this.choice(this.selectId(current, accounts), accounts) ?? this.choice(DEFAULT_LOGIN_ID, accounts)!;
+	}
+	/** The id `select` would run on, without touching the login's directory: what a display asks. */
+	selectId(current?: string, accounts = this.accounts()): string {
 		const state = readAccountsState(this.agentDir);
 		const order = this.order(accounts);
-		if (current && order.includes(current) && this.usable(current, accounts, state)) return this.choice(current, accounts)!;
+		if (current && order.includes(current) && this.usable(current, accounts, state)) return current;
 		const first = order.find((id) => this.usable(id, accounts, state));
-		if (first) return this.choice(first, accounts)!;
-		const fallback = current && order.includes(current) ? current : order[0] ?? DEFAULT_LOGIN_ID;
-		return this.choice(fallback, accounts) ?? this.choice(DEFAULT_LOGIN_ID, accounts)!;
+		if (first) return first;
+		return current && order.includes(current) ? current : order[0] ?? DEFAULT_LOGIN_ID;
 	}
 	/**
 	 * Record `failure` for `from` (for a limit, also for every login here of the same account),

@@ -32,7 +32,7 @@ import {
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
 } from "../transport.ts";
 import {
-	DEFAULT_LOGIN_ID, loginEntryFor, switchText,
+	loginEntryFor, switchText,
 	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginEntry, type ClaudeLoginSwitch,
 } from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
@@ -692,8 +692,9 @@ class CliSession {
 	private forkSeed?: ClaudeForkPoint;
 	/** The login the live (or next) child runs on; chosen at each spawn. */
 	private login?: ClaudeLoginChoice;
-	/** The login the session last recorded; undefined until read from the hooks. */
+	/** The login the session last recorded (undefined: none yet); read from the hooks once. */
 	private recordedLogin?: string;
+	private recordedRead = false;
 	private readonly detector = new ClaudeFailureDetector();
 	private readonly loginHooks: () => SessionLoginHooks | undefined;
 
@@ -1181,9 +1182,9 @@ class CliSession {
 		const logins = this.options.logins;
 		if (!logins) return;
 		// Only a real entry pins the session; one never recorded takes the order's first usable
-		// login, and counts as on `default` only for deciding whether a change needs recording.
+		// login, and records it: the session's login is known from its first turn, `default` too.
 		const recorded = this.loginHooks()?.recorded;
-		if (this.recordedLogin === undefined) this.recordedLogin = recorded ?? DEFAULT_LOGIN_ID;
+		if (!this.recordedRead) { this.recordedLogin = recorded; this.recordedRead = true; }
 		try { this.login = logins.select(this.login?.id ?? recorded); }
 		catch (error) { debugLog({ event: "login-select-failed", session: this.piSessionId, error: String(error) }); return; }
 		this.announce(this.login);

@@ -10,7 +10,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
 	ACCOUNTS_DEV_ENV, ClaudeLogins, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, deviceOrder, ensureLoginDir,
-	loginDir, loginEntryFor, parseAccounts, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
+	loginDir, loginEntryFor, parseAccounts, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 } from "./accounts.ts";
 import { classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
@@ -94,6 +94,22 @@ test("identity comes from oauthAccount and never carries a token", (t) => {
 	assert.deepEqual(readIdentityFile(file), { accountUuid: "u1", email: "a@b.c", orgUuid: "o1", orgName: "Org", plan: "max", rateLimitTier: "tier" });
 	fs.writeFileSync(file, "{}");
 	assert.equal(readIdentityFile(file), null);
+});
+
+test("the plan is the subscription, never the billing type, and reads as people say it", (t) => {
+	const s = sandbox(t);
+	const file = path.join(s.root, ".claude.json");
+	// What Claude Code writes without a subscriptionType: the billing type and the organization's type.
+	fs.writeFileSync(file, JSON.stringify({ oauthAccount: { emailAddress: "a@example.com", billingType: "stripe_subscription", organizationType: "claude_max", organizationRateLimitTier: "default_claude_max_20x" } }));
+	assert.deepEqual(readIdentityFile(file), { email: "a@example.com", plan: "max", rateLimitTier: "default_claude_max_20x" });
+	assert.equal(planLabel(readIdentityFile(file)), "Max 20x");
+	assert.equal(planLabel({ plan: "max", rateLimitTier: "default_claude_max_5x" }), "Max 5x");
+	assert.equal(planLabel({ plan: "pro", rateLimitTier: "default_claude_ai" }), "Pro");
+	assert.equal(planLabel({ plan: "claude_team" }), "Team");
+	// An older registry's identity holds the billing type as its plan: the tier still names it, and alone it names nothing.
+	assert.equal(planLabel({ plan: "stripe_subscription", rateLimitTier: "default_claude_max_20x" }), "Max 20x");
+	assert.equal(planLabel({ plan: "stripe_subscription" }), undefined);
+	assert.equal(planLabel(null), undefined);
 });
 
 test("device id: SOVA_DEVICE_ID, else the mesh self id, else local; order follows assignment", (t) => {

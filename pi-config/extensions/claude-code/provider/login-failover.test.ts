@@ -12,7 +12,7 @@ import { test } from "node:test";
 import type { Message, Tool } from "@earendil-works/pi-ai";
 import { SessionBridge } from "./session-bridge.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
-import { ACCOUNTS_DEV_ENV, ClaudeLogins, loginDir, writeAccounts, type ClaudeLoginEntry } from "../accounts.ts";
+import { ACCOUNTS_DEV_ENV, ClaudeLogins, loginDir, updateAccounts, writeAccounts, type ClaudeLoginEntry } from "../accounts.ts";
 
 /** A CLI child that answers initialize, and answers each user message with `reply(frame)`'s events. */
 class FakeCli extends EventEmitter {
@@ -146,6 +146,20 @@ test("a limit before anything streamed moves the turn to the next login and answ
 	const next = await collect(s.bridge.runTurn(request([user("hi"), { role: "assistant", content: [{ type: "text", text: "hello from B" }], api: "anthropic-messages", provider: "claude-code-cli", model: "sonnet", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 } as Message, user("again")])));
 	assert.equal(s.children.length, 2);
 	assert.equal((next.at(-1) as any).outcome, "success");
+});
+
+test("a session records the login it starts on, default included, and a recorded one is not recorded again", { timeout: 8000 }, async (t) => {
+	const s = setup(t, () => ANSWER("ok"));
+	updateAccounts(s.agentDir, (a) => { a.devices.local = { order: ["default", A, B] }; });
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), "default");
+	assert.deepEqual(s.entries.map((e) => [e.login, e.from]), [["default", undefined]], "the first turn records its login, even default");
+
+	const r = setup(t, () => ANSWER("ok"));
+	r.bridge.setSessionLogin("pi-session-1", B, (entry) => r.entries.push(entry));
+	await collect(r.bridge.runTurn(request([user("hi")])));
+	assert.equal(r.loginOf(r.children[0]!), B, "a recorded login that is still usable is kept");
+	assert.deepEqual(r.entries, [], "and is not recorded a second time");
 });
 
 test("an auth failure on every login ends the turn with the error, as before", { timeout: 8000 }, async (t) => {

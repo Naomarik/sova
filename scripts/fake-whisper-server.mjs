@@ -15,7 +15,8 @@
 //   FAKE_WHISPER_HANG        "health": never answer /health · "inference": never answer /inference
 //   FAKE_WHISPER_TEXT_BY     JSON {"<field>=<value>": text, …}: the first entry a request's fields
 //                            match answers instead (e.g. {"beam_size=5": "…"}), so settings score apart
-//   FAKE_WHISPER_ENGINE      "transcribe": the Parakeet host's surface (raw WAV body, no fields)
+//   FAKE_WHISPER_ENGINE      "transcribe": the Parakeet host's surface (raw WAV body, no fields); a
+//                            `-m` ending in .gguf picks it too
 //   FAKE_TRANSCRIBE_TEXT     the transcript in that mode (default: "Open sofa and run the type check in the work tree.")
 //   FAKE_WHISPER_LOG         a file to append each request to (JSON lines: {path, argv, fields, bytes, contentType})
 //   FAKE_WHISPER_DEVICE      print a Vulkan device line like the real server ("ggml_vulkan: 0 = …")
@@ -36,7 +37,8 @@ const host = arg("--host", "127.0.0.1");
 const port = Number(arg("--port", "8080"));
 const inferencePath = arg("--inference-path", "/inference");
 const env = process.env;
-const engine = env.FAKE_WHISPER_ENGINE === "transcribe" ? "transcribe" : "whisper";
+// A .gguf model is transcribe.cpp's (Parakeet), so one stand-in serves both engines across a switch.
+const engine = env.FAKE_WHISPER_ENGINE === "transcribe" || /\.gguf$/i.test(arg("-m", "")) ? "transcribe" : "whisper";
 const text =
   engine === "transcribe"
     ? (env.FAKE_TRANSCRIBE_TEXT ?? "Open sofa and run the type check in the work tree.")

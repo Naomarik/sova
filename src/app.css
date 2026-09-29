@@ -553,6 +553,19 @@ html, body, #root { height: 100%; }
 .public-links-step-text { margin: 0; padding: var(--space-2) var(--space-3); border-radius: var(--r-sm); background: var(--color-sunken); font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-mono); white-space: pre-wrap; overflow-wrap: anywhere; color: var(--color-ink); }
 /* Folded, the rail is a horizontal strip: "Public links" stays one line like the one-word tabs. */
 @media (max-width: 767px) { .settings-tab { white-space: nowrap; } }
+.public-links-accept { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.public-links-accept > legend { padding: 0; margin-bottom: var(--space-1); }
+.public-links-accept-modes { display: flex; flex-wrap: wrap; column-gap: var(--space-5); }
+.public-links-accept-list { margin: 0; padding: 0 0 0 var(--space-3); list-style: none; }
+.public-links-check { justify-content: flex-start; gap: var(--space-3); }
+.public-links-check .toggle-box { order: -1; flex: none; }
+/* A tick, not just a filled square (never hue alone), as base.css draws .session-select's. */
+.public-links-check .toggle-box { position: relative; }
+.public-links-check input:checked ~ .toggle-box::after { content: ""; position: absolute; left: 5px; top: 1px; width: 4px; height: 9px; border: solid var(--color-on-accent); border-width: 0 2px 2px 0; transform: rotate(45deg); }
+.public-links-routed { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.public-links-routed-list { margin: 0; padding: 0; }
+.public-links-routed-row { display: flex; align-items: center; gap: var(--space-3); }
+.public-links-routed-row .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .public-links-verify { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 
 /* Session details → Repository (SessionDetails RepositorySection). The changed-path list is

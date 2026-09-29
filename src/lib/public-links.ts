@@ -39,19 +39,45 @@ async function call<T>(url: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T;
 }
 
-export const getPublicLinks = () => call<PublicLinksInfo>("/api/public-links");
+export const getPublicLinks = () => call<PublicLinksInfoRouted>("/api/public-links");
 export const putPublicLinks = (patch: PublicLinksPatch) =>
-  call<PublicLinksInfo>("/api/public-links", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
+  call<PublicLinksInfoRouted>("/api/public-links", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(patch) });
 export const verifyPublicLinks = () => call<VerifyResult>("/api/public-links/verify", { method: "POST" });
+
+// ---- the routed half's fields (M6b) --------------------------------------------------------------
+
+/** A host that routes its links through this gateway, as GET /api/public-links reports it
+    (`routed`, only for route "self"). Interim: the operator approved these two optional
+    PublicLinksInfo fields; M5 adds them to shared/public-links.ts and M1 serves them, and these
+    local copies go away then. */
+export interface RoutedHost {
+  nodeId: string;
+  /** Its id in peers.json, or null when it isn't a peer here. */
+  peer: string | null;
+  /** Live links it has registered here. */
+  links: number;
+  up: boolean;
+  /** When its last snapshot arrived, ms epoch. */
+  lastPushAt: number | null;
+  /** Whether acceptFrom lets its links in. */
+  accepted: boolean;
+}
+/** A peer whose hello advertises a gateway: one "Through {gateway}" choice. */
+export interface GatewayChoice {
+  nodeId: string;
+  peer: string;
+  publicUrl: string;
+}
+export type PublicLinksInfoRouted = PublicLinksInfo & { routed?: RoutedHost[]; gateways?: GatewayChoice[] };
 
 // ---- what the app knows now ---------------------------------------------------------------------
 
-const [info, setInfo] = createSignal<PublicLinksInfo | null>(null);
+const [info, setInfo] = createSignal<PublicLinksInfoRouted | null>(null);
 /** The last GET or PUT answer, for the Mesh card's chip; null until one (or on a server without the route). */
 export const publicLinksInfo = info;
 
 /** Read the setting into `publicLinksInfo`. A server without the route (older, or M1 not landed) reads as nothing. */
-export async function loadPublicLinks(): Promise<PublicLinksInfo | null> {
+export async function loadPublicLinks(): Promise<PublicLinksInfoRouted | null> {
   try {
     const next = await getPublicLinks();
     setInfo(next);
@@ -74,6 +100,10 @@ export interface PublicLinksDraft {
   front: ShareFront;
   /** As typed. */
   sharePort: string;
+  /** Which peers may register their links here: every peer, or these StableIDs. */
+  acceptFrom: "all" | string[];
+  /** A routed host's ingress port, as typed. */
+  ingressPort: string;
 }
 
 const routeOf = (f: PublicLinksFile): RouteChoice => (typeof f.route === "string" ? f.route : "via");
@@ -84,7 +114,12 @@ export const publicLinksDraftOf = (f: PublicLinksFile): PublicLinksDraft => ({
   publicUrl: f.gateway?.publicUrl ?? "",
   front: f.gateway?.front ?? "vhost",
   sharePort: String(f.gateway?.sharePort ?? SHARE_PORT_DEFAULT),
+  acceptFrom: f.gateway?.acceptFrom === undefined || f.gateway.acceptFrom === "all" ? "all" : [...f.gateway.acceptFrom],
+  ingressPort: String(f.ingressPort ?? SHARE_PORT_DEFAULT),
 });
+
+const sameAccept = (a: "all" | readonly string[], b: "all" | readonly string[]): boolean =>
+  a === "all" || b === "all" ? a === b : a.length === b.length && [...a].sort().join("\n") === [...b].sort().join("\n");
 
 /** A typed port: a whole number 1–65535, or null. */
 export function parsePort(s: string): number | null {
@@ -114,8 +149,10 @@ export function urlIssue(s: string): string | null {
 }
 
 /** Why the draft can't be saved (the field's own words), or null. Only the gateway choice has fields. */
-export function draftIssue(d: PublicLinksDraft, pinned: readonly string[] = []): { field: "publicUrl" | "sharePort" | "via"; text: string } | null {
+export function draftIssue(d: PublicLinksDraft, pinned: readonly string[] = []): { field: "publicUrl" | "sharePort" | "via" | "ingressPort"; text: string } | null {
   if (d.route === "via" && !d.viaNodeId) return { field: "via", text: "Pick the gateway." };
+  if (d.route === "via" && parsePort(d.ingressPort) === null)
+    return { field: "ingressPort", text: "The ingress port is a whole number from 1 to 65535." };
   if (d.route !== "self") return null;
   if (!pinned.includes("SOVA_SHARE_PUBLIC_URL")) {
     const u = urlIssue(d.publicUrl);
@@ -129,7 +166,7 @@ export function draftIssue(d: PublicLinksDraft, pinned: readonly string[] = []):
 /**
  * What a save sends: the route when it changed, and the whole gateway setting when any of its
  * fields did (the server keeps it while the route is not "self", so switching back restores it).
- * acceptFrom rides along as stored. Empty when nothing changed.
+ * The ingress port goes when a routed host changed it. Empty when nothing changed.
  */
 export function publicLinksChanges(d: PublicLinksDraft, f: PublicLinksFile): PublicLinksPatch {
   const out: PublicLinksPatch = {};
@@ -142,10 +179,15 @@ export function publicLinksChanges(d: PublicLinksDraft, f: PublicLinksFile): Pub
       publicUrl: normalizeUrl(d.publicUrl),
       front: d.front,
       sharePort: parsePort(d.sharePort) ?? SHARE_PORT_DEFAULT,
-      acceptFrom: f.gateway?.acceptFrom ?? "all",
+      acceptFrom: d.acceptFrom === "all" ? "all" : [...d.acceptFrom],
     };
     const g = f.gateway;
-    if (!g || g.publicUrl !== gateway.publicUrl || g.front !== gateway.front || g.sharePort !== gateway.sharePort) out.gateway = gateway;
+    if (!g || g.publicUrl !== gateway.publicUrl || g.front !== gateway.front || g.sharePort !== gateway.sharePort || !sameAccept(g.acceptFrom, gateway.acceptFrom))
+      out.gateway = gateway;
+  }
+  if (d.route === "via") {
+    const port = parsePort(d.ingressPort) ?? SHARE_PORT_DEFAULT;
+    if (port !== (f.ingressPort ?? SHARE_PORT_DEFAULT)) out.ingressPort = port;
   }
   return out;
 }
@@ -155,7 +197,7 @@ export const samePublicLinks = (d: PublicLinksDraft, f: PublicLinksFile): boolea
 /** The env pins the last answer reported; the fields they decide can't be edited. */
 let pins: readonly string[] = [];
 
-const store = createDraftStore<PublicLinksDraft, PublicLinksFile, PublicLinksInfo>({
+const store = createDraftStore<PublicLinksDraft, PublicLinksFile, PublicLinksInfoRouted>({
   tab: "public-links",
   label: "Public links",
   toDraft: publicLinksDraftOf,
@@ -173,7 +215,7 @@ const store = createDraftStore<PublicLinksDraft, PublicLinksFile, PublicLinksInf
 });
 
 /** A GET answer arrived: the draft store and the card's chip follow it. */
-export function acceptPublicLinksInfo(next: PublicLinksInfo): void {
+export function acceptPublicLinksInfo(next: PublicLinksInfoRouted): void {
   pins = next.pinnedByEnv;
   setInfo(next);
   store.setSaved(next.file);
@@ -219,7 +261,7 @@ export function sourceLabel(s: ShareState, pinned: readonly string[]): string {
 }
 
 /** The Mesh card's chip, or null when this host has no public links. */
-export function meshChipText(i: PublicLinksInfo | null): string | null {
+export function meshChipText(i: PublicLinksInfoRouted | null): string | null {
   if (!i) return null;
   const r = i.file.route;
   if (r === "self") return "Public links: gateway";

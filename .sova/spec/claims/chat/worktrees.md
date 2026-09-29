@@ -105,8 +105,14 @@ reads as one line — "Merged feat/x into master at abc1234, 5 commits, +120 −
 worktree's status becomes `merged`. In a project with a spec (`.sova/spec/`), that text and the
 `worktree merge` answer go on with a line naming the § the merge changed that it didn't create,
 computed from the spec's history across the merge — "Foreign § this merge changes: §a, §b", or
-"none" — and one "Spec warning: …" line each for a draft in the worktree with unpromoted
-records, an evidence commit the branch no longer contains, and code committed after the
+"none" — then, when the merge deleted or renamed §, a line naming them ("Deleted § (still
+foreign): §x, §y → §z"), a line naming the § whose mapped code the merge changed while their
+prose didn't ("Code changed under unchanged §: …", to read, not a required name), and one
+"Spec warning: …" line each for the changed files no claim maps (each needs a claim or a
+"Plumbing: <path> — <why>" line in the reply), a draft with records never promoted in the
+worktree or in another worktree whose branch the merge brings in (promote them, or name the § left
+stale on a "Deferred: §… — <why>" line), a merge commit that resolved § by hand (they differ from
+both parents), an evidence commit the branch no longer contains, and code committed after the
 branch's last spec commit. Those lines never change the card. The message never starts a turn; one sent while a turn runs
 lands when that turn ends. A branch with no commits beyond its base is never "merged". The TUI
 draws it as a card, and Sova's transcript renders a **merge card**: the worktree path, branch,

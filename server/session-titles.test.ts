@@ -61,8 +61,8 @@ test("cleanSessionTitle: trims, collapses whitespace, refuses empty, control cha
 test("setSessionTitle stores, clears, and keeps another server instance's titles", () => {
   setSessionTitle(ID_A, "Mine");
   assert.deepEqual({ ...readSessionTitles() }, { [ID_A]: "Mine" });
-  const raw = JSON.parse(readFileSync(file, "utf8")) as { version: number; titles: Record<string, string> };
-  assert.equal(raw.version, 1);
+  const raw = JSON.parse(readFileSync(file, "utf8")) as { version: number; titles: Record<string, unknown> };
+  assert.equal(raw.version, 2);
   // Another server writes while we hold our copy: our next write must not drop its entry.
   raw.titles["from-another-server"] = "Theirs";
   writeFileSync(file, JSON.stringify(raw));

@@ -750,7 +750,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     const s = created.json as SessionSummary;
     host.started(s.path);
     if (typeof p.title === "string" && p.title.trim()) {
-      const r = await call("POST", "/api/sessions/title", { path: s.path, title: p.title.trim() });
+      const r = await call("POST", "/api/sessions/title", { path: s.path, title: p.title.trim(), source: "overseer" });
       if (r.status !== 200) notes.push(`Title not set: ${r.json?.error ?? r.status}`);
     }
     if (typeof p.group === "string" && p.group) {
@@ -809,7 +809,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     const where = `${on}, in ${whereOf(s)}`;
     const named = (title: string) => `"${cut(title.replace(/"/g, "'"), 60)}" (${s.id})`;
     if (typeof p.title === "string" && p.title.trim()) {
-      const r = await peerCall(peer, "POST", "/api/sessions/title", { path: s.path, title: p.title.trim() });
+      const r = await peerCall(peer, "POST", "/api/sessions/title", { path: s.path, title: p.title.trim(), source: "overseer" });
       if (r.status !== 200) notes.push(`Title not set: ${r.json?.error ?? r.status}`);
     }
     const configure: Record<string, unknown> = {};
@@ -1156,7 +1156,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const done: string[] = [];
         if (p.title !== undefined) {
           const t = typeof p.title === "string" && p.title.trim() ? p.title.trim() : null;
-          const r = await call("POST", "/api/sessions/title", { path: s.path, title: t });
+          const r = await call("POST", "/api/sessions/title", { path: s.path, title: t, source: "overseer" });
           if (r.status !== 200) throw failed(r, "Renaming");
           done.push(t ? `renamed to "${t}"` : "title cleared");
         }

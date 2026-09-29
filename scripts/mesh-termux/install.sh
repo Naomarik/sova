@@ -15,6 +15,8 @@
 #   --id <slug> --label <text>   this host's mesh id and label (default: phone / "Phone"); the id is only set once
 #   --node-id <StableID> --dns <MagicDNS name>   this phone's Tailscale StableID and name, for its own hello
 #   --port <n> --peer-port <n>   main listener 127.0.0.1:<port> (default 4800), peer listener <tailnet-ip>:<peer-port> (4801)
+#                          --node-id, --dns, --tailnet-ip, --port and --peer-port are remembered in ~/sova-mesh/.install:
+#                          a rerun without one of them uses the value given last (a new value replaces it)
 #   --claude-dir <dir>     the .claude dir the `claude` on PATH reads, as seen from Termux (default: detected; see
 #                          "Claude Code's store" below; a native claude reads ~/sova-mesh/home/.claude)
 #   --ssh-key <public key> also keep an sshd for remote access: openssh, the key in ~/.ssh/authorized_keys, key-only
@@ -43,8 +45,8 @@ REF=${SOVA_REF:-$DEFAULT_REF}
 SOURCE_URL=${SOVA_SOURCE_URL:-}
 TAILNET_IP=${SOVA_TAILNET_IP:-}
 HOST_ID='' HOST_LABEL='' NODE_ID='' DNS_NAME='' SSH_KEY='' CLAUDE_DIR=''
-PORT=${SOVA_PORT:-4800}
-PEER_PORT=${SOVA_PEER_PORT:-4801}
+PORT=${SOVA_PORT:-}
+PEER_PORT=${SOVA_PEER_PORT:-}
 while [ $# -gt 0 ]; do
   case "$1" in
     --ref) REF=${2:?}; shift 2 ;;
@@ -73,11 +75,23 @@ for t in dpkg-query:dpkg apt-get:apt uname:coreutils id:coreutils cut:coreutils 
          join:coreutils awk:gawk grep:grep sed:sed termux-wake-lock:termux-tools; do
   [ -x "$PREFIX/bin/${t%%:*}" ] || die "${t%%:*} is missing (package ${t#*:}): run 'pkg install ${t#*:}' and rerun"
 done
-case "$PORT$PEER_PORT" in *[!0-9]*) die "ports must be numbers" ;; esac
-[ "$PORT" != "$PEER_PORT" ] || die "--port and --peer-port must differ"
 
 BASE="$HOME/sova-mesh"
 M="$BASE/.install"      # the manifest uninstall.sh reads
+# The identity and ports given on an earlier run (arg-* in the manifest): a rerun without the flag keeps them, so it never
+# drops SOVA_SELF_NODE_ID / SOVA_SELF_DNS from the env or moves a port. Only values given here are recorded, below.
+G_NODE_ID=$NODE_ID G_DNS_NAME=$DNS_NAME G_TAILNET_IP=$TAILNET_IP G_PORT=$PORT G_PEER_PORT=$PEER_PORT
+recorded() { [ ! -f "$M/arg-$1" ] || cat "$M/arg-$1"; }
+[ -n "$NODE_ID" ] || NODE_ID=$(recorded node-id)
+[ -n "$DNS_NAME" ] || DNS_NAME=$(recorded dns)
+[ -n "$TAILNET_IP" ] || TAILNET_IP=$(recorded tailnet-ip)
+[ -n "$PORT" ] || PORT=$(recorded port)
+[ -n "$PEER_PORT" ] || PEER_PORT=$(recorded peer-port)
+PORT=${PORT:-4800}
+PEER_PORT=${PEER_PORT:-4801}
+case "$PORT$PEER_PORT" in *[!0-9]*) die "ports must be numbers" ;; esac
+[ "$PORT" != "$PEER_PORT" ] || die "--port and --peer-port must differ"
+
 SVC="$PREFIX/var/service/sova-mesh"
 BOOT="$HOME/.termux/boot/sova-mesh"
 mkdir -p "$M"
@@ -106,6 +120,10 @@ if [ -z "$TAILNET_IP" ]; then
 fi
 tailnet_ipv4 "$TAILNET_IP" || die "--tailnet-ip $TAILNET_IP is not a Tailscale address (100.64.0.0/10)"
 log "tailnet IP: $TAILNET_IP (peer listener), main listener 127.0.0.1:$PORT"
+# every value checked: record the ones given on this run (a detected or remembered one is never written again)
+for a in node-id:"$G_NODE_ID" dns:"$G_DNS_NAME" tailnet-ip:"$G_TAILNET_IP" port:"$G_PORT" peer-port:"$G_PEER_PORT"; do
+  [ -z "${a#*:}" ] || printf '%s\n' "${a#*:}" > "$M/arg-${a%%:*}"
+done
 
 # ---- packages --------------------------------------------------------------------------------------
 installed() { dpkg-query -W -f='${db:Status-Abbrev} ${Package}\n' 2>/dev/null | awk '$1=="ii"{print $2}' | sort; }

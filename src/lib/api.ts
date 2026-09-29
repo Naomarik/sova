@@ -72,6 +72,7 @@ import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } f
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
+import type { MeshResync, ResyncJob, ResyncStart } from "../../shared/mesh-resync";
 import type { LinkSeen, LinkThread } from "../../shared/mesh-links";
 import type { MonitorHistory, MonitorResolution, MonitorSnapshot } from "../../shared/protocol";
 import { type CleanupRequest, type CleanupResult, parseCleanupResult } from "./archive";
@@ -905,6 +906,17 @@ export const claimMeshLogin = (key: string) =>
 
 /** Every host's own details (shared/mesh-details.ts), this host first; mesh on only. */
 export const fetchMeshDetails = () => request<MeshDetails>("/api/mesh/details", meshReadInit(true));
+
+/** Where each peer's build sits against this host's boot build, and the last resync job per host (§mesh.peers/resync). */
+export const fetchMeshResync = () => request<MeshResync>("/api/mesh/resync", { cache: "no-store" });
+
+/** Deploy this host's boot build to a peer that is behind: `commit` is the one the sheet showed, refused once it isn't. */
+export const startMeshResync = (id: string, commit: string) =>
+  request<ResyncJob>(`/api/mesh/resync/${encodeURIComponent(id)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ commit } satisfies ResyncStart),
+  });
 
 /** The Resource Monitor's latest tick (§app/resource-monitor); polled only while its modal is open. */
 export const fetchMonitor = () => request<MonitorSnapshot>("/api/monitor", { cache: "no-store" });

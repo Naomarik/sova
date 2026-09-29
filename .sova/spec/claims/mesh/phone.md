@@ -4,7 +4,10 @@
 A mesh host on an Android phone runs in native Termux (no proot as Sova's own host). It is installed
 by one pasted command, `scripts/mesh-termux/install.sh`, which is safe to rerun, keeps everything under
 `~/sova-mesh` with an isolated home, and records what it added so `scripts/mesh-termux/uninstall.sh`
-removes exactly that.
+removes exactly that. It also records the `--node-id`, `--dns`, `--tailnet-ip`, `--port` and
+`--peer-port` it was given, and a rerun without one of them uses the recorded value, so a rerun (or
+`scripts/mesh-termux/deploy.sh`, which pushes a commit of the laptop's checkout over ssh) keeps the
+phone's identity and ports.
 
 ## §mesh.phone/claude-store — Claude Code's login where the phone's `claude` reads it
 

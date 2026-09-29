@@ -1,9 +1,11 @@
 # §mesh/vps — A VPS host
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-A mesh host on a VPS is deployed from the laptop by `scripts/mesh-vps/deploy.sh`, as an unprivileged
-user with no root step of its own, and runs as that user's `sova-mesh` service with an isolated home
-and a fixed, minimal `PATH`.
+A mesh host on a VPS is deployed from the laptop by `scripts/mesh-vps/deploy.sh` (by hand, or by a
+resync from the host menu, §mesh.peers/resync), as an unprivileged user with no root step of its own,
+and runs as that user's `sova-mesh` service with an isolated home and a fixed, minimal `PATH`. The new
+build is installed and built beside the running one and swapped in only once it built, so a failed
+build leaves the running app as it was.
 
 ## §mesh.vps/claude-code — Claude Code on the service PATH, or a warning
 

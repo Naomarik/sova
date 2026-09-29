@@ -47,11 +47,16 @@ picker lists that host's folders.
 
 While the mesh is on and more than one host is known, the session pane's foot starts with a host
 row, directly above the usage row: it names the current choice (`All hosts`, or a host with its
-up/down dot), with `N/M connected` at its right end at every width (hosts answering now, this host
-included, out of all hosts). The whole row is one target: a click anywhere on it opens the host
+state dot), with `N/M connected` at its right end at every width (hosts answering now, this host
+included, out of all hosts; a host on another version answers and counts, one that refused this
+host doesn't). The whole row is one target: a click anywhere on it opens the host
 menu (upward when there is no room below; a bottom sheet on a narrow screen), and the click itself
 changes no filter. The collapsed pane has no host item. The menu lists `All hosts` and then each
-host by name with its dot and, when it isn't answering, the word "down"; exactly one is chosen.
+host by name with its dot, whose tone and word follow the host's state: up is a green dot and no
+word; on another version (`skewed`) an amber dot and "other version"; not answering a red dot and
+"down"; refusing this host a red dot and "refused". A host on another version also says, under its
+name, where its build sits against this host's, and one that is behind has `Resync` beside it
+(§mesh.peers/resync). Exactly one is chosen.
 `All hosts` is the default and shows every host's sessions; a host shows only that host's sessions.
 It narrows together with the text filter, and the choice is remembered across reloads; a remembered
 host that is no longer known reads as `All hosts`. The menu ends with `Mesh details…`. With the

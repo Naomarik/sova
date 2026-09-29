@@ -13,6 +13,14 @@ const err = (body: string) => {
   assert.equal(r.ok, false, `expected an error for:\n${body}`);
   return r as { ok: false; line: number; message: string };
 };
+/** A fence that still draws: its first warning (parse.ts). */
+const warning = (body: string) => {
+  const r = parseVis("steps", body);
+  if (!r.ok) assert.fail(`expected a drawing with a warning, got line ${r.line}: ${r.message}`);
+  assert.ok(r.warnings.length, `expected a warning for:\n${body}`);
+  assert.deepEqual(r.spec.warnings, r.warnings, "the spec carries the same warnings");
+  return r.warnings[0]!;
+};
 
 test("steps: lanes, rows, tones, quoted and bare steps, a mark on a row by its label", () => {
   const s = ok(`title: Organizations scenarios
@@ -50,7 +58,6 @@ test("steps: each error says what to write", () => {
     ['"A" | a ->', /an empty step/, 1],
     ['"A" | a --> b', /steps join with ->, not -->/, 1],
     ['"A" | "quoted" and bare -> b', /one "quoted label" or bare words, not both/, 1],
-    ['"A" "B" | a', /one "quoted label", then an optional tone/, 1],
     ["a -> b | c", /the steps go after the \|/, 1],
     ["== Empty ==\n== Full ==\nA | a", /lane "Empty" is empty/, 1],
     ["A | a\n== Trailing ==", /lane "Trailing" is empty/, 2],
@@ -58,12 +65,22 @@ test("steps: each error says what to write", () => {
     ["title: x", /nothing to draw/, 0],
     [`A | ${Array.from({ length: 11 }, (_, i) => `s${i}`).join(" -> ")}`, /11 steps; at most 10/, 1],
     [Array.from({ length: 17 }, (_, i) => `R${i} | a`).join("\n"), /17 rows; at most 16/, 0],
-    ['A | a\nmark "B"', /no row "B"/, 2],
-    ["== L ==\nA | a\nmark L", /no row L/, 3],
   ];
   for (const [body, re, line] of cases) {
     const e = err(body);
     assert.match(e.message, re, body);
     assert.equal(e.line, line, body);
   }
+});
+
+test("steps: a head mixing quotes and words is its text as written", () => {
+  const s = ok(`== Broadcast ==\n'"all"' | "one message" -> "every live sibling"\n"Pi" sibling warn | a -> b\n"A" "B" | c`);
+  assert.deepEqual(s.items.filter((i) => i.type === "row").map((r) => [r.label, r.tone ?? null]), [
+    [`'"all"'`, null],
+    ['"Pi" sibling', "warn"],
+    ['"A" "B"', null],
+  ]);
+  // One quoted label, or bare words (single quotes included), are read as before.
+  assert.deepEqual(ok(`"Busy sibling" ok | a\n'Idle' sibling | b`).items.map((r) => (r.type === "row" ? r.label : "")), ["Busy sibling", "'Idle' sibling"]);
+  assert.match(warning('A | a\nmark "B"').message, /no row "B", dropped/);
 });

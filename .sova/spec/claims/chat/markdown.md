@@ -167,7 +167,7 @@ block's source (§app.baton/outsider-view).
   |---|---|---|
   | `vis flow` | boxes and arrows, laid out by rank | node id or label |
   | `vis state` | a state machine (flow's layout, round nodes, `start`/`end` dots) | state id |
-  | `vis sequence` | actors, lifelines and numbered messages, with step-through | actor id, message number |
+  | `vis sequence` | actors, lifelines and numbered messages, with step-through | actor id or label, message number or exact label |
   | `vis layers` | a stack of labelled layers | layer label |
   | `vis tree` | an indented hierarchy | item name |
   | `vis flow` sections | side-by-side panels (§chat.markdown/vis-flow-sections) | node id or label |
@@ -189,17 +189,47 @@ block's source (§app.baton/outsider-view).
 - **Emphasis.** `mark <target> [tone] ["note"]`, at most 8 per block, notes ≤ 120 characters,
   works in every kind. A marked item takes its tone (default accent), a heavier outline or a tinted
   row, and the note's number as a badge; the notes are listed under the drawing in writing order.
-  A target that names nothing, or an item marked twice, is an error. Colour is never the only
-  signal: emphasis adds weight and a number, chart series pair hue with marker and dash, matrix
-  marks carry a word.
+  A malformed mark line is an error. A mark that can't apply is dropped with a warning (below): a
+  target that names nothing, an item already marked (a range keeps its items not yet marked, its
+  note on the first of them), a mark past the 8th. A dropped mark takes no number. A note over 120
+  characters is cut to 120, with a warning. Colour is never the only signal: emphasis adds weight
+  and a number, chart series pair hue with marker and dash, matrix marks carry a word.
 - **Step-through** (sequence). The drawing starts complete; nothing plays by itself.
   **Step Through** starts at the first item; Previous / Next walk it ("Step 3 of 8", "3/8" at phone
   width, announced politely); later items are dimmed; **Show All** ends the walk.
-- **Errors.** A closed fence that doesn't parse renders as the ordinary code block of
+- **Warnings (soft).** Where the intent is plain, a block draws instead of falling back: any one
+  text (a label, a note, a `title:`, a `caption:`) over 200 characters is cut to 200, ending in "…"
+  (the whole text stays in Source), and the marks above are dropped. The figure then draws with,
+  in the chat, one muted line after its caption: "Drawn with warnings: line N: <what>; …." (each
+  once, in line order; line 0 means the whole block, shown without "line"; no ligatures). The share
+  and owner pages draw the figure without that line.
+- **Errors (hard).** A closed fence that doesn't parse (an unknown kind, a line the grammar can't
+  read, a limit a kind states as an error) renders as the ordinary code block of
   §chat.markdown/code-blocks, its head reading `vis <kind>`, plain (not highlighted), followed by one
   muted line: "Couldn't draw this vis <kind> block (line N: <what to write instead>), so here is its
-  source." Error text and that source never use ligatures. The model sees the same message, so it
-  doubles as teaching.
+  source." Error text and that source never use ligatures.
+- **One parser, two grades.** `parseVis` (`src/vis/parse.ts`, with `registry.ts` DOM-free, so the
+  server can run it) returns `{ok: true, spec, warnings}` (`warnings` is `[]` for a clean block;
+  when not empty the spec carries the same list as `spec.warnings`) or `{ok: false, line, message}`
+  for a hard error. Only a hard error is a block that failed.
+- **Feedback to the model** (`server/vis-check.ts`). The model learns of a block that didn't draw
+  through a hidden retry note, not through the reader's error line. In a chat Sova hosts (not the
+  Overseer's, a baton session's or a project overseer's) with the vis minor mode on, when a run is
+  about to settle, Sova parses every `vis` fence in that run's assistant text with the same
+  `parseVis`, finding fences as the reader's view does (per text block). If any block has a hard
+  error, Sova adds one hidden note (a `sova-vis-retry` custom message, `display: false`: never in
+  the transcript or the live view; the model sees it) naming each such block (its number in the
+  reply, its kind, its first line), the line and the error, and the model gets one more request in
+  the same run, asked to re-send only the fixed blocks. At most one retry per run: the retry's own
+  reply is never checked again, even if a block is still broken, and the broken block stays visible
+  above the fix. No retry when the run was stopped or failed, when a message is queued behind it
+  (that message goes first), when the session's file is held by another writer, or when vis is
+  off. A block that draws with warnings never triggers one.
+- **`vis_check`.** While vis is on, the model has a `vis_check` tool for draft `vis html` / `vis
+  svg` bodies (title/caption lines included). It answers whether the block would draw (or its error
+  and line), any warnings, and the document's size in characters against the budget (aim under
+  8K; over 16K doesn't draw). With vis off the tool is not in the model's loadout. The guide's
+  html/svg section names it in one line.
 - **Streaming.** An open `vis` fence is never drawn half-way: it holds a 200px dashed box reading
   "Drawing <kind>… N lines", with a pulsing dot (static under reduced motion). The drawing replaces
   it when the fence closes. A re-render keeps an unchanged drawing's DOM (and a frame's state); a
@@ -217,7 +247,10 @@ block's source (§app.baton/outsider-view).
   (`--vis-fill`, `--vis-stroke`, `--vis-ink`) for `accent ok warn error info muted`. SVG is styled
   by classes, so a theme switch needs no re-render.
 - **Free-form (`vis html`, `vis svg`).** The fallback when no kind fits:
-  - at most **8 KB** of source; over that, the error fallback;
+  - a budget in **characters** (code points, not bytes) of the document after the `title:` /
+    `caption:` lines: up to 8K (8,192) draws as is; up to 16K (16,384) draws with the warning
+    "large: <n>K characters of <kind> (aim under 8K)"; over 16K is an error. The guide says to aim
+    under 8K and states what is counted;
   - an `<iframe sandbox="allow-scripts">` with `srcdoc` (**never** `allow-same-origin`), a CSP that
     blocks all network access, and the app's tokens injected (re-sent on theme change);
   - **no autoplay**: a motion gate runs before the model's code and holds CSS animations, SMIL,
@@ -227,8 +260,14 @@ block's source (§app.baton/outsider-view).
   - a script error shows one muted line under the frame.
 - **The `vis` minor mode** (§chat/mode-menu) puts the guide in the system prompt, or in a hidden note
   when it is turned on mid-session (§chat.mode-menu/minor-toggle-keeps-prompt): when to draw (at most
-  1–2 per reply, small, captioned, next to prose that says what to notice), the shared rules, and
-  one section per kind. A kind flagged `stub` in the registry is never taught.
+  1–2 per reply, small, captioned, next to prose that says what to notice), the shared rules (with
+  the 200-character text limit and the one-line caption), and one section per kind. A kind flagged
+  `stub` in the registry is never taught. Its examples draw without warnings, and the flow and
+  state examples are checked for what they mean, not only that they parse (`guide.test.ts`).
+- **No regression.** A block that drew before soft warnings, inline flow labels
+  (§chat.markdown/vis-flow-sections), panel-local ids, label marks in sequences and the character
+  budget draws exactly as before (`src/vis/golden.json`, a fixed set of synthetic blocks and the
+  guide's earlier examples with the specs the earlier parser gave).
 
 ## §chat.markdown/vis-parts — `vis chart` `type: parts`: a whole and its parts
 
@@ -264,23 +303,41 @@ belong to that panel. For two small graphs to compare (before/after, A vs B).
   top-aligned, with a 1px rule between them, when all of them fit the pane at natural size;
   otherwise they stack, a rule between them, each re-fitted to the width as a lone flow is (a phone
   always stacks them). Each panel has its label above it as a heading (caption size, semibold).
-- **Ids** stay unique across the fence. A node belongs to the panel that declares it, else the one
-  that first uses it. `mark` targets any node in any panel.
-- **Errors.** An edge between panels ("crosses from section A to B: sections are separate drawings"),
-  a node declared in a panel after another panel used it, nodes or edges before the first section
-  line, an empty or unlabelled section, a repeated section label, more than 4 sections.
-- **No regression.** A flow without `==` lines parses and draws exactly as before (no `sections`).
+- **Ids are local to their panel.** The same id in two panels is two nodes, each in its panel (the
+  later one's key in the spec is `<id>@<panel number>`, which no written id can be; its label
+  defaults to the id as written). So an edge never crosses panels. `mark <id>` names the node in
+  the first panel that has the id; `mark "label"` the first node with that label.
+- **Errors.** Nodes or edges before the first section line, a node declared twice in one panel, an
+  empty or unlabelled section, a repeated section label, more than 4 sections.
+- **No regression.** A flow without `==` lines parses and draws exactly as before (no `sections`),
+  and so does a sectioned flow whose ids differ across panels (every one that parsed before).
 - Frames or clusters inside one connected graph are not part of this.
 - **Chain tones** (any `vis flow` or `vis state`, panels or not). A tone word right after an edge's
   target (after its optional quoted edge label) tones that node: `a -> miss "dead" error`; a node
   given two different tones (by a `node` line or another chain) is an error naming both.
+- **Inline labels** (any `vis flow` or `vis state`, panels or not), decided per fence. When any
+  chain line has a quoted string right after its first id (`web "Browser" -> srv "Server"`), the
+  fence is inline-style. Then, reading in order, the first string after an id labels that node when
+  it has no label yet (no `node` line in its panel, no earlier inline label), and the next string
+  labels the edge: `-> srv "Server" "WS"` gives srv its label and the edge "WS"; later,
+  `db --> app "rows"` (app already labelled) labels the return edge. Writing a node's inline label
+  again is not an edge label. After a target with a `node` line one string labels the edge. A
+  different string right after an already-labelled source has no edge to label: the first label is
+  kept, with a warning. A string right after a source that has a `node` line, or a third string, is
+  an error. Shape and tone words may follow an id in an inline-style chain, one of each in any
+  order (`gate "Manual approval" decision`, `db "Orders" store warn`); two different shapes or tones
+  for one node are an error, and a chain shape applies to a node whose `node` line gives none. A
+  fence with no such line reads exactly as before: a string after a target is the edge's label
+  (`idle -> busy "prompt"`) and a shape word in a chain is an error. The guide teaches inline labels
+  first, with an example that shows the label-then-edge pair, a return edge's label and a shape.
 
 ## §chat.markdown/vis-steps — `vis steps`: scenario chains
 
 A kind for scenarios or journeys as chains, each with a status. HTML, `src/vis/kinds/steps/`.
 
 - **Syntax.** One row per line: `"Label" [tone] | step -> step -> …`. The label is a "quoted label"
-  or bare words; a step is a "quoted label" or bare words, and steps join with `->` only.
+  or bare words (a label mixing the two, such as `'"all"'`, is kept as written, quotes and all); a
+  step is a "quoted label" or bare words, and steps join with `->` only.
   `== lane ==` lines group the rows under a heading. No ids. `mark` a row by its label.
 - **Row.** A status mark, then the label (semibold), then the steps as chips (sunken, 1px border)
   each after the first led by an arrow; the chips wrap with the pane, an arrow staying with the

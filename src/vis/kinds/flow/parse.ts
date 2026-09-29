@@ -1,11 +1,19 @@
 /**
  * `vis flow` and `vis state`: nodes, edges, shapes and tones. See vis-mode.md § flow for the syntax
  * the model is taught. `== label ==` lines split one fence into panels: independent graphs, each
- * laid out on its own and drawn side by side (./sections.ts). Ids stay unique across the fence.
+ * laid out on its own and drawn side by side (./sections.ts). Ids are local to their panel: the same
+ * id in two panels is two nodes (the later one's key gets an `@<panel>` suffix no id can contain).
+ *
+ * Labels, two styles, chosen per fence. With `node` lines, a string after an edge's target is the
+ * EDGE's label (`a -> b "x"`). Once any chain line has a string right after its source
+ * (`a "A" -> b "B"`), the fence is inline-style: the first string after an id labels that node
+ * when it has no label yet (no `node` line in its panel, no earlier inline label), and the next
+ * string labels the edge (`a "A" -> b "B" "edge"`, `b --> a "reply"`). Repeating a node's inline
+ * label is not an edge label. Shape and tone words may follow (`gate "Approve" decision`).
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { divider, fail, id, isTone, lines, modifiers, takeSettings, tokenize, type Arrow, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { divider, fail, id, isTone, lines, modifiers, takeSettings, tokenize, warn, type Arrow, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
 
 export const SHAPES = ["box", "round", "store", "decision", "circle", "start", "end"] as const;
 export type Shape = (typeof SHAPES)[number];
@@ -56,20 +64,83 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     if (dir.value !== "down" && dir.value !== "right") fail(dir.n, `dir: is down or right, not "${dir.value}"`);
     spec.dir = dir.value as "down" | "right";
   }
-  const declared = new Map<string, FlowNode>();
-  const used: string[] = [];
-  // Tones written after an edge's target (a -> b "label" error): they colour the target node.
-  const chainTone = new Map<string, { tone: Tone; n: number }>();
-  // Sections: which one each node belongs to (where it is declared, else first used), and each edge.
+  const hasSections = rest.some((l) => divider(l) !== null);
+  // A pre-pass for the label style: which ids have a `node` line (per panel), and whether any chain
+  // line carries a string right after its source. A line it can't read is left to the main loop.
+  const nodeLines = new Set<string>();
+  let inlineStyle = false;
+  let at = -1;
+  for (const line of rest) {
+    if (divider(line) !== null) {
+      at++;
+      continue;
+    }
+    let t: Token[];
+    try {
+      t = tokenize(line);
+    } catch {
+      continue;
+    }
+    if (t[0]?.t !== "word") continue;
+    if (t[0].v === "node") {
+      if (t[1]?.t === "word") nodeLines.add(`${at}\0${t[1].v}`);
+    } else if (t[1]?.t === "str") inlineStyle = true;
+  }
+  // Sections: each panel's ids are its own. `key` is the node's id in the spec: the id as written,
+  // or, for an id an earlier panel already has, `id@<panel>` (no written id contains @).
   const sections: { label: string; n: number }[] = [];
+  // Which panel each node (by key) and each edge belongs to.
   const home = new Map<string, number>();
   const edgeHome: number[] = [];
-  const hasSections = rest.some((l) => divider(l) !== null);
-  const claim = (nid: string, n: number) => {
-    const at = sections.length - 1;
-    if (!hasSections) return;
-    if (at < 0) fail(n, "put the nodes and edges under a == section == line: once a flow has sections, everything drawn belongs to one");
-    if (!home.has(nid)) home.set(nid, at);
+  const scoped = new Map<string, string>();
+  const written = new Map<string, string>();
+  const key = (nid: string, n: number): string => {
+    const sec = sections.length - 1;
+    if (hasSections && sec < 0) fail(n, "put the nodes and edges under a == section == line: once a flow has sections, everything drawn belongs to one");
+    const scope = `${sec}\0${nid}`;
+    let k = scoped.get(scope);
+    if (k === undefined) {
+      k = written.has(nid) ? `${nid}@${sec + 1}` : nid;
+      scoped.set(scope, k);
+      written.set(k, nid);
+      home.set(k, sec);
+    }
+    return k;
+  };
+  const hasNodeLine = (nid: string) => nodeLines.has(`${sections.length - 1}\0${nid}`);
+  const declared = new Map<string, FlowNode>();
+  const used: string[] = [];
+  // Inline-style node labels, by key (the first one wins).
+  const inline = new Map<string, string>();
+  const inlineLabel = (k: string, v: string, n: number) => {
+    const prev = inline.get(k);
+    if (prev === undefined) inline.set(k, v);
+    else if (prev !== v) warn(n, `node ${written.get(k)} is labelled "${prev}" and "${v}": kept "${prev}"`);
+  };
+  // Tones written after an edge's target (a -> b "label" error): they colour the target node.
+  const chainTone = new Map<string, { tone: Tone; n: number }>();
+  // Inline-style only: shapes written in a chain (gate "Approve" decision).
+  const chainShape = new Map<string, { shape: Shape; n: number }>();
+  const shapedByLine = new Set<string>();
+  /** Tone (and, inline-style, shape) words after an id in a chain; returns the next index. */
+  const chainWords = (toks: Token[], k: number, nid: string, key: string, n: number): number => {
+    let tone = false;
+    let shape = false;
+    for (let w = toks[k]; w?.t === "word"; w = toks[++k]) {
+      if (isTone(w.v) && !tone) {
+        const prev = chainTone.get(key);
+        if (prev && prev.tone !== w.v) fail(n, `node ${nid} is toned ${prev.tone} and ${w.v}: give it one tone`);
+        chainTone.set(key, { tone: w.v, n });
+        tone = true;
+      } else if (inlineStyle && (SHAPES as readonly string[]).includes(w.v) && !shape) {
+        const sh = w.v as Shape;
+        const prev = chainShape.get(key);
+        if (prev && prev.shape !== sh) fail(n, `node ${nid} is shaped ${prev.shape} and ${sh}: give it one shape`);
+        chainShape.set(key, { shape: sh, n });
+        shape = true;
+      } else break;
+    }
+    return k;
   };
   for (const line of rest) {
     const div = divider(line);
@@ -84,64 +155,69 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     const first = toks[0]!;
     if (first.t === "word" && first.v === "node") {
       const nid = id(toks[1], line.n, "a node id after node");
-      if (declared.has(nid)) fail(line.n, `node ${nid} is declared twice`);
-      if (hasSections && home.has(nid) && home.get(nid) !== sections.length - 1) fail(line.n, `node ${nid} is already used in section "${sections[home.get(nid)!]!.label}": ids are unique across the fence`);
-      claim(nid, line.n);
+      const k0 = key(nid, line.n);
+      if (declared.has(k0)) fail(line.n, `node ${nid} is declared twice`);
       let k = 2;
       let label = nid;
       let note: string | undefined;
       if (toks[k]?.t === "str") label = toks[k++]!.v;
       if (toks[k]?.t === "str") note = toks[k++]!.v;
       const mods = modifiers(toks.slice(k), line.n, SHAPES);
-      declared.set(nid, { id: nid, label, ...(note ? { note } : {}), shape: mods.word ?? defaultShape, ...(mods.tone ? { tone: mods.tone } : {}) });
+      if (mods.word) shapedByLine.add(k0);
+      declared.set(k0, { id: k0, label, ...(note ? { note } : {}), shape: mods.word ?? defaultShape, ...(mods.tone ? { tone: mods.tone } : {}) });
       continue;
     }
-    // An edge chain: a -> b "label" --> c ...
-    let from = id(first, line.n, "node or an edge (a -> b)");
+    // An edge chain: a -> b "label" --> c ...; inline-style: a "A" -> b "B" --> c ...
+    const src = id(first, line.n, "node or an edge (a -> b)");
+    let from = key(src, line.n);
     used.push(from);
-    claim(from, line.n);
     let k = 1;
-    if (toks[k]?.t !== "arrow") {
-      if (toks[k]?.t === "str") fail(line.n, `to label a node write node ${from} "Label"; edge labels go after the target: a -> b "label"`);
-      fail(line.n, toks.length === 1 ? `a lone id: declare it with node ${from} "Label"` : `expected an arrow (-> --> <->) after ${from}`);
+    if (toks[k]?.t === "str") {
+      if (hasNodeLine(src)) fail(line.n, `${src} has a node line: its label goes there, not after the id`);
+      inlineLabel(from, toks[k++]!.v, line.n);
     }
+    if (inlineStyle) k = chainWords(toks, k, src, from, line.n);
+    if (toks[k]?.t !== "arrow") fail(line.n, toks.length === 1 ? `a lone id: declare it with node ${src} "Label"` : `expected an arrow (-> --> <->) after ${src}`);
     while (k < toks.length) {
       const arrow = toks[k];
       if (arrow?.t !== "arrow") fail(line.n, `expected an arrow (-> --> <->), found ${arrow?.v}`);
-      const to = id(toks[k + 1], line.n, "a target id after the arrow");
+      const dst = id(toks[k + 1], line.n, "a target id after the arrow");
+      const to = key(dst, line.n);
       used.push(to);
-      claim(to, line.n);
       k += 2;
       let label: string | undefined;
-      if (toks[k]?.t === "str") label = toks[k++]!.v;
-      const toneTok = toks[k];
-      if (toneTok?.t === "word" && isTone(toneTok.v)) {
-        const tone = toneTok.v as Tone;
-        const prev = chainTone.get(to);
-        if (prev && prev.tone !== tone) fail(line.n, `node ${to} is toned ${prev.tone} and ${tone}: give it one tone`);
-        chainTone.set(to, { tone, n: line.n });
-        k++;
-      }
+      if (inlineStyle && !hasNodeLine(dst)) {
+        // The first string labels the node if it has none yet (or repeats its label); the next is the edge's.
+        const s1 = toks[k];
+        if (s1?.t === "str" && (!inline.has(to) || inline.get(to) === s1.v)) {
+          inlineLabel(to, s1.v, line.n);
+          k++;
+        }
+        if (toks[k]?.t === "str") label = toks[k++]!.v;
+      } else if (toks[k]?.t === "str") label = toks[k++]!.v;
+      k = chainWords(toks, k, dst, to, line.n);
       const stray = toks[k];
-      if (stray && stray.t !== "arrow") fail(line.n, `unexpected ${stray.v} after ${to}`);
+      if (stray && stray.t !== "arrow") fail(line.n, `unexpected ${stray.v} after ${dst}`);
       const a = (arrow as { v: Arrow }).v;
-      if (hasSections && (home.get(from) !== sections.length - 1 || home.get(to) !== sections.length - 1)) {
-        const other = sections[home.get(from) !== sections.length - 1 ? home.get(from)! : home.get(to)!]!.label;
-        fail(line.n, `${from} -> ${to} crosses from section "${other}" to "${sections[sections.length - 1]!.label}": sections are separate drawings, so edges stay inside one`);
-      }
       spec.edges.push({ from, to, ...(label ? { label } : {}), dashed: a === "-->" || a === "<-->", both: a.startsWith("<") });
       edgeHome.push(sections.length - 1);
       from = to;
     }
   }
-  for (const [nid, { tone, n }] of chainTone) {
-    const node = declared.get(nid);
-    if (node?.tone && node.tone !== tone) fail(n, `node ${nid} is toned ${node.tone} on its node line and ${tone} in an edge chain: give it one tone`);
+  for (const [k, { tone, n }] of chainTone) {
+    const node = declared.get(k);
+    if (node?.tone && node.tone !== tone) fail(n, `node ${written.get(k)} is toned ${node.tone} on its node line and ${tone} in an edge chain: give it one tone`);
+  }
+  for (const [k, { shape, n }] of chainShape) {
+    const node = declared.get(k);
+    if (!node) continue;
+    if (shapedByLine.has(k) && node.shape !== shape) fail(n, `node ${written.get(k)} is shaped ${node.shape} on its node line and ${shape} in an edge chain: give it one shape`);
+    node.shape = shape;
   }
   for (const node of declared.values()) spec.nodes.push(node);
   for (const u of used) {
     if (declared.has(u)) continue;
-    const node: FlowNode = { id: u, label: u, shape: defaultShape };
+    const node: FlowNode = { id: u, label: inline.get(u) ?? written.get(u)!, shape: chainShape.get(u)?.shape ?? defaultShape };
     const tone = chainTone.get(u)?.tone;
     if (tone) node.tone = tone;
     declared.set(u, node);

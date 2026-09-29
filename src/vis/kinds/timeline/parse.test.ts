@@ -13,6 +13,14 @@ const err = (kind: string, body: string) => {
   assert.equal(r.ok, false, `expected an error for:\n${body}`);
   return r as { ok: false; line: number; message: string };
 };
+/** A fence that still draws: its first warning (parse.ts). */
+const warning = (kind: string, body: string) => {
+  const r = parseVis(kind, body);
+  if (!r.ok) assert.fail(`expected a drawing with a warning, got line ${r.line}: ${r.message}`);
+  assert.ok(r.warnings.length, `expected a warning for:\n${body}`);
+  assert.deepEqual(r.spec.warnings, r.warnings, "the spec carries the same warnings");
+  return r.warnings[0]!;
+};
 
 test("timeline: rows, optional note and tone, sections", () => {
   const s = ok<TimelineSpec>("timeline", "== 2010s ==\n2010 | Backbone | MV* in the browser\n2013 | React | accent\n2016 | Vue 2 | reactivity | ok");
@@ -26,8 +34,8 @@ test("timeline: rows, optional note and tone, sections", () => {
 });
 
 test("timeline: mark a row by its when or its label; sections can't be marked", () => {
-  assert.match(err("timeline", '2013 | React\n09:04 | Error rate climbs\nmark 09:04\nmark "Error rate climbs"').message, /marked twice/);
-  assert.match(err("timeline", '== 2010s ==\n2013 | React\nmark "2010s"').message, /no row "2010s"/);
+  assert.deepEqual(warning("timeline", '2013 | React\n09:04 | Error rate climbs\nmark 09:04\nmark "Error rate climbs"'), { line: 4, message: 'mark "Error rate climbs": already marked, dropped' });
+  assert.match(warning("timeline", '== 2010s ==\n2013 | React\nmark "2010s"').message, /no row "2010s", dropped/);
   const t = ok<TimelineSpec>("timeline", "== 2010s ==\n2013 | React\n09:04 | Error rate climbs\nmark 2013 \"first\"\nmark 09:04 error");
   assert.deepEqual(t.emphasis, [
     { key: "1", tone: "accent", note: "first", n: 1 },

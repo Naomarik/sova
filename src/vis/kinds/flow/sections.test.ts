@@ -51,17 +51,32 @@ test("flow sections: panels hold their own nodes and edges; marks reach any pane
   assert.equal(st.sections![1]!.nodes[1]!.shape, "round");
 });
 
-test("flow sections: edges between panels and other misuse are errors", () => {
-  const cross = err("== A ==\na -> b\n== B ==\nc -> a");
-  assert.equal(cross.line, 4);
-  assert.match(cross.message, /c -> a crosses from section "A" to "B": sections are separate drawings/);
-  assert.match(err("== A ==\na -> b\n== B ==\nnode a \"Again\"").message, /node a is already used in section "A": ids are unique/);
+test("flow sections: ids are local to their panel; the same id in two panels is two nodes", () => {
+  // What a model wrote for a before/after: `toggle` in both panels, an edge to it in the second.
+  const s = ok('== Before ==\ntoggle -> mode\n== After ==\nnode toggle "Toggle" accent\ntoggle -> note\nmark toggle "here"');
+  assert.deepEqual(s.sections!.map((p) => [p.nodes.map((n) => [n.id, n.label, n.tone ?? null]), p.edges.map((e) => `${e.from}>${e.to}`)]), [
+    [[["toggle", "toggle", null], ["mode", "mode", null]], ["toggle>mode"]],
+    [[["toggle@2", "Toggle", "accent"], ["note", "note", null]], ["toggle@2>note"]],
+  ]);
+  // A mark resolves in the first panel that has the id.
+  assert.deepEqual(s.emphasis, [{ key: "toggle", tone: "accent", note: "here", n: 1 }]);
+  // An id seen in a panel keeps its key there, used or declared in any order.
+  const again = ok('== A ==\na -> b\n== B ==\nb -> a\nnode a "Again"\n== C ==\na -> c');
+  assert.deepEqual(again.sections!.map((p) => p.nodes.map((n) => `${n.id}=${n.label}`)), [["a=a", "b=b"], ["a@2=Again", "b@2=b"], ["a@3=a", "c=c"]]);
+  assert.deepEqual(again.sections![1]!.edges.map((e) => `${e.from}>${e.to}`), ["b@2>a@2"]);
+  // A flow without sections is one scope, as before.
+  assert.match(err("node a\nnode a").message, /declared twice/);
+  assert.match(err("== A ==\nnode a\nnode a").message, /declared twice/);
+});
+
+test("flow sections: misuse is an error", () => {
   assert.match(err("node x\n== A ==\na -> b").message, /under a == section == line/);
   assert.match(err("== A ==\na -> b\n== B ==").message, /section "B" is empty/);
   assert.match(err("== A ==\na -> b\n== A ==\nc -> d").message, /section "A" appears twice/);
   assert.match(err("== ==\na -> b").message, /needs a label/);
   assert.match(err(Array.from({ length: 5 }, (_, i) => `== S${i} ==\nnode n${i}`).join("\n")).message, /5 sections; at most 4/);
-  assert.match(err("== A ==\na -> b\nmark zz").message, /no node zz/);
+  const dropped = parseVis("flow", "== A ==\na -> b\nmark zz");
+  assert.ok(dropped.ok && /no node zz, dropped/.test(dropped.warnings[0]!.message), "a mark naming nothing is dropped, not an error");
   // What two live models wrote: a tone after an edge's target now colours that node (see parse.test.ts).
   assert.equal(ok('a -> miss "cache prefix dead" error -> resend').nodes.find((n) => n.id === "miss")!.tone, "error");
 });

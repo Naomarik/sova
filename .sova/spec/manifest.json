@@ -6332,7 +6332,11 @@
         "src/lib/fences.ts",
         "src/vis/share-views.ts",
         "src/share/vis.tsx",
-        "src/vis/share-markdown.test.ts"
+        "src/vis/share-markdown.test.ts",
+        "src/vis/golden.test.ts",
+        "src/vis/golden.json",
+        "server/vis-check.ts",
+        "server/vis-check.test.ts"
       ]
     },
     "§chat.mode-menu/minor-toggle-keeps-prompt": {
@@ -6574,7 +6578,8 @@
         "src/vis/kinds/flow/View.tsx",
         "src/vis/kinds/flow/flow.css",
         "src/vis/kinds/flow/layout.ts",
-        "pi-config/extensions/mode/vis-mode.md"
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/guide.test.ts"
       ]
     },
     "§chat.markdown/vis-parts": {

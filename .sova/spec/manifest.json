@@ -532,7 +532,7 @@
     "§app/settings-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
@@ -7728,6 +7728,17 @@
       "code": [
         "shared/public-links.ts",
         "server/share/runtime.ts"
+      ]
+    },
+    "§app.organizations/host-offline": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/org-host-offline.ts",
+        "src/lib/org-host-offline.test.ts",
+        "src/components/OrgsView.tsx"
       ]
     }
   },

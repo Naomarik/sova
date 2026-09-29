@@ -156,6 +156,21 @@ describe("org host", () => {
     await host.close();
   });
 
+  test("an invocation report carries its data into the result event", async () => {
+    const at = place();
+    const host = await open(at);
+    host.invocations.register("sova/look", {
+      start: (_inv, report) => setTimeout(() => report("finished", undefined, { applied: 2, refused: [{ field: "role" }] }), 5),
+      stop: () => {},
+    });
+    await host.start("p/1", "host-probe", {}, operator);
+    await host.act("p/1", "look", {}, operator);
+    await tick(30);
+    const row = host.log.rows({ session: "p/1" }).find((r) => r.event === "look/finished");
+    assert.deepEqual({ applied: (row?.envelope as Record<string, unknown>)["applied"], refused: (row?.envelope as Record<string, unknown>)["refused"] }, { applied: 2, refused: [{ field: "role" }] });
+    await host.close();
+  });
+
   test("an invocation runs with its run id and its report moves the chart", async () => {
     const at = place();
     const host = await open(at);
@@ -347,7 +362,9 @@ describe("org host", () => {
     assert.deepEqual(host.sweepCold(now + 1000), [], "not a day yet");
     now += 86_400_000;
     assert.deepEqual(host.sweepCold(), ["l/1"]);
-    assert.equal(host.configuration("l/1"), null, "unloaded");
+    assert.deepEqual(host.sessions("host-local-probe", { warmOnly: true }), [], "unloaded");
+    assert.deepEqual(host.configuration("l/1"), ["top", "gathering"], "a cold session still reads, from its snapshot");
+    assert.deepEqual(host.sessions("host-local-probe").map((x) => [x.id, x.configuration]), [["l/1", ["top", "gathering"]]], "and is listed");
     assert.equal((await host.act("l/1", "gather/close", {}, operator)).taken, true, "loaded on demand");
     assert.deepEqual(host.configuration("l/1"), ["top", "idle"]);
     await host.close();

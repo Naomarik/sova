@@ -9,11 +9,12 @@
 // Durability: each committed call is a redo journal (store.ts); pending effects live in the
 // snapshots (`sova/pending`), so at open every un-answered effect is run again with its key (every
 // effect handler is idempotent by key). One timer follows the engine's `nextDueAt`.
-import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import {
   chartInfo as chartInfoOf,
   chartVersions,
   createOrgCharts,
+  type SnapshotPeek,
   type EnabledEvent,
   type EngineOptions,
   type Hold,
@@ -64,7 +65,9 @@ export interface Invocation {
   params?: Record<string, unknown>;
 }
 
-export type InvocationReport = (outcome: "finished" | "stopped" | "not-started", detail?: string) => void;
+/** How a runner reports: `data` goes into the result event with `detail` (e.g. wrapup/finished
+    {applied, refused}, reconcile/finished {decisions, conflicts, …}). */
+export type InvocationReport = (outcome: "finished" | "stopped" | "not-started", detail?: string, data?: Record<string, unknown>) => void;
 
 export interface InvocationRunner {
   start(inv: Invocation, report: InvocationReport): void;
@@ -181,6 +184,7 @@ export class OrgHost {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private sweeper: ReturnType<typeof setInterval> | null = null;
   private lastRowAt = 0;
+  private readonly peeks = new Map<string, { mtime: number; peek: SnapshotPeek }>();
   private closed = false;
 
   readonly effects = {
@@ -457,12 +461,13 @@ export class OrgHost {
       runner?.stop(inv);
       return;
     }
-    const report: InvocationReport = (outcome, detail) => {
+    const report: InvocationReport = (outcome, detail, data) => {
       void (async () => {
         await this.ready();
         if (this.closed) return;
         try {
-          this.step(() => this.engine.send(inv.sessionId, outcomeEvent(inv.type, outcome), detail ? { detail } : {}, { now: this.clock(), invokeId: inv.invokeId }));
+          const payload = { ...(data ?? {}), ...(detail ? { detail } : {}) } as JsonObject;
+          this.step(() => this.engine.send(inv.sessionId, outcomeEvent(inv.type, outcome), payload, { now: this.clock(), invokeId: inv.invokeId }));
         } catch (err) {
           console.warn(`[org-host] ${this.orgId}: reporting ${inv.type}: ${message(err)}`);
         }
@@ -564,27 +569,55 @@ export class OrgHost {
     return this.engine.enabledEvents(sid, envelope as JsonObject, { now: this.clock() });
   }
 
+  /** A cold session's snapshot, read (not loaded) and cached by file mtime; null when unknown or unreadable. */
+  private peek(sid: string): SnapshotPeek | null {
+    const entry = this.index.get(sid);
+    if (!entry || this.broken.has(sid)) return null;
+    try {
+      const mtime = statSync(entry.file).mtimeMs;
+      const have = this.peeks.get(sid);
+      if (have && have.mtime === mtime) return have.peek;
+      const peek = this.engine.peek(readFileSync(entry.file, "utf8"));
+      this.peeks.set(sid, { mtime, peek });
+      return peek;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Warm sessions from the engine; cold ones (unloaded by retention) from their snapshot, read-only. */
   configuration(sid: string): string[] | null {
-    return this.engine.configuration(sid);
+    return this.engine.configuration(sid) ?? this.peek(sid)?.configuration ?? null;
   }
 
   data(sid: string): Record<string, unknown> | null {
-    return this.engine.data(sid);
+    return this.engine.data(sid) ?? this.peek(sid)?.data ?? null;
   }
 
   chartOf(sid: string): string | null {
-    return this.engine.chartOf(sid) ?? null;
+    return this.engine.chartOf(sid) ?? this.index.get(sid)?.chart ?? null;
   }
 
   chartInfo(name: string): ReturnType<typeof chartInfoOf> {
     return chartInfoOf(name);
   }
 
-  sessions(chart?: string): SessionInfo[] {
-    return this.engine
-      .sessions()
+  /** Every session of the org (of `chart`): warm ones from the engine and, unless `warmOnly`, cold
+      ones from their snapshots (lists keep settled batons, builds, decisions). Broken ones are not
+      listed (they are in `problems()`). */
+  sessions(chart?: string, opts: { warmOnly?: boolean } = {}): SessionInfo[] {
+    const warm = new Set(this.engine.sessions());
+    const out: SessionInfo[] = [...warm]
       .filter((sid) => !chart || this.engine.chartOf(sid) === chart)
       .map((id) => ({ id, chart: this.engine.chartOf(id) ?? "", configuration: this.engine.configuration(id) ?? [], data: this.engine.data(id) ?? {}, running: this.engine.running(id) }));
+    if (!opts.warmOnly) {
+      for (const [id, entry] of this.index) {
+        if (warm.has(id) || (chart && entry.chart !== chart)) continue;
+        const p = this.peek(id);
+        if (p) out.push({ id, chart: p.chart, configuration: p.configuration, data: p.data, running: p.running });
+      }
+    }
+    return out.sort((a, b) => a.id.localeCompare(b.id));
   }
 
   holds(): Hold[] {

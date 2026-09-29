@@ -269,6 +269,8 @@ export interface OrgCharts {
   enabledEvents(sessionId: string, envelope?: JsonObject, opts?: CallOptions): EnabledEvent[];
   /** Sessions that may be unloaded at `now` (settled per their chart's `cold?`, idle `minAge` ms, nothing pending). */
   coldSessions(now: number, minAge?: number | null): string[];
+  /** A snapshot text read without loading it, against this engine's charts (runtime ones included). */
+  peek(text: string): SnapshotPeek;
   /** Every held act of every loaded session (or of one). */
   holds(sessionId?: string | null): Hold[];
   /** Earliest delayed send due across loaded sessions. */
@@ -302,6 +304,15 @@ interface Vendored {
   charts(): { name: ChartName; version: number; storage: "portable" | "host-local" }[];
   chartInfo(name: string): ChartInfo | null;
   migrateText(text: string): string;
+  peekSnapshot(text: string): SnapshotPeek;
+}
+
+/** A snapshot read without loading it (cold sessions). */
+export interface SnapshotPeek {
+  chart: ChartName;
+  configuration: string[];
+  data: JsonObject;
+  running: boolean;
 }
 
 const lib = vendored as unknown as Vendored;
@@ -380,6 +391,11 @@ export function chartVersions(): { name: ChartName; version: number; storage: "p
 
 export function chartInfo(name: string): ChartInfo | null {
   return lib.chartInfo(name);
+}
+
+/** A snapshot's chart, configuration, data and running flag without loading it (throws when unreadable). */
+export function peekSnapshot(text: string): SnapshotPeek {
+  return lib.peekSnapshot(text);
 }
 
 /** A snapshot's text at its chart's current version (throws when it can't be migrated). */

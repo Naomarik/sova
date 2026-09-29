@@ -130,6 +130,28 @@ export interface PublicLinksInfo {
   pinnedByEnv: string[];
   /** For `route: "self"` with a gateway setting: the chosen front's steps. */
   front?: FrontGuide;
+  /** Only when `route` is "self": the hosts that registered links here, or that `acceptFrom`
+      lists. `peer`: its id in peers.json, null when it is no longer there. `links`: its live
+      registered links. `up`: its hello answered just now. `lastPushAt`: when its last snapshot was
+      stored (ms epoch). `accepted`: `acceptFrom` accepts it now. */
+  routed?: RoutedHost[];
+  /** The peers whose hello advertises a share gateway (discovery; acceptance is GatewayInfo). */
+  gateways?: AdvertisedGateway[];
+}
+
+export interface RoutedHost {
+  nodeId: string;
+  peer: string | null;
+  links: number;
+  up: boolean;
+  lastPushAt: number | null;
+  accepted: boolean;
+}
+
+export interface AdvertisedGateway {
+  nodeId: string;
+  peer: string;
+  publicUrl: string;
 }
 
 /** POST /api/public-links/verify. */

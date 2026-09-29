@@ -606,6 +606,16 @@
     (reset! (:session-queues queue) qs)
     (reset! (:next-ordinal queue) ord)))
 
+(defn checkpoint
+  "The whole engine state (sessions, generations, queue) as a value: cheap (persistent data)."
+  [eng]
+  (save-state eng))
+
+(defn rewind!
+  "Put the engine back to `checkpoint` `cp` (the matrix generator explores from checkpoints)."
+  [eng cp]
+  (restore! eng cp))
+
 (defn- end-call! [eng log undelivered [_ _ qs0 _] self-sends?]
   (let [{:keys [sends queue]} (engine eng)
         undelivered (set undelivered)

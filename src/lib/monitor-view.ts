@@ -122,7 +122,7 @@ export function meters(s: MonitorSnapshot): MeterView[] {
       value: bytes(m.anon),
       of: ` of ${bytes(ram)}`,
       pct: clampPct((m.anon / Math.max(1, ram)) * 100),
-      context: `The unit holds ${bytes(m.current)} counting ${bytes(m.file)} of page cache${m.peak ? `, peak ${bytes(m.peak)}` : ""}.`,
+      context: `The unit holds ${bytes(m.current)}, including ${bytes(m.file)} of page cache${m.peak ? `, peak ${bytes(m.peak)}` : ""}.`,
     });
   } else if (s.scope === "tree") {
     out.push({
@@ -503,6 +503,8 @@ export interface ChartModel {
   /** CPU% the top edge stands for (a round number ≥ the highest stack). */
   cpuMax: number;
   memMax: number;
+  /** Memory the top edge stands for on the dashed line (a little above the window's highest). */
+  memTop: number;
   /** Stacked CPU areas, bottom first; the last is "Everything else" when groups were folded. */
   series: ChartSeries[];
   /** The memory line (RSS, or the unit's anon when present), one path per run. */
@@ -599,7 +601,7 @@ export function chartModel(
     });
     if (memMax > 0) memory.push(`M${run.map((p) => `${r1(x(p.at))},${r1(y(memOf(p), memMax * 1.1))}`).join("L")}`);
   }
-  return { width, height, t0, t1, cpuMax, memMax, series, memory, xs: points.map((p) => x(p.at)) };
+  return { width, height, t0, t1, cpuMax, memMax, memTop: memMax * 1.1, series, memory, xs: points.map((p) => x(p.at)) };
 }
 
 // ---- footer and this tab -----------------------------------------------------------------------

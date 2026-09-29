@@ -42,6 +42,7 @@
 .monitor-svg:focus-visible { outline: var(--focus-width) solid var(--focus-color); outline-offset: var(--focus-offset); }
 .monitor-axis { position: absolute; font-size: var(--fs-micro); line-height: var(--lh-micro); color: var(--color-ink-muted); }
 .monitor-axis-top { top: 0; left: 0; }
+.monitor-axis-top-end { top: 0; right: 0; }
 .monitor-axis-start { bottom: 0; left: 0; }
 .monitor-axis-end { bottom: 0; right: 0; }
 .monitor-grid { stroke: var(--color-border); stroke-width: 1; stroke-dasharray: 2 4; }
@@ -101,10 +102,12 @@
 .monitor-table thead .monitor-num { font-family: var(--font-body); font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .monitor-row-group th[scope="row"] .monitor-label { font-weight: var(--fw-semibold); color: var(--color-ink); }
 .monitor-row-group { background: var(--color-sunken); }
-.monitor-row-worker th[scope="row"] { padding-left: var(--space-5); }
-.monitor-row-proc th[scope="row"] { padding-left: var(--space-7); }
+/* Each level starts under its parent's label: a worker's twist under the session's name, a
+   process under the worker's. The twist overhangs its cell by space-2, hence the added step. */
+.monitor-row-worker th[scope="row"] { padding-left: calc(var(--tap-min) + var(--space-2)); }
+.monitor-row-proc th[scope="row"] { padding-left: calc(var(--tap-min) + var(--space-2)); }
 .monitor-row-proc.monitor-depth-2 th[scope="row"],
-.monitor-row-proc.monitor-depth-2 td[colspan] { padding-left: calc(var(--space-7) + var(--space-5)); }
+.monitor-row-proc.monitor-depth-2 td[colspan] { padding-left: calc(2 * var(--tap-min)); }
 .monitor-row-proc .monitor-num { color: var(--color-ink-2); }
 
 .monitor-name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
@@ -114,6 +117,8 @@
 td.monitor-caption { padding-left: 0; }
 .monitor-cmd { font-size: var(--fs-mono); color: var(--color-ink-2); overflow-wrap: anywhere; }
 .monitor-open { margin-left: auto; white-space: nowrap; font-size: var(--fs-caption); }
+.monitor-row-group .monitor-name { flex-wrap: wrap; }
+.monitor-row-group .monitor-label { flex: 1 1 0; }
 .monitor-guess {
   flex: none;
   padding: 0 var(--space-2);
@@ -142,10 +147,12 @@ td.monitor-caption { padding-left: 0; }
 
 @container monitor-table (max-width: 520px) {
   .monitor-col-swap { display: none; }
-  .monitor-row-worker th[scope="row"] { padding-left: var(--space-3); }
-  .monitor-row-proc th[scope="row"] { padding-left: var(--space-5); }
+  /* A long session name keeps its line; the link drops below it, under the name. */
+  .monitor-open { flex-basis: 100%; margin-left: calc(var(--tap-min) - var(--space-2)); }
+  .monitor-row-worker th[scope="row"] { padding-left: calc(var(--tap-min) - var(--space-2)); }
+  .monitor-row-proc th[scope="row"] { padding-left: calc(var(--tap-min) - var(--space-2)); }
   .monitor-row-proc.monitor-depth-2 th[scope="row"],
-  .monitor-row-proc.monitor-depth-2 td[colspan] { padding-left: var(--space-6); }
+  .monitor-row-proc.monitor-depth-2 td[colspan] { padding-left: calc(var(--tap-min) + var(--space-5)); }
 }
 
 .monitor-notes { margin: 0; padding-left: var(--space-5); font-size: var(--fs-caption); color: var(--color-ink-2); }

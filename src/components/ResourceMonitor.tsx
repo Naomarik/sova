@@ -308,7 +308,10 @@ function Chart(props: { points: MonitorPoint[]; labels: MonitorHistory["groups"]
         </span>
       </div>
       <div class="monitor-plot">
-        <span class="monitor-axis monitor-axis-top text-mono">{cpuText(model().cpuMax)}</span>
+        <span class="monitor-axis monitor-axis-top text-mono">{cpuText(model().cpuMax)} CPU</span>
+        <Show when={model().memory.length}>
+          <span class="monitor-axis monitor-axis-top-end text-mono">{bytes(model().memTop)} memory</span>
+        </Show>
         <svg
           class="monitor-svg"
           viewBox={`0 0 ${CHART_W} ${CHART_H}`}

@@ -149,7 +149,7 @@ test("meters: unit memory is anon, not memory.current; number first with context
   const mem = m.find((x) => x.key === "memory")!;
   assert.equal(mem.value, "10 GB");
   assert.equal(mem.of, " of 32 GB");
-  assert.match(mem.context!, /holds 18 GB counting 7.3 GB of page cache, peak 20 GB/);
+  assert.match(mem.context!, /holds 18 GB, including 7.3 GB of page cache, peak 20 GB/);
   const load = m.find((x) => x.key === "load")!;
   assert.equal(load.value, "4.00");
   assert.equal(load.pct, 25);

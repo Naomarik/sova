@@ -575,6 +575,28 @@ try {
 	assert.match(checks().at(-1).content, /commit by ag_07 in project/);
 	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./, "the third party's §app/other is not listed");
 
+	// M5: a run that merges is pinned to its merges. A worker's wake starts it and the parent merges featE
+	// (§app/other); the worker's own ledger commit in wt5 (§app/shell) is no part of this list. It is the
+	// next change run's.
+	branch("featE", () => put(".sova/spec/claims/app/other.md", "# §app/other\n\nOther, featE.\n"));
+	const w5 = spawnSync("git", ["-C", wt5, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim();
+	writeFileSync(path.join(wt5, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, wt5 ledger worker.\n");
+	wt5Git("commit", "-qam", "spec: a worker's promotion in wt5");
+	const w5Top = spawnSync("git", ["-C", wt5, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).stdout.trim();
+	writeFileSync(ledger, `${JSON.stringify({ v: 1, at: Date.now(), actor: { runtime: "pi", session: "ag_05" }, top: w5Top, before: w5, after: spawnSync("git", ["-C", wt5, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim(), kind: "commit" })}\n`, { flag: "a" });
+	at = requests.length;
+	const beforeE = checks().length;
+	script.push({ tool: "bash", args: { command: "git merge --no-ff --no-edit featE" } }, { text: "Merged featE.\nAlso changes: §app/other — featE wording" });
+	await session.sendCustomMessage({ customType: "subagent-complete", content: "### ag_05 finished; merge featE now", display: true }, { triggerTurn: true });
+	assert.equal(requests.length, at + 2, "the merge's list only: no re-prompt");
+	assert.equal(checks().length, beforeE);
+	at = requests.length;
+	script.push({ tool: "bash", args: { command: "printf 'x\\n' > notes-e.txt" } }, { text: "Noted.\nAlso changes: none" }, { text: "Noted.\nAlso changes: §app/shell — wt5 ledger worker" });
+	await session.prompt("note it");
+	assert.equal(requests.length, at + 3, "the worker's landing is the next change run's");
+	assert.match(checks().at(-1).content, /commit by ag_05 in wt5/);
+	assert.match(checks().at(-1).content, /computed from Git: §app\/shell\./);
+
 	// PI_SPEC_CHECK=0 turns the line check off.
 	process.env.PI_SPEC_CHECK = "0";
 	at = requests.length;

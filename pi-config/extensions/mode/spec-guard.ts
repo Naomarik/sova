@@ -999,6 +999,12 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 	}
 }
 
+/** Whether `commit` is an ancestor of (or equal to) `of`, in the repo at `dir`; false on any error. */
+export async function isAncestor(dir: string, commit: string, of: string, io: SpecIO = localIO): Promise<boolean> {
+	const r = await io.exec("git", ["merge-base", "--is-ancestor", commit, of], { cwd: dir, timeout: TOOL_TIMEOUT_MS }).catch(() => undefined);
+	return r?.code === 0;
+}
+
 /** A directory's work-tree top and HEAD (two cheap rev-parses, no status), or undefined outside Git. */
 export async function headAt(dir: string, io: SpecIO = localIO): Promise<{ top: string; head: string } | undefined> {
 	try {

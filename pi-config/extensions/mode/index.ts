@@ -89,6 +89,7 @@ import {
 	gitCommits,
 	gitMerges,
 	headAt,
+	isAncestor,
 	freshTally,
 	LANDING_REPROMPTS,
 	ledgerPath,
@@ -992,8 +993,9 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let specReprompts = 0;
 	/** Operations of an interrupted run, checked with the next one (F11). */
 	let carriedOps: OpLanding[] = [];
-	/** Ledger entries at or after this time are not yet checked. */
-	let ledgerSince = 0;
+	/** Ledger entries already checked (or already landed by a merge this session checked), by at:top:after. */
+	const ledgerSeen = new Set<string>();
+	const ledgerKey = (e: { at: number; top: string; after: string }) => `${e.at}:${e.top}:${e.after}`;
 	function freshSpecRun(): typeof specRun {
 		return { trees: [], branchAt: 0, pending: [], ops: [], opening: new Map(), changed: false, tools: false, merged: false, promoted: false, mergeForeign: [], mergeRanges: 0, taken: new Set() };
 	}
@@ -1121,18 +1123,12 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			const entries = ctx.sessionManager.getBranch().slice(specRun.branchAt);
 			const relay = workerReported(entries);
 			const t = freshTally(specRun.changed, specRun.merged || specRun.promoted);
-			// 1. Operations: this session's, an interrupted run's, and its workers' from the ledger. Workers'
-			// are taken in a run that relays one or changes something itself; a Q&A run leaves them for later,
-			// so a background promotion never forces a line on it.
+			// 1. This session's operations (and an interrupted run's), each judged on its own range.
 			const ops: OpLanding[] = [...carriedOps, ...specRun.ops];
-			const file = ledgerFile(ctx);
-			const ledger = file ? readLedger(file, ledgerSince) : [];
-			if ((relay || specRun.changed || carriedOps.length > 0) && ledger.length) {
-				for (const e of ledger) ops.push({ top: e.top, before: e.before, after: e.after, kind: e.kind, actor: e.actor?.session ?? e.actor?.runtime ?? "worker" });
-				ledgerSince = Math.max(...ledger.map((e) => e.at)) + 1;
-			}
+			const carried = carriedOps.length > 0;
 			carriedOps = [];
-			await tallyOps(t, ops, (top) => specRun.trees.find((tree) => tree.view.top === top)?.defaultTip, SPEC_CORE);
+			const tips = (top: string) => specRun.trees.find((tree) => tree.view.top === top)?.defaultTip;
+			await tallyOps(t, ops, tips, SPEC_CORE);
 			if (specRun.merged && !specRun.mergeRanges) tallyForeign(t, specRun.mergeForeign);
 			// 2. The session's own tree beyond its operations: uncommitted changes and edited drafts (a run that
 			// ran a tool, or relays a worker). A current spec that changed there is a promotion landing.
@@ -1140,10 +1136,33 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			if (cwdStart) specRun.taken.add(cwdStart.view.top);
 			for (const op of ops) specRun.taken.add(op.top);
 			if (cwdStart && (specRun.tools || relay)) await tallyTree(t, relay ? (settledTrees.get(cwdStart.view.top) ?? cwdStart) : cwdStart, SPEC_CORE, undefined, { commits: false, promoted: specRun.promoted });
+			// 3. Its workers' operations from the ledger, taken in a run that relays one or changed something
+			// itself; a Q&A run leaves them for later, so a background promotion never forces a line on it. A
+			// run that merged is pinned to its merges (M5): a worker's wake that extends it adds no other
+			// landing; what the merges brought in is theirs, the rest waits for the next run.
+			const merges = ops.filter((o) => o.actor === "self" && (o.kind === "merge" || o.kind === "ff"));
+			const pinned = specRun.merged || merges.length > 0;
+			const file = ledgerFile(ctx);
+			const ledger = file ? readLedger(file).filter((e) => !ledgerSeen.has(ledgerKey(e))) : [];
+			if ((relay || t.changed || carried) && ledger.length) {
+				const workerOps: OpLanding[] = [];
+				for (const e of ledger) {
+					if (pinned) {
+						let landedByMerge = false;
+						for (const m of merges) if (!landedByMerge && (await isAncestor(m.top, e.after, m.after))) landedByMerge = true;
+						if (landedByMerge) ledgerSeen.add(ledgerKey(e));
+						continue;
+					}
+					ledgerSeen.add(ledgerKey(e));
+					workerOps.push({ top: e.top, before: e.before, after: e.after, kind: e.kind, actor: e.actor?.session ?? e.actor?.runtime ?? "worker" });
+				}
+				await tallyOps(t, workerOps, tips, SPEC_CORE);
+				for (const op of workerOps) specRun.taken.add(op.top);
+			}
 			// 3. A relay run: each tracked worktree against where the last run left it (workers without a
 			// ledger). Other runs leave tracked worktrees out of the list: a tree that didn't land this turn
 			// is no part of it (F9).
-			if (relay)
+			if (relay && !pinned)
 				for (const fresh of specRun.trees) {
 					if (fresh.view.top === specRun.cwdTop) continue;
 					specRun.taken.add(fresh.view.top);

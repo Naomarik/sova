@@ -81,6 +81,8 @@ import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
+import { CancelHeldButton } from "./HeldAct";
+import { heldLine } from "../lib/pipeline-view";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
@@ -1447,7 +1449,7 @@ export function Sidebar(props: {
   const waitingIn = (rows: readonly SessionSummary[]) => rows.filter((r) => orgWaiting().has(r.path)).length;
   /** ONE rule for the region and its spine door: any org row among the hits (an archived project's
       counts only while it waits on you, in the region's own Needs you). */
-  const showOrgs = () => !!props.sessions && (orgs().length > 0 || orgNeedsYou().length > 0);
+  const showOrgs = () => !!props.sessions && (orgs().length > 0 || orgNeedsYou().length > 0 || orgItems().length > 0);
   const [orgsStored, setOrgsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, ORGS_KEY)));
   const orgsOpen = () =>
     orgsRegionOpenRule({
@@ -2203,19 +2205,26 @@ export function Sidebar(props: {
                         />
                       )}
                     </For>
-                    {/* A project to pick a main stakeholder for: no session, the row opens the project page. */}
+                    {/* A project's own item (a held act, a conflict to settle, a stakeholder to pick): no
+                        session, the row opens the project page. A held act recounts its minutes and has Cancel. */}
                     <For each={orgItems()}>
-                      {(it) => (
-                        <li>
-                          <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
-                            <span class="list-main">
-                              <span class="list-title">{it.title}</span>
-                              <span class="list-meta org-needs-item-detail">{it.detail}</span>
-                              <span class="list-meta">{it.where}</span>
-                            </span>
-                          </a>
-                        </li>
-                      )}
+                      {(it) => {
+                        const detail = () => (it.held ? heldLine(it.held.what, it.held.goesAt, props.now) : it.detail);
+                        return (
+                          <li classList={{ "org-needs-held": !!it.held }}>
+                            <a class="list-row list-row-interactive org-needs-item" href={it.href} title={detail()}>
+                              <span class="list-main">
+                                <span class="list-title">{it.title}</span>
+                                <span class="list-meta org-needs-item-detail">{detail()}</span>
+                                <span class="list-meta">{it.where}</span>
+                              </span>
+                            </a>
+                            <Show when={it.held && it.org ? { held: it.held, orgId: it.org.orgId } : null}>
+                              {(h) => <CancelHeldButton orgId={h().orgId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
+                            </Show>
+                          </li>
+                        );
+                      }}
                     </For>
                   </ul>
                 </section>

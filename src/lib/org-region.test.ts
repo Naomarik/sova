@@ -294,3 +294,12 @@ test("an archived project has no heading, eye or row, and no count; its waiting 
   assert.deepEqual(waiting.map((r) => r.session.id), ["d"]);
   assert.deepEqual(orgSections(rows.slice(1)), [], "an org with only archived projects has no section");
 });
+
+test("orgProjectItems: held acts first, soonest to go ahead on top; then conflicts to settle and stakeholders, newest first", () => {
+  const it = (id: string, kind: string, since: number, held?: number) =>
+    ({ id, path: "", title: id, where: "Acme", tier: kind === "held-act" ? "act" : "decide", kind, since, href: "#/orgs/o/projects/p", ...(held ? { held: { id: `h_${id}`, goesAt: held, what: "A gathering" } } : {}) }) as AttentionItem;
+  const digest = {
+    items: [it("stake", "project-stakeholder", 5), it("late", "held-act", 9, 2000), it("soon", "held-act", 1, 1000), it("conf", "conflict-to-operator", 7), it("sess", "needs-input", 99)],
+  };
+  assert.deepEqual(orgProjectItems(digest).map((x) => x.id), ["soon", "late", "conf", "stake"]);
+});

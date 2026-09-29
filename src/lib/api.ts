@@ -72,6 +72,7 @@ import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, Proje
 import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
+import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
@@ -1092,6 +1093,20 @@ export const resolveConflict = (orgId: string, projectId: string, cid: string, i
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/resolve`, jsonInit("POST", input));
 export const setSpecFrozen = (orgId: string, projectId: string, frozen: boolean) =>
   request<SpecStatus>(`${projectBase(orgId, projectId)}/spec`, jsonInit("PATCH", { frozen }));
+
+// ---- a project's Pipeline and the acts waiting in a hold (§app.project-overseer/pipeline, /holds) -----
+
+const pipelineBase = (orgId: string, projectId: string) => `${projectBase(orgId, projectId)}/pipeline`;
+export const getPipeline = (orgId: string, projectId: string) => request<PipelineInfo>(pipelineBase(orgId, projectId));
+export const holdGap = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineInfo>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/hold`, jsonInit("POST", {}));
+export const resumeGap = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineInfo>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/resume`, jsonInit("POST", {}));
+export const getGapTimeline = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineTimeline>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/timeline`);
+/** Stop a held act before it goes ahead (the operator's Cancel). */
+export const cancelHeldAct = (orgId: string, holdId: string, reason?: string) =>
+  request<{ ok: true }>(`/api/orgs/${encodeURIComponent(orgId)}/held/${encodeURIComponent(holdId)}/cancel`, jsonInit("POST", reason ? { reason } : {}));
 
 // ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
 

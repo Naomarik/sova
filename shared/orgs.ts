@@ -254,6 +254,8 @@ export interface OrgNeedsYou {
   stakeholders?: number;
   /** 1 when the org has an owner whose owner link expired or has under 7 days left, with no newer one. */
   ownerLink?: number;
+  /** Acts waiting in a hold before they reach a person or the code (§app.project-overseer/holds); absent: none, or an older server. */
+  held?: number;
 }
 
 /** One baton session of the org, for its page. */

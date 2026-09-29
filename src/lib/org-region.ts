@@ -221,16 +221,28 @@ export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefin
   return rows.sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
 
+/** The digest kinds that are a project's, not a session's: each opens its project page. */
+const PROJECT_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["held-act", "conflict-to-operator", "project-stakeholder"]);
+
 /**
- * The region's Needs you items that belong to no session: a project whose main stakeholder left
+ * The region's Needs you items that belong to no session: an act waiting in a hold before it
+ * reaches a person or the code (§app.project-overseer/holds), a conflict for the operator to settle
+ * that no session asks about (§app.requirements/routing), a project whose main stakeholder left
  * (§app.organizations/stakeholder). Each opens its project page and says the digest's own sentence.
- * A search keeps only those whose project or org name matches. Newest first.
+ * A search keeps only those whose project or org name matches. Held acts first, the one going
+ * ahead soonest on top (they can't wait); then the rest newest first.
  */
 export function orgProjectItems(digest: Pick<AttentionDigest, "items"> | undefined, query = ""): AttentionItem[] {
   const q = query.trim().toLowerCase();
+  const goesAt = (it: AttentionItem) => (it.kind === "held-act" ? (it.held?.goesAt ?? Number.MAX_SAFE_INTEGER) : null);
   return (digest?.items ?? [])
-    .filter((it) => it.kind === "project-stakeholder" && (!q || `${it.title} ${it.where}`.toLowerCase().includes(q)))
-    .sort((a, b) => b.since - a.since || a.id.localeCompare(b.id));
+    .filter((it) => PROJECT_KINDS.has(it.kind) && (!q || `${it.title} ${it.where}`.toLowerCase().includes(q)))
+    .sort((a, b) => {
+      const ga = goesAt(a);
+      const gb = goesAt(b);
+      if (ga !== null || gb !== null) return ga === null ? 1 : gb === null ? -1 : ga - gb || a.id.localeCompare(b.id);
+      return b.since - a.since || a.id.localeCompare(b.id);
+    });
 }
 
 /** A row's place, said under the region's Needs you rows: "{org} · {project}". */

@@ -160,3 +160,63 @@
   }
   .cost-table-stack td .cost-tokens { display: inline-block; min-width: 4ch; text-align: right; }
 }
+
+/* The Pipeline (§app.project-overseer/pipeline): the held acts, then one row per gap. Folded first:
+   every row is a column; from 768px of pane width a row's links sit two to a line. */
+.pipeline-held { display: flex; flex-direction: column; gap: var(--space-2); padding-bottom: var(--space-3); border-bottom: 1px solid var(--color-border); }
+.pipeline-held-list, .pipeline-rows, .pipeline-links, .pipeline-decision-list, .pipeline-timeline-list { list-style: none; margin: 0; padding: 0; }
+.pipeline-held-list { display: flex; flex-direction: column; gap: var(--space-2); }
+.pipeline-held-row {
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3); border-radius: var(--r-md);
+  background: var(--status-warn-bg); border: 1px solid var(--color-border);
+}
+.pipeline-held-line { flex: 1 1 16rem; margin: 0; color: var(--color-ink); overflow-wrap: anywhere; }
+.pipeline-held-row .button { flex: none; min-height: var(--tap-min); }
+
+.pipeline-rows { display: flex; flex-direction: column; }
+.pipeline-row { display: flex; flex-direction: column; gap: var(--space-2); padding: var(--space-3) 0; }
+.pipeline-row + .pipeline-row { border-top: 1px solid var(--color-border); }
+.pipeline-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.pipeline-title { flex: 1 1 12rem; min-width: 0; font-weight: var(--fw-semibold); color: var(--color-ink); overflow-wrap: anywhere; }
+.pipeline-chips { flex: none; display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.pipeline-meta { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+
+/* A gap's sessions and decisions: each a 44px target, whole row. */
+.pipeline-links { display: grid; grid-template-columns: 1fr; gap: var(--space-1); }
+@container insights (min-width: 768px) {
+  .pipeline-links { grid-template-columns: 1fr 1fr; }
+  .pipeline-links > li:has(> .pipeline-decisions) { grid-column: 1 / -1; }
+}
+.pipeline-link {
+  display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+  min-height: var(--tap-min); padding: var(--space-1) var(--space-3);
+  border-radius: var(--r-md); background: var(--color-sunken);
+  color: var(--color-ink); text-decoration: none; font: inherit; text-align: left;
+  border: 0; width: 100%; cursor: pointer;
+}
+a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover { background: var(--color-accent-tint); }
+.pipeline-link:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.pipeline-link-away { cursor: default; }
+.pipeline-link-kind { flex: none; font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
+.pipeline-link-title { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
+.pipeline-link-state { flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.pipeline-decisions > summary { list-style: none; }
+.pipeline-decisions > summary::-webkit-details-marker { display: none; }
+.pipeline-decision-list { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-1) 0 0 var(--space-3); }
+.pipeline-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pipeline-actions .button { min-height: var(--tap-min); }
+
+/* A gap's timeline: a log, so its times are 24-hour mono; a refusal says so in words, not hue alone. */
+.pipeline-timeline { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-sunken); }
+.pipeline-timeline-list { display: flex; flex-direction: column; }
+.pipeline-timeline-row { display: flex; gap: var(--space-3); padding: var(--space-2) 0; }
+.pipeline-timeline-row + .pipeline-timeline-row { border-top: 1px solid var(--color-border); }
+.pipeline-timeline-when { flex: none; min-width: 5ch; color: var(--color-ink-muted); white-space: nowrap; }
+.pipeline-timeline-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pipeline-timeline-line { color: var(--color-ink); overflow-wrap: anywhere; }
+.pipeline-timeline-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); overflow-wrap: anywhere; }
+.pipeline-timeline-refusal { font-size: var(--fs-caption); color: var(--status-warn); overflow-wrap: anywhere; }
+
+/* A decision row the Pipeline brought into view takes focus: the ring shows where it landed. */
+.project-decision:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-radius: var(--r-sm); }

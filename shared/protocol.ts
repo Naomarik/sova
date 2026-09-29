@@ -2758,7 +2758,9 @@ export type AttentionKind =
   | "looping"         // decisions: the session or a worker is repeating itself
   | "baton-needs-you" // a baton session: the baton is with the operator, or a person needs their link
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
-  | "project-stakeholder"; // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
+  | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
+  | "held-act"            // act tier, never pushed: a chart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "conflict-to-operator"; // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
 
 export interface AttentionItem {
   /** Session id. */
@@ -2781,6 +2783,10 @@ export interface AttentionItem {
       in the Organizations region's own Needs you, never in the global one. The Overseer's badge,
       briefs and sova_attention still count it. */
   org?: SessionOrgRef;
+  /** kind `held-act` only: the hold's id (for `POST /api/orgs/:id/held/:holdId/cancel`), when it goes
+      ahead (ms epoch), and its noun phrase, so the row recounts "{what} starts in {n} min unless you
+      cancel it." as the minutes pass. */
+  held?: { id: string; goesAt: number; what: string };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`

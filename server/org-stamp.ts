@@ -14,7 +14,7 @@ import type { OrgHostApi } from "./org-engine";
 const SCOPED = new Set(["project", "watch", "item", "decision", "conflict", "reconciler", "build", "baton"]);
 
 /** The project a session belongs to: its data's projectId, else the id's third segment for a project-scoped chart. */
-export function projectOfSession(host: Pick<OrgHostApi, "data" | "chartOf">, sid: string): string | null {
+export function projectOfSession(host: Pick<OrgHostApi, "data">, sid: string): string | null {
   const pid = host.data(sid)?.projectId;
   if (typeof pid === "string" && pid) return pid;
   const [chart, , project] = sid.split("/");
@@ -35,6 +35,61 @@ export function ledgerOf(watch: Record<string, unknown> | null): LedgerCounts {
   return { message: counts(ledger.message), day: counts(ledger.day), looksToday: typeof looks === "number" ? looks : 0 };
 }
 
+/** A held act as the host lists it (engine API: `holds()`, every held act of every loaded session). */
+export interface HeldAct {
+  id: string;
+  sessionId: string;
+  event: string;
+  data?: Record<string, unknown>;
+  by?: string;
+  until?: number;
+}
+
+/** What an act counts against (the charts' `:counts`): starting or offering a gathering, promoting
+    (one per decision id), starting a coding session, prompting one. Anything else counts nothing. */
+const COUNTS: Record<string, PoLimitKind> = {
+  "gather/start": "gather",
+  "gather/plan-start": "gather",
+  offer: "gather",
+  "decision/promote": "promote",
+  "build/start": "create",
+  "build/prompt": "prompt",
+};
+
+/** The kind and number a held act will take when it goes ahead, or null. */
+export function heldUse(h: HeldAct): { kind: PoLimitKind; n: number } | null {
+  const kind = COUNTS[h.event];
+  if (!kind) return null;
+  const ids = h.data?.ids;
+  return { kind, n: kind === "promote" && Array.isArray(ids) ? ids.length : 1 };
+}
+
+/**
+ * Fold a project's pending holds into what the ledgers and the at-once counts say (the F2 ruling):
+ * the charts' caps read only the envelope, so an act waiting in a hold is counted as if it had gone
+ * ahead, on the day ledger (a held act is always unattended) and in the at-once counts (a held start
+ * of a gathering, one that is not an offer on an existing session, or of a coding session). The
+ * hold being released now (`releasing`) is not counted twice. Pure.
+ */
+export function withHolds(
+  base: { used: LedgerCounts; gatheringsOpen: number; codingRunning: number },
+  holds: readonly HeldAct[],
+  inProject: (h: HeldAct) => boolean,
+  releasing: string | null,
+): { used: LedgerCounts; gatheringsOpen: number; codingRunning: number } {
+  const day = { ...base.used.day };
+  let { gatheringsOpen, codingRunning } = base;
+  for (const h of holds) {
+    if (h.id === releasing || !inProject(h)) continue;
+    const use = heldUse(h);
+    if (!use) continue;
+    day[use.kind] = (day[use.kind] ?? 0) + use.n;
+    if (use.kind === "gather" && !h.sessionId.startsWith("baton/")) gatheringsOpen++;
+    if (use.kind === "create") codingRunning++;
+  }
+  return { used: { ...base.used, day }, gatheringsOpen, codingRunning };
+}
+
 export interface StampWho {
   by: ActBy;
   via?: "overseer";
@@ -45,7 +100,16 @@ export interface StampWho {
 }
 
 /** The envelope for an act on `projectId` (or an org-level act, with the project facts at their defaults). */
-export function stampEnvelope(host: Pick<OrgHostApi, "sessions" | "data" | "configuration">, orgId: string, projectId: string | null, who: StampWho, settings: (projectId: string) => Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin">, fallback: Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin">): Envelope {
+export function stampEnvelope(
+  host: Pick<OrgHostApi, "sessions" | "data" | "configuration" | "holds">,
+  orgId: string,
+  projectId: string | null,
+  who: StampWho,
+  settings: (projectId: string) => Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin">,
+  fallback: Pick<ProjectOverseerSettings, "autonomy" | "caps" | "holdMin">,
+  /** The hold this act releases (the payload's `sovaReleased`): not counted as pending. */
+  releasing: string | null = null,
+): Envelope {
   const people = host.sessions("person");
   const rosterActive = people.some((p) => p.configuration.includes("active"));
   if (!projectId)
@@ -54,6 +118,8 @@ export function stampEnvelope(host: Pick<OrgHostApi, "sessions" | "data" | "conf
   const watchSid = `watch/${orgId}/${projectId}`;
   const archived = !!host.configuration(projectSid)?.includes("archived");
   const paused = !!host.configuration(watchSid)?.includes("paused");
-  const { gatheringsOpen, codingRunning } = atOnceCounts([...host.sessions("baton"), ...host.sessions("build")], projectId);
-  return buildEnvelope({ ...who, settings: settings(projectId), paused, rosterActive, archived, used: ledgerOf(host.data(watchSid)), gatheringsOpen, codingRunning });
+  const counted = { used: ledgerOf(host.data(watchSid)), ...atOnceCounts([...host.sessions("baton"), ...host.sessions("build")], projectId) };
+  const inProject = (h: HeldAct) => projectOfSession(host, h.sessionId) === projectId;
+  const folded = withHolds(counted, host.holds() as HeldAct[], inProject, releasing);
+  return buildEnvelope({ ...who, settings: settings(projectId), paused, rosterActive, archived, ...folded });
 }

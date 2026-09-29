@@ -120,8 +120,10 @@ export function atOnceCounts(sessions: readonly SessionRead[], projectId: string
       const owner = s.data.owner as { overseerOf?: unknown } | undefined;
       if (typeof owner === "object" && owner !== null && owner.overseerOf === projectId && s.configuration.includes("open")) gatheringsOpen++;
     } else if (s.chart === "build") {
+      // `running` (exported by the build) is "working or workers > 0"; read the parts when it is absent.
       const workers = typeof s.data.workers === "number" ? s.data.workers : 0;
-      if (s.data.kind === "coding" && (s.configuration.includes("working") || workers > 0)) codingRunning++;
+      const running = typeof s.data.running === "boolean" ? s.data.running : s.configuration.includes("working") || workers > 0;
+      if (s.data.kind === "coding" && running) codingRunning++;
     }
   }
   return { gatheringsOpen, codingRunning };

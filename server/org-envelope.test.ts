@@ -80,9 +80,11 @@ describe("atOnceCounts: from chart states", () => {
       s("build", ["turn", "idle"], { projectId: P, kind: "coding", workers: 0 }),
       s("build", ["turn", "idle"], { projectId: P, kind: "coding" }),
       s("build", ["turn", "idle"], { projectId: P, kind: "operator-coding", workers: 3 }),
+      s("build", ["turn", "idle"], { projectId: P, kind: "coding", running: true }),
+      s("build", ["turn", "working"], { projectId: P, kind: "coding", running: false }),
       s("build", ["turn", "working"], { projectId: P, kind: "operator-coding" }),
       s("build", ["turn", "working"], { projectId: "prj_b", kind: "coding" }),
     ];
-    assert.deepEqual(atOnceCounts(sessions, P), { gatheringsOpen: 0, codingRunning: 3 });
+    assert.deepEqual(atOnceCounts(sessions, P), { gatheringsOpen: 0, codingRunning: 4 });
   });
 });

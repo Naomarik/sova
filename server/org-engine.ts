@@ -129,10 +129,10 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
   if (pending) return pending;
   const p = (async () => {
     let self: OrgHostApi | null = null;
-    const stamp: Stamp = (sid, _event, _payload, who) => {
+    const stamp: Stamp = (sid, _event, payload, who) => {
       if (!self) throw new Error("The org engine stamped before it opened.");
       const pid = projectOfSession(self, sid);
-      return stampEnvelope(self, opts.orgId, pid, { by: who?.by ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings());
+      return stampEnvelope(self, opts.orgId, pid, { by: who?.by ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => readPoSettings(projectOverseerPaths(opts.orgId, projectId, opts.workspaceDir)), defaultPoSettings(), typeof payload.sovaReleased === "string" ? payload.sovaReleased : null);
     };
     const host = await opener({ ...opts, stamp });
     self = host;

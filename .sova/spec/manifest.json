@@ -450,7 +450,9 @@
         "src/lib/known-before-mount.test.ts",
         "src/components/Composer.tsx",
         "src/design/base.css",
-        "src/design/align-viewer.css"
+        "src/design/align-viewer.css",
+        "src/lib/workers.ts",
+        "src/lib/workers.test.ts"
       ]
     },
     "§app.subagents-pane/worker-rows": {

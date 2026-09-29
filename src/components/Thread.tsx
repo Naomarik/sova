@@ -2,7 +2,7 @@ import { children, createContext, createEffect, createMemo, createSignal, For, M
 import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
-import type { LiveBlock, LiveEntry, LiveState, LiveUserState } from "../lib/live";
+import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
 import { agoTime, clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
@@ -905,8 +905,11 @@ export function LiveEntries(props: {
     return undefined;
   };
   const hiddenBlocks = () => props.live.entries.flatMap((e) => (e.kind === "assistant" ? e.blocks.filter((b) => isHiddenBlock(b, hide())) : []));
-  /** A hidden thinking block still streams (live dot) until its own message is done. */
-  const blockDone = (b: LiveBlock) => props.live.entries.some((e) => e.kind === "assistant" && e.done && e.blocks.includes(b));
+  /** A hidden block streams (live dot) as it would shown: thinking until a later block starts. */
+  const hiddenStreams = (b: LiveBlock) => {
+    for (const e of props.live.entries) if (e.kind === "assistant" && e.blocks.includes(b)) return blockStreams(e, e.blocks.indexOf(b));
+    return true;
+  };
   const hidden = createMemo(() => (props.hideTools || props.hideThinking ? liveHiddenCounts(props.live, hide()) : null));
   return (
     <>
@@ -956,7 +959,7 @@ export function LiveEntries(props: {
                           live={props.live}
                           author={shortModel(e().model) ?? props.author}
                           model={e().model}
-                          streaming={!e().done}
+                          streaming={blockStreams(e(), i())}
                           showHead={shownBefore(e().blocks, i())?.type !== "text"}
                         />
                       </Show>
@@ -981,7 +984,7 @@ export function LiveEntries(props: {
           <HiddenRows calls={h().calls} failed={h().failed} running={h().running} thinking={h().thinking}>
             {() => (
               <For each={hiddenBlocks()}>
-                {(b) => <LiveBlockView block={b} live={props.live} author={props.author} streaming={!blockDone(b)} showHead={false} />}
+                {(b) => <LiveBlockView block={b} live={props.live} author={props.author} streaming={hiddenStreams(b)} showHead={false} />}
               </For>
             )}
           </HiddenRows>

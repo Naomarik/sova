@@ -44,5 +44,8 @@ if (themeResetRequested()) {
 // The collapsed sessions pane, the same way: a reload of a collapsed window must not flash the
 // full pane first (lib/spine.ts).
 applyStoredSpine();
+// The document never scrolls (app.css), so a reload or an installed app's relaunch must not put
+// back an offset left from before it: that offset is the list's head cut off at the top.
+history.scrollRestoration = "manual";
 
 render(() => <App />, document.getElementById("root")!);

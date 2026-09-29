@@ -116,8 +116,9 @@ foreign): §x, §y → §z"), a line naming the § whose mapped code the merge c
 prose didn't ("Code changed under unchanged §: …", to read, not a required name), and one
 "Spec warning: …" line each for the changed files no claim maps (each needs a claim or a
 "Plumbing: <path> — <why>" line in the reply), a draft with records never promoted in the
-worktree or in another worktree whose branch the merge brings in (promote them, or name the § left
-stale on a "Deferred: §… — <why>" line), a merge commit that resolved § by hand (they differ from
+worktree or in another worktree whose branch the merge brings in (into the repository's default
+branch, master or main: promote them now, since no "Deferred:" line passes there; into any other
+branch: promote them, or name the § left stale on a "Deferred: §… — <why>" line), a merge commit that resolved § by hand (they differ from
 both parents), an evidence commit the branch no longer contains, and code committed after the
 branch's last spec commit. Those lines never change the card. The message never starts a turn; one sent while a turn runs
 lands when that turn ends. A branch with no commits beyond its base is never "merged". The TUI

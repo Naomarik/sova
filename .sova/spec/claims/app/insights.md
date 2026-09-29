@@ -165,7 +165,7 @@ ellipsis.
   - **Session head:** no chip at all, working or not, team or not. The count is already the
     sidebar row's rail count and the Agents foot row's, and the head's row goes to the title and
     the context readout (§chat.context-window/width-budget). The Agents page, the composer's
-    subagents trigger and the subagents pane keep their own counts.
+    subagents trigger and the session pane keep their own counts.
   - The count inside a sidebar session row is **never** a link, because an `<a>` can't nest in
     the row's link — and now it sits outside the link, in the rail, as a `tabindex="-1"` button.
     The foot's Agents row is still the way to the page from the sidebar.

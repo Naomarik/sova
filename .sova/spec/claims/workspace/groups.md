@@ -173,7 +173,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 ```
 
 - **`.workspace` replaces `.app-main`** in the grid's second column, at the same width and
-  with the same floor. The sidebar, the resizer (§app/shell) and the portals are untouched; the subagents
+  with the same floor. The sidebar, the resizer (§app/shell) and the portals are untouched; the session
   pane (§app/subagents-pane) is **not** available in a workspace, because it is a per-session surface and there
   are N sessions here. A member's own `/agents` opens `#/agents`, which is cross-session already.
 - **The head is 56px**, like `.session-head` and `.subagents-head`, so the band across the window

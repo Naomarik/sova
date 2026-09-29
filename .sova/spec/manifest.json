@@ -4894,6 +4894,7 @@
         "src/components/SessionPane.tsx",
         "src/components/SessionUsage.tsx",
         "src/components/SessionDetails.tsx",
+        "src/app.css",
         "src/design/base.css",
         "src/lib/spend.ts",
         "src/lib/spend.test.ts",

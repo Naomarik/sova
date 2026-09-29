@@ -277,7 +277,7 @@ label a person reads says "sessions pane".
   expanded, as it always has, because folded it is the whole screen. Widen the window and the
   spine comes back.
 - **One knob.** While collapsed the app writes `--spine-width` into the inline `--sidebar-width`
-  on `<html>`, and `.app` carries `data-spine="on"` (absent when expanded). The grid, the Subagents
+  on `<html>`, and `.app` carries `data-spine="on"` (absent when expanded). The grid, the session
   pane's width and `--measure` all read `--sidebar-width`, so they follow with no rule of their
   own, and `.pane-resizer` is not rendered while the stored choice is collapsed (§app.shell/spine-column).
 - **The head** — Expand, New Session, and Search sessions. New Session opens the New Session
@@ -493,7 +493,7 @@ label a person reads says "sessions pane".
   The line ends with the **context ring** (§chat/context-window): a 12px ring whose arc is the share of the window
   the last reply left filled, `.context-warn` at ≥80% and `.context-error` at ≥95% — the same
   `contextStep` the head's gauge uses, so a row and the session it opens step together. Its
-  `title` is the head's exact sentence. It and the subagents pane's worker ring are the only
+  `title` is the head's exact sentence. It and the session pane's worker ring are the only
   places in the product where the context fill is a shape instead of a number, and
   §chat.context-window/sidebar-ring writes that exception down.
 - **Lines 2 and 3 are `.list-line`.** Each is a flex wrapper: the text block flexes and truncates,

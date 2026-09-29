@@ -410,12 +410,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Current goal jump | Jump to Message |
 | Compaction | Compacted · `{tokens}` tokens summarized (no count: Compacted · earlier messages summarized) · Files read · Files changed |
 
-## §design.copy-deck/subagents-pane — Subagents pane (§app/subagents-pane)
+## §design.copy-deck/subagents-pane — Session detail pane (§app/subagents-pane)
 
 | Where | Copy |
 |---|---|
 | Trigger | `{w} of {n} subagents working` (1 of 1: `1 of 1 subagent working`), the same while the parent's turn runs · narrow: `{w}/{n}` · all settled: `{n} subagents`, narrow `{n}` · accessible name: `{w} of {n} subagents working — show subagents` · settled: `{n} subagents — show subagents` |
-| Pane | label and title: Subagents · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close subagents |
+| Pane | label and title: Session detail · tab strip `aria-label`: Session detail tabs · chip: `{w} working` (omitted at 0) · Close `aria-label`: Close session detail |
 | Row meta | `{provider}` · `{model}` · settled: `{model} · as of {HH:MM}` · idle after a failure adds: · last task failed (the provider leads: `claude code`, `zai`, …) |
 | Row status chips | Working · Starting · Idle · Stopping · Done · Failed · Stopped · Restored · Interrupted · beside any of them, for a team member whose seat was released: Ejected |
 | Restored workers (§app.worker-restore/restore) | note: Not running since a server restart. · interrupted: Not running since a server restart; it was mid-task at `{HH:MM}`, and that turn never finished. · meta without usage: usage unavailable · snapshot cost: `$0.41 as of {HH:MM}` |

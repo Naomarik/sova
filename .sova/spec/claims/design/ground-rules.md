@@ -156,11 +156,13 @@ and `fill="none" stroke="currentColor"`.
 | `attach.svg` | Attach Images (composer). New, drawn on the system grid |
 | `command.svg` | Commands button (composer, §chat/slash-commands): a `/` in a rounded square. New, drawn on the system grid |
 | `image.svg` | Tool-card image count, drop overlay. New, drawn on the system grid |
-| `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview. A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
+| `pencil.svg` | Draft rows (§app/session-list): the lead of line 2, before the draft's preview; the composer's run status while the turn writes (§chat.transcript/streaming). A pen at 45° with a nib, legible at `.icon-sm`. New, drawn on the system grid |
+| `bulb.svg` | The composer's run status while the turn thinks (§chat.transcript/streaming): a light bulb with two base lines. New, drawn on the system grid |
+| `wrench.svg` | The composer's run status while the turn runs a tool (§chat.transcript/streaming): an open-jawed wrench at 45°. New, drawn on the system grid |
 | `gauge.svg` | Usage: the sidebar foot's Usage row. Sova's own, drawn on the system grid |
 | `activity.svg` | Resource monitor: the button at the right end of the sidebar foot's Usage row, and its spine item (§app.resource-monitor/entry-button). A pulse line: flat, one sharp peak and trough, flat again. New, drawn on the system grid |
 | `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§chat/mode-menu). Three tracks with an offset handle each. New, drawn on the system grid |
-| `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads (from the skill's set) |
+| `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads, and the composer's subagents trigger (§app.subagents-pane/trigger) (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
 | `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the overview's `Fan Out` action card (§workspace/groups, §workspace/fanout) |
 | `check-circle.svg`, `x-circle.svg`, `external.svg`, `menu.svg` | Reserved. Shipped but unused in the MVP |

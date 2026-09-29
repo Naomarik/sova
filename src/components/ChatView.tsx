@@ -1671,7 +1671,8 @@ export function ChatView(props: {
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}
-        detail={live.activity ?? runDetail(live)}
+        activity={live.activity}
+        detail={runDetail(live)}
         workersWorking={workersWorking()}
         workersTotal={workersTotal()}
         workersSplit={workersSplit()}

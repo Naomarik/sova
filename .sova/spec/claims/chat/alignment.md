@@ -299,7 +299,9 @@ In a chat's composer, the run-status row carries an alignment chip **immediately
 Inputs trigger** (§chat/composer): "{n} aligns · {decided}/{total} decided" ("1 align · 5/7 decided"), where
 `n` is the open alignments on the branch and `decided`/`total` count their decided and all their
 live (not dropped) questions, the same counts the rows show. It is omitted when no alignment is open, and the row shows for it alone. The
-chip and the Inputs trigger sit together at the row's right end.
+chip and the Inputs trigger sit together at the row's right end. In a narrow composer's run-status
+row (§chat.transcript/streaming) it is the one control that may give way: when nothing else can,
+its count ends in an ellipsis ("1 align · 0/8…"), and its accessible name keeps the whole count.
 
 ```html
 <button type="button" class="run-status-link run-status-align" aria-haspopup="menu" aria-expanded="false"

@@ -2663,18 +2663,99 @@ a.group-option { color: inherit; text-decoration: none; }
 
 /* ---- RUN STATUS + JUMP TO LATEST. Sit on the composer's top edge. ------- */
 
+/* One line at every width, the same 20px whatever it carries: the triggers' net height, so the
+   composer doesn't move between idle and working or as the step changes. The margin is its own,
+   not the global `p` rule's. Two forms, by the composer's width (below): wide says it in words,
+   "● Working · running bash" and "● 1 subagent ›"; narrow is the dot plus the step's icon and a
+   worker icon plus a count, the words visually hidden. Stopping and the rare states keep their
+   words in both. In the wide form the detail is the part that gives way (ellipsis); in the narrow
+   one only the rare states' words do. */
 .run-status {
+  --run-status-pad: var(--space-2);  /* the gap, and each trigger's inline padding and offset */
+  --run-status-part-gap: var(--space-2);  /* between a trigger's parts */
   display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: var(--space-2);
+  gap: var(--run-status-pad);
+  height: calc(var(--control-sm) - 2 * var(--space-2));
+  margin: 0 0 var(--space-4);
   font-size: var(--fs-caption);
   color: var(--color-ink-2);
   min-width: 0;
 }
+.run-status-state,
+.run-status-workers {
+  position: relative;             /* holds the visually hidden words */
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.run-status-state { flex: 0 1 auto; }
+.run-status-workers { flex: none; }
+.run-status-say {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+  white-space: nowrap;
+}
 .run-status-detail {
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: var(--fs-mono);
   color: var(--color-ink-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.run-status-state .icon,
+.run-status-workers .icon { color: var(--color-ink-muted); }
+.run-status .run-status-narrow { display: none; }
+
+/* The narrow form, below 620px of composer: the narrowest content width where the whole wide row
+   fits untruncated, measured with "● Working · running agent_spawn", "● 1 subagent ›",
+   "1 align · 0/8 decided" and "3 inputs ›" at the Medium text size. It contracts, so the container query
+   gets a @media floor (the skill's union). */
+@container composer (max-width: 619.98px) {
+  .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
+  .run-status .run-status-wide { display: none; }
+  .run-status .run-status-narrow { display: inline-block; }
+  .run-status-state,
+  .run-status-workers { gap: var(--space-1); }
+  .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
+     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
+     stays its accessible name). */
+  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
+  /* Stopping and the rare states give way first, down to about 4em of their words. */
+  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: calc(6px + var(--space-1) + 4em); }
+  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-status-say {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+}
+@media (max-width: 619.98px) {
+  .run-status { --run-status-pad: calc(var(--space-3) / 2); --run-status-part-gap: var(--space-1); }
+  .run-status .run-status-wide { display: none; }
+  .run-status .run-status-narrow { display: inline-block; }
+  .run-status-state,
+  .run-status-workers { gap: var(--space-1); }
+  .run-status-state:not(:has(> .run-status-words)) { flex: none; }
+  /* The one trigger that may give way here: "1 align · 0/8 decided" is the widest, so at a 344px
+     screen its count ends in an ellipsis rather than pushing the row past the edge (its full text
+     stays its accessible name). */
+  .run-status > .run-status-link.run-status-align { flex: 0 1 auto; min-width: 0; }
+  /* Stopping and the rare states give way first, down to about 4em of their words. */
+  .run-status-state:has(> .run-status-words) { flex-shrink: 1000000; min-width: calc(6px + var(--space-1) + 4em); }
+  .run-status > .run-status-align .text-num { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .run-status-say {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
+}
+.run-status-words {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2716,15 +2797,24 @@ a.group-option { color: inherit; text-decoration: none; }
   margin: 0 auto;
 }
 .composer-row { display: flex; align-items: flex-end; gap: var(--space-2); }
+/* The block padding is what's left of --control-md after one body line and the two borders, split
+   evenly: one line is exactly 44px with its text centred, at every text size. The border counts as
+   drawn: a width of 1px or more snaps down to whole px (1.5 draws as 1), and the 8px line is the
+   fallback where round() isn't supported. */
 .composer-input {
   flex: 1;
   min-height: var(--control-md);
   max-height: var(--composer-max);
   padding: var(--space-2) var(--space-3);
+  padding: calc((var(--control-md) - var(--fs-body) * var(--lh-body) - 2 * round(down, var(--stroke-icon), 1px)) / 2) var(--space-3);
   resize: none;
   overflow-y: auto;
   field-sizing: content;          /* native auto-grow where supported; JS fallback per the composer spec */
 }
+/* Empty, the box is one line: a placeholder longer than the box ("Steer the current turn…" beside
+   Steer and Stop) is cut, not wrapped, so a turn starting doesn't make the composer taller. */
+.composer-input:placeholder-shown { field-sizing: fixed; }
+.composer-input::placeholder { white-space: nowrap; }
 .composer-actions { display: flex; align-items: flex-end; gap: var(--space-2); flex: none; }
 .composer-foot {
   display: flex;
@@ -4353,6 +4443,15 @@ a.chip:hover { color: var(--color-ink); border-color: var(--color-border-strong)
   transition:
     background-color var(--dur-fast) var(--ease-standard),
     color            var(--dur-fast) var(--ease-standard);
+}
+/* Every trigger keeps its own width: squeezed, its words ran into the next one. Its padding and
+   offset are the row's (8px wide; 6px narrow, with its parts 4px apart, so a working row with all
+   three triggers fits a 344px screen). */
+.run-status > .run-status-link {
+  flex: none;
+  gap: var(--run-status-part-gap);
+  margin-left: calc(var(--run-status-pad) * -1);
+  padding: 0 var(--run-status-pad);
 }
 .run-status-link::after {
   content: "";

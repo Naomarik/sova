@@ -26,6 +26,9 @@ import type { Autonomy } from "../shared/project-overseer";
 
 // ---- the trace (the fixture format) ----------------------------------------------------------------
 
+/** The spike's project chart, shipped under this name beside the refit's own "project" until the spike is retired. */
+export const SPIKE_PROJECT = "spike-project";
+
 export type Level = "L0" | "L1" | "L2" | "L3";
 type Kinds = "gather" | "promote" | "create" | "prompt";
 
@@ -414,7 +417,7 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
   const lastFactOf: Record<string, number> = {};
   let lastReconcileDt = -Infinity;
   let eng = (create ?? noEngine)(hooks);
-  const projectBuilt = charts.includes("project");
+  const projectBuilt = charts.includes(SPIKE_PROJECT);
   const projOn = () => projectBuilt && projectOn;
   const hasItem = charts.includes("work-item");
   if (!projectBuilt) rep.skipped.push("project chart not in the build: watch-loop checks skipped");
@@ -505,7 +508,7 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
     if (projectOn || !projectBuilt) return;
     projectOn = true;
     call("start project", () =>
-      eng.start(PSID, "project", { projectSid: PSID, ...(tickOrigin !== null ? { tickOrigin, tickMs: TICK_MS } : {}), settings: { watch: trace.final.watch ?? true, watchGapMin: trace.final.watchGapMin ?? 10, soonLookSec: F.codingSettledReason === false ? null : trace.final.soonLookSec === undefined ? 60 : trace.final.soonLookSec, unattendedPerDay: caps.unattendedPerDay ?? null, caps }, paused, archived: false, rosterActive: rosterActive() }, { now }),
+      eng.start(PSID, SPIKE_PROJECT, { projectSid: PSID, ...(tickOrigin !== null ? { tickOrigin, tickMs: TICK_MS } : {}), settings: { watch: trace.final.watch ?? true, watchGapMin: trace.final.watchGapMin ?? 10, soonLookSec: F.codingSettledReason === false ? null : trace.final.soonLookSec === undefined ? 60 : trace.final.soonLookSec, unattendedPerDay: caps.unattendedPerDay ?? null, caps }, paused, archived: false, rosterActive: rosterActive() }, { now }),
     );
   };
   // Whether this build has the project's `overseer/act` (item-less tool calls): an attended read is always allowed.
@@ -513,7 +516,7 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
   if (projectBuilt) {
     const probe = (create ?? noEngine)({ clock: () => now });
     try {
-      probe.start("probe", "project", { projectSid: "probe" }, { now });
+      probe.start("probe", SPIKE_PROJECT, { projectSid: "probe" }, { now });
       const t = probe.trial("probe", "overseer/act", { by: "overseer", attended: true, autonomy: "L0", paused: false, rosterActive: true, tool: "sova_project" }, { now });
       hasAct = t.taken || (t.refused?.length ?? 0) > 0;
     } catch {
@@ -532,7 +535,7 @@ export async function replay(trace: Trace, create: ((hooks: EngineHooks) => Engi
   if (projectBuilt) {
     const probe = (create ?? noEngine)({ clock: () => now });
     try {
-      probe.start("tick", "project", { projectSid: "tick", tickOrigin: now + 7000, tickMs: TICK_MS, settings: { watchGapMin: 0, soonLookSec: 0 } }, { now });
+      probe.start("tick", SPIKE_PROJECT, { projectSid: "tick", tickOrigin: now + 7000, tickMs: TICK_MS, settings: { watchGapMin: 0, soonLookSec: 0 } }, { now });
       const r = probe.send("tick", "reason/noted", { kind: "baton/closed", params: { sessionId: "x", title: "x" } }, { now });
       chartTicks = !(r.configuration ?? []).includes("running");
     } catch {

@@ -14,9 +14,9 @@
     [sova.org-charts.engine.js-chart :as js-chart]))
 
 (def spike-charts
-  "The spike's charts (project v1, work-item v3), kept until the refit's charts replace them: they
-   explain through `guards/explain`."
-  {"project"   {:chart project/chart :version project/version
+  "The spike's charts (project v1 as \"spike-project\", beside the refit's own \"project\"; work-item v3),
+   kept for the spike replay until the refit's charts replace them: they explain through `guards/explain`."
+  {"spike-project" {:chart project/chart :version project/version
                 :explain (fn [event data envelope] (guards/explain "project" event data envelope))}
    "work-item" {:chart work-item/chart :version work-item/version
                 :explain (fn [event data envelope] (guards/explain "work-item" event data envelope))}})

@@ -251,6 +251,17 @@ const baseName = (p: string): string => p.slice(p.lastIndexOf("/") + 1).replace(
 export const sessionLabel = (s: Pick<MonitorSession, "title" | "sessionPath" | "cwd">): string =>
   s.title || (s.sessionPath ? baseName(s.sessionPath) : s.cwd ? `Unknown session in ${s.cwd}` : "Unknown session");
 
+/** The words for the groups that aren't a session, the same in the table, the chart and transient work. */
+const RESERVED: Record<string, string> = {
+  [SERVER_GROUP]: "Sova server",
+  [ESCAPED_GROUP]: "Escaped processes",
+  [UNATTRIBUTED_GROUP]: "Not attributed",
+  [UNOWNED_GROUP]: "Workers of no known session",
+};
+
+/** A history group's name: ours for the reserved keys, else the history's label, else the file name. */
+export const groupLabel = (key: string, labels: MonitorHistory["groups"]): string => RESERVED[key] ?? (labels[key]?.label || baseName(key));
+
 /** The table now: every session, then the server itself, workers of no known session, escaped and unattributed processes. Heaviest first within sessions. */
 export function liveRows(s: MonitorSnapshot): GroupRow[] {
   const rows: GroupRow[] = [...s.sessions]
@@ -270,7 +281,7 @@ export function liveRows(s: MonitorSnapshot): GroupRow[] {
     }));
   rows.push({
     key: SERVER_GROUP,
-    label: "Sova server",
+    label: RESERVED[SERVER_GROUP]!,
     caption: `pid ${s.server.pid}`,
     kind: "server",
     cpuPct: s.server.cpuPct,
@@ -327,15 +338,9 @@ export function rowsAt(point: MonitorPoint, labels: MonitorHistory["groups"], li
   for (const w of live?.unownedWorkers ?? []) workerNames.set(`${UNOWNED_GROUP}/${w.id}`, w);
   const kindOf = (key: string): GroupRow["kind"] =>
     key === SERVER_GROUP ? "server" : key === ESCAPED_GROUP ? "escaped" : key === UNATTRIBUTED_GROUP ? "unattributed" : key === UNOWNED_GROUP ? "unowned" : "session";
-  const reserved: Record<string, string> = {
-    [SERVER_GROUP]: "Sova server",
-    [ESCAPED_GROUP]: "Escaped processes",
-    [UNATTRIBUTED_GROUP]: "Not attributed",
-    [UNOWNED_GROUP]: "Workers of no known session",
-  };
   const rows: GroupRow[] = Object.entries(point.groups).map(([key, [cpuPct, rssBytes]]) => {
     const kind = kindOf(key);
-    const label = labels[key]?.label || reserved[key] || baseName(key);
+    const label = groupLabel(key, labels);
     const sessionPath = kind === "session" ? (labels[key]?.sessionPath ?? (key.startsWith("/") ? key : undefined)) : undefined;
     const workers: WorkerRow[] = Object.entries(point.workers[key] ?? {})
       .map(([id, [wc, wr]]) => {
@@ -447,7 +452,7 @@ export const transientName = (r: Pick<TransientRow, "cmd" | "runs">): string => 
 /** Who a transient process was charged to: "Refactor auth · w3" / "Not attributed". */
 export function chargedTo(r: Pick<TransientRow, "group" | "workerId">, labels: MonitorHistory["groups"]): string {
   if (!r.group || r.group === UNATTRIBUTED_GROUP) return "Not attributed";
-  const g = labels[r.group]?.label ?? (r.group === ESCAPED_GROUP ? "Escaped" : r.group === SERVER_GROUP ? "Sova server" : baseName(r.group));
+  const g = groupLabel(r.group, labels);
   return r.workerId ? `${g} · ${r.workerId}` : g;
 }
 
@@ -579,7 +584,7 @@ export function chartModel(
   }
   if (cur.length) runs.push(cur);
 
-  const series: ChartSeries[] = keys.map((k) => ({ key: k, label: k === "*" ? "Everything else" : labels[k]?.label || (k === SERVER_GROUP ? "Sova server" : baseName(k)), paths: [] }));
+  const series: ChartSeries[] = keys.map((k) => ({ key: k, label: k === "*" ? "Everything else" : groupLabel(k, labels), paths: [] }));
   const memory: string[] = [];
   for (const run of runs) {
     const base = run.map(() => 0);

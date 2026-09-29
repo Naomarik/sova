@@ -7,6 +7,7 @@ import {
   chartModel,
   cpuText,
   degradedLine,
+  groupLabel,
   idleSummary,
   isHeuristic,
   liveRows,
@@ -337,4 +338,14 @@ test("footer and this tab", () => {
   assert.match(samplerLine({ ...snapshot().sampler, skipped: 2 }, 1), /1 process · 2 ticks skipped$/);
   assert.equal(tabLine(undefined), null);
   assert.equal(tabLine({ usedJSHeapSize: 84 * MB, totalJSHeapSize: 100 * MB, jsHeapSizeLimit: 4 * GB }), "This tab: 84 MB of JavaScript heap (limit 4 GB)");
+});
+
+test("reserved groups read the same everywhere, whatever the history calls them", () => {
+  const labels = { unattributed: { label: "Unattributed" }, "/s/a.jsonl": { label: "A chat" } };
+  assert.equal(groupLabel("unattributed", labels), "Not attributed");
+  assert.equal(groupLabel("server", {}), "Sova server");
+  assert.equal(groupLabel("/s/a.jsonl", labels), "A chat");
+  assert.equal(groupLabel("/s/b.jsonl", labels), "b");
+  const m = chartModel([point(0, { unattributed: [5, MB] })], labels, { width: 10, height: 10, now: 0 });
+  assert.equal(m.series[0]!.label, "Not attributed");
 });

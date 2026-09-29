@@ -30,15 +30,35 @@ export function parseStat(text: string): ProcStat | null {
   const close = text.lastIndexOf(")");
   if (open < 0 || close < open) return null;
   const pid = Number(text.slice(0, open).trim());
-  // Fields from 3 (state) on; f[0] is field 3.
-  const f = text.slice(close + 2).split(" ");
-  if (!Number.isInteger(pid) || f.length < 22) return null;
-  const n = (i: number) => Number(f[i - 3]);
+  if (!Number.isInteger(pid) || close + 2 >= text.length) return null;
+  // Fields 4..24 read in place, without splitting the line: this runs for every process each tick.
+  const nums = new Array<number>(25).fill(NaN);
+  let field = 3;
+  let at = close + 2;
+  const state = text[at]!;
+  while (field < 24) {
+    at = text.indexOf(" ", at);
+    if (at < 0) return null;
+    at++;
+    field++;
+    let v = 0;
+    let neg = false;
+    let digits = 0;
+    if (text.charCodeAt(at) === 45 /* - */) {
+      neg = true;
+      at++;
+    }
+    for (let c = text.charCodeAt(at); c >= 48 && c <= 57; c = text.charCodeAt(++at)) {
+      v = v * 10 + (c - 48);
+      digits++;
+    }
+    nums[field] = digits ? (neg ? -v : v) : NaN;
+  }
   const s: ProcStat = {
-    pid, comm: text.slice(open + 1, close), state: f[0]!,
-    ppid: n(4), pgid: n(5), sid: n(6),
-    utime: n(14), stime: n(15), cutime: n(16), cstime: n(17),
-    starttime: n(22), rss: n(24),
+    pid, comm: text.slice(open + 1, close), state,
+    ppid: nums[4]!, pgid: nums[5]!, sid: nums[6]!,
+    utime: nums[14]!, stime: nums[15]!, cutime: nums[16]!, cstime: nums[17]!,
+    starttime: nums[22]!, rss: nums[24]!,
   };
   for (const k of ["ppid", "pgid", "sid", "utime", "stime", "cutime", "cstime", "starttime", "rss"] as const)
     if (!Number.isFinite(s[k])) return null;
@@ -69,12 +89,16 @@ export function parseKeyValues(text: string): Map<string, number> {
   return out;
 }
 
-/** /proc/meminfo, "Key:   123 kB" lines, in bytes. */
-export function parseMeminfo(text: string): Map<string, number> {
+/** /proc/meminfo, "Key:   123 kB" lines, in bytes: only `keys` (default the four the monitor
+    shows), found by name rather than by parsing every line each tick. */
+export function parseMeminfo(text: string, keys: readonly string[] = ["MemTotal", "MemAvailable", "SwapTotal", "SwapFree"]): Map<string, number> {
   const out = new Map<string, number>();
-  for (const line of text.split("\n")) {
-    const m = /^([^:]+):\s+(\d+)(?:\s*kB)?/.exec(line);
-    if (m) out.set(m[1]!, Number(m[2]) * (line.includes("kB") ? 1024 : 1));
+  for (const key of keys) {
+    const at = text.startsWith(key + ":") ? 0 : text.indexOf("\n" + key + ":") + 1;
+    if (at <= 0 && !text.startsWith(key + ":")) continue;
+    const end = text.indexOf("\n", at);
+    const m = /:\s+(\d+)(\s*kB)?/.exec(text.slice(at, end < 0 ? undefined : end));
+    if (m) out.set(key, Number(m[1]) * (m[2] ? 1024 : 1));
   }
   return out;
 }

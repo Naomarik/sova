@@ -163,6 +163,8 @@ export interface MonitorOptions {
       special loadout): enough to find their Claude Code provider by its --session-id. */
   held?: () => { path: string; sessionId: string; cwd?: string }[];
   platform?: string;
+  /** Ticks between re-reads of an idle process (default IDLE_EVERY). */
+  idleEvery?: number;
   /** Start the event-loop delay histogram (off in tests that drive ticks by hand). */
   eventLoop?: boolean;
   /** Sova's display title for a session (asked at most once a minute per session, off the tick). */
@@ -193,7 +195,7 @@ interface ProcState {
 const BATCH = 48;
 const LOOP_RESOLUTION_MS = 200;
 /** An idle process (two reads that found no CPU spent) is re-read every this many ticks. */
-const IDLE_EVERY = 4;
+const IDLE_EVERY = 6;
 const yieldLoop = () => new Promise<void>((r) => setImmediate(r));
 // One reused buffer and no fstat: half the cost of readFileSync for small /proc files (measured).
 let buf = Buffer.allocUnsafe(16384);
@@ -264,6 +266,7 @@ export class ResourceMonitor {
   private treeDeepAt = 0;
   private lastPiWorkerMiss = 0;
   private snap: MonitorSnapshot | null = null;
+  private readonly idleEvery: number;
   private readonly titleOf?: (path: string) => Promise<string | undefined>;
   private titles = new Map<string, { title?: string; at: number }>();
   /** The last tick's busy ms per phase, with its process and new-process counts (diagnostics). */
@@ -280,6 +283,7 @@ export class ResourceMonitor {
     this.liveDir = opts.liveDir;
     this.plat = opts.platform ?? platform();
     this.titleOf = opts.titleOf;
+    this.idleEvery = Math.max(1, Math.round(opts.idleEvery ?? IDLE_EVERY));
     const held = opts.held;
     this.hostedOf = opts.hosted ?? (() => {
       const out: HostedInfo[] = [...hosted.values()].map((h) => ({
@@ -487,9 +491,9 @@ export class ResourceMonitor {
             deferred++;
             continue;
           }
-          // Idle for two ticks or more: re-read every IDLE_EVERY-th tick (staggered by pid).
+          // Idle for two reads or more: re-read every `idleEvery`-th tick (staggered by pid).
           const last = lastByPid.get(pid);
-          if (last && last.quiet >= 2 && (this.tickCount + pid) % IDLE_EVERY !== 0) {
+          if (last && last.quiet >= 2 && (this.tickCount + pid) % this.idleEvery !== 0) {
             stale.add(last.key);
             stats.set(pid, last.stat);
             continue;

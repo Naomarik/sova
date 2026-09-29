@@ -44,7 +44,9 @@ test("cgroup key/value files, meminfo, loadavg, boot time", () => {
   const ms = parseKeyValues("anon 9980000000\nfile 7300000000\nshmem 730000000\n");
   assert.equal(ms.get("anon"), 9_980_000_000);
   assert.equal(ms.get("file"), 7_300_000_000);
-  const mi = parseMeminfo("MemTotal:       65000000 kB\nMemAvailable:   30000000 kB\nHugePages_Total:       0\n");
+  const mi = parseMeminfo("MemTotal:       65000000 kB\nMemAvailable:   30000000 kB\nHugePages_Total:       0\n", ["MemTotal", "MemAvailable", "HugePages_Total", "Missing"]);
+  assert.equal(mi.has("Missing"), false);
+  assert.deepEqual([...parseMeminfo("Buffers: 1 kB\nSwapFree:  7 kB\nMemTotal: 2 kB\n")].sort(), [["MemTotal", 2048], ["SwapFree", 7168]]);
   assert.equal(mi.get("MemTotal"), 65_000_000 * 1024);
   assert.equal(mi.get("HugePages_Total"), 0);
   assert.deepEqual(parseLoadavg("23.10 12.50 8.01 3/1200 99999\n"), [23.1, 12.5, 8.01]);

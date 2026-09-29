@@ -1270,6 +1270,7 @@
       "code": [
         "public/favicon.svg",
         "public/manifest.webmanifest",
+        "index.html",
         "scripts/pwa-icons.sh",
         "public/icons/pwa-192.png",
         "public/icons/pwa-512.png",
@@ -1286,7 +1287,12 @@
     "§design.ground-rules/theme": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "verified",
+      "code": [
+        "src/lib/theme.ts",
+        "index.html",
+        "src/lib/theme.test.ts"
+      ]
     },
     "§design.ground-rules/voice": {
       "kind": "note",

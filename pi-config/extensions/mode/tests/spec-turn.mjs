@@ -26,6 +26,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const scratchRoot = process.env.MODE_TEST_SCRATCH ?? path.join(homedir(), ".cache", "mode-tests");
 mkdirSync(scratchRoot, { recursive: true });
 const scratch = mkdtempSync(path.join(scratchRoot, "spec-turn-"));
+// A draft tool that does nothing: `node <it> promote … --write` is a promote to the checks, and the test
+// writes the current spec itself right after, as the real tool would.
+const noopDraft = path.join(scratch, "noop", "sova-spec-draft.mjs");
+mkdirSync(path.dirname(noopDraft), { recursive: true });
+writeFileSync(noopDraft, "");
 const agentDir = path.join(scratch, "agent");
 mkdirSync(path.join(agentDir, "extensions"), { recursive: true });
 symlinkSync(path.resolve(here, "../../spec"), path.join(agentDir, "extensions/spec"));
@@ -148,7 +153,7 @@ try {
 	git("add", "-A");
 	git("commit", "-qm", "work");
 	at = requests.length;
-	const promote = `: sova-spec-draft.mjs promote feat --write; printf '# §app/shell\\n\\nShell, v2.\\n' > .sova/spec/claims/app/shell.md`;
+	const promote = `node ${noopDraft} promote feat --write; printf '# §app/shell\\n\\nShell, v2.\\n' > .sova/spec/claims/app/shell.md`;
 	script.push({ tool: "bash", args: { command: promote } }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" });
 	await session.prompt("promote it");
 	assert.equal(requests.length, at + 4, "exactly two continuations");
@@ -160,7 +165,7 @@ try {
 
 	// The same kind of turn, naming it: settles at once.
 	at = requests.length;
-	const promote2 = `: sova-spec-draft.mjs promote feat --write; printf '# §app/shell\\n\\nShell, v3.\\n' > .sova/spec/claims/app/shell.md`;
+	const promote2 = `node ${noopDraft} promote feat --write; printf '# §app/shell\\n\\nShell, v3.\\n' > .sova/spec/claims/app/shell.md`;
 	script.push({ tool: "bash", args: { command: promote2 } }, { text: "Promoted.\nAlso changes: §app/shell — v3 wording" });
 	await session.prompt("promote again");
 	assert.equal(requests.length, at + 2, "a correct line needs no continuation");
@@ -399,7 +404,7 @@ try {
 	at = requests.length;
 	const before7 = checks().length;
 	script.push(
-		{ tool: "bash", args: { command: `: sova-spec-draft.mjs promote feat --root ${wt7} --write; printf '# §app/shell\\n\\nShell, wt7.\\n' > ${wt7}/.sova/spec/claims/app/shell.md` } },
+		{ tool: "bash", args: { command: `node ${noopDraft} promote feat --root ${wt7} --write; printf '# §app/shell\\n\\nShell, wt7.\\n' > ${wt7}/.sova/spec/claims/app/shell.md` } },
 		{ effect: otherTask, text: "Promoted.\nAlso changes: none" },
 		{ text: "Promoted.\nAlso changes: §app/shell — wt7 wording" },
 	);
@@ -487,7 +492,7 @@ try {
 
 	// promote's drift warnings reach the model with that tool result, as a warning: no continuation.
 	at = requests.length;
-	const drifted = `: sova-spec-draft.mjs promote feat --write; printf '  warn drift: the draft removed 80%% from §app/shell, but §app/other still says it\\n'`;
+	const drifted = `node ${noopDraft} promote feat --write; printf '  warn drift: the draft removed 80%% from §app/shell, but §app/other still says it\\n'`;
 	script.push({ tool: "bash", args: { command: drifted } }, { text: "Promoted.\nAlso changes: none" });
 	await session.prompt("promote the drift");
 	assert.match(seen(requests[at + 1]), /\[spec check\] promote's drift warnings \(a warning, not a block\): \(1\) the draft removed 80% from §app\/shell, but §app\/other still says it/);

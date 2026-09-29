@@ -179,12 +179,11 @@ export async function findSpecRoot(cwd: string, exists: SpecIO["exists"] = exist
 	}
 }
 
-const DRAFT_NEW = /sova-spec-draft\.mjs["']?\s+new\s+["']?([a-z0-9][a-z0-9_-]{0,63})\b/g;
-
-/** Draft names created by `sova-spec-draft.mjs new <name> … --write` among these shell commands, in order. */
+/** Draft names created by `sova-spec-draft.mjs new <name> … --write` (draftToolRuns) among these shell commands, in order. */
 export function draftsCreated(commands: readonly string[]): string[] {
 	const names: string[] = [];
-	for (const command of commands) if (/--write\b/.test(command)) for (const m of command.matchAll(DRAFT_NEW)) names.push(m[1]);
+	for (const command of commands)
+		for (const r of draftToolRuns(command)) if (r.verb === "new" && r.args.includes("--write") && /^[a-z0-9][a-z0-9_-]{0,63}$/.test(r.args[0] ?? "")) names.push(r.args[0]!);
 	return names;
 }
 
@@ -687,9 +686,118 @@ export function repromptText(check: AlsoChangesCheck, foreign: readonly string[]
 
 // ── What a turn did ──────────────────────────────────────────────────────────
 
-/** `sova-spec-draft.mjs … promote … --write`: a promotion that writes the current spec. */
+/** A shell command's text with each heredoc body removed (the body is data, never a command). */
+function withoutHeredocs(command: string): string {
+	const lines = command.split("\n");
+	const out: string[] = [];
+	for (let i = 0; i < lines.length; i++) {
+		const line = lines[i]!;
+		out.push(line);
+		for (const m of line.matchAll(/<<(-?)\s*(['"]?)([A-Za-z_][\w-]*)\2/g)) {
+			const strip = m[1] === "-";
+			while (i + 1 < lines.length && (strip ? lines[i + 1]!.replace(/^\t+/, "") : lines[i + 1]) !== m[3]) i++;
+			if (i + 1 < lines.length) i++;
+		}
+	}
+	return out.join("\n");
+}
+
+/**
+ * The simple commands of a shell command, each as its words (quotes removed, `$` references kept as
+ * written): split at `;`, `&`, `|`, newlines, parentheses, backticks and `$(`, outside quotes; heredoc
+ * bodies and comments dropped. A reading for recognising commands, not a shell.
+ */
+export function simpleCommands(command: string): string[][] {
+	const text = withoutHeredocs(command);
+	const commands: string[][] = [];
+	let words: string[] = [];
+	let word: string | undefined;
+	const endWord = () => {
+		if (word !== undefined) words.push(word);
+		word = undefined;
+	};
+	const endCommand = () => {
+		endWord();
+		if (words.length) commands.push(words);
+		words = [];
+	};
+	for (let i = 0; i < text.length; i++) {
+		const c = text[i]!;
+		if (c === "\\") {
+			if (text[i + 1] === "\n") i++;
+			else if (i + 1 < text.length) word = (word ?? "") + text[++i];
+			continue;
+		}
+		if (c === "'") {
+			const end = text.indexOf("'", i + 1);
+			word = (word ?? "") + text.slice(i + 1, end < 0 ? text.length : end);
+			i = end < 0 ? text.length : end;
+			continue;
+		}
+		if (c === '"') {
+			let j = i + 1;
+			let body = "";
+			for (; j < text.length && text[j] !== '"'; j++) {
+				if (text[j] === "\\" && j + 1 < text.length) j++;
+				body += text[j];
+			}
+			word = (word ?? "") + body;
+			i = j;
+			continue;
+		}
+		if (c === "#" && word === undefined) {
+			while (i + 1 < text.length && text[i + 1] !== "\n") i++;
+			continue;
+		}
+		if (c === "$" && text[i + 1] === "(") {
+			endCommand();
+			i++;
+			continue;
+		}
+		if (";&|\n()`".includes(c)) {
+			endCommand();
+			continue;
+		}
+		if (c === " " || c === "\t") {
+			endWord();
+			continue;
+		}
+		word = (word ?? "") + c;
+	}
+	endCommand();
+	return commands;
+}
+
+/** Node options that take the next word as their value. */
+const NODE_VALUE_OPTIONS = new Set(["--import", "--require", "-r", "--loader", "--experimental-loader", "--env-file", "--conditions", "-C"]);
+
+/**
+ * Each run of the draft tool in a shell command: its verb and the words after it. The script is
+ * `…/sova-spec-draft.mjs` or a variable (`$d`, `"$d"`, `${d}`: the tool through a path held in one),
+ * run by `node` (its options skipped) or directly, after any `VAR=value` assignments. Words inside a
+ * heredoc body, an echo or printf, or quotes of another command are never a run.
+ */
+export function draftToolRuns(command: string): { verb: string; args: string[] }[] {
+	const runs: { verb: string; args: string[] }[] = [];
+	for (const words of simpleCommands(command)) {
+		let i = 0;
+		while (i < words.length && /^[A-Za-z_]\w*=/.test(words[i]!)) i++;
+		while (i < words.length && ["exec", "command", "time", "env"].includes(words[i]!)) i++;
+		if (/(^|\/)node$/.test(words[i] ?? "")) {
+			i++;
+			while (i < words.length && words[i]!.startsWith("-")) i += NODE_VALUE_OPTIONS.has(words[i]!) ? 2 : 1;
+		}
+		const script = words[i];
+		if (!script || !(/(^|\/)sova-spec-draft\.mjs$/.test(script) || /^\$(\w+|\{\w+\})$/.test(script))) continue;
+		const verb = words[i + 1];
+		if (verb) runs.push({ verb, args: words.slice(i + 2) });
+	}
+	return runs;
+}
+
+/** `sova-spec-draft.mjs … promote … --write` (the script named, or held in a variable): a promotion that writes the current spec. */
 export function promoteWrites(command: string): boolean {
-	return /sova-spec-draft\.mjs["']?\s+promote\b/.test(command) && /--write\b/.test(command);
+	return draftToolRuns(command).some((r) => r.verb === "promote" && r.args.includes("--write"));
 }
 
 /** `git commit` / `git merge` in a shell command (not merge-base, merge-file, …). */
@@ -1298,7 +1406,7 @@ export function currentSpecPath(path: string): boolean {
 
 /** A shell command allowed to write the current spec: a draft tool (promote, merge-manifest, recover) or git itself. */
 export function sanctionedSpecWrite(command: string): boolean {
-	return /sova-spec-draft\.mjs/.test(command) || /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+(?:merge|checkout|restore|reset|rebase|pull|cherry-pick|revert|stash|switch|am)\b/.test(command);
+	return /sova-spec-draft\.mjs/.test(command) || draftToolRuns(command).some((r) => ["promote", "recover", "merge-manifest"].includes(r.verb)) || /\bgit\b(?:\s+-[Cc]\s+\S+)*\s+(?:merge|checkout|restore|reset|rebase|pull|cherry-pick|revert|stash|switch|am)\b/.test(command);
 }
 
 export const directWriteNote = (paths: readonly string[]): string =>
@@ -1487,7 +1595,7 @@ export function driftWarningsIn(text: string): string[] {
 /** For a promote call's result (preview or --write): its drift warnings, relayed as a warning (never a block). */
 export function driftNote(toolName: string, input: unknown, content: unknown): string | undefined {
 	const command = toolName.toLowerCase() === "bash" ? (input as { command?: unknown } | undefined)?.command : undefined;
-	if (typeof command !== "string" || !/sova-spec-draft\.mjs["']?\s+promote\b/.test(command)) return undefined;
+	if (typeof command !== "string" || !draftToolRuns(command).some((r) => r.verb === "promote")) return undefined;
 	const warnings = driftWarningsIn(textOf(content));
 	if (!warnings.length) return undefined;
 	return `${CHECK_TAG} promote's drift warnings (a warning, not a block): ${warnings.map((w, i) => `(${i + 1}) ${w}`).join(" ")}\nFor each: change the stale § in a draft and promote (name it in \`Also changes:\`), or say why it stays.`;

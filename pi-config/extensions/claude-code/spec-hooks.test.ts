@@ -191,6 +191,23 @@ test("B3: a promote without --json after merging master in counts only what it w
 	assert.deepEqual([turn.landed, turn.foreign], [true, ["§app/x"]]);
 });
 
+test("promote through a variable (R3-B-s3-3's `node $d promote … --write`) lands; the same words in a heredoc don't", async () => {
+	for (const [command, lands] of [
+		[`cd ROOT && d=/c/core/sova-spec-draft.mjs; node "$d" promote feat --id '§app/x' --plan abc --write 2>&1 | tail -2`, true],
+		["cat > ROOT/notes.md <<'EOF'\nnode \"$d\" promote feat --plan abc --write\nEOF", false],
+	] as const) {
+		const { root, stateDir } = b3();
+		const o = { core: CORE, stateDir };
+		git(root, "checkout", "-q", "main");
+		await runHook("turn", event(root, {}), o);
+		write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nX does a promoted thing.\n");
+		await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: command.replaceAll("ROOT", root) } }), o);
+		const turn = readState(statePath(stateDir, "s1")!).turn;
+		assert.equal(Boolean(turn.landed), lands, command);
+		if (lands) assert.deepEqual([turn.landings?.[0]?.kind, turn.foreign], ["promote", ["§app/x"]]);
+	}
+});
+
 test("a Git-computed list: a § named beyond it is an extra, sent back even behind an override", async () => {
 	const { root, stateDir, c } = b3();
 	const o = { core: CORE, stateDir };

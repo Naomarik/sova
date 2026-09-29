@@ -100,6 +100,50 @@ test("command detection: promote --write, git commit / merge, --root, draft name
 	assert.ok(!ranCensus("edit", { path: "a" }));
 });
 
+test("promoteWrites: every argv that runs the draft tool (named, or through a variable) with promote … --write; never heredoc, echo or quoted text", () => {
+	const hits = [
+		// R3-B-s3-2 / s3-3: the path in $d, set in the same command (`;` or a newline), output piped.
+		"d=/r/cfg/.agent/extensions/spec/core/sova-spec-draft.mjs; node $d promote quiet-hold  --id '§app.notifications/delivery' --id '§app.notifications/settings' --plan 0206f1a8 --root . --write 2>&1 | tail -2",
+		"d=/r/cfg/.agent/extensions/spec/core/sova-spec-draft.mjs\nnode $d promote no-send-test  --id '§app.notifications/send-test' --plan 9f1c --root . --write",
+		// R3-B-s2-1: --all.
+		"cd /r/repo && node $d promote usage-90-remerge --all --plan 0206f1a810c97b2ea4a1 --root . --write",
+		// The quoted variable, and d set in an earlier call.
+		'node "$d" promote feat --id \'§a/b\' --plan abc --write',
+		"node ${d} promote feat --plan abc --write --root /w/t",
+		// The path through $core, quoted or not; ids and the plan in variables (R3-B-s2-2's near-limit-90b).
+		'node "$core/sova-spec-draft.mjs" promote feat --id \'§a/b\' --plan abc --write --root . --json',
+		"node $core/sova-spec-draft.mjs promote feat --plan abc --write",
+		'plan=$(node "$core/sova-spec-draft.mjs" promote near-limit-90b $IDS --root . --json 2>/dev/null | jq -r .plan); echo plan=$plan; node "$core/sova-spec-draft.mjs" promote near-limit-90b $IDS --plan $plan --root . --write 2>&1 | tail -12',
+		// The script run directly, node options, a line continuation, an env assignment, a subshell.
+		"$DRAFT promote feat --plan abc --write",
+		"node --import ./kill.mjs \"$d\" promote f1 --id x --write --root . --json",
+		"node \"$d\" promote feat \\\n  --plan abc \\\n  --write",
+		"SOVA_X=1 node $d promote feat --plan abc --write",
+		"(cd /w/t && node \"$d\" promote feat --plan abc --write)",
+	];
+	for (const command of hits) assert.ok(promoteWrites(command), command);
+	const misses = [
+		"node $d promote feat --id '§a/b' --root .", // a preview writes nothing
+		'node "$core/sova-spec-draft.mjs" promote feat --id \'§a/b\' --json',
+		'echo "node $d promote feat --write"',
+		"printf 'node $d promote feat --write\\n'",
+		"cat > notes.md <<'EOF'\nnode $d promote feat --plan abc --write\nEOF",
+		"cat > notes.md <<-EOF\n\tnode \"$core/sova-spec-draft.mjs\" promote feat --write\n\tEOF\ngit add notes.md",
+		'git commit -m "node $d promote feat --write"',
+		"grep -n 'promote --write' README.md",
+		"node $d new feat --write --root .",
+		'node "$core/sova-spec.mjs" census --changed --root . --json # then promote --write',
+		": sova-spec-draft.mjs promote feat --write",
+		"node $d status feat --json; echo promote --write",
+	];
+	for (const command of misses) assert.ok(!promoteWrites(command), command);
+	// A heredoc body is dropped, and the command after it is still read.
+	assert.ok(promoteWrites("cat > n.md <<'EOF'\nnotes\nEOF\nnode $d promote feat --plan abc --write"));
+	assert.deepEqual(draftsCreated(["d=/c/sova-spec-draft.mjs; node $d new feat-b --write --root .", "echo node $d new fake --write"]), ["feat-b"]);
+	assert.ok(sanctionedSpecWrite('node "$d" promote feat --plan abc --write'), "a promote through $d is a sanctioned spec write");
+	assert.ok(!sanctionedSpecWrite("printf x > .sova/spec/manifest.json"));
+});
+
 test("parseAlsoChanges: none, ids, markdown emphasis; anything else is not the line", () => {
 	assert.deepEqual(parseAlsoChanges("Also changes: none"), []);
 	assert.deepEqual(parseAlsoChanges("Also changes: §chat.alignment/card — lettered options; §design.copy-deck/sidebar — count only"), [

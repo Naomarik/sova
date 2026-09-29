@@ -18,6 +18,11 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const scratchRoot = process.env.MODE_TEST_SCRATCH ?? path.join(homedir(), ".cache", "mode-tests");
 mkdirSync(scratchRoot, { recursive: true });
 const scratch = mkdtempSync(path.join(scratchRoot, "spec-worker-"));
+// A draft tool that does nothing: `node <it> promote … --write` is a promote to the checks, and the test
+// writes the current spec itself right after, as the real tool would.
+const noopDraft = path.join(scratch, "noop", "sova-spec-draft.mjs");
+mkdirSync(path.dirname(noopDraft), { recursive: true });
+writeFileSync(noopDraft, "");
 const agentDir = path.join(scratch, "agent");
 mkdirSync(path.join(agentDir, "extensions"), { recursive: true });
 symlinkSync(path.resolve(here, "../../spec"), path.join(agentDir, "extensions/spec"));
@@ -118,7 +123,8 @@ try {
 	git("add", "-A");
 	git("commit", "-qm", "work");
 	let at = requests.length;
-	const promote = `: sova-spec-draft.mjs promote feat --write; printf '# §app/shell\\n\\nShell, v2.\\n' > .sova/spec/claims/app/shell.md`;
+	// The tool through a path held in $d (R3-B-s3-3's form): still a promote.
+	const promote = `d=${noopDraft}; node "$d" promote feat --write; printf '# §app/shell\\n\\nShell, v2.\\n' > .sova/spec/claims/app/shell.md`;
 	script.push({ tool: "bash", args: { command: promote } }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" }, { text: "Promoted.\nAlso changes: none" });
 	await session.prompt("promote it");
 	assert.equal(requests.length, at + 4, "two re-prompts on a landing, then through");

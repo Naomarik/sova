@@ -35,7 +35,7 @@ export function ProfilePlaybookCard(props: {
         fallback={<Banner tone="warn" title={missingPlaybookText(props.playbook)} />}
       >
         {(pb) => (
-          <div class="card profile-playbook" role="group" aria-label={`Playbook: ${pb().title}`}>
+          <div class="profile-playbook" role="group" aria-label={`Playbook: ${pb().title}`}>
             <div class="profile-playbook-head">
               <Icon name="bulb" small />
               <span class="text-eyebrow">Playbook</span>

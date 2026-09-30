@@ -117,3 +117,20 @@
       (is (= "overseer" (get-in (hist y) [:by :kind])) "an overseer's approval says overseer, never operator")
       (is (= [{:field :status :from "proposed" :to "active"}] (map #(select-keys % [:field :from :to]) (:lines (hist y))))))
     (is (= "operator" (get-in (hist (h/send! x sid :person/approve {:by "operator" :by-kind "operator"})) [:by :kind])))))
+
+(deftest r7-time-zone-and-working-hours
+  (let [x   (born ana)
+        wh  {:days [5 1 2] :from "09:00" :to "17:00"}
+        y   (h/send! x sid :person/edit (assoc op :patch {:tz "Europe/Istanbul" :hours wh}))
+        hist (last (h/outbox y sid))]
+    (is (= "Europe/Istanbul" (:tz (h/data y sid))))
+    (is (= {:days [1 2 5] :from "09:00" :to "17:00"} (:hours (h/data y sid))) "days kept in order")
+    (is (= [:tz :hours] (map :field (:lines hist))) "history lines like contact's")
+    (is (= "tz must be an IANA time zone, like Europe/Istanbul" (h/refusal x sid :person/edit (assoc op :patch {:tz "Mars/Olympus"}))))
+    (is (= "hours.from and hours.to must be times like 09:00" (h/refusal x sid :person/edit (assoc op :patch {:hours {:days [1] :from "9" :to "17:00"}}))))
+    (is (re-find #"may not write tz" (h/refusal x sid :person/edit {:by "overseer" :attended true :patch {:tz "Europe/Istanbul"}})) "the operator's fields")
+    (testing "cleared again"
+      (let [z (h/send! y sid :person/edit (assoc op :patch {:tz "" :hours nil}))]
+        (is (= "" (:tz (h/data z sid))))
+        (is (nil? (:hours (h/data z sid))))))
+    (is (= [:name :decides :referral :status :tz :hours] (:exported person/entry)) "the hours checks read them")))

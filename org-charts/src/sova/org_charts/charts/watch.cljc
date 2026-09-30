@@ -288,7 +288,8 @@
       (transition {:event :org/attached-here} (script {:expr (fn [_ _] [(ops/assign :paused true)])}))
       (transition {:event :operator/level-set}
         (script {:expr (fn [_ d] [(ops/assign :paused false)
-                                  (ops/assign :settings (assoc (:settings d) :autonomy (or (:autonomy (b/evt d)) (:autonomy (settings d)))))])}))
+                                  ;; `resume-at`, never `autonomy`: the envelope's autonomy is the level in force (paused: L0)
+                                  (ops/assign :settings (assoc (:settings d) :autonomy (or (:resume-at (b/evt d)) (:autonomy (settings d)))))])}))
       (transition {:event :settings/changed}
         (script {:expr (fn [_ d] (settings-ops d))})
         (raise-released))

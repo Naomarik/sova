@@ -27,6 +27,8 @@
 (defn- gather [to n] {:session-id (str "b" n) :to to :public-title "T" :goal "G" :question "Q"})
 
 (defn- first-step [r] (first (:steps r)))
+(defn- act-step "The gathering start's own step (a clock jump fires due timers first)."
+  [r] (first (filter #(= :gather/start (:event %)) (:steps r))))
 
 (defn- one-slot-left [label env sentence]
   (testing label
@@ -65,3 +67,27 @@
       (is (not (:confirm held)))
       (is (not= [:hold/waiting] (map :event (:steps end))) "off the list: it goes ahead at its end")
       (is (empty? (core/holds eng))))))
+
+(deftest r7-a-gathering-to-someone-off-hours-waits-for-their-window
+  ;; Thursday 2026-03-05 00:16Z is 03:16 in Istanbul (UTC+3); their day starts 09:00 (06:00Z)
+  (let [ana    {:id "p1" :name "Ana" :status "active" :tz "Europe/Istanbul" :hours {:days [0 1 2 3 4 5 6] :from "09:00" :to "17:00"}}
+        night  (.getTime (js/Date. "2026-03-05T00:16:00Z"))
+        window (.getTime (js/Date. "2026-03-05T06:00:00Z"))
+        env    (assoc (unattended {:used 0 :max 6} {}) :hold-ms 0 :target ana)]
+    (testing "unattended: an hours wait until the window"
+      (let [eng (item-engine)
+            r   (core/send! eng sid :gather/start (merge (gather "p1" 1) env) {:now night})
+            h   (first (core/holds eng))]
+        (is (= "hours" (:wait h)))
+        (is (= window (:until h)))
+        (is (not (contains? (:batons (core/data eng sid)) "baton/o1/b1")) "not started yet")
+        (is (some? (:held (act-step r))))))
+    (testing "in hours it goes at once"
+      (let [eng (item-engine)]
+        (core/send! eng sid :gather/start (merge (gather "p1" 1) env) {:now (+ window 1)})
+        (is (empty? (core/holds eng)))))
+    (testing "the operator's click goes at once, marked off-hours"
+      (let [eng (item-engine)
+            r   (core/send! eng sid :gather/start (merge (gather "p1" 1) {:by "operator" :target ana}) {:now night})]
+        (is (empty? (core/holds eng)))
+        (is (= window (:off-hours (act-step r))))))))

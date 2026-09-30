@@ -111,9 +111,11 @@
     (ended? data) (r/refuse 409 (str "This session is already " (course data) "."))))
 
 (defn extend-refusal
-  "Extend: refused once done or closed; the limit is at most 1000."
-  [data {:keys [by invalid]}]
-  (let [max (get-in data [:budget :messages-max] 60)]
+  "Extend: refused once done or closed; the limit is at most 1000. The payload's `more` (the route's
+   body field `by`: the envelope's own `by` is the actor)."
+  [data {:keys [more invalid]}]
+  (let [max (get-in data [:budget :messages-max] 60)
+        by  more]
     (cond
       (not (blank? invalid)) (r/refuse 400 invalid)
       (not (and (integer? by) (<= 1 by messages-cap))) (r/refuse 400 (str "by must be a whole number from 1 to " messages-cap))

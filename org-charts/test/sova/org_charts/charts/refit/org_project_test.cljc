@@ -174,3 +174,9 @@
 (deftest a-session-id-with-a-blank-part-throws
   (is (thrown? #?(:clj Exception :cljs js/Error) (b/watch-sid "o1" nil)))
   (is (= "watch/o1/pr1" (b/watch-sid "o1" "pr1"))))
+
+(deftest a-started-baton-gets-the-hosts-start-keys
+  (let [y (h/send! (project) psid :baton/start (assoc op :session-id "s1" :targets ["p1" "p2"] :public-title "T" :goal "G" :question "Q"
+                                                   :lease-ms 1000 :operator-name "Omar" :offer-id "off_x"))]
+    (is (= {:lease-ms 1000 :operator-name "Omar" :offer-id "off_x"}
+           (select-keys (:data (last (h/directives y psid))) [:lease-ms :operator-name :offer-id])))))

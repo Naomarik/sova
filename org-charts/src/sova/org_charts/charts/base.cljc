@@ -6,6 +6,7 @@
     [clojure.string :as str]
     [com.fulcrologic.statecharts.elements :refer [Send script]]
     [com.fulcrologic.statecharts.data-model.operations :as ops]
+    [sova.org-charts.charts.rules.hours :as hours]
     [sova.org-charts.engine.dsl :as dsl]))
 
 ;; ---- the event --------------------------------------------------------------------------------
@@ -47,6 +48,13 @@
    \"offer\", a start to one person or the operator \"gather\"."
   [data]
   (if (>= (count (:targets (evt data))) 2) "offer" "gather"))
+
+(defn hours-window
+  "Act meta `:hours` (r7) for an act that reaches people: the envelope's person records (`target`,
+   `targets`, stamped by the host with tz/hours) → when their next window opens, or nil (go now)."
+  [data]
+  (let [e (evt data)]
+    (hours/reach-window (filter map? (cons (:target e) (:targets e))) (now-ms data))))
 
 (defn- sid-of
   "A session id from its parts; a blank part is a chart bug (a send to `watch/o1/` would reach no

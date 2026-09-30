@@ -22,7 +22,7 @@
 (def version 1)
 
 (def status-states {"proposed" :proposed "active" :active "left" :left})
-(def fields [:name :contact :role :decides :skills :competence :language :voice :referral])
+(def fields [:name :contact :role :decides :skills :competence :language :voice :tz :hours :referral])
 
 (defn person-of [data] (assoc (select-keys data fields) :status (:status data)))
 
@@ -228,7 +228,7 @@
    :version  version
    :migrate  {}
    :storage  :portable
-   :exported [:name :decides :referral :status]
+   :exported [:name :decides :referral :status :tz :hours]
    :acts     acts
    :not-here not-here
    :redact   {:contact :contact}})

@@ -191,7 +191,7 @@
                [:reason/noted {:kind "baton/done" :params {:title "T"} :key "k1" :by "system"}]
                [:turn/started {:look false}] [:turn/ended {}] [:org/attached-here {}] [:fire 60000] [:look/finished {}]
                [:look/stopped {:detail "x"}] [:settings/changed {:settings {:caps {:unattended-per-day 0}}}] [:day/rollover {}]]
-       :acts [[:operator/run-now {}] [:operator/level-set {:autonomy "L2"}]]
+       :acts [[:operator/run-now {}] [:operator/level-set {:resume-at "L2"}]]
        :key (fn [d] [(count (:reasons d)) (:looks-today d)])})))
 
 (deftest baton-matrix
@@ -200,16 +200,20 @@
         ana {:id "p1" :name "Ana" :status "active"} bob {:id "p2" :name "Bob" :status "active"}]
     (clean! "baton"
       (run "baton" "baton/o1/s1"
-        {:starts [(assoc start :to "p1") (assoc start :to "operator") (assoc start :targets ["p1" "p2"])]
+        ;; one start: its own acts reach the operator and the pool (take-back, offer), and each start
+        ;; explores from scratch; the other starts' first steps are the JVM `starts` test
+        {:starts [(assoc start :to "p1")]
          :drive [[:reply/writing {}] [:reply/ended {}] [:fire 900000] (moved "person" "person/o1/p1" [:person :left] {:name "Ana"})
                  [:wrapup/finished {}] [:wrapup/stopped {:detail "x"}]]
          :acts [[:baton/hand-to {:target bob :chosen true :question "Q"}] [:baton/hand-to {:target {:id "operator"} :question "Q"}]
                 [:baton/goal-done {:summary "S"}] [:baton/message {:from "p1" :active true}] [:baton/message {:from "p2" :active true}]
                 [:baton/message {:from "operator"}] [:baton/send {:text "T"}] [:baton/send {:text " "}] [:baton/take-back {}] [:baton/handoff {:target bob :question "Q"}]
                 [:baton/offer {:targets [ana bob] :question "Q"}] [:baton/withdraw {}] [:baton/close {:reason "r" :owner-project "pr1"}]
-                [:baton/extend {:by 5}] [:baton/extend {:by 1000}] [:baton/wrapup-retry {}]
+                [:baton/extend {:more 5}] [:baton/extend {:more 1000}] [:baton/wrapup-retry {}]
                 [:baton/record-decision {:decision-id "s1:e1" :area "A" :statement "S" :quote "Q" :owner-areas []}]]
-         :key (fn [d] [(get-in d [:budget :messages-used]) (:holder d) (some? (:pending-move d))])
+         ;; messages used up to 2 (the start's limit): past it only the budget region matters (a working
+         ;; Extend raises the limit without bound, and the raw count would make every Extend a new state)
+         :key (fn [d] [(min 2 (get-in d [:budget :messages-used] 0)) (:holder d) (some? (:pending-move d))])
          :max-configs 6000}))))
 
 (deftest decision-matrix

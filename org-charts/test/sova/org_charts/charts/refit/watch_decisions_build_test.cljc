@@ -35,7 +35,9 @@
     (testing "paused by an attach: L0 in force, looks wait; a level set resumes"
       (let [p (-> x (h/send! wsid :org/attached-here {}) (h/send! wsid :reason/noted done-reason) (h/advance! 120000))]
         (is (h/in? p wsid :due))
-        (is (h/in? (h/send! p wsid :operator/level-set (assoc op :autonomy "L2")) wsid :running))))
+        (is (h/in? (h/send! p wsid :operator/level-set (assoc op :resume-at "L2")) wsid :running))
+        (is (= "L2" (get-in (h/data (h/send! p wsid :operator/level-set (assoc op :autonomy "L0" :resume-at "L2")) wsid) [:settings :autonomy]))
+          "the envelope's autonomy (the level in force, L0 while paused) never overrides the level chosen")))
     (testing "the looks per day hold at the limit, and midnight gives them back"
       (let [y (-> x (h/send! wsid :settings/changed {:settings {:caps {:unattended-per-day 0}}}) (h/send! wsid :reason/noted done-reason) (h/advance! 60000))]
         (is (h/in? y wsid :held))

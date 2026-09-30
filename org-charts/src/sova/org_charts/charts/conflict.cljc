@@ -164,7 +164,7 @@
         (on-entry {} (script {:expr (fn [_ d] [(ops/assign :state "resolved")])}))))))
 
 (def acts
-  {:conflict/reroute {:needs nil :people-facing true :card (fn [d] {:people (remove #{"operator"} [(:to (e d))])})}
+  {:conflict/reroute {:needs nil :people-facing true :hours b/hours-window :card (fn [d] {:people (remove #{"operator"} [(:to (e d))])})}
    :conflict/settle  {:needs nil}
    :hold/cancel      {:needs "L0" :correction true}})
 

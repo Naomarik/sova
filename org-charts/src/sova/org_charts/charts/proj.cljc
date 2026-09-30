@@ -141,7 +141,7 @@
   [data]
   (let [e (b/evt data)]
     (merge (select-keys e [:to :public-title :goal :question :briefing :model :thinking :messages-max :abilities
-                           :targets :op-item :parent :mint-link :started-via])
+                           :targets :op-item :parent :mint-link :started-via :lease-ms :operator-name :offer-id :names])
       {:org-id (:org-id data) :project-id (:id data) :session-id (:session-id e)
        :owner (if (contains? #{"overseer" "chart"} (some-> (:by e) name)) {:overseer-of (:id data)} "operator")
        :created-at (b/now-ms data)})))
@@ -278,7 +278,7 @@
    :overseer/clear    {:needs nil :people-facing true :card (fn [d] {:projects [(:id d)]})}
    :stakeholder/set   {:needs nil}
    :gap/file          {:needs "L0" :tool "sova_idea"}
-   :baton/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind b/start-kind
+   :baton/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind b/start-kind :hours b/hours-window
                        :card (fn [d] (b/start-card (:id d) d))
                        :what (fn [d] (str "A gathering session \"" (:public-title (b/evt d)) "\""))}
    :build/start       {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true :confirm-kind "build"

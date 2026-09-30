@@ -29,7 +29,7 @@ Stamped by the host (`server/org-envelope.ts`) inside the org's serialized step:
 | `card {people,projects,sessions}` | the confirm card of the global Overseer's turn |
 | `holdMs` | the project's hold (`holdMin` × 60 000; 0 = no hold) |
 | `invalid` (+ `invalidStatus`) | the host's own argument refusal (name resolution, abilities and mode ceilings, a folder, a root, field shapes) — the chart refuses with it where today's code checks it |
-| per act | `target {id,name,status,referral?}` / `targets [..]`, `namesTaken [lowercased]`, `ownerAreas [..]`, `chosen` (hand_to's holder-chose, a transcript check), `live` (a terminal holds the session), `leak` (the owner update's 24-char backstop sentence), `ownerActive`, `buildFinishedAt`, `blockers {gatherings,coding,overseerWorking}`, `authorOwnsArea`, `operatorName`, `projectName` |
+| per act | `target {id,name,status,referral?,tz?,hours?}` / `targets [..]` (r7: every person an act reaches, with their zone and hours; `baton/send`: the holder), `namesTaken [lowercased]`, `ownerAreas [..]`, `chosen` (hand_to's holder-chose, a transcript check), `live` (a terminal holds the session), `leak` (the owner update's 24-char backstop sentence), `ownerActive`, `buildFinishedAt`, `blockers {gatherings,coding,overseerWorking}`, `authorOwnsArea`, `operatorName`, `projectName` |
 
 Level refusals come first (engine, `registry/options :level-check`): the operator's click, a person, a
 gathering model, the wrap-up and the system are never level-checked; `overseer` and `chart` acts are
@@ -74,7 +74,18 @@ Start: `{orgId, id, person (cleaned), changed [{field,from,to}], by: ChangeBy}` 
 | `person/revert` | op | `{row: {at, field, from, to}}` (read from roster-history.jsonl) | "No such change" 404; creation 409; C6 "{name}'s {field} has changed since then, so reverting this would undo a later change. Revert the latest change instead." (409) |
 
 Effects: `roster-history {personId, lines, by, revertOf?}` (the host appends with a unique `at`),
-`revoke-person-links {personId}` (entry of `left`). Exported: `name, decides, referral, status`.
+`revoke-person-links {personId}` (entry of `left`). Exported: `name, decides, referral, status, tz, hours`.
+
+r7 working hours: `person/edit {patch {tz, hours}}` (the operator's; history lines like contact, not
+private): `tz` an IANA zone ("" clears), `hours {days [0–6, 0 = Sunday], from "HH:MM", to "HH:MM"}` or
+null (`to` ≤ `from`: overnight). Refusals (400): "tz must be an IANA time zone, like Europe/Istanbul",
+"hours must be { days, from, to } or null", "hours.days must list days 0–6 (0 is Sunday), each once",
+"hours.from and hours.to must be times like 09:00", "hours.from and hours.to must differ". The pure
+`rules.hours/next-window [person nowMs] → ms | nil` (nil: in hours or no hours) is what the server's
+`hoursNow {open, nextOpen?}` reads. Acts that reach a person carry `:hours` (baton `hand-to`,
+`handoff`, `offer`, `send`; conflict `reroute`; project `baton/start`; item `gather/start`): the
+engine holds an automatic or unattended one until the window (`wait: "hours"`), the operator's goes at
+once with `offHours`. Several people: it goes when any of them is in hours.
 
 ## project (`project/<org>/<p>`, portable)
 
@@ -100,7 +111,7 @@ Owner-update withdraw (`updates.jsonl`) is plain data: its route, no chart event
 Start: `{orgId, projectId, paused?, settings?, tickOrigin?, tickMs?}` (the host starts it paused at attach).
 
 Host events: `facts/changed {rosterActive}`, `settings/changed {settings}` (overseer.json as read),
-`operator/level-set {autonomy}` (ends a pause), `org/attached-here`, `turn/started {look}`,
+`operator/level-set {resumeAt}` (ends a pause; not `autonomy`, the envelope's level in force), `org/attached-here`, `turn/started {look}`,
 `turn/user-entered` (the operator's message entered the context: the per-message ledger resets),
 `turn/ended`, `reason/noted {kind, params, key, by} | {reasons: [..]}`, `ledger/take {kind, n, ledger, by}`,
 `ledger/reset-message`, `limit/refused {kind, ledger, used, max}`, `look/finished`, `look/stopped {detail}`,
@@ -126,7 +137,8 @@ names, operatorName, leaseMs`). Effects at birth: `create-session`, `mint-links 
 | `message/refused` | host | | the runtime refused it after all: undone (503 busy counts nothing) |
 | `baton/take-back`, `baton/handoff {target, question, briefing}`, `baton/offer {targets, question, briefing, offerId}`, `baton/withdraw` | op (GO: card) | | while a reply runs: effect `stop-reply`, the move waits for `reply/ended` and is checked again |
 | `baton/close` | op · overseer (L1 `sova_close_gathering`, held) · system · chart (the r3 move) | `{reason, ownerProject}` | overseer's order: reason, own, settle, ended, wrote |
-| `baton/extend {by}`, `baton/abilities {abilities}`, `baton/hide {hidden}`, `baton/wrapup-retry` | op | | |
+| `baton/send {text, delivery?}` | overseer (L3 `sova_send`, held; confirm kind `message`) · chart | + `invalid` (archived, delivery), `target` (the holder) | "text must not be blank."; caps (a prompt); effect `send-prompt {text, delivery}` |
+| `baton/extend {more}` (the route's `by`; `by` is the envelope's actor), `baton/abilities {abilities}`, `baton/hide {hidden}`, `baton/wrapup-retry` | op | | |
 | `budget/recount {n}` | host | | never raises |
 | `reply/starting`, `reply/writing`, `reply/ended` | host (chat layer) | | |
 | `wrapup/finished {applied, refused}`, `wrapup/stopped {detail}` | host | | invocation `:sova/wrapup {sessionId}` |

@@ -126,7 +126,7 @@
 
 (defn baton-start-data [d]
   (let [ev (e d)]
-    (merge (select-keys ev [:to :targets :public-title :goal :question :briefing :model :thinking :messages-max :abilities :names :operator-name])
+    (merge (select-keys ev [:to :targets :public-title :goal :question :briefing :model :thinking :messages-max :abilities :names :operator-name :lease-ms :offer-id])
       {:org-id (:org-id d) :project-id (:project-id d) :session-id (:session-id ev)
        :owner (if (b/operator-act? d) "operator" {:overseer-of (:project-id d)})
        :mint-link (b/operator-act? d)
@@ -369,7 +369,7 @@
       (final {:id :dropped}))))
 
 (def acts
-  {:gather/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind b/start-kind
+  {:gather/start       {:needs "L1" :tool "sova_start_gathering" :people-facing true :counts "gather" :hold true :confirm-kind b/start-kind :hours b/hours-window
                         :card (fn [d] (b/start-card (:project-id d) d))
                         :what (fn [d] (str "A gathering on " (:idea-id d) " (\"" (:public-title (e d)) "\")"))}
    :gather/plan        {:needs "L0" :tool "sova_start_gathering"}

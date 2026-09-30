@@ -6,6 +6,7 @@
    today's, byte for byte."
   (:require
     [clojure.string :as str]
+    [sova.org-charts.charts.rules.hours :as hours]
     [sova.org-charts.charts.rules.refusal :as r]))
 
 (def name-max 80)
@@ -16,8 +17,9 @@
 (def language-max 35)
 
 (def profile-fields
-  "PROFILE_FIELDS, in their order (one history line each)."
-  [:name :status :contact :role :decides :skills :competence :language :voice :referral])
+  "PROFILE_FIELDS, in their order (one history line each). `tz` and `hours` (r7): the operator's,
+   history lines like contact, not private."
+  [:name :status :contact :role :decides :skills :competence :language :voice :tz :hours :referral])
 
 (def contact-keys [:email :phone :whatsapp :other])
 
@@ -97,6 +99,10 @@
                    (r/refuse 400 (str "“" bad "” names no decision area: use words, like “website”."))
                    out)))
     :skills (clean-list v "skills")
+    :tz (if-let [p (hours/tz-problem v)] (r/refuse 400 p) (or v ""))
+    :hours (if-let [p (hours/hours-problem v)]
+             (r/refuse 400 p)
+             (when v {:days (vec (sort (:days v))) :from (:from v) :to (:to v)}))
     :competence (if-not (map? v)
                   (r/refuse 400 "competence must be an object")
                   (let [out (reduce (fn [acc [k c]]

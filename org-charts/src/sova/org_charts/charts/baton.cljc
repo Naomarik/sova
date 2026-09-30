@@ -180,8 +180,10 @@
        (script {:expr (fn [_ d] (let [ev (e d)] (move-ops d (get-in ev [:target :id]) (str/trim (:question ev)) (:briefing ev))))})
        (watch-person #(get-in (e %) [:target :id]))
        (handoff-entry)
-       ;; the operator's hand-off returns a link (the route shows it once)
-       (dsl/effect :mint-link (fn [d] {:n (count (:handoffs d)) :person-id (get-in (e d) [:target :id])})))
+       ;; the operator's hand-off returns a link (the route shows it once); the global Overseer's
+       ;; (`:mint-link false`) mints none: nobody could be shown it
+       (script {:expr (fn [_ d] (when-not (false? (:mint-link (e d)))
+                                  (dsl/effect-ops d (dsl/effect-map :mint-link (fn [_] {:n (count (:handoffs d)) :person-id (get-in (e d) [:target :id])}) d))))}))
      (hold-move :baton/offer offer-checks)
      (dsl/act {:event :baton/offer :target :pool :checks offer-checks :cond idle?}
        (revoke-withdrawn)
@@ -396,7 +398,7 @@
       (dsl/act {:event :baton/abilities :checks [(mk rb/abilities-refusal)]}
         (script {:expr (fn [_ d] [(ops/assign :abilities (:abilities (e d)))])}))
       (dsl/act {:event :baton/extend :checks [(mk rb/extend-refusal)]}
-        (script {:expr (fn [_ d] [(ops/assign [:budget :messages-max] (+ (get-in d [:budget :messages-max]) (:by (e d))))])}))
+        (script {:expr (fn [_ d] [(ops/assign [:budget :messages-max] (+ (get-in d [:budget :messages-max]) (:more (e d))))])}))
       ;; W3: the host counts the transcript at resume and attach; never raises a count
       (transition {:event :budget/recount}
         (script {:expr (fn [_ d] (let [n (:n (e d))]
@@ -485,10 +487,16 @@
         (state {:id :reply :initial :reply-idle}
           (state {:id :reply-idle}
             (on-entry {} (set-reply "idle"))
+            ;; an accepted message starts its reply in the same step (the host's reply/starting then
+            ;; finds it starting), so the budget stop and a lease lapse wait for that reply
+            (transition {:event :baton/message :cond (fn [_ d] (nil? (msg-check d))) :target :reply-starting})
             (transition {:event :reply/starting :target :reply-starting})
             (transition {:event :reply/writing :target :reply-writing}))
           (state {:id :reply-starting}
             (on-entry {} (set-reply "starting"))
+            (transition {:event :reply/starting})
+            ;; the runtime refused the message after all: no reply comes (the note is undone above)
+            (transition {:event :message/refused :target :reply-idle})
             (transition {:event :reply/writing :target :reply-writing})
             (transition {:event :reply/stop :target :reply-stopping})
             (transition {:event :reply/ended :target :reply-idle}))
@@ -558,16 +566,18 @@
       "That can't be done now.")))
 
 (def acts
-  {:baton/hand-to         {:needs nil}
+  ;; `:hours` (r7): an act that reaches a person waits for their working hours when automatic or
+  ;; unattended (engine); the host stamps the person records it reaches as `target`/`targets`
+  {:baton/hand-to         {:needs nil :hours b/hours-window}
    :baton/goal-done       {:needs nil}
    :baton/record-decision {:needs nil}
    :baton/propose         {:needs nil}
    :baton/message         {:needs nil}
-   :baton/send            {:needs "L3" :tool "sova_send" :people-facing true :counts "prompt" :hold true :confirm-kind "message"
+   :baton/send            {:needs "L3" :tool "sova_send" :people-facing true :counts "prompt" :hold true :confirm-kind "message" :hours b/hours-window
                            :what (fn [d] (str "A message into \"" (:public-title d) "\""))}
    :baton/take-back       {:needs nil :people-facing true :card (fn [d] {:sessions [(:session-id d)]})}
-   :baton/handoff         {:needs nil :people-facing true :card (fn [d] {:sessions [(:session-id d)] :people [(get-in (e d) [:target :id])]})}
-   :baton/offer           {:needs nil :people-facing true :confirm-kind "offer" :card (fn [d] {:sessions [(:session-id d)] :people (mapv :id (:targets (e d)))})}
+   :baton/handoff         {:needs nil :people-facing true :hours b/hours-window :card (fn [d] {:sessions [(:session-id d)] :people [(get-in (e d) [:target :id])]})}
+   :baton/offer           {:needs nil :people-facing true :confirm-kind "offer" :hours b/hours-window :card (fn [d] {:sessions [(:session-id d)] :people (mapv :id (:targets (e d)))})}
    :baton/withdraw        {:needs nil}
    :baton/close           {:needs "L1" :tool "sova_close_gathering" :people-facing true :hold true :confirm-kind "close"
                            :what (fn [d] (str "Closing \"" (:public-title d) "\""))

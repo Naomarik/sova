@@ -70,7 +70,8 @@
 
 (deftest offers-claims-leases
   (let [x (start {:targets ["p1" "p2"] :lease-ms 1000})
-        y (msg x "p1")]
+        y (-> x (msg "p1") (h/send! sid :reply/ended {}))]
+    (is (h/in? (h/advance! (msg x "p1") 5000) sid :leased) "no lapse between the claim and its reply")
     (is (h/in? y sid :leased))
     (is (= "p1" (:holder (h/data y sid))))
     (is (= "Someone else is answering right now." (h/refusal y sid :baton/message {:by "person" :from "p2" :active true})))
@@ -88,17 +89,28 @@
 
 (deftest budget
   (let [x (start (assoc to-ana :messages-max 2))
-        y (-> x (msg "p1") (msg "p1"))]
+        w (-> x (msg "p1") (h/send! sid :reply/ended {}) (msg "p1"))
+        y (h/send! w sid :reply/ended {})]
+    (testing "server-3: the last allowed message's reply starts in its own step, so the stop waits for it"
+      (is (h/in? w sid :at-limit))
+      (is (h/in? w sid :reply-starting))
+      (is (h/in? w sid :with-person) "still theirs while its reply is starting")
+      (is (h/in? (h/send! w sid :reply/starting {}) sid :reply-starting) "the host's reply/starting is idempotent")
+      (is (h/in? (h/send! w sid :lease/lapse {}) sid :with-person)))
+    (testing "a message the runtime refuses after all starts no reply"
+      (let [r (-> x (msg "p1") (h/send! sid :message/refused {}))]
+        (is (h/in? r sid :reply-idle))
+        (is (= 0 (get-in (h/data r sid) [:budget :messages-used])))))
     (is (h/in? y sid :at-limit))
-    (is (h/in? y sid :with-operator) "after the last allowed message (no reply ran)")
+    (is (h/in? y sid :with-operator) "after the reply to the last allowed message")
     (is (= rb/limit-question (:question (last (:handoffs (h/data y sid))))))
     (testing "the limit never cuts a reply"
       (let [z (-> x (msg "p1") (h/send! sid :reply/writing {}) (msg "p1"))]
         (is (h/in? z sid :with-person))
         (is (h/in? (h/send! z sid :reply/ended {}) sid :with-operator))))
     (is (= rb/limit-reached (h/refusal y sid :baton/handoff (assoc op :target ana :question "Q"))))
-    (is (= "A conversation's limit is at most 1000 messages (it is 2 now)." (h/refusal y sid :baton/extend (assoc op :by 999))))
-    (is (h/in? (h/send! y sid :baton/extend (assoc op :by 5)) sid :under))
+    (is (= "A conversation's limit is at most 1000 messages (it is 2 now)." (h/refusal y sid :baton/extend (assoc op :more 999))))
+    (is (h/in? (h/send! y sid :baton/extend (assoc op :more 5)) sid :under))
     (testing "recount never raises"
       (is (= 1 (get-in (h/data (h/send! y sid :budget/recount {:n 1}) sid) [:budget :messages-used])))
       (is (= 2 (get-in (h/data (h/send! y sid :budget/recount {:n 9}) sid) [:budget :messages-used]))))))
@@ -120,8 +132,12 @@
       (is (h/in? (h/send! y sid :reply/ended {}) sid :with-operator)))))
 
 (deftest done-close-wrapup
-  (let [x (msg (start to-ana) "p1")
+  (let [x (-> (start to-ana) (msg "p1") (h/send! sid :reply/ended {}))
         y (h/send! x sid :baton/goal-done {:by "model" :summary "All set"})]
+    (testing "goal_done inside the reply: the wrap-up waits for the reply to end"
+      (let [m (-> (start to-ana) (msg "p1") (h/send! sid :reply/writing {}) (h/send! sid :baton/goal-done {:by "model" :summary "All set"}))]
+        (is (not (h/in? m sid :wrapup-running)))
+        (is (h/in? (h/send! m sid :reply/ended {}) sid :wrapup-running))))
     (is (h/in? y sid :done))
     (is (h/in? y sid :wrapup-running))
     (is (= "This session is already done." (h/refusal y sid :baton/goal-done {:by "model" :summary "x"})))
@@ -191,3 +207,13 @@
     (testing "a participant's own message is never held and has no confirm kind"
       (is (not (:hold (get-in baton/acts [:baton/message]))))
       (is (nil? (get-in baton/acts [:baton/message :confirm-kind]))))))
+
+(deftest the-global-overseers-hand-off-mints-no-link
+  (let [go {:by "operator" :via "overseer" :card {:sessions ["s1"] :people ["p2"]}}]
+    (is (some #{"mint-link"} (map name (h/kinds (h/send! (start to-ana) sid :baton/handoff (assoc op :target bob :question "Q")) sid))))
+    (is (not-any? #{"mint-link"} (map name (h/kinds (h/send! (start to-ana) sid :baton/handoff (assoc go :target bob :question "Q" :mint-link false)) sid))))))
+
+(deftest extend-reads-more-never-the-envelopes-by
+  (let [x (start (assoc to-ana :messages-max 2))]
+    (is (= 7 (get-in (h/data (h/send! x sid :baton/extend {:by "operator" :more 5}) sid) [:budget :messages-max])))
+    (is (= "by must be a whole number from 1 to 1000" (h/refusal x sid :baton/extend {:by "operator"})))))

@@ -172,7 +172,7 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
 - pnpm, pinned by `packageManager` (package.json) and `mise.toml`: `pnpm install --frozen-lockfile`.
   Settings live in `pnpm-workspace.yaml` (`.npmrc` is gitignored); only esbuild may run its
   install script (`allowBuilds`).
-- Editing org-charts/ (the org's statecharts; "charts" there means statecharts): start `pnpm statecharts:watch` first, run `pnpm statecharts:test`; never cold-compile in a loop; matrices only at the end; `release lib` (the vendored bundle build) only for the final bundle.
+- Editing statecharts/ (the org's statecharts): start `pnpm statecharts:watch` first, run `pnpm statecharts:test`; never cold-compile in a loop; matrices only at the end; `release lib` (the vendored bundle build) only for the final bundle.
 - `pnpm run dev:server` (port **4800**) and `pnpm run dev:web` (Vite, proxies /api + /ws to 4800)
 - Isolated testing: `pnpm run dev:hermetic` builds `<worktree>/.agent` (`scripts/hermetic-agent-dir.mjs`: this tree's
   pi-config, own sessions/state, nothing in `~/.pi`) and serves it on 4810 (`SOVA_PORT=<n>` picks another); it copies no auth — copy `auth.json` in by hand.

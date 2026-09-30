@@ -19,7 +19,7 @@
     "dev:hermetic": "node scripts/hermetic-agent-dir.mjs && PORT=${SOVA_PORT:-4810} PI_CODING_AGENT_DIR=\"$PWD/.agent\" tsx server/index.ts",
     "prices:update": "tsx scripts/prices-update.mjs",
     "voice:install": "tsx scripts/voice.ts",
-    "org-charts": "tsx scripts/org-charts.ts",
+    "statecharts": "tsx scripts/statecharts.ts",
     "statecharts:watch": "node scripts/statecharts-watch.mjs",
     "statecharts:test": "node scripts/statecharts-test.mjs",
     "typecheck": "tsc --noEmit",

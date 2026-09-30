@@ -1,4 +1,4 @@
-// `pnpm org-charts rebuild --verify <org> [--workspace <dir>]`: replay every session's transition log
+// `pnpm statecharts rebuild --verify <org> [--workspace <dir>]`: replay every session's transition log
 // on the current statecharts and list each whose states, links, timers or holds differ from its snapshot
 // (server/org-host/rebuild.ts). Reads only; exit 1 when a session differs, 2 on a usage error.
 // There is no plain rebuild (operator ruling r9): the log never holds message text, contact values
@@ -6,7 +6,7 @@
 import { formatReport, verifyOrg } from "../server/org-host/rebuild";
 import { stateRoot } from "../server/state-root";
 
-const USAGE = "usage: org-charts rebuild --verify <org> [--workspace <dir>]";
+const USAGE = "usage: statecharts rebuild --verify <org> [--workspace <dir>]";
 
 async function main(argv: string[]): Promise<number> {
   const [cmd, ...rest] = argv;

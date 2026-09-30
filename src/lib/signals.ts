@@ -4,13 +4,14 @@
 // the live feed's overlay of these onto the list (WS /ws/watch?feed=sessions). Pure: the sidebar
 // reads these, the tests pin them.
 
-import type { SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
+import type { AttentionDigest, SessionMarks, SessionSummary, SessionTags, SignalKind } from "../../shared/protocol";
 
-/** The line-1 mark's kinds: open alignment questions (§chat.alignment/session-mark), or a signal. */
-export type NeedsYouKind = "questions" | SignalKind;
+/** The line-1 mark's kinds: open alignment questions (§chat.alignment/session-mark), a signal, or a
+    team gone quiet (§app.decisions/team-stall, the digest's decide item for the session). */
+export type NeedsYouKind = "questions" | SignalKind | "team-stalled";
 
 /** The mark's kinds, most urgent first: one mark per row, the first of these that applies. */
-export const SIGNAL_PRECEDENCE: readonly NeedsYouKind[] = ["questions", "asks-you", "looping"];
+export const SIGNAL_PRECEDENCE: readonly NeedsYouKind[] = ["questions", "asks-you", "team-stalled", "looping"];
 
 /** What a row's line-1 mark says: the kind, whether it is about a subagent rather than the session,
     and, for open questions, the session's counts. */
@@ -47,7 +48,7 @@ export function turnErrorTitle(e: NonNullable<SessionSummary["turnError"]>): str
  */
 export function rowNeedsYou(
   s: Pick<SessionSummary, "path" | "signals" | "workerSignals" | "seenAt" | "align">,
-  opts: { selected: string | null; busy: boolean },
+  opts: { selected: string | null; busy: boolean; stalled?: boolean },
 ): NeedsYouMark | null {
   if (s.path === opts.selected || opts.busy) return null;
   if (s.align && s.align.openQuestions > 0) return { kind: "questions", worker: false, align: s.align };
@@ -58,17 +59,27 @@ export function rowNeedsYou(
   const workers: SignalKind[] = w && w.stuck > 0 ? ["looping"] : [];
   for (const kind of SIGNAL_PRECEDENCE) {
     if (kind === "questions") continue;
+    if (kind === "team-stalled") {
+      if (opts.stalled) return { kind, worker: false };
+      continue;
+    }
     if (own.includes(kind)) return { kind, worker: false };
     if (workers.includes(kind)) return { kind, worker: true };
   }
   return null;
 }
 
+/** The sessions waiting on a team gone quiet: the digest's team-stalled items, by path. A quiet
+    row mark only, never Needs you. */
+export const stalledPaths = (digest: Pick<AttentionDigest, "items"> | undefined): Set<string> =>
+  new Set((digest?.items ?? []).filter((i) => i.kind === "team-stalled" && i.path).map((i) => i.path));
+
 /** The mark's glyph and class (src/design/base.css, "DECISIONS"): the shape differs per kind, so hue isn't alone. */
-export const SIGNAL_ICON = { questions: "chat", "asks-you": "chat", looping: "refresh" } as const satisfies Record<NeedsYouKind, string>;
+export const SIGNAL_ICON = { questions: "chat", "asks-you": "chat", "team-stalled": "clock", looping: "refresh" } as const satisfies Record<NeedsYouKind, string>;
 export const SIGNAL_CLASS: Record<NeedsYouKind, string> = {
   questions: "session-signal session-signal-questions",
   "asks-you": "session-signal session-signal-asks",
+  "team-stalled": "session-signal session-signal-stalled",
   looping: "session-signal session-signal-looping",
 };
 
@@ -78,6 +89,7 @@ const questionsText = (n: number) => `${n} open question${n === 1 ? "" : "s"}`;
 export function signalWords(m: NeedsYouMark): string {
   if (m.kind === "questions") return `${questionsText(m.align?.openQuestions ?? 0)}. `;
   if (m.kind === "asks-you") return "Asks you something. ";
+  if (m.kind === "team-stalled") return "Waiting on a quiet team. ";
   if (m.worker) return "A subagent may be stuck. ";
   return "May be looping. ";
 }
@@ -90,6 +102,7 @@ export function signalTitle(m: NeedsYouMark): string {
     return a.questionDocs === 1 && a.lead ? `${questionsText(a.openQuestions)} in ${a.lead.id} ${a.lead.title}` : `${questionsText(a.openQuestions)} in ${a.questionDocs} alignments`;
   }
   if (m.kind === "asks-you") return "The last reply asks you something.";
+  if (m.kind === "team-stalled") return "Waiting on subagents that have gone quiet.";
   if (m.worker) return "A subagent looks stuck.";
   return "The last turn looks like it went in circles.";
 }

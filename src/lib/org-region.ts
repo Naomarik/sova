@@ -216,7 +216,7 @@ export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefin
   for (const s of org) {
     if (listed.has(s.path) || orgDone(s)) continue;
     const w = batonWaitDetail(s);
-    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since });
+    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since, later: [] });
   }
   return rows.sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }

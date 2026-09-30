@@ -3,7 +3,7 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, putAttentionLater, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
@@ -37,7 +37,19 @@ import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { type ArchiveDrag, archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, orgProjectOf, outsideDropEffect, outsideLabel, outsideTarget, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
-import { NEEDS_YOU_KEY, needsYouCut, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
+import {
+  LATER_TITLE,
+  laterAnnouncement,
+  laterLabel,
+  laterRefused,
+  NEEDS_YOU_KEY,
+  needsYouCut,
+  needsYouOpen as needsYouOpenRule,
+  needsYouRows,
+  needsYouShown,
+  needsYouTitle,
+  storedNeedsYouOpen,
+} from "../lib/needs-you";
 import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
@@ -55,8 +67,8 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
-import { readinessBadge, readinessTitle } from "../lib/readiness";
+import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { readinessBadge, readinessRowChip, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
@@ -81,6 +93,7 @@ import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/worke
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
+import { RowMenu, type RowMenuHandle } from "./RowMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
@@ -138,6 +151,9 @@ const leftTarget = (e: DragEvent, el: HTMLElement) => !(e.relatedTarget instance
 /** Which group sections are open, and which of their inline controls is showing. Module state for
     the same reason as the drag: a group's section is rebuilt whenever the session list refreshes
     (every few seconds), and an open group, or a rename in progress, must survive that. */
+/** The sessions waiting on a team gone quiet (the digest's decide items): a quiet line-1 mark on
+    every copy of the row, so module state like the drag, set by the Sidebar from its digest. */
+const [stalled, setStalled] = createSignal<ReadonlySet<string>>(new Set());
 const [openGroups, setOpenGroups] = createSignal<Record<string, boolean>>({});
 /** Which folder sections are open, keyed by `folderOpenKey` (region + folder). Module state for
     the same reason: the folder rules mint fresh folder objects on every poll, so every folder section
@@ -278,6 +294,9 @@ function SessionRow(props: {
   detail?: { text: string; title: string } | null;
   /** The Organizations region's Needs you only: where the row lives, "{org} · {project}". */
   place?: string;
+  /** Needs you only: put the row away (§app.session-list/needs-you). Gives the row its Later
+      button and its right-click and long-press menu. */
+  onLater?: () => void;
 }) {
   const s = () => props.session;
   /** The row's own remote mark: one row answers for itself, never its
@@ -298,11 +317,13 @@ function SessionRow(props: {
     return w ? waitingSentence(w) : "pi is replying in this session";
   };
   /** Line 1's "needs you" mark (src/lib/signals.ts): the server's kinds, never on the open or a running session. */
-  const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy() }));
+  const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy(), stalled: stalled().has(s().path) }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
   const leadMark = () => rowLeadMark(s(), props.selected);
   /** Line 3's merge-readiness badge (src/lib/readiness.ts): the server's answer, worded. */
   const badge = () => readinessBadge(s().readiness);
+  /** Line 3's leading chip: ready to merge, or waiting for your OK. */
+  const readyChip = () => readinessRowChip(s().readiness);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -322,10 +343,18 @@ function SessionRow(props: {
    * away. What the fired hold leaves behind — a `click`, and on touch a `contextmenu` — is
    * swallowed below, or the row would navigate on top of the selection it just made.
    */
+  const select = () => {
+    startSelection(s().path);
+    announce(`Selecting sessions. ${s().title} selected.`);
+  };
+  /** A Needs you row's menu: Later, then Select. A held press opens it there instead of selecting. */
+  let menu: RowMenuHandle | undefined;
+  let link: HTMLAnchorElement | undefined;
+  let pressAt = { x: 0, y: 0 };
   const hold = createHoldGesture({
     onHold: () => {
-      startSelection(s().path);
-      announce(`Selecting sessions. ${s().title} selected.`);
+      if (props.onLater && menu && !selectionMode()) menu.openAt(pressAt.x, pressAt.y);
+      else select();
     },
   });
   const cancelHold = () => hold.cancel();
@@ -373,6 +402,7 @@ function SessionRow(props: {
         "session-row-dragging": dragging()?.path === s().path,
         "session-row-shell-selecting": selecting(),
         "session-row-shell-selected": selecting() && chosen(),
+        "session-row-shell-later": !!props.onLater && !selecting(),
       }}
       // The row itself is the drag source (the link inside is not: a browser drags links natively,
       // and that drag carries a URL, not a session). The session list's "Groups": drag a row onto a group section.
@@ -395,6 +425,7 @@ function SessionRow(props: {
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return; // right-click is not a hold
         if (onOwnControl(e)) return;
+        pressAt = { x: e.clientX, y: e.clientY };
         hold.start({ x: e.clientX, y: e.clientY });
         watchPress(true);
       }}
@@ -411,8 +442,14 @@ function SessionRow(props: {
       // Capture went to someone else (a native drag, a scrollbar, another element grabbing it),
       // so the pointerup belonging to this press will never arrive.
       onLostPointerCapture={endPress}
-      // The long-press context menu belongs to the hold, not to the browser.
-      onContextMenu={(e) => hold.suppressed() && e.preventDefault()}
+      // The long-press context menu belongs to the hold, not to the browser. A right-click on a
+      // Needs you row opens the row's own menu (Later, Select).
+      onContextMenu={(e) => {
+        if (hold.suppressed()) return e.preventDefault();
+        if (!props.onLater || !menu || selecting()) return;
+        e.preventDefault();
+        menu.openAt(e.clientX, e.clientY);
+      }}
     >
       <div class="session-rail">
         {/* The rail is where a row's state lives, so it is where the row is picked too: one 44px
@@ -479,6 +516,7 @@ function SessionRow(props: {
         </div>
       </div>
       <a
+        ref={link}
         class="list-row list-row-interactive session-row"
         href={sessionHref(s().path)}
         draggable={false}
@@ -594,6 +632,15 @@ function SessionRow(props: {
             </div>
           </Show>
           <div class="list-line list-meta-row">
+            {/* Ready or waiting leads the line, at one left edge down the list; it never truncates. */}
+            <Show when={readyChip()}>
+              {(c) => (
+                <span class={`chip chip-${c().tone} session-readiness-chip`} title={readinessTitle(s().readiness) ?? undefined}>
+                  <span class="chip-dot" aria-hidden="true" />
+                  {c().label}
+                </span>
+              )}
+            </Show>
             <Show when={hostOf(s().path)}>{(h) => <HostMark host={h()} />}</Show>
             <Show when={mark()}>
               {(m) => (
@@ -657,6 +704,23 @@ function SessionRow(props: {
         <Show when={mark()}>{(m) => <span class="visually-hidden">{remoteMarkSuffix(m())}</span>}</Show>
         <Show when={hostOf(s().path)}>{(h) => <span class="visually-hidden">{hostClause(h())}</span>}</Show>
       </a>
+      {/* Later: at the row's right end. Desktop shows it on hover and keyboard focus; a phone,
+          which has no hover, always. A sibling of the link, never inside it. */}
+      <Show when={props.onLater && !selecting()}>
+        <button type="button" class="button button-ghost button-sm session-later" aria-label={laterLabel(s().title)} title={LATER_TITLE} onClick={() => props.onLater!()}>
+          Later
+        </button>
+        <RowMenu
+          label={`Actions · ${s().title}`}
+          ref={(h) => (menu = h)}
+          ignore={() => hold.suppressed()}
+          returnFocus={() => link}
+          items={[
+            { label: "Later", aria: laterLabel(s().title), onRun: () => props.onLater!() },
+            { label: "Select", aria: `Select ${s().title}`, onRun: select },
+          ]}
+        />
+      </Show>
     </li>
   );
 }
@@ -1334,10 +1398,39 @@ export function Sidebar(props: {
    * Recent. A shortcut like Recent — every row is still where it lives — and built from `hits()`
    * too, so the search narrows it and its count is always its rows. The open session stays listed.
    */
-  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits()));
+  /** Later's keys this tab has put away: the row goes at once, before the next digest read drops it. */
+  const [putAway, setPutAway] = createSignal<ReadonlySet<string>>(new Set());
+  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits(), putAway()));
+  createEffect(() => setStalled(stalledPaths(props.attention)));
+  const putLater = (row: { session: SessionSummary; later: string[] }) => {
+    const keys = row.later;
+    if (keys.length === 0) return;
+    setPutAway((prev) => new Set([...prev, ...keys]));
+    announce(laterAnnouncement(row.session.title));
+    const bringBack = () =>
+      setPutAway((prev) => {
+        const next = new Set(prev);
+        for (const k of keys) next.delete(k);
+        return next;
+      });
+    putAttentionLater(keys)
+      // The next read leaves the items out; until it lands the local set keeps the row hidden.
+      .then(() => requestListRefresh())
+      .catch((e: unknown) => {
+        bringBack();
+        const said = laterRefused(e instanceof Error ? e.message : String(e));
+        toast(said);
+        announce(said);
+      });
+  };
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYou().length);
   const needsYouCutNote = () => needsYouCut(props.attention);
+  /** The row's Later, while its items carry keys (an older server sends none). */
+  const needsYouLater = (path: string) => {
+    const r = needsYou().find((row) => row.session.path === path);
+    return r && r.later.length > 0 ? () => putLater(r) : undefined;
+  };
   const needsYouDetail = (path: string) => {
     const r = needsYou().find((row) => row.session.path === path);
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
@@ -2044,8 +2137,18 @@ export function Sidebar(props: {
               <ul class="list">
                 {/* Keyed on the session objects, which `hits()` keeps across polls: a row is updated
                     in place, never remounted, when only the digest changed. */}
+                {/* Keyed by the session, so a digest read doesn't remount a row (and drop its focus). */}
                 <For each={needsYou().map((r) => r.session)}>
-                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />}
+                  {(s) => (
+                    <SessionRow
+                      session={s}
+                      selected={props.selected}
+                      now={props.now}
+                      targets={targets()}
+                      detail={needsYouDetail(s.path)}
+                      onLater={needsYouLater(s.path)}
+                    />
+                  )}
                 </For>
               </ul>
               <Show when={needsYouCutNote()}>

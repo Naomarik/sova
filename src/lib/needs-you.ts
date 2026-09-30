@@ -1,7 +1,8 @@
 // The sidebar's "Needs you" region: the sessions the attention digest puts in its act tier
 // (server/attention.ts — a dialog open, an errored turn, a subagent error, open alignment questions
-// waiting on you, a reply that asks you, a team gone quiet, a worktree waiting for your OK to merge
-// (server/merge-readiness.ts)), said once more above Recent.
+// waiting on you, a baton hand-off), said once more above Recent. A reply that asks, a team gone
+// quiet and a branch ready to merge are decide items: quiet marks on their rows, never listed here.
+// Every row can be put away with Later until something new happens for its items.
 //
 // One decide-tier kind lists too: a roster proposal (§app.organizations/referrals) waits on the
 // operator's Approve or Decline and on nothing else, so it is a thing to act on here.
@@ -27,6 +28,8 @@ export interface NeedsYouRow {
   details: string[];
   /** ms epoch of the session's newest act item; 0 unknown. */
   since: number;
+  /** Every listed item's `later` key: Later puts all of them away, so the row goes as one. */
+  later: string[];
 }
 
 /** Whether a digest item lists in the region: every act item, and a roster proposal. */
@@ -38,27 +41,42 @@ export const listsInNeedsYou = (it: Pick<AttentionItem, "tier" | "kind">): boole
  * filter narrows this region like every other and it never lists a row the rest of the pane hides.
  * A digest session the list doesn't carry is dropped: the count is the rows.
  */
-export function needsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
+export function needsYouRows(
+  digest: Pick<AttentionDigest, "items"> | undefined,
+  sessions: readonly SessionSummary[],
+  /** Keys this tab has put away and the server hasn't dropped yet: Later hides at once. */
+  putAway: ReadonlySet<string> = new Set(),
+): NeedsYouRow[] {
   if (!digest) return [];
   const byPath = new Map(sessions.map((s) => [s.path, s]));
-  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[] }>();
+  const acc = new Map<string, { session: SessionSummary; since: number; details: { at: number; text: string }[]; later: string[] }>();
   for (const it of digest.items) {
     if (!listsInNeedsYou(it)) continue;
+    if (it.later && putAway.has(it.later)) continue;
     const session = byPath.get(it.path);
     if (!session) continue;
     let a = acc.get(it.path);
-    if (!a) acc.set(it.path, (a = { session, since: it.since, details: [] }));
+    if (!a) acc.set(it.path, (a = { session, since: it.since, details: [], later: [] }));
     a.since = Math.max(a.since, it.since);
+    if (it.later) a.later.push(it.later);
     if (it.detail) a.details.push({ at: it.since, text: it.detail });
   }
   return [...acc.values()]
     .map((a) => {
       // Newest first; the sort is stable, so one time keeps the digest's own order (most urgent kind first).
       const details = a.details.sort((x, y) => y.at - x.at).map((d) => d.text);
-      return { session: a.session, since: a.since, details, detail: details[0] ?? null };
+      return { session: a.session, since: a.since, details, detail: details[0] ?? null, later: a.later };
     })
     .sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
+
+/** The row's Later button: its accessible name, and what it does. */
+export const laterLabel = (title: string): string => `Later: ${title}`;
+export const LATER_TITLE = "Hide this until something new happens here.";
+/** Said in the live region once the row is put away. */
+export const laterAnnouncement = (title: string): string => `${title} put away until something new happens.`;
+/** The toast when the server refuses: the row is back. */
+export const laterRefused = (message: string): string => `Couldn't put it away. ${message}`;
 
 /** Whether the digest's 30-item cap dropped act items, so the region may be short. */
 export const needsYouCut = (digest: Pick<AttentionDigest, "items" | "counts"> | undefined): boolean =>

@@ -8,6 +8,7 @@ import type {
   AgentsInsight,
   SessionsDirInfo,
   AttentionDigest,
+  AttentionLaterRequest,
   ChatModeResult,
   ClaudeAccountsInfo,
   ClaudePoolInfo,
@@ -324,6 +325,11 @@ export const clearDoneOverseerTodos = () => request<OverseerTodosInfo>("/api/ove
 
 /** The attention digest: what needs the user, what finished, what is running (≤30 items, tier first). */
 export const getAttention = () => request<AttentionDigest>("/api/overseer/attention");
+
+/** Needs you's Later (§app.session-list/needs-you): put act items away until their anchors change.
+    `keys` are the items' `later`. The next digest read leaves them out. */
+export const putAttentionLater = (keys: string[]) =>
+  request<{ ok: true }>("/api/attention/later", { method: "POST", body: JSON.stringify({ keys } satisfies AttentionLaterRequest) });
 
 /** Settings → Overseer. */
 export const getOverseerSettings = () => request<OverseerSettingsInfo>("/api/settings/overseer");

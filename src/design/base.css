@@ -2301,6 +2301,31 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .session-row.list-row-interactive:hover,
 .session-row[aria-current="page"] { background: none; }
+/* Needs you's Later (§app.session-list/needs-you): at the row's right end, a sibling of the link.
+   A phone (no hover) always shows it, in flow, a 44px target, and the title gives way. A mouse gets
+   it on hover and keyboard focus only, laid over the row's right end on the row's own hover fill,
+   so a resting row keeps its full width; hidden by opacity, never display, so Tab still reaches
+   it. The row's right-click and long-press menu carry the same Later. */
+.session-row-shell-later { position: relative; }
+.session-later { flex: none; align-self: center; margin-right: var(--space-2); }
+@media (hover: none), (pointer: coarse) {
+  .session-later { min-height: var(--tap-min); min-width: var(--tap-min); }
+}
+@media (hover: hover) and (pointer: fine) {
+  .session-later {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--color-sunken);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity var(--dur-fast) var(--ease-standard);
+  }
+  .session-row-shell-current .session-later { background: var(--color-accent-tint); }
+  .session-row-shell-later:hover .session-later,
+  .session-row-shell-later:focus-within .session-later { opacity: 1; pointer-events: auto; }
+}
 .session-row .list-title { font-size: var(--session-title-fs); line-height: var(--lh-body); }
 /* The draft pencil leading line 1: 1em square so it follows the title's own size (the Typography
    setting included), muted like every row icon, on the text's baseline-ish centre. Inline, so it
@@ -5685,10 +5710,11 @@ a.subagent-row { text-decoration: none; }
 /* A session that needs you: one glyph after the unread dot (or the turn-error mark), before
    the draft pencil. It is inline text like the pencil, not an indicator, so line 1 stays the
    title's. One mark per row, the most urgent kind: open alignment questions (§chat.alignment/
-   session-mark), then a reply that asks you (§app.decisions/asks-user), then looping. The kind
-   differs in shape as well as tone, so hue never carries it alone: open questions are their count
-   in the accent (the accent's one spend, "this needs you"), an ask the speech bubble in the
-   accent, looping the refresh arrows in warn. The glyph is aria-hidden; the
+   session-mark), then a reply that asks you (§app.decisions/asks-user), then a team gone quiet
+   (§app.decisions/team-stall), then looping. The kind differs in shape as well as tone, so hue
+   never carries it alone: open questions are their count in the accent (the accent's one spend,
+   "this needs you"), an ask the speech bubble in muted ink, a quiet team the clock in muted ink,
+   looping the refresh arrows in warn. The glyph is aria-hidden; the
    hidden words beside it name the kind. A wrapping span may carry the tooltip; it adds no box of its own. */
 .list-title .session-signal {
   width: 1em;
@@ -5704,13 +5730,28 @@ a.subagent-row { text-decoration: none; }
   color: var(--color-accent);
 }
 .list-title .session-signal-questions { margin-right: 2px; }
-.session-signal-asks { color: var(--color-accent); }
+/* A reply that seems to ask and a team gone quiet are quiet marks, never the accent: neither is a
+   Needs you item (§app.session-list/needs-you). */
+.session-signal-asks,
+.session-signal-stalled { color: var(--color-ink-muted); }
 .session-signal-looping { color: var(--status-warn); }
 
 /* The merge-readiness badge joins line 3's facts, "2h ago · ready ✓ · model", in the meta's own
    muted voice: it says where the work stands, the line-1 mark is what calls. It never wraps or
    splits; the model's name gives way first. */
 .session-row .list-meta .session-readiness { white-space: nowrap; }
+/* Ready to merge and waiting for your OK: a toned chip, dot and word in sentence case (the
+   .org-needs-chip treatment), leading line 3. flex: none, so the meta text after it truncates
+   first — the model's name gives way before anything else. Tightened to the meta line's own box
+   so no row grows. */
+.list-line > .session-readiness-chip {
+  flex: none;
+  letter-spacing: 0;
+  text-transform: none;
+  padding-block: 0;
+  line-height: var(--lh-micro);
+  margin-block: -1px;
+}
 
 /* Settings → Decisions. Each provider is one line: a chip (dot and word) for its state, then
    the fact in caption ink ("Key ending 3f9a · checked 2h ago", "Rate-limited · retrying in 30 s"). */

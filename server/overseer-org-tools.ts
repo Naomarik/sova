@@ -58,6 +58,8 @@ export interface OrgToolDeps {
   started(path: string, prompted?: boolean): void;
   /** The items of the confirm card whose click opened this turn; null: no card click opened it. */
   confirmed(): SovaConfirmItem[] | null;
+  /** The Overseer's current conversation (recorded with its in-process acts, as a route's sender mark is). */
+  overseerId?(): string;
   /** A session reference in any form the tools print it, reduced to its id. */
   sessionRef(raw: unknown): string;
   obj(properties: Record<string, unknown>, required?: string[]): any;
@@ -137,7 +139,8 @@ export function orgTools(d: OrgToolDeps): Tool[] {
   /** The operator's act made through the Overseer, in the turn its confirm card started (the charts check the card). */
   const goBy = (): OperatorBy => {
     const items = d.confirmed();
-    return { kind: "operator", via: "overseer", ...(items ? { card: JSON.parse(cardHeader(items)) } : {}) };
+    const overseerId = d.overseerId?.() ?? "";
+    return { kind: "operator", via: "overseer", ...(overseerId ? { overseerId } : {}), ...(items ? { card: JSON.parse(cardHeader(items)) } : {}) };
   };
   const orgOf = (ref: unknown) => resolveOrg(ref);
   const base = (orgId: string) => `/api/orgs/${enc(orgId)}`;
@@ -487,9 +490,9 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_gather",
     label: "Gathering sessions",
     description:
-      "Gathering sessions (hand-offs) with the people of an organization, for the user. start {org, project, to, public_title, question, goal, briefing?, model?, thinking?, messages_max?, abilities?}: to is a person, operator (the user), or a list of two or more people for an offer. offer {session, to, question?, briefing?}, handoff {session, to, question, briefing?}, take {session} (Take Back), close {session}, extend {session, by} (more messages), revoke_link {session, person?}. " +
+      "Gathering sessions (hand-offs) with the people of an organization, for the user. start {org, project, to, public_title, question, goal, why, briefing?, model?, thinking?, messages_max?, abilities?}: to is a person, operator (the user), or a list of two or more people for an offer. offer {session, to, question?, briefing?}, handoff {session, to, question, briefing?}, take {session} (Take Back), close {session}, extend {session, by} (more messages), revoke_link {session, person?}. " +
       "start, offer, handoff, take, close and revoke_link run only in the turn a confirm card's click opened, listing every person, project and session the call acts on; extend needs none. No link is ever made for you: the user sends each person their link from Needs you. " +
-      "public_title and question are shown to the person as written: plain, specific words for them, never an internal label, an id, a cost, the About text or a note about anyone; goal is what the session must find out, for its model only.",
+      "public_title and question are shown to the person as written: plain, specific words for them, never an internal label, an id, a cost, the About text or a note about anyone; goal is what the session must find out, for its model only; why is for the user only.",
     promptSnippet: "start, offer, hand off, take back, close, extend or revoke a gathering session (people-facing: confirm first)",
     parameters: obj(
       {
@@ -501,6 +504,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         public_title: str("start: the session's title, shown to the person."),
         question: str("start, offer, handoff: what to ask them first, shown to them."),
         goal: str("start: what the session must find out (for its model)."),
+        why: str("start (required): why you start it, one or two sentences for the user. Shown to the user only, never to the person or the session's model."),
         briefing: str("start, offer, handoff: context for the session's model."),
         model: str('start: model ref "provider/model" (default: the new-session default).'),
         thinking: str("start: thinking level."),
@@ -526,6 +530,8 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             const abilities = overseerAbilities(p.abilities, projectAbilities(org.id, project.id));
             if ("error" in abilities) throw refuse(abilities.error);
             requireConfirm({ projects: [{ orgId: org.id, id: project.id, name: project.name }], people: people.map((x: { id: string; name: string }) => personOf(org.id, x)) });
+            const why = typeof p.why === "string" ? p.why.trim() : "";
+            if (!why) throw refuse("Say why you start it (why): one or two sentences for the user, never shown to the person.");
             const made = await counted("gather", async () =>
               // In-process, never POST /api/baton: no link is minted, so no URL or token exists to leak (§app.overseer/org-people-facing).
               createBaton({
@@ -540,7 +546,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
                 ...(typeof p.thinking === "string" && p.thinking ? { thinking: p.thinking } : {}),
                 ...(p.messages_max !== undefined ? { messagesMax: p.messages_max } : {}),
                 abilities,
-              }, { by: goBy(), mintLink: false, startedVia: "overseer" }),
+              }, { by: goBy(), mintLink: false, startedVia: "overseer", why }),
             );
             attentionChanged();
             const title = cut(String(p.public_title ?? ""), 80);

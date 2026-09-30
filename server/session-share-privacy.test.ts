@@ -56,6 +56,10 @@ const M = {
   bashCmd: "MK-BASHCMD-q7x",
   bashOut: "MK-BASHOUT-q7x",
   system: "MK-SYSTEM-q7x",
+  // pi 0.86+'s system entry: the prompt in named sections, whole tool declarations (§app.baton/told).
+  systemPreamble: "MK-PREAMBLE-q7x",
+  systemToolName: "mk_systool_q7x",
+  systemToolDescription: "MK-SYSTOOLDESC-q7x",
   customMsg: "MK-CUSTOMMSG-q7x",
   report: "MK-REPORT-q7x",
   custom: "MK-CUSTOM-q7x",
@@ -148,6 +152,7 @@ last = fork;
 add({ type: "message", message: { role: "toolResult", toolCallId: "call_1", toolName: M.toolName, content: [{ type: "text", text: M.toolOut }], details: { note: M.toolDetails }, isError: false, timestamp: seq } });
 add({ type: "message", message: { role: "bashExecution", command: `echo ${M.bashCmd}`, output: M.bashOut, exitCode: 0, cancelled: false, truncated: false, timestamp: seq } });
 add({ type: "message", message: { role: "system", content: [{ type: "text", text: M.system }], timestamp: seq } });
+add({ type: "message", message: { role: "system", content: "", sections: { preamble: M.systemPreamble, cwd: "<cwd>(none)</cwd>" }, toolsAdded: [{ name: M.systemToolName, description: M.systemToolDescription, parameters: { type: "object" } }], toolsRemoved: [{ name: "read_link" }], timestamp: seq } });
 add({ type: "custom_message", customType: "mk-ext", content: M.customMsg, display: true });
 add({ type: "custom_message", customType: "subagent-report", content: `Report\n${M.report}`, display: true });
 add({ type: "custom", customType: "worktrees", data: { note: M.custom } });
@@ -208,7 +213,7 @@ describe("nothing private reaches a session share (§app.session-share/never)", 
       const mark = planted(field, m);
       assert.ok(file.includes(mark) || file.includes(JSON.stringify(mark).slice(1, -1)), `${field} was planted`);
       // A role:"system" message and extension state (`custom`) render no row of the operator's; the file holds them.
-      if (field !== "system" && field !== "custom") assert.ok(transcript.includes(mark), `${field} is in the operator's transcript`);
+      if (!["system", "systemPreamble", "systemToolName", "systemToolDescription", "custom"].includes(field)) assert.ok(transcript.includes(mark), `${field} is in the operator's transcript`);
     }
     for (const s of [SESSION_ID, cwd, home]) assert.ok(file.includes(s), `${s} is in the session file`);
   });

@@ -15,6 +15,8 @@ const BRANCH = [
   custom("c0", BATON_ENTRY, { v: 1, orgId: "org_x", projectId: "prj_x" }),
   custom("c1", BATON_HANDOFF_ENTRY, { v: 1, n: 1, from: "operator", to: "p_t", question: "Where to host?", briefing: "" }),
   msg("s0", "system", "SYSTEM PROMPT with the goal SECRET-GOAL"),
+  // pi 0.86+'s shape: empty content, the prompt in named sections, whole tool declarations (§app.baton/told).
+  { type: "message", id: "s1", timestamp: "2026-09-26T10:00:00.000Z", message: { role: "system", content: "", sections: { preamble: "PREAMBLE-SECRET steering profile", cwd: "<cwd>(none)</cwd>" }, toolsAdded: [{ name: "record_decision", description: "TOOL-DESCRIPTION-SECRET", parameters: { type: "object" } }], toolsRemoved: [{ name: "read_link" }], timestamp: 1 } },
   { type: "model_change", id: "mc", provider: "zai", modelId: "glm-5.3" },
   { type: "thinking_level_change", id: "tl", thinkingLevel: "low" },
   msg("u1", "user", [{ type: "text", text: "On srv-01." }, { type: "image", data: "AAA", mimeType: "image/png" }]),
@@ -49,7 +51,7 @@ test("only messages, reply text and the three cards survive, in order", () => {
     ["handoff:c1", "message:u1", "reply:a1", "decision:d1", "handoff:c2", "message:u2", "message:u3", "done:f1"],
   );
   const text = JSON.stringify(v);
-  for (const leak of ["SECRET-GOAL", "THINKING", "TOOL RESULT", "REPORT", "COMPACTION", "glm-5.3", "/secret/cwd", "org_x", "prj_x", "hand_to", "AAA"])
+  for (const leak of ["SECRET-GOAL", "PREAMBLE-SECRET", "TOOL-DESCRIPTION-SECRET", "record_decision", "read_link", "<cwd>", "THINKING", "TOOL RESULT", "REPORT", "COMPACTION", "glm-5.3", "/secret/cwd", "org_x", "prj_x", "hand_to", "AAA"])
     assert.ok(!text.includes(leak), `never shown: ${leak}`);
 });
 

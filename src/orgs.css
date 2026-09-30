@@ -114,6 +114,17 @@
 .baton-strip-abilities .toggle { font-size: inherit; }
 .baton-strip-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .baton-strip-link { flex-basis: 100%; }
+/* Who started it: its own line under It can:, the overseer part a link. */
+.baton-strip-started { display: block; }
+/* The why and the goal: a full-width row of its own, the whole summary a 44px
+   target; opened, the goal as written, then the muted note, capped at a reading measure. */
+.baton-strip-goal { flex-basis: 100%; max-width: none; }
+.baton-strip-goal > .disclosure-summary { min-height: var(--tap-min); }
+.baton-strip-goal > .disclosure-body { max-width: var(--measure); display: flex; flex-direction: column; gap: var(--space-2); margin-top: 0; }
+.baton-strip-goal-label { margin: 0; font-size: var(--fs-caption); font-weight: 600; color: var(--color-ink-muted); }
+.baton-strip-goal-label + .baton-strip-goal-text { margin-top: calc(-1 * var(--space-2) + var(--space-1)); }
+.baton-strip-goal-text { margin: 0; color: var(--color-ink); white-space: pre-wrap; }
+.baton-strip-goal-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: normal; }
 
 /* Baton cards in the operator's transcript, and the sender's name on a user row. */
 .baton-card {

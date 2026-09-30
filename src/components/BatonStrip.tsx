@@ -5,7 +5,7 @@ import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
 import { LINK_WARNINGS } from "../../shared/public-links";
 import { openSettings } from "../lib/settings-nav";
-import { linkReplaced, linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
+import { goalShown, linkReplaced, linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
 import { requestListRefresh } from "../lib/list-refresh";
 import { confirmActivate } from "../lib/confirm-step";
 import { useMinuteNow } from "../lib/minute-clock";
@@ -13,10 +13,13 @@ import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
 import { createMemo, onCleanup } from "solid-js";
-import { retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
+import { getBatonTold, retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
 import { abilityToast } from "../lib/gathering-abilities";
 import { firstName } from "../lib/person-page";
-import { Banner, Chip } from "./ui";
+import { starterHref, starterName, toldMarkdown, whyText } from "../lib/baton-told";
+import { openMarkdown } from "../lib/markdown-viewer";
+import { relativeTime } from "../lib/format";
+import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
@@ -124,6 +127,14 @@ export function BatonStrip(props: {
                 )}
               </For>
             </div>
+            {/* Who started it, and when (§app.baton/told): always shown; the overseer part links to it. */}
+            <span class="baton-strip-meta baton-strip-started">
+              Started by{" "}
+              <Show when={starterHref(i().started, i().session.orgId, i().session.projectId)} fallback={starterName(i().started, i().projectName)}>
+                {(href) => <a href={href()}>{starterName(i().started, i().projectName)}</a>}
+              </Show>{" "}
+              · {relativeTime(i().started.at, now())}
+            </span>
           </div>
           <Chip tone={i().session.state === "needs-you" ? "warn" : i().session.state === "done" ? "success" : i().session.state === "open" ? "info" : undefined}>
             {i().session.state === "needs-you" ? "Needs you" : i().session.state === "open" ? (liveOffer(i()) ? "Offered" : "Open") : i().session.state === "done" ? "Done" : "Closed"}
@@ -168,6 +179,21 @@ export function BatonStrip(props: {
                 Hand On…
               </button>
             </Show>
+            {/* What It's Told (§app.baton/told): read-only, fetched when opened, at every width. */}
+            <button
+              type="button"
+              class="button button-sm button-ghost"
+              onClick={() =>
+                void getBatonTold(sid())
+                  .then((t) => {
+                    setError(null);
+                    openMarkdown({ title: "What It's Told", subtitle: t.publicTitle, markdown: toldMarkdown(t, Date.now()) });
+                  })
+                  .catch((err) => setError(errText(err)))
+              }
+            >
+              What It's Told
+            </button>
             {/* Hide From / Show To the org's owner (§app.owner-page/controls): this conversation on their page. */}
             <Show when={i().owner}>
               {(o) => (
@@ -201,6 +227,27 @@ export function BatonStrip(props: {
               </button>
             </Show>
           </div>
+          {/* Why it was started, and its goal: folded on every open, no preview — someone may be
+              looking at this screen with the operator. Neither leaves the operator app (§app.baton/goal-on-strip). */}
+          <details class="disclosure baton-strip-goal">
+            <summary class="disclosure-summary">
+              <Icon name="chevron-right" small class="icon-twist" />
+              <span class="disclosure-label">Why and goal</span>
+            </summary>
+            <div class="disclosure-body">
+              <p class="baton-strip-goal-label">Why</p>
+              <p class="baton-strip-goal-text">{whyText(i().started)}</p>
+              <Show when={goalShown(i().session)}>
+                {(g) => (
+                  <>
+                    <p class="baton-strip-goal-label">Goal</p>
+                    <p class="baton-strip-goal-text">{g()}</p>
+                  </>
+                )}
+              </Show>
+              <p class="baton-strip-goal-note">Only you see this. It's never on their page.</p>
+            </div>
+          </details>
           <Show when={i().owner && i().session.hiddenFromOwner}>
             <p class="baton-strip-areas">Hidden from {firstName(i().owner!.name)}'s owner page.</p>
           </Show>

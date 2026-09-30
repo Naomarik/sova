@@ -24,7 +24,9 @@
    Start data (from the spawner): BatonSession's fields — `:org-id :project-id :session-id :owner
    :goal :public-title :question :briefing :to (a person id or \"operator\") | :targets [ids ≥ 2]
    :model :thinking :messages-max :abilities :parent :conflict :started-via :mint-link :op-item
-   :names {pid name} :operator-name :lease-ms` (+ `:sova/links {:item …}` when a gap's)."
+   :names {pid name} :operator-name :lease-ms` (+ `:sova/links {:item …}` when a gap's), and who started
+   it, `:started {:by \"operator\"|\"overseer\"|\"project-overseer\" :overseer-id? :why?}` (absent on a
+   session from before it: the host reads `:owner` and `:started-via` instead)."
   (:require
     [clojure.string :as str]
     [com.fulcrologic.statecharts.chart :refer [statechart]]

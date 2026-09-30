@@ -101,7 +101,8 @@ describe("the share server", async () => {
   const post = (token: string, body: string) => fetch(`${base}/api/h/${token}/message`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
 
   test("the operator app and API are unreachable", async () => {
-    for (const p of ["/", "/api/sessions", "/api/orgs", "/api/baton", "/ws/chat", "/peer/x", "/ext/x/", "/assets/index.js", `/api/%68/${mariaToken}`])
+    // What It's Told (§app.baton/told) too, even for a real session's id.
+    for (const p of ["/", "/api/sessions", "/api/orgs", "/api/baton", "/api/baton/x/told", `/api/baton/${c.sessionId}/told`, "/ws/chat", "/peer/x", "/ext/x/", "/assets/index.js", `/api/%68/${mariaToken}`])
       assert.equal((await fetch(base + p)).status, 404, p);
     const up = await new Promise<number>((resolve) => {
       const ws = new WebSocket(`${wsBase}/ws/chat?path=/x.jsonl`);

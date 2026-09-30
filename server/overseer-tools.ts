@@ -1487,6 +1487,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       },
       started: (path, prompted) => host.started(path, prompted),
       confirmed: () => host.confirmed(),
+      overseerId: () => host.overseerId(),
       sessionRef,
       obj,
       str,

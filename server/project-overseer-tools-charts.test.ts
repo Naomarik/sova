@@ -57,7 +57,7 @@ const actions = () =>
   existsSync(store.projectOverseerPaths(org.id, project.id).actions)
     ? readFileSync(store.projectOverseerPaths(org.id, project.id).actions, "utf8").trim().split("\n").map((l) => JSON.parse(l))
     : [];
-const gather = (title: string, person = "Tony Reyes") => ({ gap: "none", person, public_title: title, goal: "Who hosts the portal", question: "Who hosts the portal?" });
+const gather = (title: string, person = "Tony Reyes") => ({ gap: "none", person, why: "Nobody has said this yet.", public_title: title, goal: "Who hosts the portal", question: "Who hosts the portal?" });
 const settings = (patch: Parameters<typeof po.patchProjectOverseer>[2]) => po.patchProjectOverseer(org.id, project.id, patch);
 /** The project's holds, each under the id the server names it by (F19: `${sessionId}:${holdId}`). */
 const holdsOf = () => hostOf(org.id).holds().filter((h) => (h.projectId ?? h.sessionId.split("/")[2]) === project.id).map((h) => ({ ...h, id: holdRef(h) }));
@@ -89,9 +89,9 @@ describe("the level is the charts' (§app.project-overseer/autonomy-levels)", ()
 
   test("an autonomy change applies at the next tool call", async () => {
     await settings({ autonomy: "L0" });
-    await assert.rejects(() => run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], public_title: "Pay day", goal: "g", question: "q?" }), /sova_offer needs L1|sova_start_gathering needs L1/);
+    await assert.rejects(() => run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], why: "Nobody has said this yet.", public_title: "Pay day", goal: "g", question: "q?" }), /sova_offer needs L1|sova_start_gathering needs L1/);
     await settings({ autonomy: "L1" });
-    assert.match(textOf(await run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], public_title: "Pay day", goal: "g", question: "q?" })), /^Held: starting "Pay day" as an offer to Tony Reyes, Toni Diaz/);
+    assert.match(textOf(await run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], why: "Nobody has said this yet.", public_title: "Pay day", goal: "g", question: "q?" })), /^Held: starting "Pay day" as an offer to Tony Reyes, Toni Diaz/);
     await clearHolds();
   });
 
@@ -269,7 +269,7 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
   test("a held act names who it reaches and about what, never a gap's id: a gap's gathering, an offer, a coding session for a gap", async () => {
     await clearHolds();
     await run("sova_start_gathering", { ...gather("Hosting owner"), gap: "§gap/hosting" });
-    await run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], public_title: "Payroll dates", goal: "g", question: "When?" });
+    await run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], why: "Nobody has said this yet.", public_title: "Payroll dates", goal: "g", question: "When?" });
     const whats = (await pipeline()).held.map((h) => h.what);
     assert.ok(whats.includes("A gathering with Tony Reyes: Hosting owner"), whats.join(" | "));
     assert.ok(whats.includes("An offer to 2 people: Payroll dates"), whats.join(" | "));
@@ -399,7 +399,7 @@ describe("every start names its gap (§app.project-overseer/gaps, q7)", () => {
     assert.match(item, new RegExp(`^item/${org.id}/${project.id}/g_[0-9a-f]{8}$`));
     await run("sova_idea", { op: "add", id: "§gap/payday", title: "again" }).catch(() => {});
     assert.equal(hostOf(org.id).sessions("item").filter((s) => s.data["ideaId"] === "§gap/payday").length, 1, "one item per gap");
-    await run("sova_start_gathering", { gap: "§gap/payday", person: "Toni Diaz", public_title: "Pay day", goal: "Which day salaries go out", question: "Which day do salaries go out?" });
+    await run("sova_start_gathering", { gap: "§gap/payday", person: "Toni Diaz", why: "Nobody has said this yet.", public_title: "Pay day", goal: "Which day salaries go out", question: "Which day do salaries go out?" });
     // The route the page reads lists it.
     const listed = (await (await app.request(`/api/orgs/${org.id}/projects/${project.id}/pipeline`)).json()) as PipelineInfo;
     assert.ok(listed.rows.some((r) => r.gap === "§gap/payday" && r.title === "Nobody decided the pay day"));
@@ -410,8 +410,8 @@ describe("every start names its gap (§app.project-overseer/gaps, q7)", () => {
 
   test("a start with no gap, or an unknown one, is refused before anything starts", async () => {
     const before = baton.allBatons().length;
-    await assert.rejects(() => run("sova_start_gathering", { person: "Toni Diaz", public_title: "x", goal: "g", question: "q?" }), /^Error: Say which gap this is for: gap "§gap\/<name>" \(sova_idea lists them\) or "none"\.$/);
-    await assert.rejects(() => run("sova_start_gathering", { gap: "§gap/nope", person: "Toni Diaz", public_title: "x", goal: "g", question: "q?" }), /No gap §gap\/nope in this project: file it first/);
+    await assert.rejects(() => run("sova_start_gathering", { person: "Toni Diaz", why: "Nobody has said this yet.", public_title: "x", goal: "g", question: "q?" }), /^Error: Say which gap this is for: gap "§gap\/<name>" \(sova_idea lists them\) or "none"\.$/);
+    await assert.rejects(() => run("sova_start_gathering", { gap: "§gap/nope", person: "Toni Diaz", why: "Nobody has said this yet.", public_title: "x", goal: "g", question: "q?" }), /No gap §gap\/nope in this project: file it first/);
     await assert.rejects(() => run("sova_create_session", { prompt: "Build it" }), /Say which gap this is for/);
     assert.equal(baton.allBatons().length, before);
   });
@@ -419,10 +419,10 @@ describe("every start names its gap (§app.project-overseer/gaps, q7)", () => {
   test("a planned gathering (L0) is filed on the item, started by the chart once the level reaches L1", async () => {
     await settings({ autonomy: "L0" });
     await run("sova_idea", { op: "add", id: "§gap/vat", title: "VAT" });
-    const out = textOf(await run("sova_start_gathering", { gap: "§gap/vat", plan: true, person: "Toni Diaz", public_title: "VAT rate", goal: "Which VAT rate applies", question: "Which VAT rate do we charge?" }));
+    const out = textOf(await run("sova_start_gathering", { gap: "§gap/vat", plan: true, person: "Toni Diaz", why: "Nobody has said this yet.", public_title: "VAT rate", goal: "Which VAT rate applies", question: "Which VAT rate do we charge?" }));
     assert.match(out, /^Planned "VAT rate" with Toni Diaz on §gap\/vat: the chart starts it once your level reaches L1/);
     assert.ok(!baton.allBatons().some((b) => b.publicTitle === "VAT rate"), "nothing started at L0");
-    await assert.rejects(() => run("sova_start_gathering", { gap: "none", plan: true, person: "Toni Diaz", public_title: "x", goal: "g", question: "q?" }), /A planned gathering belongs to a gap/);
+    await assert.rejects(() => run("sova_start_gathering", { gap: "none", plan: true, person: "Toni Diaz", why: "Nobody has said this yet.", public_title: "x", goal: "g", question: "q?" }), /A planned gathering belongs to a gap/);
     await settings({ autonomy: "L1" });
     await new Promise((r) => setTimeout(r, 100));
     assert.ok(baton.allBatons().some((b) => b.publicTitle === "VAT rate"), "L1: the chart started it");

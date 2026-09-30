@@ -1190,7 +1190,8 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   operator's with `via: "overseer"` and the Overseer's id: the roster history's `by: {kind:
   "operator", via: "overseer", overseerId}`, the About history's `by`, the project's
   `stakeholderHistory` and the org's `ownerHistory` lines (`why: "operator"`, `via`), the project's
-  `archived` record (§app.organizations/archive), a baton session it started (`startedVia`), and a
+  `archived` record (§app.organizations/archive), a baton session it started (`startedVia`, and
+  `started` with the Overseer's id and its why, §app.baton/goal-and-loadout), and a
   coding session it started (§app.overseer/org-project-overseers), each in its chart and its
   transition-log rows (§app.project-overseer/org-charts). A
   request without the secret records no `via`, whatever its body says.
@@ -1202,19 +1203,23 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   Profile Changes and the org's Recent Profile Changes (`you, via the Overseer` where the writer
   reads `you`), the About card's History rows, the main stakeholder's and the owner's latest-change
   lines ("Set by you, via the Overseer {time}."), a coding session's row ("Started by you, via the
-  Overseer"), and the archived project's banner. Copy: §design.copy-deck/overseer-orgs.
+  Overseer"), a gathering session's strip ("Started by you, via the Overseer · {relative time}",
+  §app.baton/told), and the archived project's banner. Copy: §design.copy-deck/overseer-orgs.
 - **Reverting** a line made via the Overseer is an ordinary revert: it records whoever reverts it.
 
 ## §app.overseer/org-people-facing — Acts that reach people ask first
 
-- **`sova_gather {op}`**: `start {org, project, to, public_title, question, goal, briefing?,
+- **`sova_gather {op}`**: `start {org, project, to, public_title, question, goal, why, briefing?,
   model?, thinking?, messages_max?, abilities?}` (`to`: a person, `operator`, or two or more people
   for an offer at start; `abilities` within the project's ceiling, §app.baton/abilities), `offer {session, to[], question?, briefing?}`, `handoff {session, to, question,
   briefing?}`, `take {session}` (Take Back), `close {session}`, `extend {session, by}` and
   `revoke_link {session, person?}`. The rules of §app.baton/goal-and-loadout,
   /offers-and-leases and /links apply as on the page; the tool descriptions carry the project
   overseer's wording rules for `public_title`, `question` and `goal`
-  (§app.project-overseer/tools).
+  (§app.project-overseer/tools). `why` is required: one or two sentences for the user saying why
+  it starts this session, recorded on its chart and shown only to the user, on the strip and in
+  What It's Told (§app.baton/told); never to the person, never to the session's model. Without it:
+  "Say why you start it (why): one or two sentences for the user, never shown to the person.".
 - **No link is ever minted for the model.** `start` and `offer` start in-process with no link
   (`mintLink: false`), owned by the operator; the session then needs the user to send each person
   their link (§app.baton/needs-you), and the result says so: "No link was made: Needs you asks you

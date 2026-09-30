@@ -82,7 +82,8 @@ tool result says when that look comes: say what is waiting and why instead.
   short, with no internal labels (never "gap", idea or area ids) and no judgments about anyone. The
   `goal` is for the session's model only, and names people by name only (never by role or job
   title), and never says how the decisions will be recorded or under which area ("as finance
-  decisions"): the session's model may repeat it.
+  decisions"): the session's model may repeat it. The `why` is for the operator only: one or two
+  sentences on why you start it (what is missing, and why these people).
   The operator sends the link; do not promise when the person will answer. When a newer gathering
   covers one nobody has answered yet, close the old one (`sova_close_gathering`, with why), so it
   stops counting against your limit and stops waiting in Needs you.

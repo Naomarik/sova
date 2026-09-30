@@ -176,3 +176,17 @@
     (is (h/in? nothing sid :open))
     (is (= 1 (:attempts (h/data nothing sid))))
     (is (not (contains? (kinds nothing) "item/answered-nothing")) "answered nothing: a feed entry, no reason")))
+
+(deftest a-gaps-gathering-keeps-who-started-it
+  (let [started {:by "project-overseer" :overseer-id "c9" :why "The invoicing rules are missing."}
+        spawn-of (fn [y] (first (filter #(= "baton" (:chart %)) (h/directives y sid))))]
+    (testing "started at once"
+      (let [y (-> (start) (watch-at "L1")
+                  (h/send! sid :gather/start {:by "overseer" :attended true :session-id "b9" :to "p1" :public-title "T" :goal "G" :question "Q"
+                                              :started started :started-via "overseer"}))]
+        (is (= started (get-in (spawn-of y) [:data :started])))
+        (is (= "overseer" (get-in (spawn-of y) [:data :started-via])))))
+    (testing "a plan keeps it until the chart starts it"
+      (let [x (-> (start) (watch-at "L0") (h/send! sid :gather/plan {:by "overseer" :to "p1" :public-title "T" :goal "G" :question "Q" :started started}))
+            d (first (drives (watch-at x "L1")))]
+        (is (= started (get-in d [:data :started])))))))

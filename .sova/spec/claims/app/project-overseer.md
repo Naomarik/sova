@@ -312,7 +312,7 @@ user row.
   person, or the operator), `sova_offer` (two or more), `sova_reconcile`,
   `sova_owner_update` (an update on the owner page, §app.owner-page/updates),
   `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
-  within the project's ceiling (§app.baton/abilities). L2: `sova_promote`,
+  within the project's ceiling (§app.baton/abilities) and a required `why`. L2: `sova_promote`,
   `sova_roster` approve/decline (history records the overseer as the writer). L3:
   `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode` and
   `minor_modes`; in its own worktree, §app.project-overseer/coding-worktrees), `sova_send` (its
@@ -348,7 +348,11 @@ user row.
   `goal` is for the session's model only, and names people by name only, never by role or job
   title, and never says how its decisions will be recorded or under which owner area ("as finance
   decisions"), because the session's model may repeat it (the `goal` descriptions say so, and
-  `goal_done`'s `summary` description asks for the session's own words and names only).
+  `goal_done`'s `summary` description asks for the session's own words and names only). Its `why`
+  is for the operator: one or two sentences saying why it starts this session, recorded on the
+  session's chart (a plan keeps it until the chart starts it) and shown on the strip and in What
+  It's Told (§app.baton/told), never to the person and never to the session's model. Without it:
+  "Say why you start it (why): one or two sentences for the operator, never shown to the person.".
 - **Closing its own.** `sova_close_gathering` (a session and a required `reason`) closes a
   gathering session or offer it started that nobody it went to has written in yet (`wroteAt`
   unset), the same way the operator's Close does (the wrap-up is scheduled, the share page
@@ -650,7 +654,8 @@ user row.
   the owner page read the charts in memory and answer in the same shapes as before; no route
   reads a state file.
 - **Links are set when they are made, never inferred.** A gathering session knows its gap, its
-  conflict and the session it came from; a decision knows its gathering session and its gap; a
+  conflict, the session it came from and who started it (`started {by, overseerId?, why?}` in its
+  start data, §app.baton/goal-and-loadout, kept by a gap's gathering and a planned one too); a decision knows its gathering session and its gap; a
   coding session knows its gap and the decisions it builds. Nothing is matched from words.
 - **One engine per attached org, one queue.** Every event for an org (an operator's act, a tool
   call, a person's message, a timer, an effect's result) is taken one at a time, in order, so what

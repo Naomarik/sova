@@ -107,3 +107,12 @@ export function batonComposerGate(baton: BatonSummaryField | undefined, mine: bo
   const others = mine === false || (mine === undefined && baton.state === "open");
   return others ? { ended: false, text: `${baton.holder ?? "Someone"} holds the baton. Take it back to write.` } : null;
 }
+
+/**
+ * The goal the strip folds under Goal, trimmed; null when there is
+ * none to show, so the disclosure is left out rather than opening on nothing.
+ */
+export function goalShown(session: { goal?: string | null } | undefined): string | null {
+  const g = typeof session?.goal === "string" ? session.goal.trim() : "";
+  return g || null;
+}

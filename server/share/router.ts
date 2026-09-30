@@ -12,7 +12,7 @@ import { findPersonLink } from "../person-links";
 import { findShareLink } from "../session-shares";
 import { verifiedAddress } from "./destination";
 import { hashLabel, previewHashKnown } from "../preview-links";
-import { inProcessShare, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
+import { inProcessShare, UPLOAD_TIMEOUT_MS, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
 import { gatewayPreviewMatch, localPreviewOrigin } from "./preview-address";
 import { previewHopHeaders, previewHttpHop, previewUpgradeHop } from "./preview-hop";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
@@ -135,7 +135,7 @@ type Route = { kind: TokenKind; token: string } | { kind: "asset"; name: string 
 type Standing = "same" | "moved" | "gone";
 
 const TOKEN = "([A-Za-z0-9_-]{43})";
-const H_ROUTE = new RegExp(`^/(?:api/)?h/${TOKEN}(?:/message)?$`);
+const H_ROUTE = new RegExp(`^/(?:api/)?h/${TOKEN}(?:/message|/image|/img/(?:0|[1-9][0-9]{0,3}))?$`);
 const I_ROUTE = new RegExp(`^/(?:api/)?i/${TOKEN}(?:/[pc]/[a-z]_[a-z2-9]{8})?$`);
 const S_ROUTE = new RegExp(`^/(?:api/)?s/${TOKEN}(?:/img/(?:0|[1-9][0-9]{0,4}))?$`);
 
@@ -328,10 +328,13 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     };
     active.add(entry);
     const answered = pre === "recent" ? watchStall(base, fail) : () => {};
+    // The origin answers a photo upload only once its whole body is in: that hop waits as long
+    // as the edge lets the upload take.
+    const upload = req.method === "POST" && /\/image$/.test(ctx.url.pathname);
     const timer = setTimeout(() => {
       notePeerReach(base, false);
       fail();
-    }, headersMs);
+    }, upload ? UPLOAD_TIMEOUT_MS + headersMs : headersMs);
     res.on("close", () => {
       active.delete(entry);
       clearTimeout(timer);
@@ -416,9 +419,10 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     const kind = route.kind;
     const hit = registry.lookup(h, kind, now(), live);
     if (!hit) return local.dispatch(req, res, ctx);
-    // A session share's image is capped here too, counted while streaming (defense in depth: the
-    // origin caps it already, but an older or misconfigured one might not).
-    const cap = kind === "s" && ctx.url.pathname.includes("/img/") ? imageMax : Infinity;
+    // A session share's image, and a gathering's photo (§app.baton/images), are capped here too,
+    // counted while streaming (defense in depth: the origin caps it already, but an older or
+    // misconfigured one might not).
+    const cap = (kind === "s" || kind === "h") && ctx.url.pathname.includes("/img/") ? imageMax : Infinity;
     return hop(req, res, ctx, hit, () => holds(hit.nodeId, h, kind, hit.ingressPort), (up) => {
       const declared = Number(up.headers["content-length"]);
       if (Number.isFinite(declared) && declared > cap) {

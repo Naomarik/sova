@@ -1,14 +1,15 @@
 import { createEffect, createResource, Show } from "solid-js";
-import { MESSAGES_CAP, MESSAGES_MIN } from "../../shared/baton";
+import { MESSAGES_CAP, MESSAGES_MIN, PHOTO_MB, PHOTOS_PER_CONVERSATION, PHOTOS_PER_MESSAGE } from "../../shared/baton";
 import { getBatonSettings } from "../lib/api";
-import { batonDraft, batonSaveError, batonSaving as saving, parseLimit, setBatonDraft, setBatonSaved } from "../lib/baton-settings-draft";
+import { batonDraft, batonSaveError, batonSaving as saving, parseLimit, photoFields, setBatonDraft, setBatonSaved, type BatonDraft } from "../lib/baton-settings-draft";
 import { Banner } from "./ui";
 import { RetryButton, sentence } from "./WorkerSlotRow";
 
 /**
  * Settings → Organizations: the message limit a new hand-off session starts with (a start may set
- * its own; the operator extends one that reaches it). Host state, saved by the
- * dialog's footer (baton-settings-draft.ts holds the save and its error).
+ * its own; the operator extends one that reaches it), and photos in gathering chats
+ * (§app.baton/images). Host state, saved by the dialog's footer (baton-settings-draft.ts holds the
+ * save and its error).
  */
 export function BatonSettingsSection() {
   const [info, { refetch }] = createResource(getBatonSettings);
@@ -16,7 +17,30 @@ export function BatonSettingsSection() {
     const i = info.error ? undefined : info();
     if (i) setBatonSaved(i);
   });
-  const valid = () => parseLimit(batonDraft() ?? "") !== null;
+  const valid = () => parseLimit(batonDraft()?.messagesMax ?? "") !== null;
+  const edit = (patch: Partial<BatonDraft>) => {
+    const d = batonDraft();
+    if (d) setBatonDraft({ ...d, ...patch });
+  };
+  const photoField = (label: string, key: "perMessage" | "mb" | "perConversation", bounds: { min: number; max: number }) => (
+    <label class="field">
+      <span class="field-label">{label}</span>
+      <input
+        class="input"
+        type="number"
+        min={bounds.min}
+        max={bounds.max}
+        step="1"
+        value={batonDraft()?.[key] ?? ""}
+        disabled={saving() || !batonDraft()?.photosOn}
+        aria-invalid={batonDraft() ? photoFields[key](batonDraft()!) === null : false}
+        onInput={(e) => edit({ [key]: e.currentTarget.value })}
+      />
+      <span class="field-hint">
+        {bounds.min}–{bounds.max}
+      </span>
+    </label>
+  );
   return (
     <section class="settings-delegate" aria-labelledby="settings-orgs-title">
       <div class="settings-type-head">
@@ -40,15 +64,29 @@ export function BatonSettingsSection() {
             min={MESSAGES_MIN}
             max={MESSAGES_CAP}
             step="1"
-            value={batonDraft() ?? ""}
+            value={batonDraft()?.messagesMax ?? ""}
             disabled={saving()}
             aria-invalid={!valid()}
-            onInput={(e) => setBatonDraft(e.currentTarget.value)}
+            onInput={(e) => edit({ messagesMax: e.currentTarget.value })}
           />
           <span class="field-hint">
             {valid() ? `New sessions only; sessions already started keep theirs.` : `A whole number from ${MESSAGES_MIN} to ${MESSAGES_CAP.toLocaleString("en-US")}.`}
           </span>
         </label>
+        <h4 class="settings-type-title" id="settings-orgs-photos">
+          Photos in gathering chats
+        </h4>
+        <label class="toggle toggle-switch">
+          <input type="checkbox" checked={batonDraft()?.photosOn ?? true} disabled={saving()} onChange={(e) => edit({ photosOn: e.currentTarget.checked })} />
+          <span class="toggle-box" />
+          <span>People can send photos</span>
+        </label>
+        <div class="orgs-fields" role="group" aria-labelledby="settings-orgs-photos">
+          {photoField("Per message", "perMessage", PHOTOS_PER_MESSAGE)}
+          {photoField("Largest photo, MB", "mb", PHOTO_MB)}
+          {photoField("Per conversation", "perConversation", PHOTOS_PER_CONVERSATION)}
+        </div>
+        <p class="field-hint">Applies to every gathering session on this host, from its next message.</p>
         <Show when={batonSaveError()}>{(e) => <Banner tone="error" title="Couldn't save the message limit." body={`${sentence(e().message)} Your saved limit is unchanged.`} />}</Show>
       </Show>
     </section>

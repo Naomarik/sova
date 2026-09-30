@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { BatonSession, BatonStarted, BatonStartedFor, BatonStarter, BatonTold, BatonToldTool } from "../shared/baton";
 import { batonById, batonSid, sessionPathOf } from "./baton";
 import { activeBatonTools, batonTools, BATON_TOOLS, renderBatonPrompt } from "./baton-loadout";
+import { photosFor } from "./baton-images";
 import { READ_LINK_TOOL, readLinkTool } from "./baton-read-link";
 import { WRAPUP_TOOL } from "./baton-wrapup";
 import { hostOf, isOrgHostOpen } from "./org-engine";
@@ -212,7 +213,7 @@ export async function toldOf(sessionId: string): Promise<BatonTold | null> {
   if (recorded.prompt) prompt = { kind: "recorded", ...recorded.prompt };
   else {
     // Never run: what the next reply would get, rendered now (the only render; labelled a preview).
-    prompt = { kind: "preview", text: renderBatonPrompt(sessionId) };
+    prompt = { kind: "preview", text: renderBatonPrompt(sessionId, undefined, !!(await photosFor(row, dir, undefined, branch).catch(() => null))) };
     const active = new Set(activeBatonTools(sessionId));
     tools = [...batonTools(sessionId, () => {}), readLinkTool(sessionId)].filter((t) => active.has(t.name)).map(toolOf);
   }

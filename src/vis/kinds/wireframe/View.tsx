@@ -346,9 +346,21 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
           </div>
         );
       case "row":
+        return (
+          <div class={c("vis-wf-row")}>
+            {kids()}
+            {/* Beside the blocks while each keeps about 12ch, else on a line of its own under them (wireframe.css). */}
+            <Show when={b.to !== undefined || b.toName}>
+              <span class="vis-wf-row-go">
+                <Go from={b} />
+              </span>
+            </Show>
+            {badge()}
+          </div>
+        );
       case "grid":
         return (
-          <div class={c(`vis-wf-${b.type}`)}>
+          <div class={c("vis-wf-grid")}>
             {kids()}
             <Go from={b} />
             {badge()}

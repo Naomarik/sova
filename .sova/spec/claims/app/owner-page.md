@@ -118,7 +118,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 - **A conversation** reads exactly as a share page shows it (§app.baton/outsider-view), with the
   owner as the viewer: the same filter, redaction and sender labels; briefings only when addressed
   to the owner; how many people an offer went to, never who; never cut at an offer; done and closed
-  conversations included; no composer. When it is the owner's turn in it, the page says to answer
+  conversations included; no composer. A message's photos (§app.baton/images) show as their count
+  only ("2 photos"), never the pictures. When it is the owner's turn in it, the page says to answer
   through the link the operator sent for it.
 
 ## §app.owner-page/conversations — Which conversations the owner reads

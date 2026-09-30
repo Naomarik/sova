@@ -287,6 +287,80 @@ test("wireframe layout: in a row beside other blocks a badge takes its label's w
   assert.equal(one(`row\n  badge "Beta"\n  text "${"word ".repeat(6).trim()}"`), 18);
 });
 
+// A fence a model wrote (2026-09-30): the last card's title, beside its chip in a phone's 2-column grid, was
+// drawn one letter to a line.
+const CATEGORIES_FENCE = `title: Home page with your categories
+screen "Home"
+header "Shop"
+grid
+  card "Clickers"
+  card "Keychains"
+  card "Toys"
+  card "Name stands"
+  card "Custom orders" -> "Custom order"
+screen "Custom order"
+header "Custom orders"
+  icon "back"
+input "Your note" "" "Tell us what you'd like"
+button "Send note" accent
+button "Chat on WhatsApp"`;
+const CATEGORIES = spec(CATEGORIES_FENCE);
+const CATEGORIES_DESKTOP = spec(`device: desktop\n${CATEGORIES_FENCE}`);
+// A col's title, a heading and a row, each with a chip, in a phone.
+const TITLED = spec(`title: Col in a row and a heading, each with a link
+screen "Home"
+header "Shop"
+row
+  col "Custom orders and gifts" -> "Custom order"
+    text "Tell us what you want"
+  col "Keychains"
+    text "Many colours"
+  col "Toys" -> "Custom order"
+    text "Small"
+heading "Your custom orders here" -> "Custom order"
+text "Heading chip above"
+row -> "Custom order"
+  text "A row with its own link"
+  text "Second cell"
+screen "Custom order"
+header "Custom orders"
+button "Send note" accent`);
+
+test("wireframe layout: a chip goes under its title when the title would keep less than 12 characters beside it", () => {
+  // A phone at 676 (277px inside) and a desktop (641px inside). With `flat`, 12ch is 84px, and a "→ Nowhere" chip
+  // is 79px and the 6px before it.
+  const phone = (body: string) => estimateHeight(spec(body), 676, flat) - 12 - 18 - 3 - 20;
+  const desktop = (body: string) => phone(`device: desktop\n${body}`) - 4;
+  // The CATEGORIES fence's last card: 112.5px inside, 27.5px beside its chip, so the chip goes under the
+  // title: 18 + 2 + 18, and 18px of padding and border. On one line the title was 20px wide, 5 lines.
+  assert.equal(phone('grid\n  card "Name stands"\n  card "Custom orders" -> "Nowhere"'), 18 + 18 + 2 + 18);
+  // The same card on a desktop's 4 columns (132px inside): still under. Alone across a desktop: beside its title.
+  assert.equal(desktop('grid\n  card "A"\n  card "B"\n  card "C"\n  card "Custom orders" -> "Nowhere"'), 18 + 18 + 2 + 18);
+  assert.equal(desktop('card "Custom orders" -> "Nowhere"'), 18 + 18);
+  // A chip with no title is a line of its own either way.
+  assert.equal(phone('grid\n  card -> "Nowhere"\n  card "B"'), 18 + 18);
+  // A col's title in a row of 3 on a phone (87px each): under it, the title wrapping in the col's whole width
+  // (3 lines), then its text (2 lines).
+  assert.equal(phone('row\n  col "Custom orders and gifts" -> "Nowhere"\n    text "Tell us what you want"\n  col "B"\n  col "C"'), 3 * 18 + 2 + 18 + 8 + 2 * 18);
+  // A heading across a phone keeps its chip beside it; in a card in a grid its chip goes on a line of its own, 2px under.
+  assert.equal(phone('heading "Your custom orders here" -> "Nowhere"'), 22);
+  assert.equal(phone('grid\n  card "A"\n    heading "Plan" -> "Nowhere"\n  card "B"'), 18 + 18 + 8 + 22 + 2 + 18);
+  // So do its controls, after the chip: "Add" (44px wide, 28 high) doesn't fit beside the chip either, a third line.
+  assert.equal(phone('grid\n  card "A"\n    heading "Plan" -> "Nowhere"\n      button "Add"\n  card "B"'), 18 + 18 + 8 + 22 + 2 + 18 + 2 + 28);
+  // With no chip, "Add" wraps under the text alone.
+  assert.equal(phone('grid\n  card "A"\n    heading "Plan"\n      button "Add"\n  card "B"'), 18 + 18 + 8 + 22 + 2 + 28);
+});
+
+test("wireframe layout: a row's chip goes under its blocks when each would keep less than 12 characters beside it", () => {
+  const phone = (body: string) => estimateHeight(spec(body), 676, flat) - 12 - 18 - 3 - 20;
+  const desktop = (body: string) => phone(`device: desktop\n${body}`) - 4;
+  // 2 blocks need 2 × 103 + 120 = 326px beside the chip: a phone's 277 puts it under them, 8px apart.
+  assert.equal(phone('row -> "Nowhere"\n  text "a"\n  text "b"'), 18 + 8 + 18);
+  assert.equal(phone('row -> "Nowhere"\n  text "a"'), 18);
+  assert.equal(desktop('row -> "Nowhere"\n  text "a"\n  text "b"\n  text "c"\n  text "d"'), 18);
+  assert.equal(phone('row -> "Nowhere"'), 18);
+});
+
 test("wireframe layout: the screen buttons are one line at any width", () => {
   const six = spec(Array.from({ length: 6 }, (_, i) => `screen "Step number ${i + 1} of the flow"\ntext "x"`).join("\n"));
   // Scrolling (six phones would go below 3/4): 36px of buttons and 8px under them, over the strip.
@@ -313,7 +387,8 @@ const RENDERED: [string, WireframeSpec, number, number][] = [
   ["six long screen names", LONG_NAMES, 296, 196],
   ["a grid and a row of more than 4, with wide blocks", WIDE, 676, 282],
   ["a grid and a row of more than 4, with wide blocks", WIDE, 296, 154],
-  ["chips on items, buttons, a card and table rows", CHIPS, 676, 335],
+  // Re-measured 2026-09-30 on feat/wf-chip-wrap: the card's chip now goes under its title (was 335).
+  ["chips on items, buttons, a card and table rows", CHIPS, 676, 351],
   ["chips on items, buttons, a card and table rows", CHIPS, 296, 460],
   ["four tiles", TILES, 676, 168],
   ["four tiles", TILES, 296, 168],
@@ -328,6 +403,13 @@ const RENDERED: [string, WireframeSpec, number, number][] = [
   ["an item with badges and buttons (a real fence)", PREVIEWS, 296, 312],
   ["long badges cut short, an item's controls on two lines, a badge beside text", SQUEEZED, 676, 429],
   ["long badges cut short, an item's controls on two lines, a badge beside text", SQUEEZED, 296, 447],
+  // Captured 2026-09-30 on feat/wf-chip-wrap, the same way (every row above re-measured, only CHIPS at 676 changed).
+  ["a card's chip under its title in a phone's grid (a real fence)", CATEGORIES, 676, 280],
+  ["a card's chip under its title in a phone's grid (a real fence)", CATEGORIES, 296, 334],
+  ["the same on a desktop", CATEGORIES_DESKTOP, 676, 338],
+  ["the same on a desktop", CATEGORIES_DESKTOP, 296, 222],
+  ["a col's, a heading's and a row's chips", TITLED, 676, 372],
+  ["a col's, a heading's and a row's chips", TITLED, 296, 444],
 ];
 
 test("wireframe layout: the estimate is within 15% of the rendered height", () => {
@@ -338,7 +420,7 @@ test("wireframe layout: the estimate is within 15% of the rendered height", () =
 });
 
 test("wireframe layout: deterministic, and positive at every width", () => {
-  for (const s of [INVOICES, CHECKOUT, SETTINGS, OVERLAYS, LONG_NAMES, WIDE, CHIPS, TILES, WIDE_TILES, RAGGED, SHELL, PREVIEWS, SQUEEZED]) {
+  for (const s of [INVOICES, CHECKOUT, SETTINGS, OVERLAYS, LONG_NAMES, WIDE, CHIPS, TILES, WIDE_TILES, RAGGED, SHELL, PREVIEWS, SQUEEZED, CATEGORIES, CATEGORIES_DESKTOP, TITLED]) {
     for (let w = 280; w <= 1000; w += 3) {
       const h = estimateHeight(s, w);
       assert.equal(h, estimateHeight(s, w));

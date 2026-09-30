@@ -1,7 +1,9 @@
 import { createEffect, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { SHARE_TEXT_MAX, type BatonView, type GoneWhy, type ShareServerMessage } from "../../shared/baton";
 import { HOP_LOST_CLOSE, RECONNECT_BACKOFF_MS } from "../../shared/public-links";
-import { Item, LinkedText, Reply } from "./thread";
+import { PhotoFormatError, processPhoto, sizeLabel, uploadPhoto, type UploadRefusal } from "./photos";
+import { Item, LinkedText, MessagePhotos, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
 
 /**
@@ -33,13 +35,44 @@ const gone = (why: unknown): Problem => (typeof why === "string" && Object.hasOw
     the page stays, the draft stays, and it keeps trying (§mesh.public/offline). */
 const RECONNECTING = "Reconnecting. Your draft is kept.";
 const NOT_SENT_OFFLINE = "Not sent. The page is offline; your message is still here.";
+/** A photo in the composer (§app.baton/images): processed on the device, then uploaded at once. */
+interface Attachment {
+  cid: string;
+  name: string;
+  size: number;
+  /** The processed bytes, kept for a retry or a re-upload after `photo-expired`; null once refused on the device. */
+  blob: Blob | null;
+  thumb: string | null;
+  state: "processing" | "uploading" | "ready" | "failed";
+  progress: number;
+  id?: string;
+  reason?: string;
+  abort?: () => void;
+}
+/** A sent message not in the view yet: dropped once the view holds `expect` messages of the viewer's own. */
+interface Pending {
+  cid: string;
+  text: string;
+  thumbs: string[];
+  expect: number;
+}
+let seq = 0;
+const cid = () => `c${++seq}`;
+const photosWord = (n: number) => (n === 1 ? "1 photo" : `${n} photos`);
+
 const UNKNOWN: Problem = { title: "This link doesn't open a conversation.", body: "Check that you copied the whole link, or ask the person who sent it for a new one." };
 
 export function ShareApp() {
-  const [view, setView] = createSignal<BatonView | null>(null);
+  // A store reconciled by item id: an unchanged row keeps its elements (and its photos' <img>s) across view pushes.
+  const [store, setStore] = createStore<{ v: BatonView | null }>({ v: null });
+  const view = () => store.v;
   const [problem, setProblem] = createSignal<Problem | null>(TOKEN ? null : UNKNOWN);
   const [streaming, setStreaming] = createSignal("");
-  const [pending, setPending] = createSignal<string[]>([]);
+  const [pending, setPending] = createSignal<Pending[]>([]);
+  const [atts, setAtts] = createStore<Attachment[]>([]);
+  const [announce, setAnnounce] = createSignal("");
+  const [dropping, setDropping] = createSignal(false);
+  let fileInput: HTMLInputElement | undefined;
   const [draft, setDraft] = createSignal("");
   const [sending, setSending] = createSignal(false);
   const [sendError, setSendError] = createSignal<string | null>(null);
@@ -52,13 +85,97 @@ export function ShareApp() {
   };
   let listEnd: HTMLDivElement | undefined;
 
+  /** The viewer's own messages in the view (the server labels them "you"; it sends no person ids). */
+  const ownCount = () => (view()?.items ?? []).filter((i) => i.kind === "message" && i.by === "you").length;
   const apply = (v: BatonView) => {
-    setView(v);
+    setStore("v", reconcile(v, { key: "id", merge: false }));
     setStreaming("");
-    // The server labels the viewer's own messages "you" (it sends no person ids).
-    const mine = new Set(v.items.filter((i) => i.kind === "message" && i.by === "you").map((i) => (i as { text: string }).text));
-    setPending((p) => p.filter((t) => !mine.has(t)));
+    const own = ownCount();
+    setPending((p) => p.filter((x) => own < x.expect));
   };
+  const photos = () => (view()?.viewer?.canWrite ? (view()?.viewer?.photos ?? null) : null);
+  const photoSrc = (n: number) => `/api/h/${TOKEN}/img/${n}`;
+
+  // ---- photos in the composer (§app.baton/images) ----
+  const patch = (id: string, p: Partial<Attachment>) => setAtts((a) => a.cid === id, p);
+  const find = (id: string) => atts.find((a) => a.cid === id);
+  const live = () => atts.filter((a) => a.state !== "failed" || a.blob !== null);
+  const uploading = () => atts.some((a) => a.state === "processing" || a.state === "uploading");
+  const ready = () => atts.filter((a) => a.state === "ready" && a.id);
+  const upload = async (id: string): Promise<boolean> => {
+    const a = find(id);
+    if (!a?.blob || !TOKEN) return false;
+    const up = uploadPhoto(TOKEN, a.blob, (p) => patch(id, { progress: p }));
+    patch(id, { state: "uploading", progress: 0, reason: undefined, id: undefined, abort: up.abort });
+    try {
+      const staged = await up.done;
+      if (!find(id)) return false;
+      patch(id, { state: "ready", id: staged.id, progress: 1, abort: undefined });
+      return true;
+    } catch (err) {
+      const r = err as UploadRefusal;
+      if (!find(id) || r.code === "aborted") return false;
+      if (r.status === 410) setProblem(gone(undefined));
+      patch(id, { state: "failed", reason: r.status ? r.error : "Upload failed.", abort: undefined });
+      setAnnounce(`${a.name} wasn't attached. ${r.status ? r.error : "Upload failed."}`);
+      return false;
+    }
+  };
+  const addFiles = async (files: readonly File[], pasted = false) => {
+    const limits = photos();
+    if (!limits || !files.length) return;
+    let added = 0;
+    // One announcement for the whole pick: a later one would replace a refusal before it is read.
+    const refused: string[] = [];
+    for (const file of files) {
+      const name = pasted ? "Pasted photo" : file.name || "Photo";
+      const id = cid();
+      if (live().length >= limits.perMessage) {
+        const reason = `Up to ${limits.perMessage} photos per message.`;
+        setAtts(atts.length, { cid: id, name, size: file.size, blob: null, thumb: null, state: "failed", progress: 0, reason });
+        refused.push(`${name} wasn't attached. ${reason}`);
+        continue;
+      }
+      setAtts(atts.length, { cid: id, name, size: file.size, blob: null, thumb: null, state: "processing", progress: 0 });
+      let blob: Blob;
+      let preview: string;
+      try {
+        ({ blob, preview } = await processPhoto(file));
+      } catch (err) {
+        const reason = err instanceof PhotoFormatError ? err.message : "This photo's format can't be sent.";
+        patch(id, { state: "failed", reason });
+        refused.push(`${name} wasn't attached. ${reason}`);
+        continue;
+      }
+      if (!find(id)) continue;
+      if (blob.size > limits.maxBytes) {
+        const reason = `Over ${Math.round(limits.maxBytes / (1024 * 1024))} MB.`;
+        patch(id, { state: "failed", reason });
+        refused.push(`${name} wasn't attached. ${reason}`);
+        continue;
+      }
+      patch(id, { blob, size: blob.size, thumb: preview });
+      added++;
+      void upload(id);
+    }
+    setAnnounce([...(added ? [`${photosWord(added)} attached.`] : []), ...refused].join(" "));
+  };
+  const remove = (id: string) => {
+    const a = find(id);
+    a?.abort?.();
+    setAtts((list) => list.filter((x) => x.cid !== id));
+  };
+  const imageFiles = (list: FileList | null | undefined): File[] => [...(list ?? [])].filter((f) => f.type.startsWith("image/"));
+  // A stray drop anywhere else on the page must not navigate away to the file.
+  const stray = (e: DragEvent) => {
+    if (photos() && e.dataTransfer?.types.includes("Files")) e.preventDefault();
+  };
+  window.addEventListener("dragover", stray);
+  window.addEventListener("drop", stray);
+  onCleanup(() => {
+    window.removeEventListener("dragover", stray);
+    window.removeEventListener("drop", stray);
+  });
 
   const load = async () => {
     if (!TOKEN) return;
@@ -127,15 +244,26 @@ export function ShareApp() {
   const send = async (e?: Event) => {
     e?.preventDefault();
     const text = draft().trim();
-    if (!text || sending() || !TOKEN) return;
+    if ((!text && !ready().length) || sending() || uploading() || !TOKEN) return;
     setSending(true);
     setSendError(null);
+    const expect = ownCount() + pending().length + 1;
     try {
-      const res = await fetch(`/api/h/${TOKEN}/message`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
+      const post = () =>
+        fetch(`/api/h/${TOKEN}/message`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(ready().length ? { text, images: ready().map((a) => a.id) } : { text }),
+        });
+      let res = await post();
+      // A staged photo expired (a restart, a day's wait): upload them again, once, and resend.
+      if (res.status === 409 && ready().length) {
+        const body = (await res.clone().json().catch(() => ({}))) as { code?: string };
+        if (body.code === "photo-expired") {
+          const ok = await Promise.all(ready().map((a) => upload(a.cid)));
+          if (ok.every(Boolean)) res = await post();
+        }
+      }
       if (res.status === 410) return setProblem(gone(((await res.json().catch(() => ({}))) as { why?: unknown }).why));
       // Never resent on its own: the text stays in the composer for the person to send again.
       if (res.status === 503) {
@@ -149,7 +277,10 @@ export function ShareApp() {
         void load();
         return;
       }
-      setPending((p) => [...p, text]);
+      const sent = ready();
+      setPending((p) => [...p, { cid: cid(), text, thumbs: sent.flatMap((a) => (a.thumb ? [a.thumb] : [])), expect }]);
+      // The previews now belong to the sending echo; the strip empties.
+      setAtts([]);
       setDraft("");
     } catch {
       setSendError("We couldn't reach the conversation. Check your connection and send again; your text is still here.");
@@ -199,12 +330,17 @@ export function ShareApp() {
           </Show>
         </header>
         <section class="share-thread" aria-label="Conversation">
-          <For each={view()?.items ?? []}>{(it) => <Item item={it} />}</For>
+          <For each={view()?.items ?? []}>{(it) => <Item item={it} photo={photoSrc} />}</For>
           <For each={pending()}>
             {(t) => (
               <article class="share-msg share-msg-own" aria-label="You, sending">
                 <span class="share-who">You · sending</span>
-                <LinkedText text={t} />
+                <Show when={t.thumbs.length}>
+                  <MessagePhotos srcs={t.thumbs} from="you" />
+                </Show>
+                <Show when={t.text}>
+                  <LinkedText text={t.text} />
+                </Show>
               </article>
             )}
           </For>
@@ -217,22 +353,106 @@ export function ShareApp() {
           <div ref={listEnd} />
         </section>
         <Show when={view()?.viewer?.canWrite}>
-          <form class="share-composer" onSubmit={send}>
+          <form
+            class="share-composer"
+            classList={{ "share-composer-drop": dropping() }}
+            onSubmit={send}
+            onDragOver={(e) => {
+              if (!photos() || !e.dataTransfer?.types.includes("Files")) return;
+              e.preventDefault();
+              setDropping(true);
+            }}
+            onDragLeave={(e) => {
+              if (e.currentTarget === e.target) setDropping(false);
+            }}
+            onDrop={(e) => {
+              if (!photos()) return;
+              e.preventDefault();
+              setDropping(false);
+              void addFiles(imageFiles(e.dataTransfer?.files));
+            }}
+          >
+            <Show when={atts.length}>
+              <ul class="share-atts" aria-label="Photos to send">
+                <For each={atts}>
+                  {(a) => (
+                    <li class="share-att" classList={{ "share-att-failed": a.state === "failed" }}>
+                      <Show when={a.thumb} fallback={<span class="icon share-icon-alert share-att-icon" aria-hidden="true" />}>
+                        <img class="share-att-thumb" src={a.thumb!} alt="" />
+                      </Show>
+                      <span class="share-att-text">
+                        <span class="share-att-name" title={a.name}>
+                          {a.name}
+                        </span>
+                        <span class="share-att-meta">
+                          {a.state === "failed"
+                            ? a.reason
+                            : a.state === "processing"
+                              ? "Preparing"
+                              : a.state === "uploading"
+                                ? `Uploading ${Math.round(a.progress * 100)}%`
+                                : sizeLabel(a.size)}
+                        </span>
+                        <Show when={a.state === "uploading"}>
+                          <progress class="share-att-progress" max="1" value={a.progress} aria-hidden="true" />
+                        </Show>
+                      </span>
+                      <Show when={a.state === "failed" && a.blob}>
+                        <button type="button" class="button button-ghost share-att-retry" aria-label={`Retry ${a.name}`} onClick={() => void upload(a.cid)}>
+                          Retry
+                        </button>
+                      </Show>
+                      <button type="button" class="button button-icon button-ghost" aria-label={`Remove ${a.name}`} onClick={() => remove(a.cid)}>
+                        <span class="icon share-icon-close" aria-hidden="true" />
+                      </button>
+                    </li>
+                  )}
+                </For>
+              </ul>
+            </Show>
             <label class="visually-hidden" for="share-text">
               Your reply
             </label>
-            <textarea
-              id="share-text"
-              class="input textarea share-input"
-              rows={3}
-              maxlength={SHARE_TEXT_MAX}
-              placeholder="Write your reply"
-              value={draft()}
-              onInput={(e) => setDraft(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
-              }}
-            />
+            <div class="share-compose-row">
+              <Show when={photos()}>
+                <button type="button" class="button button-icon share-clip" aria-label="Attach Photos" title="Attach Photos" onClick={() => fileInput?.click()}>
+                  <span class="icon share-icon-attach" aria-hidden="true" />
+                </button>
+                <input
+                  ref={fileInput}
+                  class="visually-hidden"
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  tabindex="-1"
+                  aria-hidden="true"
+                  onChange={(e) => {
+                    const files = imageFiles(e.currentTarget.files);
+                    e.currentTarget.value = "";
+                    void addFiles(files);
+                  }}
+                />
+              </Show>
+              <textarea
+                id="share-text"
+                class="input textarea share-input"
+                rows={3}
+                maxlength={SHARE_TEXT_MAX}
+                placeholder="Write your reply"
+                value={draft()}
+                onInput={(e) => setDraft(e.currentTarget.value)}
+                onPaste={(e) => {
+                  const files = photos() ? imageFiles(e.clipboardData?.files) : [];
+                  if (!files.length) return;
+                  // A paste with text keeps its text and attaches the image too.
+                  if (!e.clipboardData?.types.includes("text/plain")) e.preventDefault();
+                  void addFiles(files, true);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) void send();
+                }}
+              />
+            </div>
             <Show when={sendError()}>
               <p class="field-error" role="alert">
                 {sendError()}
@@ -240,12 +460,17 @@ export function ShareApp() {
             </Show>
             <div class="share-composer-foot">
               <span class="field-hint">
-                {draft().length.toLocaleString("en-US")} of {SHARE_TEXT_MAX.toLocaleString("en-US")} characters · Ctrl+Enter sends
+                {uploading()
+                  ? "Waiting for photos to finish."
+                  : `${draft().length.toLocaleString("en-US")} of ${SHARE_TEXT_MAX.toLocaleString("en-US")} characters · Ctrl+Enter sends`}
               </span>
-              <button type="submit" class="button button-primary" aria-disabled={sending() || !draft().trim() ? "true" : undefined}>
+              <button type="submit" class="button button-primary" aria-disabled={sending() || uploading() || (!draft().trim() && !ready().length) ? "true" : undefined}>
                 {sending() ? "Sending" : "Send"}
               </button>
             </div>
+            <p class="visually-hidden" aria-live="polite">
+              {announce()}
+            </p>
           </form>
         </Show>
       </Show>

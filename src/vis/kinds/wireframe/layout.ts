@@ -128,6 +128,28 @@ const stack = (bs: WBlock[], w: number, ctx: Ctx) =>
   bs.length ? bs.reduce((h, b) => h + block(b, w, ctx) + ((b.type === "badge" || b.type === "avatar") && goWidth(b, ctx) ? GAP + CHIP : 0), 0) + GAP * (bs.length - 1) : 0;
 
 const CHIP = 18;
+
+/** 12ch of semibold text at a size: what a title keeps beside its chip (wireframe.css: `flex: 1 1 12ch`). */
+const twelve = (px: number, ctx: Ctx) => ctx.m.b("0".repeat(12), px);
+
+/**
+ * A block's title and its chip (wireframe.css's .vis-wf-title): on one line while the title keeps 12ch beside the
+ * chip, else the chip on a line of its own under the title, 2px apart. With no title, the chip alone.
+ */
+function titled(s: string, w: number, b: WBlock, ctx: Ctx): number {
+  const go = goWidth(b, ctx);
+  const text = (width: number) => LINE * lines(s, width, BODY_PX, ctx.m.r);
+  if (!go) return text(w);
+  if (w - go >= twelve(BODY_PX, ctx)) return Math.max(CHIP, text(w - go));
+  return (s ? text(w) + 2 : 0) + CHIP;
+}
+
+/** A row's own blocks keep about 12ch (95px) each, 8px apart, beside its chip at its widest (120px) and the 8px before it. */
+const ROW_CELL = 95;
+/** Whether a row's chip goes on a line of its own under its blocks (wireframe.css's `@container wf-row` rules): past 4
+ * blocks, as for 4. */
+export const rowGoUnder = (blocks: number, w: number) => w < Math.min(4, blocks) * (ROW_CELL + GAP) + 120;
+
 /** The gap between an item's blocks at its right, and between those of a row among them. */
 const TRAIL_GAP = 6;
 
@@ -180,12 +202,29 @@ function packed(bs: WBlock[], w: number, ctx: Ctx): number {
 /** Where a block's chip goes on a line of its own under its content: the gap before it. */
 const CHIP_UNDER: Record<string, number> = { stat: 0, chart: 4, progress: 4, input: 3, select: 3, search: 3, empty: 4, loading: 6, list: 0, table: 3 };
 
+/** A row's own blocks, `w` wide between them. */
+function rowOwn(b: WBlock, w: number, ctx: Ctx): number {
+  const per = Math.min(4, b.children.length);
+  // Beside other blocks a button or a badge takes its label's width (up to half the row); the rest share what's left.
+  const mixed = b.children.some((c) => c.type !== "button");
+  const own = (c: WBlock) => (mixed && (c.type === "button" || c.type === "badge") ? Math.min(0.5 * w, ownWidth(c, ctx)) : 0);
+  let h = 0;
+  for (let i = 0; i < b.children.length; i += per) {
+    const line = b.children.slice(i, i + per);
+    const fixed = line.reduce((a, c) => a + own(c), 0);
+    const shares = line.reduce((a, c) => a + (own(c) ? 0 : c.wide ? 2 : 1), 0) || 1;
+    const each = (w - GAP * (per - 1) - fixed) / shares;
+    // Past 4 the row wraps, and every block takes a quarter.
+    const width = (c: WBlock) => (b.children.length > 4 ? (w - GAP * 3) / 4 : own(c) || each * (c.wide ? 2 : 1));
+    h += (i ? GAP : 0) + Math.max(...line.map((c) => (c.type === "button" ? button(c, width(c), ctx, true) : block(c, width(c), ctx))));
+  }
+  return h;
+}
+
 function block(b: WBlock, w: number, ctx: Ctx): number {
   const h = blockOwn(b, w, ctx);
   const under = CHIP_UNDER[b.type];
   if (under !== undefined && goWidth(b, ctx)) return h + under + CHIP;
-  // A row with nothing in it but its chip is as tall as the chip.
-  if (b.type === "row" && goWidth(b, ctx)) return Math.max(h, CHIP);
   return h;
 }
 
@@ -217,26 +256,19 @@ function blockOwn(b: WBlock, w: number, ctx: Ctx): number {
     case "sheet": {
       const padY = b.type === "modal" ? 24 + 3 : b.type === "sheet" ? 30 + 1.5 : b.type === "sidebar" ? 20 : 0;
       const padX = b.type === "modal" || b.type === "sheet" ? 24 : b.type === "sidebar" ? 20 : 0;
-      const parts = [t[0] ? body(t[0], w - padX) : 0, t[1] ? small(t.slice(1).join(" · "), w - padX) : 0, kids(w - padX)].filter((h) => h > 0);
+      // Its title and chip; with no title, the chip alone.
+      const parts = [t[0] || goWidth(b, ctx) ? titled(t[0] ?? "", w - padX, b, ctx) : 0, t[1] ? small(t.slice(1).join(" · "), w - padX) : 0, kids(w - padX)].filter((h) => h > 0);
       return padY + parts.reduce((a, h) => a + h, 0) + GAP * Math.max(0, parts.length - 1);
     }
     case "row": {
-      if (!b.children.length) return 0;
-      const per = Math.min(4, b.children.length);
-      // Beside other blocks a button or a badge takes its label's width (up to half the row); the rest share what's left.
-      const mixed = b.children.some((c) => c.type !== "button");
-      const own = (c: WBlock) => (mixed && (c.type === "button" || c.type === "badge") ? Math.min(0.5 * w, ownWidth(c, ctx)) : 0);
-      let h = 0;
-      for (let i = 0; i < b.children.length; i += per) {
-        const line = b.children.slice(i, i + per);
-        const fixed = line.reduce((a, c) => a + own(c), 0);
-        const shares = line.reduce((a, c) => a + (own(c) ? 0 : c.wide ? 2 : 1), 0) || 1;
-        const each = (w - GAP * (per - 1) - fixed) / shares;
-        // Past 4 the row wraps, and every block takes a quarter.
-        const width = (c: WBlock) => (b.children.length > 4 ? (w - GAP * 3) / 4 : own(c) || each * (c.wide ? 2 : 1));
-        h += (i ? GAP : 0) + Math.max(...line.map((c) => (c.type === "button" ? button(c, width(c), ctx, true) : block(c, width(c), ctx))));
-      }
-      return h;
+      // Its chip: beside its blocks, which share what it leaves, or on a line of its own under them. A row with
+      // nothing in it but its chip is as tall as the chip.
+      const go = goWidth(b, ctx);
+      if (!b.children.length) return go ? CHIP : 0;
+      const under = go > 0 && rowGoUnder(b.children.length, w);
+      // Past 4 blocks, the quarters fill their lines and the chip goes after the last one.
+      if (go && !under) return Math.max(CHIP, rowOwn(b, b.children.length > 4 ? w : w - go - 2, ctx));
+      return rowOwn(b, w, ctx) + (under ? GAP + CHIP : 0);
     }
     case "grid": {
       // Tiles fill rows of 2 (phone) or 4 (desktop) in order; a wide one spans 2, and starts a new row
@@ -259,7 +291,7 @@ function blockOwn(b: WBlock, w: number, ctx: Ctx): number {
     }
     case "card": {
       const iw = w - 22;
-      const parts = [t[0] || b.to !== undefined || b.toName ? body(t[0] || " ", iw - goWidth(b, ctx)) : 0, t[1] ? small(t.slice(1).join(" · "), iw) - 6 : 0, kids(iw)].filter((h) => h > 0);
+      const parts = [t[0] || goWidth(b, ctx) ? titled(t[0] ?? "", iw, b, ctx) : 0,t[1] ? small(t.slice(1).join(" · "), iw) - 6 : 0, kids(iw)].filter((h) => h > 0);
       return 18 + parts.reduce((a, h) => a + h, 0) + GAP * Math.max(0, parts.length - 1);
     }
     case "list":
@@ -306,8 +338,20 @@ function blockOwn(b: WBlock, w: number, ctx: Ctx): number {
       const lead = b.children.findIndex((c) => !["button", "link", "icon"].includes(c.type));
       const end = lead < 0 ? b.children : b.children.slice(0, lead);
       const below = b.children.slice(end.length);
-      const endW = end.reduce((a, c) => a + 6 + (c.type === "button" ? 23 + m.b(c.texts.join(" · ") || "Button", BODY_PX) : c.type === "icon" ? 16 : m.r(c.texts.join(" "), BODY_PX)), 0);
-      const own = Math.max(22 * Math.max(1, lines(t.join(" "), Math.max(40, w - endW - goWidth(b, ctx)), 14.5, m.b)), end.some((c) => c.type === "button") ? 28 : 0);
+      const endW = end.reduce((a, c) => a + 6 + (c.type === "button" ? 23 + m.b(c.texts.join(" · ") || "Button", BODY_PX) : c.type === "icon" ? 16 : m.r(c.texts.join(" "), BODY_PX)), 0) - 6;
+      // Its chip, then those controls, each beside the text while it keeps 12ch, else wrapping onto a line under it, 2px apart.
+      const go = goWidth(b, ctx);
+      const after = [...(go ? [{ w: go - 6, h: CHIP }] : []), ...(end.length ? [{ w: endW, h: end.some((c) => c.type === "button") ? 28 : 18 }] : [])];
+      const rows = [{ x: twelve(14.5, ctx), h: 0 }];
+      for (const a of after) {
+        const row = rows[rows.length - 1]!;
+        if (row.x + 6 + a.w <= w) {
+          row.x += 6 + a.w;
+          row.h = Math.max(row.h, a.h);
+        } else rows.push({ x: a.w, h: a.h });
+      }
+      const beside = rows[0]!.x - twelve(14.5, ctx);
+      const own = Math.max(22 * Math.max(1, lines(t.join(" "), Math.max(40, w - beside), 14.5, m.b)), rows[0]!.h) + rows.slice(1).reduce((a, r) => a + 2 + r.h, 0);
       return own + (below.length ? GAP + stack(below, w, ctx) : 0);
     }
     case "text":

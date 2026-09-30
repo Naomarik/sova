@@ -202,7 +202,8 @@ links". When nothing answers in time, it replies with the state as it stands.
   live, accepted host registered for that route's kind is forwarded to that host's ingress; else
   the request is served in-process, which answers 404 for an unknown token's API and socket (the
   page shell answers 200 for any token). An unknown hash is never asked of any host.
-- **Kinds bind routes.** An `h` row serves `/h`, `/api/h` and `/ws/h`; an `i` row serves `/i` and
+- **Kinds bind routes.** An `h` row serves `/h`, `/api/h` (its photo upload and photo reads
+  included, §app.baton/images) and `/ws/h`; an `i` row serves `/i` and
   `/api/i`; an `s` row serves `/s`, `/api/s` (its image route included) and `/ws/s`; a `p` row
   serves only its own preview host, every path and websocket on it (§mesh.public/preview-address);
   an `x` row never routes. A socket's kind comes from its path.
@@ -219,7 +220,8 @@ links". When nothing answers in time, it replies with the state as it stands.
   `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `nosniff`. A `p` hop is the
   exception: its answer (redirects, 502s and cookies included) passes as the minting host sent it,
   minus hop-by-hop and `x-sova-*` headers, with a preview's limits (§mesh.public/preview-limits),
-  and its websocket is passed through raw. The minting host keeps
+  and its websocket is passed through raw. A hopped `h` photo read is capped at 10 MB while
+  streaming, as a session share's image is. The minting host keeps
   its per-token limits, visits and CSP.
 - `/ws/h` and `/ws/s` through a hop: the page's handshake is checked first (400 otherwise); the page is
   accepted only after the host's side opened and the route was judged again (404 otherwise). The

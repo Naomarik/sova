@@ -66,7 +66,8 @@ once), **lease** (an offer's lock on its first taker).
   role, decision areas), the roster's active people it may hand to, a private "who decides what"
   list of every active person, the holder included, with their job title and decision areas (the
   owner areas a decision picks from, §app.requirements/owner-area; "none" when no area covers it), the operator's name and the
-  rules, and — when anyone has left the organization — the names (and former roles) of the people
+  rules, whether people can send photos here (§app.baton/images: what it may ask for and say
+  about one, or that photos can't be sent), and — when anyone has left the organization — the names (and former roles) of the people
   who left, with the rule to say they have left and ask who covers their area now (never to hand
   to them or propose them as someone new); the user's `APPEND_SYSTEM.md` is not included, and the prompt's working-directory line
   reads `(none)`. The prompt **never names the org**: an outsider learns nothing of it beyond the
@@ -322,7 +323,8 @@ once), **lease** (an offer's lock on its first taker).
 
 ## §app.baton/outsider-view — What the share page shows
 
-- Only: the public title; user messages with their sender's name; the model's reply text, with
+- Only: the public title; user messages with their sender's name and their photos
+  (§app.baton/images); the model's reply text, with
   its drawings (below);
   hand-off cards (from and to names, the question, and the briefing only when the viewer is its
   addressee); the done card; the decision cards ("Noted", the area and the statement); and who
@@ -358,9 +360,10 @@ once), **lease** (an offer's lock on its first taker).
   shutdown, Take back or Stop) shows at most its first 4,000 characters and, under it, "This reply
   was cut off."; one that stopped with no text shows nothing. The operator's transcript keeps it
   whole.
-- Text only, both ways: images are refused on the share route, and the operator's composer
-  refuses a send with images in a baton session ("A hand-off session is text only: images can't be
-  sent.", code `refused`); a message starting with `/` is refused; ≤ 4000 characters.
+- Text and photos, both ways: a person's message carries text, photos (§app.baton/images) or
+  both, and the operator's images in a baton session reach the model as images too, never as a
+  path; a message starting with `/` is refused; ≤ 4000 characters. A message of photos alone is
+  still a row. Message text is shown without pi's image resize notes (§chat.images/resize-notes).
 - An **offer** shows as a card with the question, how many people were asked (never who: with two,
   "someone else" would name the other) and the briefing for an invitee. An invitee who has never
   held the offer sees the conversation only up to that card, is not told who holds it ("Someone
@@ -442,7 +445,8 @@ once), **lease** (an offer's lock on its first taker).
   setting nor both variables there is no listener. A host routed through a gateway serves the same
   paths on its ingress instead (§mesh.public/ingress). It serves only: `GET /h/<token>` (the share page), `GET /h/assets/*` (the
   share page's own build, never the operator app's), `GET /api/h/<token>` (the filtered view and
-  state), `POST /api/h/<token>/message {text}` and the WebSocket `/ws/h?token=`, the page's
+  state), `POST /api/h/<token>/message {text, images?}`, `POST /api/h/<token>/image` and
+  `GET /api/h/<token>/img/<n>` (§app.baton/images) and the WebSocket `/ws/h?token=`, the page's
   visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
   page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`
   (§app.owner-page/page); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
@@ -452,8 +456,12 @@ once), **lease** (an offer's lock on its first taker).
   `/ext/*` are unreachable on it. The main listener never serves the share page. A request whose `Host` is a
   preview host is the preview's (§mesh.public/preview-address), with its own limits and answers
   (§mesh.public/preview-limits, §mesh.public/preview-proxy); nothing below applies to it.
-- Limits: request bodies over 16 KB (or without a length) are refused (413); a request's headers
-  must arrive within 10 seconds and the whole request within 15 (408); per token 10 messages
+- Limits: request bodies over 16 KB (or without a length) are refused (413), except a photo
+  upload's, whose cap at the edge is the setting's ceiling (10 MB) plus 64 KB, and past this host's
+  own largest photo setting the upload route answers 413; a request's headers
+  must arrive within 10 seconds and the whole request within 15 (408), except a photo upload,
+  which has 120; photo reads (`/img/`) count in a bucket of their own, 240 a minute per client
+  address and 240 a minute per token, never the 60 below; per token 10 messages
   a minute (429; tokens with no message in the last minute are forgotten) and one WebSocket (a new one replaces the old, which is told it opened
   elsewhere; a frame over 1 KB closes it with 1009, and a share socket's error is logged, never
   an uncaught exception); per client address 60 requests a minute (429; the page shell answers a
@@ -474,6 +482,60 @@ once), **lease** (an offer's lock on its first taker).
   answer 503 "The share page is not built on this host."
 - Public exposure goes through a gateway (§mesh/public): a front outside Sova terminates TLS and
   forwards to the gateway's share port, and other hosts route their links through the gateway.
+
+## §app.baton/images — A person's photos
+
+- **When.** A person can send photos and screenshots only while their link writes, photos are on
+  (Settings → Organizations, §app.settings-dialog/organizations) and the session's current model
+  sees images (its `input` lists `image`). Only then does the view carry `viewer.photos
+  {perMessage, maxBytes}` and the share page show its paperclip; otherwise it shows none. A model
+  that can't see images gets no photo at all: the upload and the message routes refuse one (409,
+  code `no-photos`), and the operator's strip and the project page's gathering-model picker say
+  "This model can't see photos: people won't get an attach button."
+- **Attaching.** A 44 px paperclip button ("Attach Photos") left of the textarea opens the device's
+  own picker (`accept="image/*"`, several at once, no `capture`, so a phone offers its camera,
+  photo library and files); pasting image files and dropping them on the composer attach too
+  (a paste keeps its text). Each file is processed on the device before it leaves it: decoded
+  with its orientation applied, scaled so its longest edge is at most 2000 px, and re-encoded
+  (JPEG at quality 0.85; a PNG that needs no scaling stays PNG), which drops its metadata (EXIF,
+  GPS). A file the browser can't decode is not sent ("This photo's format can't be sent.").
+- **Upload at attach.** Each processed photo uploads at once, `POST /api/h/<token>/image` with the
+  raw bytes and their type (`image/jpeg`, `image/png`, `image/webp` or `image/gif`), answering
+  201 `{id, size, mime}`. It is refused like a message (410 and 404 for a dead or unknown link,
+  409 while the link can't write), and also: 409 `no-photos` (above); 413 over the largest photo;
+  400 when the bytes aren't the declared type (magic bytes); 429 past 20 uploads a minute, or 3 ×
+  the per-conversation limit a day, per link; 507 "Photos can't be taken right now." while the
+  host's staging area holds 500 MB or its disk has under 2 GB free (`SOVA_BATON_UPLOADS_MAX_MB`,
+  `SOVA_BATON_UPLOADS_FREE_MB`). The server strips metadata again as a backstop (JPEG APP1 and
+  APP13, PNG `eXIf` and text chunks, WebP `EXIF` and `XMP `). A photo is staged host-local under
+  `<stateRoot>/baton-uploads/<sessionId>/` (0700, files 0600, never the workspace repo), named by
+  a random id, and removed once sent, after 24 hours, or when the session closes.
+- **The pending strip** above the textarea shows each photo as a 32 px preview, its name and size,
+  a progress bar while it uploads, Retry after a failure, and a 44 px Remove; it wraps and never
+  squeezes the textarea at 320 px. Send takes text, photos or both, and waits while an upload runs
+  ("Waiting for photos to finish."). Additions and refusals are announced in a polite live region.
+- **Sending.** `POST /api/h/<token>/message {text, images?: [id]}`: each id a photo this link staged
+  for this session; at most the per-message limit; text may be empty when there are photos. A
+  conversation takes at most its per-conversation limit of photos (409 "This conversation has
+  reached its photo limit."); an id that is gone answers 409 `photo-expired`, and the page uploads
+  that photo again once and resends. A message counts once, whatever its photos. The photos enter
+  the transcript inline, as image content in the person's message (the session file, in the org's
+  workspace repo), after its author note; a refused message keeps its staged photos for the retry.
+- **Who sees them.** Everyone the message's text is shown to, under the same cuts (an invitee's
+  offer cut, the wrap-up): the share page, as a message's photos (one fitted in 320 × 240, more as
+  96 px tiles; a lightbox scoped to the message; alt "Photo from {name}" or "Photo {i} of {n} from
+  {name}"), fetched from `GET /api/h/<token>/img/<n>`, `n` numbering the photos of that viewer's
+  view in order; and the operator's transcript, as thumbnails (§chat.images/thread-thumbnails).
+  The owner page, the operator's Preview as and the project overseer's reads show a count instead
+  ("2 photos"). Pixels never ride the view or its socket.
+- **The model** sees each photo as an image in the person's message. While photos can be sent, its
+  prompt says people may attach photos and screenshots, that it may ask for one when that helps
+  the goal, to talk only about what in it matters to the goal, and never to describe a face or read
+  a document's personal numbers back to anyone; otherwise it says photos can't be sent here.
+- **The operator's images** in a baton session reach the model the same way: an image the operator
+  attached (a path in that session's attachments folder, one of the four types) is sent inline as
+  image content and its path line is removed from the text, so no local path reaches the share
+  page.
 
 ## §app.baton/visits — The visit log: each time someone opened their link
 

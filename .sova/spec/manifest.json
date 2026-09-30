@@ -6886,6 +6886,7 @@
         "src/components/WatchView.tsx",
         "src/components/ChangesViewer.tsx",
         "src/components/ChangesViewer.css",
+        "src/components/Thread.tsx",
         "src/app.css"
       ]
     },
@@ -9188,7 +9189,8 @@
       "requires": [
         "§chat.profiles/model",
         "§chat.profiles/singleton",
-        "§app.session-list/needs-you"
+        "§app.session-list/needs-you",
+        "§app.session-list/groups"
       ]
     },
     "§app.settings-dialog/profiles": {
@@ -10172,6 +10174,67 @@
       "requires": [
         "§app.project-overseer/autonomy-levels",
         "§app.project-overseer/watch-loop"
+      ]
+    },
+    "§app.baton/images": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/outsider-view",
+        "§app.baton/share-listener",
+        "§app.baton/links",
+        "§app.baton/attribution",
+        "§app.settings-dialog/organizations",
+        "§chat.images/thread-thumbnails"
+      ],
+      "code": [
+        "server/baton-images.ts",
+        "server/baton-images.test.ts",
+        "shared/baton.ts",
+        "server/share/routes.ts",
+        "server/share/edge.ts",
+        "server/share/hub.ts",
+        "server/share/router.ts",
+        "server/baton-view.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/baton-settings.ts",
+        "server/baton-told.ts",
+        "server/chat-manager.ts",
+        "server/org-routes.ts",
+        "server/project-overseer-tools.ts",
+        "server/attachments.ts",
+        "src/share/ShareApp.tsx",
+        "src/share/photos.ts",
+        "src/share/thread.tsx",
+        "src/share/thread.css",
+        "src/share/share.css",
+        "src/components/BatonStrip.tsx",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/PersonPage.tsx",
+        "server/share-router.test.ts",
+        "server/share-message.test.ts",
+        "server/share-listener.test.ts"
+      ]
+    },
+    "§design.copy-deck/gathering-images": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§chat.markdown/vis-wireframe-chips": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/vis-wireframe"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/wireframe/View.tsx",
+        "src/vis/kinds/wireframe/wireframe.css",
+        "src/vis/kinds/wireframe/layout.ts",
+        "src/vis/kinds/wireframe/layout.test.ts"
       ]
     }
   },

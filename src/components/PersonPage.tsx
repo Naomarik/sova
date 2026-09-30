@@ -846,7 +846,11 @@ function PreviewItem(props: { item: BatonViewItem }) {
       return (
         <article class="person-preview-msg" classList={{ "person-preview-own": it.by === "you" }}>
           <span class="person-preview-who">{it.by === "you" ? "They wrote" : it.name}</span>
-          <div class="person-preview-text">{it.text}</div>
+          {/* Photos as a count only (§app.baton/images); the operator's transcript shows them. */}
+          <Show when={it.images?.length}>{(n) => <span class="field-hint">{n() === 1 ? "1 photo" : `${n()} photos`}</span>}</Show>
+          <Show when={it.text}>
+            <div class="person-preview-text">{it.text}</div>
+          </Show>
         </article>
       );
     case "reply":

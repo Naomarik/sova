@@ -175,8 +175,6 @@ export function Composer(props: {
   mode?: ModeControl | null;
   /** Chat sessions only: opens the Playbooks dialog (the flyout's Playbooks row). */
   onPlaybooks?: () => void;
-  /** "Fan Out…" in the flyout, for a chat session that can be forked. */
-  onFanOut?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
   undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
@@ -1004,7 +1002,6 @@ export function Composer(props: {
             model={props.model}
             thinking={props.thinking}
             onPlaybooks={props.onPlaybooks}
-            onFanOut={props.onFanOut}
             undo={props.undo}
             sandbox={props.sandbox}
             onRefocus={() => input.focus()}

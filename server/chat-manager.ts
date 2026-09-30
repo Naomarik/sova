@@ -68,8 +68,8 @@ export const currentLinkOrigin = (): string | null => linkOrigin;
  *
  * - `topic-outline-headless`: topic-outline only summarizes in the TUI unless its host opts in;
  *   opt in so web chats get outlines. Boolean flag: the SDK sets it true whatever the value.
- *   Workers never get it, and neither does a fanout member (`outline: false`) — N outline
- *   summarizers on one fanout is cost with no reader.
+ *   Workers never get it, and neither does a session carrying an older build's group-member
+ *   marker (`outline: false`, FANOUT_MEMBER_ENTRY).
  * - `target`: a remote session (cwd = a target placeholder, server/targets.ts) switches
  *   pi-config's remote extension on for that target.
  * - `claude-code-provider`: the experimental Settings switch. When on, the claude-code extension
@@ -430,20 +430,16 @@ export async function drainQueueThenAbort(
 export const REWIND_ENTRY = "sova-rewind";
 
 /**
- * customType of the invisible entry fanout writes into every member at creation (server/fanout.ts,
- * beside the member's model change). It is how a LATER runtime — this server after a restart, or
- * the workspace opened cold — knows to open the session WITHOUT `topic-outline-headless`: the
- * outline summarizer is a second model call per turn, and N of them on a fanout is cost with no
- * reader. The marker travels with the file,
- * so the exception holds for the member's life across restarts, rather than being an in-memory
- * flag threaded through acquireChat that a restart would forget. Same shape as REWIND_ENTRY:
- * never LLM context, no usage, rendered nowhere (normalizeEntry's default for custom types).
+ * customType of the invisible entry an older build wrote into every member of a group it created
+ * in one gesture (§workspace.groups/legacy-groups). Nothing writes it now; it is READ so those
+ * sessions keep opening WITHOUT `topic-outline-headless`, as they always did — the marker travels
+ * with the file, so the exception holds across restarts. Same shape as REWIND_ENTRY: never LLM
+ * context, no usage, rendered nowhere (normalizeEntry's default for custom types).
  */
 export const FANOUT_MEMBER_ENTRY = "sova-fanout-member";
 
-/** Whether a session file is a fanout member, by the marker its creation wrote. The predicate
- *  openSession keys the outline exception on; exported for the test that pins the marker's
- *  round trip through the file. */
+/** Whether a session file carries that marker. The predicate openSession keys the outline
+ *  exception on. */
 export function isFanoutMember(sm: Pick<SessionManager, "getEntries">): boolean {
   return sm.getEntries().some((e) => e.type === "custom" && e.customType === FANOUT_MEMBER_ENTRY);
 }
@@ -2803,12 +2799,13 @@ type ResolvedModel = NonNullable<ReturnType<ModelRuntime["getModel"]>>;
  * The model a MESSAGE-LESS session records for itself, for openSession to pass as
  * `createAgentSessionFromServices`' `model`. The SDK restores a session's recorded model only
  * when the branch already has messages (sdk.js gates the restore on `messages.length > 0`), and
- * a fresh fanout member is created with a model_change and nothing else — so without this, its
- * runtime resolves the server default and the member's first turn runs a model nobody chose.
+ * a session can record a model_change and nothing else (its model set before its first message)
+ * — so without this, its runtime resolves the server default and the first turn runs a model
+ * nobody chose.
  * Once the branch has messages the SDK does this itself, which is why the message-less case is
  * the only one answered here. The two guards are the SDK's own restore guards (getModel, then
  * hasConfiguredAuth): on either failure the answer is undefined and the SDK falls back —
- * binding a member's model must never fail the open.
+ * binding a recorded model must never fail the open.
  */
 export function recordedModelForEmptyBranch(
   sessionManager: Pick<SessionManager, "buildSessionContext">,
@@ -2820,7 +2817,7 @@ export function recordedModelForEmptyBranch(
   return model && modelRuntime.hasConfiguredAuth(model.provider) ? model : undefined;
 }
 
-/** The recorded member choice outranks an eligible global default; undefined leaves the SDK
+/** The recorded choice outranks an eligible global default; undefined leaves the SDK
  *  to choose. savedDefault has already passed the pristine-session and available/auth checks. */
 export function modelForSessionOpen(
   sessionManager: Pick<SessionManager, "buildSessionContext">,
@@ -2836,9 +2833,9 @@ type BranchContext = ReturnType<SessionManager["buildSessionContext"]>;
 /**
  * Whether the runtime's construction-time model append only restates what the branch already
  * records. The SDK appends the model it was built with for a session with no messages
- * (sdk.js:261), and a fanout member's file was written with exactly that model at creation — so
- * deferring it lands a second identical `model_change` on the first prompt, and transcript.ts
- * renders one `Model:` row per entry: every member's pane would open with the same row twice.
+ * (sdk.js:261), and a message-less file that already records exactly that model would get a
+ * second identical `model_change` on the first prompt, and transcript.ts renders one `Model:`
+ * row per entry: the session would open with the same row twice.
  * Both halves of the condition are load-bearing. With messages on the branch that append is the
  * SDK's own resume record, and a pair that differs from the recorded one is a real change (the
  * fallback default after an unauthenticated recorded model) — those must still be written.
@@ -2897,10 +2894,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // until bind() has resolved the chat's mode it reads the mode from the branch itself.
   const visHost: { chat?: ChatSession } = {};
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-    // The outline opt-in is declined for a FANOUT MEMBER, and the FILE says so, not a flag
-    // threaded through acquireChat: its creation wrote the FANOUT_MEMBER_ENTRY marker beside the
-    // model change, so the member opens WITHOUT the opt-in and lands in the extension's own
-    // default, and the marker survives restarts. Everything else about the loadout — `target`,
+    // The outline opt-in is declined for a session an older build marked as a group member, and
+    // the FILE says so (FANOUT_MEMBER_ENTRY), not a flag threaded through acquireChat, so the
+    // marker survives restarts. Nothing writes the marker any more. Everything else about the loadout — `target`,
     // the experimental claude-code switch — is the same sessionFlags() every runtime gets.
     // The Overseer (server/overseer.ts) is recognised the same way, by its marker, and gets its own
     // loadout: its prompt appended after the user's APPEND_SYSTEM.md, its sova_* tools, a tool

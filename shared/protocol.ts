@@ -93,16 +93,13 @@ export interface SessionSummary {
   /** The session this one was forked from: the header's `parentSession`, canonicalized like every
       other session path here (so it is byte-identical to that session's `path`), and only while
       that file still exists and is a .jsonl inside the sessions dir. Absent for every session that
-      was not branched, and from an older server. Lets a group show fork points without reading
-      each transcript. */
+      was not branched, and from an older server. */
   parent?: string;
   /** The same parent as a session id (that session's `id`, read from its filename): what
       `GroupMember.id`, the group assignments and every group route key on. Set exactly when
       `parent` is. Use `parent` to link or open (routes take paths), `parentId` to match.
-      LINEAGE ONLY, and the distinction matters: this pair says a session was forked from THAT
-      file, never at WHICH entry. A fork marker needs the leaf it diverged at, which only a group
-      Sova fanned out carries (`seed`), so a marker position must never be inferred from here —
-      a marker in the wrong place is a false claim about which part of the transcript is shared. */
+      LINEAGE ONLY: this pair says a session was forked from THAT file, never at WHICH entry, so
+      no position in a transcript may be inferred from it. */
   parentId?: string;
   /** Remote session: the target name from ~/.pi/agent/targets.json. Derived from `cwd`, which for a
       remote session is the local placeholder ~/.pi/agent/sova/targets/<target>/<remote/abs/path>.
@@ -120,15 +117,6 @@ export interface SessionSummary {
       wins, so a send or a cleared composer drops the pencil before the next list refresh.
       Absent: no draft, or an older server. */
   hasDraft?: true;
-  /** This session's file is in a session format older than the server's current
-      (⇔ header `version` ≠ CURRENT_SESSION_FORMAT, server-computed — the client never compares
-      numbers itself). The fanout source rules refuse such a file (`old-format`: forking reads
-      the file, and reading an old format rewrites it wholesale under a runtime we hold), so the
-      dialog pre-disables Create with the fanout spec's sentence. SAFE BY ABSENCE: absent = current, OR the
-      head could not be read, OR an older server that never sends the field — none of which ever
-      blocks anything; only `true` disables a fork. Never affects opening, watching or chatting:
-      an older-format session is only special to a route that would rewrite it. */
-  legacyFormat?: true;
   /** This file is an Overseer file (current or historical): it carries the `sova-overseer` custom
       marker entry AND overseer-state.json names it (current or history); a marked fork of one is
       an ordinary session. Hidden from every sidebar region, search, Recent and cleanup count
@@ -490,9 +478,6 @@ export interface SessionsDirInfo {
 // POST /api/sessions { target, remoteCwd } -> SessionSummary   (remote session: creates the local placeholder
 //                                  ~/.pi/agent/sova/targets/<target>/<remoteCwd> and a session there; 400 bad body/
 //                                  non-absolute remoteCwd, 404 unknown target)
-// POST /api/sessions/fork { path, entryId, position } -> ForkResult   (201; one new web-owned session
-//                                  branched off `path` at `entryId`, the per-message Fork action. Nothing is
-//                                  sent. 400 bad body, 404 unknown session, 409 { refused: ForkRefusal })
 // POST /api/sessions/connect {} -> SessionSummary   (the connection agent: a new session in a fresh
 //                                  ~/.pi/agent/sova/connect/<ts>/ seeded with AGENTS.md from server/connect-agent-template.md)
 // GET  /api/targets             -> TargetInfo[]   (~/.pi/agent/targets.json; missing file → []; status from a cached,
@@ -552,33 +537,6 @@ export interface SessionsDirInfo {
 //                                  no slash commands — images belong to a pane composer.
 //                                  400 bad body, blank text, members not an array of strings, an id that is
 //                                  not a member, or the group is empty; 404 unknown group; 409 refused)
-// POST /api/session-groups/fanout FanoutRequest -> 201 FanoutResult
-//                                  (N sessions from one starting point, as one group. FORK MODE ({source}):
-//                                  every member is branched from source.leafId onto a FRESH SessionManager of
-//                                  its own — never the manager Sova holds for the source — and the group
-//                                  gets a `seed`. FRESH MODE ({cwd, text}): N independent sessions, no shared
-//                                  root, no seed, and `text` is sent through the batch-prompt path.
-//                                  `groupId` lands the members in an EXISTING group (the response's `group`
-//                                  is then that one): a target with no seed adopts this fanout's, a matching
-//                                  seed appends, a DIFFERING seed is 400 { error, code: "seed-conflict" } with
-//                                  nothing created, and an unknown id is 404 with nothing created.
-//                                  `named` says whether `name` is Sova's generated default: "generated" makes
-//                                  the new group auto-dissolve when emptied; "user", absent or unrecognised marks
-//                                  it user-named and explicitly NOT dissolving. Ignored with `groupId` (the target
-//                                  keeps its own name and its own flag).
-//                                  400 bad name, empty members, a count outside 1–9, an unknown ref, both or
-//                                  neither of name/groupId, both or neither of source/cwd, text or cwd in fork
-//                                  mode, blank text in fresh mode, or a cwd the New Session path itself would
-//                                  refuse (not absolute, gone, or not a directory
-//                                  — fresh mode IS that path N times, and answers with its sentences);
-//                                  404 a source path that resolves to no session (the subject doesn't exist —
-//                                  different from "exists but not right now"); 409 { refused: [BatchRefusal] }
-//                                  with exactly ONE entry, the source: tui-live, mid-turn, busy, config,
-//                                  old-format (opening it would migrate-rewrite the file) or stale-leaf (the
-//                                  ACTIVE branch's last rendered entry is no longer the one the dialog showed —
-//                                  not the file's last line, which after a rewind is the abandoned branch). A member that fails DURING creation
-//                                  has its own half-written file removed and is reported in `failed`; a member
-//                                  that already exists is never unmade)
 // POST /api/sessions/archive { path, archived: boolean } -> SessionSummary   (sets/clears the archive mark; never
 //                                  writes the session file. 400 bad body/path, 404 missing, 409 archiving a live
 //                                  or non-web session)
@@ -981,7 +939,7 @@ export interface ModelInfo {
       providers included), then models-store.json — the same cached resolver ContextInfo.window
       uses. Absent when neither source knows it, the same convention as ContextInfo.window, so a
       cost preview shows "unknown" rather than assuming a default. This is the MODEL's window,
-      independent of any session, which is what lets the fanout dialog compare candidate rows;
+      independent of any session, so two models can be compared by it;
       ContextInfo.window cannot, because it describes one session's current model. */
   contextWindow?: number;
 }
@@ -1253,17 +1211,9 @@ export interface SessionTitleSettingsInfo {
     refuses a longer one with 400, while an empty one clears the label). */
 export const GROUP_LABEL_MAX = 40;
 
-/** The session file format this server writes and considers current (the JSONL header's
-    `version`). A file whose header carries a different version — or none, which reads as 1,
-    pre-versioning — is `legacyFormat` in a summary and `old-format` as a fanout source refusal:
-    reading one rewrites it wholesale. The SERVER owns this number and every comparison against
-    it; a client that compared versions itself would drift on the next bump, which is exactly
-    why SessionSummary.legacyFormat is a computed flag and not a raw version. */
-export const CURRENT_SESSION_FORMAT = 3;
-
 /** One session's presentation metadata inside a group (SessionGroup.members). Membership itself is
     the server's assignments map — this carries only the ORDER (array position) and an optional
-    short LABEL, e.g. "sonnet ×2" on a fanout member. */
+    short LABEL, e.g. "control" or "the cheap one". */
 export interface GroupMember {
   /** Session id (`SessionSummary.id`), not a path. */
   id: string;
@@ -1271,13 +1221,14 @@ export interface GroupMember {
   label?: string;
 }
 
-/** Where a fanout group came from (SessionGroup.seed). Written only by POST
-    /api/session-groups/fanout in fork mode; fresh mode has no fork point to align to. */
+/** SessionGroup.seed: a note an older build wrote on a group it created by forking one session
+    into several. This build never writes one and nothing reads it; the store keeps it through
+    every write (§workspace.groups/legacy-groups). */
 export interface GroupSeed {
   /** Canonical path of the source session — the same path each member's header carries as
       `parentSession`, and the same string that session's own `SessionSummary.path` has. */
   parentSessionPath: string;
-  /** The entry every member was branched at: the ONLY source of a fork marker's position. */
+  /** The entry every member was branched at. */
   leafId: string;
 }
 
@@ -1290,28 +1241,14 @@ export interface SessionGroup {
   /** Shown as-is (trimmed, 1–60 chars). Duplicates are allowed: nothing keys on the name. */
   name: string;
   createdAt: string; // ISO
-  /** Set only on a group Sova fanned out (fork mode): where its members came from. Lineage
-      (`SessionSummary.parent`/`parentId`) says a session was forked from THAT file; only this
-      says WHERE, so the fork marker and Align to Fork are seed-only and never infer a position
-      from lineage. A hand-made group never grows one, which is what the auto-dissolve rule
-      (AssignGroupResult.dissolved) stands on. */
+  /** An older build's note (GroupSeed). Kept, never written, never read by the UI. */
   seed?: GroupSeed;
   /** Whether the group deletes itself when its last member leaves (AssignGroupResult.dissolved).
-      Set ONLY by POST /api/session-groups/fanout when it CREATES the group with a generated name
-      — Sova made it and named it, so Sova may remove it. NEVER set by that route's `groupId`
-      path: a group the user named is theirs and keeps standing empty, even after it adopts a
-      fanout's `seed`.
-      THIS IS THE ONE TRUTH OF DISSOLUTION. It used to be inferred from `seed`, which is lineage
-      and the fork marker's datum; that inference is what would have made an adopted hand-made
-      group start deleting itself. Do not re-derive dissolution from another field, and do not
-      use this one to mean anything but dissolution.
-      A RENAME CLEARS IT (PATCH /api/session-groups/:id with a name that actually changes): the
-      claim above is a conjunction — Sova made it AND named it — and renaming falsifies the
-      second half, so the group becomes the user's and stands when emptied. Renaming to the same
-      string revokes nothing, and reordering or relabelling never touch it. The flag is set and
-      cleared by the events that make it true or false, so no rule has to be remembered.
-      Absent only on a group written before this field existed — then, and only then, `seed`
-      implies it, since those are Sova's own fanout groups. An explicit value always wins. */
+      Only an older build ever set it, on a group it both created and named; this build never
+      sets it and keeps it through every write. THE ONE TRUTH OF DISSOLUTION: read `=== true`,
+      an explicit false always wins, and a rename that actually changes the name clears it (the
+      user then owns the name). Absent only on a group written before the field existed — then,
+      and only then, a `seed` implies it. Reordering and relabelling never touch it. */
   autoDissolve?: boolean;
   /** The group's sessions in display order, with their labels. The server always sends it — it is
       reconciled against the assignments on every read (ids no longer in the group drop out, ids
@@ -1325,10 +1262,8 @@ export interface SessionGroup {
 export interface AssignGroupResult {
   ok: true;
   /** The assign emptied a group whose `autoDissolve` is set, and the server deleted it in the SAME
-      write. `autoDissolve` is the whole rule and
-      `seed` decides nothing: a hand-made group that ADOPTS a fanout's seed keeps standing when
-      emptied, because a group whose name is the user's work stands empty — whether they typed it
-      at creation or later over a generated one. Absent otherwise. The client toasts
+      write. `autoDissolve` is the whole rule (an absent flag defers to the legacy `seed` rule),
+      and every other group stands empty. Absent otherwise. The client toasts
       "Dissolved “{name}”", leaves the workspace route and refetches the list. Archive cleanup can
       also empty a group and deliberately does NOT dissolve one: no client is listening to that
       call, and a background listing pass must never delete a group. */
@@ -1346,19 +1281,6 @@ export type BatchRefusalCode =
   | "config"
   | "busy"
   | "missing"
-  /** Fanout only: the source's header version isn't current, so opening it would rewrite the
-      file — which a runtime we hold for that session would see as a foreign write. The only
-      refusal here the user can clear themselves ("open it for chat once, then fan out"). */
-  | "old-format"
-  /** Fanout only: `source.leafId` is not the source's current leaf — meaning the last entry its
-      transcript RENDERS on its ACTIVE branch, which is what the server compares against
-      (readActiveBranch + normalizeEntry, the transcript's own two rules). NOT the file's last
-      line, and the difference is not academic: after a rewind the file's TAIL is the ABANDONED
-      branch, and the entries there are ordinary visible messages. Comparing against the tail
-      refuses sources nobody has touched, and rewound sessions are the likeliest thing to fork.
-      The client sends the leaf it SHOWED the user, for the same reason: forking from a point
-      they didn't approve would break the fork marker's only promise. */
-  | "stale-leaf"
   | "internal";
 
 /** One member the batch could not take, named four ways: `id` joins against `GroupMember.id` and
@@ -1369,148 +1291,6 @@ export interface BatchRefusal {
   path: string; // canonical session path ("" when the file is gone)
   code: BatchRefusalCode;
   message: string;
-  /** FANOUT ONLY, and only in a 201's `failed`: the model ref (`ModelInfo.ref`) of the member
-      the entry names, so the partial-creation banner can compose "{model} couldn't start: …"
-      without a lookup. TWO SHAPES OF ENTRY LIVE HERE, told apart by `id`:
-      • EMPTY `id` (and empty `path`): a member that NEVER CAME INTO BEING — creation failed, so
-        there is no session and `ref` is the ONLY handle on it.
-      • `id` (and `path`) SET: a member that EXISTS — created and grouped — but was REFUSED ITS
-        FIRST MESSAGE by the batch path (fresh mode's `text`). `id` names it and joins to the
-        pane; `ref` is present too, so the banner can still name the model. A pre-existing
-        member of a `groupId` target (not of this fanout) reports with `id` only — its model is
-        not this fanout's to claim.
-      A 409 refusal (the source) carries no `ref` on any route. As ever, `message` is the bare
-      reason — never prefixed with the ref, which would render the model twice in the banner. */
-  ref?: string;
-}
-
-/** One row of the fanout dialog: a model, and how many copies of it to make. */
-export interface FanoutMemberSpec {
-  /** `ModelInfo.ref`, "provider/id". */
-  ref: string;
-  /** 1–9. The member appears this many times, consecutively, in pane order. */
-  count: number;
-}
-
-/** POST /api/session-groups/fanout. Exactly one of `source` (fork mode) and `cwd` (fresh mode). */
-export interface FanoutRequest {
-  /** Name for a NEW group, 1–GROUP_NAME_MAX. Exactly one of `name` and `groupId` is required:
-      with `name` the route creates the group (and Sova owns it, so `autoDissolve` is set); with
-      `groupId` it lands in an existing one, which keeps its own name. Sending both is a 400 —
-      ignoring one of them silently would look like a rename that did nothing. */
-  name?: string;
-  members: FanoutMemberSpec[]; // array order IS pane order
-  /** Fork mode: branch every member from this entry of this session. `leafId` is the leaf the
-      dialog SHOWED the user, not a request for the server to find the current one. */
-  source?: { path: string; leafId: string };
-  /** Fresh mode: the folder every member is created in — checked by the New Session route's own
-      rule (targets.ts validateNewSessionCwd: absolute, an existing directory), so a folder that path refuses is a 400 with that path's own sentence
-      BEFORE anything is made. */
-  cwd?: string;
-  /** Fresh mode only: the first message every member gets, sent through the batch path. Its
-      outcome is PART OF THE 201: the batch's refusals are folded into `failed` (entries whose
-      `id` names an existing member — see BatchRefusal.ref), so a fanout that created N members
-      and started none says so instead of announcing a success that lands the user in N silent
-      panes. The members are kept either way: real, empty, grouped sessions, retryable. */
-  text?: string;
-  /** Whether `name` is the default Sova generated, or one the user typed over it. The client
-      holds this fact and nothing else can: the server never generated the default, so it cannot
-      distinguish an accepted one from an identical string typed by hand. Reported as a FACT; the
-      policy stays server-side, and `autoDissolve` is derived from it, never sent by a client.
-      "generated" ⇒ Sova made AND named the group ⇒ `autoDissolve: true`.
-      "user", ABSENT, or any unrecognised value ⇒ the user named it ⇒ the server writes
-      `autoDissolve: false` EXPLICITLY — never leaves it absent, because absent-plus-`seed` is the
-      on-disk signature of a pre-flag fanout group and the legacy rule dissolves those.
-      IF THIS FIELD IS EVER REPLACED, THE REPLACEMENT MUST LAND ATOMICALLY — contract, server,
-      client and tests in one change. An ADDITIVE migration fails silently and in the direction
-      that looks healthy: a client still sending `named` while the server reads a new field sees
-      absent, absent means "the user named it", so NO group is ever marked auto-dissolving, none
-      is ever removed, and nothing errors anywhere. The safe-absence rule that exists to prevent
-      lost names is exactly what would hide the feature being dead. Delete the old field in the
-      same commit that adds the new one.
-      CHECK IT POSITIVELY: `named === "generated"`. `named !== "user"` is the same sentence and
-      the wrong one — an absent field is not a claim of user authorship, it is a client that
-      cannot make the claim at all, and treating it as Sova's deletes a name. Both spellings
-      are equally SAFE with a boolean and equally available here, but a two-valued enum makes the
-      negative form read naturally, so it is the likelier mistake and worth naming. Tests pin
-      absent and unrecognised to a recorded false so the wrong spelling fails loudly.
-      TWO ABSENCES, OPPOSITE DEFAULTS, BOTH CORRECT: this field's absence means the CLIENT predates
-      it, and a user-named group is what is at risk, so it falls to "user"; `SessionGroup.autoDissolve`'s
-      absence means the RECORD predates it, where no user-named group can exist, so there it falls
-      to seed-implies-dissolution. Do not "align" them — and note that the SHAPES differ on purpose
-      for the same reason: a boolean beside a boolean with opposite absence defaults invites exactly
-      that alignment, while a boolean beside an enum cannot be mistaken for a matched pair. The
-      difference in kind is what keeps the difference in meaning visible.
-      THE SERVER MUST NOT VALIDATE THIS BY RE-DERIVING THE DEFAULT. Generating the name here to
-      compare would be a second generator of one string, which is the ground the server-side
-      alternative was rejected on: in fresh mode the default is rewritten on every keystroke, so a
-      derivation at Create time disagrees with what the user was looking at. Same precedent as
-      `source.leafId`, accepted as the leaf the DIALOG SHOWED rather than recomputed.
-      DERIVE IT FROM THE EDIT EVENT, never by comparing strings. Sova's client keeps
-      `nameTouched`, set by the name field's own input handler and by nothing else, and sends
-      "user" when it is set. "Typed over then reverted" is therefore "user": an empty group may
-      be left behind, which is litter, recoverable in one gesture.
-      THAT SIGNAL DOES TWO JOBS, and the second is invisible from the first: `nameTouched` also
-      gates whether Sova may keep REGENERATING the field from the prompt. One decides whether we
-      may keep writing the name; the other decides whose the result is. So a change to when
-      regeneration stops silently changes who owns the name, and no test in the file being edited
-      will fail. Anyone altering either rule owns both.
-      WHY NOT A COMPARISON (`name === the last string we wrote`): it is correct ONLY while
-      regeneration stops at the first touch. That gate lives in another function; weaken it, add a
-      second writer, and regeneration keeps firing after the user types — the field then holds our
-      latest guess, the comparison equals it by construction, and a group the USER named is
-      classified "generated" and deleted. The edit flag cannot fail that way: the signal is sticky
-      and set by the user's own input. So the comparison is the fragile mechanism and it fails
-      toward LOSS, while the edit flag's error is an empty group left standing.
-      AND THE PROXY RUNS THE OTHER WAY from how it looks: under that gate, `name === lastWritten`
-      is true exactly when the field was never touched — so the comparison is a DERIVED READING of
-      the edit event, computed the long way and valid only while an invariant in another function
-      holds. The edit flag is the direct measurement; the comparison is its correlate.
-      NOTE the tempting argument here is a retracted one (spec 9d6fe2b): that "typed over then
-      reverted" and "typed our exact string by hand" are the same state deserving opposite
-      answers, so no comparison can separate them. They do deserve the SAME answer — both end
-      with our string on the group — and if that argument held it would indict the edit flag
-      equally, since it also gives both rows one answer. Do not defend this rule with it; the
-      fragility above is the live reason.
-      POLARITY IS LOAD-BEARING FOR ANY OPTIONAL FLAG HERE, not just this one: the field must be
-      the one whose FALSEHOOD, or absence, is the safe answer. `nameEdited` would have been the
-      same information with the opposite failure — absent ⇒ not edited ⇒ generated ⇒ the group
-      deletes itself — which is the unsafe default wearing an innocent name. */
-  named?: "generated" | "user";
-  /** Land the new members in an EXISTING group instead of creating one; the response's `group`
-      is then that group. Omitted = create one named `name`. Seed rules, all checked BEFORE
-      anything is created: an unknown id is 404; a target with NO seed ADOPTS this fanout's and
-      appends; a target whose seed EQUALS this one appends; a target whose seed DIFFERS is
-      refused with 400 { error, code: "seed-conflict" }. ONE GROUP CARRIES ONE SEED, because the
-      fork marker and Align to Fork read it — a mixed-lineage group would make the marker assert
-      a divergence point it cannot know, so the request is refused rather than the datum
-      fabricated. Fresh mode has no seed: it never adopts and never conflicts, and leaves the
-      target's seed alone. NOTE a hand-made group that adopts a seed becomes auto-dissolving
-      (AssignGroupResult.dissolved), including the name the user chose. */
-  groupId?: string;
-}
-
-/** 400 body of POST /api/session-groups/fanout when the request cannot be reconciled with the
-    group it was asked to land in. `code` is a closed set of one today; the client renders its own
-    sentence from it and `error` is the fallback. Every other 400 on this route is `{ error }`. */
-export interface FanoutConflict {
-  error: string;
-  code: "seed-conflict";
-}
-
-/** 201 body of the fanout. `created` is never empty: if not one member could be made, nothing is
-    created, the group is not written, and the call fails — a group with no members is debris,
-    not a result. `failed` carries the members that couldn't START, in two shapes told apart by
-    `id` (see BatchRefusal.ref): an empty id names a member that never came into being (its own
-    debris is unlinked; `ref` is the only handle); a set id names an EXISTING member that was
-    created and grouped but refused its first message by the batch path — kept, retryable, `ref`
-    beside the id so the banner can name the model. Nothing already created is ever rolled back.
-    `group` is read back AFTER the members are assigned, so the one response the client navigates
-    on carries the members this fanout just landed. */
-export interface FanoutResult {
-  group: SessionGroup;
-  created: SessionSummary[];
-  failed: BatchRefusal[];
 }
 
 /** 200 body of the batch prompt. `sent` MEANS ACCEPTED, NOT ANSWERED: the route returns as soon
@@ -1522,88 +1302,6 @@ export interface FanoutResult {
 export interface BatchPromptResult {
   sent: string[]; // session ids, in the order they were accepted
   failed: BatchRefusal[];
-}
-
-/** POST /api/sessions/fork — one session branched off another at one entry, the per-message Fork
-    action (spec 13's "Fork the session from here"). Unlike the fanout route this makes exactly one
-    child, in no group, with no fanout member marker, and sends nothing.
-
-    `entryId` is a `TranscriptItem.id`; an assistant BLOCK id (`<entryId>:<n>`, `<entryId>:stop` —
-    server/transcript.ts gives one row per content block) is accepted and resolved to its entry, so
-    the client can pass the row id it rendered without re-deriving the entry.
-
-    `position` is pi's own pair (docs/sessions.md): "before" is `/fork` — branch through the
-    entry's PARENT and hand the entry's own text back for the composer — and "at" is `/clone`,
-    everything through the entry itself. */
-export interface ForkRequest {
-  path: string;
-  entryId: string;
-  position: "before" | "at";
-}
-
-/** What position "before" hands to the NEW session's composer: the original message, ready to
-    edit and send again, and never sent for it. All three fields are the entry's own, so a fork of
-    a message with images is a composer with those images — the approved difference from `rewound`,
-    which hands back text only (pi's /tree parity).
-
-    `text` is the DISPLAY text: pi-clipboard paths are stripped exactly as `TranscriptItem.text`
-    strips them, because `attachments` stands in for them and the composer writes them back on
-    send. Absent when the message was images only. */
-export interface ForkEditor {
-  /** Display text: pi's own clipboard paths are stripped exactly as `TranscriptItem.text` strips
-      them, because `attachments` stands in for them and the composer writes them back on send.
-      A path the USER TYPED is not stripped — that is their sentence, not a generated reference.
-      Absent when the message was images only. */
-  text?: string;
-  /** Every image path the original text named, INCLUDING ones whose file is gone (`available:
-      false`). The dead ones are kept on purpose: they are the only record that an image was part
-      of this message, so the client can say "1 image couldn't come along" instead of dropping it
-      silently. Stage the available ones; name the rest. */
-  attachments?: TmpAttachment[];
-  /** `data:<mime>;base64,<data>` for stored `ImageContent` blocks — the bytes the model saw — for
-      images NOT already covered by an available entry in `attachments`. Re-upload these into the
-      new session's draft.
-      THE TWO CHANNELS NEVER OVERLAP, and it is settled by CONTENT rather than by assuming a
-      message cannot carry both a path and its own bytes: the server hashes each still-readable
-      attachment and drops any stored block with the same hash, because the FILE is the better
-      carrier (it becomes a real draft attachment). So "in `attachments` and available" and "in
-      `images`" partition the images that can travel, and `available:false` is the third case —
-      neither, and the client must say so. Without that split a client cannot tell a re-upload from
-      a duplicate, and the safe guess is to report images lost that were in fact sent. */
-  images?: string[];
-}
-
-/** 201 body of POST /api/sessions/fork. The child is already web-owned (origin "web"), its header
-    records `parentSession`, and its entries are the source's ACTIVE branch root→branch point with
-    their ids preserved, so lineage ("Forked from") needs no extra call. */
-export interface ForkResult {
-  session: SessionSummary;
-  /** Only for "before" on a user entry, and only when there is something to hand over. */
-  editor?: ForkEditor;
-}
-
-/** Why a fork was refused (409 `{ refused }`). A CLOSED SET OF ITS OWN, deliberately not an
-    extension of `BatchRefusalCode`: adding a member there would silently widen every exhaustive
-    switch the fanout client already has. The codes that mean the same thing are spelled the same
-    and carry the same server sentence, so one copy deck covers both routes.
-    "not-on-branch" = the id is unknown or sits on an abandoned branch (after a rewind the file's
-    TAIL is the abandoned one, so this is an ordinary state, not a corruption);
-    "nothing-before" = "before" on the first entry, which has nothing in front of it to branch from. */
-export type ForkRefusalCode =
-  | "tui-live"
-  | "mid-turn"
-  | "busy"
-  | "config"
-  | "missing"
-  | "old-format"
-  | "not-on-branch"
-  | "nothing-before"
-  | "internal";
-
-export interface ForkRefusal {
-  path: string;
-  code: ForkRefusalCode;
-  message: string;
 }
 
 /** The mode extension's settings (pi-config/extensions/mode). One major mode, any set of minor
@@ -2051,7 +1749,7 @@ export type WatchContext = ContextInfo | "compacted" | null;
     this one; 0 = the list is whole. Sent only to a client that asked with `?tail=1`, in one step
     with its hello or snapshot, so nothing else comes between the chunks. */
 /**
- * What the complete-list readers (the inputs count, Fan Out's "up to message {n}", Undo last turn)
+ * What the complete-list readers (the inputs count, Undo last turn)
  * need of the rows before a list's first row, which the client doesn't hold: sent with a
  * `?tail=rest` hello or snapshot, and with every TranscriptRows response, always about the rows
  * before that message's first row. Counted by the client's own rules (shared/row-counts.ts), so the
@@ -2579,7 +2277,7 @@ export interface SessionWorktreeInfo {
       cached briefly; absent when not merged or not checkable. */
   mergedInto?: { target: string; sha: string };
   how: "created" | "attached";
-  /** The session it was inherited from (a fork or fanout copied the entry); absent when it is this
+  /** The session it was inherited from (a fork copied the entry); absent when it is this
       session's own. */
   sharedWith?: string;
   /** The directory still exists. */

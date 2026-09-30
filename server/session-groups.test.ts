@@ -362,9 +362,9 @@ test("a store we create ourselves is version 1 with nothing extra", () => {
   assert.equal(raw.version, 1);
 });
 
-// --- auto-dissolve of a fanout group ---------------------------
-// `seed` is written by the fanout stage and isn't a typed field yet; the store carries unknown
-// keys through, so these tests write one the way a newer build would.
+// --- auto-dissolve of an older build's one-gesture ("fanout") group ---------------------------
+// Nothing writes `seed` or `autoDissolve` any more (§workspace.groups/legacy-groups); the store
+// still reads them, so these tests write them the way that older build did.
 
 const SEED = { parentSessionPath: "/s/root.jsonl", leafId: "e9" };
 
@@ -535,9 +535,8 @@ test("a member's unknown fields travel with it between groups", () => {
 });
 
 // --- what decides dissolution (autoDissolve, not seed) ---------------------------------------
-// The flag is the one truth. `seed` is lineage and the fork marker's datum; inferring deletion
-// from it is what would have made a group the USER named start deleting itself once it adopted
-// a fanout's lineage.
+// The flag is the one truth. `seed` is lineage; inferring deletion from it is what would have made
+// a group the USER named start deleting itself once it adopted an older build's lineage.
 
 test("a group Sova created AND named dissolves when emptied", () => {
   reset({
@@ -550,8 +549,7 @@ test("a group Sova created AND named dissolves when emptied", () => {
 });
 
 test("a HAND-MADE group that adopted a fanout's seed SURVIVES being emptied", () => {
-  // The case the flag exists for: it has lineage (so markers and Align to Fork work), and it
-  // keeps the name the user chose.
+  // The case the flag exists for: it has lineage, and it keeps the name the user chose.
   reset({
     version: 1,
     groups: [{ id: "g1", name: "My comparison", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: false, members: [{ id: "a" }] }],

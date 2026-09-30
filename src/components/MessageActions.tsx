@@ -6,7 +6,6 @@ import { Icon, type IconName } from "./ui";
 
 const ICON: Record<MessageActionKind, IconName> = {
   copy: "copy",
-  fork: "branch",
   rewind: "undo",
   regenerate: "refresh",
   remove: "close",
@@ -117,7 +116,7 @@ export function MessageActions(props: {
   };
 
   const run = async (it: MessageActionItem) => {
-    if (running()) return; // one press, one request: a double click is not two forks
+    if (running()) return; // one press, one request: a double click is not two rewinds
     setRunning(true);
     try {
       await it.run();

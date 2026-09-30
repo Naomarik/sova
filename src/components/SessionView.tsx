@@ -3,7 +3,6 @@ import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../../shared/p
 import { agentsFeed } from "../lib/agents-feed";
 import { teamPulse } from "../lib/insights";
 import { relativeTime, shortModel } from "../lib/format";
-import { sourceBlocked } from "../lib/fanout";
 import { createPaneInsight } from "../lib/pane-insight";
 import { explanationsFeed } from "../lib/explanations-feed";
 import { knownExplanations, knownOutline, knownWorkers } from "../lib/known-before-mount";
@@ -18,8 +17,6 @@ import { InsightStrip } from "./InsightStrip";
 import { createProjectOverseerControl, ProjectOverseerHead } from "./ProjectOverseerHead";
 import { RemoteChip, RemoteHeadChip } from "./RemoteStatus";
 import type { PaneInsight, TabId } from "./SessionPane";
-import type { FanoutSource } from "./FanoutDialog";
-import type { ForkMarker } from "./Thread";
 import { WatchView } from "./WatchView";
 import { Banner, Chip, Icon } from "./ui";
 import { hostLabel, hostOf } from "../lib/mesh";
@@ -65,12 +62,10 @@ export function SessionView(props: {
   /** The pane's whole name, pre-assembled by the workspace: label, title or a
       repeat suffix (`claude-opus-5 #2`) — whatever tells this member apart — already joined with
       the model. Given, it overrides the label/title assembly, because the workspace is the only
-      place that can see which members repeat: three `opus ×3` forks share a title, and this
+      place that can see which members repeat: three `opus` members may share a title, and this
       view's own assembly would name all three identically. One rule (paneNames), one string,
       every surface — head, aria-label, live prefix. */
   name?: () => string;
-  /** The group's fork point, for a member of a fanout: drawn in the thread, never written. */
-  fork?: ForkMarker;
   /** Leading control in the head (the single view's Back link, a pane's nothing). */
   lead?: JSX.Element;
   /** Trailing controls in the head: a pane's own menu. */
@@ -93,8 +88,6 @@ export function SessionView(props: {
   onTurnError?(path: string, message: string | null): void;
   onRewindControl(path: string, control: RewindControl | null): void;
   onRewound(info: { path: string; entryId: string }): void;
-  /** A session a view here just created (a Fork): the app adopts and opens it. */
-  onCreated(session: SessionSummary): void;
   /** Whether the session pane is open for this session on `tab`. */
   paneOn(path: string, tab: TabId): boolean;
   openPane(path: string, tab: TabId): void;
@@ -106,8 +99,6 @@ export function SessionView(props: {
   subagentsPath(): string | null;
   /** A bare "/new" in the composer: start a new session in this folder. */
   onNewSession(path: string): Promise<string | null>;
-  /** Open the fanout dialog on this session (the flyout's "Fan Out…"). */
-  onFanOut?(source: FanoutSource): void;
   /** A head of the caller's own in place of the session head (the Overseer's page). */
   head?: () => JSX.Element;
   /** The Overseer's chat extras (ChatView `overseer`). */
@@ -358,14 +349,12 @@ export function SessionView(props: {
                     sessionId={s().id}
                     author={author()}
                     streaming={!!s().live}
-                    onCreated={props.onCreated}
                     onAppend={reloadInsight}
                     workersWorking={working()}
                     workersTotal={insight.data ? (insight.data.workers?.length ?? 0) : knownWorkers(s())}
                     workersSplit={split()}
                     onShowWorkers={() => props.toggleSubagents(path)}
                     workersOpen={props.paneOn(path, "agents")}
-                    fork={props.fork}
                     stateBanner={
                       <Switch>
                         <Match when={w().why === "recent"}>
@@ -427,7 +416,6 @@ export function SessionView(props: {
                       }}
                       onRewindControl={(control) => props.onRewindControl(path, control)}
                       onRewound={props.onRewound}
-                      onCreated={props.onCreated}
                       inputsOpen={props.paneOn(path, "timeline") && props.inputsOnly() === path}
                       paneTab={props.subagentsPath() === path ? activeTab(path) : null}
                       onShowTimeline={(only) => props.showTimeline(path, only)}
@@ -447,27 +435,6 @@ export function SessionView(props: {
                       overseer={props.overseer}
                       projectOverseer={poControl && !poEarlier ? { onClear: poControl.clear, onReloaded: poControl.onReloaded } : undefined}
                       teams={insight.data?.teams}
-                      fork={props.fork}
-                      onFanOut={
-                        // Never from a TUI-live session: Sova doesn't touch a file a terminal
-                        // owns, and the leaf we can see isn't the one it is about to write, so the
-                        // fork would be from a stale point — a silently wrong comparison.
-                        props.onFanOut && !s().live
-                          ? (src) =>
-                              props.onFanOut!({
-                                session: s(),
-                                ...src,
-                                // Read LIVE from the summary, not snapshotted here: a mid-turn
-                                // block must clear itself when the turn ends — "It enables itself,
-                                // in place, with no re-open" — and a string captured at
-                                // open time can only repeat the turn's start forever. The states a
-                                // string COULD hold are the ones the list can see; the ones it
-                                // can't (an unidentified writer, a moved leaf) stay server
-                                // refusals, rendered with the same sentences after the press.
-                                blocked: () => sourceBlocked(s()),
-                              })
-                          : undefined
-                      }
                     />
                   );
                 }}

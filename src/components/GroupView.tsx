@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, Show, type JSX } from "solid-js";
-import type { ChatClaudeLogin, GroupSeed, SessionGroup, SessionSummary, WorkerInfo } from "../../shared/protocol";
+import type { ChatClaudeLogin, SessionGroup, SessionSummary, WorkerInfo } from "../../shared/protocol";
 import { GROUP_LABEL_MAX } from "../../shared/protocol";
 import { setSessionArchived, unassignSessionById } from "../lib/api";
 import { groupHref } from "../lib/group-route";
@@ -21,14 +21,12 @@ import {
 } from "../lib/group-layout";
 import type { RewindControl } from "../lib/inputs";
 import {
-  groupNameOf,
   loadSessionGroups,
   memberLabel,
   orderedMembers,
   paneNames,
   quoted,
   removeGroup,
-  sessionGroups,
   setGroupOrder,
   setMemberLabel,
   setSessionGroup,
@@ -36,16 +34,11 @@ import {
 } from "../lib/session-groups";
 import { announce, home, setGroupSendAll, toast } from "../lib/ui-state";
 import { cwdLabel } from "../lib/remote-session";
-import { failureLines, partialClosing, partialTitle } from "../lib/fanout";
-import { ensureRendered, JUMP_EVENT, loadRow, transcriptRoot } from "../lib/jump";
-import { clearPartial, pendingPartial } from "./FanoutDialog";
 import { sessionWorking, type UsageTotalView } from "../lib/workers";
 import type { PaneInsight, TabId } from "./SessionPane";
 import { sessionHref } from "./Sidebar";
 import { SessionView } from "./SessionView";
 import { GroupComposer } from "./GroupComposer";
-import type { FanoutSource } from "./FanoutDialog";
-import type { ForkMarker } from "./Thread";
 import { ActionMenu, type ActionMenuApi } from "./ActionMenu";
 import { Banner, Icon } from "./ui";
 
@@ -70,21 +63,6 @@ export function paneIdFor(path: string): string {
 const composerOf = (path: string) => document.getElementById(`composer-input-${paneIdFor(path)}`) as HTMLTextAreaElement | null;
 
 /**
- * The last Promote, per group: what the head's `Promoted: {title}` chip offers to undo. Module
- * state, so walking to the promoted session and back still finds the offer — that walk is when
- * a promote made by mistake is noticed. Never persisted: it is an undo for the gesture, not a
- * record of it, so a reload drops it.
- */
-const [promoted, setPromoted] = createSignal<Record<string, { path: string; id: string; title: string; label: string | null; index: number }>>({});
-const forgetPromoted = (groupId: string) =>
-  setPromoted((m) => {
-    if (!(groupId in m)) return m;
-    const next = { ...m };
-    delete next[groupId];
-    return next;
-  });
-
-/**
  * The pane the workspace has focused, for the app shell outside it — the skip link's target, and
  * which session the shell treats as "the one on screen". It can't be read off the route: moving
  * between panes only REPLACES the URL (focus is not history), and replaceState fires no
@@ -92,9 +70,6 @@ const forgetPromoted = (groupId: string) =>
  */
 const [workspaceFocus, setWorkspaceFocus] = createSignal<string | null>(null);
 export { workspaceFocus };
-
-/** Never animate a scroll for someone who asked us not to; read per call, not cached. */
-const reduceMotion = () => window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Whether a member is mid-turn: what the tab's live dot and Eliminate's refusal both read. */
 const running = (s: SessionSummary | undefined) => !!s && (s.busy || sessionWorking(s) > 0);
@@ -110,8 +85,6 @@ export interface PaneWiring {
   onClaudeLogin(path: string, login: ChatClaudeLogin | null): void;
   onRewindControl(path: string, control: RewindControl | null): void;
   onRewound(info: { path: string; entryId: string }): void;
-  /** A session a pane just created (a Fork): the app adopts and opens it. */
-  onCreated(session: SessionSummary): void;
   paneOn(path: string, tab: TabId): boolean;
   openPane(path: string, tab: TabId): void;
   toggleSubagents(path: string): void;
@@ -119,13 +92,6 @@ export interface PaneWiring {
   inputsOnly(): string | null;
   subagentsPath(): string | null;
   onNewSession(path: string): Promise<string | null>;
-  /** Open the fanout dialog for this workspace: new members, landing here. Carries the group's
-   *  `seed` when it has one, so the dialog can offer forking from the SAME point the existing
-   *  members came from — "two more of these" — and undefined for a
-   *  hand-made group, which stays destination-only. */
-  onFanOut(seed?: GroupSeed): void;
-  /** Open it on one member, to fork THAT session (the pane flyout's "Fan Out…"). */
-  onFanOutFrom(source: FanoutSource): void;
 }
 
 /**
@@ -143,7 +109,7 @@ export function GroupView(props: {
   group: SessionGroup;
   /** The group's sessions, from the session list; this puts them in the group's own order. */
   members: SessionSummary[];
-  /** Every session, for Add Members: what this group could take in. */
+  /** Every session: what tells a member whose file is gone from one that is merely elsewhere. */
   sessions: SessionSummary[];
   /** The pane the route names, or null when it names none. */
   focused: string | null;
@@ -234,9 +200,9 @@ export function GroupView(props: {
 
   /**
    * A list load has landed since this workspace mounted. Until one has, a group member with no
-   * row is "not loaded yet", never "gone": the fanout dialog refreshes the list and navigates in
-   * the same breath, and the first paint can race that refresh — a just-created member is the
-   * one case "file is gone" must never be said about.
+   * row is "not loaded yet", never "gone": a member assigned a moment before the workspace opened
+   * may not be in the first list yet, and a just-made member is the one case "file is gone" must
+   * never be said about.
    */
   const [listSettled, setListSettled] = createSignal(false);
   createEffect(on(() => props.wiring.listVersion, () => setListSettled(true), { defer: true }));
@@ -295,10 +261,10 @@ export function GroupView(props: {
   /**
    * The pane names: ONE rule, shared with the tabs, implemented once in
    * `paneNames` — `{label} · {model}`, `{title} · {model}`, or for members that share a title
-   * with no label (the canonical `opus ×3` fanout) the model with its `#n` ALONE. The head, the
-   * pane's aria-label and the live region's prefix all read this map, so a repeat can never be
-   * named differently on two surfaces — it was: the pane names had no suffix at all while the
-   * tabs did, and three same-model forks were three panes with one name.
+   * with no label (three `opus` members of one comparison) the model with its `#n` ALONE. The
+   * head, the pane's aria-label and the live region's prefix all read this map, so a repeat can
+   * never be named differently on two surfaces — it was: the pane names had no suffix at all while
+   * the tabs did, and three same-model members were three panes with one name.
    */
   const names = createMemo(() => {
     const input = [
@@ -324,120 +290,6 @@ export function GroupView(props: {
     rows().forEach((m, i) => out.set(m.path, text[i] ?? m.title));
     ghosts().forEach((g, i) => out.set(ghostKey(g.id), text[rows().length + i] ?? g.seen?.title ?? "This member"));
     return out;
-  });
-
-  /**
-   * The group's fork point, and the ONLY source of a marker's position: `seed` is written when
-   * Sova itself fanned the group out. Lineage (`parent`/`parentId`) proves two members came from
-   * one session but not WHICH entry they diverged at, so a hand-made group of forks gets no marker
-   * — a marker in the wrong place is a false claim about what is shared (gate #10).
-   */
-  const fork = createMemo<ForkMarker | undefined>(() => {
-    const seed = props.group.seed;
-    if (!seed) return undefined;
-    const source = props.sessions.find((x) => x.path === seed.parentSessionPath);
-    return {
-      entryId: seed.leafId,
-      title: source?.title ?? "the source session",
-      // The source can be archived, renamed or gone; a missing file renders as plain text.
-      path: source ? source.path : null,
-    };
-  });
-
-  /**
-   * Scroll every pane so its fork marker sits at the top of its scroll region. A pane whose branch
-   * no longer holds the leaf (rewound past it) is left where it is and named in the announcement —
-   * we never guess at a position. It is a scroll, not a state: nothing is pinned afterwards.
-   *
-   * A HIDDEN pane (tabs mode) cannot be scrolled at all — `display: none` has no scroll offsets —
-   * so its alignment is remembered and lands the moment the pane is shown, and the announcement
-   * says that rather than counting a scroll that didn't happen. Counting it would be the
-   * announcement overstating something the user cannot check.
-   */
-  const [pendingAlign, setPendingAlign] = createSignal<Set<string>>(new Set());
-  const scrollToMarker = (path: string): boolean | "waiting" => {
-    const seed = props.group.seed;
-    if (!seed) return false;
-    // Built first if the pane hasn't reached it yet (tail-first rendering, lib/tail-render).
-    const root = transcriptRoot(path);
-    const row = ensureRendered(seed.leafId, root);
-    // Not there while the pane may have older rows it doesn't hold (lib/older-rows): not missing
-    // yet; they're fetched down to it, and it aligns once they're here.
-    if (!row) {
-      const load = loadRow(root, { entry: seed.leafId });
-      if (!load) return false;
-      void load.then((r) => r === "here" && queueMicrotask(() => alignArrived(path)));
-      return "waiting";
-    }
-    // As every jump does: the pane stops following first, so rows still being built below (the
-    // ones this just built, or older rows landing) can't pull it back to the end mid-scroll.
-    root?.dispatchEvent(new Event(JUMP_EVENT));
-    row.scrollIntoView({ block: "start", behavior: reduceMotion() ? "auto" : "smooth" });
-    return true;
-  };
-  /**
-   * A pane whose rows just arrived: none of the rows the scroll passes has been drawn, so their
-   * heights are estimates and the first aim falls short. Aim again once the scroll has rested,
-   * at most twice, as a jump does (lib/jump `recenter`).
-   */
-  const alignArrived = (path: string, left = 2) => {
-    if (!scrollToMarker(path) || left <= 0) return;
-    setTimeout(() => {
-      const seed = props.group.seed;
-      const root = transcriptRoot(path);
-      const row = seed && root ? ensureRendered(seed.leafId, root) : null;
-      if (!row || !root) return;
-      if (Math.abs(row.getBoundingClientRect().top - root.getBoundingClientRect().top) > 24) alignArrived(path, left - 1);
-    }, 700);
-  };
-  const alignToFork = () => {
-    const seed = props.group.seed;
-    if (!seed) return;
-    const missed: string[] = [];
-    const waiting: string[] = [];
-    const deferred = new Set<string>();
-    let aligned = 0;
-    for (const key of panes()) {
-      if (ghostOf(key)) continue; // no transcript exists to align
-      if (mode() === "tabs" && active() !== key) {
-        deferred.add(key);
-        continue;
-      }
-      const done = scrollToMarker(key);
-      if (!done) missed.push(nameOf(key));
-      else if (done === "waiting") waiting.push(nameOf(key));
-      else aligned += 1;
-    }
-    setPendingAlign(deferred);
-    const head =
-      missed.length === 0
-        ? `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}${deferred.size > 0 || waiting.length > 0 ? " now." : " to the fork point."}`
-        : `Aligned ${aligned} ${aligned === 1 ? "member" : "members"}. ${missed.join(", ")} has no fork point on its branch.`;
-    const tail =
-      deferred.size > 0
-        ? ` ${[...deferred].map(nameOf).join(", ")} will align when you open ${deferred.size === 1 ? "its" : "their"} tab.`
-        : "";
-    announce(head + tail);
-  };
-  // The deferred alignments land the moment their pane is shown: a tab switch (which is also how
-  // Ctrl+Alt+←/→ arrives, through focusPane) or a return to split, where every pane is visible.
-  createEffect(() => {
-    const pending = pendingAlign();
-    if (pending.size === 0) return;
-    if (mode() === "tabs") {
-      const at = active();
-      if (!at || !pending.has(at) || !scrollToMarker(at)) return;
-      setPendingAlign((s) => {
-        const next = new Set(s);
-        next.delete(at);
-        return next;
-      });
-      return;
-    }
-    for (const key of [...pending]) {
-      if (!scrollToMarker(key)) continue;
-      setPendingAlign((s) => new Set([...s].filter((k) => k !== key)));
-    }
   });
 
   /**
@@ -586,7 +438,7 @@ export function GroupView(props: {
    * number, so that width is re-derived every time the row changes. That width is allowed below the
    * 440 floor, which nothing else is: the floor exists for
    * a transcript and a composer each on their own, and a comparison the user asked to see side by
-   * side is the one thing worth trading it for (4×440 = 1760px, so a 4-way fanout never fits at
+   * side is the one thing worth trading it for (4×440 = 1760px, so a 4-member group never fits at
    * any viewport without this). A pane fitted under 440px carries an inline `min-width: 0`
    * alongside the width, because the stylesheet's floor would otherwise quietly re-apply (inline
    * beats it; no CSS change needed). Memory only, like every width: a posture, not a setting.
@@ -641,8 +493,8 @@ export function GroupView(props: {
   /**
    * Takes a file-gone member out of the group: the `.empty` pane's one action. By session id,
    * because there is no file left to resolve a path through — the wire's `{ id, groupId: null }`
-   * form. Everything downstream is detach's: the group may dissolve under the write (its last
-   * member, Sova's own name), and that is said and routed, not inferred.
+   * form. Everything downstream is detach's: an older build's autoDissolve group may dissolve under
+   * the write, and that is said and routed, not inferred.
    */
   const removeGone = async (g: { id: string; label: string | null; seen?: SessionSummary }) => {
     const name = nameOf(ghostKey(g.id));
@@ -661,7 +513,6 @@ export function GroupView(props: {
     await loadSessionGroups(); // the member entry is the group's copy, not the list's
     props.wiring.onRefresh();
     if (result?.dissolved) {
-      forgetPromoted(id());
       location.hash = "#/";
       return;
     }
@@ -694,61 +545,31 @@ export function GroupView(props: {
         done = `Removed ${title} from ${quoted(props.group.name)}, but couldn't archive it. ${(err as Error).message}`;
       }
     }
-    // The server deleted this group in the same write (its last member left a fanout group), so
-    // the route no longer names anything: say both things at once and leave.
+    // The server deleted this group in the same write (its last member left an older build's
+    // autoDissolve group), so the route no longer names anything: say both things at once and leave.
     if (result.dissolved) done += ` Dissolved ${quoted(props.group.name)} — nothing was left in it.`;
     toast(done);
     announce(done);
     props.wiring.onRefresh();
     if (result.dissolved) {
-      forgetPromoted(id());
       location.hash = "#/";
       return;
     }
     if (next) focusPane(next, true);
   };
 
-  /** Promote: the member you picked is the answer, so it leaves the group and opens on its own. */
+  /** Promote: the member you picked is the answer, so it leaves the group and opens on its own.
+      No undo here: putting it back is the sidebar's gesture, like adding any session. */
   const promote = async (path: string) => {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
-    // Captured BEFORE the write, because ungrouping drops the member entry: without the label and
-    // the place, Add Back would put the pane back nameless and at the end.
-    const undo = { path, id: s?.id ?? "", title, label: labelOf(path), index: panes().indexOf(path) };
     const result = await setSessionGroup(path, null);
     if (!result) return;
-    setPromoted((m) => ({ ...m, [id()]: undo }));
     props.wiring.onRefresh();
     let done = `Took ${title} out of ${quoted(props.group.name)}.`;
     if (result.dissolved) done += ` Dissolved ${quoted(props.group.name)} — nothing was left in it.`;
     toast(done);
-    if (result.dissolved) forgetPromoted(id());
     location.hash = sessionHref(path);
-  };
-
-  /**
-   * Undo the last Promote: one write that restores the member's label AND its place, because a
-   * restore that half-works is worse than one that fails cleanly. A server that ignores `index`
-   * lands it at the end, which the toast then says rather than claiming a place it didn't get.
-   */
-  const addBack = async () => {
-    const undo = promoted()[id()];
-    if (!undo) return;
-    const result = await setSessionGroup(undo.path, id(), { label: undo.label ?? undefined, index: undo.index });
-    if (!result) {
-      toast(`Couldn't put this session back. ${quoted(props.group.name)} is unchanged.`);
-      return;
-    }
-    forgetPromoted(id());
-    props.wiring.onRefresh();
-    // The server's own answer, not a guess: where did it actually land?
-    await loadSessionGroups();
-    const at = sessionGroups().find((g) => g.id === id())?.members?.findIndex((m) => m.id === undo.id);
-    const back = `Put ${undo.title} back in ${quoted(props.group.name)}.`;
-    const done = at !== undefined && at >= 0 && at !== undo.index ? `${back} It's at the end.` : back;
-    toast(done);
-    announce(done);
-    focusPane(undo.path, true);
   };
 
   // ---- Completion roll-up ------------------
@@ -822,22 +643,6 @@ export function GroupView(props: {
 
   // ---- Group lifecycle (head) ---------------------------------------------
   const [confirming, setConfirming] = createSignal(false);
-  const [adding, setAdding] = createSignal(false);
-  /**
-   * Open Add Members from wherever the user is: the wide head's popover and the narrow head's
-   * menu BOTH key off `adding`, so the empty state's and the partial banner's buttons work at
-   * every width — under 640 no popover is mounted, and a button that flips a signal nobody
-   * listens to is a dead button.
-   */
-  const requestAdd = () => setAdding(true);
-  /** The fanout that just made this group, when some members couldn't start. */
-  const partial = () => {
-    const p = pendingPartial();
-    return p && p.groupId === id() ? p : null;
-  };
-  // Another group's workspace is not where this one's report belongs.
-  createEffect(on(gid, () => clearPartial(), { defer: true }));
-
   /**
    * Dissolve is Delete group under another word: same route, but here it sits above open
    * transcripts, where "Delete" would read as deleting them. Both confirmations say the sessions
@@ -848,7 +653,6 @@ export function GroupView(props: {
     const name = props.group.name;
     setConfirming(false);
     if (!(await removeGroup(id()))) return;
-    forgetPromoted(id());
     props.wiring.onRefresh();
     toast(
       n === 0
@@ -856,18 +660,6 @@ export function GroupView(props: {
         : `Dissolved ${quoted(name)}. Its ${n} ${n === 1 ? "session is" : "sessions are"} ungrouped.`,
     );
     location.hash = "#/"; // the route no longer names anything
-  };
-
-  /** Sessions this group could take in: everything that isn't already in it. */
-  const candidates = createMemo(() => props.sessions.filter((s) => s.groupId !== id()));
-
-  const add = async (session: SessionSummary) => {
-    setAdding(false);
-    const from = session.groupId ? groupNameOf(sessionGroups(), session.groupId) : null;
-    if (!(await setSessionGroup(session.path, id()))) return;
-    props.wiring.onRefresh();
-    toast(from ? `Moved ${session.title} from ${quoted(from)} to ${quoted(props.group.name)}.` : `Added ${session.title} to ${quoted(props.group.name)}.`);
-    focusPane(session.path, true);
   };
 
   return (
@@ -908,19 +700,6 @@ export function GroupView(props: {
             </Show>
           </p>
         </div>
-        {/* An undo for the gesture that just emptied a pane, for as long as this tab remembers
-            it. It carries the label and the position, so the pane comes back named what it was
-            called and where it was. */}
-        <Show when={promoted()[id()]}>
-          {(undo) => (
-            <span class="chip chip-count workspace-promoted" title={`${undo().title} was taken out of ${quoted(props.group.name)}`}>
-              Promoted: {undo().title}
-              <button type="button" class="button button-sm button-ghost" onClick={() => void addBack()}>
-                Add Back
-              </button>
-            </span>
-          )}
-        </Show>
         {/* Wide enough for the tools to stand beside the name; under 640 they become one menu,
             because a row that sheds buttons as it narrows hides a different one at every width. */}
         <Show
@@ -931,14 +710,7 @@ export function GroupView(props: {
               members={rows().length}
               sendAll={panes().length > 0 ? sendAll() : null}
               onSendAll={switchSendAll}
-              candidates={candidates()}
-              seeded={!!props.group.seed}
-              onAlign={alignToFork}
-              onAdd={(session) => void add(session)}
-              onFanOut={() => props.wiring.onFanOut(props.group.seed)}
               onDissolve={() => void dissolve()}
-              addOpen={adding()}
-              onAddOpen={setAdding}
             />
           }
         >
@@ -983,23 +755,6 @@ export function GroupView(props: {
               Send to All
             </button>
           </Show>
-          {/* Absent for a group Sova didn't fan out: there is nothing to align to, and gate #10
-              forbids inferring a fork point from lineage. A hand-made group that ADOPTS a seed
-              gains this button, which the copy deck notes is adoption's one visible trace. */}
-          <Show when={props.group.seed}>
-            <button type="button" class="button button-sm button-ghost workspace-align" onClick={alignToFork}>
-              <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
-              Align to Fork
-            </button>
-          </Show>
-          <AddMembers
-            groupName={props.group.name}
-            candidates={candidates()}
-            open={adding()}
-            onOpen={setAdding}
-            onAdd={(s) => void add(s)}
-            onFanOut={() => props.wiring.onFanOut(props.group.seed)}
-          />
           {/* Asked in place, in the head, like the sidebar's Delete group asks in its tool row. */}
           <Show
             when={confirming()}
@@ -1069,79 +824,16 @@ export function GroupView(props: {
         when={panes().length > 0}
         fallback={
           <div class="center-fill">
-            {/* Two empty states, and the difference is whether this group ever HAD members. A
-                fanout group with none left did not fail to fill: its sessions were deleted
-                outside Sova, and "no sessions yet" would be the wrong story about the same
-                screen. `seed` is the only thing that tells them apart — a group Sova fanned
-                out, or a hand-made one that adopted lineage. */}
-            <Show
-              when={props.group.seed}
-              fallback={
-                <div class="empty">
-                  <Icon name="folder" class="empty-mark" />
-                  <p class="empty-title">{quoted(props.group.name)} has no sessions yet.</p>
-                  <p class="empty-body">Add some here, or drag a row onto the group in the sidebar.</p>
-                  <div class="cluster">
-                    <button type="button" class="button empty-action" onClick={requestAdd}>
-                      <Icon name="plus" />
-                      Add Members
-                    </button>
-                    <button type="button" class="button" onClick={() => props.wiring.onFanOut(undefined)}>
-                      Fan Out…
-                    </button>
-                  </div>
-                </div>
-              }
-            >
-              {/* Seed + no members. The group knows those two facts and NOTHING about why, so the
-                  copy must not pick a cause: this is reachable by deletion outside Sova AND by a
-                  user-named group whose members were removed or promoted, files intact. The old
-                  wording asserted the first, which is a falsehood in the second — and the datum
-                  that would separate them doesn't exist anywhere in the group. */}
-              <div class="empty">
-                <Icon name="folder" class="empty-mark" />
-                <p class="empty-title">{quoted(props.group.name)} has no sessions left.</p>
-                <p class="empty-body">
-                  They were removed from the group, or their files were deleted outside Sova. Dissolving it
-                  takes the name and the fork point, and nothing else.
-                </p>
-                <button type="button" class="button empty-action button-destructive" onClick={() => void dissolve()}>
-                  Dissolve
-                </button>
-              </div>
-            </Show>
+            {/* The workspace adds no members: a session joins a group from the sidebar or through
+                the Overseer, so the empty state says where, and offers nothing to press. */}
+            <div class="empty">
+              <Icon name="folder" class="empty-mark" />
+              <p class="empty-title">{quoted(props.group.name)} has no sessions yet.</p>
+              <p class="empty-body">Drag a session onto the group in the sidebar, or use Move into group in its details.</p>
+            </div>
           </div>
         }
       >
-        {/* A creation that half-worked, reported where the members are rather than where the
-            dialog was: the k that started are on screen behind this. */}
-        <Show when={partial()}>
-          {(p) => (
-            <Banner
-              tone="warn"
-              /* The count the DIALOG knows (`created`), never the pane count: fanning 3 into a
-                 group of 2 with one failure is "2 of 3 created", not "4 of 3" — the existing
-                 members were never part of this creation. */
-              title={partialTitle(p().created ?? panes().length, p().planned)}
-              body={
-                <>
-                  <For each={failureLines(p().failed)}>{(line) => <span class="fanout-fail-line">{line}</span>}</For>
-                  <span>{partialClosing(p().created ?? panes().length)}</span>
-                </>
-              }
-              action={
-                <>
-                  <button type="button" class="button button-sm" onClick={requestAdd}>
-                    Add Members
-                  </button>
-                  <button type="button" class="button button-sm button-ghost" onClick={clearPartial}>
-                    Dismiss
-                  </button>
-                </>
-              }
-            />
-          )}
-        </Show>
         <div class="workspace-row" data-mode={mode()} aria-label="Members" ref={watchRow}>
           <For each={panes()}>
             {(key) => {
@@ -1213,8 +905,6 @@ export function GroupView(props: {
                     /* The pre-assembled name (repeat-suffix aware): one rule for the head, the
                        aria-label and the announcements. */
                     name={() => nameOf(path)}
-                    fork={fork()}
-                    onFanOut={props.wiring.onFanOutFrom}
                     listVersion={props.wiring.listVersion}
                     now={props.wiring.now}
                     onTurnError={noteTurnError}
@@ -1261,7 +951,6 @@ export function GroupView(props: {
                     inputsOnly={props.wiring.inputsOnly}
                     subagentsPath={props.wiring.subagentsPath}
                     onNewSession={props.wiring.onNewSession}
-                onCreated={props.wiring.onCreated}
                   />
                 </section>
               );
@@ -1525,158 +1214,8 @@ function MenuRow(props: {
 }
 
 /**
- * The addable sessions, filtered by the same search at every width:
- * ungrouped first — adding those costs nothing — then ones a press would move out of another
- * group, each naming the group it leaves. One implementation for both heads, because the narrow
- * head used to lose the search and silently cap at 40 rows, which is a different picker wearing
- * the same label. `Fan Out…` rides last, carrying the group's seed so the dialog can offer
- * forking from the members' own starting point ("two more of these").
- */
-function MemberPicker(props: {
-  groupName: string;
-  candidates: SessionSummary[];
-  onAdd(session: SessionSummary): void;
-  onFanOut(seed?: GroupSeed): void;
-  /** Closes the popover the picker lives in, before the fanout dialog opens over it. */
-  close(): void;
-}) {
-  const [query, setQuery] = createSignal("");
-
-  /** Ungrouped first, then the ones a press would move out of another group. */
-  const rows = createMemo(() => {
-    const q = query().trim().toLowerCase();
-    const hits = q ? props.candidates.filter((s) => s.title.toLowerCase().includes(q) || s.cwd.toLowerCase().includes(q)) : props.candidates;
-    return [...hits.filter((s) => !s.groupId), ...hits.filter((s) => s.groupId)];
-  });
-
-  return (
-    <>
-      <div class="model-menu-search">
-        <div class="search">
-          <Icon name="search" />
-          <input
-            class="input"
-            type="text"
-            aria-label="Search sessions"
-            placeholder="Title or folder"
-            value={query()}
-            onInput={(e) => setQuery(e.currentTarget.value)}
-          />
-        </div>
-      </div>
-      <div class="model-menu-list" role="menu" aria-label={`Add a session to ${quoted(props.groupName)}`}>
-        <Show
-          when={rows().length > 0}
-          fallback={
-            <p class="sidebar-region-note">
-              {props.candidates.length === 0 ? "Every session is already in a group." : "No session matches."}
-            </p>
-          }
-        >
-          <For each={rows()}>
-            {(session) => (
-              <MenuRow
-                aria={`Add ${session.title} to ${quoted(props.groupName)}`}
-                onRun={() => props.onAdd(session)}
-              >
-                <span class="mode-option-id">{session.title}</span>
-                {/* Naming the group it would leave is the whole warning: adding moves it. */}
-                <Show when={session.groupId}>
-                  <span class="mode-option-note">in {quoted(groupNameOf(sessionGroups(), session.groupId) ?? "another group")}</span>
-                </Show>
-              </MenuRow>
-            )}
-          </For>
-        </Show>
-        {/* Adding an existing session moves it; this makes new ones. Last row, so the cheap
-            gesture comes first and the creating one is a deliberate reach. */}
-        <div class="model-menu-group" role="group" aria-label="Or make new members">
-          <MenuRow
-            aria={`Fan out into ${quoted(props.groupName)}`}
-            icon={<span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />}
-            onRun={() => props.onFanOut()}
-            close={props.close}
-          >
-            <span class="mode-option-id">Fan Out…</span>
-          </MenuRow>
-        </div>
-      </div>
-    </>
-  );
-}
-
-/**
- * The the session list group popover in reverse: instead of choosing a
- * group for one session, it chooses a session for this group. The body is `MemberPicker`, shared
- * with the narrow head's menu so both widths offer the same search, the same list and the same
- * last row.
- */
-function AddMembers(props: {
-  groupName: string;
-  /** Every session not already in this group, in the list's own order. */
-  candidates: SessionSummary[];
-  open: boolean;
-  onOpen(open: boolean): void;
-  onAdd(session: SessionSummary): void;
-  /** The last row: make new members instead of moving existing ones. */
-  onFanOut(seed?: GroupSeed): void;
-}) {
-  let trigger!: HTMLButtonElement;
-  let menu!: HTMLDivElement;
-
-  const close = () => {
-    if (menu.matches(":popover-open")) menu.hidePopover();
-  };
-  const openMenu = () => {
-    const r = trigger.getBoundingClientRect();
-    menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
-    menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
-    menu.showPopover();
-    queueMicrotask(() => menu.querySelector<HTMLInputElement>("input")?.focus());
-  };
-
-  createEffect(() => {
-    if (props.open && !menu.matches(":popover-open")) openMenu();
-    if (!props.open) close();
-  });
-
-  return (
-    <>
-      <button
-        ref={trigger}
-        type="button"
-        class="button button-sm button-ghost"
-        aria-haspopup="menu"
-        aria-expanded={props.open ? "true" : "false"}
-        onClick={() => props.onOpen(!props.open)}
-      >
-        Add Members
-      </button>
-      <div
-        ref={menu}
-        class="model-menu group-menu"
-        popover="auto"
-        aria-label={`Add a session to ${quoted(props.groupName)}`}
-        onToggle={(e) => props.onOpen((e as ToggleEvent).newState === "open")}
-      >
-        <MemberPicker
-          groupName={props.groupName}
-          candidates={props.candidates}
-          onAdd={props.onAdd}
-          onFanOut={props.onFanOut}
-          close={close}
-        />
-      </div>
-    </>
-  );
-}
-
-/**
- * The head's tools as one menu, under 640px. Same actions, same
- * order, same words — and now the same Add Members PICKER the wide head has, not a truncated
- * list: the spec's "filtered by the same search" holds at every width, and `addOpen` is the same
- * signal the empty state's and the partial banner's buttons flip, so Add Members works from
- * anywhere at any width.
+ * The head's tools as one menu, under 640px. Same actions, same order, same words: Send to All,
+ * then Dissolve.
  *
  * Dissolve asks INSIDE the menu here, rather than in the head: at this width the head has no room
  * for the question, and the reassurance it carries — the sessions stay in the list — is the half a
@@ -1685,51 +1224,27 @@ function AddMembers(props: {
 function HeadActions(props: {
   groupName: string;
   members: number;
-  candidates: SessionSummary[];
-  /** The group has a fork point, so Align to Fork is offered — same rule as the wide head. */
-  seeded: boolean;
   /** Send to All's state, or null with no members: no group composer, so no row. */
   sendAll: boolean | null;
   onSendAll(next: boolean): void;
-  onAdd(session: SessionSummary): void;
-  onAlign(): void;
-  onFanOut(seed?: GroupSeed): void;
   onDissolve(): void;
-  /** The shared Add Members state: flips true from OUTSIDE the head (empty state, partial
-   *  banner), and the menu answers by opening straight into the picker. */
-  addOpen: boolean;
-  onAddOpen(open: boolean): void;
 }) {
   let trigger!: HTMLButtonElement;
   let menu!: HTMLDivElement;
   const [open, setOpen] = createSignal(false);
   const [asking, setAsking] = createSignal(false);
-  const [picking, setPicking] = createSignal(false);
 
   const close = () => {
     if (menu.matches(":popover-open")) menu.hidePopover();
   };
-  /** One opener, one target: the menu opens INTO a state (its rows, or the picker), because
-   *  openMenu-then-set-state resets the very state the opener just asked for — the bug shape of
-   *  a setter called before the displayer that re-initializes it. */
-  const openInto = (pick: boolean) => {
+  const openMenu = () => {
     const r = trigger.getBoundingClientRect();
     menu.style.setProperty("--menu-top", `${Math.round(r.bottom + 4)}px`);
     menu.style.setProperty("--menu-right", `${Math.max(0, Math.round(innerWidth - r.right))}px`);
     setAsking(false);
-    setPicking(pick);
     menu.showPopover();
-    queueMicrotask(() =>
-      (pick ? menu.querySelector<HTMLInputElement>("input") : menu.querySelector<HTMLElement>("[role^=menuitem]"))?.focus(),
-    );
+    queueMicrotask(() => menu.querySelector<HTMLElement>("[role^=menuitem]")?.focus());
   };
-  const openMenu = () => openInto(false);
-  const openPicking = () => openInto(true);
-
-  createEffect(() => {
-    if (props.addOpen && !picking()) openPicking();
-    if (!props.addOpen && picking() && menu.matches(":popover-open")) close();
-  });
 
   return (
     <>
@@ -1755,11 +1270,7 @@ function HeadActions(props: {
         onToggle={(e) => {
           const isOpen = (e as ToggleEvent).newState === "open";
           setOpen(isOpen);
-          if (!isOpen) {
-            setAsking(false);
-            setPicking(false);
-            props.onAddOpen(false);
-          }
+          if (!isOpen) setAsking(false);
         }}
       >
         <Show when={asking()}>
@@ -1784,16 +1295,7 @@ function HeadActions(props: {
             </button>
           </div>
         </Show>
-        <Show when={picking()}>
-          <MemberPicker
-            groupName={props.groupName}
-            candidates={props.candidates}
-            onAdd={props.onAdd}
-            onFanOut={props.onFanOut}
-            close={close}
-          />
-        </Show>
-        <Show when={!asking() && !picking()}>
+        <Show when={!asking()}>
           <div class="model-menu-list" role="menu" aria-label={`Actions for ${quoted(props.groupName)}`}>
             <Show when={props.sendAll !== null}>
               <MenuRow
@@ -1807,27 +1309,6 @@ function HeadActions(props: {
                 <span class="mode-option-id">Send to All</span>
               </MenuRow>
             </Show>
-            <Show when={props.seeded}>
-              <MenuRow
-                aria={`Align every pane of ${quoted(props.groupName)} to its fork point`}
-                icon={<span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />}
-                onRun={props.onAlign}
-                close={close}
-              >
-                <span class="mode-option-id">Align to Fork</span>
-              </MenuRow>
-            </Show>
-            <MenuRow aria={`Add a session to ${quoted(props.groupName)}`} icon={<Icon name="plus" small />} onRun={() => openPicking()}>
-              <span class="mode-option-id">Add Members</span>
-            </MenuRow>
-            <MenuRow
-              aria={`Fan out into ${quoted(props.groupName)}`}
-              icon={<span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />}
-              onRun={() => props.onFanOut()}
-              close={close}
-            >
-              <span class="mode-option-id">Fan Out…</span>
-            </MenuRow>
             <MenuRow aria={`Dissolve ${quoted(props.groupName)}`} icon={<Icon name="close" small />} onRun={() => setAsking(true)}>
               <span class="mode-option-id">Dissolve</span>
             </MenuRow>

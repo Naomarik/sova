@@ -52,9 +52,7 @@ import { getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { runFanout } from "./fanout";
-import { runFork } from "./fork";
-import { AUTO_TITLE_MAX_PATHS, type FanoutRequest, type ForkRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -201,7 +199,6 @@ app.post("/api/sessions", async (c) => {
     return createWebSession(c, dir);
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
-  // The one rule, shared with fanout's fresh mode (spec 14b: fresh IS this path N times).
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) return c.json({ error: cwdError }, 400);
   return createWebSession(c, cwd);
@@ -290,7 +287,7 @@ app.post("/api/session-groups/assign", async (c) => {
     if (body.path !== undefined) return c.json({ error: "send either path or id, not both" }, 400);
     if (body.label !== undefined || body.index !== undefined) return c.json({ error: "label and index belong to an assignment, not a removal" }, 400);
     const out = assignSession(body.id, null);
-    // dissolved is set only when this write emptied a fanout group, which the server then deleted.
+    // dissolved is set only when this write emptied an autoDissolve group, which the server then deleted.
     return out.ok ? c.json({ ok: true, ...(out.dissolved ? { dissolved: true } : {}) }) : c.json({ error: out.error }, out.status);
   }
   // Omitted keeps the label the session already had (a move between groups carries it).
@@ -306,7 +303,7 @@ app.post("/api/session-groups/assign", async (c) => {
   // an assignment made before that rule).
   if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
   const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
-  // dissolved is set only when this write emptied a fanout group, which the server then deleted.
+  // dissolved is set only when this write emptied an autoDissolve group, which the server then deleted.
   return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
 });
 
@@ -325,37 +322,6 @@ app.post("/api/session-groups/:id/prompt", async (c) => {
   const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
   if (r.ok) return c.json(r.result);
   return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
-});
-
-// N sessions from one starting point, as one group. Fork mode branches every
-// member from one entry of one source; fresh mode makes N independent sessions in a folder.
-app.post("/api/session-groups/fanout", async (c) => {
-  let body: FanoutRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { name, members, source | cwd }" }, 400);
-  }
-  const r = await runFanout(body);
-  if (r.ok) return c.json(r.result, 201);
-  if (r.status === 409) return c.json({ refused: r.refused }, 409);
-  // One 400 carries a code (seed-conflict), so the client renders its own sentence for it.
-  return c.json({ error: r.error, ...(r.code ? { code: r.code } : {}) }, r.status);
-});
-
-// One new session branched off one entry of another: the per-message Fork action (server/fork.ts).
-// Not a one-member fanout — no group, no seed, no member marker — and nothing is ever sent.
-app.post("/api/sessions/fork", async (c) => {
-  let body: ForkRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { path, entryId, position }" }, 400);
-  }
-  const r = await runFork(body);
-  if (r.ok) return c.json(r.result, 201);
-  if (r.status === 409) return c.json({ refused: r.refused }, 409);
-  return c.json({ error: r.error }, r.status);
 });
 
 // Moves a web-spawned session between the sidebar regions. Changes Sova's own id list only, except
@@ -443,8 +409,9 @@ const titleDeps = (): NameDeps => ({
 const autoTitleSweep = new AutoTitleSweep({
   settings: () => readSessionTitleSettings(),
   list: listSessions,
-  // Groups Sova fanned out: those it made (autoDissolve) or seeded (a pre-flag fanout group).
-  fanoutGroups: () => new Set(readGroups().filter((g) => g.autoDissolve === true || (g.autoDissolve === undefined && g.seed)).map((g) => g.id)),
+  // Groups an older build made in one gesture: autoDissolve, or seeded before the flag existed
+  // (§workspace.groups/legacy-groups). Nothing writes either any more.
+  legacyGroups: () => new Set(readGroups().filter((g) => g.autoDissolve === true || (g.autoDissolve === undefined && g.seed)).map((g) => g.id)),
   name: (s) => nameSession(s.path, "sweep", titleDeps()),
   log: (line) => console.log(line),
 });

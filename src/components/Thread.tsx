@@ -3,7 +3,7 @@ import type { TmpAttachment, TranscriptItem } from "../../shared/protocol";
 import type { BatonMark } from "../../shared/baton";
 import { wrapupRowIds } from "../lib/wrapup-rows";
 import { blockStreams, type LiveBlock, type LiveEntry, type LiveState, type LiveUserState } from "../lib/live";
-import { agoTime, clockTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
+import { agoTime, prettyJson, shortModel, stampTime, thousands, tildePath } from "../lib/format";
 import { useMinuteNow } from "../lib/minute-clock";
 import { isObj, str, timestampOf, toolCallArgs, toolResultView } from "../lib/message";
 import { stripPastedPaths } from "../lib/path-attachments";
@@ -41,7 +41,7 @@ import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/me
 /**
  * What a view hangs under each delivered message. The thread decides
  * WHERE a strip goes — once per entry, never once per rendered block — and the view decides what
- * it holds: a chat offers Copy · Fork · Rewind/Regenerate, a watch offers Copy with the others'
+ * it holds: a chat offers Copy · Rewind/Regenerate, a watch offers Copy with the others'
  * reasons, and a transcript rendered with no provider (a subagent's) shows no strip at all.
  */
 export interface MessageActionsProvider {
@@ -408,10 +408,6 @@ export function HistoryItems(props: {
   hideThinking?: boolean;
   /** Index from which a call without a result may still be running; after the last user row by default. */
   openFrom?: number;
-  /** The fork point of a fanout member: one drawn row, right after the entry the
-      branch was taken from. Nothing is written to the file for it — the client draws it from the
-      group's `seed`, and a member whose branch no longer holds that entry simply has no row. */
-  fork?: ForkMarker;
   /** Per-message actions. Absent: no strips at all (a subagent transcript, the hidden-rows
       disclosure) — an action is about the chat you are in, not about every transcript on screen. */
   actions?: MessageActionsProvider;
@@ -495,35 +491,6 @@ export function HistoryItems(props: {
     return -1;
   });
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
-  /**
-   * Which rendered row the fork marker follows: the LAST row belonging to the forked entry. An
-   * assistant message renders one row per content block, all sharing an entry id, so matching on
-   * the row id alone would draw the marker between a reply's own paragraphs — and matching the
-   * first block would put it before the rest of the message it says is shared.
-   */
-  const forkAfter = createMemo(() => {
-    const entryId = props.fork?.entryId;
-    if (!entryId) return -1;
-    let at = -1;
-    rows().forEach((item, i) => {
-      if (entryIdOf(item.id) === entryId) at = i;
-    });
-    return at;
-  });
-  /**
-   * The forked entry's OWN timestamp, as the clock — the marker's "· 2:06 PM". It is the time of the
-   * last shared moment (the row the marker follows), NOT the wall-clock of the fanout gesture:
-   * the gesture time lives nowhere in `seed`, and adding a field for it
-   * would put a write-time fact in marker data whose only reader is this decoration. Derived
-   * from the row itself, so nothing is added and nothing can drift; omitted outright when the
-   * row carries no timestamp (never guessed — the same rule as the marker's position).
-   */
-  const forkTime = createMemo(() => {
-    const at = forkAfter();
-    const iso = at >= 0 ? timestampOf(rows()[at]?.raw) : undefined;
-    return iso ? clockTime(iso) : null;
-  });
-
   /**
    * Tail-first (lib/tail-render): inside a transcript, the newest rows are built with the list and
    * the older ones prepended above them while the browser is idle, until all are built. The window
@@ -641,9 +608,7 @@ export function HistoryItems(props: {
           return (
           // A link message is a partner's, shown only in the Agents tab (§mesh.links/transcript):
           // no row at all here, not even the wrapper. It still counts as a turn start (above).
-          item.kind === "link" ? (
-            <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} time={forkTime()} />}</Show>
-          ) : (
+          item.kind === "link" ? null : (
           // The row's box: the outline strip finds an entry's row by it (Jump to Message), and the
           // estimate is its height until it is first drawn (content-visibility, app.css).
           <div class="entry" data-entry={item.id} style={{ "--entry-est": rowEstimate(item, ...shownImages(item)) }}>
@@ -805,9 +770,6 @@ export function HistoryItems(props: {
                 />
               )}
             </Show>
-            {/* After the entry, not inside its blocks: above this row is shared with the source,
-                below it is this member's own. */}
-            <Show when={forkAfter() === index() && props.fork}>{(fork) => <ForkRow fork={fork()} time={forkTime()} />}</Show>
           </div>
           )
           );
@@ -1173,7 +1135,7 @@ export function ThreadScroller(props: {
       // The rows just added are above the view: not new content to follow. The view keeps its
       // distance from the end, which at the bottom is the bottom. The browser's own scroll
       // anchoring usually has done this already; then nothing is written, and a scroll under way
-      // (a jump, Align to Fork) carries on.
+      // (a jump) carries on.
       observer.takeRecords();
       const want = el.scrollHeight - fromEnd;
       if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
@@ -1322,37 +1284,3 @@ export function TranscriptSkeleton() {
   );
 }
 
-/** Where a fanout member was branched from. */
-export interface ForkMarker {
-  /** `seed.leafId`: the entry the fork was taken at. It exists with this id in the source AND in
-      every member, because branching copies entries without re-minting their ids. */
-  entryId: string;
-  /** The source session's title, and its path while the file is still there. */
-  title: string;
-  path: string | null;
-}
-
-/**
- * The marker row: above it is shared with the source, below it is this member's own. A rendered
- * row, never an entry — nothing is written into the session file for it, because the fact it
- * states already lives in the group registry, and a written marker would need the write guards.
- * `time` is the forked entry's own clock (`2:06 PM`) (see `forkTime`), or null to omit the clock half —
- * an entry with no timestamp is not a thing to guess at.
- */
-function ForkRow(props: { fork: ForkMarker; time: string | null }) {
-  return (
-    <p class="info-row fork-marker" role="note">
-      <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
-      <span class="info-row-text">
-        Forked from{" "}
-        <Show
-          when={props.fork.path}
-          fallback={<span title="This session is no longer on disk.">{props.fork.title}</span>}
-        >
-          {(path) => <a href={`#/s/${encodeURIComponent(path())}`}>{props.fork.title}</a>}
-        </Show>{" "}
-        here{props.time ? ` · ${props.time}` : ""}
-      </span>
-    </p>
-  );
-}

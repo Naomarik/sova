@@ -51,7 +51,6 @@ import type { RewindControl } from "./lib/inputs";
 import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
-import { sourceBlocked } from "./lib/fanout";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -67,7 +66,6 @@ import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
 import { ResourceMonitor } from "./components/ResourceMonitor";
 import { closeMonitor, monitorOpen } from "./lib/monitor-nav";
-import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { OverseerView } from "./components/OverseerView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
@@ -623,15 +621,6 @@ export function App() {
   /** A session this tab just created opens for chat with its composer focused. */
   const [autofocusPath, setAutofocusPath] = createSignal<string | null>(null);
   /**
-   * The fanout dialog, when it is open: `{}` with no source is a fresh-prompt fanout, and a
-   * `source` opens it on that session with Fork selected. `presetCwd` is the New Session
-   * dialog's handoff: fresh mode starts in the folder that dialog had chosen. It
-   * lives here rather than in the workspace because it can be opened from a session too, and it
-   * outlives the surface that opened it — the dialog stays up while the request is in flight.
-   */
-  const [fanout, setFanout] = createSignal<{ source?: FanoutSource; into?: { id: string; name: string }; presetCwd?: string } | null>(null);
-
-  /**
    * The skip link's target and name move together: a workspace in Send to All has one action —
    * the group composer — so the link says "Skip to Group Composer" and lands on its input; while
    * the group composer is not on screen (Send to All off, or a workspace with no members) it is
@@ -896,7 +885,6 @@ export function App() {
     onClaudeLogin: noteClaudeLogin,
     onRewindControl: setRewindControl,
     onRewound: noteRewound,
-    onCreated: adoptCreated,
     paneOn,
     openPane,
     toggleSubagents,
@@ -904,39 +892,6 @@ export function App() {
     inputsOnly,
     subagentsPath,
     onNewSession: startNewFrom,
-    // From a workspace: the members land in THIS group, beside the ones already there.
-    // With the group's own seed it is the APPEND case — "I want two more of these": the new
-    // members branch from the same fork point the existing ones share, which is the one `groupId`
-    // + `source` combination the route defines and the one the UI could never reach before. A
-    // hand-made group (no seed) lands beside them with no source, as before; a seed whose parent
-    // is no longer in the list falls back to that too — the fork UI would otherwise name a
-    // transcript nobody can show.
-    onFanOut: (seed?: { parentSessionPath: string; leafId: string }) => {
-      const group = openGroup();
-      if (!group) {
-        setFanout({});
-        return;
-      }
-      const into = { id: group.id, name: group.name };
-      const parent = seed ? (list() ?? []).find((s) => s.path === seed.parentSessionPath) : undefined;
-      if (!seed || !parent) {
-        setFanout({ into });
-        return;
-      }
-      setFanout({
-        into,
-        source: {
-          session: parent,
-          leafId: seed.leafId,
-          // The source is not on screen here: its fill was never reported, and the summary's own
-          // tail value is not the fork point's fill once the source ran on — so unknown, never a
-          // guess. No `messages` either: the fork note hides rather than count what it can't see.
-          context: null,
-          blocked: () => sourceBlocked(parent),
-        },
-      });
-    },
-    onFanOutFrom: (source) => setFanout({ source }),
   };
 
   return (
@@ -1100,7 +1055,6 @@ export function App() {
                       listVersion={wiring.listVersion}
                       now={wiring.now}
                       onRefresh={wiring.onRefresh}
-                      onCreated={wiring.onCreated}
                       onArchiveChanged={wiring.onArchiveChanged}
                       onInsight={wiring.onInsight}
                       onWorkers={wiring.onWorkers}
@@ -1114,7 +1068,6 @@ export function App() {
                       inputsOnly={wiring.inputsOnly}
                       subagentsPath={wiring.subagentsPath}
                       onNewSession={wiring.onNewSession}
-                      onFanOut={wiring.onFanOutFrom}
                     />
                   );
                 }}
@@ -1185,10 +1138,8 @@ export function App() {
                     {/* A plain title at every width: the Sessions card below is where the count lives. */}
                     <h1 class="overview-title">Overview</h1>
                   </div>
-                  {/* Ways to start something: one session, or the same prompt to N models at once (the
-                      overview is fanout's front door, which is why it is offered here and not in the
-                      sidebar). */}
-                  <OverviewActions onNewSession={() => setCreating(true)} onFanOut={() => setFanout({})} />
+                  {/* Ways to start something. */}
+                  <OverviewActions onNewSession={() => setCreating(true)} />
                   <HomeSessionsCard glance={sessionsGlance(list() ?? [], attention.data(), overseer.data()?.proactivity)} now={now()} onOpenList={openSessionList} />
                   <MeshCard />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
@@ -1241,28 +1192,8 @@ export function App() {
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}
-            onFanOut={(cwd) => {
-              // The type field's handoff: close this dialog, open the fanout dialog on a fresh
-              // prompt, with the folder it had chosen carried over.
-              setCreating(false);
-              setFanout({ presetCwd: cwd });
-            }}
           />
         </Portal>
-      </Show>
-      <Show when={fanout()}>
-        {(open) => (
-          <Portal>
-            <FanoutDialog
-              source={open().source}
-              into={open().into}
-              presetCwd={open().presetCwd}
-              sessions={list() ?? []}
-              onClose={() => setFanout(null)}
-              onCreated={refresh}
-            />
-          </Portal>
-        )}
       </Show>
       <Show when={settingsOpenAt()}>
         <Portal>

@@ -5,7 +5,6 @@ import { Portal } from "solid-js/web";
 import type {
   ChatClaudeLogin,
   ChatServerMessage,
-  ContextInfo,
   OverseerQuickAction,
   SandboxInfo,
   SessionSummary,
@@ -20,7 +19,7 @@ import { OverseerThreadContext, QuickActions } from "./OverseerCards";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { createFork, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
   addPendingPrompt,
@@ -79,7 +78,6 @@ import {
   setSessionContext,
   toast,
 } from "../lib/ui-state";
-import { stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -93,23 +91,19 @@ import {
   actionsFor,
   COPIED,
   copyable,
-  forkRefusalText,
-  forkSentence,
   queueGoneEffect,
   queueRemoveReason,
   queueRemoveRefusalText,
   type ActionState,
-  type MessageStrip,
 } from "../lib/message-actions";
 import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
-import { entryIdOf, jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
-import { anyReply, inputTotal, lastInput as lastInputOf, messageTotal, newestOnly, newRows } from "../lib/older-rows";
+import { jumpToEntry, jumpWhenArrived, landExplainJump, transcriptRoot } from "../lib/jump";
+import { inputTotal, lastInput as lastInputOf, newestOnly, newRows } from "../lib/older-rows";
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
-import { openCreated } from "../lib/fork-stage";
 import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
@@ -117,7 +111,7 @@ import { PlaybooksDialog } from "./PlaybooksDialog";
 import type { ModeControl, ModeState } from "./ModeMenu";
 import type { ModelControl } from "./ModelMenu";
 import { ChangesSession } from "./ChangesViewer";
-import { type ForkMarker, HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
+import { HistoryItems, LiveEntries, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton, TurnError } from "./Thread";
 import { Banner, Icon } from "./ui";
 import { UiDialog } from "./UiDialog";
 
@@ -199,11 +193,6 @@ export function ChatView(props: {
   onShowTimeline?(inputsOnly?: boolean): void;
   /** Hands the Timeline this chat's rewind (sent over this socket); null when this view goes away. */
   onRewindControl?(control: RewindControl | null): void;
-  /** A session this view just created (a Fork): the app adopts it — registers it so the route
-      resolves before the list refetch lands, refreshes the sidebar, and opens it with the composer
-      focused. Writing `location.hash` instead lands on "Couldn't find this session." until the
-      list catches up, which is what the end-to-end pass caught. */
-  onCreated?(session: SessionSummary): void;
   /** A rewind landed on this chat, whoever asked (a Timeline row, or the flyout's "Undo last
       turn"): the Timeline must re-read the branch, or it keeps offering the abandoned rows.
       Success only — a refusal changed nothing. App mints the generation counter the pane watches.
@@ -211,11 +200,6 @@ export function ChatView(props: {
   onRewound?(info: { path: string; entryId: string }): void;
   /** This session's teams (polled insight), so the status row can name team members as such. */
   teams?: TeamInfo[];
-  /** Where this member was forked from, when it is one: one drawn row in the thread. */
-  fork?: ForkMarker;
-  /** Open the fanout dialog on this session. Absent (with the flyout row) when there is nothing
-      to fork or nobody who may read the file. */
-  onFanOut?(source: { leafId: string; messages: number; context: ContextInfo | "compacted" | null }): void;
   /** This pane's turn-error state, for the workspace's roll-up: the latest
       turn-error message while it is current, or null. Current means the last turn ended in an
       error and no newer turn has started — a fresh turn (or a rewind) clears it, so the workspace
@@ -325,43 +309,6 @@ export function ChatView(props: {
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
   const [showPlaybooks, setShowPlaybooks] = createSignal(false);
 
-  /**
-   * "Fan Out…" in the flyout, and the source it hands over.
-   *
-   * The leaf is the last entry THIS TRANSCRIPT RENDERS, which is the entry the user is looking at
-   * — and it is an ENTRY id, not a row id: an assistant message renders one row per content block
-   * (`${entryId}:${i}`), so the last row's own id is usually not something the server can match
-   * against the file. The server computes its side the same way (readActiveBranch + normalizeEntry,
-   * server/fanout.ts) and refuses a leaf that isn't current, so the two have to mean the same thing.
-   *
-   * The row is ABSENT rather than disabled with nothing to fork: no reply yet, or no items at all.
-   * the copy deck is explicit that an absence needs no explanation.
-   *
-   * `messages` is a MESSAGE count (src/lib/message-count.ts), because the dialog's fork note says
-   * "up to message {n}" — the rendered-row count it used to send counts one row per content block
-   * plus every info row, so it named a number that was never a count of messages.
-   */
-  const fanOut = () => {
-    const list = items();
-    const o = older();
-    // "up to message {n}" counts the whole branch: the rows held plus the hello's summary of the
-    // rest. Absent until that hello.
-    if (!props.onFanOut || !list || list.length === 0 || !o) return undefined;
-    if (!anyReply(list, o)) return undefined;
-    const leafId = entryIdOf(list[list.length - 1]!.id);
-    if (!leafId) return undefined;
-    return () => {
-      const state = sessionContext()[props.path];
-      props.onFanOut!({
-        leafId,
-        messages: messageTotal(list, o),
-        // The gauge's own state, verbatim: "compacted" stays "compacted" — the dialog turns it
-        // into words, never into 0, which is a claim the context window spec refuses for exactly this state. Null is
-        // the fill never having been reported, which the dialog also says as words.
-        context: state ?? null,
-      });
-    };
-  };
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
   const [commands, setCommands] = createSignal<SlashCommand[]>([]);
   /** The global mode and how it applies to this chat (WS "mode"). */
@@ -993,21 +940,19 @@ export function ChatView(props: {
    */
   const [actionNote, setActionNote] = createSignal<{ entryId: string; text: string } | null>(null);
   const noteOn = (entryId: string | undefined, text: string) => setActionNote(entryId && text ? { entryId, text } : null);
-  /** A fork is a REST request, not a socket one: its own in-flight flag. */
-  const [forking, setForking] = createSignal(false);
   /** Queued messages with a removal out, by id, so only that row greys. */
   const [removing, setRemoving] = createSignal<string[]>([]);
 
   /** What every strip in this chat is judged by. Reactive by construction: a turn starting, a
       compaction, a model switch or a reconnect re-enables the actions in place. */
-  const actionState = (kind: "rewind" | "regenerate" | "fork", wake = false, link = false): ActionState => ({
+  const actionState = (wake = false, link = false): ActionState => ({
     chat: true,
     live: false, // a ChatView only exists for a session Sova may write to
     streaming: live.running,
     compacting: compacting(),
     // Rewind and Regenerate both move the branch on the same runtime, and the server has no
     // mutex between them: one in flight blocks the other, not just another of its own kind.
-    pending: kind === "fork" ? forking() : pending().rewind + pending().regenerate > 0,
+    pending: pending().rewind + pending().regenerate > 0,
     paused: blocked()?.text ?? null,
     wake,
     link,
@@ -1040,35 +985,6 @@ export function ChatView(props: {
     else noteOn(entryId, result.message);
   };
 
-  /**
-   * Fork: a new session holding this branch up to here — "before" a message of yours (pi's /fork:
-   * its text and attachments land in the new composer, unsent), "at" a reply (pi's /clone). The
-   * new session opens; nothing here changes, and nothing there is sent.
-   */
-  const forkFrom = async (strip: MessageStrip) => {
-    if (forking()) return;
-    setActionNote(null);
-    setForking(true);
-    try {
-      const out = await createFork({ path: props.path, entryId: strip.entryId, position: strip.role === "user" ? "before" : "at" });
-      if (!out.ok) {
-        const text = forkRefusalText(out.code, out.message);
-        noteOn(strip.entryId, text);
-        announce(text);
-        return;
-      }
-      const target = out.session.path;
-      // What actually landed in the new composer decides what we say landed there.
-      const sentence = forkSentence(await stageFork(target, out.editor));
-      noteOn(strip.entryId, "");
-      toast(sentence);
-      announce(sentence);
-      openCreated(out.session, props.onCreated);
-    } finally {
-      setForking(false);
-    }
-  };
-
   /** What each delivered message offers here. Copy is ours alone; the rest are requests with a
       reason when they can't act, never a button that quietly does nothing. */
   const chatActions: MessageActionsProvider = {
@@ -1077,14 +993,12 @@ export function ChatView(props: {
         switch (kind) {
           case "copy":
             return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
-          case "fork":
-            return { kind, reason: actionReason("fork", actionState("fork")), run: () => forkFrom(strip) };
           case "rewind":
-            return { kind, reason: actionReason("rewind", actionState("rewind")), run: () => rewindFrom(strip.entryId) };
+            return { kind, reason: actionReason("rewind", actionState()), run: () => rewindFrom(strip.entryId) };
           case "regenerate":
             return {
               kind,
-              reason: actionReason("regenerate", actionState("regenerate", !!strip.fromWake, !!strip.fromLink)),
+              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink)),
               run: () => regenerate(strip.entryId),
             };
         }
@@ -1624,7 +1538,6 @@ export function ChatView(props: {
                 streaming={live.running}
                 hideTools={hideTools(props.path)}
                 hideThinking={hideThinking(props.path)}
-                fork={props.fork}
                 actions={chatActions}
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
@@ -1754,7 +1667,6 @@ export function ChatView(props: {
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}
         onPlaybooks={() => setShowPlaybooks(true)}
-        onFanOut={fanOut()}
         undo={undoControl}
         onSend={send}
         picks={composerPicks()}

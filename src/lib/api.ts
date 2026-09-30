@@ -37,9 +37,6 @@ import type {
   AssignGroupResult,
   BatchPromptResult,
   BatchRefusal,
-  FanoutConflict,
-  FanoutRequest,
-  FanoutResult,
   SessionGroup,
   SessionHiddenWorkers,
   SessionInsight,
@@ -109,14 +106,6 @@ export type BatchOutcome =
   /** `status` so a caller can tell "the group changed under me" (400) from "the server is gone"
       (0) — the first is recoverable by re-reading the list, the second isn't. */
   | { ok: false; error: string; status: number; refused?: undefined };
-
-/** What a fanout can come back as; the 409 is the route's answer, not an exception. */
-export type FanoutOutcome =
-  | { ok: true; result: FanoutResult }
-  | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined; conflict?: undefined }
-  /** `conflict` is the route's one coded 400 (`seed-conflict`): the client renders its own
-      sentence from the code, and `error` stays the fallback for every other 400. */
-  | { ok: false; error: string; status: number; refused?: undefined; conflict?: FanoutConflict["code"] };
 
 export class ApiError extends Error {
   constructor(
@@ -539,8 +528,8 @@ export const assignSessionGroup = (path: string, groupId: string | null, opts?: 
  * Removal by session id, for a member whose FILE is gone (gone from disk):
  * the path form 404s when there is no file to resolve, but the pane's `Remove From Group` still
  * has to work, so the route takes `id` for unassignment only. Same response shape as the path
- * form, `dissolved` included — taking the last member out of a fanout group dissolves it whether
- * the file existed or not.
+ * form, `dissolved` included — taking the last member out of an `autoDissolve` group (an older
+ * build's) dissolves it whether the file existed or not.
  */
 export const unassignSessionById = (id: string) =>
   request<AssignGroupResult>("/api/session-groups/assign", {
@@ -573,91 +562,6 @@ export async function promptSessionGroup(id: string, text: string, members?: str
     if (refused) return { ok: false, refused };
     return { ok: false, error: (err as Error).message, status: err instanceof ApiError ? err.status : 0 };
   }
-}
-
-/**
- * N sessions from one starting point, as one group. One write:
- * the group, its members and their assignments land together, because a fanout that half-exists
- * is a sidebar section the user has to clean up.
- *
- * Like the batch prompt, the refusal is a VALUE — a source that is mid-turn, TUI-live, in an older
- * format or has moved on since the dialog opened comes back as a 409 with exactly one entry naming
- * the SOURCE (which is a member of nothing, so its `id` is empty by design). A 201 can still carry
- * `failed`: members that couldn't start, named by `ref` since they have no session.
- */
-export async function createFanout(body: FanoutRequest): Promise<FanoutOutcome> {
-  try {
-    const result = await request<FanoutResult>("/api/session-groups/fanout", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    return { ok: true, result };
-  } catch (err) {
-    const refused = err instanceof ApiError && err.status === 409 ? refusalsOf(err.body) : null;
-    if (refused) return { ok: false, refused };
-    const status = err instanceof ApiError ? err.status : 0;
-    return { ok: false, error: (err as Error).message, status, conflict: conflictOf(err) };
-  }
-}
-
-/**
- * A fork's answer. The 201 carries the new session and, for a fork taken BEFORE a user message,
- * that message for the new composer — its text, its uploaded attachments and any inline image
- * bytes — so the fork lands you exactly where you were about to send, with nothing auto-sent.
- *
- * The shapes are the server's (POST /api/sessions/fork, see the team's wire contract). They are
- * described here only as far as this client reads them; the words for a refusal are Sova's own
- * (`forkRefusalText`), never the server's prose parsed.
- */
-export interface ForkEditor {
-  text?: string;
-  attachments?: TmpAttachment[];
-  /** Inline image bytes (data URLs) the message carried. A composer draft holds uploaded files,
-      not bytes, so these can be shown but not re-staged — the announcement says so. */
-  images?: string[];
-}
-
-export type ForkOutcome =
-  | { ok: true; session: SessionSummary; editor?: ForkEditor }
-  /** A refusal is a VALUE, like the fanout's: the strip renders it on the message's own row. */
-  | { ok: false; code?: string; message: string; status: number };
-
-/**
- * Fork a session at one of its entries: `position: "before"` on a user message (pi's /fork — the
- * branch through its parent, that message handed to the new composer), `"at"` on any entry (pi's
- * /clone — everything through it). Never sends anything in the new session.
- */
-export async function createFork(body: { path: string; entryId: string; position: "before" | "at" }): Promise<ForkOutcome> {
-  try {
-    const result = await request<{ session: SessionSummary; editor?: ForkEditor }>("/api/sessions/fork", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    return { ok: true, session: result.session, editor: result.editor };
-  } catch (err) {
-    const status = err instanceof ApiError ? err.status : 0;
-    const refused = err instanceof ApiError && err.status === 409 ? forkRefusalOf(err.body) : null;
-    return { ok: false, code: refused?.code, message: refused?.message ?? (err as Error).message, status };
-  }
-}
-
-/** The 409 body's single refusal, when it is shaped like one. An unknown shape is not invented
-    into a code: the caller then says the plain "couldn't fork" sentence. */
-function forkRefusalOf(body: unknown): { code?: string; message: string } | null {
-  const list = (body as { refused?: unknown } | undefined)?.refused;
-  const first = Array.isArray(list) ? list[0] : list;
-  if (!first || typeof first !== "object") return null;
-  const { code, message } = first as { code?: unknown; message?: unknown };
-  return { code: typeof code === "string" ? code : undefined, message: typeof message === "string" ? message : "" };
-}
-
-/** The coded 400 this route can answer with, when it is one. */
-function conflictOf(err: unknown): FanoutConflict["code"] | undefined {
-  if (!(err instanceof ApiError) || err.status !== 400) return undefined;
-  const code = (err.body as { code?: unknown } | undefined)?.code;
-  return code === "seed-conflict" ? code : undefined;
 }
 
 /** The 409's members, or null when the body isn't the shape this route promises. */

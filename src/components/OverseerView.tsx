@@ -444,7 +444,6 @@ export function OverseerView(props: {
               listVersion={w.listVersion}
               now={w.now}
               onRefresh={w.onRefresh}
-              onCreated={w.onCreated}
               onArchiveChanged={w.onArchiveChanged}
               onInsight={w.onInsight}
               onWorkers={w.onWorkers}

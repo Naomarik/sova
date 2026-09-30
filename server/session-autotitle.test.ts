@@ -153,7 +153,7 @@ describe("eligibility", () => {
     assert.equal(at.buttonSkip(base), null);
   });
 
-  test("the sweep: unnamed, summarized, quiet, not archived, not a worker, fanout member or Overseer file", () => {
+  test("the sweep: unnamed, summarized, quiet, not archived, not a worker, legacy group member or Overseer file", () => {
     const fan = new Set(["fan"]);
     const ok = (s: Partial<SessionSummary>, quiet = 5 * 60_000) => at.sweepEligible({ ...base, ...s }, now, quiet, fan);
     assert.equal(ok({}), true);
@@ -325,7 +325,7 @@ describe("the sweep", () => {
     const sweep = new at.AutoTitleSweep({
       settings: () => settings(),
       list: async () => rows.map((r) => (named.has(r.id) ? { ...r, titleBy: "auto" as const, originalTitle: "t" } : r)),
-      fanoutGroups: () => new Set(),
+      legacyGroups: () => new Set(),
       now: () => now,
       name: async (s) => {
         asked.push(s.id);
@@ -357,7 +357,7 @@ describe("the sweep", () => {
         listed++;
         return [row(1), row(2), row(3), row(4)];
       },
-      fanoutGroups: () => new Set(),
+      legacyGroups: () => new Set(),
       now: () => clock,
       name: async (s) => {
         asked.push(s.id);

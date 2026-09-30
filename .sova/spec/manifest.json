@@ -223,7 +223,9 @@
         "server/sessions-context.test.ts",
         "shared/protocol.ts",
         "src/lib/readiness.ts",
-        "src/lib/readiness.test.ts"
+        "src/lib/readiness.test.ts",
+        "server/preview-kept.ts",
+        "server/project-previews.test.ts"
       ]
     },
     "§app.session-list/groups": {
@@ -8419,7 +8421,8 @@
       "requires": [],
       "code": [
         "server/session-share-view.ts",
-        "server/session-share-privacy.test.ts"
+        "server/session-share-privacy.test.ts",
+        "server/preview-kept.ts"
       ]
     },
     "§app.session-share/overview": {

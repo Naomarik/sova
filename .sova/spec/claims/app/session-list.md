@@ -433,6 +433,9 @@ label a person reads says "sessions pane".
   </h3>
   ```
 - **Row line 1.** `SessionSummary.title`, truncated to one line; the full title goes in `title=`.
+  The server shows "[preview link]" in place of a preview link this host keeps
+  (§app.project-overseer/previews) in every title, `originalTitle`, summary line, draft preview
+  and reply error, before it cuts any of them, so no part of one is ever listed.
   `Untitled` renders in `--color-ink-muted`. A session with a profile has its icon just before the
   title, in accent ink, with "Profile: {label}" as its `title` (§chat.profiles/after-first-message).
 - **Draft rows.** An empty husk — a session whose file holds no user message anywhere — is never

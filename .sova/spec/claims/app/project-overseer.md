@@ -578,7 +578,8 @@ user row.
   overseer's tool results or errors (they are part of its session file, which the org's workspace
   repo commits): every one of its tools passes its result through a filter that shows "[preview
   link]" in place of a kept link, whatever text held it. Nor is it in the session list
-  (`SessionSummary`: a title or summary line that holds one shows "[preview link]" in its place),
+  (`SessionSummary`: a title or summary line that holds one shows "[preview link]" in its place,
+  replaced before the text is cut, §app.session-list/content-rules),
   the org's gathering rows, the owner page, the share payloads (`/h/`, `/i/`, `/s/`), the
   transition log, the overseer's activity log or the server's own logs. An owner update, or a
   gathering's `public_title`, `question`, `goal` or `why`, that holds a kept link is refused: "A

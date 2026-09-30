@@ -46,6 +46,8 @@ export type LiveEntry =
       origin?: "client" | "server";
       /** The Overseer queued it (`QueueItem.overseer`): the row reads "Overseer", not "Sent by Sova". */
       overseer?: boolean;
+      /** Another session queued it (`QueueItem.fromSession`): the row reads "From {title}". */
+      fromSession?: { sessionId: string; title: string };
       /** A baton session's sender (person id or "operator"), from its `sova-baton-sent` marker while
           the row is still live (§app.baton/attribution). */
       by?: string;
@@ -214,6 +216,7 @@ export interface QueuedItem {
   images?: number;
   origin?: "client" | "server";
   overseer?: boolean;
+  fromSession?: { sessionId: string; title: string };
 }
 
 /**
@@ -250,6 +253,7 @@ export function applyQueue(set: SetStoreFunction<LiveState>, items: readonly Que
           entry.handed = item.state === "sending";
           if (item.origin) entry.origin = item.origin;
           if (item.overseer) entry.overseer = true;
+          if (item.fromSession) entry.fromSession = item.fromSession;
         } else if (entry.state === "queued") {
           entry.handed = true;
         }
@@ -266,6 +270,7 @@ export function applyQueue(set: SetStoreFunction<LiveState>, items: readonly Que
           handed: item.state === "sending",
           ...(item.origin ? { origin: item.origin } : {}),
           ...(item.overseer ? { overseer: true } : {}),
+          ...(item.fromSession ? { fromSession: item.fromSession } : {}),
         });
       }
     }),

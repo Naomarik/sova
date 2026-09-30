@@ -9,7 +9,10 @@
  * (`a "A" -> b "B"`), the fence is inline-style: the first string after an id labels that node
  * when it has no label yet (no `node` line in its panel, no earlier inline label), and the next
  * string labels the edge (`a "A" -> b "B" "edge"`, `b --> a "reply"`). Repeating a node's inline
- * label is not an edge label. Shape and tone words may follow (`gate "Approve" decision`).
+ * label is not an edge label. Shape and tone words may follow (`gate "Approve" decision`). A second
+ * string after a chain's source, before its first arrow, is that node's second line
+ * (`a "A" "second" -> b`). A line `a "A" ["second"] [words]` with no arrow is a `node` line without
+ * the word: it counts as one for the style too (a string after `a` as a target is the edge's).
  *
  * `group "Label" a b c` (also frame/subgraph/cluster; no arrow on the line) draws a frame around
  * some nodes of one graph (./layout.ts keeps them together); per panel, flat, a node in one at most.
@@ -63,6 +66,8 @@ const GROUP_WORDS = ["group", "frame", "subgraph", "cluster"];
 const MAX_GROUPS = 6;
 /** `group "Label" a b c`: a group word, one string, then ids (commas allowed), and no arrow. */
 const isGroupLine = (t: Token[]) => t[0]?.t === "word" && GROUP_WORDS.includes(t[0].v) && t[1]?.t === "str" && !t.some((x) => x.t === "arrow");
+/** `a1 "Label" ["second"] [shape] [tone]` with no arrow: a `node` line without the word (checked after isGroupLine). */
+const isDeclLine = (t: Token[]) => t[0]?.t === "word" && t[0].v !== "node" && t[1]?.t === "str" && !t.some((x) => x.t === "arrow");
 
 const MAX_NODES = 30;
 const MAX_EDGES = 48;
@@ -98,7 +103,8 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     if (t[0]?.t !== "word" || isGroupLine(t)) continue;
     if (t[0].v === "node") {
       if (t[1]?.t === "word") nodeLines.add(`${at}\0${t[1].v}`);
-    } else if (t[1]?.t === "str") inlineStyle = true;
+    } else if (isDeclLine(t)) nodeLines.add(`${at}\0${t[0].v}`);
+    else if (t[1]?.t === "str") inlineStyle = true;
   }
   // Sections: each panel's ids are its own. `key` is the node's id in the spec: the id as written,
   // or, for an id an earlier panel already has, `id@<panel>` (no written id contains @).
@@ -127,6 +133,8 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   const used: string[] = [];
   // Inline-style node labels, by key (the first one wins).
   const inline = new Map<string, string>();
+  // A chain source's second string (a "A" "second line" -> b): the node's note, by key.
+  const inlineNote = new Map<string, string>();
   const inlineLabel = (k: string, v: string, n: number) => {
     const prev = inline.get(k);
     if (prev === undefined) inline.set(k, v);
@@ -175,11 +183,13 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       continue;
     }
     const first = toks[0]!;
-    if (first.t === "word" && first.v === "node") {
-      const nid = id(toks[1], line.n, "a node id after node");
+    // `node a "A"`, or the same without the word (`a "A" round`, no arrow on the line).
+    const idAt = first.t === "word" && first.v === "node" ? 1 : isDeclLine(toks) ? 0 : -1;
+    if (idAt >= 0) {
+      const nid = id(toks[idAt], line.n, "a node id after node");
       const k0 = key(nid, line.n);
       if (declared.has(k0)) fail(line.n, `node ${nid} is declared twice`);
-      let k = 2;
+      let k = idAt + 1;
       let label = nid;
       let note: string | undefined;
       if (toks[k]?.t === "str") label = toks[k++]!.v;
@@ -196,7 +206,20 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     let k = 1;
     if (toks[k]?.t === "str") {
       if (hasNodeLine(src)) fail(line.n, `${src} has a node line: its label goes there, not after the id`);
-      inlineLabel(from, toks[k++]!.v, line.n);
+      const label = toks[k++]!.v;
+      inlineLabel(from, label, line.n);
+      // Before the first arrow a second string can't be an edge's: it is the node's second line.
+      if (toks[k]?.t === "str") {
+        const note = toks[k++]!.v;
+        if (toks[k]?.t === "str") {
+          const arrow = toks.findIndex((t) => t.t === "arrow");
+          const to = arrow < 0 ? "" : ` ${toks[arrow]!.v} ${toks[arrow + 1]?.t === "word" ? toks[arrow + 1]!.v : "…"}`;
+          fail(line.n, `${src} takes a label and one second line before its arrow: ${src} "${label}" "${note}"${to}`);
+        }
+        const prev = inlineNote.get(from);
+        if (prev === undefined) inlineNote.set(from, note);
+        else if (prev !== note) warn(line.n, `node ${src} has the second lines "${prev}" and "${note}": kept "${prev}"`);
+      }
     }
     if (inlineStyle) k = chainWords(toks, k, src, from, line.n);
     if (toks[k]?.t !== "arrow") fail(line.n, toks.length === 1 ? `a lone id: declare it with node ${src} "Label"` : `expected an arrow (-> --> <->) after ${src}`);
@@ -206,19 +229,37 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       const dst = id(toks[k + 1], line.n, "a target id after the arrow");
       const to = key(dst, line.n);
       used.push(to);
+      const dstAt = k + 1;
       k += 2;
       let label: string | undefined;
+      let named = false;
       if (inlineStyle && !hasNodeLine(dst)) {
         // The first string labels the node if it has none yet (or repeats its label); the next is the edge's.
         const s1 = toks[k];
         if (s1?.t === "str" && (!inline.has(to) || inline.get(to) === s1.v)) {
           inlineLabel(to, s1.v, line.n);
+          named = true;
           k++;
         }
         if (toks[k]?.t === "str") label = toks[k++]!.v;
       } else if (toks[k]?.t === "str") label = toks[k++]!.v;
+      const strings = k;
       k = chainWords(toks, k, dst, to, line.n);
       const stray = toks[k];
+      if (stray?.t === "str") {
+        // Say what to write instead, quoting the target as it should read.
+        const head = `unexpected "${stray.v}" after ${dst}`;
+        const q = (s: string) => `"${s.replace(/\n/g, "\\n")}"`;
+        const arrowV = (arrow as { v: Arrow }).v;
+        if (k > strings) {
+          const strs = toks.slice(dstAt + 1, strings).map((t) => q(t.v));
+          const words = toks.slice(strings, k).map((t) => t.v);
+          fail(line.n, `${head}: strings go before shape and tone words: ${arrowV} ${[dst, ...strs, q(stray.v), ...words].join(" ")}`);
+        }
+        if (named) fail(line.n, `${head}: one label and one edge label per target; for a second line use node ${dst} ${q(inline.get(to)!)} ${q(stray.v)}`);
+        const already = inlineStyle && !hasNodeLine(dst) ? `${dst} is labelled ${q(inline.get(to)!)} already, so ${q(label!)} labels the edge; ` : "";
+        fail(line.n, `${head}: ${already}one string per edge label (\\n breaks a line): ${arrowV} ${dst} ${q(`${label}\n${stray.v}`)}`);
+      }
       if (stray && stray.t !== "arrow") fail(line.n, `unexpected ${stray.v} after ${dst}`);
       const a = (arrow as { v: Arrow }).v;
       spec.edges.push({ from, to, ...(label ? { label } : {}), dashed: a === "-->" || a === "<-->", both: a.startsWith("<") });
@@ -239,7 +280,8 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   for (const node of declared.values()) spec.nodes.push(node);
   for (const u of used) {
     if (declared.has(u)) continue;
-    const node: FlowNode = { id: u, label: inline.get(u) ?? written.get(u)!, shape: chainShape.get(u)?.shape ?? defaultShape };
+    const note = inlineNote.get(u);
+    const node: FlowNode = { id: u, label: inline.get(u) ?? written.get(u)!, ...(note ? { note } : {}), shape: chainShape.get(u)?.shape ?? defaultShape };
     const tone = chainTone.get(u)?.tone;
     if (tone) node.tone = tone;
     declared.set(u, node);

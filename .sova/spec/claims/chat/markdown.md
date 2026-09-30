@@ -1,7 +1,10 @@
 # §chat/markdown — Markdown and code
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-**Scope.** **assistant-text** rows render markdown. Everything else stays as it is:
+**Scope.** **assistant-text** rows render markdown, and so do the other places that show model- or
+agent-written prose with this same renderer: the alignment viewer, report rows and team-message
+cards, linked-session messages, the Overseer's briefs and idea text, and the markdown viewer
+(§app/markdown-viewer). Everything else stays as it is:
 
 - **user** text is plain, keeping `.message-text` and `white-space: pre-wrap`;
 - **thinking** is plain inside its disclosure;
@@ -295,8 +298,10 @@ context window, a share of a limit). HTML, drawn by `src/vis/kinds/chart/Parts.t
 - **Colour.** A part's tone colours it; parts without one take the chart's series colours in turn
   (accent, warn, success, error, info, muted). A mark tints the part's legend row, adds the note's
   number there and outlines the segment; it never recolours the part.
-- **Errors.** A negative part, a part without a number, parts adding up to 0, parts adding up to more
-  than `of:` (at the `of:` line), `of:` on any other type or not a number above 0, `series:`,
+- **Past `of:`.** Parts adding up to more than `of:` draw as without `of:`, with a warning
+  (§chat.markdown/vis-lenience).
+- **Errors.** A negative part, a part without a number, parts adding up to 0, `of:` on any other
+  type or not a number above 0, `series:`,
   `scale: log`, `x:`/`y:`, more than 12 parts.
 - **Height.** Estimated from the same metrics before it draws (§chat.markdown/visuals, No layout shift).
 
@@ -366,6 +371,58 @@ called `group` or `frame` in a chain still parses as before.
 - **No regression.** A fence without group lines parses and lays out exactly as before, and a
   chain line that uses the word as an id (`frame -> x`) is a chain, not a group.
 - **The guide** teaches it in one line under flow, and its main flow example draws one group.
+
+## §chat.markdown/vis-lenience — `vis` lines models get wrong: one reading, or a did-you-mean
+
+Models writing `vis` fences reach for a few shapes the grammar didn't read. Where such a line has
+only one plausible meaning, it draws with that meaning; where it doesn't, its error says what to
+write, quoting the corrected line. Every line that parsed before keeps its meaning.
+
+- **A flow source's second line.** In a `vis flow` or `vis state` chain, a second string right
+  after the chain's source, before its first arrow, is that node's second line, drawn under its
+  label as a `node` line's is: `g1 "Gathering" "own states" -> n1` draws g1 as "Gathering" over
+  "own states". The line is inline-style (§chat.markdown/vis-flow-sections), as it is with one
+  string. A different second line for a node that already has one keeps the first, with a warning.
+  A third string there is an error: "g1 takes a label and one second line before its arrow: g1
+  "Gathering" "own states" -> n1".
+- **A declaration without `node`.** A flow or state line of an id, a string, an optional second
+  string and optional shape and tone words, with no arrow (`a1 "Worker starts" round`), declares
+  that node exactly as `node a1 "Worker starts" round` does: a string after it as an edge's target
+  is the edge's label, and it doesn't make the fence inline-style. A lone id is still an error
+  that names the `node` line.
+- **After a flow target**, the first string still labels the node (inline style) and the second the
+  edge. A further string is an error that says what to write, by what came before it:
+  - the target was labelled on this line: "unexpected "own states" after d1: one label and one
+    edge label per target; for a second line use node d1 "Decision" "own states"";
+  - the target was labelled earlier (or has a node line, or the fence isn't inline-style), so the
+    first string was the edge's: "… one string per edge label (\n breaks a line): -> api "Notify
+    completion\nPOST /confirm-upload"", led, when inline, by "api is labelled "API Server"
+    already, so "Notify completion" labels the edge";
+  - it follows a shape or tone word: "… strings go before shape and tone words: -> staging
+    "rejected" error".
+- **Sequence, Mermaid messages.** A message whose target ends in `:` or starts with `>`
+  (`Client -> Server: SYN`, `Client->>Server: SYN`) is an error quoting the vis message: "write
+  Client -> Server "SYN" (not Mermaid a -> b: msg)", a `-->>` reply as `-->`.
+- **Tree, a slash outside the quotes.** A lone `/` right after a quoted name's closing quote (then
+  the line's end or a space) is the folder's slash: `"Docs"/ "shared" ok` draws exactly as `"Docs/"
+  "shared" ok` (a name already ending in `/` takes no second one). A slash joined to more text
+  (`"Docs"/x`) is an error: "put the / inside the quotes: "Docs/"x".
+- **Chart parts past `of:`.** A `type: parts` chart whose parts add up to more than `of:` draws
+  exactly as the same fence without its `of:` line (no capacity, no free rest, shares of the
+  total, "… in total"), with the warning "line N: the parts add up to 4.41, more than of: 4.19:
+  drawn without of:" at the `of:` line (§chat.markdown/visuals, Warnings). Parts up to `of:` are
+  unchanged.
+- **The guide** teaches flow example-first, one bullet per shape, each quoting its example (a
+  node labelled where it first appears, two lines in a box by `\n` in its label, the edge label
+  after a target, shape and tone, a `node` line declaring a node); says that after a target the
+  first string labels it and the second the edge, never a second line; lists short "Not vis"
+  wrong→right pairs for Mermaid habits (`A->>B: msg`, `A[Label] --> B`) in its shared rules; and
+  asks for a tree folder's `/` inside the quotes, a quoted mark target when it has spaces, and no
+  `of:` when a chart's parts exceed it. It shows no node with two strings (a source's second line,
+  a declaration without `node`): in an offline eval of weak models at low effort, showing one led
+  a model to write `-> b "B" "role"` on targets, drawing the role on the arrow; the parser reads
+  those forms when a model writes them anyway. The text sent to the model stays within the size it
+  had (12,356 bytes), and so does the file (15,279).
 
 ## §chat.markdown/vis-matrix-tones — `vis matrix` cell tones
 

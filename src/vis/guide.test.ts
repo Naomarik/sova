@@ -45,7 +45,33 @@ test("the guide's flow and state examples mean what the text says", () => {
   assert.deepEqual(labels(main), { web: "Browser tab", srv: "Sova server", sdk: "pi session", done: "Reply streamed?" });
   assert.deepEqual(main.edges.map((e) => [e.from, e.to, e.label ?? null]), [["web", "srv", "WS /ws/chat"], ["srv", "sdk", null], ["sdk", "srv", "events"], ["srv", "done", null], ["done", "web", "yes"]]);
   assert.deepEqual(main.nodes.map((n) => n.shape), ["box", "box", "store", "decision"]);
-  for (const quoted of ['srv "Sova server" "WS /ws/chat"', 'sdk --> srv "events"', 'done "Reply streamed?" decision']) assert.ok(GUIDE.includes(`\`${quoted}\``), `the bullets quote the example: ${quoted}`);
+  for (const quoted of ['web "Browser tab" ->', 'srv "Sova server" "WS /ws/chat"', 'sdk --> srv "events"', 'done "Reply streamed?" decision']) assert.ok(GUIDE.includes(`\`${quoted}\``), `the bullets quote the example: ${quoted}`);
+  // Each bullet's own example means what the bullet says. Two lines anywhere: \n in the label.
+  const flow = (body: string) => {
+    const r = parseVis("flow", body);
+    assert.ok(r.ok, body);
+    return r.spec as FlowSpec;
+  };
+  assert.ok(GUIDE.includes('`-> gw "Gateway\\nKong"`'));
+  assert.deepEqual(flow('web "Web" -> gw "Gateway\\nKong"').nodes[1]!.label, "Gateway\nKong");
+  // After a target, the second string is the edge's, never a second line (the eval's most common misread).
+  assert.ok(GUIDE.includes("after a target, the first string labels it and the second labels the edge, never a second line."));
+  const kong = flow('web "Web" -> gw "Gateway" "Kong"');
+  assert.deepEqual([kong.nodes[1]!.note, kong.edges[0]!.label], [undefined, "Kong"]);
+  // A declaration alone on a line, then a string after db as a target is the edge's (inline fence or not).
+  assert.ok(GUIDE.includes('`node db "Orders" store` alone on a line declares a node; then `api -> db "SQL"` labels the edge'));
+  for (const body of ['node db "Orders" store\napi -> db "SQL"', 'node db "Orders" store\napi "API" -> db "SQL"']) {
+    const s = flow(body);
+    const db = s.nodes.find((n) => n.id === "db")!;
+    assert.deepEqual([db.label, db.shape, s.edges[0]!.label], ["Orders", "store", "SQL"]);
+  }
+  // In an offline eval of weak models (2026-09-30), showing any two-string node in the flow section
+  // led one to write `-> b "B" "role"` on targets, drawing the role on the arrow. The parser reads a
+  // source's second string and a declaration without `node`, but the guide teaches only `\n`.
+  const flowSection = sections.find((s) => s.heading === "flow")!.text.replace(/<!--[\s\S]*?-->/g, "");
+  // An id then two strings, at a line's or a bullet's start: only the target bullet's label + edge pair.
+  const pairs = [...flowSection.matchAll(/(?:^|`)([a-z]\w*) "[^"]*" "[^"]*"/gm)].map((m) => m[1]);
+  assert.deepEqual(pairs, ["srv"], "no two-string node is shown");
   // Groups: the main example frames the server and the session it holds.
   assert.deepEqual(main.groups, [{ label: "One process", nodes: ["srv", "sdk"] }]);
   // Panels: the same ids in both panels are two nodes each.
@@ -53,6 +79,29 @@ test("the guide's flow and state examples mean what the text says", () => {
   // State: no inline label anywhere, so each string after a target is its edge's event.
   assert.deepEqual(state.edges.map((e) => e.label ?? null), [null, "prompt", "settled", "error"]);
   assert.ok(state.nodes.every((n) => n.label === n.id));
+});
+
+// The rules' "Not vis" pairs: the Mermaid side fails with a hint, the vis side draws what it says.
+test("the guide's Not vis pairs: the wrong side is refused with a hint, the right side means it", () => {
+  assert.match(GUIDE, /`A->>B: msg` is `a -> b "msg"`; `A\[Label\] --> B` is `a "Label" --> b`/);
+  const seq = parseVis("sequence", 'A->>B: msg');
+  assert.ok(!seq.ok && seq.message === 'write A -> B "msg" (not Mermaid a ->> b: msg)');
+  const msg = parseVis("sequence", 'a -> b "msg"');
+  assert.ok(msg.ok);
+  assert.deepEqual((msg.spec as { steps: unknown[] }).steps, [{ type: "msg", from: "a", to: "b", label: "msg", dashed: false }]);
+  assert.ok(!parseVis("flow", "A[Label] --> B").ok);
+  const flow = parseVis("flow", 'a "Label" --> b');
+  assert.ok(flow.ok);
+  assert.deepEqual([(flow.spec as FlowSpec).nodes[0]!.label, (flow.spec as FlowSpec).edges[0]!.dashed], ["Label", true]);
+  // Tree: the folder's slash inside the quotes.
+  assert.match(GUIDE, /End folder names with `\/`, inside quotes: `"My Docs\/"`, never `"My Docs"\/`\./);
+  assert.match(GUIDE, /`"My Docs\/" "shared"`/);
+  const tree = parseVis("tree", '"My Docs/" "shared"');
+  assert.ok(tree.ok && (tree.spec as { roots: { name: string; note?: string }[] }).roots[0]!.name === "My Docs/");
+  // The guide's "never" form still draws the same folder (the parser reads its one meaning).
+  const outside = parseVis("tree", '"My Docs"/ "shared"');
+  assert.ok(outside.ok);
+  assert.deepEqual(outside.spec, tree.spec);
 });
 
 test("each kind section names registered kinds, and every registered kind has a section", () => {
@@ -92,7 +141,7 @@ test("the rules keep the '- The parser is strict:' line the gathering guide rewr
   assert.match(GUIDE, /^Rules for every kind:\n(?:- .*\n)*- The parser is strict: .*$/m);
   const g = gatheringVisGuide(GUIDE);
   assert.match(g, /^- The parser is strict: use only the syntax below, or the person sees no drawing at all\.$/m);
-  assert.doesNotMatch(g, /shows the block as plain source/);
+  assert.doesNotMatch(g, /shows the block as source/);
 });
 
 // A gathering session's guide (§app.baton/abilities): the business kinds' sections of this same

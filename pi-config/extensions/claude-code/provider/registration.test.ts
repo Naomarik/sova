@@ -38,6 +38,7 @@ function fakePi(flagValue?: boolean) {
 		unregistered: [] as string[],
 		sessionStart: [] as (() => void)[],
 		values: new Map<string, boolean | string>(),
+		commands: new Map<string, { description?: string; handler: (args: string, ctx: unknown) => Promise<void> }>(),
 	};
 	const pi = {
 		registerFlag(name: string, options: { type: string; default?: boolean }) {
@@ -57,6 +58,9 @@ function fakePi(flagValue?: boolean) {
 		on(event: string, handler: () => void) {
 			if (event === "session_start") state.sessionStart.push(handler);
 		},
+		registerCommand(name: string, options: { description?: string; handler: (args: string, ctx: unknown) => Promise<void> }) {
+			state.commands.set(name, options);
+		},
 	} as unknown as ExtensionAPI;
 	const startSession = () => {
 		if (flagValue !== undefined) state.values.set(CLAUDE_PROVIDER_FLAG, flagValue);
@@ -70,6 +74,15 @@ test("the flag is registered as an off-by-default boolean and registers nothing 
 	registerProviderIfEnabled(pi, bridge);
 	assert.deepEqual(state.flags.get(CLAUDE_PROVIDER_FLAG)?.default, false);
 	assert.equal(state.registered.size, 0);
+});
+
+test("the /claude-login command is registered at load, and refuses while Claude Code models are off", async () => {
+	const { pi, state, startSession } = fakePi(false);
+	registerProviderIfEnabled(pi, bridge);
+	startSession();
+	const command = state.commands.get("claude-login");
+	assert.ok(command, "Sova's composer calls this handler to switch a chat's login");
+	await assert.rejects(command.handler("l-0000000a", {}), /Claude Code models are off/);
 });
 
 test("flag off registers no provider, even after session start", () => {

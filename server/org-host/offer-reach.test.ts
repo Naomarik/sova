@@ -64,7 +64,7 @@ describe("r12 offer reach on the host", () => {
     await host.close();
   });
 
-  test("9: closed across Bo's window, the reach timer fires at open and reaches him (he is in hours then); a link is minted for him alone", async () => {
+  test("9: closed across Bo's window, the reach timer fires at open and reaches him (he is in hours then); no link is made for him by itself (the operator sends it: r12 final)", async () => {
     const at = place();
     let now = t0;
     const host = await openAt(at, () => now);
@@ -80,10 +80,7 @@ describe("r12 offer reach on the host", () => {
     await new Promise((r) => setTimeout(r, 30));
     assert.equal(reach(again)["p2"]?.state, "reached");
     assert.equal(reach(again)["p2"]?.at, now, "reached at open, not at the (missed) window start");
-    const bos = minted.filter((e) => e["personId"] === "p2");
-    assert.equal(bos.length, 1);
-    assert.equal(bos[0]!["chartKey"], "reach/off_s1_1/p2");
-    assert.equal(bos[0]!["via"], "reach");
+    assert.deepEqual(minted.filter((e) => e["personId"] === "p2"), [], "a timer's reach mints nothing (Needs you asks the operator)");
     await again.close();
   });
 

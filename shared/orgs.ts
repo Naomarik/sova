@@ -234,8 +234,9 @@ export interface OrgChange {
 }
 
 /** r13: a line of `org-history.jsonl` changing the company zone or working hours (field keys as a person's
-    history). The history reads return them apart from About's (`OrgDetail.hoursHistory`). */
-export type OrgHoursChange = Omit<OrgChange, "field" | "from" | "to" | "revertOf"> &
+    history). The history reads return them apart from About's (`OrgDetail.hoursHistory`); revertible like About's
+    (`POST /api/orgs/:id/hours/revert {at}`, refused when the field changed since). */
+export type OrgHoursChange = Omit<OrgChange, "field" | "from" | "to"> &
   ({ field: "tz"; from: string; to: string } | { field: "hours"; from: PersonHours | null; to: PersonHours | null });
 
 export interface OrgGitStatus {

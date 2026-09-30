@@ -76,7 +76,8 @@ export function ScheduleCard(props: { schedule: PlaybookSchedule; onApprove(): P
       <Show when={canApprove(s()) || canRevoke(s())}>
         <div class="schedule-card-actions">
           <Show when={canApprove(s())}>
-            <button type="button" class="button button-sm button-primary" disabled={busy()} onClick={() => void act(props.onApprove)}>
+            {/* Secondary: the dialog's one primary action stays Send Playbook. */}
+            <button type="button" class="button button-sm" disabled={busy()} onClick={() => void act(props.onApprove)}>
               Approve Schedule
             </button>
           </Show>

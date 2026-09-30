@@ -18,6 +18,9 @@ export function permitsAndSchedulesText(permits: readonly Permit[], schedules: r
   return parts.join(" · ");
 }
 
+/** What the state chip doesn't already say: the next fire, or why it is paused or not valid. */
+const scheduleDetail = (s: ScheduleInfo): string => (s.state === "active" ? (s.next ? scheduleStateText(s) : "") : (s.reason ?? ""));
+
 const FIRE_WORDS: Record<ScheduleFire["kind"], string> = { new: "Started a session", wake: "Woke its session", reset: "Continued after a limit reset" };
 
 /** "Until 6:00 PM" / "Until revoked". */
@@ -189,7 +192,8 @@ export function OverseerPermitsChip(props: {
                 </div>
                 <p class="permit-text">{sch.text ?? `when: ${sch.when}`}</p>
                 <p class="permit-allows">
-                  {runsAsText(sch)} · {scheduleStateText(sch)}
+                  {runsAsText(sch)}
+                  {scheduleDetail(sch) ? ` · ${scheduleDetail(sch)}` : ""}
                 </p>
                 <p class="permit-meta">{sch.fires.length ? `Last fired ${agoTime(sch.fires.at(-1)!.at)}` : "Not fired yet"}</p>
                 <Show when={sch.fires.length}>
@@ -213,7 +217,7 @@ export function OverseerPermitsChip(props: {
                 <Show when={canApprove(sch) || canRevoke(sch)}>
                   <div class="permit-actions">
                     <Show when={canApprove(sch) && props.onApproveSchedule}>
-                      <button type="button" class="button button-sm button-primary" disabled={busy() === sch.id} onClick={() => void revoke(sch.id, () => props.onApproveSchedule!(sch))}>
+                      <button type="button" class="button button-sm" disabled={busy() === sch.id} onClick={() => void revoke(sch.id, () => props.onApproveSchedule!(sch))}>
                         Approve Schedule
                       </button>
                     </Show>

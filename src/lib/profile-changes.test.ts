@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { NamedChange } from "../../shared/orgs";
-import { groupChanges, orgHoursChangeLine, revertible, valueText, writerWord } from "./profile-changes";
+import { groupChanges, orgHoursChangeLine, orgHoursRevert, revertible, valueText, writerWord } from "./profile-changes";
 
 const ch = (at: string, personId: string, field: NamedChange["field"], to: unknown, kind: NamedChange["by"]["kind"] = "operator", extra: Partial<NamedChange> = {}): NamedChange => ({
   at,
@@ -75,4 +75,21 @@ test("valueText: working hours read as the Hours row does; a zone as itself; cle
 test("r13: a company-hours history line says the field and both values in words", () => {
   assert.equal(orgHoursChangeLine({ field: "tz", from: "", to: "Europe/Istanbul" }), "Time zone: — → Europe/Istanbul");
   assert.equal(orgHoursChangeLine({ field: "hours", from: { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" }, to: null }), "Hours: Mon–Fri 09:00–17:00 → —");
+});
+
+test("r13: a company-hours line reverts unless its field changed since (C6) or the value is already back", () => {
+  const h9 = { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" };
+  const h10 = { days: [1, 2, 3, 4, 5], from: "10:00", to: "18:00" };
+  const history = [
+    { at: "t3", field: "hours" as const, from: h9, to: h10 },
+    { at: "t2", field: "tz" as const, from: "", to: "Europe/Istanbul" },
+    { at: "t1", field: "hours" as const, from: null, to: h9 },
+  ];
+  const now = { tz: "Europe/Istanbul", hours: h10 };
+  assert.deepEqual(orgHoursRevert(history[0]!, history, now), { ok: true });
+  assert.deepEqual(orgHoursRevert(history[1]!, history, now), { ok: true }, "a newer hours line doesn't block a zone line");
+  assert.deepEqual(orgHoursRevert(history[2]!, history, now), { ok: false, why: "Changed since. Revert the newer change first." });
+  assert.deepEqual(orgHoursRevert(history[0]!, history, { tz: "Europe/Istanbul", hours: h9 }), { ok: false, why: "The hours are already these." });
+  assert.deepEqual(orgHoursRevert(history[1]!, history, { hours: h10 }), { ok: false, why: "The time zone is already this." });
+  assert.equal(orgHoursChangeLine({ field: "tz", from: "Europe/Istanbul", to: "", revertOf: "t2" }), "Reverted. Time zone: Europe/Istanbul → —");
 });

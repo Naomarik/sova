@@ -1,8 +1,8 @@
 import { createSignal, For, Show } from "solid-js";
 import type { OrgDetail } from "../../shared/orgs";
-import { ApiError, putOrgHours } from "../lib/api";
+import { ApiError, putOrgHours, revertOrgHours } from "../lib/api";
 import { relativeTime, stampTime } from "../lib/format";
-import { orgHoursChangeLine } from "../lib/profile-changes";
+import { orgHoursChangeLine, orgHoursRevert } from "../lib/profile-changes";
 import { companyHoursLine } from "../lib/working-hours";
 import { createHoursDraft, HoursFieldset } from "./HoursFields";
 import { Icon } from "./ui";
@@ -12,7 +12,8 @@ const errText = (err: unknown) => (err instanceof ApiError || err instanceof Err
 
 /**
  * Company hours (r13, §app.organizations/working-hours): the company's zone and working hours, the
- * default for anyone without their own. Operator only; its changes are the org's history, as About's.
+ * default for anyone without their own. Operator only; its changes are the org's history, reverted as About's
+ * (a line whose field changed since is refused: the newer change first).
  */
 export function CompanyHoursCard(props: { org: OrgDetail; act: Act }) {
   const [editing, setEditing] = createSignal(false);
@@ -87,18 +88,31 @@ export function CompanyHoursCard(props: { org: OrgDetail; act: Act }) {
           <summary>History ({history().length})</summary>
           <ul class="orgs-history-list">
             <For each={history()}>
-              {(c) => (
-                <li class="orgs-change">
-                  <span>
-                    {orgHoursChangeLine(c)}
-                    <span class="list-meta">
-                      {" · "}
-                      <time title={stampTime(c.at)}>{relativeTime(c.at)}</time>
-                      {c.by.via === "overseer" ? " · by you, via the Overseer" : " · by you"}
+              {(c) => {
+                const can = () => orgHoursRevert(c, history(), props.org);
+                return (
+                  <li class="orgs-change orgs-change-group">
+                    <span class="orgs-change-main">
+                      {orgHoursChangeLine(c)}
+                      <span class="list-meta">
+                        {" · "}
+                        <time title={stampTime(c.at)}>{relativeTime(c.at)}</time>
+                        {c.by.via === "overseer" ? " · by you, via the Overseer" : " · by you"}
+                      </span>
                     </span>
-                  </span>
-                </li>
-              )}
+                    <button
+                      type="button"
+                      class="button button-sm button-ghost"
+                      disabled={!can().ok}
+                      title={can().why}
+                      aria-label={`Revert the change of ${stampTime(c.at)}`}
+                      onClick={() => void props.act(() => revertOrgHours(props.org.id, c.at), "Reverted.")}
+                    >
+                      <Icon name="undo" small /> Revert
+                    </button>
+                  </li>
+                );
+              }}
             </For>
           </ul>
         </details>

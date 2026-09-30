@@ -997,6 +997,8 @@ export const getOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIC
 export const patchOrg = (id: string, patch: { name?: string; about?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
 /** r13: the company's zone and working hours, the default for anyone without their own ("" / null clear them). */
 export const putOrgHours = (id: string, body: { tz: string; hours: PersonHours | null }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/hours`, jsonInit("PUT", body));
+/** r13: the company's zone or hours back to history line `at`'s `from`; refused when that field changed since. */
+export const revertOrgHours = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/hours/revert`, jsonInit("POST", { at }));
 /** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
 export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));

@@ -41,8 +41,25 @@ export function valueText(field: ProfileChange["field"], v: unknown): string {
 }
 
 /** r13: a company-hours history line: "Time zone: — → Europe/Istanbul", "Hours: Mon–Fri 09:00–17:00 → —". */
-export const orgHoursChangeLine = (c: Pick<OrgHoursChange, "field" | "from" | "to">): string =>
-  `${c.field === "tz" ? "Time zone" : "Hours"}: ${valueText(c.field, c.from)} → ${valueText(c.field, c.to)}`;
+export const orgHoursChangeLine = (c: Pick<OrgHoursChange, "field" | "from" | "to" | "revertOf">): string =>
+  `${c.revertOf ? "Reverted. " : ""}${c.field === "tz" ? "Time zone" : "Hours"}: ${valueText(c.field, c.from)} → ${valueText(c.field, c.to)}`;
+
+/**
+ * Whether a company-hours line can be reverted, and why not (the button's title): C6, a line whose field
+ * changed since is refused (the newer change first); a value already back is nothing to do. `history` is newest first.
+ */
+export function orgHoursRevert(
+  c: Pick<OrgHoursChange, "at" | "field" | "from">,
+  history: readonly Pick<OrgHoursChange, "at" | "field">[],
+  now: { tz?: string; hours?: unknown },
+): { ok: boolean; why?: string } {
+  const i = history.findIndex((h) => h.at === c.at);
+  if (history.slice(0, Math.max(0, i)).some((h) => h.field === c.field)) return { ok: false, why: "Changed since. Revert the newer change first." };
+  const current = c.field === "tz" ? (now.tz ?? "") : (now.hours ?? null);
+  const back = c.field === "tz" ? (c.from ?? "") : (c.from ?? null);
+  if (JSON.stringify(current) === JSON.stringify(back)) return { ok: false, why: c.field === "tz" ? "The time zone is already this." : "The hours are already these." };
+  return { ok: true };
+}
 
 export interface ChangeGroup {
   /** The first change's `at`: a stable key. */

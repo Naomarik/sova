@@ -2817,8 +2817,9 @@ export interface AttentionItem {
     /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
     reviewSince?: number;
   };
-  /** Act tier only: the key `POST /api/attention/later` takes to put this item away until its
-      anchor (what counts as new for it) changes (§app.overseer/attention-digest). Opaque. */
+  /** Every act-tier item, and each `roster-proposal`: the key `POST /api/attention/later` takes to
+      put this item away until its anchor (what counts as new for it) changes
+      (§app.overseer/attention-digest). Opaque. */
   later?: string;
 }
 

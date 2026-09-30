@@ -360,9 +360,10 @@ export interface BatonSummaryField {
   holder: string | null;
   state: BatonState;
   /** Present while the operator holds it after a hand-off: the Needs-you detail. */
-  needsYou?: { from: string; question: string; since: number };
-  /** Present while a person holds it through a hand-off with no live link: the operator must send one. */
-  sendLink?: { to: string; question: string; since: number };
+  needsYou?: { from: string; question: string; since: number; /** The hand-off's number (Later's anchor). */ handoff?: number };
+  /** Present while a person holds it through a hand-off with no live link: the operator must send one.
+      `handoff`/`offerId`: the hand-off (or open offer) it asks links for (Later's anchor). */
+  sendLink?: { to: string; question: string; since: number; handoff?: number; offerId?: string };
   /** r12: an open offer's invitees not reached yet (their working hours haven't come), by name; `until`: their next
       window (ISO), null when none is found. */
   waiting?: { name: string; until: string | null }[];

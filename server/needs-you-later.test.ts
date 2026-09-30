@@ -138,3 +138,40 @@ describe("Later hides an item until its anchor moves", () => {
     assert.equal(sessionItems(r, NOW)[0]!.later, sessionItems(r, NOW + 60_000)[0]!.later);
   });
 });
+
+describe("Later on the Organizations region's baton and roster rows", () => {
+  type Baton = NonNullable<SessionSummary["baton"]>;
+  const baton = (over: Partial<Baton>, at = NOW - 60_000) => row(summary("g", { lastActiveAt: new Date(at).toISOString(), baton: { holder: null, state: "needs-you", ...over } as Baton }));
+
+  test("a person waiting on you: hidden until a new hand-off or a new message on it", () => {
+    const file = freshFile();
+    const waiting = (handoff: number, at?: number) => baton({ needsYou: { from: "Ann", question: "Which venue?", since: NOW - 90_000, handoff } }, at);
+    putAway(keysOf(digest([waiting(2)], file), "g"), NOW, file);
+    assert.deepEqual(acts(digest([waiting(2)], file)), []);
+    assert.deepEqual(acts(digest([waiting(2, NOW - 1000)], file)), ["g:baton-needs-you"], "a new message on the same hand-off");
+    putAway(keysOf(digest([waiting(2, NOW - 1000)], file), "g"), NOW, file);
+    assert.deepEqual(acts(digest([waiting(3, NOW - 1000)], file)), ["g:baton-needs-you"], "a new hand-off");
+  });
+
+  test("send-link: anchored on the open offer, else the hand-off", () => {
+    const file = freshFile();
+    const send = (over: Partial<NonNullable<Baton["sendLink"]>>) => baton({ state: "open", sendLink: { to: "Bob", question: "Dates?", since: NOW - 90_000, handoff: 1, ...over } });
+    putAway(keysOf(digest([send({ offerId: "of1" })], file), "g"), NOW, file);
+    assert.deepEqual(acts(digest([send({ offerId: "of1" })], file)), []);
+    assert.deepEqual(acts(digest([send({ offerId: "of2" })], file)), ["g:baton-needs-you"], "a new offer");
+    assert.equal(parseLaterKey(keysOf(digest([send({})], file), "g")[0])?.anchor[0], "h1");
+  });
+
+  test("a roster proposal: its own key per proposed person, hidden until a new proposal", () => {
+    const file = freshFile();
+    const p = (id: string) => ({ personId: id, name: id, role: "", by: "Ann", since: NOW - 5000 });
+    const r = (...ids: string[]) => baton({ state: "open", proposals: ids.map(p) });
+    const first = digest([r("p1")], file);
+    const keys = first.items.filter((i) => i.kind === "roster-proposal").map((i) => i.later!);
+    assert.equal(keys.length, 1);
+    putAway(keys, NOW, file);
+    const both = digest([r("p1", "p2")], file);
+    assert.deepEqual(both.items.filter((i) => i.kind === "roster-proposal").map((i) => i.detail), ["Approve p2 proposed by Ann?"], "p1 stays away; p2 is new");
+    assert.deepEqual(digest([r("p1", "p2")], file).items.filter((i) => i.kind === "roster-proposal").length, 1, "p2 showing does not bring p1 back");
+  });
+});

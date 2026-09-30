@@ -81,30 +81,38 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   };
   // An act item carries its Later key (server/needs-you-later.ts): its anchor is what counts as new
   // for it, its `since` unless the caller names better tokens.
-  const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string, anchor?: string[]) =>
+  // `slot` tells apart several items of one kind in a session (a roster proposal per person).
+  const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string, anchor?: string[], slot?: string) =>
     out.push({
       ...base,
       tier,
       kind,
       since,
       ...(detail ? { detail: cap(detail) } : {}),
-      ...(tier === "act" ? { later: laterKey(s.id, kind, anchor ?? [`t${since}`]) } : {}),
+      ...(tier === "act" || slot ? { later: laterKey(s.id, slot ? `${kind}/${slot}` : kind, anchor ?? [`t${since}`]) } : {}),
     });
   const state = s.activity?.state;
   const running = s.busy || state === "working";
 
   // act: blocked on the user.
   // A baton session (§app.baton/needs-you): the baton is with the operator, or a person holds it
-  // through a hand-off nobody has a link for yet.
-  if (s.baton?.needsYou) add("act", "baton-needs-you", s.baton.needsYou.since || lastActive, `${s.baton.needsYou.from} → you: ${s.baton.needsYou.question}`);
-  else if (s.baton?.sendLink) {
-    add("act", "baton-needs-you", s.baton.sendLink.since || lastActive, `Send ${s.baton.sendLink.to} their link: ${s.baton.sendLink.question}`);
+  // through a hand-off nobody has a link for yet. Later's anchor is the hand-off (or offer) and the
+  // file's newest event: a new hand-off, or a new message on this one, is new.
+  const moved = `m${lastActive}`;
+  if (s.baton?.needsYou) {
+    const n = s.baton.needsYou;
+    add("act", "baton-needs-you", n.since || lastActive, `${n.from} → you: ${n.question}`, [n.handoff !== undefined ? `h${n.handoff}` : `t${n.since}`, moved]);
+  } else if (s.baton?.sendLink) {
+    const l = s.baton.sendLink;
+    add("act", "baton-needs-you", l.since || lastActive, `Send ${l.to} their link: ${l.question}`, [l.offerId ? `o${l.offerId}` : l.handoff !== undefined ? `h${l.handoff}` : `t${l.since}`, moved]);
     // r12: the offer's invitees still waiting for their hours ride on it (they need nothing yet).
     if (s.baton.waiting?.length) out[out.length - 1]!.waiting = s.baton.waiting;
   }
   // decide: a referral from this session waits for the operator (§app.organizations/referrals).
+  // Each carries a Later key of its own (the Organizations region's Needs you lists it), anchored
+  // on the proposed person: a new proposal is new.
   for (const p of s.baton?.proposals ?? [])
-    add("decide", "roster-proposal", p.since || lastActive, `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`);
+    add("decide", "roster-proposal", p.since || lastActive, `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`, [`p${p.personId}`, `t${p.since}`], p.personId);
   if (row.dialogs.length)
     add("act", "needs-input", row.activitySince || lastActive, `Waiting on: ${row.dialogs.join("; ")}`, row.dialogIds?.length ? row.dialogIds.map((d) => `d${d}`) : undefined);
   else if (state === "needs-input")

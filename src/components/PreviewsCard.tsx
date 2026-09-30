@@ -27,10 +27,8 @@ export function PreviewsCard(props: { orgId: string; projectId: string }) {
 
   const list = () => activePreviews(poll.data()?.previews ?? []);
   const address = () => poll.data()?.address;
-  const typed = () => {
-    const p = parsePort(port());
-    return "port" in p ? p.port : null;
-  };
+  /** The number typed, for the warning (named even when the port is refused). */
+  const typed = () => (/^\d{1,5}$/.test(port().trim()) ? Number(port().trim()) : null);
 
   const copy = async (url: string) => {
     try {

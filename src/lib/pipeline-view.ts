@@ -217,7 +217,9 @@ export function heldWaitLine(h: HeldWait, now: number): string {
   if (h.wait === "hours") {
     const rel = inWords(h.goesAt, now);
     if (!rel) return `${what} is starting now.`;
-    return `${what} waits for ${h.person ?? "their"}${h.person ? "'s" : ""} working hours: it starts at ${sendAt(h.goesAt, now)} (${rel}) unless you cancel it.`;
+    // Named once: an act that already names them says "their".
+    const whose = h.person && !what.includes(h.person) ? `${h.person}'s` : "their";
+    return `${what} waits for ${whose} working hours: it starts at ${sendAt(h.goesAt, now)} your time (${rel}) unless you cancel it.`;
   }
   return heldLine(h.what, h.goesAt, now);
 }

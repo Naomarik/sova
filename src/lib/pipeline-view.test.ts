@@ -150,7 +150,11 @@ test("heldWaitLine: the hold's r2 sentence; an hours wait's send time on your cl
   const tomorrow9 = new Date(2026, 9, 1, 9, 0).getTime();
   assert.equal(
     heldWaitLine({ what, goesAt: tomorrow9, wait: "hours", person: "Sam Okafor" }, now),
-    "A message to Sam Okafor waits for Sam Okafor's working hours: it starts at Thu 09:00 (in 18h) unless you cancel it.",
+    "A message to Sam Okafor waits for their working hours: it starts at Thu 09:00 your time (in 18h) unless you cancel it.",
+  );
+  assert.equal(
+    heldWaitLine({ what: "A gathering: Export formats", goesAt: tomorrow9, wait: "hours", person: "Sam Okafor" }, now),
+    "A gathering: Export formats waits for Sam Okafor's working hours: it starts at Thu 09:00 your time (in 18h) unless you cancel it.",
   );
   assert.equal(heldWaitLine({ what, goesAt: tomorrow9, wait: "hours" }, now).includes("waits for their working hours"), true);
   assert.equal(heldWaitLine({ what, goesAt: now - 1, wait: "hours", person: "Sam" }, now), "A message to Sam Okafor is starting now.");

@@ -18,9 +18,14 @@ import { MINT_ACK_TIMEOUT_MS } from "../../shared/public-links";
  */
 
 export interface ShareLinksChange {
-  /** The link kind that changed: `h` hand-off, `i` owner page. */
-  kind: "h" | "i";
-  cause: "mint" | "revoke";
+  /** The link kind that changed: `h` hand-off, `i` owner page, `s` session share. */
+  kind: "h" | "i" | "s";
+  /** `mint`: new links; `revoke`: links stopped; `renew`: live links' expiry changed, none new. */
+  cause: "mint" | "revoke" | "renew";
+  /** A mint's exact new token hashes, when it made several (a session share mints one link per
+      recipient): each is confirmed only when it was sent and accepted. Absent: the mint made
+      exactly one new hash (the older stores' events). */
+  hashes?: string[];
 }
 
 /** A listener's answer: nothing, or the warning to show with a just-minted link. */

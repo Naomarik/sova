@@ -3,6 +3,7 @@ import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareSt
 import { readPeers } from "../mesh/peers";
 import { readPublicLinks, sharePin } from "../public-links";
 import { createShareServer } from "./edge";
+import { SESSION_SHARE_GATEWAY_OLD, type SessionShareWarningCode } from "../../shared/session-share";
 import { viaGatewayStatus } from "./gateway-client";
 import type { ShareLinksOutcome } from "./links-events";
 import { gatewayHooks, type GatewayRouter } from "./router";
@@ -194,9 +195,9 @@ export function shareInfo(env: NodeJS.ProcessEnv = process.env): { bound: boolea
   return { bound: !!bound, publicUrl: shareState(env).publicUrl };
 }
 
-/** Every link as the operator copies it, `/h/` (hand-off) and `/i/` (owner page) alike: the
-    effective address, else just the path. */
-export function linkUrl(kind: "h" | "i", token: string, env: NodeJS.ProcessEnv = process.env): string {
+/** Every link as the operator copies it, `/h/` (hand-off), `/i/` (owner page) and `/s/` (session
+    share) alike: the effective address, else just the path. */
+export function linkUrl(kind: "h" | "i" | "s", token: string, env: NodeJS.ProcessEnv = process.env): string {
   return `${shareState(env).publicUrl ?? ""}/${kind}/${token}`;
 }
 
@@ -215,4 +216,18 @@ export function linkWarning(outcome?: ShareLinksOutcome, env: NodeJS.ProcessEnv 
   }
   if (outcome.timedOut || outcome.failed) return { linkWarning: fill("unconfirmed", name), linkWarningCode: "unconfirmed" };
   return {};
+}
+
+/** linkWarning for session links (§app.session-share/link): the address's own warning first; then,
+    on a host routed through a gateway that doesn't list kind `s` (an older gateway, or one not
+    asked yet), `gateway-old`, since its snapshot carries no session row; else the mint's. */
+export function sessionLinkWarning(outcome?: ShareLinksOutcome, env: NodeJS.ProcessEnv = process.env): { linkWarning?: string; linkWarningCode?: SessionShareWarningCode } {
+  const s = shareState(env);
+  if (s.warning) return linkWarning(outcome, env);
+  const file = readPublicLinks();
+  if (typeof file.route === "object" && !viaGatewayStatus()?.kinds?.includes("s")) {
+    const name = viaGatewayStatus()?.label || viaPeer(file.route.via.nodeId)?.label || GATEWAY_FALLBACK;
+    return { linkWarning: SESSION_SHARE_GATEWAY_OLD.replaceAll("{gateway}", name), linkWarningCode: "gateway-old" };
+  }
+  return linkWarning(outcome, env);
 }

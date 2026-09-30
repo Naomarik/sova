@@ -475,6 +475,16 @@
         (script {:expr (fn [_ d] [(ops/assign :abilities (:abilities (e d)))])}))
       (dsl/act {:sova/feed :feed :event :baton/extend :checks [(mk rb/extend-refusal)]}
         (script {:expr (fn [_ d] [(ops/assign [:budget :messages-max] (+ (get-in d [:budget :messages-max]) (:more (e d))))])}))
+      ;; §app.outreach/send-link: the host mints the link and hands it to the channel in the effect;
+      ;; its result names the outcome only (never the link, the token or the address)
+      (dsl/act {:sova/feed :feed :event :baton/send-link :checks [(mk rb/send-link-refusal)]}
+        (script {:expr (fn [_ d] (let [o   (rb/current-offer d)
+                                       pid (get-in (e d) [:target :id])]
+                                   (dsl/effect-ops d (dsl/effect-map :send-link (fn [_] (cond-> {:person-id pid :channel "whatsapp"
+                                                                                                 :n (if o (:n o) (count (:handoffs d)))
+                                                                                                 :by (if (= "overseer" (:via (e d))) "operator-via-overseer" "operator")}
+                                                                                          o (assoc :offer-id (:id o))))
+                                                                     d))))}))
       ;; W3: the host counts the transcript at resume and attach; never raises a count
       (transition {:sova/feed :quiet :event :budget/recount}
         (script {:expr (fn [_ d] (let [n (:n (e d))]
@@ -647,7 +657,7 @@
     (case event
       :baton/wrapup-retry (:sentence (rb/retry-refusal (cond (contains? config :wrapup-running) "running" (contains? config :wrapup-failed) "failed" :else "other")
                                        (contains? config :reply-idle)))
-      (:baton/take-back :baton/handoff :baton/offer :baton/withdraw :baton/extend) (str "This session is " c ".")
+      (:baton/take-back :baton/handoff :baton/offer :baton/withdraw :baton/extend :baton/send-link) (str "This session is " c ".")
       :baton/close (if (= c "closed") "This session is already closed." (str "This session is " c "."))
       (:baton/hand-to :baton/message :baton/propose :baton/abilities) (str "This conversation is " c ".")
       :baton/goal-done (str "This session is already " c ".")
@@ -669,6 +679,8 @@
                            :what (fn [d] (str "Closing \"" (:public-title d) "\""))
                            :card (fn [d] {:sessions [(:session-id d)]})}
    :baton/extend          {:needs nil}
+   :baton/send-link       {:needs nil :people-facing true :hours b/hours-window
+                           :card (fn [d] {:sessions [(:session-id d)] :people [(get-in (e d) [:target :id])]})}
    :baton/abilities       {:needs nil}
    :baton/hide            {:needs nil}
    :baton/wrapup-retry    {:needs nil}

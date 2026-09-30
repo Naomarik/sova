@@ -62,7 +62,7 @@
   (let [now (at/table)
         bad (for [k (sort (into (set (keys now)) (keys ag/golden))) :when (not= (get now k) (get ag/golden k))]
               [k :now (get now k) :golden (get ag/golden k)])]
-    (is (= 77 (count ag/golden)))
+    (is (= 78 (count ag/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 10 bad))))))
 
 (deftest exactly-these-acts-are-held

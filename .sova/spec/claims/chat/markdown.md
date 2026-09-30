@@ -523,8 +523,10 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
   it at its right; a back, menu or left-arrow `icon` goes before the title. On a desktop screen
   whose first block is a `header` and which has a `sidebar`, the header spans the frame, with the
   sidebar and the page below it.
-  A `heading`'s first blocks, when they are a `button`, `link` or `icon`, sit at its right; the
-  rest of what it holds is its section, below it. `tabbar` and
+  A `heading`'s first blocks, when they are a `button`, `link` or `icon`, are its controls: they
+  sit at its right, after its chip, which in a wide heading sits at the right edge next to them;
+  when its text would keep less than about 12 characters' width beside them, the chip and the
+  controls wrap onto a line under the text. The rest of what it holds is its section, below it. `tabbar` and
   `footer` sit at the bottom.
 - **Screens.** Up to 6, each in a phone frame (240–300px) or a desktop frame (560–760px), both
   fluid with the figure, side by side in a strip. A frame never pans inside itself:
@@ -577,6 +579,17 @@ at its right. Blocks that don't fit beside the title go on a line of their own u
 detail, wrapping, each at its own width, never overlapping one another or running out of the item.
 A `row` among them is laid out as part of that group. In a row beside other blocks, a badge takes
 its label's width, cut short with an ellipsis if it must, like a button.
+
+## §chat.markdown/vis-wireframe-chips — `vis wireframe` chips never squeeze a title
+
+A chip on a `card`, `col`, `sidebar`, `modal` or `sheet` sits on its title's line while the title
+keeps at least about 12 characters' width beside it, and otherwise goes on a line of its own under
+the title, never narrowing the title to a few letters. A `heading`'s chip and its controls do the
+same: at its right edge while its text keeps that width, else on a line under the text
+(§chat.markdown/vis-wireframe). On that line of its own a chip is never wider than its block, and a
+long screen name in it is cut short with an ellipsis. A `row`'s chip sits beside its blocks while
+each of up to 4 of them keeps about 12 characters' width with the chip at its widest, and otherwise
+goes on a line of its own under them. The reserved height counts the chip's own line.
 
 ## §chat.markdown/accessibility — Accessibility
 

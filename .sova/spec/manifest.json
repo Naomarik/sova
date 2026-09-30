@@ -10147,6 +10147,20 @@
         "§app.overseer/confirm",
         "§app/project-overseer"
       ]
+    },
+    "§chat.markdown/vis-wireframe-chips": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/vis-wireframe"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/wireframe/View.tsx",
+        "src/vis/kinds/wireframe/wireframe.css",
+        "src/vis/kinds/wireframe/layout.ts",
+        "src/vis/kinds/wireframe/layout.test.ts"
+      ]
     }
   },
   "boundary": {

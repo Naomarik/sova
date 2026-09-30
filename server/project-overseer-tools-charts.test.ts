@@ -328,6 +328,9 @@ describe("every start names its gap (§app.project-overseer/gaps, q7)", () => {
     await run("sova_idea", { op: "add", id: "§gap/payday", title: "again" }).catch(() => {});
     assert.equal(hostOf(org.id).sessions("item").filter((s) => s.data["ideaId"] === "§gap/payday").length, 1, "one item per gap");
     await run("sova_start_gathering", { gap: "§gap/payday", person: "Toni Diaz", public_title: "Pay day", goal: "Which day salaries go out", question: "Which day do salaries go out?" });
+    // The route the page reads lists it.
+    const listed = (await (await app.request(`/api/orgs/${org.id}/projects/${project.id}/pipeline`)).json()) as PipelineInfo;
+    assert.ok(listed.rows.some((r) => r.gap === "§gap/payday" && r.title === "Nobody decided the pay day"));
     const row = pipelineInfoOf().rows.find((r) => r.gap === "§gap/payday")!;
     assert.deepEqual(row.gatherings.map((g) => g.title), ["Pay day"]);
     assert.equal(row.phase, "asking");
@@ -374,13 +377,14 @@ describe("the operator's own gap ideas (the project page's Ideas)", async () => 
   const base = `/api/orgs/${org.id}/projects/${project.id}/overseer`;
   const send = (method: string, path: string, body: unknown) => page.request(`${base}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
-  test("Add a §gap idea files its item; setting it dropped ends it; an §idea files none", async () => {
-    assert.equal((await send("POST", "/ideas", { id: "§gap/parking", title: "Parking" })).status, 201);
-    assert.ok(po.itemOfGap(org.id, project.id, "§gap/parking"));
+  test("the operator's own §gap idea is never an item; dropping one the overseer filed ends its item", async () => {
     const items = hostOf(org.id).sessions("item").length;
-    assert.equal((await send("POST", "/ideas", { id: "§idea/logo", title: "A logo" })).status, 201);
+    assert.equal((await send("POST", "/ideas", { id: "§gap/parking", title: "Parking" })).status, 201);
+    assert.equal(po.itemOfGap(org.id, project.id, "§gap/parking"), null, "the operator's list is never a work queue");
     assert.equal(hostOf(org.id).sessions("item").length, items);
-    assert.equal((await send("PATCH", `/idea?id=${encodeURIComponent("§gap/parking")}`, { status: "dropped" })).status, 200);
-    assert.equal(po.itemOfGap(org.id, project.id, "§gap/parking"), null);
+    await run("sova_idea", { op: "add", id: "§gap/export", title: "Export format" });
+    assert.ok(po.itemOfGap(org.id, project.id, "§gap/export"));
+    assert.equal((await send("PATCH", `/idea?id=${encodeURIComponent("§gap/export")}`, { status: "dropped" })).status, 200);
+    assert.equal(po.itemOfGap(org.id, project.id, "§gap/export"), null);
   });
 });

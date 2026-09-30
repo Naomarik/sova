@@ -10236,6 +10236,18 @@
         "src/vis/kinds/wireframe/layout.ts",
         "src/vis/kinds/wireframe/layout.test.ts"
       ]
+    },
+    "§chat.worktrees/merged-state": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/entry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/git.ts",
+        "pi-config/extensions/worktrees/git.test.ts"
+      ]
     }
   },
   "boundary": {

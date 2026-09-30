@@ -117,6 +117,7 @@ import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setS
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { AttentionSignals } from "./attention-signals";
+import { initRestartWindow, markServerStop } from "./server-stop";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
@@ -1398,6 +1399,9 @@ server.on("error", (err) => {
 });
 attachWebSockets(server);
 
+// The previous server's stop mark: the workers its stop ended are no errors (server/server-stop.ts).
+initRestartWindow();
+
 // Needs you's Later is gone (§app.overseer/attention-digest): the store an earlier version kept its
 // choices in is deleted, so none of them keeps anything hidden. A no-op once it is gone.
 try {
@@ -1487,6 +1491,8 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
+  // First: the workers this stop ends die on the same signal (server/server-stop.ts).
+  markServerStop();
   // Whatever a step below waits on, the process ends.
   setTimeout(() => {
     console.error("[server] shutdown took over 20 s; exiting");

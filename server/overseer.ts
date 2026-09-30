@@ -35,6 +35,7 @@ import {
   setOverseerRuntime,
 } from "./chat-manager";
 import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
+import { endedByRestart, restartWindow } from "./server-stop";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
@@ -332,15 +333,20 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const sessions = await listSessions();
     const records = readLiveRecords({ includeOwn: true });
     const byPath = new Map<string, { failed: number; since: number; errorTimes: number[] }>();
+    // Workers this server's own restart ended are no errors of theirs (server/server-stop.ts): only
+    // rows restored in this server's runtimes, whose records carry its pid.
+    const window = restartWindow();
+    const restartEnded = (row: unknown) => endedByRestart(row, window);
     for (const r of records) {
       if (!r.sessionFile) continue;
       const prev = byPath.get(r.sessionFile);
-      const failed = failedWorkersOf(r.rec);
+      const skip = r.pid === process.pid ? restartEnded : undefined;
+      const failed = failedWorkersOf(r.rec, skip);
       const since = activityOf(r.rec)?.since ?? 0;
       byPath.set(r.sessionFile, {
         failed: Math.max(failed, prev?.failed ?? 0),
         since: Math.max(since, prev?.since ?? 0),
-        errorTimes: [...(prev?.errorTimes ?? []), ...workerErrorTimesOf(r.rec)],
+        errorTimes: [...(prev?.errorTimes ?? []), ...workerErrorTimesOf(r.rec, skip)],
       });
     }
     const nowMs = Date.now();

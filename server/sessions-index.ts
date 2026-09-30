@@ -1,3 +1,5 @@
+import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
+import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
@@ -463,12 +465,13 @@ export async function readTailReply(path: string, size: number): Promise<LastRep
 /** `input`: the head holds a user message of any kind. A wake nudge or a partner's link message
     never titles a session, but it is still something written in it: a session whose only user
     messages are link messages has real turns and is never an empty husk. */
-async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean } | null> {
+async function readHead(path: string): Promise<{ header: any; title: string | null; model: string | null; overseer: boolean; input: boolean; profile?: ProfileEntryData | null } | null> {
   const fh = await open(path, "r");
   try {
     // The Overseer marker is written right after the header, before any user message, so the
     // head read (which stops at the first user message) always sees it.
     let overseer = false;
+    let profile: ProfileEntryData | null = null;
     let input = false;
     let header: any = null;
     let title: string | null = null;
@@ -499,16 +502,18 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         }
         if (e.type === "model_change" && !model && e.provider && e.modelId) model = `${e.provider}/${e.modelId}`;
         if (e.type === "custom" && e.customType === OVERSEER_ENTRY) overseer = true;
+        // The profile is fixed at the first message, so the newest entry before it is the session's.
+        if (e.type === "custom" && e.customType === PROFILE_ENTRY) profile = profileOnBranch([e]);
         if (e.type === "message") {
           const msg = e.message ?? {};
           if (!model && msg.role === "assistant" && msg.provider && msg.model) model = `${msg.provider}/${msg.model}`;
           if (msg.role === "user") input = true;
           if (msg.role === "user" && title === null && !notTitle(userText(msg.content))) title = oneLine(userText(msg.content));
         }
-        if (title !== null && model) return { header, title, model, overseer, input };
+        if (title !== null && model) return { header, title, model, overseer, input, profile };
       }
       // Stop at the first user message even without a model: model_change precedes it.
-      if (title !== null) return { header, title, model, overseer, input };
+      if (title !== null) return { header, title, model, overseer, input, profile };
     }
     if (pending.trim() && title === null) {
       if (pos < MAX_HEAD) {
@@ -529,7 +534,7 @@ async function readHead(path: string): Promise<{ header: any; title: string | nu
         if (t !== null && !notTitle(t)) title = oneLine(t);
       }
     }
-    return header ? { header, title, model, overseer, input } : null;
+    return header ? { header, title, model, overseer, input, profile } : null;
   } finally {
     await fh.close();
   }
@@ -674,6 +679,7 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
       ...(align.summary ? { align: align.summary } : {}),
+      ...(profileField(head.profile) ? { profile: profileField(head.profile) } : {}),
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
     cache.set(path, entry);
@@ -852,7 +858,9 @@ export async function listSessions(): Promise<SessionSummary[]> {
       const st2 = await stat(s.path).catch(() => null);
       if (st2 && (await isZeroInput(s.path, st2.size))) {
         // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
-        if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer) continue;
+        // So is one that carries a profile: a One at a time profile counts from its pick, so the
+        // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
+        if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) continue;
         if (hasDraft) preview = draftPreview(draft.text, draft.attachments);
       }
     }

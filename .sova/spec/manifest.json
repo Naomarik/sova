@@ -2908,7 +2908,9 @@
         "server/overseer-todo-tools.ts",
         "server/overseer-tools.test.ts",
         "server/overseer-link-tools.ts",
-        "server/overseer-org-tools.test.ts"
+        "server/overseer-org-tools.test.ts",
+        "src/components/ProfileCards.tsx",
+        "server/profiles-store.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -9276,6 +9278,272 @@
         "server/share/preview-hop.ts",
         "server/share-preview-proxy.test.ts",
         "server/share-preview-router.test.ts"
+      ]
+    },
+    "§chat.markdown/vis-lenience": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.markdown/vis-flow-sections"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/flow/parse.ts",
+        "src/vis/kinds/flow/parse.test.ts",
+        "src/vis/kinds/sequence/parse.ts",
+        "src/vis/kinds/sequence/parse.test.ts",
+        "src/vis/kinds/tree/parse.ts",
+        "src/vis/kinds/tree/parse.test.ts",
+        "src/vis/kinds/chart/parse.ts",
+        "src/vis/kinds/chart/parts.test.ts",
+        "src/vis/lenience.test.ts",
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/guide.test.ts"
+      ]
+    },
+    "§app.session-list/profile-shelf": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProfileShelf.tsx",
+        "src/components/ProfileStartSheet.tsx",
+        "src/lib/profile-start.ts",
+        "src/components/Sidebar.tsx",
+        "src/App.tsx",
+        "src/app.css"
+      ],
+      "requires": [
+        "§chat.profiles/model",
+        "§chat.profiles/singleton",
+        "§app.session-list/needs-you"
+      ]
+    },
+    "§app.settings-dialog/profiles": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProfilesSettings.tsx",
+        "src/lib/profiles-draft.ts",
+        "server/profiles-store.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/model",
+        "§app.settings-dialog/save-bar"
+      ]
+    },
+    "§chat.profiles/after-first-message": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProfileChip.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/Thread.tsx"
+      ],
+      "requires": [
+        "§chat.profiles/model"
+      ]
+    },
+    "§chat.profiles/applying": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-profile-routes.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/session-profiles-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/model"
+      ]
+    },
+    "§chat.profiles/delivery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/queue.ts",
+        "server/transcript.ts",
+        "shared/protocol.ts",
+        "src/components/Thread.tsx",
+        "src/lib/live.ts",
+        "src/components/ProfileCards.tsx"
+      ],
+      "requires": [
+        "§chat.profiles/session-tools",
+        "§app.overseer/sent-marker"
+      ]
+    },
+    "§chat.profiles/enforcement": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "shared/profiles.ts",
+        "server/session-profiles-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/model"
+      ]
+    },
+    "§chat.profiles/limits": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-powers.ts",
+        "server/session-profiles.test.ts",
+        "server/session-profiles-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/session-tools"
+      ]
+    },
+    "§chat.profiles/model": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/profiles.ts",
+        "server/profiles-store.ts",
+        "server/session-profile.ts",
+        "server/sessions-index.ts",
+        "server/session-profiles.test.ts"
+      ],
+      "requires": []
+    },
+    "§chat.profiles/picker": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProfilePicker.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/profiles.ts",
+        "src/lib/change-rows.ts",
+        "src/lib/api.ts",
+        "src/app.css"
+      ],
+      "requires": [
+        "§chat.profiles/model",
+        "§chat.transcript/setup-card"
+      ]
+    },
+    "§chat.profiles/session-tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-powers.ts",
+        "server/session-guards.ts",
+        "server/session-profile-routes.ts",
+        "server/session-profiles-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/enforcement",
+        "§app.overseer/tools"
+      ]
+    },
+    "§chat.profiles/singleton": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-profile.ts",
+        "server/session-profile-routes.ts",
+        "server/sessions-index.ts",
+        "src/components/ProfilePicker.tsx"
+      ],
+      "requires": [
+        "§chat.profiles/model",
+        "§chat.profiles/applying"
+      ]
+    },
+    "§chat/profiles": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/profiles.ts"
+      ]
+    },
+    "§app.claude-logins/switch-cost": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/switch-login",
+        "§chat.context-window/last-reply",
+        "§chat.context-window/format"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/lib/claude-login.test.ts",
+        "src/design/base.css"
+      ]
+    },
+    "§app.claude-logins/switch-login": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/active-login",
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/failover",
+        "§app.claude-logins/borrow-return",
+        "§chat.composer/composer-flyout"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/index.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "server/claude-pool/agent.ts",
+        "server/chat-manager.ts",
+        "server/claude-login-state.ts",
+        "shared/protocol.ts",
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/design/base.css",
+        "pi-config/extensions/claude-code/provider/login-command.ts",
+        "src/lib/api.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "pi-config/extensions/claude-code/provider/registration.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/claude-pool/agent.test.ts",
+        "src/lib/claude-login.test.ts"
+      ]
+    },
+    "§app.claude-logins/switch-queue": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/switch-login"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/claude-login-state.ts",
+        "shared/protocol.ts",
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/components/Composer.tsx",
+        "server/claude-login-state.test.ts",
+        "src/components/ChatView.tsx",
+        "src/design/base.css"
       ]
     }
   },

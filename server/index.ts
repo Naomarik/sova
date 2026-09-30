@@ -59,6 +59,9 @@ import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemo
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { configureSession } from "./sessions-configure";
+import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
+import { resolveChoice, singletonHolder } from "./session-profile";
+import { singletonRunningText } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
@@ -165,9 +168,33 @@ app.get("/api/health", (c) => c.json({ ok: true }));
 app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
 
 app.get("/api/sessions", async (c) => c.json(await listSessions()));
+registerProfileRoutes(app);
 
-/** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary. */
-async function createWebSession(c: Context, cwd: string) {
+/** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
+    With `start`, it is made with that profile (§app.session-list/profile-shelf) and, given one, its
+    first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
+async function createWebSession(c: Context, cwd: string, start?: { profile: string; prompt?: string; by?: "overseer" | "start" }) {
+  if (start) {
+    const r = resolveChoice(start.profile);
+    if (!r.ok) return c.json({ error: r.error }, 400);
+    if (r.profile?.singleton) {
+      const holder = singletonHolder(r.profile.id, await listSessions());
+      if (holder) return c.json({ error: singletonRunningText(r.profile.label), running: { id: holder.id, path: holder.path, title: holder.title } }, 409);
+    }
+  }
+  const made = await createWebSessionFile(c, cwd);
+  if (made instanceof Response) return made;
+  if (!start) return c.json(made, 201);
+  const applied = await applyProfile(made.path, start.profile, start.by ?? "start");
+  if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
+  if (start.prompt?.trim()) {
+    const sent = await promptSession(made.path, start.prompt);
+    if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
+  }
+  return c.json((await getSessionSummary(made.path)) ?? made, 201);
+}
+
+async function createWebSessionFile(c: Context, cwd: string) {
   const sm = SessionManager.create(resolve(cwd));
   const rawPath = sm.getSessionFile();
   const header = sm.getHeader();
@@ -182,14 +209,14 @@ async function createWebSession(c: Context, cwd: string) {
   markSeen(header.id);
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
-  return c.json(summary, 201);
+  return summary;
 }
 
 // { cwd } for a local session, or { target, remoteCwd } for a remote one: its cwd is the local
 // placeholder mirroring the remote path (server/targets.ts), created here; chat-manager passes the
 // `target` flag, so the remote extension runs every tool on the far side.
 app.post("/api/sessions", async (c) => {
-  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown };
+  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -203,13 +230,19 @@ app.post("/api/sessions", async (c) => {
     if (!target) return c.json({ error: `Unknown target: ${body.target}` }, 404);
     const dir = targetDir(body.target, remoteCwd);
     mkdirSync(dir, { recursive: true });
-    return createWebSession(c, dir);
+    return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))));
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) return c.json({ error: cwdError }, 400);
-  return createWebSession(c, cwd);
+  return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))));
 });
+
+/** POST /api/sessions's optional `profile` (an id) and `prompt`, sent by the start sheet. */
+function startOf(body: { profile?: unknown; prompt?: unknown }, byOverseer = false): { profile: string; prompt?: string; by: "overseer" | "start" } | undefined {
+  if (typeof body.profile !== "string" || !body.profile) return undefined;
+  return { profile: body.profile, by: byOverseer ? "overseer" : "start", ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}) };
+}
 
 // The connection agent: a new session in a fixed seed dir whose AGENTS.md (the remote-runtime
 // template, re-copied on every spawn) teaches it to probe, verify and write a targets.json entry.

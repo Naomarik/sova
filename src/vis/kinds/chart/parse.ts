@@ -5,7 +5,7 @@
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaList, fail, isTone, lines, takeSettings, text, tokenize, type Tone, type VisBase } from "../../core/grammar";
+import { commaList, fail, isTone, lines, takeSettings, text, tokenize, warn, type Tone, type VisBase } from "../../core/grammar";
 
 export type ChartType = "bar" | "stacked" | "line" | "scatter" | "parts";
 export interface ChartRow {
@@ -105,7 +105,11 @@ export function parseChart(body: string): ChartSpec {
   if (spec.type === "parts") {
     if (spec.rows.length > MAX_PARTS) fail(0, `${spec.rows.length} parts; at most ${MAX_PARTS}: fold the small ones into one`);
     const total = spec.rows.reduce((a, r) => a + r.values[0]!, 0);
-    if (spec.of !== undefined && total > spec.of) fail(values.get("of")!.n, `the parts add up to ${total}, more than of: ${spec.of}`);
+    // Parts past `of:` draw as if it were absent (what the guide asks for then), with a warning.
+    if (spec.of !== undefined && total > spec.of) {
+      warn(values.get("of")!.n, `the parts add up to ${total}, more than of: ${spec.of}: drawn without of:`);
+      delete spec.of;
+    }
     if (total === 0) fail(0, "the parts add up to 0: nothing to split");
   }
   if (spec.rows.length > MAX_ROWS) fail(0, `${spec.rows.length} rows; at most ${MAX_ROWS}`);

@@ -15,6 +15,8 @@
         <span class="text-mono">claude-opus-5</span>
       </p>
     </div>
+    <!-- a session with a profile, once its first message is sent (§chat.profiles/after-first-message) -->
+    <span class="profile-chip-wrap"><button class="button button-ghost profile-chip" aria-haspopup="dialog">…icon… Merge captain</button></span>
     <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- live only; static, no pulse -->
     <a class="button button-icon button-ghost session-share-open" href="#/share/…" aria-label="Share session">…share…</a>
     <button class="button button-icon button-ghost session-details-open" aria-label="Session details">…info…</button>
@@ -436,8 +438,9 @@ any other. A delivered row never draws one: nothing can be recalled then. A queu
 and tap region every other strip has.
 
 The row's head names who queued it: `You`, `Overseer` for a message the Overseer sent into this
-session (§app.overseer/sent-marker), or `Sent by Sova` for one Sova queued for the session itself
-(a group send, a remote status probe). Every one of them is removable the same way.
+session (§app.overseer/sent-marker), `From a session` under the sender header "From {title}" for one
+another session sent (§chat.profiles/delivery), or `Sent by Sova` for one Sova queued for the
+session itself (a group send, a remote status probe). Every one of them is removable the same way.
 
 The states are the server's to report, and a queue snapshot proves only what it still holds. Every
 departure is broadcast to EVERY client of the chat as `queue_item_gone {itemId, reason, text?}`,
@@ -896,7 +899,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 | No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
-| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
+| Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then, in an ordinary session, the Profile select and what it changes (§chat.profiles/picker), then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows and the profile entry draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |
 | Agent/server error (`type:"error"`, not busy) | `.banner.banner-error` placed as the last item of the thread (in flow, so it stays in the record). Title: "The turn stopped with an error." Body: "{message}. Your messages are kept. Send again to retry." |
 
 ## §chat.transcript/setup-card — Setup card
@@ -931,6 +934,9 @@ main-pane rows.
 
 - **When it shows.** Only inside that empty state, so only while the thread has zero rows, local
   rows included. The first row takes the empty state away, and the card with it.
+- **The profile comes first.** In an ordinary session the empty state's Profile select and what it
+  changes (§chat.profiles/picker) sit between the title and this card; the card itself is unchanged.
+  The `sova-profile` entry draws no row, so picking a profile keeps the empty state.
 - **It lands whole.** It asks two things at once, the loadout (`GET /api/sessions/context`) and
   the repository (`GET /api/sessions/git`), and draws nothing until both have answered, whether
   each answered with data or with a failure. There is no skeleton and no placeholder: the card

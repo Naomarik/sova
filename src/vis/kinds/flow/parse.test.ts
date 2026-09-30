@@ -167,8 +167,74 @@ test("flow inline style: the first string labels an unlabelled node, the next la
   // A target with a node line: its one string is the edge's, a second is an error.
   const lined = ok<FlowSpec>("flow", 'a "A" -> b\nnode b "B"\na -> b "go"');
   assert.deepEqual(edges(lined), ["a>b", "a>b:go"]);
-  assert.match(err("flow", 'a "A" -> b\nnode b "B"\na -> b "go" "more"').message, /unexpected more after b/);
-  assert.match(err("flow", 'a "A" -> b "B" "e" "extra"').message, /unexpected extra after b/);
+  assert.equal(err("flow", 'a "A" -> b\nnode b "B"\na -> b "go" "more"').message, 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
+  assert.equal(err("flow", 'a "A" -> b "B" "e" "extra"').message, 'unexpected "extra" after b: one label and one edge label per target; for a second line use node b "B" "extra"');
+});
+
+test("flow: a stray string after a target says what to write instead", () => {
+  const msg = (body: string) => err("flow", body).message;
+  // Labelled on this line: the third string reads as a second line, which only a node line has.
+  assert.equal(msg('ai1 "AI" --> d1 "Decision" "yes" "own states"'), 'unexpected "own states" after d1: one label and one edge label per target; for a second line use node d1 "Decision" "own states"');
+  // Labelled earlier: the first string was the edge's, so the second reads as a two-line edge label.
+  assert.equal(
+    msg('api "API Server" -> db\nclient "Client" -> api "Notify completion" "POST /confirm-upload"'),
+    'unexpected "POST /confirm-upload" after api: api is labelled "API Server" already, so "Notify completion" labels the edge; one string per edge label (\\n breaks a line): -> api "Notify completion\\nPOST /confirm-upload"',
+  );
+  // A string after a shape or tone word: the strings go first.
+  assert.equal(msg('staging "Deploy to staging" -> x\napproval "OK?" -> staging error "rejected"'), 'unexpected "rejected" after staging: strings go before shape and tone words: -> staging "rejected" error');
+  assert.equal(msg('a "A" -> b "B" decision warn "go"'), 'unexpected "go" after b: strings go before shape and tone words: -> b "B" "go" decision warn');
+  // Outside inline style: one string, the edge's.
+  assert.equal(msg('a -> b "go" "more"'), 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
+  // A stray word keeps its message.
+  assert.equal(msg("a -> b decision"), "unexpected decision after b");
+});
+
+test("flow: a second string after a chain's source is its second line; before the arrow it can't be an edge's", () => {
+  const s = ok<FlowSpec>("flow", 'g1 "Gathering" "own states" -> n1 "English note" warn -> ai1 "Overseer" round\nai1 --> d1 "Decision" "own states"');
+  const node = (id: string) => s.nodes.find((n) => n.id === id)!;
+  assert.deepEqual([node("g1").label, node("g1").note], ["Gathering", "own states"]);
+  assert.equal(node("n1").note, undefined);
+  // After a TARGET the second string is still the edge's, never a second line.
+  assert.deepEqual([node("d1").label, node("d1").note], ["Decision", undefined]);
+  assert.deepEqual(s.edges.map((e) => e.label ?? null), [null, null, "own states"]);
+  // Shape and tone words may follow; the fence is inline-style, as with one string.
+  const shaped = ok<FlowSpec>("flow", 'ev "Something happens" "gathering ends" round accent -> llm "Overseer LLM"');
+  assert.deepEqual([shaped.nodes[0]!.note, shaped.nodes[0]!.shape, shaped.nodes[0]!.tone, shaped.nodes[1]!.label], ["gathering ends", "round", "accent", "Overseer LLM"]);
+  // A different second line later keeps the first, with a warning; the same one is silent.
+  const twice = parseVis("flow", 'a "A" "one" -> b\na "A" "two" -> c\na "A" "one" -> d');
+  assert.ok(twice.ok);
+  assert.equal((twice.spec as FlowSpec).nodes[0]!.note, "one");
+  assert.deepEqual(twice.warnings, [{ line: 2, message: 'node a has the second lines "one" and "two": kept "one"' }]);
+  // A third string before the arrow is an error quoting the line to write.
+  assert.equal(err("flow", 'g1 "Gathering" "own states" "more" -> n1').message, 'g1 takes a label and one second line before its arrow: g1 "Gathering" "own states" -> n1');
+  // A source with a node line still takes no string.
+  assert.match(err("flow", 'node a "A"\na "A" "x" -> b').message, /a has a node line/);
+  // State too.
+  assert.equal(ok<FlowSpec>("state", 's "Idle" "waiting" -> t "Busy"').nodes[0]!.note, "waiting");
+});
+
+test("flow: a line `id \"Label\" [\"second\"] [words]` with no arrow is a node line without the word", () => {
+  const s = ok<FlowSpec>("flow", 'a1 "Worker starts" round\na2 "Write claims" "by hand"\na4 "Census" muted\na1 -> a2 "rule only if parent pastes it"\na2 -> a4');
+  assert.deepEqual(s.nodes.map((n) => [n.id, n.label, n.note ?? null, n.shape, n.tone ?? null]), [
+    ["a1", "Worker starts", null, "round", null],
+    ["a2", "Write claims", "by hand", "box", null],
+    ["a4", "Census", null, "box", "muted"],
+  ]);
+  // Like a node line, it leaves the fence out of inline style: a string after its target is the edge's.
+  assert.deepEqual(s.edges.map((e) => e.label ?? null), ["rule only if parent pastes it", null]);
+  // In an inline-style fence too, a target it declares takes one string, the edge's.
+  const mixed = ok<FlowSpec>("flow", 'b "Build"\nw "Web" -> b "deploys"');
+  assert.deepEqual([mixed.nodes.map((n) => n.label), mixed.edges[0]!.label], [["Build", "Web"], "deploys"]);
+  // Sections: each panel's declarations are its own.
+  const panels = ok<FlowSpec>("flow", '== A ==\nx "X"\nx -> y "go"\n== B ==\nx "Other"\nx -> y');
+  assert.deepEqual(panels.sections!.map((p) => p.nodes.map((n) => n.label)), [["X", "y"], ["Other", "y"]]);
+  // Declared twice (with or without the word) is an error; a source string for it too; a lone id still names node.
+  assert.match(err("flow", 'a "A"\nnode a "B"').message, /node a is declared twice/);
+  assert.match(err("flow", 'a "A"\na "A" -> b').message, /a has a node line/);
+  assert.equal(err("flow", "a\na -> b").message, 'a lone id: declare it with node a "Label"');
+  assert.match(err("flow", 'a "A" sideways').message, /unknown word "sideways"/);
+  // A group line is still a group line.
+  assert.deepEqual(ok<FlowSpec>("flow", 'a -> b\ngroup "G" a b').groups, [{ label: "G", nodes: ["a", "b"] }]);
 });
 
 test("flow inline style: shape and tone words may follow an inline label, on sources and targets", () => {

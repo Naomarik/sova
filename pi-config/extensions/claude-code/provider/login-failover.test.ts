@@ -11,6 +11,7 @@ import { PassThrough, Writable } from "node:stream";
 import { test } from "node:test";
 import type { Message, Tool } from "@earendil-works/pi-ai";
 import { SessionBridge } from "./session-bridge.ts";
+import { pickChatLogin } from "./login-command.ts";
 import type { ClaudeFrame, ClaudeTurnRequest } from "./types.ts";
 import { ACCOUNTS_DEV_ENV, ClaudeLogins, loginDir, loginUsers, markLeaving, readLeaving, updateAccounts, writeAccounts, type ClaudeLoginEntry } from "../accounts.ts";
 
@@ -221,4 +222,82 @@ test("the pool: an idle chat child whose login leaves is torn down, and the next
 	assert.equal(fs.existsSync(lease), false, "and its lease is gone: A can leave");
 	await collect(s.bridge.runTurn(request([user("hi"), { role: "assistant", content: [{ type: "text", text: "ok" }], api: "x", provider: "x", model: "x", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: 2 } as any, user("again")])));
 	assert.equal(s.loginOf(s.children[1]!), B, "the next turn starts on B");
+});
+
+// ---- A pick in the composer (§app.claude-logins/switch-login) ------------------------------------
+
+const said = (text: string, n = 2): Message => ({ role: "assistant", content: [{ type: "text", text }], api: "x", provider: "x", model: "x", usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: n } as any);
+/** The session branch as pi holds it: the entries the bridge asked to append. */
+const branchOf = (entries: ClaudeLoginEntry[]) => entries.map((data) => ({ type: "custom", customType: "claude-login", data }));
+/** A pick needs a signed-in login: an empty synthetic credentials file is enough to say so. */
+function signIn(agentDir: string): void {
+	for (const id of [A, B]) {
+		fs.mkdirSync(loginDir(agentDir, id), { recursive: true });
+		fs.writeFileSync(path.join(loginDir(agentDir, id), ".credentials.json"), "{}");
+	}
+}
+
+test("a pick moves an idle chat now: the manual entry and note, the next turn folded on the picked login, then the device order again", { timeout: 8000 }, async (t) => {
+	let bTurns = 0;
+	const s = setup(t, (login) => {
+		if (login !== B) return ANSWER(`ok from ${login}`);
+		bTurns++;
+		return bTurns === 2 ? LIMIT(Math.floor(Date.now() / 1000) + 3600) : ANSWER("ok from B");
+	});
+	signIn(s.agentDir);
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), A);
+
+	assert.equal(await pickChatLogin(B, { id: "pi-session-1", branch: branchOf(s.entries) }, { bridge: s.bridge, logins: s.logins }), "switched");
+	const pick = s.entries.at(-1)!;
+	assert.deepEqual([pick.login, pick.from, pick.reason], [B, A, "manual"]);
+	assert.equal(pick.text, "Claude: switched a@example.com → b@example.com (chosen by you)");
+	for (let i = 0; i < 200 && !s.children[0]!.exited; i++) await new Promise((r) => setTimeout(r, 5));
+	assert.equal(s.children[0]!.exited, true, "the idle child on A stops at once");
+	// A worker starts on the device's order, whatever the chat picked.
+	assert.equal(s.logins.select().id, A, "workers are unaffected");
+
+	const second = await collect(s.bridge.runTurn(request([user("hi"), said("ok from l-0000000a"), user("again")])));
+	assert.equal((second.at(-1) as any).outcome, "success");
+	assert.equal(s.children.length, 2);
+	assert.equal(s.loginOf(s.children[1]!), B, "the next turn runs on the pick");
+	const folded = JSON.stringify(s.children[1]!.users[0]!.message.content);
+	assert.ok(folded.includes("hi") && folded.includes("again"), "with the history folded into its one message");
+	assert.equal(s.entries.length, 2, "and the pick is not recorded twice");
+
+	// Nothing pins it: a limit on B moves on in the device's order (to A), as for any chat.
+	const third = await collect(s.bridge.runTurn(request([user("hi"), said("ok from l-0000000a"), user("again"), said("ok from B", 3), user("more")])));
+	assert.equal((third.at(-1) as any).outcome, "success");
+	assert.equal(s.loginOf(s.children.at(-1)!), A);
+	assert.deepEqual([s.entries.at(-1)!.from, s.entries.at(-1)!.login, s.entries.at(-1)!.reason], [B, A, "limit"]);
+});
+
+test("a pick before the chat's first Claude turn only records it, and the first turn starts there", { timeout: 8000 }, async (t) => {
+	const s = setup(t, () => ANSWER("ok"));
+	signIn(s.agentDir);
+	assert.equal(await pickChatLogin(B, { id: "pi-session-1", branch: [] }, { bridge: s.bridge, logins: s.logins }), "switched");
+	assert.deepEqual(s.entries.map((e) => [e.login, e.from, e.reason]), [[B, A, "manual"]], "from the login it would have started on");
+	await collect(s.bridge.runTurn(request([user("hi")])));
+	assert.equal(s.loginOf(s.children[0]!), B);
+	assert.equal(s.entries.length, 1);
+});
+
+test("a pick of the chat's own login changes nothing; an unusable one, or one mid-turn, is refused", { timeout: 8000 }, async (t) => {
+	let hold = true;
+	const s = setup(t, () => (hold ? [] : ANSWER("ok")));
+	signIn(s.agentDir);
+	const pick = (id: string) => pickChatLogin(id, { id: "pi-session-1", branch: branchOf(s.entries) }, { bridge: s.bridge, logins: s.logins });
+	// Mid-turn: the child has the message and has not answered yet.
+	const ctl = new AbortController();
+	const running = collect(s.bridge.runTurn(request([user("hi")]), ctl.signal));
+	for (let i = 0; i < 200 && !s.children[0]?.users.length; i++) await new Promise((r) => setTimeout(r, 5));
+	await assert.rejects(pick(B), /still answering/);
+	ctl.abort();
+	await running;
+	hold = false;
+	assert.equal(await pick(A), "same");
+	assert.ok(!s.entries.some((e) => e.reason === "manual"), "no entry for either");
+	s.logins.recordFailure({ id: B, label: "b@example.com", env: {}, accountUuid: "acct-b" }, { kind: "limit", resetsAt: Date.now() + 3_600_000 });
+	await assert.rejects(pick(B), /limited until/);
+	await assert.rejects(pick("l-0000dead"), /no such Claude login/);
 });

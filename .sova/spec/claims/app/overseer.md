@@ -149,6 +149,14 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   terminal-owned, archived or worker session, and never the Overseer's own. The route is
   `POST /api/sessions/prompt` (`delivery` optional, `"followUp"` or `"steer"`; anything else is a
   400).
+- **Profiles (§chat/profiles).** `sova_create_session` takes `profile`: a built-in's or a saved
+  profile's id, on this host only. Only a profile marked "The Overseer may start it" is taken; any
+  other refuses before anything is created. The session is created with that profile's snapshot
+  (and its mode and model unless the call names its own), and the tool's result renders as a
+  **Started from {label}** card with Open Session. A One at a time profile that is live refuses
+  with a card saying "{label} is already running. It's set to One at a time, so only 1 session can
+  use it." and **Open the Running {Label}**; nothing is created and no cap is taken.
+  `sova_set_session` never changes a profile: it has no such parameter, so it can't widen one.
 - **TUI-live sessions are read-only**: every act on one is refused.
 - **Files: anywhere but credentials.** The Overseer's `read`, `grep`, `find` and `ls` reach any
   file on the machine except secret files, which none of them reads, lists or matches:
@@ -573,9 +581,11 @@ Three tools let the Overseer make and end links between sessions on different ho
 - While it waits in the queue, its row reads **Overseer** rather than "Sent by Sova" (the queue
   snapshot's `overseer` flag, set only for a message carrying the sender secret).
 - The transcript renders an **Overseer** tag on that user row, on reload and live.
-- **One mechanism, two senders.** Baton sessions attribute every user message the same way, with
-  their own `sova-baton-sent` marker (§app.baton/attribution); the pending-mark list, the queue
-  hand-off rule and the settle sweep are shared, and each marker is written only for its own sender.
+- **One mechanism, three senders.** Baton sessions attribute every user message the same way, with
+  their own `sova-baton-sent` marker (§app.baton/attribution), and so does a session's
+  `session_send`, with `sova-session-sent` (§chat.profiles/delivery); the pending-mark list, the
+  queue hand-off rule and the settle sweep are shared, and each marker is written only for its own
+  sender, with the bytes of the Overseer's and the baton's markers unchanged.
 - **A project overseer's conversation too.** The one route that writes into a project overseer's
   conversation, the Overseer's message route (§app.overseer/org-project-overseers), marks every
   message it hands in the same way, with the same `sova-overseer-sent` entry, the same queued-row

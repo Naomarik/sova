@@ -50,8 +50,8 @@ export function cleanGroupLabel(raw: unknown): { ok: true; label: string | null 
 }
 
 /** A stored seed (an older build's, §workspace.groups/legacy-groups), read leniently: both fields
-    must be non-empty strings or the group simply has none (and so the legacy dissolve rule never
-    reads it). Nothing writes one any more; it is read only so it survives every write. */
+    must be non-empty strings or the group simply has none. Nothing writes one any more and nothing
+    acts on one; it is read only so it survives every write. */
 function readSeed(raw: unknown): GroupSeed | null {
   if (!isObj(raw)) return null;
   const { parentSessionPath, leafId } = raw as { parentSessionPath?: unknown; leafId?: unknown };
@@ -257,10 +257,9 @@ export function updateGroup(id: string, patch: GroupPatch): GroupResult {
     if (!group) return { ok: false, status: 404, error: "Group not found" };
     if (name && name !== group.name) {
       group.name = name;
-      // A rename revokes the second half of "Sova made it AND named it": Sova made this one,
-      // the USER named it, and renaming something is the clearest signal there is that they mean
-      // to keep it. Set by the event rather than remembered as a rule (the workspace spec spares a group
-      // whose name is the user's work, however it came by that name).
+      // A rename revokes the second half of "Sova made it AND named it": the USER named this one.
+      // The flag no longer deletes anything, but the auto-title sweep still reads it to tell an
+      // older build's one-gesture group (§workspace.groups/legacy-groups).
       group.autoDissolve = false;
     }
     if (order) {
@@ -302,48 +301,13 @@ export function readGroup(id: string): SessionGroup | null {
   return load().groups.find((g) => g.id === id) ?? null;
 }
 
-export type AssignResult = { ok: true; dissolved?: true } | { ok: false; status: 400 | 404; error: string };
-
 /**
- * Whether this group deletes itself when its last member leaves (§workspace.groups/legacy-groups).
- * `autoDissolve` is the ONE truth of that, and only an older build ever set it, on a group it both
- * created and named in one gesture; nothing sets it now. Absent means the record predates the
- * flag, and only then does `seed` imply it: those older records are all such groups, and every
- * group that ever adopted a seed was written with an explicit flag.
- *
- * A RENAME clears it (updateGroup): the user renaming it takes the name over.
+ * Assign never deletes a group, whatever it holds afterwards (§workspace.groups/group-lifecycle,
+ * "Emptying a group"): a group's name is the user's work, and an empty group is a real state the
+ * workspace renders and offers Dissolve on. An older build's `autoDissolve` (and `seed`) is still
+ * read and written back unchanged, but decides nothing here (§workspace.groups/legacy-groups).
  */
-function dissolvesWhenEmpty(group: StoredGroup): boolean {
-  return group.autoDissolve ?? group.seed !== undefined;
-}
-
-/**
- * The workspace spec, "Emptying a group": an older build's one-gesture group (dissolvesWhenEmpty)
- * is removed by the write that removes its last member — in the SAME atomic write, so the store is
- * never briefly holding it empty. Every other group is left standing: its name is the user's
- * work, and the session list already specs an empty one as a real state.
- *
- * Deliberately only here, on the assign GESTURE — never on "the group happens to be empty now".
- * Nothing else empties a group behind the user's back: a member whose file is gone KEEPS its
- * assignment (the "This session's file is gone" pane renders it; see dropGroupAssignments for
- * the decision), and Archive cleanup prunes only the ids it deleted itself — so a rule keyed on
- * emptiness rather than the gesture could still only ever fire under the user's own hands, and
- * would let a background event silently delete a group the user made — with nobody listening
- * to that call to even report it. An empty
- * group is a real state instead, and the workspace offers Dissolve by hand.
- *
- * Returns whether it dissolved, so the caller can tell the client the group it was viewing is gone.
- */
-function dissolveIfEmptied(store: Store, groupId: string | null): boolean {
-  if (!groupId) return false;
-  const at = store.groups.findIndex((g) => g.id === groupId);
-  if (at < 0) return false;
-  const group = store.groups[at]!;
-  if (!dissolvesWhenEmpty(group)) return false;
-  if (Object.values(store.assignments).includes(groupId)) return false; // still has members
-  store.groups.splice(at, 1);
-  return true;
-}
+export type AssignResult = { ok: true } | { ok: false; status: 400 | 404; error: string };
 
 /**
  * POST /api/session-groups/assign: one session, at most one group (`null` takes it out of the one
@@ -386,7 +350,7 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
     }
     if (!group) {
       delete store.assignments[sessionId];
-      return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
+      return { ok: true };
     }
     const member: GroupMember = { ...carried, id: sessionId };
     if (label === null) delete member.label; // an explicit clear
@@ -394,9 +358,7 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
     const at = index === undefined ? group.members.length : Math.min(index, group.members.length);
     group.members.splice(at, 0, member);
     store.assignments[sessionId] = group.id;
-    // A move out of an autoDissolve group empties it just as surely as an unassign does (never the
-    // same-group case: that returned above).
-    return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
+    return { ok: true };
   });
 }
 

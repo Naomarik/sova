@@ -244,9 +244,7 @@ export async function removeGroup(id: string): Promise<boolean> {
  * Puts a session in a group, or takes it out with null. The caller refreshes the session list
  * afterwards (the group a row shows comes from the list, not from here).
  *
- * Returns the server's answer, not just success, because one thing in it cannot be inferred from
- * the list: `dissolved` says this write emptied an older build's autoDissolve group and the
- * server deleted it in the same breath. Null means the write failed and a toast has already said why.
+ * Returns the server's answer, or null when the write failed and a toast has already said why.
  */
 export async function setSessionGroup(
   path: string,

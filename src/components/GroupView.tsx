@@ -493,29 +493,22 @@ export function GroupView(props: {
   /**
    * Takes a file-gone member out of the group: the `.empty` pane's one action. By session id,
    * because there is no file left to resolve a path through — the wire's `{ id, groupId: null }`
-   * form. Everything downstream is detach's: an older build's autoDissolve group may dissolve under
-   * the write, and that is said and routed, not inferred.
+   * form. The group stays, emptied or not, like after any other removal.
    */
   const removeGone = async (g: { id: string; label: string | null; seen?: SessionSummary }) => {
     const name = nameOf(ghostKey(g.id));
     const next = neighbourOf(panes(), ghostKey(g.id));
-    let result: { dissolved?: boolean } | null = null;
     try {
-      result = await unassignSessionById(g.id);
+      await unassignSessionById(g.id);
     } catch (err) {
       toast(`Couldn't remove this member. ${(err as Error).message}`);
       return;
     }
-    let done = `Removed ${name} from ${quoted(props.group.name)}.`;
-    if (result?.dissolved) done += ` Dissolved ${quoted(props.group.name)} — nothing was left in it.`;
+    const done = `Removed ${name} from ${quoted(props.group.name)}.`;
     toast(done);
     announce(done);
     await loadSessionGroups(); // the member entry is the group's copy, not the list's
     props.wiring.onRefresh();
-    if (result?.dissolved) {
-      location.hash = "#/";
-      return;
-    }
     if (next && !next.startsWith("gone:")) focusPane(next, true);
   };
 
@@ -524,8 +517,7 @@ export function GroupView(props: {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
     const next = neighbourOf(panes(), path);
-    const result = await setSessionGroup(path, null);
-    if (!result) return;
+    if (!(await setSessionGroup(path, null))) return;
     let done: string;
     if (!archive) {
       // Remove-only on a session Sova didn't start is the whole story, and says so: there was
@@ -545,16 +537,9 @@ export function GroupView(props: {
         done = `Removed ${title} from ${quoted(props.group.name)}, but couldn't archive it. ${(err as Error).message}`;
       }
     }
-    // The server deleted this group in the same write (its last member left an older build's
-    // autoDissolve group), so the route no longer names anything: say both things at once and leave.
-    if (result.dissolved) done += ` Dissolved ${quoted(props.group.name)} — nothing was left in it.`;
     toast(done);
     announce(done);
     props.wiring.onRefresh();
-    if (result.dissolved) {
-      location.hash = "#/";
-      return;
-    }
     if (next) focusPane(next, true);
   };
 
@@ -563,12 +548,9 @@ export function GroupView(props: {
   const promote = async (path: string) => {
     const s = summaryOf(path);
     const title = s?.title ?? "this session";
-    const result = await setSessionGroup(path, null);
-    if (!result) return;
+    if (!(await setSessionGroup(path, null))) return;
     props.wiring.onRefresh();
-    let done = `Took ${title} out of ${quoted(props.group.name)}.`;
-    if (result.dissolved) done += ` Dissolved ${quoted(props.group.name)} — nothing was left in it.`;
-    toast(done);
+    toast(`Took ${title} out of ${quoted(props.group.name)}.`);
     location.hash = sessionHref(path);
   };
 

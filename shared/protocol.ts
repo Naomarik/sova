@@ -501,11 +501,9 @@ export interface SessionsDirInfo {
 //                                  sessions themselves are untouched. 404 unknown)
 // POST /api/session-groups/assign { path, groupId: string | null, label?: string | null, index?: number }
 //                                  -> AssignGroupResult
-//                                  (puts one session in a group, or takes it out with null. When this write
-//                                  removes the LAST member of a group whose `autoDissolve` is set (one Sova
-//                                  both created AND named), that group is deleted in the same atomic write and
-//                                  the response carries dissolved: true. `seed` decides nothing here: a group
-//                                  the user named stands empty even after it adopts one. `label` sets the
+//                                  (puts one session in a group, or takes it out with null. It never deletes
+//                                  a group: one whose last member leaves stands empty, an older build's
+//                                  `autoDissolve` group included. `label` sets the
 //                                  session's label in the group it lands in, `null` clears it, and omitting it
 //                                  keeps the label it already had — a session moved between groups keeps its
 //                                  metadata. `index` is where it lands in the target group's member order:
@@ -1243,12 +1241,10 @@ export interface SessionGroup {
   createdAt: string; // ISO
   /** An older build's note (GroupSeed). Kept, never written, never read by the UI. */
   seed?: GroupSeed;
-  /** Whether the group deletes itself when its last member leaves (AssignGroupResult.dissolved).
-      Only an older build ever set it, on a group it both created and named; this build never
-      sets it and keeps it through every write. THE ONE TRUTH OF DISSOLUTION: read `=== true`,
-      an explicit false always wins, and a rename that actually changes the name clears it (the
-      user then owns the name). Absent only on a group written before the field existed — then,
-      and only then, a `seed` implies it. Reordering and relabelling never touch it. */
+  /** An older build's mark on a group it both created and named, which once deleted the group
+      when its last member left. It deletes nothing now: this build never sets it and keeps it
+      through every write, a rename that changes the name still clears it, and the auto-title
+      sweep reads it (`=== true`, or absent with a `seed`) to skip that group's members. */
   autoDissolve?: boolean;
   /** The group's sessions in display order, with their labels. The server always sends it — it is
       reconciled against the assignments on every read (ids no longer in the group drop out, ids
@@ -1257,17 +1253,10 @@ export interface SessionGroup {
   members?: GroupMember[];
 }
 
-/** 200 body of POST /api/session-groups/assign. Additive: a client that only reads `ok` is
-    unaffected. */
+/** 200 body of POST /api/session-groups/assign. An older server could add `dissolved: true`;
+    this one never does, because an assign never deletes a group. */
 export interface AssignGroupResult {
   ok: true;
-  /** The assign emptied a group whose `autoDissolve` is set, and the server deleted it in the SAME
-      write. `autoDissolve` is the whole rule (an absent flag defers to the legacy `seed` rule),
-      and every other group stands empty. Absent otherwise. The client toasts
-      "Dissolved “{name}”", leaves the workspace route and refetches the list. Archive cleanup can
-      also empty a group and deliberately does NOT dissolve one: no client is listening to that
-      call, and a background listing pass must never delete a group. */
-  dissolved?: true;
 }
 
 /** Why one member of a group batch prompt cannot be prompted right now

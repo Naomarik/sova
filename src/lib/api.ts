@@ -506,11 +506,7 @@ export const deleteSessionGroup = (id: string) =>
  * `index` is where it lands in the member order (0 first, omitted or past the end = the end), so
  * an undo restores the label AND the place in one write that can't half-succeed. It is ignored
  * when ungrouping, and ignored for a session already in that group: assign never reorders in
- * place, `PATCH {order}` is the reposition.
- *
- * `dissolved` comes back only when this write removed the last member of a group Sova fanned
- * out, which deletes it in the same atomic write — the client cannot infer that from a count it
- * just changed.
+ * place, `PATCH {order}` is the reposition. It never deletes a group, emptied or not.
  */
 export const assignSessionGroup = (path: string, groupId: string | null, opts?: { label?: string | null; index?: number }) =>
   request<AssignGroupResult>("/api/session-groups/assign", {
@@ -528,8 +524,7 @@ export const assignSessionGroup = (path: string, groupId: string | null, opts?: 
  * Removal by session id, for a member whose FILE is gone (gone from disk):
  * the path form 404s when there is no file to resolve, but the pane's `Remove From Group` still
  * has to work, so the route takes `id` for unassignment only. Same response shape as the path
- * form, `dissolved` included — taking the last member out of an `autoDissolve` group (an older
- * build's) dissolves it whether the file existed or not.
+ * form.
  */
 export const unassignSessionById = (id: string) =>
   request<AssignGroupResult>("/api/session-groups/assign", {

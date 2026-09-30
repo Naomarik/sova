@@ -287,8 +287,7 @@ app.post("/api/session-groups/assign", async (c) => {
     if (body.path !== undefined) return c.json({ error: "send either path or id, not both" }, 400);
     if (body.label !== undefined || body.index !== undefined) return c.json({ error: "label and index belong to an assignment, not a removal" }, 400);
     const out = assignSession(body.id, null);
-    // dissolved is set only when this write emptied an autoDissolve group, which the server then deleted.
-    return out.ok ? c.json({ ok: true, ...(out.dissolved ? { dissolved: true } : {}) }) : c.json({ error: out.error }, out.status);
+    return out.ok ? c.json({ ok: true }) : c.json({ error: out.error }, out.status);
   }
   // Omitted keeps the label the session already had (a move between groups carries it).
   const label = body.label === undefined ? { ok: true as const, label: undefined } : cleanGroupLabel(body.label);
@@ -303,8 +302,7 @@ app.post("/api/session-groups/assign", async (c) => {
   // an assignment made before that rule).
   if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
   const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
-  // dissolved is set only when this write emptied an autoDissolve group, which the server then deleted.
-  return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
+  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
 });
 
 // The group workspace's shared follow-up: one request, N sessions, all-or-nothing.

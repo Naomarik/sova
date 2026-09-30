@@ -368,10 +368,11 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
     return { branchDeleted: out.branchDeleted };
   });
 
-  // After a restart no turn runs: every build whose chart still says one hears it ended.
+  // After a restart no turn runs: every build whose chart still says one hears it ended, cold ones included (a
+  // build not resumed yet would keep "working" forever: F-049/F-050's twin for coding sessions).
   void (async () => {
-    for (const s of host.sessions("build", { warmOnly: true })) {
-      if (s.data.turn === "working") await host.act(s.id, "turn/ended", {}, SYSTEM);
+    for (const s of host.sessions("build")) {
+      if (s.running && s.data.turn === "working") await host.act(s.id, "turn/ended", {}, SYSTEM);
     }
   })().catch((err) => console.warn(`[build] ${orgId}: resuming turns: ${err instanceof Error ? err.message : String(err)}`));
 }

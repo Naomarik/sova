@@ -27,6 +27,7 @@ import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
+import { startStaticPreviews } from "./project-previews";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
@@ -1328,8 +1329,10 @@ onSessionArchived((id) => void meshLinks.endFor(id));
 mountPublicLinks(app);
 mountShareGateway(app, meshApi);
 // Preview links (shared/preview-links.ts, §mesh.public/preview): a project's loopback apps behind
-// their own public hosts, under /api/previews (main listener only).
+// their own public hosts, under /api/previews (main listener only). A folder preview is served by
+// Sova itself (§mesh.public/preview-serve): rebound here on its recorded port, stopped when it ends.
 mountPreviewLinks(app);
+startStaticPreviews();
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 

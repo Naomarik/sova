@@ -173,6 +173,7 @@ export const CONFIRM_KIND_LABEL: Record<string, string> = {
   "owner-update": "Owner updates",
   "roster-approve": "Approving a proposed person",
   "roster-decline": "Declining a proposed person",
+  preview: "Publishing a preview link",
 };
 /** A kind's row label; one this table lacks reads as its id. */
 export const confirmKindLabel = (kind: string): string => CONFIRM_KIND_LABEL[kind] ?? kind;

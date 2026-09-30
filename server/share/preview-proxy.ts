@@ -2,7 +2,9 @@ import { request, type IncomingHttpHeaders, type IncomingMessage, type ServerRes
 import { connect, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { PREVIEW_LIMITS } from "../../shared/public-links";
+import { keptPreview } from "../preview-kept";
 import { findPreview, findPreviewByHash, onPreviewEnded, type PreviewRecord, previewState } from "../preview-links";
+import { staticServes } from "../preview-serve";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 
 /**
@@ -192,6 +194,16 @@ export class OpenConnections {
   }
 }
 
+/**
+ * Whether a preview's port may be dialed now (§mesh.public/preview-serve): a folder preview only while
+ * Sova itself serves that folder on it, so another program that took the port is never shown; any other
+ * preview always.
+ */
+export function previewDialable(record: PreviewRecord): boolean {
+  if (keptPreview(record.id)?.target.kind !== "static") return true;
+  return staticServes().some((s) => s.id === record.id && s.port === record.port);
+}
+
 // ---- the proxy -----------------------------------------------------------------------------------------
 
 export interface PreviewProxyOptions {
@@ -202,6 +214,8 @@ export interface PreviewProxyOptions {
   origin: (label: string) => string | null;
   /** The loopback addresses to try, in order (tests). */
   hosts?: readonly string[];
+  /** Whether a record's port may be dialed now; not: the not-running answer. Default previewDialable. */
+  dialable?: (record: PreviewRecord) => boolean;
   headersMs?: number;
   bodyMax?: number;
   slots?: PreviewSlots;
@@ -226,6 +240,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
   const find = opts.find ?? findPreview;
   const findByHash = opts.findByHash ?? findPreviewByHash;
   const hosts = opts.hosts ?? ["127.0.0.1", "::1"];
+  const dialable = opts.dialable ?? previewDialable;
   const headersMs = opts.headersMs ?? PREVIEW_LIMITS.headersMs;
   const bodyMax = opts.bodyMax ?? PREVIEW_LIMITS.bodyMaxBytes;
   const slots = opts.slots ?? new PreviewSlots();
@@ -249,6 +264,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
     if (j === "gone") return previewAnswer(req, res, "gone");
     if (j === "no-origin") return previewAnswer(req, res, "busy");
     const { record, origin } = j;
+    if (!dialable(record)) return previewAnswer(req, res, "notRunning");
     const declared = Number(req.headers["content-length"]);
     if (Number.isFinite(declared) && declared > bodyMax) return previewAnswer(req, res, "tooLarge");
     const release = slots.take(record.hash, "http");
@@ -327,6 +343,7 @@ export function createPreviewProxy(opts: PreviewProxyOptions): PreviewProxy {
     if (j === "gone") return previewUpgradeAnswer(socket, "gone");
     if (j === "no-origin") return previewUpgradeAnswer(socket, "busy");
     const { record, origin } = j;
+    if (!dialable(record)) return previewUpgradeAnswer(socket, "notRunning");
     const release = slots.take(record.hash, "ws");
     if (!release) return previewUpgradeAnswer(socket, "busy");
     let upstream: Socket | null = null;

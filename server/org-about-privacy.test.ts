@@ -369,6 +369,6 @@ describe("the About text has one reader in the server", () => {
     // The guard only answers which source a text repeats: it returns a label, never the text.
     const guard = text.slice(text.indexOf("export function ownerUpdateLeak("), text.indexOf("\n}\n", text.indexOf("export function ownerUpdateLeak(")));
     assert.match(guard, /: string \| null \{/);
-    for (const r of guard.matchAll(/return ([^;]+);/g)) assert.match(r[1]!, /^(null|what|true|false|PRIVATE|OTHER|"[^"]*")$/, `returns ${r[1]}`);
+    for (const r of guard.matchAll(/return ([^;]+);/g)) assert.match(r[1]!, /^(null|what|true|false|PRIVATE|OTHER|PREVIEW_IN_OWNER_UPDATE|"[^"]*")$/, `returns ${r[1]}`);
   });
 });

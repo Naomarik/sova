@@ -23,6 +23,9 @@ import type { ProjectOverseerPaths } from "./project-overseer-store";
 import type { EnabledEvent } from "./org-charts";
 import type { FeedEntry } from "./org-host";
 import type { HeldAct, PipelineRow } from "../shared/pipeline";
+import { PREVIEW_PURPOSE_MAX, type PreviewView } from "../shared/preview-links";
+import { holdsPreviewLink, redactPreviewLinksDeep } from "./preview-kept";
+import { handoffOf } from "./project-previews";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -89,6 +92,12 @@ export interface PoToolHost {
       reason for the model: no owner, too long, text repeating private text, and, unless the operator
       asked (`attended`), nothing new since the last post or a post under 24 hours old. */
   postOwnerUpdate(input: { text: string; attended: boolean }): Promise<{ update: ProjectUpdate; owner: string } | { held: { id: string; until: number }; owner: string }>;
+  /** The project's preview links (§app.project-overseer/previews), each with its kept link, target, session and state. */
+  previews(): Promise<PreviewView[]>;
+  /** A preview link of one of its coding sessions' apps: the project chart's preview/start (L1, held unattended). */
+  startPreview(input: { session: string; target: { port: number } | { folder: string }; purpose: string; days?: number }): Promise<{ preview: PreviewView } | { held: { id: string; until: number } }>;
+  /** Turn one of the project's previews off: at once, never held. */
+  turnOffPreview(id: string): Promise<PreviewView>;
   /** A chart refused `kind` for its allowance: the watch holds it until it comes back (limit/refused). */
   limitRefused(kind: PoLimitKind): Promise<void>;
   /** Both allowances' use and limits, from the watch chart's ledgers. */
@@ -136,6 +145,7 @@ const PLAIN_NEEDS: Record<string, Need> = {
   sova_card: "L0",
   sova_todo: "operator",
   sova_pipeline: "read",
+  sova_previews: "read",
   sova_hold: "L0", // hold/cancel, hold/approve: L0 corrections on every chart that holds
   sova_set_state: "operator", // the engine takes it only in the operator's turn
 };
@@ -293,7 +303,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
   function act(name: string, run: (params: any, toolCallId: string) => Promise<Out>) {
     return async (toolCallId: string, params: any): Promise<Out> => {
       const log = (outcome: "ok" | "partial" | "refused" | "error", error?: string, note?: string) =>
-        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }, p.actions);
+        // A kept preview link never reaches the log, even in a refused call's arguments (§app.project-overseer/previews).
+        logAction(redactPreviewLinksDeep({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: params, outcome, ...(error !== undefined ? { error } : {}), ...(note ? { note } : {}) }), p.actions);
       try {
         const refused = operatorOnlyRefusal(name, host.attended());
         if (refused) throw new Refusal(refused);
@@ -360,6 +371,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       throw new Refusal("Give public_title and question (both shown to the person as written: neutral, no internal labels) and goal (for the session's model only).");
     const why = typeof p0.why === "string" ? p0.why.trim() : "";
     if (!why) throw new Refusal(WHY_REFUSAL);
+    if ([publicTitle, question, goal, why].some((t) => holdsPreviewLink(t))) throw new Refusal(PREVIEW_IN_GATHERING);
     const roster = host.roster();
     const raw: string[] = many ? (Array.isArray(p0.people) ? p0.people.map(String) : []) : [String(p0.person ?? "")];
     if (many && raw.length < 2) throw new Refusal("An offer goes to at least two people; for one, use sova_start_gathering.");
@@ -426,6 +438,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const heldNow = host.held?.() ?? [];
         const use = host.allowance();
         const builds = await host.builds();
+        const activePreviews = (await host.previews().catch(() => [])).filter((v) => v.state === "active");
         const lines = [
           `# ${project.name}`,
           `Root: ${project.root}`,
@@ -456,6 +469,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           "## Builds (coding sessions, newest first; merged is read from git)",
           ...(builds.length ? builds.slice(0, 20).map((w) => buildLine(w)) : ["(none yet)"]),
           ...(builds.length > 20 ? [`(${builds.length - 20} more: sova_list_sessions)`] : []),
+          "",
+          "## Previews (active preview links; sova_previews lists them all)",
+          ...(activePreviews.length ? activePreviews.map((v) => previewLine(v)) : ["(none)"]),
           "",
           "## Your limits",
           `This operator message: ${PO_LIMIT_KINDS.map((k) => usedOf(use.message[k].used, s.caps[PER_TURN[k]], LIMIT_WHAT[k])).join(", ")}.`,
@@ -794,6 +810,72 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       }),
     },
     {
+      name: "sova_previews",
+      label: "Previews",
+      description:
+        "The project's preview links: each shows one coding session's running app (a port it serves, or a folder of its worktree that Sova serves) to a stakeholder at its own public address, until it is turned off or expires. " +
+        "Lists each one's id, its link (when kept: previews made before links were kept show none), what it serves, its coding session and branch, its purpose, who made it, its expiry and whether the app answers now. Active ones first.",
+      promptSnippet: "list the project's preview links (link, what it serves, session, state)",
+      parameters: obj({}),
+      execute: read(async () => {
+        const all = await host.previews();
+        const order = (v: PreviewView) => (v.state === "active" ? 0 : 1);
+        const list = [...all].sort((a, b) => order(a) - order(b) || b.createdAt.localeCompare(a.createdAt));
+        const shown = list.filter((v, i) => v.state === "active" || i < 40);
+        const lines = shown.length ? shown.map((v) => previewLine(v)) : ["(no preview links yet: sova_preview start makes one)"];
+        return { content: text(lines.join("\n")), details: { v: 1, previews: shown.map(handoffOf) } };
+      }),
+    },
+    {
+      name: "sova_preview",
+      label: "Preview link",
+      description:
+        "Start or turn off a preview link: one of the project's coding sessions' running apps at its own public address, for a stakeholder to see now. " +
+        "start: `session` (a coding session with a worktree), and either `port` (one that session already serves: the program listening must run from its worktree) or `folder` (a folder of its worktree, relative to it, that Sova serves: built static files, never a dot-folder), plus `purpose` (one line: what it shows and to whom). " +
+        "Anyone with the link can use the app as if they were on this computer, so make one only when a stakeholder should see it now, check it answers, and give the link to the operator, who sends it on: never put it in a gathering or an owner update. Sova never starts the app: if it stopped, have its coding session start it again (sova_send). " +
+        "Unattended it needs L1 and waits in a hold the operator can cancel. off: `id` turns one off at once, at any level; turn a preview off once it has served its purpose.",
+      promptSnippet: "start (L1, held unattended) or turn off a preview link of a coding session's app",
+      parameters: obj(
+        {
+          op: str("start | off", { enum: ["start", "off"] }),
+          session: str(`start: the coding session whose app it shows. ${SESSION_PARAM}`),
+          port: int("start: the loopback port the session's app listens on.", { minimum: 1, maximum: 65535 }),
+          folder: str("start: a folder of the session's worktree to serve, relative to it (e.g. \"dist\")."),
+          purpose: str(`start: what it shows and to whom, one line (at most ${PREVIEW_PURPOSE_MAX} characters).`),
+          days: int("start: how long it lasts, 1 to 30 days (default 1).", { minimum: 1, maximum: 30 }),
+          id: str("off: the preview's id (pv_…, from sova_previews)."),
+        },
+        ["op"],
+      ),
+      execute: act("sova_preview", async (q) => {
+        if (q.op === "off") {
+          const id = typeof q.id === "string" ? q.id.trim() : "";
+          if (!id) throw new Refusal("Give the id of the preview to turn off (sova_previews lists them).");
+          const v = await host.turnOffPreview(id);
+          return { content: text(`Turned off ${v.id}: its link answers "no longer active" from now on.`), details: { v: 1, preview: handoffOf(v), note: `Turned off a preview link${v.purpose ? `: ${cut(v.purpose, 120)}` : ""}` } };
+        }
+        if (q.op !== "start") throw new Refusal("op is start or off.");
+        const session = q.session === undefined || q.session === null || q.session === "" ? "" : sessionRef(q.session);
+        if (!session) throw new Refusal("Name the coding session whose app it shows (session).");
+        const hasPort = q.port !== undefined && q.port !== null;
+        const hasFolder = typeof q.folder === "string" && q.folder.trim() !== "";
+        if (hasPort === hasFolder) throw new Refusal("Give either port (an app the session serves) or folder (a folder of its worktree), not both.");
+        const purpose = typeof q.purpose === "string" ? q.purpose.trim() : "";
+        const made = await host.startPreview({
+          session,
+          target: hasFolder ? { folder: String(q.folder).trim() } : { port: Number(q.port) },
+          purpose,
+          ...(q.days !== undefined && q.days !== null ? { days: Number(q.days) } : {}),
+        });
+        if ("held" in made) return { content: text(heldText(`the preview link "${cut(purpose, 80)}"`, made.held)), details: { v: 1, held: made.held.id } };
+        const v = made.preview;
+        return {
+          content: text(`Made a preview link: ${v.url ?? "(its link couldn't be kept)"} — ${previewLine(v).slice(2)}. Check it opens, then give it to the operator to send on.`),
+          details: { v: 1, preview: handoffOf(v), note: `Made a preview link: ${cut(purpose, 120)}` },
+        };
+      }),
+    },
+    {
       name: "sova_reconcile",
       label: "Reconcile",
       description: "Run the reconciler now: compare the project's decisions within each area, route contradictions to whoever decides the area, and draft the consistent ones into the project's spec draft.",
@@ -1063,6 +1145,20 @@ export const GOAL_RULES =
   'Name people by name only, never by role or job title, and never say how the answers will be recorded or under which area ("as finance decisions"): the session\'s model may repeat it.';
 
 const SESSION_PARAM = 'Session id as sova_list_sessions lists it (a bare id; "sova://s/<id>" also works).';
+
+/** A gathering's texts reach a person as written: a kept preview link never goes there (§app.project-overseer/previews). */
+export const PREVIEW_IN_GATHERING = "A preview link goes to people through the operator, never in a gathering's title, question, goal or why.";
+
+/** One preview as the tools list it: id, what it serves, its session, purpose, who, state, expiry and link. Pure. */
+export function previewLine(v: PreviewView): string {
+  const t = v.target ?? { kind: "port" as const, port: v.port };
+  const what = t.kind === "static" ? `folder ${t.folder}` : `port ${t.port}`;
+  const state =
+    v.state === "off" ? "turned off" : v.state === "expired" ? "expired" : t.kind === "static" ? (v.running ? "active, serving the folder" : "active, not serving the folder") : v.running ? "active, app is running" : `active, nothing on port ${t.port}`;
+  const session = v.sessionId ? ` · ${v.sessionId}${v.sessionTitle ? ` "${cut(v.sessionTitle, 60)}"` : ""}${v.branch ? ` on ${v.branch}` : ""}${v.sessionFrom === "worktree" ? " (matched by its worktree)" : ""}` : "";
+  const who = v.createdBy === "operator" ? "the operator" : "you";
+  return `- ${v.id} · ${what}${session}${v.purpose ? ` · "${cut(v.purpose, 120)}"` : ""} · made by ${who} · ${state} · ${v.state === "active" ? `expires ${v.expiresAt}` : v.revokedAt ? `off since ${v.revokedAt}` : `expired ${v.expiresAt}`} · link: ${v.url ?? "not kept (shown only when it was made)"}`;
+}
 
 /** The built-ins it has besides its own tools: read-only file access in the project root. */
 export const PO_BUILTINS = ["read", "grep", "find", "ls"];

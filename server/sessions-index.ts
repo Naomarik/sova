@@ -1,4 +1,5 @@
 import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
+import { keptLabels, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
@@ -826,6 +827,9 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
   const orgs = orgLookup();
+  // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
+  // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
+  const previewLabels = keptLabels();
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -887,7 +891,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(readiness ? { ...row, readiness } : row);
+    out.push(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row, previewLabels));
   }
   pruneReadiness(out);
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -933,7 +937,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...orgField(s.path, s.id),
   };
   const readiness = readinessOverlay(row);
-  return readiness ? { ...row, readiness } : row;
+  return redactPreviewLinksDeep(readiness ? { ...row, readiness } : row);
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

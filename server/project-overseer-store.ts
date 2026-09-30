@@ -5,6 +5,8 @@ import {
   AUTONOMY_LEVELS,
   capProblem,
   CONFIRM_KINDS,
+  CONFIRM_KINDS_BEFORE_KNOWN,
+  type ConfirmKind,
   confirmKindsProblem,
   DEFAULT_CONFIRM_KINDS,
   DEFAULT_AUTONOMY,
@@ -149,16 +151,24 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     watch: typeof raw.watch === "boolean" ? raw.watch : d.watch,
     // Over the maximum still means "as long as allowed"; any other bad value, the default.
     holdMin: typeof raw.holdMin === "number" && Number.isInteger(raw.holdMin) && raw.holdMin > HOLD_MIN_MAX ? HOLD_MIN_MAX : holdProblem(raw.holdMin) === null ? (raw.holdMin as number) : d.holdMin,
-    // An unknown kind (a newer host's) is dropped; anything else unreadable, the default.
-    confirmKinds: Array.isArray(raw.confirmKinds) ? CONFIRM_KINDS.filter((k) => (raw.confirmKinds as unknown[]).includes(k)) : [...d.confirmKinds],
+    // An unknown kind (a newer host's) is dropped; anything else unreadable, the default. A kind added
+    // since the list was saved (not in its confirmKindsKnown) is on, as every kind is by default.
+    confirmKinds: Array.isArray(raw.confirmKinds) ? confirmKindsOf(raw.confirmKinds, raw.confirmKindsKnown) : [...d.confirmKinds],
     extraSystemPrompt: typeof raw.extraSystemPrompt === "string" ? raw.extraSystemPrompt.slice(0, EXTRA_PROMPT_MAX) : "",
   };
+}
+
+/** A saved list, with every kind added since it was saved (per `known`, the kinds it could choose from) turned on. Pure. */
+export function confirmKindsOf(saved: unknown[], known: unknown): ConfirmKind[] {
+  const knew: readonly unknown[] = Array.isArray(known) ? known : CONFIRM_KINDS_BEFORE_KNOWN;
+  return CONFIRM_KINDS.filter((k) => saved.includes(k) || !knew.includes(k));
 }
 
 export const readPoSettings = (p: ProjectOverseerPaths): ProjectOverseerSettings => parsePoSettings(readJson(p.settings));
 
 export function writePoSettings(p: ProjectOverseerPaths, s: ProjectOverseerSettings): ProjectOverseerSettings {
-  writeAtomic(p.settings, `${JSON.stringify(s, null, 2)}\n`);
+  // confirmKindsKnown: the kinds this list could choose from, so a kind added later reads as on.
+  writeAtomic(p.settings, `${JSON.stringify({ ...s, confirmKindsKnown: [...CONFIRM_KINDS] }, null, 2)}\n`);
   return s;
 }
 

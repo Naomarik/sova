@@ -11,6 +11,29 @@ import type { GatheringAbilities } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import type { Autonomy, CodingWorktree, ProjectCodingMode, ProjectOverseerSettings } from "../shared/project-overseer";
 import type { SessionSummary } from "../shared/protocol";
+import type { PreviewView } from "../shared/preview-links";
+
+/** A kept, active preview of the in-tree coding session's app. */
+const PREVIEW_LABEL = "a".repeat(52);
+const PREVIEW: PreviewView = {
+  id: "pv_AAAAAAAAAAAAAAAA",
+  orgId: "org_aaaaaaaa",
+  projectId: "prj_bbbbbbbb",
+  port: 5173,
+  createdAt: "2026-09-30T10:00:00.000Z",
+  expiresAt: "2026-10-01T10:00:00.000Z",
+  createdBy: "session:po-1",
+  state: "active",
+  running: true,
+  target: { kind: "port", port: 5173 },
+  url: `https://${PREVIEW_LABEL}.preview.example.invalid/`,
+  purpose: "The shop for Ana",
+  sessionId: "in-tree",
+  branch: "sova/fix-abc123",
+  sessionFrom: "recorded",
+  sessionTitle: "Worktree",
+  sessionPath: "/s/in-tree.jsonl",
+};
 
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -38,7 +61,7 @@ const person = (id: string, name: string, status: Person["status"] = "active"): 
 });
 
 let n = 0;
-function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; open?: number; builds?: CodingWorktree[]; refuse?: InstanceType<typeof OrgError> } = {}) {
+function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; open?: number; builds?: CodingWorktree[]; refuse?: InstanceType<typeof OrgError>; previews?: PreviewView[]; previewHeld?: boolean } = {}) {
   const calls: string[] = [];
   /** The allowances a chart refused, as the tools told the watch (limit/refused). */
   const limited: string[] = [];
@@ -138,6 +161,16 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     allowance: () => {
       const of = (keys: Record<string, string>) => Object.fromEntries(Object.entries(keys).map(([k, cap]) => [k, { used: 0, max: (settings.caps as unknown as Record<string, number | null>)[cap] ?? null }]));
       return { message: of({ gather: "gatherPerTurn", promote: "promotePerTurn", create: "createPerTurn", prompt: "promptsPerTurn" }), today: of({ gather: "gatherPerDay", promote: "promotePerDay", create: "createPerDay", prompt: "promptsPerDay" }) } as never;
+    },
+    previews: async () => opts.previews ?? [],
+    startPreview: async (input: { session: string; target: { port: number } | { folder: string }; purpose: string; days?: number }) => {
+      calls.push(`preview:${input.session}:${JSON.stringify(input.target)}:${input.purpose}`);
+      if (opts.previewHeld) return { held: { id: "project/org_aaaaaaaa/prj_bbbbbbbb:h7", until: Date.parse("2026-09-30T10:10:00.000Z") } };
+      return { preview: { ...PREVIEW, ...("folder" in input.target ? { target: { kind: "static" as const, folder: input.target.folder } } : {}), purpose: input.purpose, sessionId: input.session } };
+    },
+    turnOffPreview: async (id: string) => {
+      calls.push(`preview-off:${id}`);
+      return { ...PREVIEW, id, state: "off" as const, revokedAt: "2026-09-30T11:00:00.000Z", running: undefined };
     },
     postOwnerUpdate: async (input: { text: string; attended: boolean }) => {
       calls.push("owner-update");
@@ -616,5 +649,67 @@ describe("the chart tools (q2, q9, q10)", () => {
     await assert.rejects(() => f.run("sova_set_state", { session: "item/o/p/g_1", states: [], reason: "r" }), /Give the target states/);
     const out = textOf(await f.run("sova_set_state", { session: "item/o/p/g_1", states: ["asking"], reason: "the operator asked" }));
     assert.equal(out, "item/o/p/g_1 is now in asking.");
+  });
+});
+
+describe("preview links (§app.project-overseer/previews)", () => {
+  const SHAPE = ["v", "id", "url", "purpose", "expiresAt", "orgId", "projectId", "sessionId", "branch", "target", "state", "running", "createdBy"].sort();
+
+  test("sova_previews lists each with its link, what it serves, session and state, in the one fixed shape", async () => {
+    const old: PreviewView = { ...PREVIEW, id: "pv_BBBBBBBBBBBBBBBB", url: null, purpose: null, sessionId: "in-tree", sessionFrom: "worktree", createdBy: "operator", running: false, port: 8731, target: { kind: "port", port: 8731 } };
+    const off: PreviewView = { ...PREVIEW, id: "pv_CCCCCCCCCCCCCCCC", state: "off", revokedAt: "2026-09-30T11:00:00.000Z", running: undefined, target: { kind: "static", folder: "dist" } };
+    const { run } = fake({ previews: [off, old, PREVIEW] });
+    const out = (await run("sova_previews")) as { content: { text: string }[]; details: { v: number; previews: Record<string, unknown>[] } };
+    const t = out.content[0]!.text;
+    const lines = t.split("\n");
+    assert.ok(lines[lines.length - 1]!.includes("pv_CCCCCCCCCCCCCCCC · folder dist"), "active ones first, then the rest");
+    assert.match(t, new RegExp(`pv_AAAAAAAAAAAAAAAA · port 5173 · in-tree "Worktree" on sova/fix-abc123 · "The shop for Ana" · made by you · active, app is running · expires 2026-10-01T10:00:00.000Z · link: https://${PREVIEW_LABEL}\\.preview\\.example\\.invalid/`));
+    assert.match(t, /pv_BBBBBBBBBBBBBBBB · port 8731 · in-tree "Worktree" on sova\/fix-abc123 \(matched by its worktree\) · made by the operator · active, nothing on port 8731 · .* · link: not kept \(shown only when it was made\)/);
+    assert.match(t, /turned off · off since 2026-09-30T11:00:00.000Z/);
+    assert.equal(out.details.v, 1);
+    for (const h of out.details.previews) assert.deepEqual(Object.keys(h).sort(), SHAPE);
+    const byId = Object.fromEntries(out.details.previews.map((h) => [h.id, h]));
+    assert.equal(byId.pv_BBBBBBBBBBBBBBBB!.url, null, "no link kept: null, never guessed");
+    assert.equal(byId.pv_CCCCCCCCCCCCCCCC!.running, null, "running only while active");
+    assert.deepEqual(byId.pv_AAAAAAAAAAAAAAAA, { v: 1, id: PREVIEW.id, url: PREVIEW.url, purpose: "The shop for Ana", expiresAt: PREVIEW.expiresAt, orgId: "org_aaaaaaaa", projectId: "prj_bbbbbbbb", sessionId: "in-tree", branch: "sova/fix-abc123", target: { kind: "port", port: 5173 }, state: "active", running: true, createdBy: "session:po-1" });
+  });
+
+  test("sova_project lists the active ones under Previews", async () => {
+    const { run } = fake({ previews: [PREVIEW, { ...PREVIEW, id: "pv_CCCCCCCCCCCCCCCC", state: "expired" }] });
+    const t = ((await run("sova_project")) as { content: { text: string }[] }).content[0]!.text;
+    assert.match(t, /## Previews[^\n]*\n- pv_AAAAAAAAAAAAAAAA · port 5173/);
+    assert.ok(!t.includes("pv_CCCCCCCCCCCCCCCC"));
+  });
+
+  test("start: one of port and folder, a session, the host's answer in the same shape; the log never holds the link", async () => {
+    const { run, calls, paths } = fake();
+    await assert.rejects(run("sova_preview", { op: "start", session: "in-tree", purpose: "p" }), /Give either port .* or folder/);
+    await assert.rejects(run("sova_preview", { op: "start", session: "in-tree", port: 5173, folder: "dist", purpose: "p" }), /not both/);
+    await assert.rejects(run("sova_preview", { op: "start", port: 5173, purpose: "p" }), /Name the coding session/);
+    const out = (await run("sova_preview", { op: "start", session: "sova://s/in-tree", folder: "dist", purpose: "The shop for Ana" })) as { content: { text: string }[]; details: { v: number; preview: Record<string, unknown> } };
+    assert.deepEqual(calls, ['preview:in-tree:{"folder":"dist"}:The shop for Ana']);
+    assert.ok(out.content[0]!.text.startsWith(`Made a preview link: https://${PREVIEW_LABEL}`));
+    assert.equal(out.details.v, 1);
+    assert.deepEqual(Object.keys(out.details.preview).sort(), SHAPE);
+    assert.deepEqual(out.details.preview.target, { kind: "static", folder: "dist" });
+    const log = readFileSync(paths.actions, "utf8");
+    assert.ok(log.includes("sova_preview"));
+    assert.ok(!log.includes(PREVIEW_LABEL), "the activity log never holds a kept link");
+  });
+
+  test("a held start says so, with the held act's id", async () => {
+    const { run } = fake({ previewHeld: true });
+    const out = (await run("sova_preview", { op: "start", session: "in-tree", port: 5173, purpose: "The shop for Ana" })) as { content: { text: string }[]; details: unknown };
+    assert.match(out.content[0]!.text, /^Held: the preview link "The shop for Ana" waits until 2026-09-30T10:10:00.000Z so the operator can cancel it/);
+    assert.deepEqual(out.details, { v: 1, held: "project/org_aaaaaaaa/prj_bbbbbbbb:h7" });
+  });
+
+  test("off turns one off by id", async () => {
+    const { run, calls } = fake();
+    await assert.rejects(run("sova_preview", { op: "off" }), /Give the id/);
+    const out = (await run("sova_preview", { op: "off", id: "pv_AAAAAAAAAAAAAAAA" })) as { content: { text: string }[]; details: { preview: { state: string; running: null } } };
+    assert.deepEqual(calls, ["preview-off:pv_AAAAAAAAAAAAAAAA"]);
+    assert.equal(out.details.preview.state, "off");
+    assert.equal(out.details.preview.running, null);
   });
 });

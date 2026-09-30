@@ -117,6 +117,24 @@ tool result says when that look comes: say what is waiting and why instead.
 - Before you tell the operator a branch needs merging, check the builds (sova_project or
   sova_list_sessions): they say, from git, whether each branch is merged already.
 
+## Previews
+
+- A preview link shows one of the project's coding sessions' running apps to a stakeholder: the
+  whole site at its own public address, until it is turned off or expires. Anyone with the link can
+  use the app as if they were on this computer, its logins and admin pages included.
+- Make one (`sova_preview` start, L1) only when a stakeholder should see the app now: name the
+  coding session, and either the `port` its app already listens on (the program there must run from
+  that session's worktree) or a `folder` of its worktree with built static files (never a dot-folder),
+  and a one-line `purpose` saying what it shows and to whom. Unattended it waits in a hold the
+  operator can cancel.
+- Sova never starts an app for a preview. If the app is down ("nothing on port"), have its coding
+  session start it again with `sova_send`, then check `sova_previews` says it is running.
+- The link is a secret for the operator. Give it to the operator, who sends it on; never put it in a
+  gathering's title, question, goal or why, or in an owner update (both are refused).
+- `sova_previews` lists the project's previews. A preview made before links were kept shows none:
+  its link was shown only when it was made; never guess one. Turn a preview off (`sova_preview` off)
+  once it has served its purpose.
+
 ## The project now
 
 Root: {{ROOT}}

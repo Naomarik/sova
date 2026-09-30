@@ -15,6 +15,7 @@
     [com.fulcrologic.statecharts.elements :refer [state transition on-entry script]]
     [com.fulcrologic.statecharts.data-model.operations :as ops]
     [sova.org-charts.charts.base :as b]
+    [sova.org-charts.charts.rules.hours :as hours]
     [sova.org-charts.charts.rules.person :as rp]
     [sova.org-charts.charts.rules.refusal :as r]
     [sova.org-charts.engine.dsl :as dsl]))
@@ -155,6 +156,12 @@
       [(person-act :person/edit nil [])
        (person-act :person/revert nil [revert-check])])))
 
+(defn effective-hours
+  "r13: `[effective inherited?]`: their own hours, else the company's (the org's, as last moved), else
+   nil (always in hours). What every act that reaches them reads (exported: `effective-hours`)."
+  [d]
+  [(hours/effective d (:company-hours d)) (hours/inherited? d (:company-hours d))])
+
 (defn- entered [status]
   (on-entry {} (script {:expr (fn [_ data] [(ops/assign :status status)])})))
 
@@ -163,6 +170,14 @@
     (state {:id :person :initial :born}
       (dsl/hold-cancel-correction)
       (b/hold-review)
+      ;; r13: the company's hours (the org's), their default; kept current, and so are the effective ones
+      (on-entry {} (dsl/watch (fn [d] (b/org-sid (:org-id d)))))
+      (transition {:sova/feed :quiet :event :link/moved :cond (b/moved-from? "org")}
+        (script {:expr (fn [_ d] [(ops/assign :company-hours (select-keys (:exported (b/moved d)) [:tz :hours]))])}))
+      (transition {:sova/feed :quiet :cond (fn [_ d] (or (not (contains? d :hours-inherited))
+                                                           (not= [(:effective-hours d) (:hours-inherited d)] (effective-hours d))))}
+        (script {:expr (fn [_ d] (let [[eff inh] (effective-hours d)]
+                                   [(ops/assign :effective-hours eff) (ops/assign :hours-inherited inh)]))}))
       (state {:id :born}
         (on-entry {}
           (script {:expr (fn [_ d] (into [(ops/assign :status (get-in d [:person :status] "active"))]
@@ -230,7 +245,7 @@
    :version  version
    :migrate  {}
    :storage  :portable
-   :exported [:name :decides :referral :status :tz :hours]
+   :exported [:name :decides :referral :status :tz :hours :effective-hours :hours-inherited]
    :acts     acts
    :not-here not-here
    :redact   {:contact :contact}})

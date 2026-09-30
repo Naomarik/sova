@@ -83,12 +83,25 @@
 
 (declare run-due!)
 
+(defn- run-timers!
+  "The engine's `:timer` directives (dsl/timer-at) among those a step added (after the first `n`):
+   cancel the session's timer `id`, then (unless `at` is nil) send `event` at the instant `at`."
+  [{:keys [env queue] :as h} sid n]
+  (let [now  (:now @(:state queue))
+        dirs (drop n (:sova/directives (::wmdm/data-model (get @(:sessions h) sid))))]
+    (doseq [{:keys [op id event at data]} dirs :when (= :timer op)]
+      (sp/cancel! queue env sid id)
+      (when (some? at)
+        (sp/send! queue env {:event event :data (or data {}) :target sid :source-session-id sid :send-id id
+                             :delay (max 0 (- at now))})))))
+
 (defn start!
   "Start session `sid` of `chart` (a registry name) with `data`."
   [{:keys [env sessions charts] :as h} chart sid data]
   (let [wm (sp/start! (::sc/processor env) env (keyword chart) {::sc/session-id sid ::sc/invocation-data (assoc data :now (now h))})]
     (swap! sessions assoc sid wm)
     (swap! charts assoc sid chart)
+    (run-timers! h sid 0)
     (check-problems!)
     (run-due! h)))
 
@@ -113,9 +126,11 @@
       (let [d (merge {:at time} (:data event))]
         (if-let [why (level-refusal h target (:name event) d)]
           (swap! refused conj {:sid target :event (:name event) :sentence why})
-          (let [wm2 (sp/process-event! (::sc/processor env) env wm (evts/new-event (assoc event :data d)))]
+          (let [n   (count (:sova/directives (::wmdm/data-model wm)))
+                wm2 (sp/process-event! (::sc/processor env) env wm (evts/new-event (assoc event :data d)))]
             (swap! delivered conj {:sid target :event (:name event) :data d})
-            (swap! sessions assoc target wm2)))))))
+            (swap! sessions assoc target wm2)
+            (run-timers! h target n)))))))
 
 (defn run-due! [{:keys [queue] :as h}]
   (loop [n 0]

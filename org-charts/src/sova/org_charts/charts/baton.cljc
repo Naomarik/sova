@@ -34,6 +34,7 @@
     [sova.org-charts.charts.rules.baton :as rb]
     [sova.org-charts.charts.rules.levels :as lv]
     [sova.org-charts.charts.rules.person :as rp]
+    [sova.org-charts.charts.rules.reach :as reach]
     [sova.org-charts.charts.rules.refusal :as r]
     [sova.org-charts.engine.dsl :as dsl]))
 
@@ -80,7 +81,8 @@
         n        (inc (count (:handoffs data)))
         id       (or (:offer-id (e data)) (str "off_" (:session-id data) "_" n))
         q        (if (rb/blank? question) (:public-title data) question)
-        offer    {:id id :to (vec targets) :question q :briefing (or briefing "") :state "open" :created-at (b/now-ms data) :n n}]
+        offer    {:id id :to (vec targets) :question q :briefing (or briefing "") :state "open" :created-at (b/now-ms data) :n n
+                  :reach {} :mint? (not (false? (:mint-link (e data)))) :at-once (b/at-once? data)}]
     (into wops
       [(ops/assign :handoffs (conj (vec (:handoffs data)) {:n n :from (from-of data) :to pool :question q :briefing (or briefing "") :at (b/now-ms data) :offer-id id}))
        (ops/assign :offers (conj (vec (map #(if (= "withdrawn" (:state %)) % %) (:offers data))) offer))
@@ -111,6 +113,48 @@
                              (when (and pid (not= pid operator) (not= pid pool) (not (contains? (set (:watching d)) pid)))
                                [(ops/assign :watching (conj (vec (:watching d)) pid))
                                 (ops/assign :sova/directives (conj (vec (:sova/directives d)) {:op :watch :target (b/person-sid (:org-id d) pid)}))])))}))
+
+;; ---- r12: an offer reaches each invitee in their own hours --------------------------------------
+
+(def reach-timer "offer-reach")
+
+(defn hours-ops
+  "Keep the invitees' zone and hours (`{pid {:tz :hours}}`) from person records: the envelope's
+   (`targets` / `target-people`, stamped by the host) or their `link/moved`."
+  [d records]
+  (vec (for [p records :when (and (map? p) (:id p))]
+         (ops/assign [:people-hours (:id p)] (select-keys p [:tz :hours])))))
+
+(defn later-reach?
+  "Reaching after the offer's own step (its act, or the gathering's birth), when no route shows a link."
+  [d]
+  (not (contains? #{nil :baton/offer} (b/evt-name d))))
+
+(defn reach-ops
+  "Bring the current offer's reaching up to date at now (`d` as it will be): reach whoever waiting
+   is in hours (a `mint-link` each, keyed per invitee, unless the offer mints none), and re-arm the
+   one reach timer at the next waiting invitee's window. Held, nobody is reached and the timer stops
+   (rule 12). An offer from before r12 (no `:reach`) is left alone: it reached everyone."
+  [d]
+  (let [o (rb/current-offer d)]
+    (when (and o (contains? o :reach))
+      (let [{:keys [offer reached at]} (reach/step o (:people-hours d) (b/now-ms d) (= "held" (:state o)))
+            d2 (assoc d :offers (mapv #(if (= (:id %) (:id o)) offer %) (:offers d)))]
+        (vec (concat
+          [(ops/assign :offers (:offers d2))]
+          (when (and (:mint? o) (seq reached))
+            [(ops/assign :outbox (into (vec (:outbox d2))
+                                   (for [pid reached]
+                                     ;; via "act": the offer's own step, whose caller shows the link; via "reach": later
+                                     ;; (its timer, a lapse, an hours edit), no caller, so none is minted until the
+                                     ;; operator sends it (coordinator-49)
+                                     (dsl/effect-map :mint-link (fn [_] {:n (:n o) :offer-id (:id o) :person-id pid
+                                                                        :key (str "reach/" (:id o) "/" pid)
+                                                                        :via (if (later-reach? d2) "reach" "act")}) d2))))])
+          (dsl/timer-at-ops d2 reach-timer :offer/reach at {:offer-id (:id o)})))))))
+
+(defn- reach-now [] (script {:expr (fn [_ d] (reach-ops d))}))
+(defn- stop-reaching [] (script {:expr (fn [_ d] (dsl/timer-at-ops d reach-timer :offer/reach nil))}))
 
 (defn- watch-all [pids-fn]
   (script {:expr (fn [_ d] (let [new (remove (set (:watching d)) (remove #{operator pool} (pids-fn d)))]
@@ -188,10 +232,10 @@
      (dsl/act {:sova/feed :feed :event :baton/offer :target :pool :checks offer-checks :cond idle?}
        (revoke-withdrawn)
        (script {:expr (fn [_ d] (let [ev (e d)] (offer-ops d (map :id (:targets ev)) (:question ev) (:briefing ev))))})
+       (script {:expr (fn [_ d] (hours-ops d (concat (:targets (e d)) (:target-people (e d)))))})
        (watch-all #(map :id (:targets (e %))))
-       (offer-entry)
-       (script {:expr (fn [_ d] (when-not (false? (:mint-link (e d)))
-                                  (dsl/effect-ops d (dsl/effect-map :mint-links (fn [_] {:n (count (:handoffs d)) :offer-id (:offer-id d)}) d))))}))]))
+       (offer-entry))]))
+;; (r12: its links are minted per invitee as each is reached, on entering the pool: `reach-ops`)
 
 ;; ---- the person-left cascade -------------------------------------------------------------------
 
@@ -219,7 +263,16 @@
      (raise {:event :person/left :data (fn [_ d] {:person-id (left-pid d)})}))
    (transition {:sova/feed :quiet :event :link/moved :cond (fn [_ d] (= "person" (:chart (b/moved d))))}
      (script {:expr (fn [_ d] (when-let [n (get-in (b/moved d) [:exported :name])]
-                                [(ops/assign [:names (b/last-part (:from (b/moved d)))] n)]))}))])
+                                [(ops/assign [:names (b/last-part (:from (b/moved d)))] n)]))})
+     ;; r12: an invitee's zone and hours; an open offer re-reckons who it reaches, and when (r13: a
+     ;; company-hours edit arrives this way too: org → person's effective hours → here)
+     (script {:expr (fn [env d] (let [pid (b/last-part (:from (b/moved d)))
+                                      ex  (get-in (b/moved d) [:exported])
+                                      ;; r13: their effective hours (own, else the company's), when the person says
+                                      h   (if (contains? ex :effective-hours) (select-keys (:effective-hours ex) [:tz :hours]) (select-keys ex [:tz :hours]))]
+                                  (when (and (some #{pid} (:to (rb/current-offer d))) (not= h (get-in d [:people-hours pid])))
+                                    (into [(ops/assign [:people-hours pid] h)]
+                                          (when (b/in? env :pool) (reach-ops (assoc-in d [:people-hours pid] h)))))))}))])
 
 (defn- cascade-move []
   [(dsl/act {:sova/feed :feed :event :person/left :cond (fn [env d] (and (busy? env d) (left-effect d (:person-id (e d)))))}
@@ -344,7 +397,8 @@
     (if (>= (count targets) 2)
       (let [id (or (:offer-id d) (str "off_" (:session-id d) "_1"))]
         (into base [(ops/assign :handoffs [{:n 1 :from operator :to pool :question q :briefing br :at now :offer-id id}])
-                    (ops/assign :offers [{:id id :to (vec targets) :question q :briefing br :state "open" :created-at now :n 1}])
+                    (ops/assign :offers [{:id id :to (vec targets) :question q :briefing br :state "open" :created-at now :n 1
+                                          :reach {} :mint? (not (false? (:mint-link d))) :at-once (true? (:at-once d))}])
                     (ops/assign :offer-id id)
                     (ops/assign :holder nil)
                     (ops/assign :participants [operator])]))
@@ -362,10 +416,11 @@
       (transition {:sova/feed :feed :event :session/retire :cond (fn [env _] (and (or (b/in? env :done) (b/in? env :closed)) (or (b/in? env :wrapup-done) (b/in? env :wrapup-skipped)))) :target :retired})
       (on-entry {}
         (script {:expr (fn [_ d] (start-ops d))})
+        (script {:expr (fn [_ d] (hours-ops d (:target-people d)))})
         (watch-all (fn [d] (concat (when (:to d) [(:to d)]) (:targets d))))
         ;; the session file (the host creates it; the start's link, unless the caller can't show one)
         (dsl/effect :create-session (fn [d] (select-keys d [:session-id :org-id :project-id :public-title :model :thinking])))
-        (script {:expr (fn [_ d] (when (and (not (false? (:mint-link d))) (not= operator (:holder d)))
+        (script {:expr (fn [_ d] (when (and (not (false? (:mint-link d))) (not= operator (:holder d)) (nil? (:offer-id d)))
                                    (dsl/effect-ops d (dsl/effect-map :mint-links (fn [_] {:n 1 :offer-id (:offer-id d)}) d))))}))
       (dsl/hold-cancel-correction)
       (b/hold-review)
@@ -465,8 +520,16 @@
             (state {:id :with-person})
             (state {:id :with-operator})
             (state {:id :offered :initial :pool}
-              (state {:id :pool})
+              ;; r12: the offer ended (moved on, taken back, done, closed): nobody is reached after
+              (on-exit {} (stop-reaching))
+              (state {:id :pool}
+                ;; open (a new offer, or its lease lapsed): reach whoever is in hours now, re-arm for the rest
+                (on-entry {} (reach-now))
+                (transition {:sova/feed :feed :event :offer/reach :cond (fn [_ d] (= (:offer-id (e d)) (:offer-id d)))}
+                  (reach-now)))
               (state {:id :leased}
+                ;; rule 12: held, reaching pauses (a lapse re-opens it and reaching resumes)
+                (on-entry {} (reach-now))
                 ;; 15 min idle from the later of the holder's message and the reply; never mid-reply
                 (on-entry {} (Send {:id :lease-timer :event :lease/lapse :delayexpr (fn [_ d] (lease-ms d))}))
                 (on-exit {} (cancel {:sendid :lease-timer}))

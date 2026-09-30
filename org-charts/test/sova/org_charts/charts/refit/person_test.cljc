@@ -133,7 +133,7 @@
       (let [z (h/send! y sid :person/edit (assoc op :patch {:tz "" :hours nil}))]
         (is (= "" (:tz (h/data z sid))))
         (is (nil? (:hours (h/data z sid))))))
-    (is (= [:name :decides :referral :status :tz :hours] (:exported person/entry)) "the hours checks read them")))
+    (is (= [:name :decides :referral :status :tz :hours :effective-hours :hours-inherited] (:exported person/entry)) "the hours checks read them")))
 
 (deftest r7-reverting-hours-and-zone
   ;; server-6/ui: "hours — → Mon–Fri 09:00–17:00" (from absent), Revert → it clears (never a 400)

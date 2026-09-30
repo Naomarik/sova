@@ -52,6 +52,7 @@ Start: `{id, name, slug, createdAt, holder: {hostId, hostName, since}}`.
 | event | by | payload | notes / refusals |
 |---|---|---|---|
 | `org/rename` | op | `{name}` | "name must be 1–80 characters" (400) |
+| `org/hours` | op | `{tz?, hours?}` (either; null / "" clears) | r13, the company's working hours (its people's default): "Only the operator sets the company's working hours." (403), then a person's tz/hours sentences (400). Exported `tz, hours`; the route writes the org history row (like About) |
 | `project/add` | op | `{projectId, name, root}` + `invalid` (root rules) | spawns `project/<org>/<projectId>` |
 | `person/add` | op | `{personId, person: PersonInput, byKind?}` + `namesTaken` | `rules/person apply-change` (caps, "{name} is already on the roster." 409); spawns `person` active |
 | `owner/set` | op | `{personId \| null}` + `target` | "Only an active person on the roster can be the owner." (400); same person: nothing; effect `revoke-owner-links {why: owner-changed}` |
@@ -82,7 +83,13 @@ Start: `{orgId, id, person (cleaned), changed [{field,from,to}], by: ChangeBy}` 
 | `person/revert` | op | `{row: {at, field, from, to}}` (read from roster-history.jsonl) | "No such change" 404; creation 409; C6 "{name}'s {field} has changed since then, so reverting this would undo a later change. Revert the latest change instead." (409) |
 
 Effects: `roster-history {personId, lines, by, revertOf?}` (the host appends with a unique `at`),
-`revoke-person-links {personId}` (entry of `left`). Exported: `name, decides, referral, status, tz, hours`.
+`revoke-person-links {personId}` (entry of `left`). Exported: `name, decides, referral, status, tz, hours,
+effectiveHours, hoursInherited`.
+
+r13: the person watches its org (`link/moved` from `org/<org>`: the company's `tz, hours`) and exports
+`effectiveHours` = `rules.hours/effective [person company]` (own when valid, else the company's, else
+null = always in hours) and `hoursInherited` (they are the company's). A baton reads an invitee's
+`effectiveHours` from their `link/moved`, so a company edit reaches every open offer's reach.
 
 r7 working hours: `person/edit {patch {tz, hours}}` (the operator's; history lines like contact, not
 private): `tz` an IANA zone ("" clears), `hours {days [0–6, 0 = Sunday], from "HH:MM", to "HH:MM"}` or
@@ -93,7 +100,8 @@ null (`to` ≤ `from`: overnight). Refusals (400): "tz must be an IANA time zone
 `hoursNow {open, nextOpen?}` reads. Acts that reach a person carry `:hours` (baton `hand-to`,
 `handoff`, `offer`; conflict `reroute`; project `baton/start`; item `gather/start`): the
 engine holds an automatic or unattended one until the window (`wait: "hours"`), the operator's goes at
-once with `offHours`. Several people: it goes when any of them is in hours.
+once with `offHours`. Several people: it goes when any of them is in hours (the offer then reaches each
+invitee in their own hours: r12, baton). The server stamps the EFFECTIVE records (r13).
 
 ## project (`project/<org>/<p>`, portable)
 
@@ -140,8 +148,8 @@ Exported: `paused, rosterActive, archived, looksToday, lastRun, held, reasons, l
 
 Start: BatonSession's fields (`orgId, projectId, sessionId, owner, goal, publicTitle, question, briefing,
 to | targets, model, thinking, messagesMax, abilities, parent, conflict, startedVia, mintLink, opItem,
-names, operatorName, leaseMs`). Effects at birth: `create-session`, `mint-links {n, offerId?}` (unless
-`mintLink: false` or to the operator).
+names, operatorName, leaseMs, targetPeople`). Effects at birth: `create-session`, `mint-links {n}` to a
+person (unless `mintLink: false` or to the operator); an offer mints per invitee as each is reached (r12).
 
 | event | by | payload + envelope | refusals (today's) |
 |---|---|---|---|
@@ -149,17 +157,21 @@ names, operatorName, leaseMs`). Effects at birth: `create-session`, `mint-links 
 | `baton/goal-done` | model | `{summary}` | "Give a summary of what was established.", "This session is already {state}." |
 | `baton/record-decision` | model | `{decisionId, area, areaKey, ownerArea, statement, quote, entryId, markerId}` + `ownerAreas` | "Give the area, the statement and their exact words.", owner area; spawns `decision`; a settle session sends `reconcile/request {delayMs: 2000, by: sova}` |
 | `baton/propose` | model | `{personId, name, role, contact, why, quote, decides?, same}` + `namesTaken` | the referral's name and completeness refusals; spawns a proposed `person` |
-| `baton/message` | person · operator | `{from, active}` | "It's not your turn anymore." (`taken`), "Someone else is answering right now." (`taken`), budget (`budget`), "You are no longer taking part…" |
+| `baton/message` | person · operator | `{from, active}` | "It's not your turn anymore." (`taken`), "Someone else is answering right now." (`taken`), "This offer has not reached you yet." (`taken`, r12: an invitee outside their hours), budget (`budget`), "You are no longer taking part…" |
+| `offer/reach {offerId}` | the chart's own timer (`offer-reach`, r12) | | reaches whoever waits and is in hours now; re-arms at the next window; ignored for another offer |
 | `message/refused` | host | | the runtime refused it after all: undone (503 busy counts nothing) |
-| `baton/take-back`, `baton/handoff {target, question, briefing}`, `baton/offer {targets, question, briefing, offerId}`, `baton/withdraw` | op (GO: card) | | while a reply runs: effect `stop-reply`, the move waits for `reply/ended` and is checked again |
+| `baton/take-back`, `baton/handoff {target, question, briefing}`, `baton/offer {targets, question, briefing, offerId}` (+ `targetPeople`), `baton/withdraw` | op (GO: card) | | while a reply runs: effect `stop-reply`, the move waits for `reply/ended` and is checked again |
 | `baton/close` | op · overseer (L1 `sova_close_gathering`, held) · system · chart (the r3 move) | `{reason, ownerProject}` | overseer's order: reason, own, settle, ended, wrote |
 | `baton/extend {more}` (the route's `by`; `by` is the envelope's actor), `baton/abilities {abilities}`, `baton/hide {hidden}`, `baton/wrapup-retry` | op | | |
 | `budget/recount {n}` | host | | never raises |
 | `reply/starting`, `reply/writing`, `reply/ended` | host (chat layer) | | |
 | `wrapup/finished {applied, refused}`, `wrapup/stopped {detail}` | host | | invocation `:sova/wrapup {sessionId}` |
 
-Effects: `baton-entry {type: handoff|offer|lease|done|proposal, …}` (the transcript entry), `mint-link`,
-`mint-links`, `revoke-links {all|offerId, why}`, `stop-reply`.
+Effects: `baton-entry {type: handoff|offer|lease|done|proposal, …}` (the transcript entry), `mint-link
+{n, personId}` (a hand-off) or `{n, offerId, personId, key: "reach/<offerId>/<personId>" (the host sees it as `chartKey`)}` (an offer's
+invitee, once, when reached: r12; `via: "act"` in the offer's own step, whose caller shows the link, or
+`via: "reach"` after it, by its timer, a lapse or an hours edit: nothing is minted until the operator sends it), `mint-links {n}`, `revoke-links {all|offerId, why}`, `stop-reply`.
+An offer's `reach {personId {state: waiting|reached, at?, next?}}` is in `offers[]` (exported).
 Exported: `course, holder, needsYou, offerId, offers, wroteAt, owner, conflict, decisions, publicTitle,
 budget, hiddenFromOwner, wrapup, handoffs, participants, reply, createdAt, closedAt`.
 

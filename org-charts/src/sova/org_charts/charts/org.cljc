@@ -18,6 +18,7 @@
     [com.fulcrologic.statecharts.data-model.operations :as ops]
     [sova.org-charts.charts.base :as b]
     [sova.org-charts.charts.person :as person]
+    [sova.org-charts.charts.rules.hours :as hours]
     [sova.org-charts.charts.rules.levels :as lv]
     [sova.org-charts.charts.rules.person :as rp]
     [sova.org-charts.charts.rules.refusal :as r]
@@ -106,6 +107,25 @@
    (owner-set-act :owner-set)
    (owner-set-act :owner-none)])
 
+;; ---- company hours (r13) -------------------------------------------------------------------------------
+
+(defn hours-check
+  "The company's zone and hours: the operator's, validated as a person's (same sentences)."
+  [d]
+  (let [e (b/evt d)]
+    (cond
+      (not (b/operator-act? d)) (r/refuse 403 "Only the operator sets the company's working hours.")
+      (and (contains? e :tz) (hours/tz-problem (:tz e))) (r/refuse 400 (hours/tz-problem (:tz e)))
+      (and (contains? e :hours) (hours/hours-problem (:hours e))) (r/refuse 400 (hours/hours-problem (:hours e))))))
+
+(defn hours-ops
+  "Set (or, with null / \"\", clear) what the event names; people without hours of their own use them."
+  [d]
+  (let [e (b/evt d)]
+    (cond-> []
+      (contains? e :tz) (conj (ops/assign :tz (when-not (str/blank? (:tz e)) (:tz e))))
+      (contains? e :hours) (conj (ops/assign :hours (:hours e))))))
+
 ;; ---- births -------------------------------------------------------------------------------------------
 
 (defn project-data [data]
@@ -120,6 +140,10 @@
 
       (dsl/act {:sova/feed :feed :event :org/rename :checks [name-check]}
         (script {:expr (fn [_ d] [(ops/assign :name (str/trim (:name (b/evt d))))])}))
+
+      ;; r13: the company's working hours (exported: its people's default, read by their charts)
+      (dsl/act {:sova/feed :feed :event :org/hours :checks [invalid hours-check]}
+        (script {:expr (fn [_ d] (hours-ops d))}))
 
       ;; A project: the host checked its root (not a workspace, not inside one, not holding one,
       ;; not in Sova's state; realpath) and stamps the refusal as `invalid`.
@@ -156,6 +180,7 @@
 
 (def acts
   {:org/rename   {:needs nil}
+   :org/hours    {:needs nil}
    :project/add  {:needs nil}
    :person/add   {:needs nil}
    :owner/set    {:needs nil}
@@ -168,6 +193,6 @@
    :version  version
    :migrate  {}
    :storage  :portable
-   :exported [:name :owner :owner-cleared :holder]
+   :exported [:name :owner :owner-cleared :holder :tz :hours]
    :acts     acts
    :not-here not-here})

@@ -40,6 +40,7 @@
    ["baton" ":course-born" [] "[:with-operator]" 0] :feed
    ["baton" ":course-born" [] "[:with-person]" 0] :feed
    ["baton" ":done" [":baton/close"] "[:closed]" 0] :feed
+   ["baton" ":pool" [":offer/reach"] "[]" 0] :feed
    ["baton" ":leased" [":baton/message"] "[:leased]" 0] :feed
    ["baton" ":leased" [":lease/lapse"] "[:pool]" 0] :feed
    ["baton" ":leased" [":lease/renew"] "[:leased]" 0] :quiet
@@ -281,6 +282,7 @@
    ["org" ":org" [":hold/cancel"] "[]" 0] :correction
    ["org" ":org" [":holder/claim"] "[]" 0] :quiet
    ["org" ":org" [":holder/release"] "[]" 0] :quiet
+   ["org" ":org" [":org/hours"] "[]" 0] :feed
    ["org" ":org" [":org/rename"] "[]" 0] :feed
    ["org" ":org" [":person/add"] "[]" 0] :feed
    ["org" ":org" [":project/add"] "[]" 0] :feed
@@ -317,6 +319,8 @@
    ["person" ":left" [":person/revert"] "[:proposed]" 0] :feed
    ["person" ":left" [":person/revert"] "[]" 0] :feed
    ["person" ":person" [":hold/cancel"] "[]" 0] :correction
+   ["person" ":person" [] "[]" 0] :quiet
+   ["person" ":person" [":link/moved"] "[]" 0] :quiet
    ["person" ":proposed" [":person/approve"] "[:active]" 0] :feed
    ["person" ":proposed" [":person/decline"] "[:left]" 0] :feed
    ["person" ":proposed" [":person/edit"] "[:active]" 0] :feed

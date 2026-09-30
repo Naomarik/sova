@@ -5,6 +5,7 @@
    sentence is today's."
   (:require
     [clojure.string :as str]
+    [sova.org-charts.charts.rules.reach :as reach]
     [sova.org-charts.charts.rules.refusal :as r]))
 
 (def operator "operator")
@@ -139,9 +140,12 @@
       (ended? data) (r/refuse 409 (str "This conversation is " (course data) "."))
       (and (not= from operator) (not active)) (r/refuse 409 "You are no longer taking part in this conversation." :code "gone")
       :else
-      (let [claim? (and o (= "open" (:state o)) (not= from operator) (some #{from} (:to o)))
+      (let [claim? (and o (= "open" (:state o)) (not= from operator) (some #{from} (:to o)) (reach/may-claim? o from))
             holder (if claim? from (:holder data))]
         (cond
+          ;; r12: an invitee the offer has not reached (outside their hours) cannot claim it
+          (and o (not= from operator) (some #{from} (:to o)) (not (reach/may-claim? o from)))
+          (r/refuse 409 "This offer has not reached you yet." :code "taken")
           (and claim? (budget-spent? data)) (r/refuse 409 "This conversation has reached its message limit. The operator has been told." :code "budget")
           (not= holder from)
           (cond

@@ -142,9 +142,10 @@
   [data]
   (let [e (b/evt data)]
     (merge (select-keys e [:to :public-title :goal :question :briefing :model :thinking :messages-max :abilities
-                           :targets :op-item :parent :mint-link :started-via :lease-ms :operator-name :offer-id :names])
+                           :targets :op-item :parent :mint-link :started-via :lease-ms :operator-name :offer-id :target-people :names])
       {:org-id (:org-id data) :project-id (:id data) :session-id (:session-id e)
        :owner (if (contains? #{"overseer" "chart"} (some-> (:by e) name)) {:overseer-of (:id data)} "operator")
+       :at-once (b/at-once? data)
        :created-at (b/now-ms data)})))
 
 (defn build-data [data]

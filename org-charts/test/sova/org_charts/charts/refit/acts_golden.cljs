@@ -45,6 +45,7 @@
    ["item" ":item/hold"] {}
    ["item" ":item/resume"] {}
    ["org" ":hold/cancel"] {:correction true, :needs "L0"}
+   ["org" ":org/hours"] {}
    ["org" ":org/rename"] {}
    ["org" ":owner/set"] {}
    ["org" ":person/add"] {}

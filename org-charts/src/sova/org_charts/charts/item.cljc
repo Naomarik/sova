@@ -134,10 +134,11 @@
 
 (defn baton-start-data [d]
   (let [ev (e d)]
-    (merge (select-keys ev [:to :targets :public-title :goal :question :briefing :model :thinking :messages-max :abilities :names :operator-name :lease-ms :offer-id])
+    (merge (select-keys ev [:to :targets :public-title :goal :question :briefing :model :thinking :messages-max :abilities :names :operator-name :lease-ms :offer-id :target-people])
       {:org-id (:org-id d) :project-id (:project-id d) :session-id (:session-id ev)
        :owner (if (b/operator-act? d) "operator" {:overseer-of (:project-id d)})
        :mint-link (b/operator-act? d)
+       :at-once (b/at-once? d)
        :created-at (b/now-ms d)})))
 
 (defn- started-noted

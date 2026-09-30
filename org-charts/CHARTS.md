@@ -47,8 +47,24 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
   `rules/hours` `next-window` (pure; DST both ways, overnight; JVM + Intl), `reach-window` and
   `reach-times` (each invitee's own reach time, for per-invitee delivery); `:hours b/hours-window` on
   baton `hand-to` `handoff` `offer`, conflict `reroute`, project `baton/start`, item `gather/start` (the
-  host stamps tz/hours on `target`/`targets`, an offer's invitees on `target-people`). An offer opens at
-  its earliest invitee's window, (A), pending q15. Tests: `hours_test`, `holds_test` r7.
+  host stamps tz/hours on `target`/`targets`, an offer's invitees on `target-people`). Tests: `hours_test`,
+  `holds_test` r7.
+- **r12 offers (q15 = C)**: the offer opens at its first invitee's window (the act's `:hours` wait, as
+  above); then `rules/reach` `step` reaches each invitee only in their own hours (no hours set: always).
+  The offer's `:reach {pid {:state waiting|reached :at :next}}`, the invitees' `:people-hours` (from the
+  envelope's records and their `link/moved`), ONE re-armed timer `offer-reach` (`dsl/timer-at`) at the
+  next waiting window; entering `pool` reaches (a new offer, a lapse), `offer/reach` fires it, an
+  invitee's hours edit re-reckons; a `mint-link {offer-id person-id n key}`
+  per invitee as reached, keyed `reach/<offer>/<pid>` (`via "act"` in the offer's own step, `via "reach"` after it) (no `mint-links` for an offer; an offer the operator makes, or one in a turn they started, reaches everyone at once: `:at-once`). Only the reached may claim ("This offer has not
+  reached you yet."). Rule 12: `leased` pauses it (timer stopped, nobody reached); a lapse resumes it;
+  the offer ending (`offered` exit) stops it for good. Tests: `reach_test` (scope tests 1–8, 12),
+  `baton-matrix-an-offer-in-hours`.
+- **r13 company hours (q16)**: org `org/hours {tz hours}` (operator only, a person's validation;
+  exported); each person watches its org and exports `effective-hours` (`rules/hours effective`: own,
+  else the company's, else nil = always in hours) and `hours-inherited` (one quiet eventless transition
+  keeps them current); a baton re-reckons an open offer's reach from an invitee's `effective-hours`, so
+  a company edit re-arms reach timers; hours waits are re-armed by the host (`sova/rewindow`, engine).
+  Looks and held acts that reach nobody read no hours. Tests: `company_hours_test`.
 - **r8 / q12 review**: `:confirm-kind` on every held act (F12; `base/start-kind`: "offer" for ≥2
   targets); `b/hold-review` on each chart with held acts: `hold/approve` (approve early, L0, reason) and,
   on `hold/waiting`, a soon `hold/review` reason to the project's watch, naming the hold as

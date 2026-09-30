@@ -79,7 +79,8 @@
      "^It is already (done|closed)\\.$" "^Someone it went to has already written in it\\.$"
      "^Give a summary of what was established\\.$" "^by must be a whole number from 1 to 1000$"
      "^A conversation's limit is at most 1000 messages \\(it is \\d+ now\\)\\.$" "^You are no longer taking part in this conversation\\.$"
-     "^Someone else is answering right now\\.$" "^It's not your turn anymore\\.$" "^.* holds the baton\\. Take it back to write\\.$"
+     "^Someone else is answering right now\\.$" "^It's not your turn anymore\\.$" "^This offer has not reached you yet\\.$" "^.* holds the baton\\. Take it back to write\\.$"
+     "^Only the operator sets the company's working hours\\.$" "^tz must be an IANA time zone, like Europe/Istanbul$"
      "^The baton is offered to people right now\\. Take it back to write\\.$" "^Give the area, the statement and their exact words\\.$"
      "^\".*\" is not an owner area\\. Use one of: .* or \"none\"\\.$" "^The wrap-up is already running\\.$"
      "^A reply is running in this session\\. Retry when it finishes\\.$" "^Only a wrap-up that stopped can be retried\\.$"
@@ -106,7 +107,7 @@
 ;; to, watches or drives (what it spawns is real, not absorbed). Anything else, a malformed id
 ;; included, fails its cell.
 (def worlds
-  {"person"     #{}
+  {"person"     #{"org/o1"}
    "org"        #{"person/o1/p1"}
    "residence"  #{"org/o1"}
    "project"    #{"person/o1/p1"}
@@ -144,7 +145,10 @@
     (clean! "person"
       (run "person" "person/o1/p1"
         {:starts [(person "active" {}) (person "proposed" {:referral referral})]
-         :acts [[:person/edit {:patch {:role "Boss"}}] [:person/edit {:patch {:status "left"}}] [:person/edit {:patch {:status "active"}}]
+         ;; r13: the company's hours come and go (the effective ones follow)
+         :drive [(moved "org" "org/o1" [:org :owner-none] {:name "Acme" :tz "UTC" :hours {:days [1 2 3 4 5] :from "09:00" :to "17:00"}})
+                 (moved "org" "org/o1" [:org :owner-none] {:name "Acme"})]
+         :acts [[:person/edit {:patch {:role "Boss"}}] [:person/edit {:patch {:tz "Europe/Istanbul" :hours {:days [1] :from "09:00" :to "17:00"}}}] [:person/edit {:patch {:status "left"}}] [:person/edit {:patch {:status "active"}}]
                 [:person/edit {:patch {:status "proposed" :referral referral}}] [:person/edit {:patch {:language "es-CO"}}]
                 [:person/edit {:patch {:name "Bob"} :names-taken ["bob"]}] [:person/approve {}] [:person/decline {}] [:person/leave {}]
                 [:person/revert {:row {:at 1 :field "role" :from "X" :to "R"}}] [:person/revert {:row {:at 2 :field "status" :from "left" :to "active"}}]
@@ -156,7 +160,8 @@
       {:starts [{:id "o1" :name "Acme"}]
        :drive [(moved "person" "person/o1/p1" [:person :left] {:name "Ana"})]
        :acts [[:owner/set {:person-id "p1" :target {:status "active"}}] [:owner/set {:person-id nil}] [:owner/set {:person-id "p2" :target {:status "left"}}]
-              [:org/rename {:name "New"}] [:org/rename {:name ""}] [:project/add {:project-id "pr9" :name "P" :root "/r"}]
+              [:org/rename {:name "New"}] [:org/rename {:name ""}]
+              [:org/hours {:tz "UTC" :hours {:days [1 2 3 4 5] :from "09:00" :to "17:00"}}] [:org/hours {:tz "" :hours nil}] [:org/hours {:tz "Mars/Olympus"}] [:project/add {:project-id "pr9" :name "P" :root "/r"}]
               [:person/add {:person-id "p9" :person {:name "Cy"} :names-taken []}] [:person/add {:person-id "p9" :person {:name "Ana"} :names-taken ["ana"]}]]})))
 
 (deftest residence-matrix
@@ -198,13 +203,14 @@
 (def baton-start {:org-id "o1" :project-id "pr1" :session-id "s1" :public-title "T" :goal "G" :owner {:overseer-of "pr1"}
                   :names names :operator-name "Omar" :messages-max 2})
 
-(defn- baton-matrix [label start]
+(defn- baton-matrix [label start & [more-drives]]
   (let [ana {:id "p1" :name "Ana" :status "active"} bob {:id "p2" :name "Bob" :status "active"}]
     (clean! label
       (run "baton" "baton/o1/s1"
         {:starts [start]
-         :drive [[:reply/writing {}] [:reply/ended {}] [:fire 900000] (moved "person" "person/o1/p1" [:person :left] {:name "Ana"})
+         :drive (into [[:reply/writing {}] [:reply/ended {}] [:fire 900000] (moved "person" "person/o1/p1" [:person :left] {:name "Ana"})
                  [:wrapup/finished {}] [:wrapup/stopped {:detail "x"}]]
+                (vec more-drives))
          :acts [[:baton/hand-to {:target bob :chosen true :question "Q"}] [:baton/hand-to {:target {:id "operator"} :question "Q"}]
                 [:baton/goal-done {:summary "S"}] [:baton/message {:from "p1" :active true}] [:baton/message {:from "p2" :active true}]
                 [:baton/message {:from "operator"}] [:baton/take-back {}] [:baton/handoff {:target bob :question "Q"}]
@@ -220,6 +226,16 @@
 (deftest baton-matrix-to-a-person (baton-matrix "baton, to a person" (assoc baton-start :to "p1")))
 (deftest baton-matrix-to-the-operator (baton-matrix "baton, to the operator" (assoc baton-start :to "operator")))
 (deftest baton-matrix-an-offer (baton-matrix "baton, an offer to a pool" (assoc baton-start :targets ["p1" "p2"])))
+(deftest baton-matrix-an-offer-in-hours
+  ;; r12: the generator's clock is 1970-01-01 00:16:40 UTC; Bo's window opens at 01:00 (a reach timer),
+  ;; and his hours change while he waits (re-armed, or reached at once when cleared)
+  (let [bo-hours {:days [0 1 2 3 4 5 6] :from "01:00" :to "02:00"}]
+    (baton-matrix "baton, an offer reaching each invitee in their hours (r12)"
+      (assoc baton-start :targets ["p1" "p2"] :target-people [{:id "p1" :name "Ana" :status "active"}
+                                                             {:id "p2" :name "Bob" :status "active" :tz "UTC" :hours bo-hours}])
+      [[:fire 2700000]
+       (moved "person" "person/o1/p2" [:person :active] {:name "Bob" :tz "UTC" :hours (assoc bo-hours :from "03:00")})
+       (moved "person" "person/o1/p2" [:person :active] {:name "Bob"})])))
 (deftest baton-matrix-no-link (baton-matrix "baton, no link minted" (assoc baton-start :to "p1" :mint-link false)))
 (deftest baton-matrix-a-settle-session
   (baton-matrix "baton, a conflict's settle session" (assoc baton-start :to "p1" :mint-link false :conflict {:id "cf1" :area "A"})))

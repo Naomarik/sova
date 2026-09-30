@@ -90,6 +90,20 @@
       [(instant-of tz (+ d (* from minute-ms)))
        (instant-of tz (+ d (if (<= to from) day-ms 0) (* to minute-ms)))])))
 
+(defn- own-hours? [{:keys [tz hours]}] (and (valid-zone? tz) (map? hours) (nil? (hours-problem hours))))
+
+(defn effective
+  "r13: the working hours an act that reaches this person reads: their own `{:tz :hours}` when set
+   (valid), else the company's (the org's) when set, else nil (always in hours, as today)."
+  [person company]
+  (cond
+    (own-hours? person) (select-keys person [:tz :hours])
+    (own-hours? company) (select-keys company [:tz :hours])
+    :else nil))
+
+(defn inherited? "Their effective hours are the company's." [person company]
+  (and (not (own-hours? person)) (own-hours? company)))
+
 (defn next-window
   "When an act that reaches this person may go: nil when they have no zone or hours (as today) or
    `now` is inside a window; else the instant (ms) their next window opens."

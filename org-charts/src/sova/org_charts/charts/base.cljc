@@ -27,6 +27,12 @@
 
 (defn operator-act? [data] (= "operator" (by data)))
 
+(defn at-once?
+  "An act that reaches people at once, whatever their hours (r7, r12 clarification): the operator's
+   own click, or an overseer turn the operator started (attended)."
+  [data]
+  (or (operator-act? data) (true? (:attended (evt data)))))
+
 (defn in?
   "The session is in state `id` (its configuration, as the data model's `In` reads it)."
   [env id]

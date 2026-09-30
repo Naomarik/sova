@@ -26,7 +26,7 @@ relative to the session's cwd.
 | `readOnlyWithinWritable` | Paths inside a writable root that stay read-only (git hooks and config: code that would run later outside the sandbox). pi's agent dir and this directory are always read-only. |
 | `proxy.allow` | Hosts the sandbox may reach through its HTTP/CONNECT proxy; `*.example.com` matches subdomains. Everything else is refused. |
 | `env.allow` | Extra environment variable names passed into the sandbox (`NAME` or `PREFIX*`). Everything not on the built-in allowlist is dropped. Adding a name is a loosening. |
-| `acceptPartial` | Let unattended workers start when enforcement is only `partial` (for example Claude Code workers, whose Write/Edit the CLI's sandbox does not confine). |
+| `acceptPartial` | Let unattended workers, pi or Claude Code, start when the backend's probe reports enforcement as only `partial`. A Claude Code worker runs whole inside this same sandbox under this same policy, with the CLI's own sandbox off. |
 
 A project may carry `<cwd>/.sova/sandbox.json`, which can only **tighten**: `level:
 "read-only"`, more `hidden` or `readOnlyWithinWritable` entries, a subset of `writable`,

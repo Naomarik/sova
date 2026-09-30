@@ -144,8 +144,9 @@ Claude defaults:
   rejection, or a displayed-dialog timeout denies the operation.
 - User/project/local settings and ambient MCP configuration are not inherited
   (`--setting-sources ""`, `--strict-mcp-config`). Normal Claude project
-  instructions remain available. These workers are **not sandboxes** and share
-  host filesystem permissions.
+  instructions remain available. Without Sova's sandbox these workers are **not
+  sandboxes** and share host filesystem permissions; under it they are confined
+  whole (see **Under the sandbox**).
 - MCP servers: the manager may pass `mcpServers` (team members get the
   subagents `team` server, see the subagents README). The runner writes them to
   a private 0600 `mcp.json` beside the system-prompt file, passes it with
@@ -275,11 +276,57 @@ Protocol behavior is version-sensitive; live probes used Claude Code 2.1.276 and
 2.1.277.
 See [docs/protocol-probes.md](docs/protocol-probes.md).
 
+## Under the sandbox
+
+When the parent's sandbox is on, or the worker starts in a tracked worktree with it off, the
+subagents spawner gets `{kind: "confine", scope, module}` from the sandbox's `workerLaunch` and
+passes it in as the runner's `confine` option (`ClaudeConfine`). The runner's single `launch()`
+chokepoint then wraps EVERY launch (start, acquire, relocate, failover) with the sandbox's
+`confineLaunch`, so the CLI, its Bash, its file tools and every MCP server it starts run inside the
+sandbox's own backend under the policy a pi worker would get there. `confined-launch.ts` holds the
+Claude half and no policy: it turns the worker and its login into the sandbox's plain `needs`.
+
+- Claude Code's own sandbox is off (`{"sandbox":{"enabled":false}}` merged into `--settings`), and
+  the permission mode stays `bypassPermissions` unless the spawn asks for another.
+- Private config dir `<agentDir>/sova/sandbox/claude/<parent session>-<worker id>/`, 0700, is
+  `CLAUDE_CONFIG_DIR` inside. Its `projects/<cwd slug>` links to that slug folder of the login's
+  (shared) `projects/`, which is the only writable part of it, so transcripts land where every
+  reader looks. `CLAUDE.md`, `agents`, `commands`, `skills` and `plugins` link to the login's,
+  read-only. The dir is kept across resumes. The subagents session-start sweep removes it once it
+  has been idle for 24 h and its owner session's file is deleted, or the worker's record is gone.
+  Archiving keeps it.
+- Token: at every launch `accounts.ts` `freshAccessToken` reads the login's ACCESS token only
+  (`accessTokenFor`, never the refresh token). With under 60 min left it first runs
+  `refreshLogin`: the CLI unconfined on that login, with the discovery argv and one `initialize`
+  (no model call). The token goes in on fd 3 (`CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR=3`, probed
+  with CLI 2.1.282), never on argv or in any environment. Credential variables and the login's
+  `CLAUDE_CONFIG_DIR` are dropped from the source environment. bwrap's own spawn environment
+  keeps `CLAUDE_CONFIG_DIR=<login dir>`, so the pool's `/proc/<pid>/environ` lookup still counts
+  the worker on its login.
+- A 401 in a confined worker refreshes that login once and resumes on it with `--resume` (a
+  transcript line says so). Only a second 401 goes to the normal auth failover.
+- Writable besides the policy's roots: the private dir, its transcript slug folder, the team
+  mailbox, and with spec on its own hook state (`<agentDir>/spec-hooks/workers/<key>/`) and ledger
+  file (`mode/spec-guard.ts` `workerLedgerPath`, read by the parent's spec mode). The proxy is the
+  worker's own, and also allows `api.anthropic.com`; under `read-only` that is its only host.
+- Hosted workers: the host process (`subagents/host.ts`) reads the token and calls
+  `confineLaunch` itself, owning the worker's proxy and its tmp (`<worker dir>/tmp`). Inline
+  workers' tmp is released with `releaseWorkerTmp(scope)` when they close.
+- Launch gate (`confinedVersionProbe`, runner option `launchProbe`, darwin by default): before
+  the first confined launch of an executable in a process, `claude --version` runs through the
+  same `confineLaunch`, with no token. Only a pass is cached; a failure refuses the spawn.
+- Transcript lines: once, at the first confined launch, `[sandbox: confined — the session's
+  sandbox]` (`…, narrowed to <root>` in a tracked worktree), or `[sandbox: confined — write-only
+  to <root>]`; and `[sandbox: refused — <reason>]` before a refused launch fails the worker. Tool
+  denials reach the model raw (EROFS/EACCES).
+- Not wrapped: the chat provider (Claude as a pi session's model), whose CLI runs with
+  `--tools ''` and only calls pi's own tools, which pi's sandbox confines.
+
 ## Spec hooks
 
 `spec-hooks.ts` is the worker half of the spec guard (`mode/spec-guard.ts`). The subagents spawn
 path installs it for code-writing workers of a spec-on session, as `hooks` in the one `--settings`
-JSON (`withClaudeSettings` merges into the sandbox's settings; flag settings, hooks included, apply
+JSON (`withClaudeSettings` merges them into the worker's settings; flag settings, hooks included, apply
 under `--setting-sources ""`, probed with CLI 2.1.282). Each hook is `node spec-hooks.ts
 <turn|post|stop> --core <spec/core> --state <dir> [--ledger <file>]`, a fresh process per event with
 plain-JSON state per Claude session:

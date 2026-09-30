@@ -156,6 +156,12 @@
 
 (def gather-cap (lv/cap-check "gather" (constantly 1) b/evt))
 (def create-cap (lv/cap-check "create" (constantly 1) b/evt))
+(def prompt-cap (lv/cap-check "prompt" (constantly 1) b/evt))
+
+(defn root-prompt-check
+  "sova_send to a root coding session: the text (the session's own checks come as `invalid`)."
+  [d]
+  (when (lv/blank? (:text (b/evt d))) (r/refuse 400 "text must not be blank.")))
 
 
 (def chart
@@ -197,6 +203,12 @@
       (dsl/act {:sova/feed :feed :event :build/start :checks [not-archived invalid gap-none-build-check create-cap]}
         (dsl/spawn {:chart "build" :link :project :id (fn [d] (b/build-sid (:org-id d) (:id d) (:session-id (b/evt d)))) :data build-data})
         (b/ledger :ledger/take "create" (constantly 1)))
+      ;; sova_send to a coding session under the project root that is not a build (a build's prompt
+      ;; is its own chart's build/prompt): L3, a prompt, held when unattended; the host's `invalid`
+      ;; carries the session's checks (archived, a terminal holds it, delivery)
+      (dsl/act {:sova/feed :feed :event :project/prompt :checks [invalid root-prompt-check prompt-cap]}
+        (dsl/effect :prompt (fn [d] (select-keys (b/evt d) [:session-id :text :delivery])))
+        (b/ledger :ledger/take "prompt" (constantly 1)))
 
       (parallel {:id :regions}
         (state {:id :shelf :initial :active}
@@ -284,6 +296,8 @@
                        :what (fn [d] (str "A gathering session \"" (:public-title (b/evt d)) "\""))}
    :build/start       {:needs "L3" :tool "sova_create_session" :code-facing true :counts "create" :hold true :confirm-kind "build"
                        :what (fn [d] (str "A coding session \"" (or (:title (b/evt d)) "untitled") "\""))}
+   :project/prompt    {:needs "L3" :tool "sova_send" :code-facing true :counts "prompt" :hold true :confirm-kind "prompt"
+                       :what (fn [d] (str "A prompt to \"" (or (not-empty (:title (b/evt d))) (:session-id (b/evt d))) "\""))}
    :owner-update/post {:needs "L1" :tool "sova_owner_update" :people-facing true :hold true :confirm-kind "owner-update"
                        :what (fn [_] "An owner update")}
    :hold/cancel       {:needs "L0" :correction true}

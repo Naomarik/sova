@@ -27,21 +27,36 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
 ## How the rulings land
 
 - **q2 / r3 drive**: `item` region `drive` (eventless, each once per key, at the level in force read
-  from the watched `watch` session): L1 `reconcile/request` when a gathering ended with pending
-  decisions; L2 `decision/promote` of in-area drafted decisions; L3 `build/start` with
-  `rules/item build-prompt` once every live decision is promoted, none built, no build; L1 a planned
-  gathering (`gather/plan`, filed at L0) once, never after an attempt that answered nothing; L1
-  `baton/close` of an own unwritten gathering once a newer one to the same person is open. All go
-  through `dsl/drive` (by chart) and so through every guard and the hold.
+  from the watched `watch` session): L2 `decision/promote` of in-area drafted decisions; L3
+  `build/start` with `rules/item build-prompt` once every live decision is promoted, none built, no
+  build; L1 a planned gathering (`gather/plan`, filed at L0) once, never after an attempt that
+  answered nothing; L1 `baton/close` of an own unwritten gathering once a newer one to the same
+  person is open. The L1 `reconcile/request` when a gathering ended with pending decisions is the
+  baton's own drive (`baton` `reconcile-when-ended`, F8a), not the item's. All go through `dsl/drive`
+  (by chart) and so through every guard and the hold.
 - **q7**: `project` `build/start` (gap none) refuses an unattended overseer (`gap-none-build-check`);
   `item` `build/start` needs promoted, not-built decisions (`decisions-check`; narrowing only).
 - **q9 / r5 corrections**: `hold/cancel` (L0, every chart), item `correct/reopen`, `correct/skip-stall`,
   `correct/relink` (L1), reconciler `correct/clear-failed` (L1), build `correct/merged` (L2); each a
   `dsl/correction` (reason required unless the operator's). Free set-state is the engine's.
 - **q10 / r4 / r6 hold**: acts with `:hold true` in the registry: person approve/decline, project
-  `baton/start` · `build/start` · `owner-update/post`, baton `close`, reconciler `decision/promote`, item
+  `baton/start` · `build/start` · `project/prompt` · `owner-update/post`, baton `close`, reconciler `decision/promote`, item
   `gather/start` · `build/start`, build `build/prompt`; `:what` gives the Needs-you words. F2: caps are
   checked at hold time and again at release; the ledger counts only the taken transition.
+- **r7 working hours**: person `tz`/`hours` (operator's fields, history lines, exported);
+  `rules/hours` `next-window` (pure; DST both ways, overnight; JVM + Intl) and `reach-window`; `:hours
+  b/hours-window` on baton `hand-to` `handoff` `offer`, conflict `reroute`, project `baton/start`, item
+  `gather/start` (the host stamps tz/hours on `target(s)`). Tests: `hours_test`, `holds_test` r7.
+- **r8 / q12 review**: `:confirm-kind` on every held act (F12; `base/start-kind`: "offer" for ≥2
+  targets); `b/hold-review` on each chart with held acts: `hold/approve` (approve early, L0, reason) and,
+  on `hold/waiting`, a soon `hold/review` reason to the project's watch. Tests: `registry_test`,
+  `holds_test` F12 + r8.
+- **r8a feed classes**: every transition declares `:sova/feed` (rule in EVENTS.md); `registry_test`
+  (none unclassified), `feed_test` (a pin per class per chart, and the golden table `feed_golden` of
+  every authored transition).
+- **r10**: no act sends text into a gathering (F-128): `baton/send` deleted, no act of kind "message".
+- **Root prompt** (coordinator-25): project `project/prompt` (L3 `sova_send`, a prompt, held, kind
+  "prompt") for a coding session under the root that is not a build.
 - **C-rows**: C1 C2 C3 C12 in `watch`; C4 `reconciler.debouncing`; C5 item stall clocks; C6
   `person/revert`; C7 `gap` or `"none"`; C8 C14 baton lease timer; C10 person status in the edit's
   patch; C11 item `…-starting` flags; C13 C18 (deleted/unneeded); C16 decision; C17 conflict `unrouted`;
@@ -50,7 +65,9 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
 Tests: `test/sova/org_charts/charts/refit/` — `host.cljc` (a deterministic JVM/Node host: the real
 processor, a virtual clock, the engine's level and `:pre` checks; hosts are values) and one test
 namespace per chart group. Run on the JVM:
-`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
+`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test 'sova.org-charts.charts.refit.hours-test 'sova.org-charts.charts.refit.decision-results-test 'sova.org-charts.charts.refit.server4-findings-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
+The engine-level tests (`*_test.cljs`: matrix per chart and per baton start kind, registry, feed, holds,
+world) run in the shadow `:test` build.
 
 ## Inventory map (every F-id → its element)
 
@@ -167,7 +184,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-125 | L1 `sova_reconcile` | chart | `reconciler` `reconcile/request {by overseer}` |
 | F-126 | Send to person… (an operator gesture on an item) | chart | `project` `baton/start` by the operator with `opItem` |
 | F-127 | L2 `sova_promote {ids}` | chart | `reconciler` `decision/promote` by overseer (L2, held) |
-| F-128 | L3 `sova_create_session` and `sova_send` | chart | `item` `build/start` (L3, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (L3 `sova_send`) |
+| F-128 | L3 `sova_create_session` and `sova_send` | chart | `item` `build/start` (L3, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (L3 `sova_send`) to a build; `project/prompt` (L3 `sova_send`, held) to a root coding session that is not a build; a gathering session is refused by the tool (r10: no chart act) |
 | F-129 | Limits: allowances, at-once, looks | chart | `rules/levels` `cap-check` (at once, then allowance), watch ledgers (`ledger/take`), settings data |
 | F-130 | Held items and release | chart | `watch` `limit/refused` → `held` (≤10), releases at midnight / raised limit / message at once (C12) |
 | F-131 | Watch-loop reasons (events → English) | chart | typed `reason/noted` from charts; `watch` `own-act?` (C2), key dedupe (C3), ≤50 pending, 20 in the text |

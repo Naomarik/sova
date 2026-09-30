@@ -195,18 +195,12 @@
     (is (empty? (drives (h/send! (start to-ana) sid :baton/close op))) "no decisions, no reconcile")
     (is (empty? (drives (-> (start (assoc to-ana :conflict {:id "cf1" :area "pay"})) with-d (h/send! sid :baton/close op)))) "a settle session asks on its own")))
 
-(deftest the-overseers-send-into-a-gathering
-  (let [x   (start to-ana)
-        att {:by "overseer" :attended true :autonomy "L3" :roster-active true}
-        y   (h/send! x sid :baton/send (assoc att :text "Please ask about Q3" :delivery "followUp"))]
-    (is (some #{"send-prompt"} (map name (h/kinds y sid))))
-    (is (= {:text "Please ask about Q3" :delivery "followUp"} (select-keys (last (h/outbox y sid)) [:text :delivery])))
-    (is (= [["watch/o1/pr1" "prompt"]] (map (juxt :target (comp :kind :data)) (filter #(= :ledger/take (:event %)) (h/elsewhere y)))))
-    (is (= "text must not be blank." (h/refusal x sid :baton/send (assoc att :text " "))))
-    (is (re-find #"sova_send needs L3" (h/refusal x sid :baton/send {:by "overseer" :autonomy "L2" :roster-active true :text "t"})))
-    (testing "a participant's own message is never held and has no confirm kind"
-      (is (not (:hold (get-in baton/acts [:baton/message]))))
-      (is (nil? (get-in baton/acts [:baton/message :confirm-kind]))))))
+(deftest r10-nobody-sends-into-a-gathering
+  ;; F-128: sova_send refuses a gathering session (only its participants write in it)
+  (is (not (contains? baton/acts :baton/send)) "no act sends text into a gathering")
+  (testing "a participant's own message is never held and has no confirm kind"
+    (is (not (:hold (get-in baton/acts [:baton/message]))))
+    (is (nil? (get-in baton/acts [:baton/message :confirm-kind])))))
 
 (deftest the-global-overseers-hand-off-mints-no-link
   (let [go {:by "operator" :via "overseer" :card {:sessions ["s1"] :people ["p2"]}}]

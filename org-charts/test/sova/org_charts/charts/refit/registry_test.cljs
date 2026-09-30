@@ -30,13 +30,14 @@
   (doseq [[chart ev m] (acts) :when (:hold m)]
     (is (and (seq (kinds m)) (every? confirm-kinds (kinds m))) (str chart " " ev ": " (pr-str (kinds m))))))
 
-(deftest every-confirm-kind-is-declared
-  (is (= confirm-kinds (set (mapcat (fn [[_ _ m]] (kinds m)) (acts))))))
+(deftest every-confirm-kind-but-message-is-declared
+  ;; r10: no act sends text into a gathering (F-128), so nothing is of kind "message"
+  (is (= (disj confirm-kinds "message") (set (mapcat (fn [[_ _ m]] (kinds m)) (acts))))))
 
 (deftest the-kind-of-each-act
-  (is (= {["baton" :baton/send] #{"message"} ["baton" :baton/offer] #{"offer"} ["baton" :baton/close] #{"close"}
+  (is (= {["baton" :baton/offer] #{"offer"} ["baton" :baton/close] #{"close"}
           ["project" :baton/start] #{"gather" "offer"} ["item" :gather/start] #{"gather" "offer"}
-          ["project" :build/start] #{"build"} ["item" :build/start] #{"build"} ["build" :build/prompt] #{"prompt"}
+          ["project" :build/start] #{"build"} ["item" :build/start] #{"build"} ["build" :build/prompt] #{"prompt"} ["project" :project/prompt] #{"prompt"}
           ["reconciler" :decision/promote] #{"promote"} ["project" :owner-update/post] #{"owner-update"}
           ["person" :person/approve] #{"roster-approve"} ["person" :person/decline] #{"roster-decline"}}
          (into {} (for [[chart ev m] (acts) :when (:confirm-kind m)] [[chart ev] (kinds m)])))))

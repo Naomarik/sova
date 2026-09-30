@@ -180,7 +180,8 @@
               [:owner-update/post {:text "Shipped." :owner-active true}] [:owner-update/post {:text "" :owner-active true}]
               [:gap/file {:gap-id "g_1" :idea-id "§gap/x"}]
               [:baton/start {:session-id "s1" :to "p1" :public-title "T" :goal "G"}]
-              [:build/start {:session-id "c1" :title "T" :prompt "P"}] [:spec/freeze {:frozen true}]]})))
+              [:build/start {:session-id "c1" :title "T" :prompt "P"}] [:spec/freeze {:frozen true}]
+              [:project/prompt {:session-id "c9" :text "go"}] [:project/prompt {:session-id "c9" :text " "}]]})))
 
 (deftest watch-matrix
   (clean! "watch"
@@ -206,7 +207,7 @@
                  [:wrapup/finished {}] [:wrapup/stopped {:detail "x"}]]
          :acts [[:baton/hand-to {:target bob :chosen true :question "Q"}] [:baton/hand-to {:target {:id "operator"} :question "Q"}]
                 [:baton/goal-done {:summary "S"}] [:baton/message {:from "p1" :active true}] [:baton/message {:from "p2" :active true}]
-                [:baton/message {:from "operator"}] [:baton/send {:text "T"}] [:baton/send {:text " "}] [:baton/take-back {}] [:baton/handoff {:target bob :question "Q"}]
+                [:baton/message {:from "operator"}] [:baton/take-back {}] [:baton/handoff {:target bob :question "Q"}]
                 [:baton/offer {:targets [ana bob] :question "Q"}] [:baton/withdraw {}] [:baton/close {:reason "r" :owner-project "pr1"}]
                 [:baton/extend {:more 5}] [:baton/extend {:more 1000}] [:baton/wrapup-retry {}]
                 [:baton/record-decision {:decision-id "s1:e1" :area "A" :statement "S" :quote "Q" :owner-areas []}]]

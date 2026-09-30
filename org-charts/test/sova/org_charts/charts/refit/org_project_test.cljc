@@ -180,3 +180,16 @@
                                                    :lease-ms 1000 :operator-name "Omar" :offer-id "off_x"))]
     (is (= {:lease-ms 1000 :operator-name "Omar" :offer-id "off_x"}
            (select-keys (:data (last (h/directives y psid))) [:lease-ms :operator-name :offer-id])))))
+
+(deftest a-prompt-to-a-root-coding-session
+  ;; coordinator-25: sova_send reaches any coding session under the root, not only builds
+  (let [x   (project)
+        att {:by "overseer" :attended true :autonomy "L3" :roster-active true}
+        y   (h/send! x psid :project/prompt (assoc att :session-id "c9" :text "Run the tests" :delivery "followUp"))]
+    (is (= {:kind "prompt" :session-id "c9" :text "Run the tests" :delivery "followUp"}
+           (select-keys (last (filter #(= "prompt" (name (:kind %))) (h/outbox y psid))) [:kind :session-id :text :delivery])))
+    (is (= [["watch/o1/pr1" "prompt"]] (map (juxt :target (comp :kind :data)) (filter #(= :ledger/take (:event %)) (h/elsewhere y)))))
+    (is (= "text must not be blank." (h/refusal x psid :project/prompt (assoc att :session-id "c9" :text " "))))
+    (is (= "\"Pay page\" is open in a terminal, so it is read-only." (h/refusal x psid :project/prompt (assoc att :session-id "c9" :text "t" :invalid "\"Pay page\" is open in a terminal, so it is read-only."))) "the session's own checks, from the host")
+    (is (re-find #"sova_send needs L3" (h/refusal x psid :project/prompt {:by "overseer" :autonomy "L2" :roster-active true :session-id "c9" :text "t"})))
+    (is (re-find #"^Today's allowance is used: 12 of 12" (h/refusal x psid :project/prompt (assoc att :attended false :session-id "c9" :text "t" :ledger "day" :allowance {:prompt {:used 12 :max 12}}))))))

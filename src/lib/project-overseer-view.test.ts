@@ -231,12 +231,12 @@ test("holdWords and holdHint: no hold at 0, else the minutes and where to cancel
 
 test("the confirm list: labels by kind (an unknown kind reads as its id), toggling keeps the server's order, and what a tick says", async () => {
   const { confirmKindLabel, toggleConfirmKind, confirmKindDone } = await import("./project-overseer-view");
-  assert.equal(confirmKindLabel("message"), "Messages to people");
+  assert.equal(confirmKindLabel("gather"), "Starting a gathering");
   assert.equal(confirmKindLabel("roster-decline"), "Declining a proposed person");
   assert.equal(confirmKindLabel("new-kind"), "new-kind");
-  const all = ["message", "gather", "promote"] as const;
-  assert.deepEqual(toggleConfirmKind(all, ["promote"], "message", true), ["message", "promote"]);
-  assert.deepEqual(toggleConfirmKind(all, ["message", "promote"], "message", false), ["promote"]);
+  const all = ["gather", "offer", "promote"] as const;
+  assert.deepEqual(toggleConfirmKind(all, ["promote"], "gather", true), ["gather", "promote"]);
+  assert.deepEqual(toggleConfirmKind(all, ["gather", "promote"], "gather", false), ["promote"]);
   assert.equal(confirmKindDone("promote", true), "Promoting decisions: waits for the overseer's approval once its hold ends.");
   assert.equal(confirmKindDone("promote", false), "Promoting decisions: goes ahead when its hold ends.");
 });

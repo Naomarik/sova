@@ -164,7 +164,6 @@ export const holdHint = (min: number): string =>
     : `What it starts on its own that reaches a person or the code waits ${gapWords(min)} in Needs you, where you can cancel it.`;
 /** The confirm list's rows (r8, q14): each act kind that, held, waits for the overseer's approval. */
 export const CONFIRM_KIND_LABEL: Record<string, string> = {
-  message: "Messages to people",
   gather: "Starting a gathering",
   offer: "Offering a gathering",
   close: "Closing a gathering",

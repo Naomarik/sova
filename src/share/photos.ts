@@ -20,12 +20,16 @@ export function sizeLabel(bytes: number): string {
 
 export class PhotoFormatError extends Error {}
 
+/** The longest edge of the preview the page shows before the photo is sent. */
+const PREVIEW_EDGE = 480;
+
 /**
  * Decode with its orientation applied, scale to the longest-edge ceiling, re-encode: a JPEG at
  * quality 0.85, or a PNG that needed no scaling as a PNG. Drawing onto a canvas drops every
- * metadata segment (EXIF, GPS). A file the browser can't decode is a PhotoFormatError.
+ * metadata segment (EXIF, GPS). A file the browser can't decode is a PhotoFormatError. `preview`
+ * is a small JPEG data URL: the page's CSP allows `data:` images, never `blob:`.
  */
-export async function processPhoto(file: Blob): Promise<Blob> {
+export async function processPhoto(file: Blob): Promise<{ blob: Blob; preview: string }> {
   let bitmap: ImageBitmap;
   try {
     bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
@@ -48,7 +52,15 @@ export async function processPhoto(file: Blob): Promise<Blob> {
     ctx.drawImage(bitmap, 0, 0, fit.width, fit.height);
     const blob = await new Promise<Blob | null>((r) => canvas.toBlob(r, png ? "image/png" : "image/jpeg", 0.85));
     if (!blob) throw new PhotoFormatError("This photo's format can't be sent.");
-    return blob;
+    const small = fitEdge(fit.width, fit.height, PREVIEW_EDGE);
+    const thumb = document.createElement("canvas");
+    thumb.width = small.width;
+    thumb.height = small.height;
+    const tctx = thumb.getContext("2d")!;
+    tctx.fillStyle = "#fff";
+    tctx.fillRect(0, 0, small.width, small.height);
+    tctx.drawImage(canvas, 0, 0, small.width, small.height);
+    return { blob, preview: thumb.toDataURL("image/jpeg", 0.8) };
   } finally {
     bitmap.close();
   }

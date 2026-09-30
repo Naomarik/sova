@@ -91,13 +91,7 @@ export function ShareApp() {
     setStore("v", reconcile(v, { key: "id", merge: false }));
     setStreaming("");
     const own = ownCount();
-    setPending((p) =>
-      p.filter((x) => {
-        if (own < x.expect) return true;
-        for (const t of x.thumbs) URL.revokeObjectURL(t);
-        return false;
-      }),
-    );
+    setPending((p) => p.filter((x) => own < x.expect));
   };
   const photos = () => (view()?.viewer?.canWrite ? (view()?.viewer?.photos ?? null) : null);
   const photoSrc = (n: number) => `/api/h/${TOKEN}/img/${n}`;
@@ -131,42 +125,44 @@ export function ShareApp() {
     const limits = photos();
     if (!limits || !files.length) return;
     let added = 0;
+    // One announcement for the whole pick: a later one would replace a refusal before it is read.
+    const refused: string[] = [];
     for (const file of files) {
       const name = pasted ? "Pasted photo" : file.name || "Photo";
       const id = cid();
       if (live().length >= limits.perMessage) {
         const reason = `Up to ${limits.perMessage} photos per message.`;
         setAtts(atts.length, { cid: id, name, size: file.size, blob: null, thumb: null, state: "failed", progress: 0, reason });
-        setAnnounce(`${name} wasn't attached. ${reason}`);
+        refused.push(`${name} wasn't attached. ${reason}`);
         continue;
       }
       setAtts(atts.length, { cid: id, name, size: file.size, blob: null, thumb: null, state: "processing", progress: 0 });
       let blob: Blob;
+      let preview: string;
       try {
-        blob = await processPhoto(file);
+        ({ blob, preview } = await processPhoto(file));
       } catch (err) {
         const reason = err instanceof PhotoFormatError ? err.message : "This photo's format can't be sent.";
         patch(id, { state: "failed", reason });
-        setAnnounce(`${name} wasn't attached. ${reason}`);
+        refused.push(`${name} wasn't attached. ${reason}`);
         continue;
       }
       if (!find(id)) continue;
       if (blob.size > limits.maxBytes) {
         const reason = `Over ${Math.round(limits.maxBytes / (1024 * 1024))} MB.`;
         patch(id, { state: "failed", reason });
-        setAnnounce(`${name} wasn't attached. ${reason}`);
+        refused.push(`${name} wasn't attached. ${reason}`);
         continue;
       }
-      patch(id, { blob, size: blob.size, thumb: URL.createObjectURL(blob) });
+      patch(id, { blob, size: blob.size, thumb: preview });
       added++;
       void upload(id);
     }
-    if (added) setAnnounce(`${photosWord(added)} attached.`);
+    setAnnounce([...(added ? [`${photosWord(added)} attached.`] : []), ...refused].join(" "));
   };
   const remove = (id: string) => {
     const a = find(id);
     a?.abort?.();
-    if (a?.thumb) URL.revokeObjectURL(a.thumb);
     setAtts((list) => list.filter((x) => x.cid !== id));
   };
   const imageFiles = (list: FileList | null | undefined): File[] => [...(list ?? [])].filter((f) => f.type.startsWith("image/"));
@@ -283,8 +279,7 @@ export function ShareApp() {
       }
       const sent = ready();
       setPending((p) => [...p, { cid: cid(), text, thumbs: sent.flatMap((a) => (a.thumb ? [a.thumb] : [])), expect }]);
-      // The thumbnails now belong to the sending echo; everything else in the strip goes.
-      for (const a of atts) if (a.thumb && !sent.includes(a)) URL.revokeObjectURL(a.thumb);
+      // The previews now belong to the sending echo; the strip empties.
       setAtts([]);
       setDraft("");
     } catch {
@@ -395,7 +390,7 @@ export function ShareApp() {
                             : a.state === "processing"
                               ? "Preparing"
                               : a.state === "uploading"
-                                ? `${sizeLabel(a.size)} · Uploading ${Math.round(a.progress * 100)}%`
+                                ? `Uploading ${Math.round(a.progress * 100)}%`
                                 : sizeLabel(a.size)}
                         </span>
                         <Show when={a.state === "uploading"}>

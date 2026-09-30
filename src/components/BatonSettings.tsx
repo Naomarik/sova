@@ -78,6 +78,7 @@ export function BatonSettingsSection() {
         </h4>
         <label class="toggle toggle-switch">
           <input type="checkbox" checked={batonDraft()?.photosOn ?? true} disabled={saving()} onChange={(e) => edit({ photosOn: e.currentTarget.checked })} />
+          <span class="toggle-box" />
           <span>People can send photos</span>
         </label>
         <div class="orgs-fields" role="group" aria-labelledby="settings-orgs-photos">

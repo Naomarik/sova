@@ -35,7 +35,7 @@
  * The org's owner and the Owner page's operator routes: see shared/owner.ts.
  */
 
-import type { BatonView } from "./baton";
+import type { BatonView, OfferReach } from "./baton";
 
 export type PersonStatus = "active" | "proposed" | "left";
 
@@ -383,7 +383,8 @@ export interface PersonSessionRow {
   /** This person holds it now. */
   holdsNow: boolean;
   /** The current offer (open or held), when there is one. */
-  offer?: { state: "open" | "held"; invited: number; includesThem: boolean; holder?: NamedRef };
+  /** `reach` (r12): this person's, when the offer includes them (absent: reached, or an offer from before r12). */
+  offer?: { state: "open" | "held"; invited: number; includesThem: boolean; holder?: NamedRef; reach?: OfferReach };
   relations: PersonRelation[];
   /** Messages they wrote in it. */
   messages: number;

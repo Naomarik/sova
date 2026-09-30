@@ -189,3 +189,74 @@ describe("an act that reaches them outside their hours (r7)", () => {
     assert.equal(inHours.offHours, undefined);
   });
 });
+
+describe("company working hours, the default (r13)", () => {
+  const put = (b: unknown) => app.request(`/api/orgs/${org.id}/hours`, { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+  type Detail = { tz?: string; hours?: unknown; hoursHistory?: { at: string; field: string; from: unknown; to: unknown; revertOf?: string }[] };
+
+  test("the operator sets and clears them; each changed field is a history line; a person without hours of their own reads the company's", async () => {
+    const cy = await orgs.addPerson(org.id, { name: "Cy Moss", role: "Ops" });
+    const hours = { days: ALL, from: hm(2), to: hm(3) };
+    const r = await put({ tz: "UTC", hours });
+    assert.equal(r.status, 200, await r.clone().text());
+    const d = (await r.json()) as Detail;
+    assert.deepEqual([d.tz, d.hours], ["UTC", hours]);
+    assert.deepEqual(d.hoursHistory!.slice(0, 2).map((h) => [h.field, h.from, h.to]), [["hours", null, hours], ["tz", "", "UTC"]]);
+    const p = orgs.findPerson(org.id, cy.id)!;
+    assert.equal(p.hoursFrom, "company");
+    assert.equal(p.tz, undefined, "their own fields stay empty");
+    assert.equal(p.hoursNow?.open, false);
+    // Sam's own hours win.
+    await patch({ tz: "UTC", hours: { days: ALL, from: hm(-1), to: hm(1) } });
+    assert.deepEqual([orgs.findPerson(org.id, sam.id)!.hoursFrom, orgs.findPerson(org.id, sam.id)!.hoursNow?.open], ["own", true]);
+    // The person page carries the company's, for "(company hours)".
+    const page = (await (await app.request(`/api/orgs/${org.id}/people/${cy.id}`)).json()) as { org: { tz?: string; hours?: unknown } };
+    assert.deepEqual([page.org.tz, page.org.hours], ["UTC", hours]);
+    // Cleared: neither, always in hours.
+    assert.equal((await put({ tz: null, hours: null })).status, 200);
+    assert.equal(orgs.findPerson(org.id, cy.id)!.hoursFrom, undefined);
+    assert.equal(orgs.findPerson(org.id, cy.id)!.hoursNow, undefined);
+  });
+
+  test("the chart's checks answer with its sentences; nothing is written", async () => {
+    const before = (await (await app.request(`/api/orgs/${org.id}`)).json()) as Detail;
+    const r = await put({ tz: "Mars/Olympus" });
+    assert.equal(r.status, 400);
+    const after = (await (await app.request(`/api/orgs/${org.id}`)).json()) as Detail;
+    assert.equal(after.hoursHistory?.length, before.hoursHistory?.length);
+    assert.equal((await put({})).status, 400);
+  });
+
+  test("a history line reverts while its field still holds its value; a later change refuses it (C6)", async () => {
+    const h1 = { days: ALL, from: hm(2), to: hm(3) };
+    const h2 = { days: ALL, from: hm(4), to: hm(5) };
+    await put({ tz: "UTC", hours: h1 });
+    const first = ((await (await put({ hours: h2 })).json()) as Detail).hoursHistory![0]!;
+    assert.deepEqual([first.field, first.to], ["hours", h2]);
+    const older = ((await (await app.request(`/api/orgs/${org.id}`)).json()) as Detail).hoursHistory!.find((h) => h.field === "hours" && JSON.stringify(h.to) === JSON.stringify(h1))!;
+    const refused = await app.request(`/api/orgs/${org.id}/hours/revert`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ at: older.at }) });
+    assert.equal(refused.status, 409);
+    assert.match(((await refused.json()) as { error: string }).error, /^The company's working hours have changed since then, so reverting this would undo a later change\. Revert the latest change instead\.$/);
+    const ok = await app.request(`/api/orgs/${org.id}/hours/revert`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ at: first.at }) });
+    assert.equal(ok.status, 200);
+    const d = (await ok.json()) as Detail;
+    assert.deepEqual(d.hours, h1);
+    assert.deepEqual([d.hoursHistory![0]!.revertOf, d.hoursHistory![0]!.to], [first.at, h1]);
+    await put({ tz: null, hours: null });
+  });
+
+  test("a company-hours change moves an act waiting for someone who has no hours of their own", async () => {
+    const di = await orgs.addPerson(org.id, { name: "Di Park", role: "Legal" });
+    await put({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
+    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
+    await tool.execute("t9", { gap: "none", person: "Di Park", public_title: "Terms", goal: "g", question: "Which terms?" } as never, undefined, undefined, undefined as never);
+    const heldOf = () => pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Di Park: Terms");
+    assert.equal(heldOf()?.goesAt, orgs.findPerson(org.id, di.id)!.hoursNow!.nextOpen, "it waits for the company's window");
+    await put({ hours: { days: ALL, from: hm(-1), to: hm(1) } });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(heldOf(), undefined, "the company's hours are now: released");
+    assert.ok(baton.allBatons().some((b) => b.publicTitle === "Terms"));
+    await put({ tz: null, hours: null });
+  });
+});

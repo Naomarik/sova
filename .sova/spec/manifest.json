@@ -2167,10 +2167,12 @@
     "§mesh.peers/health": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/mesh/index.ts",
-        "server/mesh/hello.ts"
+        "server/mesh/hello.ts",
+        "server/mesh/details.ts",
+        "server/mesh/mesh.test.ts"
       ]
     },
     "§mesh.peers/hello": {

@@ -65,7 +65,10 @@ is shown as `skewed`: listed, but its sessions can't be opened or created until 
 
 While the mesh is on, the host polls each peer's `hello` and reports each as `up`, `down` or
 `skewed` with when it was last seen. A peer that stops answering is `down` on the first
-failed hello; its absence never breaks this host's own sessions or pages.
+failed hello; its absence never breaks this host's own sessions or pages. A `skewed` peer
+answers, so it counts as reachable wherever this host acts on a peer coming back up: every
+reading of it (its hello, its session list, its own calls) agrees, and a poll never reads it as
+gone and back.
 
 ## §mesh.peers/discovery — Discovery hints
 

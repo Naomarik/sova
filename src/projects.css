@@ -201,6 +201,7 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
 .pipeline-link-kind { flex: none; font-size: var(--fs-micro); letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
 .pipeline-link-title { flex: 1 1 8rem; min-width: 0; overflow-wrap: anywhere; }
 .pipeline-link-state { flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.pipeline-build-note { margin: var(--space-1) 0 0; font-size: var(--fs-caption); color: var(--status-warn); overflow-wrap: anywhere; }
 .pipeline-decisions > summary { list-style: none; }
 .pipeline-decisions > summary::-webkit-details-marker { display: none; }
 .pipeline-decisions > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }

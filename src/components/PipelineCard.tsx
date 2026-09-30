@@ -173,6 +173,8 @@ function GapRow(props: { orgId: string; projectId: string; row: Row; now: number
                   <span class="pipeline-link-kind">Build</span> <span class="pipeline-link-title">{b.title}</span>
                   <span class="pipeline-link-state">{buildState(b)}</span>
                 </LinkOrText>
+                {/* F20: its mode could not be set, so its first prompt never went: the server's sentence. */}
+                <Show when={b.notPrompted}>{(s) => <p class="pipeline-build-note">{s()}</p>}</Show>
               </li>
             )}
           </For>

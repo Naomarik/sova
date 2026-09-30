@@ -63,3 +63,11 @@ test("the writer word: you, via the Overseer, only for the operator's change mad
   const groups = groupChanges([ch("2026-09-28T10:00:01.000Z", "p1", "role", "a", "operator", { by: via }), ch("2026-09-28T10:00:00.000Z", "p1", "skills", ["b"], "operator")]);
   assert.equal(groups.length, 2, "the user's own change and one via the Overseer are separate acts");
 });
+
+test("valueText: working hours read as the Hours row does; a zone as itself; cleared as a dash (r7)", async () => {
+  const { valueText } = await import("./profile-changes");
+  assert.equal(valueText("hours", { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" }), "Mon–Fri 09:00–17:00");
+  assert.equal(valueText("hours", null), "—");
+  assert.equal(valueText("tz", "Europe/Istanbul"), "Europe/Istanbul");
+  assert.equal(valueText("tz", ""), "—");
+});

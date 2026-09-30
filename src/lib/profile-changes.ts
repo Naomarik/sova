@@ -2,6 +2,7 @@
 // grouped so one act (adding a person, one wrap-up, one referral) reads as one row, each value in
 // words. Pure, for tsx --test.
 
+import { hoursWords } from "./working-hours";
 import type { NamedChange, PersonStatus, ProfileChange } from "../../shared/orgs";
 
 /** Who wrote a profile change, in words, by kind. */
@@ -26,6 +27,9 @@ export function valueText(field: ProfileChange["field"], v: unknown): string {
   if (typeof v === "object") {
     const o = v as Record<string, unknown>;
     if (field === "referral") return typeof o.why === "string" ? o.why : "—";
+    // Working hours (r7): the same words as the Hours row, "Mon–Fri 09:00–17:00".
+    if (field === "hours" && Array.isArray(o.days) && typeof o.from === "string" && typeof o.to === "string")
+      return hoursWords({ days: o.days as number[], from: o.from, to: o.to });
     if (field === "competence")
       return Object.entries(o)
         .map(([skill, c]) => `${skill} ${(c as { level?: number })?.level ?? "?"}/5`)

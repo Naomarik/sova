@@ -183,3 +183,15 @@
     (is (= "Its worktree was removed, so it has no folder to work in."
            (h/refusal (-> x (h/send! bsid :build/remove-worktree op) (h/send! bsid :effect/done {:kind "remove-worktree"})) bsid :build/prompt {:by "overseer" :attended true :text "go"})))
     (is (h/in? (h/send! x bsid :git/probe {:branch "new-since-merge"}) bsid :new-since-merge))))
+
+(deftest F-133-a-folded-reason-never-pushes-the-soon-look-back
+  ;; server-5: a coding session's turn settles at t, again at t+30 s (same key, folded): the look
+  ;; comes a minute after the first
+  (let [settled {:kind "coding/settled" :params {:title "Pay" :session-id "c1"} :key "coding/settled:c1:ok" :by "system"}
+        x  (h/send! (watch) wsid :reason/noted settled)
+        t  (h/now x)
+        y  (-> x (h/advance! 30000) (h/send! wsid :reason/noted settled))]
+    (is (= 1 (count (:reasons (h/data y wsid)))) "folded")
+    (is (= (+ t 60000) (:soon-at (h/data y wsid))))
+    (is (h/in? (h/advance! y 29999) wsid :waiting))
+    (is (h/in? (h/advance! y 30000) wsid :running) "at t+60 s, not t+90 s")))

@@ -58,3 +58,21 @@
     (is (= "Someone else is answering right now." (:sentence (core/explain e sid :baton/message {:by "person" :from "p2" :active true} {:now (+ t0 1)}))))
     (is (= "You are no longer taking part in this conversation." (why (msg "p2" false))) "an invitee who left")
     (is (= "Ana holds the baton. Take it back to write." (why (core/send! e sid :baton/message {:by "operator" :from "operator"} {:now (+ t0 1)}))))))
+
+(deftest F-133-on-the-engine-a-folded-reason-never-pushes-the-soon-look-back
+  (let [e       (core/new-engine registry/charts {:level-check lv/level-check :absorb-unknown true})
+        settled {:by "system" :kind "coding/settled" :params {:title "Pay" :session-id "c1"} :key "coding/settled:c1:ok"}
+        t       (+ t0 3600000)]
+    (core/start! e psid "project" {:org-id "o1" :id "pr1" :name "Site" :root "/r"} t0)
+    (core/send! e psid :overseer/start (assoc op :conversation-id "c1") {:now t0})
+    ;; it looked a minute before t, so only the soon look can bring the next one inside the gap
+    (core/send! e wsid :operator/run-now op {:now (- t 60000)})
+    (core/send! e wsid :look/finished {} {:now (- t 59000)})
+    (is (contains? (set (core/configuration e wsid)) :quiet))
+    (core/send! e wsid :reason/noted settled {:now t})
+    (let [soon (:soon-at (core/data e wsid))]
+      (is (= (+ t 60000) soon))
+      (core/send! e wsid :reason/noted settled {:now (+ t 30000)})
+      (is (= 1 (count (:reasons (core/data e wsid)))))
+      (is (= soon (:soon-at (core/data e wsid))) "the folded second one leaves it")
+      (is (<= (core/next-due-at e) (+ t 80000)) "the look is due on the first tick after t+60 s"))))

@@ -2,6 +2,8 @@
   "Registry-wide lints over the eleven charts."
   (:require
     [cljs.test :refer [deftest is]]
+    [sova.org-charts.charts.refit.acts-golden :as ag]
+    [sova.org-charts.charts.refit.acts-table :as at]
     [sova.org-charts.charts.registry :as registry]
     [sova.org-charts.engine.core :as core]))
 
@@ -53,3 +55,18 @@
 (deftest every-transition-has-a-feed-class
   (is (empty? (core/unclassified registry/charts))
     "each transition declares :sova/feed :feed (moves an item, reaches a person or code) or :quiet (bookkeeping)"))
+
+;; ---- every act's metadata (holds first: q10) ---------------------------------------------------------
+
+(deftest every-acts-metadata-is-the-golden-one
+  (let [now (at/table)
+        bad (for [k (sort (into (set (keys now)) (keys ag/golden))) :when (not= (get now k) (get ag/golden k))]
+              [k :now (get now k) :golden (get ag/golden k)])]
+    (is (= 76 (count ag/golden)))
+    (is (empty? bad) (str (count bad) " differ: " (pr-str (take 10 bad))))))
+
+(deftest exactly-these-acts-are-held
+  (is (= #{["baton" ":baton/close"] ["build" ":build/prompt"] ["item" ":build/start"] ["item" ":gather/start"]
+           ["person" ":person/approve"] ["person" ":person/decline"] ["project" ":baton/start"] ["project" ":build/start"]
+           ["project" ":owner-update/post"] ["project" ":session/prompt"] ["reconciler" ":decision/promote"]}
+         (set (for [[k m] (at/table) :when (:hold m)] k)))))

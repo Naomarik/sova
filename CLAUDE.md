@@ -80,7 +80,15 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   and the session list, and its hidden `align-state` / `align-nudge` custom messages, which Sova
   must keep hidden (`display: false`); an older session's `align-doc` custom entries are read-only;
   show-changes' `show_changes` tool: each result's `details` (`{v: 1, scope, title?, paths?,
-  steps?}`), read by Sova for the card that opens the changes viewer.
+  steps?}`), read by Sova for the card that opens the changes viewer; provider-limits
+  (`pi-config/extensions/provider-limits/gate.ts`, builtins only): the request limits
+  `provider-limits.json` `{version: 1, limits: {<provider>: 1..999}}` (missing or unreadable = the
+  defaults zai 5, ollama-cloud 10; written by Settings → Models, synced like the policy), and the
+  per-provider queue files under `<agent dir>/provider-limits/<provider>/` — `slots/<pid>-<n>.json`
+  `{v: 1, pid, sessionId?, kind, at}`, `wants/<pid>-<n>.json` (the same plus `since`),
+  `lowered.json` `{v: 1, limit, until}` and the claim `lock` — which every pi process (TUI, hosted
+  sessions, pi workers via their `-e` list) and Sova's own one-shots claim through, and which Sova
+  reads by session id for the waiting state.
   Not covered by Sova's tsconfig, with these exceptions: the server imports
   `pi-config/extensions/mode/state.ts`, `minor.ts`, `delegate.ts` and `spec.ts` (`server/mode-state.ts`,
   `server/delegate.ts`, `server/spec-settings.ts`; hence `allowImportingTsExtensions`),
@@ -94,6 +102,11 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   strict parse, reader and atomic writer for Settings → Teams), `server/claude-accounts.ts` imports
   `pi-config/extensions/claude-code/accounts.ts` (builtins only, see above: Settings → Accounts, and
   the login the server's own `claude` spawns — model discovery, `--version` — run on),
+  `server/provider-limits.ts`, `server/decide-llm.ts`, `server/overseer.ts` and
+  `server/sync/docs.ts` import `pi-config/extensions/provider-limits/gate.ts` (builtins only: the
+  limits file's parse, reader and writer, the lease gate a one-shot claims its slot through, the
+  Overseer's background mark, and the queue read for the web; its gate state is a `globalThis`
+  singleton, so the extension's copy in a hosted runtime and the server's share it),
   `server/worktrees-state.ts` imports
   `pi-config/extensions/worktrees/state.ts` (builtins only: the `worktrees` entry, its fold, the
   merge card's details) and `git.ts` (builtins only: the extension's own "is this branch merged"

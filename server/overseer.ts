@@ -34,6 +34,7 @@ import {
 import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
+import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 import { mergeMode } from "./mode-state";
 import {
   DEFAULT_CAPS,
@@ -790,6 +791,8 @@ setOverseerRuntime({
   // a brief, a wake-up or an extension's message never goes through it: read-only, on the same budget.
   watchSession(session) {
     overseerSession = session;
+    // Its model requests are background work under a provider's request limit (§app.provider-limits/queue).
+    markBackground(session.sessionManager.getSessionId());
     turns.watch(session.agent);
     const prompt = livePrompt;
     session.subscribe((event) => {

@@ -499,7 +499,7 @@ export async function acquireSlot(provider: string, opts: AcquireOptions): Promi
 				if (reported !== null) opts.onWait?.(null);
 				return null;
 			}
-			const outcome = await withLock(dir, () => {
+			const outcome = await withLock<{ slotFile: string } | { inUse: number }>(dir, () => {
 				const t = Date.now();
 				const slots = listLive<SlotRecord>(slotsDir, t, true, false);
 				// Pruned as stale while this process was stalled: put the entry back, same place in line.
@@ -518,6 +518,7 @@ export async function acquireSlot(provider: string, opts: AcquireOptions): Promi
 			});
 			if ("slotFile" in outcome) {
 				if (reported !== null) opts.onWait?.(null);
+				const slotFile = outcome.slotFile;
 				let released = false;
 				return {
 					provider,
@@ -525,7 +526,7 @@ export async function acquireSlot(provider: string, opts: AcquireOptions): Promi
 					release() {
 						if (released) return;
 						released = true;
-						disown(outcome.slotFile);
+						disown(slotFile);
 					},
 				};
 			}

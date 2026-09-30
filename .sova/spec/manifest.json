@@ -1938,7 +1938,13 @@
         "pi-config/extensions/sandbox/tools.ts",
         "pi-config/extensions/sandbox/README.md",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
-        "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
+        "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
+        "pi-config/extensions/sandbox/launch.ts",
+        "pi-config/extensions/claude-code/confined-launch.ts",
+        "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
+        "pi-config/extensions/subagents/host.ts",
+        "pi-config/extensions/sandbox/tests/claude-confine.mjs",
+        "pi-config/extensions/sandbox/tests/claude-worker.mjs"
       ]
     },
     "§chat/sandbox": {
@@ -7194,7 +7200,8 @@
         "pi-config/extensions/claude-code/runner-failover.test.ts",
         "server/claude-accounts.test.ts",
         "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson",
-        "server/claude-pool/agent.ts"
+        "server/claude-pool/agent.ts",
+        "pi-config/extensions/claude-code/confined-launch.test.ts"
       ]
     },
     "§app.claude-logins/registry": {
@@ -8453,6 +8460,30 @@
         "src/components/SharesPage.tsx",
         "src/components/SessionDetails.tsx",
         "src/lib/session-shares.ts"
+      ]
+    },
+    "§chat.sandbox/claude-state": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.sandbox/workers",
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/failover"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/confined-launch.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/subagents/host.ts",
+        "pi-config/extensions/subagents/host-transport.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/sandbox/launch.ts",
+        "pi-config/extensions/claude-code/confined-launch.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
       ]
     }
   },

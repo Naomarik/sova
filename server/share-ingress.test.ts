@@ -104,7 +104,7 @@ const fakeDeps: Record<string, unknown> = {
     const [, node, path] = m as unknown as [string, string, string];
     if (path === "/api/peer/hello") return helloReply(node);
     // The routed host asks with ?kinds=1 (GatewayInfo.kinds); the fake answers either.
-    if (path === "/api/peer/share-gateway/info" || path === "/api/peer/share-gateway/info?kinds=1") return infoReply(node);
+    if (path === "/api/peer/share-gateway/info" || path === "/api/peer/share-gateway/info?kinds=1" || path === "/api/peer/share-gateway/info?kinds=1&preview=1") return infoReply(node);
     if (path === "/api/peer/share-gateway/links" && init?.method === "PUT") return pushReply(node, JSON.parse(String(init.body)));
     return null;
   },
@@ -197,7 +197,7 @@ test("viaGatewayIdentity in address mode is null when the gateway peer has no ta
 test("refreshGateway: hello gives the public URL, info the acceptance; viaGatewayStatus caches it", async () => {
   assert.equal(gw.viaGatewayStatus(), null, "nothing learnt yet");
   const s = await gw.refreshGateway();
-  assert.deepEqual(s, { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true, kinds: null });
+  assert.deepEqual(s, { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true, kinds: null, previewUrl: null });
   assert.deepEqual(gw.viaGatewayStatus(), s);
 });
 
@@ -216,7 +216,7 @@ test("refreshGateway: a 404 not-gateway is not accepting; a failed hello or info
 test("viaGatewayStatus: null until the selected gateway was asked, and null when the via gateway is no peer", async () => {
   assert.equal(gw.viaGatewayStatus(), null, "routed, nothing asked yet");
   await gw.refreshGateway();
-  assert.deepEqual(gw.viaGatewayStatus(), { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true, kinds: null });
+  assert.deepEqual(gw.viaGatewayStatus(), { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true, kinds: null, previewUrl: null });
   setting = { version: 1, route: { via: { nodeId: "nGONE" } } };
   assert.equal(gw.viaGatewayStatus(), null, "via names no peer");
 });
@@ -1405,9 +1405,9 @@ test("parseInfo: kinds is optional; known kinds are kept, unknown ones dropped; 
   assert.equal(gw.parseInfo({ status: 200, body: { ...good, kinds: [1] } }), null);
 });
 
-test("the routed host asks its gateway's info with ?kinds=1", async () => {
+test("the routed host asks its gateway's info with ?kinds=1&preview=1", async () => {
   await gw.refreshGateway();
-  assert.ok(calls.some((u) => u.endsWith("/api/peer/share-gateway/info?kinds=1")), calls.join("\n"));
+  assert.ok(calls.some((u) => u.endsWith("/api/peer/share-gateway/info?kinds=1&preview=1")), calls.join("\n"));
 });
 
 test("version skew: a gateway whose info lists no kinds never receives an `s` row; h and i links still route and confirm", async () => {

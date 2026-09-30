@@ -394,7 +394,9 @@ once), **lease** (an offer's lock on its first taker).
   `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). Every other path
   answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
   escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
-  `/ext/*` are unreachable on it. The main listener never serves the share page.
+  `/ext/*` are unreachable on it. The main listener never serves the share page. A request whose `Host` is a
+  preview host is the preview's (§mesh.public/preview-address), with its own limits and answers
+  (§mesh.public/preview-limits, §mesh.public/preview-proxy); nothing below applies to it.
 - Limits: request bodies over 16 KB (or without a length) are refused (413); a request's headers
   must arrive within 10 seconds and the whole request within 15 (408); per token 10 messages
   a minute (429; tokens with no message in the last minute are forgotten) and one WebSocket (a new one replaces the old, which is told it opened

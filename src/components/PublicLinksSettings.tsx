@@ -67,6 +67,8 @@ export function PublicLinksSettingsSection() {
   const [verifying, setVerifying] = createSignal(false);
   /** The last Verify this panel ran, when it failed: the banner says why. Success reads from the server's verifiedAt. */
   const [failed, setFailed] = createSignal<(VerifyResult & { url: string }) | null>(null);
+  /** The preview half of the last Verify (§mesh.public/preview-address), when the gateway has a preview address. */
+  const [previewCheck, setPreviewCheck] = createSignal<VerifyResult["preview"] | null>(null);
   const verifiedAt = () => (info()?.share.state === "verified" ? info()?.file.verifiedAt : undefined);
   /** Verify checks the saved address: an unsaved edit has to be saved first. */
   const verifyBlocked = () => {
@@ -83,6 +85,7 @@ export function PublicLinksSettingsSection() {
     try {
       const r = await verifyPublicLinks();
       if (!r.ok) setFailed({ ...r, url });
+      setPreviewCheck(r.preview ?? null);
     } catch (err) {
       setFailed({ ok: false, error: (err as Error).message, url });
     } finally {
@@ -234,6 +237,49 @@ export function PublicLinksSettingsSection() {
             >
               {(v) => (
                 <span class="field-hint" id="public-links-url-hint">
+                  Set by environment ({v()}). Change it there, then restart Sova.
+                </span>
+              )}
+            </Show>
+          </div>
+
+          <div class="field settings-field public-links-url">
+            <label class="field-label" for="public-links-preview">
+              Preview address
+            </label>
+            <input
+              id="public-links-preview"
+              class="input input-mono"
+              autocomplete="off"
+              spellcheck={false}
+              inputmode="url"
+              placeholder="https://*.example.com"
+              value={pinOf("previewUrl") ? (info()?.preview?.url ?? "") : (draft()?.previewUrl ?? "")}
+              disabled={off()}
+              readOnly={!!pinOf("previewUrl")}
+              aria-invalid={issue()?.field === "previewUrl" ? "true" : undefined}
+              aria-describedby="public-links-preview-hint"
+              onInput={(e) => edit({ previewUrl: e.currentTarget.value })}
+            />
+            <Show
+              when={pinOf("previewUrl")}
+              fallback={
+                <Show
+                  when={issue()?.field === "previewUrl"}
+                  fallback={
+                    <span class="field-hint" id="public-links-preview-hint">
+                      Optional. Preview links open each app at its own name under this domain. It needs a wildcard DNS record and certificate; the steps below say how.
+                    </span>
+                  }
+                >
+                  <span class="field-error" id="public-links-preview-hint">
+                    {issue()!.text}
+                  </span>
+                </Show>
+              }
+            >
+              {(v) => (
+                <span class="field-hint" id="public-links-preview-hint">
                   Set by environment ({v()}). Change it there, then restart Sova.
                 </span>
               )}
@@ -392,6 +438,24 @@ export function PublicLinksSettingsSection() {
               )}
             </Show>
           </div>
+          <Show when={!verifyBlocked() && previewCheck()}>
+            {(p) => (
+              <Show
+                when={p().ok}
+                fallback={
+                  <Banner
+                    tone="warn"
+                    title="Preview hosts don't reach this gateway yet."
+                    body={`${sentence(p().error ?? (p().status ? `It answered ${p().status}` : "No answer"))} Check the wildcard DNS record and the front, then verify again.`}
+                  />
+                }
+              >
+                <span class="field-hint" role="status">
+                  Preview hosts reach this gateway too.
+                </span>
+              </Show>
+            )}
+          </Show>
           <Show when={!verifyBlocked() && failed()}>
             {(v) => (
               <Banner

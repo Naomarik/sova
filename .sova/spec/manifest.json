@@ -9468,6 +9468,115 @@
       "requires": [
         "§chat/markdown"
       ]
+    },
+    "§mesh.public/preview": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/registry",
+        "§mesh.public/preview-address",
+        "§mesh.public/preview-proxy"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/preview-links.ts",
+        "server/preview-links.ts",
+        "server/preview-links-routes.ts",
+        "server/share/registry-push.ts",
+        "server/share/registry.ts",
+        "shared/public-links.ts",
+        "server/index.ts",
+        "server/preview-links.test.ts",
+        "server/share-preview-router.test.ts"
+      ]
+    },
+    "§mesh.public/preview-address": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§mesh.public/front",
+        "§mesh.public/gateway"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/public-links.ts",
+        "server/public-links-routes.ts",
+        "server/share/edge.ts",
+        "server/share/ingress.ts",
+        "server/share/router.ts",
+        "server/share/front.ts",
+        "server/share/gateway-client.ts",
+        "server/share/gateway-routes.ts",
+        "server/share/preview-address.ts",
+        "shared/public-links.ts",
+        "src/lib/public-links.ts",
+        "src/components/PublicLinksSettings.tsx",
+        "server/share-preview-address.test.ts",
+        "server/share-preview-proxy.test.ts"
+      ]
+    },
+    "§mesh.public/preview-card": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/preview"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PreviewsCard.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/SharesPage.tsx",
+        "src/lib/api.ts",
+        "src/lib/previews.ts",
+        "src/lib/previews.test.ts"
+      ]
+    },
+    "§mesh.public/preview-limits": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/preview"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/preview-proxy.ts",
+        "server/share/preview-hop.ts",
+        "shared/public-links.ts",
+        "server/share-preview-proxy.test.ts"
+      ]
+    },
+    "§mesh.public/preview-offline": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/preview",
+        "§mesh.public/offline"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/preview-pages.ts",
+        "server/share/preview-proxy.ts",
+        "server/share/preview-hop.ts",
+        "server/share/router.ts",
+        "shared/public-links.ts",
+        "server/share-preview-proxy.test.ts",
+        "server/share-preview-router.test.ts"
+      ]
+    },
+    "§mesh.public/preview-proxy": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/preview"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/preview-proxy.ts",
+        "server/share/preview-hop.ts",
+        "server/share-preview-proxy.test.ts",
+        "server/share-preview-router.test.ts"
+      ]
     }
   },
   "boundary": {

@@ -2,7 +2,7 @@ import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync
 import { dirname, join } from "node:path";
 import { type RegistryAck, REGISTRY_LIMITS, REGISTRY_LINK_KINDS, type RegistryLink, type RegistryLinkKind, type RoutedHost, type ShareGatewaySetting } from "../../shared/public-links";
 import type { PeerEntry } from "../mesh/peers";
-import { parsePublicUrl, publicLinksFile, readPublicLinks, sharePin } from "../public-links";
+import { parsePublicUrl, previewPin, publicLinksFile, readPublicLinks, sharePin } from "../public-links";
 import { stateRoot } from "../state-root";
 import { type SnapshotCheck, type SnapshotContext, validateSnapshot } from "./registry-validation";
 
@@ -64,6 +64,15 @@ export function gatewayPublicUrl(env: NodeJS.ProcessEnv = process.env): string |
   return sharePin(env) ?? g.publicUrl;
 }
 
+/** The preview address this gateway serves (§mesh.public/preview-address): the
+    SOVA_SHARE_PREVIEW_URL pin, else the setting's; null when this host is no gateway or has none.
+    What the edge splits by Host and GatewayInfo.previewUrl carries. */
+export function gatewayPreviewUrl(env: NodeJS.ProcessEnv = process.env): string | null {
+  const g = gatewaySetting();
+  if (!g) return null;
+  return previewPin(env) ?? g.previewUrl ?? null;
+}
+
 /** Whether the gateway accepts links from this node. */
 export function acceptsNode(g: ShareGatewaySetting, nodeId: string): boolean {
   return g.acceptFrom === "all" || g.acceptFrom.includes(nodeId);
@@ -83,7 +92,9 @@ function hashesIn(name: string): string[] {
 /** Every token hash this host minted (hand-off, owner and session links, live or not): the first
     claimant of each, whatever a peer registers. Read from the link stores' files. */
 export function localShareHashes(): Set<string> {
-  return new Set([...hashesIn("baton-links.json"), ...hashesIn("person-links.json"), ...hashesIn("session-shares.json")].map((h) => h.toLowerCase()));
+  return new Set(
+    [...hashesIn("baton-links.json"), ...hashesIn("person-links.json"), ...hashesIn("session-shares.json"), ...hashesIn("preview-links.json")].map((h) => h.toLowerCase()),
+  );
 }
 
 // ---- the store ----------------------------------------------------------------------------------
@@ -132,6 +143,9 @@ export class GatewayRegistry {
   private loaded: { path: string; stamp: string; hosts: HostRows[]; broken?: string } | null = null;
   private byHash = new Map<string, { host: HostRows; kind: RegistryLinkKind; exp: number }>();
   private changed: (() => void)[] = [];
+  /** `p` hashes a live host withdrew from its snapshot (turned off there), until their old expiry:
+      answered 410 rather than 404 (§mesh.public/preview-offline). Memory only. */
+  private withdrawnPreviews = new Map<string, number>();
 
   constructor(opts: RegistryOptions = {}) {
     this.file = opts.file ?? (() => join(stateRoot(), "share-gateway.json"));
@@ -216,6 +230,10 @@ export class GatewayRegistry {
     // The caller keeps its place in the order; a new host goes last.
     const next = hosts.flatMap((h) => (h === prev ? [mine] : others.filter((o) => o.nodeId === h.nodeId)));
     if (!prev) next.push(mine);
+    const kept = new Set(accepted.map((l) => l.h));
+    for (const l of prev?.links ?? []) if (l.kind === "p" && l.exp > ctx.now && !kept.has(l.h)) this.withdrawnPreviews.set(l.h, l.exp);
+    for (const h of kept) this.withdrawnPreviews.delete(h);
+    for (const [h, exp] of this.withdrawnPreviews) if (exp <= ctx.now) this.withdrawnPreviews.delete(h);
     const path = this.file();
     writeStore(path, { version: 1, hosts: next });
     this.swap(path, stampOf(path), next);
@@ -244,11 +262,17 @@ export class GatewayRegistry {
 
   /** Where a hash goes for a route of `kind`, or null: unknown, expired, of another kind, or its
       host no longer live. */
-  lookup(h: string, kind: "h" | "i" | "s", now: number, live: (nodeId: string) => boolean): RegistryHit | null {
+  lookup(h: string, kind: "h" | "i" | "s" | "p", now: number, live: (nodeId: string) => boolean): RegistryHit | null {
     this.hosts();
     const row = this.byHash.get(h);
     if (!row || row.kind !== kind || row.exp <= now || !live(row.host.nodeId)) return null;
     return { nodeId: row.host.nodeId, ingressPort: row.host.ingressPort };
+  }
+
+  /** Whether a live host withdrew this preview hash from its snapshot before its expiry. */
+  previewWithdrawn(h: string, now: number): boolean {
+    const exp = this.withdrawnPreviews.get(h);
+    return exp !== undefined && exp > now;
   }
 
   /** Every live host that listed an asset name, in first-registration order. */

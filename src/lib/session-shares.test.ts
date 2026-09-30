@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionShare, SessionSharePresence } from "../../shared/session-share";
-import { cleanLabels, createBlocked, expiresWord, imagesBlocked, isStalePreview, modeLine, openedLine, presenceWord, ShareApiError, shareLine, sharingTabLabel, sliceLine, thumbsLine, viewingNow, visitLine } from "./session-shares";
+import { cleanLabels, createBlocked, expiresWord, imagesBlocked, isShareChanged, isStalePreview, modeLine, openedLine, presenceWord, ShareApiError, shareLine, sharingTabLabel, sliceLine, thumbsLine, viewingNow, visitLine } from "./session-shares";
 
 test("labels are trimmed, capped, deduplicated case-insensitively, and never the anyone row's label", () => {
   assert.deepEqual(cleanLabels([" Ana ", "ana", "", "Ben", "Anyone with the link", "x".repeat(80)]), ["Ana", "Ben", "x".repeat(60)]);
@@ -97,4 +97,10 @@ test("the Sharing tab counts recipients viewing now, never a background tab, and
   assert.equal(viewingNow([share(["viewing"], { stoppedAt: "2026-09-30T00:00:00Z" })]), 0);
   assert.equal(sharingTabLabel(0), "Sharing");
   assert.equal(sharingTabLabel(2), "Sharing, 2 viewing now");
+});
+
+test("only a 409 share-changed reads as a share changed meanwhile", () => {
+  assert.equal(isShareChanged(new ShareApiError("x", 409, "share-changed")), true);
+  assert.equal(isShareChanged(new ShareApiError("x", 409, "stale-preview")), false);
+  assert.equal(isShareChanged(new ShareApiError("x", 400, "share-changed")), false);
 });

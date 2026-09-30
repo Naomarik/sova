@@ -22,6 +22,7 @@ import {
   expiresWord,
   extendShare,
   imagesBlocked,
+  isShareChanged,
   isStalePreview,
   modeLine,
   sliceLine,
@@ -377,6 +378,10 @@ function ManageShare(props: {
       if (isStalePreview(x)) {
         setStale(true);
         void readNext();
+      } else if (isShareChanged(x)) {
+        // The share moved under this confirm: back to Manage, whose banner says so, to look again.
+        props.setPreviewing(null);
+        setError(errText(x));
       } else setNextError(errText(x));
     } finally {
       setBusy(null);

@@ -109,6 +109,8 @@ export const sharingTabLabel = (viewing: number): string => (viewing > 0 ? `Shar
 /** A 409 from a mint or update whose previewed cut is no longer in the session file. */
 export const isStalePreview = (x: unknown): boolean => x instanceof ShareApiError && x.status === 409 && x.code === "stale-preview";
 export const STALE_PREVIEW = "The session changed. Preview it again.";
+/** A 409 from a change whose share was changed meanwhile (another tab, the share page). */
+export const isShareChanged = (x: unknown): boolean => x instanceof ShareApiError && x.status === 409 && x.code === "share-changed";
 
 /** Where the images of a preview stand: every index loaded, some failed, or some still loading. */
 export interface ThumbState {

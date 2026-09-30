@@ -64,7 +64,7 @@ export function shelfGroups(sessions: readonly SessionSummary[], profiles: reado
 }
 
 /**
- * The Profiles region (§app.session-list/profile-shelf): a shortcut above Needs you. `row` draws a
+ * The Profiles region (§app.session-list/profile-shelf): a shortcut under Groups. `row` draws a
  * session row the way the rest of the list does; `cwd` is the open session's folder.
  */
 export function ProfileShelf(props: { sessions: readonly SessionSummary[] | undefined; searching: boolean; cwd: string | null; row: (s: SessionSummary) => JSX.Element }) {

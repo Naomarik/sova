@@ -2,6 +2,7 @@
   "The watch, decision, reconciler, conflict and build charts."
   (:require
     #?(:clj [clojure.test :refer [deftest is testing]] :cljs [cljs.test :refer-macros [deftest is testing]])
+    [sova.org-charts.charts.reasons :as rs]
     [sova.org-charts.charts.refit.host :as h]
     [sova.org-charts.charts.watch :as w]))
 
@@ -215,3 +216,20 @@
           by-of (fn [x] (some #(when (= :reason/noted (:event %)) (get-in % [:data :by])) (h/elsewhere x)))]
       (is (= "chart" (by-of (r "chart"))))
       (is (= "system" (by-of (r "operator")))))))
+
+(deftest build-not-prompted-tells-the-overseer
+  ;; F20 follow-up (coordinator-42): a failed set-mode leaves the build started, not prompted (master), and
+  ;; its project's watch is told, since a build the chart started has no caller to answer
+  (let [told (fn [x] (keep #(when (= :reason/noted (:event %)) (:data %)) (h/elsewhere x)))
+        failed (fn [d] (-> (build d) (h/send! bsid :effect/done {:kind "make-worktree" :result {:branch "sova/pay-abc123" :target "main" :base "b0"}})
+                           (h/send! bsid :effect/failed {:kind "set-mode" :detail "no such mode"})))
+        x (failed {})
+        r (first (told x))]
+    (is (h/in? x bsid :ready))
+    (is (= "no such mode" (:mode-not-set (h/data x bsid))))
+    (is (not (some #{"first-prompt"} (h/kinds x bsid))) "never prompted in a mode it wasn't given")
+    (is (= "build/not-prompted" (:kind r)))
+    (is (= "system" (:by r)))
+    (is (= "The coding session \"Pay page\" started, but its mode could not be set, so its first prompt was not sent." (rs/text r)))
+    (is (rs/soon? r))
+    (is (empty? (keep :kind (told (failed {:prompt nil})))) "no prompt to send: nothing to tell")))

@@ -33,6 +33,7 @@
                                  (str n " decision" (plural n " was" "s were") " promoted into the spec."))
           "reconcile/drafted" (str n " decision" (plural n " is" "s are") " drafted and promotable.")
           "coding/settled" (str "The coding session \"" title "\" " (if failed "stopped with an error" "finished its turn") ".")
+          "build/not-prompted" (str "The coding session \"" title "\" started, but its mode could not be set, so its first prompt was not sent.")
           "build/merged" (str "The operator merged \"" title "\" (" branch ") into " target ".")
           "build/merge-refused" (str "Merge Branch for \"" title "\" was refused: " reason)
           "held/looks" (str "Today's looks are back (refused " (b/clock-time at) ").")
@@ -47,7 +48,7 @@
           (str kind)))))
 
 (def soon-kinds
-  #{"baton/done" "baton/asked-operator" "coding/settled" "build/merged" "build/merge-refused"
+  #{"baton/done" "baton/asked-operator" "coding/settled" "build/not-prompted" "build/merged" "build/merge-refused"
     "held/looks" "held/day" "held/raised" "item/stalled" "hold/review"})
 
 (defn soon?

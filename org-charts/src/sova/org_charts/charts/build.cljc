@@ -150,9 +150,13 @@
             (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "set-mode") :target :ready}
               (script {:expr (fn [_ d] (when (:branch d)
                                          (dsl/effect-ops d (dsl/effect-map :worktree-note (fn [_] {:text (commit-paragraph d)}) d))))}))
-            ;; its mode could not be set: started, not prompted
+            ;; its mode could not be set: started, not prompted (master); the overseer is told, since a
+            ;; build the chart started has no caller to answer
             (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "set-mode") :target :ready}
-              (script {:expr (fn [_ d] [(ops/assign :mode-not-set (or (:detail (e d)) true))])})))
+              (script {:expr (fn [_ d] [(ops/assign :mode-not-set (or (:detail (e d)) true))])})
+              (b/tell-watch (fn [d] (when-not (lv/blank? (:prompt d))
+                                      {:kind "build/not-prompted" :by "system" :params {:title (shown-title d) :session-id (:session-id d)}
+                                       :key (str "build/not-prompted:" (:session-id d))})))))
           (state {:id :prompting}
             (on-entry {} (dsl/effect :first-prompt (fn [d] {:prompt (first-prompt d)})))
             (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "first-prompt") :target :ready})

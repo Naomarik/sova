@@ -490,21 +490,26 @@ export class ClaudePrivateFiles {
 	dir?: string;
 	systemPromptFile?: string;
 	mcpConfigFile?: string;
-	/** Writes the configured files and returns the argv flags for them. Throws after cleanup. */
-	write(o: { tmpDir?: string; systemPrompt?: string; mcpServers: [string, ClaudeMcpServerEntry][] }): string[] {
+	/**
+	 * Writes the configured files and returns the argv flags for them. Throws after cleanup. `inside`:
+	 * the path `tmpDir` has for the process (a confined one sees its sandbox tmp elsewhere, e.g. `/tmp`),
+	 * which the flags then name.
+	 */
+	write(o: { tmpDir?: string; inside?: string; systemPrompt?: string; mcpServers: [string, ClaudeMcpServerEntry][] }): string[] {
 		const args: string[] = [];
 		if (!o.systemPrompt && !o.mcpServers.length) return args;
+		const named = (file: string) => o.inside === undefined || o.tmpDir === undefined ? file : path.join(o.inside, path.relative(o.tmpDir, file));
 		try {
 			this.dir = fs.mkdtempSync(path.join(o.tmpDir ?? os.tmpdir(), "pi-claude-"));
 			if (o.systemPrompt) {
 				this.systemPromptFile = path.join(this.dir, "system.md");
 				fs.writeFileSync(this.systemPromptFile, o.systemPrompt, { encoding: "utf8", mode: 0o600, flag: "wx" });
-				args.push("--append-system-prompt-file", this.systemPromptFile);
+				args.push("--append-system-prompt-file", named(this.systemPromptFile));
 			}
 			if (o.mcpServers.length) {
 				this.mcpConfigFile = path.join(this.dir, "mcp.json");
 				fs.writeFileSync(this.mcpConfigFile, JSON.stringify({ mcpServers: Object.fromEntries(o.mcpServers) }), { encoding: "utf8", mode: 0o600, flag: "wx" });
-				args.push("--mcp-config", this.mcpConfigFile);
+				args.push("--mcp-config", named(this.mcpConfigFile));
 			}
 		} catch (error) {
 			// Never run without the instructions or tools the caller configured.
@@ -546,6 +551,8 @@ export interface ClaudeTransportLimits {
 	maxLineBytes: number;
 }
 export type SpawnImpl = (command: string, args: string[], options: any) => ChildProcess;
+/** Data a launched process gets on an inherited fd (a pipe), never through argv or the environment. */
+export interface TransportFd { fd: number; data: string }
 /**
  * Everything the transport cannot decide: what a protocol error means, what to
  * do with output, and whether the owner is already tearing down. Hooks are
@@ -638,10 +645,31 @@ export class ClaudeTransport {
 	/** No new turn should be started while an interrupt is unanswered. */
 	isInterruptPending(): boolean { return this.interruptPromise !== undefined; }
 
-	/** Spawn the CLI. Spawn failures are thrown to the caller, which owns the message. */
-	launch(command: string, args: string[], options: { cwd: string; env?: Record<string, string> }): void {
-		const spawnOptions = { cwd: options.cwd, shell: false, detached: process.platform !== "win32", env: claudeEnv(options.env), stdio: ["pipe", "pipe", "pipe"] };
+	/**
+	 * Spawn the CLI. Spawn failures are thrown to the caller, which owns the message. A confined launch
+	 * passes `spawnEnv`, the whole environment of the spawned process (nothing merged in), and `fds`,
+	 * payloads each written to a pipe at that fd number whose write end is then closed. `hosted` is
+	 * handed to the spawnImpl as is: a hosting process confines the launch itself.
+	 */
+	launch(command: string, args: string[], options: { cwd: string; env?: Record<string, string>; spawnEnv?: Record<string, string>; fds?: TransportFd[]; hosted?: unknown }): void {
+		const fds = options.fds ?? [];
+		const stdio: string[] = ["pipe", "pipe", "pipe"];
+		for (const { fd } of fds) {
+			if (!Number.isInteger(fd) || fd < 3 || fd > 64 || stdio[fd] === "pipe") throw new Error(`Invalid launch fd ${fd}`);
+			while (stdio.length < fd) stdio.push("ignore");
+			stdio[fd] = "pipe";
+		}
+		const spawnOptions = {
+			cwd: options.cwd, shell: false, detached: process.platform !== "win32", env: options.spawnEnv ?? claudeEnv(options.env), stdio,
+			...(options.hosted === undefined ? {} : { hosted: options.hosted }),
+		};
 		this.proc = (this.spawnImpl ?? spawn)(command, args, spawnOptions);
+		for (const { fd, data } of fds) {
+			const pipe = this.proc.stdio?.[fd] as import("node:stream").Writable | null | undefined;
+			if (!pipe) continue;
+			pipe.on("error", () => { /* the process reports its own failure */ });
+			pipe.end(data);
+		}
 		this.wire(this.proc);
 	}
 	/** Re-attach to a process another host started: no argv, no environment of ours. */

@@ -1,0 +1,145 @@
+/**
+ * A Claude Code worker confined by the sandbox: what its process needs besides the policy, as the
+ * plain data the sandbox's generic launch seam takes (`sandbox/launch.ts` `LaunchNeeds`), and the
+ * confined spawn itself. The sandbox knows nothing of Claude; this file knows nothing of the policy.
+ *
+ * The worker runs with its own Claude Code config directory, `<agentDir>/sova/sandbox/claude/<key>/`
+ * (CLAUDE_CONFIG_DIR inside; kept across resumes), whose `projects/<slug>` is a link to the real
+ * transcript folder of its cwd, so its records land where every reader looks. Its login's
+ * credentials stay hidden: the access token (never the refresh token, accounts.ts accessTokenFor)
+ * is read outside at every launch and handed over on fd 3 (CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR,
+ * probed with CLI 2.1.282), so it is in no argv and no environment. Seen from outside, the process
+ * still names its login's directory in CLAUDE_CONFIG_DIR (spawnEnv), so the pool's
+ * /proc/<pid>/environ lookup (accounts.ts claudeRunsOn) keeps counting it on that login.
+ *
+ * Node builtins only, and the sandbox module is loaded by path (`confine.module`) at launch, never
+ * imported: a hosting process (subagents/host.ts) runs the same steps with the serialized data.
+ */
+import * as fs from "node:fs";
+import * as path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defaultClaudeDir, type ClaudeLoginChoice } from "./accounts.ts";
+import type { ConfineLaunchResult, LaunchCommand, LaunchNeeds } from "../sandbox/launch.ts";
+
+/** The confinement a worker's every launch goes through (subagents passes it from workerLaunch). */
+export interface ClaudeConfine {
+	/** workerLaunch's opaque scope and the module that exports `confineLaunch` / `workerTmpDir`. */
+	scope: string;
+	module: string;
+	/** The worker's session-qualified key (`<parent session>-<worker id>`): names its config dir. */
+	key: string;
+	/** The parent's agent dir, where the private config dirs live. */
+	agentDir: string;
+	/** Further paths the worker's own state needs writable: its team mailbox, spec-hook state dir and ledger file. */
+	writable?: string[];
+	/** A hosted worker: the host process confines it and owns this tmp (never the parent's). */
+	hostedTmpDir?: string;
+}
+
+/** The fd the access token arrives on inside. */
+export const TOKEN_FD = 3;
+export const TOKEN_FD_ENV = "CLAUDE_CODE_OAUTH_TOKEN_FILE_DESCRIPTOR";
+/** The hosts a confined worker's proxy allows besides the policy's (under read-only, the only ones). */
+export const CLAUDE_API_HOSTS = ["api.anthropic.com"];
+/** Claude Code's own sandbox is off inside ours: one boundary, ours. */
+export const CONFINED_SETTINGS = { sandbox: { enabled: false } } as const;
+/** Credentials a confined worker never inherits: its login's token comes on the fd only. */
+const SECRET_VARS = ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", TOKEN_FD_ENV];
+/** Entries of the login's directory the private one links to, read-only through their targets (user memory, agents, commands, skills). */
+const LINKED = ["CLAUDE.md", "agents", "commands", "skills", "plugins"];
+/** The CLI keeps a project slug whole up to this length; a longer one gets a hash suffix only it can compute. */
+const SLUG_MAX = 200;
+/** accounts.ts, for a hosting process that reads the token itself. */
+export const ACCOUNTS_MODULE = fileURLToPath(new URL("./accounts.ts", import.meta.url));
+
+/** `<agentDir>/sova/sandbox/claude/<key>/`: the worker's own Claude Code state, CLAUDE_CONFIG_DIR inside. */
+export function privateConfigDir(agentDir: string, key: string): string {
+	if (!/^[A-Za-z0-9._-]+$/.test(key) || key === "." || key === "..") throw new Error(`Not a worker key: ${key}`);
+	return path.join(agentDir, "sova", "sandbox", "claude", key);
+}
+/** Remove a worker's private config dir (its registry entry is gone). Never throws. */
+export function releasePrivateConfigDir(agentDir: string, key: string): void {
+	try { fs.rmSync(privateConfigDir(agentDir, key), { recursive: true, force: true }); } catch { /* gone */ }
+}
+/** The directory a login's token and transcripts come from: its CLAUDE_CONFIG_DIR, else Claude Code's own. */
+export function loginDirOf(login: Pick<ClaudeLoginChoice, "env"> | undefined): string {
+	return login?.env.CLAUDE_CONFIG_DIR ?? defaultClaudeDir();
+}
+/** The CLI's project folder name for a cwd: every non-alphanumeric becomes `-` (provider/session-records.ts). */
+const slugOf = (cwd: string): string => cwd.replace(/[^a-zA-Z0-9]/g, "-");
+
+/**
+ * Make the worker's private config dir (0700) and its links, and return the launch's `needs`: every
+ * path absolute. `env` is the extra environment the launch was given (MCP_TOOL_TIMEOUT and the like);
+ * the login's CLAUDE_CONFIG_DIR in it is replaced by the private dir inside and kept outside. Throws
+ * with the reason when the worker cannot be set up (the caller refuses the launch).
+ */
+export function claudeNeeds(o: {
+	confine: ClaudeConfine;
+	cwd: string;
+	login: Pick<ClaudeLoginChoice, "env"> | undefined;
+	env?: Record<string, string>;
+}): LaunchNeeds {
+	const loginDir = loginDirOf(o.login);
+	const home = privateConfigDir(o.confine.agentDir, o.confine.key);
+	const slug = slugOf(o.cwd);
+	if (slug.length > SLUG_MAX) throw new Error(`its working directory's path is too long for a confined Claude worker (${o.cwd.length} characters; the transcript folder name must stay under ${SLUG_MAX})`);
+	fs.mkdirSync(home, { recursive: true, mode: 0o700 });
+	try { fs.chmodSync(home, 0o700); } catch { /* best effort */ }
+	// The transcripts: every login's projects/ is Claude Code's own (accounts.ts SHARED_ENTRIES).
+	const projectsLink = path.join(loginDir, "projects");
+	if (!fs.existsSync(projectsLink)) fs.mkdirSync(projectsLink, { recursive: true });
+	const slugDir = path.join(fs.realpathSync(projectsLink), slug);
+	fs.mkdirSync(slugDir, { recursive: true });
+	fs.mkdirSync(path.join(home, "projects"), { recursive: true });
+	link(slugDir, path.join(home, "projects", slug));
+	for (const name of LINKED) {
+		let target: string;
+		try { target = fs.realpathSync(path.join(loginDir, name)); } catch { continue; }
+		if (!target.startsWith(home + path.sep)) link(target, path.join(home, name));
+	}
+	const extra = { ...o.env };
+	for (const name of [...SECRET_VARS, "CLAUDE_CONFIG_DIR"]) delete extra[name];
+	return {
+		writable: [home, slugDir, ...(o.confine.writable ?? [])],
+		proxyHosts: [...CLAUDE_API_HOSTS],
+		env: { ...extra, CLAUDE_CONFIG_DIR: home, [TOKEN_FD_ENV]: String(TOKEN_FD), DISABLE_AUTOUPDATER: "1", CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1" },
+		...(o.login?.env.CLAUDE_CONFIG_DIR ? { spawnEnv: { CLAUDE_CONFIG_DIR: o.login.env.CLAUDE_CONFIG_DIR } } : {}),
+		...(o.confine.hostedTmpDir ? { tmpDir: o.confine.hostedTmpDir } : {}),
+	};
+}
+/** A symlink at `at` to `target`, replacing a stale link (never a real file or directory). */
+function link(target: string, at: string): void {
+	let stat: fs.Stats | undefined;
+	try { stat = fs.lstatSync(at); } catch { stat = undefined; }
+	if (stat && !stat.isSymbolicLink()) return;
+	if (stat) {
+		if (fs.readlinkSync(at) === target) return;
+		fs.unlinkSync(at);
+	}
+	fs.symlinkSync(target, at);
+}
+
+/** The launch environment a confined claude is picked from: the unconfined one, without any credential or login dir. */
+export function confinedSourceEnv(env: NodeJS.ProcessEnv): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [name, value] of Object.entries(env)) if (typeof value === "string" && !SECRET_VARS.includes(name) && name !== "CLAUDE_CONFIG_DIR") out[name] = value;
+	return out;
+}
+
+/** What the sandbox module exports (sandbox/launch.ts), as this file uses it. */
+export interface LaunchModule {
+	confineLaunch(scope: string, needs: LaunchNeeds, launch: LaunchCommand): Promise<ConfineLaunchResult>;
+	workerTmpDir(scope: string, needs?: Pick<LaunchNeeds, "tmpDir">): { host: string; inside: string };
+}
+const loaded = new Map<string, Promise<LaunchModule>>();
+/** The sandbox's launch module, by the path workerLaunch named (loaded once per path). */
+export function launchModule(file: string): Promise<LaunchModule> {
+	let module = loaded.get(file);
+	if (!module) {
+		module = import(file) as Promise<LaunchModule>;
+		loaded.set(file, module);
+		module.catch(() => loaded.delete(file));
+	}
+	return module;
+}

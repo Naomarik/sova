@@ -7,12 +7,13 @@
 import { randomUUID } from "node:crypto";
 import { CLAUDE_PERMISSION_MODES, type ClaudePermissionMode } from "./policy.ts";
 import {
-	applyResultUsage, buildClaudeArgv, ClaudeFailureDetector, ClaudePrivateFiles, ClaudeTransport, contextTokensFrom, deferred,
+	applyResultUsage, buildClaudeArgv, claudeEnv, ClaudeFailureDetector, ClaudePrivateFiles, ClaudeTransport, contextTokensFrom, deferred,
 	isMessageStart, isUncorrelatedResult, mcpServerFailure, parseCanUseTool, permissionDenialsFrom, record,
 	resultError, resultMatches, textBlocksText, textDelta,
 	type ClaudeToolPermissionRequest, type ControlAck, type Deferred,
 } from "./transport.ts";
-import { switchText, type ClaudeAccountFailure, type ClaudeLoginChoice, type LoginUser } from "./accounts.ts";
+import { freshAccessToken, refreshLogin, switchText, type RefreshImpl, type ClaudeAccountFailure, type ClaudeLoginChoice, type LoginUser } from "./accounts.ts";
+import { ACCOUNTS_MODULE, CONFINED_SETTINGS, TOKEN_FD, claudeNeeds, confinedSourceEnv, launchModule, loginDirOf, type ClaudeConfine } from "./confined-launch.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
 
@@ -92,6 +93,24 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 	 * that ran under a detached host continues without one (the host's files belong to its first process).
 	 */
 	respawnImpl?: SpawnOptions["spawnImpl"];
+	/**
+	 * Run every process of this worker inside the sandbox (confined-launch.ts): its start, a resume, a
+	 * move to another login and a failover alike, since all of them go through launch(). Claude's own
+	 * sandbox is then off, its login's access token is read again at each launch and handed over on an
+	 * fd, and its private launch files live in its sandbox tmp. With `hostedTmpDir`, the first process's
+	 * spawnImpl is a hosting process that confines the launch itself.
+	 */
+	confine?: ClaudeConfine;
+	/** @internal How a confined launch refreshes its login (default accounts.ts refreshLogin with `executable`). */
+	refreshImpl?: RefreshImpl;
+}
+/** What a hosting process gets to confine a launch itself (host.ts); plain data, no secret. */
+export interface ClaudeHostedConfine {
+	module: string;
+	scope: string;
+	needs: ReturnType<typeof claudeNeeds>;
+	/** The token the host reads itself (accounts.ts freshAccessToken of `dir`) and hands over on `fd`. */
+	token: { module: string; dir: string; fd: number; force: boolean };
 }
 /** What a worker needs of the host's logins; accounts.ts ClaudeLogins is the real one. */
 export interface ClaudeWorkerLogins {
@@ -211,6 +230,12 @@ export class ClaudeRunner implements Worker {
 	private answeredIds?: Set<string>;
 	/** A resume that dies before initialize reports the CLI's own reason (e.g. no such conversation). */
 	private lastStderr?: string;
+	/** The current transport's process is started by the hosting process (a confined launch is then the host's). */
+	private viaHost = false;
+	/** Confined: the next launch refreshes its login's token first (after a 401). */
+	private refreshNext = false;
+	/** Confined: the login whose token a 401 already refreshed once; a second 401 on it fails over. */
+	private authRefreshed?: string;
 
 	private readonly options: ClaudeSpawnOptions;
 	private readonly handlers: ClaudeRunnerHandlers;
@@ -226,7 +251,7 @@ export class ClaudeRunner implements Worker {
 			if (!Number.isSafeInteger(value) || value <= 0) throw new Error("Runner limits/timings must be positive integers");
 		}
 		this.login = options.login;
-		this.transport = this.makeTransport(options.spawnImpl);
+		this.transport = this.makeTransport(options.spawnImpl, !!options.confine?.hostedTmpDir);
 		this.whenClosed = this.closedState.promise;
 		if (options.adopt) this.sessionId = options.adopt.sessionId;
 		else if (options.resume) this.sessionId = options.resume.sessionId;
@@ -238,7 +263,8 @@ export class ClaudeRunner implements Worker {
 	 * One process's transport. Its hooks act only while it is the worker's current one: a process
 	 * being replaced after a login switch dies without failing, closing or notifying the worker.
 	 */
-	private makeTransport(spawnImpl: ClaudeSpawnOptions["spawnImpl"]): ClaudeTransport {
+	private makeTransport(spawnImpl: ClaudeSpawnOptions["spawnImpl"], viaHost = false): ClaudeTransport {
+		this.viaHost = viaHost;
 		const forced = this.login && this.options.logins?.forcedFailure?.(this.login.id);
 		const transport: ClaudeTransport = new ClaudeTransport({
 			timings: this.timings,
@@ -315,8 +341,12 @@ export class ClaudeRunner implements Worker {
 			this.fail("Claude runner does not support Pi forks or nested extensions"); return;
 		}
 		if (o.logins?.acquire && this.login) { void this.startOnAcquired(o.logins.acquire.bind(o.logins)); return; }
-		if (!this.launch(o.resume?.sessionId, o.env)) return;
-		void this.initialize();
+		this.then(this.launch(o.resume?.sessionId, o.env), () => void this.initialize());
+	}
+	/** After a launch: `next` once it spawned (a confined launch resolves later). */
+	private then(launched: boolean | Promise<boolean>, next: () => void): void {
+		if (launched === true) next();
+		else if (launched !== false) void launched.then((ok) => { if (ok) next(); });
 	}
 	/** In the pool, a worker that would start on `default` borrows a login first (accounts.ts acquire). */
 	private async startOnAcquired(acquire: (current?: string) => Promise<ClaudeLoginChoice>): Promise<void> {
@@ -330,12 +360,16 @@ export class ClaudeRunner implements Worker {
 			}
 		} catch { /* start on the login chosen at creation */ }
 		if (this.stopping || this.closed) return;
-		if (!this.launch(this.options.resume?.sessionId, env)) return;
-		void this.initialize();
+		this.then(this.launch(this.options.resume?.sessionId, env), () => void this.initialize());
 	}
 
-	/** Build the argv and private files, then spawn the current transport. False once failed. */
-	private launch(resume: string | undefined, env: Record<string, string> | undefined): boolean {
+	/**
+	 * Build the argv and private files, then spawn the current transport. False once failed. The one
+	 * chokepoint every process of the worker starts through: a confined worker's launch goes through
+	 * the sandbox here (launchConfined), whichever path asked for it.
+	 */
+	private launch(resume: string | undefined, env: Record<string, string> | undefined): boolean | Promise<boolean> {
+		if (this.options.confine) return this.launchConfined(this.options.confine, resume, env);
 		const o = this.options;
 		const permissionMode = o.permissionMode ?? "bypassPermissions";
 		const hostPermissions = permissionMode !== "bypassPermissions" && !!o.onPermission;
@@ -353,6 +387,76 @@ export class ClaudeRunner implements Worker {
 		try {
 			this.transport.launch(o.executable ?? "claude", args, { cwd: o.cwd, env });
 		} catch (error) { this.fail(`Spawn failed: ${String(error)}`); return false; }
+		this.trackLogin();
+		return true;
+	}
+
+	/**
+	 * The confined launch: Claude's own sandbox off (merged over the caller's settings, spec hooks
+	 * included), the private launch files in the worker's sandbox tmp named by their inside path, the
+	 * login's access token read again (refreshed first when under an hour is left, or after a 401) and
+	 * handed over on an fd, and the process wrapped by the sandbox's `confineLaunch`. A hosted process
+	 * gets the same data and confines itself (the host reads the token). Never spawns unconfined.
+	 */
+	private async launchConfined(confine: ClaudeConfine, resume: string | undefined, env: Record<string, string> | undefined): Promise<boolean> {
+		const o = this.options;
+		const transport = this.transport;
+		const gone = () => this.stopping || this.transport !== transport || transport.isClosed();
+		let settings: Record<string, unknown> = {};
+		if (o.settingsJson !== undefined) {
+			let parsed: unknown;
+			try { parsed = JSON.parse(o.settingsJson); } catch { parsed = undefined; }
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) { this.fail("Invalid settingsJson: must be a JSON object"); return false; }
+			settings = parsed as Record<string, unknown>;
+		}
+		const permissionMode = o.permissionMode ?? "bypassPermissions";
+		const hostPermissions = permissionMode !== "bypassPermissions" && !!o.onPermission;
+		const built = buildClaudeArgv({
+			permissionMode, permissionModes: CLAUDE_PERMISSION_MODES, hostPermissions,
+			model: o.model, effort: o.effort, tools: o.tools, allowedTools: o.allowedTools,
+			mcpServers: o.mcpServers, env, maxBudgetUsd: o.maxBudgetUsd, settingsJson: JSON.stringify({ ...settings, ...CONFINED_SETTINGS }),
+			...(resume ? { resume } : {}),
+		});
+		if (built.error !== undefined) { this.fail(built.error); return false; }
+		const refusal = (why: string) => `This Claude Code worker cannot start confined by the sandbox: ${why}`;
+		let needs: ReturnType<typeof claudeNeeds>;
+		try { needs = claudeNeeds({ confine, cwd: o.cwd, login: this.login, env }); }
+		catch (error) { this.fail(refusal((error as Error).message)); return false; }
+		let module: Awaited<ReturnType<typeof launchModule>>;
+		let tmp: { host: string; inside: string };
+		try {
+			module = await launchModule(confine.module);
+			tmp = module.workerTmpDir(confine.scope, needs);
+		} catch (error) { if (!gone()) this.fail(refusal(`the sandbox's launch module failed (${(error as Error).message})`)); return false; }
+		if (gone()) return false;
+		const args = built.args;
+		try {
+			args.push(...this.privateFiles.write({ tmpDir: tmp.host, inside: tmp.inside, systemPrompt: o.systemPrompt, mcpServers: built.mcpServers }));
+		} catch (error) { this.fail((error as Error).message); return false; }
+		const force = this.refreshNext;
+		this.refreshNext = false;
+		const loginDir = loginDirOf(this.login);
+		const source = confinedSourceEnv(claudeEnv(env));
+		const command = o.executable ?? "claude";
+		if (this.viaHost) {
+			const hosted: ClaudeHostedConfine = { module: confine.module, scope: confine.scope, needs, token: { module: ACCOUNTS_MODULE, dir: loginDir, fd: TOKEN_FD, force } };
+			try { transport.launch(command, args, { cwd: o.cwd, env, hosted }); }
+			catch (error) { this.fail(`Spawn failed: ${String(error)}`); return false; }
+			this.trackLogin();
+			return true;
+		}
+		const token = await freshAccessToken(loginDir, { force, refresh: o.refreshImpl ?? ((dir) => refreshLogin(dir, { executable: o.executable })) });
+		if (gone()) return false;
+		if (!token) { this.fail(refusal(`the Claude login ${this.login?.label ?? "default"} has no access token to hand over (sign it in again)`)); return false; }
+		let confined: Awaited<ReturnType<typeof module.confineLaunch>>;
+		try { confined = await module.confineLaunch(confine.scope, { ...needs, fds: [{ fd: TOKEN_FD, data: token.token }] }, { command, args, cwd: o.cwd, env: source }); }
+		catch (error) { if (!gone()) this.fail(refusal((error as Error).message)); return false; }
+		if ("refused" in confined) { if (!gone()) this.fail(confined.refused); return false; }
+		if (gone()) { void confined.cleanup(); return false; }
+		try {
+			transport.launch(confined.command, confined.args, { cwd: o.cwd, spawnEnv: confined.spawnEnv, fds: confined.fds });
+		} catch (error) { void confined.cleanup(); this.fail(`Spawn failed: ${String(error)}`); return false; }
+		void transport.whenClosed.then(() => confined.cleanup()).catch(() => undefined);
 		this.trackLogin();
 		return true;
 	}
@@ -405,7 +509,7 @@ export class ClaudeRunner implements Worker {
 		if (!to.env.CLAUDE_CONFIG_DIR) delete env.CLAUDE_CONFIG_DIR;
 		this.transport = this.makeTransport(this.options.respawnImpl);
 		this.switching = false;
-		if (!this.launch(this.sessionId, env)) return;
+		if (!(await this.launch(this.sessionId, env))) return;
 		const ok = await this.transport.control("initialize");
 		if (this.stopping || this.closed || this.leaderExited) return;
 		if (!ok) { this.fail(`Claude initialize failed after moving to ${to.label}`); return; }
@@ -610,6 +714,8 @@ export class ClaudeRunner implements Worker {
 			this.dropQueue(`after task ${outcome}`);
 		}
 		if (!this.stopping && !this.closed) this.status = "waiting";
+		// A task that ran through is proof the login's token works again: a later 401 refreshes once more.
+		if (outcome === "success") this.authRefreshed = undefined;
 		task.accepted.resolve(correlated); task.settled.resolve(correlated);
 		this.touch();
 		// Never wake the parent between queued tasks, during redirect, or while
@@ -631,6 +737,20 @@ export class ClaudeRunner implements Worker {
 		if (this.switching || this.stopping || this.redirecting || task.cancelled || !this.sessionId || this.respawns >= 16) return false;
 		const from = this.login!;
 		const logins = this.options.logins!;
+		// Confined: the login is likely fine and only the token handed in expired. Refresh it once and
+		// resume on the same login; a second refusal fails over as usual.
+		if (this.options.confine && failure.kind === "auth" && this.authRefreshed !== from.id) {
+			this.authRefreshed = from.id;
+			this.refreshNext = true;
+			this.respawns++;
+			this.switching = true;
+			this.initialized = false;
+			clearTimeout(task.acceptTimer);
+			this.cancelPermissions();
+			this.push("system", `Claude: ${from.label} refused the worker's token; refreshing it and resuming on the same login`);
+			void this.respawnOn(task, from);
+			return true;
+		}
 		if (logins.failoverAsync) {
 			// The pool: `from` goes back, and the next login may be borrowed first. The failed result
 			// waits; with no login found it settles the task as it would have.
@@ -678,19 +798,20 @@ export class ClaudeRunner implements Worker {
 			this.close(null, null);
 			return;
 		}
+		const same = this.login?.id === to.id;
 		this.login = to;
 		const env = { ...this.options.env, ...to.env };
 		if (!to.env.CLAUDE_CONFIG_DIR) delete env.CLAUDE_CONFIG_DIR;
 		this.transport = this.makeTransport(this.options.respawnImpl);
 		this.switching = false;
-		if (!this.launch(this.sessionId, env)) return;
+		if (!(await this.launch(this.sessionId, env))) return;
 		const ok = await this.transport.control("initialize");
 		if (this.stopping || this.closed || this.leaderExited) return;
 		if (!ok) { this.fail(`Claude initialize failed after switching to ${to.label}`); return; }
 		this.privateFiles.releaseSystemPrompt();
 		this.initialized = true;
 		const again = task.progressed
-			? `[Your previous turn was interrupted: its Claude login was switched (${to.label}). Continue where you left off. The interrupted message was:]\n\n${task.message}`
+			? `[Your previous turn was interrupted: ${same ? `its Claude login's token was refreshed (${to.label})` : `its Claude login was switched (${to.label})`}. Continue where you left off. The interrupted message was:]\n\n${task.message}`
 			: task.message;
 		this.dispatch(again.length <= this.limits.maxInputChars ? again : task.message, task.kind);
 	}

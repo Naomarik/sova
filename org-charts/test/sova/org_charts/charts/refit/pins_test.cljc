@@ -384,15 +384,3 @@
   (is (not (st/settled? "item" [:item :asking])))
   (is (= [{:sid "a" :settled true}] (st/note [{:sid "a" :settled true}] {:sid "a" :kind "gathering"})) "r11m10: noted twice is one row, as it was")
   (is (= [{:sid "a" :settled true} {:sid "b" :kind "gathering" :settled false}] (st/note [{:sid "a" :settled true}] {:sid "b" :kind "gathering"}))))
-
-(deftest send-link-refusal-pins
-  (let [p   {:id "p1" :name "Ann" :status "active"}
-        row {:holder "p1" :handoffs [{:n 1 :to "p1"}]}]
-    (is (nil? (rb/send-link-refusal row {:target p})) "the holder of the current hand-off")
-    (is (= "Ann is not active, so they get no link." (:sentence (rb/send-link-refusal row {:target (assoc p :status "left")}))))
-    (is (= "Ann does not hold the baton, so there is no link to send." (:sentence (rb/send-link-refusal (assoc row :holder "operator") {:target p}))))
-    (is (= "person must be a roster person's id" (:sentence (rb/send-link-refusal row {:target nil}))))
-    (let [offer {:offer-id "o1" :holder nil :offers [{:id "o1" :n 2 :state "open" :to ["p1" "p2"] :reach {"p1" {:state "waiting"}}}]}]
-      (is (= "Ann is not reached yet: their link is made when their working hours start." (:sentence (rb/send-link-refusal offer {:target p}))))
-      (is (nil? (rb/send-link-refusal offer {:target (assoc p :id "p2")})) "an invitee with no reach entry was reached at once")
-      (is (= "Ann is not invited to the open offer." (:sentence (rb/send-link-refusal offer {:target (assoc p :id "p3")})))))))

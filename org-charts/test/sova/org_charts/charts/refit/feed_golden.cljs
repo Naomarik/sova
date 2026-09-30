@@ -27,7 +27,7 @@
    ["baton" ":at-limit" [] "[:under]" 0] :quiet
    ["baton" ":baton" [":baton/abilities"] "[]" 0] :feed
    ["baton" ":baton" [":baton/extend"] "[]" 0] :feed
-   ["baton" ":baton" [":baton/send-link"] "[]" 0] :feed
+   ["project" ":project" [":outreach/send"] "[]" 0] :feed
    ["baton" ":baton" [":baton/hide"] "[]" 0] :feed
    ["baton" ":baton" [":baton/propose"] "[]" 0] :feed
    ["baton" ":baton" [":baton/record-decision"] "[]" 0] :feed

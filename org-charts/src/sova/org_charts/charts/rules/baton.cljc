@@ -123,23 +123,6 @@
       (ended? data) (r/refuse 409 (str "This session is " (course data) "."))
       (> (+ max by) messages-cap) (r/refuse 400 (str "A conversation's limit is at most " messages-cap " messages (it is " max " now).")))))
 
-(defn send-link-refusal
-  "Send a person their link on a channel outside Sova (the host resolved `target`): an active person
-   who holds the current hand-off, or an invitee of the current offer already reached (as Get Link)."
-  [data {:keys [target invalid]}]
-  (let [o   (current-offer data)
-        pid (:id target)]
-    (cond
-      (not (blank? invalid)) (r/refuse 400 invalid)
-      (ended? data) (r/refuse 409 (str "This session is " (course data) "."))
-      (nil? pid) (r/refuse 400 "person must be a roster person's id")
-      (not= "active" (:status target)) (r/refuse 409 (str (:name target) " is not active, so they get no link."))
-      o (cond
-          (not (some #{pid} (:to o))) (r/refuse 409 (str (:name target) " is not invited to the open offer."))
-          (= "waiting" (get-in o [:reach pid :state]))
-          (r/refuse 409 (str (:name target) " is not reached yet: their link is made when their working hours start.")))
-      (not= pid (:holder data)) (r/refuse 409 (str (:name target) " does not hold the baton, so there is no link to send.")))))
-
 (defn abilities-refusal [data {:keys [invalid]}]
   (cond
     (ended? data) (r/refuse 409 (str "This conversation is " (course data) "."))

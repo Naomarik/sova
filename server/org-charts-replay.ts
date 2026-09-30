@@ -1129,8 +1129,14 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   };
 
   // ---- looks ---------------------------------------------------------------------------------------------------
-  /** The watch's pending reason kinds (noted since its current look started). */
-  const pendingNow = () => ((world.data(S.watch).reasons as { kind?: string }[] | undefined) ?? []).map((r) => String(r.kind));
+  /** The chart's look at `at` when it carried only reasons this trace's code lacks (drift), else undefined. */
+  const driftLook = (at: unknown) =>
+    world.looks.find(
+      (l) =>
+        l.at === at &&
+        l.kinds.length > 0 &&
+        l.kinds.every((k) => (k === "baton/asked-operator" && F.askedOperatorReason === false) || (k === "coding/settled" && F.codingSettledReason === false)),
+    );
   /** The reasons of the last look, when it was cut off (C1), until the next look. */
   let requeued: { at: number; kinds: Set<string> } | null = null;
   const realLook = async (s: Step) => {
@@ -1164,6 +1170,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       // verifier-3 R2: only traces older than 239852ee (no coding/settled reason) lack the look's record of a Run Now.
       else if (F.codingSettledReason === false && explained.length === realKinds.length && pendingKinds.length && !conf.includes("running"))
         diverge("look-started", "a chart look", { at: leaves(conf), reasons: pendingKinds }, "store-shape", `a look before any rule allows one, carrying reasons the chart holds: a Run Now with reasons pending (no store records the click, in a trace older than 239852ee); resynced as one. ${PROPOSE.dated}`);
+      else if (driftLook(d.lastRunAt))
+        diverge("look-started", "a chart look", { at: leaves(conf), reasons: pendingKinds }, "drift", "the chart's last look was for a reason this trace's code lacks; it restarted the chart's gap, so the chart's next look waits past this one", { chartLook: { at: driftLook(d.lastRunAt)!.at - T0, kinds: driftLook(d.lastRunAt)!.kinds }, commits: driftLook(d.lastRunAt)!.kinds.includes("coding/settled") ? ["239852ee"] : ["8b7f6751"] });
       else if (conf.includes("running") && realKinds.every((k) => k === "run-now"))
         diverge("look-started", "a chart look", leaves(conf), "store-shape", `a Run Now while the previous look still runs in the chart: that look's end is missing from its session (cut off); resynced. ${PROPOSE.dated}`);
       else diverge("look-started", "a chart look", { at: leaves(conf), reasons: pendingKinds }, null, "a real look started where the chart started none", { chartNews: world.chartNews.filter((n) => realKinds.includes(n.kind)).map((n) => ({ ...n, at: n.at - T0 })), watch: { lastRunAt: typeof d.lastRunAt === "number" ? d.lastRunAt - T0 : null } });

@@ -762,6 +762,15 @@ export function sessionChoice(
 export const codingChoice = (input: { model?: string; thinking?: string }, settings: Parameters<typeof sessionChoice>[2], running: Parameters<typeof sessionChoice>[3]) =>
   sessionChoice("coding", input, settings, running);
 
+/**
+ * What a build started without them gets (F20: the item chart's own L3 build names no mode, model or thinking):
+ * the project's coding mode (else Automatic) and its coding model, as Start coding gives them.
+ */
+export async function buildDefaults(orgId: string, projectId: string): Promise<{ mode: ProjectCodingMode; model: string | null; thinking: string | null }> {
+  const settings = readPoSettings(projectOverseerPaths(orgId, projectId));
+  return { mode: baseCodingMode(settings.codingMode, projectOf(orgId, projectId).root), ...codingChoice({}, settings, await overseerRunning(orgId, projectId)) };
+}
+
 /** A gathering session's model and thinking, as createBaton takes them. */
 async function gatheringChoice(orgId: string, projectId: string, input: { model?: string; thinking?: string }): Promise<{ model?: string; thinking?: string }> {
   const c = sessionChoice("gathering", input, readPoSettings(projectOverseerPaths(orgId, projectId)), await overseerRunning(orgId, projectId));

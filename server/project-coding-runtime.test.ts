@@ -34,6 +34,7 @@ const { settled } = await import("./workspace-git");
 const { offersMerge } = await import("../src/lib/coding-worktrees");
 const { readBuilds, withWorktreePath } = await import("./build-loadout");
 const { seedBuild } = await import("./org-test-fixtures");
+const { envelopeFor, hostOf } = await import("./org-engine");
 /** A project's builds with their worktree folders on this host. */
 const buildsOf = async (orgId: string, projectId: string, root: string) => Promise.all(readBuilds(orgId, projectId).map(async (r) => ({ ...r, worktree: (await withWorktreePath(r, root))?.worktree })));
 
@@ -337,6 +338,44 @@ describe("a project's coding sessions", async () => {
     assert.ok(currentLinkOrigin(), "the listener is bound, so ordinary runtimes get the link flag too");
     assert.deepEqual([...extensionFlagsFor(plainRoot, false, true, true)], [], "the project overseer and baton sessions: none, even with the Claude Code switch on");
     assert.deepEqual([...extensionFlagsFor(plainRoot, false, false, true).keys()], ["claude-code-provider", "sova-link"], "an ordinary session keeps them");
+  });
+
+  test("F20 (r3): at L3 the item chart's own build of a gap's promoted decisions gets the project's mode, then its first prompt", async () => {
+    writeDefault("delegate", ["align"]);
+    // Automatic (no coding mode set): normal · spec, for a project with a spec.
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L3", holdMin: 0, codingMode: null });
+    const projectSid = `project/${org.id}/${project.id}`;
+    const itemSid = `item/${org.id}/${project.id}/g_build1`;
+    const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
+    assert.equal((await hostOf(org.id).act(projectSid, "gap/file", { gapId: "g_build1", ideaId: "§gap/login" }, envelope, { settle: true })).taken, true);
+    const before = readBuilds(org.id, project.id).length;
+    // A promoted decision of the gap, as its decision session reports it: the chart builds it itself.
+    await hostOf(org.id).act(
+      itemSid,
+      "link/moved",
+      { from: `decision/${org.id}/${project.id}/d_login1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "The login page asks for email and password.", record: "§req/login" } },
+      envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+      { settle: true },
+    );
+    let row: ReturnType<typeof readBuilds>[number] | undefined;
+    const sidOf = (r: { sessionId: string }) => `build/${org.id}/${project.id}/${r.sessionId}`;
+    for (let i = 0; i < 200 && !(row && hostOf(org.id).configuration(sidOf(row))?.includes("ready")); i++) {
+      await new Promise((r) => setTimeout(r, 50));
+      row = readBuilds(org.id, project.id).slice(before).find((r) => r.title === "Build §gap/login");
+    }
+    assert.ok(row?.path, `the chart started a build: ${JSON.stringify(readBuilds(org.id, project.id).slice(before))}`);
+    const sid = sidOf(row);
+    const d = hostOf(org.id).data(sid) ?? {};
+    assert.ok(hostOf(org.id).configuration(sid)?.includes("ready"), "its setup ended");
+    assert.equal(d["modeNotSet"], undefined, "its mode was set");
+    assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] }, "the project's mode, never the default's");
+    // No auth here: the runtime takes the prompt and its turn fails, so the file may never show it; the chart's
+    // log shows the first prompt sent and answered.
+    const rows = hostOf(org.id).log.rows({ sessions: [sid] });
+    const setup = rows.map((r) => r.after.find((x) => ["making-worktree", "setting-mode", "prompting", "ready", "not-started"].includes(x)));
+    assert.deepEqual([...new Set(setup)], ["making-worktree", "setting-mode", "prompting", "ready"], "mode set, then the first prompt");
+    assert.ok(rows.some((r) => r.event === "effect/done" && r.before.includes("prompting") && r.after.includes("ready")), "the prompt was taken");
+    assert.equal(d["promptError"], undefined);
   });
 
   test("gathering sessions stay mode-less, whatever the project's coding mode and the default", async () => {

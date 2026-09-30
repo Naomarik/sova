@@ -229,7 +229,12 @@ async function createBuildSession(cwd: string, sessionId: string, d: Record<stri
   if (have) return have;
   const path = await sessionMaker(cwd, sessionId);
   fresh.set(sessionId, path);
-  const choice = { model: typeof d.model === "string" && d.model ? d.model : null, thinking: typeof d.thinking === "string" && d.thinking ? d.thinking : null };
+  let choice = { model: typeof d.model === "string" && d.model ? d.model : null, thinking: typeof d.thinking === "string" && d.thinking ? d.thinking : null };
+  // A build the item chart started itself (L3) names no model: the project's coding model, as Start coding gives it.
+  if (!choice.model) {
+    const def = await (await import("./project-overseer")).buildDefaults(str(d.orgId), str(d.projectId));
+    choice = { model: def.model, thinking: choice.thinking ?? def.thinking };
+  }
   // Opened on its model and thinking from the start (its file never records the default first);
   // set again only when the open didn't take them (a model without auth, an unknown level).
   setOpeningChoice(path, choice);
@@ -300,10 +305,12 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
   });
 
   host.effects.register("set-mode", async (e) => {
-    const { sessionId } = sessionOf(host, e);
+    const { orgId: oid, projectId, sessionId } = sessionOf(host, e);
     if (seeded.has(sessionId)) return {};
     try {
-      await applyCodingMode(pathOrThrow(sessionId), e.mode as ProjectCodingMode);
+      // F20: a build the item chart started itself (L3) names no mode: the project's, as Start coding gives it.
+      const mode = (e.mode as ProjectCodingMode | null | undefined) ?? (await (await import("./project-overseer")).buildDefaults(oid, projectId)).mode;
+      await applyCodingMode(pathOrThrow(sessionId), mode);
     } catch (err) {
       // The session stays, listed and counted; its first turn never runs in a mode it wasn't given.
       console.warn(`[build] ${sessionId}: mode not set: ${err instanceof Error ? err.message : String(err)}`);

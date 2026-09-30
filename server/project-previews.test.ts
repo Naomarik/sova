@@ -35,7 +35,7 @@ const kept = await import("./preview-kept");
 const links = await import("./preview-links");
 const { stopStaticServe, staticServes } = await import("./preview-serve");
 const { createPreviewProxy } = await import("./share/preview-proxy");
-const { PREVIEW_IN_GATHERING } = await import("./project-overseer-tools");
+const { PREVIEW_IN_GATHERING, previewLinkFree } = await import("./project-overseer-tools");
 
 after(async () => {
   for (const s of staticServes()) await stopStaticServe(s.id);
@@ -171,16 +171,18 @@ describe("the overseer's guard: L1, the hold, the operator's turn (§app.project
     }
   });
 
-  test("in the operator's own turn it runs at once, even at L0, and the result carries the link in the fixed shape", async () => {
+  test("in the operator's own turn it runs at once, even at L0; the result is the fixed shape, never the link", async () => {
     await settings({ autonomy: "L0", holdMin: 10 });
     const out = await run("sova_preview", folderStart, true);
     assert.equal(holdsOf().length, 0, "never held in the operator's turn");
     const p = out.details.preview as Record<string, unknown>;
-    assert.deepEqual(Object.keys(p).sort(), ["branch", "createdBy", "expiresAt", "id", "orgId", "projectId", "purpose", "running", "sessionId", "state", "target", "url", "v"]);
+    assert.deepEqual(Object.keys(p).sort(), ["branch", "createdBy", "expiresAt", "id", "linkKept", "orgId", "projectId", "purpose", "running", "sessionId", "state", "target", "v"]);
     assert.deepEqual([p.v, p.sessionId, p.branch, p.state, p.running, p.purpose], [1, "c-shop", "sova/shop-abc123", "active", true, "The shop for Ana"]);
     assert.deepEqual(p.target, { kind: "static", folder: "dist" });
-    assert.match(String(p.url), /^https:\/\/[a-z2-7]{52}\.preview\.example\.invalid\/$/);
-    assert.ok(out.content[0]!.text.includes(String(p.url)));
+    assert.equal(p.linkKept, true);
+    const url = (await list()).find((v) => v.id === p.id)!.url!;
+    assert.match(url, /^https:\/\/[a-z2-7]{52}\.preview\.example\.invalid\/$/, "kept, for the operator's list");
+    assert.ok(!JSON.stringify(out).includes(labelOf(url)), "never in the overseer's result");
   });
 
   test("turning one off is never held: at L0, in a run of its own, at once", async () => {
@@ -225,8 +227,8 @@ describe("what it may show (§mesh.public/preview-serve)", () => {
 
   test("through the preview: the folder's files, never a dot-file, a symlink out or a listing; another program on its port is never shown", async () => {
     const out = await run("sova_preview", folderStart, true);
-    const p = out.details.preview as { id: string; url: string };
-    const label = labelOf(p.url);
+    const p = out.details.preview as { id: string };
+    const label = labelOf((await list()).find((v) => v.id === p.id)!.url!);
     assert.deepEqual(await fetchVia(label, "/"), { status: 200, body: "<h1>Shop</h1>" });
     assert.equal((await fetchVia(label, "/assets/app.js")).status, 200);
     for (const path of ["/.git/config", "/.env", "/%2egit/config", "/out/secret.txt", "/assets/", "/../outside/secret.txt", "/assets/%2e%2e/.env"]) assert.equal((await fetchVia(label, path)).status, 404, path);
@@ -294,6 +296,34 @@ describe("the kept link is a secret (§mesh.public/preview, §app.project-overse
     assert.equal(shown.outline.now, "made [preview link] for Ana");
     assert.ok(!JSON.stringify(shown).includes(labelOf(url)));
     assert.equal(kept.redactPreviewLinksDeep({ title: "nothing here" }).title, "nothing here");
+  });
+
+  test("no overseer tool result or error carries a kept link, even text that holds one", async () => {
+    const urls = (await list()).map((v) => v.url).filter(Boolean) as string[];
+    assert.ok(urls.length);
+    const seen: string[] = [];
+    for (const [name, params] of [
+      ["sova_previews", {}],
+      ["sova_project", {}],
+      ["sova_idea", { op: "list" }],
+      ["sova_pipeline", {}],
+      ["sova_list_sessions", {}],
+      ["sova_preview", folderStart],
+    ] as [string, Record<string, unknown>][]) {
+      try {
+        seen.push(JSON.stringify(await run(name, params, true)));
+      } catch (err) {
+        seen.push(String(err));
+      }
+    }
+    const all = (await list()).map((v) => v.url).filter(Boolean) as string[];
+    for (const u of all) for (const out of seen) assert.ok(!out.includes(labelOf(u)), `a kept link in a tool result: ${out.slice(0, 120)}`);
+    // The backstop every overseer tool passes through: a result or error that holds a kept link shows [preview link].
+    const leaky = previewLinkFree({ name: "t", label: "t", description: "", parameters: {}, execute: async () => ({ content: [{ type: "text", text: `see ${urls[0]}` }], details: { u: urls[0] } }) } as never);
+    const r = await leaky.execute("c", {} as never, undefined, undefined, undefined as never);
+    assert.deepEqual(r, { content: [{ type: "text", text: "see [preview link]" }], details: { u: "[preview link]" } });
+    const failing = previewLinkFree({ name: "t", label: "t", description: "", parameters: {}, execute: async () => { throw new Error(`no ${urls[0]} here`); } } as never);
+    await assert.rejects(() => failing.execute("c", {} as never, undefined, undefined, undefined as never), /^Error: no \[preview link\] here$/);
   });
 
   test("the transition log and the activity log never hold it", async () => {

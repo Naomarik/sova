@@ -303,12 +303,12 @@ export async function previewViews(filter: { orgId?: string; projectId?: string 
   return out;
 }
 
-/** The one shape a preview leaves the tools in (shared/preview-links.ts PreviewHandoff). Pure. */
+/** The one shape a preview leaves the tools in (shared/preview-links.ts PreviewHandoff): never its link. Pure. */
 export function handoffOf(v: PreviewView): PreviewHandoff {
   return {
     v: 1,
     id: v.id,
-    url: v.url ?? null,
+    linkKept: !!v.url,
     purpose: v.purpose ?? null,
     expiresAt: v.expiresAt,
     orgId: v.orgId,

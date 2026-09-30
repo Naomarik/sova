@@ -653,7 +653,7 @@ describe("the chart tools (q2, q9, q10)", () => {
 });
 
 describe("preview links (§app.project-overseer/previews)", () => {
-  const SHAPE = ["v", "id", "url", "purpose", "expiresAt", "orgId", "projectId", "sessionId", "branch", "target", "state", "running", "createdBy"].sort();
+  const SHAPE = ["v", "id", "linkKept", "purpose", "expiresAt", "orgId", "projectId", "sessionId", "branch", "target", "state", "running", "createdBy"].sort();
 
   test("sova_previews lists each with its link, what it serves, session and state, in the one fixed shape", async () => {
     const old: PreviewView = { ...PREVIEW, id: "pv_BBBBBBBBBBBBBBBB", url: null, purpose: null, sessionId: "in-tree", sessionFrom: "worktree", createdBy: "operator", running: false, port: 8731, target: { kind: "port", port: 8731 } };
@@ -663,15 +663,16 @@ describe("preview links (§app.project-overseer/previews)", () => {
     const t = out.content[0]!.text;
     const lines = t.split("\n");
     assert.ok(lines[lines.length - 1]!.includes("pv_CCCCCCCCCCCCCCCC · folder dist"), "active ones first, then the rest");
-    assert.match(t, new RegExp(`pv_AAAAAAAAAAAAAAAA · port 5173 · in-tree "Worktree" on sova/fix-abc123 · "The shop for Ana" · made by you · active, app is running · expires 2026-10-01T10:00:00.000Z · link: https://${PREVIEW_LABEL}\\.preview\\.example\\.invalid/`));
-    assert.match(t, /pv_BBBBBBBBBBBBBBBB · port 8731 · in-tree "Worktree" on sova\/fix-abc123 \(matched by its worktree\) · made by the operator · active, nothing on port 8731 · .* · link: not kept \(shown only when it was made\)/);
+    assert.match(t, new RegExp(`pv_AAAAAAAAAAAAAAAA · port 5173 · in-tree "Worktree" on sova/fix-abc123 · "The shop for Ana" · made by you · active, app is running · expires 2026-10-01T10:00:00.000Z · link kept \\(send it by id\\)$`, "m"));
+    assert.match(t, /pv_BBBBBBBBBBBBBBBB · port 8731 · in-tree "Worktree" on sova\/fix-abc123 \(matched by its worktree\) · made by the operator · active, nothing on port 8731 · .* · no link kept \(shown only when it was made\)/);
     assert.match(t, /turned off · off since 2026-09-30T11:00:00.000Z/);
     assert.equal(out.details.v, 1);
+    assert.ok(!JSON.stringify(out).includes(PREVIEW_LABEL), "never the link, in content or details");
     for (const h of out.details.previews) assert.deepEqual(Object.keys(h).sort(), SHAPE);
     const byId = Object.fromEntries(out.details.previews.map((h) => [h.id, h]));
-    assert.equal(byId.pv_BBBBBBBBBBBBBBBB!.url, null, "no link kept: null, never guessed");
+    assert.equal(byId.pv_BBBBBBBBBBBBBBBB!.linkKept, false, "no link kept, never guessed");
     assert.equal(byId.pv_CCCCCCCCCCCCCCCC!.running, null, "running only while active");
-    assert.deepEqual(byId.pv_AAAAAAAAAAAAAAAA, { v: 1, id: PREVIEW.id, url: PREVIEW.url, purpose: "The shop for Ana", expiresAt: PREVIEW.expiresAt, orgId: "org_aaaaaaaa", projectId: "prj_bbbbbbbb", sessionId: "in-tree", branch: "sova/fix-abc123", target: { kind: "port", port: 5173 }, state: "active", running: true, createdBy: "session:po-1" });
+    assert.deepEqual(byId.pv_AAAAAAAAAAAAAAAA, { v: 1, id: PREVIEW.id, linkKept: true, purpose: "The shop for Ana", expiresAt: PREVIEW.expiresAt, orgId: "org_aaaaaaaa", projectId: "prj_bbbbbbbb", sessionId: "in-tree", branch: "sova/fix-abc123", target: { kind: "port", port: 5173 }, state: "active", running: true, createdBy: "session:po-1" });
   });
 
   test("sova_project lists the active ones under Previews", async () => {
@@ -688,7 +689,8 @@ describe("preview links (§app.project-overseer/previews)", () => {
     await assert.rejects(run("sova_preview", { op: "start", port: 5173, purpose: "p" }), /Name the coding session/);
     const out = (await run("sova_preview", { op: "start", session: "sova://s/in-tree", folder: "dist", purpose: "The shop for Ana" })) as { content: { text: string }[]; details: { v: number; preview: Record<string, unknown> } };
     assert.deepEqual(calls, ['preview:in-tree:{"folder":"dist"}:The shop for Ana']);
-    assert.ok(out.content[0]!.text.startsWith(`Made a preview link: https://${PREVIEW_LABEL}`));
+    assert.ok(out.content[0]!.text.startsWith("Made a preview link: pv_AAAAAAAAAAAAAAAA · folder dist"));
+    assert.ok(!JSON.stringify(out).includes(PREVIEW_LABEL), "the result never carries the link");
     assert.equal(out.details.v, 1);
     assert.deepEqual(Object.keys(out.details.preview).sort(), SHAPE);
     assert.deepEqual(out.details.preview.target, { kind: "static", folder: "dist" });

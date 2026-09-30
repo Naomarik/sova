@@ -129,11 +129,14 @@ tool result says when that look comes: say what is waiting and why instead.
   operator can cancel.
 - Sova never starts an app for a preview. If the app is down ("nothing on port"), have its coding
   session start it again with `sova_send`, then check `sova_previews` says it is running.
-- The link is a secret for the operator. Give it to the operator, who sends it on; never put it in a
-  gathering's title, question, goal or why, or in an owner update (both are refused).
-- `sova_previews` lists the project's previews. A preview made before links were kept shows none:
-  its link was shown only when it was made; never guess one. Turn a preview off (`sova_preview` off)
-  once it has served its purpose.
+- You never see a preview's link: it is a secret, and your tool results are part of your session
+  file, which the organization's workspace repo keeps. A preview reaches a person by its id: send it
+  with `sova_send_to_person` (when you have that tool), which puts the link in the message for you,
+  or tell the operator it is ready (they have the link on the project page). Never write a preview
+  address into a gathering or an owner update.
+- `sova_previews` lists the project's previews by id, with whether each has a link kept (one made
+  before links were kept has none: it was shown only when it was made, so it can't be sent). Turn a
+  preview off (`sova_preview` off) once it has served its purpose.
 
 ## The project now
 

@@ -15,7 +15,9 @@ import type { PreviewAddress } from "./public-links";
  * POST /api/previews/<id>/extend         body { days } -> PreviewView | 400 | 404
  *
  * The link of a preview made from now on is kept host-local (`preview-kept.json`, 0600) and is in
- * these answers and the project overseer's own tool results only (§app.project-overseer/previews).
+ * these answers only: the operator's. The project overseer never sees it (its tool results land in its
+ * session file, in the org's workspace repo): it has PreviewHandoff, and a preview reaches a person by
+ * its id, the link resolved server-side (§app.project-overseer/previews).
  */
 
 export type PreviewState = "active" | "off" | "expired";
@@ -101,15 +103,17 @@ export interface PreviewError {
 
 /**
  * The one shape a preview leaves Sova's tools in (§app.project-overseer/previews): `sova_previews`
- * and `sova_preview` put it in their results' `details`, and a later tool that sends a preview on
- * (a WhatsApp hand-off) takes it as it is. Fixed: fields are only ever added, under a new `v`.
- * `url` is the secret link, null when none is kept; `purpose`, `sessionId` and `branch` are null
- * when unknown; `running` is null unless it is active.
+ * and `sova_preview` put it in their results' `details`. It never carries the link: a tool result is
+ * part of the overseer's session file, which the org's workspace repo commits and may push. A tool
+ * that sends a preview to a person (sova_send_to_person) takes its `id` and resolves the link on the
+ * server. `linkKept` says whether there is a link to send (false for a preview made before links were
+ * kept); `purpose`, `sessionId` and `branch` are null when unknown; `running` is null unless it is
+ * active. Fixed: fields are only ever added, under a new `v`.
  */
 export interface PreviewHandoff {
   v: 1;
   id: string;
-  url: string | null;
+  linkKept: boolean;
   purpose: string | null;
   expiresAt: string;
   orgId: string;

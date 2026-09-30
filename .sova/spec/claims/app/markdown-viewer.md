@@ -9,7 +9,7 @@ document in place. `view` is `'rendered'` (the default) or `'source'`.
 **Frame.** A native `<dialog class="md-viewer">` opened with `showModal()`, like the lightbox
 (§design/deviations): top layer, the page inert behind it, over any dialog already open.
 
-- **Desktop (768px and wider):** inset `--space-6` from every edge of the window, `--r-xl`
+- **Desktop (768px and wider):** inset `--space-5` (24px) from every edge of the window, `--r-xl`
   corners, on the scrim. The document is a centred reading column 72ch wide that scrolls inside
   the frame; the head stays put.
 - **Phone (under 768px):** a tall sheet, full width, with a `--space-5` (24px) gap above it,

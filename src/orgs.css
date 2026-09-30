@@ -114,6 +114,13 @@
 .baton-strip-abilities .toggle { font-size: inherit; }
 .baton-strip-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .baton-strip-link { flex-basis: 100%; }
+/* The goal: a full-width row of its own, the whole summary a 44px
+   target; opened, the goal as written, then the muted note, capped at a reading measure. */
+.baton-strip-goal { flex-basis: 100%; max-width: none; }
+.baton-strip-goal > .disclosure-summary { min-height: var(--tap-min); }
+.baton-strip-goal > .disclosure-body { max-width: var(--measure); display: flex; flex-direction: column; gap: var(--space-2); margin-top: 0; }
+.baton-strip-goal-text { margin: 0; color: var(--color-ink); }
+.baton-strip-goal-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); white-space: normal; }
 
 /* Baton cards in the operator's transcript, and the sender's name on a user row. */
 .baton-card {

@@ -5,7 +5,7 @@ import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
 import { LINK_WARNINGS } from "../../shared/public-links";
 import { openSettings } from "../lib/settings-nav";
-import { linkReplaced, linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
+import { goalShown, linkReplaced, linksStale, liveOffer, proposedAreasLine, whereLine, wrapupLine } from "../lib/baton-strip";
 import { requestListRefresh } from "../lib/list-refresh";
 import { confirmActivate } from "../lib/confirm-step";
 import { useMinuteNow } from "../lib/minute-clock";
@@ -16,7 +16,7 @@ import { createMemo, onCleanup } from "solid-js";
 import { retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
 import { abilityToast } from "../lib/gathering-abilities";
 import { firstName } from "../lib/person-page";
-import { Banner, Chip } from "./ui";
+import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
@@ -201,6 +201,22 @@ export function BatonStrip(props: {
               </button>
             </Show>
           </div>
+          {/* The goal: folded on every open, no preview — someone may be
+              looking at this screen with the operator. It never leaves the operator app. */}
+          <Show when={goalShown(i().session)}>
+            {(g) => (
+              <details class="disclosure baton-strip-goal">
+                <summary class="disclosure-summary">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  <span class="disclosure-label">Goal</span>
+                </summary>
+                <div class="disclosure-body">
+                  <p class="baton-strip-goal-text">{g()}</p>
+                  <p class="baton-strip-goal-note">Only you see this. It's never on their page.</p>
+                </div>
+              </details>
+            )}
+          </Show>
           <Show when={i().owner && i().session.hiddenFromOwner}>
             <p class="baton-strip-areas">Hidden from {firstName(i().owner!.name)}'s owner page.</p>
           </Show>

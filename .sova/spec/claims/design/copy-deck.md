@@ -760,6 +760,29 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Overseer tool refusal (the model reads it) | "Reading links is off for this project's gathering sessions; the operator can allow it on the project page." |
 | `read_link` refusals (the model reads them) | "Only a link someone wrote in this conversation can be opened." · "That address can't be opened from here." · "Not a text page: {content type}." · "This conversation has already read 10 links." · "The page didn't answer in time." · "The page answered {status}." |
 
+## §design.copy-deck/gathering-images — Photos in gathering chats (§app.baton/images)
+
+| Where | Copy |
+|---|---|
+| Share page, paperclip button `aria-label` and `title` | Attach Photos |
+| Pending strip `aria-label` | Photos to send |
+| Pending photo, being processed on the device | Preparing |
+| Pending photo, uploading (the size shows once it's up) | Uploading {p}% |
+| Pending photo, failed (meta; the button) | Upload failed · `Retry` (`aria-label` "Retry {name}") |
+| Pending photo, Remove `aria-label` | Remove {name} |
+| Pasted photo name | Pasted photo |
+| Send while an upload runs (hint under the composer) | Waiting for photos to finish. |
+| Refused on the device | This photo's format can't be sent. · Over {n} MB. · Up to {n} photos per message. |
+| Refused by the host | This conversation has reached its photo limit. · Photos can't be taken right now. · This conversation can't take photos right now. · Too many photos. Wait a minute. |
+| Announce: added | {n} photos attached. (1: "1 photo attached.") |
+| Announce: refused | {name} wasn't attached. {reason} |
+| Thread, photo `alt` | Photo from {name} · Photo {i} of {n} from {name} (the viewer's own: "you") |
+| Thread, photo list `aria-label` | {n} photos (1: "1 photo") |
+| Lightbox buttons | Close Photo · Previous Photo · Next Photo · counter {i} / {n} |
+| Owner page, Preview as, overseer reads (count instead of pixels) | 1 photo · {n} photos |
+| Operator's strip and the project page's gathering-model picker, a model without vision | This model can't see photos: people won't get an attach button. |
+| Settings → Organizations, section | Photos in gathering chats · `People can send photos` · `Per message` (1–8) · `Largest photo, MB` (1–10) · `Per conversation` (1–200) · hint "Applies to every gathering session on this host, from its next message." · invalid: "Organizations needs photo limits within their ranges." |
+
 ## §design.copy-deck/project-limits — Project page · limits and pace (§app.project-overseer/limits)
 
 | Where | Copy |

@@ -13,8 +13,10 @@ import { activeBranch, type Entry } from "./transcript";
  * shape.
  */
 
-/** SessionSummary.align from a branch's documents, or undefined when none is open. */
-export function sessionAlignOf(docs: readonly AlignDocument[]): SessionAlign | undefined {
+/** SessionSummary.align from a branch's documents, or undefined when none is open. `reopens`: per
+    `{al_N}/{q}`, how often the branch reopened it; a reopened question's id carries the count
+    (`al_9/q1#1`), so Later (server/needs-you-later.ts) reads a reopen as new. */
+export function sessionAlignOf(docs: readonly AlignDocument[], reopens: ReadonlyMap<string, number> = new Map()): SessionAlign | undefined {
   const open = openDocsOf(docs);
   if (open.length === 0) return undefined;
   const asking = open.filter((doc) => openQuestionsOf(doc).length > 0);
@@ -22,7 +24,16 @@ export function sessionAlignOf(docs: readonly AlignDocument[]): SessionAlign | u
   return {
     openDocs: open.length,
     openQuestions: asking.reduce((n, doc) => n + openQuestionsOf(doc).length, 0),
-    ...(asking.length ? { questionIds: asking.flatMap((doc) => openQuestionsOf(doc).map((q) => `${doc.id}/${q.id}`)) } : {}),
+    ...(asking.length
+      ? {
+          questionIds: asking.flatMap((doc) =>
+            openQuestionsOf(doc).map((q) => {
+              const n = reopens.get(`${doc.id}/${q.id}`) ?? 0;
+              return n ? `${doc.id}/${q.id}#${n}` : `${doc.id}/${q.id}`;
+            }),
+          ),
+        }
+      : {}),
     questionDocs: asking.length,
     ...(lead ? { lead: { id: lead.id, title: lead.title } } : {}),
   };
@@ -140,12 +151,18 @@ export function waitingAlignOf(branch: readonly ScanEntry[]): SessionAlign | und
   if (active && !active.minorModes.includes("align")) return undefined;
   let lastDoc = -1;
   let lastUser = -1;
+  const reopens = new Map<string, number>();
   branch.forEach((e, i) => {
     if (e.userPrompt) lastUser = i;
-    else if (alignResultOf(e)?.doc) lastDoc = i;
+    else {
+      const d = alignResultOf(e);
+      if (!d?.doc) return;
+      lastDoc = i;
+      for (const c of d.changes ?? []) if (c.kind === "reopened") reopens.set(`${d.doc.id}/${c.q}`, (reopens.get(`${d.doc.id}/${c.q}`) ?? 0) + 1);
+    }
   });
   if (lastDoc < lastUser) return undefined;
-  return sessionAlignOf(foldAlignments(branch).docs);
+  return sessionAlignOf(foldAlignments(branch).docs, reopens);
 }
 
 /** Reads [from, size) of the file and appends its complete lines to `into`; returns where they end. */

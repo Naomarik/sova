@@ -136,6 +136,19 @@ describe("readAlignScan: the file's open alignments, cheaply", () => {
     assert.deepEqual(scan.summary, { openDocs: 1, openQuestions: 2, questionIds: ["al_1/q1", "al_1/q2"], questionDocs: 1, lead: { id: "al_1", title: "Export" } });
   });
 
+  test("a reopened question's id carries how often the branch reopened it (Later reads it as new)", async () => {
+    const [c, d, r] = calls([
+      { ops: [{ op: "create", title: "Needs you", summary: "s", questions: [Q("Later")] }] },
+      { doc: "al_1", ops: [{ op: "decide", q: "q1", decision: "yes" }] },
+      { doc: "al_1", ops: [{ op: "reopen", q: "q1" }] },
+    ]) as [AlignDetails, AlignDetails, AlignDetails];
+    const a = result(c, "u1");
+    const b = result(d, a.id);
+    const path = session("reopen", [a, b, result(r, b.id)]);
+    const scan = await readAlignScan(path, readFileSync(path).length, null);
+    assert.deepEqual(scan.summary?.questionIds, ["al_1/q1#1"]);
+  });
+
   test("the marker search resumes where it stopped while the file grows; a shrunk file is searched from the start", async () => {
     const path = session("grow", []);
     const empty = await readAlignScan(path, readFileSync(path).length, null);

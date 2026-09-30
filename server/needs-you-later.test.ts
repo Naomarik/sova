@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { AttentionItem, SessionSummary } from "../shared/protocol";
 import { type AttentionRow, buildDigest, sessionItems, withBatonLater } from "./attention";
-import { bringBack, LATER_MAX_AGE_MS, laterKey, parseLaterKey, putAway, resetLaterCache, withoutLater } from "./needs-you-later";
+import { bringBack, laterKey, parseLaterKey, pruneLater, putAway, resetLaterCache, withoutLater } from "./needs-you-later";
 
 const NOW = Date.parse("2026-09-30T11:00:00.000Z");
 const dir = mkdtempSync(join(tmpdir(), "sova-later-"));
@@ -88,6 +88,22 @@ describe("Later hides an item until its anchor moves", () => {
     assert.deepEqual(acts(digest([row(summary("s", { align: align(["al_3/q2", "al_3/q4"]) }))], file)), ["s:open-questions"], "a new question: back");
   });
 
+  test("open questions: put away, decided, reopened → back (the reopen is a new token); a turn running in between does not bring it back", async () => {
+    const { sessionAlignOf } = await import("./align-state");
+    const doc = (open: boolean) => ({ id: "al_9", title: "T", phase: "open", questions: [{ id: "q1", topic: "t", ask: "a?", recommendation: { choice: "x", why: "y" }, ...(open ? {} : { decision: { text: "x", at: "" } }) }] }) as never;
+    const file = freshFile();
+    const asRow = (a: SessionSummary["align"], over: Partial<SessionSummary> = {}) => row(summary("r", { align: a, ...over }));
+    const first = sessionAlignOf([doc(true)]);
+    assert.deepEqual(first?.questionIds, ["al_9/q1"]);
+    putAway(keysOf(digest([asRow(first)], file), "r"), NOW, file);
+    assert.deepEqual(acts(digest([asRow(first, { busy: true })], file)), [], "a turn runs: the item is absent");
+    assert.deepEqual(acts(digest([asRow(first)], file)), [], "idle again, nothing new: still away");
+    assert.equal(sessionAlignOf([doc(false)])?.openQuestions, 0, "decided: nothing open");
+    const reopened = sessionAlignOf([doc(true)], new Map([["al_9/q1", 1]]));
+    assert.deepEqual(reopened?.questionIds, ["al_9/q1#1"]);
+    assert.deepEqual(acts(digest([asRow(reopened)], file)), ["r:open-questions"], "reopened: back");
+  });
+
   test("a dialog: a new dialog id brings it back; a user message or a look changes nothing", () => {
     const file = freshFile();
     const r = (ids: string[], over: Partial<SessionSummary> = {}) => row(summary("d", over), { dialogs: ids.map(() => "Pick"), dialogIds: ids });
@@ -108,7 +124,7 @@ describe("Later hides an item until its anchor moves", () => {
     assert.deepEqual(acts(digest([w(NOW - 100)], file)), ["w:worker-error"], "a new subagent error");
   });
 
-  test("the store survives a restart; undo brings an item back; a moved-on or month-old entry is dropped", () => {
+  test("the store survives a restart; undo brings an item back; time alone never does; a moved-on entry, or a deleted session's, is dropped", () => {
     const file = freshFile();
     const r = row(summary("q", { align: align(["al_1/q1"]) }));
     const keys = keysOf(digest([r], file), "q");
@@ -119,8 +135,11 @@ describe("Later hides an item until its anchor moves", () => {
     assert.equal(bringBack(keys, file), 1);
     assert.deepEqual(acts(digest([r], file)), ["q:open-questions"]);
     putAway(keys, NOW, file);
-    assert.deepEqual(acts(digest([r], file, NOW + LATER_MAX_AGE_MS + 1)), ["q:open-questions"], "older than 30 days: back");
-    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).items, {});
+    assert.deepEqual(acts(digest([r], file, NOW + 365 * 86_400_000)), [], "a year later, nothing new: still away (al_3 q2 rejected a time limit)");
+    pruneLater(new Set(["q", "other"]), file);
+    assert.equal(Object.keys(JSON.parse(readFileSync(file, "utf8")).items).length, 1, "its session is still listed: kept");
+    pruneLater(new Set(["other"]), file);
+    assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).items, {}, "the session is gone from the list: dropped");
     putAway(keys, NOW, file);
     digest([row(summary("q", { align: align(["al_1/q9"]) }))], file);
     assert.deepEqual(JSON.parse(readFileSync(file, "utf8")).items, {}, "the anchor moved on: the entry is gone for good");

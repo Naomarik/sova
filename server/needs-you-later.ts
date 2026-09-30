@@ -14,13 +14,14 @@ import { stateRoot } from "./state-root";
  * answered) does not.
  */
 
-export const LATER_MAX_AGE_MS = 30 * 86_400_000;
 const MAX_TOKENS = 50;
 const MAX_TOKEN = 200;
 
 interface Entry {
   anchor: string[];
   at: number;
+  /** The item's id (its session's, or a project item's): pruneLater's key. */
+  id?: string;
 }
 interface LaterFile {
   version: 1;
@@ -59,7 +60,8 @@ function load(file: string): LaterFile {
     if (typeof v !== "object" || v === null || typeof v.items !== "object" || v.items === null) return out;
     for (const [k, e] of Object.entries(v.items as Record<string, unknown>)) {
       const r = e as Partial<Entry> | null;
-      if (r && Array.isArray(r.anchor) && r.anchor.every((t) => typeof t === "string") && typeof r.at === "number") out.items[k] = { anchor: r.anchor, at: r.at };
+      if (r && Array.isArray(r.anchor) && r.anchor.every((t) => typeof t === "string") && typeof r.at === "number")
+        out.items[k] = { anchor: r.anchor, at: r.at, ...(typeof r.id === "string" ? { id: r.id } : {}) };
     }
     return out;
   } catch {
@@ -93,7 +95,7 @@ export function putAway(keys: readonly unknown[], now = Date.now(), file = later
   const parsed = keys.map(parseLaterKey).filter((k): k is NonNullable<typeof k> => k !== null);
   if (!parsed.length) return 0;
   write(file, (d) => {
-    for (const k of parsed) d.items[slot(k.id, k.kind)] = { anchor: [...new Set(k.anchor)], at: now };
+    for (const k of parsed) d.items[slot(k.id, k.kind)] = { anchor: [...new Set(k.anchor)], at: now, id: k.id };
   });
   return parsed.length;
 }
@@ -110,13 +112,13 @@ export function bringBack(keys: readonly unknown[], file = laterFile()): number 
 
 /**
  * The items without the ones put away whose anchor hasn't moved. An entry whose item has a new
- * token now, or that is older than LATER_MAX_AGE_MS, is dropped from the store (one write).
+ * token now is dropped from the store (one write). Nothing expires with time: only something new
+ * brings an item back (`now` is kept for callers).
  */
-export function withoutLater<T extends Pick<AttentionItem, "later">>(items: readonly T[], now = Date.now(), file = laterFile()): T[] {
+export function withoutLater<T extends Pick<AttentionItem, "later">>(items: readonly T[], _now = Date.now(), file = laterFile()): T[] {
   const data = read(file);
   if (!Object.keys(data.items).length) return [...items];
   const stale = new Set<string>();
-  for (const [k, e] of Object.entries(data.items)) if (now - e.at > LATER_MAX_AGE_MS) stale.add(k);
   const out = items.filter((it) => {
     const k = it.later ? parseLaterKey(it.later) : null;
     if (!k) return true;
@@ -138,6 +140,25 @@ export function withoutLater<T extends Pick<AttentionItem, "later">>(items: read
     }
   }
   return out;
+}
+
+/**
+ * Store hygiene: drop entries whose session (or project item) is no longer listed at all — a
+ * deleted session never comes back to need them. `ids`: every listed session's id and every
+ * no-session item's id. An entry is never dropped just because its item is absent now: open
+ * questions leave the digest while a turn runs and must stay put away when it ends.
+ */
+export function pruneLater(ids: ReadonlySet<string>, file = laterFile()): void {
+  const data = read(file);
+  const gone = Object.entries(data.items).filter(([k, e]) => !ids.has(e.id ?? k.slice(0, k.indexOf(":")))).map(([k]) => k);
+  if (!gone.length) return;
+  try {
+    write(file, (d) => {
+      for (const k of gone) delete d.items[k];
+    });
+  } catch (err) {
+    console.warn("[needs-you-later] write failed:", err instanceof Error ? err.message : String(err));
+  }
 }
 
 /** Tests: forget the in-memory copy. */

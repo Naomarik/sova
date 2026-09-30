@@ -194,15 +194,14 @@
        :acts [[:operator/run-now {}] [:operator/level-set {:resume-at "L2"}]]
        :key (fn [d] [(count (:reasons d)) (:looks-today d)])})))
 
-(deftest baton-matrix
-  (let [start {:org-id "o1" :project-id "pr1" :session-id "s1" :public-title "T" :goal "G" :owner {:overseer-of "pr1"}
-               :names names :operator-name "Omar" :messages-max 2}
-        ana {:id "p1" :name "Ana" :status "active"} bob {:id "p2" :name "Bob" :status "active"}]
-    (clean! "baton"
+(def baton-start {:org-id "o1" :project-id "pr1" :session-id "s1" :public-title "T" :goal "G" :owner {:overseer-of "pr1"}
+                  :names names :operator-name "Omar" :messages-max 2})
+
+(defn- baton-matrix [label start]
+  (let [ana {:id "p1" :name "Ana" :status "active"} bob {:id "p2" :name "Bob" :status "active"}]
+    (clean! label
       (run "baton" "baton/o1/s1"
-        ;; one start: its own acts reach the operator and the pool (take-back, offer), and each start
-        ;; explores from scratch; the other starts' first steps are the JVM `starts` test
-        {:starts [(assoc start :to "p1")]
+        {:starts [start]
          :drive [[:reply/writing {}] [:reply/ended {}] [:fire 900000] (moved "person" "person/o1/p1" [:person :left] {:name "Ana"})
                  [:wrapup/finished {}] [:wrapup/stopped {:detail "x"}]]
          :acts [[:baton/hand-to {:target bob :chosen true :question "Q"}] [:baton/hand-to {:target {:id "operator"} :question "Q"}]
@@ -215,6 +214,14 @@
          ;; Extend raises the limit without bound, and the raw count would make every Extend a new state)
          :key (fn [d] [(min 2 (get-in d [:budget :messages-used] 0)) (:holder d) (some? (:pending-move d))])
          :max-configs 6000}))))
+
+;; One shard per start kind (each explores from scratch; together they are the enumeration)
+(deftest baton-matrix-to-a-person (baton-matrix "baton, to a person" (assoc baton-start :to "p1")))
+(deftest baton-matrix-to-the-operator (baton-matrix "baton, to the operator" (assoc baton-start :to "operator")))
+(deftest baton-matrix-an-offer (baton-matrix "baton, an offer to a pool" (assoc baton-start :targets ["p1" "p2"])))
+(deftest baton-matrix-no-link (baton-matrix "baton, no link minted" (assoc baton-start :to "p1" :mint-link false)))
+(deftest baton-matrix-a-settle-session
+  (baton-matrix "baton, a conflict's settle session" (assoc baton-start :to "p1" :mint-link false :conflict {:id "cf1" :area "A"})))
 
 (deftest decision-matrix
   (clean! "decision"

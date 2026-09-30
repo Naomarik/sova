@@ -88,6 +88,31 @@ test("the detached driver runs a process group, logs it, and stops the whole gro
   assert.deepEqual(await d.units(`sova-svc-test-${process.pid}-`), []);
 });
 
+test("the detached driver's unit is its whole session: a child in a process group of its own is still the unit's", async () => {
+  // `pnpm exec` does this to its child; sh's job control (`set -m`) does it to `sleep`.
+  const d = new DetachedDriver(2_000);
+  const unit = `sova-svc-test-${process.pid}-grp`;
+  await d.start({ unit, argv: ["sh", "-c", "set -m; sleep 60 & wait"], cwd: tmpdir(), env: { PATH: process.env.PATH ?? "" } });
+  const st = await d.status(unit);
+  let pids: number[] = [];
+  for (let i = 0; i < 50 && (pids = d.pids(unit)).length < 2; i++) await sleep(50);
+  assert.equal(pids.length, 2, `sh and sleep: ${pids}`);
+  const sleeper = pids.find((p) => p !== st.pid)!;
+  const pgrp = (pid: number) => Number(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]!.split(" ")[2]);
+  assert.notEqual(pgrp(sleeper), pgrp(st.pid!), "the child really is in another process group");
+  assert.ok(d.owns(unit, sleeper), "and still the unit's");
+  await d.stop(unit);
+  for (const pid of pids) {
+    let gone = false;
+    try {
+      gone = readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]!.startsWith("Z");
+    } catch {
+      gone = true;
+    }
+    assert.ok(gone, `pid ${pid} stopped`);
+  }
+});
+
 test("the detached driver's runOnce: exit codes, a timeout kills it, leftovers are killed and counted", async () => {
   const d = new DetachedDriver(1_000);
   const base = { cwd: tmpdir(), env: { PATH: process.env.PATH ?? "" } };

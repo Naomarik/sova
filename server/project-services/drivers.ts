@@ -77,9 +77,10 @@ function statFields(pid: number): string[] | null {
     return null;
   }
 }
-const pgrpOf = (pid: number) => {
+/** The session a live (not zombie) process belongs to. */
+const sidOf = (pid: number) => {
   const f = statFields(pid);
-  return f && f[0] !== "Z" ? Number(f[2]) : null;
+  return f && f[0] !== "Z" ? Number(f[3]) : null;
 };
 const startOf = (pid: number) => statFields(pid)?.[19] ?? null;
 const allPids = () => {
@@ -201,10 +202,12 @@ interface ProcRecord {
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Each unit is a process started in its own session and process group, its output appended to
+ * Each unit is a process started in its own session, its output appended to
  * `<state root>/project-services/logs/<unit>.log` and its pid and start time recorded in
- * `procs/<unit>.json`. It is not the server's to wait for, so it outlives a server restart. Stop
- * signals the whole group: TERM, then KILL after 15 s. A process that left the group escapes.
+ * `procs/<unit>.json`. It is not the server's to wait for, so it outlives a server restart. The unit
+ * is its whole session (a tool like `pnpm exec` puts its child in a new process group, but the
+ * group stays in the session): stop signals every process in it, TERM, then KILL after 15 s. A
+ * process that starts a session of its own escapes.
  */
 export class DetachedDriver implements Driver {
   readonly id = "detached" as const;
@@ -220,7 +223,7 @@ export class DetachedDriver implements Driver {
     }
   }
   private live(r: ProcRecord | null): boolean {
-    return !!r && startOf(r.pid) === r.start && pgrpOf(r.pid) === r.pid;
+    return !!r && startOf(r.pid) === r.start && sidOf(r.pid) === r.pid;
   }
   async available() {
     return process.platform === "linux" ? { ok: true, detail: "detached process groups (SOVA_PROJECT_DRIVER=detached)" } : { ok: false, detail: "the detached driver reads /proc: Linux only" };
@@ -258,30 +261,31 @@ export class DetachedDriver implements Driver {
     const rec = await this.spawnUnit(spec);
     writeFileSync(this.recFile(spec.unit), `${JSON.stringify(rec)}\n`);
   }
-  private groupPids(pgid: number): number[] {
-    return allPids().filter((p) => pgrpOf(p) === pgid);
+  private sessionPids(sid: number): number[] {
+    return allPids().filter((p) => sidOf(p) === sid);
   }
-  private async killGroup(pgid: number): Promise<void> {
+  /** TERM to every process of the session, then KILL to what is left after the grace. */
+  private async killSession(sid: number): Promise<void> {
     const send = (sig: NodeJS.Signals) => {
-      try {
-        process.kill(-pgid, sig);
-      } catch {
-        // gone
-      }
+      for (const pid of this.sessionPids(sid))
+        try {
+          process.kill(pid, sig);
+        } catch {
+          // gone
+        }
     };
     send("SIGTERM");
     const until = Date.now() + this.stopGraceMs;
     while (Date.now() < until) {
-      if (!this.groupPids(pgid).length) return;
+      if (!this.sessionPids(sid).length) return;
       await sleep(100);
     }
     send("SIGKILL");
-    for (let i = 0; i < 50 && this.groupPids(pgid).length; i++) await sleep(100);
+    for (let i = 0; i < 50 && this.sessionPids(sid).length; i++) await sleep(100);
   }
   async stop(unit: string) {
     const r = this.rec(unit);
-    if (r && startOf(r.pid) === r.start) await this.killGroup(r.pid);
-    else if (r && this.groupPids(r.pid).length) await this.killGroup(r.pid);
+    if (r && this.sessionPids(r.pid).length) await this.killSession(r.pid);
     rmSync(this.recFile(unit), { force: true });
   }
   async status(unit: string): Promise<UnitStatus> {
@@ -298,11 +302,11 @@ export class DetachedDriver implements Driver {
   }
   owns(unit: string, pid: number) {
     const r = this.rec(unit);
-    return !!r && pgrpOf(pid) === r.pid;
+    return !!r && sidOf(pid) === r.pid;
   }
   pids(unit: string) {
     const r = this.rec(unit);
-    return r ? this.groupPids(r.pid) : [];
+    return r ? this.sessionPids(r.pid) : [];
   }
   async logs(unit: string, lines: number) {
     try {
@@ -336,7 +340,7 @@ export class DetachedDriver implements Driver {
       let timedOut = false;
       const timer = setTimeout(() => {
         timedOut = true;
-        if (child.pid) void this.killGroup(child.pid);
+        if (child.pid) void this.killSession(child.pid);
       }, spec.timeoutSec * 1000);
       child.once("error", () => {
         clearTimeout(timer);
@@ -346,11 +350,11 @@ export class DetachedDriver implements Driver {
       child.once("exit", (code, sig) => {
         clearTimeout(timer);
         closeSync(fd);
-        // A hook leaves nothing behind (§app.project-services/supervisor): its group goes with it.
+        // A hook leaves nothing behind (§app.project-services/supervisor): its session goes with it.
         const pid = child.pid;
-        const leftover = pid ? this.groupPids(pid).length : 0;
+        const leftover = pid ? this.sessionPids(pid).length : 0;
         const finish = () => done({ code: code ?? (sig ? 128 : null), timedOut, ms: Date.now() - t0, ...(leftover ? { leftover } : {}) });
-        if (pid && leftover) void this.killGroup(pid).then(finish);
+        if (pid && leftover) void this.killSession(pid).then(finish);
         else finish();
       });
     });

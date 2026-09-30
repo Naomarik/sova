@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { parseVis } from "../../parse";
+import { PREVIEWS } from "./previews.fixture";
 import { BLOCKS, MAX_BLOCKS, MAX_DEPTH, MAX_ROWS, SYNONYMS, TAUGHT, type WBlock, type WireframeSpec } from "./parse";
 
 const parse = (body: string) => {
@@ -291,4 +292,33 @@ mark "Unpaid" "tap to filter"`);
   assert.deepEqual(top(s, 1), [["header", ["Invoice no."], [["icon", ["back"]]]], ["card", ["Amount due", "AED —"], [["button", ["Send reminder"], { tone: "accent" }]]]]);
   // The mark sits under screen 2, which has no "Unpaid": found by the anywhere fallback, on the stat.
   assert.deepEqual(s.emphasis, [{ key: "s0.1.0", tone: "accent", note: "tap to filter", n: 1 }]);
+});
+
+// A real fence whose items' title column once collapsed beside a row of badges and buttons: the parser
+// was never at fault. It reads the fence as meant, with no warning, the row under each item.
+test("wireframe: an item holding a row of badges and buttons parses as written", () => {
+  const s = ok(PREVIEWS);
+  assert.deepEqual(s.screens.map((x) => [x.name, x.device]), [["Desktop", "desktop"], ["Phone", "phone"]]);
+  assert.deepEqual(top(s, 0), [
+    ["header", ["Project name"]],
+    ["card", ["Previews", "A coding session's running app, shown to people outside"], [["list", [], [
+      ["item", ["Purpose of preview", "Coding session · branch · static files", "Expires in N days"], [["row", [], [
+        ["badge", ["Made by the overseer"], { tone: "info" }],
+        ["badge", ["Serving"], { tone: "ok" }],
+        ["button", ["Copy Link"]],
+        ["button", ["Turn Off"], { tone: "error" }],
+      ]]]],
+      ["item", ["Older preview", "Matched by the app's folder · port N", "Expires in N days"], [["row", [], [
+        ["badge", ["Made by you"], { tone: "muted" }],
+        ["button", ["Turn Off"], { tone: "error" }],
+      ]]]],
+    ]]]],
+  ]);
+  assert.deepEqual(top(s, 1), [
+    ["header", ["Project name"]],
+    ["card", ["Previews"], [["list", [], [
+      ["item", ["Purpose of preview", "Coding session · static files"], [["row", [], [["button", ["Copy Link"]], ["button", ["Turn Off"], { tone: "error" }]]]]],
+    ]]]],
+  ]);
+  assert.deepEqual(s.emphasis!.map((e) => e.key), ["s0.1.0.1", "s1.1.0.0.0.0"]);
 });

@@ -161,6 +161,9 @@ is the workspace. `install.sh --check` reports drift from the template and never
 
 - **Keys.** `version`, `level`, `defaultOn`, `writable`, `hidden`, `readOnlyWithinWritable`,
   `shadowed`, `proxy` (`allow`), `env` (`allow`), `acceptPartial`.
+- **The template hides the WhatsApp sender's home**, `$AGENT_DIR/sova/whatsapp` (its linked
+  device's credentials, §app.outreach/secrets), beside `$AGENT_DIR/auth.json`. A policy seeded
+  before that keeps its own list: `install.sh --check` reports the drift.
 - **Re-read on every tool call.** An edit applies to the next tool call of every session.
 - **Never writable from inside.** The whole agent directory is read-only (it holds sessions,
   settings and extensions that pi runs later outside the sandbox), `<agentDir>/sandbox-policy/`

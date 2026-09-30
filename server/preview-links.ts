@@ -33,6 +33,11 @@ export interface PreviewRecord {
   revokedAt?: string;
   /** `operator` or `session:<id>`. */
   createdBy: string;
+  /** A person's own link to another preview (§app.outreach/links): its port, never past its expiry,
+      turned off with it. */
+  siblingOf?: string;
+  /** The roster person it was sent to (a sibling's). */
+  sentTo?: string;
 }
 
 interface StoreFile {
@@ -75,7 +80,7 @@ export function validatePreviewFile(raw: unknown): StoreFile | { why: string } {
   const hashes = new Set<string>();
   for (const [i, l] of (raw.links as unknown[]).entries()) {
     const bad = (what: string) => ({ why: `link ${i}: ${what}` });
-    if (!isObj(l) || !onlyKeys(l, ["id", "hash", "orgId", "projectId", "port", "createdAt", "expiresAt", "revokedAt", "createdBy"])) return bad("keys");
+    if (!isObj(l) || !onlyKeys(l, ["id", "hash", "orgId", "projectId", "port", "createdAt", "expiresAt", "revokedAt", "createdBy", "siblingOf", "sentTo"])) return bad("keys");
     if (typeof l.id !== "string" || !PREVIEW_ID.test(l.id) || ids.has(l.id)) return bad("id");
     ids.add(l.id);
     if (typeof l.hash !== "string" || !/^[0-9a-f]{64}$/.test(l.hash) || hashes.has(l.hash)) return bad("hash");
@@ -84,6 +89,7 @@ export function validatePreviewFile(raw: unknown): StoreFile | { why: string } {
     if (!isPort(l.port)) return bad("port");
     if (!ISO(l.createdAt) || !ISO(l.expiresAt) || (l.revokedAt !== undefined && !ISO(l.revokedAt))) return bad("times");
     if (typeof l.createdBy !== "string" || !(l.createdBy === "operator" || /^session:[A-Za-z0-9_.-]{1,128}$/.test(l.createdBy))) return bad("createdBy");
+    if ((l.siblingOf !== undefined && (typeof l.siblingOf !== "string" || !PREVIEW_ID.test(l.siblingOf))) || (l.sentTo !== undefined && (typeof l.sentTo !== "string" || !REF.test(l.sentTo)))) return bad("sibling");
   }
   return { version: 1, links: raw.links as PreviewRecord[] };
 }
@@ -180,6 +186,8 @@ export function viewOf(r: PreviewRecord, now = Date.now()): PreviewView {
     expiresAt: r.expiresAt,
     ...(r.revokedAt ? { revokedAt: r.revokedAt } : {}),
     createdBy: r.createdBy,
+    ...(r.siblingOf ? { siblingOf: r.siblingOf } : {}),
+    ...(r.sentTo ? { sentTo: r.sentTo } : {}),
     state: previewState(r, now),
   };
 }
@@ -237,6 +245,34 @@ export interface MintInput {
   createdBy?: string;
 }
 
+/**
+ * A person's own link to preview `of` (§app.outreach/links): the same org, project and port, expiring
+ * with it (never later), and turned off with it. Refused unless `of` is active.
+ */
+export function mintSibling(of: string, sentTo: string, now = Date.now()): { record: PreviewRecord; label: string } {
+  const store = read();
+  const o = store.links.find((l) => l.id === of);
+  if (!o || previewState(o, now) !== "active") throw new PreviewRefused("bad-project", "That preview is not active.");
+  if (!REF.test(sentTo)) throw new PreviewRefused("bad-project", "Name the person it goes to.");
+  const label = newPreviewLabel();
+  const record: PreviewRecord = {
+    id: newId("pv_"),
+    hash: hashLabel(label),
+    orgId: o.orgId,
+    projectId: o.projectId,
+    port: o.port,
+    createdAt: iso(now),
+    expiresAt: o.expiresAt,
+    createdBy: "operator",
+    siblingOf: o.id,
+    sentTo,
+  };
+  store.links.push(record);
+  write(store);
+  shareLinksChanged({ kind: "p", cause: "mint", hashes: [record.hash] });
+  return { record, label };
+}
+
 /** Check a port: an integer 1–65535, not Sova's own defaults, not a port this process uses. */
 export function checkPort(port: unknown, sovaPorts: ReadonlySet<number>): number {
   if (!isPort(port)) throw new PreviewRefused("bad-port", "The port must be a whole number from 1 to 65535.");
@@ -278,17 +314,19 @@ export function mintPreview(input: MintInput, sovaPorts: ReadonlySet<number>, no
   return { record, label };
 }
 
-/** Turn one off: 410 from now on, and its open connections closed. Idempotent. */
+/** Turn one off, and every person's sibling of it: 410 from now on, and their open connections closed. Idempotent. */
 export function revokePreview(id: string, now = Date.now()): PreviewRecord | null {
   const store = read();
   const r = store.links.find((l) => l.id === id);
   if (!r) return null;
-  if (!r.revokedAt) {
-    r.revokedAt = iso(now);
+  const off = [r, ...store.links.filter((l) => l.siblingOf === id)];
+  const changed = off.filter((l) => !l.revokedAt);
+  for (const l of changed) l.revokedAt = iso(now);
+  if (changed.length) {
     write(store);
     shareLinksChanged({ kind: "p", cause: "revoke" });
   }
-  ended(r.hash);
+  for (const l of off) ended(l.hash);
   return r;
 }
 
@@ -299,7 +337,10 @@ export function extendPreview(id: string, days: unknown, now = Date.now()): Prev
   const r = store.links.find((l) => l.id === id);
   if (!r) return null;
   if (previewState(r, now) !== "active") throw new PreviewRefused("bad-days", "Only an active preview can be extended.");
-  r.expiresAt = iso(now + d * DAY_MS);
+  // A sibling never outlives the preview it copies.
+  const parent = r.siblingOf ? store.links.find((l) => l.id === r.siblingOf) : undefined;
+  const want = now + d * DAY_MS;
+  r.expiresAt = iso(parent ? Math.min(want, Date.parse(parent.expiresAt)) : want);
   write(store);
   shareLinksChanged({ kind: "p", cause: "renew" });
   return r;

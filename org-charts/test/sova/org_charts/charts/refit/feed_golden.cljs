@@ -27,6 +27,7 @@
    ["baton" ":at-limit" [] "[:under]" 0] :quiet
    ["baton" ":baton" [":baton/abilities"] "[]" 0] :feed
    ["baton" ":baton" [":baton/extend"] "[]" 0] :feed
+   ["project" ":project" [":outreach/send"] "[]" 0] :feed
    ["baton" ":baton" [":baton/hide"] "[]" 0] :feed
    ["baton" ":baton" [":baton/propose"] "[]" 0] :feed
    ["baton" ":baton" [":baton/record-decision"] "[]" 0] :feed
@@ -351,6 +352,7 @@
    ["project" ":project" [":hold/cancel"] "[]" 0] :correction
    ["project" ":project" [":milestone/noted"] "[]" 0] :quiet
    ["project" ":project" [":owner-update/post"] "[]" 0] :feed
+   ["project" ":project" [":preview/start"] "[]" 0] :feed
    ["project" ":project" [":project/edit"] "[]" 0] :feed
    ["project" ":project" [":spec/freeze"] "[]" 0] :feed
    ["project" ":ready" [] "[:cooling]" 0] :quiet

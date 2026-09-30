@@ -28,8 +28,10 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
 - `lastKnownUrl` (the via gateway's address as last learnt) and `verifiedAt` (the last Verify that
   passed) are written only by the server. A saved change of the gateway's address, or any route
   but `self`, drops `verifiedAt`: a Verify vouches for one address.
-- Main listener only (a request from the peer listener, or carrying `X-Forwarded-Host`, gets the
-  plain 404): `GET /api/public-links` → `{file, share, pinnedByEnv, front?, routed?, gateways}`;
+- Main listener only (a request from the peer listener, or carrying `X-Sova-Relayed`, which
+  another host's `/peer/<id>/` proxy sets on everything it relays, gets the plain 404; a generic
+  reverse proxy in front of the main listener, such as `tailscale serve`, Caddy or nginx, is
+  served even though it sets `X-Forwarded-Host`): `GET /api/public-links` → `{file, share, pinnedByEnv, front?, routed?, gateways}`;
   `PUT /api/public-links` with any of `route`, `gateway`, `ingressPort` (16 KB at most; a gateway
   may leave out `sharePort` and `acceptFrom` for their defaults, and its URL may carry one trailing
   slash) → the same answer, or 400 `{error}` naming the problem, with nothing written; `POST
@@ -339,23 +341,42 @@ mesh off. Copy is §design.copy-deck/public-links.
   previews are two separate sites.
 - `<stateRoot>/preview-links.json` (0600, written atomically, parsed strictly: a file that breaks a
   rule serves no preview and is never overwritten) keeps, per link, `{id, hash, orgId, projectId,
-  port, createdAt, expiresAt, revokedAt?, createdBy}`, where `hash` is the SHA-256 of the label and
-  `createdBy` is `operator` or `session:<id>`. The label itself is never stored: the mint's answer
-  carries the link once.
-- **Mint** (`POST /api/previews {orgId, projectId, port, days?}`, main listener only, like the
-  other local acts): `port` must be an integer 1–65535, not 4800, 4801, 4802 or 4810, and not a
-  port this Sova process binds or its settings name (main, peer, share, ingress). `days` is 1 by
-  default and at most 30. With no preview address it is refused with a named reason, and no link
-  is made: `no-address` (none set here or on the gateway) or `gateway-old` (the via gateway
-  doesn't list kind `p`: "{gateway} needs updating before it can carry preview links.").
+  port, createdAt, expiresAt, revokedAt?, createdBy, siblingOf?, sentTo?}`, where `hash` is the
+  SHA-256 of the label and `createdBy` is `operator` or `session:<id>` (the project overseer's
+  conversation, §app.project-overseer/previews). A **sibling** (`siblingOf`, `sentTo`) is a person's
+  own link to another preview, made when it is sent to them (§app.outreach/links): same project and
+  port, expiring with it; its label is never stored, and the send carries its link once.
+- **What else a preview has** is kept beside it, in `<stateRoot>/preview-kept.json` (0600, written
+  atomically, host-local, never synced or committed), per preview id: its link, its target (`port`,
+  or `static` with the folder Sova serves, §mesh.public/preview-serve), the coding session and
+  branch it shows, and its purpose, each only when known. It is read tolerantly: a file that
+  can't be read keeps no link and serves no folder, and every preview still opens. The link is a
+  secret kept for the operator: the project overseer never sees it, and names a preview by its id
+  (§app.project-overseer/previews). A preview made before this file existed has no kept link, only
+  its hash: its link was shown once, when it was made, and is never guessed. A sibling has no entry
+  of its own: it shows its original's target, session and purpose.
+- **Mint** (`POST /api/previews {orgId, projectId, port | folder, sessionId?, purpose?, days?}`,
+  main listener only, like the other local acts): exactly one of `port` and `folder`. `port` must
+  be an integer 1–65535, not 4800, 4801, 4802 or 4810, and not a port this Sova process binds, its
+  settings name (main, peer, share, ingress) or it serves a folder preview on. A `folder` is
+  served by Sova itself (§mesh.public/preview-serve) and needs `sessionId`, the coding session of
+  the project whose worktree holds it. `purpose` is one line, at most 200 characters. `days` is 1
+  by default and at most 30. With no preview address it is refused with a named reason, and no
+  link is made: `no-address` (none set here or on the gateway) or `gateway-old` (the via gateway
+  doesn't list kind `p`: "{gateway} needs updating before it can carry preview links."). The
+  answer carries the link, and the link is kept.
 - The app is always dialed at `127.0.0.1:<port>`, then `[::1]:<port>` when nothing listens there,
   and never at any other address.
-- **Turn Off** (`POST /api/previews/<id>/off`) revokes it: from then on its origin answers 410,
+- **Turn Off** (`POST /api/previews/<id>/off`) revokes it, and every sibling of it: from then on its origin answers 410,
   and every open HTTP connection and websocket through it is closed at once. The same happens
   when it expires. **Extend** (`POST /api/previews/<id>/extend {days}`) moves its expiry to `days`
-  from now (at most 30). `GET /api/previews?orgId&projectId` lists a project's previews (every
-  project's without them) with each one's port, expiry, state and whether something listens on
-  its port now (`running`), with the preview address's state.
+  from now (at most 30; a sibling's, never past its original's). `GET /api/previews?orgId&projectId`
+  lists a project's previews (every project's without them) with each one's port, target, expiry,
+  state and whether something listens on its port now (`running`; for a folder, whether Sova
+  serves it now), its kept link (`url`, null when none is kept), purpose, coding session and branch
+  (a recorded one, else the one matched by its worktree, §app.project-overseer/previews), with the
+  preview address's state; a sibling carries `siblingOf`, `sentTo` and `sentToName`, and the lists
+  show it as "sent to {name}".
 - A routed host sends each live preview's hash as a `p` row (§mesh.public/registry) only to a
   gateway target whose own info listed `p`; its gateway routes the preview host to its ingress
   (§mesh.public/routing).
@@ -429,12 +450,53 @@ would have expired, and answers them 410 too.
 
 ## §mesh.public/preview-card — Previews on the project page
 
-- The project page has a **Previews** card: each active preview with its port, `Expires {time}`,
-  whether something listens on the port (`App is running` / `Nothing on port {n}`), **Copy Link**
-  (only in the page that minted it, since the link is shown once) and **Turn Off**; turned-off
-  and expired previews are not listed. Then **New Preview**: Port, Expires (1, 7 or 30 days) and
+- The project page has a **Previews** card: each active preview, one row each. The row's title is
+  its purpose, else "Preview of port {n}" or "Preview of {folder}" ("the worktree" for the
+  worktree itself). Under it: its coding session's title (a link to that session) · its branch in
+  mono · what it serves ("app on port {n}" or "static files"), each part only when known; then
+  "Matched by the app's folder" when the session was matched now by the listener's worktree rather
+  than recorded (§app.project-overseer/previews); then a state chip, `Serving` (success) when the
+  app answers on its port or Sova serves its folder, else `Nothing on port {n}` or `Folder not
+  served` (warn); who made it ("Made by you", or "Made by the overseer", a link to that
+  conversation); "sent to {name}" for a person's own copy sent on WhatsApp (§app.outreach/links);
+  and "Expires in {time}". Then **Copy Link** ("Link copied.") when a link is kept
+  or this page just minted it, else the line "Link shown only when it was made."; and **Turn Off**
+  (a second click confirms: "Turn Off Preview?"; done: "Preview turned off."). Turned-off and
+  expired previews are not listed. Below 480px each row stacks its lines above its buttons, which
+  share the row's width, and a long title, branch or folder wraps instead of widening the page.
+- Then **New Preview**: Port, Expires (1, 7 or 30 days), an optional Purpose (at most 200
+  characters, sent only when not blank) and
   the warning "Anyone with this link can use the app on port {n} as if they were on this
   computer, including its logins, admin pages and anything it can change." A refused mint shows
   its reason on the form. With no preview address the card says so and how to set it.
 - The Shares page lists this host's live previews, one row each, with the project, port, expiry
   and Turn Off.
+
+## §mesh.public/preview-serve — A preview of a folder, served by Sova
+
+- A preview's target may be a **folder** instead of a port: a folder inside the worktree of one of
+  the project's coding sessions on this host (§app.project-overseer/coding-worktrees), judged at
+  its real path, with no part of it below the worktree starting with a dot. Sova serves it itself
+  on `127.0.0.1:<port>`, a free port it picks at the mint and records as the preview's `port`
+  (§mesh.public/preview), and the preview dials that port like any other. Sova never starts,
+  stops or restarts a program for a preview: a port preview shows what a coding session already
+  serves, and whoever runs that app starts it again when it stops ("Nothing on port {n}").
+- **Files only, inside the folder.** It answers only `GET` and `HEAD` (any other method: 405). The
+  path is judged raw and after decoding, segment by segment: a segment that starts with `.` (a
+  dot-file or dot-folder, `.git` and `.sova` included, `.` and `..`), an encoded `/` or `\`, a
+  backslash or a NUL answers 404; so does a path whose real path (every symlink resolved) is
+  outside the folder or passes through such a segment, anything that isn't a regular file, and
+  everything while the folder itself is missing. A
+  folder is never listed: it serves the folder's `index.html` when there is one (a folder asked
+  for without its trailing slash is redirected to it first, so relative links work), else 404.
+- **Its answers.** `Content-Type` by the file's extension (the web's page, script, style, data,
+  image, font, audio, video, wasm and pdf types; any other `application/octet-stream`),
+  `X-Content-Type-Options: nosniff`, `Cache-Control: no-cache` (a 404 `no-store`), no `Server`
+  header, and never an `x-sova-*` header. A 404 is plain text, "Not Found", naming no path.
+- **While it is active, and only then.** Turn Off closes its listener at once; an expired one's
+  closes within a minute. At startup Sova binds each active folder preview again on its recorded
+  port; when that port is taken it serves nothing there and logs it (never the link). The preview
+  proxy dials a folder preview's port (a person's sibling of it too, §app.outreach/links) only while
+  Sova itself serves that folder on it, so another
+  program that took the port is never shown: the visitor gets the not-running page
+  (§mesh.public/preview-offline).

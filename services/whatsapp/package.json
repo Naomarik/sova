@@ -1,0 +1,23 @@
+{
+  "name": "sova-whatsapp",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Sova's WhatsApp sender: one linked device, one long-lived Baileys socket, reached over a local Unix socket",
+  "type": "module",
+  "packageManager": "pnpm@12.6.0",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "bin": {
+    "sova-whatsapp": "bin/sova-whatsapp.mjs"
+  },
+  "scripts": {
+    "start": "node bin/sova-whatsapp.mjs run",
+    "test": "node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "qrcode-terminal": "0.12.0"
+  }
+}

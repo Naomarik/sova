@@ -544,3 +544,61 @@ describe("the view's code builds field by field", () => {
     assert.doesNotMatch(text, /\bnormalizeEntr(y|ies)\b|\.raw\b/);
   });
 });
+
+describe("a kept preview link never reaches a session share (§app.session-share/never, §app.project-overseer/previews)", async () => {
+  const { keepPreview, PREVIEW_LINK_REDACTED } = await import("./preview-kept");
+  const LABEL = "pvq7x".padEnd(52, "k");
+  const URL_ = `https://${LABEL}.preview.example.invalid/`;
+  keepPreview("pv_Q7XQ7XQ7XQ7XQ7XQ", { url: URL_, target: { kind: "port" } });
+  const pvPath = join(root, "agent", "sessions", "2026-09-30T04-00-00-000Z_0199cccc-preview.jsonl");
+  // A person typed the link; the model repeated it; one copy straddles the recipient's text cut.
+  const straddle = `${"word ".repeat(Math.floor((SESSION_SHARE_TEXT_MAX - 20) / 5))}${URL_} tail`;
+  const rows = [
+    { type: "session", version: 3, id: "0199cccc-preview", timestamp: "2026-09-30T04:00:00.000Z", cwd },
+    { type: "message", id: "pv-u1", parentId: null, timestamp: "2026-09-30T04:00:01.000Z", message: { role: "user", content: `Can you check ${URL_} for me? VISIBLE-PV-USER`, timestamp: 1 } },
+    { type: "message", id: "pv-a1", parentId: "pv-u1", timestamp: "2026-09-30T04:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: `Sure: ${URL_} opens the shop. VISIBLE-PV-REPLY` }], stopReason: "stop", timestamp: 2 } },
+    { type: "message", id: "pv-u2", parentId: "pv-a1", timestamp: "2026-09-30T04:00:03.000Z", message: { role: "user", content: straddle, timestamp: 3 } },
+  ];
+  writeFileSync(pvPath, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+  resetShareViewCache();
+  await new Promise<void>((r) => (server.listening ? r() : server.listen(0, "127.0.0.1", r)));
+  const port = (server.address() as AddressInfo).port;
+  const shares = (["snapshot", "live"] as const).map((mode) => {
+    const { share, tokens } = createShare({ sessionId: "0199cccc-preview", sessionPath: pvPath, title: `Preview ${URL_}`, mode, cut: mode === "snapshot" ? { entryId: "pv-u2", at: null } : null, days: 30, labels: [`Cy ${mode}`], anyone: false });
+    return { mode, share, token: tokens[0]!.token };
+  });
+  const bodies: [string, string][] = [];
+  for (const { mode, token } of shares)
+    for (const p of [`/s/${token}`, `/api/s/${token}`, `/api/s/${token}?outline=1`]) {
+      const res = await fetch(`http://127.0.0.1:${port}${p}`);
+      bodies.push([`${mode} ${p}`, await res.text()]);
+    }
+  for (const { mode, share, token } of shares) {
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/ws/s?token=${token}`);
+    ws.on("message", (d) => bodies.push([`${mode} frame`, String(d)]));
+    await new Promise<void>((ok, fail) => (ws.once("open", () => ok()), ws.once("error", fail)));
+    await new Promise((r) => setTimeout(r, 50));
+    await pushShareView(share.id);
+    await new Promise((r) => setTimeout(r, 100));
+    ws.close();
+  }
+  const view = await sessionShareView({ sessionPath: pvPath, cutEntryId: null, from: null, title: `Preview ${URL_}`, sharedAt: "2026-09-30T04:00:00.000Z", mode: "live" });
+
+  test("control: the link is in the file, and the view, the API and the frames did answer", () => {
+    assert.ok(readFileSync(pvPath, "utf8").includes(URL_));
+    assert.ok(bodies.some(([l, b]) => l.includes("/api/s/") && b.includes("VISIBLE-PV-REPLY")));
+    assert.ok(bodies.some(([l, b]) => l.endsWith("frame") && b.includes("VISIBLE-PV-REPLY")));
+  });
+
+  test("the view shows [preview link] in its place, in the title, the user's text and the reply", () => {
+    assert.ok(view);
+    assert.equal(view.title, `Preview ${PREVIEW_LINK_REDACTED}`);
+    assert.match(view.items[0]!.text, /Can you check \[preview link\] for me\?/);
+    assert.match(view.items[1]!.text, /Sure: \[preview link\] opens the shop\./);
+  });
+
+  test("no part of the label anywhere: a cut never leaves its first characters", () => {
+    const head = LABEL.slice(0, 12);
+    for (const [label, body] of [...bodies, ["view", JSON.stringify(view)] as [string, string]]) assert.ok(!body.includes(head), `a kept link (or its start) in ${label}`);
+  });
+});

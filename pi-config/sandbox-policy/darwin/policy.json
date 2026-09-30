@@ -17,7 +17,8 @@
     "~/.pypirc",
     "~/.claude/.credentials.json",
     "$AGENT_DIR/claude-accounts",
-    "$AGENT_DIR/auth.json"
+    "$AGENT_DIR/auth.json",
+    "$AGENT_DIR/sova/whatsapp"
   ],
   "readOnlyWithinWritable": [".git/hooks", ".git/config", ".envrc"],
   "proxy": {

@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit";
 import type { LinkError, LinkInbox, LinkOffersList, LinksList, LinkWhoami, PeerLinkRead } from "../../shared/mesh-links";
 import type { MeshApi } from "./index";
 import { LinkActError, type LinksDeps, type MeshLinks, meshLinks as theLinks } from "./links";
-import { PROXIED_HEADER } from "./proxy";
+import { localRequest } from "./proxy";
 
 // The link routes (§mesh/links; the list and bodies: shared/mesh-links.ts). Peer routes answer
 // only the peer listener's verified caller; the local acts under /api/mesh/links/* answer only
@@ -34,7 +34,7 @@ export function mountLinks(app: Hono, mesh: LinksDeps["mesh"] & Pick<MeshApi, "r
   meshLinks.configure({ ...deps, mesh });
 
   /** This host's own listener, the mesh on: a local act or a page read may run. */
-  const local = (c: Context) => mesh.enabled() && !(c.env as { meshPeer?: unknown } | undefined)?.meshPeer && !c.req.header(PROXIED_HEADER);
+  const local = (c: Context) => mesh.enabled() && localRequest(c);
 
   // ---- peer listener ----------------------------------------------------------------------------
 

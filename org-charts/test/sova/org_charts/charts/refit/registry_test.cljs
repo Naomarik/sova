@@ -15,7 +15,7 @@
 
 (def confirm-kinds
   "shared/project-overseer.ts CONFIRM_KINDS."
-  #{"message" "gather" "offer" "close" "promote" "build" "prompt" "owner-update" "roster-approve" "roster-decline"})
+  #{"message" "gather" "offer" "close" "promote" "build" "prompt" "owner-update" "send" "roster-approve" "roster-decline" "preview"})
 
 (defn- acts [] (for [[chart {:keys [acts]}] registry/charts [ev m] acts] [chart ev m]))
 
@@ -40,7 +40,7 @@
   (is (= {["baton" :baton/offer] #{"offer"} ["baton" :baton/close] #{"close"}
           ["project" :baton/start] #{"gather" "offer"} ["item" :gather/start] #{"gather" "offer"}
           ["project" :build/start] #{"build"} ["item" :build/start] #{"build"} ["build" :build/prompt] #{"prompt"} ["project" :session/prompt] #{"prompt"}
-          ["reconciler" :decision/promote] #{"promote"} ["project" :owner-update/post] #{"owner-update"}
+          ["reconciler" :decision/promote] #{"promote"} ["project" :owner-update/post] #{"owner-update"} ["project" :outreach/send] #{"send"} ["project" :preview/start] #{"preview"}
           ["person" :person/approve] #{"roster-approve"} ["person" :person/decline] #{"roster-decline"}}
          (into {} (for [[chart ev m] (acts) :when (:confirm-kind m)] [[chart ev] (kinds m)])))))
 
@@ -62,11 +62,11 @@
   (let [now (at/table)
         bad (for [k (sort (into (set (keys now)) (keys ag/golden))) :when (not= (get now k) (get ag/golden k))]
               [k :now (get now k) :golden (get ag/golden k)])]
-    (is (= 77 (count ag/golden)))
+    (is (= 79 (count ag/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 10 bad))))))
 
 (deftest exactly-these-acts-are-held
   (is (= #{["baton" ":baton/close"] ["build" ":build/prompt"] ["item" ":build/start"] ["item" ":gather/start"]
            ["person" ":person/approve"] ["person" ":person/decline"] ["project" ":baton/start"] ["project" ":build/start"]
-           ["project" ":owner-update/post"] ["project" ":session/prompt"] ["reconciler" ":decision/promote"]}
+           ["project" ":owner-update/post"] ["project" ":outreach/send"] ["project" ":preview/start"] ["project" ":session/prompt"] ["reconciler" ":decision/promote"]}
          (set (for [[k m] (at/table) :when (:hold m)] k)))))

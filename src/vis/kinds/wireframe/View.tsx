@@ -406,7 +406,10 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
             <Show when={t[2]}>
               <span class="vis-wf-item-end">{t.slice(2).join(" · ")}</span>
             </Show>
-            {kids(trail)}
+            {/* Its other blocks, one group: beside the text while it keeps about 12ch, else on a line under it. */}
+            <Show when={trail.length}>
+              <span class="vis-wf-item-trail">{kids(trail)}</span>
+            </Show>
             {badge()}
           </div>
         );
@@ -537,7 +540,7 @@ export default function WireframeView(props: ViewProps<WireframeSpec>) {
         return (
           <>
             <span class={c("vis-wf-badge")}>
-              {t.join(" · ")}
+              <span class="vis-wf-badge-label">{t.join(" · ")}</span>
               {badge()}
             </span>
             <Go from={b} />

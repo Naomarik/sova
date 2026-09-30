@@ -98,7 +98,8 @@
      "^That session is not one of this gap's\\.$" "^Name the gap to move it to\\.$"
      "^It runs in the project root.*" "^The session is working\\.$" "^Its workers are running\\.$" "^On another host: its worktree is there\\.$"
      "^Its worktree was (already )?removed.*" "^\".*\" is open in a terminal, so it is read-only\\.$" "^text must not be blank\\.$"
-     "^A merge is running\\.$" "^Name the commit it was merged by\\.$"]))
+     "^A merge is running\\.$" "^Name the commit it was merged by\\.$"
+     "^Say what it shows and to whom \\(purpose\\): one line\\.$" "^The purpose is one line of at most 200 characters\\.$"]))
 
 (defn in-catalogue? [s] (boolean (some #(re-matches % s) catalogue)))
 
@@ -187,7 +188,8 @@
               [:gap/file {:gap-id "g_1" :idea-id "§gap/x"}]
               [:baton/start {:session-id "s1" :to "p1" :public-title "T" :goal "G"}]
               [:build/start {:session-id "c1" :title "T" :prompt "P"}] [:spec/freeze {:frozen true}]
-              [:session/prompt {:session-id "c9" :title "T" :text "go"}] [:session/prompt {:session-id "c9" :title "T" :text " "}] [:session/prompt {:session-id "c9" :title "T" :text "go" :live true}]]})))
+              [:session/prompt {:session-id "c9" :title "T" :text "go"}] [:session/prompt {:session-id "c9" :title "T" :text " "}] [:session/prompt {:session-id "c9" :title "T" :text "go" :live true}]
+              [:preview/start {:coding-session "c1" :port 5173 :purpose "The shop for Ana"}] [:preview/start {:coding-session "c1" :folder "dist" :purpose " "}]]})))
 
 (deftest watch-matrix
   (clean! "watch"

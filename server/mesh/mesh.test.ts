@@ -112,7 +112,7 @@ before(async () => {
     }
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
-    json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: req.url, body: Buffer.concat(chunks).toString(), fwd: req.headers["x-forwarded-host"] ?? null });
+    json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: req.url, body: Buffer.concat(chunks).toString(), fwd: req.headers["x-forwarded-host"] ?? null, relayed: req.headers["x-sova-relayed"] ?? null });
   });
   const wss = new WebSocketServer({ noServer: true });
   fake.on("upgrade", (req, socket, head) => {
@@ -492,9 +492,10 @@ describe("mesh ON", () => {
   test("proxy REST: verbatim path + query + body; the peer's answer untouched", async () => {
     const res = await realFetch(`${base}/peer/b/api/echo?x=1&y=%2F`, { method: "POST", body: "hi" });
     assert.equal(res.status, 200);
-    const echo = (await res.json()) as { method: string; url: string; body: string; fwd: string };
+    const echo = (await res.json()) as { method: string; url: string; body: string; fwd: string; relayed: string };
     assert.deepEqual([echo.method, echo.url, echo.body], ["POST", "/api/echo?x=1&y=%2F", "hi"]);
     assert.equal(echo.fwd, new URL(base).host);
+    assert.equal(echo.relayed, "1", "the relay marks itself, so the peer's local routes refuse it");
     assert.equal((await realFetch(`${base}/peer/b/api/teapot`)).status, 418);
   });
 

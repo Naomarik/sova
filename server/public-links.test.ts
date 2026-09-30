@@ -481,7 +481,12 @@ describe("the routes", () => {
     }
   });
 
-  test("refused from the peer listener and through a proxy (X-Forwarded-Host): the plain 404, nothing written", async () => {
+  test("the operator's browser behind a reverse proxy (X-Forwarded-Host) is served", async () => {
+    const res = await app().request("/api/public-links", { headers: { "X-Forwarded-Host": "host.example.ts.net:8443" } });
+    assert.equal(res.status, 200);
+  });
+
+  test("refused from the peer listener and relayed by a peer's proxy (X-Sova-Relayed): the plain 404, nothing written", async () => {
     const a = app();
     const peer = { meshPeer: { id: "p", nodeId: "n1" } };
     for (const [path, init] of [
@@ -490,8 +495,8 @@ describe("the routes", () => {
       ["/api/public-links/verify", { method: "POST" }],
     ] as const) {
       assert.equal((await a.request(path, init, peer)).status, 404, `peer ${path}`);
-      const headers = { ...((init as { headers?: Record<string, string> }).headers ?? {}), "X-Forwarded-Host": "front.example.com" };
-      assert.equal((await a.request(path, { ...init, headers })).status, 404, `proxied ${path}`);
+      const headers = { ...((init as { headers?: Record<string, string> }).headers ?? {}), "X-Forwarded-Host": "front.example.com", "X-Sova-Relayed": "1" };
+      assert.equal((await a.request(path, { ...init, headers })).status, 404, `relayed ${path}`);
     }
     assert.throws(() => statSync(store.publicLinksFile()));
   });

@@ -243,7 +243,8 @@ once), **lease** (an offer's lock on its first taker).
 
 - A link is `/h/<token>`, on the effective public address (§mesh.public/setting), built by the
   one helper every link uses: 32 random bytes, base64url. One is minted when a session starts with a
-  person, and when the operator asks for one (Get Link, for the current hand-off); a `hand_to`
+  person, when the operator asks for one (Get Link, for the current hand-off), and when one is sent
+  to the person outside Sova (Send on WhatsApp, or an overseer's send, §app.outreach/send); a `hand_to`
   mints none — the host could never show it — so until the operator gets one, the session needs
   them (§app.baton/needs-you). The host stores only
   its SHA-256, bound to (org, session, hand-off, person), with an expiry of 14 days, in
@@ -269,6 +270,8 @@ once), **lease** (an offer's lock on its first taker).
   the strip) shows the text verbatim in warn tone with an **Open Settings** button that opens
   Settings → Public links, and while a person or an offer holds the session and no address is set,
   the strip shows the `off` text as a warn banner with the same button.
+- The strip also offers **Send on WhatsApp** for the holder, or each reached invitee of an open
+  offer, with its fallback after a failure (§app.outreach/send).
 - The operator can get the current link (`GET /api/baton/:sid/link` mints a fresh one for the
   current hand-off and turns off the older ones for it: the host cannot show a token it no longer
   has) and turn it off (`POST /api/baton/:sid/revoke`). A link is shown once, with a Copy Link
@@ -547,7 +550,7 @@ once), **lease** (an offer's lock on its first taker).
   <question>" (≤ 200 characters), in the digest (§app.overseer/attention-digest) and so the
   Organizations region's Needs you (§app.session-list/organizations), never the global one. The operator's reply clears it.
 - When a person holds the baton through a hand-off with no live link, the same item says "Send
-  <name> their link: <question>"; getting the link clears it.
+  <name> their link: <question>"; getting the link, or sending it (§app.outreach/send), clears it.
 - An open offer whose invitees don't all have a live link (started in-process with `mintLink:
   false`) says "Send <names of those without one> their link: <question>" the same way, until
   every invitee has one.

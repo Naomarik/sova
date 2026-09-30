@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { stateRoot } from "./state-root";
+import { outreachSecretDirs, outreachSecretFiles } from "./outreach/protected-paths";
 
 /** What the Overseer's read/grep/find/ls answer for a secret file. */
 export const SECRET_REFUSAL = "That file holds credentials; the Overseer can't read it.";
@@ -42,6 +43,8 @@ export function secretRules(home = homedir(), agentDir = getAgentDir(), state = 
       // Sova's link stores: every hand-off link's and owner link's token hash (§app.overseer/tools).
       join(state, "baton-links.json"),
       join(state, "person-links.json"),
+      // The outreach setting and its receipts (§app.outreach/secrets).
+      ...outreachSecretFiles(state),
     ],
     /** Whole directories: nothing inside is read, listed or matched. */
     dirs: [
@@ -58,6 +61,8 @@ export function secretRules(home = homedir(), agentDir = getAgentDir(), state = 
       // The reading process's open files, the server's own: on Linux `/dev/fd` resolves into
       // `/proc`, but on macOS it is its own file system, and `/dev/stdin` and the like resolve here.
       "/dev/fd",
+      // The WhatsApp sender's home and its auth directory, wherever configured (§app.outreach/secrets).
+      ...outreachSecretDirs(agentDir, home),
     ],
     /** File names that are secret anywhere; `name` is how the prompt names each. */
     names: [

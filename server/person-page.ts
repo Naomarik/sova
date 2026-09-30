@@ -12,6 +12,7 @@ import { opaqueSenders, readView } from "./share/hub";
 import { readVisits } from "./visits";
 import { ownerLinksOfPerson } from "./owner";
 import { ownerLinksOf } from "./person-links";
+import { personSends } from "./outreach/log";
 
 /**
  * A person's page (§app.organizations/person-page): everything the org knows about one roster
@@ -351,6 +352,8 @@ export function personPage(orgId: string, pid: string, now = Date.now()): Person
       .map((p) => ({ projectId: p.id, name: p.name })),
     owner: readOrg(orgId).owner === pid && person.status === "active",
     ownerLinks: ownerLinksOfPerson(orgId, pid, now),
+    // Their sends outside Sova (§app.outreach/log), newest first.
+    sends: personSends(orgId, pid, (sid) => ctx.rows.find((r) => r.sessionId === sid)?.publicTitle ?? "A gathering"),
   };
 }
 

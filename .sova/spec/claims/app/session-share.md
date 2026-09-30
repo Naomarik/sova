@@ -100,7 +100,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   directory `~`. Wake nudges and link partners' messages are not the user's words and are left
   out. An image path (/tmp, an attachments folder, a generated paste name) leaves the text
   wherever it stands, prose, inline code, a fence or a vis drawing's source alike: removed when
-  it is a word of its own, `[image]` otherwise; ordinary code stays as written. A time goes out only as a canonical ISO time
+  it is a word of its own, `[image]` otherwise; ordinary code stays as written. A preview link
+  this host keeps (§app.project-overseer/previews), in the title or any message, a person's own
+  words included, becomes "[preview link]" before any text is cut, and every view, outline and
+  socket frame passes that filter whole. A time goes out only as a canonical ISO time
   re-written from a whole ISO 8601 entry time; any other value is left out.
 - The branch is chosen strictly: the cut's path to the root, or, with no cut, the path from the
   file's last entry that has an id. An id-less record is ignored, never read as a reason to show
@@ -209,7 +212,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   shares with a live link, then the stopped and expired ones folded under "Ended"), then
   **Organization links** (every live hand-off `/h/` and owner `/i/` link, from
   `GET /api/shares-overview` on each host), then **Preview links** (this host's live previews,
-  §mesh.public/preview-card). With the mesh on, each row names its host.
+  §mesh.public/preview-card; a person's own copy sent on WhatsApp says "sent to {name}" before its
+  expiry). With the mesh on, each row names its host.
 - A session share row: its public title (a link to the session), its slice line or mode line (as
   the Sharing section), its recipients
   with presence and opened lines, and **Manage** (the Share sheet on it) and **Stop Sharing**

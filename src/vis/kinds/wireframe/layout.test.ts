@@ -4,6 +4,7 @@ import { parseVis } from "../../parse";
 import { unweighted } from "../tree/measure";
 import { estimateHeight, fitStrip, frameWidth, MIN_STRIP_SCALE, stripWidth } from "./layout";
 import type { WireframeSpec } from "./parse";
+import { PREVIEWS as PREVIEWS_FENCE } from "./previews.fixture";
 
 const spec = (body: string) => {
   const r = parseVis("wireframe", body);
@@ -205,6 +206,25 @@ list
 heading "Archived"
   link "Show all"`);
 
+const PREVIEWS = spec(PREVIEWS_FENCE);
+const SQUEEZED = spec(`title: Squeezed badges
+screen "Phone" phone
+list
+  item "A" "detail"
+    badge "A very long badge label that cannot fit on a phone at all" info
+    button "Go"
+  item "Two rows" "of controls" "right"
+    row
+      badge "Made by the overseer, long" info
+      badge "Serving" ok
+      button "Copy Link"
+      button "Turn Off" error
+    toggle on
+row
+  badge "Another long badge label here, and more" ok
+  text "Some text beside it that is long enough to wrap"
+  button "Act"`);
+
 test("wireframe layout: frames narrow with the pane to fit whole, down to 240px (phone) and 560px (desktop)", () => {
   // The body's content width less the strip's 6px padding each side (wireframe.css --wf-inset).
   assert.equal(frameWidth("desktop", 676), 664);
@@ -239,6 +259,32 @@ test("wireframe layout: fixed control heights, a row its tallest child, a phone 
   // A long label wraps inside a button on its own, and is cut short on one line in a row.
   assert.ok(one(`button "${"word ".repeat(20)}"`) > 34);
   assert.equal(one(`row\n  button "${"word ".repeat(12)}"\n  button "B"`), 34);
+});
+
+test("wireframe layout: an item's blocks sit beside its title while it keeps about 12 characters, else wrap under it", () => {
+  // A phone at 676: strip padding 12, chrome 18, border 3, page padding 20. A desktop's chrome is 22.
+  const phone = (body: string) => estimateHeight(spec(body), 676, flat) - 12 - 18 - 3 - 20;
+  const desktop = (body: string) => phone(`device: desktop\n${body}`) - 4;
+  // Each list here is 2px of border around one item: 6px above and below it, 10px at each side.
+  // The phone item from the PREVIEWS fence, 255px inside: the text keeps 12ch (84px) and its buttons
+  // (94 + 6 + 87) don't fit beside it, so they take a line of their own under the title and detail.
+  const buttons = 'row\n      button "Copy Link"\n      button "Turn Off" error';
+  assert.equal(phone(`list\n  item "Purpose of preview" "Coding session · static files"\n    ${buttons}`), 2 + 12 + 18 + 16 + 8 + 34);
+  // Two badges and two buttons (420px) on a phone wrap into two lines, badges (18) over buttons (34), 6px apart.
+  const four = 'row\n      badge "Made by the overseer" info\n      badge "Serving" ok\n      button "Copy Link"\n      button "Turn Off" error';
+  assert.equal(phone(`list\n  item "Purpose"\n    ${four}`), 2 + 12 + 18 + 8 + 18 + 6 + 34);
+  // On a desktop (619px inside) the same four and the right text (127) leave the text less than 12ch: under it, on one line.
+  assert.equal(desktop(`list\n  item "Purpose of preview" "Coding session · branch · static files" "Expires in N days"\n    ${four}`), 2 + 12 + 18 + 16 + 8 + 34);
+  // A badge and a button (186px) fit beside the title and the right text: one line, as tall as the button.
+  assert.equal(desktop('list\n  item "Older preview" "Matched by the app\'s folder · port N" "Expires in N days"\n    row\n      badge "Made by you" muted\n      button "Turn Off" error'), 2 + 12 + 34);
+  // A lone toggle still sits beside the text, as before.
+  assert.equal(phone('list\n  item "Notifications" "email and push"\n    toggle on'), 2 + 12 + 18 + 16);
+});
+
+test("wireframe layout: in a row beside other blocks a badge takes its label's width", () => {
+  const one = (body: string) => estimateHeight(spec(body), 676, flat) - 12 - 18 - 3 - 20;
+  // "Beta" is 16 + 28px wide, so the text beside it has 277 - 8 - 44px: one line, not two in half the row.
+  assert.equal(one(`row\n  badge "Beta"\n  text "${"word ".repeat(6).trim()}"`), 18);
 });
 
 test("wireframe layout: the screen buttons are one line at any width", () => {
@@ -277,6 +323,11 @@ const RENDERED: [string, WireframeSpec, number, number][] = [
   ["a ragged desktop grid with a chip", RAGGED, 296, 102],
   ["an app shell: a header over the sidebar, controls in headings", SHELL, 676, 324],
   ["an app shell: a header over the sidebar, controls in headings", SHELL, 296, 186],
+  // Captured 2026-09-30 on feat/wireframe-item-wrap, the same way (the existing rows above re-measured unchanged).
+  ["an item with badges and buttons (a real fence)", PREVIEWS, 676, 256],
+  ["an item with badges and buttons (a real fence)", PREVIEWS, 296, 312],
+  ["long badges cut short, an item's controls on two lines, a badge beside text", SQUEEZED, 676, 429],
+  ["long badges cut short, an item's controls on two lines, a badge beside text", SQUEEZED, 296, 447],
 ];
 
 test("wireframe layout: the estimate is within 15% of the rendered height", () => {
@@ -287,7 +338,7 @@ test("wireframe layout: the estimate is within 15% of the rendered height", () =
 });
 
 test("wireframe layout: deterministic, and positive at every width", () => {
-  for (const s of [INVOICES, CHECKOUT, SETTINGS, OVERLAYS, LONG_NAMES, WIDE, CHIPS, TILES, WIDE_TILES, RAGGED, SHELL]) {
+  for (const s of [INVOICES, CHECKOUT, SETTINGS, OVERLAYS, LONG_NAMES, WIDE, CHIPS, TILES, WIDE_TILES, RAGGED, SHELL, PREVIEWS, SQUEEZED]) {
     for (let w = 280; w <= 1000; w += 3) {
       const h = estimateHeight(s, w);
       assert.equal(h, estimateHeight(s, w));

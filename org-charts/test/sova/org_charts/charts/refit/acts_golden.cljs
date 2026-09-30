@@ -8,6 +8,7 @@
    ["baton" ":baton/abilities"] {}
    ["baton" ":baton/close"] {:card? true, :confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_close_gathering", :what? true}
    ["baton" ":baton/extend"] {}
+   ["project" ":outreach/send"] {:card? true, :confirm? true, :hold true, :hours? true, :needs "L1", :people-facing true, :tool "sova_send_to_person", :what? true}
    ["baton" ":baton/goal-done"] {}
    ["baton" ":baton/hand-to"] {:hours? true}
    ["baton" ":baton/handoff"] {:card? true, :hours? true, :people-facing true}
@@ -65,6 +66,7 @@
    ["project" ":overseer/clear"] {:card? true, :people-facing true}
    ["project" ":overseer/start"] {}
    ["project" ":owner-update/post"] {:confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_owner_update", :what? true}
+   ["project" ":preview/start"] {:confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_preview", :what? true}
    ["project" ":project/archive"] {:card? true, :people-facing true}
    ["project" ":project/edit"] {}
    ["project" ":project/unarchive"] {}

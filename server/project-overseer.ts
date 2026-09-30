@@ -84,6 +84,11 @@ import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions
 import { setArchived } from "./archived-sessions";
 import { readView } from "./share/hub";
 import { actOrThrow, envelopeFor, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
+import { holdsPreviewLink } from "./preview-kept";
+import { listPreviews, PreviewRefused } from "./preview-links";
+import { sovaPorts } from "./preview-links-routes";
+import { makePreview, previewViews, resolvePreview, turnOffPreview as turnOffPreviewLink } from "./project-previews";
+import { previewAddress } from "./share/preview-address";
 import { heldActs, pipelineInfo } from "./project-pipeline";
 import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
@@ -667,6 +672,11 @@ function toolHost(rt: Rt): PoToolHost {
       return hostOf(orgId).configuration(sid) ?? [];
     },
     held: () => readMemo(paths).held,
+    // §app.outreach/send: the project chart's outreach/send in this turn's envelope (held when unattended).
+    async sendToPerson(input) {
+      const { sendAct } = await import("./outreach/core");
+      return sendAct({ orgId, projectId, personId: input.personId, ...(input.link ? { link: input.link } : {}), ...(input.note ? { note: input.note } : {}), sentBy: "project-overseer" }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()));
+    },
     async postOwnerUpdate(input) {
       // The project chart's owner-update/post: an owner, the text, the leak backstop, and (unattended) the 24 h and
       // milestone gates; held when unattended (q10). Its effect writes the update.
@@ -687,8 +697,51 @@ function toolHost(rt: Rt): PoToolHost {
       if (fx?.error) throw new Error(fx.error);
       return { update: fx?.result as ProjectUpdate, owner: owner?.name ?? "" };
     },
+    previews: () => previewViews({ orgId, projectId }),
+    async startPreview(input) {
+      // The target is checked before the act (§app.project-overseer/previews): a refusal is the chart's `invalid`,
+      // logged, holding nothing. The effect checks it again when it goes (a hold may end long after).
+      const overseerId = readPoState(paths)?.current ?? "";
+      let invalid = "";
+      let codingSession = input.session;
+      try {
+        const r = await resolvePreview({ orgId, projectId, ...input.target, sessionId: input.session, purpose: input.purpose, days: input.days, createdBy: `session:${overseerId}`, requireOwner: true }, { sovaPorts: sovaPorts() });
+        codingSession = r.tree?.sessionId ?? input.session;
+        const address = previewAddress();
+        if (!address.url) invalid = address.message ?? "No preview address is set.";
+      } catch (err) {
+        if (!(err instanceof PreviewRefused)) throw err;
+        invalid = err.message;
+      }
+      const sid = `project/${orgId}/${projectId}`;
+      const out = await actOrThrow(
+        orgId,
+        sid,
+        "preview/start",
+        { codingSession, ...input.target, purpose: input.purpose, ...(input.days !== undefined ? { days: input.days } : {}), overseerId, ...(invalid ? { invalid } : {}) },
+        overseerEnvelope(orgId, projectId, paths, rt.turns.attended()),
+        { settle: true },
+      );
+      if (out.held) return { held: heldAt(sid, out.held) };
+      const fx = out.effects?.find((e) => e.kind === "preview");
+      if (fx?.error) throw new OrgError(fx.error, 409);
+      const id = (fx?.result as { id?: unknown } | null)?.id;
+      const view = (await previewViews({ orgId, projectId })).find((v) => v.id === id);
+      if (!view) throw new Error("The preview was made, but it can't be read back.");
+      return { preview: view };
+    },
+    async turnOffPreview(id) {
+      // Never held, at any level: it only takes something away. Only this project's.
+      if (!listPreviews({ orgId, projectId }).some((v) => v.id === id)) throw new OrgError(`No preview ${id} in this project: sova_previews lists them.`, 404);
+      await turnOffPreviewLink(id);
+      const view = (await previewViews({ orgId, projectId })).find((v) => v.id === id);
+      if (!view) throw new Error("It was turned off, but it can't be read back.");
+      return view;
+    },
   };
 }
+
+export const PREVIEW_IN_OWNER_UPDATE = "A preview link goes to people through the operator, never in an owner update.";
 
 /** The shortest repeated run that counts as copying private text into an owner update. */
 export const OWNER_UPDATE_REPEAT = 24;
@@ -721,6 +774,8 @@ export function lastBuildFinishedAt(orgId: string, projectId: string): number | 
  * refuses the post. The About text is read here to be kept OUT of the update, never to write it.
  */
 export function ownerUpdateLeak(orgId: string, projectId: string, text: string): string | null {
+  // A kept preview link is a secret the operator sends on (§app.project-overseer/previews).
+  if (holdsPreviewLink(text)) return PREVIEW_IN_OWNER_UPDATE;
   const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
   const hay = norm(text);
   const repeats = (secret: string): boolean => {
@@ -1463,6 +1518,19 @@ onOrgHostOpened((host, orgId) => {
     const [, , projectId] = String(e.sessionId).split("/");
     const out = updateIdea(String(e.ideaId), { status: e.status === "dropped" ? "dropped" : "done" }, projectOverseerPaths(orgId, projectId ?? "").ideas);
     return { status: out.idea.status };
+  });
+  // The project chart's preview/start, taken (or released from its hold): checked again as it stands now, then
+  // minted and its link kept host-local. The result names the preview only: an effect's result is logged.
+  host.effects.register("preview", async (e) => {
+    const projectId = String(e.sessionId).split("/")[2] ?? "";
+    const ports = sovaPorts();
+    const target = typeof e.folder === "string" ? { folder: e.folder } : { port: e.port };
+    const r = await resolvePreview(
+      { orgId, projectId, ...target, sessionId: e.codingSession, purpose: e.purpose, days: e.days, createdBy: `session:${String(e.overseerId ?? "") || "overseer"}`, requireOwner: true },
+      { sovaPorts: ports },
+    );
+    const made = await makePreview(r, ports);
+    return { id: made.record.id };
   });
   // The project chart's owner-update/post, taken (or released from its hold): the update is written.
   host.effects.register("owner-update", async (e) => {

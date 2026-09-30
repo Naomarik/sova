@@ -2,7 +2,7 @@ import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AdvertisedGateway, PublicLinksFile, PublicLinksInfo, RoutedHost, VerifyResult } from "../shared/public-links";
 import { advertisedGateways } from "./mesh/hello";
-import { PROXIED_HEADER } from "./mesh/proxy";
+import { localRequest } from "./mesh/proxy";
 import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
 import { frontGuide, verifyPreviewUrl, verifyPublicUrl } from "./share/front";
 import { previewAddress } from "./share/preview-address";
@@ -14,12 +14,12 @@ import { publicLinksChanged } from "./share/setting-events";
 /**
  * Settings → Public links (§mesh.public/setting): GET and PUT /api/public-links and POST
  * /api/public-links/verify (shared/public-links.ts). Main listener only: a request from the peer
- * listener (`meshPeer`) or through a proxy (X-Forwarded-Host) gets the plain 404, like the mesh
+ * listener (`meshPeer`) or relayed by a peer's proxy (X-Sova-Relayed) gets the plain 404, like the mesh
  * links' local acts. Works with the mesh off.
  */
 
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
-const local = (c: Context) => !(c.env as { meshPeer?: unknown } | undefined)?.meshPeer && !c.req.header(PROXIED_HEADER);
+const local = localRequest;
 const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const NO_STORE = { "Cache-Control": "no-store" };
 /** How long a PUT that routes this host through a gateway waits for that gateway's first answer

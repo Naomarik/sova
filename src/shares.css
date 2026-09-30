@@ -99,3 +99,20 @@
 .share-thumb-failed img { visibility: hidden; }
 /* A recipient action's failure: its own line across the row, under the buttons. */
 .share-recipient-error { flex-basis: 100%; margin: 0; }
+
+/* ---- Project page · Previews card ---- */
+.previews-row { align-items: flex-start; flex-wrap: wrap; }
+.previews-row .list-main { min-width: 14rem; }
+.previews-row .list-title,
+.previews-row .list-meta { white-space: normal; overflow-wrap: anywhere; }
+/* Session · branch · what it serves: the dot sits in the gap before a part. A part that wraps to the
+   start of a line puts its dot left of the line's box, which the line clips: it never leads a line. */
+.previews-row-line { display: flex; flex-wrap: wrap; align-items: center; column-gap: var(--space-4); row-gap: 2px; overflow: clip; overflow-clip-margin: 2px; }
+.previews-row-line > :not(.chip) + :not(.chip) { position: relative; }
+.previews-row-line > :not(.chip) + :not(.chip)::before { content: "·"; position: absolute; left: calc(var(--space-4) / -2); transform: translateX(-50%); color: var(--color-ink-muted); }
+/* A phone stacks the row: its lines first, then its buttons across the width. */
+@media (max-width: 479px) {
+  .previews-row { flex-direction: column; align-items: stretch; }
+  .previews-row .list-main { min-width: 0; }
+  .previews-row-actions > .button { flex: 1 1 0; }
+}

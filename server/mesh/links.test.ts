@@ -471,8 +471,10 @@ describe("routes and the pane", () => {
   test("local acts never answer the peer listener", async () => {
     const res = await A.app.request("/api/mesh/links", {}, { meshPeer: entryOf(B) });
     assert.equal(res.status, 404);
-    const proxied = await A.app.request("/api/mesh/links", { headers: { "X-Forwarded-Host": "x" } });
-    assert.equal(proxied.status, 404);
+    const relayed = await A.app.request("/api/mesh/links", { headers: { "X-Sova-Relayed": "1" } });
+    assert.equal(relayed.status, 404);
+    const behindServe = await A.app.request("/api/mesh/links", { headers: { "X-Forwarded-Host": "host.example.ts.net:8443" } });
+    assert.equal(behindServe.status, 200);
   });
 
   test("link_members lists the session's links; without a session, every link", async () => {

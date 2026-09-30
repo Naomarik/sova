@@ -27,8 +27,12 @@ import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
 import { mountPreviewLinks } from "./preview-links-routes";
+import { startStaticPreviews } from "./project-previews";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
+import { startOutreach } from "./outreach/core";
+import { mountOutreachRelay } from "./outreach/relay";
+import { mountOutreach } from "./outreach/routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
@@ -1328,9 +1332,17 @@ onSessionArchived((id) => void meshLinks.endFor(id));
 // listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
 mountPublicLinks(app);
 mountShareGateway(app, meshApi);
+// Outreach (shared/outreach.ts, §app/outreach): Settings → Outreach and Send on WhatsApp under
+// /api/outreach and /api/baton/:sid/send-link (main listener only), and the relay for peers that
+// send through this host's sender under /api/peer/outreach/*.
+mountOutreach(app);
+mountOutreachRelay(app, meshApi);
+startOutreach();
 // Preview links (shared/preview-links.ts, §mesh.public/preview): a project's loopback apps behind
-// their own public hosts, under /api/previews (main listener only).
+// their own public hosts, under /api/previews (main listener only). A folder preview is served by
+// Sova itself (§mesh.public/preview-serve): rebound here on its recorded port, stopped when it ends.
 mountPreviewLinks(app);
+startStaticPreviews();
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 

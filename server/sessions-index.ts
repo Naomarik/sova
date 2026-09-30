@@ -1,4 +1,5 @@
 import { PROFILE_ENTRY, type ProfileEntryData } from "../shared/profiles";
+import { keptLabels, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { profileField, profileOnBranch } from "./session-profile";
 import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
@@ -90,14 +91,16 @@ async function workerSessionPaths(files: string[]): Promise<Set<string>> {
   }
 }
 
+// Both redact kept preview links BEFORE they cut (§app.project-overseer/previews): a link cut short no
+// longer matches, and its first characters would show.
 function oneLine(s: string): string {
-  const t = s.replace(/\s+/g, " ").trim();
+  const t = redactPreviewLinks(s).replace(/\s+/g, " ").trim();
   return t.length > TITLE_MAX ? `${t.slice(0, TITLE_MAX - 1)}…` : t;
 }
 
 /** The outline's "now" line, whitespace-collapsed and capped for the sidebar's summary row. */
 function summaryLine(s: string): string {
-  const t = s.replace(/\s+/g, " ").trim();
+  const t = redactPreviewLinks(s).replace(/\s+/g, " ").trim();
   return t.length > SUMMARY_MAX ? `${t.slice(0, SUMMARY_MAX - 1)}…` : t;
 }
 
@@ -409,7 +412,7 @@ export function finishedReply(e: any): LastReply | null {
   const at = entryTime(e);
   if (at === null) return null;
   const msg = e.message.errorMessage;
-  const error = stop === "error" && typeof msg === "string" && msg.trim() ? msg.trim().slice(0, REPLY_ERROR_MAX) : undefined;
+  const error = stop === "error" && typeof msg === "string" && msg.trim() ? redactPreviewLinks(msg.trim()).slice(0, REPLY_ERROR_MAX) : undefined;
   return { at, stopReason: stop, ...(error ? { error } : {}) };
 }
 
@@ -826,6 +829,9 @@ export async function listSessions(): Promise<SessionSummary[]> {
   const seen = readSeen();
   const attention = readDecisionSettings().features.attention;
   const orgs = orgLookup();
+  // A kept preview link never reaches the list (§app.project-overseer/previews): a title or summary line
+  // that holds one (the overseer saw it in its tool result) shows "[preview link]" in its place.
+  const previewLabels = keptLabels();
   // A member whose file is gone KEEPS its assignment, on purpose: the workspace's "This
   // session's file is gone" pane IS that assignment rendered (spec 14-workspaces "Gone from
   // disk"), and pruning here — on every listing pass — would race the pane's own Remove From
@@ -860,7 +866,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
         // So is one that carries a profile: a One at a time profile counts from its pick, so the
         // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
         if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) continue;
-        if (hasDraft) preview = draftPreview(draft.text, draft.attachments);
+        if (hasDraft) preview = draftPreview(redactPreviewLinks(draft.text), draft.attachments);
       }
     }
     const l = live.get(s.path);
@@ -887,7 +893,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(readiness ? { ...row, readiness } : row);
+    out.push(redactPreviewLinksDeep(readiness ? { ...row, readiness } : row, previewLabels));
   }
   pruneReadiness(out);
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -933,7 +939,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...orgField(s.path, s.id),
   };
   const readiness = readinessOverlay(row);
-  return readiness ? { ...row, readiness } : row;
+  return redactPreviewLinksDeep(readiness ? { ...row, readiness } : row);
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

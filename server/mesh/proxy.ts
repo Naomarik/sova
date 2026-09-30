@@ -132,6 +132,18 @@ export function proxyTail(tail: string): string | null {
 /** Every proxied request and socket carries this, so the peer can tell it from a peerFetch. */
 export const PROXIED_HEADER = "X-Forwarded-Host";
 
+/**
+ * Also on every proxied request and socket, and set by nothing else: a generic reverse proxy in
+ * front of the main listener (tailscale serve, Caddy, nginx) sets X-Forwarded-Host too, so only
+ * this one tells a relay from the operator's own browser. A browser that sends it only refuses
+ * itself; it can't take it off a relay.
+ */
+export const RELAYED_HEADER = "X-Sova-Relayed";
+
+/** This host's own browser: not on the peer listener (`meshPeer`) and not relayed by a peer's
+    /peer/<id>/ proxy. The operator's local routes answer anything else with their 404. */
+export const localRequest = (c: Context): boolean => !(c.env as { meshPeer?: unknown } | undefined)?.meshPeer && !c.req.header(RELAYED_HEADER);
+
 function whyDown(err: unknown): string {
   const e = err as Error & { cause?: { code?: string; message?: string } };
   return e.cause?.code ?? e.cause?.message ?? e.message ?? String(err);
@@ -145,6 +157,7 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
   for (const h of HOP_BY_HOP) headers.delete(h);
   headers.delete(OVERSEER_HEADER);
   headers.set(PROXIED_HEADER, host || "unknown");
+  headers.set(RELAYED_HEADER, "1");
   const base = peerUrl(peer);
   const go = await preflight(base);
   if (!go) return c.json({ error: "peer down", id: peer.id }, 502);
@@ -190,7 +203,7 @@ export function upgradePeerSocket(req: IncomingMessage, socket: Duplex, head: Bu
     return;
   }
   socket.on("error", () => {}); // a reset while we decide; proxySocket takes over from there
-  const headers: Record<string, string> = { [PROXIED_HEADER]: req.headers.host || "unknown" };
+  const headers: Record<string, string> = { [PROXIED_HEADER]: req.headers.host || "unknown", [RELAYED_HEADER]: "1" };
   const base = peerUrl(peer);
   void preflight(base).then((go) => {
     if (socket.destroyed) return; // the browser gave up first

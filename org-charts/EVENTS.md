@@ -116,6 +116,7 @@ Start: `{orgId, id, name, root, createdAt, origin}`; spawns `reconciler/<org>/<p
 | `overseer/start` / `overseer/clear` | op | `{conversationId}` | clear keeps ≤ 20 earlier; sends `ledger/reset-message` to the watch |
 | `stakeholder/set` | op | `{personId \| null}` + `target` | "Only an active person on the roster can be a project's main stakeholder." (400) |
 | `owner-update/post` | overseer (L1, held unattended) · op | `{text}` + `ownerActive`, `leak`, `buildFinishedAt` | today's order: owner, blank, 2,000, leak, then unattended only: 24 h ("An update was posted {…}: at most one a day."), milestone; effect `owner-update {text, run}` |
+| `preview/start` | overseer (L1, held unattended, confirm kind `preview`) · op | `{codingSession, port \| folder, purpose, days?, overseerId}` + the host's `invalid` (the session, the port's listener, the folder, Sova's ports, the address) | archived, the host's check, then the purpose; effect `preview {codingSession, port\|folder, purpose, days?, overseerId}` (never a link; the host mints and keeps it) |
 | `gap/file` | overseer (L0 `sova_idea add §gap/…`) | `{gapId (g_…), ideaId}` | spawns `item/<org>/<p>/<gapId>` |
 | `milestone/noted` | baton · decision · build | `{kind, shown}` | |
 | `baton/start` | op · overseer (L1, `gap: "none"`, held) · GO (card: the project and every person) | BatonStartInput + `sessionId` | "{project} is archived. Unarchive it first." (409); caps; spawns a baton |

@@ -3,6 +3,9 @@ import type { OrgLinkRow, SessionShare, SharesOverview } from "../../shared/sess
 import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
 import { hostLabel, meshOn, meshPeers, selfLabel } from "../lib/mesh";
+import type { PreviewView } from "../../shared/preview-links";
+import { getPreviews, turnOffPreview } from "../lib/api";
+import { activePreviews, runningLine } from "../lib/previews";
 import { expiresWord, openedLine, presenceWord, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, visitLine } from "../lib/session-shares";
 import { InsightsPage } from "./InsightsPage";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
@@ -23,8 +26,9 @@ const sessionLink = (sessionId: string) => `#/sid/${encodeURIComponent(sessionId
 
 /**
  * The Shares page (§app.session-share/shares-page): every live public link this host and each up
- * peer serve, session shares first, then organization links. Read-only over the org stores; Turn
- * Off Link uses their own revoke routes.
+ * peer serve, session shares first, then organization links, then this host's preview links
+ * (§mesh.public/preview-card). Read-only over the org stores; Turn Off Link uses their own revoke
+ * routes, and a preview's Turn Off its own.
  */
 export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement): void }) {
   const [hosts, setHosts] = createSignal<HostShares[]>([]);
@@ -32,6 +36,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
   const [refreshing, setRefreshing] = createSignal(false);
   const [managing, setManaging] = createSignal<{ host: string | null; share: SessionShare } | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const [previews, setPreviews] = createSignal<PreviewView[]>([]);
 
   let run = 0;
   const read = async () => {
@@ -47,7 +52,9 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
         }
       }),
     );
+    const mineOnly = await getPreviews().then((l) => activePreviews(l.previews), () => null);
     if (mine !== run) return;
+    if (mineOnly) setPreviews(mineOnly);
     setHosts(answers);
     setLoaded(true);
     setRefreshing(false);
@@ -102,7 +109,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
     >
       <For each={down()}>{(h) => <p class="usage-note">{hostName(h.host)} can't be reached, so its links aren't listed.</p>}</For>
 
-      <Show when={loaded() && shares().length === 0 && orgLinks().length === 0 && down().length === 0}>
+      <Show when={loaded() && shares().length === 0 && orgLinks().length === 0 && previews().length === 0 && down().length === 0}>
         <div class="empty">
           <p class="empty-title">No public links are open.</p>
           <p class="empty-body">Share a session from its Sharing tab: Session details, then Sharing.</p>
@@ -148,6 +155,37 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                   hostName={meshOn() ? hostName(l.host) : null}
                   onRevoke={() => void act(() => (l.link.kind === "handoff" && l.link.sessionId ? revokeHandoff(l.host, l.link.sessionId) : revokeOwnerLink(l.host, l.link.orgId)))}
                 />
+              )}
+            </For>
+          </ul>
+        </section>
+      </Show>
+
+      <Show when={previews().length > 0}>
+        <section class="card shares-card" aria-labelledby="shares-preview-title">
+          <h2 class="shares-card-title" id="shares-preview-title">
+            Preview links
+          </h2>
+          <ul class="list">
+            <For each={previews()}>
+              {(v) => (
+                <li class="list-row shares-row">
+                  <div class="list-main">
+                    <p class="list-title shares-row-title">
+                      <a href={`#/orgs/${encodeURIComponent(v.orgId)}/projects/${encodeURIComponent(v.projectId)}`}>Port {v.port}</a>
+                      <span class={v.running ? "chip chip-success" : "chip"}>
+                        <span class="chip-dot" aria-hidden="true" />
+                        {runningLine(v)}
+                      </span>
+                    </p>
+                    <p class="list-meta">
+                      Project {v.projectId} · {expiresWord(v.expiresAt, props.now)}
+                    </p>
+                  </div>
+                  <div class="shares-row-actions">
+                    <TwoStep label="Turn Off" confirm="Turn Off Preview?" onRun={() => void act(() => turnOffPreview(v.id))} />
+                  </div>
+                </li>
               )}
             </For>
           </ul>

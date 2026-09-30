@@ -168,8 +168,20 @@ export function operatorOnlyRefusal(name: string, attended: boolean): string | n
     : `${name} changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_confirm card with what you would change.`;
 }
 
-/** The allowance a tool's act draws on (its chart act's `counts`). */
-export const COUNTS: Record<string, PoLimitKind> = { sova_start_gathering: "gather", sova_offer: "gather", sova_promote: "promote", sova_create_session: "create", sova_send: "prompt" };
+/** The allowance a tool's act draws on: the `counts` of the chart acts that name it as their `tool` (they must agree). */
+export const COUNTS: Record<string, PoLimitKind> = (() => {
+  const out: Record<string, PoLimitKind> = {};
+  for (const { name } of chartVersions())
+    for (const [id, act] of Object.entries(chartInfo(name)?.acts ?? {})) {
+      const kind = act.counts as PoLimitKind | null | undefined;
+      if (!act.tool || !kind || !PO_LIMIT_KINDS.includes(kind)) continue;
+      if (out[act.tool] && out[act.tool] !== kind) throw new Error(`${name} ${id}: ${act.tool} counts "${kind}", another act counts "${out[act.tool]}"`);
+      out[act.tool] = kind;
+    }
+  // An offer is the same start as a gathering session.
+  if (out.sova_start_gathering) out.sova_offer = out.sova_start_gathering;
+  return out;
+})();
 
 // ---- builds ----------------------------------------------------------------------------------------
 

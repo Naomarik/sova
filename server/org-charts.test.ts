@@ -2,11 +2,12 @@
 // ESM bundle (server/vendor/org-charts.js) through the typed wrapper, on the "engine-probe" chart. The
 // probe is not in the shipped file: these tests register it at runtime (`charts`), as a JS copy
 // (fixtures/org-charts-engine/probe-chart.ts) of org-charts/src/sova/org_charts/engine/probe.cljs, which
-// the CLJS tests run. The replay runs the shipped charts. Pure: no files, no clock but `now`.
+// the CLJS tests run; probe_shape.json holds both to one shape. The replay runs the shipped charts. Pure: no files, no clock but `now`.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { chartVersions, createOrgCharts as createShipped, hoursInherited, nextWindow, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
-import { PROBE_CHARTS } from "./fixtures/org-charts-engine/probe-chart";
+import { readFileSync } from "node:fs";
+import { PROBE_CHARTS, probeChart, probeShape } from "./fixtures/org-charts-engine/probe-chart";
 
 /** The shipped engine with the probe chart registered. */
 const createOrgCharts = (opts: EngineOptions = {}): OrgCharts => createShipped({ ...opts, charts: PROBE_CHARTS });
@@ -35,6 +36,11 @@ describe("org-charts engine (vendored ESM)", () => {
     for (const c of chartVersions()) {
       assert.ok(Number.isInteger(c.version) && c.version > 0, `${c.name} has version ${String(c.version)}`);
     }
+  });
+
+  test("the JS probe has probe.cljs's shape (probe_shape.json, which the CLJS suite checks probe.cljs against)", () => {
+    const want = JSON.parse(readFileSync(new URL("../org-charts/src/sova/org_charts/engine/probe_shape.json", import.meta.url), "utf8"));
+    assert.deepEqual(probeShape(probeChart), want, "probe-chart.ts differs from probe_shape.json: change probe.cljs, probe-chart.ts and the JSON together");
   });
 
   test("start enters every region of a parallel state, in document order", () => {

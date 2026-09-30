@@ -657,7 +657,7 @@ Dissolve (here) and Delete group (the sidebar) do.
 | Case | The workspace |
 |---|---|
 | 1 member | Renders normally: one pane at its width, the row not scrolling, the group composer reading "1 member" and sending to that one. **It does not silently become `#/s/`** — a view that redirects out from under you can't be built on |
-| 0 members | `.empty` in the pane area: **"“{name}” has no sessions yet."** Drag a session from the sidebar onto this group, or use Move into group in its details. No button: the workspace adds nothing. The group composer is not rendered — there is nothing to send to. The same state for every group, whether or not an older build gave it a `seed` |
+| 0 members | `.empty` in the pane area: **"“{name}” has no sessions yet."** Drag a session onto the group in the sidebar, or use Move into group in its details. No button: the workspace adds nothing. The group composer is not rendered — there is nothing to send to. The same state for every group, whether or not an older build gave it a `seed` |
 
 ## §workspace.groups/making-a-comparison — Making a comparison
 

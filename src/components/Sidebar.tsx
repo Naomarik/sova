@@ -1,9 +1,11 @@
+import { ProfileShelf } from "./ProfileShelf";
+import { profileIconName } from "../lib/profiles";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { autoTitleSessions, fetchTargets, putAttentionLater, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
@@ -37,19 +39,7 @@ import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
 import { archiveDragOf, archivedDropToast, blockedDropSentence, orgProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
-import {
-  LATER_TITLE,
-  laterAnnouncement,
-  laterLabel,
-  laterRefused,
-  NEEDS_YOU_KEY,
-  needsYouCut,
-  needsYouOpen as needsYouOpenRule,
-  needsYouRows,
-  needsYouShown,
-  needsYouTitle,
-  storedNeedsYouOpen,
-} from "../lib/needs-you";
+import { NEEDS_YOU_KEY, needsYouCut, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
 import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
@@ -90,7 +80,6 @@ import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/worke
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
-import { RowMenu, type RowMenuHandle } from "./RowMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
@@ -253,9 +242,6 @@ function SessionRow(props: {
   detail?: { text: string; title: string } | null;
   /** The Organizations region's Needs you only: where the row lives, "{org} · {project}". */
   place?: string;
-  /** Needs you only: put the row away (§app.session-list/needs-you). Gives the row its Later
-      button and its right-click and long-press menu. */
-  onLater?: () => void;
 }) {
   const s = () => props.session;
   /** The row's own remote mark: one row answers for itself, never its
@@ -308,25 +294,9 @@ function SessionRow(props: {
     startSelection(s().path);
     announce(`Selecting sessions. ${s().title} selected.`);
   };
-  /** A Needs you row's menu: Later, then Select. A held press opens it there instead of selecting. */
-  let menu: RowMenuHandle | undefined;
-  let link: HTMLAnchorElement | undefined;
   let shell: HTMLLIElement | undefined;
-  let pressAt = { x: 0, y: 0 };
   let pointerId = 0;
   let pointerKind = "mouse";
-  /**
-   * Where the menu opens once the press that asked for it ends. Never during it: the menu is a
-   * `popover="auto"`, and a press that went down before it existed and comes up outside it is a
-   * light dismiss — it would close the moment the finger or button let go.
-   */
-  let menuOnRelease: { x: number; y: number } | null = null;
-  const openMenuAfterRelease = () => {
-    const at = menuOnRelease;
-    menuOnRelease = null;
-    // After this pointerup (and its click) have been dispatched.
-    if (at) setTimeout(() => menu?.openAt(at.x, at.y));
-  };
   /** The row is held: it rises off the list, and the list stops scrolling under it. */
   const [lifted, setLifted] = createSignal(false);
   /** The row in flight, as the drop needs it, decided once when the drag starts. */
@@ -354,7 +324,6 @@ function SessionRow(props: {
     onDrag: (at) => {
       setLifted(false);
       watchPress(false);
-      menuOnRelease = null;
       if (shell) startRowDrag(dragInfo(), at, pointerId, shell, pointerKind);
     },
   });
@@ -362,18 +331,13 @@ function SessionRow(props: {
     press.cancel();
     setLifted(false);
     watchPress(false);
-    menuOnRelease = null;
   };
-  /** The press ended in place: a lifted row is selected, or a Needs you row opens its menu. */
+  /** The press ended in place: a lifted row is selected. */
   const releasePress = () => {
     const wasLifted = press.finish();
     setLifted(false);
     watchPress(false);
-    if (wasLifted) {
-      if (props.onLater && menu && !selectionMode()) menuOnRelease = pressAt;
-      else select();
-    }
-    openMenuAfterRelease();
+    if (wasLifted) select();
   };
   const movePress = (e: PointerEvent) => e.pointerId === pointerId && press.move({ x: e.clientX, y: e.clientY });
   const cancelOwn = (e: PointerEvent) => e.pointerId === pointerId && cancelPress();
@@ -417,16 +381,14 @@ function SessionRow(props: {
         "session-row-lifted": lifted(),
         "session-row-shell-selecting": selecting(),
         "session-row-shell-selected": selecting() && chosen(),
-        "session-row-shell-later": !!props.onLater && !selecting(),
       }}
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return; // right-click is not a hold
         if (onOwnControl(e) || draggingPath()) return;
-        pressAt = { x: e.clientX, y: e.clientY };
         pointerId = e.pointerId;
         pointerKind = e.pointerType;
         // In selection mode there is no drag at all: a press there is a hold or a toggle.
-        press.start(pressAt, e.pointerType, !selecting());
+        press.start({ x: e.clientX, y: e.clientY }, e.pointerType, !selecting());
         watchPress(true);
       }}
       onPointerCancel={cancelPress}
@@ -441,19 +403,8 @@ function SessionRow(props: {
       // belonging to this press will never arrive. A drag that took the capture has already
       // ended the press, so this changes nothing for it.
       onLostPointerCapture={() => press.phase() !== "idle" && cancelPress()}
-      // The long-press context menu belongs to the hold, not to the browser. A right-click on a
-      // Needs you row opens the row's own menu (Later, Select).
-      onContextMenu={(e) => {
-        if (press.suppressed() || draggingPath()) return e.preventDefault();
-        if (!props.onLater || !menu || selecting()) return;
-        e.preventDefault();
-        // Linux and macOS fire this on the button going DOWN: open on its release (see
-        // menuOnRelease). Windows fires it after the release, and the keyboard's menu key with no
-        // button at all: open now.
-        if (e.buttons === 0) return menu.openAt(e.clientX, e.clientY);
-        menuOnRelease = { x: e.clientX, y: e.clientY };
-        addEventListener("pointerup", openMenuAfterRelease, { capture: true, once: true });
-      }}
+      // The long-press context menu belongs to the hold, not to the browser.
+      onContextMenu={(e) => (press.suppressed() || draggingPath()) && e.preventDefault()}
     >
       <div class="session-rail">
         {/* The rail is where a row's state lives, so it is where the row is picked too: one 44px
@@ -520,7 +471,6 @@ function SessionRow(props: {
         </div>
       </div>
       <a
-        ref={link}
         class="list-row list-row-interactive session-row"
         href={sessionHref(s().path)}
         draggable={false}
@@ -588,6 +538,17 @@ function SessionRow(props: {
             <Show when={showsDraftMark(s(), hasLocalDraft(s().path))}>
               <Icon name="pencil" small class="list-title-draft" />
               <span class="visually-hidden">Draft. </span>
+            </Show>
+            {/* Its profile (§chat.profiles/after-first-message): the icon, the label as its title. */}
+            <Show when={s().profile}>
+              {(p) => (
+                <>
+                  <span class="session-profile-badge" title={`Profile: ${p().label}`}>
+                    <Icon name={profileIconName(p().icon)} small />
+                  </span>
+                  <span class="visually-hidden">Profile {p().label}. </span>
+                </>
+              )}
             </Show>
             {s().title}
             {/* A baton session (§app/baton): who holds the baton now. */}
@@ -708,23 +669,6 @@ function SessionRow(props: {
         <Show when={mark()}>{(m) => <span class="visually-hidden">{remoteMarkSuffix(m())}</span>}</Show>
         <Show when={hostOf(s().path)}>{(h) => <span class="visually-hidden">{hostClause(h())}</span>}</Show>
       </a>
-      {/* Later: at the row's right end. Desktop shows it on hover and keyboard focus; a phone,
-          which has no hover, always. A sibling of the link, never inside it. */}
-      <Show when={props.onLater && !selecting()}>
-        <button type="button" class="button button-ghost button-sm session-later" aria-label={laterLabel(s().title)} title={LATER_TITLE} onClick={() => props.onLater!()}>
-          Later
-        </button>
-        <RowMenu
-          label={`Actions · ${s().title}`}
-          ref={(h) => (menu = h)}
-          ignore={() => press.suppressed()}
-          returnFocus={() => link}
-          items={[
-            { label: "Later", aria: laterLabel(s().title), onRun: () => props.onLater!() },
-            { label: "Select", aria: `Select ${s().title}`, onRun: select },
-          ]}
-        />
-      </Show>
     </li>
   );
 }
@@ -1354,39 +1298,11 @@ export function Sidebar(props: {
    * Recent. A shortcut like Recent — every row is still where it lives — and built from `hits()`
    * too, so the search narrows it and its count is always its rows. The open session stays listed.
    */
-  /** Later's keys this tab has put away: the row goes at once, before the next digest read drops it. */
-  const [putAway, setPutAway] = createSignal<ReadonlySet<string>>(new Set());
-  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits(), putAway()));
+  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits()));
   createEffect(() => setStalled(stalledPaths(props.attention)));
-  const putLater = (row: { session: SessionSummary; later: string[] }) => {
-    const keys = row.later;
-    if (keys.length === 0) return;
-    setPutAway((prev) => new Set([...prev, ...keys]));
-    announce(laterAnnouncement(row.session.title));
-    const bringBack = () =>
-      setPutAway((prev) => {
-        const next = new Set(prev);
-        for (const k of keys) next.delete(k);
-        return next;
-      });
-    putAttentionLater(keys)
-      // The next read leaves the items out; until it lands the local set keeps the row hidden.
-      .then(() => requestListRefresh())
-      .catch((e: unknown) => {
-        bringBack();
-        const said = laterRefused(e instanceof Error ? e.message : String(e));
-        toast(said);
-        announce(said);
-      });
-  };
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYou().length);
   const needsYouCutNote = () => needsYouCut(props.attention);
-  /** The row's Later, while its items carry keys (an older server sends none). */
-  const needsYouLater = (path: string) => {
-    const r = needsYou().find((row) => row.session.path === path);
-    return r && r.later.length > 0 ? () => putLater(r) : undefined;
-  };
   const needsYouDetail = (path: string) => {
     const r = needsYou().find((row) => row.session.path === path);
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
@@ -1494,12 +1410,7 @@ export function Sidebar(props: {
   /** The region counts rows: a project's eye is not one. */
   const orgRowCount = () => regionCount(orgs());
   const orgTotal = () => regionCount(orgSections(all().filter(isOrgSession)));
-  const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits(), putAway()));
-  /** Later on an org row the digest put here; a baton-only row has no key and clears when answered. */
-  const orgNeedsYouLater = (path: string) => {
-    const r = orgNeedsYou().find((row) => row.session.path === path);
-    return r && r.later.length > 0 ? () => putLater(r) : undefined;
-  };
+  const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
   /** Its Needs you items that are no session: projects to pick a main stakeholder for. */
   const orgItems = createMemo(() => orgProjectItems(props.attention, query()));
   const orgWaitingCount = () => orgNeedsYou().length + orgItems().length;
@@ -2081,6 +1992,14 @@ export function Sidebar(props: {
             </div>
           </Show>
 
+          {/* Profiles, above everything (§app.session-list/profile-shelf): a shortcut, grouped by profile. */}
+          <ProfileShelf
+            sessions={all()}
+            cwd={props.sessions?.find((x) => x.path === props.selected)?.cwd ?? null}
+            searching={!!query().trim()}
+            row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
+          />
+
           {/* Needs you, above everything: the sessions blocked on you, from the attention digest.
               A shortcut like Recent below it — every row is still where it lives — and flat for the
               same reason. Open by default; a collapse holds for the tab (lib/needs-you). */}
@@ -2096,18 +2015,8 @@ export function Sidebar(props: {
               <ul class="list">
                 {/* Keyed on the session objects, which `hits()` keeps across polls: a row is updated
                     in place, never remounted, when only the digest changed. */}
-                {/* Keyed by the session, so a digest read doesn't remount a row (and drop its focus). */}
                 <For each={needsYou().map((r) => r.session)}>
-                  {(s) => (
-                    <SessionRow
-                      session={s}
-                      selected={props.selected}
-                      now={props.now}
-                      targets={targets()}
-                      detail={needsYouDetail(s.path)}
-                      onLater={needsYouLater(s.path)}
-                    />
-                  )}
+                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />}
                 </For>
               </ul>
               <Show when={needsYouCutNote()}>
@@ -2264,7 +2173,6 @@ export function Sidebar(props: {
                           targets={targets()}
                           detail={orgNeedsYouDetail(s.path)}
                           place={orgPlaceLabel(s)}
-                          onLater={orgNeedsYouLater(s.path)}
                         />
                       )}
                     </For>

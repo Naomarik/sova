@@ -83,3 +83,14 @@ mark 9 "past the end"`;
   // An actor's label wins over a message with the same text.
   assert.deepEqual(ok<SequenceSpec>("sequence", 'actor a "Ping"\na -> b "Ping"\nmark "Ping"').emphasis, [{ key: "actor:a", tone: "accent" }]);
 });
+
+test("sequence: a Mermaid message is an error quoting the vis one", () => {
+  const msg = (body: string) => err("sequence", body).message;
+  assert.equal(msg("Client -> Server: SYN"), 'write Client -> Server "SYN" (not Mermaid a -> b: msg)');
+  assert.equal(msg("Client->>Server: SYN ACK"), 'write Client -> Server "SYN ACK" (not Mermaid a ->> b: msg)');
+  assert.equal(msg("s -->> c: ok"), 'write s --> c "ok" (not Mermaid a -->> b: msg)');
+  assert.equal(msg('c -> s: "SYN"'), 'write c -> s "SYN" (not Mermaid a -> b: msg)');
+  assert.equal(msg("c -> s:"), "write c -> s (not Mermaid a -> b: msg)");
+  // Other bad targets keep their message.
+  assert.match(msg("c -> s[x]"), /not an id/);
+});

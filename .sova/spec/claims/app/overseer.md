@@ -149,6 +149,17 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   terminal-owned, archived or worker session, and never the Overseer's own. The route is
   `POST /api/sessions/prompt` (`delivery` optional, `"followUp"` or `"steer"`; anything else is a
   400).
+- **Profiles (§chat/profiles).** `sova_create_session` takes `profile`: a profile's id, on this
+  host only, resolved against the new session's folder (its project first, then yours, then built
+  in, §chat.profiles/projects). Only a profile marked "The Overseer may start it" is taken, and a
+  project profile only once you approved it (§chat.profiles/trust); any other refuses before
+  anything is created. A profile that links a playbook sends that playbook as the first message,
+  with `prompt` as its text (§chat.profiles/playbook). The session is created with that profile's snapshot
+  (and its mode and model unless the call names its own), and the tool's result renders as a
+  **Started from {label}** card with Open Session. A One at a time profile that is live refuses
+  with a card saying "{label} is already running. It's set to One at a time, so only 1 session can
+  use it." and **Open the Running {Label}**; nothing is created and no cap is taken.
+  `sova_set_session` never changes a profile: it has no such parameter, so it can't widen one.
 - **TUI-live sessions are read-only**: every act on one is refused.
 - **Files: anywhere but credentials.** The Overseer's `read`, `grep`, `find` and `ls` reach any
   file on the machine except secret files, which none of them reads, lists or matches:
@@ -573,9 +584,11 @@ Three tools let the Overseer make and end links between sessions on different ho
 - While it waits in the queue, its row reads **Overseer** rather than "Sent by Sova" (the queue
   snapshot's `overseer` flag, set only for a message carrying the sender secret).
 - The transcript renders an **Overseer** tag on that user row, on reload and live.
-- **One mechanism, two senders.** Baton sessions attribute every user message the same way, with
-  their own `sova-baton-sent` marker (§app.baton/attribution); the pending-mark list, the queue
-  hand-off rule and the settle sweep are shared, and each marker is written only for its own sender.
+- **One mechanism, three senders.** Baton sessions attribute every user message the same way, with
+  their own `sova-baton-sent` marker (§app.baton/attribution), and so does a session's
+  `session_send`, with `sova-session-sent` (§chat.profiles/delivery); the pending-mark list, the
+  queue hand-off rule and the settle sweep are shared, and each marker is written only for its own
+  sender, with the bytes of the Overseer's and the baton's markers unchanged.
 - **A project overseer's conversation too.** The one route that writes into a project overseer's
   conversation, the Overseer's message route (§app.overseer/org-project-overseers), marks every
   message it hands in the same way, with the same `sova-overseer-sent` entry, the same queued-row
@@ -609,7 +622,16 @@ itself.
   pending dialog); an errored turn (`turnError`, §app.overseer/seen, or `activity.state` error
   while a live record is up; one item either way, dated by the reply, its detail the error message
   — the file's first — else "The last turn stopped with an error."); a worker that ended in an error. A
-  killed worker is left out: a kill is usually the user's own gesture. A worker error counts as
+  killed worker is left out: a kill is usually the user's own gesture. So is a worker the server's
+  own restart ended: a worker this server restored (§app.worker-restore/restore) in its own
+  runtime, whose recorded ending is an error at a time between the previous server's stop and this
+  server's start, on any backend (a claude-code worker's "Claude exited before expected closure
+  (SIGTERM)", a pi worker's "pi exited with code 143" alike). The stop is the moment the previous
+  server began shutting down, which it writes to `<stateRoot>/server-stop.json` (`{v: 1, pid,
+  at}`) before anything else; the next start reads it and deletes it, and allows it 5 s of slack
+  (the workers die on the same signal). Without that file (a crash, or a stop by a server that
+  predates it) the stop is taken as 30 s before this start. A worker error while the server keeps
+  running is never one of these, and still shows. A worker error counts as
   seen once the session is on screen, or its seen stamp (§app.overseer/seen) is at or past the
   latest error; a new error after that raises it again. An error's time is its worker row's
   `endedAt` (else `lastActivity`, else `startedAt`); when rows were dropped from the live record
@@ -626,24 +648,10 @@ itself.
   turns, subagent errors, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
-- **Later.** An act item the user put away with Later (§app.session-list/needs-you) is left out
-  of the digest — its items, its counts and the "need you" count — until its **anchor** changes:
-  the thing whose change counts as new. Each act item carries a `later` key naming its session,
-  its kind and its anchor as the user saw it; `POST /api/attention/later {keys}` puts them away,
-  `POST /api/attention/later/undo {keys}` brings them back, and either drops the digest's memo.
-  The anchors: open questions — the open questions' ids (a new or reopened question is new; one
-  answered is not); a dialog — the open dialogs (a new one is new); an errored turn — its reply's
-  time; a subagent error — the latest error's time; a baton hand-off — the hand-off (or open
-  offer) (§app.baton/needs-you); a roster proposal, which
-  carries a key though it is a decide item — its proposed person; any other act item — its
-  `since`. A message the user sends or a look at the session changes no anchor. The store is
-  `<stateRoot>/needs-you-later.json` (atomic tmp+rename), one entry per session and kind (per
-  proposed person for roster proposals), so it
-  survives a restart and is the same on every device; an entry whose anchor has moved on is
-  dropped, and so is one whose session (or project item) is no longer listed at all. Time alone
-  never brings an item back, and neither does its absence: open questions leave the digest while a
-  turn runs, and stay put away when it ends. A reopened question is new because the question's id
-  carries how often the branch reopened it (`al_9/q1#1`).
+- **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
+  no choice of the user's hides one. A `<stateRoot>/needs-you-later.json` left by an earlier
+  version, whose choices once hid items, is deleted once when the server starts (best-effort; a
+  failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
   `asks-you` when the last reply asks the user something (§app.decisions/asks-user) and the
   session has no `open-questions` item, "Asks you: {the asking sentence}", else "The last reply
@@ -1177,7 +1185,8 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   operator's with `via: "overseer"` and the Overseer's id: the roster history's `by: {kind:
   "operator", via: "overseer", overseerId}`, the About history's `by`, the project's
   `stakeholderHistory` and the org's `ownerHistory` lines (`why: "operator"`, `via`), the project's
-  `archived` record (§app.organizations/archive), a baton session it started (`startedVia`), and a
+  `archived` record (§app.organizations/archive), a baton session it started (`startedVia`, and
+  `started` with the Overseer's id and its why, §app.baton/goal-and-loadout), and a
   coding session it started (§app.overseer/org-project-overseers), each in its chart and its
   transition-log rows (§app.project-overseer/org-charts). A
   request without the secret records no `via`, whatever its body says.
@@ -1189,19 +1198,23 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   Profile Changes and the org's Recent Profile Changes (`you, via the Overseer` where the writer
   reads `you`), the About card's History rows, the main stakeholder's and the owner's latest-change
   lines ("Set by you, via the Overseer {time}."), a coding session's row ("Started by you, via the
-  Overseer"), and the archived project's banner. Copy: §design.copy-deck/overseer-orgs.
+  Overseer"), a gathering session's strip ("Started by you, via the Overseer · {relative time}",
+  §app.baton/told), and the archived project's banner. Copy: §design.copy-deck/overseer-orgs.
 - **Reverting** a line made via the Overseer is an ordinary revert: it records whoever reverts it.
 
 ## §app.overseer/org-people-facing — Acts that reach people ask first
 
-- **`sova_gather {op}`**: `start {org, project, to, public_title, question, goal, briefing?,
+- **`sova_gather {op}`**: `start {org, project, to, public_title, question, goal, why, briefing?,
   model?, thinking?, messages_max?, abilities?}` (`to`: a person, `operator`, or two or more people
   for an offer at start; `abilities` within the project's ceiling, §app.baton/abilities), `offer {session, to[], question?, briefing?}`, `handoff {session, to, question,
   briefing?}`, `take {session}` (Take Back), `close {session}`, `extend {session, by}` and
   `revoke_link {session, person?}`. The rules of §app.baton/goal-and-loadout,
   /offers-and-leases and /links apply as on the page; the tool descriptions carry the project
   overseer's wording rules for `public_title`, `question` and `goal`
-  (§app.project-overseer/tools).
+  (§app.project-overseer/tools). `why` is required: one or two sentences for the user saying why
+  it starts this session, recorded on its chart and shown only to the user, on the strip and in
+  What It's Told (§app.baton/told); never to the person, never to the session's model. Without it:
+  "Say why you start it (why): one or two sentences for the user, never shown to the person.".
 - **No link is ever minted for the model.** `start` and `offer` start in-process with no link
   (`mintLink: false`), owned by the operator; the session then needs the user to send each person
   their link (§app.baton/needs-you), and the result says so: "No link was made: Needs you asks you

@@ -87,6 +87,14 @@ test("POST /api/baton/:sid/offer/withdraw withdraws the open offer; nothing open
   assert.equal((await call("POST", "/api/baton/nope/offer/withdraw")).status, 404);
 });
 
+test("GET /api/baton carries the session's goal, for the operator's strip", async () => {
+  const goal = "Find out who signs off on payroll dates.\nAnd by when.";
+  const made = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Payroll sign-off", goal });
+  const r = await call("GET", `/api/baton?path=${encodeURIComponent(made.path)}`);
+  assert.equal(r.status, 200);
+  assert.equal((r.json as BatonInfo).session.goal, goal);
+});
+
 test("DELETE /api/orgs/:id detaches it here; POST /api/orgs/attach brings the same workspace back", async () => {
   const dir = orgs.orgDir(org.id);
   await settled(dir);

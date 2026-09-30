@@ -92,9 +92,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   that no baton session asks about yet (`{n} conflict(s) to settle`; one with a session is already
   counted once, as that session's reply); and projects whose main stakeholder left
   (§app.organizations/stakeholder); and acts a project's chart holds before they reach a person or
-  the code (§app.project-overseer/holds). A baton wait or a session's proposal put away with Later
-  (§app.baton/needs-you) is not counted until it comes back, so the count matches the rows Needs you
-  lists.
+  the code (§app.project-overseer/holds).
 - **Last activity** is the newest of the org's creation and its newest transition-log row
   (§app.project-overseer/org-charts): a roster change, a baton session's start, hand-off, offer or
   close, a person's message, anything any of its charts took.
@@ -679,7 +677,8 @@ Organizations region's own Needs you, never the global one.
   `roster-history.jsonl` and the person's own chart are the only places a contact value lives in
   the workspace repo.
 - Profiles appear only on the org's own pages (the org page and a person's page), never in a baton
-  session pane. The owner page shows people by name only (§app.owner-page/never).
+  session pane, except the holder's steering profile inside the prompt What It's Told shows the
+  operator on request (§app.baton/told). The owner page shows people by name only (§app.owner-page/never).
 
 ## §app.organizations/referrals — People not on the roster
 

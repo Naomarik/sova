@@ -2497,34 +2497,6 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .session-row.list-row-interactive:hover,
 .session-row[aria-current="page"] { background: none; }
-/* Needs you's Later (§app.session-list/needs-you): at the row's right end, a sibling of the link.
-   A phone (no hover) always shows it, in flow, a 44px target, and the title gives way. A mouse gets
-   it on hover and keyboard focus only, laid over the row's right end on the row's own hover fill,
-   so a resting row keeps its full width; hidden by opacity, never display, so Tab still reaches
-   it. The row's right-click and long-press menu carry the same Later. */
-.session-row-shell-later { position: relative; }
-.session-later { flex: none; align-self: center; margin-right: var(--space-2); }
-@media (hover: none), (pointer: coarse) {
-  .session-later { min-height: var(--tap-min); min-width: var(--tap-min); }
-}
-@media (hover: hover) and (pointer: fine) {
-  .session-later {
-    position: absolute;
-    right: 0;
-    top: 50%;
-    transform: translateY(-50%);
-    background: var(--color-sunken);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--dur-fast) var(--ease-standard);
-  }
-  .session-row-shell-current .session-later { background: var(--color-accent-tint); }
-  .session-row-shell-later:hover .session-later,
-  .session-row-shell-later:focus-within .session-later { opacity: 1; pointer-events: auto; }
-  /* .button:active's 1px press would replace the centring transform and drop the button 19px
-     under the pointer, so the release lands on the row and the click never reaches Later. */
-  .session-later:active { transform: translateY(-50%) translateY(1px); }
-}
 .session-row .list-title { font-size: var(--session-title-fs); line-height: var(--lh-body); }
 /* The draft pencil leading line 1: 1em square so it follows the title's own size (the Typography
    setting included), muted like every row icon, on the text's baseline-ish centre. Inline, so it
@@ -3147,17 +3119,43 @@ a.group-option { color: inherit; text-decoration: none; }
 .composer-model[aria-disabled="true"]:active { transform: none; }
 
 /* The chat's Claude login (§app.claude-logins/active-login): beside the model, quiet and
-   compact, only on a Claude Code model when the device has several logins. Not a control. */
+   compact, only on a Claude Code model when the device has several logins. The login panel's
+   trigger (§app.claude-logins/switch-login), drawn like the model indicator. */
 .composer-login {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
   flex: 0 1 auto;
   min-width: 0;
   max-width: 26ch;
+  min-height: var(--control-sm);
+  padding: 0 var(--space-2);
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  font: inherit;
   font-size: var(--fs-caption);
   color: var(--color-ink-muted);
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  cursor: pointer;
 }
+/* The 44px target the caption row is too short to hold, as on .composer-model. */
+.composer-login::after {
+  content: "";
+  position: absolute;
+  inset: calc((var(--tap-min) - var(--control-sm)) / -2) 0;
+}
+.composer-login-full,
+.composer-login-short { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.composer-login .live-dot { flex: none; }
+.composer-login:hover,
+.composer-login[aria-expanded="true"] { background: var(--color-sunken); color: var(--color-ink); }
+.composer-login:active { transform: translateY(1px); }
+.composer-login:focus-visible { outline: var(--focus-ring); outline-offset: 0; }
+.composer-login[aria-disabled="true"] { cursor: not-allowed; }
+.composer-login[aria-disabled="true"]:hover { background: transparent; color: var(--color-ink-muted); }
+.composer-login[aria-disabled="true"]:active { transform: none; }
 .composer-login-short { display: none; }
 @media (max-width: 640px) {
   .composer-login { max-width: 12ch; }
@@ -3792,6 +3790,35 @@ a.group-option { color: inherit; text-decoration: none; }
   background: var(--color-border);
 }
 .composer-flyout-head { flex: none; padding: var(--space-2) var(--space-2) 0; }
+/* The login panel: an account's email is its group label as written (an address is never
+   uppercased), and a login's name is body type, not the Thinking ladder's mono. */
+.composer-flyout-logins .list-group-label {
+  font-family: inherit;
+  font-size: var(--fs-caption);
+  letter-spacing: normal;
+  text-transform: none;
+}
+.composer-flyout-logins .composer-flyout-item[role="menuitemradio"] .composer-flyout-label {
+  font-family: inherit;
+  font-size: inherit;
+}
+/* The login panel's waiting line and its closing note (§app.claude-logins/switch-queue, /switch-cost). */
+.composer-flyout-status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.composer-flyout-status .live-dot { flex: none; }
+.composer-flyout-note {
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-muted);
+}
 .composer-flyout-back { gap: var(--space-1); }
 
 

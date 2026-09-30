@@ -55,6 +55,8 @@ export const PUBLIC_TITLE_MAX = 120;
 export const GOAL_MAX = 2000;
 export const QUESTION_MAX = 1000;
 export const BRIEFING_MAX = 4000;
+/** An overseer's reason for a start (§app.baton/told): one or two sentences. */
+export const WHY_MAX = 1000;
 
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -526,12 +528,26 @@ export interface CreateOptions {
   /** false: no link is minted (an in-process caller that can't show one); Needs you asks the operator. */
   mintLink?: boolean;
   startedVia?: "overseer";
+  /** An overseer's reason for starting it, for the operator only (§app.baton/told); its tool requires one. */
+  why?: string;
   /** Sova's own item for it (the operator's to-do it came from). */
   opItem?: string;
   /** A gap's item chart (`item/…`): it starts the gathering (gather/start) and links it, instead of the project. */
   item?: string;
   /** With `item`: file it as the gap's planned gathering (gather/plan), started by the chart itself at L1 (r3). */
   plan?: boolean;
+}
+
+/**
+ * Who starts it, as its chart records it (§app.baton/goal-and-loadout): the project overseer comes with its
+ * turn's envelope, the global Overseer as the operator via the Overseer; anyone else is the operator.
+ */
+function startedRecord(opts: CreateOptions): { by: "operator" | "overseer" | "project-overseer"; overseerId?: string; why?: string } {
+  const why = cleanText(opts.why);
+  const extra = (overseerId: string | undefined) => ({ ...(overseerId ? { overseerId } : {}), ...(why ? { why } : {}) });
+  if (opts.envelope?.by === "overseer") return { by: "project-overseer", ...extra(opts.envelope.overseerId) };
+  if (opts.startedVia === "overseer") return { by: "overseer", ...extra(opts.by?.overseerId) };
+  return { by: "operator" };
 }
 
 /**
@@ -564,7 +580,8 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
     (invitees && !invitees.ok ? invitees.error : null) ??
     (target && !target.ok ? target.error : null) ??
     limitWhy ??
-    ("error" in abilities ? abilities.error : null);
+    ("error" in abilities ? abilities.error : null) ??
+    textProblem(opts.why ?? "", "why", WHY_MAX, false);
   const publicTitle = cleanText(input.publicTitle);
   const sessionId = randomUUID();
   const to = target?.ok ? target.ref : undefined;
@@ -587,6 +604,7 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
     ...(parent ? { parent: parent.row.sessionId } : {}),
     ...(mint ? {} : { mintLink: false }),
     ...(opts.startedVia ? { startedVia: opts.startedVia } : {}),
+    started: startedRecord(opts),
     ...(opts.opItem ? { opItem: opts.opItem } : {}),
     leaseMs: leaseMs(),
     operatorName: operatorName(),
@@ -916,7 +934,7 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
     ...(openedSessions(row.orgId).has(row.sessionId) ? { opened: true as const } : {}),
     ...(row.conflict ? { settle: { area: row.conflict.area } } : {}),
     ...(row.state === "needs-you" && last && last.to === OPERATOR
-      ? { needsYou: { from: nameOf(row.orgId, last.from), question: last.question, since: Date.parse(last.at) || 0, handoff: last.n } }
+      ? { needsYou: { from: nameOf(row.orgId, last.from), question: last.question, since: Date.parse(last.at) || 0 } }
       : {}),
     ...(() => {
       const newest = Object.values(linkTimes(row)).sort().at(-1);
@@ -924,11 +942,11 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
     })(),
     // A person holds it through a hand-off nobody has a link for yet: the operator must send one.
     ...(row.state === "open" && last && row.holder !== null && row.holder !== OPERATOR && last.to === row.holder && liveLinks(row.sessionId, last.n).length === 0
-      ? { sendLink: { to: nameOf(row.orgId, row.holder), question: last.question, since: Date.parse(last.at) || 0, handoff: last.n } }
+      ? { sendLink: { to: nameOf(row.orgId, row.holder), question: last.question, since: Date.parse(last.at) || 0 } }
       : {}),
     // An open offer with invitees nobody has a link for (started in-process without links): the
     // operator sends them — named until each has one.
-    ...(missing.length ? { sendLink: { to: missing.join(", "), question: offer!.question, since: Date.parse(last!.at) || 0, handoff: last!.n, offerId: offer!.id } } : {}),
+    ...(missing.length ? { sendLink: { to: missing.join(", "), question: offer!.question, since: Date.parse(last!.at) || 0 } } : {}),
     ...(waiting.length ? { waiting } : {}),
   };
 }

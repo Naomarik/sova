@@ -68,11 +68,13 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   (never chosen), the per-process leases `<login dir>/.sova-leases/<pid>.json` `{v: 1, owner,
   users, busy, children, lastActiveAt, at}` (`LoginUsers`, a `globalThis` singleton that also
   releases idle users of a leaving login), the borrow requests `<agent dir>/claude-pool/wants/*.json`
-  `{v: 1, at, pid, excludeAccounts?, excludeLogins?}` that `acquire` / `failoverAsync` write and
-  wait on, and the agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`;
+  `{v: 1, at, pid, excludeAccounts?, excludeLogins?, only?}` that `acquire` / `failoverAsync` (and
+  `take`, a pick in the composer that names one login) write and wait on, and the agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`;
   and the session's hidden `claude-login` custom
-  entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}`, written by the provider and read
-  by Sova, which renders one with `from` as a note row), worktrees: the session's `worktrees` custom
+  entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}` (`reason` `limit` | `auth` |
+  `manual`, the user's pick), written by the provider and read by Sova, which renders one with `from` as
+  a note row; the web's login switch calls the provider's `/claude-login <login id>` command handler
+  directly, like `/mode`, so its argument is a contract too), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
   extension message (the merge card), read by Sova and by the subagents spawn gate; mode's `align`
   tool: each result's `details` (`{v: 1, doc?, changes, line, exempt?}`, the touched alignment's
@@ -229,7 +231,14 @@ Rules:
 - Before any restart, read the live records `~/.pi/agent/sessions/live/p<server-pid>-*.json`
   (heartbeat ≤ 30s) for every hosted session: `presence.workerCounts.working > 0`, or
   `presence.activity.state === "working"` (your own turn counts too). Hold the restart if any is busy.
-- Never restart from inside a hosted session: you are the server's child.
+- Never run `systemctl restart` from inside a hosted session: you are the server's child, and the
+  restart kills your turn mid tool call. The one allowed form is a delayed transient unit outside the
+  server, `systemd-run --user --on-active=30s systemctl --user restart <unit>`, scheduled right after
+  a final busy check of every session this server hosts (the rule above), as your turn's LAST tool
+  call, after which the turn ends at once. A turn another session starts in those 30 s can still be
+  cut off. If `systemd-run` fails (a sandboxed session can't reach the user bus, by design), never
+  work around it: ask the user to restart. Confirm afterwards with `GET /api/health` (`startedAt`,
+  `head`).
 - The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`, Symbol.for registry): a
   fresh session that reloads the extension still gets the bridge built from the code loaded first,
   so provider edits also need a restart. Before trusting a live test, check the unit's start time

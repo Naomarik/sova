@@ -1,0 +1,9 @@
+{
+  "id": "reviewer",
+  "label": "Read-only reviewer",
+  "icon": "eye",
+  "description": "Reads other sessions. Can't edit files, run the shell, or start workers.",
+  "remove": ["shell", "edit", "workers"],
+  "grant": ["sessions.read"],
+  "overseerMayStart": true
+}

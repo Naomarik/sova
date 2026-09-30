@@ -4,7 +4,6 @@ import { statSync } from "node:fs";
 import { join } from "node:path";
 import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
-import { withBatonLater } from "./attention";
 import { unroutedConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
@@ -41,6 +40,7 @@ import {
   type OperatorBy,
 } from "./orgs";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
+import { batonData, startedOf, toldOf } from "./baton-told";
 import { OVERSEER_CARD_HEADER } from "./overseer-tools";
 import type { EnvelopeCard } from "./org-envelope";
 import { archiveBlockers } from "./project-overseer";
@@ -123,6 +123,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
       }),
     wrapup: row.wrapup ?? null,
     owner: ownerName(row.orgId, roster),
+    started: startedOf(row, batonData(row)),
   };
 }
 
@@ -189,10 +190,7 @@ function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): W
   }
   for (const r of rows) {
     if (r.state !== "open" && r.state !== "needs-you") continue;
-    const raw = batonSummaryField(sessionPathOf(dir, r));
-    // A wait (or a proposal) put away with Later counts no more than Needs you lists it.
-    const field = raw ? withBatonLater({ id: r.sessionId, baton: raw }).baton : undefined;
-    w.needsYou.proposals -= (raw?.proposals?.length ?? 0) - (field?.proposals?.length ?? 0);
+    const field = batonSummaryField(sessionPathOf(dir, r));
     if (field?.needsYou) {
       w.needsYou.replies++;
       w.batons.set(r.sessionId, "reply");
@@ -695,6 +693,15 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const hit = path ? batonOfPath(path) : null;
       if (!hit) return c.json({ error: "Not a baton session" }, 404);
       return c.json(batonInfo(hit.row));
+    }),
+  );
+  // What It's Told (§app.baton/told): who started it and why, the prompt as last recorded, its tools. Operator only.
+  app.get(
+    "/api/baton/:sid/told",
+    handle(async (c) => {
+      const told = await toldOf(p(c, "sid"));
+      if (!told) return c.json({ error: "Not a baton session" }, 404);
+      return c.json(told);
     }),
   );
   app.get(

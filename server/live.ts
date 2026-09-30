@@ -40,20 +40,24 @@ export function activityOf(rec: any): LiveActivity | undefined {
 }
 
 /** presence.workerCounts.error: workers that ended in an error, or 0. Killed ones are left out:
-    a kill is usually the user's own gesture, not something to bring back to them. */
-export function failedWorkersOf(rec: any): number {
-  return count(rec?.presence?.workerCounts?.error) ?? 0;
+    a kill is usually the user's own gesture, not something to bring back to them. So are the
+    error rows `skip` names (a restart's, server/server-stop.ts): the count less those rows. */
+export function failedWorkersOf(rec: any, skip?: (row: unknown) => boolean): number {
+  const n = count(rec?.presence?.workerCounts?.error) ?? 0;
+  const rows = rec?.presence?.workers;
+  if (!skip || !Array.isArray(rows)) return n;
+  return Math.max(0, n - rows.filter((w) => w?.status === "error" && skip(w)).length);
 }
 
 /** When each worker ROW in status `error` ended (endedAt, else lastActivity, else startedAt), for
-    the rows that carry a time. Rows can be dropped for size (SCHEMA.md §5, finished ones first),
-    so this may cover fewer workers than failedWorkersOf counts. */
-export function workerErrorTimesOf(rec: any): number[] {
+    the rows that carry a time and `skip` doesn't name. Rows can be dropped for size (SCHEMA.md §5,
+    finished ones first), so this may cover fewer workers than failedWorkersOf counts. */
+export function workerErrorTimesOf(rec: any, skip?: (row: unknown) => boolean): number[] {
   const rows = rec?.presence?.workers;
   if (!Array.isArray(rows)) return [];
   const out: number[] = [];
   for (const w of rows) {
-    if (!w || typeof w !== "object" || w.status !== "error") continue;
+    if (!w || typeof w !== "object" || w.status !== "error" || skip?.(w)) continue;
     const t = [w.endedAt, w.lastActivity, w.startedAt].find((v) => typeof v === "number" && Number.isFinite(v) && v > 0);
     if (t !== undefined) out.push(t);
   }

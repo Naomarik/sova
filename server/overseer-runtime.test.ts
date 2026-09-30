@@ -298,7 +298,7 @@ describe("turns the user did not start are read-only", () => {
     sova_roster: { op: "add", org: "any", name: "Probe Person" },
     sova_owner: { op: "set", org: "any", person: null },
     sova_project_decisions: { op: "reconcile", org: "any", project: "any" },
-    sova_gather: { op: "start", org: "any", project: "any", to: "operator", public_title: "t", question: "q", goal: "g" },
+    sova_gather: { op: "start", org: "any", project: "any", to: "operator", why: "Nobody has said this yet.", public_title: "t", question: "q", goal: "g" },
     sova_project_overseer: { op: "settings", org: "any", project: "any", watch: false },
   };
   /** Every other op of the organization acts: refused as read-only too, a message to a project overseer included. */

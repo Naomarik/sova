@@ -54,7 +54,7 @@ import type { OverseerCard } from "../../shared/overseer-card";
 import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { showWorkersOfLabel, teamNote, type WorkingSplit, workersOfLabel, workersRunningLabel } from "../lib/workers";
-import { ComposerMenu, type ComposerMenuApi, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { ComposerMenu, type ComposerMenuApi, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { sandboxBadge } from "../lib/sandbox";
 import type { ModelControl } from "./ModelMenu";
 import { ModeMenu, type ModeControl } from "./ModeMenu";
@@ -185,6 +185,8 @@ export function Composer(props: {
   model?: ModelControl | null;
   /** Chat sessions only: the chat's Claude login (WS "claude_login"), shown beside the model. */
   claudeLogin?: () => ChatClaudeLogin | null;
+  /** Chat sessions only: the login panel the login label opens (§app.claude-logins/switch-login). */
+  login?: LoginControl | null;
   /** Chat sessions only: the flyout's Thinking ladder. */
   thinking?: ThinkingControl | null;
   /** Chat sessions only: this chat's mode switch, at the right end of the foot. */
@@ -200,6 +202,8 @@ export function Composer(props: {
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
+  /** Each new object: the draft's text was sent by something else (Run Playbook, §chat.profiles/playbook), so it empties. */
+  taken?: { at: number } | null;
   /** Answers picked on an alignment card (§chat.alignment/card), staged for the next send:
       the row names them, and `compose` puts their line ahead of the typed text in one message. */
   picks?: { label: string; compose(text: string): string; clear(): void } | null;
@@ -315,6 +319,16 @@ export function Composer(props: {
     if (disabled() || !indicator) return;
     if (fromPointer ? openAtPress : indicatorOpen()) menu()?.close();
     else menu()?.show("model", indicator); // the panel this indicator is the label for
+  };
+  // ---- Claude login label: the third trigger, for the login panel (§app.claude-logins/switch-login).
+  let loginLabel: HTMLButtonElement | undefined;
+  const loginShown = () => composerLogin(props.claudeLogin?.() ?? null, modelRef(), !!props.running);
+  const loginOpen = () => !!loginLabel && !!menu()?.open() && menu()?.anchor() === loginLabel;
+  let loginOpenAtPress = false;
+  const toggleLogin = (fromPointer: boolean) => {
+    if (disabled() || !loginLabel || !props.login) return;
+    if (fromPointer ? loginOpenAtPress : loginOpen()) menu()?.close();
+    else menu()?.show("login", loginLabel);
   };
 
   /** The subagents status row: what's working, or — once idle — what the session
@@ -690,6 +704,18 @@ export function Composer(props: {
       { defer: true },
     ),
   );
+  createEffect(
+    on(
+      () => props.taken,
+      (t) => {
+        if (!t) return;
+        touched = true;
+        setText("");
+        setDraftText(props.path, "");
+      },
+      { defer: true },
+    ),
+  );
   onMount(() => {
     // After the frame, so a closing dialog's focus handling has already run. Not on a touch-only
     // device: focusing the textarea there raises the keyboard over the new session.
@@ -1043,6 +1069,7 @@ export function Composer(props: {
             onPlaybooks={props.onPlaybooks}
             undo={props.undo}
             sandbox={props.sandbox}
+            login={props.login}
             onRefocus={() => input.focus()}
             onApi={setMenu}
           />
@@ -1233,12 +1260,27 @@ export function Composer(props: {
               <Icon name="chevron-down" small class="composer-model-caret" />
             </button>
           </Show>
-          <Show when={composerLogin(props.claudeLogin?.() ?? null, modelRef())}>
+          <Show when={loginShown()}>
             {(l) => (
-              <span class="composer-login" title={l().title} aria-label={l().label}>
+              <button
+                ref={loginLabel}
+                type="button"
+                class="composer-login"
+                aria-haspopup="menu"
+                aria-controls={paneId("composer-flyout")}
+                aria-expanded={loginOpen() ? "true" : "false"}
+                aria-disabled={disabled() || !props.login ? "true" : undefined}
+                title={l().title}
+                aria-label={l().label}
+                onPointerDown={() => (loginOpenAtPress = loginOpen())}
+                onClick={(e) => toggleLogin(e.detail > 0)}
+              >
+                <Show when={l().pending}>
+                  <span class="live-dot" />
+                </Show>
                 <span class="composer-login-full">{l().text}</span>
                 <span class="composer-login-short">{l().short}</span>
-              </span>
+              </button>
             )}
           </Show>
           <span class="composer-reason" id={paneId("composer-reason")}>

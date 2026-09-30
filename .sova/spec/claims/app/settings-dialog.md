@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Modes, Teams,
-Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Voice, Experimental.
+Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
@@ -374,6 +374,25 @@ broken. Polling stops when the tab loses focus or the dialog closes.
 
 While the list loads, the panel shows skeleton rows. If the folder can't be read, an error banner
 offers Retry and the built-in themes list anyway — the app's own themes don't depend on it.
+
+## §app.settings-dialog/profiles — Profiles
+
+The tab after Teams: every profile a session in the open session's folder can use
+(§chat.profiles/projects), read-only. It opens with one line: "Profiles are files. Ask an agent to
+add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` folder (else your
+`session-profiles.json`), and a **File Format** link opens `docs/profiles.md`.
+
+- **The list**, in the picker's groups: **Built in** (Default first), **This project ({name})** and
+  **Yours**. Each row has the profile's icon and label, its source badge, its summary line of what it
+  changes ("reads and messages sessions · no edit files · One at a time"; Default "Nothing
+  changed"), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
+  path. Without a session folder, This project says "Open a session to see its project's profiles."
+- **Problems.** A file that couldn't be read is its own row under its group, with a **Can't be
+  read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here.
+- **Approve** on a project profile that needs approval (§chat.profiles/trust), beside a line naming
+  the powers it asks for; once approved the row says "Approved".
+- **Hide From Picker** on every profile but Default (**Show In Picker** and a **Hidden** badge once
+  hidden). Hiding and approving save at once; nothing here goes through the dialog's footer.
 
 ## §app.settings-dialog/overseer — Overseer
 

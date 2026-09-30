@@ -406,7 +406,9 @@ describe("mesh ON", () => {
 
   test("a peer reaches /api/* and hello, never /api/mesh, /peer, /ext or the shell", async () => {
     whoisNode = "nB";
-    assert.deepEqual(JSON.parse((await peerGet("/api/health")).body), { ok: true });
+    const health = JSON.parse((await peerGet("/api/health")).body) as { ok: boolean; startedAt: string; head: string | null };
+    assert.equal(health.ok, true);
+    assert.ok(!Number.isNaN(Date.parse(health.startedAt)) && (health.head === null || /^[0-9a-f]{40}$/.test(health.head)), JSON.stringify(health));
     const hello = JSON.parse((await peerGet("/api/peer/hello")).body) as MeshHello;
     assert.equal(hello.mesh, 1);
     assert.equal(hello.nodeId, "nA");
@@ -693,7 +695,8 @@ describe("mesh ON", () => {
       ],
     });
     whoisNode = "nSelf";
-    assert.deepEqual(await getJson("/peer/self/api/health"), [200, { ok: true }]);
+    const [status, health] = (await getJson("/peer/self/api/health")) as [number, { ok: boolean }];
+    assert.deepEqual([status, health.ok], [200, true]);
     const r = await wsTrip(`${wsBase}/peer/self/ws/watch?path=nope`);
     assert.equal(r.code, 4404);
     whoisNode = "nStranger";

@@ -39,7 +39,7 @@ export interface RowPress {
   /** A press began. `drag` is false where a row can't be dragged (selection mode). */
   start(at: Point, pointer: string, drag: boolean): void;
   move(at: Point): void;
-  /** The press ended where it was. True when it had lifted: the caller selects (or opens the menu). */
+  /** The press ended where it was. True when it had lifted: the caller selects. */
   finish(): boolean;
   /** The press is off without a choice: a scroll, a pointercancel, the window losing focus. */
   cancel(): void;

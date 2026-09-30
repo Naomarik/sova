@@ -1,3 +1,4 @@
+import { setProfileStartAdopt } from "./lib/profile-start";
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
@@ -683,6 +684,8 @@ export function App() {
       onHash();
     });
   };
+  setProfileStartAdopt(adoptCreated);
+
   setAdopter(adoptCreated);
   onCleanup(() => setAdopter(null));
 
@@ -1208,7 +1211,7 @@ export function App() {
       </Show>
       <Show when={settingsOpenAt()}>
         <Portal>
-          <SettingsDialog initialTab={settingsOpenAt() ?? undefined} onClose={closeSettings} />
+          <SettingsDialog initialTab={settingsOpenAt() ?? undefined} cwd={summary()?.cwd ?? null} onClose={closeSettings} />
         </Portal>
       </Show>
       {/* Opened from the sidebar's host menu or #/mesh; only while the mesh is on. */}

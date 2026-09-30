@@ -1,4 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -25,6 +26,7 @@ import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
+import { mountPreviewLinks } from "./preview-links-routes";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
@@ -53,11 +55,15 @@ import { getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, type AttentionLaterRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
 import { configureSession } from "./sessions-configure";
+import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
+import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
+import type { ProfilePick } from "./profile-sources";
+import { singletonRunningText } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
@@ -113,8 +119,7 @@ import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setS
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { AttentionSignals } from "./attention-signals";
-import { attentionChanged } from "./attention-memo";
-import { bringBack, putAway } from "./needs-you-later";
+import { initRestartWindow, markServerStop } from "./server-stop";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
@@ -135,6 +140,16 @@ const DIST_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "dist");
 const DESIGN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src", "design");
 /** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
 const CONNECT_TEMPLATE = fileURLToPath(new URL("./connect-agent-template.md", import.meta.url));
+
+/** When this process started, and the commit its checkout had then (§chat.profiles/live-commit). */
+const SERVER_STARTED_AT = new Date().toISOString();
+const SERVER_HEAD: string | null = (() => {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: dirname(fileURLToPath(import.meta.url)), timeout: 5_000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+  } catch {
+    return null;
+  }
+})();
 
 // Embedded pi runtimes / extensions must never take the server down.
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
@@ -159,14 +174,42 @@ app.onError((err, c) => {
   return c.json({ error: err.message }, 500);
 });
 
-app.get("/api/health", (c) => c.json({ ok: true }));
+// What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then.
+app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD }));
 // The folder this server lists sessions from (its agent dir's), which the empty list names.
 app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
 
 app.get("/api/sessions", async (c) => c.json(await listSessions()));
+registerProfileRoutes(app);
 
-/** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary. */
-async function createWebSession(c: Context, cwd: string) {
+/** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
+    With `start`, it is made with that profile (§app.session-list/profile-shelf) and, given one, its
+    first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
+async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }) {
+  let pick: ProfilePick | undefined = start?.profile;
+  if (start) {
+    // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
+    const r = await resolveChoice(start.profile, cwd);
+    if (!r.ok) return c.json({ error: r.error, ...(r.approval ? { approval: true } : {}) }, r.approval ? 409 : 400);
+    if (r.profile?.singleton) {
+      const holder = singletonHolder(snapshotKey(r.profile), await listSessions());
+      if (holder) return c.json({ error: singletonRunningText(r.profile.label), running: { id: holder.id, path: holder.path, title: holder.title } }, 409);
+    }
+    if (r.listed) pick = { source: r.listed.source, id: r.listed.id };
+  }
+  const made = await createWebSessionFile(c, cwd);
+  if (made instanceof Response) return made;
+  if (!start || !pick) return c.json(made, 201);
+  const applied = await applyProfile(made.path, pick, start.by ?? "start");
+  if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
+  if (start.prompt?.trim()) {
+    const sent = await promptSession(made.path, start.prompt);
+    if (!sent.ok) return c.json({ error: `Created the session with its profile, but its first message was refused: ${sent.error}`, session: made }, sent.status);
+  }
+  return c.json((await getSessionSummary(made.path)) ?? made, 201);
+}
+
+async function createWebSessionFile(c: Context, cwd: string) {
   const sm = SessionManager.create(resolve(cwd));
   const rawPath = sm.getSessionFile();
   const header = sm.getHeader();
@@ -181,14 +224,14 @@ async function createWebSession(c: Context, cwd: string) {
   markSeen(header.id);
   const summary = await getSessionSummary(path);
   if (!summary) return c.json({ error: "Failed to read back new session" }, 500);
-  return c.json(summary, 201);
+  return summary;
 }
 
 // { cwd } for a local session, or { target, remoteCwd } for a remote one: its cwd is the local
 // placeholder mirroring the remote path (server/targets.ts), created here; chat-manager passes the
 // `target` flag, so the remote extension runs every tool on the far side.
 app.post("/api/sessions", async (c) => {
-  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown };
+  let body: { cwd?: unknown; target?: unknown; remoteCwd?: unknown; profile?: unknown; prompt?: unknown };
   try {
     body = await c.req.json();
   } catch {
@@ -202,13 +245,26 @@ app.post("/api/sessions", async (c) => {
     if (!target) return c.json({ error: `Unknown target: ${body.target}` }, 404);
     const dir = targetDir(body.target, remoteCwd);
     mkdirSync(dir, { recursive: true });
-    return createWebSession(c, dir);
+    return createWebSession(c, dir, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))));
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) return c.json({ error: cwdError }, 400);
-  return createWebSession(c, cwd);
+  return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))));
 });
+
+/** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the shelf's Run and Start, the Overseer. */
+function startOf(body: { profile?: unknown; prompt?: unknown }, byOverseer = false): { profile: ProfilePick; prompt?: string; by: "overseer" | "start" } | undefined {
+  const p = body.profile as { source?: unknown; id?: unknown } | string | undefined;
+  const pick: ProfilePick | undefined =
+    typeof p === "string" && p
+      ? p
+      : p && typeof p === "object" && typeof p.id === "string" && p.id && (p.source === "sova" || p.source === "user" || p.source === "project")
+        ? { source: p.source, id: p.id }
+        : undefined;
+  if (!pick) return undefined;
+  return { profile: pick, by: byOverseer ? "overseer" : "start", ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}) };
+}
 
 // The connection agent: a new session in a fixed seed dir whose AGENTS.md (the remote-runtime
 // template, re-copied on every spawn) teaches it to probe, verify and write a targets.json entry.
@@ -1002,17 +1058,6 @@ app.get("/api/explanations", async (c) => c.json(await listExplanations(c.req.qu
 app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
 app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
 app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
-// Later (§app.overseer/attention-digest): put Needs you items away until their anchor moves, or bring them back.
-for (const [route, apply] of [["/api/attention/later", putAway], ["/api/attention/later/undo", bringBack]] as const) {
-  app.post(route, async (c) => {
-    const body = (await c.req.json().catch(() => null)) as Partial<AttentionLaterRequest> | null;
-    const keys = body && Array.isArray(body.keys) ? body.keys : null;
-    if (!keys || keys.length === 0 || keys.length > 100) return c.json({ error: "Expected JSON body { keys: string[] } (1–100 keys)" }, 400);
-    if (apply(keys) !== keys.length) return c.json({ error: "Unknown Later key" }, 400);
-    attentionChanged();
-    return c.json({ ok: true });
-  });
-}
 // Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).
 // There is no route that makes one: only a card click does, in the Overseer's own runtime.
 app.get("/api/overseer/autonomy", async (c) => c.json(await overseerAutonomy(), 200, { "Cache-Control": "no-store" }));
@@ -1282,6 +1327,9 @@ onSessionArchived((id) => void meshLinks.endFor(id));
 // listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
 mountPublicLinks(app);
 mountShareGateway(app, meshApi);
+// Preview links (shared/preview-links.ts, §mesh.public/preview): a project's loopback apps behind
+// their own public hosts, under /api/previews (main listener only).
+mountPreviewLinks(app);
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 
@@ -1374,6 +1422,17 @@ server.on("error", (err) => {
 });
 attachWebSockets(server);
 
+// The previous server's stop mark: the workers its stop ended are no errors (server/server-stop.ts).
+initRestartWindow();
+
+// Needs you's Later is gone (§app.overseer/attention-digest): the store an earlier version kept its
+// choices in is deleted, so none of them keeps anything hidden. A no-op once it is gone.
+try {
+  rmSync(join(stateRoot(), "needs-you-later.json"), { force: true });
+} catch (err) {
+  console.warn(`[server] needs-you-later.json not deleted: ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
@@ -1455,6 +1514,8 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
+  // First: the workers this stop ends die on the same signal (server/server-stop.ts).
+  markServerStop();
   // Whatever a step below waits on, the process ends.
   setTimeout(() => {
     console.error("[server] shutdown took over 20 s; exiting");

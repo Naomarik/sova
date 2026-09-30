@@ -1,0 +1,9 @@
+{
+  "id": "mini-overseer",
+  "label": "Mini overseer",
+  "icon": "network",
+  "description": "Reads and messages sessions in its project. Can't edit files.",
+  "remove": ["edit", "workers"],
+  "grant": ["sessions.read", "sessions.message"],
+  "overseerMayStart": true
+}

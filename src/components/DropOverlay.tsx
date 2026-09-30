@@ -86,12 +86,11 @@ function placeGhost() {
   ghost.style.transform = `translate3d(${Math.round(at.x)}px, ${Math.round(at.y)}px, 0)`;
 }
 
-/** The dragged row, copied for the card: no ids (they'd repeat), no menus, no state classes. */
+/** The dragged row, copied for the card: no ids (they'd repeat), no state classes. */
 function cardOf(source: Element): HTMLElement {
   const copy = source.cloneNode(true) as HTMLElement;
   copy.classList.remove("session-row-lifted", "session-row-dragging", "session-row-shell-current", "session-row-shell-selecting", "session-row-shell-selected");
   for (const el of [copy, ...copy.querySelectorAll("[id]")]) el.removeAttribute("id");
-  for (const el of copy.querySelectorAll("[popover], .session-later")) el.remove();
   return copy;
 }
 

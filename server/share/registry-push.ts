@@ -11,7 +11,7 @@ import {
 } from "../../shared/public-links";
 import { meshApi } from "../mesh";
 import { stateRoot } from "../state-root";
-import { currentTarget, forgetKinds, pushSnapshot, refreshGateway, routeSetting, routesSessions, stillCurrent, viaGatewayPeer } from "./gateway-client";
+import { currentTarget, forgetKinds, type GatewayTarget, pushSnapshot, refreshGateway, routeSetting, routesKind, stillCurrent, viaGatewayPeer } from "./gateway-client";
 import { onShareLinksChanged, type ShareLinksChange } from "./links-events";
 import { validateSnapshot } from "./registry-validation";
 import { SHARE_DIST } from "./routes";
@@ -106,7 +106,7 @@ function liveLinks(now: number): RegistryLink[] {
   const latest = now + REGISTRY_LIMITS.maxExpiryAheadMs;
   const seen = new Set<string>();
   const out: RegistryLink[] = [];
-  const add = (rows: StoredLink[], kind: "h" | "i" | "s") => {
+  const add = (rows: StoredLink[], kind: "h" | "i" | "s" | "p") => {
     for (const l of rows) {
       if (!l || typeof l.hash !== "string" || !REGISTRY_LIMITS.hash.test(l.hash) || l.revokedAt || seen.has(l.hash)) continue;
       const exp = typeof l.expiresAt === "string" ? Date.parse(l.expiresAt) : NaN;
@@ -118,6 +118,7 @@ function liveLinks(now: number): RegistryLink[] {
   add(storeLinks("baton-links.json"), "h");
   add(storeLinks("person-links.json"), "i");
   add(storeLinks("session-shares.json"), "s");
+  add(storeLinks("preview-links.json"), "p");
   return out.sort((a, b) => b.exp - a.exp);
 }
 
@@ -137,12 +138,12 @@ let lastOmitted = 0;
 /** The snapshot of `live` under `seq`: past maxLinks or SNAPSHOT_MAX_BYTES, the links expiring
     soonest are left out (logged whenever the number left out changes; a mint whose own link is
     left out is answered with a warning). */
-function snapshotOf(live: RegistryLink[], seq: number, withSessions: boolean): RegistrySnapshot {
+function snapshotOf(live: RegistryLink[], seq: number, kinds: ReadonlySet<RegistryLink["kind"]>): RegistrySnapshot {
   const port = routeSetting()?.ingressPort ?? SHARE_PORT_DEFAULT;
-  // An `s` row goes only to a target that itself stated `s`: an older gateway rejects the whole
-  // snapshot (an unknown kind is bad-snapshot), blocking that update: none of its new h and i
-  // links would land (the rows it already holds stay).
-  const routes = withSessions ? live : live.filter((l) => l.kind !== "s");
+  // An `s` or `p` row goes only to a target that itself stated that kind: an older gateway rejects
+  // the whole snapshot (an unknown kind is bad-snapshot), blocking that update: none of its new h
+  // and i links would land (the rows it already holds stay).
+  const routes = live.filter((l) => kinds.has(l.kind));
   const snap: RegistrySnapshot = { v: 1, seq, links: routes.slice(0, REGISTRY_LIMITS.maxLinks), assets: shareAssets(), ingressPort: port };
   const all = snap.links.length;
   const size = Buffer.byteLength(JSON.stringify(snap));
@@ -159,15 +160,27 @@ function snapshotOf(live: RegistryLink[], seq: number, withSessions: boolean): R
   return snap;
 }
 
-/** Whether the current via target itself stated that it routes session links (GatewayInfo.kinds
-    lists `s`, from its own info since it became the target). */
+/** The row kinds a target gets: `h` and `i` always, `s` and `p` only once it stated them itself. */
+function kindsFor(target: GatewayTarget | null): Set<RegistryLink["kind"]> {
+  const out = new Set<RegistryLink["kind"]>(["h", "i"]);
+  for (const k of ["s", "p"] as const) if (routesKind(target, k)) out.add(k);
+  return out;
+}
+
+/** Whether the current via target itself stated that it routes links of `kind` (GatewayInfo.kinds
+    lists it, from its own info since it became the target); h and i always. */
+export function gatewayRoutes(kind: RegistryLink["kind"]): boolean {
+  return routesKind(currentTarget(), kind);
+}
+
+/** Whether the current via target routes session links (kind `s`). */
 export function gatewayRoutesSessions(): boolean {
-  return routesSessions(currentTarget());
+  return gatewayRoutes("s");
 }
 
 /** The snapshot this host would send now under `seq` (checked with validateSnapshot before any send). */
 export function buildSnapshot(seq: number, now = Date.now()): RegistrySnapshot {
-  return snapshotOf(liveLinks(now), seq, gatewayRoutesSessions());
+  return snapshotOf(liveLinks(now), seq, kindsFor(currentTarget()));
 }
 
 // ---- the send loop --------------------------------------------------------------------------------
@@ -260,9 +273,9 @@ async function sendLoop(): Promise<void> {
     const now = Date.now();
     const live = liveLinks(now);
     // The capability evidence this snapshot is built on, judged again right before it is sent.
-    const withSessions = routesSessions(target);
-    const snap = snapshotOf(live, seq, withSessions);
-    const carriesSessions = snap.links.some((l) => l.kind === "s");
+    const kinds = kindsFor(target);
+    const snap = snapshotOf(live, seq, kinds);
+    const carriesSessions = snap.links.some((l) => l.kind === "s" || l.kind === "p");
     const check = validateSnapshot(JSON.parse(JSON.stringify(snap)), { now });
     if (!check.ok) {
       console.warn(`[share] the registry snapshot failed its own check (${check.why}); not sent`);
@@ -270,7 +283,7 @@ async function sendLoop(): Promise<void> {
       setDirty(true);
       return;
     }
-    const { withdrawn, answered, ack } = await pushSnapshot(target, snap, () => !carriesSessions || routesSessions(target));
+    const { withdrawn, answered, ack } = await pushSnapshot(target, snap, () => [...kinds].every((k) => routesKind(target, k)));
     if (gen !== generation) return;
     if (withdrawn || !stillCurrent(target)) {
       // The target changed (another gateway, its entry or endpoint edited, or gone) before the
@@ -299,7 +312,7 @@ async function sendLoop(): Promise<void> {
       // the compatible h/i set goes again at once (once per run), so h/i publication isn't held.
       skewRetried = true;
       forgetKinds();
-      console.warn("[share] the gateway refused a snapshot with session links; sending without them until it states `s` again");
+      console.warn("[share] the gateway refused a snapshot with session or preview links; sending without them until it states their kinds again");
       again = true;
       continue;
     }
@@ -366,7 +379,7 @@ function readBatch(): void {
     for (const e of events) e.resolve(warning("unconfirmed", ""));
     return;
   }
-  const fresh = { h: new Set<string>(), i: new Set<string>(), s: new Set<string>() };
+  const fresh = { h: new Set<string>(), i: new Set<string>(), s: new Set<string>(), p: new Set<string>() };
   const liveNow = liveLinks(Date.now());
   const liveSet = new Set(liveNow.map((l) => l.h));
   // A mint that names its hashes owns exactly those: they are nobody else's fresh candidates.
@@ -377,7 +390,7 @@ function readBatch(): void {
     if (!named.has(l.h)) fresh[l.kind].add(l.h);
   }
   for (const h of named) seen.add(h);
-  const mints = { h: 0, i: 0, s: 0 };
+  const mints = { h: 0, i: 0, s: 0, p: 0 };
   for (const e of events) if (e.change.cause === "mint" && !e.change.hashes) mints[e.change.kind] += 1;
   const carrying = outbox.seq + 1;
   for (const e of events) {
@@ -413,11 +426,11 @@ export function registryRouteChanged(): void {
   void kick();
 }
 
-/** Ask the gateway again; when it now lists `s` and didn't before, its session links are owed. */
+/** Ask the gateway again; when it now lists `s` or `p` and didn't before, those links are owed. */
 async function refreshThenPush(): Promise<void> {
-  const before = gatewayRoutesSessions();
+  const before = [gatewayRoutes("s"), gatewayRoutes("p")];
   await refreshGateway();
-  if (started && !before && gatewayRoutesSessions()) {
+  if (started && ((!before[0] && gatewayRoutes("s")) || (!before[1] && gatewayRoutes("p")))) {
     setDirty(true);
     void kick();
   }

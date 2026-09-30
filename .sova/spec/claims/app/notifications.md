@@ -52,9 +52,7 @@ tier and comes back is new again.
   (§app.overseer/attention-digest), so nothing could send it; a stored choice for it is dropped,
   and a client still sending that key is not refused. A reply that asks you (`asks-you`,
   §app.decisions/asks-user), a team gone quiet (`team-stalled`, §app.decisions/team-stall) and a
-  branch ready to merge are not blockers (decide tier), so they never reach this decision. A
-  blocker the user put away with Later (§app.session-list/needs-you) leaves the act tier until
-  something new for it happens, and is then new again.
+  branch ready to merge are not blockers (decide tier), so they never reach this decision.
 - **Nothing old on start.** The first reading after the server starts is the baseline: blockers
   already there are never sent. The told-set is kept in memory only.
 - **Told without sending** — dropped for good, not held: when sending is off, no contact address

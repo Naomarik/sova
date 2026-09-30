@@ -18,7 +18,7 @@ import {
   type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerKey, buildDigest, laterFilter, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-pipeline";
 import { conflictAttention } from "./decisions";
@@ -35,6 +35,7 @@ import {
   setOverseerRuntime,
 } from "./chat-manager";
 import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
+import { endedByRestart, restartWindow } from "./server-stop";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
 import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
@@ -83,7 +84,6 @@ import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
-import { pruneLater } from "./needs-you-later";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 
 /**
@@ -333,15 +333,20 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const sessions = await listSessions();
     const records = readLiveRecords({ includeOwn: true });
     const byPath = new Map<string, { failed: number; since: number; errorTimes: number[] }>();
+    // Workers this server's own restart ended are no errors of theirs (server/server-stop.ts): only
+    // rows restored in this server's runtimes, whose records carry its pid.
+    const window = restartWindow();
+    const restartEnded = (row: unknown) => endedByRestart(row, window);
     for (const r of records) {
       if (!r.sessionFile) continue;
       const prev = byPath.get(r.sessionFile);
-      const failed = failedWorkersOf(r.rec);
+      const skip = r.pid === process.pid ? restartEnded : undefined;
+      const failed = failedWorkersOf(r.rec, skip);
       const since = activityOf(r.rec)?.since ?? 0;
       byPath.set(r.sessionFile, {
         failed: Math.max(failed, prev?.failed ?? 0),
         since: Math.max(since, prev?.since ?? 0),
-        errorTimes: [...(prev?.errorTimes ?? []), ...workerErrorTimesOf(r.rec)],
+        errorTimes: [...(prev?.errorTimes ?? []), ...workerErrorTimesOf(r.rec, skip)],
       });
     }
     const nowMs = Date.now();
@@ -352,11 +357,9 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = heldChat(s.path);
       const live = byPath.get(s.path);
-      const pending = chat ? chat.pendingDialogs() : [];
       return {
         summary: s,
-        dialogs: pending.map((d) => d.title || d.method),
-        dialogIds: pending.map((d) => d.id),
+        dialogs: chat ? chat.pendingDialogs().map((d) => d.title || d.method) : [],
         queued: chat ? chat.queue.size : 0,
         failedWorkers: live?.failed ?? 0,
         workerErrorAt: live?.failed ? workerErrorTime(live.failed, live.errorTimes, noteFailedRise(s.path, live.failed, nowMs)) : undefined,
@@ -370,11 +373,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
-    // Items put away with Later (§app.overseer/attention-digest) leave the digest until their anchor
-    // moves; entries of sessions no longer listed at all are dropped.
-    const extra = [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)];
-    pruneLater(new Set([...sessions.map((s) => s.id), ...extra.map((i) => i.id)]));
-    return buildDigest(rows, Date.now(), homedir(), extra, laterFilter());
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

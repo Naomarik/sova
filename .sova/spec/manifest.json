@@ -235,11 +235,7 @@
         "src/components/Groups.tsx",
         "src/components/Sidebar.tsx",
         "server/index.ts",
-        "server/session-groups-index.test.ts",
-        "src/lib/group-open.ts",
-        "src/lib/group-open.test.ts",
-        "src/lib/session-groups.ts",
-        "src/lib/session-groups.test.ts"
+        "server/session-groups-index.test.ts"
       ]
     },
     "§app.session-list/recent": {
@@ -288,7 +284,7 @@
     "§app.session-list/selecting-several-sessions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/lib/session-selection.ts",
         "src/lib/session-selection.test.ts",
@@ -299,9 +295,7 @@
         "server/sessions-index.ts",
         "server/index.ts",
         "server/overseer-tools.ts",
-        "shared/protocol.ts",
-        "src/lib/hold-select.ts",
-        "src/lib/hold-select.test.ts"
+        "shared/protocol.ts"
       ]
     },
     "§app.session-list/states": {
@@ -1361,7 +1355,7 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",
@@ -1713,7 +1707,8 @@
         "server/playbooks.ts",
         "src/lib/playbooks.ts",
         "src/components/PlaybooksDialog.tsx",
-        "server/files.ts"
+        "server/files.ts",
+        "server/project-root.ts"
       ]
     },
     "§chat.playbooks/tokens": {
@@ -1729,7 +1724,8 @@
         "src/lib/playbooks.ts",
         "src/components/PlaybooksDialog.tsx",
         "src/components/ChatView.tsx",
-        "server/chat-manager.ts"
+        "server/chat-manager.ts",
+        "shared/playbooks.ts"
       ]
     },
     "§chat.playbooks/when-sending-stops-being-possible": {
@@ -1748,7 +1744,9 @@
       "code": [
         "server/playbooks.ts",
         "src/lib/playbooks.ts",
-        "src/components/PlaybooksDialog.tsx"
+        "src/components/PlaybooksDialog.tsx",
+        "server/project-root.ts",
+        "server/playbooks.test.ts"
       ]
     },
     "§chat/playbooks": {
@@ -2639,8 +2637,8 @@
         "server/attention.test.ts",
         "shared/protocol.ts",
         "server/align-state.ts",
-        "server/needs-you-later.ts",
-        "server/needs-you-later.test.ts",
+        "server/server-stop.ts",
+        "server/server-stop.test.ts",
         "server/index.ts"
       ],
       "requires": [
@@ -2914,7 +2912,9 @@
         "server/overseer-todo-tools.ts",
         "server/overseer-tools.test.ts",
         "server/overseer-link-tools.ts",
-        "server/overseer-org-tools.test.ts"
+        "server/overseer-org-tools.test.ts",
+        "src/components/ProfileCards.tsx",
+        "server/profile-sources.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -3404,7 +3404,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3418,7 +3418,6 @@
         "server/org-routes.ts",
         "server/overseer.ts",
         "server/attention.ts",
-        "src/components/RowMenu.tsx",
         "src/lib/api.ts",
         "src/design/base.css",
         "src/lib/org-region.ts"
@@ -3947,8 +3946,7 @@
         "src/lib/org-region.ts",
         "server/baton-links.ts",
         "src/components/Sidebar.tsx",
-        "shared/baton.ts",
-        "server/needs-you-later.test.ts"
+        "shared/baton.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest"
@@ -5098,7 +5096,7 @@
     "§app.session-list/organizations": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-list/ordinary-surfaces",
         "§app.organizations/org-sessions",
@@ -9175,25 +9173,520 @@
         "scripts/mesh-vps/config.sh"
       ]
     },
-    "§app.session-list/drop-overlay": {
+    "§mesh.public/preview": {
       "kind": "behavior",
       "requires": [
-        "§app.session-list/groups",
-        "§app.session-list/selecting-several-sessions",
-        "§app.session-list/regions-top-and-archive"
+        "§mesh.public/registry",
+        "§mesh.public/preview-address",
+        "§mesh.public/preview-proxy"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
-        "src/lib/drag-overlay.ts",
-        "src/lib/drag-overlay.test.ts",
-        "src/components/DropOverlay.tsx",
+        "shared/preview-links.ts",
+        "server/preview-links.ts",
+        "server/preview-links-routes.ts",
+        "server/share/registry-push.ts",
+        "server/share/registry.ts",
+        "shared/public-links.ts",
+        "server/index.ts",
+        "server/preview-links.test.ts",
+        "server/share-preview-router.test.ts"
+      ]
+    },
+    "§mesh.public/preview-address": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§mesh.public/front",
+        "§mesh.public/gateway"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/public-links.ts",
+        "server/public-links-routes.ts",
+        "server/share/edge.ts",
+        "server/share/ingress.ts",
+        "server/share/router.ts",
+        "server/share/front.ts",
+        "server/share/gateway-client.ts",
+        "server/share/gateway-routes.ts",
+        "server/share/preview-address.ts",
+        "shared/public-links.ts",
+        "src/lib/public-links.ts",
+        "src/components/PublicLinksSettings.tsx",
+        "server/share-preview-address.test.ts",
+        "server/share-preview-proxy.test.ts"
+      ]
+    },
+    "§mesh.public/preview-card": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/preview"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PreviewsCard.tsx",
+        "src/components/ProjectPage.tsx",
+        "src/components/SharesPage.tsx",
+        "src/lib/api.ts",
+        "src/lib/previews.ts",
+        "src/lib/previews.test.ts"
+      ]
+    },
+    "§mesh.public/preview-limits": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/preview"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/preview-proxy.ts",
+        "server/share/preview-hop.ts",
+        "shared/public-links.ts",
+        "server/share-preview-proxy.test.ts"
+      ]
+    },
+    "§mesh.public/preview-offline": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/preview",
+        "§mesh.public/offline"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/preview-pages.ts",
+        "server/share/preview-proxy.ts",
+        "server/share/preview-hop.ts",
+        "server/share/router.ts",
+        "shared/public-links.ts",
+        "server/share-preview-proxy.test.ts",
+        "server/share-preview-router.test.ts"
+      ]
+    },
+    "§mesh.public/preview-proxy": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/preview"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/preview-proxy.ts",
+        "server/share/preview-hop.ts",
+        "server/share-preview-proxy.test.ts",
+        "server/share-preview-router.test.ts"
+      ]
+    },
+    "§chat.markdown/vis-lenience": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.markdown/vis-flow-sections"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/flow/parse.ts",
+        "src/vis/kinds/flow/parse.test.ts",
+        "src/vis/kinds/sequence/parse.ts",
+        "src/vis/kinds/sequence/parse.test.ts",
+        "src/vis/kinds/tree/parse.ts",
+        "src/vis/kinds/tree/parse.test.ts",
+        "src/vis/kinds/chart/parse.ts",
+        "src/vis/kinds/chart/parts.test.ts",
+        "src/vis/lenience.test.ts",
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/vis/guide.test.ts"
+      ]
+    },
+    "§app.session-list/profile-shelf": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProfileShelf.tsx",
+        "src/lib/profile-start.ts",
         "src/components/Sidebar.tsx",
-        "src/lib/drag-archive.ts",
-        "src/lib/drag-archive.test.ts",
-        "src/lib/hold-select.ts",
-        "src/lib/hold-select.test.ts",
+        "src/App.tsx",
+        "src/app.css"
+      ],
+      "requires": [
+        "§chat.profiles/model",
+        "§chat.profiles/singleton",
+        "§app.session-list/needs-you"
+      ]
+    },
+    "§app.settings-dialog/profiles": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProfilesSettings.tsx",
+        "server/session-profile-routes.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts",
+        "src/App.tsx"
+      ],
+      "requires": [
+        "§chat.profiles/model",
+        "§chat.profiles/projects",
+        "§chat.profiles/trust"
+      ]
+    },
+    "§chat.profiles/after-first-message": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProfileChip.tsx",
+        "src/components/SessionView.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/Thread.tsx",
+        "src/lib/profile-start.ts"
+      ],
+      "requires": [
+        "§chat.profiles/model"
+      ]
+    },
+    "§chat.profiles/applying": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-profile-routes.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/session-profiles-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/model"
+      ]
+    },
+    "§chat.profiles/delivery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/queue.ts",
+        "server/transcript.ts",
+        "shared/protocol.ts",
+        "src/components/Thread.tsx",
+        "src/lib/live.ts",
+        "src/components/ProfileCards.tsx"
+      ],
+      "requires": [
+        "§chat.profiles/session-tools",
+        "§app.overseer/sent-marker"
+      ]
+    },
+    "§chat.profiles/enforcement": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "shared/profiles.ts",
+        "server/session-profiles-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/model"
+      ]
+    },
+    "§chat.profiles/limits": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-powers.ts",
+        "server/session-profiles.test.ts",
+        "server/session-profiles-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/session-tools"
+      ]
+    },
+    "§chat.profiles/model": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/profiles.ts",
+        "server/profiles-store.ts",
+        "server/session-profile.ts",
+        "server/sessions-index.ts",
+        "server/session-profiles.test.ts",
+        "profiles/reviewer.json",
+        "profiles/mini-overseer.json",
+        "shared/protocol.ts",
+        "src/lib/summary-diff.test.ts"
+      ],
+      "requires": []
+    },
+    "§chat.profiles/picker": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ProfilePicker.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/profiles.ts",
+        "src/lib/change-rows.ts",
+        "src/lib/api.ts",
+        "src/app.css",
+        "src/components/ProfilePlaybookCard.tsx"
+      ],
+      "requires": [
+        "§chat.profiles/model",
+        "§chat.transcript/setup-card"
+      ]
+    },
+    "§chat.profiles/session-tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-powers.ts",
+        "server/session-guards.ts",
+        "server/session-profile-routes.ts",
+        "server/session-profiles-runtime.test.ts",
+        "server/session-profiles.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/enforcement",
+        "§app.overseer/tools"
+      ]
+    },
+    "§chat.profiles/singleton": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-profile.ts",
+        "server/session-profile-routes.ts",
+        "server/sessions-index.ts",
+        "src/components/ProfilePicker.tsx",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/overseer-tools.ts"
+      ],
+      "requires": [
+        "§chat.profiles/model",
+        "§chat.profiles/applying"
+      ]
+    },
+    "§chat/profiles": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/profiles.ts"
+      ]
+    },
+    "§app.claude-logins/switch-cost": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/switch-login",
+        "§chat.context-window/last-reply",
+        "§chat.context-window/format"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/lib/claude-login.test.ts",
         "src/design/base.css"
+      ]
+    },
+    "§app.claude-logins/switch-login": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/active-login",
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/failover",
+        "§app.claude-logins/borrow-return",
+        "§chat.composer/composer-flyout"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/index.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "server/claude-pool/agent.ts",
+        "server/chat-manager.ts",
+        "server/claude-login-state.ts",
+        "shared/protocol.ts",
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/design/base.css",
+        "pi-config/extensions/claude-code/provider/login-command.ts",
+        "src/lib/api.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "pi-config/extensions/claude-code/provider/registration.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/claude-pool/agent.test.ts",
+        "src/lib/claude-login.test.ts"
+      ]
+    },
+    "§app.claude-logins/switch-queue": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/switch-login"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/claude-login-state.ts",
+        "shared/protocol.ts",
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/components/Composer.tsx",
+        "server/claude-login-state.test.ts",
+        "src/components/ChatView.tsx",
+        "src/design/base.css"
+      ]
+    },
+    "§app/markdown-viewer": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/markdown-viewer.ts",
+        "src/lib/markdown-viewer.test.ts",
+        "src/components/MarkdownViewer.tsx",
+        "src/design/markdown-viewer.css",
+        "src/components/ui.tsx"
+      ],
+      "requires": [
+        "§chat/markdown"
+      ]
+    },
+    "§chat.profiles/live-commit": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/index.ts",
+        "server/mesh/mesh.test.ts"
+      ],
+      "requires": []
+    },
+    "§chat.profiles/playbook": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/playbooks.ts",
+        "src/components/ProfilePlaybookCard.tsx",
+        "server/overseer-tools.ts",
+        "src/lib/playbooks.ts",
+        "src/components/ProfilePicker.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx",
+        "server/session-profiles-runtime.test.ts",
+        "src/app.css"
+      ],
+      "requires": [
+        "§chat.profiles/projects",
+        "§chat.playbooks/what-gets-sent"
+      ]
+    },
+    "§chat.profiles/projects": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-root.ts",
+        "server/profile-sources.ts",
+        "shared/profiles.ts",
+        "profiles/reviewer.json",
+        "profiles/mini-overseer.json",
+        "docs/profiles.md",
+        "server/profiles-store.ts",
+        "server/playbooks.ts",
+        "server/session-profiles.test.ts",
+        ".sova/profiles/merge-captain.json"
+      ],
+      "requires": [
+        "§chat.profiles/model"
+      ]
+    },
+    "§chat.profiles/trust": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/profile-trust.ts",
+        "server/session-profile.ts",
+        "server/session-profile-routes.ts",
+        "src/components/ProfilePicker.tsx",
+        "server/session-profiles.test.ts",
+        "src/components/ProfilesSettings.tsx",
+        "src/lib/api.ts"
+      ],
+      "requires": [
+        "§chat.profiles/projects"
+      ]
+    },
+    "§app.baton/goal-on-strip": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/BatonStrip.tsx",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts",
+        "src/orgs.css",
+        "server/org-routes.test.ts"
+      ],
+      "requires": [
+        "§app.baton/goal-and-loadout",
+        "§app.baton/outsider-view",
+        "§app.owner-page/never"
+      ]
+    },
+    "§app.baton/told": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton-told.ts",
+        "server/baton-told.test.ts",
+        "src/lib/baton-told.ts",
+        "src/lib/baton-told.test.ts",
+        "src/components/BatonStrip.tsx",
+        "shared/baton.ts",
+        "server/org-routes.ts",
+        "server/baton.ts",
+        "src/orgs.css",
+        "src/lib/api.ts",
+        "server/baton-view.test.ts",
+        "server/session-share-privacy.test.ts",
+        "server/share-listener.test.ts",
+        "server/owner-page-privacy.test.ts",
+        "server/overseer-org-tools.test.ts"
+      ],
+      "requires": [
+        "§app.baton/goal-and-loadout",
+        "§app.baton/goal-on-strip",
+        "§app.baton/outsider-view",
+        "§app.owner-page/never",
+        "§app.baton/abilities",
+        "§app.organizations/privacy",
+        "§app.project-overseer/org-charts",
+        "§app/markdown-viewer"
       ]
     }
   },

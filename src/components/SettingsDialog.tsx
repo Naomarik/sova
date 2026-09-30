@@ -71,6 +71,7 @@ import { SessionTitleSettingsSection } from "./SessionTitleSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { TeamSettingsSection } from "./TeamSettings";
+import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
 import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -85,6 +86,7 @@ const TABS = [
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "teams", label: "Teams", icon: "command" as const },
+  { id: "profiles", label: "Profiles", icon: "wrench" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
   { id: "notifications", label: "Notifications", icon: "bell" as const },
   { id: "decisions", label: "Decisions", icon: "shield" as const },
@@ -103,7 +105,7 @@ type TabId = (typeof TABS)[number]["id"];
  * policy file every session reads — this browser, the TUI, and every subagent — so a switch here
  * is a rule, not a filter. Themes picks what this browser wears; that one is localStorage only.
  */
-export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTab }) {
+export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTab; /** The open session's folder: Profiles lists its project's. */ cwd?: string | null }) {
   // The tab it opens at (General unless a caller — the mode menu's "Configure Delegate" — asks for
   // another) is also the one `onMount` focuses: the two have to agree, or the dialog opens with
   // focus on a tab that isn't the selected one.
@@ -248,6 +250,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "teams"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-teams" aria-labelledby="settings-tab-teams">
               <TeamSettingsSection />
+            </div>
+          </Show>
+          <Show when={tab() === "profiles"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-profiles" aria-labelledby="settings-tab-profiles">
+              <ProfilesSettingsSection cwd={props.cwd ?? null} />
             </div>
           </Show>
           <Show when={tab() === "overseer"}>

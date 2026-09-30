@@ -3,7 +3,7 @@
 // Devices are PoolAgents wired to each other in-process; a crash is an agent that throws at a named
 // step and is replaced by a fresh one over the same directories (which replays the journal).
 import assert from "node:assert/strict";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
 import { after, describe, test } from "node:test";
@@ -307,6 +307,29 @@ describe("borrowing", () => {
     await w.syncAll();
     await e.agent.tick();
     assert.deepEqual(usableOn(w, L2), ["e"], "the pinned device takes its login as soon as it is free");
+  });
+
+  test("a want naming one login (a pick in the composer) borrows that one, even while another is held; none when it isn't free", async () => {
+    const { w } = await pool();
+    const d = w.dev("d");
+    const e = w.dev("e");
+    const wants = (x: Device) => (existsSync(join(x.agentDir, "claude-pool", "wants")) ? readdirSync(join(x.agentDir, "claude-pool", "wants")) : []);
+    want(d);
+    await d.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"], "d holds the first free login");
+    want(d, { only: L2 });
+    await d.agent.tick();
+    assert.deepEqual([usableOn(w, L1), usableOn(w, L2)], [["d"], ["d"]], "and borrows L2 by name while holding L1");
+    assert.deepEqual(wants(d), [], "the want is answered");
+    want(d, { only: L2 });
+    await d.agent.tick();
+    assert.deepEqual(wants(d), [], "L2 is here already: answered with no borrow");
+    await w.syncAll();
+    want(e, { only: L1 });
+    await e.agent.tick();
+    assert.deepEqual(usableOn(w, L1), ["d"], "L1 is held by d: the keeper lends it to nobody else");
+    assert.deepEqual(readAccounts(e.agentDir).value.logins.filter((l) => l.device === "e"), [], "e got no other login instead");
+    assert.deepEqual(wants(e), [], "the want is answered: nothing to borrow");
   });
 
   for (const step of ["lend-offered", "borrow-staged", "lend-committing", "lend-deleting", "borrow-activating"]) {

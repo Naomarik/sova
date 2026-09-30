@@ -44,6 +44,9 @@ const { orgLookup } = await import("./org-sessions");
 const { readBuilds, setBuildSessionMakerForTest } = await import("./build-loadout");
 const { setReconcileDeps } = await import("./reconcile");
 const { OVERSEER_SENT_ENTRY } = await import("../shared/protocol");
+const { hostOf } = await import("./org-engine");
+const { batonData, startedOf } = await import("./baton-told");
+const { readOverseerState } = await import("./overseer-store");
 
 after(async () => {
   await disposeAllChats();
@@ -307,7 +310,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
 
   test("people-facing acts run only in a turn a confirm card's click opened, listing every target (§app.overseer/org-people-facing)", async () => {
     card = null;
-    const start = { op: "start", org: org.id, project: project.id, to: tony.id, public_title: "Backups", question: "How are backups made?", goal: "Learn the backup routine" };
+    const start = { op: "start", org: org.id, project: project.id, to: tony.id, why: "Nobody has said this yet.", public_title: "Backups", question: "How are backups made?", goal: "Learn the backup routine" };
     const typed = await call("sova_gather", start);
     assert.equal(typed.ok, false);
     assert.match(typed.text, /^This reaches people or ends something: ask with sova_card, listing the project Ledger \(prj_[a-z0-9]+\), Tony Reyes \(p_[a-z0-9]+\) in its items, and act in the turn the user's click starts\.$/);
@@ -315,6 +318,12 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.equal((await call("sova_gather", start)).ok, false, "a card that didn't list the person");
     card = items(projectItem(org.id, project.id), personItem(org.id, tony.id));
     const before = baton.allBatons().length;
+    // A start says why (§app.baton/told): refused without one, after the card, and nothing starts.
+    const { why: _why, ...noWhy } = start;
+    const unexplained = await call("sova_gather", noWhy);
+    assert.equal(unexplained.ok, false);
+    assert.equal(unexplained.text, "Say why you start it (why): one or two sentences for the user, never shown to the person.");
+    assert.equal(baton.allBatons().length, before, "nothing started without a why");
     const started = await call("sova_gather", start);
     assert.ok(started.ok, started.text);
     assert.equal(baton.allBatons().length, before + 1);
@@ -324,6 +333,9 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const row = baton.batonById(id)!.row;
     assert.equal(baton.liveLinkCount(row), 0);
     assert.equal(row.startedVia, "overseer");
+    // Its chart records who started it, the Overseer's conversation and the why (§app.baton/goal-and-loadout).
+    assert.deepEqual(hostOf(org.id).data(baton.batonSid(org.id, id))?.["started"], { by: "overseer", overseerId: OVERSEER_ID, why: "Nobody has said this yet." });
+    assert.deepEqual(startedOf(row, batonData(row)), { who: "overseer", at: row.createdAt, why: "Nobody has said this yet.", overseer: { id: OVERSEER_ID, current: readOverseerState()?.current === OVERSEER_ID } });
     assert.deepEqual(row.abilities, { draw: true, readLinks: false }, "the project's set: Automatic (§app.baton/abilities)");
     // Read links only when the project allows it: refused before the card, the cap or the session.
     const refused = await call("sova_gather", { ...start, abilities: { read_links: true } });
@@ -366,7 +378,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.equal((await call("sova_org_project", { op: "add", org: org.id, name: "Bad", root: "relative/path" })).ok, false);
     assert.equal(limits.count("org"), 0);
     card = items(projectItem(org.id, project.id));
-    const g = { op: "start", org: org.id, project: project.id, to: "operator", public_title: "Mine", question: "q?", goal: "g" };
+    const g = { op: "start", org: org.id, project: project.id, to: "operator", why: "Nobody has said this yet.", public_title: "Mine", question: "q?", goal: "g" };
     const one = await call("sova_gather", g);
     assert.ok(one.ok, one.text);
     const before = baton.allBatons().length;

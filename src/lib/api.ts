@@ -1,3 +1,4 @@
+import type { ProfilesListing } from "../../shared/profiles";
 import type {
   VoiceDeviceInfo,
   VoiceStatus,
@@ -8,7 +9,6 @@ import type {
   AgentsInsight,
   SessionsDirInfo,
   AttentionDigest,
-  AttentionLaterRequest,
   ChatModeResult,
   ClaudeAccountsInfo,
   ClaudePoolInfo,
@@ -69,7 +69,7 @@ import type {
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
-import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
+import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
@@ -96,6 +96,7 @@ import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
+import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
 /**
  * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
@@ -219,6 +220,9 @@ export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/te
 
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
 export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
+/** The logins of the host that holds chat `path` (the query only routes the request there). */
+export const getChatClaudeAccounts = (path: string) =>
+  request<ClaudeAccountsInfo>(`/api/claude/accounts?path=${encodeURIComponent(path)}`);
 /** Start `claude auth login` for a new login; answers once its sign-in URL is out. */
 /** Add a login, or (with `login`) sign an existing one in again on this device. */
 export const startClaudeLogin = (login?: string) =>
@@ -320,11 +324,6 @@ export const clearDoneOverseerTodos = () => request<OverseerTodosInfo>("/api/ove
 
 /** The attention digest: what needs the user, what finished, what is running (≤30 items, tier first). */
 export const getAttention = () => request<AttentionDigest>("/api/overseer/attention");
-
-/** Needs you's Later (§app.session-list/needs-you): put act items away until their anchors change.
-    `keys` are the items' `later`. The next digest read leaves them out. */
-export const putAttentionLater = (keys: string[]) =>
-  request<{ ok: true }>("/api/attention/later", { method: "POST", body: JSON.stringify({ keys } satisfies AttentionLaterRequest) });
 
 /** Settings → Overseer. */
 export const getOverseerSettings = () => request<OverseerSettingsInfo>("/api/settings/overseer");
@@ -479,6 +478,25 @@ export const setSessionTitle = (path: string, title: string | null) =>
 
 /** The sidebar's user-made groups, in creation order. */
 export const listSessionGroups = () => request<SessionGroup[]>("/api/session-groups");
+
+/** Profiles (§chat/profiles): what a folder can use, one pick, approving and hiding (profiles are files; nothing here writes one). */
+export type ProfilePickRef = { source: "sova" | "user" | "project"; id: string };
+export const fetchProfiles = (cwd?: string | null) =>
+  request<ProfilesListing>(cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles", { cache: "no-store" });
+export const pickProfile = (path: string, profile: ProfilePickRef | { remove: string[]; grant: string[]; from?: ProfilePickRef } | null) =>
+  request<{ ok: true }>("/api/sessions/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, profile }) });
+/** Approve a project profile's powers, exactly the ones shown (§chat.profiles/trust). */
+export const approveProfile = (cwd: string, p: { id: string; grant: string[]; overseerMayStart: boolean }) =>
+  request<ProfilesListing>("/api/profiles/approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cwd, id: p.id, grant: p.grant, overseerMayStart: p.overseerMayStart }),
+  });
+export const setProfileHidden = (key: string, hidden: boolean, cwd?: string | null) =>
+  request<ProfilesListing>("/api/profiles/hidden", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, hidden, ...(cwd ? { cwd } : {}) }) });
+/** A new session in `cwd` with a profile picked; nothing is sent (the shelf's Run and Start, the chip's Run Again). */
+export const startProfileSession = (cwd: string, profile: ProfilePickRef) =>
+  request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile }) });
 
 export const createSessionGroup = (name: string) =>
   request<SessionGroup>("/api/session-groups", {
@@ -971,6 +989,8 @@ export const withdrawProjectUpdate = (id: string, pid: string, uid: string) =>
 
 export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);
+/** What It's Told (§app.baton/told): fetched when opened, the operator's only. */
+export const getBatonTold = (sid: string) => request<BatonTold>(`/api/baton/${encodeURIComponent(sid)}/told`);
 export const batonLink = (sid: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link`);
 export const revokeBatonLink = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/revoke`, jsonInit("POST"));
 export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/take`, jsonInit("POST"));
@@ -1110,3 +1130,11 @@ export const applyCalibration = (info: VoiceDeviceInfo, key: string) => request<
 export const revertCalibration = (info: VoiceDeviceInfo) => request<VoiceStatus>(calPath("/revert", info.id), jsonInit("POST", { device: info }));
 /** Forget a device: its settings, clips and runs. */
 export const forgetVoiceDevice = (id: string) => request<VoiceStatus>(`/api/voice/devices/${encodeURIComponent(id)}`, jsonInit("DELETE"));
+
+// ---- preview links (§mesh.public/preview): this host's own, never a peer's ----------------------------
+
+export const getPreviews = (orgId?: string, projectId?: string) =>
+  request<PreviewList>(`/api/previews${orgId && projectId ? `?orgId=${encodeURIComponent(orgId)}&projectId=${encodeURIComponent(projectId)}` : ""}`, { cache: "no-store" });
+export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/previews", jsonInit("POST", body));
+export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
+export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));

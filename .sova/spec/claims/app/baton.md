@@ -33,6 +33,14 @@ once), **lease** (an offer's lock on its first taker).
   with `mintLink: false` and no `owner` (the session is the operator's), and its chart records
   `startedVia: "overseer"` (§app.overseer/org-people-facing). A request body's `owner`, `mintLink`
   and `startedVia` are ignored.
+- **Who started it, and why.** Every start records it in the chart's start data as `started {by,
+  overseerId?, why?}`: `by` is `operator` (the Start form, Send to person…), `overseer` (the global
+  Overseer's `sova_gather start`) or `project-overseer` (`sova_start_gathering`, `sova_offer`, a
+  planned gathering the chart starts later); `overseerId` is that overseer's conversation; `why` is
+  the overseer's required reason, one or two sentences for the operator (§app.overseer/org-people-facing,
+  §app.project-overseer/tools). The operator's Start form asks for no reason. A request body's
+  `started` and `why` are ignored. The why is never in the session's prompt, so its model never sees
+  it.
 - It is a webapp-owned session whose file lives in the org's workspace repo (`sessions/`), whose
   cwd is that repo, and whose file carries an invisible `sova-baton` marker `{v:1, orgId,
   projectId}`. Its standing — holder, hand-offs, offers and leases, budget, the reply running, the
@@ -41,7 +49,9 @@ once), **lease** (an offer's lock on its first taker).
   the file can't be made, the chart says so and nothing half-made is left. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its
   public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
   holder, state and message count — and the public title, only when the session head above shows a
-  different one (a renamed session): otherwise it would say the title twice — and Get Link / Turn Off Link / Take Back / Close
+  different one (a renamed session): otherwise it would say the title twice — who started it and
+  when (§app.baton/told), its why and goal, folded under **Why and goal** (§app.baton/goal-on-strip),
+  What It's Told (§app.baton/told), and Get Link / Turn Off Link / Take Back / Close
   Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations); the strip never shows a profile. Each strip action re-reads the session list at once,
   so the ` · <holder>` suffix moves without waiting for the list's next poll.
 - **Loadout.** No pi-config extension, skill, prompt template or context file is loaded; the only
@@ -99,6 +109,61 @@ once), **lease** (an offer's lock on its first taker).
   two tabs extending at once each show what the server now holds. While an open session is at its limit the strip says "The message limit is reached
   (<used> of <max>). Extend it to go on." with **Extend by** [20] and **Extend**, and its where-line
   reads "with you — extend the limit to write" while the operator holds it.
+
+## §app.baton/goal-on-strip — The why and the goal, folded on the strip
+
+- The strip (§app.baton/goal-and-loadout) shows the session's why and goal to the operator under a
+  **Why and goal** disclosure, below the org, project, **It can:** and **Started by** lines. It is
+  folded each time the session opens (no open state is kept), and its summary says only "Why and
+  goal", with no preview of the text; the whole summary row is a 44px target.
+- Opened, it shows **Why**: the reason the overseer that started it gave (§app.baton/told), as
+  written; "Not recorded: you started it." for a session the operator started, and "Not recorded."
+  for an overseer's session from before a reason was asked. Then **Goal**: the goal as written
+  (line breaks kept), left out when it is empty. Then one muted line: "Only you see this. It's
+  never on their page."
+- The why and the goal reach only the operator app: `GET /api/baton` (`BatonInfo.session.goal`,
+  `BatonInfo.started.why`) and What It's Told (§app.baton/told). They never reach the person's page
+  (§app.baton/outsider-view), the owner page (§app.owner-page/never) or any share.
+
+## §app.baton/told — Who started it, and what it is told
+
+- **Started by.** The strip always shows one line under **It can:**: "Started by you · {relative
+  time}", "Started by the {project} overseer · {relative time}" or "Started by you, via the
+  Overseer · {relative time}" (the time is the session's start). The overseer part links to that
+  overseer: the project's overseer page, or the Overseer (its current conversation, else that
+  conversation read-only from its History).
+- **Where it comes from.** Read from the chart's `started` (§app.baton/goal-and-loadout). A session
+  from before `started` reads its `owner` (`{overseerOf}`: the project's overseer) and `startedVia`
+  (`"overseer"`: you, via the Overseer), else you; the Overseer's conversation, when the chart lacks
+  it, from the session's start row in the transition log (§app.project-overseer/org-charts). Nothing
+  else is inferred: a part not recorded reads "Not recorded.".
+- **What It's Told**, a strip button at every width, opens the markdown viewer (§app/markdown-viewer) on one read-only
+  document titled "What It's Told", with the public title under it, fetched when opened from
+  `GET /api/baton/:sid/told` (404 for a session that isn't a gathering session). Its sections:
+  - **Started by**: who, with the strip's link, and when; and what it was started for: the gap (its id
+    and title), the conflict it settles (its area), the session it came from (a link), or the to-do
+    or idea Send to person… started it from.
+  - **Why** and **Goal**, as the strip's disclosure shows them.
+  - **Prompt**: the system prompt as the session file last recorded it — pi's system entries on its
+    active branch, replayed as pi replays them, never rendered again — with "Last changed {time},
+    sent with every reply since.", in a fenced block. Before its first reply the file has none: the
+    prompt the next reply would get is rendered then, headed "Not sent yet: what the next reply
+    would get.". Once the wrap-up has begun (§app.organizations/wrap-up), the conversation's prompt
+    is the one before it and the wrap-up's prompt is a section of its own, **Wrap-up prompt**.
+  - **Tools**: each tool the conversation's model has, as last recorded before any wrap-up (before
+    its first reply, the ones the next reply would get), with its description, the ability that
+    turns it on (`read_link`: Read links, §app.baton/abilities) and its parameters in a JSON block;
+    then the loadout's tools it doesn't have now (`read_link` while it can't read links,
+    `write_profile_updates` outside the wrap-up), by name.
+  - **Model**: the model and thinking level its file last recorded, else the chart's, else "the
+    new-session default"; and the message limit, {used} of {max}.
+  - It ends with "Only you see this. It's never on their page."
+- **The operator's only.** The prompt holds the holder's private steering profile and the "who
+  decides what" list, and nothing here is for anyone else: none of it — who started it, the
+  overseer's id, the why, the prompt, the tools — reaches the person's page or its socket
+  (§app.baton/outsider-view), the owner page (§app.owner-page/never), a session share, the session
+  list's baton field or the org page's session rows. The share listener answers 404 for
+  `/api/baton/:sid/told`. Nothing on it changes the session.
 
 ## §app.baton/hand-off — hand_to, goal_done, record_decision
 
@@ -381,7 +446,9 @@ once), **lease** (an offer's lock on its first taker).
   `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). Every other path
   answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
   escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
-  `/ext/*` are unreachable on it. The main listener never serves the share page.
+  `/ext/*` are unreachable on it. The main listener never serves the share page. A request whose `Host` is a
+  preview host is the preview's (§mesh.public/preview-address), with its own limits and answers
+  (§mesh.public/preview-limits, §mesh.public/preview-proxy); nothing below applies to it.
 - Limits: request bodies over 16 KB (or without a length) are refused (413); a request's headers
   must arrive within 10 seconds and the whole request within 15 (408); per token 10 messages
   a minute (429; tokens with no message in the last minute are forgotten) and one WebSocket (a new one replaces the old, which is told it opened
@@ -487,16 +554,9 @@ once), **lease** (an offer's lock on its first taker).
 - A person proposed from the session and still waiting (§app.organizations/referrals) is a
   decide-tier item `roster-proposal`, "Approve Bob Smith (IT lead) proposed by Tony Reyes?", listed
   in the Organizations region's Needs you.
-- **Later** (§app.session-list/needs-you) covers these rows too: each item carries a `later` key.
-  A person waiting on you and a send-link are anchored on their hand-off (a send-link for an open
-  offer on the offer), so a new hand-off or offer brings the row back. No message does: while the
-  baton is with the operator, or with a person who has no link, nobody else can write in the
-  session, and the operator's own messages (and the replies to them) are not new. A roster proposal is anchored on its proposed person, so
-  only a new proposal brings its row back. Answering clears them as before. The session list's
-  `baton` field carries the same key on each wait (`needsYou.later`, `sendLink.later`,
-  `proposals[i].later`), and a wait put away is left out of that field until its anchor moves, as
-  its item is left out of the digest, and out of the organization card's waiting counts
-  (§app.organizations/org-cards).
+- Nothing puts these rows away but answering them: every wait is listed, in the digest, the
+  session list's `baton` field and the organization card's waiting counts
+  (§app.organizations/org-cards), until it is answered.
 - Any change to a baton session's chart or its links (Get Link, a reply, Extend, Take back, a
   hand-off, approve, decline, close) re-diffs the session list at once (a baton session's state is
   part of what the list compares), and the page re-reads the attention digest whenever it re-reads the list for

@@ -189,7 +189,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
 
   test("a gathering session the overseer starts: its model never gets it", async () => {
     const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_start_gathering")!;
-    const out = await tool.execute("t1", { gap: "none", person: "Tony Reyes", public_title: "Servers", goal: "Find where the ledger runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
+    const out = await tool.execute("t1", { gap: "none", person: "Tony Reyes", why: "Nobody has said this yet.", public_title: "Servers", goal: "Find where the ledger runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
     const id = (out.details as { id: string }).id;
     const hit = baton.batonById(id)!;
     const path = baton.sessionPathOf(hit.dir, hit.row);

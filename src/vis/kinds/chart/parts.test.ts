@@ -78,9 +78,29 @@ test("pctText: tiny, small and whole shares", () => {
   assert.deepEqual([0, 0.004, 0.045, 0.0999, 0.5, 1].map(pctText), ["0%", "<1%", "4.5%", "10%", "50%", "100%"]);
 });
 
+test("parts past of: draw exactly as without of:, with a warning", () => {
+  const over = 'type: parts\nunit: MB\nof: 4.19\n"Screenshots" 4.18 warn\n"Text + JSON" 0.23\nmark "Screenshots"';
+  const r = parseVis("chart", over);
+  if (!r.ok) assert.fail(r.message);
+  assert.deepEqual(r.warnings, [{ line: 3, message: "the parts add up to 4.41, more than of: 4.19: drawn without of:" }]);
+  // The same spec as the fence with its of: line dropped (but for the warning it carries).
+  const without = parseVis("chart", over.replace("of: 4.19\n", ""));
+  assert.ok(without.ok);
+  const { warnings, ...drawn } = r.spec;
+  assert.deepEqual(drawn, without.spec);
+  assert.equal(warnings!.length, 1);
+  // So: no capacity, no free rest, shares of the total, "in total" in the head.
+  const d = partsOf(r.spec as ChartSpec);
+  assert.deepEqual(d.parts.map((p) => [p.label, p.valueText, p.pctText]), [["Screenshots", "4.18", "95%"], ["Text + JSON", "0.23", "5.2%"]]);
+  assert.deepEqual(d.head, { value: "4.41 MB", rest: " in total" });
+  const flat = unweighted((t, px) => t.length * px * 0.6);
+  assert.equal(partsHeight(r.spec as ChartSpec, 600, flat), partsHeight(without.spec as ChartSpec, 600, flat));
+  // At or under the capacity nothing changes: of: kept, no warning.
+  const full = parseVis("chart", "type: parts\nof: 10\na 4\nb 6");
+  assert.ok(full.ok && (full.spec as ChartSpec).of === 10 && full.warnings.length === 0);
+});
+
 test("parts: each error says what to write", () => {
-  assert.match(err("type: parts\nof: 100\na 60\nb 50").message, /add up to 110, more than of: 100/);
-  assert.equal(err("type: parts\nof: 100\na 60\nb 50").line, 2);
   const neg = err("type: parts\na 5\nb -2");
   assert.match(neg.message, /can't be negative/);
   assert.equal(neg.line, 3);

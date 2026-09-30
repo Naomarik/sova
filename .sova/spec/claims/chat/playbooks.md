@@ -9,14 +9,14 @@ current chat as your turn, through the chat's ordinary send path.
 ## §chat.playbooks/where-playbooks-come-from — Where playbooks come from
 
 `GET /api/playbooks?cwd=…` returns a `PlaybookCatalog` (`shared/protocol.ts`), built by
-`server/playbooks.ts`. It rescans three folders on every request, with no watch and no cache.
+`server/playbooks.ts`. It rescans its folders on every request, with no watch and no cache.
 The dialog fetches once each time it opens.
 
 | Group | `source` | Folder | Notes |
 |---|---|---|---|
 | **Sova** | `sova` | `playbooks/` at the Sova repo root | Shipped with Sova |
 | **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches a shipped one **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts` |
-| **This project** | `project` | `<cwd>/.sova/marketing/playbooks/` | Generated for one project. It never replaces anything. It is always its own group, even when an id matches one above |
+| **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above |
 
 **The grammar is the same in all three folders.** A playbook is a directory `<id>/` holding a
 `PLAYBOOK.md`, plus whatever `phases/` or `templates/` its body tells the agent to read.
@@ -50,17 +50,18 @@ it couldn't:
 
 | State | When | Dialog shows |
 |---|---|---|
-| `ok` | The cwd is a local folder and its playbooks folder was read (or doesn't exist) | Its playbooks under This project. With none, no heading |
+| `ok` | The cwd is a local folder and its project's playbooks folders were read (or don't exist) | Its playbooks under This project. With none, no heading |
 | `none` | No cwd was sent | Nothing |
 | `remote` | The cwd is on a remote target | A caption note below the groups |
-| `missing` | The cwd is relative, doesn't exist, isn't a folder, or can't be read. It is also `missing` when `<cwd>/.sova/marketing/playbooks/` exists but can't be read | A caption note below the groups |
+| `missing` | The cwd is relative, doesn't exist, isn't a folder, or can't be read. It is also `missing` when one of the project's playbooks folders exists but can't be read | A caption note below the groups |
 
 The note is the **server's `message`**, which names the target or the folder and the actual
 fault. A client fallback is used only when the server sent no message (§design/copy-deck).
 
 **Remote is decided lexically.** This is exactly how `/api/files` (`server/files.ts`) decides
 it. A relative cwd is refused as `missing`, then a remote cwd is refused, all before any
-filesystem call. Only a cwd that survives both is `stat`ed. This order matters: a remote
+filesystem call. Only a cwd that survives both is `stat`ed, and then its project is found
+(§chat.profiles/projects). This order matters: a remote
 placeholder must never be read as a local folder.
 
 ## §chat.playbooks/entry-point — Entry point
@@ -184,8 +185,9 @@ these **per session for the page's lifetime**, in memory only, so a reload loses
 
 ## §chat.playbooks/what-gets-sent — What gets sent
 
-`playbookTurnText()` in `src/lib/playbooks.ts`, pinned by `src/lib/playbooks.test.ts`, builds
-exactly:
+`playbookTurnText()` in `shared/playbooks.ts` (re-exported by `src/lib/playbooks.ts` and pinned
+by `src/lib/playbooks.test.ts`; a profile's linked playbook uses the same one,
+§chat.profiles/playbook) builds exactly:
 
 ```
 Playbook: <title> — <absolute dir>

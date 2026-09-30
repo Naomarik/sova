@@ -258,7 +258,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     const was = store.readPoSettings(sp);
     // With a hold (q10) the unattended start waits for the operator to cancel it: nothing exists yet.
     store.writePoSettings(sp, { ...was, holdMin: 10 });
-    const held = await tool.execute("t0", { gap: "none", person: "Tony", public_title: "Payment terms", goal, question: "What payment terms do we offer?" }, undefined, undefined, undefined as never);
+    const held = await tool.execute("t0", { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "Payment terms", goal, question: "What payment terms do we offer?" }, undefined, undefined, undefined as never);
     assert.match((held.content as { text: string }[])[0]!.text, /^Held: starting "Payment terms" with Tony waits until .+ so the operator can cancel it/);
     assert.ok((held.details as { held?: string }).held);
     assert.equal(baton.allBatons().filter((b) => b.publicTitle === "Payment terms").length, 0, "held: no session yet");
@@ -266,7 +266,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     assert.equal((await hostOf(org.id).act(h.sessionId, "hold/cancel", { id: h.id }, envelopeFor(org.id, project.id, { by: "operator", attended: true }), { settle: true })).taken, true);
     // With none it starts at once.
     store.writePoSettings(sp, { ...was, holdMin: 0 });
-    const out = await tool.execute("t1", { gap: "none", person: "Tony", public_title: "Payment terms", goal, question: "What payment terms do we offer?" }, undefined, undefined, undefined as never);
+    const out = await tool.execute("t1", { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "Payment terms", goal, question: "What payment terms do we offer?" }, undefined, undefined, undefined as never);
     const id = (out.details as { id: string }).id;
     const hit = baton.batonById(id)!;
     assert.deepEqual(hit.row.owner, { overseerOf: project.id });

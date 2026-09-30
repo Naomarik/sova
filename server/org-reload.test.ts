@@ -74,9 +74,23 @@ test("a broken org snapshot: the page still opens (id, problems, Reload), every 
   assert.match(page.problems[0]!, /can't be read/);
   assert.equal(page.roster.length, 1, "what still loads is shown");
   assert.ok((await call("GET", "/api/orgs")).status === 200, "the list still opens");
-  const refused = await call("PATCH", `/api/orgs/${org.id}`, { name: "Renamed" });
-  assert.equal(refused.status, 409);
-  assert.match(((await refused.json()) as { error: string }).error, /Fix or restore it, then reload\.$/);
+  // Every org-level act answers the workspace sentence (never "no readable organization").
+  mkdirSync(join(root, "proj-org"), { recursive: true });
+  const lina = page.roster[0]!;
+  for (const [method, path, body] of [
+    ["PATCH", `/api/orgs/${org.id}`, { name: "Renamed" }],
+    ["PATCH", `/api/orgs/${org.id}`, { about: "We make invoices." }],
+    ["POST", `/api/orgs/${org.id}/about/revert`, { at: new Date().toISOString() }],
+    ["PUT", `/api/orgs/${org.id}/owner`, { personId: lina.id }],
+    ["POST", `/api/orgs/${org.id}/projects`, { name: "Site", root: join(root, "proj-org") }],
+    ["POST", `/api/orgs/${org.id}/people`, { name: "New Person", role: "Ops" }],
+    ["POST", `/api/orgs/${org.id}/commit`, undefined],
+  ] as const) {
+    const r = await call(method, path, body);
+    const text = await r.text();
+    assert.equal(r.status, 409, `${method} ${path}: ${text}`);
+    assert.match((JSON.parse(text) as { error: string }).error, /^The workspace repo has a problem: .* can't be read\. Fix or restore it, then reload\.$/, `${method} ${path}`);
+  }
   writeFileSync(file, good);
   const back = (await (await call("POST", `/api/orgs/${org.id}/reload`)).json()) as OrgDetail;
   assert.deepEqual([back.name, back.problems], ["Broken", []]);

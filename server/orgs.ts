@@ -23,10 +23,10 @@ import {
   type ProfileChange,
   type StakeholderChange,
 } from "../shared/orgs";
-import { actOrThrow, closeOrgHost, envelopeFor, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, type OrgHostApi } from "./org-engine";
+import { actOrThrow, closeOrgHost, envelopeFor, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, refusalError, type OrgHostApi } from "./org-engine";
 import type { Envelope, EnvelopeCard } from "./org-envelope";
 import { hostIdentity } from "./org-holder";
-import { OrgHost } from "./org-host";
+import { OrgHost, OrgWorkspaceError } from "./org-host";
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
 import { commitEveryMs } from "./workspace-commits";
@@ -418,6 +418,10 @@ function orgOfData(orgId: string, d: Record<string, unknown>): Org {
 
 export function readOrg(orgId: string): Org {
   const dir = orgDir(orgId);
+  // Its own snapshot doesn't load: every act on the org is refused with the workspace sentence (reads use
+  // readOrgOrPlaceholder).
+  const bad = orgHost(orgId).problems().find((p) => p.sessionId === orgSid(orgId));
+  if (bad) throw refusalError(new OrgWorkspaceError(bad.file).refusal);
   const d = orgHost(orgId).data(orgSid(orgId));
   if (!d) throw new OrgError(`The workspace repo at ${dir} has no readable organization`, 409);
   return orgOfData(orgId, d);
@@ -586,6 +590,7 @@ function writeAbout(dir: string, to: string, revertOf?: string, by: OperatorBy =
 /** Set the About text back to history line `at`'s `from`, as a new operator change. */
 export function revertOrgChange(orgId: string, at: string, by: OperatorBy = OPERATOR_BY): void {
   const dir = orgDir(orgId);
+  readOrg(orgId); // an org whose snapshot doesn't load: the workspace sentence
   const line = readOrgHistoryFile(dir).find((c) => c.at === at);
   if (!line) throw new OrgError("No such change", 404);
   writeAbout(dir, line.from, at, by);
@@ -593,8 +598,7 @@ export function revertOrgChange(orgId: string, at: string, by: OperatorBy = OPER
 
 export async function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }, by: OperatorBy = OPERATOR_BY): Promise<Org> {
   const dir = orgDir(orgId);
-  // Unreadable: the act below answers "Fix or restore it, then reload."
-  if (!unreadable(orgId, orgSid(orgId))) readOrg(orgId);
+  readOrg(orgId);
   const about = patch.about === undefined ? undefined : cleanAbout(patch.about);
   if (patch.name !== undefined) await actOrThrow(orgId, orgSid(orgId), "org/rename", { name: patch.name }, operatorEnvelope(orgId, null, by));
   if (about !== undefined) writeAbout(dir, about, undefined, by);

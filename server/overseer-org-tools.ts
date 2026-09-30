@@ -75,7 +75,7 @@ const enc = encodeURIComponent;
 
 /** The refusal of a people-facing act outside a confirmed turn (§app.overseer/org-people-facing). */
 export const confirmRefusal = (what: string) =>
-  `This reaches people or ends something: ask with sova_confirm, listing ${what} in its items, and act in the turn the user's click starts.`;
+  `This reaches people or ends something: ask with sova_card, listing ${what} in its items, and act in the turn the user's click starts.`;
 /** What a started gathering session or offer says instead of a link. */
 export const noLinkNote = (names: string[]) => `No link was made: Needs you asks you to send ${names.join(", ")} their link.`;
 

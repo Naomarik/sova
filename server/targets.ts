@@ -25,7 +25,7 @@ export type { Target };
 
 export const targetsFile = () => targetsFilePath(getAgentDir());
 
-/** Shared local-create rule for New Session and fresh fanout: trimmed, absolute, an
+/** The local-create rule for New Session: trimmed, absolute, an
  *  existing directory. Local statSync has no deadline. The caller creates with the trimmed cwd. */
 export async function validateNewSessionCwd(raw: string): Promise<string | null> {
   const cwd = raw.trim();

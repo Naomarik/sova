@@ -171,7 +171,7 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -179,7 +179,9 @@
         "src/lib/storage-keys.ts",
         "src/lib/signals.ts",
         "src/lib/signals.test.ts",
-        "src/lib/summary-diff.ts"
+        "src/lib/summary-diff.ts",
+        "src/lib/readiness.ts",
+        "src/lib/readiness.test.ts"
       ]
     },
     "§app.session-list/archive-by-date": {
@@ -219,7 +221,9 @@
         "src/lib/folder-open.ts",
         "server/sessions-index.ts",
         "server/sessions-context.test.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/lib/readiness.ts",
+        "src/lib/readiness.test.ts"
       ]
     },
     "§app.session-list/groups": {
@@ -230,7 +234,8 @@
         "src/design/base.css",
         "src/components/Groups.tsx",
         "src/components/Sidebar.tsx",
-        "server/index.ts"
+        "server/index.ts",
+        "server/session-groups-index.test.ts"
       ]
     },
     "§app.session-list/recent": {
@@ -279,7 +284,7 @@
     "§app.session-list/selecting-several-sessions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/lib/session-selection.ts",
         "src/lib/session-selection.test.ts",
@@ -535,7 +540,8 @@
       "authority": "accepted",
       "evidence": "unreviewed",
       "code": [
-        "src/components/NewSessionDialog.tsx"
+        "src/components/NewSessionDialog.tsx",
+        "server/targets.ts"
       ]
     },
     "§app/session-list": {
@@ -1109,8 +1115,7 @@
         "§app.session-list/needs-you",
         "§app.session-list/recent",
         "§mesh.ui/card",
-        "§app.extensions/cards",
-        "§workspace.fanout/entry-points"
+        "§app.extensions/cards"
       ]
     },
     "§chat.transcript/live-watch": {
@@ -1292,11 +1297,6 @@
       "authority": "accepted",
       "evidence": "reviewed"
     },
-    "§design.copy-deck/fanout": {
-      "kind": "note",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
     "§design.copy-deck/images": {
       "kind": "note",
       "authority": "accepted",
@@ -1355,12 +1355,15 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",
         "src/lib/session-selection.ts",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "src/lib/readiness.ts",
+        "src/lib/needs-you.ts",
+        "src/lib/signals.ts"
       ]
     },
     "§design.copy-deck/slash-commands": {
@@ -1386,7 +1389,7 @@
     "§design.copy-deck/workspace": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§design.ground-rules/color-budget": {
       "kind": "note",
@@ -1472,76 +1475,6 @@
       "authority": "accepted",
       "evidence": "verified"
     },
-    "§workspace.fanout/classes": {
-      "kind": "note",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/cost-preview": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/entry-points": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "src/components/ComposerMenu.tsx",
-        "src/components/ChatView.tsx",
-        "src/lib/older-rows.ts",
-        "shared/row-counts.ts",
-        "src/lib/message-count.ts"
-      ]
-    },
-    "§workspace.fanout/states": {
-      "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/the-dialog": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/the-fork-point-in-a-transcript": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "src/components/GroupView.tsx",
-        "src/lib/jump.ts"
-      ]
-    },
-    "§workspace.fanout/the-route": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/targets.ts",
-        "server/fanout.ts"
-      ]
-    },
-    "§workspace.fanout/tokens": {
-      "kind": "note",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/two-sources": {
-      "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/what-creation-does": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/fanout.ts",
-        "server/chat-manager.ts",
-        "server/fork.ts"
-      ]
-    },
     "§workspace.groups/a-pane": {
       "kind": "behavior",
       "requires": [
@@ -1558,8 +1491,11 @@
     },
     "§workspace.groups/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/App.tsx"
+      ]
     },
     "§workspace.groups/announcements": {
       "kind": "behavior",
@@ -1568,23 +1504,23 @@
     },
     "§workspace.groups/classes": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/data": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§workspace.groups/decisions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§workspace.groups/group-lifecycle": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§workspace.groups/keyboard": {
       "kind": "behavior",
@@ -1607,7 +1543,7 @@
     "§workspace.groups/member-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§workspace.groups/rejected": {
       "kind": "note",
@@ -1648,7 +1584,8 @@
         "src/lib/group-prompt.ts",
         "src/lib/group-prompt.test.ts",
         "src/lib/input-mode.ts",
-        "src/components/VoiceInput.tsx"
+        "src/components/VoiceInput.tsx",
+        "server/group-prompt.ts"
       ]
     },
     "§workspace.groups/tokens": {
@@ -1656,15 +1593,13 @@
       "authority": "accepted",
       "evidence": "verified"
     },
-    "§workspace/fanout": {
-      "kind": "surface",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
     "§workspace/groups": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/GroupView.tsx"
+      ]
     },
     "§chat.transcript/setup-card-figures": {
       "kind": "behavior",
@@ -2188,9 +2123,9 @@
         "shared/image-note.ts",
         "server/transcript.ts",
         "server/sessions-index.ts",
-        "server/fork.ts",
         "server/chat-manager.ts",
-        "src/lib/live.ts"
+        "src/lib/live.ts",
+        "server/image-note.test.ts"
       ]
     },
     "§mesh.peers/allowlist": {
@@ -2697,7 +2632,10 @@
         "server/signals-store.ts",
         "server/attention.test.ts",
         "shared/protocol.ts",
-        "server/align-state.ts"
+        "server/align-state.ts",
+        "server/needs-you-later.ts",
+        "server/needs-you-later.test.ts",
+        "server/index.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -2718,7 +2656,11 @@
         "src/lib/overseer-draft.test.ts",
         "server/overseer-store.test.ts",
         "src/components/OverseerSettings.tsx",
-        "server/overseer-org-tools.test.ts"
+        "server/overseer-org-tools.test.ts",
+        "src/components/Composer.tsx",
+        "src/lib/settings-nav.ts",
+        "src/design/base.css",
+        "server/overseer-prompt.md"
       ],
       "requires": []
     },
@@ -2743,7 +2685,15 @@
         "server/project-overseer-tools.test.ts",
         "src/lib/overseer.test.ts",
         "src/lib/hidden-rows.test.ts",
-        "server/overseer-org-tools.test.ts"
+        "server/overseer-org-tools.test.ts",
+        "shared/overseer-card.ts",
+        "shared/overseer-card.test.ts",
+        "server/overseer-card-tool.ts",
+        "server/overseer.ts",
+        "server/project-overseer.ts",
+        "src/components/OverseerCardChip.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -2815,7 +2765,9 @@
         "src/lib/slash.ts",
         "src/components/Composer.tsx",
         "src/components/ChatView.tsx",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "shared/overseer-grants.ts",
+        "server/overseer-approvals.test.ts"
       ],
       "requires": [
         "§app.session-list/regions-top-and-archive",
@@ -2825,7 +2777,7 @@
     "§app.overseer/links": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/session-links.ts",
         "src/lib/markdown.ts",
@@ -2837,7 +2789,7 @@
     "§app.overseer/navigation": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-tools.ts",
         "src/lib/overseer.ts",
@@ -2968,7 +2920,7 @@
     "§app.settings-dialog/overseer": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/OverseerSettings.tsx",
         "src/components/SettingsDialog.tsx",
@@ -2980,9 +2932,15 @@
         "src/components/WorkerSlotRow.tsx",
         "src/lib/delegate-form.ts",
         "server/overseer-store.ts",
-        "src/components/PushSettings.tsx"
+        "src/components/Composer.tsx",
+        "src/design/base.css",
+        "src/lib/overseer-draft.test.ts"
       ],
-      "requires": []
+      "requires": [
+        "§app.settings-dialog/save-bar",
+        "§app.overseer/caps",
+        "§design.copy-deck/settings-overseer"
+      ]
     },
     "§app/overseer": {
       "kind": "surface",
@@ -3440,7 +3398,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3453,7 +3411,11 @@
         "server/attention-memo.test.ts",
         "server/org-routes.ts",
         "server/overseer.ts",
-        "server/attention.ts"
+        "server/attention.ts",
+        "src/components/RowMenu.tsx",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "src/lib/org-region.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -3978,7 +3940,9 @@
         "server/baton-offers.test.ts",
         "src/lib/org-region.ts",
         "server/baton-links.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "shared/baton.ts",
+        "server/needs-you-later.test.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest"
@@ -4807,7 +4771,7 @@
         "§chat.worktrees/inherit"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "server/insights.ts",
         "server/worktrees-state.ts",
@@ -5116,7 +5080,6 @@
         "src/lib/recent.test.ts",
         "src/lib/home-sessions.ts",
         "src/lib/home-sessions.test.ts",
-        "src/components/FanoutDialog.tsx",
         "src/components/Groups.tsx",
         "src/components/SelectionToolbar.tsx",
         "src/lib/session-selection.ts",
@@ -5127,7 +5090,7 @@
     "§app.session-list/organizations": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "requires": [
         "§app.session-list/ordinary-surfaces",
         "§app.organizations/org-sessions",
@@ -5335,11 +5298,13 @@
         "public/sw.js",
         "src/lib/push-draft.test.ts",
         "src/lib/push.test.ts",
-        "server/push.test.ts"
+        "server/push.test.ts",
+        "src/lib/settings-nav.ts"
       ],
       "requires": [
         "§app.settings-dialog/save-bar",
-        "§app.notifications/delivery"
+        "§app.notifications/delivery",
+        "§design.copy-deck/settings-overseer"
       ]
     },
     "§app/notifications": {
@@ -9033,6 +8998,143 @@
         "server/session-shares.test.ts",
         "src/share/SessionShareApp.tsx"
       ]
+    },
+    "§workspace.groups/legacy-groups": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/auto-titles"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-groups.ts",
+        "server/session-groups.test.ts",
+        "server/group-prompt-wiring.test.ts",
+        "server/chat-manager.ts",
+        "server/session-autotitle.ts",
+        "server/session-autotitle.test.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/session-groups.ts",
+        "src/lib/session-groups.test.ts",
+        "src/components/GroupView.tsx"
+      ]
+    },
+    "§workspace.groups/making-a-comparison": {
+      "kind": "behavior",
+      "requires": [
+        "§app.overseer/tools",
+        "§app.session-list/groups"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer-prompt.md",
+        "server/index.ts",
+        "server/merge-routes.test.ts",
+        "server/chat-model.test.ts",
+        "src/components/GroupView.tsx",
+        "src/components/NewSessionDialog.tsx",
+        "src/components/OverviewActions.tsx",
+        "src/App.tsx"
+      ]
+    },
+    "§workspace.groups/send-all-mode": {
+      "kind": "behavior",
+      "requires": [
+        "§workspace.groups/the-group-composer",
+        "§workspace.groups/layout-tabs",
+        "§workspace.groups/shell",
+        "§workspace.groups/announcements",
+        "§design.copy-deck/workspace"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/GroupView.tsx",
+        "src/components/GroupComposer.tsx",
+        "src/lib/group-layout.ts",
+        "src/lib/group-layout.test.ts",
+        "src/lib/ui-state.ts",
+        "src/App.tsx",
+        "src/app.css",
+        "src/components/Composer.tsx"
+      ]
+    },
+    "§app.overseer/approvals": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/overseer-grants.ts",
+        "shared/overseer-grants.test.ts",
+        "shared/overseer-card.ts",
+        "server/overseer-card-tool.ts",
+        "server/overseer.ts",
+        "server/overseer-tools.ts",
+        "shared/protocol.ts",
+        "src/components/OverseerPermitsChip.tsx",
+        "src/components/OverseerCards.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx",
+        "src/design/base.css",
+        "server/overseer-prompt.md",
+        "server/overseer-approvals.test.ts",
+        "server/index.ts",
+        "src/lib/api.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§app.overseer/confirm",
+        "§app.overseer/caps",
+        "§app.overseer/org-people-facing"
+      ]
+    },
+    "§app.overseer/auto-resume": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/auto-resume.ts",
+        "server/auto-resume.test.ts",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/overseer-store.ts",
+        "shared/protocol.ts",
+        "src/components/OverseerSettings.tsx"
+      ],
+      "requires": [
+        "§app.overseer/caps",
+        "§app.overseer/proactivity",
+        "§app.overseer/sent-marker",
+        "§app.settings-dialog/overseer"
+      ]
+    },
+    "§app.overseer/session-names": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-names.ts",
+        "server/session-names.test.ts",
+        "server/attention.ts",
+        "server/overseer.ts",
+        "server/overseer-tools.ts",
+        "server/push.ts",
+        "shared/overseer-card.ts",
+        "shared/protocol.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§app.overseer/attention-digest",
+        "§app.overseer/proactivity",
+        "§app.notifications/delivery"
+      ]
+    },
+    "§design.copy-deck/settings-overseer": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "reviewed"
     }
   },
   "boundary": {

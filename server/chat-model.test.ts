@@ -1,8 +1,8 @@
 // Run: npx tsx --test server/chat-model.test.ts
-// Gate: the open-time half of the fanout model fix. The SDK restores a session's recorded model
+// Gate: a message-less session's recorded model at open. The SDK restores a session's recorded model
 // only when the branch already has MESSAGES (sdk.js gates the restore on messages.length > 0),
-// so openSession must bind it itself for the one shape that has none — a fresh fanout member,
-// whose file records its model and nothing else (server/fanout.ts fresh()). Hermetic on purpose:
+// so openSession must bind it itself for the one shape that has none — a file that records its
+// model and nothing else. Hermetic on purpose:
 // the stub manager answers buildSessionContext() (the SDK's own branch-aware accessor — an
 // off-branch file scan would bind a model from a rewound session's abandoned branch), and the
 // stub runtime answers the SDK's own two restore guards: getModel, then hasConfiguredAuth.
@@ -28,7 +28,7 @@ const runtime = (known: Record<string, object>, authed: string[]) =>
 const GLM = { provider: "zai", id: "glm-5.3", contextWindow: 128_000 };
 const SAVED = { provider: "ollama-cloud", id: "deepseek-v4.1-flash", contextWindow: 128_000 };
 
-test("open-time model precedence: recorded fanout choice outranks a different global default", () => {
+test("open-time model precedence: a recorded choice outranks a different global default", () => {
   const rt = runtime({ "zai/glm-5.3": GLM, "ollama-cloud/deepseek-v4.1-flash": SAVED }, ["zai", "ollama-cloud"]);
   const saved = rt.getModel(SAVED.provider, SAVED.id)!;
   const sm = manager([], { provider: "zai", modelId: "glm-5.3" });
@@ -53,7 +53,7 @@ test("open-time model precedence: ordinary history without eligible default stay
 });
 
 test("a message-less session with a recorded model binds THAT model", () => {
-  // The fanout member at open: header + model_change, no messages yet.
+  // Header + model_change, no messages yet.
   const resolved = recordedModelForEmptyBranch(manager([], { provider: "zai", modelId: "glm-5.3" }), runtime({ "zai/glm-5.3": GLM }, ["zai"]));
   assert.equal(resolved, GLM, "the exact model object the runtime's getModel resolved");
 });
@@ -83,8 +83,8 @@ const context = (messages: Message[], model: Recorded) => manager(messages, mode
 
 test("only a message-less branch that already records that exact model calls the append a restatement", () => {
   const recorded = context([], { provider: "zai", modelId: "glm-5.3" });
-  // The shape a fanout member opens as: dropping this is the point — the alternative is the same
-  // `Model:` row twice in every pane, because transcript.ts renders one row per entry.
+  // Dropping this is the point — the alternative is the same
+  // `Model:` row twice on open, because transcript.ts renders one row per entry.
   assert.equal(restatesRecordedModel(recorded, "zai", "glm-5.3"), true, "the recorded pair, once");
   // A different pair is a real change and must be written: the fallback default that follows an
   // unauthenticated recorded model, and a different model of the same provider.

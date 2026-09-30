@@ -1,7 +1,7 @@
 import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { CURRENT_SESSION_FORMAT, OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
+import { OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
@@ -27,6 +27,7 @@ import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-sto
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { batonSummaryField } from "./baton";
+import { withBatonLater } from "./attention";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { orgCodingIds, orgLookup } from "./org-sessions";
 import { orgOfSessionPath, readIndex } from "./orgs";
@@ -656,11 +657,6 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
     const hostCwd = extraSessionRoots().includes(dirname(path)) ? cwdOverride(path) : undefined;
     const cwd = hostCwd ?? (typeof h.cwd === "string" ? h.cwd : "");
-    // An older session format is fanout-source metadata (legacyFormat ⇔ version ≠ current,
-    // pre-versioning headers read as 1 — the same rule fanout's own head read applies), so the
-    // dialog can pre-disable a fork that the route would refuse. Absent means current (or an
-    // unreadable head, which has no summary at all): never a blocker anywhere else.
-    const format = typeof h.version === "number" ? h.version : 1;
     const parent = await existingParent(h.parentSession);
     // Remote sessions use local placeholders, never mount mappings.
     const remote = parseTargetCwd(cwd);
@@ -677,7 +673,6 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
       ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
-      ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
       ...(align.summary ? { align: align.summary } : {}),
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
@@ -885,7 +880,9 @@ export async function listSessions(): Promise<SessionSummary[]> {
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    out.push(readiness ? { ...row, readiness } : row);
+    // A baton wait put away with Later leaves the row, as its digest item leaves the digest.
+    const shown = withBatonLater(row);
+    out.push(readiness ? { ...shown, readiness } : shown);
   }
   pruneReadiness(out);
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -931,7 +928,8 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...orgField(s.path, s.id),
   };
   const readiness = readinessOverlay(row);
-  return readiness ? { ...row, readiness } : row;
+  const shown = withBatonLater(row);
+  return readiness ? { ...shown, readiness } : shown;
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

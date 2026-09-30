@@ -124,7 +124,7 @@ describe("the allowances are the watch chart's ledgers (§app.project-overseer/l
       const r0 = await hostOf(org.id).act(`watch/${org.id}/${project.id}`, "turn/user-entered", {}, { by: "system" });
       assert.equal(r0.taken, true);
       await run("sova_start_gathering", gather("A1"), true);
-      await assert.rejects(() => run("sova_start_gathering", gather("A2"), true), /^Error: This message's allowance is used: 1 of 1 gathering sessions started per message you send\. Stop here and tell the operator what is done and what is left, or ask with sova_confirm\.$/);
+      await assert.rejects(() => run("sova_start_gathering", gather("A2"), true), /^Error: This message's allowance is used: 1 of 1 gathering sessions started per message you send\. Stop here and tell the operator what is done and what is left, or ask with sova_card\.$/);
       await run("sova_start_gathering", gather("D1"));
       await assert.rejects(() => run("sova_start_gathering", gather("D2")), /^Error: Today's allowance is used: 1 of 1 gathering sessions started on its own\. It looks again at midnight\. Nothing starts before then\. Tell the operator what is waiting; don't promise an earlier look\.$/);
       // The activity log has the operator's sentence only.

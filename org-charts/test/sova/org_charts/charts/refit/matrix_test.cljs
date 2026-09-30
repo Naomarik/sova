@@ -51,7 +51,7 @@
      "^Today's allowance is used: \\d+ of \\d+ .* on its own\\. It looks again at midnight\\..*"
      "^This message's allowance is used: \\d+ of \\d+ .* per message you send\\..*"
      "^\\d+ of its (gathering sessions are open|coding sessions are running), and the limit is \\d+ at once\\..*"
-     "^This reaches people or ends something: ask with sova_confirm, listing .* in its items, and act in the turn the user's click starts\\.$"
+     "^This reaches people or ends something: ask with sova_card, listing .* in its items, and act in the turn the user's click starts\\.$"
      "^A correction needs a reason: say why\\.$" "^No held act has that id\\.$" "^That can't be done now\\.$"
      ;; org, residence, person
      "^name must be 1–80 characters$" "^Only an active person on the roster can be the owner\\.$"

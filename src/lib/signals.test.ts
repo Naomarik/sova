@@ -13,6 +13,7 @@ import {
   SIGNAL_PRECEDENCE,
   signalTitle,
   signalWords,
+  stalledPaths,
   tagSearchText,
   tagsTitle,
   tagTopicWord,
@@ -92,7 +93,7 @@ test("the turn-error tooltip says the fact, then pi's message when there is one"
 });
 
 test("every kind has its own glyph, class and words", () => {
-  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "asks-you", "looping"]);
+  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "asks-you", "team-stalled", "looping"]);
   // Open questions show their count, no glyph: only the glyph kinds need distinct icons.
   const icons = SIGNAL_PRECEDENCE.filter((k) => k !== "questions").map((k) => SIGNAL_ICON[k]);
   const classes = SIGNAL_PRECEDENCE.map((k) => SIGNAL_CLASS[k]);
@@ -100,7 +101,7 @@ test("every kind has its own glyph, class and words", () => {
   assert.equal(new Set(icons).size, icons.length);
   assert.equal(new Set(classes).size, SIGNAL_PRECEDENCE.length);
   // A worker only ever speaks for "looping"; open questions and asks are the session's own, whatever the flag.
-  assert.equal(new Set(words).size, 4, "worker and session words differ except where one never applies");
+  assert.equal(new Set(words).size, 5, "worker and session words differ except where one never applies");
   for (const w of words) assert.match(w, /\. $/, "hidden words end a sentence before the title");
 });
 
@@ -216,4 +217,23 @@ test("list nudges: cancel drops a waiting read (the sidebar going away)", () => 
   assert.equal(reads, 1);
   n.nudge();
   assert.equal(reads, 2, "a cancelled throttle still works for the next nudge");
+});
+
+test("a team gone quiet: a quiet mark from the digest's decide item, after an ask and before looping", () => {
+  const d = {
+    items: [
+      { id: "a", path: "/s/a.jsonl", title: "T", where: "~", tier: "decide", kind: "team-stalled", since: 1, href: "", kinds: [] },
+      { id: "b", path: "/s/b.jsonl", title: "T", where: "~", tier: "decide", kind: "asks-you", since: 1, href: "", kinds: [] },
+    ],
+  } as unknown as Parameters<typeof stalledPaths>[0];
+  assert.deepEqual([...stalledPaths(d)], ["/s/a.jsonl"]);
+  assert.deepEqual([...stalledPaths(undefined)], []);
+  assert.deepEqual(rowNeedsYou(row(), { ...open, stalled: true }), { kind: "team-stalled", worker: false });
+  assert.equal(rowNeedsYou(row({ signals: sig(["asks-you", "looping"]) }), { ...open, stalled: true })?.kind, "asks-you");
+  assert.equal(rowNeedsYou(row({ signals: sig(["looping"]) }), { ...open, stalled: true })?.kind, "team-stalled");
+  assert.equal(rowNeedsYou(row(), { selected: "/s/a.jsonl", busy: false, stalled: true }), null, "never on the open session");
+  assert.equal(signalWords({ kind: "team-stalled", worker: false }), "Waiting on a quiet team. ");
+  assert.equal(signalTitle({ kind: "team-stalled", worker: false }), "Waiting on subagents that have gone quiet.");
+  assert.equal(SIGNAL_ICON["team-stalled"], "clock");
+  assert.match(SIGNAL_CLASS["team-stalled"], /session-signal-stalled/);
 });

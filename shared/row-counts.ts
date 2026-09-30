@@ -21,7 +21,7 @@ const MESSAGE_KINDS: ReadonlySet<TranscriptItem["kind"]> = new Set(["user", "wak
 export const messageCount = (items: readonly TranscriptItem[]): number =>
   new Set(items.filter((it) => MESSAGE_KINDS.has(it.kind)).map((it) => entryOfRow(it.id))).size;
 
-/** A row of a reply the model wrote: Fan Out needs one on the branch. */
+/** A row of a reply the model wrote. */
 export const isReplyRow = (row: Pick<TranscriptItem, "kind">): boolean => row.kind === "assistant-text" || row.kind === "tool-call";
 
 /** What the complete-list readers need to know of `rows`, the rows a client doesn't hold. */

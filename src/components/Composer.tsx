@@ -34,7 +34,6 @@ import {
 import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
-  groupComposerActive,
   clearDraft,
   draftAttachments,
   drafts,
@@ -48,7 +47,12 @@ import { paneScopedId, usePaneAnnounce, usePaneScope } from "../lib/pane-scope";
 import { inputsText } from "../lib/input-count";
 import { isOpenDoc, type AlignEntry } from "../lib/align";
 import { AlignChip } from "./AlignChip";
+import { OverseerCardChip } from "./OverseerCardChip";
+import { OverseerPermitsChip } from "./OverseerPermitsChip";
+import { livePermits, type Permit } from "../../shared/overseer-grants";
+import type { OverseerCard } from "../../shared/overseer-card";
 import { dragHasRow } from "../lib/session-groups";
+import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { showWorkersOfLabel, teamNote, type WorkingSplit, workersOfLabel, workersRunningLabel } from "../lib/workers";
 import { ComposerMenu, type ComposerMenuApi, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
@@ -145,8 +149,7 @@ export function Composer(props: {
   /** The Overseer's "/mode": given, any "/mode" (arguments too) is ours and never reaches the
       runtime, which is always in normal mode; this says so. Absent, it is the runtime's as before. */
   onMode?: () => void;
-  /** At the right end of the foot, in the mode switch's slot (the Overseer's quick actions). It
-      stays when the foot collapses: it is an action, not reference. */
+  /** At the right end of the foot, in the mode switch's slot (the Overseer's quick actions). */
   accessory?: () => JSX.Element;
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
@@ -156,6 +159,18 @@ export function Composer(props: {
   aligns?: AlignEntry[];
   /** Jump to an alignment's newest card. */
   onJumpAlign?: (entry: AlignEntry) => void;
+  /** The Overseer's open cards (§app.overseer/confirm): with one open, the run-status row carries
+      the card chip, before the alignment chip. */
+  cards?: OverseerCard[];
+  /** Jump to a card. */
+  onJumpCard?: (card: OverseerCard) => void;
+  /** The Overseer's approvals and rules and its running count (§app.overseer/approvals,
+      §app.overseer/caps): the run-status row carries "3 of 10 running" while any runs, and the
+      approvals chip while any is live. */
+  autonomy?: { running: number; cap: number; permits: Permit[] };
+  onRevokePermit?: (id: string) => Promise<string | null>;
+  onJumpCardId?: (card: string) => void;
+  onJumpToolCall?: (toolCallId: string) => void;
   /** User messages on this chat's active branch; the status row's inputs trigger, hidden at 0. */
   inputCount?: number;
   /** The branch has inputs whose count isn't known yet (lib/known-before-mount): the inputs
@@ -177,8 +192,6 @@ export function Composer(props: {
   mode?: ModeControl | null;
   /** Chat sessions only: opens the Playbooks dialog (the flyout's Playbooks row). */
   onPlaybooks?: () => void;
-  /** "Fan Out…" in the flyout, for a chat session that can be forked. */
-  onFanOut?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
   undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
@@ -235,14 +248,6 @@ export function Composer(props: {
   // The pane this composer belongs to: its id scopes every DOM id below (a workspace has N
   // composers on screen), and its label prefixes what this composer says out loud.
   const scope = usePaneScope();
-  /** Whether the caret is in THIS composer: half of what decides it may collapse. */
-  const [focused, setFocused] = createSignal(false);
-  /**
-   * Collapsed: only in a pane, only while the group composer is in use, and never when
-   * this composer is focused or holds a draft — a pane with text must keep it visible, and the one
-   * you are typing in must not shrink under you.
-   */
-  const collapsed = () => !!scope.id && groupComposerActive() && !focused() && !text() && voice.phase() === "idle";
   const paneId = (base: string) => paneScopedId(scope, base);
   const announce = usePaneAnnounce();
   /** Dictation into this box (§chat/voice): the mic in the row, its strip above it. */
@@ -369,6 +374,8 @@ export function Composer(props: {
   const inputsHeld = () => !inputsRow() && !!props.inputsPending && !!props.onShowTimeline;
 
   /** The alignment chip, while an alignment is open (and there is somewhere to jump). */
+  const runningRow = () => (props.autonomy && props.autonomy.running > 0 ? props.autonomy : null);
+  const permitsRow = () => (props.autonomy && props.onRevokePermit && livePermits(props.autonomy.permits).length ? props.autonomy.permits : null);
   const alignRow = () => (props.onJumpAlign && (props.aligns ?? []).some((e) => isOpenDoc(e.doc)) ? props.aligns! : null);
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
@@ -783,7 +790,7 @@ export function Composer(props: {
     <>
         {/* One row, whichever of the three has something to say (they can coexist: the inputs
             trigger sits at its right end while a turn streams, and alone when nothing runs). */}
-        <Show when={controls().status || workersRow() || inputsRow() || inputsHeld() || alignRow()}>
+        <Show when={controls().status || workersRow() || inputsRow() || inputsHeld() || alignRow() || props.cards?.length || runningRow() || permitsRow()}>
           <p class="run-status">
             {/* One dot leads the row while anything works — the turn, a stop, a rare state, a
                 compaction or a subagent — and nothing else in the row pulses. */}
@@ -847,6 +854,29 @@ export function Composer(props: {
             </Show>
             {/* The alignment chip, then the inputs trigger: right-aligned together (the chip takes the
                 auto margin when it is there), so they keep their place whatever else the row carries. */}
+            <Show when={runningRow()}>
+              {(r) => (
+                <button
+                  type="button"
+                  class="run-status-link run-status-running text-num"
+                  title="Sessions the Overseer started or messaged that are working now, of its limit. Opens Settings → Overseer → Limits."
+                  onClick={() => openSettings("overseer", "overseer-limits")}
+                >
+                  {r().running} of {r().cap} running
+                </button>
+              )}
+            </Show>
+            <Show when={permitsRow()}>
+              {(permits) => (
+                <OverseerPermitsChip
+                  permits={permits()}
+                  onRevoke={(id) => props.onRevokePermit?.(id) ?? Promise.resolve(null)}
+                  onJumpCard={(id) => props.onJumpCardId?.(id)}
+                  onJumpUse={(id) => props.onJumpToolCall?.(id)}
+                />
+              )}
+            </Show>
+            <Show when={props.onJumpCard && props.cards?.length ? props.cards : null}>{(cards) => <OverseerCardChip cards={cards()} onJump={(c) => props.onJumpCard?.(c)} />}</Show>
             <Show when={alignRow()}>{(entries) => <AlignChip entries={entries()} onJump={(e) => props.onJumpAlign?.(e)} />}</Show>
             <Show when={inputsRow()}>
               {(row) => (
@@ -882,7 +912,6 @@ export function Composer(props: {
   return (
     <footer
       class="composer"
-      data-collapsed={collapsed() ? "true" : undefined}
       data-drop={drop() ?? undefined}
       onDragOver={(e) => {
         if (disabled() || !e.dataTransfer?.types.includes("Files")) return;
@@ -1015,7 +1044,6 @@ export function Composer(props: {
             model={props.model}
             thinking={props.thinking}
             onPlaybooks={props.onPlaybooks}
-            onFanOut={props.onFanOut}
             undo={props.undo}
             sandbox={props.sandbox}
             onRefocus={() => input.focus()}
@@ -1069,9 +1097,7 @@ export function Composer(props: {
               }
             }}
             onPointerDown={onPointerDown}
-            onFocus={() => setFocused(true)}
             onBlur={() => {
-              setFocused(false);
               dropButtonSlash(); // closing by blur undoes an untouched button "/" too
               setSlashToken(null);
               setMentionToken(null);

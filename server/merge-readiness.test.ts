@@ -48,7 +48,7 @@ test("01a0edcd: 1 ahead, clean, 0 of 3 open, checks run, the reply asks to merge
   const asks = r.asksToMerge(EDCD_REPLY);
   assert.equal(asks, true, "the ask sits above the Also changes line and still counts");
   const t = r.treeReadiness(tree({ branch: "feat/agents-row-dropdown" }), { ...idle, asks, lastCheck: { at: 1, ok: true } });
-  assert.deepEqual(t, { state: "waiting-approval", why: "checks passed" });
+  assert.deepEqual(t, { state: "waiting-approval", why: "checks passed", reason: "Waiting for your OK · checks passed · 1 commit ahead" });
   const s = r.sessionReadinessOf([{ path: "/wt/a", branch: "feat/agents-row-dropdown", ...t }], {}, 5);
   assert.equal(s?.badge, "waiting");
   assert.equal(s?.branch, "feat/agents-row-dropdown");
@@ -59,7 +59,7 @@ test("01a0ecd7: 2 ahead, clean, 1 of 3 open and a TEMP commit → blocked; answe
   assert.equal(temp, "TEMP(viewport-test): floating Reload tab");
   const facts = tree({ branch: "feat/viewport-height", ahead: 2, tempCommit: temp });
   assert.equal(r.treeReadiness(facts, { ...idle, openQuestions: 1, asks: r.asksToMerge(ECD7_REPLY) }).state, "blocked");
-  assert.deepEqual(r.treeReadiness(facts, idle), { state: "in-progress", why: `temporary commit: ${temp}` });
+  assert.deepEqual(r.treeReadiness(facts, idle), { state: "in-progress", why: `temporary commit: ${temp}`, reason: `In progress · temporary commit: ${temp}` });
   assert.equal(r.asksToMerge(ECD7_REPLY), false, "asking about a test setup is not asking to merge");
   for (const s of ["WIP: half", "fixup! earlier", "squash! x", "amend! y", "temp: probe"]) assert.ok(r.tempCommitOf([s]), s);
   assert.equal(r.tempCommitOf(["Temperature units", "attempt 2"]), undefined);
@@ -69,22 +69,24 @@ test("01a0eef8: ahead 0 with 10 dirty files is never merged, running or not", ()
   // treeFacts says merged only after a commit of the branch's own; here HEAD is still the base.
   const t = tree({ branch: "feat/align-chip-whole-branch", merged: false, ahead: 0, dirty: true });
   assert.equal(r.treeReadiness(t, { ...idle, running: true }).state, "in-progress");
-  assert.deepEqual(r.treeReadiness(t, idle), { state: "in-progress", why: "uncommitted changes" });
+  assert.deepEqual(r.treeReadiness(t, idle), { state: "in-progress", why: "uncommitted changes", reason: "In progress · uncommitted changes" });
+  const named = r.treeReadiness({ ...t, dirtyCount: 10, dirtyFiles: ["src/lib/align.ts", "src/app.css", "x"] }, idle);
+  assert.deepEqual(named, { state: "in-progress", why: "10 uncommitted files: align.ts and 9 more", reason: "In progress · 10 uncommitted files: align.ts and 9 more" });
   // And merged with uncommitted work left behind is stale, never merged.
-  assert.deepEqual(r.treeReadiness(tree({ merged: true, dirty: true, tracked: "merged" }), idle), { state: "stale", why: "merged, with uncommitted changes" });
+  assert.deepEqual(r.treeReadiness(tree({ merged: true, dirty: true, tracked: "merged" }), idle), { state: "stale", why: "merged, with uncommitted changes", reason: "Stale · merged, with uncommitted changes" });
   assert.equal(r.treeReadiness(tree({ merged: true, dirty: true }), { ...idle, running: true }).state, "in-progress");
 });
 
 test("01a0ebbf: merged and clean, the server started before the merge → restart pending", () => {
   const t = r.treeReadiness(tree({ tracked: "merged", merged: true }), idle);
-  assert.deepEqual(t, { state: "merged" });
+  assert.deepEqual(t, { state: "merged", reason: "Merged" });
   const s = r.sessionReadinessOf([{ path: "/wt/rm", branch: "feat/resource-monitor", ...t }], { lastMerge: { at: 50, branch: "feat/resource-monitor" }, restartPending: true, pushPending: true }, 60);
   assert.equal(s?.badge, "restart");
   assert.equal(s?.since, 50, "dated by the merge");
   assert.equal(s?.pushPending, true);
 });
 
-test("01a0eb99 (R2, R9): two merged, two still tracked active that git finds merged → merged with cleanup follow-ups", () => {
+test("01a0eb99 (R2, R9): two merged, two still tracked active that git finds merged → merged; cleanup is title-only, the count is the follow-up check's", () => {
   const trees = [
     { path: "/wt/1", branch: "feat/vis-reliability", ...r.treeReadiness(tree({ merged: true }), idle) },
     { path: "/wt/2", branch: "feat/vis-wireframe", ...r.treeReadiness(tree({ merged: true }), idle) },
@@ -94,8 +96,9 @@ test("01a0eb99 (R2, R9): two merged, two still tracked active that git finds mer
   assert.deepEqual(trees.map((t) => t.state), ["merged", "merged", "merged", "merged"]);
   const s = r.sessionReadinessOf(trees, { lastMerge: { at: 9, branch: "feat/vis-round4" }, followUp: { weight: "small", cue: "x" } }, 10);
   assert.equal(s?.badge, "merged");
-  assert.equal(s?.cleanup, 2);
-  assert.equal(s?.followUps, 3);
+  assert.equal(s?.cleanup, 2, "said in the title");
+  assert.equal(s?.followUps, 1, "only the follow-up check's named work counts (a6)");
+  assert.equal(r.sessionReadinessOf(trees, { lastMerge: { at: 9, branch: "feat/vis-round4" } }, 10)?.followUps, undefined, "cleanup alone: no count");
   assert.equal(s?.branch, "feat/vis-round4");
   // R9: one merged, one still in progress: no one-word badge hides the unmerged one.
   const mixed = r.sessionReadinessOf([trees[3]!, { path: "/wt/5", branch: "feat/next", state: "in-progress", why: "uncommitted changes" }], { lastMerge: { at: 9, branch: "feat/vis-round4" } }, 10);
@@ -131,20 +134,22 @@ test("the follow-up answer: small below 1.5 or unsure, none under the P and scor
   assert.equal(followUpOf(undefined), undefined);
 });
 
-test("R4: ready and asking 'Shall I merge it into master?' → an act item 'Ready to merge: <branch>', not while running or archived", () => {
+test("R4: ready, or asking 'Shall I merge it into master?' → a decide item (never Needs you), not while running or archived", () => {
   assert.equal(r.asksToMerge("1 ahead, tests pass.\n\nShall I merge it into master?"), true);
   for (const s of ["Want me to merge this now?", "It's ready to merge.", "Say merge and I'll land it.", "Should I go ahead and merge it?", "OK to merge?"]) assert.ok(r.asksToMerge(s), s);
   for (const s of ["Merged into master at abc1234.", "Want me to take it on?", "I merged the fix."]) assert.equal(r.asksToMerge(s), false, s);
   const readiness = r.sessionReadinessOf([{ path: "/wt/a", branch: "feat/a", state: "waiting-approval", why: "checks passed" }], {}, 42);
   const row = (over: Partial<SessionSummary>) => ({ id: "s", path: "/s/a.jsonl", busy: false, archived: false, readiness, ...over }) as unknown as SessionSummary;
-  assert.deepEqual(r.readinessItems(row({})), [{ tier: "act", kind: "ready-to-merge", since: 42, detail: "Ready to merge: feat/a" }]);
+  assert.deepEqual(r.readinessItems(row({})), [{ tier: "decide", kind: "ready-to-merge", since: 42, detail: "Waiting for your OK: feat/a" }]);
+  const ready = r.sessionReadinessOf([{ path: "/wt/a", branch: "feat/a", state: "ready", why: "checks passed" }], {}, 43);
+  assert.deepEqual(r.readinessItems({ ...row({}), readiness: ready } as SessionSummary), [{ tier: "decide", kind: "ready-to-merge", since: 43, detail: "Ready to merge: feat/a" }]);
   assert.deepEqual(r.readinessItems(row({ busy: true })), []);
   assert.deepEqual(r.readinessItems(row({ archived: true })), []);
 });
 
 test("a failed or missing check: failed keeps it off ready, none is still ready and says so", () => {
-  assert.deepEqual(r.treeReadiness(tree(), { ...idle, lastCheck: { at: 1, ok: false } }), { state: "in-progress", why: "the last check failed" });
-  assert.deepEqual(r.treeReadiness(tree(), idle), { state: "ready", why: "no check run seen" });
+  assert.deepEqual(r.treeReadiness(tree(), { ...idle, lastCheck: { at: 1, ok: false } }), { state: "in-progress", why: "the last check failed", reason: "In progress · the last check failed" });
+  assert.deepEqual(r.treeReadiness(tree(), idle), { state: "ready", why: "no check run seen", reason: "Ready to merge · no check run seen · 1 commit ahead" });
   assert.equal(r.checkFailed(false, "ℹ tests 12\nℹ pass 12\nℹ fail 0\n"), false);
   assert.equal(r.checkFailed(false, "ℹ tests 12\nℹ pass 11\nℹ fail 1\n"), true);
   assert.equal(r.checkFailed(false, "src/x.ts(3,1): error TS2304: Cannot find name"), true);
@@ -249,14 +254,14 @@ test("computeReadiness end to end with git faked: waiting for the OK, then merge
   r.configureReadiness({ insights: { treeStatus: async () => status }, git: fakeGit({}), asksUser: () => undefined, now: () => 0, processStart: 0 });
   const waiting = await r.computeReadiness(summary(path), facts!);
   assert.equal(waiting?.badge, "waiting");
-  assert.deepEqual(waiting?.trees, [{ path: "/wt/agents-row-dropdown", branch: "feat/agents-row-dropdown", state: "waiting-approval", why: "no check run seen" }]);
+  assert.deepEqual(waiting?.trees, [{ path: "/wt/agents-row-dropdown", branch: "feat/agents-row-dropdown", state: "waiting-approval", why: "no check run seen", reason: "Waiting for your OK · no check run seen · 1 commit ahead" }]);
   // The attention signal's answer for this very reply wins over the fallback.
   r.configureReadiness({ asksUser: () => ({ turnId: (lines.at(-1) as { id: string }).id, asks: false }) });
   assert.equal((await r.computeReadiness(summary(path), facts!))?.badge, "ready");
   // R1: someone else merged it (ancestor), the row still says active: merged, with a cleanup follow-up.
   status = { ...status, merged: "ancestor", ahead: 0 };
   const merged = await r.computeReadiness(summary(path), facts!);
-  assert.deepEqual([merged?.badge, merged?.cleanup, merged?.followUps], ["merged", 1, 1]);
+  assert.deepEqual([merged?.badge, merged?.cleanup, merged?.followUps], ["merged", 1, undefined]);
   // R3: a rebased merge train changed the shas: merged by content.
   status = { ...status, merged: "content", ahead: 3 };
   assert.equal((await r.computeReadiness(summary(path), facts!))?.badge, "merged");
@@ -337,4 +342,64 @@ test("a file that shrank since its size was read ends the search, never spins", 
   // returning exactly the marker's overlap made no progress, forever.
   const out = await Promise.race([r.readReadinessScan(path, size + 5000, { size, found: false }), new Promise((done) => setTimeout(() => done("hung"), 2000))]);
   assert.notEqual(out, "hung");
+});
+
+// --- al_2's accuracy fixes, from the live cases (DECISIONS a5, a6) ---------------------------
+
+test("01a0e4d1 feat/site-marketing: 17 conflicts with master → not ready, 'Conflicts with master · 17 files'", async () => {
+  const t = r.treeReadiness(tree({ branch: "feat/site-marketing", ahead: 12, base: "master", conflicts: 17 }), idle);
+  assert.deepEqual(t, { state: "in-progress", why: "conflicts with master: 17 files", reason: "Conflicts with master · 17 files" });
+  assert.equal(r.sessionReadinessOf([{ path: "/wt/sm", branch: "feat/site-marketing", ...t }], {}, 1)?.badge, undefined, "no ready chip");
+  // merge-tree's exit-1 answer is kept: its conflicted-file lines, one file per distinct path.
+  const { conflictedFiles } = await import("./worktrees");
+  assert.equal(conflictedFiles("a79ab\n100644 7898 1\tsite/a.md\n100644 f2ad 2\tsite/a.md\n100644 6178 3\tsite/a.md\n100644 587b 2\tsite/b.md\n"), 2);
+});
+
+test("01a0def5 feat/cc-sandbox: only NAIVE-RUN.txt dirty → ready, the file named; 3 or more → in progress", () => {
+  const facts = tree({ branch: "feat/cc-sandbox", ahead: 19, dirty: true, dirtyCount: 1, dirtyFiles: ["pi-config/extensions/sandbox/tests/NAIVE-RUN.txt"] });
+  assert.deepEqual(r.treeReadiness(facts, { ...idle, lastCheck: { at: 1, ok: true } }), {
+    state: "ready",
+    why: "checks passed · 1 uncommitted file: NAIVE-RUN.txt",
+    reason: "Ready to merge · checks passed · 19 commits ahead · 1 uncommitted file: NAIVE-RUN.txt",
+  });
+  assert.equal(r.treeReadiness({ ...facts, dirtyCount: 2, dirtyFiles: ["a/x.txt", "b.txt"] }, idle).why, "no check run seen · 2 uncommitted files: x.txt and 1 more");
+  assert.deepEqual(r.treeReadiness({ ...facts, dirtyCount: 3, dirtyFiles: ["a/x.ts", "b.ts", "c.ts"] }, idle), { state: "in-progress", why: "3 uncommitted files: x.ts and 2 more", reason: "In progress · 3 uncommitted files: x.ts and 2 more" });
+  assert.equal(r.treeReadiness({ ...facts, dirtyCount: 1, ahead: 0 }, idle).state, "in-progress", "a dirty file on no commits is still in progress");
+});
+
+test("git status names the files: first ones repo-relative, a rename's new name", async () => {
+  const { porcelainFiles } = await import("./worktrees");
+  assert.deepEqual(porcelainFiles(" M pi-config/extensions/sandbox/tests/NAIVE-RUN.txt\n"), { count: 1, first: ["pi-config/extensions/sandbox/tests/NAIVE-RUN.txt"] });
+  assert.deepEqual(porcelainFiles("R  old.ts -> new.ts\n?? \"a b.txt\"\n M c\n M d\n"), { count: 4, first: ["new.ts", "a b.txt", "c"] });
+});
+
+test("01a0def5's 6572-char reply: the spec lines go BEFORE the 1500-char tail, so the body's ask is kept; a Deferred: line rides along for the follow-up check", async () => {
+  const body = `${"The red-team runner rewrote NAIVE-RUN.txt again; only dates and timings changed. ".repeat(20)}\n\nAll checks pass. Shall I merge feat/cc-sandbox into master?`;
+  const spec = `Deferred: §chat.sandbox/claude-workers — the TUI half lands separately\nAlso changes: ${"§chat.sandbox/x — a long description of what changed; ".repeat(80)}`;
+  const text = `${body}\n\n${spec}`;
+  assert.ok(text.length > 6000);
+  const e = r.scanLine(JSON.stringify({ type: "message", id: "a1", parentId: null, timestamp: "2026-09-30T09:00:00.000Z", message: { role: "assistant", content: [{ type: "text", text }], stopReason: "stop" } }), new Set());
+  const kept = e!.reply!.text;
+  assert.ok(kept.includes("Shall I merge feat/cc-sandbox into master?"), "the body's end is kept");
+  assert.ok(!kept.includes("Also changes:"), "no spec line crowds it out");
+  assert.ok(kept.endsWith("Deferred: §chat.sandbox/claude-workers — the TUI half lands separately"));
+  assert.equal(r.asksToMerge(kept), true);
+  const { followUpState } = await import("./merge-followup");
+  const state = followUpState({ sessionId: "s", cardId: "c", cwd: "/", terminal: false, card: { branch: "feat/cc-sandbox", target: "master", commits: 19, added: 1, removed: 1 }, reply: { id: "a1", at: 1, text: kept }, routine: { restart_pending: false, push_pending: false, cleanup: 0 } });
+  assert.ok(String(state.reply).endsWith("Shall I merge feat/cc-sandbox into master?"), "the follow-up check reads the body");
+  assert.equal(state.deferred, "Deferred: §chat.sandbox/claude-workers — the TUI half lands separately");
+});
+
+test("01a0e63c: an empty leftover worktree (clean, no commits, idle) does not hide the merged badge of three merged trees", () => {
+  const merged = (b: string) => ({ path: `/wt/${b}`, branch: b, ...r.treeReadiness(tree({ tracked: "merged", merged: true }), idle) });
+  const empty = { path: "/wt/e", branch: "feat/bw-e2e-motorsaif", ...r.treeReadiness(tree({ ahead: 0 }), idle) };
+  assert.equal(empty.why, "no commits yet");
+  const s = r.sessionReadinessOf([merged("feat/a"), merged("feat/b"), merged("feat/c"), empty], { lastMerge: { at: 3, branch: "feat/c" } }, 4);
+  assert.equal(s?.badge, "merged");
+  assert.equal(s?.branch, "feat/c");
+  // A dirty tree with no commits is work, not a leftover: it still hides the badge.
+  const dirty = { ...empty, dirtyCount: 1 };
+  assert.equal(r.sessionReadinessOf([merged("feat/a"), dirty], {}, 4)?.badge, undefined);
+  // Only an empty tree: nothing merged, no badge.
+  assert.equal(r.sessionReadinessOf([empty], {}, 4)?.badge, undefined);
 });

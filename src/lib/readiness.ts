@@ -1,17 +1,32 @@
 import type { ReadinessState, SessionReadiness } from "../../shared/protocol";
 
 /**
- * The row's merge-readiness badge (§chat.worktrees/readiness): the server decides which badge
- * holds; this only words it. Terse on purpose — it shares line 3 with the time and model.
+ * The row's merge readiness (§chat.worktrees/readiness): the server decides which badge holds; this
+ * only words it. Ready and waiting are a toned chip that leads line 3 (they're what you can act
+ * on); every other badge stays terse muted text between the time and the model.
  */
 
-/** The badge's words, or null when there is none. */
+/** The chip that leads line 3: ready or waiting for your OK, else null. */
+export interface ReadinessRowChip {
+  label: string;
+  tone: "success" | "info";
+}
+
+export function readinessRowChip(r: SessionReadiness | undefined): ReadinessRowChip | null {
+  switch (r?.badge) {
+    case "ready":
+      return { label: "Ready to merge", tone: "success" };
+    case "waiting":
+      return { label: "Waiting for your OK", tone: "info" };
+    default:
+      return null;
+  }
+}
+
+/** The muted badge's words, or null when there is none (or the chip speaks instead). The count is
+    the follow-up check's named work only; a leftover worktree is in the title, never here. */
 export function readinessBadge(r: SessionReadiness | undefined): string | null {
   switch (r?.badge) {
-    case "waiting":
-      return "waiting for your OK";
-    case "ready":
-      return "ready ✓";
     case "restart":
       return "restart pending";
     case "merged": {
@@ -28,7 +43,7 @@ const STATE_WORD: Record<ReadinessState, string> = {
   stale: "stale",
   "in-progress": "in progress",
   blocked: "blocked",
-  ready: "ready",
+  ready: "ready to merge",
   "waiting-approval": "waiting for your OK",
 };
 

@@ -12,8 +12,10 @@ import {
   PANE_MAX_WIDTH,
   PANE_MIN_WIDTH,
   PANE_WIDTH_STEP,
+  readSendAll,
   stepFrom,
   stepWidth,
+  writeSendAll,
 } from "./group-layout";
 
 test("a pane starts at clamp(440px, 34vw, 720px)", () => {
@@ -147,4 +149,51 @@ test("a fitted width leaves the stepped range deliberately: Wider returns, Narro
   // In the stepped range, stepFrom is stepWidth.
   assert.equal(stepFrom(600, 1), 600 + PANE_WIDTH_STEP);
   assert.equal(stepFrom(PANE_MIN_WIDTH, -1), PANE_MIN_WIDTH);
+});
+
+/** Stands `store` in for the page's sessionStorage while `run` runs, then puts the old one back. */
+function withSessionStorage(store: unknown, run: () => void) {
+  const had = Object.getOwnPropertyDescriptor(globalThis, "sessionStorage");
+  Object.defineProperty(globalThis, "sessionStorage", { value: store, configurable: true, writable: true });
+  try {
+    run();
+  } finally {
+    if (had) Object.defineProperty(globalThis, "sessionStorage", had);
+    else delete (globalThis as { sessionStorage?: unknown }).sessionStorage;
+  }
+}
+
+test("Send to All is off until this workspace turns it on, and each workspace keeps its own", () => {
+  const data = new Map<string, string>();
+  const store = { getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v) };
+  withSessionStorage(store, () => {
+    assert.equal(readSendAll("g1"), false, "never chosen: off");
+    writeSendAll("g1", true);
+    assert.equal(readSendAll("g1"), true);
+    assert.equal(readSendAll("g2"), false, "another workspace is untouched");
+    writeSendAll("g1", false);
+    assert.equal(readSendAll("g1"), false);
+    // Anything but the on value is off: a value this build never wrote is not a choice to honour.
+    data.set("sova:group-send-all-g3", "true");
+    assert.equal(readSendAll("g3"), false);
+  });
+});
+
+test("a blocked or missing sessionStorage reads Send to All as off and never throws", () => {
+  const blocked = {
+    getItem: () => {
+      throw new Error("SecurityError");
+    },
+    setItem: () => {
+      throw new Error("SecurityError");
+    },
+  };
+  withSessionStorage(blocked, () => {
+    assert.doesNotThrow(() => writeSendAll("g1", true));
+    assert.equal(readSendAll("g1"), false);
+  });
+  withSessionStorage(undefined, () => {
+    assert.doesNotThrow(() => writeSendAll("g1", true));
+    assert.equal(readSendAll("g1"), false);
+  });
 });

@@ -148,7 +148,7 @@ describe("the Overseer file", () => {
     assert.equal(chat.overseer, true);
     assert.ok(isOverseerFile(chat.session.sessionManager));
     const active = chat.session.getActiveToolNames();
-    assert.ok(active.includes("sova_attention") && active.includes("sova_confirm"), active.join(","));
+    assert.ok(active.includes("sova_attention") && active.includes("sova_card"), active.join(","));
     for (const banned of ["bash", "edit", "write"]) assert.ok(!active.includes(banned), `${banned} must not be active`);
     assert.ok(active.every((n) => n.startsWith("sova_") || ["read", "grep", "find", "ls", "wake_nudge"].includes(n)), active.join(","));
     assert.match(chat.session.systemPrompt, /You are the one Overseer/);

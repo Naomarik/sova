@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { ClaudeLogins } from "../pi-config/extensions/claude-code/accounts.ts";
-import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry } from "./claude-login-state";
+import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick } from "./claude-login-state";
 
 const root = mkdtempSync(join(tmpdir(), "sova-chat-login-"));
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -44,4 +44,41 @@ test("the message and the entry test", () => {
   assert.equal(isClaudeLoginEntry(entry(A)), true);
   assert.equal(isClaudeLoginEntry({ type: "custom", customType: "sandbox" }), false);
   assert.equal(isClaudeLoginEntry(null), false);
+});
+
+test("the wire: a waiting pick rides along, and a pool with other logins makes a one-login device worth a menu", () => {
+  const pending = { id: "l-0000000b", name: "b@example.com" };
+  assert.deepEqual(chatClaudeLogin([entry(A)], logins, { pending })?.pending, pending);
+  assert.equal(chatClaudeLogin([entry(A)], logins, { pending: null })?.pending, undefined, "no pick, no field");
+  const bare = mkdtempSync(join(tmpdir(), "sova-chat-login-bare-"));
+  after(() => rmSync(bare, { recursive: true, force: true }));
+  const own = new ClaudeLogins({ agentDir: bare, env: { PI_CODING_AGENT_DIR: bare, CLAUDE_CONFIG_DIR: claudeDir } });
+  assert.equal(chatClaudeLogin([], own, { poolOthers: () => 0 })?.several, false, "only its own login, no pool");
+  assert.equal(chatClaudeLogin([], own, { poolOthers: () => 2 })?.several, true, "the pool has logins to borrow");
+});
+
+test("a pick while a reply runs waits; a later one replaces it; the chat's own login or a cancel drops it; it goes at the reply's end", () => {
+  const b = { id: "l-0000000b", name: "b@example.com" };
+  const c = { id: "l-0000000c", name: "c@example.com" };
+  const pick = new LoginPick();
+  assert.equal(pick.choose(b, A, true), "queued");
+  assert.equal(pick.choose(c, A, true), "queued");
+  assert.deepEqual(pick.pending, c, "picking again replaces the waiting pick");
+  assert.equal(pick.choose({ id: A, name: "a" }, A, true), "cancelled", "the chat's own login cancels it");
+  assert.equal(pick.pending, null);
+  assert.equal(pick.choose(null, A, true), "unchanged", "nothing to cancel");
+  assert.equal(pick.choose(b, A, true), "queued");
+  assert.equal(pick.choose(null, A, true), "cancelled", "Cancel switch");
+  // Queued, then the reply ends: the pick lands, and nothing else can be picked or cancelled meanwhile.
+  assert.equal(pick.choose(c, A, true), "queued");
+  const landing = pick.start();
+  assert.deepEqual(landing, c, "applied at the reply's end");
+  assert.equal(pick.start(), null, "once");
+  assert.equal(pick.choose(b, A, false), "landing");
+  assert.equal(pick.choose(null, A, false), "unchanged");
+  pick.done(landing!);
+  assert.deepEqual([pick.pending, pick.applying], [null, false]);
+  // Idle: a pick goes now.
+  assert.equal(pick.choose(b, A, false), "apply");
+  assert.deepEqual(pick.start(), b);
 });

@@ -169,6 +169,15 @@ export function PublicLinksSettingsSection() {
           </dl>
         )}
       </Show>
+      <Show when={info()?.share.listener}>
+        {(l) => (
+          <Banner
+            tone="error"
+            title="The share port isn't open."
+            body={`${l().reason} Links from this host can't be opened from outside until it is. Fix it, then save a different port or restart Sova.`}
+          />
+        )}
+      </Show>
 
       <fieldset class="field public-links-route">
         <legend class="field-label">Where links open</legend>

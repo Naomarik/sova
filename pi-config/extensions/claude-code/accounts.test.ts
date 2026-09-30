@@ -12,7 +12,7 @@ import { spawn, spawnSync } from "node:child_process";
 import {
 	ACCOUNTS_DEV_ENV, ClaudeLogins, LEASES_DIR_NAME, LEASE_STALE_MS, readLoginUse, DEFAULT_LIMIT_COOLDOWN_MS, SHARED_ENTRIES, accountsPath, claudeBaseEnv, claudeJsonPath,
 	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount,
-	loginDir, loginEntryFor, parseAccounts, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
+	loginDir, loginEntryFor, manualSwitchText, parseAccounts, poolAgentPath, readWants, wantsDir, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
 	accessTokenFor, freshAccessToken, refreshLogin, REFRESH_ARGV, TOKEN_REFRESH_MARGIN_MS,
 } from "./accounts.ts";
@@ -458,4 +458,56 @@ process.stdin.on("end", () => process.exit(0));
 	assert.deepEqual(call, { argv: [...REFRESH_ARGV], dir, cwd: fs.realpathSync(dir) });
 	assert.equal(await refreshLogin(dir, { executable: fake, env: { ...process.env, FAKE_FAIL: "1" } }), false);
 	assert.equal(await refreshLogin(dir, { executable: path.join(root, "missing-claude") }), false);
+});
+
+// ---------------------------------------------------------------------------
+// A pick in the composer (§app.claude-logins/switch-login)
+// ---------------------------------------------------------------------------
+
+test("a pick: its note and entry, and pickable says why a login can't be picked", (t) => {
+	const from = { id: A, label: "work@example.com", env: {} };
+	const to = { id: B, label: "home", env: {} };
+	assert.equal(manualSwitchText(from, to), "Claude: switched work@example.com → home (chosen by you)");
+	assert.deepEqual(loginEntryFor(to, { from, to, text: "t" }), { v: 1, login: B, label: "home", from: A, fromLabel: "work@example.com", reason: "manual", text: "t" });
+
+	const s = sandbox(t);
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "acct-1"), login(B, "acct-1", { enabled: false }), login(C, "acct-2", { device: "vps" })], devices: { local: { order: [A, B, "default"] } } });
+	const refused = (id: string) => { const p = s.logins.pickable(id); return "refused" in p ? p.refused : null; };
+	assert.match(refused(A)!, /isn't signed in/, "no credentials file: nothing to run on");
+	fs.mkdirSync(loginDir(s.agentDir, A), { recursive: true });
+	fs.writeFileSync(path.join(loginDir(s.agentDir, A), ".credentials.json"), "{}");
+	const picked = s.logins.pickable(A);
+	assert.ok("choice" in picked && picked.choice.id === A && picked.choice.env.CLAUDE_CONFIG_DIR === loginDir(s.agentDir, A));
+	assert.match(refused(B)!, /is off/);
+	assert.match(refused(C)!, /isn't on this device/, "held by another device");
+	assert.match(refused("l-0000dead")!, /no such Claude login/);
+	const own = s.logins.pickable("default");
+	assert.ok("choice" in own && own.choice.id === "default", "the device's own login counts");
+	s.logins.recordFailure({ id: A, label: "a", env: {}, accountUuid: "acct-1" }, { kind: "limit", resetsAt: s.now + 3_600_000 });
+	assert.match(refused(A)!, /limited until/);
+	s.logins.recordFailure({ id: A, label: "a", env: {} }, { kind: "auth" });
+	assert.match(refused(A)!, /signed in again/);
+});
+
+test("take: a login free at the keeper is borrowed by name (the want's `only`), and one held here asks nothing", async (t) => {
+	const s = sandbox(t);
+	fs.mkdirSync(path.join(s.agentDir, "sova"));
+	fs.writeFileSync(path.join(s.agentDir, "sova", "peers.json"), JSON.stringify({ version: 1, self: { id: "desk", label: "Desk" }, peers: [{ id: "vps", label: "Vps" }] }));
+	writeAccounts(s.agentDir, { version: 1, logins: [login(A, "acct-1", { device: "desk" }), login(C, "acct-2", { device: null })], devices: {} });
+	fs.mkdirSync(path.dirname(poolAgentPath(s.agentDir)), { recursive: true });
+	fs.writeFileSync(poolAgentPath(s.agentDir), JSON.stringify({ v: 1, pid: process.pid, at: Date.now(), device: "desk" }));
+	const logins = new ClaudeLogins({ agentDir: s.agentDir, env: s.env, wantWaitMs: 3000, wantPollMs: 10 });
+	await logins.take(A);
+	assert.deepEqual(readWants(s.agentDir), [], "A is held here already: no borrow");
+	const taking = logins.take(C);
+	let seen: ReturnType<typeof readWants> = [];
+	for (let i = 0; i < 100 && !seen.length; i++) { await new Promise((r) => setTimeout(r, 10)); seen = readWants(s.agentDir); }
+	assert.equal(seen[0]?.want.only, C, "the borrow names C");
+	// The pool agent's part: C arrives here.
+	updateAccounts(s.agentDir, (a) => { a.logins.find((l) => l.id === C)!.device = "desk"; });
+	await taking;
+	assert.deepEqual(readWants(s.agentDir), [], "the want is gone once C is here");
+	fs.mkdirSync(path.join(wantsDir(s.agentDir)), { recursive: true });
+	fs.writeFileSync(path.join(wantsDir(s.agentDir), "1-x.json"), JSON.stringify({ v: 1, at: 1, pid: 1, only: "not-a-login" }));
+	assert.equal(readWants(s.agentDir)[0]?.want.only, undefined, "a malformed `only` is dropped");
 });

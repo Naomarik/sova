@@ -4,9 +4,11 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
   ChatClaudeLogin,
+  ClaudeAccountsInfo,
   ChatServerMessage,
   OverseerQuickAction,
   SandboxInfo,
+  ChatProfileInfo,
   SessionSummary,
   SlashCommand,
   TeamInfo,
@@ -21,8 +23,9 @@ import { cardFold, openCards } from "../lib/overseer";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { getOverseerAutonomy, revokeOverseerPermit, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import type { OverseerAutonomy } from "../../shared/protocol";
+import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
   addPendingPrompt,
@@ -83,7 +86,8 @@ import {
 } from "../lib/ui-state";
 import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
-import { isChangeRow } from "../lib/change-rows";
+import { isChangeRow, isProfileRow } from "../lib/change-rows";
+import { ProfilePicker } from "./ProfilePicker";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
@@ -109,7 +113,7 @@ import { inputTotal, lastInput as lastInputOf, newestOnly, newRows } from "../li
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
-import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
@@ -177,6 +181,8 @@ export function ChatView(props: {
   /** This chat's Claude login (WS "claude_login"; null after each hello), for the sidebar foot's
       usage glance. */
   onClaudeLogin?(login: ChatClaudeLogin | null): void;
+  /** The session's profile as the socket said it (the head chip, §chat.profiles/after-first-message). */
+  onProfile?(info: ChatProfileInfo): void;
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
   /** The pane is open for this session ON THE AGENTS TAB (the subagents trigger's aria-expanded). */
@@ -359,6 +365,11 @@ export function ChatView(props: {
   /** Level asked for, until the echo. A refusal ends it and leaves the level as it was. */
   const [pendingThinking, setPendingThinking] = createSignal<string | null>(null);
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
+  /** A refused or failed switch of Claude login (§app.claude-logins/switch-login): the server's reason. */
+  const [loginError, setLoginError] = createSignal<string | null>(null);
+  /** The login panel's reading of this host's logins, at each opening. */
+  const [loginInfo, setLoginInfo] = createSignal<ClaudeAccountsInfo | null>(null);
+  const [loginInfoError, setLoginInfoError] = createSignal<string | null>(null);
   const [showPlaybooks, setShowPlaybooks] = createSignal(false);
 
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
@@ -367,6 +378,10 @@ export function ChatView(props: {
   const [modeState, setModeState] = createSignal<ModeState | null>(null);
   /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
   const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
+  /** The socket's `profile` message (§chat.profiles/applying); null until one arrives. */
+  const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
+  /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
+  const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal(false);
   /** This chat's Claude login (WS "claude_login"), null until told or when the host can't name one. */
   const [claudeLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null>(null);
@@ -585,6 +600,7 @@ export function ChatView(props: {
           });
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
+          setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
           setClaudeLogin(null); // a "claude_login" message follows when this host has several logins
           props.onClaudeLogin?.(null);
           batch(() => {
@@ -776,6 +792,13 @@ export function ChatView(props: {
         case "sandbox":
           setSandboxState({ on: msg.on, enforcement: msg.enforcement, status: msg.status });
           break;
+        case "profile": {
+          const { type: _t, ...info } = msg;
+          setProfileInfo(info);
+          props.onProfile?.(info);
+          if (info.locked) setProfileRace(null);
+          break;
+        }
         case "claude_login":
           setClaudeLogin(msg.login);
           props.onClaudeLogin?.(msg.login);
@@ -815,6 +838,7 @@ export function ChatView(props: {
             // someone else): the words as they are, the draft back in the box, the socket kept, no
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
+              if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
               toast(msg.message);
@@ -847,6 +871,12 @@ export function ChatView(props: {
               return;
             default: {
               if (modelError() || thinkingError()) break; // shown as the switch's banner
+              // A refused switch of Claude login is its own banner, never a turn failure.
+              if (msg.message.startsWith(LOGIN_UNCHANGED)) {
+                setLoginError(msg.message.slice(LOGIN_UNCHANGED.length).trim());
+                announce(msg.message);
+                break;
+              }
               // The front door may have moved this tab to a host that doesn't hold this session:
               // the reconnect's "not found" is no turn error then. Ask for the host check now and
               // keep "Reconnecting"; the view is replaced when the change is confirmed.
@@ -1297,6 +1327,28 @@ export function ChatView(props: {
     },
     choose: chooseModel,
   };
+  /** The login label's panel (§app.claude-logins/switch-login): the server keeps the waiting pick. */
+  let loginRead = 0;
+  const loginControl: LoginControl = {
+    login: claudeLogin,
+    info: loginInfo,
+    error: loginInfoError,
+    refresh: () => {
+      const seq = ++loginRead;
+      setLoginInfoError(null);
+      getChatClaudeAccounts(props.path)
+        .then((info) => seq === loginRead && setLoginInfo(info))
+        .catch((err) => seq === loginRead && setLoginInfoError(`Couldn't read this device's logins: ${err instanceof Error ? err.message : String(err)}`));
+    },
+    running: () => live.running,
+    context: () => sessionContext()[props.path],
+    choose: (id) => {
+      if (socket.send({ type: "set_claude_login", login: id })) setLoginError(null);
+    },
+    cancel: () => {
+      socket.send({ type: "set_claude_login", login: null });
+    },
+  };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
   /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
@@ -1557,6 +1609,26 @@ export function ChatView(props: {
                 />
               )}
             </Show>
+            {/* A refused switch of Claude login (§app.claude-logins/switch-login). */}
+            <Show when={loginError()}>
+              {(why) => (
+                <Banner
+                  tone="error"
+                  title="Couldn't switch the Claude login."
+                  body={
+                    <>
+                      {why()}
+                      <Show when={claudeLogin()}>{(l) => <> You're still on {l().email ?? l().name}.</>}</Show>
+                    </>
+                  }
+                  action={
+                    <button type="button" class="button button-sm button-ghost" onClick={() => setLoginError(null)}>
+                      Dismiss
+                    </button>
+                  }
+                />
+              )}
+            </Show>
             {/* A refused thinking change reads like a refused model switch. */}
             <Show when={thinkingError()}>
               {(err) => (
@@ -1660,7 +1732,7 @@ export function ChatView(props: {
               <Show
                 when={
                   whole() &&
-                  (props.overseer ? list().every((it) => it.kind === "info") : list().every(isChangeRow)) &&
+                  (props.overseer ? list().every((it) => it.kind === "info") : list().every((it) => isChangeRow(it) || isProfileRow(it))) &&
                   live.entries.length === 0 &&
                   commandRows().length === 0
                 }
@@ -1672,6 +1744,20 @@ export function ChatView(props: {
                       <p class="empty-title">
                         New session in <code>{props.cwdLabel}</code>.
                       </p>
+                      <Show when={profileInfo()?.pickable && !profileInfo()?.locked && profileInfo()}>
+                        {(info) => (
+                          <ProfilePicker
+                            path={props.path}
+                            info={info()}
+                            mode={modeState()?.mode}
+                            model={model()}
+                            race={profileRace()}
+                            onFirstMessage={(text) => {
+                              if (!drafts.get(props.path)?.trim()) setDraftText(props.path, text);
+                            }}
+                          />
+                        )}
+                      </Show>
                       <SessionSetupCard path={props.path} />
                       <p class="empty-body">Your first message becomes its title.</p>
                     </div>
@@ -1742,6 +1828,7 @@ export function ChatView(props: {
         autofocus={props.autofocus}
         model={modelControl}
         claudeLogin={claudeLogin}
+        login={loginControl}
         thinking={thinkingControl}
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}

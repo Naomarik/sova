@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_SENT_ENTRY, type AlignReportInfo, type EntryKind, type ExplanationInfo, type TranscriptItem } from "../shared/protocol";
+import { PROFILE_ENTRY, SESSION_SENT_ENTRY } from "../shared/profiles";
+import { profileField, profileOnBranch } from "./session-profile";
 import {
   BATON_DECISION_ENTRY,
   BATON_DONE_ENTRY,
@@ -367,6 +369,27 @@ function overseerSentRow(id: string, entry: Entry): TranscriptItem[] {
   return [it];
 }
 
+/** Another session sent the user message `targetId` (§chat.profiles/delivery): renders nothing
+    itself; the client draws the sender header above that row. */
+function sessionSentRow(id: string, entry: Entry): TranscriptItem[] {
+  const d: any = entry.data;
+  if (!d || typeof d.targetId !== "string" || !d.targetId || typeof d.from?.sessionId !== "string") return [];
+  const it = item(id, "info", entry);
+  it.sessionMark = { kind: "sent", targetId: d.targetId, from: { sessionId: d.from.sessionId, title: typeof d.from.title === "string" ? d.from.title : "" }, hop: typeof d.hop === "number" ? d.hop : 1 };
+  return [it];
+}
+
+/** The session's profile entry (§chat.profiles/after-first-message): the client draws its row only
+    once a user message is on the branch. */
+function profileRow(id: string, entry: Entry): TranscriptItem[] {
+  const d = profileOnBranch([entry as { type: string; customType?: string; data?: unknown }]);
+  if (!d) return [];
+  const field = profileField(d) ?? null;
+  const it = item(id, "info", entry, field ? `Profile: ${field.label}${field.singleton ? " · One at a time" : ""}` : "Profile: Default");
+  it.profileMark = { profile: field };
+  return [it];
+}
+
 /** The Overseer answered an extension dialog: the machine row "Overseer chose: X". */
 function overseerAnswerRow(id: string, entry: Entry): TranscriptItem[] {
   const d: any = entry.data;
@@ -502,6 +525,8 @@ export function normalizeEntry(entry: Entry, fallbackId = "?", state?: { model?:
       if (entry.customType === ALIGN_DOC) return alignRow(id, entry);
       if (entry.customType === EXPLAIN_DOC) return explainRow(id, entry);
       if (entry.customType === OVERSEER_SENT_ENTRY) return overseerSentRow(id, entry);
+      if (entry.customType === SESSION_SENT_ENTRY) return sessionSentRow(id, entry);
+      if (entry.customType === PROFILE_ENTRY) return profileRow(id, entry);
       if (entry.customType === OVERSEER_DIALOG_ANSWER_ENTRY) return overseerAnswerRow(id, entry);
       if (entry.customType === TEAM_EVENT_TYPE) return teamEventRow(id, entry);
       if (entry.customType === "claude-login") return claudeLoginRow(id, entry);

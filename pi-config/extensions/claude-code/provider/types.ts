@@ -113,6 +113,11 @@ export interface ClaudeSessionBridge {
 	 * and where the bridge reports a change of login, as the entry to append (accounts.ts).
 	 */
 	setSessionLogin?(sessionId: string, recorded: string | undefined, onChange: (entry: import("../accounts.ts").ClaudeLoginEntry) => void): void;
+	/**
+	 * Move a session to the login the user picked (`/claude-login`); absent on a bridge built by
+	 * older code (it is a process-wide singleton), which a restart replaces.
+	 */
+	switchSessionLogin?(sessionId: string, to: import("../accounts.ts").ClaudeLoginChoice, from: import("../accounts.ts").ClaudeLoginChoice): "switched" | "same" | "busy" | "unknown";
 }
 
 /** The payload handed to `options.onPayload`; a returned replacement is applied. */

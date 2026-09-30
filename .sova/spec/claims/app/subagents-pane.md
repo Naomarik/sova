@@ -218,7 +218,8 @@ strip, empty or not: a tab that came and went would move the strip under the rea
 - **Sharing** holds the Sharing section (§app.session-share/sheet). The pane reads the session's
   shares once for it and for the tab's badge (`GET /api/session-shares?session=<id>`): at open, when
   the session changes, after the Share sheet changes something, and every 5 seconds while a share
-  is live and the page is visible. While a recipient of a live share is viewing now (a background
+  is live and the page is visible. A re-read updates the list in place: the placeholder shows only
+  until a session's first read lands. While a recipient of a live share is viewing now (a background
   tab, "Open in a tab", never counts), the tab carries a count chip, and its accessible name is
   "Sharing, {n} viewing now"; at zero there is no chip and the name is "Sharing".
 - **Timeline** is §chat/timeline, **Agents** the list and transcript below; **Skills** says which

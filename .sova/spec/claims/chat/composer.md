@@ -76,12 +76,13 @@
         <span class="composer-model-level">high</span>
         <span class="icon icon-sm composer-model-caret" style="--icon: url(/icons/chevron-down.svg)" aria-hidden="true"></span>
       </button>
-      <!-- a Claude Code model on a device with several Claude logins: the chat's login, not a
-           control; see §app.claude-logins/active-login -->
-      <span class="composer-login" title="This chat runs on this Claude login: …" aria-label="Claude login: own@example.com">
+      <!-- a Claude Code model on a device with several Claude logins: the chat's login, the
+           flyout's login trigger; see §app.claude-logins/active-login, /switch-login -->
+      <button class="composer-login" type="button" aria-haspopup="menu" aria-controls="composer-flyout"
+              aria-expanded="false" title="This chat runs on this Claude login: …" aria-label="Claude login: own@example.com">
         <span class="composer-login-full">own@example.com</span>
         <span class="composer-login-short">own</span>
-      </span>
+      </button>
       <span class="composer-reason" id="composer-reason"><!-- reason when disabled; else empty --></span>
       <!-- chat sessions only: the mode switch, pushed to the right edge; see §chat/mode-menu -->
       <button class="button button-ghost mode-trigger" type="button" aria-haspopup="menu" …>…</button>
@@ -220,12 +221,13 @@ Everything you do to a session that isn't typing lives behind one ghost `plus` b
 Commands) and took the model trigger and the session's own facts out of the head (§chat/transcript): the
 composer is where the session is acted on, and the head is for reading.
 
-**One popover, two triggers, three panels.** The `plus` button opens the **menu** panel — Attach
+**One popover, up to three triggers and four panels.** The `plus` button opens the **menu** panel — Attach
 images, Commands, Playbooks, Hide tool calls, Hide thinking, Sandbox and Undo
 last turn, each present only where it applies (below). The model indicator in `.composer-foot` (§chat/composer) opens the **model**
 panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
 for. The Model row opens the §chat/model-menu **picker** as the third panel, which comes back to the model
-panel it was opened from. Each trigger anchors the popover above **itself**: the math is the same,
+panel it was opened from. Where the Claude login label is shown (§app.claude-logins/active-login),
+it is a third trigger and opens a fourth panel, **login** (§app.claude-logins/switch-login). Each trigger anchors the popover above **itself**: the math is the same,
 measured on whichever element opened it, and closing returns focus there. The composer holds the
 flyout's handle (`show(panel, anchor)` · `close()` · `open` · `anchor`, handed over once on
 mount), so the indicator can toggle the menu it opened and mirror its state in `aria-expanded`.
@@ -284,9 +286,10 @@ it.
   measure that element and set `--menu-bottom: {innerHeight − rect.top + 4}px` and `--menu-left:
   {rect.left}px`. A resize re-anchors it; it closes only when the anchor isn't laid out anymore.
   Under 768px it's the same bottom sheet the model menu is.
-- **Panels.** Three, one popover: **menu** (the `plus` button's), **model** (the indicator's), and
+- **Panels.** Up to four, one popover: **menu** (the `plus` button's), **model** (the indicator's), and
   the §chat/model-menu **picker**, which the Model row opens and a `Back` button above its search field returns
-  from — to the model panel, which is the only way in. Only the panel in front is rendered, so it
+  from — to the model panel, which is the only way in; and **login**, the login label's, where it
+  is shown. Only the panel in front is rendered, so it
   is also the whole keyboard order. One popover means no nested light-dismiss to reason about, and
   `Esc` always means "close the flyout".
 - **Keyboard.** `↑`/`↓` move and wrap, `Home`/`End` jump, `Enter`/`Space` activate, `Esc` closes

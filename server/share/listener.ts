@@ -1,5 +1,5 @@
 import type { Server } from "node:http";
-import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareState } from "../../shared/public-links";
+import { LINK_WARNINGS, type LinkWarningCode, type PublicLinksFile, type ShareListenerFailure, type ShareState } from "../../shared/public-links";
 import { readPeers } from "../mesh/peers";
 import { readPublicLinks, sharePin } from "../public-links";
 import { createShareServer } from "./edge";
@@ -18,7 +18,9 @@ import { onPublicLinksChanged } from "./setting-events";
  * Bound from the Public links setting (§mesh.public/setting): "This host is the gateway" binds
  * 127.0.0.1:<sharePort>, behind the front that terminates TLS. SOVA_SHARE_HOST and SOVA_SHARE_PORT
  * pin the address; with neither the setting nor both variables, nothing is bound. A PUT of the
- * setting rebinds without a restart (setting-events), releasing the old port first.
+ * setting rebinds without a restart (setting-events), releasing the old port first. A bind that is
+ * wanted and fails (the port taken, a SOVA_SHARE_PORT that isn't a port) is kept as the share
+ * state's `listener` until one works or none is wanted (§mesh.public/listener-failure).
  */
 
 // The edge's names, where the tests and callers have always imported them.
@@ -43,15 +45,41 @@ let unsubscribe: (() => void) | null = null;
 let chain: Promise<unknown> = Promise.resolve();
 /** Bumped by stop: a rebind queued before it binds nothing. */
 let generation = 0;
+/** The last wanted bind that failed, until one works or none is wanted. */
+let failure: ShareListenerFailure | null = null;
 
-/** Where the setting and the environment say to bind; null: nothing to bind. */
-export function bindTarget(file: PublicLinksFile, env: NodeJS.ProcessEnv = process.env): BindTarget | null {
+/** What the setting and the environment ask for: an address to bind, a failure (a bind is wanted
+    but SOVA_SHARE_PORT isn't a port; only the variable can be one, the setting is parsed
+    strictly), or null: nothing to bind. */
+function bindAsk(file: PublicLinksFile, env: NodeJS.ProcessEnv): { want: BindTarget } | { failure: ShareListenerFailure } | null {
   const self = file.route === "self" && file.gateway ? file.gateway : null;
   const host = env.SOVA_SHARE_HOST?.trim() || (self ? "127.0.0.1" : "");
   const portText = env.SOVA_SHARE_PORT?.trim() || (self ? String(self.sharePort) : "");
-  if (!host || !portText || !/^\d{1,5}$/.test(portText)) return null;
-  const port = Number(portText);
-  return port <= 65535 ? { host, port } : null;
+  if (!host || !portText) return null;
+  const port = /^\d{1,5}$/.test(portText) ? Number(portText) : NaN;
+  return port <= 65535 ? { want: { host, port } } : { failure: { host, port: null, reason: "SOVA_SHARE_PORT isn't a port number." } };
+}
+
+/** Where the setting and the environment say to bind; null: nothing to bind, or nothing valid. */
+export function bindTarget(file: PublicLinksFile, env: NodeJS.ProcessEnv = process.env): BindTarget | null {
+  const ask = bindAsk(file, env);
+  return ask && "want" in ask ? ask.want : null;
+}
+
+const hostPort = (host: string, port: number) => `${host.includes(":") ? `[${host}]` : host}:${port}`;
+
+/** A failed listen in one sentence (§design.copy-deck/public-links). */
+function failureReason(err: NodeJS.ErrnoException, want: BindTarget): string {
+  switch (err.code) {
+    case "EADDRINUSE":
+      return `Another program is already using ${hostPort(want.host, want.port)}.`;
+    case "EACCES":
+      return `This host doesn't let Sova use port ${want.port}.`;
+    case "EADDRNOTAVAIL":
+      return `${want.host} isn't an address of this host.`;
+    default:
+      return `Couldn't open ${hostPort(want.host, want.port)} (${err.code ?? err.message}).`;
+  }
 }
 
 /** Cut the router's open hops (dispose: nothing routes through it again), then close the
@@ -72,8 +100,9 @@ function bind(want: BindTarget, gen: number): Promise<ShareListenerState | null>
   const router = makeHooks();
   const server = createShareServer(router);
   return new Promise((resolve) => {
-    server.once("error", (err) => {
+    server.once("error", (err: NodeJS.ErrnoException) => {
       console.warn(`[share] listener not up on ${want.host}:${want.port}: ${err.message}`);
+      if (gen === generation) failure = { host: want.host, port: want.port, reason: failureReason(err, want) };
       void close(server, router);
       resolve(null);
     });
@@ -86,16 +115,18 @@ function bind(want: BindTarget, gen: number): Promise<ShareListenerState | null>
       }
       const actual = (server.address() as { port: number }).port;
       bound = { server, router, state: { host: want.host, port: actual }, want };
+      failure = null;
       console.log(`[share] share listener on http://${want.host.includes(":") ? `[${want.host}]` : want.host}:${actual}`);
       resolve(bound.state);
     });
   });
 }
 
-/** Make the bound socket match `want`: keep it when it already does, else close it (the port is
-    free once this resolves) and bind anew. */
-function rebind(want: BindTarget | null): Promise<ShareListenerState | null> {
+/** Make the bound socket match the ask: keep it when it already does, else close it (the port is
+    free once this resolves) and bind anew; an ask that is a failure binds nothing and keeps it. */
+function rebind(ask: ReturnType<typeof bindAsk>): Promise<ShareListenerState | null> {
   const gen = generation;
+  const want = ask && "want" in ask ? ask.want : null;
   const run = chain.then(async () => {
     if (gen !== generation) return null;
     if (bound && want && bound.want.host === want.host && bound.want.port === want.port) return bound.state;
@@ -104,7 +135,15 @@ function rebind(want: BindTarget | null): Promise<ShareListenerState | null> {
       bound = null;
       await close(old.server, old.router);
     }
-    if (!want || gen !== generation) return null;
+    if (gen !== generation) return null;
+    if (ask && "failure" in ask) {
+      if (failure?.reason !== ask.failure.reason) console.warn(`[share] listener not up: ${ask.failure.reason}`);
+      failure = ask.failure;
+    }
+    if (!want) {
+      if (!ask) failure = null;
+      return null;
+    }
     return bind(want, gen);
   });
   chain = run.catch(() => undefined);
@@ -116,13 +155,18 @@ function rebind(want: BindTarget | null): Promise<ShareListenerState | null> {
 export function startShareListener(env: NodeJS.ProcessEnv = process.env, opts: { hooks?: () => GatewayRouter } = {}): Promise<ShareListenerState | null> {
   makeHooks = opts.hooks ?? gatewayHooks;
   unsubscribe?.();
-  unsubscribe = onPublicLinksChanged((file) => rebind(bindTarget(file, env)).then(() => undefined));
+  unsubscribe = onPublicLinksChanged((file) => rebind(bindAsk(file, env)).then(() => undefined));
   sharePin(env); // a refused pin says so at startup, not first at a mint
-  return rebind(bindTarget(readPublicLinks(), env));
+  return rebind(bindAsk(readPublicLinks(), env));
 }
+
+/** Resolves once every bind and close queued so far has run: a PUT of the setting answers with
+    the bind as it came out (§mesh.public/listener-failure). */
+export const shareListenerSettled = (): Promise<void> => chain.then(() => undefined);
 
 export function stopShareListener(): void {
   generation++;
+  failure = null;
   unsubscribe?.();
   unsubscribe = null;
   if (!bound) return;
@@ -141,7 +185,7 @@ export function noteVerify(url: string, ok: boolean): void {
   lastCheck = { url, ok };
 }
 
-const boundUrl = (): string | null => (bound ? `http://${bound.state.host.includes(":") ? `[${bound.state.host}]` : bound.state.host}:${bound.state.port}` : null);
+const boundUrl = (): string | null => (bound ? `http://${hostPort(bound.state.host, bound.state.port)}` : null);
 /** A warning's text with the gateway named; a sentence that starts with the name starts with a capital. */
 function fill(code: LinkWarningCode, gateway: string): string {
   const text = LINK_WARNINGS[code].replaceAll("{gateway}", gateway);
@@ -166,8 +210,13 @@ function ownState(source: ShareState["source"], publicUrl: string, file: PublicL
 
 /** Where links minted here point, and whether they open from outside (ShareState). First match:
     SOVA_SHARE_PUBLIC_URL (a pin), this host's own gateway setting, the via gateway (live, else
-    lastKnownUrl), the bound address, off. */
+    lastKnownUrl), the bound address, off; with `listener` while a wanted bind failed. */
 export function shareState(env: NodeJS.ProcessEnv = process.env, file: PublicLinksFile = readPublicLinks()): ShareState {
+  const s = effectiveState(env, file);
+  return failure ? { ...s, listener: { ...failure } } : s;
+}
+
+function effectiveState(env: NodeJS.ProcessEnv, file: PublicLinksFile): ShareState {
   const pin = sharePin(env);
   if (pin) return ownState("env", pin, file);
   if (file.route === "self" && file.gateway) return ownState("setting", file.gateway.publicUrl, file);

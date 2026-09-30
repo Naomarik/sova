@@ -5,7 +5,9 @@ import { useHostScope } from "../lib/host-scope";
 import { confirmActivate, confirmReset } from "../lib/confirm-step";
 import { hideThinking, hideTools, setHideThinking, setHideTools } from "../lib/ui-state";
 import { sandboxRowTitle } from "../lib/sandbox";
-import type { SandboxInfo } from "../../shared/protocol";
+import { loginMenu, resendNote } from "../lib/claude-login";
+import type { ContextState } from "../lib/context";
+import type { ChatClaudeLogin, ClaudeAccountsInfo, SandboxInfo } from "../../shared/protocol";
 import { ModelPicker, type ModelControl } from "./ModelMenu";
 import { usePaneId } from "../lib/pane-scope";
 import { Icon, type IconName } from "./ui";
@@ -38,9 +40,29 @@ export interface SandboxControl {
   set(on: boolean): void;
 }
 
-/** The flyout's three panels: the "+" button's root menu, the indicator's model panel, and the
-    the model menu's picker the model panel opens. */
-export type FlyoutPanel = "menu" | "model" | "picker";
+/** What the chat view exposes so the flyout can move this chat to another Claude login
+    (§app.claude-logins/switch-login). */
+export interface LoginControl {
+  /** The chat's login and its waiting pick (WS "claude_login"). */
+  login: Accessor<ChatClaudeLogin | null>;
+  /** This device's logins (GET /api/claude/accounts), read at each opening; null until it lands. */
+  info: Accessor<ClaudeAccountsInfo | null>;
+  /** Why that read failed, else null. */
+  error: Accessor<string | null>;
+  /** Reads them again: the panel does at each opening. */
+  refresh(): void;
+  /** A reply is running: a pick waits for it to end. */
+  running: Accessor<boolean>;
+  /** The chat's context fill, for the resend note (§app.claude-logins/switch-cost). */
+  context: Accessor<ContextState | undefined>;
+  choose(id: string): void;
+  /** Drops the waiting pick. */
+  cancel(): void;
+}
+
+/** The flyout's panels: the "+" button's root menu, the indicator's model panel, the model menu's
+    picker the model panel opens, and the login label's login panel. */
+export type FlyoutPanel = "menu" | "model" | "picker" | "login";
 
 /** What the composer gets on mount so a second trigger — the model indicator — can open
     this one popover, anchored above itself. */
@@ -76,6 +98,8 @@ interface Row {
   title?: string;
   /** Shares the composer's reason line, so a disabled row reads out why. */
   describe?: boolean;
+  /** The login panel's account group the row sits in. */
+  group?: string;
   run(): void;
 }
 
@@ -86,7 +110,7 @@ interface Row {
  * chats Undo last turn); the
  * composer's model indicator opens the **model** panel (the Model row and this model's
  * Thinking ladder); the Model row opens the model menu's **picker**, which comes back to the model panel.
- * Ctrl/⌘+P opens the picker.
+ * The Claude login label, where shown, opens the **login** panel. Ctrl/⌘+P opens the picker.
  */
 export function ComposerMenu(props: {
   /** The composer is disabled (TUI-live, connecting, reconnecting): nothing here acts. */
@@ -108,6 +132,8 @@ export function ComposerMenu(props: {
   undo?: UndoControl | null;
   /** Chat sessions whose runtime has the sandbox extension: the Sandbox row. */
   sandbox?: SandboxControl | null;
+  /** Chat sessions on a Claude Code model with several logins: the login panel. */
+  login?: LoginControl | null;
   /** Puts focus back in the textarea after a choice. */
   onRefocus(): void;
   /** Called once on mount with the handle the composer's model indicator opens this menu by. */
@@ -279,8 +305,59 @@ export function ComposerMenu(props: {
     return out;
   });
 
+  /** The login label's panel: every login by account, the waiting pick and its Cancel. */
+  const loginGroups = createMemo(() => {
+    const control = props.login;
+    const info = control?.info();
+    return control && info ? loginMenu(info, control.login(), control.running()) : [];
+  });
+  const loginRows = createMemo<Row[]>(() => {
+    const control = props.login;
+    const out: Row[] = [];
+    if (!control) return out;
+    if (control.login()?.pending && control.running())
+      out.push({
+        id: "login-cancel",
+        role: "menuitem",
+        icon: "close",
+        label: "Cancel switch",
+        disabled: props.disabled,
+        describe: props.disabled,
+        run: () => {
+          control.cancel(); // stays open: the pending row and the label go back as the server says
+        },
+      });
+    for (const group of loginGroups())
+      for (const r of group.rows)
+        out.push({
+          id: `login-${r.id}`,
+          role: "menuitemradio",
+          label: r.name,
+          meta: r.meta ?? undefined,
+          checked: r.checked,
+          busy: r.pending,
+          disabled: props.disabled || (r.reason !== null && !r.checked),
+          describe: props.disabled,
+          title: props.disabled ? undefined : (r.reason ?? (r.borrow ? "Borrows this login from the keeper, then moves the chat to it." : undefined)),
+          group: group.key,
+          run: () => {
+            if (r.checked) {
+              if (control.login()?.pending) control.cancel();
+              close(true);
+              props.onRefocus();
+              return;
+            }
+            if (r.pending) return;
+            control.choose(r.id);
+            close(true);
+            props.onRefocus();
+          },
+        });
+    return out;
+  });
+
   /** The panel in front, which is the only list rendered — and so the keyboard's whole order. */
-  const rows = createMemo<Row[]>(() => (panel() === "model" ? modelRows() : menuRows()));
+  const rows = createMemo<Row[]>(() => (panel() === "model" ? modelRows() : panel() === "login" ? loginRows() : menuRows()));
 
   /** Rows of one section, each with its index in `rows()` — the keyboard's order. */
   const pick = (keep: (r: Row) => boolean) => rows().map((r, index) => ({ r, index })).filter((x) => keep(x.r));
@@ -311,6 +388,7 @@ export function ComposerMenu(props: {
     // Show first: a panel that mounts into a hidden popover can't take focus.
     if (!menu.matches(":popover-open")) menu.showPopover();
     setPanel(to);
+    if (to === "login") props.login?.refresh(); // standings change: read them at each opening
     void ensureModels(host()).catch(() => {}); // the Thinking ladder needs the list; the picker reports its own failure
     if (to !== "picker") focusFirst();
   };
@@ -487,6 +565,48 @@ export function ComposerMenu(props: {
                 </div>
               </Show>
             </div>
+          </Match>
+          {/* The login label's panel (§app.claude-logins/switch-login): logins by account, the
+              device's own last; the waiting pick first, and what a switch resends last. */}
+          <Match when={panel() === "login" && props.login}>
+            {(control) => (
+              <div class="model-menu-list composer-flyout-list composer-flyout-logins" role="menu" aria-label="Claude login" onKeyDown={onListKeyDown}>
+                <Show when={control().running() && control().login()?.pending}>
+                  {(waiting) => (
+                    <>
+                      <p class="composer-flyout-status">
+                        <span class="live-dot" />
+                        Switching to {waiting().name} after this reply
+                      </p>
+                      <Index each={pick((r) => r.id === "login-cancel")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+                      <div class="composer-flyout-sep" role="separator" />
+                    </>
+                  )}
+                </Show>
+                <Show when={control().info()} fallback={<p class="composer-flyout-note">{control().error() ?? "Loading logins…"}</p>}>
+                  <Index each={loginGroups()}>
+                    {(group) => (
+                      <div class="model-menu-group" role="group" aria-labelledby={paneId(`composer-flyout-login-${group().key}`)}>
+                        <div class="list-group-label" id={paneId(`composer-flyout-login-${group().key}`)}>
+                          {group().label}
+                        </div>
+                        <Index each={pick((r) => r.group === group().key)}>{(x) => <Item r={x().r} index={x().index} />}</Index>
+                      </div>
+                    )}
+                  </Index>
+                </Show>
+                <Show when={resendNote(control().context())}>
+                  {(note) => (
+                    <>
+                      <div class="composer-flyout-sep" role="separator" />
+                      <p class="composer-flyout-note" title={note().title}>
+                        {note().text}
+                      </p>
+                    </>
+                  )}
+                </Show>
+              </div>
+            )}
           </Match>
           <Match when={panel() === "menu"}>
             <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>

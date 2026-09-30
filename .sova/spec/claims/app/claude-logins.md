@@ -207,19 +207,24 @@ none yet (it never ran a Claude turn here) is shown the login this device would 
 its first usable login in the device's order.
 
 - **Composer foot.** On a chat whose model is a Claude Code model (`claude-code-cli/…`), on a
-  device with more than one login in its order, a quiet `.composer-login` sits right after the
+  device with more than one login to choose from (more than one in its order or, with the mesh
+  on, any other login in the pool), a quiet `.composer-login` sits right after the
   model indicator: the login's email (else its label or id), in caption size and muted ink,
-  ellipsized at 26 characters; on a phone width only the part before the `@`, at most 12. It is
-  not a control. Its `title` says
+  ellipsized at 26 characters; on a phone width only the part before the `@`, at most 12. It is a
+  button (`aria-haspopup="menu"`, `aria-expanded`) that opens the flyout's login panel
+  (§app.claude-logins/switch-login); in a chat that can't be written it is `aria-disabled`, like
+  the model indicator. Its `title` says
   "This chat runs on this Claude login: {label ·} {email} · {plan}. Order and standing: Settings →
   Accounts." — or, before the chat recorded one, "This chat starts on this Claude login (first
-  ready on this device): …"; its `aria-label` is "Claude login: {email}". With a single login, or
+  ready on this device): …"; its `aria-label` is "Claude login: {email}". While a pick waits it
+  shows that pick instead (§app.claude-logins/switch-queue). With a single login, or
   on another provider's model, nothing is shown.
 - **Wire.** `/ws/chat` sends `{type: "claude_login", login}` (`ChatClaudeLogin`: `id`, `name`,
-  `email?`, `planLabel?`, `recorded`, `several`, or `null` when the registry can't name one) after
+  `email?`, `planLabel?`, `recorded`, `several`, `pending?` — the waiting pick's `id` and `name` —
+  or `null` when the registry can't name one) after
   every hello, only on a device with several logins (a hello clears the last one), and whenever a
-  `claude-login` entry is appended, so a failover moves the indicator in the same turn. A switch
-  still shows its note row.
+  `claude-login` entry is appended or the waiting pick changes, so a failover moves the indicator in
+  the same turn. A switch still shows its note row.
 - **TUI.** The usage-status footer shows the Claude usage of the session's login: its newest
   `claude-login` entry, else — before the session's first Claude turn — the login this device
   would start it on now (its first usable login, as above; Claude Code's own only when the
@@ -228,6 +233,71 @@ its first usable login in the device's order.
 - **Usage readouts.** The sidebar foot's usage glance and the Usage page's summary lead read the
   same login for the chat on screen (§app.insights/sidebar-foot). Its `/usage` screen lists Claude Code's own login and then each added one, each titled
   "Claude · {email}" with its plan.
+
+## §app.claude-logins/switch-login — Switching a chat's login from the composer
+
+In a web chat on a Claude Code model, the composer's login label (§app.claude-logins/active-login)
+opens the **login** panel of the composer flyout (§chat.composer/composer-flyout), which moves the
+chat to another Claude login at any time.
+
+- **What it lists.** Every login this device knows of, one group per account as Settings →
+  Accounts lists them (§app.claude-logins/device-order): the group's label is the account's email
+  (else "Unknown account"), and each row is a `menuitemradio` named like the login
+  (§app.claude-logins/registry, **Names**). This device's own login (`default`, "Claude Code's own
+  login") comes last, in its own group "This device". The chat's login is checked. A row can be
+  picked when its login is enabled and ready (not limited, not needing sign-in, signed in) and
+  either held here (not leaving) or, with the mesh on, free at the keeper while the keeper is
+  online; a free one's row says "Borrow". Every other row is `aria-disabled` and says why, in this
+  order of precedence: "On {device}" (held by another device), "Stuck on {device}", "Pinned to
+  {device}", "Keeper offline", "Leaving this device", "Off", "Not signed in", "Sign in again",
+  "Limited until {time}".
+- **A pick.** The chat moves to that login now: its idle Claude Code process stops, and its next
+  turn starts one on the picked login the way a model change restarts it (the history folded into
+  one message, so that turn has no prompt cache). The session gets a `claude-login` entry with
+  `reason: "manual"`, `from`, `fromLabel` and the text `Claude: switched {from} → {to} (chosen by
+  you)`; the chat shows it as a note row and the label moves at once. A chat that has no Claude
+  process yet only records the pick, and its first turn starts there. Nothing pins the chat: from
+  then on the usual rules hold. It keeps that login across restarts while the login is usable, and
+  a limit or a failed sign-in moves it on in the device's order (§app.claude-logins/failover); it
+  does not come back by itself. Picking the chat's own login changes nothing, and the flyout closes
+  on a pick.
+- **Borrowing.** With the mesh on, picking a free login asks this device's pool agent to borrow
+  that login by name (`only` in the borrow request), and the keeper lends that one or none
+  (§app.claude-logins/borrow-return). The label shows the pick as waiting until the login is held
+  here, up to 30 seconds. If it can't be borrowed, the chat stays where it was and the transcript's
+  banner says why. The login the chat left stays on this device until it is returned as usual
+  (§app.claude-logins/idle-pin).
+- **Workers.** A switch moves the chat only: its running workers keep their logins, and new ones
+  start on the device's order as before.
+- **Where.** The web only; a terminal session has no picker. `/ws/chat` takes `{type:
+  "set_claude_login", login}` (`login`: a login id, or `null` to cancel a waiting pick), and the
+  server calls the claude-code extension's `/claude-login` command handler directly, the way the web
+  mode switch calls `/mode`. It is refused, with the reason in the banner, for a chat another
+  writer has or that is open in a terminal, a chat not on a Claude Code model, and a runtime
+  without the extension's command.
+
+## §app.claude-logins/switch-queue — A pick while a reply runs
+
+While the chat's reply runs (or a compaction), a pick waits for it. The login panel marks the
+picked row with a live dot and "After this reply", and its first row reads "Switching to {name}
+after this reply", followed by **Cancel switch**, which drops the pick. The composer's login label
+shows the picked login's name after a live dot instead of the current one, and its `title` reads
+"Switching to {name} after this reply. Open to cancel." Picking another login replaces the waiting
+pick; picking the chat's current login cancels it. A message sent while the reply runs goes into
+that reply as usual, on the login it runs on. When the reply ends, the pick is applied before the
+next turn starts: anything still waiting in the chat's queue then waits until the switch has landed
+(or failed), then goes as usual. A pick whose login can't be used by then is dropped and the banner
+says why. The waiting pick is kept by the server, so every tab on the chat shows it and can cancel
+it; a server restart drops it.
+
+## §app.claude-logins/switch-cost — What a switch resends
+
+Once the chat has a reply, the login panel ends with a muted note, "Switching resends ~{n} tokens
+without cache": `n` is the chat's context fill as the head shows it (§chat.context-window/last-reply,
+in §chat.context-window/format). Its `title` says "An estimate from the last reply's context. The
+restart folds the history into one message, which the new login reads uncached." After a
+compaction, until the next reply, the note reads "Switching resends this chat without cache", with
+no number. A chat with no reply shows no note.
 
 ## §app.claude-logins/accounts-tab — Settings → Accounts
 
@@ -305,7 +375,8 @@ keep working on it.
 A device that needs Claude and holds no usable login **borrows** a free one from the keeper, with no
 per-device setup: the keeper offers the first free login in the pool's order that is enabled, not
 pinned to another device, not limited (its account's limit not yet reset) and not needing sign-in —
-a login pinned to the asking device first — and the credentials travel host to host over the peer
+a login pinned to the asking device first; a borrow that names one login (a pick in the composer,
+§app.claude-logins/switch-login) is offered that login or none — and the credentials travel host to host over the peer
 listener only, never through a browser. The move is two-phase: the borrower stores the offered
 credentials aside, unused, and only after the keeper confirms, having dropped and deleted its own
 copy, does the borrower start using them. A device **returns** its login with its current

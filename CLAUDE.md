@@ -68,11 +68,13 @@ re-run `pi-config/install.sh` after one (`--check` verifies them without changin
   (never chosen), the per-process leases `<login dir>/.sova-leases/<pid>.json` `{v: 1, owner,
   users, busy, children, lastActiveAt, at}` (`LoginUsers`, a `globalThis` singleton that also
   releases idle users of a leaving login), the borrow requests `<agent dir>/claude-pool/wants/*.json`
-  `{v: 1, at, pid, excludeAccounts?, excludeLogins?}` that `acquire` / `failoverAsync` write and
-  wait on, and the agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`;
+  `{v: 1, at, pid, excludeAccounts?, excludeLogins?, only?}` that `acquire` / `failoverAsync` (and
+  `take`, a pick in the composer that names one login) write and wait on, and the agent heartbeat `<agent dir>/claude-pool/agent.json` `{v: 1, pid, at, device}`;
   and the session's hidden `claude-login` custom
-  entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}`, written by the provider and read
-  by Sova, which renders one with `from` as a note row), worktrees: the session's `worktrees` custom
+  entry `{v: 1, login, label?, from?, fromLabel?, reason?, resetsAt?, text?}` (`reason` `limit` | `auth` |
+  `manual`, the user's pick), written by the provider and read by Sova, which renders one with `from` as
+  a note row; the web's login switch calls the provider's `/claude-login <login id>` command handler
+  directly, like `/mode`, so its argument is a contract too), worktrees: the session's `worktrees` custom
   entry (the tracked set, whole snapshot, newest on the branch wins) and its `worktree-merge`
   extension message (the merge card), read by Sova and by the subagents spawn gate; mode's `align`
   tool: each result's `details` (`{v: 1, doc?, changes, line, exempt?}`, the touched alignment's

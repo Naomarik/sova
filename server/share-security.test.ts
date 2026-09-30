@@ -212,6 +212,11 @@ test("stripForwarded: every INGRESS_STRIP_HEADERS name and prefix, case-insensit
   }
 });
 
+test("stripForwarded: a CDN's client-address headers go too (CF-Connecting-IP, True-Client-IP)", () => {
+  const keys = lower(stripForwarded({ "CF-Connecting-IP": "203.0.113.66", "true-client-ip": "203.0.113.66", "True-Client-IP": "203.0.113.67", accept: "*/*" }));
+  assert.deepEqual(keys, ["accept"]);
+});
+
 test("stripForwarded: hop-by-hop headers go", () => {
   const out = stripForwarded({
     connection: "keep-alive",

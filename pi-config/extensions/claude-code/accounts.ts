@@ -142,12 +142,13 @@ export interface ClaudeLoginChoice {
 	env: Record<string, string>;
 	accountUuid?: string;
 }
-/** A failover, as a notice reports it. */
+/** A failover, or a switch the user chose, as a notice reports it. */
 export interface ClaudeLoginSwitch {
 	from: ClaudeLoginChoice;
 	to: ClaudeLoginChoice;
-	failure: ClaudeAccountFailure;
-	/** "Claude: switched A → B (5h limit, resets 15:00)". */
+	/** A failover's failure; absent for a switch the user chose (entry reason `manual`). */
+	failure?: ClaudeAccountFailure;
+	/** "Claude: switched A → B (5h limit, resets 15:00)" · "… (chosen by you)". */
 	text: string;
 }
 
@@ -835,8 +836,11 @@ export function loginUsers(): LoginUsers {
 	return host[LOGIN_USERS] ??= new LoginUsers();
 }
 
-/** A borrow request: `<agent dir>/claude-pool/wants/<pid>-<rand>.json`. */
-export interface LoginWant { v: 1; at: number; pid: number; excludeAccounts?: string[]; excludeLogins?: string[] }
+/**
+ * A borrow request: `<agent dir>/claude-pool/wants/<pid>-<rand>.json`. `only`: that login or none
+ * (a pick in the composer), answered once it is held here.
+ */
+export interface LoginWant { v: 1; at: number; pid: number; excludeAccounts?: string[]; excludeLogins?: string[]; only?: string }
 export const wantsDir = (agentDir: string): string => path.join(agentDir, POOL_DIR_NAME, "wants");
 export const poolAgentPath = (agentDir: string): string => path.join(agentDir, POOL_DIR_NAME, "agent.json");
 /** Whether this host's pool agent (Sova's server, mesh on) is running: its heartbeat is fresh and its pid alive. */
@@ -858,7 +862,7 @@ export function readWants(agentDir: string): Array<{ file: string; want: LoginWa
 			const w = JSON.parse(fs.readFileSync(file, "utf8"));
 			if (typeof w?.at !== "number" || typeof w?.pid !== "number") continue;
 			const list = (v: unknown) => Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").slice(0, 64) : undefined;
-			out.push({ file, want: { v: 1, at: w.at, pid: w.pid, ...(list(w.excludeAccounts) ? { excludeAccounts: list(w.excludeAccounts)! } : {}), ...(list(w.excludeLogins) ? { excludeLogins: list(w.excludeLogins)! } : {}) } });
+			out.push({ file, want: { v: 1, at: w.at, pid: w.pid, ...(list(w.excludeAccounts) ? { excludeAccounts: list(w.excludeAccounts)! } : {}), ...(list(w.excludeLogins) ? { excludeLogins: list(w.excludeLogins)! } : {}), ...(isLoginId(w.only) ? { only: w.only } : {}) } });
 		} catch { /* half-written or gone */ }
 	}
 	return out;
@@ -887,6 +891,10 @@ export function failureReason(failure: ClaudeAccountFailure, now = Date.now()): 
 }
 export function switchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice, failure: ClaudeAccountFailure, now = Date.now()): string {
 	return `Claude: switched ${from.label} → ${to.label} (${failureReason(failure, now)})`;
+}
+/** A switch the user picked in the composer. */
+export function manualSwitchText(from: ClaudeLoginChoice, to: ClaudeLoginChoice): string {
+	return `Claude: switched ${from.label} → ${to.label} (chosen by you)`;
 }
 
 // ---------------------------------------------------------------------------
@@ -1057,8 +1065,37 @@ export class ClaudeLogins {
 		next ??= this.nextAfter(from, failure, true);
 		return next ? this.choice(next) : undefined;
 	}
+	/**
+	 * Whether the user may move a chat to `id` now (§app.claude-logins/switch-login): held here (the
+	 * device's own login included), enabled, ready, signed in and not leaving. Else why not.
+	 */
+	pickable(id: string): { choice: ClaudeLoginChoice } | { refused: string } {
+		const accounts = this.accounts();
+		const pool = this.pool;
+		if (id !== DEFAULT_LOGIN_ID && !accounts.logins.some((l) => l.id === id && heldHere(l.device, this.device, pool)))
+			return { refused: accounts.logins.some((l) => l.id === id) || pool ? "That Claude login isn't on this device." : "This device has no such Claude login." };
+		if (!loginEnabled(accounts, this.device, id)) return { refused: "That Claude login is off in Settings → Accounts." };
+		const ready = this.readinessOf(id);
+		if (ready.state === "limited") return { refused: `That Claude login is limited until ${clock(ready.until, this.now())}.` };
+		if (ready.state === "auth") return { refused: "That Claude login needs to be signed in again." };
+		if (id !== DEFAULT_LOGIN_ID && credentialsMtime(this.dirOf(id)) === undefined) return { refused: "That Claude login isn't signed in." };
+		if (this.leaving(id)) return { refused: "That Claude login is leaving this device." };
+		const choice = this.choice(id, accounts);
+		return choice ? { choice } : { refused: "That Claude login isn't on this device." };
+	}
+	/**
+	 * Borrow `id` by name from the keeper (a pick in the composer): only while the pool is on and
+	 * this host's pool agent runs, and only when it isn't held here already. Resolves when it is
+	 * held here or the wait ends; the caller checks `pickable` after.
+	 */
+	async take(id: string): Promise<void> {
+		if (!isLoginId(id) || !this.pool || !poolAgentAlive(this.agentDir, this.now())) return;
+		const accounts = this.accounts();
+		if (accounts.logins.some((l) => l.id === id && heldHere(l.device, this.device, true))) return;
+		await this.borrow({ only: id });
+	}
 	/** Write a borrow request and wait until a usable login is held here, the agent answered, or the wait ends. */
-	private async borrow(want: { excludeAccounts?: string[]; excludeLogins?: string[] }): Promise<void> {
+	private async borrow(want: { excludeAccounts?: string[]; excludeLogins?: string[]; only?: string }): Promise<void> {
 		const dir = wantsDir(this.agentDir);
 		const file = path.join(dir, `${process.pid}-${randomBytes(4).toString("hex")}.json`);
 		try {
@@ -1066,9 +1103,12 @@ export class ClaudeLogins {
 			writeJsonAtomic(file, { v: 1, at: this.now(), pid: process.pid, ...want } satisfies LoginWant, 0o600);
 		} catch { return; }
 		const until = Date.now() + this.wantWaitMs;
+		const held = want.only
+			? () => this.accounts().logins.some((l) => l.id === want.only && heldHere(l.device, this.device, true))
+			: () => this.firstHeld(want.excludeAccounts, want.excludeLogins) !== undefined;
 		try {
 			while (Date.now() < until) {
-				if (this.firstHeld(want.excludeAccounts, want.excludeLogins) !== undefined) return;
+				if (held()) return;
 				if (!fs.existsSync(file)) return; // the agent answered: borrowed (seen above next time) or none to lend
 				await sleep(this.wantPollMs);
 			}
@@ -1117,10 +1157,11 @@ export interface ClaudeLoginEntry {
 	v: 1;
 	login: string;
 	label?: string;
-	/** Present on a failover: the login it left. */
+	/** Present on a switch (a failover, or the user's pick): the login it left. */
 	from?: string;
 	fromLabel?: string;
-	reason?: "limit" | "auth";
+	/** `manual`: the user picked it in the composer. */
+	reason?: "limit" | "auth" | "manual";
 	resetsAt?: number;
 	/** The notice, as the chat shows it. */
 	text?: string;
@@ -1129,8 +1170,8 @@ export function loginEntryFor(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch)
 	return {
 		v: 1, login: to.id, label: to.label,
 		...(change ? {
-			from: change.from.id, fromLabel: change.from.label, reason: change.failure.kind,
-			...(change.failure.resetsAt ? { resetsAt: change.failure.resetsAt } : {}),
+			from: change.from.id, fromLabel: change.from.label, reason: change.failure?.kind ?? "manual",
+			...(change.failure?.resetsAt ? { resetsAt: change.failure.resetsAt } : {}),
 			text: change.text,
 		} : {}),
 	};

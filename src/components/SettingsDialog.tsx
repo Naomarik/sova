@@ -71,6 +71,7 @@ import { SessionTitleSettingsSection } from "./SessionTitleSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { TeamSettingsSection } from "./TeamSettings";
+import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
 import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
@@ -85,6 +86,7 @@ const TABS = [
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "teams", label: "Teams", icon: "command" as const },
+  { id: "profiles", label: "Profiles", icon: "wrench" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
   { id: "notifications", label: "Notifications", icon: "bell" as const },
   { id: "decisions", label: "Decisions", icon: "shield" as const },
@@ -248,6 +250,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "teams"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-teams" aria-labelledby="settings-tab-teams">
               <TeamSettingsSection />
+            </div>
+          </Show>
+          <Show when={tab() === "profiles"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-profiles" aria-labelledby="settings-tab-profiles">
+              <ProfilesSettingsSection />
             </div>
           </Show>
           <Show when={tab() === "overseer"}>

@@ -73,6 +73,9 @@ test("the words: state chip, source, Mesh card chip", () => {
   assert.deepEqual(stateChip(share({ state: "configured" })), { word: "Not verified", tone: "warn" });
   assert.deepEqual(stateChip(share({ state: "verified" })), { word: "Verified", tone: "success" });
   assert.deepEqual(stateChip(share({ state: "unreachable" })), { word: "Unreachable", tone: "error" });
+  const down = { host: "127.0.0.1", port: 4802, reason: "Another program is already using 127.0.0.1:4802." };
+  for (const state of ["off", "configured", "verified", "unreachable"] as const)
+    assert.deepEqual(stateChip(share({ state, listener: down })), { word: "Not listening", tone: "error" }, `a share port that won't open wins over ${state}`);
   assert.equal(sourceLabel(share({ source: "env" }), ["SOVA_SHARE_PUBLIC_URL"]), "Set by environment (SOVA_SHARE_PUBLIC_URL)");
   assert.equal(sourceLabel(share({ source: "setting" }), []), "From this setting");
   assert.equal(sourceLabel(share({ source: "gateway", via: "vps" }), []), "From vps");

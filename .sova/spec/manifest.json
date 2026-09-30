@@ -4946,7 +4946,9 @@
         "src/lib/spend.test.ts",
         "src/components/AgentsView.tsx",
         "src/App.tsx",
-        "src/lib/session-shares.ts"
+        "src/lib/session-shares.ts",
+        "src/lib/pane-shares.ts",
+        "src/lib/pane-shares.test.ts"
       ]
     },
     "§app.settings-dialog/claude-long-context-offered": {

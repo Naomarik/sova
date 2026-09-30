@@ -262,7 +262,11 @@ as your number, from anywhere, until you unlink the device on the phone.
 3. Send one real link: in a test organization, put someone on the roster whose WhatsApp you can see
    (a second phone of yours, or a colleague who expects it), with that number, start a gathering that
    hands off to them, and press **Send on WhatsApp**. The message arrives from your number. Their
-   page in the organization lists the send, then `delivered` and `read` as the receipts come in.
+   page in the organization lists it under **Sent on WhatsApp**, then `Delivered` and `Read` as the
+   receipts come in.
+4. Optionally, let an overseer send one: ask the project's overseer (level L1 or above) to message
+   that person their link. Sent on its own, it first waits in the project's hold, where you can
+   cancel it, and in the person's working hours; see [Outreach](README.md#who-may-send).
 
 ## 9. Operate
 

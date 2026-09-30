@@ -54,6 +54,8 @@ test("the contact marker: planted and changed through person/edit, it is in the 
   const stateDir = join(root, "state");
   let crash = false;
   const host = await OrgHost.open({ orgId: "o1", workspaceDir, stateDir, durable: false, commitHooks: { afterJournal: () => { if (crash) throw new Error("killed"); } } });
+  // the person watches its org (r13: company hours), so the org is there first, as in production
+  await host.start("org/o1", "org", { id: "o1", name: "Acme", slug: "acme", createdAt: 1 }, { by: "operator" });
   const person = { name: "Ana Ruiz", contact: { email: OLD }, status: "active", role: "Owner", decides: [], skills: [] };
   await host.start("person/o1/p1", "person", { orgId: "o1", id: "p1", person, changed: [{ field: "contact", from: null, to: { email: OLD } }], by: { kind: "operator" } }, { by: "operator" });
   const r = await host.act("person/o1/p1", "person/edit", { patch: { contact: { email: NEW, phone: PHONE } } }, { by: "operator" });

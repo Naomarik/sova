@@ -5,7 +5,7 @@
 // the CLJS tests run. The replay runs the shipped charts. Pure: no files, no clock but `now`.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { chartVersions, createOrgCharts as createShipped, nextWindow, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
+import { chartVersions, createOrgCharts as createShipped, hoursInherited, nextWindow, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
 import { PROBE_CHARTS } from "./fixtures/org-charts-engine/probe-chart";
 
 /** The shipped engine with the probe chart registered. */
@@ -343,5 +343,20 @@ describe("nextWindow (r7: the charts' rules.hours, exported)", () => {
     assert.equal(nextWindow({ tz: "America/New_York", hours: weekdays }, mon + 12 * h), mon + 13 * h);
     assert.equal(nextWindow({}, mon), null, "no zone or hours: always open");
     assert.equal(nextWindow({ tz: "Not/AZone", hours: weekdays }, mon), null);
+  });
+
+  test("r13: effective hours: own over the company's, the company's when none, neither = always", () => {
+    const mon = Date.UTC(2026, 8, 28);
+    const h = 3600_000;
+    const company = { tz: "UTC", hours: { days: [1, 2, 3, 4, 5], from: "07:00", to: "15:00" } };
+    const own = { tz: "UTC", hours: weekdays };
+    assert.equal(nextWindow(own, mon + 8 * h, company), mon + 9 * h, "own hours win");
+    assert.equal(nextWindow({}, mon + 5 * h, company), mon + 7 * h, "none of their own: the company's");
+    assert.equal(nextWindow({}, mon + 8 * h, company), null, "in the company's hours");
+    assert.equal(nextWindow({}, mon + 5 * h, null), null, "neither: always in hours");
+    assert.equal(nextWindow({ tz: "UTC" }, mon + 5 * h, company), mon + 7 * h, "a zone without hours isn't own hours");
+    assert.equal(hoursInherited({}, company), true);
+    assert.equal(hoursInherited(own, company), false);
+    assert.equal(hoursInherited({}, null), false);
   });
 });

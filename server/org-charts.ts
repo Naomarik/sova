@@ -312,7 +312,8 @@ interface Vendored {
   migrateText(text: string): string;
   peekSnapshot(text: string): SnapshotPeek;
   verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts?: Pick<EngineOptions, "charts">): SessionVerdict;
-  nextWindow(person: WorkingHours, nowMs: number): number | null;
+  nextWindow(person: WorkingHours, nowMs: number, company?: WorkingHours | null): number | null;
+  hoursInherited(person: WorkingHours, company: WorkingHours | null): boolean;
 }
 
 /** `org-charts rebuild --verify`: one session's log replayed on the current charts against its snapshot. */
@@ -435,8 +436,14 @@ export interface WorkingHours {
   hours?: { days: number[]; from: string; to: string } | null;
 }
 
-/** When an act that reaches `person` may go: null when `nowMs` is inside their hours or they have none,
-    else the instant their next window opens (the charts' own rules.hours/next-window). */
-export function nextWindow(person: WorkingHours, nowMs: number): number | null {
-  return lib.nextWindow(person, nowMs) ?? null;
+/** When an act that reaches `person` may go, by their EFFECTIVE hours (r13: their own, else the
+    company's, else always in hours): null when `nowMs` is inside them or there are none, else the instant
+    the next window opens (the charts' own rules.hours effective + next-window). */
+export function nextWindow(person: WorkingHours, nowMs: number, company?: WorkingHours | null): number | null {
+  return lib.nextWindow(person, nowMs, company ?? null) ?? null;
+}
+
+/** r13: the person has no hours of their own, and the company's apply ("(company hours)"). */
+export function hoursInherited(person: WorkingHours, company: WorkingHours | null): boolean {
+  return lib.hoursInherited(person, company);
 }

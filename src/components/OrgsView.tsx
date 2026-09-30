@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
-import { hoursLine, offHoursNote } from "../lib/working-hours";
+import { hoursLine, offHoursNote, offHoursTail } from "../lib/working-hours";
 import { AUTOMATIC_ABILITIES, MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type GatheringAbilities, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
 import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
@@ -38,7 +38,7 @@ import { createOrgSource } from "../lib/org-source";
 import { useMinuteNow } from "../lib/minute-clock";
 import { orgHref, orgSessionHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
-import { toast } from "../lib/ui-state";
+import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { meshPeers, orgHostOf } from "../lib/mesh";
 import { orgHostOffline } from "../lib/org-host-offline";
@@ -581,6 +581,14 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
     if (!ok || !started) return;
     const s = started as BatonStartResult;
+    // r7: it went at once; say when their hours start (the done toast already said it started).
+    if (s.offHours && typeof who === "string") {
+      const tail = offHoursTail(nameOf(who), s.offHours, Date.now());
+      if (tail) {
+        toast(tail);
+        announce(tail);
+      }
+    }
     if (s.links?.length) props.onLinks(s.links, s.linkWarning);
     else if (s.link && typeof who === "string") props.onLinks([{ personId: who, name: nameOf(who), link: s.link }], s.linkWarning);
     setTitle("");

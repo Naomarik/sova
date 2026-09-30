@@ -100,11 +100,19 @@ export function offHoursNote(p: Pick<Person, "name" | "tz" | "hoursNow">, now: n
   return opens ? `${head} It goes now; their hours start ${opens}.` : `${head} It goes now.`;
 }
 
-/** Said after the operator's own act went to someone off hours (the act's answer carries `offHours`). */
-export function sentOffHours(name: string, offHours: string, now: number): string {
-  const opens = opensWords(offHours, now);
-  return opens ? `Sent. ${name}'s working hours start ${opens}.` : "Sent.";
+/** Said after the operator's own act went to someone off hours (the act's answer carries `offHours`):
+    "Sam Okafor's working hours start Tue 09:00 your time (in 18h)." "" when the time is unreadable. */
+export function offHoursTail(name: string, offHours: string | undefined, now: number): string {
+  const opens = offHours ? opensWords(offHours, now) : "";
+  return opens ? `${name}'s working hours start ${opens}.` : "";
 }
+
+/** A done line with the off-hours tail when there is one: "Handed to Sam. Sam's working hours start …". */
+export const withOffHours = (done: string, name: string, offHours: string | undefined, now: number): string =>
+  [done, offHoursTail(name, offHours, now)].filter(Boolean).join(" ");
+
+/** "Sent." with the off-hours tail. */
+export const sentOffHours = (name: string, offHours: string, now: number): string => withOffHours("Sent.", name, offHours, now);
 
 /** The zones the browser knows, for the form's suggestions; [] where it can't list them. */
 export function knownZones(): string[] {

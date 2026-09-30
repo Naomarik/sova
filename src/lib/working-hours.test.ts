@@ -51,6 +51,12 @@ test("offHoursNote: only while they're off hours; their clock when the zone is k
   assert.equal(offHoursNote({ name: "Sam", hoursNow: { open: false } }, NOW), "Outside Sam's working hours. It goes now.");
 });
 
+test("withOffHours: a done line gains the tail only when the answer says off hours", async () => {
+  const { withOffHours } = await import("./working-hours");
+  assert.equal(withOffHours("Handed to Sam Okafor.", "Sam Okafor", tomorrow9, NOW), "Handed to Sam Okafor. Sam Okafor's working hours start Thu 09:00 your time (in 18h).");
+  assert.equal(withOffHours("Handed to Sam Okafor.", "Sam Okafor", undefined, NOW), "Handed to Sam Okafor.");
+});
+
 test("sentOffHours: said after the operator's own act reached someone off hours", () => {
   assert.equal(sentOffHours("Sam Okafor", tomorrow9, NOW), "Sent. Sam Okafor's working hours start Thu 09:00 your time (in 18h).");
   assert.equal(sentOffHours("Sam Okafor", "nope", NOW), "Sent.");

@@ -1,4 +1,5 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
+import { offHoursNote, withOffHours } from "../lib/working-hours";
 import { abilitiesOf, MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
@@ -434,7 +435,7 @@ function HandOnForm(props: {
       if (to().length === 1) {
         const who = to()[0]!;
         const r = await handBaton(sid, who, question().trim(), briefing().trim() || undefined);
-        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link, ...(r.at ? { at: r.at } : {}) }] : [], `Handed to ${nameOf(who)}.`, r.info, [who], r.linkWarning);
+        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link, ...(r.at ? { at: r.at } : {}) }] : [], withOffHours(`Handed to ${nameOf(who)}.`, nameOf(who), r.offHours, Date.now()), r.info, [who], r.linkWarning);
       } else {
         const r = await offerBaton(sid, to(), question().trim(), briefing().trim() || undefined);
         props.onDone(r.links, `Offered to ${to().length} people. The first to answer takes it.`, r.info, to(), r.linkWarning);
@@ -459,6 +460,10 @@ function HandOnForm(props: {
           )}
         </For>
         <p class="field-hint">Pick 2 or more to offer it: the first to answer takes it, for as long as they keep answering.</p>
+        {/* r7: yours goes at once; say so for each ticked person who is off hours now. */}
+        <For each={props.info.active.filter((p) => to().includes(p.id))}>
+          {(p) => <Show when={offHoursNote(p, Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
+        </For>
       </fieldset>
       <label class="field">
         <span class="field-label">Question</span>

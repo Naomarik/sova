@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { withOffHours } from "../lib/working-hours";
 import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionsInfo, type PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
 import {
@@ -551,7 +552,21 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
             class="orgs-inline"
             onSubmit={(e) => {
               e.preventDefault();
-              void props.act("route", () => routeConflict(props.orgId, props.projectId, c().id, to() || undefined), "Sent. A hand-off session asks them to settle it.");
+              // r7: routed to someone off hours, it still went at once; the done line says when their hours start.
+              let offHours: string | undefined;
+              const who = refName(props.info.names, to() || c().routedTo);
+              void props
+                .act("route", async () => {
+                  const r = await routeConflict(props.orgId, props.projectId, c().id, to() || undefined);
+                  offHours = r.offHours;
+                  return r;
+                })
+                .then((ok) => {
+                  if (!ok) return;
+                  const done = withOffHours("Sent. A hand-off session asks them to settle it.", who, offHours, Date.now());
+                  toast(done);
+                  announce(done);
+                });
             }}
           >
             <label class="field orgs-grow">

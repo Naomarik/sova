@@ -1065,7 +1065,7 @@ export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${e
 export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
-  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
+  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string; offHours?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
 export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
 export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
 export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);
@@ -1088,7 +1088,7 @@ export const setOwnerArea = (orgId: string, projectId: string, did: string, owne
 export const settleSpecText = (orgId: string, projectId: string, did: string, action: "keep" | "restore") =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}/text`, jsonInit("POST", { action }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
-  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
+  request<DecisionsInfo & { offHours?: string }>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/resolve`, jsonInit("POST", input));
 export const setSpecFrozen = (orgId: string, projectId: string, frozen: boolean) =>

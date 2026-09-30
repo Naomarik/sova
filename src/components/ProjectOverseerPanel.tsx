@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, Show } from "solid-js";
-import { offHoursNote } from "../lib/working-hours";
+import { offHoursNote, withOffHours } from "../lib/working-hours";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
   ALLOWANCE_MAX,
@@ -1230,7 +1230,8 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
       setSending(false);
       setTo([]);
       props.onLinks(r.links);
-      toast(r.links.length > 1 ? `Offered to ${r.links.length} people.` : "Hand-off session started.");
+      const one = r.links.length === 1 ? r.links[0]! : null;
+      toast(r.links.length > 1 ? `Offered to ${r.links.length} people.` : withOffHours("Hand-off session started.", one?.name ?? "Their", r.offHours, Date.now()));
       props.after();
     } catch (x) {
       setErr(unchangedError(errText(x), "Nothing was sent."));

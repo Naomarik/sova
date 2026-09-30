@@ -685,7 +685,7 @@ itself.
   with the operator, "<from> → you: <question>", or while a person holds it through a hand-off no
   live link exists for, "Send <name> their link: <question>".
 - **Needs you, a held act** (§app.project-overseer/holds): `held-act`, one per act a project's
-  chart holds before it reaches a person or the client's code, "{what} starts in {n} min unless
+  statechart holds before it reaches a person or the client's code, "{what} starts in {n} min unless
   you cancel it.", carrying the hold (`held: {id, goesAt, what}`) so the list can offer Cancel.
   Never a phone notification.
 - **Finished (decide), a conflict for the operator** (§app.requirements/routing):
@@ -1120,7 +1120,7 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
   extra instructions, both allowances used and left and the held items
   (§app.project-overseer/limits); its last 10 actions; its gathering sessions and offers; decisions
   by state and area, and the open conflicts with who they are routed to; spec status (frozen, edited
-  outside); its coding sessions from their charts (title, who started it, working or idle, branch,
+  outside); its coding sessions from their statecharts (title, who started it, working or idle, branch,
   merged, worktree removed); how many ideas and open and done to-dos it has; the last owner update;
   and the project's cost (§app.project-costs/card). `items: true` adds the open to-dos (id, text,
   linked idea or session) and the ideas' table of contents, so an act can name them.
@@ -1137,7 +1137,7 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
 
 - **One projection.** Every org read and every org act's result is built by one server module
   (`server/overseer-org-view.ts`) that composes the org reads' own functions field by field. It
-  never passes an `OrgDetail`, a `PersonPage`, a person's or a baton session's chart data along whole, so a field
+  never passes an `OrgDetail`, a `PersonPage`, a person's or a baton session's statechart data along whole, so a field
   added to those later reaches the model only when this module names it.
 - **Never in a tool result, an error or the action log:**
   - **contact**, every channel, wherever it sits: a person's profile, a referral, a history line (a
@@ -1204,7 +1204,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   `stakeholderHistory` and the org's `ownerHistory` lines (`why: "operator"`, `via`), the project's
   `archived` record (§app.organizations/archive), a baton session it started (`startedVia`, and
   `started` with the Overseer's id and its why, §app.baton/goal-and-loadout), and a
-  coding session it started (§app.overseer/org-project-overseers), each in its chart and its
+  coding session it started (§app.overseer/org-project-overseers), each in its statechart and its
   transition-log rows (§app.project-overseer/org-charts). A
   request without the secret records no `via`, whatever its body says.
 - **Operator authority.** `via` changes nothing about what the write may do: field authority,
@@ -1229,7 +1229,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   /offers-and-leases and /links apply as on the page; the tool descriptions carry the project
   overseer's wording rules for `public_title`, `question` and `goal`
   (§app.project-overseer/tools). `why` is required: one or two sentences for the user saying why
-  it starts this session, recorded on its chart and shown only to the user, on the strip and in
+  it starts this session, recorded on its statechart and shown only to the user, on the strip and in
   What It's Told (§app.baton/told); never to the person, never to the session's model. Without it:
   "Say why you start it (why): one or two sentences for the user, never shown to the person.".
 - **No link is ever minted for the model.** `start` and `offer` start in-process with no link
@@ -1249,7 +1249,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   `left`; `sova_project_overseer` `clear`; `sova_org_project` `archive`. Anywhere else (a typed
   "yes", a card that didn't list the target, a card already answered, superseded or dropped, a
   later turn, a card from before card ids) the op refuses without doing anything, before any other
-  refusal it could get (an archive with no card gets this, not "Stop these first"). The charts check
+  refusal it could get (an archive with no card gets this, not "Stop these first"). The statecharts check
   it (§app.project-overseer/org-charts): the Overseer's calls to the routes carry its turn's card
   beside its sender mark:
   "This reaches people or ends something: ask with sova_card, listing {what} in its items, and
@@ -1295,7 +1295,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   title?, item?, model?, thinking?}`** starts one as the project's, the same way the project page's
   Start Coding Session does: its own worktree (§app.project-overseer/coding-worktrees), the
   project's coding mode (§app.project-overseer/coding-mode), an `operator-coding` session whose
-  chart is marked `via: "overseer"`. `item` (a to-do or idea id) links it and gives the
+  statechart is marked `via: "overseer"`. `item` (a to-do or idea id) links it and gives the
   prompt when none is given; without an item, `prompt` and `title` are required. It counts against
   the Overseer's per-turn sessions created and running at once, like any session it starts, and
   never against the project overseer's limits. The result names the session, its branch and its

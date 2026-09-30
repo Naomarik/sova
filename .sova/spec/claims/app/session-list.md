@@ -1677,7 +1677,7 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
 - **Organization → project → rows, always.** The org level is drawn even with one org, so the shape
   doesn't change when a second is attached. There are no `cwd` folder heads: every gathering session
   shares the workspace folder, which means nothing to the operator. Orgs sort by name, then id; projects
-  by name. A project the org's charts no longer know is "Unknown project"; a workspace file with
+  by name. A project the org's statecharts no longer know is "Unknown project"; a workspace file with
   no project is "Other", which sorts last.
 - **The project level is a sticky label, not a section** (an `h4`, sticking like a folder label). Its
   `title` is the project root, `~`-shortened, read from the project overseer's folder when the region
@@ -1934,7 +1934,7 @@ after).
 Every session file inside an attached organization's workspace `sessions/` folder (baton
 transcripts, project-overseer conversations, anything else started there) is out of reach of
 `POST /api/sessions/cleanup`, in every mode. That folder belongs to the organization, and its
-charts point at those files by name, so deleting one leaves a record whose
+statecharts point at those files by name, so deleting one leaves a record whose
 transcript is gone.
 
 - **Older Than 7 / 30 Days, Empty Sessions.** An organization file never matches, however long it
@@ -1954,7 +1954,7 @@ Archiving an empty husk (a session nothing was ever sent in, with no stored draf
 file, since the list never shows a husk and an archive mark on it could never render. A session
 file inside an attached organization's workspace `sessions/` is the exception: `POST
 /api/sessions/archive` never deletes one. A fresh baton still waiting on its first link is a husk
-by shape, and the organization's charts name those files, so deleting one leaves a
+by shape, and the organization's statecharts name those files, so deleting one leaves a
 record whose transcript is gone.
 
 - **Archived instead.** Such a session is archived like any other: it gets the archive mark and

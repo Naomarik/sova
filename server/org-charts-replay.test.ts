@@ -88,10 +88,7 @@ const MAX_MICROSTEPS = 200;
 const REWORK = "reworked onto the real host: unexplained divergences being classified (server-5)";
 /** The lanes whose divergences are still being classified: every other lane must replay with none unexplained. */
 const PENDING = new Set([
-  "real-08",
-  "real-22",
   "real-26",
-  "real-28",
 ] as string[]);
 
 const reports: Report[] = [];
@@ -134,7 +131,7 @@ const git = (...args: string[]): string | null => {
 
 // Drift: the trace ran code without the commit that changed this behaviour, and the code the charts model has
 // it. A trace may have run a side branch (real-03: feat/bw-fix-overseer), so "without" is not "an ancestor of".
-test("every drift names a commit the charts' code has and its trace's code lacks", { todo: REWORK }, (t) => {
+test("every drift names a commit the charts' code has and its trace's code lacks", (t) => {
   if (git("rev-parse", "--git-dir") === null) return t.skip("no git history in this copy");
   const drift = reports.flatMap((r) => r.divergences.filter((d) => d.cls === "drift").map((d) => ({ d, trace: traces.find((x) => x.id === r.trace)! })));
   assert.ok(drift.length > 0, "the corpus has drift to check");
@@ -151,7 +148,7 @@ test("every drift names a commit the charts' code has and its trace's code lacks
     }
   }
   for (const { commit } of Object.values(DRIFT_COMMIT)) assert.notEqual(git("rev-parse", "--verify", "--quiet", `${commit}^{commit}`), null, commit);
-  assert.deepEqual([...commits].sort(), ["239852ee", "320042f0", "77f3cdbf", "80a785ca"]);
+  assert.deepEqual([...commits].sort(), ["239852ee", "320042f0", "77f3cdbf", "80a785ca", "8b7f6751"]);
 });
 
 test("allowance counts are checked against the trace's own ledger, never synced", () => {

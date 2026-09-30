@@ -164,3 +164,9 @@ test("replay: a labelled target's two strings (a Haiku eval reply, 'unexpected \
   assert.deepEqual(edges(s).slice(-2), ["client@2>s3b:PUT (signed)\nmultipart stream", "s3b>client@2:201 Created"]);
   assert.deepEqual(node(s, "s3b"), ["S3 bucket", null, "box", null]);
 });
+
+test("replay: a string after a labelled target's tone (a Haiku eval reply, 'strings go before shape and tone words') labels the edge", () => {
+  const s = ok("flow", 'title: CI/CD Pipeline\ncaption: Automated testing and linting, then manual approval before production deployment.\nlint "Lint\\n(eslint + prettier)" -> test "Test\\n(vitest)" -> build "Build\\n(docker image)" -> staging "Deploy to staging" -> approval "Manual approval?" decision\napproval -> prod "Deploy to prod" ok\napproval -> staging error "rejected"\nmark approval "gates production"\n');
+  assert.deepEqual(edges(s).slice(-2), ["approval>prod", "approval>staging:rejected"]);
+  assert.deepEqual(node(s, "staging"), ["Deploy to staging", null, "box", "error"]);
+});

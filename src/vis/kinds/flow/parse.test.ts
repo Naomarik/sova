@@ -184,9 +184,14 @@ test("flow: a stray string after a target says what to write instead", () => {
     msg('api "API Server" -> db\nclient "Client" -> api "Notify completion" "POST /confirm-upload" "x"'),
     'unexpected "POST /confirm-upload" after api: api is labelled "API Server" already, so "Notify completion" labels the edge; one string per edge label (\\n breaks a line): -> api "Notify completion\\nPOST /confirm-upload"',
   );
-  // A string after a shape or tone word: the strings go first.
-  assert.equal(msg('staging "Deploy to staging" -> x\napproval "OK?" -> staging error "rejected"'), 'unexpected "rejected" after staging: strings go before shape and tone words: -> staging "rejected" error');
-  assert.equal(msg('a "A" -> b "B" decision warn "go"'), 'unexpected "go" after b: strings go before shape and tone words: -> b "B" "go" decision warn');
+  // A string after a shape or tone word, when it can only be the edge's (the target is labelled, no
+  // edge label yet): read as if written first (§chat.markdown/vis-lenience). Otherwise the strings go first.
+  const late = ok<FlowSpec>("flow", 'staging "Deploy to staging" -> x\napproval "OK?" -> staging error "rejected"');
+  assert.deepEqual([late.edges[1]!.label, late.nodes.find((n) => n.id === "staging")!.tone], ["rejected", "error"]);
+  assert.equal(ok<FlowSpec>("flow", 'a "A" -> b "B" decision warn "go"').edges[0]!.label, "go");
+  assert.equal(ok<FlowSpec>("flow", 'a -> b warn "go"').edges[0]!.label, "go", "outside inline style a string after a target is the edge's");
+  assert.equal(msg('a "A" -> b error "rejected"'), 'unexpected "rejected" after b: strings go before shape and tone words: -> b "rejected" error', "b unlabelled: its label or the edge's");
+  assert.equal(msg('a "A" -> b "B" "e" warn "go"'), 'unexpected "go" after b: strings go before shape and tone words: -> b "B" "e" "go" warn', "the edge has its label");
   // Outside inline style: one string, the edge's.
   assert.equal(msg('a -> b "go" "more"'), 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
   // A stray word keeps its message.

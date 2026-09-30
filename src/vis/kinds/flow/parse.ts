@@ -259,6 +259,12 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       if (label !== undefined && !named && (inlineStyle || hasNodeLine(dst)) && toks[k]?.t === "str" && toks[k + 1]?.t !== "str") label = `${label}\n${toks[k++]!.v}`;
       const strings = k;
       k = chainWords(toks, k, dst, to, line.n);
+      // A string after the words, with no edge label yet, when it can't be the target's label (the
+      // target is labelled already, or strings after targets are edge labels): the edge's.
+      if (k > strings && label === undefined && (inline.has(to) || hasNodeLine(dst) || !inlineStyle) && toks[k]?.t === "str" && toks[k + 1]?.t !== "str") {
+        label = toks[k++]!.v;
+        k = chainWords(toks, k, dst, to, line.n);
+      }
       const stray = toks[k];
       if (stray?.t === "str") {
         // Say what to write instead, quoting the target as it should read.

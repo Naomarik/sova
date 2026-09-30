@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -58,7 +58,7 @@ import { getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, type AttentionLaterRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -73,7 +73,7 @@ import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults
 import { providerLimitsInfo, providerWaiting, saveProviderLimits } from "./provider-limits";
 import { modelDenial, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
-import { listPlaybooks } from "./playbooks";
+import { registerScheduleRoutes, startScheduleKeeper } from "./schedule-routes";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
@@ -122,8 +122,7 @@ import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setS
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { AttentionSignals } from "./attention-signals";
-import { attentionChanged } from "./attention-memo";
-import { bringBack, putAway } from "./needs-you-later";
+import { initRestartWindow, markServerStop } from "./server-stop";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
@@ -677,7 +676,8 @@ app.get("/api/themes", (c) => c.json(listThemes()));
 // ~/.pi/agent/sova/playbooks/ and the session cwd's .sova/marketing/playbooks/, rescanned per
 // request. Read-only, and never fails: a cwd that can't be listed (none, remote, missing) is
 // `project.state`, an unreadable user folder is `error`, and everything else is still listed.
-app.get("/api/playbooks", async (c) => c.json(await listPlaybooks(c.req.query("cwd"))));
+// The playbooks catalog with each schedule's state, and the schedules' routes (server/schedule-routes.ts).
+registerScheduleRoutes(app);
 
 // Sova's own settings (server/web-settings.ts): today one experimental switch. GET reads the
 // stored value, PUT replaces it. The switch drives the `claude-code-provider` extension flag, so
@@ -1062,17 +1062,6 @@ app.get("/api/explanations", async (c) => c.json(await listExplanations(c.req.qu
 app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
 app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
 app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
-// Later (§app.overseer/attention-digest): put Needs you items away until their anchor moves, or bring them back.
-for (const [route, apply] of [["/api/attention/later", putAway], ["/api/attention/later/undo", bringBack]] as const) {
-  app.post(route, async (c) => {
-    const body = (await c.req.json().catch(() => null)) as Partial<AttentionLaterRequest> | null;
-    const keys = body && Array.isArray(body.keys) ? body.keys : null;
-    if (!keys || keys.length === 0 || keys.length > 100) return c.json({ error: "Expected JSON body { keys: string[] } (1–100 keys)" }, 400);
-    if (apply(keys) !== keys.length) return c.json({ error: "Unknown Later key" }, 400);
-    attentionChanged();
-    return c.json({ ok: true });
-  });
-}
 // Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).
 // There is no route that makes one: only a card click does, in the Overseer's own runtime.
 app.get("/api/overseer/autonomy", async (c) => c.json(await overseerAutonomy(), 200, { "Cache-Control": "no-store" }));
@@ -1443,12 +1432,24 @@ server.on("error", (err) => {
 });
 attachWebSockets(server);
 
+// The previous server's stop mark: the workers its stop ended are no errors (server/server-stop.ts).
+initRestartWindow();
+
+// Needs you's Later is gone (§app.overseer/attention-digest): the store an earlier version kept its
+// choices in is deleted, so none of them keeps anything hidden. A no-op once it is gone.
+try {
+  rmSync(join(stateRoot(), "needs-you-later.json"), { force: true });
+} catch (err) {
+  console.warn(`[server] needs-you-later.json not deleted: ${err instanceof Error ? err.message : String(err)}`);
+}
+
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
 // The runs the last stop cut off get one "continue" each (§app.overseer/auto-resume).
 startAutoResume();
+startScheduleKeeper((path, init) => app.request(path, init));
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
@@ -1524,6 +1525,8 @@ let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) process.exit(1);
   shuttingDown = true;
+  // First: the workers this stop ends die on the same signal (server/server-stop.ts).
+  markServerStop();
   // Whatever a step below waits on, the process ends.
   setTimeout(() => {
     console.error("[server] shutdown took over 20 s; exiting");

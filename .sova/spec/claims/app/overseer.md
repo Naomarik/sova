@@ -402,7 +402,9 @@ it does to which items, never just its label. These too are the prompt's and the
   operations, 2 explorers launched (§app.overseer/explorer), 3 links made
   (§app.overseer/links-tools), 20 organization writes (`orgWritesPerTurn`) and 3 gathering
   sessions or offers started (`gatherPerTurn`). **At once:** at most 10 Overseer-started sessions
-  running (5 before; a settings file that stores its own number keeps it). All eight are
+  running (5 before; a settings file that stores its own number keeps it); a session a playbook
+  schedule started or woke counts as Overseer-started, as a resumed one does (§chat.schedules/fire),
+  and a fire with no slot free is skipped. All eight are
   configurable in Settings → Overseer; a settings file without the two new ones reads them as their
   defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
@@ -502,7 +504,10 @@ time. Both kinds of approval come only from the user's click on a card option th
   the sessions, as links, until the deadline; or the rule's text, its acts and sessions), where it
   came from (a link to its card and the option letter), when it expires ("Until 6:00 PM", or "Until
   revoked"), its uses (the last one's time, and each use as a link to the act in the thread), and a
-  **Revoke** button. There is no Settings page for them.
+  **Revoke** button. There is no Settings page for them. The same chip and panel also count and list
+  every playbook schedule, approved or not ("1 approval · 2 schedules"), each with **Approve
+  Schedule** or **Revoke Schedule** (§chat.schedules/where-shown); the chip shows while there is
+  one, even with no live approval or rule.
 - **The card shows it.** An option whose click wrote one shows its state under the card's answer:
   "Approved until 6:00 PM (g_2)", then "Expired" or "Revoked"; "Rule r_1 adopted", then "Revoked".
 - `GET /api/overseer/autonomy` returns the running count, the cap and every grant and rule of the
@@ -622,7 +627,16 @@ itself.
   pending dialog); an errored turn (`turnError`, §app.overseer/seen, or `activity.state` error
   while a live record is up; one item either way, dated by the reply, its detail the error message
   — the file's first — else "The last turn stopped with an error."); a worker that ended in an error. A
-  killed worker is left out: a kill is usually the user's own gesture. A worker error counts as
+  killed worker is left out: a kill is usually the user's own gesture. So is a worker the server's
+  own restart ended: a worker this server restored (§app.worker-restore/restore) in its own
+  runtime, whose recorded ending is an error at a time between the previous server's stop and this
+  server's start, on any backend (a claude-code worker's "Claude exited before expected closure
+  (SIGTERM)", a pi worker's "pi exited with code 143" alike). The stop is the moment the previous
+  server began shutting down, which it writes to `<stateRoot>/server-stop.json` (`{v: 1, pid,
+  at}`) before anything else; the next start reads it and deletes it, and allows it 5 s of slack
+  (the workers die on the same signal). Without that file (a crash, or a stop by a server that
+  predates it) the stop is taken as 30 s before this start. A worker error while the server keeps
+  running is never one of these, and still shows. A worker error counts as
   seen once the session is on screen, or its seen stamp (§app.overseer/seen) is at or past the
   latest error; a new error after that raises it again. An error's time is its worker row's
   `endedAt` (else `lastActivity`, else `startedAt`); when rows were dropped from the live record
@@ -639,24 +653,10 @@ itself.
   turns, subagent errors, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
-- **Later.** An act item the user put away with Later (§app.session-list/needs-you) is left out
-  of the digest — its items, its counts and the "need you" count — until its **anchor** changes:
-  the thing whose change counts as new. Each act item carries a `later` key naming its session,
-  its kind and its anchor as the user saw it; `POST /api/attention/later {keys}` puts them away,
-  `POST /api/attention/later/undo {keys}` brings them back, and either drops the digest's memo.
-  The anchors: open questions — the open questions' ids (a new or reopened question is new; one
-  answered is not); a dialog — the open dialogs (a new one is new); an errored turn — its reply's
-  time; a subagent error — the latest error's time; a baton hand-off — the hand-off (or open
-  offer) (§app.baton/needs-you); a roster proposal, which
-  carries a key though it is a decide item — its proposed person; any other act item — its
-  `since`. A message the user sends or a look at the session changes no anchor. The store is
-  `<stateRoot>/needs-you-later.json` (atomic tmp+rename), one entry per session and kind (per
-  proposed person for roster proposals), so it
-  survives a restart and is the same on every device; an entry whose anchor has moved on is
-  dropped, and so is one whose session (or project item) is no longer listed at all. Time alone
-  never brings an item back, and neither does its absence: open questions leave the digest while a
-  turn runs, and stay put away when it ends. A reopened question is new because the question's id
-  carries how often the branch reopened it (`al_9/q1#1`).
+- **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
+  no choice of the user's hides one. A `<stateRoot>/needs-you-later.json` left by an earlier
+  version, whose choices once hid items, is deleted once when the server starts (best-effort; a
+  failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
   `asks-you` when the last reply asks the user something (§app.decisions/asks-user) and the
   session has no `open-questions` item, "Asks you: {the asking sentence}", else "The last reply
@@ -850,7 +850,8 @@ checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ s
   as a machine row ("Brief · <time>") with its body under it as markdown (the blockers as a list, each
   an in-app session link named summary-first, §app.overseer/session-names), and never navigates any tab. A brief turn is not a user turn: it is
   read-only (§app.overseer/tools), so it can report and offer a `sova_card` card but never act,
-  and it renews no caps (§app.overseer/caps).
+  and it renews no caps (§app.overseer/caps). Brief Me also sends one brief when Sova first finds a
+  playbook schedule that needs approval (§chat.schedules/where-shown).
 
 ## §app.overseer/standing-notes — Standing notes
 

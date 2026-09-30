@@ -1,10 +1,10 @@
-// Press-and-hold on a session row: the
-// gesture that turns one row into a selection, on a mouse and under a thumb alike. Framework-free
-// and clock-injected, so the rules below are testable without a browser — the row wires real
-// pointer events to `start`/`move`/`finish`/`cancel` and asks `suppressed()` what to do with the
-// click and the context menu the hold leaves behind.
+// Press-and-hold on a session row: the timer that lifts one row, on a mouse and under a thumb
+// alike, and the window that swallows what the hold leaves behind. A lifted row released in place
+// becomes a selection; one that moves becomes a drag (drag-overlay.ts wraps this for both).
+// Framework-free and clock-injected, so the rules below are testable without a browser, and
+// `suppressed()` says what to do with the click and the context menu the hold leaves behind.
 
-/** How long a press has to stay put to become a selection. Long enough not to fire on a click. */
+/** How long a press has to stay put to lift the row. Long enough not to fire on a click. */
 export const HOLD_MS = 500;
 /** How far the pointer may drift and still be the same press — a thumb is never perfectly still. */
 export const HOLD_MOVE_PX = 10;

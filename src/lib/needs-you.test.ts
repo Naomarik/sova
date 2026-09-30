@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { AttentionItem, SessionSummary } from "../../shared/protocol";
-import { LATER_TITLE, laterAnnouncement, laterLabel, laterRefused, needsYouCut, needsYouOpen, needsYouRows, needsYouShown, storedNeedsYouOpen } from "./needs-you";
+import { needsYouCut, needsYouOpen, needsYouRows, needsYouShown, storedNeedsYouOpen } from "./needs-you";
 
 const session = (id: string): SessionSummary =>
   ({
@@ -126,31 +126,6 @@ test("a worktree waiting for your OK and a stalled team list in Needs you; merge
       ["team", "Waiting on frontend, reviewer, quiet for 16 min."],
     ],
   );
-});
-
-test("Later: each row carries its items' keys, and a key this tab put away hides its item at once", () => {
-  const keyed = (i: AttentionItem, later: string): AttentionItem => ({ ...i, later });
-  const d = digest([
-    keyed(item("a", "act", "error", 100, "The last turn stopped with an error."), "k-a1"),
-    keyed(item("a", "act", "worker-error", 200, "1 subagent ended in an error."), "k-a2"),
-    keyed(item("b", "act", "needs-input", 300, "Waiting on a dialog."), "k-b"),
-    item("c", "act", "error", 50),
-  ]);
-  const sessions = ["a", "b", "c"].map(session);
-  const rows = needsYouRows(d, sessions);
-  assert.deepEqual(rows.find((r) => r.session.id === "a")!.later, ["k-a1", "k-a2"], "Later puts every item of the row away");
-  assert.deepEqual(rows.find((r) => r.session.id === "c")!.later, [], "an older server sends no key: no Later");
-  const hidden = needsYouRows(d, sessions, new Set(["k-a1", "k-a2", "k-b"]));
-  assert.deepEqual(hidden.map((r) => r.session.id), ["c"], "the row goes before the server answers");
-  const partly = needsYouRows(d, sessions, new Set(["k-a1"]));
-  assert.equal(partly.find((r) => r.session.id === "a")!.detail, "1 subagent ended in an error.", "an item with a new key stays listed");
-});
-
-test("Later's words", () => {
-  assert.equal(laterLabel("Ship it"), "Later: Ship it");
-  assert.equal(LATER_TITLE, "Hide this until something new happens here.");
-  assert.equal(laterAnnouncement("Ship it"), "Ship it put away until something new happens.");
-  assert.equal(laterRefused("The Sova server isn't reachable."), "Couldn't put it away. The Sova server isn't reachable.");
 });
 
 test("asks you, team stalled and ready to merge are decide items: never a Needs you row", () => {

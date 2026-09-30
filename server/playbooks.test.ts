@@ -176,3 +176,19 @@ test("parseFrontmatter: quotes, CRLF, BOM, colons in values, and a body that loo
   assert.deepEqual(later.fields, {}, "a fence not on line 1 is body text");
   assert.equal(later.body, "# Title\n---\ntitle: nope\n---\n");
 });
+
+test("a schedule is read from a project playbook only; a bad line is invalid with its error (§chat.schedules/header)", async () => {
+  const deps = base();
+  const cwd = fresh("project");
+  drop(join(cwd, PROJECT_PLAYBOOK_DIRS[0]), "round", fm({ title: "Round", when: "every 30m; claude-limit-reset", profile: "merge-captain" }, "b"));
+  drop(join(cwd, PROJECT_PLAYBOOK_DIRS[0]), "bad", fm({ title: "Bad", when: "every 10m", profile: "p" }, "b"));
+  drop(deps.shippedDir, "shipped-timer", fm({ title: "Shipped timer", when: "daily 09:00", profile: "p" }, "b"));
+  drop(join(cwd, PROJECT_PLAYBOOK_DIRS[0]), "plain", fm({ title: "Plain" }, "b"));
+  const cat = await listPlaybooks(cwd, deps);
+  const by = (id: string) => cat.playbooks.find((p) => p.id === id)!.schedule;
+  assert.deepEqual(by("round"), { when: "every 30m; claude-limit-reset", profile: "merge-captain", text: "Every 30 min · When a Claude limit resets", state: "needs-approval" });
+  assert.equal(by("bad")!.state, "invalid");
+  assert.match(by("bad")!.reason!, /every takes 30m/);
+  assert.deepEqual(by("shipped-timer"), { when: "daily 09:00", profile: "p", state: "not-project", reason: "Schedules run only from a project's playbooks." });
+  assert.equal(by("plain"), undefined);
+});

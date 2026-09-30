@@ -5,7 +5,7 @@ import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
-import { autoTitleSessions, fetchTargets, putAttentionLater, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
+import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
 import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
@@ -36,27 +36,13 @@ import {
 } from "../lib/org-region";
 import { groupRemotePlaceOf, remoteMarkOf, remoteMarkSuffix, remoteMarkTitle } from "../lib/remote-mark";
 import { summaryLineOf, summaryTitleOf } from "../lib/summary-row";
-import { type ArchiveDrag, archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, orgProjectOf, outsideDropEffect, outsideLabel, outsideTarget, unarchivedToast } from "../lib/drag-archive";
+import { archiveDragOf, archivedDropToast, blockedDropSentence, orgProjectOf, unarchivedToast } from "../lib/drag-archive";
 import { cwdLabel, remotePlaceOf, type TargetInfo } from "../lib/remote-session";
 import { recentCount, recentSessions } from "../lib/recent";
-import {
-  LATER_TITLE,
-  laterAnnouncement,
-  laterLabel,
-  laterRefused,
-  NEEDS_YOU_KEY,
-  needsYouCut,
-  needsYouOpen as needsYouOpenRule,
-  needsYouRows,
-  needsYouShown,
-  needsYouTitle,
-  storedNeedsYouOpen,
-} from "../lib/needs-you";
+import { NEEDS_YOU_KEY, needsYouCut, needsYouOpen as needsYouOpenRule, needsYouRows, needsYouShown, needsYouTitle, storedNeedsYouOpen } from "../lib/needs-you";
 import { type CwdGroup, groupByActivity, groupByCreation } from "../lib/session-order";
 import {
   createGroup,
-  dragHasRow,
-  groupDragPath,
   groupNameOf,
   groupSections,
   loadSessionGroups,
@@ -64,7 +50,6 @@ import {
   removeGroup,
   renameGroup,
   sessionGroups,
-  setGroupDragData,
   setSessionGroup,
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
@@ -77,7 +62,7 @@ import { marksOverlay, openSessionFeed } from "../lib/session-feed";
 import { reuseUnchanged } from "../lib/summary-diff";
 import { readKey, removeKey, writeKey } from "../lib/storage-keys";
 import { monogram, setSpine, spine } from "../lib/spine";
-import { createHoldGesture } from "../lib/hold-select";
+import { ARCHIVE_TILE, createRowPress, type DragInfo, dropAction, dropTiles, type TileId } from "../lib/drag-overlay";
 import {
   clearSelection,
   isSelected,
@@ -95,7 +80,6 @@ import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/worke
 import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
 import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
-import { RowMenu, type RowMenuHandle } from "./RowMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
@@ -104,6 +88,7 @@ import { heldWaitLine } from "../lib/pipeline-view";
 import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
+import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon } from "./ui";
 import { SHARES_HREF } from "../lib/session-shares";
@@ -128,30 +113,8 @@ const ARCHIVE_KEY = "sova:archive-open";
 /** One key per Archive date section, same "1"/"0" values as ARCHIVE_KEY. */
 const archiveDateKey = (id: ArchiveGroupId) => `sova:archive-date-open-${id}`;
 
-/**
- * The row being dragged, and the drop target under the pointer. Module state, because one drag
- * spans the row that started it and the group sections it passes over, and a tab can only drag
- * one thing at a time. `groupId` is where the row is now, which is what decides whether a drop
- * moves it or does nothing; `archive` is what a drop outside the sidebar would do, decided when
- * the drag starts (lib/drag-archive).
- */
-const [dragging, setDragging] = createSignal<{ path: string; groupId: string | null; title: string; archive: ArchiveDrag; org: string | null } | null>(null);
-/** A group id, "remove", or one of the two outside-the-sidebar states. */
-const [dropTarget, setDropTarget] = createSignal<string | "remove" | "archive" | "archive-blocked" | null>(null);
-const isOutsideTarget = (t: string | null): t is "archive" | "archive-blocked" => t === "archive" || t === "archive-blocked";
-/** The words of the row that says what a drop outside the pane would do, or null when none shows. */
-const outsideText = (): string | null => {
-  const d = dragging();
-  const t = dropTarget();
-  return d && isOutsideTarget(t) ? outsideLabel(t, d.archive, d.title) : null;
-};
-
-/** Whether a drag over `element` has left it: a dragleave fires whenever the pointer crosses into
-    a child, so the drop state must only clear once the pointer is outside the whole target. */
-const leftTarget = (e: DragEvent, el: HTMLElement) => !(e.relatedTarget instanceof Node) || !el.contains(e.relatedTarget);
-
-/** Which group sections are open, and which of their inline controls is showing. Module state for
-    the same reason as the drag: a group's section is rebuilt whenever the session list refreshes
+/** Which group sections are open, and which of their inline controls is showing. Module state:
+    a group's section is rebuilt whenever the session list refreshes
     (every few seconds), and an open group, or a rename in progress, must survive that. */
 /** The sessions waiting on a team gone quiet (the digest's decide items): a quiet line-1 mark on
     every copy of the row, so module state like the drag, set by the Sidebar from its digest. */
@@ -178,30 +141,13 @@ const onGroupToggle = (id: string, e: Event & { currentTarget: HTMLDetailsElemen
 };
 
 /**
- * Drops the dragged row into `groupId` (`null` takes it out of the group it is in). Says what
+ * Files the dropped row into `groupId` (`null` takes it out of the group it is in). Says what
  * happened through the toast stack and the polite region, and returns whether the list should be
- * re-read. A drop back where the row already is does nothing at all.
+ * re-read. A drop back where the row already is does nothing at all. The overlay has already
+ * refused what can't happen (lib/drag-overlay); the server refuses it again.
  */
-async function applyDrop(groupId: string | null): Promise<boolean> {
-  const from = dragging();
-  setDragging(null);
-  setDropTarget(null);
-  if (!from || from.groupId === groupId) return false;
-  // An organization's session is never grouped (the server refuses too); taking one OUT of a group is still fine.
-  if (from.org !== null && groupId !== null) {
-    const said = "Organization sessions stay with their project.";
-    toast(said);
-    announce(said);
-    return false;
-  }
-  // Groups are this host's; a peer's session can't join one (the peer has its own, unseen here).
-  const host = hostOf(from.path);
-  if (host) {
-    const said = `Groups hold this host's sessions only. That one lives on ${hostLabel(host)}.`;
-    toast(said);
-    announce(said);
-    return false;
-  }
+async function applyDrop(from: DragInfo, groupId: string | null): Promise<boolean> {
+  if (from.groupId === groupId) return false;
   const before = from.groupId ? groupNameOf(sessionGroups(), from.groupId) : null;
   const after = groupId ? groupNameOf(sessionGroups(), groupId) : null;
   if (!(await setSessionGroup(from.path, groupId))) return false;
@@ -296,9 +242,6 @@ function SessionRow(props: {
   detail?: { text: string; title: string } | null;
   /** The Organizations region's Needs you only: where the row lives, "{org} · {project}". */
   place?: string;
-  /** Needs you only: put the row away (§app.session-list/needs-you). Gives the row its Later
-      button and its right-click and long-press menu. */
-  onLater?: () => void;
 }) {
   const s = () => props.session;
   /** The row's own remote mark: one row answers for itself, never its
@@ -338,73 +281,91 @@ function SessionRow(props: {
     return fromList && fromList.window ? fromList : null;
   };
   /**
-   * Press-and-hold — a mouse button held down, a thumb held on the row — selects this session and
-   * turns the sidebar into selection mode. The press is off the
-   * moment it stops being a press in place: a drag, a scroll (the list moving under a still
-   * finger is `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row going
-   * away. What the fired hold leaves behind — a `click`, and on touch a `contextmenu` — is
-   * swallowed below, or the row would navigate on top of the selection it just made.
+   * Press-and-hold — a mouse button held down, a thumb held on the row — lifts the row; letting go
+   * in place selects this session and turns the sidebar into selection mode. A lifted row that
+   * moves, or a mouse press that moves 6px, is a drag instead: it opens the drop overlay
+   * (§app.session-list/drop-overlay), which owns the gesture from then on. The press is off the
+   * moment it stops being a press in place: a scroll (the list moving under a still finger is
+   * `pointercancel` on touch and a `scroll` event on a mouse wheel), or the row going away. What a
+   * lift or a drag leaves behind — a `click`, and on touch a `contextmenu` — is swallowed below, or
+   * the row would navigate on top of what the gesture just did.
    */
   const select = () => {
     startSelection(s().path);
     announce(`Selecting sessions. ${s().title} selected.`);
   };
-  /** A Needs you row's menu: Later, then Select. A held press opens it there instead of selecting. */
-  let menu: RowMenuHandle | undefined;
-  let link: HTMLAnchorElement | undefined;
-  let pressAt = { x: 0, y: 0 };
-  /**
-   * Where the menu opens once the press that asked for it ends. Never during it: the menu is a
-   * `popover="auto"`, and a press that went down before it existed and comes up outside it is a
-   * light dismiss — it would close the moment the finger or button let go.
-   */
-  let menuOnRelease: { x: number; y: number } | null = null;
-  const openMenuAfterRelease = () => {
-    const at = menuOnRelease;
-    menuOnRelease = null;
-    // After this pointerup (and its click) have been dispatched.
-    if (at) setTimeout(() => menu?.openAt(at.x, at.y));
+  let shell: HTMLLIElement | undefined;
+  let pointerId = 0;
+  let pointerKind = "mouse";
+  /** The row is held: it rises off the list, and the list stops scrolling under it. */
+  const [lifted, setLifted] = createSignal(false);
+  /** The row in flight, as the drop needs it, decided once when the drag starts. */
+  const dragInfo = (): DragInfo => {
+    const row = s();
+    const host = hostOf(row.path);
+    return {
+      path: row.path,
+      title: row.title,
+      groupId: row.groupId ?? null,
+      org: isOrgSession(row),
+      orgProject: orgProjectOf(row),
+      peer: host ? hostLabel(host) : null,
+      // Busy as the row shows it: this tab's own run is newer than the last fetched list.
+      archive: archiveDragOf({ ...row, busy: localRunning()[row.path] ?? row.busy }),
+      archived: !!row.archived,
+    };
   };
-  const hold = createHoldGesture({
-    onHold: () => {
-      if (props.onLater && menu && !selectionMode()) menuOnRelease = pressAt;
-      else select();
+  const press = createRowPress({
+    onLift: () => {
+      setLifted(true);
+      // A short buzz where a phone has one: the row has come off the list.
+      if (pointerKind !== "mouse") navigator.vibrate?.(10);
+    },
+    onDrag: (at) => {
+      setLifted(false);
+      watchPress(false);
+      if (shell) startRowDrag(dragInfo(), at, pointerId, shell, pointerKind);
     },
   });
-  const cancelHold = () => hold.cancel();
-  /** A release anywhere ends this press, even one that happened over another element. */
-  const finishHold = () => {
-    hold.finish();
+  const cancelPress = () => {
+    press.cancel();
+    setLifted(false);
     watchPress(false);
-    openMenuAfterRelease();
   };
+  /** The press ended in place: a lifted row is selected. */
+  const releasePress = () => {
+    const wasLifted = press.finish();
+    setLifted(false);
+    watchPress(false);
+    if (wasLifted) select();
+  };
+  const movePress = (e: PointerEvent) => e.pointerId === pointerId && press.move({ x: e.clientX, y: e.clientY });
+  const cancelOwn = (e: PointerEvent) => e.pointerId === pointerId && cancelPress();
+  const releaseOwn = (e: PointerEvent) => e.pointerId === pointerId && releasePress();
   /**
    * Only while a press is in flight: one set of listeners per PRESSED row, never one per row on
-   * screen. A scroll under the pointer moves the row out from under it; a window blur (an alt-tab,
-   * a native drag taking over, an OS menu) means the pointerup may never arrive at all; and the
-   * pointerup itself is watched on the window because a press that wandered off the row still has
-   * to END — a press left "down" forever would suppress every later click on this row.
+   * screen. The moves are watched on the window, so a mouse that leaves the row on its way to 6px
+   * is still a drag. A scroll under the pointer moves the row out from under it; a window blur
+   * (an alt-tab, an OS menu) means the pointerup may never arrive at all; and the pointerup itself
+   * is watched on the window because a press that wandered off the row still has to END — a press
+   * left "down" forever would suppress every later click on this row.
    */
   const watchPress = (on: boolean) => {
-    if (on) {
-      addEventListener("scroll", cancelHold, true);
-      addEventListener("blur", cancelHold);
-      addEventListener("pointerup", finishHold, true);
-      addEventListener("pointercancel", cancelHold, true);
-    } else {
-      removeEventListener("scroll", cancelHold, true);
-      removeEventListener("blur", cancelHold);
-      removeEventListener("pointerup", finishHold, true);
-      removeEventListener("pointercancel", cancelHold, true);
-    }
+    const f = on ? addEventListener : removeEventListener;
+    f("pointermove", movePress as EventListener, true);
+    f("scroll", cancelPress, true);
+    f("blur", cancelPress);
+    f("pointerup", releaseOwn as EventListener, true);
+    f("pointercancel", cancelOwn as EventListener, true);
   };
-  /** Every way a press stops being ours, in one place. */
-  const endPress = () => {
-    hold.cancel();
-    watchPress(false);
-    menuOnRelease = null;
+  onCleanup(cancelPress);
+  /** A lifted row, or one in flight, must not scroll the list under the finger. Non-passive, and
+      on the row from the start: a listener added once the touch has begun may not be asked. */
+  const holdStill = (e: TouchEvent) => {
+    if (e.cancelable && (press.phase() === "lifted" || draggingPath() === s().path)) e.preventDefault();
   };
-  onCleanup(endPress);
+  onMount(() => shell?.addEventListener("touchmove", holdStill, { passive: false }));
+  onCleanup(() => shell?.removeEventListener("touchmove", holdStill));
   /** The rail's own controls (the state pills, the checkbox) are pressed, not held. */
   const onOwnControl = (e: PointerEvent) => e.target instanceof Element && !!e.target.closest("button, input, label");
   const selecting = () => selectionMode();
@@ -412,66 +373,38 @@ function SessionRow(props: {
 
   return (
     <li
+      ref={shell}
       class="session-row-shell"
       classList={{
         "session-row-shell-current": props.selected === s().path,
-        "session-row-dragging": dragging()?.path === s().path,
+        "session-row-dragging": draggingPath() === s().path,
+        "session-row-lifted": lifted(),
         "session-row-shell-selecting": selecting(),
         "session-row-shell-selected": selecting() && chosen(),
-        "session-row-shell-later": !!props.onLater && !selecting(),
-      }}
-      // The row itself is the drag source (the link inside is not: a browser drags links natively,
-      // and that drag carries a URL, not a session). The session list's "Groups": drag a row onto a group section.
-      // In selection mode there is no drag at all: a press there is a hold or a toggle.
-      draggable={selecting() ? "false" : "true"}
-      onDragStart={(e) => {
-        // A native drag can start before the pointer has moved the tolerance — the browser's own
-        // threshold is smaller, and on some platforms a drag begins with no pointermove at all.
-        // Once it has, this press is a drag: it must not also become a hold mid-flight.
-        endPress();
-        setGroupDragData(e, s().path);
-        // Busy as the row shows it: this tab's own run is newer than the last fetched list.
-        const archive = archiveDragOf({ ...s(), busy: localRunning()[s().path] ?? s().busy });
-        setDragging({ path: s().path, groupId: s().groupId ?? null, title: s().title, archive, org: orgProjectOf(s()) });
-      }}
-      onDragEnd={() => {
-        setDragging(null);
-        setDropTarget(null);
       }}
       onPointerDown={(e) => {
         if (e.pointerType === "mouse" && e.button !== 0) return; // right-click is not a hold
-        if (onOwnControl(e)) return;
-        pressAt = { x: e.clientX, y: e.clientY };
-        hold.start({ x: e.clientX, y: e.clientY });
+        if (onOwnControl(e) || draggingPath()) return;
+        pointerId = e.pointerId;
+        pointerKind = e.pointerType;
+        // In selection mode there is no drag at all: a press there is a hold or a toggle.
+        press.start({ x: e.clientX, y: e.clientY }, e.pointerType, !selecting());
         watchPress(true);
       }}
-      onPointerMove={(e) => hold.move({ x: e.clientX, y: e.clientY })}
-      onPointerUp={() => {
-        hold.finish();
-        watchPress(false);
-        openMenuAfterRelease();
+      onPointerCancel={cancelPress}
+      // A pointer that leaves the row before the hold is not a press in place — except a mouse
+      // that may still drag, whose moves the window keeps watching (6px is a drag, wherever it goes).
+      onPointerLeave={(e) => {
+        if (press.phase() !== "pressed") return;
+        if (e.pointerType === "mouse" && !selecting()) return;
+        cancelPress();
       }}
-      onPointerCancel={endPress}
-      // The pointer left this row before the hold fired — a slide off the row, or the list moving
-      // under it — so this press is not a selection. AFTER the hold has fired, leaving means
-      // nothing: the gesture is done, and the release (watched on the window) is what ends it.
-      onPointerLeave={() => !hold.held() && endPress()}
-      // Capture went to someone else (a native drag, a scrollbar, another element grabbing it),
-      // so the pointerup belonging to this press will never arrive.
-      onLostPointerCapture={endPress}
-      // The long-press context menu belongs to the hold, not to the browser. A right-click on a
-      // Needs you row opens the row's own menu (Later, Select).
-      onContextMenu={(e) => {
-        if (hold.suppressed()) return e.preventDefault();
-        if (!props.onLater || !menu || selecting()) return;
-        e.preventDefault();
-        // Linux and macOS fire this on the button going DOWN: open on its release (see
-        // menuOnRelease). Windows fires it after the release, and the keyboard's menu key with no
-        // button at all: open now.
-        if (e.buttons === 0) return menu.openAt(e.clientX, e.clientY);
-        menuOnRelease = { x: e.clientX, y: e.clientY };
-        addEventListener("pointerup", openMenuAfterRelease, { capture: true, once: true });
-      }}
+      // Capture went to someone else (a scrollbar, another element grabbing it), so the pointerup
+      // belonging to this press will never arrive. A drag that took the capture has already
+      // ended the press, so this changes nothing for it.
+      onLostPointerCapture={() => press.phase() !== "idle" && cancelPress()}
+      // The long-press context menu belongs to the hold, not to the browser.
+      onContextMenu={(e) => (press.suppressed() || draggingPath()) && e.preventDefault()}
     >
       <div class="session-rail">
         {/* The rail is where a row's state lives, so it is where the row is picked too: one 44px
@@ -538,14 +471,13 @@ function SessionRow(props: {
         </div>
       </div>
       <a
-        ref={link}
         class="list-row list-row-interactive session-row"
         href={sessionHref(s().path)}
         draggable={false}
         aria-current={props.selected === s().path ? "page" : undefined}
         onClick={(e) => {
-          // The hold already acted on this row; its click is the gesture's echo, not a choice.
-          if (hold.suppressed()) {
+          // A hold or a drag already acted on this row; its click is the gesture's echo, not a choice.
+          if (press.suppressed() || dragSuppressesClick(s().path)) {
             e.preventDefault();
             return;
           }
@@ -737,23 +669,6 @@ function SessionRow(props: {
         <Show when={mark()}>{(m) => <span class="visually-hidden">{remoteMarkSuffix(m())}</span>}</Show>
         <Show when={hostOf(s().path)}>{(h) => <span class="visually-hidden">{hostClause(h())}</span>}</Show>
       </a>
-      {/* Later: at the row's right end. Desktop shows it on hover and keyboard focus; a phone,
-          which has no hover, always. A sibling of the link, never inside it. */}
-      <Show when={props.onLater && !selecting()}>
-        <button type="button" class="button button-ghost button-sm session-later" aria-label={laterLabel(s().title)} title={LATER_TITLE} onClick={() => props.onLater!()}>
-          Later
-        </button>
-        <RowMenu
-          label={`Actions · ${s().title}`}
-          ref={(h) => (menu = h)}
-          ignore={() => hold.suppressed()}
-          returnFocus={() => link}
-          items={[
-            { label: "Later", aria: laterLabel(s().title), onRun: () => props.onLater!() },
-            { label: "Select", aria: `Select ${s().title}`, onRun: select },
-          ]}
-        />
-      </Show>
     </li>
   );
 }
@@ -868,7 +783,6 @@ function GroupBlock(props: {
 }) {
   const group = () => props.group;
   const count = () => props.sessions.length;
-  const over = () => dropTarget() === group().id;
 
   /** The confirm question, one sentence, in both its forms: what goes away, then what doesn't. */
   const question = () =>
@@ -891,22 +805,8 @@ function GroupBlock(props: {
   return (
     <details
       class="group-section"
-      classList={{ "group-section-drop": over() }}
       open={groupOpen(group().id)}
       onToggle={(e) => onGroupToggle(group().id, e)}
-      onDragOver={(e) => {
-        if (!dragHasRow(e)) return;
-        e.preventDefault();
-        if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-        if (!over()) setDropTarget(group().id);
-      }}
-      onDragLeave={(e) => {
-        if (over() && leftTarget(e, e.currentTarget)) setDropTarget(null);
-      }}
-      onDrop={(e) => {
-        e.preventDefault();
-        if (groupDragPath(e)) void applyDrop(group().id).then((changed) => changed && props.onChanged());
-      }}
     >
       {/* No folder icon here, unlike the cwd heads inside: a group is the user's own name for a set
           of sessions, not a folder on disk, and the icon claimed otherwise right above real ones. */}
@@ -935,7 +835,7 @@ function GroupBlock(props: {
                     title={`Open ${quoted(group().name)} as a workspace`}
                     icon={<Icon name="external" small />}
                     href={groupHref(group().id)}
-                    disabled={count() === 0 ? "Nothing is in it yet. Drag a session here first." : ""}
+                    disabled={count() === 0 ? "Nothing is in it yet. Drag a session into it first." : ""}
                   />
                   <menu.Item
                     label="Rename…"
@@ -992,7 +892,7 @@ function GroupBlock(props: {
           )}
         </ActionMenu>
       </summary>
-      <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag one here.</p>}>
+      <Show when={count() > 0} fallback={<p class="sidebar-region-note">No sessions yet. Drag a session to file it here.</p>}>
         <GroupList
           groups={groupByActivity(props.sessions)}
           selected={props.selected}
@@ -1152,7 +1052,7 @@ export function Sidebar(props: {
   selected: string | null;
   now: number;
   onRefresh(): void;
-  /** After a drag out of the pane archives a session, or its Undo brings it back. */
+  /** After a row dropped on the drop overlay's Archive archives a session, or its Undo brings it back. */
   onArchiveChanged(path: string, archived: boolean): void;
   onNew(): void;
   usage: UsageInsight | undefined;
@@ -1201,62 +1101,27 @@ export function Sidebar(props: {
   onMount(() => void loadSessionGroups());
 
   /**
-   * Dragging a row out of the pane archives it ("Dragging"). The boundary is this
-   * <aside>, not the list: anywhere else in the window is "outside". Listening only while a row
-   * is in flight. The composer's own window guard (Composer.tsx) still keeps the row's text/plain
-   * path out of its field; this adds the archive on top, and only a drop archives — never a
-   * dragend, which is also what Esc and a drop off the window end with.
+   * A row dropped on the drop overlay (§app.session-list/drop-overlay). The overlay says which tile
+   * was under the pointer; the rules say what that means, and a refused tile only says why.
    */
-  const outside = (e: DragEvent) => !(e.target instanceof Node && aside.contains(e.target));
-  const onWindowDragOver = (e: DragEvent) => {
-    const d = dragging();
-    if (!d || !dragHasRow(e)) return;
-    if (!outside(e)) {
-      if (isOutsideTarget(dropTarget())) setDropTarget(null);
-      return;
+  const onOverlayDrop = (d: DragInfo, tile: TileId | null) => {
+    const act = dropAction(tile, dropTiles(d, sessionGroups(), groupCounts()));
+    if (act.kind === "group") void applyDrop(d, act.groupId).then((changed) => changed && props.onRefresh());
+    else if (act.kind === "archive") void archiveByDrag(d);
+    else if (act.kind === "new") openNewGroupFor(d);
+    else if (act.kind === "refused") {
+      const said = tile === ARCHIVE_TILE ? (blockedDropSentence(d.archive) ?? act.reason) : act.reason;
+      toast(said);
+      announce(said);
     }
-    // Always ours out here, archived row or not: nothing else in the page may take the path.
-    e.preventDefault();
-    const t = outsideTarget(d.archive, false);
-    if (e.dataTransfer) e.dataTransfer.dropEffect = outsideDropEffect(t);
-    if (dropTarget() !== t) setDropTarget(t);
   };
-  const onWindowDragLeave = (e: DragEvent) => {
-    if (isOutsideTarget(dropTarget()) && leftWindow(e, { width: innerWidth, height: innerHeight })) setDropTarget(null);
+  /** `Create and Move` in the New group dialog: one action, two requests. */
+  const createAndMove = async (d: DragInfo, name: string) => {
+    const group = await createGroup(name); // a failure has already said why
+    if (group && (await applyDrop(d, group.id))) props.onRefresh();
   };
-  const onWindowDrop = (e: DragEvent) => {
-    const d = dragging();
-    if (!d || !groupDragPath(e) || !outside(e)) return;
-    e.preventDefault();
-    setDragging(null);
-    setDropTarget(null);
-    void archiveByDrag(d);
-  };
-  createEffect(() => {
-    if (!dragging()) return;
-    // An <iframe> (the Explained cards, a rendered page) is its own document: a dragover over one
-    // never reaches this window, so the state would go stale there. base.css lets the pointer
-    // through them while a row is in flight.
-    document.documentElement.toggleAttribute("data-row-drag", true);
-    addEventListener("dragover", onWindowDragOver);
-    document.addEventListener("dragleave", onWindowDragLeave);
-    addEventListener("drop", onWindowDrop);
-    onCleanup(() => {
-      document.documentElement.removeAttribute("data-row-drag");
-      removeEventListener("dragover", onWindowDragOver);
-      document.removeEventListener("dragleave", onWindowDragLeave);
-      removeEventListener("drop", onWindowDrop);
-    });
-  });
-
-  const archiveByDrag = async (d: { path: string; archive: ArchiveDrag; org: string | null }) => {
-    const blocked = blockedDropSentence(d.archive);
-    if (blocked) {
-      toast(blocked);
-      announce(blocked);
-      return;
-    }
-    if (d.archive.kind !== "archive") return; // already archived: the gesture does nothing
+  const archiveByDrag = async (d: DragInfo) => {
+    if (d.archive.kind !== "archive") return; // the overlay refused it already
     let deleted: boolean;
     try {
       // A never-sent session is deleted rather than archived (lib/drag-archive); the answer says which.
@@ -1267,9 +1132,9 @@ export function Sidebar(props: {
       announce(failed);
       return;
     }
-    const done = archivedDropToast(deleted, d.org);
+    const done = archivedDropToast(deleted, d.orgProject);
     // Keyed: the next archive's toast replaces this one, so only the latest Undo is on screen.
-    toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path, d.org) } } : undefined);
+    toast(done.text, done.undo ? { key: "archive-undo", action: { label: "Undo", run: () => undoArchive(d.path, d.orgProject) } } : undefined);
     announce(done.text);
     props.onArchiveChanged(d.path, true);
   };
@@ -1410,6 +1275,8 @@ export function Sidebar(props: {
   /** Every ordinary surface — Needs you, Recent, Groups, Live & web, the Archive and its cleanup —
       reads these, never `all()`/`hits()`: an organization's session lives only in its own region. */
   const ordinary = createMemo(() => all().filter(isOrdinarySession));
+  /** Each group's session count, as its section counts them, for its tile in the overlay. */
+  const groupCounts = createMemo(() => new Map(groupSections(ordinary(), sessionGroups(), false).map((x) => [x.group.id, x.sessions.length])));
   const ordinaryHits = createMemo(() => hits().filter(isOrdinarySession));
   const orgHits = createMemo(() => hits().filter(isOrgSession));
   // Pane rule: live, or web-spawned and not archived, stays on top (src/lib/regions.ts).
@@ -1431,39 +1298,11 @@ export function Sidebar(props: {
    * Recent. A shortcut like Recent — every row is still where it lives — and built from `hits()`
    * too, so the search narrows it and its count is always its rows. The open session stays listed.
    */
-  /** Later's keys this tab has put away: the row goes at once, before the next digest read drops it. */
-  const [putAway, setPutAway] = createSignal<ReadonlySet<string>>(new Set());
-  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits(), putAway()));
+  const needsYou = createMemo(() => needsYouRows(props.attention, ordinaryHits()));
   createEffect(() => setStalled(stalledPaths(props.attention)));
-  const putLater = (row: { session: SessionSummary; later: string[] }) => {
-    const keys = row.later;
-    if (keys.length === 0) return;
-    setPutAway((prev) => new Set([...prev, ...keys]));
-    announce(laterAnnouncement(row.session.title));
-    const bringBack = () =>
-      setPutAway((prev) => {
-        const next = new Set(prev);
-        for (const k of keys) next.delete(k);
-        return next;
-      });
-    putAttentionLater(keys)
-      // The next read leaves the items out; until it lands the local set keeps the row hidden.
-      .then(() => requestListRefresh())
-      .catch((e: unknown) => {
-        bringBack();
-        const said = laterRefused(e instanceof Error ? e.message : String(e));
-        toast(said);
-        announce(said);
-      });
-  };
   /** ONE rule for the region and its spine door: rows, and proactivity known and not Off. */
   const showNeedsYou = () => !!props.sessions && needsYouShown(props.overseer?.proactivity, needsYou().length);
   const needsYouCutNote = () => needsYouCut(props.attention);
-  /** The row's Later, while its items carry keys (an older server sends none). */
-  const needsYouLater = (path: string) => {
-    const r = needsYou().find((row) => row.session.path === path);
-    return r && r.later.length > 0 ? () => putLater(r) : undefined;
-  };
   const needsYouDetail = (path: string) => {
     const r = needsYou().find((row) => row.session.path === path);
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
@@ -1492,22 +1331,20 @@ export function Sidebar(props: {
   /** A group's rows, from the same hit list the sections were built from. */
   const rowsOf = (id: string) => ordinaryHits().filter((s) => s.groupId === id);
   /** With no query the region always stands: its head carries the `+` that makes a group, the
-      feature's front door. While searching it appears only when a group has a match — or when a row is in flight
-      and needs its "Remove from …" target, which a fruitless search would otherwise hide. */
-  const groupsShown = () => !searching() || sections().length > 0 || !!dragging()?.groupId;
+      feature's front door. While searching it appears only when a group has a match. */
+  const groupsShown = () => !searching() || sections().length > 0;
 
   /** The Groups region's own twist. Collapsed on every load and memory-only — unlike the Archive
       there is no stored choice to read, so nothing a past visit did can open it. It
       is component state, not module state: the region is one node that outlives every poll. */
   const [groupsChosen, setGroupsChosen] = createSignal<boolean | undefined>(undefined);
   /** Forced open, without touching the choice, while a search is on (a matching group must not
-      hide its hits), while a grouped row is in flight (its drop targets live in here), or while the
+      hide its hits), or while the
       new-group field is showing (it lives in here too, and the `+` can be pressed on a shut region). */
   const groupsRegionOpen = () =>
     groupsRegionOpenRule({
       chosen: groupsChosen(),
       searching: searching(),
-      draggingGrouped: !!dragging()?.groupId,
       composing: newGroupField(),
     });
   const onGroupsRegionToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
@@ -1573,12 +1410,7 @@ export function Sidebar(props: {
   /** The region counts rows: a project's eye is not one. */
   const orgRowCount = () => regionCount(orgs());
   const orgTotal = () => regionCount(orgSections(all().filter(isOrgSession)));
-  const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits(), putAway()));
-  /** Later on an org row the digest put here; a baton-only row has no key and clears when answered. */
-  const orgNeedsYouLater = (path: string) => {
-    const r = orgNeedsYou().find((row) => row.session.path === path);
-    return r && r.later.length > 0 ? () => putLater(r) : undefined;
-  };
+  const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
   /** Its Needs you items that are no session: projects to pick a main stakeholder for. */
   const orgItems = createMemo(() => orgProjectItems(props.attention, query()));
   const orgWaitingCount = () => orgNeedsYou().length + orgItems().length;
@@ -2012,7 +1844,7 @@ export function Sidebar(props: {
   };
 
   return (
-    <aside ref={aside} class="app-sidebar" aria-label="Sessions" data-drop={dropTarget() === "archive" ? "archive" : undefined}>
+    <aside ref={aside} class="app-sidebar" aria-label="Sessions">
       {/* Collapsed, the pane's own body is not in the DOM at all — nothing hidden-but-readable. */}
       <Show when={!collapsed()} fallback={<Spine />}>
         <div class="sidebar-head">
@@ -2183,18 +2015,8 @@ export function Sidebar(props: {
               <ul class="list">
                 {/* Keyed on the session objects, which `hits()` keeps across polls: a row is updated
                     in place, never remounted, when only the digest changed. */}
-                {/* Keyed by the session, so a digest read doesn't remount a row (and drop its focus). */}
                 <For each={needsYou().map((r) => r.session)}>
-                  {(s) => (
-                    <SessionRow
-                      session={s}
-                      selected={props.selected}
-                      now={props.now}
-                      targets={targets()}
-                      detail={needsYouDetail(s.path)}
-                      onLater={needsYouLater(s.path)}
-                    />
-                  )}
+                  {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} detail={needsYouDetail(s.path)} />}
                 </For>
               </ul>
               <Show when={needsYouCutNote()}>
@@ -2279,30 +2101,10 @@ export function Sidebar(props: {
                   <GroupBlock group={group} sessions={rowsOf(group.id)} selected={props.selected} now={props.now} targets={targets()} searching={searching()} onChanged={props.onRefresh} />
                 )}
               </For>
-              {/* Only while a grouped row is in flight: dropping here takes it out of its group. */}
-              <Show when={dragging()?.groupId}>
-                <div
-                  class="group-remove"
-                  classList={{ "group-remove-over": dropTarget() === "remove" }}
-                  onDragOver={(e) => {
-                    if (!dragHasRow(e)) return;
-                    e.preventDefault();
-                    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
-                    if (dropTarget() !== "remove") setDropTarget("remove");
-                  }}
-                  onDragLeave={(e) => {
-                    if (dropTarget() === "remove" && leftTarget(e, e.currentTarget)) setDropTarget(null);
-                  }}
-                  onDrop={(e) => {
-                    e.preventDefault();
-                    if (groupDragPath(e)) void applyDrop(null).then((changed) => changed && props.onRefresh());
-                  }}
-                >
-                  <Icon name="close" small />
-                  Remove from {quoted(groupNameOf(sessionGroups(), dragging()?.groupId ?? undefined) ?? "its group")}
-                </div>
-              </Show>
             </details>
+          </Show>
+
+          {/* Hidden when a search empties it            </details>
           </Show>
 
           {/* Hidden when a search empties it; kept with a note when there's simply nothing on top. */}
@@ -2371,7 +2173,6 @@ export function Sidebar(props: {
                           targets={targets()}
                           detail={orgNeedsYouDetail(s.path)}
                           place={orgPlaceLabel(s)}
-                          onLater={orgNeedsYouLater(s.path)}
                         />
                       )}
                     </For>
@@ -2515,17 +2316,9 @@ export function Sidebar(props: {
             </details>
           </Show>
 
-          {/* Only while a row is outside the pane: what a drop there does, at the end of the list.
-              Nothing renders in the main pane. An archived row shows nothing — it's already there. */}
-          <Show when={outsideText()}>
-            {(label) => (
-              <div class="archive-drop" classList={{ "archive-drop-blocked": dropTarget() === "archive-blocked" }} aria-hidden="true">
-                <Icon name="archive" small />
-                <span class="archive-drop-text">{label()}</span>
-              </div>
-            )}
-          </Show>
         </nav>
+        {/* Portalled: the full-screen overlay a dragged row opens, and its New group dialog. */}
+        <DropOverlay groups={sessionGroups()} counts={groupCounts()} onDrop={onOverlayDrop} onCreate={(d, name) => void createAndMove(d, name)} />
 
         <div class="sidebar-foot">
           {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}

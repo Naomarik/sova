@@ -723,7 +723,8 @@ reach only the digest.
 Needs you is a **shortcut, not a place a session lives**, exactly like Recent: every row is still in
 Recent (when it moved lately), Live & web or the Archive, and its group. An organization session is
 never a row here. Nothing is moved or hidden,
-and the region's only actions are its twist and each row's **Later**.
+and the region has **no actions of its own** beyond its twist: nothing puts a row away but the
+thing it waits on being done.
 
 ```html
 <!-- First in .sidebar-list after the Profiles region, above Recent. Only while it has rows and proactivity is not Off. -->
@@ -753,21 +754,10 @@ and the region's only actions are its twist and each row's **Later**.
   or the draft preview, and shown even with summaries hidden in Settings › General. Its `title` is
   every act sentence the session has, newest first. An act item with no sentence leaves line 2 as
   the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.
-- **Later.** Every row can be put away: `Later` sends the `later` key of each of the session's act
-  items (`POST /api/attention/later {keys}`) and hides the row until something new happens for one
-  of those items — a new or reopened open question (one answered is not new), a new dialog, a new
-  errored turn, a new subagent error. The Organizations region's baton and roster rows (a person
-  waiting on you, a link to send, a roster proposal) put away the same way: a new hand-off or
-  offer, or a new proposal, brings them back (§app.baton/needs-you). A message
-  you send or a look at the session is not new. The choice is the server's (§app.overseer/attention-digest), so it survives a restart and is the same
-  on phone and desktop; the row goes at once, before the server answers, and comes back with a
-  toast if the server refuses. On desktop `Later` is a small ghost button at the row's right end,
-  shown while the row is hovered or has keyboard focus within it, and an item in the row's
-  right-click menu. On a phone (no hover) it is always shown at the row's right end, a 44px target,
-  and an item in the row's long-press menu. On a Needs you row a press held (~500ms) opens that
-  menu — `Later`, then `Select`, which enters selection mode with the row selected
-  (§app.session-list/selecting-several-sessions) — instead of selecting at once; everywhere else a
-  held row selects as before. The menu is a popover: Escape and a press outside close it.
+- **No row menu, no put-away.** A Needs you row carries no button of its own and no menu: a press
+  held on it and let go selects it (§app.session-list/selecting-several-sessions), one that moves
+  opens the drop overlay (§app.session-list/drop-overlay), and a right-click is the browser's, as
+  on every other row.
 - **The open session stays listed**, drawn with the current tint like any row: the count is the
   digest's, and a number must match its list.
 - **Open by default, collapsible.** The head is a twist (`<details>`, the Groups head's
@@ -843,7 +833,7 @@ already saying it, and "0 recent" above "0 sessions" says it twice.
 ## §app.session-list/groups — Groups
 
 Groups are the user's **own** sections, below Needs you and Recent and above every other region: named folders they make and file
-sessions into by dragging a row onto one. They live server-side in
+sessions into by dragging a row and dropping it on one (§app.session-list/drop-overlay). They live server-side in
 `~/.pi/agent/sova/session-groups.json` (`server/session-groups.ts`), keyed by session id like the
 archive, so every tab and every Sova server sees the same groups and clearing browser storage
 loses nothing. `GET /api/session-groups` lists them; the other routes are in `shared/protocol.ts`.
@@ -853,7 +843,7 @@ list: a grouped session still shows under Live & web (or in the Archive), so the
 appear in a group and below it at once. A session belongs to **at most one** group.
 
 **Organization sessions are never grouped**, like the Overseer's files (§app.session-list/ordinary-surfaces):
-the Groups region never draws one, and a drop on a group, the session pane's `Move into group` and
+the Groups region never draws one, and the drop overlay's group tiles, the session pane's `Move into group` and
 the server (`POST /api/session-groups/assign`, 400) all refuse it with "Organization sessions stay
 with their project." — on the disabled control, as its reason, before the press. An assignment made
 before this rule is kept on the server and not drawn; a group left holding only organization
@@ -926,11 +916,8 @@ sessions shows as empty.
     </details>
   </details>
 
-  <!-- A group with no sessions: the note, and still a drop target. -->
-  <p class="sidebar-region-note">No sessions yet. Drag one here.</p>
-
-  <!-- Only while a grouped row is in flight. -->
-  <div class="group-remove"><svg class="icon icon-sm" aria-hidden="true">…close…</svg> Remove from “Work”</div>
+  <!-- A group with no sessions: the note. -->
+  <p class="sidebar-region-note">No sessions yet. Drag a session to file it here.</p>
 </details>
 ```
 
@@ -963,15 +950,14 @@ opening the region lasts as long as the page does and no longer, so a reload alw
 This is the deliberate exception to the Archive's rule (§app/session-list "Regions"), and there is no storage key
 to read — `src/lib/group-open.ts` is the whole rule, inputs only.
 - **Forced open** — without changing the choice, exactly as the Archive is — while a search is on
-(a matching group must not hide its hits), while a grouped row is being dragged (the group
-sections and the "Remove from …" target it needs are inside the region), and while the new-group
+(a matching group must not hide its hits), and while the new-group
 name field is showing (it opens in the region's body, and a shut region would hide the field the
 user just asked for). When the field closes the choice answers again, so a region the user never
 opened is shut again.
 - **A group inside it is a `<details>` too**, like an Archive date section, and collapsed by
 default on the same terms: memory only, no storage key, reopened by hand each page.
-- **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag one here.": it is
-what a group is when the user makes it, and a drop target is what fills it. While a search is on,
+- **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag a session to file it
+here.": it is what a group is when the user makes it, and its tile in the drop overlay is what fills it. While a search is on,
 a group with no matching session is left out entirely. Every group reaches this state when its
 last member leaves, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups).
 - **Creating.** The region's one action is a `+` at the right end of its head
@@ -1002,12 +988,10 @@ rendered OUT of the summary's subtree (a portal to `<body>`): a popover paints i
 but stays where it is in the DOM, and a `<details>` toggles for a click on anything inside its
 summary that has no activation behaviour of its own — which is exactly what a `role="menuitem"`
 row is. Measured before the panel moved: pressing `Rename…` collapsed the group under the menu.
-Dropping a dragged row on the summary still files it into the group, and still doesn't open the
-section.
 - **Opening it as a workspace.** `Open workspace` is the menu's first row, a link to `#/g/{id}` —
 the group's members side by side, each a whole chat, with one composer that writes to all of them
 (§workspace/groups). An empty group can't be opened as one: the row is `aria-disabled` with its reason under the
-label ("Nothing is in it yet. Drag a session here first."), said before the press rather than
+label ("Nothing is in it yet. Drag a session into it first."), said before the press rather than
 discovered as a blank workspace. The
 section is still the place you file sessions into; the workspace is the place you read them in.
 - **This is where membership changes.** The Groups region, the selection toolbar and the
@@ -1023,13 +1007,13 @@ sessions stay in the list." (empty: "Delete “Work”? Nothing is in it.") — 
 destructive ask means the gesture is off, not that it should be re-offered. It
 removes the group and its assignments and never touches a session file. `DELETE
 /api/session-groups/:id`; toast: "Deleted “Work”. Its 4 sessions are ungrouped."
-- **Dragging.** A session row is a drag source (the link inside is not — a browser drags links
-natively, and that drag carries a URL). Dropping it on a group's label or body files it there;
-dropping it on another group moves it; a drop on the group it is already in does nothing. While a
-**grouped** row is in flight, one dashed `Remove from “Work”` row appears at the end of the region
-to drop it out. The source row dims for the length of the drag. A drop says what happened through
-`.toast` and the polite region: "Added to “Work”." · "Moved to “Home”." · "Removed from “Home”."
-- **Without a pointer**, and on touch, drag is not available: the session pane's `Move into group`
+- **Dragging.** Dragging a session row, with a mouse or a thumb, opens the drop
+overlay (§app.session-list/drop-overlay). Dropping the row on a group's tile files it there,
+dropping it on another group's tile moves it, and the group it is already in is marked `Current`
+and does nothing. A grouped row also gets a `Remove from “Work”` tile. A drop says what happened
+through `.toast` and the polite region: "Added to “Work”." · "Moved to “Home”." · "Removed from
+“Home”." The list's own group sections are not drop targets.
+- **Without a pointer** there is no drag: the session pane's `Move into group`
 control (the session pane's Session tab, §app.subagents-pane/tabs) is the same change, as a popover radio list
 (`role="menuitemradio"`, one row per group plus `No group`) with `New group…` at the end, which
 creates the group and moves the session in one step. The Identity list shows the current group.
@@ -1047,10 +1031,145 @@ opens the menu and does not also toggle the section, and Tab reaches the trigger
 summary. Escape closes the menu (and any screen it is showing) and returns focus to it. The region
 head's `+` is a named button (`aria-label` "New group") inside its `<summary>`, and it keeps the
 region's gestures the same way: it stops click and keydown, so Enter or Space on it opens the name
-field and does not also toggle the region. When the field closes it hands focus back to the `+`. The
-`Remove from …` row is a drop target only, not a control: the popover path is what a keyboard
-uses. Contrast is the region head's (ink-2 on sunken, 7.65 dark / 7.22 light); the drop state adds
-the accent tint and a dashed accent edge, never a pulse.
+field and does not also toggle the region. When the field closes it hands focus back to the `+`.
+Dragging is a pointer gesture only (§app.session-list/drop-overlay): the popover path is what a
+keyboard uses. Contrast is the region head's (ink-2 on sunken, 7.65 dark / 7.22 light).
+
+## §app.session-list/drop-overlay — Dragging a row: the drop overlay
+
+Dragging a session row doesn't aim at a target in the list. It opens a **drop overlay**: one
+compact panel that holds every place the row can go, a target per group, `+ New group`, and
+Archive. In the list a group or the Archive region is usually off screen or scrolled away; the
+overlay puts every target in view at once, each the size of a session row, as a list the eye
+can read without travelling across the window. It grows with the number of groups toward
+filling the window, and only then do its rows get shorter. A copy of the dragged row floats over
+it under the pointer, so what is being dropped is never out of sight. It
+is the same gesture with a mouse and a thumb: one Pointer Events path. The pure rules live in
+`src/lib/drag-overlay.ts`, the overlay in `src/components/DropOverlay.tsx`, and the drop in
+`Sidebar.tsx`.
+
+```html
+<!-- Portalled to <body>, position fixed, inset 0, over everything, toasts included. Only while a row is in flight. -->
+<div class="drop-overlay" role="dialog" aria-modal="true" aria-labelledby="drop-overlay-title">
+  <div class="drop-overlay-panel" style="--drop-list-w: 320px">   <!-- centred; a bottom sheet when folded -->
+  <div class="drop-overlay-head">
+    <h2 class="drop-overlay-title" id="drop-overlay-title">Move “<bdi>Fix the build</bdi>”</h2>
+    <p class="drop-overlay-hint">Drop it on a group or on Archive. Let go anywhere else to cancel.</p>
+    <!-- Only when the row can't join a group: the one reason, once, not on every tile. -->
+    <p class="drop-overlay-note">Organization sessions stay with their project.</p>
+  </div>
+  <!-- Its own size, never stretched (dropListLayout): columns, rows and row height inline. Column-major:
+       a column fills top to bottom before the next begins. Scrolls only at the 44px floor; auto-scrolls near its edges. -->
+  <div class="drop-overlay-grid" style="grid-template-columns: repeat(1, minmax(0, 1fr)); grid-template-rows: repeat(4, 52px)">
+    <div class="drop-tile drop-tile-new" data-drop-tile="new">…plus… New group</div>
+    <div class="drop-tile drop-tile-remove" data-drop-tile="remove">…close… Remove from “Work”</div>   <!-- grouped rows only -->
+    <div class="drop-tile drop-tile-current" data-drop-tile="g1" aria-disabled="true">…folder… Work <span class="chip">Current</span> · 1 session</div>
+    <div class="drop-tile" data-drop-tile="g2">…folder… <bdi>Home</bdi> · 3 sessions</div>
+  </div>
+  <div class="drop-overlay-bar">
+    <button type="button" class="drop-tile drop-tile-cancel" data-drop-tile="cancel">…close… Cancel</button>
+    <div class="drop-tile drop-tile-archive" data-drop-tile="archive">…archive… Archive</div>
+  </div>
+  </div>
+  <!-- The floating card. pointer-events: none; placed with a transform on every move. -->
+  <div class="drop-ghost" aria-hidden="true">
+    <ul class="drop-ghost-card"><li class="session-row-shell">…a copy of the dragged row…</li></ul>
+    <p class="drop-ghost-target">…arrow-right… Move to “Home”</p>
+  </div>
+</div>
+```
+
+- **Starting it.** With a mouse, pressing a row and moving it about 6px opens the overlay at once,
+  with no hold. With a thumb (and a pen), a press held still ~500ms **lifts** the row: it rises
+  (surface fill, `--shadow-2`) and the phone buzzes briefly where it can (`navigator.vibrate`).
+  Moving the lifted row more than 10px opens the overlay. A touch that moves before the lift is a
+  scroll or a tap, exactly as before. Letting go of a lifted row without moving it selects it
+  (§app.session-list/selecting-several-sessions), and a still mouse held 500ms does the same. In
+  selection mode a row doesn't drag at all.
+- **Layout.** Fixed to the window, `inset: 0`, above the toasts (z-index 65; a toast from the
+  last drop would otherwise cover `Cancel`). The page stays in view behind it under `--scrim`,
+  as behind a dialog, with no blur: the panel is small, and the dimmed list still shows where the
+  row came from. On it sits **one panel** (`--color-bg`, a thin border, `--shadow-3`, `r-lg`):
+  centred in the window from 768px, and under 768px a bottom sheet the window's width, where a
+  thumb rests. It holds a head ("Move “{title}”" at body size, one line, truncated, and the hint
+  in caption), the list of targets, and a bar. The panel is as wide as the list and never
+  narrower than 400px (folded: the sheet's width, the list filling it).
+  **The targets are shaped like session rows**, not tiles: a 52px row, a 16px icon, the name on
+  the first line and what it holds (or, under the pointer, what a drop does) on the second, both
+  left-aligned, one line each and truncated, with the full name as the row's title.
+  `dropListLayout` places them: **one column** the sessions pane's width (320px) while the rows fit
+  the height the window leaves; when they don't, they continue in a **2nd, then a 3rd column**
+  (column-major, like the list continuing), each at least 260px, so a narrow window, a phone
+  included, stays one column and a phone on its side may take more; once 3 columns (or as many as
+  fit) are full, **the rows get shorter**, down to 44px; only past that does the list scroll. So
+  at 1440×900 a few groups are a short single column in the middle of the window, 20 are 2
+  columns, and 40 are 3 columns of 46px rows without scrolling; on a 390×844 phone 20 groups
+  scroll a single column of 44px rows. `+ New group` comes first, with a dashed edge and an
+  accent `+`. With no groups yet its second line reads "No groups yet. Drop here to start one."
+  `Remove from “{name}”` comes next, for a grouped row only, dashed with a close mark. The
+  groups follow in their creation order, each with a folder icon and its session count. **The
+  bar** holds `Cancel` (three fifths, first) and then, 12px away at the far end, Archive, both
+  48px tall with the icon and label centred. Archive is outlined in the error colour with an
+  error-coloured icon, as a destructive button is, and never filled; its reason, when it can't
+  archive, wraps under the label and is read whole. The bar is part of the panel, so it is
+  always in view: only the list scrolls. Near the list's top or bottom edge (56px) the list
+  scrolls under a still pointer, faster the nearer the edge.
+- **The floating card.** While the overlay is open, a copy of the dragged row, taken when the
+  drag starts and looking as it does in the list, floats over everything. It has the surface
+  fill, a 1.5px accent edge, `--shadow-3`, and sits 2% larger. With a mouse it trails the
+  pointer, 16px right of and 20px below its tip, flipping left or up at the window's edge. With a
+  finger or pen it is centred 32px above the touch, so the finger never hides it, or below the
+  touch when there is no room above. It is 340px wide at most (300px with a finger) and always
+  stays inside the window. Under it one line says where a drop now would put the row:
+  "Move to “{name}”" (a grouped row) / "Add to “{name}”" · "Remove from “{name}”" · "Into a new
+  group" · "Archive" · "Cancel", with an arrow, or with a close mark "Already in “{name}”"
+  (its own group), "Can't drop here" (a refused group or New group), "Can't archive", and "Let
+  go to cancel" over nothing. The card has `pointer-events: none`, and hit-testing reads the
+  tiles' own rectangles at the pointer, so the card never stands between the pointer and a tile.
+  The tile hit is the one under the pointer, never the one under the card's centre.
+- **The target under the pointer** takes the accent tint, an accent border and a 1.5px accent outline, and its second
+  line changes to what a drop does ("Drop to move here", "Drop to add here", "Drop to remove",
+  "Drop to name a new group"). Hue is never the only sign of it. Archive under the pointer is
+  outlined in error with the error tint and reads "Drop to archive"; `Cancel` reads "Drop to cancel".
+- **The row's current group** is marked `Current` and inert: a drop there does nothing.
+- **Tiles that can't take the row are disabled, and say why in words.** The overlay always
+  opens. An organization session can't join a group: the new-group and group tiles are disabled,
+  and the head's note says "Organization sessions stay with their project." once. A peer's
+  session gets "Groups hold this host's sessions only. That one lives on {host}." in the same
+  way (a peer's own groups aren't this host's, so it gets no `Current` or `Remove` tile). Taking
+  an organization session out of a group still works. Archive, when it can't archive, says why
+  under its label: "Can't archive: {reason}" in `archiveBlockReason`'s words (open in a TUI, not
+  started in Sova, mid-turn, with subagents working). A row that is already archived says
+  "Already archived.", and an external row the Archive already lists says "Already in the
+  Archive." A drop on a disabled tile does nothing but say its reason, as a toast and through
+  the polite region.
+- **Dropping.** On a group, the row goes into it (`setSessionGroup`) with the group toasts: "Added
+  to “{name}”." · "Moved to “{name}”." · "Removed from “{name}”.". On Archive, the row is archived:
+  `POST /api/sessions/archive`, then "Archived. Find it under Archive." with `Undo`, whose toast is
+  "Moved back to Live & web.". An organization session goes to its project's Done list instead
+  (§app.session-list/organizations), and an empty husk is deleted without an Undo
+  (§app.session-list/regions-top-and-archive). On `+ New group`, the overlay closes and the New
+  group dialog opens (below). On `Cancel`, on empty space, or on Escape, a `pointercancel` or the
+  window losing focus, the overlay closes and nothing happens. The drop's `click` never reaches
+  the row: nothing opens underneath.
+- **New group dialog.** The standard `.modal` (a sheet at folded width), titled "New group", with
+  "“{title}” moves into it." above one name field (placeholder `Group name`, 60 characters). The
+  foot has ghost `Cancel` and primary `Create and Move`, which is disabled while the field is empty
+  ("Type a name first."). Enter creates, Escape, the scrim and `Cancel` close it, and nothing is
+  created. `Create and Move` is `POST /api/session-groups`, then the assign, then "Added to
+  “{name}”." (or "Moved to …" for a grouped row). Focus is trapped in the dialog and returns
+  where it was.
+- **While it is open** the list under it doesn't scroll (a non-passive `touchmove` is refused
+  while the row is lifted or in flight), iframes let the pointer through
+  (`[data-row-drag] iframe`), and the row's text can't be selected or called out by a long press.
+- **Reduced motion.** The overlay, the lift and the card's rise appear without a transition. The
+  card still follows the pointer, since that is position rather than animation.
+
+**Accessibility.** Opening it announces "Moving “{title}”. Drop it on a group, Archive, New
+group, or Cancel." through the polite region. Escape cancels. Every tile carries its words, and
+disabled tiles carry `aria-disabled` and their reason. The overlay is a pointer gesture: a
+keyboard files a session with the session pane's `Move into group` and the selection toolbar,
+which do the same changes.
 
 ## §app.session-list/selecting-several-sessions — Selecting several sessions
 
@@ -1059,29 +1178,30 @@ gestures are not about one session though — renaming, filing into a group, arc
 them to eight sessions one row at a time is eight round trips through a pane the user did not want
 to open. So the list itself can be picked from.
 
-**The way in is a press held on a row**, ~500ms, mouse or thumb alike: that row is selected and
-the sidebar enters **selection mode** — except on a Needs you row, where the hold opens the row's menu, `Later` then
-`Select`, and `Select` starts selection with that row picked (§app.session-list/needs-you).
-Press-and-hold is the accelerator; the **Select** button
+**The way in is a press held on a row**, ~500ms, mouse or thumb alike, and let go without moving:
+the hold lifts the row (§app.session-list/drop-overlay), and the release selects it and puts the
+sidebar in **selection mode**, on a Needs you row as on any other. The selection commits on the
+release, never at the hold, because a lifted row that moves is a drag. Press-and-hold is the accelerator; the **Select** button
 beside the session count is the door, for a keyboard and for anyone who has never held a row in
 their life — on a phone it shares the one toolbar line with the count, before the search icon
 (§app.session-list/search), and leaves it while the search is open. There is never only one way in.
 
 **What a press is, and what it stops being.** A press becomes a hold only if it stays within 10px
-of where it started and nothing interrupts it. Moving further is a drag (rows still drag into
-groups, exactly as before) or a scroll; a `pointercancel` — what touch sends the moment the list
-starts moving under a still finger — ends it too, and so does a wheel scroll under a held mouse.
-A native drag can begin before the 10px tolerance is reached (the browser's own threshold is
-smaller), so a `dragstart` ends the press too, as do the pointer leaving the row, capture being
-lost, and the window losing focus — every path where the `pointerup` may never arrive.
+of where it started and nothing interrupts it. Before the hold, a mouse that moves 6px opens the
+drop overlay, and a thumb that moves 10px is a scroll. After the hold, moving 10px opens the drop
+overlay and the release selects nothing. A `pointercancel` (what touch sends the moment the list
+starts moving under a still finger) ends the press too, and so does a wheel scroll under a held
+mouse, the pointer leaving the row before the hold, capture being lost, and the window losing
+focus: every path where the `pointerup` may never arrive. A press that ends any of these ways
+selects nothing.
 
-A hold that DID fire swallows what it leaves behind: the `click` the pointerup produces and, on
-touch, the `contextmenu` that arrives before it. Neither may reach the row's link, or the session
+A hold that DID fire, and a drag, swallow what they leave behind: the `click` the pointerup
+produces and, on touch, the `contextmenu` that arrives before it. Neither may reach the row's link, or the session
 would open on top of the selection that was just made. **That suppression lasts for the whole
 press and for a second after it is RELEASED** — never a second after the hold fired. A press may be
 held for as long as the user likes, and a window measured from the hold would have run out under a
 3-second press, letting the click through to toggle the row straight back off. The rules live in
-`src/lib/hold-select.ts`.
+`src/lib/hold-select.ts` and `src/lib/drag-overlay.ts`.
 
 **In selection mode**, a click on a row toggles it instead of opening it, each row's rail carries a
 44px checkbox, and the rail — 30px of gutter everywhere else — widens to 44px to hold it. Outside
@@ -1358,7 +1478,8 @@ the top region doesn't keep every one of them forever.
 
 - **Where.** An Archive Session button (`archive.svg`) in the Session pane (§chat/transcript), only
   on web sessions. Rows are links, so it can't live in them: a button inside `<a>` is invalid and
-  splits the row's single target.
+  splits the row's single target. Dragging a row to the drop overlay's Archive tile
+  (§app.session-list/drop-overlay) does the same, with an `Undo` on its toast.
 - **What it does.** `POST /api/sessions/archive { path, archived }`, then a list refresh. The id
   goes into `~/.pi/agent/sova/archived-sessions.json`; the session file is never written, except
   that an empty husk outside any organization's workspace is deleted instead
@@ -1541,11 +1662,8 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
   the model (no project: "{time} · {org}"). Order: newest waiting item first (`since`), ties on path.
   Like the global Needs you, it is a **shortcut, not a place a session lives**: each row is still under
   its project. Not collapsible (the region's own twist collapses it); omitted when it has no rows. The
-  global Needs you never lists these sessions (§app.session-list/needs-you). Every row here has
-  **Later**, exactly as a global Needs you row has it — the button, its desktop and phone
-  placements, the right-click and long-press menu. A row the digest's act items put here goes until
-  something new happens for those items; a row the baton puts here (a question, a link to send, a
-  referral) goes until a new hand-off or offer (a referral: a new proposal).
+  global Needs you never lists these sessions (§app.session-list/needs-you). Like a global Needs you
+  row, a row here has no button or menu of its own: it leaves when what it waits on is answered.
 - **A project's items, too.** The same block lists the digest's items that belong to a project
   rather than a session, each a row opening the project page with the digest's sentence: first each
   held act (§app.project-overseer/holds), the one going ahead soonest on top, its sentence recounted
@@ -1619,8 +1737,8 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
 - **The org link.** Each org summary ends with a 44px ghost icon link to `#/orgs/<id>`, hung into the
   right gutter like a group's `⋯`; it stops its own click and keydown so it doesn't also toggle the org.
   Names truncate with an ellipsis, the full name in `title`.
-- **Archiving.** Org sessions are web sessions, so the session head's Archive button and the drag out of
-  the pane still work (§app.session-list/regions-top-and-archive "Archiving"). The row moves to its
+- **Archiving.** Org sessions are web sessions, so the session head's Archive button and the drop
+  overlay's Archive tile (§app.session-list/drop-overlay) still work (§app.session-list/regions-top-and-archive "Archiving"). The row moves to its
   group's **Done** in its project, never to the Archive; Unarchive moves it back. A workspace file is never
   deleted by archiving, even empty (§app.session-list/archive-org-guard); an org coding session
   nothing was ever sent in is a husk like any other and is deleted. Toasts: "Archived. Find it in

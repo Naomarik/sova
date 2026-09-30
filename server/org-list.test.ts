@@ -62,18 +62,6 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
     assert.deepEqual(all.find((o) => o.id === quiet.id)!.needsYou, { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0, ownerLink: 0, held: 0 }, "another org's items stay there");
   });
 
-  test("a wait put away with Later counts no more than Needs you lists it; brought back, it counts again", async () => {
-    const { withBatonLater } = await import("./attention");
-    const { putAway, bringBack } = await import("./needs-you-later");
-    const mine = baton.allBatons().find((r) => r.orgId === busy.id && r.publicTitle === "Mine")!;
-    const field = withBatonLater({ id: mine.sessionId, baton: baton.batonSummaryField(baton.sessionPathOf(orgs.orgsInfo().orgs.find((o) => o.id === busy.id)!.dir, mine))! }).baton!;
-    assert.ok(field.needsYou?.later);
-    putAway([field.needsYou!.later!]);
-    assert.equal((await list()).find((o) => o.id === busy.id)!.needsYou!.replies, 0, "put away: the card stops counting it");
-    bringBack([field.needsYou!.later!]);
-    assert.equal((await list()).find((o) => o.id === busy.id)!.needsYou!.replies, 1);
-  });
-
   test("a closed session no longer counts, and activity moves forward", async () => {
     const before = (await list()).find((o) => o.id === busy.id)!;
     const mine = baton.allBatons().find((r) => r.orgId === busy.id && r.publicTitle === "Mine")!;

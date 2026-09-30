@@ -420,11 +420,9 @@ export interface BatonSummaryField {
   holder: string | null;
   state: BatonState;
   /** Present while the operator holds it after a hand-off: the Needs-you detail. */
-  needsYou?: { from: string; question: string; since: number; /** The hand-off's number (Later's anchor). */ handoff?: number; /** Its Later key (the session list only; §app.baton/needs-you). */ later?: string };
-  /** Present while a person holds it through a hand-off with no live link: the operator must send one.
-      `handoff`/`offerId`: the hand-off (or open offer) it asks links for (Later's anchor); `later`:
-      its Later key (the session list only). A wait put away with Later is absent from the list. */
-  sendLink?: { to: string; question: string; since: number; handoff?: number; offerId?: string; later?: string };
+  needsYou?: { from: string; question: string; since: number };
+  /** Present while a person holds it through a hand-off with no live link: the operator must send one. */
+  sendLink?: { to: string; question: string; since: number };
   /** r12: an open offer's invitees not reached yet (their working hours haven't come), by name; `until`: their next
       window (ISO), null when none is found. */
   waiting?: { name: string; until: string | null }[];
@@ -434,7 +432,7 @@ export interface BatonSummaryField {
       every Get Link, so an open strip reads its data again. */
   linkAt?: string;
   /** People proposed from this session still waiting for approval (attention kind "roster-proposal"). */
-  proposals?: { personId: string; name: string; role: string; by: string; since: number; /** Later key (the session list only). */ later?: string }[];
+  proposals?: { personId: string; name: string; role: string; by: string; since: number }[];
   /** Someone it was sent to has written (the row's `wroteAt`): In progress, not Not started. */
   written?: true;
   /** A person (not a link previewer or a scanner) opened one of its links. */

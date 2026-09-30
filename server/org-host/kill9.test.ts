@@ -13,14 +13,16 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import type { EngineOptions } from "../org-charts";
 import { OrgHost } from "./index";
+import { scanSnapshots } from "./store";
 import { HOST_CHARTS } from "./test-chart";
 
 const ROUNDS = Number(process.env["KILL9_ROUNDS"] ?? 40);
 const CHILD = fileURLToPath(new URL("./kill9-child.ts", import.meta.url));
+const OFFER_CHILD = fileURLToPath(new URL("./kill9-offer-child.ts", import.meta.url));
 
-function round(root: string, seed: number, killAfterMs: number): Promise<string> {
+function round(root: string, seed: number, killAfterMs: number, child_ = CHILD): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ["--import", "tsx", CHILD, root, String(seed)], { stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(process.execPath, ["--import", "tsx", child_, root, String(seed)], { stdio: ["ignore", "pipe", "pipe"] });
     let out = "";
     let err = "";
     let killing = false;
@@ -69,6 +71,55 @@ test(`kill -9 at random moments, ${ROUNDS} times: every open loads everything, e
     assert.ok(existsSync(join(root, "effects.log")));
     const runs = readFileSync(join(root, "effects.log"), "utf8").trim().split("\n");
     assert.ok(runs.length >= 1);
+    await host.close();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test(`r12: offers reaching each invitee in their hours, killed at random ${Math.ceil(ROUNDS / 2)} times: nobody reached twice or outside their hours, every waiter has a timer`, { timeout: 30 * 60_000 }, async () => {
+  const root = mkdtempSync(join(tmpdir(), "org-host-kill9-offer-"));
+  try {
+    let seed = 11;
+    for (let i = 0; i < Math.ceil(ROUNDS / 2); i++) {
+      seed = (seed * 48271) % 2147483647;
+      const line = await round(root, seed, seed % 40, OFFER_CHILD);
+      assert.equal(line, "ready []", `round ${i}: the open after a kill found no problem`);
+    }
+    const now = Number(readFileSync(join(root, "clock"), "utf8"));
+    const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, clock: () => now });
+    assert.deepEqual(host.problems(), []);
+    const batons = host.sessions("baton");
+    assert.ok(batons.length >= 2, `offers were made (${batons.length})`);
+    const hoursOf: Record<string, [number, number] | null> = { p1: [22 * 60, 23 * 60 + 30], p2: [3 * 60, 11 * 60], p3: null };
+    let reached = 0;
+    let waiters = 0;
+    for (const b of batons) {
+      const offer = ((b.data["offers"] as { reach?: Record<string, { state: string; at?: number }> }[] | undefined) ?? []).at(-1);
+      for (const [pid, r] of Object.entries(offer?.reach ?? {})) {
+        if (r.state !== "reached") continue;
+        reached++;
+        const w = hoursOf[pid];
+        if (w && r.at != null) {
+          const d = new Date(r.at);
+          const m = d.getUTCHours() * 60 + d.getUTCMinutes();
+          assert.ok(m >= w[0] && m < w[1], `${b.id}: ${pid} reached at ${d.toISOString()}, inside their hours`);
+        }
+      }
+      const waiting = Object.values(offer?.reach ?? {}).some((r) => r.state === "waiting");
+      if (waiting) {
+        const snap = scanSnapshots(join(root, "ws", "charts")).find((x) => x.sid === b.id)!;
+        const text = readFileSync(snap.file, "utf8");
+        assert.ok(text.slice(text.indexOf(":queue")).includes(":offer/reach"), `${b.id}: a waiter has its reach timer`);
+        waiters++;
+      }
+    }
+    assert.ok(reached > 0, "someone was reached");
+    // each invitee's link is ONE effect per offer (a crash may re-run it, under the same engine key)
+    const mints = readFileSync(join(root, "mints.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as { key: string; chartKey: string });
+    const keysPer = new Map<string, Set<string>>();
+    for (const m of mints) keysPer.set(`${m.chartKey}`, (keysPer.get(m.chartKey) ?? new Set()).add(m.key));
+    for (const [ck, keys] of keysPer) assert.equal(keys.size, 1, `${ck}: minted by one effect only`);
     await host.close();
   } finally {
     rmSync(root, { recursive: true, force: true });

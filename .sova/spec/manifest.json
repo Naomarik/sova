@@ -927,7 +927,12 @@
     "§chat.slash-commands/commands-that-need-the-terminal-ui": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/slash.ts",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx"
+      ]
     },
     "§chat.slash-commands/contrast": {
       "kind": "behavior",

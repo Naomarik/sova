@@ -238,9 +238,15 @@ command isn't left waiting), replace the "Ran" row with:
 </div>
 ```
 
-Nothing in the contract says ahead of time which commands are TUI-only, so every command is
-listed and choosable. If a flag is added later (for example `tui: true`), show "Needs the
-terminal UI" in place of the description on line 2, and keep the row choosable.
+Nothing in the contract says ahead of time which commands are TUI-only, so the client keeps
+its own table of them: `palette`, `sessions`, `sessions-back`, `codefold`, `usage`,
+`usage-refresh`, `working-count`, `extensions`, `websearch` (it opens a browser on the server
+machine) and `subagents` (its models picker drops the pick here). These never appear in the
+menu. `team`, and every `team:…` or `team-…` form, is hidden from the menu too, though it is
+not TUI-only. Hiding is the menu's alone: the full list still decides whether a typed `/word`
+is a command. Sending a TUI-only command typed in full with no arguments (`/sessions`) shows
+the row above in place of "Ran" right away, without waiting on the server; a bare `/subagents`
+still opens the session pane instead (§app.subagents-pane/trigger).
 
 ## §chat.slash-commands/tokens — Tokens
 

@@ -240,7 +240,11 @@ as your number, from anywhere, until you unlink the device on the phone.
   WhatsApp blocks or restricts the account). The connection stays up either way.
 - **Logs.** `journalctl --user -u sova-whatsapp`: state changes and failures, warn level by default.
   They name no message and no full number; digit runs show as their last three digits.
-  `SOVA_WA_LOG_LEVEL=info` adds each send's reference.
+  `SOVA_WA_LOG_LEVEL=info` adds each send's reference. The sender silences everything its libraries
+  print on their own: libsignal, under Baileys, prints whole encryption sessions, private keys
+  included, and none of that reaches the terminal or the journal at any level. Never run the sender
+  through another wrapper that loads Baileys without that guard (`src/quiet-console.mjs`, loaded
+  first by `bin/sova-whatsapp.mjs`).
 - **The reconnect budget.** The sender reconnects on its own only after a routine drop, 30 s later,
   then 1, 2, 4 … up to 30 minutes apart, and at most 3 times an hour and 10 a day, starts included.
   Past that it stays `down` until you reconnect it.

@@ -1,7 +1,7 @@
 /** `vis layers`: layers top to bottom, `label | item, item | note | tone`. */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaList, fail, lines, popTone, swapToneNote, takeSettings, text, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { commaList, fail, hasBar, lines, notATone, popTone, swapToneNote, tableRow, takeSettings, text, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export interface Layer {
   label: string;
@@ -41,13 +41,19 @@ const whole = (t: string, n: number) => text(/^"(?:[^"\\]|\\.)*"$/.test(t) ? unq
 export function parseLayers(body: string): LayersSpec {
   const ls = lines(body);
   const spec: LayersSpec = { kind: "layers", layers: [] };
-  const { rest: settled } = takeSettings(ls, [], spec);
-  const { rest, marks } = takeMarks(settled);
-  for (const line of rest) {
-    const fs = rawFields(line);
+  const { rest: settled } = takeSettings(ls, [], spec, { caseless: true });
+  const { rest, marks } = takeMarks(settled, { indented: true });
+  for (const written of rest) {
+    // A Markdown table's row (`| Server | Hono |`); its `|---|` rule is skipped.
+    const line = tableRow(written);
+    if (!line) continue;
+    // No `|` but a `: `: `Browser: React, Redux` is `Browser | React, Redux`.
+    const colon = hasBar(line.text) ? null : /^([^:]+?):\s+(.+)$/.exec(line.text);
+    const fs = colon ? [text(colon[1]!.trim(), line.n), text(colon[2]!.trim(), line.n)] : rawFields(line);
     swapToneNote(fs, 4);
     const tone = popTone(fs);
-    if (fs.length < 2 || fs.length > 3) fail(line.n, "a layer is: label | item, item, … | note (optional) | tone (optional)");
+    const shape = "a layer is: label | item, item, … | note (optional) | tone (optional)";
+    if (fs.length < 2 || fs.length > 3) fail(line.n, notATone(fs, 4, shape) ?? shape);
     const [rawLabel, items, rawNote] = fs as [string, string, string | undefined];
     const label = whole(rawLabel, line.n);
     const note = rawNote === undefined ? undefined : whole(rawNote, line.n);

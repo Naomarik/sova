@@ -5,7 +5,7 @@
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaListFor, fail, isTone, lines, takeSettings, text, tokenize, warn, type Tone, type VisBase } from "../../core/grammar";
+import { commaListFor, fail, isTone, lines, takeSettings, text, tokenize, VisError, warn, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
 
 export type ChartType = "bar" | "stacked" | "line" | "scatter" | "parts";
 export interface ChartRow {
@@ -32,19 +32,107 @@ const MAX_SERIES = 6;
 const MAX_PARTS = 12;
 
 const CHART_TYPES: ChartType[] = ["bar", "stacked", "line", "scatter", "parts"];
+/** Other words for a type (§chat.markdown/vis-lenience-content): pie and donut are a whole and its parts. */
+const TYPE_WORDS: Readonly<Record<string, ChartType>> = {
+  column: "bar", columns: "bar", bars: "bar", hbar: "bar", horizontal: "bar", vertical: "bar", grouped: "bar",
+  area: "line", lines: "line", trend: "line",
+  stack: "stacked", "stacked bar": "stacked", "stacked bars": "stacked",
+  pie: "parts", donut: "parts", doughnut: "parts",
+  points: "scatter", dots: "scatter",
+};
 
-export function parseChart(body: string): ChartSpec {
+const MAGNITUDE: Readonly<Record<string, number>> = { k: 1e3, K: 1e3, M: 1e6, bn: 1e9 };
+const GAP = /^(-|null|n\/a|na|\?|—|–)$/i;
+const VALUE = /^([-+])?([$€£¥])?(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d[\d_]*(?:\.\d*)?|\.\d+)(e[-+]?\d+)?([A-Za-zµμ%€£¥$/]+)?$/;
+const UNIT_WORD = /^[A-Za-zµμ%€£¥$][A-Za-zµμ%€£¥$/]{0,7}$/;
+
+/**
+ * A value as people write one: `1.2k`, `$4,200`, `120ms`, `-3%`, `n/a` (a gap). `unit` is its unit
+ * suffix or currency (never `%` or a magnitude: `k` `K` `M` `bn`, and `B` after a currency, since
+ * `500B` is bytes); null when the word isn't a value.
+ */
+export function readValue(w: string): { v: number | null; unit?: string } | null {
+  if (GAP.test(w)) return { v: null };
+  const m = VALUE.exec(w);
+  if (!m) return null;
+  const [, sign, cur, digits, exp, suffix] = m;
+  let v = Number(digits!.replace(/[,_]/g, "") + (exp ?? ""));
+  if (!Number.isFinite(v)) return null;
+  if (sign === "-") v = -v;
+  if (suffix === "%") return cur ? null : { v };
+  const mag = suffix === undefined ? undefined : (MAGNITUDE[suffix] ?? (suffix === "B" && cur ? 1e9 : undefined));
+  if (mag) v *= mag;
+  const unit = mag || suffix === undefined ? cur : `${cur ?? ""}${suffix}`;
+  return { v, ...(unit ? { unit } : {}) };
+}
+
+type RowRead = { label: string; vals: (number | null)[]; tone?: Tone; units: (string | undefined)[] };
+
+/**
+ * A row today's reading refuses, read from its end (§chat.markdown/vis-lenience-content): a tone,
+ * then `width` values, each with an optional unit word after it; the rest is the label. Null when
+ * that doesn't read, or when every extra word could be a value (a missing `series:` reads the same).
+ */
+function readRowFromEnd(toks: Token[], width: number): RowRead | null {
+  const head = toks[0];
+  if (!head || head.t === "arrow") return null;
+  let i = toks.length - 1;
+  let tone: Tone | undefined;
+  const last = toks[i];
+  if (i > 0 && last?.t === "word" && isTone(last.v)) {
+    tone = last.v;
+    i--;
+  }
+  const vals: (number | null)[] = [];
+  const units: (string | undefined)[] = [];
+  for (let k = 0; k < width; k++) {
+    let unitWord: string | undefined;
+    const t = toks[i];
+    const before = toks[i - 1];
+    if (i >= 2 && t?.t === "word" && UNIT_WORD.test(t.v) && !isTone(t.v) && !readValue(t.v) && before?.t === "word" && readValue(before.v)?.v != null && readValue(before.v)!.unit === undefined) {
+      unitWord = t.v;
+      i--;
+    }
+    const vt = toks[i];
+    if (i < 1 || vt?.t !== "word") return null;
+    const v = readValue(vt.v);
+    if (!v) return null;
+    vals.unshift(v.v);
+    units.unshift(v.unit ?? unitWord);
+    i--;
+  }
+  const labelToks = toks.slice(0, i + 1);
+  if (labelToks.length === 0 || labelToks.some((t) => t.t === "arrow")) return null;
+  if (labelToks.length > 1) {
+    if (head.t === "str") return null;
+    const seen = new Set(units.filter(Boolean));
+    if (labelToks.slice(1).every((t) => t.t === "word" && (readValue(t.v) !== null || seen.has(t.v)))) return null;
+  }
+  return { label: labelToks.map((t) => t.v).join(" "), vals, units, ...(tone ? { tone } : {}) };
+}
+
+/** A `key: value` line that is a row: every word a value, a unit word, a tone or `|` (`jan: 1200`). */
+const valuesOnly = (_key: string, value: string): boolean => {
+  const ws = value.split(/\s+/).filter(Boolean);
+  return ws.some((w) => readValue(w)?.v != null) && ws.every((w) => readValue(w) !== null || isTone(w) || w === "|" || UNIT_WORD.test(w));
+};
+
+export function parseChart(body: string, defaultType: ChartType = "bar"): ChartSpec {
   const ls = lines(body);
-  const spec: ChartSpec = { kind: "chart", type: "bar", scale: "linear", series: [], rows: [] };
-  const { rest: settled, values } = takeSettings(ls, ["type", "unit", "x", "y", "series", "scale", "of"], spec);
-  const { rest, marks } = takeMarks(settled);
+  const spec: ChartSpec = { kind: "chart", type: defaultType, scale: "linear", series: [], rows: [] };
+  const { rest: settled, values } = takeSettings(ls, ["type", "unit", "x", "y", "series", "scale", "of"], spec, { caseless: true, asRow: valuesOnly });
+  const { rest, marks } = takeMarks(settled, { indented: true });
   const type = values.get("type");
   if (type) {
+    const word = type.value.toLowerCase().replace(/\s+chart$/, "").trim();
+    const known = CHART_TYPES.includes(word as ChartType) ? (word as ChartType) : Object.hasOwn(TYPE_WORDS, word) ? TYPE_WORDS[word] : undefined;
+    if (known) type.value = known;
     if (!CHART_TYPES.includes(type.value as ChartType)) fail(type.n, `type: is one of ${CHART_TYPES.join(", ")}${/pie|donut|doughnut/.test(type.value) ? " (no pie or donut: use parts for a whole and its parts)" : ""}`);
     spec.type = type.value as ChartType;
   }
   const scale = values.get("scale");
   if (scale) {
+    if (/^(logarithmic|log10)$/i.test(scale.value)) scale.value = "log";
     if (scale.value !== "linear" && scale.value !== "log") fail(scale.n, "scale: is linear or log");
     spec.scale = scale.value as "linear" | "log";
   }
@@ -65,13 +153,16 @@ export function parseChart(body: string): ChartSpec {
   const of = values.get("of");
   if (of) {
     if (spec.type !== "parts") fail(of.n, "of: is the capacity of a type: parts chart");
-    const cap = Number(of.value.replace(/_/g, ""));
-    if (!/^\d[\d_]*\.?\d*(e[-+]?\d+)?$/i.test(of.value) || !(cap > 0)) fail(of.n, `of: is a number above 0${/,/.test(of.value) ? " (no thousands commas)" : ""}`);
+    const plain = /^\d[\d_]*\.?\d*(e[-+]?\d+)?$/i.test(of.value);
+    // `of: 200k`, `of: $2.4M`: a value as a row's reads (its unit aside).
+    const cap = plain ? Number(of.value.replace(/_/g, "")) : (readValue(of.value)?.v ?? NaN);
+    if (!(cap > 0)) fail(of.n, `of: is a number above 0${/,/.test(of.value) ? " (no thousands commas)" : ""}`);
     spec.of = cap;
   }
   const width = spec.type === "scatter" ? 2 : Math.max(1, spec.series.length);
-  for (const line of rest) {
-    const toks = tokenize(line);
+  // Each row's units (the lenient reading's), to check that they agree.
+  const rowUnits: { unit: string; n: number }[] = [];
+  const strict = (line: Line, toks: Token[]): RowRead => {
     const head = toks[0]!;
     if (head.t === "arrow") fail(line.n, "a row is: label value [value…] [tone]");
     const label = head.v;
@@ -94,13 +185,38 @@ export function parseChart(body: string): ChartSpec {
       }
       vals.push(tok.v.endsWith("%") ? parseFloat(tok.v) : num);
     }
-    if (vals.length !== width) fail(line.n, `${vals.length} values; expected ${width}${spec.type === "scatter" ? " (x y)" : spec.series.length ? ` (series: ${spec.series.join(", ")})` : " (add series: a, b for more than one)"}`);
+    // A bare head then one value too many may be a label with a space: say so.
+    const quote = head.t === "word" && vals.length > width && toks[1]?.t === "word" ? `; or quote a label with spaces: "${head.v} ${toks[1].v}" ${toks.slice(2).map((t) => t.v).join(" ")}` : "";
+    if (vals.length !== width) fail(line.n, `${vals.length} values; expected ${width}${spec.type === "scatter" ? " (x y)" : spec.series.length ? ` (series: ${spec.series.join(", ")})` : " (add series: a, b for more than one)"}${quote}`);
+    return { label, vals, units: [], ...(tone ? { tone } : {}) };
+  };
+  for (const line of rest) {
+    const all = tokenize(line);
+    let row: RowRead;
+    try {
+      row = strict(line, all);
+    } catch (e) {
+      // Today's reading refuses the row: the one other reading, or today's error.
+      const lenient = e instanceof VisError ? readRowFromEnd(all.filter((t) => !(t.t === "word" && t.v === "|")), width) : null;
+      if (!lenient) throw e;
+      row = lenient;
+    }
+    const { label, vals, tone } = row;
+    for (const unit of row.units) if (unit) rowUnits.push({ unit, n: line.n });
     if (spec.type === "scatter" && vals.includes(null)) fail(line.n, "a scatter point needs both x and y");
     if (spec.type === "parts" && vals.includes(null)) fail(line.n, "a part needs a number: leave out a part that has none");
     if (spec.type === "parts" && vals[0]! < 0) fail(line.n, "a part can't be negative");
     if (tone && width > 1 && spec.type !== "scatter") fail(line.n, "a tone colours a single-series bar; with several series each series has its own colour");
     if (spec.scale === "log" && vals.some((v) => v !== null && v <= 0)) fail(line.n, "scale: log needs values above 0");
     spec.rows.push({ label: text(label, line.n), values: vals, ...(tone ? { tone } : {}) });
+  }
+  // The rows' units agree: one unit, the chart's (a currency is always fine beside `unit:`).
+  const distinct = [...new Set(rowUnits.map((u) => u.unit))];
+  if (distinct.length > 1) fail(rowUnits.find((u) => u.unit === distinct[1])!.n, `mixed units ${distinct[0]} and ${distinct[1]}: write every value in one unit`);
+  if (distinct.length === 1) {
+    const u = distinct[0]!;
+    if (spec.unit === undefined) spec.unit = u;
+    else if (!/^[$€£¥]$/.test(u) && !spec.unit.toLowerCase().split(/[^\p{L}\p{N}%$€£¥µμ]+/u).includes(u.toLowerCase())) fail(rowUnits[0]!.n, `mixed units ${spec.unit} and ${u}: write every value in one unit`);
   }
   if (spec.rows.length === 0) fail(0, spec.type === "parts" ? 'nothing to draw: add parts like "System prompt" 9000' : 'nothing to draw: add rows like "Quicksort" 120');
   if (spec.type === "parts") {

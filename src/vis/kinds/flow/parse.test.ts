@@ -63,11 +63,11 @@ test("state: nodes default to round", () => {
 });
 
 test("flow errors point at the line and say what to write", () => {
-  assert.deepEqual([err("flow", 'a -> b\nA["Label"] --> b').line], [2]);
-  assert.match(err("flow", 'a["x"] -> b').message, /node <id> "Label"/);
+  assert.deepEqual([err("flow", 'a -> b\nA["Label" --> b').line], [2]);
+  assert.match(err("flow", 'a["x" -> b').message, /node <id> "Label"/);
   assert.match(err("flow", 'node a "A"\na "Label" -> b').message, /a has a node line: its label goes there/);
   assert.match(err("flow", "node a sparkly").message, /unknown word "sparkly"/);
-  assert.match(err("flow", "direction: down\na -> b").message, /unknown setting "direction:"/);
+  assert.match(err("flow", "orientation: down\na -> b").message, /unknown setting "orientation:"/);
   assert.match(err("flow", "dir: up\na -> b").message, /down or right/);
   assert.match(err("flow", "node a\nnode a").message, /declared twice/);
   assert.match(err("flow", 'node a "unclosed').message, /unclosed quote/);

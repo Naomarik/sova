@@ -19,7 +19,7 @@
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { divider, fail, id, isTone, lines, modifiers, takeSettings, text, tokenize, warn, type Arrow, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
+import { divider, fail, id, isTone, lines, modifiers, slug, takeSettings, text, tokenize, warn, type Arrow, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
 
 export const SHAPES = ["box", "round", "store", "decision", "circle", "start", "end"] as const;
 export type Shape = (typeof SHAPES)[number];
@@ -79,6 +79,135 @@ const dotted = (t: Token[]): Token[] =>
     return [x];
   });
 
+/** Words for a shape (§chat.markdown/vis-lenience-content), read where a shape word goes. */
+const SHAPE_WORDS: Readonly<Record<string, Shape>> = {
+  diamond: "decision", rhombus: "decision", condition: "decision", choice: "decision",
+  cylinder: "store", database: "store", db: "store",
+  rounded: "round", pill: "round", stadium: "round", oval: "round",
+  rect: "box", rectangle: "box", square: "box",
+};
+const DIRS: Readonly<Record<string, "down" | "right">> = { lr: "right", rl: "right", horizontal: "right", "left-right": "right", across: "right", td: "down", tb: "down", bt: "down", vertical: "down", "top-down": "down" };
+
+/** A node label a Mermaid bracket gave (`A[Label]`): marked inside the string so it labels the node in any style. */
+const NL = "\uE000";
+/** An edge label written on its arrow (`-->|yes|`, `-- yes -->`) or after a colon (`b: yes`). */
+type ELabel = { t: "elabel"; v: string };
+type FTok = Token | ELabel;
+const BRACKETS: [string, string, Shape | ""][] = [["([", "])", "round"], ["[(", ")]", "store"], ["((", "))", "circle"], ["{{", "}}", ""], ["[", "]", ""], ["(", ")", "round"], ["{", "}", "decision"]];
+
+/**
+ * Mermaid's node brackets, outside quotes: `A[Label]` is `A "Label"`, `A{Label}` adds decision, and
+ * so on (BRACKETS). Only a line that couldn't be read otherwise has them (an id never holds a bracket).
+ */
+function brackets(t: string): string {
+  let out = "";
+  for (let i = 0; i < t.length; ) {
+    if (t[i] === '"') {
+      const end = t.indexOf('"', i + 1);
+      const j = end < 0 ? t.length : end + 1;
+      out += t.slice(i, j);
+      i = j;
+      continue;
+    }
+    const idm = /^[\p{L}\p{N}_][\p{L}\p{N}\p{M}_.\/-]*/u.exec(t.slice(i));
+    const prev = t[i - 1];
+    if (idm && (prev === undefined || /[\s>&-]/.test(prev))) {
+      const after = i + idm[0].length;
+      const b = BRACKETS.find(([open]) => t.startsWith(open, after));
+      const close = b ? t.indexOf(b[1], after + b[0].length) : -1;
+      if (b && close > after) {
+        const inner = t.slice(after + b[0].length, close).trim().replace(/^"(.*)"$/s, "$1").replace(/(?<!\\)"/g, '\\"');
+        out += `${idm[0]} "${NL}${inner}"${b[2] ? ` ${b[2]}` : ""}`;
+        i = close + b[1].length;
+        continue;
+      }
+      out += idm[0];
+      i = after;
+      continue;
+    }
+    out += t[i++];
+  }
+  return out;
+}
+
+/** A line as Mermaid writes it, made readable (§chat.markdown/vis-lenience-content); null to drop it. Only lines that fail as written change. */
+function mermaidLine(line: Line, first: boolean, setDir: (d: "down" | "right") => void): Line | null {
+  let t = line.text;
+  const head = /^(?:graph|flowchart)(?:\s+(TD|TB|BT|LR|RL))?\s*;?$/i.exec(t);
+  if (first && head) {
+    if (head[1]) setDir(DIRS[head[1].toLowerCase()]!);
+    return null;
+  }
+  if (first && /^stateDiagram(-v2)?\s*$/i.test(t)) return null;
+  if (/^(classDef|class|style|linkStyle|click)\s+[^"\s]/.test(t) && !/-->|->|<->/.test(t)) return null;
+  if (/^%%/.test(t) || /^direction\s+(TB|TD|BT|LR|RL)\s*$/i.test(t)) return null;
+  const st = /^state\s+"((?:[^"\\]|\\.)*)"\s+as\s+(\S+)\s*$/.exec(t);
+  if (st) t = `node ${st[2]} "${st[1]}"`;
+  if (/;\s*$/.test(t) && (t.match(/(?<!\\)"/g)?.length ?? 0) % 2 === 0) t = t.replace(/\s*;\s*$/, "");
+  if (/[\p{L}\p{N}_][[({]/u.test(t)) t = brackets(t);
+  return t === line.text ? line : { ...line, raw: t, text: t };
+}
+
+/**
+ * Token-level Mermaid habits and words, all on tokens today's reading refuses: a string marked by
+ * brackets() becomes the node's label; `[*]` a start or end dot; an edge label on its arrow or after
+ * a colon moves after the edge's target as an ELabel; a shape word's synonym becomes the shape.
+ */
+function mermaidTokens(toks: Token[]): FTok[] {
+  let t: FTok[] = [...toks];
+  // `a -- text --> b`: the text rides the arrow.
+  const dashes = t.findIndex((x, i) => i > 0 && x.t === "word" && x.v === "--");
+  if (dashes > 0) {
+    const arrow = t.findIndex((x, i) => i > dashes && x.t === "arrow");
+    if (arrow > dashes + 1 && t[arrow + 1]) {
+      const text = t.slice(dashes + 1, arrow).map((x) => x.v).join(" ");
+      t = [...t.slice(0, dashes), t[arrow]!, t[arrow + 1]!, { t: "elabel", v: text }, ...t.slice(arrow + 2)];
+    }
+  }
+  // `a -->|text| b`.
+  for (let i = 0; i < t.length; i++) {
+    const x = t[i]!;
+    const next = t[i + 1];
+    if (x.t !== "arrow" || next?.t !== "word" || !next.v.startsWith("|")) continue;
+    let j = i + 1;
+    while (j < t.length && !(t[j]!.t === "word" && t[j]!.v.endsWith("|") && (j > i + 1 || t[j]!.v.length > 1))) j++;
+    if (j >= t.length || !t[j + 1]) break;
+    const text = t.slice(i + 1, j + 1).map((y) => y.v).join(" ").replace(/^\|\s*|\s*\|$/g, "");
+    t = [...t.slice(0, i + 1), t[j + 1]!, { t: "elabel", v: text }, ...t.slice(j + 2)];
+  }
+  // `a -> b: text` and `b : text`, after the line's last target.
+  const last = t.map((x) => x.t).lastIndexOf("arrow");
+  const target = t[last + 1];
+  if (last >= 0 && target?.t === "word") {
+    const glued = target.v.length > 1 && target.v.endsWith(":");
+    const sep = t[last + 2]?.t === "word" && (t[last + 2] as { v: string }).v.startsWith(":");
+    if (glued || sep) {
+      const rest = t.slice(last + 2).map((x) => x.v);
+      if (sep) rest[0] = rest[0]!.slice(1);
+      const text = rest.join(" ").trim();
+      t = [...t.slice(0, last + 1), { t: "word", v: glued ? target.v.slice(0, -1) : target.v }, ...(text ? [{ t: "elabel", v: text } as ELabel] : [])];
+    }
+  }
+  // `[*]`: the start dot as a source, the end dot as a target; synonyms where a shape word goes (a
+  // group line holds only ids).
+  if (isGroupLine(t as Token[])) return t;
+  const out: FTok[] = [];
+  t.forEach((x, i) => {
+    const prev = t[i - 1];
+    const idSpot = i === 0 || prev?.t === "arrow" || (i === 1 && prev?.t === "word" && prev.v === "node");
+    if (x.t === "word" && x.v === "[*]") out.push(...(i === 0 ? [{ t: "word", v: "__start" }, { t: "word", v: "start" }] : [{ t: "word", v: "__end" }, { t: "word", v: "end" }]) as FTok[]);
+    else if (x.t === "word" && !idSpot && Object.hasOwn(SHAPE_WORDS, x.v.toLowerCase())) out.push({ t: "word", v: SHAPE_WORDS[x.v.toLowerCase()]! });
+    else out.push(x);
+  });
+  return out;
+}
+/** A string brackets() marked: the node's label, whatever the fence's style. */
+const isNL = (x: FTok | undefined): boolean => x?.t === "str" && x.v.startsWith(NL);
+const nlText = (x: { v: string }) => x.v.slice(NL.length);
+
+/** Labels that are just the dot's own name: `node s0 start "Start"` stays a dot. */
+const DOT_WORDS = /^(start|begin|end|done|finish|stop)$/i;
+
 const MAX_NODES = 30;
 const MAX_EDGES = 48;
 const MAX_SECTIONS = 4;
@@ -86,13 +215,22 @@ const MAX_SECTIONS = 4;
 
 function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   const spec: FlowSpec = { kind: "flow", dir: "down", nodes: [], edges: [] };
-  const { rest: settled, values } = takeSettings(ls, ["dir"], spec);
-  const { rest, marks } = takeMarks(settled);
+  const { rest: settled, values } = takeSettings(ls, ["dir"], spec, { caseless: true, aliases: { direction: "dir" } });
+  const { rest: marked, marks } = takeMarks(settled);
   const dir = values.get("dir");
   if (dir) {
-    if (dir.value !== "down" && dir.value !== "right") fail(dir.n, `dir: is down or right, not "${dir.value}"`);
-    spec.dir = dir.value as "down" | "right";
+    const d = dir.value === "down" || dir.value === "right" ? dir.value : DIRS[dir.value.toLowerCase()];
+    if (!d) fail(dir.n, `dir: is down or right, not "${dir.value}"`);
+    spec.dir = d!;
   }
+  // Mermaid's lines, made readable or dropped (a `graph LR` head sets dir: unless dir: is set).
+  const rest = marked.flatMap((l, i) => {
+    const m = mermaidLine(l, i === 0, (d) => {
+      if (!dir) spec.dir = d;
+    });
+    return m ? [m] : [];
+  });
+  const toksOf = (line: Line): FTok[] => mermaidTokens(dotted(tokenize(line, { wide: true })));
   const hasSections = rest.some((l) => divider(l) !== null);
   // A pre-pass for the label style: which ids have a `node` line (per panel), and whether any chain
   // line carries a string right after its source. A line it can't read is left to the main loop.
@@ -106,7 +244,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     }
     let t: Token[];
     try {
-      t = dotted(tokenize(line));
+      t = toksOf(line) as Token[];
     } catch {
       continue;
     }
@@ -114,7 +252,8 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     if (t[0].v === "node" && t[1]?.t !== "arrow") {
       if (t[1]?.t === "word") nodeLines.add(`${at}\0${t[1].v}`);
     } else if (isDeclLine(t)) nodeLines.add(`${at}\0${t[0].v}`);
-    else if (t[1]?.t === "str") inlineStyle = true;
+    // A bracket's label (`A[Label]`) labels its node in either style, so it sets neither.
+    else if (t[1]?.t === "str" && !isNL(t[1])) inlineStyle = true;
   }
   // Sections: each panel's ids are its own. `key` is the node's id in the spec: the id as written,
   // or, for an id an earlier panel already has, `id@<panel>` (no written id contains @).
@@ -150,6 +289,16 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     if (prev === undefined) inline.set(k, v);
     else if (prev !== v) warn(n, `node ${written.get(k)} is labelled "${prev}" and "${v}": kept "${prev}"`);
   };
+  // A "label" where an id belongs (`"Browser" -> "API"`): the node with that label in this panel, else
+  // a new one whose id is made from it.
+  const nodeByLabel = (label: string, n: number): string => {
+    const sec = sections.length - 1;
+    for (const [k, v] of inline) if (v === label && home.get(k) === sec) return written.get(k)!;
+    for (const [k, node] of declared) if (node.label === label && home.get(k) === sec) return written.get(k)!;
+    const sid = slug(label, (x) => scoped.has(`${sec}\0${x}`) || nodeLines.has(`${sec}\0${x}`));
+    inlineLabel(key(sid, n), label, n);
+    return sid;
+  };
   // Tones written after an edge's target (a -> b "label" error): they colour the target node.
   const chainTone = new Map<string, { tone: Tone; n: number }>();
   // Shapes written in a chain (gate "Approve" decision, delivered -> done end).
@@ -183,7 +332,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       sections.push({ label: div, n: line.n });
       continue;
     }
-    const toks = dotted(tokenize(line));
+    const toks = toksOf(line) as Token[];
     if (toks.length === 0) continue;
     if (isGroupLine(toks)) {
       const ids = toks.slice(2).flatMap((t) => (t.t === "word" ? t.v.split(",").filter(Boolean) : fail(line.n, `group: after its "label", only node ids (group "Label" a b c)`)));
@@ -200,24 +349,29 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       const nid = id(toks[idAt], line.n, "a node id after node");
       const k0 = key(nid, line.n);
       if (declared.has(k0)) fail(line.n, `node ${nid} is declared twice`);
-      let k = idAt + 1;
       let label = nid;
       let note: string | undefined;
-      if (toks[k]?.t === "str") label = toks[k++]!.v;
-      if (toks[k]?.t === "str") note = toks[k++]!.v;
-      const mods = modifiers(toks.slice(k), line.n, SHAPES);
+      // Strings (the label, then a second line) and words (shape, tone), strings first or after the words.
+      const strs = toks.slice(idAt + 1).filter((t) => t.t === "str");
+      const words = toks.slice(idAt + 1).filter((t) => t.t !== "str");
+      if (strs.length > 2) fail(line.n, `unexpected "${strs[2]!.v}"`);
+      if (strs[0]) label = isNL(strs[0]) ? nlText(strs[0]) : strs[0].v;
+      if (strs[1]) note = strs[1].v;
+      const mods = modifiers(words, line.n, SHAPES);
       if (mods.word) shapedByLine.add(k0);
       declared.set(k0, { id: k0, label, ...(note ? { note } : {}), shape: mods.word ?? defaultShape, ...(mods.tone ? { tone: mods.tone } : {}) });
       continue;
     }
     // An edge chain: a -> b "label" --> c ...; inline-style: a "A" -> b "B" --> c ...
-    const src = id(first, line.n, "node or an edge (a -> b)");
+    if (first.t === "str" && !isNL(first)) toks[0] = { t: "word", v: nodeByLabel(first.v, line.n) };
+    const src = id(toks[0], line.n, "node or an edge (a -> b)");
     let from = key(src, line.n);
     used.push(from);
     let k = 1;
     if (toks[k]?.t === "str") {
       if (hasNodeLine(src)) fail(line.n, `${src} has a node line: its label goes there, not after the id`);
-      const label = toks[k++]!.v;
+      const tok = toks[k++]!;
+      const label = isNL(tok) ? nlText(tok) : tok.v;
       inlineLabel(from, label, line.n);
       // Before the first arrow a second string can't be an edge's: it is the node's second line.
       if (toks[k]?.t === "str") {
@@ -237,6 +391,8 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     while (k < toks.length) {
       const arrow = toks[k];
       if (arrow?.t !== "arrow") fail(line.n, `expected an arrow (-> --> <->), found ${arrow?.v}`);
+      const target = toks[k + 1];
+      if (target?.t === "str" && !isNL(target)) toks[k + 1] = { t: "word", v: nodeByLabel(target.v, line.n) };
       const dst = id(toks[k + 1], line.n, "a target id after the arrow");
       const to = key(dst, line.n);
       used.push(to);
@@ -244,7 +400,25 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       k += 2;
       let label: string | undefined;
       let named = false;
-      if (inlineStyle && !hasNodeLine(dst)) {
+      // A bracket's label and an edge label written on the arrow or after a colon, in either order.
+      let fixed: string | undefined;
+      for (let x = toks[k] as FTok | undefined; x && (isNL(x) || x.t === "elabel"); x = toks[++k] as FTok | undefined) {
+        if (x.t === "elabel") fixed = x.v;
+        else {
+          inlineLabel(to, nlText(x), line.n);
+          named = true;
+        }
+      }
+      if (fixed !== undefined) {
+        label = fixed;
+        // A string after the target then labels it, when it can (`a -->|yes| b "B"`).
+        const s1 = toks[k];
+        if (!named && s1?.t === "str" && !hasNodeLine(dst) && (!inline.has(to) || inline.get(to) === s1.v)) {
+          inlineLabel(to, s1.v, line.n);
+          named = true;
+          k++;
+        }
+      } else if (inlineStyle && !hasNodeLine(dst)) {
         // The first string labels the node if it has none yet (or repeats its label); the next is the edge's.
         const s1 = toks[k];
         if (s1?.t === "str" && (!inline.has(to) || inline.get(to) === s1.v)) {
@@ -256,7 +430,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       } else if (toks[k]?.t === "str") label = toks[k++]!.v;
       // A target labelled already (earlier inline, or by its node line): a second string is the
       // edge's too, its label's second line (`-> api "Notify completion" "POST /confirm"`).
-      if (label !== undefined && !named && (inlineStyle || hasNodeLine(dst)) && toks[k]?.t === "str" && toks[k + 1]?.t !== "str") label = `${label}\n${toks[k++]!.v}`;
+      if (label !== undefined && fixed === undefined && !named && (inlineStyle || hasNodeLine(dst)) && toks[k]?.t === "str" && toks[k + 1]?.t !== "str") label = `${label}\n${toks[k++]!.v}`;
       const strings = k;
       k = chainWords(toks, k, dst, to, line.n);
       // A string after the words, with no edge label yet, when it can't be the target's label (the
@@ -308,6 +482,18 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     spec.nodes.push(node);
   }
   for (const node of spec.nodes) if (!node.tone && chainTone.has(node.id)) node.tone = chainTone.get(node.id)!.tone;
+  // A start or end dot with a label of its own (`node pending start "Pending payment"`): the state
+  // it names, round, with its own unlabelled dot and an edge between them.
+  for (const node of [...spec.nodes]) {
+    if ((node.shape !== "start" && node.shape !== "end") || node.label === written.get(node.id) || DOT_WORDS.test(node.label)) continue;
+    const shape = node.shape;
+    const dot = `${node.id}:${shape}`;
+    node.shape = "round";
+    spec.nodes.splice(spec.nodes.indexOf(node) + (shape === "end" ? 1 : 0), 0, { id: dot, label: "", shape });
+    home.set(dot, home.get(node.id)!);
+    spec.edges.push(shape === "start" ? { from: dot, to: node.id, dashed: false, both: false } : { from: node.id, to: dot, dashed: false, both: false });
+    edgeHome.push(home.get(node.id)!);
+  }
   if (spec.nodes.length === 0) fail(0, "nothing to draw: add nodes and edges (a -> b)");
   if (spec.nodes.length > MAX_NODES) fail(0, `${spec.nodes.length} nodes; at most ${MAX_NODES}: split it, or summarise`);
   if (spec.edges.length > MAX_EDGES) fail(0, `${spec.edges.length} edges; at most ${MAX_EDGES}`);
@@ -336,7 +522,9 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     if (spec.sections) spec.sections.forEach((s, i) => { const gs = groups.filter((g) => g.sec === i).map(({ label, nodes }) => ({ label, nodes })); if (gs.length) s.groups = gs; });
     spec.groups = groups.map(({ label, nodes }) => ({ label, nodes }));
   }
-  applyMarks(spec, marks, byIdOrLabel(spec.nodes.map((n) => ({ key: n.id, id: n.id, label: n.label }))), "node");
+  // A number or range names a node whose id it is (`mark 1`).
+  const byNode = byIdOrLabel(spec.nodes.map((n) => ({ key: n.id, id: n.id, label: n.label })));
+  applyMarks(spec, marks, (t) => byNode(t.t === "number" || t.t === "range" ? { t: "id", text: t.text } : t), "node");
   return spec;
 }
 

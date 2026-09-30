@@ -24,20 +24,23 @@ const MAX_STEPS = 10;
 const MAX_LANES = 6;
 const SHAPE = 'a row is: "Label" [tone] | step -> step -> step';
 
-/** The line split at its first `|` outside quotes, or null when it has none. */
-function splitBar(line: Line): [Line, Line] | null {
+/** The line split at its first (or `last`) `|` outside quotes, or null when it has none. */
+function splitBar(line: Line, last = false): [Line, Line] | null {
   const s = line.text;
   let quoted = false;
+  let at = -1;
   for (let i = 0; i < s.length; i++) {
     const c = s[i]!;
     if (c === "\\" && quoted) i++;
     else if (c === '"') quoted = !quoted;
     else if (c === "|" && !quoted) {
-      const part = (t: string): Line => ({ n: line.n, raw: t, text: t.trim() });
-      return [part(s.slice(0, i)), part(s.slice(i + 1))];
+      at = i;
+      if (!last) break;
     }
   }
-  return null;
+  if (at < 0) return null;
+  const part = (t: string): Line => ({ n: line.n, raw: t, text: t.trim() });
+  return [part(s.slice(0, at)), part(s.slice(at + 1))];
 }
 
 /**
@@ -63,7 +66,8 @@ const literal = (line: Line, tone: Tone | undefined): string => (tone ? line.tex
 
 /** `a -> "b c" -> d e`: steps between `->`s, each a quoted label or bare words. */
 function chain(line: Line): string[] {
-  const toks = tokenize(line);
+  // `→`, `=>` and the like join steps as `->` does (§chat.markdown/vis-lenience-content).
+  const toks = tokenize(line, { wide: true });
   if (toks.length === 0) fail(line.n, `${SHAPE} (no steps after the |)`);
   const steps: string[] = [];
   let cur: typeof toks = [];
@@ -86,8 +90,8 @@ function chain(line: Line): string[] {
 
 export function parseSteps(body: string): StepsSpec {
   const spec: StepsSpec = { kind: "steps", items: [] };
-  const { rest: settled } = takeSettings(lines(body), [], spec);
-  const { rest, marks } = takeMarks(settled);
+  const { rest: settled } = takeSettings(lines(body), [], spec, { caseless: true });
+  const { rest, marks } = takeMarks(settled, { indented: true });
   const lanes: Line[] = [];
   for (const line of rest) {
     const div = divider(line);
@@ -102,7 +106,11 @@ export function parseSteps(body: string): StepsSpec {
     const parts = splitBar(line);
     if (!parts) fail(line.n, SHAPE);
     const [h, c] = parts!;
-    spec.items.push({ type: "row", ...head(h), steps: chain(c) });
+    const hd = head(h);
+    // A status written last, as layers and timeline rows end (`… -> done | ok`), when the label has none.
+    const tail = hd.tone ? null : splitBar(c, true);
+    if (tail && isTone(tail[1].text)) spec.items.push({ type: "row", ...hd, tone: tail[1].text, steps: chain(tail[0]) });
+    else spec.items.push({ type: "row", ...hd, steps: chain(c) });
   }
   const last = spec.items[spec.items.length - 1];
   if (last?.type === "lane") fail(lanes[lanes.length - 1]!.n, `lane "${last.label}" is empty: give it rows, or drop the line`);

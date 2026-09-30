@@ -11,6 +11,7 @@ import { chipHtml } from "./path-attachments";
 import { groupLinkIndex, resolveAppLink, sessionIndex } from "./session-links";
 import type { VisBase } from "../vis/core/grammar";
 import { parseVis, visKindWord, type ParseResult } from "../vis/parse";
+import { canonicalKind } from "../vis/registry";
 import clojure from "highlight.js/lib/languages/clojure";
 import cmake from "highlight.js/lib/languages/cmake";
 import dart from "highlight.js/lib/languages/dart";
@@ -290,7 +291,8 @@ const renderVis = (t: { content: string; info: string; markup: string }, kind: s
     return renderCode(t.content, t.info, env, true, kind ? `vis ${kind}` : "vis", " md-vis-source") + `<p class="md-vis-error">Couldn't draw this ${esc(kind ? `vis ${kind}` : "vis")} block (${esc(where + r.message)}), so here is its source.</p>\n`;
   }
   const fence = `${t.markup}${t.info}\n${t.content}${t.markup}`;
-  const i = env.visuals.push({ kind, spec: r.spec, fence, body: t.content }) - 1;
+  // An alias (`vis flowchart`) mounts its kind's View.
+  const i = env.visuals.push({ kind: canonicalKind(kind), spec: r.spec, fence, body: t.content }) - 1;
   // The key changes with the content, so a re-render never keeps a drawing of an older text.
   return `<div class="md-vis" data-vis="${i}" data-vis-key="${hash(fence)}"></div>\n`;
 };

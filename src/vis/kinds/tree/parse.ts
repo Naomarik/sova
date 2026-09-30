@@ -1,7 +1,7 @@
 /** `vis tree`: an indented (or tree-drawn) hierarchy with notes and tones. */
 
 import { applyMarks, takeMarks } from "../../core/emphasis";
-import { fail, isTone, lines, modifiers, takeSettings, text, tokenize, type Tone, type VisBase } from "../../core/grammar";
+import { fail, isTone, lines, modifiers, takeSettings, text, tokenize, VisError, type Tone, type VisBase } from "../../core/grammar";
 
 export interface TreeNode {
   /** Its path of child indexes, "0.2.1": the emphasis key. */
@@ -29,34 +29,59 @@ export function parseTree(body: string): TreeSpec {
   if (rest.length === 0) fail(0, "nothing to draw");
   if (rest.length > MAX_ROWS) fail(0, `${rest.length} rows; at most ${MAX_ROWS}`);
   const art = rest.some((l) => TREE_ART.test(l.raw));
-  let unit = 0;
-  const stack: TreeNode[] = [];
-  for (const line of rest) {
-    let depth: number;
-    let content: string;
-    if (art) {
-      const m = TREE_ART.exec(line.raw);
-      if (m) {
-        depth = m[1]!.length / 4 + 1;
-        content = line.raw.slice(m[0].length);
+  // `loose`: each line a child of the nearest less-indented line above it, when the indentation
+  // doesn't read as multiples of the first indent (§chat.markdown/vis-lenience-content).
+  const build = (loose: boolean): TreeNode[] => {
+    const roots: TreeNode[] = [];
+    let unit = 0;
+    const stack: TreeNode[] = [];
+    const indents: number[] = [];
+    for (const line of rest) {
+      let depth: number;
+      let content: string;
+      if (art) {
+        const m = TREE_ART.exec(line.raw);
+        if (m) {
+          depth = m[1]!.length / 4 + 1;
+          content = line.raw.slice(m[0].length);
+        } else {
+          if (/^\s/.test(line.raw)) fail(line.n, "mixes tree-drawing lines with indented ones");
+          depth = 0;
+          content = line.raw;
+        }
+      } else if (loose) {
+        const indent = /^ */.exec(line.raw.replace(/\t/g, "  "))![0].length;
+        let d = indents.length;
+        while (d > 0 && indents[d - 1]! >= indent) d--;
+        indents.length = d;
+        indents.push(indent);
+        depth = d;
+        content = line.text;
       } else {
-        if (/^\s/.test(line.raw)) fail(line.n, "mixes tree-drawing lines with indented ones");
-        depth = 0;
-        content = line.raw;
+        const indent = /^ */.exec(line.raw.replace(/\t/g, "  "))![0].length;
+        if (indent > 0 && unit === 0) unit = indent;
+        if (unit > 0 && indent % unit !== 0) fail(line.n, `indent ${indent} is not a multiple of ${unit}`);
+        depth = unit ? indent / unit : 0;
+        content = line.text;
       }
-    } else {
-      const indent = /^ */.exec(line.raw.replace(/\t/g, "  "))![0].length;
-      if (indent > 0 && unit === 0) unit = indent;
-      if (unit > 0 && indent % unit !== 0) fail(line.n, `indent ${indent} is not a multiple of ${unit}`);
-      depth = unit ? indent / unit : 0;
-      content = line.text;
+      if (depth > stack.length) fail(line.n, "indented more than one level past its parent");
+      const node = treeNode(content.trim(), line.n);
+      stack.length = depth;
+      if (depth === 0) roots.push(node);
+      else stack[depth - 1]!.children.push(node);
+      stack.push(node);
     }
-    if (depth > stack.length) fail(line.n, "indented more than one level past its parent");
-    const node = treeNode(content.trim(), line.n);
-    stack.length = depth;
-    if (depth === 0) spec.roots.push(node);
-    else stack[depth - 1]!.children.push(node);
-    stack.push(node);
+    return roots;
+  };
+  try {
+    spec.roots = build(false);
+  } catch (e) {
+    if (!(e instanceof VisError) || art) throw e;
+    try {
+      spec.roots = build(true);
+    } catch {
+      throw e;
+    }
   }
   const walk = (ns: TreeNode[], prefix: string) => ns.forEach((n, i) => {
     n.key = `${prefix}${i}`;

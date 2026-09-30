@@ -56,7 +56,7 @@ app "App" -> cache "Cache" -> db "Database"
 
 ## sequence
 <!-- owner: process member. Step-through walks messages (a divider goes with the next, a note with the one before), so "Step 2" is what `mark 2` names. Emphasis targets: actor id or label, message number. -->
-Messages between parties over time (protocols, handshakes, request/response). The reader can step through it one message at a time.
+Messages between parties over time (protocols, handshakes, request/response). The reader can step through it message by message.
 ```vis sequence
 actor c "Client"
 actor s "Server"
@@ -66,7 +66,7 @@ s --> c "SYN-ACK"
 note c s "keys derived from the exchange"
 mark 2 "the server commits resources here"
 ```
-- `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors; 2–4 read best on a phone. Keep message labels to a few words.
+- `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors (2–4 fit a phone). Keep message labels short.
 
 ## state
 <!-- owner: process member (flow's parser, layout and View; `end` sinks to the last rank). Emphasis target: state id or label. -->
@@ -106,7 +106,7 @@ mark markdown.ts "the vis hook lives here"
 
 ## chart
 <!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->
-Numbers to compare. `type:` `bar` (default; `series:` makes grouped bars), `stacked`, `line` (a trend across ordered rows) or `scatter` (two measures per item). `unit:`, `x:` and `y:` name the axes; `scale: log` for values spanning decades (both axes in a scatter). No pie or donut charts.
+Numbers to compare. `type:` `bar` (default; `series:` makes grouped bars), `stacked`, `line` (a trend across ordered rows) or `scatter` (two measures per item). `unit:`, `x:` and `y:` name the axes; `scale: log` for values spanning decades (both axes in a scatter).
 ```vis chart
 type: bar
 unit: ms
@@ -115,7 +115,7 @@ unit: ms
 "Bubble sort" 9800
 mark "Bubble sort" warn "quadratic"
 ```
-- A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives and `12%` are fine; no thousands commas. At most 40 rows, 6 series.
+- A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives, `12%` and `1.2k` are fine. At most 40 rows, 6 series.
 - Scatter rows are `label x y [tone]`, with no `series:`.
 - `type: parts`: one bar split into its rows, for a whole and its parts; `of:` a capacity draws the unused rest (rows past it don't draw: drop `of:`, say so in the caption).
 ```vis chart
@@ -202,7 +202,7 @@ for (let i = 0;
   i <= items.length;
   i++) total += items[i];
 ```
-- `lang:` a fence word (ts, py, rust, sql, …). `start:` the first line's number, so the numbers match the file.
+- `lang:` a fence word (ts, py, sql, …). `start:` the first line's number, as in the file.
 - Marks go before `---`; all after it is code.
 
 ## html / svg

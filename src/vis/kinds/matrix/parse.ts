@@ -5,7 +5,7 @@
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaListFor, fail, fields, isTone, lines, takeSettings, unquote, type Tone, type VisBase } from "../../core/grammar";
+import { commaListFor, fail, fields, hasBar, isTone, lines, tableRow, takeSettings, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export type CellMark = "yes" | "no" | "partial";
 export interface MatrixCell {
@@ -29,12 +29,27 @@ const MARKS: Record<string, CellMark> = { yes: "yes", no: "no", partial: "partia
 export function parseMatrix(body: string): MatrixSpec {
   const ls = lines(body);
   const spec: MatrixSpec = { kind: "matrix", columns: [], rows: [] };
-  const { rest: settled, values } = takeSettings(ls, ["columns"], spec);
-  const { rest, marks } = takeMarks(settled);
-  const cols = values.get("columns");
+  const { rest: settled, values } = takeSettings(ls, ["columns"], spec, { caseless: true });
+  const { rest: marked, marks } = takeMarks(settled, { indented: true });
+  // Markdown table rows (`| SSO | no | yes |`) lose their outer bars; the `|---|` rule is skipped.
+  let rest = marked.flatMap((l) => tableRow(l) ?? []);
+  const cellCount = (line: Line) => line.text.split(/(?<!\\)\|/).length - 1;
+  let cols = values.get("columns");
+  // No `columns:`: the first row is the header, its first cell (the corner) dropped.
+  if (!cols && rest.length > 1 && hasBar(rest[0]!.text)) {
+    const header = rest[0]!;
+    rest = rest.slice(1);
+    const names = fields(header).slice(1);
+    if (names.some((c) => c === "")) fail(header.n, "empty column name in the header row");
+    cols = { value: names.join(", "), raw: names.map((c) => `"${c.replace(/"/g, '\\"')}"`).join(", "), n: header.n };
+  }
   if (!cols) fail(0, "matrix needs columns: A, B, C");
+  // `columns: A | B | C`: split at `|` when every row has that many cells.
+  const piped = hasBar(cols!.raw) ? cols!.raw.replace(/^\|\s*|\s*(?<!\\)\|$/g, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/^"((?:[^"\\]|\\.)*)"$/, (_, q: string) => unquote(q))) : null;
+  const counts = rest.map(cellCount);
+  if (piped && piped.every((c) => c !== "") && counts.length > 0 && counts.every((c) => c === piped.length)) spec.columns = piped;
   // The rows' cell counts settle a `columns:` line that reads more than one way (commaListFor).
-  spec.columns = commaListFor(cols!.raw, cols!.n, () => rest.map((line) => line.text.split(/(?<!\\)\|/).length - 1));
+  else spec.columns = commaListFor(cols!.raw, cols!.n, () => rest.map(cellCount));
   if (spec.columns.length < 1 || spec.columns.length > MAX_COLUMNS) fail(cols!.n, `1 to ${MAX_COLUMNS} columns`);
   for (const line of rest) {
     const fs = fields(line);

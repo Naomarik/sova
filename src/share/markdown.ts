@@ -2,6 +2,7 @@ import MarkdownIt from "markdown-it";
 import { unclosedFence } from "../lib/fences";
 import type { VisBase } from "../vis/core/grammar";
 import { parseVis, visKindWord } from "../vis/parse";
+import { canonicalKind } from "../vis/registry";
 
 // The share page's renderer: plain CommonMark, raw HTML off (markdown-it escapes it), links
 // autodetected. Nothing of the operator app's renderer (session links, path chips, highlighting):
@@ -66,14 +67,17 @@ md.renderer.rules.fence = (tokens, idx, options, e, self) => {
   const env = e as unknown as Env;
   const t = tokens[idx]!;
   const n = env.fences++;
-  const kind = visKindWord(t.info);
+  let kind = visKindWord(t.info);
   if (kind === null) return defaultFence(tokens, idx, options, e, self);
   if (env.openFence === n) {
     const lines = t.content.split("\n").length - 1;
     return `<div class="md-vis-pending"><p class="md-vis-pending-line"><span class="md-vis-pending-dot" aria-hidden="true"></span>Drawing ${esc(kind || "a visual")}… <span class="md-vis-pending-count">${lines} ${lines === 1 ? "line" : "lines"}</span></p></div>\n`;
   }
   const { drawn, image, source } = env.kinds;
-  const r = drawn.has(kind) || image?.has(kind) || source?.has(kind) ? parseVis(kind, t.content) : null;
+  // The word as written parses (an alias reads as its kind); the kind it draws as decides the rest.
+  const word = kind;
+  kind = canonicalKind(word);
+  const r = drawn.has(kind) || image?.has(kind) || source?.has(kind) ? parseVis(word, t.content) : null;
   if (!r?.ok) return `<p class="share-vis-broken">${BROKEN_DRAWING}</p>\n`;
   const title = (r.spec as { title?: string }).title;
   if (image?.has(kind)) {

@@ -47,6 +47,8 @@ export interface RawMark {
   targets: (MarkTarget | RunTarget)[];
   tone?: Tone;
   note?: string;
+  /** The same line read with its note written bare after a `:` (`mark Sep 30: the outage`), used when this reading names nothing. */
+  alt?: RawMark;
 }
 
 function markTarget(head: Token, n: number): MarkTarget {
@@ -92,17 +94,56 @@ function readMark(line: Line): RawMark {
   return mark;
 }
 
-/** Split `mark` lines out of a kind's lines. A line that can't be read is dropped with a warning. */
-export function takeMarks(ls: Line[]): { rest: Line[]; marks: RawMark[] } {
+const TONE_WORDS = "accent|ok|warn|error|info|muted";
+const escape = (s: string) => s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+/**
+ * A mark line readMark refuses, with its note written bare (§chat.markdown/vis-lenience-content):
+ * after a quoted target, a number or a range, the words that follow (`mark "Vue 2" templates, not
+ * JSX`); after a run of bare words ending in `:`, the rest (`mark Sep 30: the outage`). The line as
+ * it would read with that note quoted, or null.
+ */
+function bareNote(line: Line): Line | null {
+  const quoted = new RegExp(`^mark\\s+("(?:[^"\\\\]|\\\\.)*"|\\d+(?:-\\d+)?)(?:\\s+|(?=:))(?:(${TONE_WORDS})\\s+)?[:\\-—–]?\\s*([^"\\s].*?)(?:\\s+(${TONE_WORDS}))?$`).exec(line.text);
+  const run = quoted ? null : new RegExp(`^mark\\s+([^",:]+?)(?:\\s+(${TONE_WORDS}))?:\\s+(.+?)(?:\\s+(${TONE_WORDS}))?$`).exec(line.text);
+  const m = quoted ?? run;
+  if (!m) return null;
+  const [, target, tone1, note, tone2] = m;
+  if (tone1 && tone2) return null;
+  const q = /^"((?:[^"\\]|\\.)*)"$/.exec(note!);
+  const t = `mark ${target} ${tone1 ?? tone2 ?? ""} "${q ? q[1] : escape(note!)}"`.replace(/\s+/g, " ");
+  return { ...line, raw: t, text: t };
+}
+
+/**
+ * Split `mark` lines out of a kind's lines. A line that can't be read is dropped with a warning.
+ * `indented`: a mark line may be indented too (kinds where indentation means nothing else).
+ */
+export function takeMarks(ls: Line[], opts: { indented?: boolean } = {}): { rest: Line[]; marks: RawMark[] } {
   const rest: Line[] = [];
   const marks: RawMark[] = [];
   for (const line of ls) {
-    if (!/^mark(\s|$)/.test(line.raw)) {
+    if (!/^mark(\s|$)/.test(opts.indented ? line.text : line.raw)) {
       rest.push(line);
       continue;
     }
     try {
-      const mark = readMark(line);
+      let mark: RawMark;
+      try {
+        mark = readMark(line);
+      } catch (e) {
+        const bare = e instanceof VisError ? bareNote(line) : null;
+        if (!bare) throw e;
+        mark = readMark(bare);
+      }
+      // `mark Sep 30: the outage` reads as one long run; if that names nothing, the run up to the colon with the rest as its note.
+      if (mark.note === undefined && /^mark\s+[^",:]+:\s/.test(line.text)) {
+        const bare = bareNote(line);
+        try {
+          if (bare) mark.alt = readMark(bare);
+        } catch {
+          /* no other reading */
+        }
+      }
       if (mark.note !== undefined && mark.note.length > MAX_NOTE) {
         warn(line.n, `mark note over ${MAX_NOTE} characters, shortened`);
         mark.note = clip(mark.note, MAX_NOTE);
@@ -130,7 +171,12 @@ export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget, lin
   const out: Emphasis[] = [];
   const seen = new Set<string>();
   let n = 0;
-  for (const m of marks) {
+  for (let m of marks) {
+    const names = (t: MarkTarget) => {
+      const got = resolve(t, m.line);
+      return got !== null && (!Array.isArray(got) || got.length > 0);
+    };
+    if (m.alt && !m.targets.some((t) => (t.t === "run" ? names({ t: "label", text: t.text }) || t.words.every(names) : names(t)))) m = m.alt;
     // Each target resolves on its own; one that names nothing is dropped (the others kept).
     const perTarget: string[][] = [];
     const named: string[] = [];

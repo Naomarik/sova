@@ -82,17 +82,20 @@ test("the guide's flow and state examples mean what the text says", () => {
 });
 
 // The rules' "Not vis" pairs: the Mermaid side fails with a hint, the vis side draws what it says.
-test("the guide's Not vis pairs: the wrong side is refused with a hint, the right side means it", () => {
+test("the guide's Not vis pairs: the right side means it, and the wrong side (read anyway) means the same", () => {
   assert.match(GUIDE, /`A->>B: msg` is `a -> b "msg"`; `A\[Label\] --> B` is `a "Label" --> b`/);
-  const seq = parseVis("sequence", 'A->>B: msg');
-  assert.ok(!seq.ok && seq.message === 'write A -> B "msg" (not Mermaid a ->> b: msg)');
   const msg = parseVis("sequence", 'a -> b "msg"');
   assert.ok(msg.ok);
   assert.deepEqual((msg.spec as { steps: unknown[] }).steps, [{ type: "msg", from: "a", to: "b", label: "msg", dashed: false }]);
-  assert.ok(!parseVis("flow", "A[Label] --> B").ok);
+  const seq = parseVis("sequence", "A->>B: msg");
+  assert.ok(seq.ok);
+  assert.deepEqual((seq.spec as { steps: unknown[] }).steps, [{ type: "msg", from: "A", to: "B", label: "msg", dashed: false }]);
   const flow = parseVis("flow", 'a "Label" --> b');
   assert.ok(flow.ok);
   assert.deepEqual([(flow.spec as FlowSpec).nodes[0]!.label, (flow.spec as FlowSpec).edges[0]!.dashed], ["Label", true]);
+  const mermaid = parseVis("flow", "A[Label] --> B");
+  assert.ok(mermaid.ok);
+  assert.deepEqual([(mermaid.spec as FlowSpec).nodes[0]!.label, (mermaid.spec as FlowSpec).edges[0]!.dashed], ["Label", true]);
   // Tree: the folder's slash inside the quotes.
   assert.match(GUIDE, /End folder names with `\/`, inside quotes: `"My Docs\/"`, never `"My Docs"\/`\./);
   assert.match(GUIDE, /`"My Docs\/" "shared"`/);

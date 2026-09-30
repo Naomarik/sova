@@ -22,7 +22,7 @@
  */
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { accessSync, chmodSync, constants, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { accessSync, chmodSync, constants, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { connect, createServer, type Server, type Socket } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -169,7 +169,9 @@ export function profilePlan({ policy, relayPort }: ProfileInput): ProfilePlan {
 	// copy (the source) is what the sandbox writes, reached through the env (see shadowEnv).
 	const shadowPaths = new Set(shadows.map((s) => s.path));
 	const realWritable = set.writable.filter((w) => !shadowPaths.has(w));
-	const writable = uniq([tmp, ...realWritable, ...shadows.map((s) => s.source)]);
+	// A confined launch's own state is writable at any level; Seatbelt cannot remap, so a bind is its
+	// source (the target is a link to it, made by `confine`).
+	const writable = uniq([tmp, ...realWritable, ...shadows.map((s) => s.source), ...(policy.binds ?? []).map((b) => canon(b.source))]);
 	const readOnly = uniq([...set.readOnly, ...shadows.map((s) => s.path)]);
 	const inWritable = (p: string) => writable.some((w) => isWithin(p, w));
 	const protectedPaths = [...readOnly, ...hidden].filter(inWritable);
@@ -209,6 +211,35 @@ export function writeLayers(plan: Pick<ProfilePlan, "writable" | "readOnly">): {
 		layers[layer]![e.allow ? "allow" : "deny"].push(e.path);
 	}
 	return layers;
+}
+
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/** Reads `NAME=value` lines from `fd`, exports each, closes the fd and execs the command. Exported for tests. */
+export function secretPrelude(fd: number): string {
+	return [`while IFS= read -r l || [ -n "$l" ]; do export "$l"; done <&${fd}`, `exec ${fd}<&-`, `exec "$@"`].join("\n");
+}
+
+/**
+ * A bind whose target is not its source: Seatbelt cannot remap, so the target must be a link to
+ * the source (made when missing). Anything else at the target is a refusal. Exported for tests.
+ */
+export function linkBind(b: Shadow): string | undefined {
+	if (b.path === b.source) return undefined;
+	let st;
+	try {
+		st = lstatSync(b.path);
+	} catch {
+		try {
+			mkdirSync(dirname(b.path), { recursive: true, mode: 0o700 });
+			symlinkSync(b.source, b.path);
+			return undefined;
+		} catch (err) {
+			return `cannot link ${b.path} to ${b.source}: ${(err as Error).message}`;
+		}
+	}
+	if (st.isSymbolicLink() && canonicalizePath(b.path) === canonicalizePath(b.source)) return undefined;
+	return `cannot bind ${b.source} at ${b.path}: something else is there (Seatbelt needs a link)`;
 }
 
 export function renderProfile(plan: ProfilePlan): string {
@@ -402,6 +433,17 @@ export class DarwinSeatbeltBackend implements Backend {
 			}
 		}
 
+		const secrets = Object.entries(req.secretEnv ?? {});
+		if (secrets.length) {
+			const fd = req.secretFd;
+			if (!Number.isInteger(fd) || fd! < 3) return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: "secret variables need a free fd (secretFd >= 3)" };
+			if (secrets.some(([k, v]) => !ENV_NAME.test(k) || /[\n\0]/.test(v))) return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: "a secret variable has an invalid name or a newline in its value" };
+		}
+		for (const b of policy.binds ?? []) {
+			const why = linkBind(b);
+			if (why) return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: why };
+		}
+
 		let plan: ProfilePlan;
 		let profile: string;
 		try {
@@ -425,7 +467,9 @@ export class DarwinSeatbeltBackend implements Backend {
 		if (network === "proxy") Object.assign(env, proxyEnv(relayPort!));
 
 		const confined: Confined = {
-			argv: [sandboxExec, "-f", profile, ...req.argv],
+			// Secrets never reach argv or the spawn env: a shell inside reads them from the fd, exports them, and execs.
+			argv: [sandboxExec, "-f", profile, ...(secrets.length ? ["/bin/sh", "-c", secretPrelude(req.secretFd!), "sova-sandbox-env"] : []), ...req.argv],
+			...(secrets.length ? { fds: [{ fd: req.secretFd!, data: secrets.map(([k, v]) => `${k}=${v}\n`).join("") }] } : {}),
 			env,
 			enforcement: "full",
 			network,

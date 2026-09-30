@@ -15,6 +15,7 @@ import type { SessionSummary } from "../shared/protocol";
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 const { projectOverseerTools, TOOL_NEEDS, COUNTS, operatorOnlyRefusal, underRoot, buildState } = await import("./project-overseer-tools");
+const { chartInfo, chartVersions } = await import("./org-charts");
 const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER_REASON } = await import("./project-overseer-store");
 const { OrgError } = await import("./org-error");
 const { TOOL_NEEDS: MASTER_NEEDS } = await import("./org-charts-replay");
@@ -212,6 +213,16 @@ describe("the wrapper relays a chart's refusal", () => {
     await assert.rejects(() => g.run("sova_start_gathering", gather), /2 of its gathering sessions are open, and the limit is 2 at once\. One reaching its goal/);
     assert.deepEqual(g.limited, [], "an at-once refusal holds nothing: a session finishing is already a reason");
     assert.deepEqual(COUNTS, { sova_start_gathering: "gather", sova_offer: "gather", sova_promote: "promote", sova_create_session: "create", sova_send: "prompt" });
+  });
+
+  test("each tool's allowance is its chart acts' `counts`, and every allowance tool has an act", () => {
+    const acts = chartVersions().flatMap(({ name }) => Object.values(chartInfo(name)?.acts ?? {}));
+    for (const [tool, kind] of Object.entries(COUNTS)) {
+      const own = acts.filter((a) => a.tool === (tool === "sova_offer" ? "sova_start_gathering" : tool));
+      assert.ok(own.some((a) => a.counts === kind), `${tool} maps to no act counting "${kind}"`);
+      for (const a of own) if (a.counts) assert.equal(a.counts, kind, `${tool}: an act counts "${a.counts}"`);
+    }
+    for (const a of acts) if (a.tool && a.counts) assert.equal(COUNTS[a.tool as string], a.counts, `${a.tool} counts "${a.counts}" in its act`);
   });
 
   test("the operator's to-dos refuse outside their turn without reaching the host", async () => {

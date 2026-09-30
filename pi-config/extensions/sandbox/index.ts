@@ -16,13 +16,14 @@
  * policy) and refuses when any of it fails. Never a passthrough.
  */
 import { realpathSync, rmSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ExtensionAPI, type ExtensionContext, getAgentDir, SettingsManager } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { backendFor, type Policy } from "./backend.ts";
-import { scrubEnv } from "./env.ts";
+import { hostEnv, scrubEnv } from "./env.ts";
 import { canonicalize, loadPolicyFile, narrowScope, type ParentScope, parentScopeOf, parseParentScope, policyFilePath, type ResolvedPolicy, workerCwdRefusal, writeOnlyScope } from "./policy.ts";
+import { encodeLaunchScope, OWNER_ID } from "./launch.ts";
 import { type ProxyHandle, proxySocketPath, startProxy } from "./proxy.ts";
 import { ensureSessionTmpDir, resolveSessionPolicy } from "./session-policy.ts";
 import {
@@ -37,8 +38,10 @@ import {
 	type SandboxActive,
 	type SandboxLevel,
 	type SandboxStateEvent,
+	type WorkerLaunch,
+	type WorkerLaunchRequest,
 } from "./state.ts";
-import { claudeSettingsFor, confinedDefinitions, type Snapshot, type StockOptions, stockDefinitions } from "./tools.ts";
+import { confinedDefinitions, type Snapshot, type StockOptions, stockDefinitions } from "./tools.ts";
 
 const FLAG = "sandbox";
 /** Set by a sandboxed parent on its workers: its level and writable roots (`ParentScope` JSON). */
@@ -52,13 +55,6 @@ const NOT_ON_REMOTE = "not enforced on remote";
 const WORKTREES_STATE_EVENT = "worktrees:state";
 const WORKTREES_DISCOVER_EVENT = "worktrees:discover";
 
-/** A write-only worker's environment: the host's as it is, minus what the backend sets itself. */
-function hostEnv(source: NodeJS.ProcessEnv): Record<string, string> {
-	const out: Record<string, string> = {};
-	for (const [k, v] of Object.entries(source)) if (v !== undefined && k !== "TMPDIR") out[k] = v;
-	return out;
-}
-
 function realpathOr(p: string): string {
 	try {
 		return realpathSync(p);
@@ -69,6 +65,8 @@ function realpathOr(p: string): string {
 
 /** This extension's directory, for a worker's `-e` list. */
 const SELF_DIR = realpathOr(dirname(fileURLToPath(import.meta.url)));
+/** The confined-launch entry a spawner (or a hosting process) imports by path. */
+const LAUNCH_MODULE = join(SELF_DIR, "launch.ts");
 
 function offState(level: SandboxLevel = "workspace-write"): SandboxActive {
 	return { version: 1, on: false, level, backend: "none", enforcement: "none" };
@@ -206,36 +204,37 @@ export default function sandbox(pi: ExtensionAPI) {
 	function emitState(): void {
 		const on = active.on && !remote;
 		const event: SandboxStateEvent = { version: 1, on, extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
-		// A worker of this session started inside a tracked worktree writes only there
-		// (§chat.worktrees/workers): on, the parent's scope narrowed to it; off, write-only confinement.
-		if (!remote) {
-			event.workerFlagsIn = (root: string) => {
-				const r = canonicalize(root);
-				if (!on) return { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(writeOnlyScope(r)) };
-				const scope = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
-				return scope ? { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(narrowScope(scope, r)) } : undefined;
-			};
-		}
-		if (on) {
-			const scope = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
-			if (scope) event.workerFlags = { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) };
-			const unavailable = `Sandbox unavailable in the parent: ${active.reasons?.join("; ") ?? "no policy loaded"}. A worker cannot start sandboxed.`;
-			// §chat.sandbox/fail-closed: an unattended worker (any backend) refuses to start under partial enforcement unless acceptPartial.
-			const partial =
-				lastPolicy && active.enforcement === "partial" && !lastPolicy.acceptPartial
-					? `Sandbox enforcement is partial (${active.reasons?.join("; ") ?? "unknown reason"}); set acceptPartial in the sandbox policy to start unattended workers.`
-					: undefined;
-			event.checkWorker = ({ cwd: workerCwd }) => (scope ? (partial ?? workerCwdRefusal(scope, workerCwd)) : unavailable);
-			// Claude workers get the CLI's own sandbox plus permission rules (PROBE.md): full, under dontAsk.
-			if (lastPolicy) event.claudeSettingsJson = claudeSettingsFor(lastPolicy);
-			event.claudePermissionMode = "dontAsk";
-			if (active.enforcement === "unavailable" || !lastPolicy) {
-				event.claudeRefusal = `Sandbox unavailable: ${active.reasons?.join("; ") ?? "no policy loaded"}. A Claude Code worker cannot start sandboxed.`;
-			} else if (partial) {
-				event.claudeRefusal = partial;
-			}
-		}
+		// Every worker start asks this (§chat.sandbox/workers, §chat.worktrees/workers); a remote session has none.
+		if (!remote) event.workerLaunch = (req) => workerLaunch(on, req);
 		pi.events?.emit(SANDBOX_STATE_EVENT, event);
+	}
+
+	/**
+	 * How one worker starts (§chat.sandbox/workers, §chat.worktrees/workers). On: the parent's scope
+	 * (narrowed to a tracked worktree's `root`), or the refusal; off: a write-only scope in a tracked
+	 * worktree, else nothing. pi workers get the extension's flags; any other backend a scope for
+	 * `confineLaunch` (launch.ts), which runs its whole process under the same policy.
+	 */
+	function workerLaunch(on: boolean, req: WorkerLaunchRequest): WorkerLaunch {
+		const root = req.root ? canonicalize(req.root) : undefined;
+		let scope: ParentScope;
+		if (on) {
+			const parent = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
+			if (!parent) return { kind: "refused", reason: `Sandbox unavailable in the parent: ${active.reasons?.join("; ") ?? "no policy loaded"}. A worker cannot start sandboxed.` };
+			// §chat.sandbox/fail-closed: an unattended worker (any backend) refuses to start under partial enforcement unless acceptPartial.
+			if (active.enforcement === "partial" && !lastPolicy!.acceptPartial) {
+				return { kind: "refused", reason: `Sandbox enforcement is partial (${active.reasons?.join("; ") ?? "unknown reason"}); set acceptPartial in the sandbox policy to start unattended workers.` };
+			}
+			const outside = workerCwdRefusal(parent, req.cwd);
+			if (outside) return { kind: "refused", reason: outside };
+			scope = root ? narrowScope(parent, root) : parent;
+		} else {
+			if (!root) return { kind: "none" };
+			scope = writeOnlyScope(root);
+		}
+		if (req.backend === "pi") return { kind: "pi", extensionPath: SELF_DIR, flags: { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) } };
+		if (!OWNER_ID.test(req.owner) || req.owner === "." || req.owner === "..") return { kind: "refused", reason: `Sandbox: invalid worker id ${JSON.stringify(req.owner)}; a worker cannot start sandboxed.` };
+		return { kind: "confine", scope: encodeLaunchScope({ v: 1, agentDir: agentDir(), sessionId: tmpId || sessionId || `pid${process.pid}`, owner: req.owner, parent: scope }), module: LAUNCH_MODULE };
 	}
 
 	function renderStatus(): void {

@@ -94,11 +94,12 @@ import {
 	remoteWorkerInstructions,
 	type RemoteSessionEvent,
 } from "../remote/workers.ts";
-import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
+import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
+import { sweepPrivateConfigDirs, type ClaudeConfine } from "../claude-code/confined-launch.ts";
 import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT, type ModeStateEvent } from "../mode/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, parseModeWorkerEvent, type ModeWorkerEvent } from "../mode/events.ts";
 import { specHookSettings, withClaudeSettings } from "../claude-code/spec-hooks.ts";
-import { LEDGER_ENV, ledgerPath } from "../mode/spec-guard.ts";
+import { LEDGER_ENV, ledgerPath, workerLedgerPath } from "../mode/spec-guard.ts";
 import { DEFAULT_CLAUDE_TOOLS } from "../claude-code/transport.ts";
 import { workerSpecBrief, writesCode } from "./spec-brief.ts";
 import { restoreActive as restoreWorktrees, treeOf, workerCwdRefusal as worktreeCwdRefusal, type WorktreesActive } from "../worktrees/state.ts";
@@ -609,14 +610,15 @@ export function registerSubagents(
 	});
 	pi.events?.emit(REMOTE_DISCOVER_EVENT, { version: 1 });
 	// The parent's sandbox (pi-config's sandbox extension): announced on the bus like the remote
-	// session. While it is on, every worker is checked by it and starts under it; nothing here
-	// interprets the policy (workerFlags, the Claude settings and checkWorker are the extension's).
+	// session. Every worker it has a say in (the sandbox on, or a cwd in a tracked worktree) asks its
+	// one `workerLaunch` call how to start: pi flags, a confinement for any other backend, or a refusal.
+	// Nothing here interprets the policy.
 	let sandboxState: SandboxStateEvent | undefined;
 	const unregisterSandboxListener = pi.events?.on(SANDBOX_STATE_EVENT, (data: unknown) => {
 		const e = data as SandboxStateEvent | undefined;
 		if (!e || e.version !== 1 || typeof e.on !== "boolean") return;
 		if (e.on && (typeof e.extensionPath !== "string" || !e.extensionPath.startsWith("/"))) return;
-		if (e.workerFlags !== undefined && (typeof e.workerFlags !== "object" || Object.values(e.workerFlags).some((v) => typeof v !== "string"))) return;
+		if (e.workerLaunch !== undefined && typeof e.workerLaunch !== "function") return;
 		sandboxState = e;
 	});
 	pi.events?.emit(SANDBOX_DISCOVER_EVENT, { version: 1 });
@@ -1112,6 +1114,39 @@ export function registerSubagents(
 	 */
 	const spawnBatch = async (ctx: ExtensionContext, request: BatchRequest, signal?: AbortSignal): Promise<AgentGroup> => {
 		const { specs } = request;
+		const parentId = ctx.sessionManager.getSessionId?.() || unsavedSessionKey;
+		/** A worker's session-qualified id: the sandbox's owner of its scope and the name of its Claude state dir. */
+		const workerKey = (id: string) => `${sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112)}-${id}`;
+		/**
+		 * A confined Claude worker's confinement (claude-code/confined-launch.ts): the sandbox's scope for
+		 * it, and what its own state needs writable — its team mailbox, and with spec on its own hook state
+		 * dir and ledger file (which the parent's spec mode reads too), which its hooks are pointed at.
+		 */
+		const confineClaude = (o: { id: string; cwd: string; backend: string; root?: string; specHooks: boolean; prepared: { settingsJson?: string }; mailbox?: string; hostedTmp?: string }): { confine: ClaudeConfine; settingsJson?: string } => {
+			const owner = workerKey(o.id);
+			const answer = sandboxState?.workerLaunch?.({ cwd: o.cwd, ...(o.root ? { root: o.root } : {}), backend: o.backend, owner });
+			if (answer?.kind !== "confine") throw new Error(answer?.kind === "refused" ? answer.reason : "This session's sandbox gave no confinement for this worker; it cannot start sandboxed.");
+			const writable = o.mailbox ? [o.mailbox] : [];
+			let settingsJson = o.prepared.settingsJson;
+			if (o.specHooks) {
+				const stateDir = path.join(agentDir(), SPEC_HOOK_STATE, "workers", owner);
+				const ledger = workerLedgerPath(agentDir(), parentId, owner);
+				fs.mkdirSync(stateDir, { recursive: true, mode: 0o700 });
+				fs.mkdirSync(path.dirname(ledger), { recursive: true });
+				fs.appendFileSync(ledger, "");
+				writable.push(stateDir, ledger);
+				settingsJson = withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir, ledger }));
+			}
+			const hostedTmpDir = o.hostedTmp ? path.join(o.hostedTmp, "tmp") : undefined;
+			if (hostedTmpDir) fs.mkdirSync(hostedTmpDir, { recursive: true, mode: 0o700 });
+			return {
+				confine: {
+					scope: answer.scope, module: answer.module, key: owner, agentDir: agentDir(), writable, ...(hostedTmpDir ? { hostedTmpDir } : {}),
+					describe: sandboxState?.on ? `the session's sandbox${o.root ? `, narrowed to ${o.root}` : ""}` : `write-only to ${o.root}`,
+				},
+				...(settingsJson === undefined ? {} : { settingsJson }),
+			};
+		};
 		const total = specs.reduce((sum, s) => sum + (s.count ?? 1), 0);
 		if (
 			!Number.isInteger(total) ||
@@ -1161,10 +1196,26 @@ export function registerSubagents(
 			const tree = remote ? undefined : treeOf(worktreeSet, cwd);
 			if (spec.useWorktreeConfig && (backendId !== "pi" || !tree))
 				throw new Error(backendId !== "pi" ? "useWorktreeConfig is for pi workers only." : `useWorktreeConfig needs a cwd inside an active worktree this session tracks; ${cwd} is not.`);
-			if (sandbox) {
-				// Fail closed: an on state that cannot vouch for this worker refuses it.
-				const refusal = sandbox.checkWorker ? sandbox.checkWorker({ cwd, backend: backendId }) : "This session's sandbox is on but gave no worker check; a worker cannot start sandboxed.";
-				if (refusal) throw new Error(refusal);
+			// The one sandbox call (§chat.sandbox/workers): while on, or for a worker in a tracked worktree
+			// (it then writes only there). Off and outside a worktree, nothing is asked: today's launch.
+			// Fail closed: a state that cannot answer refuses the worker. The owner here only validates;
+			// a confined worker asks again under its own id when it is created (below).
+			let launch: WorkerLaunch = { kind: "none" };
+			if (sandbox || tree) {
+				if (!sandboxState?.workerLaunch) {
+					throw new Error(sandbox
+						? "This session's sandbox is on but gave no worker launch; a worker cannot start sandboxed."
+						: `Cannot confine a worker to the worktree ${tree!.path}: ${sandboxState ? "this session's sandbox gave no scope for it" : "the sandbox extension is not loaded"}.`);
+				}
+				launch = sandboxState.workerLaunch({ cwd, ...(tree ? { root: tree.path } : {}), backend: backendId, owner: workerKey("check") });
+				if (launch.kind === "refused") throw new Error(launch.reason);
+				if (launch.kind === "none") {
+					throw new Error(tree
+						? `Cannot confine a worker to the worktree ${tree.path}: this session's sandbox gave no scope for it.`
+						: "This session's sandbox is on but gave no worker launch; a worker cannot start sandboxed.");
+				}
+				if (launch.kind === "confine" && backendId === "pi") throw new Error("This session's sandbox gave a pi worker no extension flags; it cannot start sandboxed.");
+				if (launch.kind === "pi" && backendId !== "pi") throw new Error(`This session's sandbox gave the ${backendId} worker no confinement; it cannot start sandboxed.`);
 			}
 			// Where a worker may start: the session's cwd or an active tracked worktree. Remote cwds are far paths, not checked.
 			if (!remote) {
@@ -1194,14 +1245,13 @@ export function registerSubagents(
 				if (denied) throw new Error(denied);
 				backend.validate(spec, ctx);
 				let prepared = backend.prepare?.({ ...spec, cwd }, ctx) ?? {};
-				if (sandbox) {
-					// The CLI's own sandbox, as the extension computed it; never bypassPermissions, and no
-					// host prompt that could approve past the rules.
-					if (backendId !== "claude-code") throw new Error(`Backend ${backendId} cannot run workers while this session's sandbox is on.`);
-					if (sandbox.claudeRefusal) throw new Error(sandbox.claudeRefusal);
-					if (!sandbox.claudeSettingsJson || !sandbox.claudePermissionMode) throw new Error("This session's sandbox is on but gave no Claude Code settings; a Claude Code worker cannot start sandboxed.");
-					const confined = { settingsJson: sandbox.claudeSettingsJson, permissionMode: sandbox.claudePermissionMode, onPermission: undefined };
-					prepared = { ...prepared, ...confined };
+				// Confined (the sandbox on, or a worktree): the whole claude process runs inside the sandbox,
+				// every launch of it (claude-code/confined-launch.ts). Only Claude Code can be confined.
+				const confined = launch.kind === "confine" ? { module: launch.module } : undefined;
+				if (confined && backendId !== "claude-code") {
+					throw new Error(sandbox
+						? `Backend ${backendId} cannot run workers while this session's sandbox is on.`
+						: `Backend ${backendId} cannot run workers in a tracked worktree (only pi and claude-code workers can be confined to it).`);
 				}
 				if (remote) {
 					if (backendId !== "claude-code") throw new Error(`Backend ${backendId} cannot run workers of a remote session (only pi and claude-code have remote tooling).`);
@@ -1215,20 +1265,22 @@ export function registerSubagents(
 				// Spec on: a code-writing Claude worker gets the hooks that run census after each tool call and
 				// check its reply's last line (claude-code/spec-hooks.ts), and the brief unless its mode prompt
 				// carries the spec block. Remote workers' files are on the target, out of the local tools' reach.
-				if (specOn && !remote && backendId === "claude-code" && writesCode(prepared.tools ?? spec.tools ?? DEFAULT_CLAUDE_TOOLS)) {
+				const specHooks = specOn && !remote && backendId === "claude-code" && writesCode(prepared.tools ?? spec.tools ?? DEFAULT_CLAUDE_TOOLS);
+				if (specHooks) {
 					const settingsJson = (prepared as { settingsJson?: string }).settingsJson;
 					prepared = {
 						...prepared,
 						...(specInPrompt ? {} : { systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, workerSpecBrief(SPEC_CORE_DIR)].filter(Boolean).join("\n\n") }),
 						// Its git operations go to this session's ledger, so the parent counts a worker's commit in its own tree.
-						settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE), ledger: ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) })),
+						// A confined worker gets its own hook state and ledger file, set per worker when it is created.
+						...(confined ? {} : { settingsJson: withClaudeSettings(settingsJson, specHookSettings({ node: process.execPath, coreDir: SPEC_CORE_DIR, stateDir: path.join(agentDir(), SPEC_HOOK_STATE), ledger: ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) })) }),
 					} as typeof prepared;
 				}
 				// Last, after the brief and any remote instructions: the prompt the runner uses is this one.
 				if (modePrompt) prepared = { ...prepared, systemPrompt: [prepared.systemPrompt ?? spec.systemPrompt, modePrompt].filter(Boolean).join("\n\n") };
 				return { spec, cwd, model: spec.model, tools: remote ? [] : spec.tools, systemPrompt: spec.systemPrompt,
 					extensions: undefined, forkSession: undefined, backend, prepared, flags: undefined, remoteMcp, ledger: undefined,
-					givenModes: modePrompt ? [...modes!.minorModes] : [] };
+					givenModes: modePrompt ? [...modes!.minorModes] : [], confined: confined ? { root: tree?.path, specHooks } : undefined };
 			}
 			if (spec.backendOptions !== undefined) throw new Error("backendOptions are not supported by the pi backend.");
 			const definition = spec.agentType !== undefined ? loadDefinition(spec.agentType) : undefined;
@@ -1265,14 +1317,10 @@ export function registerSubagents(
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
 			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
-			// A pi worker inside a tracked worktree writes only there: the sandbox extension's scope for
-			// that root, whether the parent's sandbox is on (narrowed) or off (write-only).
-			const confine = tree ? sandboxState?.workerFlagsIn?.(tree.path) : undefined;
-			if (tree && (!sandboxState?.extensionPath || !confine))
-				throw new Error(`Cannot confine a worker to the worktree ${tree.path}: ${sandboxState?.extensionPath ? "this session's sandbox gave no scope for it" : "the sandbox extension is not loaded"}.`);
-			if (sandbox && !tree && !sandbox.workerFlags) throw new Error("This session's sandbox is on but gave no worker flags; a worker cannot start sandboxed.");
-			const sandboxFlags = confine ?? sandbox?.workerFlags;
-			const sandboxPath = sandboxFlags ? sandboxState!.extensionPath : undefined;
+			// The sandbox's answer for a pi worker: its extension and flags (the parent's scope while on; in a
+			// tracked worktree, narrowed to it, or write-only while off).
+			const sandboxFlags = launch.kind === "pi" ? launch.flags : undefined;
+			const sandboxPath = launch.kind === "pi" ? launch.extensionPath : undefined;
 			const { extensions, flags: piFlags } = sandboxPath
 				? claudeCodeProviderLoad(model, [...sources.filter((source) => !sameExtension(source, sandboxPath)), sandboxPath], { ...flags, ...modeFlags, ...sandboxFlags })
 				: claudeCodeProviderLoad(model, sources, modeFlags ? { ...flags, ...modeFlags } : flags);
@@ -1300,6 +1348,7 @@ export function registerSubagents(
 				ledger: specOn && !remote && (specWorker || treeConfig) ? ledgerPath(agentDir(), ctx.sessionManager.getSessionId?.() || unsavedSessionKey) : undefined,
 				// A tree-config worker is started with spec on (modeFlags); older records say nothing.
 				givenModes: treeConfig ? [modeFlags!.minor] : modePrompt ? [...modes!.minorModes] : [],
+				confined: undefined,
 			};
 		});
 		const resuming = request.resume;
@@ -1315,7 +1364,7 @@ export function registerSubagents(
 		const launched: string[] = [];
 		const earlySettled = new Set<Worker>();
 		try {
-			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, ledger, givenModes }] of prepared.entries()) {
+			for (const [index, { spec, cwd, model, tools, systemPrompt, extensions, forkSession, backend, prepared: backendPrepared, flags, remoteMcp, treeConfig, ledger, givenModes, confined }] of prepared.entries()) {
 				for (let i = 0; i < (spec.count ?? 1); i++) {
 					const base = spec.name ?? spec.agentType ?? "agent";
 					const id = resuming ? resuming.id : `ag_${String(++counter).padStart(2, "0")}`;
@@ -1353,6 +1402,13 @@ export function registerSubagents(
 						...(remoteMcp ? { [REMOTE_MCP_SERVER_NAME]: remoteMcp } : {}),
 						...(memberVars && tooling === "mcp" ? { [MCP_SERVER_NAME]: { command: process.execPath, args: [MEMBER_MCP], env: memberVars } } : {}),
 					};
+					// A confined claude worker: its own scope (named by its session-qualified id), its own state
+					// writable (the mailbox, and its own spec-hook state and ledger), and, hosted, the host's tmp.
+					const confinement = confined
+						? confineClaude({ id, cwd, backend: spec.backend ?? "pi", root: confined.root, specHooks: confined.specHooks, prepared: backendPrepared as { settingsJson?: string },
+							mailbox: teamMember && tooling === "mcp" ? memberDir(request.team!.teamId, id) : undefined,
+							hostedTmp: (hosted as { tmpDir?: string }).tmpDir })
+						: undefined;
 					const runner = (backend?.create ?? createRunner)(
 						{
 							model,
@@ -1364,6 +1420,7 @@ export function registerSubagents(
 							backendOptions: spec.backendOptions,
 							...(flags ? { flags } : {}),
 							...backendPrepared,
+							...confinement,
 							backend: spec.backend ?? "pi",
 							...(env ? { env } : {}),
 							...(treeConfig ? { sessionDir: treeConfig.sessionDir, approve: true } : {}),
@@ -3492,6 +3549,20 @@ export function registerSubagents(
 		pausedTeams.clear();
 		for (const teamId of pausedTeamsFrom(ctx.sessionManager.getBranch?.() ?? [])) pausedTeams.add(teamId);
 		hosting.setOwner(ctx.sessionManager.getSessionId?.(), ctx.sessionManager.getSessionFile?.());
+		// Confined Claude workers' own state dirs (§chat.sandbox/claude-state): kept across resumes, removed
+		// once the worker's record is gone with its owner session. Never one a live worker of this process uses.
+		try {
+			const key = sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112);
+			const file = ctx.sessionManager.getSessionFile?.();
+			const { manifests } = readWorkerManifests(ctx.sessionManager.getEntries());
+			const live = new Set(agents.filter((a) => !a.isFinished()).map((a) => `${key}-${a.id}`));
+			sweepPrivateConfigDirs({
+				agentDir: agentDir(),
+				sessionDirs: [...new Set([path.join(agentDir(), "sessions"), ...(file ? [path.dirname(path.dirname(file))] : [])])],
+				current: { key, recorded: (id) => manifests.has(id) || agents.some((a) => a.id === id) },
+				keep: (dir) => live.has(dir),
+			});
+		} catch { /* best effort: the next start sweeps again */ }
 		// Asynchronous (transcript reads): earlier processes' workers appear once read.
 		void restoreWorkers(ctx).catch(() => { /* Best effort: the records stay for the next start. */ });
 		if (hosting.active()) {

@@ -457,7 +457,7 @@ test("resume: the worktree gate applies again — refused once the worker's work
 	fs.mkdirSync(live);
 	fs.mkdirSync(wt);
 	const tree = (status: string) => ({ version: 1, trees: [{ path: wt, branch: "feat/x", base: "a", status, session: "owner", how: "created", at: 1 }] });
-	const confinable = { version: 1, on: false, extensionPath: path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "sandbox"), enforcement: "none", workerFlagsIn: (r: string) => ({ sandbox: "on", "sandbox-parent": r }) };
+	const confinable = { version: 1, on: false, extensionPath: path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "sandbox"), enforcement: "none", workerLaunch: (req: { root?: string }) => ({ kind: "pi", extensionPath: path.resolve(path.dirname(new URL(import.meta.url).pathname), "..", "sandbox"), flags: { sandbox: "on", "sandbox-parent": req.root ?? "" } }) };
 	const file = sessionFile();
 	file.append("worktrees", tree("active"));
 	try {

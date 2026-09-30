@@ -74,7 +74,9 @@ confinement: its writes go only to the worktree, its git dirs and a private tmp 
 sandbox's private copies of the host caches), while nothing is hidden, the network is the host's
 (its resolver included) and the environment is passed as it is. No policy file is read for it.
 If the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A
-Claude Code worker gets only the spawn-time check.
+Claude Code worker there is confined the same way, narrowed to the worktree or write-only, with
+its own state and token as §chat.sandbox/claude-state says; in write-only its environment is the
+host's less any login or token variable.
 
 ## §chat.worktrees/worktree-config — A worker on the worktree's own agent dir
 

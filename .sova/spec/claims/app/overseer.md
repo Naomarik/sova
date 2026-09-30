@@ -688,6 +688,10 @@ itself.
   chart holds before it reaches a person or the client's code, "{what} starts in {n} min unless
   you cancel it.", carrying the hold (`held: {id, goesAt, what}`) so the list can offer Cancel.
   Never a phone notification.
+- **Needs you, a message not sent** (§app.outreach/send): `outreach-not-sent`, one per project
+  overseer's WhatsApp send whose last outcome is refused, failed or unknown, "The WhatsApp message
+  to {name} was not sent: {reason}.", opening the person's page, until a later send to that person
+  in that project goes, or 7 days pass. Never a phone notification.
 - **Finished (decide), a conflict for the operator** (§app.requirements/routing):
   `conflict-to-operator`, one per open conflict routed to the operator, or not routed, that no open
   settle session asks about: "Settle a conflict in {project}: {nameA} and {nameB} disagree about

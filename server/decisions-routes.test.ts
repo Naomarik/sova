@@ -110,6 +110,18 @@ describe("decisions routes", async () => {
     assert.deepEqual((await call("GET", `${base}/decisions`)).json.ownerAreas, ["website"]);
   });
 
+  test("GET …/conflicts lists the project's conflicts; POST …/draft rewrites its draft; POST …/decisions/:did/text needs keep or restore", async () => {
+    const base = `/api/orgs/${a.id}/projects/${pa.id}`;
+    const list = await call("GET", `${base}/conflicts`);
+    assert.deepEqual([list.status, list.json], [200, []]);
+    assert.equal((await call("GET", `/api/orgs/${a.id}/projects/${pb.id}/conflicts`)).status, 404, "another org's project");
+    const drafted = await call("POST", `${base}/draft`);
+    assert.equal(drafted.status, 200);
+    assert.ok(Array.isArray(drafted.json.decisions));
+    assert.equal((await call("POST", `${base}/decisions/x:y/text`, { action: "sure" })).status, 400);
+    assert.equal((await call("POST", `${base}/decisions/x:y/text`, { action: "keep" })).status, 404, "an unknown decision");
+  });
+
   test("frozen round-trips through the project", async () => {
     const r = await call("PATCH", `/api/orgs/${a.id}/projects/${pa.id}/spec`, { frozen: true });
     assert.equal(r.status, 200);

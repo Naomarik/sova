@@ -19,7 +19,7 @@ export interface CommitTarget {
   dir: string;
 }
 
-/** "roster.json, sessions/ (3 files)": the changed paths by their first segment, for the message. */
+/** "charts/, sessions/ (3 files)": the changed paths by their first segment, for the message. */
 export function changeSummary(paths: string[]): string {
   const tops = new Map<string, number>();
   for (const p of paths) {

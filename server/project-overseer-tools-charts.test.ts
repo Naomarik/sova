@@ -432,4 +432,23 @@ describe("the operator's own gap ideas (the project page's Ideas)", async () => 
     assert.equal((await send("PATCH", `/idea?id=${encodeURIComponent("§gap/export")}`, { status: "dropped" })).status, 200);
     assert.equal(po.itemOfGap(org.id, project.id, "§gap/export"), null);
   });
+
+  test("POST …/items/send answers 201 with the session and one link per person; a bad `to` is 400", async () => {
+    await clearHolds();
+    await run("sova_idea", { op: "add", id: "§gap/route-send", title: "Who approves refunds" });
+    assert.equal((await send("POST", "/items/send", { ideaId: "§gap/route-send", to: 5, publicTitle: "Refunds", question: "Who approves refunds?" })).status, 400);
+    const r = await send("POST", "/items/send", { ideaId: "§gap/route-send", to: tony.id, publicTitle: "Refunds", question: "Who approves refunds?" });
+    assert.equal(r.status, 201);
+    const out = (await r.json()) as { sessionId: string; links: { personId: string; name: string; link: string }[] };
+    assert.ok(out.sessionId);
+    assert.deepEqual(out.links.map((l) => [l.personId, l.name]), [[tony.id, "Tony Reyes"]]);
+    assert.match(out.links[0]!.link, /\/h\//);
+  });
+
+  test("POST …/worktrees/merge and …/worktrees/remove: a session that isn't the project's coding session is 404", async () => {
+    for (const path of ["/worktrees/merge", "/worktrees/remove"]) {
+      const r = await send("POST", path, { sessionId: "not-a-build" });
+      assert.equal(r.status, 404, `${path}: ${await r.text()}`);
+    }
+  });
 });

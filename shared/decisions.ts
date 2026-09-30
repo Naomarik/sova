@@ -4,9 +4,9 @@
  * imports nothing at runtime.
  *
  * Source of truth: the `sova-baton-decision` entries in the baton transcripts (shared/baton.ts).
- * The index below is derived from them and kept in the org's workspace repo:
- *   <workspace>/projects/<projectId>/decisions.json   { version: 1, decisions: DecisionRow[] }
- *   <workspace>/projects/<projectId>/conflicts.json   { version: 1, conflicts: Conflict[] }
+ * The index below is derived from them and held by the org's charts (q1: no decisions.json or
+ * conflicts.json): one `decision` chart per recorded decision, one `conflict` chart per conflict, their
+ * snapshots in the org's workspace repo (`charts/`).
  *
  * Operator routes (main listener only; never on the share listener):
  * GET   /api/orgs/:id/projects/:pid/decisions            -> DecisionsInfo (syncs the index from the transcripts first)

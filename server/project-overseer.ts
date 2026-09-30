@@ -115,7 +115,7 @@ import { PO_BUILTINS, projectOverseerTools, type PoToolHost } from "./project-ov
 /**
  * The project overseer (§app/project-overseer): one special session per org project. Like the
  * Overseer (server/overseer.ts) it is an ordinary webapp-owned pi session with a marker, a runtime
- * loadout and an identity that is not the file (its project's state.json points at the current
+ * loadout and an identity that is not the file (its project chart's `overseer` points at the current
  * conversation; a clear rotates it). Unlike it: its file lives in the org's workspace repo
  * (`<workspace>/sessions/`), its cwd is the project root, it loads no pi-config extension, and
  * what it may do in a run the operator did not start is set per project (autonomy L0–L3, enforced
@@ -179,7 +179,7 @@ function createPoFile(orgId: string, projectId: string): { id: string; path: str
 
 /**
  * An attach (a restored clone): the overseer conversations' listing title, web origin and write-guard
- * stat are host-local, so they are derived again from each project's state.json (a title the
+ * stat are host-local, so they are derived again from each project chart's overseer (a title the
  * operator already gave one here stays). Its level is paused by the attach itself (server/orgs.ts).
  */
 onOrgAttached((orgId, dir) => {

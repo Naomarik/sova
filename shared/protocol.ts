@@ -144,8 +144,8 @@ export interface SessionSummary {
   /** An ORGANIZATIONAL session (§app.session-list/organizations): the org's own records make it one —
       every file in an attached org's workspace `sessions/` (baton sessions, offers, the project
       overseer's current and cleared conversations, any unregistered file there), and every coding
-      session a project's `started.json` records (the overseer's `coding`, Start coding session's
-      `operator-coding`). Never inferred from the folder: a session the operator opens by hand in a
+      session a project's build charts record (the overseer's `coding`, Start coding session's
+      `operator-coding`), until its project retires it (r11). Never inferred from the folder: a session the operator opens by hand in a
       project root, a fork or copy of an org session, and anything on a host where the org is not
       attached are ordinary. The sidebar lists these only in its Organizations region. Safe by absence. */
   org?: SessionOrg;

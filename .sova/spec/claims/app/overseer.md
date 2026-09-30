@@ -467,12 +467,18 @@ itself.
   question(s) in {al_N} {title}" with one open alignment, else "… in {m} alignments"), dated by its
   last reply. It needs no signal and no model; it shows with the attention feature off too.
 - **Needs you, from signals** (§app.decisions/attention-signals, only while the list carries them):
-  `looping` for stuck subagents ("A subagent looks stuck:
-  {name}.", "Subagents look stuck: {a}, {b}.", else "{n} subagents look stuck."; adding " The last
-  turn looks like it went in circles too." when it does), one item. A main session's own
-  `looping`, alone, is **Finished (decide)**: "The last turn looks like it went in circles." The
-  names are stored with the signal and reach only the digest, never the session
-  list or the feed. With the feature off, none of these appear.
+  `asks-you` when the last reply asks the user something (§app.decisions/asks-user) and the
+  session has no `open-questions` item, "Asks you: {the asking sentence}", else "The last reply
+  asks you something.", dated by the classification; `team-stalled` when the session waits on
+  subagents that have all been quiet 15 minutes (§app.decisions/team-stall), "Waiting on {names},
+  quiet for {n} min.", dated by when the quiet began. With the feature off, neither appears.
+- **Finished (decide), from signals:** `looping`, one item per session, for its stuck subagents
+  (two looping checks in a row; "A subagent looks stuck: {name}.", "Subagents look stuck: {a},
+  {b}.", else "{n} subagents look stuck."; adding " The last turn looks like it went in circles
+  too." when it does) or for its own last turn alone ("The last turn looks like it went in
+  circles."). A stuck subagent is the parent session's item, never a blocker: the user acts
+  through the parent. The names are stored with the signal and reach only the digest, never the
+  session list or the feed. With the feature off, none of these appear.
 - **Needs you, from a baton session** (§app.baton/needs-you): `baton-needs-you` while the baton is
   with the operator, "<from> → you: <question>", or while a person holds it through a hand-off no
   live link exists for, "Send <name> their link: <question>".

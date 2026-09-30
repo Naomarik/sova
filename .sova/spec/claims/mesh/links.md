@@ -107,7 +107,7 @@ not the user's message and the main transcript never shows it:
 - It never titles the session, and session tags skip it (§app.decisions/session-tags), so a
   partner's words never become the session's topic.
 - A turn it opened still counts as finished work the user hasn't seen, like any other finished
-  turn. Nothing reads whether a reply asks something (§app.decisions/attention-signals), so a
+  turn. Whether its reply asks something is never checked (§app.decisions/asks-user), so a
   question to the partner never puts the session in Needs you.
 - It never passes through the web queue (§mesh.links/delivery), so it is never a queued row and
   Stop never hands it back.

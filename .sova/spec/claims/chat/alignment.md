@@ -383,7 +383,7 @@ change parses only the lines appended since (a file that shrank or was rewritten
   is hidden from assistive tech, and the hidden words "3 open questions. " (1: "1 open question. ")
   carry it. The title is "3 open questions in 2 alignments", or, when one alignment asks,
   "3 open questions in al_4 {its title}". It takes precedence over the
-  looping mark, never clears on a visit (it is a fact of the session, not news), hides on the open
+  asks-you and looping marks, never clears on a visit (it is a fact of the session, not news), hides on the open
   session like every line-1 mark, and hides while this tab runs a turn there.
 - **Needs you.** An idle, unarchived session with open questions is an act item of the attention
   digest, kind `open-questions` ("3 open questions in al_3 Autonomy settings" or "… in 2

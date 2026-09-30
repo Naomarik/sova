@@ -171,7 +171,7 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -2678,7 +2678,7 @@
     "§app.overseer/attention-digest": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/attention.ts",
         "server/live.ts",
@@ -3168,7 +3168,7 @@
     "§app.decisions/providers": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/decide-jev.ts",
         "server/decide-llm.ts",
@@ -3245,7 +3245,7 @@
     "§app/decisions": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "shared/protocol.ts",
         "server/decide.ts"
@@ -3429,7 +3429,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -6213,7 +6213,7 @@
     "§chat.alignment/session-mark": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/align-state.ts",
         "server/align-state.test.ts",
@@ -8139,6 +8139,58 @@
         "server/share/ws-hop.ts",
         "server/share-ws-hop.test.ts",
         "server/share-router.test.ts"
+      ]
+    },
+    "§app.decisions/asks-user": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/attention-signals.ts",
+        "server/signals-store.ts",
+        "server/attention.ts",
+        "src/lib/signals.ts",
+        "src/lib/agents-board.ts",
+        "shared/protocol.ts",
+        "src/design/base.css",
+        "server/attention-signals.test.ts",
+        "server/signals-store.test.ts",
+        "server/attention.test.ts",
+        "src/lib/signals.test.ts",
+        "src/lib/agents-board.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/attention-signals",
+        "§chat.alignment/session-mark"
+      ]
+    },
+    "§app.decisions/call-ledger": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/decide-runtime.ts",
+        "server/decide-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/providers"
+      ]
+    },
+    "§app.decisions/team-stall": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/attention-signals.ts",
+        "server/signals-store.ts",
+        "server/attention.ts",
+        "server/overseer.ts",
+        "server/attention-signals.test.ts",
+        "server/attention.test.ts"
+      ],
+      "requires": [
+        "§app.decisions/attention-signals",
+        "§app.overseer/attention-digest"
       ]
     }
   },

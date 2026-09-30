@@ -16,6 +16,7 @@
     [com.fulcrologic.statecharts.protocols :as sp]
     [com.fulcrologic.statecharts.registry.local-memory-registry :as lmr]
     [sova.org-charts.charts.registry :as registry]
+    #?(:cljs [sova.org-charts.engine.bounded :as bounded])
     [sova.org-charts.engine.dsl :as dsl]
     [taoensso.timbre]))
 
@@ -62,7 +63,8 @@
          reg (lmr/new-registry)]
      (doseq [[nm {:keys [chart]}] registry/charts] (sp/register-statechart! reg (keyword nm) chart))
      {:env {::sc/statechart-registry reg ::sc/data-model dm ::sc/event-queue q
-            ::sc/processor (alg/new-processor) ::sc/invocation-processors [inv]
+            ;; on Node, the engine's step limit: an eventless cycle throws at once instead of hanging
+            ::sc/processor #?(:cljs (bounded/new-processor) :clj (alg/new-processor)) ::sc/invocation-processors [inv]
             ::sc/execution-model (lambda/new-execution-model dm q)}
       :queue q :invocations inv :sessions (atom {}) :charts (atom {}) :refused (atom []) :delivered (atom [])})))
 
@@ -136,7 +138,9 @@
   (loop [n 0]
     (let [{:keys [now pending]} @(:state queue)
           due (first (sort-by (juxt :time :ordinal) (filter #(<= (:time %) now) pending)))]
-      (when (and due (< n 10000))
+      (when due
+        ;; a send that re-arms itself for now, forever, fails the test instead of hanging it
+        (when (>= n 10000) (throw (ex-info (str "Queue limit: more than 10000 events due at " now " (a timer loop?)") {:due (:event due)})))
         (swap! (:state queue) update :pending (fn [p] (vec (remove #(identical? % due) p))))
         (if (contains? @(:sessions h) (:target due))
           (deliver! h due)

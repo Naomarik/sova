@@ -164,7 +164,7 @@ export class Sender extends EventEmitter {
     const b = this.budget()
     if (b.hour >= b.perHour || b.day >= b.perDay) {
       const which = b.hour >= b.perHour ? `${b.hour} in the last hour` : `${b.day} in the last day`
-      this.hold('down', `Reconnect budget spent (${which}): press Reconnect when WhatsApp is reachable again.`)
+      this.hold('down', `Reconnect budget spent (${which}).`)
       return false
     }
     this.s.reconnects.push(this.now())
@@ -221,7 +221,7 @@ export class Sender extends EventEmitter {
       return
     }
     // Never pair on our own: saved creds that WhatsApp answers with a QR are not accepted any more.
-    this.hold('logged-out', 'WhatsApp asked to link this device again: the saved credentials were not accepted. Unlink, then pair again.')
+    this.hold('logged-out', 'WhatsApp asked to link this device again: the saved credentials were not accepted.')
   }
 
   onOpen(me) {
@@ -256,13 +256,13 @@ export class Sender extends EventEmitter {
     }
     switch (code) {
       case 401:
-        return this.hold('logged-out', 'The phone unlinked this device (401). Its credentials are kept; unlink, then pair again to resume.', 401)
+        return this.hold('logged-out', 'The phone unlinked this device (401). Its credentials are kept.', 401)
       case 440:
-        return this.hold('replaced', 'Another process opened these credentials (440). Stop the other copy, then press Reconnect.', 440)
+        return this.hold('replaced', 'Another process opened these credentials (440).', 440)
       case 403:
-        return this.hold('blocked', 'WhatsApp refused this account (403), possibly a ban. Sending is paused: wait, then Reconnect.', 403)
+        return this.hold('blocked', 'WhatsApp refused this account (403), possibly a ban. Sending is paused.', 403)
       case 500:
-        return this.hold('down', 'WhatsApp reported a bad session (500). Press Reconnect; if it repeats, unlink and pair again.', 500)
+        return this.hold('down', 'WhatsApp reported a bad session (500).', 500)
       case 405:
         if (!this.versionRefetched) {
           this.versionRefetched = true
@@ -271,7 +271,7 @@ export class Sender extends EventEmitter {
         return this.hold('down', 'WhatsApp rejects this WA Web version (405) even after refetching it: update the sender.', 405)
     }
     if (TRANSIENT.has(code)) return this.scheduleReconnect(code)
-    this.hold('down', `The connection closed with ${code ?? 'no code'}, which the sender does not retry on its own. Press Reconnect.`, code)
+    this.hold('down', `The connection closed with ${code ?? 'no code'}, which the sender does not retry on its own.`, code)
   }
 
   async refetchAndReconnect() {
@@ -570,7 +570,7 @@ export class Sender extends EventEmitter {
     this.save()
     this.event('receipt', { ref, idem, status, ...(code != null ? { code: String(code) } : {}) })
     if (status === 'failed' && String(code) === '463') {
-      this.hold('blocked', 'WhatsApp restricted this account from starting new chats (463). Sending is paused: wait, then Reconnect.', 463)
+      this.hold('blocked', 'WhatsApp restricted this account from starting new chats (463). Sending is paused.', 463)
     }
   }
 

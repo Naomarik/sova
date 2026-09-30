@@ -41,7 +41,7 @@ export function fileStore({ stateFile, eventsFile }) {
   // no sends) until the operator looks and presses Reconnect, rather than start over with a clean slate.
   const state =
     read === CORRUPT || !read || typeof read !== 'object'
-      ? { ...emptyState(), hold: { state: 'down', why: `${stateFile} could not be read; check it, then Reconnect.` } }
+      ? { ...emptyState(), hold: { state: 'down', why: `${stateFile} could not be read.` } }
       : { ...emptyState(), ...read }
   const events = readJson(eventsFile, () => [])
   return {

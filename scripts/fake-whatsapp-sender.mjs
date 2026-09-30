@@ -29,7 +29,10 @@ try {
 
 if (argv[0] === 'ctl') {
   const [, what, code] = argv
-  const c = await connectIpc(config.socket)
+  const c = await connectIpc(config.socket).catch((err) => {
+    process.stderr.write(`fake-whatsapp-sender: no sender answers on ${config.socket} (${err.code || err.message})\n`)
+    process.exit(1)
+  })
   const r = await c.request('fake', { do: what, ...(code ? { code: Number(code) } : {}) })
   process.stdout.write(JSON.stringify(r) + '\n')
   c.close()
@@ -125,6 +128,9 @@ const ipc = await serveIpc({
       return { ok: false, code: 'bad-request', retryable: false, why: 'fake do: close | ack-error | send-throw' }
     },
   },
+}).catch((err) => {
+  process.stderr.write(`fake-whatsapp-sender: ${err.message}\n`)
+  process.exit(3)
 })
 const stop = async () => {
   core.stop()

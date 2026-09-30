@@ -69,8 +69,18 @@ function printQr(qr) {
   )
 }
 
+// What the operator does next, per state; the guide's "Recover" section says more.
+const NEXT = {
+  unpaired: 'sova-whatsapp pair',
+  'logged-out': 'sova-whatsapp unlink --yes, then sova-whatsapp pair',
+  replaced: 'stop the other copy for good, then sova-whatsapp reconnect',
+  blocked: 'wait a day or more, lower the limits, then sova-whatsapp reconnect and sova-whatsapp resume',
+  down: 'fix the cause, then sova-whatsapp reconnect',
+}
+
 function describeStatus(s) {
   const lines = [`state:      ${s.state}${s.why ? ` — ${s.why}` : ''}`]
+  if (NEXT[s.state]) lines.push(`next step:  ${NEXT[s.state]} (docs/outreach/whatsapp.md, "Recover")`)
   if (s.retryAt) lines.push(`next try:   ${s.retryAt}`)
   lines.push(`paused:     ${s.paused ? 'yes' : 'no'}`)
   if (s.me) lines.push(`linked to:  ${s.me}`)
@@ -139,7 +149,7 @@ async function status() {
   if (flag('json')) return out(JSON.stringify(offline))
   out('running:    no')
   out(`paired:     ${offline.paired ? 'yes' : 'no'}`)
-  if (offline.hold) out(`stopped as: ${offline.hold.state} — ${offline.hold.why}`)
+  if (offline.hold) out(`stopped as: ${offline.hold.state} — ${offline.hold.why}\nnext step:  start the sender, then ${NEXT[offline.hold.state]}`)
   out(`paused:     ${offline.paused ? 'yes' : 'no'}`)
 }
 

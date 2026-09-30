@@ -3,7 +3,7 @@ import type { BatonViewItem } from "../../shared/baton";
 import { linkSegments } from "../lib/share-linkify";
 import "./thread.css";
 import { createMarkdownPatcher } from "../vis/hydrate";
-import { renderShareMarkdown, type ShareVisual } from "./markdown";
+import { renderShareMarkdown, type ShareVisKinds, type ShareVisual } from "./markdown";
 import { mountShareVisual } from "./vis";
 
 // A conversation's items as an outsider reads them: the share page and the owner page render the
@@ -14,12 +14,13 @@ const peopleWord = (n: number) => (n === 1 ? "1 person" : `${n} people`);
 
 /** A reply as markdown, its drawings mounted into it. The HTML reaches the DOM one top-level block
     at a time (vis/hydrate.tsx), so while a reply streams the drawings above stay put.
-    `streaming`: an unclosed `vis` fence is still being written. */
-export function Reply(props: { text: string; streaming?: boolean }) {
+    `streaming`: an unclosed `vis` fence is still being written. `kinds`: the fences drawn (the
+    business kinds unless the page says otherwise). */
+export function Reply(props: { text: string; streaming?: boolean; kinds?: ShareVisKinds }) {
   let el!: HTMLDivElement;
   let patcher: ReturnType<typeof createMarkdownPatcher<ShareVisual>> | undefined;
   createEffect(() => {
-    const r = renderShareMarkdown(props.text, !!props.streaming);
+    const r = renderShareMarkdown(props.text, !!props.streaming, props.kinds);
     patcher ??= createMarkdownPatcher(el, mountShareVisual);
     patcher.patch(r);
   });

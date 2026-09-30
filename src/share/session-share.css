@@ -1,0 +1,53 @@
+/* A shared session's thread (§app/session-share/content): the share page and the Share sheet's
+   Preview. Token values only; thread.css draws the bubbles. */
+.ss-status { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.ss-earlier { display: flex; flex-direction: column; align-items: center; gap: var(--space-1); }
+/* A user message may carry images and no text. */
+.ss-msg { min-width: 0; }
+.ss-msg .ss-images:not(:first-child) { margin-top: var(--space-2); }
+
+/* The images embedded in a message, as they are: a wrapping row of thumbnails, each a link to the
+   full image. Bounded so a tall screenshot doesn't take the page. */
+.ss-images { display: flex; flex-wrap: wrap; align-items: flex-start; gap: var(--space-2); }
+.ss-image {
+  display: block;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  background: var(--color-sunken);
+  line-height: 0;
+}
+.ss-image img { display: block; max-width: min(100%, 320px); max-height: 240px; width: auto; height: auto; object-fit: contain; }
+.ss-image:focus-visible { outline: var(--focus-width) solid var(--focus-color); outline-offset: var(--focus-offset); }
+
+/* A vis drawing a session share can't draw as a figure: an svg as an image (no script, no
+   network), code and html as their source. */
+.share-vis-image,
+.share-vis-source { margin: var(--space-3) 0; display: flex; flex-direction: column; gap: var(--space-1); min-width: 0; }
+.share-vis-caption { font-size: var(--fs-caption); font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.share-vis-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  padding: var(--space-3);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-sizing: border-box;
+}
+.share-vis-source pre {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--r-sm);
+  background: var(--color-sunken);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  max-height: 360px;
+}
+.share-msg-reply:has(.share-vis-source, .share-vis-image) { align-self: stretch; }
+.ss-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+/* The thread's own column, so the Share sheet's Preview (which doesn't load share.css) lays out
+   the same as the page. */
+.ss-thread { display: flex; flex-direction: column; gap: var(--space-3); }

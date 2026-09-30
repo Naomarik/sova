@@ -81,7 +81,7 @@ test("stalledTitle and heldFromLine say the lane state in words", () => {
   const r = row("x", "asking", ago(4 * 24 * H), { stalled: { since: ago(H) } });
   assert.equal(stalledTitle(r, NOW), "Waiting past its stall time: asking for 4d. The overseer was asked to look.");
   assert.equal(stalledTitle(row("y", "asking"), NOW), "");
-  assert.equal(heldFromLine({ held: { since: ago(H), from: "needs-operator" } }), "Resume puts it back at needs you.");
+  assert.equal(heldFromLine({ held: { since: ago(H), from: "needs-operator" } }), "Resume puts it back where it was: needs you.");
   assert.equal(heldFromLine({}), "");
 });
 

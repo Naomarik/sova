@@ -63,7 +63,7 @@ export function PipelineCard(props: { orgId: string; projectId: string }) {
     try {
       poll.set(keyed(await (hold ? holdGap : resumeGap)(props.orgId, props.projectId, r.itemId)));
       setError(null);
-      const done = hold ? `${r.title} is on hold. Nothing starts for it until you resume it.` : `${r.title} is back at ${phaseDetail(r.held?.from ?? r.phase).toLowerCase()}.`;
+      const done = hold ? `${r.title} is on hold. Nothing starts for it until you resume it.` : `${r.title} is back where it was: ${phaseDetail(r.held?.from ?? r.phase).toLowerCase()}.`;
       toast(done);
       announce(done);
     } catch (err) {

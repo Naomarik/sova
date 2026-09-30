@@ -7,7 +7,7 @@
 import type { TranscriptItem } from "../../shared/protocol";
 import { entryIdOf } from "./jump";
 
-export type MessageActionKind = "copy" | "fork" | "rewind" | "regenerate" | "remove";
+export type MessageActionKind = "copy" | "fork" | "share" | "rewind" | "regenerate" | "remove";
 
 /** The actions a LANDED message offers. A queued message offers only `remove`, which is about
     the outgoing queue rather than about an entry, and carries its own reason (queueRemoveReason). */
@@ -94,12 +94,12 @@ export function stripsByRow(rows: readonly TranscriptItem[]): Map<number, Messag
 }
 
 /**
- * What a strip offers, in order: the safe actions first, then a gap, then the one that changes
- * the branch. `copyable` is false for an images-only message — a Copy that copies "" would claim
- * to have copied the message.
+ * What a strip offers, in order: the safe actions first (Share opens the share page with its
+ * start on this message), then a gap, then the one that changes the branch. `copyable` is false
+ * for an images-only message — a Copy that copies "" would claim to have copied the message.
  */
 export function actionsFor(role: MessageRole, opts: { copyable: boolean }): LandedActionKind[] {
-  const safe: LandedActionKind[] = opts.copyable ? ["copy", "fork"] : ["fork"];
+  const safe: LandedActionKind[] = opts.copyable ? ["copy", "fork", "share"] : ["fork", "share"];
   return [...safe, role === "user" ? "rewind" : "regenerate"];
 }
 
@@ -107,6 +107,7 @@ export function actionsFor(role: MessageRole, opts: { copyable: boolean }): Land
 export const ACTION_LABEL: Record<MessageActionKind, string> = {
   copy: "Copy message",
   fork: "Fork the session from here",
+  share: "Share from here",
   rewind: "Rewind to before this message",
   regenerate: "Regenerate this reply",
   remove: "Remove this queued message",
@@ -140,6 +141,9 @@ export const REGENERATE_CONFIRM = {
 /** A reply to a scheduled wake-up has no message of the user's to send again. */
 export const REGENERATE_WAKE_REASON = "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again.";
 export const REGENERATE_LINK_REASON = "That reply answered a linked session's message, not one you sent, so there's nothing to send again.";
+
+/** Share from here before the session list has named the session: the share page needs its id. */
+export const SHARE_WAIT_REASON = "Sova is still reading this session's details. Share enables itself once they load.";
 
 export const ACTION_CONFIRM: Partial<Record<MessageActionKind, { label: string; note: string }>> = {
   rewind: REWIND_CONFIRM,
@@ -188,6 +192,9 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
   switch (kind) {
     // Copy takes text already on the screen: nothing can refuse it, watch mode included.
     case "copy":
+      return null;
+    // Share only opens the share page, which reads: a watch or a live terminal can't refuse it.
+    case "share":
       return null;
     // Fork never writes to THIS session — it reads it — so a model switch or an archived pane
     // doesn't touch it. What stops it is somebody else writing the file.

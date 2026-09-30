@@ -473,7 +473,8 @@ function effectiveOfData(d: Record<string, unknown>): { tz: string; hours: Perso
     const e = d.effectiveHours;
     const tz = isObj(e) && typeof e.tz === "string" && e.tz ? e.tz : undefined;
     const h = isObj(e) ? hoursRecord(e.hours) : undefined;
-    return tz && h ? { tz, hours: h, inherited: d.hoursInherited === true } : null;
+    // The chart says whose they are (hours-from: own · company · none); a snapshot before it, hoursInherited.
+    return tz && h && d.hoursFrom !== "none" ? { tz, hours: h, inherited: d.hoursFrom === "company" || (d.hoursFrom === undefined && d.hoursInherited === true) } : null;
   }
   const tz = typeof d.tz === "string" && d.tz ? d.tz : undefined;
   const h = hoursRecord(d.hours);

@@ -112,6 +112,10 @@ export interface ProbeResult {
   ms?: number;
 }
 
+/** Whether a probe reached the peer: a skewed one answered too, as its session list and its own
+    calls do, so it is up to the hooks (reading it as down made each poll a comeback). */
+export const answered = (probe: ProbeResult): boolean => probe.state === "up" || probe.state === "skewed";
+
 /** GET <base>/api/peer/hello, classified. Never throws. */
 export async function probeHello(base: string): Promise<ProbeResult> {
   const t0 = performance.now();

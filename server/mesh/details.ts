@@ -17,7 +17,7 @@ import { stateRoot } from "../state-root";
 import { bootBuild } from "./build-id";
 import { BatteryReader, buildCommit, ClaudeFinder, cores, deviceType, diskOf, loadAverages, type Machine, machineUptime, memory, modelName, realMachine } from "./details-collect";
 import { DEFAULT_SERVE_PORT, frontDoorOrder, noBrowserIds } from "./front-door";
-import { ownHello, peerLastSeen, PROBE_TIMEOUT_MS, probePeer } from "./hello";
+import { answered, ownHello, peerLastSeen, PROBE_TIMEOUT_MS, probePeer } from "./hello";
 import type { MeshApi } from "./index";
 import { browserAccessSet, nextLabelAt, type PeerEntry, type PeersConfig, selfBrowserAccess } from "./peers";
 
@@ -185,7 +185,7 @@ export function mountDetails(app: Hono, mesh: MeshApi, sources: DetailsSources, 
       Promise.all(
         asked.peers.map(async (p) => {
           const probe = await probePeer(p);
-          mesh.sawPeer(p.id, probe.state === "up");
+          mesh.sawPeer(p.id, answered(probe));
           // Details are outside the protocol hash, so a skewed host is asked too.
           const got = probe.state === "up" || probe.state === "skewed" ? await peerDetails(p) : { unavailable: probe.state as "down" | "refused" };
           return { probe, got };

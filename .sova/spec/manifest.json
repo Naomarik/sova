@@ -2167,10 +2167,12 @@
     "§mesh.peers/health": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/mesh/index.ts",
-        "server/mesh/hello.ts"
+        "server/mesh/hello.ts",
+        "server/mesh/details.ts",
+        "server/mesh/mesh.test.ts"
       ]
     },
     "§mesh.peers/hello": {
@@ -10261,6 +10263,18 @@
       "code": [
         "pi-config/extensions/mode/spec-guard.ts",
         "pi-config/extensions/claude-code/spec-hooks.ts"
+      ]
+    },
+    "§chat.worktrees/merged-state": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.worktrees/entry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/worktrees/git.ts",
+        "pi-config/extensions/worktrees/git.test.ts"
       ]
     }
   },

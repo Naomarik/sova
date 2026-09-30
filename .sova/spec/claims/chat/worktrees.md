@@ -141,6 +141,16 @@ the same commit.
 A merge this session did not make gets no card; the pane still shows the worktree as merged
 (§chat.worktrees/pane).
 
+## §chat.worktrees/merged-state — When git finds a worktree merged
+
+A tracked worktree counts as merged when its branch has commits beyond its base and all of them
+are in its base branch or in the repository's main branch (master, else main), whether or not a
+merge was recorded. A worktree made from another feature branch whose commits reached master but
+never that branch is merged into master. The target it is merged into is its base branch when
+that branch has it, else the main branch; one merged into neither is checked against its base
+branch (the main branch when it has none). A check that names its target, such as the one after
+a turn against the target seen at the turn's start, looks at that target only.
+
 ## §chat.worktrees/pane — The Worktrees section
 
 The session pane's Session tab (§app.subagents-pane/tabs) shows a read-only **Worktrees**

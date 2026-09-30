@@ -2788,6 +2788,9 @@ export interface AttentionItem {
       in the Organizations region's own Needs you, never in the global one. The Overseer's badge,
       briefs and sova_attention still count it. */
   org?: SessionOrgRef;
+  /** r12: an offer's invitees not reached yet (their working hours haven't come), by display name; `until`: their
+      next window (ISO), null when none is found. Only on a gathering session's item whose offer is open. */
+  waiting?: { name: string; until: string | null }[];
   /** kind `held-act` only: the hold's id (for `POST /api/orgs/:id/held/:holdId/cancel`), when it goes
       ahead (ms epoch), and its noun phrase, so the row recounts "{what} starts in {n} min unless you
       cancel it." as the minutes pass. */

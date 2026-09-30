@@ -295,10 +295,18 @@ export interface BatonStartResult {
 }
 
 /** An offer as the operator's strip shows it. */
+/** r12 (q15 C): whether an invitee of an offer has been reached (their link made, in their own working hours). */
+export type OfferReach =
+  | { state: "reached"; at?: string }
+  /** `until`: their next window (ISO), null when none is found; `paused`: the offer is leased, so nobody new is
+      reached until the lease lapses (rule 12). */
+  | { state: "waiting"; until: string | null; paused?: true };
+
 export interface OfferInfo {
   id: string;
   n: number;
-  to: { id: string; name: string }[];
+  /** `reach` is absent on an offer from before r12, and once it is withdrawn: everyone counts as reached. */
+  to: { id: string; name: string; reach?: OfferReach }[];
   state: Offer["state"];
   holder?: { id: string; name: string };
   leaseUntil?: string;

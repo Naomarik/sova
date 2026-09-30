@@ -41,7 +41,8 @@ once), **lease** (an offer's lock on its first taker).
   the file can't be made, the chart says so and nothing half-made is left. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its
   public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
   holder, state and message count — and the public title, only when the session head above shows a
-  different one (a renamed session): otherwise it would say the title twice — and Get Link / Turn Off Link / Take Back / Close
+  different one (a renamed session): otherwise it would say the title twice — its goal, folded under
+  **Goal** (§app.baton/goal-on-strip), and Get Link / Turn Off Link / Take Back / Close
   Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations); the strip never shows a profile. Each strip action re-reads the session list at once,
   so the ` · <holder>` suffix moves without waiting for the list's next poll.
 - **Loadout.** No pi-config extension, skill, prompt template or context file is loaded; the only

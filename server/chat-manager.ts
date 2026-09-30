@@ -45,6 +45,9 @@ import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
+import { excludedTools, GRANT_TOOLS, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { profileOnBranch } from "./session-profile";
+import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -799,6 +802,18 @@ function listCommands(session: AgentSession): SlashCommand[] {
   return out;
 }
 
+/** A session's title as the list would say it: its name, else its first message, else "Untitled". */
+function titleOf(sm: Pick<SessionManager, "getBranch">): string {
+  const branch = sm.getBranch();
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const e = branch[i]!;
+    if (e.type === "session_info" && typeof (e as { name?: unknown }).name === "string" && (e as { name: string }).name.trim()) return (e as { name: string }).name.trim();
+  }
+  const first = branch.find((e) => e.type === "message" && e.message.role === "user");
+  const t = first && first.type === "message" ? textBlocks((first.message as { content?: unknown }).content).replace(/\s+/g, " ").trim() : "";
+  return t ? t.slice(0, 80) : "Untitled";
+}
+
 function modelLabel(session: AgentSession): string | null {
   const m = session.model;
   return m ? `${m.provider}/${m.id}` : null;
@@ -834,7 +849,7 @@ const QUEUE_WAKE_EVENTS = new Set(["queue_update", "message_start", "turn_end", 
 
 /** Who a marked message is from: the Overseer (`sova-overseer-sent`, §app.overseer/sent-marker) or a
     baton session's participant (`sova-baton-sent`, §app.baton/attribution). */
-type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: string };
+type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: string } | { kind: "session"; sessionId: string; title: string; hop: number };
 
 /** A message whose user entry still needs its sender marker. `itemId`: it rode in on a queue
     item; `held` while that item has not departed, so the settle sweep leaves the mark alone (its
@@ -842,8 +857,38 @@ type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: s
 type SenderMark = { text: string; sender: Sender; itemId?: string; held?: boolean };
 
 /** The sender a queue item carries, if any. */
-const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton">): Sender | null =>
-  item.overseer ? { kind: "overseer", ...(item.overseer.overseerId ? { overseerId: item.overseer.overseerId } : {}) } : item.baton ? { kind: "baton", by: item.baton.by } : null;
+const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton" | "session">): Sender | null =>
+  item.overseer
+    ? { kind: "overseer", ...(item.overseer.overseerId ? { overseerId: item.overseer.overseerId } : {}) }
+    : item.baton
+      ? { kind: "baton", by: item.baton.by }
+      : item.session
+        ? { kind: "session", ...item.session }
+        : null;
+
+/** Write a sender's invisible marker for the user entry `targetId`; returns the marker's id. */
+function appendSenderMarker(sm: SessionManager, targetId: string, sender: Sender): string {
+  if (sender.kind === "baton") return sm.appendCustomEntry(BATON_SENT_ENTRY, { v: 1, targetId, by: sender.by } satisfies BatonSentData);
+  if (sender.kind === "session")
+    return sm.appendCustomEntry(SESSION_SENT_ENTRY, { v: 1, targetId, from: { sessionId: sender.sessionId, title: sender.title }, hop: sender.hop } satisfies SessionSentData);
+  return sm.appendCustomEntry(OVERSEER_SENT_ENTRY, { v: 1, targetId, ...(sender.overseerId ? { overseerId: sender.overseerId } : {}) } satisfies OverseerSentMarkerData);
+}
+
+/** A runtime's profile (§chat.profiles/enforcement): the branch's snapshot when it was built, and,
+    when it grants something, the run state and limits its session tools use. */
+export interface ProfileState {
+  data: ProfileEntryData | null;
+  excluded: string[];
+  run?: RunState;
+  limits?: SessionLimits;
+}
+
+/** The One at a time check at the first message (§chat.profiles/singleton), bound by the module
+    that can list sessions (server/session-profile-routes.ts). Resolves to the holder, or null. */
+let singletonCheck: ((profileId: string, path: string) => Promise<{ id: string; path: string; title: string } | null>) | null = null;
+export function setSingletonCheck(fn: typeof singletonCheck): void {
+  singletonCheck = fn;
+}
 
 /** One embedded pi runtime for one session file, shared by all connected chat clients. */
 class ChatSession {
@@ -882,6 +927,10 @@ class ChatSession {
   }
   /** Texts sent here whose user entry still needs its sender marker. */
   private senderMarks: SenderMark[] = [];
+  /** This runtime's profile, set by openSession (null for special kinds). */
+  profileState: ProfileState | null = null;
+  /** The One at a time check passed for this runtime's first message. */
+  private singletonCleared = false;
   /**
    * A prompt() handed to an idle session whose run has not begun: the SDK awaits its input
    * handlers before `isStreaming` turns true, and a second prompt() in that gap is refused
@@ -1055,6 +1104,7 @@ class ChatSession {
     const sender = senderOfItem(item);
     const mark: SenderMark | null = sender ? { text: item.text, sender, itemId: item.id, held: true } : null;
     if (mark) this.senderMarks.push(mark);
+    if (sender?.kind === "session") this.profileState?.run?.expectHop(item.text, sender.hop);
     if (!streaming) {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
@@ -1086,6 +1136,8 @@ class ChatSession {
       goes through its `userSend`, so the turn it opens is known as theirs by identity, not text. */
   private toSdk<T>(origin: QueueItem["origin"], send: () => T, confirm?: string): T {
     if (origin === "client" && this.specialEntry?.userSend) return this.specialEntry.userSend(this.path, send);
+    // A profile session with powers tells the user's own messages by identity too (its limits).
+    if (origin === "client" && this.profileState?.run) return this.profileState.run.turns.send(send);
     return this.overseer && origin === "client" && overseerRuntime ? overseerRuntime.userSend(send, confirm) : send();
   }
 
@@ -1100,10 +1152,10 @@ class ChatSession {
    */
   private heldForCompaction(
     err: unknown,
-    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"]; baton?: WebQueueItem["baton"] },
+    item: { kind: WebQueueItem["kind"]; text: string; images?: QueueImage[]; origin: QueueItem["origin"]; id?: string; overseer?: WebQueueItem["overseer"]; baton?: WebQueueItem["baton"]; session?: WebQueueItem["session"] },
   ): boolean {
     if (!isCompactionInProgress(err) || this.disposed) return false;
-    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}), ...(item.baton ? { baton: item.baton } : {}) });
+    this.queue.enqueue({ kind: item.kind, text: item.text, images: item.images, origin: item.origin, ...(item.id ? { id: item.id } : {}), ...(item.overseer ? { overseer: item.overseer } : {}), ...(item.baton ? { baton: item.baton } : {}), ...(item.session ? { session: item.session } : {}) });
     return true;
   }
 
@@ -1544,6 +1596,51 @@ class ChatSession {
     return cmd && /[\\/]extensions[\\/]mode[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
   }
 
+  /** The chat socket's `profile` message (§chat.profiles/applying). */
+  profileMessage(): Extract<ChatServerMessage, { type: "profile" }> {
+    const data = this.profileState?.data ?? null;
+    const active = this.session.getActiveToolNames();
+    const grants = data?.profile?.grant ?? [];
+    const granted = grants.flatMap((g) => GRANT_TOOLS[g]).filter((t) => active.includes(t));
+    let live = false;
+    try {
+      assertNotLive(this.path);
+    } catch {
+      live = true;
+    }
+    return {
+      type: "profile",
+      profile: data?.profile ?? null,
+      ...(data?.by ? { by: data.by } : {}),
+      locked: !this.isPristine(),
+      pickable: !this.special && !live,
+      tools: active,
+      removed: [...(this.profileState?.excluded ?? [])].filter((t) => this.session.extensionRunner.getAllRegisteredTools().some((r) => r.definition.name === t) || ["bash", "edit", "write"].includes(t)),
+      granted,
+    };
+  }
+
+  /**
+   * Write this session's profile entry (§chat.profiles/applying): refused once a user message is on
+   * the branch, mid-turn, TUI-live, for a foreign writer or a special kind. The caller disposes the
+   * runtime afterwards, so the next open builds it with the profile.
+   */
+  writeProfile(data: ProfileEntryData): void {
+    if (this.special) throw new RefusedError("This session can't take a profile.");
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    if (!this.isPristine()) throw new RefusedError("The profile is fixed once a message is sent.");
+    if (this.session.isStreaming || this.isCompacting() || this.starting) throw new BusyError("Wait for the reply to finish first.", "busy");
+    this.flushDeferredAppends(); // open-time entries go first, as in pinMode
+    this.session.sessionManager.appendCustomEntry(PROFILE_ENTRY, data);
+    markOwned(this.path);
+  }
+
+  /** Whether this chat is still before its first message (the picker is live). */
+  get pristine(): boolean {
+    return this.isPristine();
+  }
+
   modeMessage(): ChatServerMessage {
     const s = this.modeState;
     return { type: "mode", mode: s.mode, minorModes: [...s.minorModes], strict: s.strict, applies: this.modeApplies };
@@ -1791,6 +1888,8 @@ class ChatSession {
     client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
     this.sendSandbox((m) => client.send(m));
+    // Only when there is something to show: a profile, or a session still before its first message.
+    if (this.profileState?.data?.profile || this.isPristine()) client.send(this.profileMessage());
     const login = claudeLoginAfterHello(this.session.sessionManager.getBranch());
     if (login) client.send(login);
     const snap = this.workersSnapshot();
@@ -1833,7 +1932,15 @@ class ChatSession {
         or, when it is queued, at its hand-off; `sentByBaton` likewise marks it as a baton
         participant's (§app.baton/attribution). `delivery`: the kind it is queued as mid-turn, as
         the composer's Steer or a Playbook's follow-up; idle, either is a plain prompt. */
-    opts?: { replay?: boolean; sentByOverseer?: { overseerId?: string }; sentByBaton?: { by: string }; delivery?: WebQueueItem["kind"]; confirm?: string },
+    opts?: {
+      replay?: boolean;
+      sentByOverseer?: { overseerId?: string };
+      sentByBaton?: { by: string };
+      /** Another session's `session_send` (§chat.profiles/delivery): marked `sova-session-sent`. */
+      sentBySession?: { sessionId: string; title: string; hop: number };
+      delivery?: WebQueueItem["kind"];
+      confirm?: string;
+    },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
@@ -1848,8 +1955,9 @@ class ChatSession {
     if (this.session.isStreaming || this.isCompacting() || this.starting) {
       const overseer = opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {};
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
+      const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
       const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...confirm });
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -1860,9 +1968,12 @@ class ChatSession {
       ? { kind: "overseer", ...(opts.sentByOverseer.overseerId ? { overseerId: opts.sentByOverseer.overseerId } : {}) }
       : opts?.sentByBaton
         ? { kind: "baton", by: opts.sentByBaton.by }
-        : null;
+        : opts?.sentBySession
+          ? { kind: "session", ...opts.sentBySession }
+          : null;
     const send: SenderMark | null = sender ? { text, sender } : null;
     if (send) this.senderMarks.push(send);
+    if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
     const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }), opts?.confirm);
     this.noteStarting(turn);
     if (send)
@@ -1882,6 +1993,7 @@ class ChatSession {
         id: clientId,
         ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}),
         ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}),
+        ...(opts?.sentBySession ? { session: opts.sentBySession } : {}),
         ...(opts?.confirm ? { confirm: opts.confirm } : {}),
       };
       if (!this.heldForCompaction(err, item)) throw err;
@@ -1918,15 +2030,7 @@ class ChatSession {
       const leaf = sm.getLeafId();
       const entry = leaf ? sm.getEntry(leaf) : undefined;
       if (entry?.type !== "message" || entry.message.role !== "user") return;
-      const sender = send?.sender;
-      const markerId =
-        sender?.kind === "baton"
-          ? sm.appendCustomEntry(BATON_SENT_ENTRY, { v: 1, targetId: entry.id, by: sender.by } satisfies BatonSentData)
-          : sm.appendCustomEntry(OVERSEER_SENT_ENTRY, {
-              v: 1,
-              targetId: entry.id,
-              ...(sender?.kind === "overseer" && sender.overseerId ? { overseerId: sender.overseerId } : {}),
-            } satisfies OverseerSentMarkerData);
+      const markerId = appendSenderMarker(sm, entry.id, send?.sender ?? { kind: "overseer" });
       markOwned(this.path);
       const marker = sm.getEntry(markerId);
       if (marker) {
@@ -1990,12 +2094,7 @@ class ChatSession {
       for (const m of marks) this.dropSenderMark(m);
       const id = sm.appendMessage({ role: "user", content: [{ type: "text", text: item.text }, ...(item.images ?? [])], timestamp: Date.now() });
       const sender = senderOfItem(item);
-      const markerId =
-        sender?.kind === "baton"
-          ? sm.appendCustomEntry(BATON_SENT_ENTRY, { v: 1, targetId: id, by: sender.by } satisfies BatonSentData)
-          : sender?.kind === "overseer"
-            ? sm.appendCustomEntry(OVERSEER_SENT_ENTRY, { v: 1, targetId: id, ...(sender.overseerId ? { overseerId: sender.overseerId } : {}) } satisfies OverseerSentMarkerData)
-            : null;
+      const markerId = sender ? appendSenderMarker(sm, id, sender) : null;
       const items = [id, markerId].flatMap((eid) => {
         const entry = eid ? sm.getEntry(eid) : undefined;
         return entry ? normalizeEntry(entry as unknown as Record<string, any>) : [];
@@ -2164,6 +2263,23 @@ class ChatSession {
     };
     if (this.disposed) {
       client.send({ type: "error", code: "reloaded", message: "Session runtime was closed; reconnect" });
+      return;
+    }
+    // One at a time (§chat.profiles/singleton): the first message of a session whose profile is
+    // live in another one is refused, the draft kept, before anything is written.
+    const single = this.profileState?.data?.profile;
+    if ((msg.type === "prompt" || msg.type === "steer") && single?.singleton && !this.singletonCleared && singletonCheck && this.isPristine()) {
+      singletonCheck(single.id, this.path).then(
+        (holder) => {
+          if (holder) {
+            client.send({ type: "error", code: "refused", message: singletonRaceText(single.label), profileRunning: holder, ...(clientId ? { clientId } : {}) });
+            return;
+          }
+          this.singletonCleared = true;
+          this.handle(client, msg);
+        },
+        (err) => fail(err),
+      );
       return;
     }
     try {
@@ -2896,6 +3012,9 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
   // The chat that hosts this runtime, once bound: the vis extension is built before it exists, and
   // until bind() has resolved the chat's mode it reads the mode from the branch itself.
   const visHost: { chat?: ChatSession } = {};
+  // The profile the runtime was built with (§chat.profiles/enforcement), read from the branch at
+  // every build: a pick disposes the runtime, so a runtime never outlives the profile it has.
+  const profile: ProfileState = { data: null, excluded: [] };
   const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
     // The outline opt-in is declined for a FANOUT MEMBER, and the FILE says so, not a flag
     // threaded through acquireChat: its creation wrote the FANOUT_MEMBER_ENTRY marker beside the
@@ -2909,11 +3028,32 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     const special = kind ? (kind.entry ? await kind.entry.loadout(path) : await overseerLoadout(path)) : null;
     // An ordinary chat gets the default extensions plus the vis feedback extension
     // (server/vis-check.ts); the special loadouts keep exactly their own.
+    const data = special ? null : profileOnBranch(sessionManager.getBranch() as unknown as Parameters<typeof profileOnBranch>[0]);
+    const snap = data?.profile ?? null;
+    profile.data = data;
+    profile.run = undefined;
+    profile.limits = undefined;
+    if (snap?.grant.length) {
+      profile.limits = new SessionLimits(sessionManager.getSessionId(), snap.limits);
+      profile.run = new RunState(profile.limits);
+    }
+    const powers =
+      snap?.grant.length && profile.run && profile.limits
+        ? [sessionPowersExtension({ sessionId: sessionManager.getSessionId(), cwd, title: () => titleOf(sessionManager), profile: snap, run: profile.run, limits: profile.limits })]
+        : [];
     const services = special
       ? await servicesForCwd(cwd, modelRuntime, false, special.resourceLoaderOptions)
       : await servicesForCwd(cwd, modelRuntime, !isFanoutMember(sessionManager), {
-          extensionFactories: [...DEFAULT_EXTENSION_FACTORIES, visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null))],
+          extensionFactories: [
+            ...DEFAULT_EXTENSION_FACTORIES,
+            visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
+            ...powers,
+          ],
         });
+    // Removals: the SDK's excludeTools, a filter on the registry itself, so no extension's
+    // setActiveTools or re-registration brings a removed tool back.
+    const present = services.resourceLoader.getExtensions().extensions.flatMap((e) => [...e.tools.keys()]);
+    profile.excluded = snap?.remove.length ? excludedTools(snap.remove, present) : [];
     for (const d of services.diagnostics) console.warn(`[chat] runtime ${d.type}: ${d.message}`);
     // A session with no messages yet starts from the saved new-session defaults (web-defaults.ts):
     // resolve the stored model ref against models with configured auth and let the SDK clamp the
@@ -2942,7 +3082,13 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       model,
       ...(defaultThinking ? { thinkingLevel: defaultThinking as Parameters<AgentSession["setThinkingLevel"]>[0] } : {}), // same cast as setThinkingLevel above: our ladder has "off", the SDK's union doesn't
       ...(special ? { tools: special.tools, ...(special.customTools ? { customTools: special.customTools } : {}) } : {}),
+      ...(profile.excluded.length ? { excludeTools: profile.excluded } : {}),
     });
+    if (profile.run) {
+      const run = profile.run;
+      run.turns.watch(created.session.agent as unknown as Parameters<RunState["turns"]["watch"]>[0]);
+      created.session.subscribe((event) => run.observe(event as Parameters<RunState["observe"]>[0]));
+    }
     // The Overseer tells a message the user sent from every other by the object it reaches the Agent as.
     if (kind?.kind === "overseer") overseerRuntime?.watchSession(created.session);
     else kind?.entry?.watchSession?.(created.session, path);
@@ -2971,6 +3117,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     }
     visHost.chat = chat;
     chat.deferredAppends = deferred;
+    chat.profileState = profile;
     const kind = specialFor(sessionManager, path);
     if (kind && kind.kind !== "overseer") {
       chat.special = kind.kind;

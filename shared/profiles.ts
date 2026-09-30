@@ -23,6 +23,14 @@ export const CAPABILITY_TOOLS: Record<Removable, readonly string[]> = {
   timers: ["wake_nudge"],
 };
 
+/** Every tool the `*` groups hold today (pi-config's subagents and link extensions), so a runtime
+    excludes them by exact name even when an extension registers one after load. */
+export const KNOWN_REMOVABLE_TOOLS = [
+  "agent_spawn", "agent_resume", "agent_models", "agent_list", "agent_transcript", "agent_steer", "agent_kill", "agent_wait",
+  "team_create", "team_add", "team_eject", "team_list",
+  "link_members", "link_send", "link_inbox", "link_offer", "link_accept", "link_decline", "link_offers",
+] as const;
+
 /** The tools each grant adds (registered by the server's `sova-session-powers` extension). */
 export const GRANT_TOOLS: Record<Grantable, readonly string[]> = {
   "sessions.read": ["session_list", "session_detail", "session_read"],
@@ -246,7 +254,7 @@ export function toolRemoved(name: string, remove: readonly Removable[]): boolean
 /** The exact tool names to exclude from a runtime whose registry holds `present`. */
 export function excludedTools(remove: readonly Removable[], present: readonly string[]): string[] {
   const exact = remove.flatMap((cap) => CAPABILITY_TOOLS[cap].filter((t) => !t.endsWith("*")));
-  return [...new Set([...exact, ...present.filter((n) => toolRemoved(n, remove))])];
+  return [...new Set([...exact, ...[...KNOWN_REMOVABLE_TOOLS, ...present].filter((n) => toolRemoved(n, remove))])];
 }
 
 /** "Up to 3 hops · 10 sends per message you send · 40 a day on its own · 6 to one session per 10 min". */

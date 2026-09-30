@@ -90,6 +90,8 @@ export interface WebQueueItem {
   overseer?: { overseerId?: string };
   /** A baton participant sent it (§app.baton/attribution): marked `sova-baton-sent` at hand-off. */
   baton?: { by: string };
+  /** Another session sent it (`session_send`, §chat.profiles/delivery): marked `sova-session-sent` at hand-off. */
+  session?: { sessionId: string; title: string; hop: number };
   /** The Overseer only: a click on the confirm card of this tool call (§app.overseer/org-people-facing). */
   confirm?: string;
 }
@@ -277,6 +279,7 @@ export class WebQueue {
       ...(it.images?.length ? { images: it.images.length } : {}),
       origin: it.origin,
       ...(it.overseer ? { overseer: true as const } : {}),
+      ...(it.session ? { fromSession: { sessionId: it.session.sessionId, title: it.session.title } } : {}),
     });
     const out: QueueItem[] = [];
     if (this.inFlight) out.push(wire(this.inFlight, "sending"));
@@ -298,6 +301,7 @@ export class WebQueue {
     id?: string;
     overseer?: WebQueueItem["overseer"];
     baton?: WebQueueItem["baton"];
+    session?: WebQueueItem["session"];
   }): string {
     const item: WebQueueItem = {
       id: input.id || randomUUID(),
@@ -307,6 +311,7 @@ export class WebQueue {
       origin: input.origin,
       ...(input.overseer ? { overseer: input.overseer } : {}),
       ...(input.baton ? { baton: input.baton } : {}),
+      ...(input.session ? { session: input.session } : {}),
     };
     this.held.push(item);
     this.deps.onChange(this.snapshot());

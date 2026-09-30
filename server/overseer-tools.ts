@@ -34,6 +34,8 @@ import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { auditedAct, cut, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
+import { findProfile } from "./profiles-store";
+import { singletonRunningText, titleCase } from "../shared/profiles";
 
 export { renderTranscript, sessionRef };
 
@@ -657,6 +659,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       if (info && (info.status === "offline" || info.status === "error"))
         notes.push(`Target ${p.target} is ${info.status}${info.error ? ` (${info.error})` : ""}; its first prompt may fail.`);
     } else body = { cwd: p.cwd ?? "" };
+    if (typeof p.profile === "string" && p.profile) body.profile = p.profile;
     const created = await call("POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, "Creating the session");
     const s = created.json as SessionSummary;
@@ -694,8 +697,9 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     // Before its first reply a new session's derived title is "Untitled"; its first prompt is
     // what the list will call it, so the link says that.
     const title = typeof p.title === "string" && p.title.trim() ? p.title.trim() : hasPrompt ? cut(p.prompt, 60) : s.title;
-    const said = [`Created ${link({ id: s.id, title })} in ${whereOf(s)}${hasPrompt ? " and sent the first prompt" : ""}.`, ...notes];
-    return { content: text(said.join("\n")), details: { id: s.id, path: s.path } };
+    const prof = s.profile ? { id: s.profile.id, label: s.profile.label, icon: s.profile.icon } : undefined;
+    const said = [`Created ${link({ id: s.id, title })} in ${whereOf(s)}${prof ? ` from the ${prof.label} profile` : ""}${hasPrompt ? " and sent the first prompt" : ""}.`, ...notes];
+    return { content: text(said.join("\n")), details: { id: s.id, path: s.path, title, ...(prof ? { profile: prof } : {}) } };
   }
 
   /** sova_create_session with `host`, after its caps: the peer's own routes for create, title and
@@ -964,6 +968,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
         title: str("A title for the list, up to 80 characters."),
         group: str("Group id to add it to."),
+        profile: str('A saved or built-in profile id (§ profiles: what the session can do), this host only. Only profiles marked "The Overseer may start it". Its mode and model apply unless you give your own.'),
       }),
       execute: act("sova_create_session", async (p) => {
         const caps = host.caps();
@@ -976,6 +981,23 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         }
         const onPeer = typeof p.host === "string" && p.host.trim() !== "";
         if (onPeer && typeof p.group === "string" && p.group) throw new Refusal("A group can't be given with host: groups belong to one host. No session was created.");
+        // A profile (§chat/profiles): this host's, one the user let the Overseer start, and a One at
+        // a time one only while it isn't live; each refuses before anything is created or capped.
+        if (typeof p.profile === "string" && p.profile) {
+          if (onPeer) throw new Refusal("A profile can't be given with host: profiles belong to this host. No session was created.");
+          const prof = findProfile(p.profile);
+          if (!prof) throw new Refusal(`No profile "${p.profile}". No session was created.`);
+          if (!prof.overseerMayStart)
+            throw new Refusal(`The ${prof.label} profile isn't marked "The Overseer may start it" (Settings → Profiles), so you can't start it. No session was created; ask the user to start it or to allow it.`);
+          if (prof.singleton) {
+            const holder = (await host.sessions()).find((x) => x.profile?.id === prof.id && !x.archived);
+            if (holder)
+              return {
+                content: text(`${singletonRunningText(prof.label)} Nothing was created. It runs in ${link(holder)}; send to it with sova_send instead.`),
+                details: { refused: "singleton", profile: { id: prof.id, label: prof.label, icon: prof.icon }, running: { id: holder.id, path: holder.path, title: holder.title }, open: `Open the Running ${titleCase(prof.label)}` },
+              };
+          }
+        }
         // A peer that is down or skewed refuses before any cap is taken.
         const peer = onPeer ? await peerOf(p.host) : null;
         // Every check and reservation happens with no await between them: parallel creates in one

@@ -149,6 +149,9 @@ export interface SessionSummary {
       project root, a fork or copy of an org session, and anything on a host where the org is not
       attached are ordinary. The sidebar lists these only in its Organizations region. Safe by absence. */
   org?: SessionOrg;
+  /** The session's profile (§chat.profiles/model), from the newest `sova-profile` entry before its
+      first user message; absent for Default. */
+  profile?: SessionProfileField;
   /** Activity from this session's live record (a TUI's, or this server's own runtime): the
       sessions extension's `presence.activity`. Absent when no live record reports one (closed
       sessions, older writers). `error` is set only for state "error", ≤200 chars. */
@@ -258,6 +261,13 @@ export interface TranscriptItem {
       - `handoff`, `decision`, `done`, `offer`, `lease`, `proposal`, `wrapup`: rendered as cards
         (`BatonMark` in shared/baton.ts is the full union). */
   batonMark?: BatonMark;
+  /** A message another session sent (§chat.profiles/delivery): the invisible `sova-session-sent`
+      entry. Renders nothing itself; the client draws the sender header above the user row
+      `targetId` (resolving by id in either arrival order) and hides that row's header line. */
+  sessionMark?: { kind: "sent"; targetId: string; from: { sessionId: string; title: string }; hop: number };
+  /** The session's `sova-profile` entry (§chat.profiles/after-first-message): kind "info", drawn as
+      the muted "Profile: {label}" row only once a user message is on the branch; null = Default. */
+  profileMark?: { profile: SessionProfileField | null };
   /** kind "info" only: a subagents-team-event-v1 entry; `text` is `Team: ` + its sentence. */
   teamEvent?: TeamEvent;
   /** kind "worktree-merge" only: the `worktree-merge` extension message's details (§chat.worktrees/merge-card).
@@ -1839,6 +1849,37 @@ export interface QueueItem {
   origin: "client" | "server";
   /** The Overseer sent it (`sova_send` into a running session); the row reads "Overseer". */
   overseer?: true;
+  /** Another session sent it (`session_send`, §chat.profiles/delivery); the row reads "From {title}". */
+  fromSession?: { sessionId: string; title: string };
+}
+
+/** `SessionSummary.profile`. */
+export interface SessionProfileField {
+  id: string;
+  label: string;
+  icon: string;
+  singleton?: true;
+  builtin?: true;
+  custom?: true;
+  /** Picked by the Overseer or a start sheet, not on the empty screen. */
+  by?: "overseer" | "start";
+}
+
+/** The chat socket's `profile` message (§chat.profiles/applying): sent after `hello` and on every open. */
+export interface ChatProfileInfo {
+  /** The branch's whole snapshot; null = Default. */
+  profile: import("./profiles").ProfileEntryData["profile"];
+  by?: "overseer" | "start";
+  /** A user message is on the branch: fixed. */
+  locked: boolean;
+  /** The picker applies to this session at all (not special, not TUI-live). */
+  pickable: boolean;
+  /** The runtime's active tool names now. */
+  tools: string[];
+  /** Tools the removals took from this runtime. */
+  removed: string[];
+  /** The session tools the grants added. */
+  granted: string[];
 }
 
 /** Why a `queue_remove` was refused, and nothing was removed.
@@ -1924,6 +1965,7 @@ export type ChatServerMessage =
   /** THIS chat's sandbox, sent after hello and on every change, ONLY when its runtime has the
       sandbox extension's /sandbox command. Absent = no extension: no row, no shield. */
   | ({ type: "sandbox" } & SandboxInfo)
+  | ({ type: "profile" } & ChatProfileInfo)
   /** THIS chat's Claude login (§app.claude-logins/active-login): the newest `claude-login` entry on
       its branch, else the login this host would start it on now. Sent after hello only when this
       host has more than one login (a hello clears the last one), and whenever a `claude-login`
@@ -2029,7 +2071,14 @@ export type ChatServerMessage =
   // "internal" = server error, transient, safe to retry.
   /** `clientId` is set when the failure belongs to ONE identified send (its `clientId`), so the
       client restores that draft and no other. Absent on chat-wide errors, as before. */
-  | { type: "error"; message: string; code?: "busy" | "recent" | "reloaded" | "config" | "refused" | "internal"; clientId?: string };
+  | {
+      type: "error";
+      message: string;
+      code?: "busy" | "recent" | "reloaded" | "config" | "refused" | "internal";
+      clientId?: string;
+      /** A One at a time profile's first message was refused: the session that holds it (§chat.profiles/singleton). */
+      profileRunning?: { id: string; path: string; title: string };
+    };
 
 /** WS /ws/watch?path= — read-only live view. Safe for sessions a TUI currently owns. Never writes.
     `&tail=1` cuts the snapshot as `/ws/chat` cuts its hello (`older`, then `history`); `&tail=rest`

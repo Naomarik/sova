@@ -46,6 +46,7 @@ const full = (): Required<SessionSummary> => ({
   workerSignals: { stuck: 1 },
   turnError: { message: "overloaded" },
   tags: { topic: "feature" },
+  profile: { id: "reviewer", label: "Read-only reviewer", icon: "eye", builtin: true },
   readiness: { trees: [{ path: "/w/t", branch: "feat/x", state: "ready", why: "checks passed" }], badge: "ready", branch: "feat/x", since: 12 },
 });
 

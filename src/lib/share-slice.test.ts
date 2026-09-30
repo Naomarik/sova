@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionShareView } from "../../shared/session-share";
-import { applyHint, bounds, canFollowLive, earlierLine, endsLine, hints, inSlice, mergeNewest, normalize, rangeLabel, shareHref, shareRouteFromHash, sliceOfShare, spanOf, tap, WHOLE, type Slice, type SliceRow } from "./share-slice";
+import { applyHint, bounds, canFollowLive, earlierLine, endsLine, hints, inSlice, mergeNewest, normalize, sameSlice, rangeLabel, shareHref, shareRouteFromHash, sliceOfShare, spanOf, tap, WHOLE, type Slice, type SliceRow } from "./share-slice";
 
 // u0 r1 r2 u3 r4 u5 r6 u7 — three turns with replies, the last question unanswered.
 const rows: SliceRow[] = ["u0", "r1", "r2", "u3", "r4", "u5", "r6", "u7"].map((id) => ({ id, kind: id.startsWith("u") ? "user" : "reply" }));
@@ -126,6 +126,7 @@ const view = (ns: number[], extra: Partial<SessionShareView> = {}): SessionShare
 test("a pushed newest page keeps earlier pages read; a reset replaces the view whole", () => {
   const read = view([0, 1, 2, 3]);
   const merged = mergeNewest(read, view([2, 3, 4], { before: 2 }));
+  assert.equal(sameSlice(read, view([2, 3, 4])), true);
   assert.deepEqual(merged.items.map((i) => i.n), [0, 1, 2, 3, 4]);
   assert.equal(merged.before, undefined);
   // the start moved: the new slice renumbers from 0, and none of the old one may stay on screen
@@ -156,4 +157,16 @@ test("the two ends in words", () => {
   assert.equal(endsLine(rows, WHOLE, false), "From the first message · To the latest");
   assert.equal(endsLine(rows, { start: "r2", end: "u5" }, false), "From message 3 · To message 6");
   assert.equal(endsLine(rows, { start: "u3", end: null }, true), "From message 4 · Follows live");
+});
+
+test("a re-read keeps earlier pages only while it is the same slice", () => {
+  const read = view([0, 1, 2, 3]);
+  // the start moved while away: item 2 is another message now, so nothing of the old view stays
+  const moved = view([2, 3, 4], { before: 2 });
+  moved.items[0] = { kind: "user", n: 2, text: "other" };
+  assert.deepEqual(mergeNewest(read, moved).items.map((i) => i.text), ["other", "m3", "m4"]);
+  // `earlier` differs: another slice
+  assert.equal(sameSlice(read, view([2, 3], { earlier: true })), false);
+  // no item number in common (it grew past a page while away): can't tell, so it replaces
+  assert.deepEqual(mergeNewest(read, view([300, 301], { before: 300 })).items.map((i) => i.n), [300, 301]);
 });

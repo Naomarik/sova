@@ -8,7 +8,7 @@ import {
   type SessionShareServerMessage,
   type SessionShareView,
 } from "../../shared/session-share";
-import { earlierLine, mergeNewest } from "../lib/share-slice";
+import { earlierLine, mergeNewest, sameSlice } from "../lib/share-slice";
 import { SESSION_VIS_KINDS } from "./markdown";
 import { LinkedText, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
@@ -165,12 +165,15 @@ export function SessionShareApp() {
 
   /** Near the bottom when a live push lands: stay there, so new messages come into view. */
   const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
-  /** Bumped by a reset: an earlier page read before it belongs to the old slice and is dropped. */
+  /** Bumped when a newest page replaced the view: an earlier page read before it may belong to the
+      old slice, and is dropped. */
   let generation = 0;
   const applyNewest = (v: SessionShareView, reset = false) => {
-    if (reset) generation++;
     const pin = view() !== null && atBottom();
-    setView((cur) => mergeNewest(cur, v, reset));
+    setView((cur) => {
+      if (cur && (reset || !sameSlice(cur, v))) generation++;
+      return mergeNewest(cur, v, reset);
+    });
     document.title = v.title;
     if (pin) queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight));
   };
@@ -202,9 +205,9 @@ export function SessionShareApp() {
   const load = async () => {
     if (!TOKEN) return;
     const v = await read();
-    // A read (the first, or again after a reconnect) replaces the view: a start moved while the
-    // socket was down renumbers every item, and a merge would mix the two slices.
-    if (v && v !== "failed") applyNewest(v, true);
+    // Again after a reconnect, it keeps the earlier pages read only while it is the same slice
+    // (mergeNewest): a start moved while the socket was down renumbers every item.
+    if (v && v !== "failed") applyNewest(v);
   };
 
   const showEarlier = async () => {

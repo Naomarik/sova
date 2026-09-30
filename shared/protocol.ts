@@ -1242,9 +1242,8 @@ export interface SessionGroup {
   /** An older build's note (GroupSeed). Kept, never written, never read by the UI. */
   seed?: GroupSeed;
   /** An older build's mark on a group it both created and named, which once deleted the group
-      when its last member left. It deletes nothing now: this build never sets it and keeps it
-      through every write, a rename that changes the name still clears it, and the auto-title
-      sweep reads it (`=== true`, or absent with a `seed`) to skip that group's members. */
+      when its last member left. It decides nothing now: this build never sets it, never reads
+      it past parsing, and keeps it through every write, a rename included. */
   autoDissolve?: boolean;
   /** The group's sessions in display order, with their labels. The server always sends it — it is
       reconciled against the assignments on every read (ids no longer in the group drop out, ids

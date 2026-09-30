@@ -549,8 +549,8 @@ test("a member's unknown fields travel with it between groups", () => {
 });
 
 // --- the stored flag: kept, never acted on -----------------------------------------------------
-// `autoDissolve` deletes nothing now; it is still read strictly, written back as it was, cleared by
-// a rename that changes the name, and read by the auto-title sweep (§workspace.groups/legacy-groups).
+// `autoDissolve` decides nothing now; it is still read strictly and written back as it was, through
+// every write, a rename included (§workspace.groups/legacy-groups).
 
 test("an explicit false survives a round trip", () => {
   reset({
@@ -574,25 +574,19 @@ test("a malformed autoDissolve is dropped on read, and the group stands", () => 
   assert.deepEqual(readGroups().map((g) => g.id), ["g1"]);
 });
 
-test("renaming an old group clears its flag", () => {
-  reset({
-    version: 1,
-    groups: [{ id: "g1", name: "Fanout · retry backoff", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
-    assignments: { a: "g1" },
-  });
-  assert.ok(renameGroup("g1", "Backoff experiments").ok);
-  assert.equal(readGroups()[0]!.autoDissolve, false, "the rename revoked Sova's claim on it");
-  assert.deepEqual((onDisk().groups[0] as LegacyOnDisk).seed, SEED, "the seed is untouched");
-});
-
-test("renaming to the SAME name changes nothing, including the flag", () => {
-  reset({
-    version: 1,
-    groups: [{ id: "g1", name: "Fanout · one", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: true, members: [{ id: "a" }] }],
-    assignments: { a: "g1" },
-  });
-  assert.ok(renameGroup("g1", "  Fanout · one  ").ok, "trimmed to the same string: not a rename");
-  assert.equal(readGroups()[0]!.autoDissolve, true, "nothing happened, so nothing was revoked");
+test("renaming an old group keeps autoDissolve and seed on disk, whatever the flag's value", () => {
+  for (const flag of [true, false]) {
+    reset({
+      version: 1,
+      groups: [{ id: "g1", name: "Fanout · retry backoff", createdAt: "2026-01-01T00:00:00.000Z", seed: SEED, autoDissolve: flag, members: [{ id: "a" }] }],
+      assignments: { a: "g1" },
+    });
+    assert.ok(renameGroup("g1", "Backoff experiments").ok);
+    const g = onDisk().groups[0] as LegacyOnDisk & { name: string };
+    assert.equal(g.name, "Backoff experiments", "the rename landed");
+    assert.equal(g.autoDissolve, flag, "the flag is untouched by a rename");
+    assert.deepEqual(g.seed, SEED, "the seed is untouched");
+  }
 });
 
 test("reordering or relabelling an old group does NOT touch its flag", () => {
@@ -602,5 +596,5 @@ test("reordering or relabelling an old group does NOT touch its flag", () => {
     assignments: { a: "g1", b: "g1" },
   });
   updateGroup("g1", { order: ["b", "a"], labels: [{ id: "a", label: "opus" }] });
-  assert.equal(readGroups()[0]!.autoDissolve, true, "only a NAME the user typed changes it");
+  assert.equal(readGroups()[0]!.autoDissolve, true, "nothing changes it");
 });

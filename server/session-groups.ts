@@ -255,13 +255,7 @@ export function updateGroup(id: string, patch: GroupPatch): GroupResult {
   return edit((store) => {
     const group = store.groups.find((g) => g.id === id);
     if (!group) return { ok: false, status: 404, error: "Group not found" };
-    if (name && name !== group.name) {
-      group.name = name;
-      // A rename revokes the second half of "Sova made it AND named it": the USER named this one.
-      // The flag no longer deletes anything, but the auto-title sweep still reads it to tell an
-      // older build's one-gesture group (§workspace.groups/legacy-groups).
-      group.autoDissolve = false;
-    }
+    if (name && name !== group.name) group.name = name;
     if (order) {
       const byId = new Map(group.members.map((m) => [m.id, m]));
       const moved: GroupMember[] = [];

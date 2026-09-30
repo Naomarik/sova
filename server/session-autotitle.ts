@@ -305,11 +305,10 @@ export const SWEEP_BACKOFF_MS = 30 * 60_000;
 const NUDGE_SLACK_MS = 5_000;
 
 /** Is this listed session one the sweep may name now? Pure. */
-export function sweepEligible(s: SessionSummary, now: number, quietMs: number, legacyGroups: ReadonlySet<string>): boolean {
+export function sweepEligible(s: SessionSummary, now: number, quietMs: number): boolean {
   if (s.titleBy || s.originalTitle !== undefined) return false; // any stored title: named once, or explicit
   if (s.archived || !s.outlineGist) return false;
   if (s.workerSession || s.overseer || s.projectOverseer || s.draftPreview !== undefined) return false;
-  if (s.groupId && legacyGroups.has(s.groupId)) return false; // an older build's one-gesture group
   const last = Date.parse(s.lastActiveAt);
   return Number.isFinite(last) && now - last >= quietMs;
 }
@@ -317,8 +316,6 @@ export function sweepEligible(s: SessionSummary, now: number, quietMs: number, l
 export interface SweepDeps {
   settings: () => SessionTitleSettings;
   list: () => Promise<SessionSummary[]>;
-  /** Groups an older build made in one gesture (§workspace.groups/legacy-groups): their members are skipped. */
-  legacyGroups: () => ReadonlySet<string>;
   name: (s: SessionSummary) => Promise<NameResult>;
   now?: () => number;
   log?: (line: string) => void;
@@ -397,10 +394,9 @@ export class AutoTitleSweep {
     } catch {
       return 0;
     }
-    const legacy = this.deps.legacyGroups();
     const quietMs = settings.quietMinutes * 60_000;
     const picks = listed
-      .filter((s) => sweepEligible(s, now, quietMs, legacy) && this.declined.get(s.id) !== s.outlineGist)
+      .filter((s) => sweepEligible(s, now, quietMs) && this.declined.get(s.id) !== s.outlineGist)
       .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))
       .slice(0, SWEEP_MAX_PER_RUN);
     let named = 0;

@@ -407,9 +407,6 @@ const titleDeps = (): NameDeps => ({
 const autoTitleSweep = new AutoTitleSweep({
   settings: () => readSessionTitleSettings(),
   list: listSessions,
-  // Groups an older build made in one gesture: autoDissolve, or seeded before the flag existed
-  // (§workspace.groups/legacy-groups). Nothing writes either any more.
-  legacyGroups: () => new Set(readGroups().filter((g) => g.autoDissolve === true || (g.autoDissolve === undefined && g.seed)).map((g) => g.id)),
   name: (s) => nameSession(s.path, "sweep", titleDeps()),
   log: (line) => console.log(line),
 });

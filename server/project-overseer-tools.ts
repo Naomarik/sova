@@ -26,7 +26,7 @@ import type { HeldAct, PipelineRow } from "../shared/pipeline";
 import { PREVIEW_PURPOSE_MAX, type PreviewView } from "../shared/preview-links";
 import { holdsPreviewLink, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { handoffOf } from "./project-previews";
-import type { LinkRef, SendAnswer } from "../shared/outreach";
+import { notSentReason, type LinkRef, type SendAnswer } from "../shared/outreach";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -98,6 +98,8 @@ export interface PoToolHost {
   postOwnerUpdate(input: { text: string; attended: boolean }): Promise<{ update: ProjectUpdate; owner: string } | { held: { id: string; until: number }; owner: string }>;
   /** The project's preview links (§app.project-overseer/previews), each with its kept link, target, session and state. */
   previews(): Promise<PreviewView[]>;
+  /** sova_send_status: the project's WhatsApp sends, newest first (the held ones first of all). Never a number, link or note. */
+  sendStatus(): SendStatusRow[];
   /** A preview link of one of its coding sessions' apps: the project chart's preview/start (L1, held unattended). */
   startPreview(input: { session: string; target: { port: number } | { folder: string }; purpose: string; days?: number }): Promise<{ preview: PreviewView } | { held: { id: string; until: number } }>;
   /** Turn one of the project's previews off: at once, never held. */
@@ -115,7 +117,7 @@ export interface PoToolHost {
       sessions in full: configuration, the events enabled for this turn (with each refusal) and its declared corrections. */
   pipeline(q: { session?: string; includeQuiet?: boolean; limit?: number }): PipelineRead;
   /** Cancel or approve early one of the project's held acts, with a reason (the chart's hold/cancel or hold/approve). */
-  decideHold(id: string, approve: boolean, reason: string): Promise<void>;
+  decideHold(id: string, approve: boolean, reason: string): Promise<{ notSent?: { name: string; why: string } } | void>;
   /** A declared correction (q9) on one of the project's chart sessions, with its reason. */
   correct(session: string, event: string, payload: Record<string, unknown>, reason: string): Promise<{ held?: { id: string; until: number } }>;
   /** Free set-state (q9/r5): the engine takes it only in a turn the operator started. */
@@ -124,6 +126,29 @@ export interface PoToolHost {
 
 /** "3 of 6 gathering sessions started", or "3 gathering sessions started (no limit)". */
 const usedOf = (used: number, max: number | null, what: string) => (max === null ? `${used} ${what} (no limit)` : `${used} of ${max} ${what}`);
+
+/** One WhatsApp send as sova_send_status reads it (§app.project-overseer/tools). `at`: its latest event's
+    time, or when a held one goes. */
+export interface SendStatusRow {
+  id: string;
+  personId: string;
+  person: string;
+  link?: "handoff" | "preview";
+  note: boolean;
+  by: "operator" | "operator-via-overseer" | "project-overseer";
+  event: "held" | "sent" | "delivered" | "read" | "failed" | "refused" | "unknown";
+  code?: string;
+  at: string;
+}
+
+/** A send as one line: never a number, a link or the note's text. Pure. */
+export function sendStatusLine(r: SendStatusRow): string {
+  const what = r.link === "preview" ? "a preview link" : r.link === "handoff" ? "a gathering link" : "a note";
+  const withNote = r.link && r.note ? " with a note" : "";
+  const by = r.by === "project-overseer" ? "you" : r.by === "operator-via-overseer" ? "the Overseer" : "the operator";
+  const when = r.event === "held" ? `goes at ${r.at}` : `at ${r.at}`;
+  return `- ${r.id} · ${r.person} · ${what}${withNote} · by ${by} · ${r.event}${r.code ? ` (${r.code}: ${notSentReason(r.code)})` : ""} · ${when}`;
+}
 
 /** What sova_pipeline reads (the host builds it from the engine; the tool words it). */
 export type PipelineRead =
@@ -150,6 +175,7 @@ const PLAIN_NEEDS: Record<string, Need> = {
   sova_todo: "operator",
   sova_pipeline: "read",
   sova_previews: "read",
+  sova_send_status: "read",
   sova_hold: "L0", // hold/cancel, hold/approve: L0 corrections on every chart that holds
   sova_set_state: "operator", // the engine takes it only in the operator's turn
 };
@@ -917,6 +943,34 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       }),
     },
     {
+      name: "sova_send_status",
+      label: "WhatsApp sends",
+      description:
+        "Check whether a WhatsApp message arrived: the project's sends, newest first, each with its id, the person, what went (a gathering link, a preview link, a note), who sent it, its latest state and when. " +
+        "held: waiting in the project's hold (with when it goes); refused: it never left (the code says why); sent: the sender took it; delivered: it reached their phone; read: they opened it; failed: WhatsApp or the sender failed it; unknown: the sender can't say whether it went. " +
+        "Filter by person, and keep the most recent with limit or hours. You never see their number, the link or the note's text.",
+      promptSnippet: "check whether your WhatsApp messages arrived (held, sent, delivered, read, refused, failed)",
+      parameters: obj({
+        person: str("Optional: a roster person, id or exact name: only their sends."),
+        limit: { type: "number", description: "Optional: at most this many, newest first (default 10, at most 50)." },
+        hours: { type: "number", description: "Optional: only sends whose latest state changed in the last this many hours." },
+      }),
+      execute: read(async (q) => {
+        let rows = host.sendStatus();
+        if (typeof q.person === "string" && q.person.trim()) {
+          const person = personOf(host.roster(), q.person);
+          if (!person) throw new Refusal(`${q.person} is not on the roster.`);
+          rows = rows.filter((r) => r.personId === person.id);
+        }
+        const hours = typeof q.hours === "number" && q.hours > 0 ? q.hours : null;
+        if (hours !== null) rows = rows.filter((r) => r.event === "held" || Date.now() - Date.parse(r.at) <= hours * 3_600_000);
+        const limit = typeof q.limit === "number" && q.limit >= 1 ? Math.min(50, Math.floor(q.limit)) : 10;
+        const shown = rows.slice(0, limit);
+        const lines = shown.length ? shown.map(sendStatusLine) : ["(no WhatsApp sends match)"];
+        return { content: text(lines.join("\n")), details: { sends: shown.length, of: rows.length } };
+      }),
+    },
+    {
       name: "sova_reconcile",
       label: "Reconcile",
       description: "Run the reconciler now: compare the project's decisions within each area, route contradictions to whoever decides the area, and draft the consistent ones into the project's spec draft.",
@@ -1086,7 +1140,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if (!reason) throw new Refusal("Say why (reason).");
         if (q.op !== "cancel" && q.op !== "approve") throw new Refusal("op is cancel or approve.");
         const id = String(q.id ?? "").trim();
-        await host.decideHold(id, q.op === "approve", reason);
+        const out = await host.decideHold(id, q.op === "approve", reason);
+        // §app.outreach/send: the released message did not go, so the approval never reads as ok.
+        if (out?.notSent) throw new Refusal(`Approved ${id}, but the WhatsApp message to ${out.notSent.name} was not sent: ${out.notSent.why}`);
         return { content: text(q.op === "approve" ? `Approved ${id}: it goes ahead now.` : `Cancelled ${id}: it will not go ahead.`), details: { id, op: q.op, note: `${q.op === "approve" ? "Approved" : "Cancelled"} a held act: ${cut(reason, 160)}` } };
       }),
     },

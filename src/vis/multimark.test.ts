@@ -43,12 +43,13 @@ test("multi-mark: chart rows", () => {
   assert.deepEqual(marked("chart", 'type: bar\nA 1\nB 2\nC 3\nmark A, C ok "ends"').map(([, n]) => n), [1, 1]);
 });
 
-test("multi-mark: a partial miss warns and keeps the rest; a stray comma is a hard error", () => {
+test("multi-mark: a partial miss warns and keeps the rest; a stray comma drops the mark with a warning", () => {
   const r = parsed("flow", 'a -> b\nmark a, zz, b "kept"');
   assert.deepEqual(r.spec.emphasis!.map((e) => e.key), ["a", "b"]);
   assert.deepEqual(r.warnings, [{ line: 2, message: "mark: no node zz, dropped" }]);
-  const bad = parseVis("flow", "a -> b\nmark a,");
-  assert.equal(bad.ok, false);
+  const bad = parsed("flow", "a -> b\nmark a,");
+  assert.equal(bad.spec.emphasis, undefined);
+  assert.deepEqual(bad.warnings, [{ line: 2, message: "mark: a comma needs a target on each side (mark a, b, c); mark dropped" }]);
 });
 
 test("multi-mark: layers, tree, timeline, steps and state items; a wireframe block word before a list", () => {

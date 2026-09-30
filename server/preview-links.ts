@@ -247,9 +247,10 @@ export interface MintInput {
 
 /**
  * A person's own link to preview `of` (§app.outreach/links): the same org, project and port, expiring
- * with it (never later), and turned off with it. Refused unless `of` is active.
+ * with it (never later), and turned off with it. Refused unless `of` is active. `createdBy`: who sent it
+ * (`operator`, or the sending overseer's `session:<id>`).
  */
-export function mintSibling(of: string, sentTo: string, now = Date.now()): { record: PreviewRecord; label: string } {
+export function mintSibling(of: string, sentTo: string, createdBy = "operator", now = Date.now()): { record: PreviewRecord; label: string } {
   const store = read();
   const o = store.links.find((l) => l.id === of);
   if (!o || previewState(o, now) !== "active") throw new PreviewRefused("bad-project", "That preview is not active.");
@@ -263,7 +264,7 @@ export function mintSibling(of: string, sentTo: string, now = Date.now()): { rec
     port: o.port,
     createdAt: iso(now),
     expiresAt: o.expiresAt,
-    createdBy: "operator",
+    createdBy,
     siblingOf: o.id,
     sentTo,
   };

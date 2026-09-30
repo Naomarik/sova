@@ -69,6 +69,16 @@ const isGroupLine = (t: Token[]) => t[0]?.t === "word" && GROUP_WORDS.includes(t
 /** `a1 "Label" ["second"] [shape] [tone]` with no arrow: a `node` line without the word (checked after isGroupLine). */
 const isDeclLine = (t: Token[]) => t[0]?.t === "word" && t[0].v !== "node" && t[1]?.t === "str" && !t.some((x) => x.t === "arrow");
 
+/** Mermaid's dotted arrow `-.->` (tokenized as the word `-.` and `->`) is a dashed edge, `-->`. */
+const dotted = (t: Token[]): Token[] =>
+  t.flatMap((x, i): Token[] => {
+    const next = t[i + 1];
+    if (x.t === "word" && (x.v === "-." || x.v === "<-.") && next?.t === "arrow" && next.v === "->") return [{ t: "arrow", v: x.v === "-." ? "-->" : "<-->" }];
+    const prev = t[i - 1];
+    if (x.t === "arrow" && x.v === "->" && prev?.t === "word" && (prev.v === "-." || prev.v === "<-.")) return [];
+    return [x];
+  });
+
 const MAX_NODES = 30;
 const MAX_EDGES = 48;
 const MAX_SECTIONS = 4;
@@ -96,12 +106,12 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     }
     let t: Token[];
     try {
-      t = tokenize(line);
+      t = dotted(tokenize(line));
     } catch {
       continue;
     }
     if (t[0]?.t !== "word" || isGroupLine(t)) continue;
-    if (t[0].v === "node") {
+    if (t[0].v === "node" && t[1]?.t !== "arrow") {
       if (t[1]?.t === "word") nodeLines.add(`${at}\0${t[1].v}`);
     } else if (isDeclLine(t)) nodeLines.add(`${at}\0${t[0].v}`);
     else if (t[1]?.t === "str") inlineStyle = true;
@@ -142,10 +152,10 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   };
   // Tones written after an edge's target (a -> b "label" error): they colour the target node.
   const chainTone = new Map<string, { tone: Tone; n: number }>();
-  // Inline-style only: shapes written in a chain (gate "Approve" decision).
+  // Shapes written in a chain (gate "Approve" decision, delivered -> done end).
   const chainShape = new Map<string, { shape: Shape; n: number }>();
   const shapedByLine = new Set<string>();
-  /** Tone (and, inline-style, shape) words after an id in a chain; returns the next index. */
+  /** Tone and shape words after an id in a chain; returns the next index. */
   const chainWords = (toks: Token[], k: number, nid: string, key: string, n: number): number => {
     let tone = false;
     let shape = false;
@@ -155,7 +165,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
         if (prev && prev.tone !== w.v) fail(n, `node ${nid} is toned ${prev.tone} and ${w.v}: give it one tone`);
         chainTone.set(key, { tone: w.v, n });
         tone = true;
-      } else if (inlineStyle && (SHAPES as readonly string[]).includes(w.v) && !shape) {
+      } else if ((SHAPES as readonly string[]).includes(w.v) && !shape) {
         const sh = w.v as Shape;
         const prev = chainShape.get(key);
         if (prev && prev.shape !== sh) fail(n, `node ${nid} is shaped ${prev.shape} and ${sh}: give it one shape`);
@@ -173,7 +183,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       sections.push({ label: div, n: line.n });
       continue;
     }
-    const toks = tokenize(line);
+    const toks = dotted(tokenize(line));
     if (toks.length === 0) continue;
     if (isGroupLine(toks)) {
       const ids = toks.slice(2).flatMap((t) => (t.t === "word" ? t.v.split(",").filter(Boolean) : fail(line.n, `group: after its "label", only node ids (group "Label" a b c)`)));
@@ -184,7 +194,8 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     }
     const first = toks[0]!;
     // `node a "A"`, or the same without the word (`a "A" round`, no arrow on the line).
-    const idAt = first.t === "word" && first.v === "node" ? 1 : isDeclLine(toks) ? 0 : -1;
+    // `node -> db` is a chain from a node whose id is node.
+    const idAt = first.t === "word" && first.v === "node" && toks[1]?.t !== "arrow" ? 1 : isDeclLine(toks) ? 0 : -1;
     if (idAt >= 0) {
       const nid = id(toks[idAt], line.n, "a node id after node");
       const k0 = key(nid, line.n);
@@ -221,7 +232,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
         else if (prev !== note) warn(line.n, `node ${src} has the second lines "${prev}" and "${note}": kept "${prev}"`);
       }
     }
-    if (inlineStyle) k = chainWords(toks, k, src, from, line.n);
+    k = chainWords(toks, k, src, from, line.n);
     if (toks[k]?.t !== "arrow") fail(line.n, toks.length === 1 ? `a lone id: declare it with node ${src} "Label"` : `expected an arrow (-> --> <->) after ${src}`);
     while (k < toks.length) {
       const arrow = toks[k];
@@ -243,8 +254,17 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
         }
         if (toks[k]?.t === "str") label = toks[k++]!.v;
       } else if (toks[k]?.t === "str") label = toks[k++]!.v;
+      // A target labelled already (earlier inline, or by its node line): a second string is the
+      // edge's too, its label's second line (`-> api "Notify completion" "POST /confirm"`).
+      if (label !== undefined && !named && (inlineStyle || hasNodeLine(dst)) && toks[k]?.t === "str" && toks[k + 1]?.t !== "str") label = `${label}\n${toks[k++]!.v}`;
       const strings = k;
       k = chainWords(toks, k, dst, to, line.n);
+      // A string after the words, with no edge label yet, when it can't be the target's label (the
+      // target is labelled already, or strings after targets are edge labels): the edge's.
+      if (k > strings && label === undefined && (inline.has(to) || hasNodeLine(dst) || !inlineStyle) && toks[k]?.t === "str" && toks[k + 1]?.t !== "str") {
+        label = toks[k++]!.v;
+        k = chainWords(toks, k, dst, to, line.n);
+      }
       const stray = toks[k];
       if (stray?.t === "str") {
         // Say what to write instead, quoting the target as it should read.

@@ -115,7 +115,7 @@ export function setting(line: Line): { key: string; value: string; raw: string }
 
 /**
  * Consume the settings a kind allows, in any order, wherever they appear. Returns the rest.
- * An unknown `word:` line is an error naming the ones that exist.
+ * An unknown `word:` line is an error naming the ones that exist; `mark:` is passed on as a `mark` line.
  */
 export function takeSettings(ls: Line[], allowed: readonly string[], base: VisBase): { rest: Line[]; values: Map<string, { value: string; raw: string; n: number }> } {
   const all = ["title", "caption", ...allowed];
@@ -125,6 +125,12 @@ export function takeSettings(ls: Line[], allowed: readonly string[], base: VisBa
     const s = setting(line);
     if (!s) {
       rest.push(line);
+      continue;
+    }
+    // `mark: 3 "note"` at column 0 is a mark line with a stray colon: left for takeMarks, without it.
+    if (s.key === "mark" && line.raw.startsWith("mark:") && s.raw) {
+      const t = `mark ${s.raw}`;
+      rest.push({ ...line, raw: t, text: t });
       continue;
     }
     if (!all.includes(s.key)) fail(line.n, `unknown setting "${s.key}:" (this kind takes ${all.map((k) => `${k}:`).join(" ")})`);
@@ -269,6 +275,15 @@ export function commaList(s: string, n: number): string[] {
 }
 
 /** The last field is a tone when it is exactly a tone word. */
+/**
+ * `a | b | warn | note` in a kind whose rows end `| note | tone` (`max` fields with the tone): a row
+ * one field too long, its next-to-last field a tone and its last not, has the two swapped. Only a
+ * row that couldn't be read otherwise is touched.
+ */
+export function swapToneNote(fs: string[], max: number): void {
+  if (fs.length === max && isTone(fs[max - 2]!) && !isTone(fs[max - 1]!)) fs.splice(max - 2, 2, fs[max - 1]!, fs[max - 2]!);
+}
+
 export function popTone(fs: string[]): Tone | undefined {
   const last = fs[fs.length - 1];
   if (fs.length > 1 && last !== undefined && isTone(last)) {

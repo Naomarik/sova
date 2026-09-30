@@ -12,13 +12,17 @@
  * in `spec.emphasis`. The figure shell lists the notes under the drawing, numbered; a View puts the
  * matching number badge (and the `vis-em` class) on each marked item via `emphasisMap`.
  *
- * A malformed mark line is an error. A well-formed one that can't apply is dropped with a warning
- * (the figure still draws): a target that names nothing (its line's other targets stay), an item
- * already marked, marks past the 8th.
+ * Bare words after a target, up to a comma, a tone word or a string, are one run with it
+ * (`mark Sep 30 "note"`): the item the joined phrase names ("Sep 30", as a quoted label), else each
+ * word as its own target when every one names an item, else the mark is dropped with a warning that
+ * quotes the fix. No mark line is an error: one that can't be read (a stray comma, two notes, a word
+ * after the note) is dropped with a warning saying what it couldn't read, and so is a well-formed one
+ * that can't apply (the figure still draws): a target that names nothing (its line's other targets
+ * stay), an item already marked, marks past the 8th.
  * A note over 120 characters is cut, with a warning.
  */
 
-import { clip, fail, isTone, tokenize, warn, type Emphasis, type Line, type Token, type Tone } from "./grammar";
+import { clip, fail, isTone, tokenize, VisError, warn, type Emphasis, type Line, type Token, type Tone } from "./grammar";
 
 export const MAX_MARKS = 8;
 export const MAX_NOTE = 120;
@@ -29,11 +33,18 @@ export type MarkTarget =
   | { t: "number"; text: string; value: number }
   | { t: "range"; text: string; from: number; to: number };
 
+/** Bare words written as one target (`mark Sep 30`): `text` is them joined by one space. */
+export interface RunTarget {
+  t: "run";
+  text: string;
+  words: MarkTarget[];
+}
+
 export interface RawMark {
   line: number;
   /** The first target; `targets` holds all of them (`mark a, b, c`), this one first. */
-  target: MarkTarget;
-  targets: MarkTarget[];
+  target: MarkTarget | RunTarget;
+  targets: (MarkTarget | RunTarget)[];
   tone?: Tone;
   note?: string;
 }
@@ -50,7 +61,38 @@ function markTarget(head: Token, n: number): MarkTarget {
   return fail(n, `mark: unexpected ${head.v}`);
 }
 
-/** Split `mark` lines out of a kind's lines. Anything malformed on a mark line is an error. */
+function readMark(line: Line): RawMark {
+  // Commas outside quotes separate targets: `a, b` and `a,b` are two, a "quoted, label" is one.
+  const toks: (Token | { t: "comma" })[] = tokenize(line)
+    .slice(1)
+    .flatMap((tok): (Token | { t: "comma" })[] => (tok.t === "word" && tok.v.includes(",") ? tok.v.split(/(,)/).filter(Boolean).map((v) => (v === "," ? { t: "comma" as const } : { t: "word" as const, v })) : [tok]));
+  if (!toks[0]) fail(line.n, 'mark needs a target: mark <id | "label" | line | from-to>[, more] [tone] ["note"]');
+  const targets: (MarkTarget | RunTarget)[] = [];
+  let k = 0;
+  for (;;) {
+    const head = toks[k++];
+    if (!head || head.t === "comma") return fail(line.n, "mark: a comma needs a target on each side (mark a, b, c)");
+    const words = [markTarget(head, line.n)];
+    // Bare words after a bare target, up to a tone word, are one run with it (`mark Sep 30`).
+    for (let tok = toks[k]; head.t === "word" && tok?.t === "word" && !isTone(tok.v); tok = toks[++k]) words.push(markTarget(tok, line.n));
+    targets.push(words.length === 1 ? words[0]! : { t: "run", text: words.map((w) => w.text).join(" "), words });
+    if (toks[k]?.t !== "comma") break;
+    k++;
+  }
+  const mark: RawMark = { line: line.n, target: targets[0]!, targets };
+  for (const tok of toks.slice(k) as Token[]) {
+    if (tok.t === "str") {
+      if (mark.note !== undefined) fail(line.n, "mark takes one note");
+      mark.note = tok.v;
+    } else if (tok.t === "word" && isTone(tok.v)) {
+      if (mark.tone) fail(line.n, "mark takes one tone");
+      mark.tone = tok.v;
+    } else fail(line.n, `mark: unexpected ${"v" in tok ? tok.v : ","} (after the target: a tone and/or a "note")`);
+  }
+  return mark;
+}
+
+/** Split `mark` lines out of a kind's lines. A line that can't be read is dropped with a warning. */
 export function takeMarks(ls: Line[]): { rest: Line[]; marks: RawMark[] } {
   const rest: Line[] = [];
   const marks: RawMark[] = [];
@@ -59,33 +101,17 @@ export function takeMarks(ls: Line[]): { rest: Line[]; marks: RawMark[] } {
       rest.push(line);
       continue;
     }
-    // Commas outside quotes separate targets: `a, b` and `a,b` are two, a "quoted, label" is one.
-    const toks: (Token | { t: "comma" })[] = tokenize(line)
-      .slice(1)
-      .flatMap((tok): (Token | { t: "comma" })[] => (tok.t === "word" && tok.v.includes(",") ? tok.v.split(/(,)/).filter(Boolean).map((v) => (v === "," ? { t: "comma" as const } : { t: "word" as const, v })) : [tok]));
-    if (!toks[0]) fail(line.n, 'mark needs a target: mark <id | "label" | line | from-to>[, more] [tone] ["note"]');
-    const targets: MarkTarget[] = [];
-    let k = 0;
-    for (;;) {
-      const head = toks[k++];
-      if (!head || head.t === "comma") return fail(line.n, "mark: a comma needs a target on each side (mark a, b, c)");
-      targets.push(markTarget(head, line.n));
-      if (toks[k]?.t !== "comma") break;
-      k++;
+    try {
+      const mark = readMark(line);
+      if (mark.note !== undefined && mark.note.length > MAX_NOTE) {
+        warn(line.n, `mark note over ${MAX_NOTE} characters, shortened`);
+        mark.note = clip(mark.note, MAX_NOTE);
+      }
+      marks.push(mark);
+    } catch (e) {
+      if (!(e instanceof VisError)) throw e;
+      warn(line.n, `${e.message}; mark dropped`);
     }
-    const target = targets[0]!;
-    const mark: RawMark = { line: line.n, target, targets };
-    for (const tok of toks.slice(k) as Token[]) {
-      if (tok.t === "str") {
-        if (mark.note !== undefined) fail(line.n, "mark takes one note");
-        if (tok.v.length > MAX_NOTE) warn(line.n, `mark note over ${MAX_NOTE} characters, shortened`);
-        mark.note = clip(tok.v, MAX_NOTE);
-      } else if (tok.t === "word" && isTone(tok.v)) {
-        if (mark.tone) fail(line.n, "mark takes one tone");
-        mark.tone = tok.v;
-      } else fail(line.n, `mark: unexpected ${"v" in tok ? tok.v : ","} (after the target: a tone and/or a "note")`);
-    }
-    marks.push(mark);
   }
   if (marks.length > MAX_MARKS) {
     for (const m of marks.slice(MAX_MARKS)) warn(m.line, `mark past the ${MAX_MARKS}th, dropped: emphasis only works when it's rare`);
@@ -95,11 +121,12 @@ export function takeMarks(ls: Line[]): { rest: Line[]; marks: RawMark[] } {
 }
 
 /**
- * Resolve marks against a kind's items. `resolve` returns the item key(s) a target names, or null
- * when it names nothing. A mark that names nothing (`what`, e.g. "node", goes in the warning) is
- * dropped; an item already marked keeps its first mark. Both warn.
+ * Resolve marks against a kind's items. `resolve` returns the item key(s) a target (written on
+ * `line`) names, or null when it names nothing. A mark that names nothing (`what`, e.g. "node", goes
+ * in the warning) is dropped; an item already marked keeps its first mark. Both warn. A run of words
+ * is its joined phrase as a label, else each word as its own target when every one names something.
  */
-export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget) => string | string[] | null, what: string): Emphasis[] {
+export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget, line: number) => string | string[] | null, what: string): Emphasis[] {
   const out: Emphasis[] = [];
   const seen = new Set<string>();
   let n = 0;
@@ -107,14 +134,26 @@ export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget) => 
     // Each target resolves on its own; one that names nothing is dropped (the others kept).
     const perTarget: string[][] = [];
     const named: string[] = [];
+    const keysOf = (t: MarkTarget): string[] => {
+      const got = resolve(t, m.line);
+      return got === null ? [] : Array.isArray(got) ? got : [got];
+    };
     for (const t of m.targets) {
-      const got = resolve(t);
-      const keys = got === null ? [] : Array.isArray(got) ? got : [got];
-      const shown = t.t === "label" ? `"${t.text}"` : t.text;
-      if (keys.length === 0) warn(m.line, `mark: no ${what} ${shown}, dropped`);
-      const fresh = keys.filter((key) => !named.includes(key));
-      named.push(...fresh);
-      if (fresh.length) perTarget.push(fresh);
+      let groups: string[][];
+      if (t.t === "run") {
+        const joined = keysOf({ t: "label", text: t.text });
+        const each = t.words.map(keysOf);
+        groups = joined.length ? [joined] : each.every((keys) => keys.length) ? each : [];
+        if (!groups.length) warn(m.line, `mark: no ${what} "${t.text}", dropped (quote a target with spaces: mark "${t.text}"${m.note !== undefined ? ' "…"' : ""})`);
+      } else {
+        groups = [keysOf(t)];
+        if (!groups[0]!.length) warn(m.line, `mark: no ${what} ${t.t === "label" ? `"${t.text}"` : t.text}, dropped`);
+      }
+      for (const keys of groups) {
+        const fresh = keys.filter((key) => !named.includes(key));
+        named.push(...fresh);
+        if (fresh.length) perTarget.push(fresh);
+      }
     }
     const target = m.targets.map((t) => (t.t === "label" ? `"${t.text}"` : t.text)).join(", ");
     if (named.length === 0) continue;
@@ -156,7 +195,7 @@ export function byIdOrLabel(items: { key: string; id?: string; label: string }[]
 
 
 /** The one call a kind makes after parsing its items: resolve its marks into `spec.emphasis`. */
-export function applyMarks(spec: { emphasis?: Emphasis[] }, marks: RawMark[], resolve: (target: MarkTarget) => string | string[] | null, what: string): void {
+export function applyMarks(spec: { emphasis?: Emphasis[] }, marks: RawMark[], resolve: (target: MarkTarget, line: number) => string | string[] | null, what: string): void {
   if (!marks.length) return;
   const emphasis = resolveMarks(marks, resolve, what);
   if (emphasis.length) spec.emphasis = emphasis;

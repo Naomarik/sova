@@ -1,11 +1,11 @@
 /* ---- MARKDOWN VIEWER (§app/markdown-viewer). One whole markdown document in a native <dialog>
    opened with showModal() (top layer, over any open dialog; recorded deviation, like the
-   lightbox). Desktop: inset --space-6 on every side with a centred 72ch column that scrolls.
+   lightbox). Desktop: inset --space-5 (24px) on every side with a centred 72ch column that scrolls.
    Folded: a tall sheet with a --space-5 gap above it and the skill's grip. */
 
 .md-viewer {
   position: fixed;
-  inset: var(--space-6);
+  inset: var(--space-5);
   width: auto;
   height: auto;
   max-width: none;

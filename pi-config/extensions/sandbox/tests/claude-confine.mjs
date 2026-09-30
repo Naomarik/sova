@@ -239,7 +239,10 @@ function judgeBattery(who, r, { sentinelPid, readOnly = false, writeOnly = false
 function judgeEnv(who, keys, needsEnv) {
 	const allowed = new Set([
 		"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "COLORTERM", "TZ", "XDG_CACHE_HOME", "XDG_CONFIG_HOME",
-		"XDG_DATA_HOME", "XDG_STATE_HOME", "PI_CODING_AGENT_DIR", "CARGO_HOME", "RUSTUP_HOME", "GOPATH", "GOROOT", "JAVA_HOME", "NVM_DIR",
+		"XDG_DATA_HOME", "XDG_STATE_HOME", "PI_CODING_AGENT_DIR",
+		// pi's per-call variables, on the default allowlist by design: present when the suite runs inside a pi session.
+		"PI_SESSION_ID", "PI_SESSION_FILE", "PI_PROVIDER", "PI_MODEL", "PI_REASONING_LEVEL",
+		"CARGO_HOME", "RUSTUP_HOME", "GOPATH", "GOROOT", "JAVA_HOME", "NVM_DIR",
 		"EDITOR", "VISUAL", "PAGER", "NO_COLOR", "FORCE_COLOR", "CI", "TMPDIR", "PWD", "SHLVL", "_", "NODE_USE_ENV_PROXY",
 		"HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "all_proxy", "no_proxy",
 		...Object.keys(needsEnv),

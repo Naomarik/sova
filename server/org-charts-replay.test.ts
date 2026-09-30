@@ -106,10 +106,6 @@ for (const t of traces)
     // A class that says the chart is right, or cannot say it, shows the step it rests on.
     for (const d of r.divergences.filter((x) => x.cls === "chart-better" || x.cls === "cannot-express" || x.cls === "drift"))
       assert.ok(d.evidence && Object.keys(d.evidence).length, `${t.id} @${d.dt} ${d.cls} ${d.check}: no evidence`);
-    for (const d of r.divergences.filter((x) => x.cls === "chart-better" && x.check === "look-reasons" && x.got === "item/reopened")) {
-      const rows = (d.evidence as { reopened: { item: string | null; flippedBack: string[]; newDecisions: string[] }[] }).reopened;
-      assert.ok(rows.length && rows.every((e) => e.item && e.flippedBack.length + e.newDecisions.length > 0), `${t.id} @${d.dt}: reopened without its own evidence`);
-    }
   });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");

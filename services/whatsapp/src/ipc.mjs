@@ -50,12 +50,15 @@ export async function serveIpc({ core, path, extraOps = {}, log = () => {} }) {
   }
 
   const conns = new Set()
+  const sockets = new Set() // raw client sockets, destroyed on close so a stop never waits on a client
   const onEvent = (e) => {
     for (const c of conns) if (c.subscribed) c.write(e)
   }
   core.on('event', onEvent)
 
   const server = net.createServer((sock) => {
+    sockets.add(sock)
+    sock.on('close', () => sockets.delete(sock))
     const conn = {
       subscribed: false,
       write: (obj) => sock.writable && sock.write(JSON.stringify(obj) + '\n'),
@@ -120,6 +123,7 @@ export async function serveIpc({ core, path, extraOps = {}, log = () => {} }) {
         core.off('event', onEvent)
         server.close(() => resolve())
         for (const c of conns) c.subscribed = false
+        for (const sock of sockets) sock.destroy()
         try {
           unlinkSync(path)
         } catch {}

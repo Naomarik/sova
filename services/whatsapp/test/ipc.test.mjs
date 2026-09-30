@@ -80,3 +80,15 @@ test('hello answers first, replays after `since`, then streams live events; no h
   core.stop()
   await ipc.close()
 })
+
+test('closing the server drops open clients at once, so a stop never waits on one', async () => {
+  const { path, core, ipc } = await served()
+  const c = await connectIpc(path)
+  await c.request('hello', { v: 1 })
+  const ended = new Promise((r) => c.socket.once('close', r))
+  const t = Date.now()
+  core.stop()
+  await ipc.close()
+  await ended
+  assert.ok(Date.now() - t < 1000)
+})

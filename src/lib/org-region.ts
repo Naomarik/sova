@@ -50,7 +50,7 @@ export interface OrgSection {
   projects: OrgProject[];
 }
 
-/** What a project with no name on the wire is called: gone from projects.json, or no project at all. */
+/** What a project with no name on the wire is called: gone from its org's project list, or no project at all. */
 export const UNKNOWN_PROJECT = "Unknown project";
 export const NO_PROJECT = "Other";
 

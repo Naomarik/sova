@@ -215,11 +215,20 @@
   (core/migrate-text charts text))
 
 (defn next-window
-  "r7: when an act that reaches `person` ({tz, hours: {days, from, to}}) may go: null when now (`now-ms`)
-   is inside their hours or they have none, else the instant (ms) their next window opens. The charts'
-   own fn (rules.hours), so the server never re-implements zones and DST."
-  [person now-ms]
-  (hours/next-window (->clj person) now-ms))
+  "r7/r13: when an act that reaches `person` ({tz, hours: {days, from, to}}) may go, by their EFFECTIVE
+   hours (their own, else `company`'s {tz, hours}, else always in hours): null when `now-ms` is inside
+   them or there are none, else the instant (ms) the next window opens. The charts' own fns
+   (rules.hours effective + next-window), so the server never re-implements zones, DST or the fallback."
+  ([person now-ms] (next-window person now-ms nil))
+  ([person now-ms company]
+   (let [p (->clj person)]
+     (when-let [eff (hours/effective p (->clj company))]
+       (hours/next-window (assoc eff :id (:id p)) now-ms)))))
+
+(defn hours-inherited
+  "r13: `person`'s effective hours are `company`'s (they have none of their own)."
+  [person company]
+  (boolean (hours/inherited? (->clj person) (->clj company))))
 
 (defn verify-session
   "`org-charts rebuild --verify`: replay session `sid`'s log `rows` (as the host's log reader gives

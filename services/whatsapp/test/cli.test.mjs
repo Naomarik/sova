@@ -1,15 +1,19 @@
 // The CLI's refusals, run for real in temp dirs. None of these reaches WhatsApp: each stops before a connection.
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync, chmodSync, realpathSync, existsSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, chmodSync, realpathSync, existsSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+const dirs = []
+const made = (d) => (dirs.push(d), d)
+after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })))
+
 const bin = fileURLToPath(new URL('../bin/sova-whatsapp.mjs', import.meta.url))
 const cli = (args, env) => spawnSync(process.execPath, [bin, ...args], { env: { PATH: process.env.PATH, HOME: '/nonexistent-home', ...env }, encoding: 'utf8', timeout: 20_000 })
-const tmp = () => realpathSync(mkdtempSync(join(tmpdir(), 'sova-wa-cli-')))
+const tmp = () => realpathSync(made(mkdtempSync(join(tmpdir(), 'sova-wa-cli-'))))
 
 test('run refuses a group/world-accessible auth dir before opening anything', () => {
   const home = join(tmp(), 'wa')

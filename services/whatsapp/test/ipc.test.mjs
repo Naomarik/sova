@@ -1,7 +1,7 @@
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import net from 'node:net'
-import { mkdtempSync, statSync, realpathSync } from 'node:fs'
+import { mkdtempSync, statSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { serveIpc, connectIpc } from '../src/ipc.mjs'
@@ -9,8 +9,12 @@ import { Sender, realClock } from '../src/core.mjs'
 import { memoryStore } from '../src/store.mjs'
 import { fakeDriver, baseConfig } from './helpers.mjs'
 
+const dirs = []
+const made = (d) => (dirs.push(d), d)
+after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })))
+
 async function served() {
-  const dir = realpathSync(mkdtempSync(join(tmpdir(), 'sova-wa-ipc-')))
+  const dir = realpathSync(made(mkdtempSync(join(tmpdir(), 'sova-wa-ipc-'))))
   const path = join(dir, 'sender.sock')
   const driver = fakeDriver()
   const core = new Sender({ config: baseConfig({ authDir: join(dir, 'auth'), limits: { gapS: 0, perHour: 20, perDay: 60 } }), store: memoryStore(), driver, clock: realClock, version: 't' })

@@ -1,11 +1,15 @@
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtempSync, mkdirSync, chmodSync, writeFileSync, realpathSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, chmodSync, writeFileSync, realpathSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { resolveConfig, problems } from '../src/config.mjs'
 
-const tmp = () => realpathSync(mkdtempSync(join(tmpdir(), 'sova-wa-test-')))
+const dirs = []
+const made = (d) => (dirs.push(d), d)
+after(() => dirs.forEach((d) => rmSync(d, { recursive: true, force: true })))
+
+const tmp = () => realpathSync(made(mkdtempSync(join(tmpdir(), 'sova-wa-test-'))))
 
 test('defaults follow PI_CODING_AGENT_DIR, then ~/.pi/agent; nothing else is assumed', () => {
   const home = '/home/someone'

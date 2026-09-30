@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, type JSX, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { withOffHours } from "../lib/working-hours";
 import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionsInfo, type PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
@@ -7,6 +7,7 @@ import {
   archiveOrgProject,
   getDecisions,
   getOrg,
+  getPreviews,
   promoteDecisions,
   reconcileProject,
   redraftProject,
@@ -22,29 +23,37 @@ import { alsoCarriesLine, areaGroups, BUILD_CHIP, builtLine, conflictSides, DECI
 import { promotionCommitLine } from "../lib/coding-worktrees";
 import { relativeTime } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
-import { orgSessionHref, orgTabHref } from "../lib/orgs-route";
+import { orgSessionHref, orgTabHref, PROJECT_TABS, projectTabHref, type ProjectTab } from "../lib/orgs-route";
+import { createPoll } from "../lib/poll";
+import { attentionLine, emptySectionsLine, summaryChips } from "../lib/project-page";
+import { isGap, openIdeas } from "../lib/project-overseer-view";
 import { stakeholderView } from "../lib/stakeholder";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { OwnerProjectCard } from "./OwnerProjectCard";
 import { PipelineCard } from "./PipelineCard";
 import { PreviewsCard } from "./PreviewsCard";
-import { ProjectCostCard } from "./ProjectCostCard";
-import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
-import { Banner, Chip } from "./ui";
+import { ActionMenu } from "./ActionMenu";
+import { costFigure, createProjectCost, ProjectCostCard } from "./ProjectCostCard";
+import { ActivityCard, CodingSessionsCard, createProjectOverseer, IdeasCard, OverseerSettings, OverseerSummary, TodosCard } from "./ProjectOverseerPanel";
+import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 import "../projects.css";
 
 const errText = (err: unknown) => (err instanceof ApiError || err instanceof Error ? err.message : String(err));
 const RUNNING_POLL_MS = 3000;
+/** The previews chip's count; the Previews card reads its own, more often. */
+const PREVIEWS_POLL_MS = 30_000;
 
 /**
- * One org project (`#/orgs/<id>/projects/<pid>`): its overseer (§app/project-overseer), and the
- * decisions its hand-off sessions recorded (§app/requirements) — each with who said it, their
- * words and where; the conflicts the reconciler found and who they went to; and promotion into
- * the project's own spec, one decision at a time.
+ * One org project (`#/orgs/<id>/projects/<pid>[/<tab>]`, §app.organizations/project-page): a
+ * summary of its overseer and counts, then four tabs. Overview is the live work — coding sessions,
+ * previews, activity, to-dos — with anything that waits on the operator first; Requirements is the
+ * decisions its hand-off sessions recorded (§app/requirements), the conflicts the reconciler found,
+ * the pipeline and the gaps; Cost is what its sessions cost; Settings is its overseer's settings
+ * (§app/project-overseer) and archiving.
  */
-export function ProjectPage(props: { orgId: string; projectId: string; titleRef(el: HTMLHeadingElement): void }) {
+export function ProjectPage(props: { orgId: string; projectId: string; tab: ProjectTab; titleRef(el: HTMLHeadingElement): void }) {
   const [org, { refetch: refetchOrg, mutate: mutateOrg }] = createResource(() => props.orgId, getOrg);
   const key = () => ({ o: props.orgId, p: props.projectId });
   const [info, { refetch, mutate }] = createResource(key, (k) => getDecisions(k.o, k.p));
@@ -69,6 +78,10 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       onCleanup(() => clearInterval(t));
     }),
   );
+  // Read once for the whole page: the summary counts them, and each tab shows its part.
+  const po = createProjectOverseer({ orgId: props.orgId, projectId: props.projectId, onBusy: setOverseerBusy });
+  const cost = createProjectCost({ orgId: props.orgId, projectId: props.projectId, tick: costTick });
+  const previews = createPoll(() => getPreviews(props.orgId, props.projectId), PREVIEWS_POLL_MS);
 
   /** One write: adopt the info it answers with, or say what failed with nothing changed. */
   const act = async (what: string, fn: () => Promise<DecisionsInfo | void>, done?: string): Promise<boolean> => {
@@ -93,8 +106,9 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
     }
   };
 
-  // Archive Project (§app.organizations/archive): a confirm under the head, the server's refusal under it.
-  const [confirmArchive, setConfirmArchive] = createSignal(false);
+  // Archive Project (§app.organizations/archive): asked where it was pressed (the head's ⋯ or
+  // Settings' danger zone), the server's refusal under the question.
+  const [confirmArchive, setConfirmArchive] = createSignal<"head" | "settings" | null>(null);
   const [archiveError, setArchiveError] = createSignal<string | null>(null);
   const [archiving, setArchiving] = createSignal(false);
   const archived = () => project()?.archived ?? null;
@@ -104,7 +118,7 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
     setArchiving(true);
     try {
       mutateOrg(await (on ? archiveOrgProject(props.orgId, p.id) : unarchiveOrgProject(props.orgId, p.id)));
-      setConfirmArchive(false);
+      setConfirmArchive(null);
       setArchiveError(null);
       const done = on ? `${p.name} archived.` : `${p.name} is back.`;
       toast(done);
@@ -115,24 +129,94 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       setArchiving(false);
     }
   };
+  const ArchiveConfirm = (p: { from: "head" | "settings" }) => (
+    <Show when={confirmArchive() === p.from && !archived() ? project() : null}>
+      {(pr) => (
+        <div class="project-archive-confirm">
+          <Banner
+            tone="warn"
+            title={`${pr().name} leaves the Projects list and its overseer stops looking. Nothing is deleted; Unarchive brings it back.`}
+            action={
+              <div class="button-row">
+                <button type="button" class="button button-sm button-destructive" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(true)}>
+                  Archive Project
+                </button>
+                <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmArchive(null)}>
+                  Cancel
+                </button>
+              </div>
+            }
+          />
+          <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+        </div>
+      )}
+    </Show>
+  );
+  const askArchive = (from: "head" | "settings") => {
+    setConfirmArchive(confirmArchive() === from ? null : from);
+    setArchiveError(null);
+  };
+
+  // ---- the summary's counts ----------------------------------------------------------------------
+  const openConflicts = createMemo(() => info()?.conflicts.filter((c) => c.state === "open").length ?? 0);
+  const ready = createMemo(() => info()?.decisions.filter(promotable).length ?? 0);
+  const chips = createMemo(() => {
+    const i = info();
+    const w = po.info.data();
+    const ideas = po.ideas.data();
+    const c = cost.data();
+    const pv = previews.data();
+    return summaryChips({
+      sessions: w ? w.worktrees.sessions.length : undefined,
+      previews: pv ? pv.previews.filter((x) => x.state === "active").length : undefined,
+      cost: c ? costFigure(c) : undefined,
+      conflicts: i ? openConflicts() : undefined,
+      decisions: i ? { total: i.decisions.filter((d) => d.state !== "superseded").length, ready: ready() } : undefined,
+      ideas: ideas ? { gaps: openIdeas(ideas.ideas).filter(isGap).length, other: openIdeas(ideas.ideas).filter((x) => !isGap(x)).length } : undefined,
+      todos: po.todos.data()?.open,
+    });
+  });
+  /** A chip's section, brought into view once its tab shows (the tab renders on the hash change). */
+  const reveal = (section: string) => requestAnimationFrame(() => requestAnimationFrame(() => document.getElementById(section)?.scrollIntoView({ block: "start" })));
+  const tabHref = (t: ProjectTab) => projectTabHref(props.orgId, props.projectId, t);
+
+  // ---- Requirements: which sections have something (the rest are one counts line) -----------------
+  const [pipelineEmpty, setPipelineEmpty] = createSignal<boolean | null>(null);
+  const [addingIdea, setAddingIdea] = createSignal(false);
+  const openIdeaCount = () => (po.ideas.data() ? openIdeas(po.ideas.data()!.ideas).length : 0);
+  const emptyLine = createMemo(() => {
+    const i = info();
+    if (!i) return null;
+    return emptySectionsLine({
+      conflicts: !i.conflicts.length,
+      decisions: !i.decisions.length,
+      pipeline: pipelineEmpty() === true,
+      ideas: !!po.ideas.data() && !openIdeaCount() && !addingIdea(),
+    });
+  });
 
   return (
     <InsightsPage
       title={project()?.name ?? "Project"}
       titleTip
+      class="project-page"
       actions={
-        <Show when={project() && !archived()}>
-          <button
-            type="button"
-            class="button button-destructive"
-            aria-expanded={confirmArchive()}
-            onClick={() => {
-              setConfirmArchive(!confirmArchive());
-              setArchiveError(null);
-            }}
-          >
-            Archive Project
-          </button>
+        <Show when={project()}>
+          {(p) => (
+            <ActionMenu label={`Project actions · ${p().name}`} title="Project actions" icon="more">
+              {(menu) => (
+                <>
+                  <menu.Item label="Settings" aria={`Settings · ${p().name}`} icon={<Icon name="settings" small />} href={tabHref("settings")} />
+                  <Show
+                    when={!archived()}
+                    fallback={<menu.Item label="Unarchive Project" aria={`Unarchive ${p().name}`} icon={<Icon name="undo" small />} onRun={() => void setArchived(false)} />}
+                  >
+                    <menu.Item label="Archive Project…" aria={`Archive ${p().name}`} icon={<Icon name="archive" small />} onRun={() => askArchive("head")} />
+                  </Show>
+                </>
+              )}
+            </ActionMenu>
+          )}
         </Show>
       }
       meta={
@@ -156,6 +240,11 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       onRefresh={() => {
         void refetch();
         void refetchOrg();
+        po.info.refetch();
+        po.actions.refetch();
+        po.ideas.refetch();
+        po.todos.refetch();
+        previews.refetch();
         setCostTick((n) => n + 1);
       }}
       error={error() ?? (info.error ? errText(info.error) : org.error ? errText(org.error) : null)}
@@ -163,27 +252,7 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       busy={info.loading && !info()}
       titleRef={props.titleRef}
     >
-      <Show when={confirmArchive() && !archived() ? project() : null}>
-        {(p) => (
-          <div class="project-archive-confirm">
-            <Banner
-              tone="warn"
-              title={`${p().name} leaves the Projects list and its overseer stops looking. Nothing is deleted; Unarchive brings it back.`}
-              action={
-                <div class="button-row">
-                  <button type="button" class="button button-sm button-destructive" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(true)}>
-                    Archive Project
-                  </button>
-                  <button type="button" class="button button-sm button-ghost" onClick={() => setConfirmArchive(false)}>
-                    Cancel
-                  </button>
-                </div>
-              }
-            />
-            <Show when={archiveError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
-          </div>
-        )}
-      </Show>
+      <ArchiveConfirm from="head" />
       <Show when={archived() ? project() : null}>
         {(p) => (
           <div class="project-archive-confirm">
@@ -200,43 +269,184 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
           </div>
         )}
       </Show>
-      <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} archived={!!archived()} />}</Show>
-      <Show when={`${props.orgId}/${props.projectId}`} keyed>
-        <PipelineCard orgId={props.orgId} projectId={props.projectId} />
-      </Show>
-      <Show when={`${props.orgId}/${props.projectId}`} keyed>
-        <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
-      </Show>
-      {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
-      <Show when={`${props.orgId}/${props.projectId}`} keyed>
-        <PreviewsCard orgId={props.orgId} projectId={props.projectId} />
-      </Show>
-      {/* Only while the org has an owner (§app.owner-page/controls). */}
-      <Show when={org()?.ownerPage?.person && project()}>
-        <OwnerProjectCard org={org()!} project={project()!} onOrg={mutateOrg} />
-      </Show>
-      <Show when={info()}>
-        {(i) => (
-          <>
-            <SpecCard info={i()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} onSpec={(spec) => mutate({ ...i(), spec })}>
-              <Show when={org() && project()}>
-                <Stakeholder
-                  org={org()!}
-                  project={project()!}
-                  onSet={async (id) => {
-                    mutateOrg(await setProjectStakeholder(props.orgId, props.projectId, id));
-                    // Who owns which area changed: the decisions' "outside their area" marks follow.
-                    void refetch();
-                  }}
+      <div class="project-summary">
+        <OverseerSummary po={po} archived={!!archived()} />
+        <Show when={chips().length}>
+          <nav class="project-counts" aria-label="Project counts">
+            <For each={chips()}>
+              {(c) => (
+                <a class="project-count" classList={{ "project-count-warn": c.tone === "warn" }} href={tabHref(c.tab)} title={c.title} onClick={() => reveal(c.section)}>
+                  <Show when={c.tone === "warn"}>
+                    <i class="chip-dot" aria-hidden="true" />
+                  </Show>
+                  {c.label}
+                </a>
+              )}
+            </For>
+          </nav>
+        </Show>
+      </div>
+      <ProjectTabs tab={props.tab} href={tabHref} attention={openConflicts() + ready()} attentionText={attentionLine(openConflicts(), ready()) ?? ""} />
+      <div class="project-tabpanel" role="tabpanel" id="project-tabpanel" aria-labelledby={`project-tab-${props.tab}`}>
+        <Switch>
+          <Match when={props.tab === "overview"}>
+            <Show when={attentionLine(openConflicts(), ready())}>
+              {(line) => (
+                <Banner
+                  tone="warn"
+                  title={line()}
+                  action={
+                    <a class="button button-sm" href={tabHref("requirements")}>
+                      Review Requirements
+                    </a>
+                  }
                 />
-              </Show>
-            </SpecCard>
-            <ConflictsCard info={i()} org={org()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} />
-            <DecisionsCard info={i()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} />
-          </>
-        )}
-      </Show>
+              )}
+            </Show>
+            <div class="project-overview">
+              <div class="project-col">
+                <CodingSessionsCard po={po} archived={!!archived()} />
+                {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
+                <div id="project-previews" class="project-anchor">
+                  <PreviewsCard orgId={props.orgId} projectId={props.projectId} />
+                </div>
+              </div>
+              <div class="project-col">
+                <ActivityCard po={po} />
+                <Show when={org()}>{(o) => <TodosCard po={po} org={o()} archived={!!archived()} />}</Show>
+              </div>
+            </div>
+          </Match>
+          <Match when={props.tab === "requirements"}>
+            <Show when={info()} fallback={<p class="orgs-empty">Reading the decisions.</p>}>
+              {(i) => (
+                <>
+                  <SpecCard info={i()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} onSpec={(spec) => mutate({ ...i(), spec })}>
+                    <Show when={org() && project()}>
+                      <Stakeholder
+                        org={org()!}
+                        project={project()!}
+                        onSet={async (id) => {
+                          mutateOrg(await setProjectStakeholder(props.orgId, props.projectId, id));
+                          // Who owns which area changed: the decisions' "outside their area" marks follow.
+                          void refetch();
+                        }}
+                      />
+                    </Show>
+                  </SpecCard>
+                  <Show when={emptyLine()}>
+                    {(line) => (
+                      <div class="project-empty-line">
+                        <p class="orgs-empty">{line()}</p>
+                        <Show when={!openIdeaCount() && !addingIdea()}>
+                          <button type="button" class="button button-sm button-ghost" onClick={() => setAddingIdea(true)}>
+                            <Icon name="plus" small /> Idea
+                          </button>
+                        </Show>
+                      </div>
+                    )}
+                  </Show>
+                  <Show when={i().conflicts.length}>
+                    <ConflictsCard info={i()} org={org()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} />
+                  </Show>
+                  <Show when={i().decisions.length}>
+                    <DecisionsCard info={i()} orgId={props.orgId} projectId={props.projectId} busy={busy()} act={act} />
+                  </Show>
+                  <PipelineCard orgId={props.orgId} projectId={props.projectId} onEmpty={setPipelineEmpty} />
+                  <Show when={org() && (openIdeaCount() || addingIdea())}>
+                    <IdeasCard po={po} org={org()!} archived={!!archived()} adding={addingIdea()} onAdding={setAddingIdea} />
+                  </Show>
+                </>
+              )}
+            </Show>
+          </Match>
+          <Match when={props.tab === "cost"}>
+            <ProjectCostCard orgId={props.orgId} poll={cost} />
+          </Match>
+          <Match when={props.tab === "settings"}>
+            <OverseerSettings po={po} />
+            {/* Only while the org has an owner (§app.owner-page/controls). */}
+            <Show when={org()?.ownerPage?.person && project()}>
+              <OwnerProjectCard org={org()!} project={project()!} onOrg={mutateOrg} />
+            </Show>
+            <Show when={project()}>
+              {(p) => (
+                <section class="card orgs-section project-danger" aria-labelledby="project-danger">
+                  <h2 class="orgs-h2" id="project-danger">
+                    Danger zone
+                  </h2>
+                  <Show
+                    when={!archived()}
+                    fallback={
+                      <div class="orgs-head">
+                        <p class="orgs-line">{p().name} is archived. Unarchive brings it back to the Projects list.</p>
+                        <button type="button" class="button button-sm" aria-disabled={archiving() ? "true" : undefined} onClick={() => void setArchived(false)}>
+                          Unarchive
+                        </button>
+                      </div>
+                    }
+                  >
+                    <div class="orgs-head">
+                      <p class="orgs-line">Archiving takes it off the Projects list and stops its overseer. Nothing is deleted.</p>
+                      <button type="button" class="button button-sm button-destructive" aria-expanded={confirmArchive() === "settings"} onClick={() => askArchive("settings")}>
+                        Archive Project
+                      </button>
+                    </div>
+                    <ArchiveConfirm from="settings" />
+                  </Show>
+                </section>
+              )}
+            </Show>
+          </Match>
+        </Switch>
+      </div>
     </InsightsPage>
+  );
+}
+
+const TAB_LABEL: Record<ProjectTab, string> = { overview: "Overview", requirements: "Requirements", cost: "Cost", settings: "Settings" };
+
+/** The page's tab strip, as the org page's: a tab per view (the tab is in the URL, each pick a history
+    entry), Left/Right moving focus along it (wrapping), Home/End jumping; Enter or Space selects.
+    Requirements carries the warn dot while something there waits on the operator. */
+function ProjectTabs(props: { tab: ProjectTab; href(t: ProjectTab): string; attention: number; attentionText: string }) {
+  const els: HTMLButtonElement[] = [];
+  createEffect(on(() => props.tab, (tab) => queueMicrotask(() => els[PROJECT_TABS.indexOf(tab)]?.scrollIntoView({ block: "nearest", inline: "nearest" }))));
+  const onKey = (e: KeyboardEvent, i: number) => {
+    const last = PROJECT_TABS.length - 1;
+    const next = e.key === "ArrowRight" ? (i === last ? 0 : i + 1) : e.key === "ArrowLeft" ? (i === 0 ? last : i - 1) : e.key === "Home" ? 0 : e.key === "End" ? last : -1;
+    if (next < 0) return;
+    e.preventDefault();
+    els[next]?.focus();
+  };
+  return (
+    <div class="tabs org-tabs project-tabs" role="tablist" aria-label="Project">
+      <For each={PROJECT_TABS}>
+        {(t, i) => (
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            id={`project-tab-${t}`}
+            aria-selected={props.tab === t ? "true" : "false"}
+            aria-controls={props.tab === t ? "project-tabpanel" : undefined}
+            tabindex={props.tab === t ? 0 : -1}
+            title={t === "requirements" && props.attention ? props.attentionText : undefined}
+            ref={(el) => (els[i()] = el)}
+            onClick={() => {
+              if (props.tab !== t) location.hash = props.href(t);
+            }}
+            onKeyDown={(e) => onKey(e, i())}
+          >
+            {TAB_LABEL[t]}
+            <Show when={t === "requirements" && props.attention}>
+              <span class="org-tab-dot" aria-hidden="true" />
+              <span class="visually-hidden">, needs you: {props.attentionText}</span>
+            </Show>
+          </button>
+        )}
+      </For>
+    </div>
   );
 }
 
@@ -385,36 +595,50 @@ function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void
           </button>
         </div>
       </div>
-      {props.children}
-      <p class="orgs-line">{decisionsLine(props.info)}</p>
-      <p class="orgs-line project-spec-line">
-        <Show when={s().exists} fallback="No spec in this project yet. The first promotion starts one.">
-          {s().promoted} promoted · {s().drafted} in the draft
-          {builtLine(s())}
-          <Show when={s().draft}>
-            {(d) => (
+      <div class="project-spec-strip">
+        {props.children}
+        <div class="project-frozen-field">
+          <label class="toggle toggle-switch project-frozen">
+            <span>Frozen</span>
+            <input type="checkbox" checked={s().frozen} disabled={freezing()} aria-describedby="project-frozen-hint" onChange={(e) => void freeze(e.currentTarget.checked)} />
+            <span class="toggle-box" />
+          </label>
+          <p class="field-hint" id="project-frozen-hint">
+            Only promotion writes the spec. A coding session's own tools can still edit it; the overseer flags any edit it finds.
+          </p>
+        </div>
+      </div>
+      <div class="project-spec-facts">
+        <p class="orgs-line">{decisionsLine(props.info)}</p>
+        <p class="orgs-line project-spec-line">
+          <Show when={s().exists} fallback="No spec in this project yet. The first promotion starts one.">
+            {s().promoted} promoted · {s().drafted} in the draft
+            {builtLine(s())}
+            <Show when={s().draft}>
+              {(d) => (
+                <>
+                  {" "}
+                  <span class="orgs-mono">{d()}</span>
+                </>
+              )}
+            </Show>
+          </Show>
+        </p>
+        {/* The folder on a line of its own: glued to the sentence above with a "·", it read as part of it. */}
+        <p class="orgs-line orgs-mono project-muted project-spec-root" title="The spec folder">
+          {s().specRoot}
+        </p>
+        <p class="orgs-line project-muted">
+          <Show when={run()} fallback="Never reconciled.">
+            {(r) => (
               <>
-                {" "}
-                <span class="orgs-mono">{d()}</span>
+                Last reconciled <time title={r().at}>{relativeTime(r().at)}</time>: {r().compared} {r().compared === 1 ? "pair" : "pairs"} compared, {r().found} new{" "}
+                {r().found === 1 ? "conflict" : "conflicts"}.
               </>
             )}
           </Show>
-        </Show>
-      </p>
-      {/* The folder on a line of its own: glued to the sentence above with a "·", it read as part of it. */}
-      <p class="orgs-line orgs-mono project-muted" title="The spec folder">
-        {s().specRoot}
-      </p>
-      <p class="orgs-line project-muted">
-        <Show when={run()} fallback="Never reconciled.">
-          {(r) => (
-            <>
-              Last reconciled <time title={r().at}>{relativeTime(r().at)}</time>: {r().compared} {r().compared === 1 ? "pair" : "pairs"} compared, {r().found} new{" "}
-              {r().found === 1 ? "conflict" : "conflicts"}.
-            </>
-          )}
-        </Show>
-      </p>
+        </p>
+      </div>
       <Show when={s().frozen && s().editedOutside}>
         <Banner
           tone="warn"
@@ -423,16 +647,6 @@ function SpecCard(props: CardProps & { onSpec(spec: DecisionsInfo["spec"]): void
         />
       </Show>
       <Show when={run()?.error}>{(e) => <Banner tone="error" title="The last reconcile stopped." body={`${e()} Pending decisions stay pending. Reconcile again.`} />}</Show>
-      <div>
-        <label class="toggle toggle-switch project-frozen">
-          <span>Frozen</span>
-          <input type="checkbox" checked={s().frozen} disabled={freezing()} aria-describedby="project-frozen-hint" onChange={(e) => void freeze(e.currentTarget.checked)} />
-          <span class="toggle-box" />
-        </label>
-        <p class="field-hint" id="project-frozen-hint">
-          Only promotion writes the spec. A coding session's own tools can still edit it; the overseer flags any edit it finds.
-        </p>
-      </div>
     </section>
   );
 }

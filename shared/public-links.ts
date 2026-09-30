@@ -22,10 +22,11 @@ import type { MeshHello } from "./protocol";
  *
  * Peer routes (peer listener; the caller is its verified StableID, and the address the gateway
  * dials back ALWAYS comes from peers.json, never from a body):
- * GET  /api/peer/share-gateway/info[?kinds=1] -> GatewayInfo | 404 { error: "not-gateway" } (this
- *                                     host is no gateway). `kinds` is answered only when asked with
- *                                     `?kinds=1`: an older routed host parses the info strictly and
- *                                     would refuse a key it doesn't know.
+ * GET  /api/peer/share-gateway/info[?kinds=1[&preview=1]] -> GatewayInfo | 404 { error: "not-gateway" }
+ *                                     (this host is no gateway). `kinds` is answered only when asked
+ *                                     with `?kinds=1`, and `previewUrl` only with `preview=1` too: an
+ *                                     older routed host parses the info strictly and would refuse a
+ *                                     key it doesn't know.
  * PUT  /api/peer/share-gateway/links  body RegistrySnapshot (≤ SNAPSHOT_MAX_BYTES, refused before
  *                                     parsing when larger) -> RegistryAck
  */
@@ -48,6 +49,9 @@ export interface ShareGatewaySetting {
   sharePort: number;
   /** Which peers may register their links here: every peer, or these StableIDs. */
   acceptFrom: "all" | string[];
+  /** The preview address (§mesh.public/preview-address): `https://*.<host>`, one wildcard label
+      over a host of at least two labels. Absent: no preview links through this gateway. */
+  previewUrl?: string;
 }
 
 /** `off`: no public links. `self`: this host is the gateway (`gateway` set). `{ via }`: links
@@ -141,6 +145,8 @@ export interface PublicLinksInfo {
   share: ShareState;
   /** The SOVA_SHARE_* variables set in the environment, which win over the setting. */
   pinnedByEnv: string[];
+  /** Where preview links minted here point (§mesh.public/preview-address). */
+  preview?: PreviewAddress;
   /** For `route: "self"` with a gateway setting: the chosen front's steps. */
   front?: FrontGuide;
   /** Only when `route` is "self": the hosts that registered links here, or that `acceptFrom`
@@ -173,6 +179,8 @@ export interface VerifyResult {
   /** The HTTP status the check got, when it got one. */
   status?: number;
   error?: string;
+  /** With a preview address: the check of a random preview host (§mesh.public/preview-address). */
+  preview?: { ok: boolean; status?: number; error?: string };
 }
 
 // ---- hello --------------------------------------------------------------------------------------
@@ -199,14 +207,17 @@ export interface GatewayInfo {
   accepting: boolean;
   seq: number | null;
   kinds?: RegistryLinkKind[];
+  /** Only when asked with `?kinds=1&preview=1`, and only while a preview address is set. */
+  previewUrl?: string;
 }
 
 /** A link's kind, which binds the routes its row may serve: `h` hand-off (/h/, /api/h/, /ws/h),
     `i` owner page (/i/, /api/i/), `s` session share (/s/, /api/s/, /ws/s, §app/session-share),
-    `x` reserved for exposures (phase 2; never a share route). */
-export type RegistryLinkKind = "h" | "i" | "s" | "x";
+    `x` reserved for exposures (phase 2; never a share route), `p` a preview link (its own host
+    `<label>.<zone>`, every path on it, §mesh.public/preview). */
+export type RegistryLinkKind = "h" | "i" | "s" | "x" | "p";
 /** Every kind this build's gateway accepts, in GatewayInfo.kinds. */
-export const REGISTRY_LINK_KINDS: readonly RegistryLinkKind[] = ["h", "i", "s", "x"];
+export const REGISTRY_LINK_KINDS: readonly RegistryLinkKind[] = ["h", "i", "s", "x", "p"];
 
 export interface RegistryLink {
   /** Lowercase 64-hex sha256 of the token: the gateway never sees a token. */
@@ -310,3 +321,49 @@ export interface OfflineBody {
 /** The close code of a live `/ws/h` or `/ws/s` hop whose host went away; the page reconnects with backoff. */
 export const HOP_LOST_CLOSE = 4503;
 export const RECONNECT_BACKOFF_MS = { first: 5000, max: 60_000 } as const;
+
+// ---- preview links (§mesh.public/preview) -------------------------------------------------------
+
+/** A preview's label, its secret: 32 random bytes as 52 lowercase base32 characters (a DNS label
+    holds at most 63). The registry row's `h` is the SHA-256 of it. */
+export const PREVIEW_LABEL_RE = /^[a-z2-7]{52}$/;
+/** Set by a gateway on a preview hop, after it stripped every incoming x-sova-* header: the label
+    of the preview host it matched. A routed host's ingress reads it only on an admitted connection. */
+export const PREVIEW_HEADER = "x-sova-preview";
+/** A preview address as written: `https://*.<host>` (a pin may be http), host of two labels or more. */
+export const PREVIEW_URL_RE = /^(https?):\/\/\*\.((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?::(\d{1,5}))?$/;
+
+/** A preview host's limits (§mesh.public/preview-limits); the share host keeps its own. */
+export const PREVIEW_LIMITS = {
+  requestsPerMinute: 1200,
+  bodyMaxBytes: 25 * 1024 * 1024,
+  headersMs: 60_000,
+  httpPerPreview: 64,
+  wsPerPreview: 16,
+  httpTotal: 256,
+  wsTotal: 256,
+} as const;
+/** Ports a preview never publishes, whatever this host binds: Sova's own defaults. */
+export const FORBIDDEN_PREVIEW_PORTS: readonly number[] = [4800, 4801, 4802, 4810];
+export const PREVIEW_DAYS_DEFAULT = 1;
+export const PREVIEW_DAYS_MAX = 30;
+/** The not-running page reloads itself this often (and says so in Retry-After). */
+export const PREVIEW_RETRY_S = 10;
+
+/** The static answers of a preview host (§mesh.public/preview-offline): no host, port or token. */
+export const PREVIEW_PAGES = {
+  notRunning: { title: "Not running", text: "This preview isn't running right now. It will open here once the app is started again." },
+  gone: { title: "Link turned off", text: "This preview link is no longer active." },
+  unknown: { title: "Not found", text: "This preview link isn't active." },
+  slow: { title: "No answer", text: "The app took too long to answer." },
+} as const;
+
+/** Where preview links minted here point: the address, `*.<zone>` form, and where it came from;
+    null with `reason` when none can be minted. */
+export interface PreviewAddress {
+  url: string | null;
+  source: "env" | "setting" | "gateway" | null;
+  reason?: "no-address" | "gateway-old";
+  /** `reason`'s sentence, the gateway named. */
+  message?: string;
+}

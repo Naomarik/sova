@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { SHARE_PORT_DEFAULT, type PublicLinksFile, type ShareFront, type ShareGatewaySetting, type ShareRoute } from "../shared/public-links";
+import { PREVIEW_URL_RE, SHARE_PORT_DEFAULT, type PublicLinksFile, type ShareFront, type ShareGatewaySetting, type ShareRoute } from "../shared/public-links";
 import { stateRoot } from "./state-root";
 
 /**
@@ -19,7 +19,7 @@ export const OFF: PublicLinksFile = { version: 1, route: "off" };
 const FRONTS: readonly ShareFront[] = ["vhost", "caddy", "funnel", "cloudflared"];
 const FILE_KEYS = ["version", "route", "gateway", "ingressPort", "lastKnownUrl", "verifiedAt"];
 const PATCH_KEYS = ["route", "gateway", "ingressPort"];
-const GATEWAY_KEYS = ["publicUrl", "front", "sharePort", "acceptFrom"];
+const GATEWAY_KEYS = ["publicUrl", "front", "sharePort", "acceptFrom", "previewUrl"];
 /** A Tailscale StableID (e.g. "nXXXXCNTRL"): short, printable, no spaces. */
 const NODE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const ACCEPT_MAX = 256;
@@ -92,7 +92,12 @@ function parseGateway(v: unknown): ShareGatewaySetting {
       fail('gateway.acceptFrom must be "all" or a list of node ids');
     if (new Set(acceptFrom as string[]).size !== (acceptFrom as string[]).length) fail("gateway.acceptFrom lists a node twice");
   }
-  return { publicUrl, front: v.front as ShareFront, sharePort: v.sharePort as number, acceptFrom: acceptFrom === "all" ? "all" : [...(acceptFrom as string[])] };
+  const out: ShareGatewaySetting = { publicUrl, front: v.front as ShareFront, sharePort: v.sharePort as number, acceptFrom: acceptFrom === "all" ? "all" : [...(acceptFrom as string[])] };
+  if (v.previewUrl !== undefined) {
+    if (parsePreviewUrl(v.previewUrl, false) !== v.previewUrl) fail("gateway.previewUrl must be written like https://*.example.com, with no path or trailing slash");
+    out.previewUrl = v.previewUrl as string;
+  }
+  return out;
 }
 
 /** A PUT's gateway before the strict parse: the port and acceptFrom may be left out (their
@@ -105,7 +110,11 @@ function gatewayInput(v: unknown): unknown {
   } catch {
     // left as sent: the strict parse names the problem
   }
-  return { sharePort: SHARE_PORT_DEFAULT, acceptFrom: "all", ...v, publicUrl };
+  const out: Record<string, unknown> = { sharePort: SHARE_PORT_DEFAULT, acceptFrom: "all", ...v, publicUrl };
+  // An empty preview address is none; a written one may carry one trailing slash and capitals.
+  if (v.previewUrl === null || (typeof v.previewUrl === "string" && !v.previewUrl.trim())) delete out.previewUrl;
+  else if (typeof v.previewUrl === "string") out.previewUrl = parsePreviewUrl(v.previewUrl.trim().toLowerCase().replace(/\/$/, ""), false) ?? v.previewUrl;
+  return out;
 }
 
 /** The whole file, strictly; throws on anything else. */
@@ -211,9 +220,9 @@ export function recordLastKnownUrl(url: string): PublicLinksFile {
 }
 
 /** The SOVA_SHARE_* variables that are set, and so win over the setting. */
-export const SHARE_ENV = ["SOVA_SHARE_PUBLIC_URL", "SOVA_SHARE_HOST", "SOVA_SHARE_PORT"] as const;
+export const SHARE_ENV = ["SOVA_SHARE_PUBLIC_URL", "SOVA_SHARE_HOST", "SOVA_SHARE_PORT", "SOVA_SHARE_PREVIEW_URL"] as const;
 export function pinnedByEnv(env: NodeJS.ProcessEnv = process.env): string[] {
-  return SHARE_ENV.filter((k) => (k === "SOVA_SHARE_PUBLIC_URL" ? sharePin(env) !== null : !!env[k]?.trim()));
+  return SHARE_ENV.filter((k) => (k === "SOVA_SHARE_PUBLIC_URL" ? sharePin(env) !== null : k === "SOVA_SHARE_PREVIEW_URL" ? previewPin(env) !== null : !!env[k]?.trim()));
 }
 
 /** The pins already warned about, so a refused one is logged once, not per request. */
@@ -245,4 +254,32 @@ export function sharePin(env: NodeJS.ProcessEnv = process.env): string | null {
     console.warn("[share] SOVA_SHARE_PUBLIC_URL ignored: it must be just an http:// or https:// address (no path, query, login, spaces or backslashes). Links use the Public links setting instead.");
   }
   return origin;
+}
+
+/**
+ * A preview address (§mesh.public/preview-address) in its canonical form, or null: `https://*.<host>`
+ * (http too when `http` is allowed: a pin), exactly one wildcard label over a lowercase host of at
+ * least two labels, an optional port, nothing after it. Nothing is normalized: anything else is null.
+ */
+export function parsePreviewUrl(v: unknown, http: boolean): string | null {
+  if (typeof v !== "string") return null;
+  const m = PREVIEW_URL_RE.exec(v);
+  if (!m) return null;
+  if (m[1] === "http" && !http) return null;
+  const port = m[3] === undefined ? null : Number(m[3]);
+  if (port !== null && (port < 1 || port > 65535 || String(port) !== m[3] || port === (m[1] === "https" ? 443 : 80))) return null;
+  if (m[2]!.length > 253 - 53) return null; // a label, its dot and the zone must fit a DNS name
+  return v;
+}
+
+/** The SOVA_SHARE_PREVIEW_URL pin, or null; a refused one is logged once and counts as none. */
+export function previewPin(env: NodeJS.ProcessEnv = process.env): string | null {
+  const text = env.SOVA_SHARE_PREVIEW_URL?.trim();
+  if (!text) return null;
+  const url = parsePreviewUrl(text.toLowerCase().replace(/\/$/, ""), true);
+  if (url === null && !warnedPins.has(`preview:${text}`)) {
+    warnedPins.add(`preview:${text}`);
+    console.warn("[share] SOVA_SHARE_PREVIEW_URL ignored: it must be like https://*.example.com (one wildcard label, no path). Preview links use the Public links setting instead.");
+  }
+  return url;
 }

@@ -10,6 +10,8 @@ import { addWatcher, viewForToken } from "./hub";
 import { socketClosed, socketOpened } from "../visits";
 import { createShareApp, logVisit, PAGE_CSP } from "./routes";
 import { sessionShareUpgrade } from "./session-routes";
+import { PREVIEW_LIMITS } from "../../shared/public-links";
+import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { clientAddress, trustedClient } from "./security";
 
 // The old client-address rule lives with the other trust helpers; its old import path stays.
@@ -28,6 +30,12 @@ export { clientAddress };
  * which is all today's listener runs. The public-links gateway replaces them with its router (a
  * token's hash → this host or the routed host that minted it), and a routed host's ingress adds
  * `admit` (only its gateway may connect). server/share/listener.ts binds.
+ *
+ * With `preview`, a request is first split by what `preview.match` says (§mesh.public/preview-address):
+ * the gateway's listener matches a Host `<label>.<zone>`, a routed host's ingress the header its
+ * admitted gateway set. A preview request skips the share allowlist (every path is the app's), its
+ * raw target passes byte for byte, and it has its own per-address limit per preview
+ * (§mesh.public/preview-limits); everything else keeps the share host's rules exactly.
  */
 
 const TOKEN = "[A-Za-z0-9_-]{43}";
@@ -169,6 +177,13 @@ export type ShareDispatch = (req: IncomingMessage, res: ServerResponse, ctx: Sha
     socket (a 500 if nothing was written yet). */
 export type ShareUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer, ctx: ShareUpgradeContext) => void | Promise<void>;
 
+/** A preview host's hooks: which preview a request is for (null: the share host), and what answers it. */
+export interface PreviewHooks {
+  match: (req: IncomingMessage) => string | null;
+  dispatch: (req: IncomingMessage, res: ServerResponse, label: string, client: string) => void | Promise<void>;
+  upgrade: (req: IncomingMessage, socket: Duplex, head: Buffer, label: string, client: string) => void | Promise<void>;
+}
+
 export interface ShareServerOptions {
   headersMs?: number;
   requestMs?: number;
@@ -185,6 +200,8 @@ export interface ShareServerOptions {
   /** Default: the in-process `/ws/h` (the link's session, read-only) and `/ws/s` (a session share's
       presence and view pushes). */
   upgrade?: ShareUpgrade;
+  /** Preview hosts (§mesh.public/preview-address); absent: none. */
+  preview?: PreviewHooks;
 }
 
 /** The in-process share app and its `/ws/h`: the hooks' defaults, and what a gateway's router
@@ -295,6 +312,49 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   const upgrade = opts.upgrade ?? local!.upgrade;
   const clientOf = opts.client ?? ((req: IncomingMessage) => trustedClient(req, { trust: "local-proxy" }));
   const perAddress = new RateLimiter(REQUESTS_PER_MINUTE);
+  const perPreview = new RateLimiter(PREVIEW_LIMITS.requestsPerMinute);
+  const preview = opts.preview;
+  /** The preview a request is for; a throw is the share host's. */
+  const previewOf = (req: IncomingMessage): string | null => {
+    try {
+      return preview?.match(req) ?? null;
+    } catch {
+      return null;
+    }
+  };
+  const servePreview = (req: IncomingMessage, res: ServerResponse, label: string): void => {
+    // Origin-form only; the path itself is the app's, never judged or parsed here.
+    if (!req.url || req.url[0] !== "/") return json(res, 400, { error: "Bad request" });
+    let client: string;
+    try {
+      client = clientOf(req);
+    } catch {
+      return json(res, 500, { error: "Internal error" });
+    }
+    if (perPreview.limited(`${client} ${label}`)) return previewAnswer(req, res, "tooMany");
+    guarded(
+      () => preview!.dispatch(req, res, label, client),
+      (err) => {
+        console.warn(`[share] preview dispatch failed (${err instanceof Error ? err.name : typeof err})`);
+        if (!res.headersSent && !res.destroyed) json(res, 500, { error: "Internal error" });
+        else res.destroy();
+      },
+    );
+  };
+  const upgradePreview = (req: IncomingMessage, socket: Duplex, head: Buffer, label: string): void => {
+    if (!req.url || req.url[0] !== "/") return refuse(socket, 400, { error: "Bad request" });
+    let client: string;
+    try {
+      client = clientOf(req);
+    } catch {
+      return void socket.destroy();
+    }
+    if (perPreview.limited(`${client} ${label}`)) return previewUpgradeAnswer(socket, "tooMany");
+    guarded(
+      () => preview!.upgrade(req, socket, head, label, client),
+      () => socket.destroy(),
+    );
+  };
   const requestTimeout = opts.requestMs ?? REQUEST_TIMEOUT_MS;
   const options = {
     headersTimeout: Math.min(opts.headersMs ?? HEADERS_TIMEOUT_MS, requestTimeout),
@@ -303,6 +363,8 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
     connectionsCheckingInterval: opts.checkMs ?? 1000,
   };
   const serve = (req: IncomingMessage, res: ServerResponse): void => {
+    const label = previewOf(req);
+    if (label) return servePreview(req, res, label);
     const target = rawTarget(req.url);
     if (!target) {
       json(res, 400, { error: "Bad request" });
@@ -340,6 +402,8 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
     guarded(() => dispatch(req, res, { url, client }), failed("dispatch"));
   };
   const serveUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer): void => {
+    const label = previewOf(req);
+    if (label) return upgradePreview(req, socket, head, label);
     const target = rawTarget(req.url);
     if (!target) {
       refuse(socket, 400, { error: "Bad request" });

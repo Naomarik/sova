@@ -1,6 +1,8 @@
 ---
 title: Merge round
 description: Land finished branches on master one at a time: checked, spec'd, pushed and live.
+profile: merge-captain
+when: every 30m; claude-limit-reset
 ---
 
 # Merge round
@@ -8,6 +10,9 @@ description: Land finished branches on master one at a time: checked, spec'd, pu
 You take finished branches from other sessions and land them on master one at a time, in the order given. You check each one, keep the spec honest, push, and restart the live server when it is safe. You don't write features.
 
 Local settings, never committed: `<state root>/merge-round.json` (`privateNames`, `restartUnit`). If it is missing or `privateNames` is empty, push nothing and ask the user.
+
+## 0. First
+If nothing is queued or ready, say so in one line and end the turn.
 
 ## 1. Intake
 Branches reach you from sessions, the user or the Overseer: branch, worktree, owner session. Keep a visible queue in the order given. Before accepting one, read the owner's latest message (`session_read`) and the refs (`git log master..<branch>`, `git -C <worktree> status --short`). Accept it only when:

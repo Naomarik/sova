@@ -396,6 +396,11 @@ function SessionModel(props: { info: ProjectOverseerInfo; host: string | null; k
     const saved = model();
     return saved && !refs.includes(saved) ? [saved, ...refs] : refs;
   });
+  const noVision = createMemo(() => {
+    const ref = model();
+    const m = ref ? models()?.find((x) => x.ref === ref) : undefined;
+    return !!m && Array.isArray(m.input) && !m.input.includes("image");
+  });
   const levels = createMemo(() => {
     const ref = model();
     const m = ref ? models()?.find((x) => x.ref === ref) : undefined;
@@ -427,6 +432,10 @@ function SessionModel(props: { info: ProjectOverseerInfo; host: string | null; k
           </option>
           <For each={options()}>{(ref) => <option value={ref} selected={ref === model()}>{ref}</option>}</For>
         </select>
+        {/* A gathering model without vision: people get no attach button (§app.baton/images). */}
+        <Show when={props.kind !== "coding" && noVision()}>
+          <span class="field-hint">This model can't see photos: people won't get an attach button.</span>
+        </Show>
       </label>
       <label class="field">
         <span class="field-label">Their thinking</span>

@@ -775,3 +775,18 @@ test("a hopped session image over the gateway's cap is refused (declared) or cut
   const streamed = await get(`${g.base}/api/s/${T("s")}/img/2`);
   assert.ok(streamed.error || streamed.body.length <= 50, "streamed past the cap: cut, never passed whole");
 });
+
+test("a gathering's photos hop as the link's own: the upload's body passes once, a read is capped like a session image", async () => {
+  const o = await origin((req, res, body) => {
+    if (req.method === "POST") return void res.writeHead(201, { "Content-Type": "application/json" }).end(JSON.stringify({ got: body.length }));
+    const img = Buffer.alloc(req.url!.endsWith("/img/1") ? 100 : 10, 1);
+    res.writeHead(200, { "Content-Type": "image/jpeg", "Content-Length": String(img.length) }).end(img);
+  });
+  const g = await gateway({ port: o.port, links: [row(T("h"))], imageMaxBytes: 50 });
+  const up = await get(`${g.base}/api/h/${T("h")}/image`, { method: "POST", headers: { "Content-Type": "image/jpeg", "Content-Length": "4" }, body: "abcd" });
+  assert.deepEqual([up.status, JSON.parse(up.body)], [201, { got: 4 }]);
+  assert.equal(o.seen.filter((s) => s.method === "POST").length, 1, "a POST is never retried");
+  const small = await get(`${g.base}/api/h/${T("h")}/img/0`);
+  assert.deepEqual([small.status, small.body.length], [200, 10]);
+  assert.equal((await get(`${g.base}/api/h/${T("h")}/img/1`)).status, 503, "declared over the cap");
+});

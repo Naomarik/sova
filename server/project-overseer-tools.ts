@@ -546,8 +546,12 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           if (!view) throw new Refusal("That gathering session's file is not on this host.");
           const rows = view.items.slice(-n).map((it) => {
             switch (it.kind) {
-              case "message":
-                return `${it.name.toUpperCase()}: ${cut(it.text, 1000)}`;
+              case "message": {
+                // Photos as a count, never pixels (§app.baton/images).
+                const n = it.images?.length ?? 0;
+                const photos = n ? `[${n === 1 ? "1 photo" : `${n} photos`}]` : "";
+                return `${it.name.toUpperCase()}: ${[photos, cut(it.text, 1000)].filter(Boolean).join(" ")}`;
+              }
               case "reply":
                 return `ASSISTANT: ${cut(it.text, 1000)}`;
               case "handoff":

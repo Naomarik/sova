@@ -13,6 +13,8 @@ import { sessionShareUpgrade } from "./session-routes";
 import { PREVIEW_LIMITS } from "../../shared/public-links";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 import { clientAddress, trustedClient } from "./security";
+import { MB, PHOTO_MB } from "../../shared/baton";
+import { UPLOAD_BODY_SLACK } from "../baton-images";
 
 // The old client-address rule lives with the other trust helpers; its old import path stays.
 export { clientAddress };
@@ -44,6 +46,9 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: /^\/h\/assets\/[A-Za-z0-9_-][A-Za-z0-9._-]*$/ },
   { method: "GET", re: new RegExp(`^/api/h/${TOKEN}$`) },
   { method: "POST", re: new RegExp(`^/api/h/${TOKEN}/message$`) },
+  // A person's photos (§app.baton/images): the upload, and one photo of the link's view.
+  { method: "POST", re: new RegExp(`^/api/h/${TOKEN}/image$`) },
+  { method: "GET", re: new RegExp(`^/api/h/${TOKEN}/img/(?:0|[1-9][0-9]{0,3})$`) },
   // The Owner page (§app.owner-page/link): read-only, GET only, no socket.
   { method: "GET", re: new RegExp(`^/i/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}$`) },
@@ -77,12 +82,25 @@ export function shareMayReach(method: string, pathname: string): boolean {
 }
 
 export const BODY_MAX = 16 * 1024;
+/** A photo upload's body cap at the edge: the largest photo any host may allow, plus room. The
+    host that stages it refuses past its own setting (the edge may be a gateway, which never
+    knows the minting host's setting). */
+export const UPLOAD_BODY_MAX = PHOTO_MB.max * MB + UPLOAD_BODY_SLACK;
 export const REQUESTS_PER_MINUTE = 60;
+/** Photo reads have a per-address bucket of their own: a thread full of photos must not use up
+    the page's 60 a minute. */
+export const IMAGE_REQUESTS_PER_MINUTE = 240;
 /** A request's headers must arrive within this, and its whole body within REQUEST_TIMEOUT_MS
     (else 408): a 16 KB body needs no more, and a slow client can't hold a socket for Node's
-    default five minutes. */
+    default five minutes. A photo upload alone has UPLOAD_TIMEOUT_MS (a phone on mobile data). */
 export const HEADERS_TIMEOUT_MS = 10_000;
 export const REQUEST_TIMEOUT_MS = 15_000;
+export const UPLOAD_TIMEOUT_MS = 120_000;
+
+const UPLOAD_PATH = new RegExp(`^/api/h/${TOKEN}/image$`);
+const IMAGE_PATH = new RegExp(`^/api/h/${TOKEN}/img/`);
+/** The body cap for a judged path: the photo upload's own, 16 KB for everything else. */
+export const bodyMaxFor = (pathname: string): number => (UPLOAD_PATH.test(pathname) ? UPLOAD_BODY_MAX : BODY_MAX);
 
 export class RateLimiter {
   private hits = new Map<string, number[]>();
@@ -186,7 +204,10 @@ export interface PreviewHooks {
 
 export interface ShareServerOptions {
   headersMs?: number;
+  /** The whole-request timer every request but a photo upload has. */
   requestMs?: number;
+  /** A photo upload's (Node's own request timeout, which it also bounds every request by). */
+  uploadMs?: number;
   checkMs?: number;
   /** Runs first, on every request and every upgrade, before the allowlist: false, a throw or a
       rejection is 403 with REFUSED_HEADER and `Connection: close`. Absent (the default): every
@@ -305,6 +326,23 @@ function logFailure(where: string, pathname: string, err: unknown): void {
   console.warn(`[share] ${where} failed on a ${routeKind(pathname)} request (${kind})`);
 }
 
+/** The edge's whole-request timer for a request that isn't a photo upload: a body still not in
+    after `ms` is answered 408 and its connection closed, as Node's own timeout would. */
+function bodyTimer(req: IncomingMessage, res: ServerResponse, ms: number): void {
+  if (req.complete) return;
+  const timer = setTimeout(() => {
+    if (req.complete || res.destroyed) return;
+    if (res.headersSent) return void req.socket.destroy();
+    const body = JSON.stringify({ error: "Request timeout" });
+    res.writeHead(408, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body), Connection: "close", "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" });
+    res.end(body, () => req.socket.destroy());
+  }, ms);
+  const clear = () => clearTimeout(timer);
+  req.once("end", clear);
+  res.once("finish", clear);
+  res.once("close", clear);
+}
+
 /** Build (not bind) a share server: tests bind it on port 0 (and may shorten the timeouts). */
 export function createShareServer(opts: ShareServerOptions = {}): Server {
   const local = opts.dispatch && opts.upgrade ? null : inProcessShare();
@@ -312,6 +350,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
   const upgrade = opts.upgrade ?? local!.upgrade;
   const clientOf = opts.client ?? ((req: IncomingMessage) => trustedClient(req, { trust: "local-proxy" }));
   const perAddress = new RateLimiter(REQUESTS_PER_MINUTE);
+  const perAddressImages = new RateLimiter(IMAGE_REQUESTS_PER_MINUTE);
   const perPreview = new RateLimiter(PREVIEW_LIMITS.requestsPerMinute);
   const preview = opts.preview;
   /** The preview a request is for; a throw is the share host's. */
@@ -356,9 +395,12 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
     );
   };
   const requestTimeout = opts.requestMs ?? REQUEST_TIMEOUT_MS;
+  const uploadTimeout = Math.max(opts.uploadMs ?? UPLOAD_TIMEOUT_MS, requestTimeout);
   const options = {
     headersTimeout: Math.min(opts.headersMs ?? HEADERS_TIMEOUT_MS, requestTimeout),
-    requestTimeout,
+    // Node's own timer is the upload's; every other request gets the edge's shorter one (below),
+    // so slow-body protection is unchanged outside the upload route.
+    requestTimeout: uploadTimeout,
     // How often Node looks for requests past those limits (default 30 s).
     connectionsCheckingInterval: opts.checkMs ?? 1000,
   };
@@ -387,17 +429,18 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       failed("client")(err);
       return;
     }
-    if (perAddress.limited(client)) {
+    if ((IMAGE_PATH.test(url.pathname) ? perAddressImages : perAddress).limited(client)) {
       tooMany(res, PAGE_SHELL.test(url.pathname));
       return;
     }
     if (req.method === "POST") {
       const len = Number(req.headers["content-length"]);
-      if (!Number.isFinite(len) || len > BODY_MAX) {
+      if (!Number.isFinite(len) || len > bodyMaxFor(url.pathname)) {
         json(res, 413, { error: "Request body too large" });
         req.resume();
         return;
       }
+      if (!UPLOAD_PATH.test(url.pathname)) bodyTimer(req, res, requestTimeout);
     }
     guarded(() => dispatch(req, res, { url, client }), failed("dispatch"));
   };

@@ -7,6 +7,7 @@ import { attentionChanged } from "./attention-memo";
 import { unroutedConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
+import { sessionSeesImages } from "./baton-images";
 import { BusyError } from "./chat-manager";
 import {
   addPerson,
@@ -688,11 +689,13 @@ export function registerOrgRoutes(app: Hono<any>): void {
   );
   app.get(
     "/api/baton",
-    handle((c) => {
+    handle(async (c) => {
       const path = resolveSessionPath(c.req.query("path"));
       const hit = path ? batonOfPath(path) : null;
       if (!hit) return c.json({ error: "Not a baton session" }, 404);
-      return c.json(batonInfo(hit.row));
+      // Photos are on but this model can't see them: the strip says people get no attach button (§app.baton/images).
+      const noPhotos = readBatonSettings().photos.enabled && !(await sessionSeesImages(hit.row, hit.dir).catch(() => false));
+      return c.json({ ...batonInfo(hit.row), ...(noPhotos ? { noPhotos: true } : {}) });
     }),
   );
   // What It's Told (§app.baton/told): who started it and why, the prompt as last recorded, its tools. Operator only.

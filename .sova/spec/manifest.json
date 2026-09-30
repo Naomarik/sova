@@ -7674,6 +7674,7 @@
         "server/share/router.ts",
         "server/share/edge.ts",
         "server/share/front.ts",
+        "shared/public-links.ts",
         "server/share-security.test.ts"
       ]
     },
@@ -9135,6 +9136,36 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "reviewed"
+    },
+    "§mesh.public/listener-failure": {
+      "kind": "behavior",
+      "requires": [
+        "§mesh.public/setting",
+        "§mesh.public/panel",
+        "§design.copy-deck/public-links"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/share/listener.ts",
+        "server/public-links-routes.ts",
+        "shared/public-links.ts",
+        "src/lib/public-links.ts",
+        "src/components/PublicLinksSettings.tsx",
+        "server/public-links.test.ts",
+        "src/lib/public-links.test.ts"
+      ]
+    },
+    "§mesh.vps/arch": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [],
+      "code": [
+        "scripts/mesh-vps/remote-setup.sh",
+        "scripts/mesh-vps/deploy.sh",
+        "scripts/mesh-vps/config.sh"
+      ]
     }
   },
   "boundary": {

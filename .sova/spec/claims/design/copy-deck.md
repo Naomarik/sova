@@ -860,7 +860,8 @@ page never names a host or a person.
 | Where | Copy |
 |---|---|
 | Title · line | Public links · People you send a link to open it at this address. |
-| State chip | `Off` · `Not verified` (warn) · `Verified` (success) · `Unreachable` (error) |
+| State chip | `Off` · `Not verified` (warn) · `Verified` (success) · `Unreachable` (error) · `Not listening` (error, §mesh.public/listener-failure) |
+| Share port won't open (error banner under the Address row) | **The share port isn't open.** {reason} Links from this host can't be opened from outside until it is. Fix it, then save a different port or restart Sova. · {reason} (server): Another program is already using {host}:{port}. · This host doesn't let Sova use port {port}. · {host} isn't an address of this host. · SOVA_SHARE_PORT isn't a port number. · Couldn't open {host}:{port} ({code}). |
 | Address row | Address · {url}, or `None` · source `Set by environment ({var})` / `From this setting` / `From {gateway}` / `Bound address` |
 | Route legend and choices | Where links open · `Off` "Links work only on your own devices." · `This host is the gateway` "This host serves every public link, including those from hosts that go through it." · `Through {gateway}` "Links from this host open at {gateway}'s address. {gateway} must be on for them to open." |
 | Gateway fields | Public address · Front (`Your web server` · `Caddy on this host` · `Tailscale Funnel` · `Cloudflare Tunnel`) · Local port · Accept links from (`All hosts` · `These hosts`) |

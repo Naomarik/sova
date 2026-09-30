@@ -17,8 +17,8 @@ const SCOPED = new Set(["project", "watch", "item", "decision", "conflict", "rec
 export function projectOfSession(host: Pick<OrgHostApi, "data">, sid: string): string | null {
   const pid = host.data(sid)?.projectId;
   if (typeof pid === "string" && pid) return pid;
-  const [chart, , project] = sid.split("/");
-  return chart && SCOPED.has(chart) && project ? project : null;
+  const [statechart, , project] = sid.split("/");
+  return statechart && SCOPED.has(statechart) && project ? project : null;
 }
 
 const KINDS: readonly PoLimitKind[] = ["gather", "promote", "create", "prompt"];

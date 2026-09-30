@@ -26,7 +26,7 @@ const { disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
 const { envelopeFor, holdRef, hostOf, setOrgClockForTest } = await import("./org-engine");
 const { heldAttention, pipelineInfo, LINES } = await import("./project-pipeline");
-const { chartInfo } = await import("./org-charts");
+const { statechartInfo } = await import("./org-charts");
 const pipelineInfoOf = () => pipelineInfo(org.id, project.id);
 const { fakeLooks } = await import("./org-test-fixtures");
 
@@ -239,13 +239,13 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
 
   test("every event an item's sessions take (item, gathering, coding session, decision) has a sentence, or moves the lane", () => {
     const missing: string[] = [];
-    for (const chart of ["item", "baton", "build", "decision"]) {
-      for (const t of chartInfo(chart)!.transitions.filter((x) => x["sova/feed"] !== "quiet"))
+    for (const statechart of ["item", "baton", "build", "decision"]) {
+      for (const t of statechartInfo(statechart)!.transitions.filter((x) => x["sova/feed"] !== "quiet"))
         for (const e of t.event) {
           if (["link/moved", "sova.charts/flush", "hold/cancelled", "hold/dropped", "sova/resumed", "effect/done", "item/moved"].includes(e)) continue;
-          if (!LINES[`${chart}:${e}`] && !LINES[e]) missing.push(`${chart}:${e}`);
+          if (!LINES[`${statechart}:${e}`] && !LINES[e]) missing.push(`${statechart}:${e}`);
         }
-      if (!LINES[`${chart}:sova/started`]) missing.push(`${chart}:sova/started`);
+      if (!LINES[`${statechart}:sova/started`]) missing.push(`${statechart}:sova/started`);
     }
     assert.deepEqual([...new Set(missing)], []);
   });

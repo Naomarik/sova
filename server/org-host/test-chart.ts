@@ -5,7 +5,7 @@ type Data = Record<string, unknown>;
 const assign = (data: Data) => [{ op: "assign", data }];
 const outbox = (d: Data, e: Data) => [...((d["outbox"] as Data[]) ?? []), e];
 
-export const HOST_CHART = [
+export const HOST_STATECHART = [
   "statechart",
   {},
   [
@@ -38,16 +38,16 @@ export const HOST_CHART = [
   ],
 ];
 
-export const HOST_CHARTS = {
+export const HOST_STATECHARTS = {
   "host-probe": {
     version: 1,
     storage: "portable",
-    chart: HOST_CHART,
+    chart: HOST_STATECHART,
     acts: {
       "gather/start": { needs: null, hold: true, counts: "gather", what: "Gathering" },
       say: { needs: null, hours: (d: Data) => ((d["_event"] as Data | undefined)?.["data"] as Data | undefined)?.["window"] ?? null },
     },
     redact: { secretish: "drop" },
   },
-  "host-local-probe": { version: 1, storage: "host-local", chart: HOST_CHART, cold: (config: string[]) => config.includes("gathering") },
+  "host-local-probe": { version: 1, storage: "host-local", chart: HOST_STATECHART, cold: (config: string[]) => config.includes("gathering") },
 };

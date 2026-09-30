@@ -12,7 +12,7 @@ import { afterEach, test } from "node:test";
 import type { EngineOptions } from "../org-charts";
 import { OrgHost } from "./index";
 import { DEFAULT_REDACT, scrub, scrubChanged } from "./log";
-import { HOST_CHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-chart";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -104,7 +104,7 @@ test("what a log replay needs (r9) is redacted like the rest: spawn data, a star
     plainText: "PLAIN-TEXT-MARKER a note's words",
     plainEmail: "plain.marker@example.org",
   };
-  const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_CHARTS as unknown as EngineOptions["charts"] });
+  const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"] });
   host.invocations.register("sova/look", {
     start: (_inv, report) => void setTimeout(() => report("finished", undefined, { text: M.reportText, contact: { phone: M.reportPhone } }), 5),
     stop: () => {},

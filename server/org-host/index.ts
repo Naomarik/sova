@@ -11,9 +11,9 @@
 // effect handler is idempotent by key). One timer follows the engine's `nextDueAt`.
 import { existsSync, mkdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import {
-  chartInfo as chartInfoOf,
-  chartVersions,
-  createOrgCharts,
+  statechartInfo as statechartInfoOf,
+  statechartVersions,
+  createStatecharts,
   type SnapshotPeek,
   type EnabledEvent,
   type EngineOptions,
@@ -21,7 +21,7 @@ import {
   type InvocationRecord,
   type Json,
   type JsonObject,
-  type OrgCharts,
+  type Statecharts,
   type Refusal,
   type StampContext,
   type Step,
@@ -186,7 +186,7 @@ function outcomeEvent(type: string, outcome: string): string {
 export class OrgHost {
   readonly orgId: string;
   readonly paths: HostPaths;
-  private readonly engine: OrgCharts;
+  private readonly engine: Statecharts;
   private readonly durable: boolean;
   private readonly clock: () => number;
   private readonly storage = new Map<string, "portable" | "host-local">();
@@ -264,12 +264,12 @@ export class OrgHost {
     this.paths = hostPaths(opts.orgId, opts.workspaceDir, opts.stateDir);
     this.durable = opts.durable ?? true;
     this.clock = opts.clock ?? Date.now;
-    this.engine = createOrgCharts({
+    this.engine = createStatecharts({
       charts: opts.charts,
       loadCold: (sid) => this.loadCold(sid),
       stamp: (sid, event, payload, ctx) => (opts.stamp ? (opts.stamp(sid, event, payload, ctx) as JsonObject) : {}),
     });
-    for (const c of chartVersions()) this.storage.set(c.name, c.storage ?? "portable");
+    for (const c of statechartVersions()) this.storage.set(c.name, c.storage ?? "portable");
     for (const [name, c] of Object.entries(opts.charts ?? {})) this.storage.set(name, ((c as { storage?: string }).storage as "host-local") ?? "portable");
   }
 
@@ -283,10 +283,10 @@ export class OrgHost {
     const sids: string[] = [];
     let loaded = 0;
     for (const root of [this.paths.portable, this.paths.local]) {
-      for (const { sid, chart, file } of scanSnapshots(root)) {
+      for (const { sid, chart: statechart, file } of scanSnapshots(root)) {
         // loading is chunked like resume: no single blocking slice (C09)
         if (++loaded % chunk === 0) await new Promise<void>((r) => setImmediate(r));
-        this.index.set(sid, { file, chart });
+        this.index.set(sid, { file, chart: statechart });
         try {
           this.engine.load(sid, readFileSync(file, "utf8"));
           sids.push(sid);
@@ -356,20 +356,20 @@ export class OrgHost {
 
   // ---- the step --------------------------------------------------------------------------------
 
-  private chartOfSid(sid: string): string {
+  private statechartOfSid(sid: string): string {
     return this.engine.chartOf(sid) ?? this.index.get(sid)?.chart ?? sid.split("/")[0] ?? "unknown";
   }
 
-  private isLocal(chart: string | null | undefined): boolean {
-    return this.storage.get(chart ?? "") === "host-local";
+  private isLocal(statechart: string | null | undefined): boolean {
+    return this.storage.get(statechart ?? "") === "host-local";
   }
 
-  private rulesOf(chart: string | null | undefined): Record<string, RedactRule> {
-    const name = chart ?? "";
+  private rulesOf(statechart: string | null | undefined): Record<string, RedactRule> {
+    const name = statechart ?? "";
     let r = this.redact.get(name);
     if (!r) {
       const runtime = (this.opts.charts as Record<string, { redact?: Record<string, RedactRule> }> | undefined)?.[name]?.redact;
-      const info = runtime ? null : chartInfoOf(name);
+      const info = runtime ? null : statechartInfoOf(name);
       r = { ...DEFAULT_REDACT, ...((runtime ?? info?.redact ?? {}) as Record<string, RedactRule>) };
       this.redact.set(name, r);
     }
@@ -382,8 +382,8 @@ export class OrgHost {
     return t;
   }
 
-  private logFileFor(chart: string | null | undefined, at: number): string {
-    return segmentFile(this.isLocal(chart) ? this.paths.localLog : this.paths.portableLog, at);
+  private logFileFor(statechart: string | null | undefined, at: number): string {
+    return segmentFile(this.isLocal(statechart) ? this.paths.localLog : this.paths.portableLog, at);
   }
 
   /** Journal and apply one call's snapshots and log rows (synchronous). */
@@ -403,9 +403,9 @@ export class OrgHost {
         return { file: this.logFileFor(s.chart, row.at), row };
       });
     const snapshots = Object.entries(r.snapshots).map(([sessionId, text]) => {
-      const chart = this.chartOfSid(sessionId);
-      const file = snapshotFile(this.isLocal(chart) ? this.paths.local : this.paths.portable, chart, sessionId);
-      this.index.set(sessionId, { file, chart });
+      const statechart = this.statechartOfSid(sessionId);
+      const file = snapshotFile(this.isLocal(statechart) ? this.paths.local : this.paths.portable, statechart, sessionId);
+      this.index.set(sessionId, { file, chart: statechart });
       return { sessionId, file, text };
     });
     if (!rows.length && !snapshots.length) return;
@@ -595,9 +595,9 @@ export class OrgHost {
     return Promise.all(r.outbox.map((e) => this.runEffect(e as Effect)));
   }
 
-  async start(sid: string, chart: string, data: Record<string, unknown>, envelope: Envelope = {}): Promise<StepResult> {
+  async start(sid: string, statechart: string, data: Record<string, unknown>, envelope: Envelope = {}): Promise<StepResult> {
     await this.ready();
-    return this.step(() => this.engine.start(sid, chart, data as JsonObject, { now: this.clock() }), { startEnvelope: envelope });
+    return this.step(() => this.engine.start(sid, statechart, data as JsonObject, { now: this.clock() }), { startEnvelope: envelope });
   }
 
   /** q9/r5 free set-state (the engine refuses anyone but the project overseer in an attended turn). */
@@ -612,10 +612,10 @@ export class OrgHost {
   /** A log row for an act no statechart takes (note, idea, to-do, confirm). */
   async logAct(row: Record<string, unknown>): Promise<void> {
     const at = this.uniqueAt(typeof row["at"] === "number" ? (row["at"] as number) : this.clock());
-    const chart = typeof row["chart"] === "string" ? (row["chart"] as string) : null;
+    const statechart = typeof row["chart"] === "string" ? (row["chart"] as string) : null;
     // `plain`: no statechart step wrote it (a log replay skips it)
-    const full = { feed: "feed", ...(scrub(row, this.rulesOf(chart)) as Record<string, Json>), at, org: this.orgId, plain: true } as LogRow;
-    const j: Journal = { id: journalId(this.clock()), at, snapshots: [], rows: [{ file: this.logFileFor(chart, at), row: full }] };
+    const full = { feed: "feed", ...(scrub(row, this.rulesOf(statechart)) as Record<string, Json>), at, org: this.orgId, plain: true } as LogRow;
+    const j: Journal = { id: journalId(this.clock()), at, snapshots: [], rows: [{ file: this.logFileFor(statechart, at), row: full }] };
     commitJournal(this.paths.journal, j, this.durable);
   }
 
@@ -692,25 +692,25 @@ export class OrgHost {
     return this.engine.data(sid) ?? this.peek(sid)?.data ?? null;
   }
 
-  chartOf(sid: string): string | null {
+  statechartOf(sid: string): string | null {
     return this.engine.chartOf(sid) ?? this.index.get(sid)?.chart ?? null;
   }
 
-  chartInfo(name: string): ReturnType<typeof chartInfoOf> {
-    return chartInfoOf(name);
+  statechartInfo(name: string): ReturnType<typeof statechartInfoOf> {
+    return statechartInfoOf(name);
   }
 
   /** Every session of the org (of `chart`): warm ones from the engine and, unless `warmOnly`, cold
       ones from their snapshots (lists keep settled batons, builds, decisions). Broken ones are not
       listed (they are in `problems()`). */
-  sessions(chart?: string, opts: { warmOnly?: boolean } = {}): SessionInfo[] {
+  sessions(statechart?: string, opts: { warmOnly?: boolean } = {}): SessionInfo[] {
     const warm = new Set(this.engine.sessions());
     const out: SessionInfo[] = [...warm]
-      .filter((sid) => !chart || this.engine.chartOf(sid) === chart)
+      .filter((sid) => !statechart || this.engine.chartOf(sid) === statechart)
       .map((id) => ({ id, chart: this.engine.chartOf(id) ?? "", configuration: this.engine.configuration(id) ?? [], data: this.engine.data(id) ?? {}, running: this.engine.running(id) }));
     if (!opts.warmOnly) {
       for (const [id, entry] of this.index) {
-        if (warm.has(id) || (chart && entry.chart !== chart)) continue;
+        if (warm.has(id) || (statechart && entry.chart !== statechart)) continue;
         const p = this.peek(id);
         if (p) out.push({ id, chart: p.chart, configuration: p.configuration, data: p.data, running: p.running });
       }

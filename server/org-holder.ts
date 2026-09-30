@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { createOrgCharts } from "./org-charts";
+import { createStatecharts } from "./org-charts";
 import { snapshotFile } from "./org-host/store";
 import { stateRoot } from "./state-root";
 import { remoteFileText } from "./workspace-git";
@@ -75,7 +75,7 @@ export function parseHolder(v: unknown): HolderRecord | null {
 export function holderOfSnapshot(sid: string, text: string | null): HolderRecord | null {
   if (!text) return null;
   try {
-    const engine = createOrgCharts();
+    const engine = createStatecharts();
     engine.load(sid, text);
     return parseHolder(engine.data(sid)?.holder);
   } catch {

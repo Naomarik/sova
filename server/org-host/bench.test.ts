@@ -8,11 +8,11 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { EngineOptions } from "../org-charts";
 import { OrgHost } from "./index";
-import { HOST_CHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-chart";
 
 test("resume of a 500-session org: < 2 s wall, no slice > 50 ms", { skip: !process.env["ORG_HOST_BENCH"] }, async () => {
   const root = mkdtempSync(join(tmpdir(), "org-host-bench-"));
-  const at = { orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_CHARTS as unknown as EngineOptions["charts"] };
+  const at = { orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"] };
   try {
     const host = await OrgHost.open(at);
     for (let i = 0; i < 500; i++) {

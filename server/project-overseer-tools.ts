@@ -18,7 +18,7 @@ import { participantLine, stakeholderLine } from "./orgs";
 import { ABILITIES_PARAM } from "./gathering-abilities";
 import { describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { OrgError } from "./org-error";
-import { chartInfo, chartVersions } from "./org-charts";
+import { statechartInfo, statechartVersions } from "./org-charts";
 import type { ProjectOverseerPaths } from "./project-overseer-store";
 import type { EnabledEvent } from "./org-charts";
 import type { FeedEntry } from "./org-host";
@@ -162,8 +162,8 @@ const PLAIN_NEEDS: Record<string, Need> = {
 export const TOOL_NEEDS: Record<string, Need> = (() => {
   const out: Record<string, Need> = { ...PLAIN_NEEDS };
   const derived: Record<string, Autonomy> = {};
-  for (const { name } of chartVersions())
-    for (const act of Object.values(chartInfo(name)?.acts ?? {})) {
+  for (const { name } of statechartVersions())
+    for (const act of Object.values(statechartInfo(name)?.acts ?? {})) {
       const need = act.needs as Autonomy | null | undefined;
       if (!act.tool || !need || !(need in RANK)) continue;
       const have = derived[act.tool];
@@ -186,8 +186,8 @@ export function operatorOnlyRefusal(name: string, attended: boolean): string | n
 /** The allowance a tool's act draws on: the `counts` of the statechart acts that name it as their `tool` (they must agree). */
 export const COUNTS: Record<string, PoLimitKind> = (() => {
   const out: Record<string, PoLimitKind> = {};
-  for (const { name } of chartVersions())
-    for (const [id, act] of Object.entries(chartInfo(name)?.acts ?? {})) {
+  for (const { name } of statechartVersions())
+    for (const [id, act] of Object.entries(statechartInfo(name)?.acts ?? {})) {
       const kind = act.counts as PoLimitKind | null | undefined;
       if (!act.tool || !kind || !PO_LIMIT_KINDS.includes(kind)) continue;
       if (out[act.tool] && out[act.tool] !== kind) throw new Error(`${name} ${id}: ${act.tool} counts "${kind}", another act counts "${out[act.tool]}"`);
@@ -322,10 +322,10 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const message = err instanceof Error ? err.message : String(err);
         // A statechart's refusal (level, allowance, at once, its own rules) is a refusal: the operator's sentence is
         // logged, the model also gets its tail. One for an allowance is held by the watch until it comes back.
-        const chart = err instanceof OrgError && err.status !== 404 ? err : null;
-        if (chart?.code === "allowance" && COUNTS[name]) await host.limitRefused(COUNTS[name]!).catch(() => {});
-        log(err instanceof Refusal || chart ? "refused" : "error", message);
-        const tail = err instanceof Refusal ? err.tail : chart?.tail;
+        const statechart = err instanceof OrgError && err.status !== 404 ? err : null;
+        if (statechart?.code === "allowance" && COUNTS[name]) await host.limitRefused(COUNTS[name]!).catch(() => {});
+        log(err instanceof Refusal || statechart ? "refused" : "error", message);
+        const tail = err instanceof Refusal ? err.tail : statechart?.tail;
         if (tail) throw new Error(`${message} ${tail}`);
         throw err instanceof Error ? err : new Error(message);
       }

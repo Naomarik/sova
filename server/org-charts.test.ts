@@ -5,42 +5,42 @@
 // the CLJS tests run; probe_shape.json holds both to one shape. The replay runs the shipped statecharts. Pure: no files, no clock but `now`.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { chartVersions, createOrgCharts as createShipped, hoursInherited, nextWindow, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
+import { statechartVersions, createStatecharts as createShipped, hoursInherited, nextWindow, StatechartsStepLimitError, type StatechartName, type EngineOptions, type Invocation, type Statecharts } from "./org-charts";
 import { readFileSync } from "node:fs";
-import { PROBE_CHARTS, probeChart, probeShape } from "./fixtures/org-charts-engine/probe-chart";
+import { PROBE_STATECHARTS, probeStatechart, probeShape } from "./fixtures/org-charts-engine/probe-chart";
 
 /** The shipped engine with the probe statechart registered. */
-const createOrgCharts = (opts: EngineOptions = {}): OrgCharts => createShipped({ ...opts, charts: PROBE_CHARTS });
-const PROBE = "engine-probe" as ChartName;
+const createStatecharts = (opts: EngineOptions = {}): Statecharts => createShipped({ ...opts, charts: PROBE_STATECHARTS });
+const PROBE = "engine-probe" as StatechartName;
 
 const T0 = 1_000_000;
 
-function probe(opts: Parameters<typeof createOrgCharts>[0] = {}, data: Record<string, number | string> = {}) {
-  const e = createOrgCharts(opts);
+function probe(opts: Parameters<typeof createStatecharts>[0] = {}, data: Record<string, number | string> = {}) {
+  const e = createStatecharts(opts);
   e.start("p", PROBE, data, { now: T0 });
   return e;
 }
 
-function has(e: OrgCharts, sid: string, ...ids: string[]): boolean {
+function has(e: Statecharts, sid: string, ...ids: string[]): boolean {
   const c = new Set(e.configuration(sid) ?? []);
   return ids.every((id) => c.has(id));
 }
 
 describe("org-charts engine (vendored ESM)", () => {
   test("the bundle lists its statecharts, each with a positive integer version", () => {
-    const names = chartVersions().map((c) => c.name);
+    const names = statechartVersions().map((c) => c.name);
     assert.deepEqual(names.sort(), ["baton", "build", "conflict", "decision", "item", "org", "person", "project", "reconciler", "residence", "watch"], "the refit's eleven statecharts, nothing else");
     assert.ok(!names.includes(PROBE), "the shipped module has no test statechart");
     assert.throws(() => createShipped().start("p", PROBE), /Unknown chart/, "the probe exists only where it is registered");
-    assert.throws(() => createShipped({ charts: { project: PROBE_CHARTS["engine-probe"] } }), /Chart project is already registered/);
-    for (const c of chartVersions()) {
+    assert.throws(() => createShipped({ charts: { project: PROBE_STATECHARTS["engine-probe"] } }), /Chart project is already registered/);
+    for (const c of statechartVersions()) {
       assert.ok(Number.isInteger(c.version) && c.version > 0, `${c.name} has version ${String(c.version)}`);
     }
   });
 
   test("the JS probe has probe.cljs's shape (probe_shape.json, which the CLJS suite checks probe.cljs against)", () => {
     const want = JSON.parse(readFileSync(new URL("../org-charts/src/sova/org_charts/engine/probe_shape.json", import.meta.url), "utf8"));
-    assert.deepEqual(probeShape(probeChart), want, "probe-chart.ts differs from probe_shape.json: change probe.cljs, probe-chart.ts and the JSON together");
+    assert.deepEqual(probeShape(probeStatechart), want, "probe-chart.ts differs from probe_shape.json: change probe.cljs, probe-chart.ts and the JSON together");
   });
 
   test("start enters every region of a parallel state, in document order", () => {
@@ -165,7 +165,7 @@ describe("org-charts engine (vendored ESM)", () => {
 
   test("a trial arms no timer, starts no invocation and delivers no send", () => {
     const calls: string[] = [];
-    const e = createOrgCharts({
+    const e = createStatecharts({
       onSave: (sid) => calls.push(`save ${sid}`),
       onInvokeStart: () => calls.push("start"),
       onInvokeStop: () => calls.push("stop"),
@@ -192,7 +192,7 @@ describe("org-charts engine (vendored ESM)", () => {
   });
 
   test("a cross-session send is delivered in the same call, or reported undelivered", () => {
-    const e = createOrgCharts();
+    const e = createStatecharts();
     e.start("a", PROBE, { peer: "b" }, { now: T0 });
     e.start("b", PROBE, {}, { now: T0 });
     const r = e.send("a", "act/ping", {}, { now: T0 });
@@ -202,7 +202,7 @@ describe("org-charts engine (vendored ESM)", () => {
     assert.deepEqual(r.sends[0]?.data, { from: "a", n: 0 });
     assert.equal(e.data("b")?.["pinged"], 1);
     assert.deepEqual(Object.keys(r.snapshots).sort(), ["a", "b"], "both moved sessions' snapshots, for one write");
-    const e3 = createOrgCharts();
+    const e3 = createStatecharts();
     e3.load("b", r.snapshots["b"] ?? "");
     assert.equal(e3.data("b")?.["pinged"], 1);
     e.unload("b");
@@ -218,7 +218,7 @@ describe("org-charts engine (vendored ESM)", () => {
     e.send("p", "next", {}, { now: T0 + 7 });
     const text = e.dump("p");
     assert.ok(text);
-    const e2 = createOrgCharts();
+    const e2 = createStatecharts();
     const info = e2.load("p", text);
     assert.equal(info.pending, 1);
     assert.equal(info.chart, "engine-probe");
@@ -236,7 +236,7 @@ describe("org-charts engine (vendored ESM)", () => {
     e.fireDue(T0 + 1);
     assert.ok(has(e, "p", "c"));
     const calls: string[] = [];
-    const e2 = createOrgCharts({
+    const e2 = createStatecharts({
       onSave: () => calls.push("save"),
       onInvokeStart: () => calls.push("start"),
       onInvokeStop: () => calls.push("stop"),
@@ -253,13 +253,13 @@ describe("org-charts engine (vendored ESM)", () => {
   });
 
   test("simultaneously past-due timers across restored sessions fire in (time, ordinal) order", () => {
-    const e = createOrgCharts();
+    const e = createStatecharts();
     for (const [sid, tick] of [["x", 300], ["y", 100], ["z", 200]] as const) {
       e.start(sid, PROBE, { tickMs: tick }, { now: T0 });
       e.send(sid, "next", {}, { now: T0 });
       e.send(sid, "next", {}, { now: T0 });
     }
-    const e2 = createOrgCharts();
+    const e2 = createStatecharts();
     for (const sid of ["z", "x", "y"]) e2.load(sid, e.dump(sid) ?? "");
     assert.deepEqual(e2.fireDue(T0 + 100_000).steps.map((s) => s.sessionId), ["y", "z", "x"]);
   });
@@ -268,13 +268,13 @@ describe("org-charts engine (vendored ESM)", () => {
     const snaps = new Map<string, string>();
     const e = probe({ onSave: (sid, text) => snaps.set(sid, text) });
     e.send("p", "next", {}, { now: T0 });
-    const e2 = createOrgCharts();
+    const e2 = createStatecharts();
     e2.load("p", snaps.get("p") ?? "");
     assert.deepEqual(e2.configuration("p"), e.configuration("p"));
   });
 
   test("errors surface as exceptions for misuse", () => {
-    const e = createOrgCharts();
+    const e = createStatecharts();
     assert.throws(() => e.send("nobody", "next"), /not loaded/);
     assert.throws(() => e.start("p", "nope" as "project"), /Unknown chart/);
     e.start("p", PROBE, {}, { now: T0 });
@@ -296,14 +296,14 @@ describe("org-charts engine (vendored ESM)", () => {
       caught = err;
     }
     assert.ok(performance.now() - t < 5_000, "it throws, it does not loop");
-    assert.ok(caught instanceof OrgChartsStepLimitError, `a typed error, got ${String(caught)}`);
+    assert.ok(caught instanceof StatechartsStepLimitError, `a typed error, got ${String(caught)}`);
     assert.equal(caught.code, "sova/step-limit");
     assert.match(caught.message, /^Step limit: session p took more than 50 microsteps on spin\/facts/);
     assert.deepEqual({ ...caught.details, configuration: caught.details.configuration.includes("gate"), transitions: caught.details.transitions.length > 0 },
       { limit: 50, microsteps: 51, sessionId: "p", event: "spin/facts", configuration: true, transitions: true });
     assert.deepEqual({ config: e.configuration("p"), data: e.dump("p"), gen: e.generation("p"), due: e.nextDueAt() }, before, "rolled back");
-    assert.throws(() => e.trial("p", "spin/facts", { merged: true, running: true }, { now: T0 }), OrgChartsStepLimitError);
-    assert.throws(() => createOrgCharts().start("x", PROBE, {}, { now: T0 }) && probe().send("p", "spin/facts", { merged: true, running: true }), /more than 200 microsteps/);
+    assert.throws(() => e.trial("p", "spin/facts", { merged: true, running: true }, { now: T0 }), StatechartsStepLimitError);
+    assert.throws(() => createStatecharts().start("x", PROBE, {}, { now: T0 }) && probe().send("p", "spin/facts", { merged: true, running: true }), /more than 200 microsteps/);
     // Merged and not running settles: the event's own transition and one eventless one.
     const r = e.send("p", "spin/facts", { merged: true, running: false }, { now: T0 + 6 });
     assert.ok(has(e, "p", "spin-merged"));
@@ -312,11 +312,11 @@ describe("org-charts engine (vendored ESM)", () => {
   });
 
   test("a step limit in a later session of the same call rolls back the earlier one too", () => {
-    const e = createOrgCharts({ maxMicrosteps: 50 });
+    const e = createStatecharts({ maxMicrosteps: 50 });
     e.start("a", PROBE, { peer: "b", spinOut: { merged: true, running: true } }, { now: T0 });
     e.start("b", PROBE, {}, { now: T0 });
     const before = ["a", "b"].map((sid) => [e.dump(sid), e.generation(sid)]);
-    assert.throws(() => e.send("a", "act/ping", {}, { now: T0 + 1 }), (err: unknown) => err instanceof OrgChartsStepLimitError && err.details.sessionId === "b" && err.details.event === "peer/pinged");
+    assert.throws(() => e.send("a", "act/ping", {}, { now: T0 + 1 }), (err: unknown) => err instanceof StatechartsStepLimitError && err.details.sessionId === "b" && err.details.event === "peer/pinged");
     assert.deepEqual(["a", "b"].map((sid) => [e.dump(sid), e.generation(sid)]), before);
   });
 

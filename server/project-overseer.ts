@@ -219,7 +219,7 @@ async function dropHistory(ids: string[]): Promise<void> {
 
 /** The project statechart's overseer region (its watch reads has-overseer from it): `overseer/start` when it has
     none yet, `overseer/clear` for a new conversation. A statechart already naming this conversation is left alone. */
-async function tellProjectChart(orgId: string, projectId: string, event: "overseer/start" | "overseer/clear", conversationId: string): Promise<void> {
+async function tellProjectStatechart(orgId: string, projectId: string, event: "overseer/start" | "overseer/clear", conversationId: string): Promise<void> {
   const host = hostOf(orgId);
   const sid = projectSid(orgId, projectId);
   const has = host.configuration(sid)?.includes("has-overseer") ?? false;
@@ -243,12 +243,12 @@ export function ensureProjectOverseer(orgId: string, projectId: string): Promise
     if (st) {
       const path = await pathOfId(st.current);
       if (path && projectOverseerOfPath(path)) {
-        await tellProjectChart(orgId, projectId, "overseer/start", st.current);
+        await tellProjectStatechart(orgId, projectId, "overseer/start", st.current);
         return { id: st.current, path };
       }
     }
     const made = createPoFile(orgId, projectId);
-    await tellProjectChart(orgId, projectId, st ? "overseer/clear" : "overseer/start", made.id);
+    await tellProjectStatechart(orgId, projectId, st ? "overseer/clear" : "overseer/start", made.id);
     // The settings file exists from the first open on, so the repo shows what is in force.
     writePoSettings(p, readPoSettings(p));
     await dropHistory(droppedSince(st, readPoState(p)));
@@ -271,7 +271,7 @@ export async function clearProjectOverseer(orgId: string, projectId: string): Pr
   const rt = rtOf(orgId, projectId);
   rt.turns.reset();
   const made = createPoFile(orgId, projectId);
-  await tellProjectChart(orgId, projectId, "overseer/clear", made.id);
+  await tellProjectStatechart(orgId, projectId, "overseer/clear", made.id);
   await dropHistory(droppedSince(st, readPoState(p)));
   return projectOverseerInfo(orgId, projectId);
 }
@@ -633,15 +633,15 @@ function toolHost(rt: Rt): PoToolHost {
       const host = hostOf(orgId);
       if (q.session) {
         const sid = projectSessionOrThrow(orgId, projectId, q.session);
-        const chart = host.chartOf(sid) ?? "";
+        const statechart = host.statechartOf(sid) ?? "";
         const envelope = overseerEnvelope(orgId, projectId, paths, rt.turns.attended());
         return {
           kind: "session",
           id: sid,
-          chart,
+          chart: statechart,
           configuration: host.configuration(sid) ?? [],
           enabled: host.enabledEvents(sid, envelope),
-          corrections: host.chartInfo(chart)?.corrections ?? [],
+          corrections: host.statechartInfo(statechart)?.corrections ?? [],
           holds: heldActs(orgId, projectId).filter((h) => holdByRef(orgId, h.id)?.sessionId === sid),
         };
       }
@@ -660,8 +660,8 @@ function toolHost(rt: Rt): PoToolHost {
     },
     async correct(session, event, payload, reason) {
       const sid = projectSessionOrThrow(orgId, projectId, session);
-      const chart = hostOf(orgId).chartOf(sid) ?? "";
-      if (!(hostOf(orgId).chartInfo(chart)?.corrections ?? []).includes(event)) throw new OrgError(`${sid} declares no ${event}: sova_pipeline with this session lists its corrections.`, 409);
+      const statechart = hostOf(orgId).statechartOf(sid) ?? "";
+      if (!(hostOf(orgId).statechartInfo(statechart)?.corrections ?? []).includes(event)) throw new OrgError(`${sid} declares no ${event}: sova_pipeline with this session lists its corrections.`, 409);
       const out = await actOrThrow(orgId, sid, event, { ...payload, reason }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), { settle: true });
       return out.held ? { held: heldAt(sid, out.held) } : {};
     },

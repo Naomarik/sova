@@ -38,7 +38,7 @@ const PREVIEW: PreviewView = {
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 const { projectOverseerTools, TOOL_NEEDS, COUNTS, operatorOnlyRefusal, underRoot, buildState } = await import("./project-overseer-tools");
-const { chartInfo, chartVersions } = await import("./org-charts");
+const { statechartInfo, statechartVersions } = await import("./org-charts");
 const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER_REASON } = await import("./project-overseer-store");
 const { OrgError } = await import("./org-error");
 const { TOOL_NEEDS: MASTER_NEEDS } = await import("./org-charts-replay");
@@ -250,7 +250,7 @@ describe("the wrapper relays a statechart's refusal", () => {
   });
 
   test("each tool's allowance is its statechart acts' `counts`, and every allowance tool has an act", () => {
-    const acts = chartVersions().flatMap(({ name }) => Object.values(chartInfo(name)?.acts ?? {}));
+    const acts = statechartVersions().flatMap(({ name }) => Object.values(statechartInfo(name)?.acts ?? {}));
     for (const [tool, kind] of Object.entries(COUNTS)) {
       const own = acts.filter((a) => a.tool === (tool === "sova_offer" ? "sova_start_gathering" : tool));
       assert.ok(own.some((a) => a.counts === kind), `${tool} maps to no act counting "${kind}"`);

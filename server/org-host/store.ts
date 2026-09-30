@@ -32,21 +32,21 @@ export function hostPaths(orgId: string, workspaceDir: string, stateDir: string)
   };
 }
 
-const NOT_CHARTS = new Set(["log", "journal"]);
+const NOT_STATECHARTS = new Set(["log", "journal"]);
 
-export function snapshotFile(root: string, chart: string, sid: string): string {
-  return join(root, chart, `${encodeURIComponent(sid)}.edn`);
+export function snapshotFile(root: string, statechart: string, sid: string): string {
+  return join(root, statechart, `${encodeURIComponent(sid)}.edn`);
 }
 
 /** Every snapshot file under `root`: `{sid, statechart, file}`. */
 export function scanSnapshots(root: string): { sid: string; chart: string; file: string }[] {
   if (!existsSync(root)) return [];
   const out: { sid: string; chart: string; file: string }[] = [];
-  for (const chart of readdirSync(root, { withFileTypes: true })) {
-    if (!chart.isDirectory() || NOT_CHARTS.has(chart.name)) continue;
-    for (const f of readdirSync(join(root, chart.name))) {
+  for (const statechart of readdirSync(root, { withFileTypes: true })) {
+    if (!statechart.isDirectory() || NOT_STATECHARTS.has(statechart.name)) continue;
+    for (const f of readdirSync(join(root, statechart.name))) {
       if (!f.endsWith(".edn")) continue;
-      out.push({ sid: decodeURIComponent(f.slice(0, -4)), chart: chart.name, file: join(root, chart.name, f) });
+      out.push({ sid: decodeURIComponent(f.slice(0, -4)), chart: statechart.name, file: join(root, statechart.name, f) });
     }
   }
   return out.sort((a, b) => a.sid.localeCompare(b.sid));

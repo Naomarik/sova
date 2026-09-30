@@ -11,7 +11,7 @@ import type { EngineOptions } from "../org-charts";
 import { OrgHost, OrgPayloadError, type OrgHostOptions } from "./index";
 import { verifyOrg } from "./rebuild";
 import { scanSnapshots } from "./store";
-import { HOST_CHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-chart";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -25,7 +25,7 @@ function place() {
 }
 
 function open(where: { workspaceDir: string; stateDir: string }, more: Partial<OrgHostOptions> = {}) {
-  return OrgHost.open({ orgId: "o1", ...where, durable: false, charts: HOST_CHARTS as unknown as EngineOptions["charts"], ...more });
+  return OrgHost.open({ orgId: "o1", ...where, durable: false, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"], ...more });
 }
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
@@ -533,7 +533,7 @@ describe("org host", () => {
     const rows = host.log.rows({ session: "p/1" });
     assert.deepEqual(rows.filter((x) => x.event === "sova/rewindow").map((x) => x.feed), ["quiet", "quiet"]);
     await host.close();
-    const v = verifyOrg({ orgId: "o1", ...at, charts: HOST_CHARTS as unknown as EngineOptions["charts"] });
+    const v = verifyOrg({ orgId: "o1", ...at, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"] });
     assert.deepEqual(v.differing, [], "rebuild --verify replays the moved wait");
   });
 

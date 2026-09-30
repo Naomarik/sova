@@ -53,7 +53,7 @@ const run = (name: string, params: Record<string, unknown>) => {
   return t.execute("call-1", params as never, undefined, undefined, undefined as never);
 };
 const detailsOf = (r: { details?: unknown }) => r.details as { id: string; path: string };
-const chartStarted = (sessionId: string) => hostOf(org.id).data(baton.batonSid(org.id, sessionId))?.["started"];
+const statechartStarted = (sessionId: string) => hostOf(org.id).data(baton.batonSid(org.id, sessionId))?.["started"];
 const info = async (path: string) => (await (await app.request(`/api/baton?path=${encodeURIComponent(path)}`)).json()) as BatonInfo;
 const toldOf = async (sessionId: string) => {
   const r = await app.request(`/api/baton/${sessionId}/told`);
@@ -95,7 +95,7 @@ describe("who started it (§app.baton/told)", () => {
     });
     assert.equal(r.status, 201, await r.clone().text());
     const { sessionId, path } = (await r.json()) as { sessionId: string; path: string };
-    assert.deepEqual(chartStarted(sessionId), { by: "operator" }, "a body's why and started are ignored");
+    assert.deepEqual(statechartStarted(sessionId), { by: "operator" }, "a body's why and started are ignored");
     const i = await info(path);
     assert.deepEqual(i.started, { who: "operator", at: i.session.createdAt });
     const t = await toldOf(sessionId);
@@ -115,7 +115,7 @@ describe("who started it (§app.baton/told)", () => {
     const out = await run("sova_start_gathering", { gap: "none", person: "Tony Reyes", why: WHY, public_title: "Hosting", goal: "Who hosts the portal", question: "Who hosts it?" });
     const { id, path } = detailsOf(out);
     assert.ok(overseerId(), "the overseer has a conversation");
-    assert.deepEqual(chartStarted(id), { by: "project-overseer", overseerId: overseerId(), why: WHY });
+    assert.deepEqual(statechartStarted(id), { by: "project-overseer", overseerId: overseerId(), why: WHY });
     const i = await info(path);
     assert.deepEqual(i.started, { who: "project-overseer", at: i.session.createdAt, why: WHY, overseer: { id: overseerId(), current: true } });
     const t = await toldOf(id);
@@ -125,10 +125,10 @@ describe("who started it (§app.baton/told)", () => {
 
   test("an offer, a gap's gathering and a planned one keep it too", async () => {
     const offer = detailsOf(await run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], why: WHY, public_title: "Pay day", goal: "g", question: "q?" }));
-    assert.deepEqual(chartStarted(offer.id), { by: "project-overseer", overseerId: overseerId(), why: WHY });
+    assert.deepEqual(statechartStarted(offer.id), { by: "project-overseer", overseerId: overseerId(), why: WHY });
     await run("sova_idea", { op: "add", id: "§gap/payday", title: "Nobody decided the pay day" });
     const gap = detailsOf(await run("sova_start_gathering", { gap: "§gap/payday", person: "Toni Diaz", why: WHY, public_title: "Pay day 2", goal: "Which day", question: "Which day?" }));
-    assert.deepEqual(chartStarted(gap.id), { by: "project-overseer", overseerId: overseerId(), why: WHY });
+    assert.deepEqual(statechartStarted(gap.id), { by: "project-overseer", overseerId: overseerId(), why: WHY });
     assert.equal(hostOf(org.id).data(baton.batonSid(org.id, gap.id))?.["startedVia"], "overseer", "a gap's start no longer drops startedVia");
     assert.deepEqual((await toldOf(gap.id)).startedFor, { kind: "gap", id: "§gap/payday", title: "Nobody decided the pay day" });
     await po.patchProjectOverseer(org.id, project.id, { autonomy: "L0" });
@@ -139,7 +139,7 @@ describe("who started it (§app.baton/told)", () => {
     await new Promise((r) => setTimeout(r, 100));
     const planned = baton.allBatons().find((b) => b.publicTitle === "VAT rate");
     assert.ok(planned, "the statechart started the plan");
-    assert.deepEqual(chartStarted(planned.sessionId), { by: "project-overseer", overseerId: overseerId(), why: "Planned: the VAT rate is open." });
+    assert.deepEqual(statechartStarted(planned.sessionId), { by: "project-overseer", overseerId: overseerId(), why: "Planned: the VAT rate is open." });
   });
 
   test("a session from before `started`: the owner says who, the transition log's start row says which conversation", async () => {

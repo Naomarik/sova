@@ -15,11 +15,11 @@
 // write, the host's journal): a cross-session send is only durable once its target's step is saved,
 // and within one call that target step has already run. After a restart, load the org's sessions,
 // `resume` them, then `fireDue(now)`. With `loadCold`, a send to a session not loaded loads it; an id
-// that exists nowhere throws OrgChartsError `sova/unknown-session` and the call changes nothing.
+// that exists nowhere throws StatechartsError `sova/unknown-session` and the call changes nothing.
 // Full contract: org-charts/src/sova/org_charts/engine/API.md.
 //
 // Step limit: one event may take at most `maxMicrosteps` microsteps (default 200). An eventless cycle
-// in a statechart then throws `OrgChartsStepLimitError` from start / send / trial / fireDue instead of
+// in a statechart then throws `StatechartsStepLimitError` from start / send / trial / fireDue instead of
 // blocking the event loop, and the whole call is rolled back (sessions, generations, the queue): the
 // snapshots last written stay the truth. onSave and invocation callbacks already made for earlier
 // steps of that call are not taken back, which is why the host writes `result.snapshots`, not onSave's.
@@ -30,7 +30,7 @@ export type Json = null | boolean | number | string | Json[] | { [key: string]: 
 export type JsonObject = { [key: string]: Json };
 
 /** A registered statechart's name ("org", "person", "baton", "item", …: the refit's registry). */
-export type ChartName = string;
+export type StatechartName = string;
 
 /** An effect intent a statechart appended to its outbox; the host runs it after the snapshot is saved. */
 export interface Effect {
@@ -198,7 +198,7 @@ export interface EnabledEvent {
 
 export interface LoadResult {
   sessionId: string;
-  chart: ChartName;
+  chart: StatechartName;
   version: number;
   generation: number;
   configuration: string[];
@@ -206,7 +206,7 @@ export interface LoadResult {
 }
 
 export interface SaveInfo {
-  chart: ChartName;
+  chart: StatechartName;
   version: number;
   generation: number;
 }
@@ -242,7 +242,7 @@ export interface EngineOptions {
   onInvokeStop?: (inv: Invocation) => void;
   /** Default clock when a call passes no `now`. */
   clock?: () => number;
-  /** Microsteps one event may take before the call throws OrgChartsStepLimitError (default 200). */
+  /** Microsteps one event may take before the call throws StatechartsStepLimitError (default 200). */
   maxMicrosteps?: number;
   /** More statecharts, written in JS (org-charts/src/sova/org_charts/engine/js_chart.cljs), by name. A
       shipped statechart's name is refused. The engine tests register their probe statechart this way. */
@@ -255,8 +255,8 @@ export interface CallOptions {
   invokeId?: string;
 }
 
-export interface OrgCharts {
-  start(sessionId: string, chart: ChartName, data?: JsonObject, opts?: CallOptions): StepResult;
+export interface Statecharts {
+  start(sessionId: string, statechart: StatechartName, data?: JsonObject, opts?: CallOptions): StepResult;
   send(sessionId: string, event: string, data?: JsonObject, opts?: CallOptions): StepResult;
   /** The real call on the engine, then rolled back: nothing saved, sent, invoked or called back. */
   trial(sessionId: string, event: string, data?: JsonObject, opts?: CallOptions): TrialResult;
@@ -271,7 +271,7 @@ export interface OrgCharts {
   configuration(sessionId: string): string[] | null;
   running(sessionId: string): boolean;
   data(sessionId: string): JsonObject | null;
-  chartOf(sessionId: string): ChartName | null;
+  chartOf(sessionId: string): StatechartName | null;
   enabledEvents(sessionId: string, envelope?: JsonObject, opts?: CallOptions): EnabledEvent[];
   /** Sessions that may be unloaded at `now` (settled per their statechart's `cold?`, idle `minAge` ms, nothing pending). */
   coldSessions(now: number, minAge?: number | null): string[];
@@ -296,8 +296,8 @@ export interface OrgCharts {
 }
 
 /** What a statechart declares (engine chart-info): acts with metadata, states, transitions, invocations. */
-export interface ChartInfo {
-  name: ChartName;
+export interface StatechartInfo {
+  name: StatechartName;
   version: number;
   storage: "portable" | "host-local";
   exported: string[];
@@ -310,9 +310,9 @@ export interface ChartInfo {
 }
 
 interface Vendored {
-  createEngine(opts?: EngineOptions): OrgCharts;
-  charts(): { name: ChartName; version: number; storage: "portable" | "host-local" }[];
-  chartInfo(name: string): ChartInfo | null;
+  createEngine(opts?: EngineOptions): Statecharts;
+  charts(): { name: StatechartName; version: number; storage: "portable" | "host-local" }[];
+  chartInfo(name: string): StatechartInfo | null;
   migrateText(text: string): string;
   peekSnapshot(text: string): SnapshotPeek;
   verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts?: Pick<EngineOptions, "charts">): SessionVerdict;
@@ -335,7 +335,7 @@ export interface SessionVerdict {
 
 /** A snapshot read without loading it (cold sessions). */
 export interface SnapshotPeek {
-  chart: ChartName;
+  chart: StatechartName;
   configuration: string[];
   data: JsonObject;
   running: boolean;
@@ -355,7 +355,7 @@ export interface StepLimitDetails {
 
 /** A typed engine error: `sova/unknown-session` (a send to an id that exists nowhere) or
     `sova/session-exists` (a start or spawn of an existing id). The call changed nothing. */
-export class OrgChartsError extends Error {
+export class StatechartsError extends Error {
   constructor(
     message: string,
     readonly code: string,
@@ -367,7 +367,7 @@ export class OrgChartsError extends Error {
 }
 
 /** One event took more microsteps than `maxMicrosteps`: an eventless cycle in a statechart. */
-export class OrgChartsStepLimitError extends Error {
+export class StatechartsStepLimitError extends Error {
   readonly code = "sova/step-limit";
   constructor(
     message: string,
@@ -384,16 +384,16 @@ function typed<A extends unknown[], R>(f: (...args: A) => R): (...args: A) => R 
       return f(...args);
     } catch (err) {
       const e = err as Partial<StepLimitDetails> & { code?: string; message?: string; name?: string };
-      if (e?.name === "OrgChartsError" && typeof e.code === "string") throw new OrgChartsError(String(e.message), e.code, e.sessionId ?? null);
+      if (e?.name === "OrgChartsError" && typeof e.code === "string") throw new StatechartsError(String(e.message), e.code, e.sessionId ?? null);
       if (e?.code !== "sova/step-limit") throw err;
       const { limit, microsteps, sessionId, event, configuration, transitions } = e as StepLimitDetails;
-      throw new OrgChartsStepLimitError(String(e.message), { limit, microsteps, sessionId, event, configuration, transitions });
+      throw new StatechartsStepLimitError(String(e.message), { limit, microsteps, sessionId, event, configuration, transitions });
     }
   };
 }
 
-/** The typed engine over a raw one: a step limit becomes OrgChartsStepLimitError. */
-export function typedEngine<E extends OrgCharts>(e: E): E {
+/** The typed engine over a raw one: a step limit becomes StatechartsStepLimitError. */
+export function typedEngine<E extends Statecharts>(e: E): E {
   return {
     ...e,
     start: typed(e.start),
@@ -408,15 +408,15 @@ export function typedEngine<E extends OrgCharts>(e: E): E {
   };
 }
 
-export function createOrgCharts(opts: EngineOptions = {}): OrgCharts {
+export function createStatecharts(opts: EngineOptions = {}): Statecharts {
   return typedEngine(lib.createEngine(opts));
 }
 
-export function chartVersions(): { name: ChartName; version: number; storage: "portable" | "host-local" }[] {
+export function statechartVersions(): { name: StatechartName; version: number; storage: "portable" | "host-local" }[] {
   return lib.charts();
 }
 
-export function chartInfo(name: string): ChartInfo | null {
+export function statechartInfo(name: string): StatechartInfo | null {
   return lib.chartInfo(name);
 }
 

@@ -1,5 +1,5 @@
 // Test-only: the "engine-probe" chart as a JS tree, registered at runtime on the shipped bundle
-// (`createEngine({charts: PROBE_CHARTS})`, org-charts/src/sova/org_charts/engine/js_chart.cljs) for the
+// (`createEngine({charts: PROBE_STATECHARTS})`, org-charts/src/sova/org_charts/engine/js_chart.cljs) for the
 // engine's TS tests and bench. A transcription of org-charts/src/sova/org_charts/engine/probe.cljs,
 // which the CLJS tests run: keep the two in step, node for node (probe_shape.json, checked on both sides). Each function gets the data model as
 // JS (camelCase keys) and returns JSON; a script returns data-model operations.
@@ -30,7 +30,7 @@ const may = (need: string) => (d: Data) => {
 
 const pick = (o: Data, keys: string[]): Data => Object.fromEntries(keys.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
 
-export const probeChart: Node = [
+export const probeStatechart: Node = [
   "statechart", { initial: "probe" },
   ["state", { id: "probe", initial: "running" },
     ["transition", { event: "probe/stop", target: "stopped" }],
@@ -118,7 +118,7 @@ export const probeChart: Node = [
 export const PROBE_VERSION = 2;
 
 /** For `createEngine({charts})`. */
-export const PROBE_CHARTS = { "engine-probe": { version: PROBE_VERSION, chart: probeChart } };
+export const PROBE_STATECHARTS = { "engine-probe": { version: PROBE_VERSION, chart: probeStatechart } };
 
 // The probe's shape, one line per node that matters to parity: states, transitions (events, targets,
 // whether guarded), history defaults, timers (delayed sends and their cancels), raises, sends and

@@ -4,7 +4,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { chartVersions } from "./org-charts";
+import { statechartVersions } from "./org-charts";
 import { autonomyRefusal, DRIFT_COMMIT, expectedPhases, FIXTURES, followUpPhase, loadTraces, oracle, replay, type OracleEnvelope as Envelope, type Report } from "./org-charts-replay";
 
 const traces = loadTraces();
@@ -70,10 +70,10 @@ test("the facts projection: each fact set has the phases a statechart may be in"
 
 // The replay drives the refit's statecharts through a real host: every statechart a lane touches must be in the bundle.
 test("the replay's statecharts are the refit's (org, project, watch, item, baton, decision, reconciler, build), never the spike's", () => {
-  const names = chartVersions().map((c) => c.name as string);
+  const names = statechartVersions().map((c) => c.name as string);
   for (const c of ["org", "person", "project", "watch", "item", "baton", "decision", "reconciler", "build"]) assert.ok(names.includes(c), `statecharts: ${names.join(", ")}`);
   const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "org-charts-replay.ts"), "utf8");
-  assert.doesNotMatch(src, /spike-project|work-item|createOrgCharts/, "no spike statechart and no bare engine: the real host");
+  assert.doesNotMatch(src, /spike-project|work-item|createStatecharts|createOrgCharts/, "no spike statechart and no bare engine: the real host");
 });
 
 // A replay takes well under a second. The limit catches a hang in anything asynchronous; a synchronous

@@ -13,7 +13,7 @@ export interface VerifyOptions {
   orgId: string;
   workspaceDir: string;
   stateDir: string;
-  /** Runtime JS statecharts (tests), as `createOrgCharts`. */
+  /** Runtime JS statecharts (tests), as `createStatecharts`. */
   charts?: EngineOptions["charts"];
 }
 

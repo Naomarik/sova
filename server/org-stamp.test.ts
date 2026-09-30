@@ -9,12 +9,12 @@ const P = "prj_a";
 function fakeHost(sessions: SessionInfo[]) {
   const byId = new Map(sessions.map((s) => [s.id, s]));
   return {
-    sessions: (chart?: string) => sessions.filter((s) => !chart || s.chart === chart),
+    sessions: (statechart?: string) => sessions.filter((s) => !statechart || s.chart === statechart),
     data: (sid: string) => byId.get(sid)?.data ?? null,
     configuration: (sid: string) => byId.get(sid)?.configuration ?? null,
   };
 }
-const s = (id: string, chart: string, configuration: string[], data: Record<string, unknown> = {}): SessionInfo => ({ id, chart, configuration, data, running: true });
+const s = (id: string, statechart: string, configuration: string[], data: Record<string, unknown> = {}): SessionInfo => ({ id, chart: statechart, configuration, data, running: true });
 const settings = { autonomy: "L3" as const, caps: { ...DEFAULT_PO_CAPS }, holdMin: 5, confirmKinds: ["gather" as const] };
 
 describe("stamping an envelope from the statecharts as they stand", () => {

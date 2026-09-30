@@ -25,8 +25,8 @@ function fakeHost(next: () => ActResult = () => ({ taken: true, refusal: null, r
     data: () => null,
     sessions: () => [],
     holds: () => [],
-    chartOf: () => null,
-    chartInfo: () => null,
+    statechartOf: () => null,
+    statechartInfo: () => null,
     problems: () => [],
     logAct: async () => {},
     onChange: (fn: (c: HostChange) => void) => void (changed = fn),
@@ -103,7 +103,7 @@ describe("org engines: one host per org", () => {
     writeFileSync(join(ws, "projects", "prj_q", "overseer", "overseer.json"), JSON.stringify({ autonomy: "L2", holdMin: 3 }));
     const config: Record<string, string[]> = { "watch/org_q/prj_q": ["attach", "paused"], "person/org_q/p_1": ["proposed"] };
     const f = fakeHost();
-    const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (chart?: string) => (chart === "person" ? [{ id: "person/org_q/p_1", chart: "person", configuration: ["active"], data: {} }] : []) };
+    const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (statechart?: string) => (statechart === "person" ? [{ id: "person/org_q/p_1", chart: "person", configuration: ["active"], data: {} }] : []) };
     let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer"; projectId?: string }) => { autonomy: string; holdMs: number; paused: boolean; projectId?: string; by: string }) | null = null;
     setOrgHostOpener(async (o) => ((stamp = o.stamp as never), host as unknown as OrgHostApi));
     await openOrgHost({ orgId: "org_q", workspaceDir: ws, stateDir: "/state" });

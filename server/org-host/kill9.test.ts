@@ -14,7 +14,7 @@ import { fileURLToPath } from "node:url";
 import type { EngineOptions } from "../org-charts";
 import { OrgHost } from "./index";
 import { scanSnapshots } from "./store";
-import { HOST_CHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-chart";
 
 const ROUNDS = Number(process.env["KILL9_ROUNDS"] ?? 40);
 const CHILD = fileURLToPath(new URL("./kill9-child.ts", import.meta.url));
@@ -50,7 +50,7 @@ test(`kill -9 at random moments, ${ROUNDS} times: every open loads everything, e
       const line = await round(root, seed, seed % 60);
       assert.equal(line, "ready []", `round ${i}: the open after a kill found no problem`);
     }
-    const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_CHARTS as unknown as EngineOptions["charts"] });
+    const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"] });
     host.effects.register("write", async (e) => ({ wrote: e.key }));
     assert.deepEqual(host.problems(), []);
     // quiesce: pending effects answered, holds and timers due

@@ -111,7 +111,7 @@ describe("clone + attach = the whole organization", async () => {
     // The statecharts' snapshots and transition log hold the state (q1): no projection file is written.
     const want = ["about.md", "org-history.jsonl", "roster-history.jsonl", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
     for (const f of want) assert.ok(files.includes(f), f);
-    const snapshot = (chart: string, sid: string) => `charts/${chart}/${encodeURIComponent(sid)}.edn`;
+    const snapshot = (statechart: string, sid: string) => `charts/${statechart}/${encodeURIComponent(sid)}.edn`;
     for (const f of [snapshot("org", `org/${a.id}`), snapshot("person", `person/${a.id}/${tony.id}`), snapshot("project", `project/${a.id}/${project.id}`)]) assert.ok(files.includes(f), f);
     assert.ok(files.some((f) => /^charts\/log\/\d{4}-\d{2}\.jsonl$/.test(f)), "the transition log");
     for (const f of ["org.json", "roster.json", "projects.json", "holder.json"]) assert.ok(!files.includes(f), `no ${f}`);

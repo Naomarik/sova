@@ -232,3 +232,4 @@ a.pipeline-link:hover, button.pipeline-link:hover, summary.pipeline-link:hover {
   .project-confirm-list { grid-template-columns: 1fr 1fr; }
 }
 .project-confirm-row { justify-content: flex-start; min-height: var(--tap-min); }
+.pipeline-meta-warn { color: var(--status-warn); }

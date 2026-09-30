@@ -162,3 +162,11 @@ test("heldWaitLine: the hold's r2 sentence; an hours wait's send time on your cl
   assert.equal(sendAt(new Date(2026, 9, 5, 9, 0).getTime(), now), "Mon 09:00");
   assert.equal(sendAt(new Date(2026, 9, 12, 9, 0).getTime(), now), "Oct 12 09:00");
 });
+
+test("followUpLine: the follow-up region in words; none when no follow-up runs", async () => {
+  const { followUpLine } = await import("./pipeline-view");
+  assert.deepEqual(followUpLine("follow-up-asking"), { text: "A follow-up gathering is asking.", warn: false });
+  assert.deepEqual(followUpLine("follow-up-needs-operator"), { text: "A follow-up gathering needs you.", warn: true });
+  assert.equal(followUpLine("no-follow-up"), null);
+  assert.equal(followUpLine(undefined), null);
+});

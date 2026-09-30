@@ -6,6 +6,7 @@ import { stampTime } from "../lib/format";
 import { createPoll } from "../lib/poll";
 import {
   byWord,
+  followUpLine,
   heldFromLine,
   heldWaitLine,
   inPhaseFor,
@@ -148,6 +149,9 @@ function GapRow(props: { orgId: string; projectId: string; row: Row; now: number
       </p>
       <Show when={r().held}>
         <p class="pipeline-meta">{heldFromLine(r())}</p>
+      </Show>
+      <Show when={followUpLine(r().followUp)}>
+        {(f) => <p class="pipeline-meta" classList={{ "pipeline-meta-warn": f().warn }}>{f().text}</p>}
       </Show>
 
       <Show when={r().gatherings.length || r().builds.length || r().decisions.length}>

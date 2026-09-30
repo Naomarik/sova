@@ -132,6 +132,13 @@ export const stalledTitle = (row: Pick<PipelineRowLike, "phase" | "since" | "sta
 export const heldFromLine = (row: Pick<PipelineRowLike, "held">): string =>
   row.held ? `Resume puts it back at ${phaseDetail(row.held.from).toLowerCase()}.` : "";
 
+/** The follow-up region's words (a gathering started once the gap was deciding or later); null when none runs. */
+export function followUpLine(followUp: string | null | undefined): { text: string; warn: boolean } | null {
+  if (followUp === "follow-up-asking" || followUp === "follow-up-starting") return { text: "A follow-up gathering is asking.", warn: false };
+  if (followUp === "follow-up-needs-operator") return { text: "A follow-up gathering needs you.", warn: true };
+  return null;
+}
+
 /** The section's line under its title, counting what the list holds. */
 export function pipelineSummary(rows: readonly PipelineRowLike[]): string {
   const listed = rows.filter((r) => r.phase !== "dropped");

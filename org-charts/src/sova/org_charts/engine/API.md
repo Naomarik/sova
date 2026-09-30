@@ -260,3 +260,9 @@ or no hours.
 after the step, this session's timer `id` is cancelled and `event` (with `payload`) is due at the instant `at`
 (ms; a past instant is due at once, in the same call); `at` nil only cancels. One pending timer per id however
 often re-armed; durable in the snapshot's queue (r12's one reach timer per offer, `reach-<offer-id>`).
+**r13 re-arm (4f916f23, a08e799d; host 967f6d6e).** Event `sova/rewindow {id until}` (engine-handled, like
+`sova/hold-due`): an hours wait (`:wait "hours"`) moves to `until` (its timer re-armed); `until` nil or due
+now releases it at once, after its own quiet row, and the release re-checks the act under a fresh stamp.
+Anything else is ignored (no row). `host.rewindowHours(windowOf: (hold) => ms | null)` sends it for every
+hours wait whose window changed (the server, after a person's or the company's hours edit; its stamp must
+give the people's current effective records). A runtime JS act's `hours` reads JS data.

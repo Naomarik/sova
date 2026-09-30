@@ -558,7 +558,8 @@ export class OrgHost {
     const mine = r.steps.find((s) => s.sessionId === sid && s.event === event);
     if (!mine) return { taken: false, refusal: STALE, result: r };
     if (mine.refused) return { taken: false, refusal: mine.refused, result: r };
-    if (mine.held) return { taken: true, held: mine.held, refusal: null, result: r };
+    // the step's hold carries no session id; a Hold does (as host.holds() lists it)
+    if (mine.held) return { taken: true, held: { ...mine.held, sessionId: sid }, refusal: null, result: r };
     if (mine.ignored) return { taken: false, refusal: { sentence: "That can't be done now.", stage: "state" }, result: r };
     return { taken: true, refusal: null, result: r };
   }

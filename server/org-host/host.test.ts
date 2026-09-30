@@ -136,6 +136,8 @@ describe("org host", () => {
     const r = await host.act("p/1", "gather/start", {}, { by: "overseer", attended: false, holdMs: 40, projectId: "prj1", overseerId: "po1" });
     assert.equal(r.taken, true);
     assert.equal(r.held?.what, "Gathering");
+    assert.equal(r.held?.sessionId, "p/1", "a Hold, as host.holds() lists it");
+    assert.deepEqual(r.held, host.holds()[0]);
     assert.deepEqual(host.holds().map((h) => h.id), ["gather/start#0"]);
     assert.deepEqual(host.configuration("p/1"), ["top", "idle"]);
     await tick(120);

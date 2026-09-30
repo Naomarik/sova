@@ -1,0 +1,164 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import {
+  closureOf,
+  DefinitionError,
+  ERROR_CODES,
+  exitOf,
+  httpStatusOf,
+  isVerbResult,
+  ordered,
+  parseDefinition,
+  portsFor,
+  render,
+  scratchSlots,
+  serviceOrder,
+  type VerbResult,
+} from "./project-contract";
+
+const parse = (o: unknown) => parseDefinition(JSON.stringify(o));
+/** The JSON path a bad definition is refused at. */
+const refusedAt = (o: unknown): string => {
+  try {
+    parse(o);
+  } catch (err) {
+    assert.ok(err instanceof DefinitionError, String(err));
+    return err.path;
+  }
+  assert.fail("expected the definition to be refused");
+};
+
+test("a static site is one service with one port", () => {
+  const def = parse({ version: 1, services: { site: { static: ".", ports: { http: { base: 8731 } } } } });
+  assert.equal(def.services.length, 1);
+  assert.equal(def.services[0]!.static, ".");
+  assert.equal(def.services[0]!.reload, "none");
+  assert.deepEqual(portsFor(def, 0), { site: { http: 8731 } });
+  assert.deepEqual(portsFor(def, 3), { site: { http: 8734 } });
+  assert.deepEqual(scratchSlots(def), [5, 6]);
+});
+
+test("a full definition parses with defaults filled in", () => {
+  const def = parse({
+    version: 1,
+    slots: { cap: 2 },
+    host: ["DATOMIC_HOME"],
+    setup: [{ id: "deps", run: ["pnpm", "install"], inputs: ["pnpm-lock.yaml"] }],
+    data: { agent: { kind: "dir", path: ".agent" }, seed: { kind: "dir", from: "${main}/seed" }, db: { kind: "hook", provision: ["./p"], deprovision: ["./d"] } },
+    services: {
+      redis: { cmd: ["redis-server", "--port", "${ports.redis.main}"], scope: "shared", ports: { main: { fixed: 6390 } } },
+      server: {
+        cmd: ["node", "server.js"],
+        env: { PORT: "${ports.server.http}", AGENT: "${data.agent}", COST: "$$5" },
+        ports: { http: { base: 4810, stride: 10 } },
+        requires: ["redis"],
+        ready: { http: "http", path: "/api/health", timeout: 90 },
+        reload: { signal: "HUP" },
+        build: { run: ["make"], inputs: ["Makefile"] },
+      },
+      db: { cmd: ["docker", "run", "--rm", "--name", "sova-${instance}-db", "-p", "${ports.db.pg}:5432", "postgres"], container: { name: "sova-${instance}-db" }, ports: { pg: { base: 5500 } } },
+    },
+    hooks: { probe: { run: ["./probe"] } },
+    share: { allow: false },
+    deploy: { targets: {} },
+  });
+  assert.equal(def.slots.cap, 2);
+  assert.equal(def.setup[0]!.timeout, 120);
+  const server = def.services.find((s) => s.name === "server")!;
+  assert.deepEqual(server.ready, { http: "http", path: "/api/health", timeout: 90 });
+  assert.equal(server.scope, "checkout");
+  assert.equal(def.services.find((s) => s.name === "db")!.container!.engine, "docker");
+  assert.deepEqual(portsFor(def, 2).server, { http: 4830 });
+  assert.deepEqual(portsFor(def, 2).redis, { main: 6390 });
+  assert.deepEqual(def.data.map((d) => d.name), ["agent", "seed", "db"]);
+  assert.deepEqual(serviceOrder(def).map((s) => s.name), ["redis", "server", "db"]);
+  assert.deepEqual(closureOf(def, ["server"]).map((s) => s.name), ["redis", "server"]);
+});
+
+test("refusals name the JSON path of the first problem", () => {
+  const svc = { static: ".", ports: { http: { base: 8000 } } };
+  assert.equal(refusedAt({ version: 1, services: { site: svc }, extra: 1 }), "$.extra");
+  assert.equal(refusedAt({ version: 2, services: { site: svc } }), "$.version");
+  assert.equal(refusedAt({ version: 1, services: {} }), "$.services");
+  assert.equal(refusedAt({ version: 1, services: { Site: svc } }), "$.services.Site");
+  assert.equal(refusedAt({ version: 1, services: { web: { cmd: "npm start" } } }), "$.services.web.cmd");
+  assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["npm", ""] } } }), "$.services.web.cmd[1]");
+  assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x"], static: "." } } }), "$.services.web");
+  assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x"], env: { SOVA_SLOT: "1" } } } }), "$.services.web.env.SOVA_SLOT");
+  assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x", "${nope}"] } } }), "$.services.web.cmd[1]");
+  assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x", "$HOME"] } } }), "$.services.web.cmd[1]");
+  assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x"], cwd: "../up" } } }), "$.services.web.cwd");
+  assert.equal(refusedAt({ version: 1, services: { site: { static: ".git", ports: { http: { base: 8000 } } } } }), "$.services.site.static");
+  assert.equal(refusedAt({ version: 1, services: { site: { ...svc, env: { A: "b" } } } }), "$.services.site.env");
+  assert.equal(refusedAt({ version: 1, services: { a: { cmd: ["x"], requires: ["b"] }, b: { cmd: ["y"], requires: ["a"] } } }), "$.services.a.requires");
+  assert.equal(refusedAt({ version: 1, services: { a: { cmd: ["x"], requires: ["zzz"] } } }), "$.services.a.requires");
+  assert.equal(refusedAt({ version: 1, services: { r: { cmd: ["x"], scope: "shared", ports: { p: { base: 7000 } } } } }), "$.services.r.ports.p");
+  assert.equal(refusedAt({ version: 1, services: { w: { cmd: ["x"], ports: { p: { base: 65530 } } } } }), "$.services.w.ports.p");
+  // The same port in one slot, and ranges that meet across slots (a's slot 1 is b's slot 0).
+  assert.equal(refusedAt({ version: 1, services: { a: { cmd: ["x"], ports: { p: { fixed: 9000 } } }, b: { cmd: ["y"], ports: { p: { base: 9000 } } } } }), "$.services.b.ports.p");
+  assert.equal(refusedAt({ version: 1, services: { a: { cmd: ["x"], ports: { p: { base: 9000 } } }, b: { cmd: ["y"], ports: { p: { base: 9001 } } } } }), "$.services.a.ports.p");
+  assert.doesNotThrow(() => parse({ version: 1, services: { a: { cmd: ["x"], ports: { p: { base: 9000, stride: 10 } } }, b: { cmd: ["y"], ports: { p: { base: 9001, stride: 10 } } } } }));
+  assert.equal(refusedAt({ version: 1, services: { w: { cmd: ["x"], ports: { p: { base: 9000 } }, ready: { tcp: "q" } } } }), "$.services.w.ready.tcp");
+  assert.equal(refusedAt({ version: 1, services: { w: { cmd: ["x"], reload: { signal: "KILL" } } } }), "$.services.w.reload.signal");
+  assert.equal(refusedAt({ version: 1, services: { w: { cmd: ["x"] } }, data: { d: { kind: "redis" } } }), "$.data.d.kind");
+  assert.equal(refusedAt({ version: 1, services: { w: { cmd: ["x"] } }, setup: [{ id: "a", run: ["x"] }, { id: "a", run: ["y"] }] }), "$.setup");
+  assert.equal(refusedAt({ version: 1, services: { w: { cmd: ["x"] } }, hooks: { teardown: { run: ["x"] } } }), "$.hooks.teardown");
+  assert.throws(() => parseDefinition("{not json"), (e) => e instanceof DefinitionError && e.path === "$");
+});
+
+test("templates render every known variable and $$ as a literal $", () => {
+  assert.equal(render("${ports.web.http}/x $$HOME", { "ports.web.http": "4010" }), "4010/x $HOME");
+  assert.throws(() => render("${slot}", {}), /no value/);
+});
+
+test("every error code has one exit class and one status", () => {
+  const want: Record<number, string[]> = {
+    1: ["not-ready", "start-failed", "hook-failed"],
+    2: ["not-approved", "not-conformant", "cap-reached", "port-held", "dirty-worktree", "unsupported", "refused-slot0", "share-denied", "forbidden", "needs-confirm"],
+    3: ["invalid-request", "invalid-definition", "not-found"],
+    4: ["busy"],
+  };
+  const seen = Object.values(want).flat();
+  assert.deepEqual([...seen].sort(), [...ERROR_CODES].sort(), "the classes cover the closed list exactly");
+  for (const [cls, codes] of Object.entries(want))
+    for (const code of codes) {
+      assert.equal(exitOf({ error: { code } as never }), Number(cls), code);
+      const status = httpStatusOf({ error: { code } as never });
+      assert.equal(status, code === "not-found" ? 404 : { 1: 502, 2: 409, 3: 400, 4: 423 }[Number(cls)], code);
+    }
+  assert.equal(exitOf({}), 0);
+  assert.equal(httpStatusOf({}), 200);
+});
+
+test("ordered results keep one key order and isVerbResult checks it", () => {
+  const base: VerbResult = {
+    at: "t",
+    approved: true,
+    defHash: null,
+    links: [],
+    data: [],
+    services: [],
+    steps: [],
+    state: "absent",
+    changed: false,
+    ok: true,
+    branch: null,
+    checkout: null,
+    generation: null,
+    slot: null,
+    instance: null,
+    project: null,
+    verb: "status",
+    v: 1,
+  };
+  const r = ordered(base);
+  assert.deepEqual(Object.keys(r).slice(0, 3), ["v", "verb", "project"]);
+  assert.deepEqual(Object.keys(r).slice(-3), ["defHash", "approved", "at"]);
+  assert.ok(isVerbResult(r));
+  assert.ok(!isVerbResult(base as unknown), "the unordered object is not the shape");
+  const failed = ordered({ ...base, ok: false, error: { code: "busy", message: "x" }, checks: [] });
+  assert.deepEqual(Object.keys(failed).slice(-5), ["checks", "error", "defHash", "approved", "at"]);
+  assert.ok(isVerbResult(failed));
+  assert.ok(!isVerbResult({ ...failed, ok: true }), "an error with ok true is not the shape");
+  assert.ok(!isVerbResult(ordered({ ...base, error: { code: "nope" as never, message: "x" }, ok: false })), "codes are a closed list");
+});

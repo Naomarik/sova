@@ -19,6 +19,7 @@ import { runLedger } from "./auto-resume";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
+import { reconcileProjectServices, registerProjectServiceRoutes } from "./project-services/routes";
 import { startProjectOverseerLoop } from "./project-overseer";
 import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
 import { closeAllOrgHosts } from "./org-engine";
@@ -293,6 +294,8 @@ registerOrgRoutes(app);
 registerWrapupRoutes(app);
 registerProjectOverseerRoutes(app);
 registerProjectCostRoutes(app);
+// Project services: the verbs over a project's .sova/project.json (server/project-services/; §app/project-services).
+registerProjectServiceRoutes(app);
 // A project's decisions, conflicts and spec promotion (server/decisions-routes.ts; §app/requirements).
 registerDecisionRoutes(app);
 // Voice input: setup, status and transcription on this host (server/voice/; §chat/voice).
@@ -1427,6 +1430,8 @@ export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (i
   startMesh({ fetch: app.fetch, upgrade: upgradeSovaSocket });
   // Public links: the share listener, a gateway's router, a routed host's ingress (server/share/runtime.ts).
   void startShareRuntime();
+  // Project instances back to their desired state (server/project-services/routes.ts).
+  void reconcileProjectServices();
 }) as Server;
 server.on("error", (err) => {
   // e.g. EADDRINUSE: don't linger half-alive behind the uncaughtException handler

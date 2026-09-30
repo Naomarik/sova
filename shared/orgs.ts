@@ -85,6 +85,9 @@ export interface Person {
   /** Computed on every read from the charts' next-window rule, never stored: inside their hours now, else
       when the next window opens (ISO). Absent: no hours set. The page's off-hours note on the operator's own acts. */
   hoursNow?: { open: boolean; nextOpen?: string };
+  /** r13: whose hours `hoursNow` reads: their own, else the company's; absent: neither (always in hours).
+      `tz`/`hours` above stay the person's own. */
+  hoursFrom?: "own" | "company";
 }
 
 export interface PersonHours {
@@ -187,6 +190,10 @@ export interface Org {
   ownerHistory?: OwnerChange[];
   /** Set when the owner left the org (so it has none); removed when the operator sets it again. */
   ownerCleared?: { personId: string; name: string; at: string };
+  /** r13: the company's zone and working hours, the default for a person with no hours of their own (operator only;
+      org history like About, not private). Absent / null: none. */
+  tz?: string;
+  hours?: PersonHours | null;
 }
 
 /** One change of the org's owner: the operator set it, or the person left. */
@@ -225,6 +232,11 @@ export interface OrgChange {
   /** The `at` of the change this undoes. */
   revertOf?: string;
 }
+
+/** r13: a line of `org-history.jsonl` changing the company zone or working hours (field keys as a person's
+    history). The history reads return them apart from About's (`OrgDetail.hoursHistory`). */
+export type OrgHoursChange = Omit<OrgChange, "field" | "from" | "to" | "revertOf"> &
+  ({ field: "tz"; from: string; to: string } | { field: "hours"; from: PersonHours | null; to: PersonHours | null });
 
 export interface OrgGitStatus {
   /** The remote pushes go to (the repo's `origin`), or null: local commits only. */
@@ -314,6 +326,8 @@ export interface OrgDetail extends OrgSummary {
   about?: string;
   /** Its history, newest first, at most 20. */
   aboutHistory?: OrgChange[];
+  /** r13: changes of the company zone and working hours, newest first. */
+  hoursHistory?: OrgHoursChange[];
   /** From the org routes: open conflicts routed to the operator with no session yet, per project id
       (projects with none are absent). */
   projectConflicts?: Record<string, number>;

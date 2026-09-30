@@ -493,6 +493,30 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Save failed (banner-error at the end of the form; the unsaved changes stay) | **Couldn't save the decision settings.** {reason}. Your saved settings are unchanged. |
 | Footnote | Stored in `~/.pi/agent/sova/decisions.json`. The key is stored separately, readable by you only. |
 
+## §design.copy-deck/settings-overseer — Settings · Overseer and Notifications (§app.settings-dialog/overseer, §app.notifications/settings)
+
+| Where | Copy |
+|---|---|
+| Tab | Overseer (icon `eye`) · Notifications (icon `bell`), the next tab, holding Phone Notifications |
+| Intro | The Overseer watches every session and acts on them for you. Open it with the eye beside the session search, or Alt+O. |
+| Group order (legends) | Proactivity · Model and thinking · Limits · Quick actions · Standing notes · Advanced (folded) |
+| Model and thinking | labels Model · Thinking · options pi's default · Model default · {ref} (not available) · hint: Applies when the Overseer is idle. It never changes the model new sessions start with. |
+| Limits lede | Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts restart each time you message it. |
+| Running at once (full width) | label Running at once · live line beside the field Now: {n} of {limit} running. · hint: How many sessions the Overseer started or messaged may be working at the same time. Starting a session, or messaging one that isn't already counted, needs a free slot; when none is free, the Overseer waits or asks you. Sessions you started count only once the Overseer messages them. |
+| Per-message limits (folded head · state) | Per-message limits · All at default · {n} changed from default |
+| Per-message fields (label · hint) | Sessions created · New sessions it may create, per message you send. — Prompts to other sessions · Messages it may send to other sessions, per message you send. — Sessions archived · Sessions it may archive, per message you send. — Ideas explored · Idea explorers it may launch, per message you send. — Links made · Sessions it may link across hosts, per message you send. — Organization changes · Changes it may make to organizations, projects, rosters and project overseers, per message you send. — Gathering sessions started · Gathering sessions and offers it may start, per message you send. |
+| Quick actions hint | The Quick Actions button in the Overseer's composer foot lists these. Picking one sends its prompt. |
+| Quick action line | {label} · {description} (none: No description) · `Edit` / `Done` · opened: Label · Description · Prompt · `Move Up` · `Move Down` · `Remove` · a blank label reads Untitled action |
+| Quick actions buttons | `Add Quick Action` (under the list) · `Reset to Defaults` (head row) |
+| Standing notes hint | The Overseer reads these every turn and can add to them. They survive /clear. |
+| Advanced (folded head · summary) | Advanced · Idea explorer, extra instructions, resume after a restart |
+| Idea explorer (legend · hint) | Idea explorer · When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a repository, and reports back to the Overseer. |
+| Extra instructions (label · hint) | Extra instructions · Added after the Overseer's own prompt. Applies from its next run. |
+| After a restart (switch · hint) | Resume interrupted sessions · A session whose turn the server's restart cut off gets one message to continue. Sessions a usage limit or you stopped stay stopped. |
+| Reset buttons (Limits, Quick actions, Idea explorer; small ghost, at the end of the group's head row) | `Reset to Defaults` — fills the draft, saves nothing |
+| Why Save waits (footer, "Overseer: {issue}") | {limit} must be a whole number from 0 to 1000. · Quick action {n} needs a label and a prompt. · The idea explorer needs a model and an effort. |
+| Footnote | Stored in `~/.pi/agent/sova/overseer.json`. |
+
 ## §design.copy-deck/settings-models — Settings · Models (§app.settings-dialog/models)
 
 | Where | Copy |
@@ -821,7 +845,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Archived, disabled reason | "Archived" (Start Overseer, Run Now, Start Coding Session, Send to Person…) |
 | Archived, refused (server) | "{project} is archived. Unarchive it first." · the overseer: "{project} is archived. Unarchive it to use its overseer." |
 | Projects tab | disclosure `Archived Projects ({n})` (collapsed; absent with none) · row: the project link · "archived {relative time}" · `Unarchive` (ghost) · every project archived, in place of "No projects yet…": "The 1 project here is archived. Unarchive one below, or add a project." / "All {n} projects here are archived. Unarchive one below, or add a project." |
-| Overseer tool refusals and notes (the model reads them; the action log keeps the refusals) | "This reaches people or ends something: ask with sova_confirm, listing {what} in its items, and act in the turn the user's click starts." · "Only the Overseer sends here. Write in the overseer's own composer." (403) · "Send words; use op clear to clear it." · "That folder is an organization's workspace; read it with sova_orgs and sova_read_session." · "No link was made: Needs you asks you to send {name} their link." |
+| Overseer tool refusals and notes (the model reads them; the action log keeps the refusals) | "This reaches people or ends something: ask with sova_card, listing {what} in its items, and act in the turn the user's click starts." · "Only the Overseer sends here. Write in the overseer's own composer." (403) · "Send words; use op clear to clear it." · "That folder is an organization's workspace; read it with sova_orgs and sova_read_session." · "No link was made: Needs you asks you to send {name} their link." |
 
 ## §design.copy-deck/public-links — Public links (§mesh/public)
 

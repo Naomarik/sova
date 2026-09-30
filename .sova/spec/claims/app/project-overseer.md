@@ -253,7 +253,7 @@ user row.
   midnight." + "Nothing starts before then. Tell the operator what is waiting; don't promise an
   earlier look."; the message allowance, "This message's allowance is used: {n} of {max} {what}
   per message you send." + "Stop here and tell the operator what is done and what is left, or ask
-  with sova_confirm."; an at-once limit, "{n} of its gathering sessions are
+  with sova_card."; an at-once limit, "{n} of its gathering sessions are
   open, and the limit is {max} at once." (or coding sessions running) + "One finishing is a reason
   to look again; don't promise when." The prompt says never to promise a look "next time" unless
   a tool result says when it comes, and lists every limit in force. A coding session's turn,
@@ -305,10 +305,10 @@ user row.
   tell it: before promoting a decision as its author's own, check that its owner area fits what the
   decision is about; when it doesn't (a page's layout or design filed under finance), don't promote
   it: tell the operator which decision it is and why the area looks wrong (they set it on the
-  project page), or ask with `sova_confirm`. `sova_decisions` shows each decision's owner area and
+  project page), or ask with `sova_card`. `sova_decisions` shows each decision's owner area and
   whether its author owns it, so the check has what it needs. Reconcile is on by default, so
   `sova_reconcile` runs unless the operator turned it off in Settings → Decisions.
-- L0: `sova_note`, `sova_confirm`, `sova_idea`. L1: `sova_start_gathering` (one active roster
+- L0: `sova_note`, `sova_card`, `sova_idea`. L1: `sova_start_gathering` (one active roster
   person, or the operator), `sova_offer` (two or more), `sova_reconcile`,
   `sova_owner_update` (an update on the owner page, §app.owner-page/updates),
   `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
@@ -335,7 +335,7 @@ user row.
   the operator did not start, a coding session must name a gap with promoted decisions and builds
   only those; `gap: "none"` (a coding session tied to no gap) is allowed only in a turn the operator
   started, else: "Without a gap, a coding session starts only in a turn the operator started: name
-  the gap whose promoted decisions it builds (gap), or ask with sova_confirm." Each refusal
+  the gap whose promoted decisions it builds (gap), or ask with sova_card." Each refusal
   changes nothing. The operator's own Start Coding Session and New
   Coding Session never need a gap. The operator's Start Coding Session on a `§gap/…` idea whose gap
   has promoted decisions not built yet is the gap's own build (on its Pipeline row; still the

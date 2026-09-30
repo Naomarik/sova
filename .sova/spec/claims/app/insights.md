@@ -66,7 +66,9 @@ working worker is never the one it leaves out.
 ```
 
 The foot holds **two stacked 44px rows, and both are always present**, so the layout never
-jumps. Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
+jumps. A third always-present row, **Shares**, sits under them: the whole-row link to `#/shares`
+(§app.session-share/shares-page, `external` icon, text "Shares"), with no button beside it; the
+spine's foot has its Shares icon button after Agents. Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
 right end — the **Resource monitor** button on the Usage row (§app.resource-monitor/entry-button),
 the Settings gear on the Agents row (§app/settings-dialog) — with one class between them, so the
 two buttons stack in one column. The link's own bottom border divides the rows, and the row draws
@@ -480,8 +482,8 @@ Sova that aren't archived.
 - **State.** One per row, on its rail (a colored left edge) and in a chip with a dot and the
   word: **Needs you** when the session waits on input or has an extension dialog open; else
   **Working** when its turn runs or any of its workers works; else **Needs you** when its last
-  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (unseen looping, a stuck
-  subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
+  turn failed or stopped on an error, or it has open alignment questions, or its decision marks (an unseen reply that asks you, unseen
+  looping, a stuck subagent) say so; else **Idle**, or **Archived** for an archived session nothing runs in. The
   chip's `title` says why a row needs you, and the open row says it in a line.
 - **Sort.** Working first, then Needs you, then the rest; within each, last active first.
 - **Filter chips.** One at a time, a second press clears it; each shows its count, and a set one

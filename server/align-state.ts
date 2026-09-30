@@ -75,7 +75,9 @@ async function hasMarker(path: string, from: number, size: number): Promise<bool
       const { bytesRead } = await fh.read(buf, 0, len, pos);
       if (bytesRead <= 0) return false;
       if (buf.subarray(0, bytesRead).includes(MARKER)) return true;
-      if (pos + bytesRead >= size) return false;
+      // The end, or a file that shrank since its size was read: a short read would make no
+      // progress (it returns only the overlap), and the loop would never end.
+      if (pos + bytesRead >= size || bytesRead < len) return false;
       pos += bytesRead - MARKER.length;
     }
     return false;

@@ -17,10 +17,10 @@ describe("diffMarks", () => {
       { id: "a", path: "/s/a.jsonl", signals: signals(1) },
       { id: "b", path: "/s/b.jsonl", tags: { topic: "docs" } },
     ]);
-    const second = diffMarks(first.next, [row("a", { signals: signals(1), workerSignals: { stuck: 1 } }), row("b", { tags: { topic: "docs", status: "done" } })]);
+    const second = diffMarks(first.next, [row("a", { signals: signals(1), workerSignals: { stuck: 1 } }), row("b", { tags: { topic: "docs", throwaway: true } })]);
     assert.deepEqual(second.changes, [
       { id: "a", path: "/s/a.jsonl", workerSignals: { stuck: 1 } },
-      { id: "b", path: "/s/b.jsonl", tags: { topic: "docs", status: "done" } },
+      { id: "b", path: "/s/b.jsonl", tags: { topic: "docs", throwaway: true } },
     ]);
     const third = diffMarks(second.next, [row("a", { workerSignals: { stuck: 1 } })]);
     assert.deepEqual(third.changes, [

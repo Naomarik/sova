@@ -2589,6 +2589,8 @@ export interface SessionWorktreeInfo {
   /** This session's workers with a live process (starting, running, waiting, stopping) whose cwd is
       inside it. */
   runningWorkers: number;
+  /** Its merge readiness (§chat.worktrees/readiness), once the background read has one. */
+  readiness?: WorktreeReadiness;
 }
 
 // ---------------------------------------------------------------------------
@@ -2765,7 +2767,12 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a chart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
-  | "conflict-to-operator"; // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
+  | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
+  | "asks-you"        // decisions: the last reply of a turn with no open alignment question asks the user something
+  | "ready-to-merge"  // a worktree is ready and the last reply asks for the go-ahead (SessionSummary.readiness)
+  | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
+  | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
+  | "team-stalled";   // decisions, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
 
 export interface AttentionItem {
   /** Session id. */
@@ -3081,8 +3088,9 @@ export const OVERSEER_BRIEF_PREFIX = "[overseer-brief]";
 //                              404 no device)
 
 /** The act-tier kinds a phone notification can be about (server/attention.ts). */
-export type PushKind = "needs-input" | "open-questions" | "error" | "looping" | "baton-needs-you" | "worker-error";
-export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "looping", "baton-needs-you", "worker-error"];
+/** "looping" (Subagent stuck) is retired: a stuck subagent is a decide item, never a blocker. */
+export type PushKind = "needs-input" | "open-questions" | "error" | "baton-needs-you" | "worker-error";
+export const PUSH_KINDS: readonly PushKind[] = ["needs-input", "open-questions", "error", "baton-needs-you", "worker-error"];
 
 /** `<stateRoot>/push.json`. */
 export interface PushSettings {
@@ -3533,9 +3541,10 @@ export interface DecisionProbeResult {
 }
 
 /** Attention-signal kinds the thresholds (fixed in server/signals-store.ts) derive from raw answers.
-    Only "looping" is left: whether a session waits on the user's answers is its open alignment
-    questions (SessionSummary.align), never a model's guess. */
-export type SignalKind = "looping";
+    "asks-you": the last reply of a turn with no open alignment question asks the user something
+    (open alignment questions stay SessionSummary.align's deterministic count); "looping": the turn
+    went in circles. */
+export type SignalKind = "asks-you" | "looping";
 
 /** One classified finished turn of a session (<stateRoot>/signals.json keeps the raw answers). */
 export interface SessionSignals {
@@ -3546,6 +3555,8 @@ export interface SessionSignals {
   provider: DecisionProviderId;
   /** score in [0, 2]: 0 progressing … 2 clearly looping. */
   stuck?: { score: number; confidence: number };
+  /** P(the last reply asks the user something), 0..1, when that turn was asked. */
+  asksUser?: number;
   /** The kinds that fire under the server's thresholds; [] = none. The client never re-derives
       them. Visibility is server-computed too: `signals` (and `workerSignals`) are present on a
       SessionSummary / SessionMarks only while the mark should show (attention on, kinds non-empty,
@@ -3559,13 +3570,12 @@ export const TAG_TOPICS = [
   "planning", "review", "data", "config", "experiment", "chore", "other",
 ] as const;
 export type TagTopic = (typeof TAG_TOPICS)[number];
-export const TAG_STATUSES = ["done", "in_progress", "abandoned", "blocked"] as const;
-export type TagStatus = (typeof TAG_STATUSES)[number];
 
-/** A session's tags, confidence-gated on the server (a field is absent when below its threshold). */
+/** A session's tags, confidence-gated on the server (a field is absent when below its threshold).
+    There is no status tag: SessionSummary.readiness says whether work is ready, waiting or merged
+    (a status answer stored before is kept in session-tags.json and never sent). */
 export interface SessionTags {
   topic?: TagTopic;
-  status?: TagStatus;
   /** A test or scratch session with no lasting work. */
   throwaway?: true;
   /** Manual tags (POST /api/sessions/tags), lowercase, deduped. */
@@ -3598,6 +3608,49 @@ export interface SessionSummary {
       digest. (A worker that ended in an error is the digest's deterministic "worker-error".) */
   workerSignals?: { stuck: number };
   tags?: SessionTags;
+  /** Merge readiness of the worktrees this session tracks (§chat.worktrees/readiness,
+      server/merge-readiness.ts): git and the file, no model, read in the background, so a row
+      gains it a moment after it first lists. Absent when the session tracks no worktree of its
+      own, before git was first read, and from older servers. */
+  readiness?: SessionReadiness;
+}
+
+/** One worktree's merge readiness (§chat.worktrees/readiness). */
+export type ReadinessState = "merged" | "stale" | "in-progress" | "blocked" | "ready" | "waiting-approval";
+
+export interface WorktreeReadiness {
+  /** Canonical top level (SessionWorktreeInfo.path). */
+  path: string;
+  branch: string;
+  state: ReadinessState;
+  /** Why, in a few words: "uncommitted changes", "TEMP commit", "the last check failed", "checks
+      passed", "no check run seen", "still tracked active". */
+  why?: string;
+}
+
+/** The row's badge, the first that holds (§chat.worktrees/readiness). */
+export type ReadinessBadge = "waiting" | "ready" | "restart" | "merged";
+
+export interface SessionReadiness {
+  /** Every own, non-dropped tracked worktree, in recorded order. */
+  trees: WorktreeReadiness[];
+  /** Absent when no badge holds (a worktree in progress, blocked or stale). */
+  badge?: ReadinessBadge;
+  /** The worktree the badge speaks for. */
+  branch?: string;
+  /** ms epoch the badge's condition began: the last reply for ready/waiting, the merge for merged. */
+  since: number;
+  /** "merged · {n} follow-ups": cleanup plus the follow-up check's answer. */
+  followUps?: number;
+  /** A merge of this session changed the server since this process started. */
+  restartPending?: true;
+  /** The newest merge's commit is not on the target's origin branch yet. */
+  pushPending?: true;
+  /** Merged worktrees still tracked active. */
+  cleanup?: number;
+  /** The follow-up check's answer for the newest merge (§app.decisions/merge-followup), when it
+      names work: its weight and the reply's own line naming it. */
+  followUp?: { weight: "small" | "significant"; cue: string };
 }
 
 export type TagsBackfillScope = "recent" | "all";

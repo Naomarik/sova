@@ -20,7 +20,6 @@ export const PUSH_KIND_LABEL: Record<PushKind, string> = {
   "needs-input": "Needs input",
   "open-questions": "Open questions",
   error: "Error",
-  looping: "Subagent stuck",
   "baton-needs-you": "Baton",
   "worker-error": "Subagent error",
 };

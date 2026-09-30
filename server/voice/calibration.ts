@@ -22,7 +22,7 @@ import type {
 } from "../../shared/protocol";
 import { RuntimeError, type TranscribeRequest } from "./runtime";
 import { decodeFields, decodeFor, decodeKey, DEFAULT_DECODE, readSettings, updateSettings, validDeviceId, type DeviceModelRecord, type VoiceSettingsFile } from "./settings";
-import { cleanTranscript, inspectWav } from "./wav";
+import { cleanTranscript, clipProblem, inspectWav } from "./wav";
 
 // ---- the sentences -----------------------------------------------------------------------------
 
@@ -48,53 +48,71 @@ export const MAX_CLIP_BYTES = 3 * 1024 * 1024;
 export const SWEEP_TIMEOUT_MS = 15_000;
 
 /** The words calibration checks are spelled right. Only "Sova" must be capitalized to count. */
-export const JARGON = ["Sova", "worktree", "Overseer", "statechart", "subagent"] as const;
+export const JARGON = ["Sova", "worktree", "Overseer", "statechart", "subagent", "TypeScript", "Claude"] as const;
 const CASED = new Set(["Sova"]);
 
 // ---- scoring -----------------------------------------------------------------------------------
 
 /** Words for word error: lowercased, a hyphen inside a word joined ("sub-agent" is "subagent"),
-    other punctuation and apostrophes dropped. */
+    a jargon compound split in two joined ("work tree" is "worktree"), other punctuation and
+    apostrophes dropped. */
 export function normalizeWords(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/(\p{L})-(?=\p{L})/gu, "$1")
     .replace(/['’]/g, "")
     .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\b(work|state|sub|type) (tree|chart|agent|script)(?=s?\b)/g, (m, a: string, b: string) => (COMPOUNDS.has(a + b) ? a + b : m))
     .split(/\s+/)
     .filter(Boolean);
+}
+const COMPOUNDS = new Set(["worktree", "statechart", "subagent", "typescript"]);
+
+/** A word alignment (Levenshtein): its edit count and the (reference, heard) index pairs it matched. */
+function align(r: string[], h: string[]): { errors: number; matched: [number, number][] } {
+  const d = r.map(() => [] as number[]).concat([[]]);
+  for (let i = 0; i <= r.length; i++)
+    for (let j = 0; j <= h.length; j++)
+      d[i]![j] = !i || !j ? i + j : Math.min(d[i - 1]![j]! + 1, d[i]![j - 1]! + 1, d[i - 1]![j - 1]! + (r[i - 1] === h[j - 1] ? 0 : 1));
+  const matched: [number, number][] = [];
+  for (let i = r.length, j = h.length; i && j; ) {
+    if (d[i]![j] === d[i - 1]![j - 1]! + (r[i - 1] === h[j - 1] ? 0 : 1)) {
+      if (r[--i] === h[--j]) matched.push([i, j]);
+    } else if (d[i]![j] === d[i - 1]![j]! + 1) i--;
+    else j--;
+  }
+  return { errors: d[r.length]![h.length]!, matched };
 }
 
 /** Word-level edit distance (substitutions, deletions, insertions) and the reference's length. */
 export function wordErrors(reference: string, heard: string): { errors: number; words: number } {
   const r = normalizeWords(reference);
-  const h = normalizeWords(heard);
-  let prev = Array.from({ length: h.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= r.length; i++) {
-    const cur = [i];
-    for (let j = 1; j <= h.length; j++) cur[j] = Math.min(prev[j]! + 1, cur[j - 1]! + 1, prev[j - 1]! + (r[i - 1] === h[j - 1] ? 0 : 1));
-    prev = cur;
-  }
-  return { errors: prev[h.length]!, words: r.length };
+  return { errors: align(r, normalizeWords(heard)).errors, words: r.length };
+}
+
+/** The heard text repeats a run of 6 or more of the prompt's words: whisper echoing its prompt. */
+export function echoesPrompt(heard: string, prompt: string | undefined): boolean {
+  const p = normalizeWords(prompt ?? "");
+  const h = ` ${normalizeWords(heard).join(" ")} `;
+  for (let i = 0; i + 6 <= p.length; i++) if (h.includes(` ${p.slice(i, i + 6).join(" ")} `)) return true;
+  return false;
 }
 
 /** A token as written, its edge punctuation and a possessive "'s" gone. */
 const bare = (t: string) => t.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "").replace(/['’]s$/u, "");
 
-/** Jargon words in the reference, and how many of them were heard as written. */
+/** Jargon words in the reference, and how many of them the word alignment matched to the word as
+    written (so a jargon word elsewhere in the transcript doesn't count). */
 export function jargonHits(reference: string, heard: string): { hits: number; total: number } {
-  const refTokens = reference.split(/\s+/).map(bare);
-  const heardTokens = heard.split(/\s+/).map(bare);
-  let hits = 0;
-  let total = 0;
-  for (const term of JARGON) {
-    const lower = term.toLowerCase();
-    const want = refTokens.filter((t) => t.toLowerCase() === lower).length;
-    if (!want) continue;
-    const got = heardTokens.filter((t) => (CASED.has(term) ? t === term : t.toLowerCase() === lower)).length;
-    total += want;
-    hits += Math.min(want, got);
-  }
+  const r = reference.split(/\s+/).map(bare).filter(Boolean);
+  const h = heard.split(/\s+/).map(bare).filter(Boolean);
+  const lower = (ts: string[]) => ts.map((t) => t.toLowerCase());
+  const term = (t: string) => JARGON.find((w) => w.toLowerCase() === t.toLowerCase());
+  const total = r.filter(term).length;
+  const hits = align(lower(r), lower(h)).matched.filter(([i, j]) => {
+    const w = term(r[i]!);
+    return w && (!CASED.has(w) || h[j] === w);
+  }).length;
   return { hits, total };
 }
 
@@ -108,7 +126,8 @@ export const median = (xs: number[]): number => {
 /**
  * Best first: rows with every clip scored before partial ones; then the fewest word errors, except
  * that among rows within 1 word of the best, more jargon hits win, then fewer word errors, then the
- * shorter median time.
+ * shorter median time. The current row stays first unless the best beats it by 3 words or more:
+ * on about 100 words a smaller gain is noise.
  */
 export function rankRows(rows: VoiceCalibrationRow[]): VoiceCalibrationRow[] {
   const most = Math.max(0, ...rows.map((r) => r.scored));
@@ -124,18 +143,24 @@ export function rankRows(rows: VoiceCalibrationRow[]): VoiceCalibrationRow[] {
     return a.errors - b.errors || b.jargonHits - a.jargonHits || a.medianMs - b.medianMs;
   };
   const byWer = (a: VoiceCalibrationRow, b: VoiceCalibrationRow) => a.wer - b.wer || b.jargonHits - a.jargonHits || a.medianMs - b.medianMs;
-  return [...full.sort(cmp), ...partial.sort(byWer)];
+  const ranked = full.sort(cmp);
+  const cur = ranked.find((r) => r.current);
+  if (cur && ranked[0] !== cur && ranked[0]!.errors > cur.errors - MARGIN) ranked.splice(0, 0, ...ranked.splice(ranked.indexOf(cur), 1));
+  return [...ranked, ...partial.sort(byWer)];
 }
+
+/** Word errors a setting must save over the current one to replace it. */
+export const MARGIN = 3;
 
 // ---- the grid ----------------------------------------------------------------------------------
 
 const VAD_ON = { vadThreshold: 0.5, vadSpeechPadMs: 150 };
 
 /**
- * The settings a sweep tries. full (GPU): prompt {none, list, sentence} × beam {1, 5} × voice
- * detection {off, on} × fallback {0.2, none} = 24. quick (CPU): prompt {list, sentence} × beam
- * {1, 5} × fallback {0.2, none} = 8, voice detection off. The device's current settings come
- * first, added when the grid lacks them.
+ * The settings a sweep tries, all with the 0.2 fallback (on short clips it almost never fires).
+ * full (GPU): prompt {none, list, sentence} × beam {1, 5} × voice detection {off, on} = 12. quick
+ * (CPU): prompt {list, sentence} × beam {1, 5} = 4, voice detection off. The device's current
+ * settings come first, added when the grid lacks them.
  */
 export function buildGrid(kind: "full" | "quick", current: VoiceDecodeSettings): VoiceDecodeSettings[] {
   const out: VoiceDecodeSettings[] = [];
@@ -143,8 +168,7 @@ export function buildGrid(kind: "full" | "quick", current: VoiceDecodeSettings):
   const vads = kind === "full" ? [false, true] : [false];
   for (const prompt of prompts)
     for (const beamSize of [1, 5])
-      for (const vad of vads)
-        for (const temperatureInc of [0.2, 0]) out.push({ ...DEFAULT_DECODE, prompt, beamSize, temperatureInc, vad, ...(vad ? VAD_ON : {}) });
+      for (const vad of vads) out.push({ ...DEFAULT_DECODE, prompt, beamSize, vad, ...(vad ? VAD_ON : {}) });
   const key = decodeKey(current);
   return [current, ...out.filter((s) => decodeKey(s) !== key)];
 }
@@ -213,6 +237,8 @@ export interface CalibratorOptions {
   /** Fetch Silero when missing (import first, verified). Resolves true once it's on disk. */
   ensureVad: (signal: AbortSignal) => Promise<boolean>;
   vadReady: () => boolean;
+  /** The folder hint of the device's last dictation, so the sweep decodes as dictation does. */
+  hint?: (device: string) => string | null;
   /** The runtime's lane. */
   transcribe: (wav: Uint8Array, req: TranscribeRequest) => Promise<{ text: string; ms: number }>;
   dictationWaiting: () => boolean;
@@ -300,6 +326,8 @@ export class Calibrator {
     if (wav.byteLength > MAX_CLIP_BYTES) throw new CalibrationError(413, "The clip is over the 3 MB limit.");
     const info = inspectWav(wav);
     if ("error" in info) throw new CalibrationError(400, info.error);
+    const problem = clipProblem(wav, info);
+    if (problem) throw new CalibrationError(400, problem);
     if (this.sweep?.device === device && this.sweep.run.phase === "running") throw new CalibrationError(409, "Calibration is running on these clips. Stop it first.");
     const dir = deviceDir(this.o.calibrationDir(), device);
     mkdirSync(dir, { recursive: true });
@@ -430,7 +458,7 @@ export class Calibrator {
       run.progress.clip = clips.indexOf(item.clip) + 1;
       run.progress.pausedForDictation = this.o.dictationWaiting();
       const ref = refs.get(item.clip.n)!;
-      const fields = run.engine === "whisper" ? decodeFields(item.row.settings, { vadModel }) : {};
+      const fields = run.engine === "whisper" ? decodeFields(item.row.settings, { vadModel, hint: this.o.hint?.(sweep.device) }) : {};
       let heard = "";
       let ms: number;
       const tick = setInterval(() => {
@@ -457,8 +485,10 @@ export class Calibrator {
       msByRow.set(item.row, list);
       item.row.medianMs = median(list);
       if (!item.again) {
-        const e = wordErrors(ref, heard);
-        const j = jargonHits(ref, heard);
+        // A transcript echoing its prompt heard nothing: scored as silence.
+        const scored = echoesPrompt(heard, fields.prompt) ? "" : heard;
+        const e = wordErrors(ref, scored);
+        const j = jargonHits(ref, scored);
         item.row.clips.push({ n: item.clip.n, heard, errors: e.errors, ms });
         item.row.errors += e.errors;
         item.row.words += e.words;

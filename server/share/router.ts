@@ -2,12 +2,14 @@ import { existsSync } from "node:fs";
 import { request, type IncomingHttpHeaders, type IncomingMessage, type ServerResponse } from "node:http";
 import { join } from "node:path";
 import { ASSET_MAX_BYTES, ASSET_TYPES, type ShareGatewaySetting } from "../../shared/public-links";
+import { SESSION_SHARE_IMAGE_MAX_BYTES } from "../../shared/session-share";
 import { findLink, hashToken } from "../baton-links";
 import { meshApi } from "../mesh";
 import { REFUSED_HEADER } from "../mesh/hello";
 import type { PeerEntry } from "../mesh/peers";
 import { notePeerReach, preflight, watchStall } from "../mesh/proxy";
 import { findPersonLink } from "../person-links";
+import { findShareLink } from "../session-shares";
 import { verifiedAddress } from "./destination";
 import { inProcessShare, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
 import { offlineKind, offlineResponse, offlineUpgrade } from "./offline";
@@ -73,7 +75,7 @@ export interface GatewayRouterOptions {
   /** The literal address a peer's hop may dial, verified as its StableID's; null refuses. */
   resolve?: (peer: PeerEntry) => Promise<string | null>;
   /** Whether this host minted a token for a route of `kind`. */
-  isLocal?: (token: string, kind: "h" | "i") => boolean;
+  isLocal?: (token: string, kind: TokenKind) => boolean;
   /** Whether this host's own share build has an asset. */
   hasAsset?: (name: string) => boolean;
   /** The hop's request headers before the gateway sets its own (M2's stripForwarded). */
@@ -84,9 +86,11 @@ export interface GatewayRouterOptions {
   now?: () => number;
   headersMs?: number;
   assetMaxBytes?: number;
+  /** The most bytes a hopped session share image may carry (SESSION_SHARE_IMAGE_MAX_BYTES). */
+  imageMaxBytes?: number;
   /** 0: no timer (tests call `sweep`). */
   sweepMs?: number;
-  /** How long a `/ws/h` hop whose host withdrew its row waits for that host's own close. */
+  /** How long a `/ws/h` or `/ws/s` hop whose host withdrew its row waits for that host's own close. */
   withdrawGraceMs?: number;
   httpTotal?: number;
 }
@@ -101,7 +105,9 @@ export interface GatewayRouter {
   dispose: () => void;
 }
 
-type Route = { kind: "h" | "i"; token: string } | { kind: "asset"; name: string };
+/** The token kinds a route may serve (never `x`). */
+type TokenKind = "h" | "i" | "s";
+type Route = { kind: TokenKind; token: string } | { kind: "asset"; name: string };
 /** Whether a hop's target still stands: `same`, `moved` (the link routes elsewhere now: the
     hop is retried by the page, the offline answer), or `gone` (it routes nowhere: an unknown
     token's answer). */
@@ -110,6 +116,7 @@ type Standing = "same" | "moved" | "gone";
 const TOKEN = "([A-Za-z0-9_-]{43})";
 const H_ROUTE = new RegExp(`^/(?:api/)?h/${TOKEN}(?:/message)?$`);
 const I_ROUTE = new RegExp(`^/(?:api/)?i/${TOKEN}(?:/[pc]/[a-z]_[a-z2-9]{8})?$`);
+const S_ROUTE = new RegExp(`^/(?:api/)?s/${TOKEN}(?:/img/(?:0|[1-9][0-9]{0,4}))?$`);
 
 /** What a judged share path is for: a token of a kind, or a hashed asset. */
 export function routeOf(pathname: string): Route | null {
@@ -119,6 +126,8 @@ export function routeOf(pathname: string): Route | null {
   if (h) return { kind: "h", token: h[1]! };
   const i = I_ROUTE.exec(pathname);
   if (i) return { kind: "i", token: i[1]! };
+  const sh = S_ROUTE.exec(pathname);
+  if (sh) return { kind: "s", token: sh[1]! };
   return null;
 }
 
@@ -146,10 +155,11 @@ function passBack(headers: IncomingHttpHeaders): Record<string, string | string[
   return { ...out, ...SHARE_RESPONSE_HEADERS };
 }
 
-/** A `/ws/h` hop's key: the target it went to (the node, its ingress port and its verified
-    address) and the token's hash, so a hop is closed when that node no longer holds the hash at
-    that target, even if the row stays or another host claims it later. */
-const hopKey = (nodeId: string, h: string, port: number, address: string): string => `${nodeId} ${h} ${port} ${address}`;
+/** A share socket hop's key: the target it went to (the node, its ingress port and its verified
+    address), the token's hash and the socket's kind, so a hop is closed when that node no longer
+    holds the hash for that kind at that target, even if the row stays or another host claims it
+    later. */
+const hopKey = (nodeId: string, h: string, port: number, address: string, kind: "h" | "s"): string => `${nodeId} ${h} ${port} ${address} ${kind}`;
 
 /** Every router not yet disposed, so a shutdown or rebind can close them all. */
 const routers = new Set<GatewayRouter>();
@@ -167,7 +177,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   // config() re-reads peers.json when it changed on disk (one stat), so a hand edit counts too.
   const peers = opts.peers ?? (() => meshApi.config()?.peers ?? []);
   const resolve = opts.resolve ?? ((peer: PeerEntry) => verifiedAddress(peer, process.env, peers));
-  const isLocal = opts.isLocal ?? ((token, kind) => (kind === "h" ? findLink(token) : findPersonLink(token)) !== null);
+  const isLocal = opts.isLocal ?? ((token, kind) => (kind === "h" ? findLink(token) : kind === "i" ? findPersonLink(token) : findShareLink(token)) !== null);
   const hasAsset = opts.hasAsset ?? ((name) => existsSync(join(SHARE_DIST, "assets", name)));
   const strip = opts.strip ?? stripForwarded;
   const reachable = opts.preflight ?? preflight;
@@ -175,6 +185,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const now = opts.now ?? Date.now;
   const headersMs = opts.headersMs ?? HOP_HEADERS_MS;
   const assetMax = opts.assetMaxBytes ?? ASSET_MAX_BYTES;
+  const imageMax = opts.imageMaxBytes ?? SESSION_SHARE_IMAGE_MAX_BYTES;
   const sweepMs = opts.sweepMs ?? HOP_SWEEP_MS;
   const httpTotal = opts.httpTotal ?? HTTP_HOPS_TOTAL;
   let disposed = false;
@@ -192,7 +203,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   /** Whether hash `h` still routes, for `kind`, to `nodeId` at ingress `port`, judged now:
       `same`; `moved` when it routes elsewhere (a newer snapshot kept the row but moved its port,
       or another host holds it now); `gone` when it no longer routes at all. */
-  const holds = (nodeId: string, h: string, kind: "h" | "i", port: number): Standing => {
+  const holds = (nodeId: string, h: string, kind: TokenKind, port: number): Standing => {
     const v = view();
     const hit = v && registry.lookup(h, kind, now(), (n) => v.byNode.has(n));
     return !hit ? "gone" : hit.nodeId === nodeId && hit.ingressPort === port ? "same" : "moved";
@@ -381,19 +392,41 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     const kind = route.kind;
     const hit = registry.lookup(h, kind, now(), live);
     if (!hit) return local.dispatch(req, res, ctx);
+    // A session share's image is capped here too, counted while streaming (defense in depth: the
+    // origin caps it already, but an older or misconfigured one might not).
+    const cap = kind === "s" && ctx.url.pathname.includes("/img/") ? imageMax : Infinity;
     return hop(req, res, ctx, hit, () => holds(hit.nodeId, h, kind, hit.ingressPort), (up) => {
+      const declared = Number(up.headers["content-length"]);
+      if (Number.isFinite(declared) && declared > cap) {
+        up.destroy();
+        return offlineResponse(res, "api");
+      }
       res.writeHead(up.statusCode ?? 502, passBack(up.headers));
-      up.pipe(res);
+      if (cap === Infinity) return void up.pipe(res);
+      let seen = 0;
+      up.on("data", (chunk: Buffer) => {
+        seen += chunk.length;
+        if (seen > cap) {
+          up.destroy();
+          res.destroy();
+        } else if (!res.write(chunk)) {
+          up.pause();
+          res.once("drain", () => up.resume());
+        }
+      });
+      up.on("end", () => res.end());
     });
   };
 
   const upgrade: ShareUpgrade = async (req, socket, head, ctx) => {
     const v = view();
-    if (!v || isLocal(ctx.token, "h")) return local.upgrade(req, socket, head, ctx);
+    // The socket's kind comes from its path (/ws/h, /ws/s): a token of another kind never hops.
+    const kind = ctx.kind;
+    if (!v || isLocal(ctx.token, kind)) return local.upgrade(req, socket, head, ctx);
     const h = hashToken(ctx.token);
-    const hit = registry.lookup(h, "h", now(), (nodeId) => v.byNode.has(nodeId));
+    const hit = registry.lookup(h, kind, now(), (nodeId) => v.byNode.has(nodeId));
     if (!hit) return local.upgrade(req, socket, head, ctx);
-    const still = () => holds(hit.nodeId, h, "h", hit.ingressPort);
+    const still = () => holds(hit.nodeId, h, kind, hit.ingressPort);
     const address = await addressNow(hit.nodeId);
     const standing = still();
     if (standing === "gone") return local.upgrade(req, socket, head, ctx);
@@ -407,7 +440,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     // the node and port, and the verified address looked up afresh (a moved address or pin, or a
     // failed lookup, refuses; never a silent redial).
     const authorized = async (): Promise<boolean> => still() === "same" && (await addressNow(hit.nodeId)) === address && still() === "same";
-    wsHop.forward(req, socket, head, hopKey(hit.nodeId, h, hit.ingressPort, address), { host: address, port: hit.ingressPort, path: ctx.url.pathname + ctx.url.search, headers }, authorized);
+    wsHop.forward(req, socket, head, hopKey(hit.nodeId, h, hit.ingressPort, address, kind), { host: address, port: hit.ingressPort, path: ctx.url.pathname + ctx.url.search, headers }, authorized);
   };
 
   /** Cut every open hop whose target's verified address changed (address lookups are async, so
@@ -430,13 +463,13 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const sweep = (): void => {
     for (const entry of [...active]) if (entry.still() !== "same") entry.kill();
     // A row its own host withdrew (a newer snapshot without it: revoked or expired there) while
-    // that host is still live and accepted: its /ws/h hops wait for the host's own close (4410
-    // after a revoke), §mesh.public/withdrawn-hop. Any other lost route closes at once.
+    // that host is still live and accepted: its /ws/h and /ws/s hops wait for the host's own close
+    // (4410 after a revoke), §mesh.public/withdrawn-hop. Any other lost route closes at once.
     const v = view();
     const withdrawn = new Set<string>();
     wsHop.closeWhere((key) => {
-      const [nodeId, h, port] = key.split(" ");
-      const standing = holds(nodeId!, h!, "h", Number(port));
+      const [nodeId, h, port, , kind] = key.split(" ");
+      const standing = holds(nodeId!, h!, kind === "s" ? "s" : "h", Number(port));
       if (standing === "same") return false;
       if (standing === "gone" && v?.byNode.has(nodeId!)) {
         withdrawn.add(key);

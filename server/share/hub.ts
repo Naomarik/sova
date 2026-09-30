@@ -11,6 +11,7 @@ const orgName = (orgId: string): string => {
     return "";
   }
 };
+import { hashToken } from "../baton-links";
 import { serverRedactor } from "../overseer-redact";
 import { readActiveBranch } from "../transcript";
 
@@ -131,6 +132,13 @@ export function sweepWatchers(): number {
   for (const [sid, set] of watchers) if (!set.size) watchers.delete(sid);
   return closed;
 }
+/** The token hashes of every open hand-off page socket, for the Shares page's "viewing now". */
+export function watchedHashes(): Set<string> {
+  const out = new Set<string>();
+  for (const set of watchers.values()) for (const w of set) if (w.socket.readyState === w.socket.OPEN) out.add(hashToken(w.token));
+  return out;
+}
+
 export const SWEEP_MS = 30_000;
 setInterval(sweepWatchers, SWEEP_MS).unref();
 

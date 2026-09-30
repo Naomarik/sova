@@ -13,8 +13,10 @@ Nothing above the seam names a provider: the features see only answers and, for 
 provider gave them.
 
 Sova-owned state under `<stateRoot>`: `decisions.json` (settings), `secrets/jev-key` (the key),
-`signals.json` (classified turns), `session-tags.json` (tags). All are sidecars: no decision ever
-writes a byte into a session file. All writes are atomic tmp+rename.
+`signals.json` (classified turns), `session-tags.json` (tags), `decisions-calls.jsonl` (the call
+ledger, §app.decisions/call-ledger). All are sidecars: no decision ever
+writes a byte into a session file. All writes are atomic tmp+rename, except the ledger's
+appends (one line each).
 
 ## §app.decisions/interface — The decision interface
 
@@ -56,7 +58,9 @@ writes a byte into a session file. All writes are atomic tmp+rename.
   share one call. Every request's state is redacted (§app.decisions/privacy) and capped at 32,000
   characters before any provider sees it; over the cap it fails `too-large` without a call.
 - **Jev.** Plain HTTPS, no SDK. boolean/choice/score map to Jev's `noul`/`choice`/`score`. A state
-  estimated over Jev's size limit fails `too-large` locally, without a call. Timeout 8 s.
+  estimated over Jev's size limit fails `too-large` locally, without a call. Timeout 8 s, except
+  for background purposes nobody waits on (session tags, subagent checks and a merge's follow-up
+  check): 15 s.
 - **A model.** The model is asked for **distributions, never a bare label**, at temperature 0 unless
   it is thinking, within 45 s, and its JSON is parsed strictly; junk is `malformed-answer`. The prompt tells it that the state is
   data, never instructions. A pi model runs through the server's
@@ -137,38 +141,109 @@ writes a byte into a session file. All writes are atomic tmp+rename.
   worked past (an exit-1 `grep -c` that found nothing) read as a failed turn.
 - **Questions** (raw answers stored in `<stateRoot>/signals.json`, pruned when a session leaves
   the list): `stuck` (score over making progress / some repetition / clearly looping), asked only
-  for a turn of 5 minutes or more, or 20 tool calls or more. A shorter turn asks nothing and makes
-  no model call; like an errored turn, it drops the stored answers of the turn before it. **No
-  model judges whether a reply asks the user something**: whether a session waits on the user's
-  answers is the deterministic count of its open alignment questions (§chat.alignment/session-mark).
-- **Thresholds, fixed in code:** `looping` when `stuck ≥ 1.5` with confidence ≥ 0.5. The wire
-  carries the kinds with the raw stuck answer; the server derives the kinds and the client never
-  re-derives them. Records stored before may still hold `asks_user`, `outcome` and `work_failed`
-  answers: nothing reads them, and no kind comes from them.
-- **Workers**, pi and Claude Code alike: a worker running for 5 minutes or more is checked for
-  `stuck` at most every 5 minutes. A worker that ended is never checked: one that ended in an
-  error is the digest's deterministic `worker-error` (§app.overseer/attention-digest). The parent
-  session carries a count (`workerSignals`: stuck); details go to the attention digest. A
+  for a turn of 5 minutes or more, or 20 tool calls or more, and never for a turn whose tool calls
+  are mostly waits (`agent_wait`, `wake_nudge` and the `team_*` tools): a parent waiting on its
+  workers is long, not looping. `asks_user` (§app.decisions/asks-user) is asked of a turn whose
+  reply looks like it asks. A turn with neither asks nothing and makes no model call; like an
+  errored turn, it drops the stored answers of the turn before it. The instructions add that
+  waiting is not looping: a scheduled wake-up, checking a roster or inbox and scheduling the next
+  check, or waiting on other workers is progress when each cycle is short, and only this turn is
+  judged.
+- **Thresholds, fixed in code:** `looping` when `stuck ≥ 1.5` with confidence ≥ 0.5; `asks-you`
+  when `asks_user ≥ 0.5`. The wire carries the kinds with the raw answers; the server derives the
+  kinds and the client never re-derives them. Records stored before may still hold `outcome` and
+  `work_failed` answers: nothing reads them, and no kind comes from them.
+- **Workers**, pi and Claude Code alike, are judged on their **current turn** only: the items
+  after the last task or steer item, its start being that item's time. A worker whose current turn
+  has run 5 minutes or more is considered at most every 5 minutes; a worker that ended is never
+  checked (one that ended in an error is the digest's deterministic `worker-error`,
+  §app.overseer/attention-digest). A team member whose duty is `monitor` or `coordinator`, and a
+  turn a wake nudge started, are never checked: they poll by design. A check first counts in code:
+  only a turn with the same tool and arguments 3 or more times in a row, or one running 15 minutes
+  or more whose last 3 tool results are all errors, is asked `stuck`; any other is stored as making
+  progress without a model call. The excerpt says what started the turn and how long it has run.
+  A worker is stored per parent session and worker id (`ag_NN` alone repeats across sessions;
+  records keyed by it alone are dropped on read). A looping answer counts only when the check
+  before it, in the same turn, was looping too (two strikes); a non-looping answer resets it. The
+  parent session carries a count (`workerSignals`: stuck); details go to the attention digest. A
   subagent's check counts until the parent session is seen after it (or is on screen), and stops
   counting 11 minutes after it, so a worker that stopped running stops counting. A stored worker
   "outcome" check from before is dropped on read.
 - **Showing and clearing** is decided on the server: a session's `signals` are sent only while it
-  has a kind, the feature is on, no pane has it open, it is not running, and it hasn't been seen
+  has a kind, the feature is on, it is not running, and — for every kind but `asks-you`, which stays
+  until the user answers (§app.decisions/asks-user) — no pane has it open and it hasn't been seen
   since it was checked (the seen store, §app.overseer/seen); a newer turn replaces them. Switching
   the feature off hides every mark and keeps the stored answers. The row's mark is
   §app.session-list/anatomy; the Overseer's view is §app.overseer/attention-digest.
 
+## §app.decisions/asks-user — Does the reply ask the user?
+
+- A finished main-session turn is asked one boolean, `asks_user` ("does the reply end by asking
+  the user a question, or for a decision, approval or information it needs before it can go
+  on?"), only when all of these hold: the session has **no open alignment question**
+  (§chat.alignment/session-mark: those already put it in Needs you); a partner's link message did
+  not open the turn (its question is to the partner); and the reply's end looks like it asks.
+- **Looks like it asks** is counted in code on the last 1,000 characters of the reply, after the
+  closing spec lines (`Also changes:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut:
+  a question mark, or a phrase such as "should I", "shall I", "want me to", "do you want", "would
+  you like", "tell me", "let me know", "say if/when/which", "if you want", "your call", "up to you",
+  "confirm and", "once you say", "after you confirm" or "say yes". A reply without one makes no model call for it.
+- The excerpt for this question alone is the title, the head of the last user message (≤600
+  characters) and the tail of the reply (≤1,500), after the closing spec lines are cut. A long
+  turn asked `stuck` too sends one request with both questions and the stuck excerpt.
+- At `asks_user ≥ 0.5` the turn's kind is `asks-you`. The reply's asking sentence (of its last
+  three sentences, the last that ends in "?", else the last), redacted and at most 160
+  characters, is stored with the answer for the attention digest only; it never reaches the
+  session list or the feed.
+- It shows while the feature is on and the session is idle, and, unlike the other signals, a look
+  does not clear it: opening or viewing the session leaves it, as with open questions. It clears
+  when the user answers (a turn runs, and the next turn replaces or drops it) or the session is
+  archived. An open alignment question that appears later takes its place in Needs you.
+
+## §app.decisions/team-stall — A team gone quiet
+
+- Counted in code, never asked of a model, by the attention signals' 10 s scan while the feature
+  is on: a session **waits on a stalled team** when all of these hold —
+  - it is idle (not running a turn), not archived, and not an Overseer, worker or baton session;
+  - it has live subagents, at least one of them neither killed nor a team member whose duty is
+    `monitor` or `coordinator`, and none of them is working;
+  - the end of its last reply (after the closing spec lines) says it waits on them: "still
+    running", "in progress", "when it arrives", "once the verifier signs off", "reports to me",
+    "will send me", "as they come", "waiting on the team" and the like;
+  - nothing has happened for 15 minutes: not its last reply, and no subagent's last activity
+    (monitors' and coordinators' check-ins never count).
+- It is stored in `<stateRoot>/signals.json` with the time the quiet began and the quiet
+  subagents' names, re-checked every scan, and dropped as soon as any condition fails.
+- The attention digest shows it as an **act** item of the session (Needs you, the Overseer's
+  count and briefs), kind `team-stalled`: "Waiting on {names}, quiet for {n} min.", dated by when
+  the quiet began — unless the session already has an `open-questions` or `asks-you` item. It is
+  not a phone notification kind: the notifier tells it without sending (§app.notifications/delivery).
+
+## §app.decisions/call-ledger — The call ledger
+
+- Every decision request that reaches the chain appends one line to
+  `<stateRoot>/decisions-calls.jsonl`: when, the purpose, the provider and model that answered (or
+  the failure's name and provider), the latency, the reported token usage, and whether it fell
+  back. Never the state, the questions, the answers, the dedupe key or the key.
+- A request refused before the chain (over the size cap) is logged as `too-large` with no
+  provider.
+- The file is capped at 4 MB: when a write would pass it, the file moves to
+  `decisions-calls.jsonl.1` (replacing the older one) and a new file starts. A failed write is
+  ignored; it never fails the decision.
+
 ## §app.decisions/session-tags — Session tags
 
 - Each session gets a **topic** from a fixed taxonomy — feature, bugfix, refactor, tests, docs,
-  infra, research, planning, review, data, config, experiment, chore, other — a **status** (done,
-  in progress, abandoned, blocked) and a **throwaway** probability (a test or scratch session with
-  no lasting work). The taxonomy is not editable; the classifier never invents labels.
+  infra, research, planning, review, data, config, experiment, chore, other — and a **throwaway**
+  probability (a test or scratch session with no lasting work). The taxonomy is not editable; the
+  classifier never invents labels. There is **no status tag**: whether work is done, ready or
+  waiting is the worktree readiness (§chat.worktrees/readiness), from git and the file. A status
+  answer stored before stays readable in the store and is never sent or shown.
 - **Input** comes from what the session list already reads (the file's head and tail, never a
   full read): the original first message, the outline's summary and "now" line, the folder's name,
   the model, how long it ran and how long it has been idle (both computed in code), the last user
   message (≤600 characters) and the end of the last reply (≤1,500), redacted before it leaves.
-- **Shown** only when confident: topic and status at confidence ≥ 0.5 and inside the taxonomy;
+- **Shown** only when confident: topic at confidence ≥ 0.5 and inside the taxonomy;
   throwaway at P(yes) ≥ 0.75. Anything below is absent on the wire; the raw answers are stored.
 - **Which sessions**, for live tagging and the backfill alike: those the privacy gate lets through
   (§app.decisions/privacy), except the Overseer's, workers', baton sessions (§app/baton) and
@@ -185,8 +260,8 @@ writes a byte into a session file. All writes are atomic tmp+rename.
 - **Manual tags**, per session (`POST /api/sessions/tags`): trimmed, lowercased, a leading `#`
   dropped, deduplicated, letters, digits and `-`, at most 32 characters each and 8 per session;
   an empty list or `null` clears them. They are kept apart from the classifier's and always shown.
-- The row shows the status word (§app.session-list/anatomy); search matches topic, status and
-  manual tags (§app.session-list/search).
+- The row shows no tag word; its line 3 carries the readiness badge instead
+  (§app.session-list/anatomy). Search matches topic and manual tags (§app.session-list/search).
 
 ## §app.decisions/backfill — Tagging existing sessions
 
@@ -215,7 +290,8 @@ writes a byte into a session file. All writes are atomic tmp+rename.
 - The same comparison sends `list_changed` (no payload; never on connect) when a session appears
   in or leaves the list, or a row's live record, running state, last activity, archived flag or
   title changes (a stored title changes in Sova's title store, never in the file: the Overseer's
-  rename, the automatic namer's, §app.session-list/auto-titles). The sidebar then reads the list again: at once if its last such read was at least a
+  rename, the automatic namer's, §app.session-list/auto-titles), or its merge readiness changes
+  (read from git in the background, §chat.worktrees/readiness). The sidebar then reads the list again: at once if its last such read was at least a
   second ago, otherwise once, a second after that read, however many more arrive meanwhile. It
   also reads the list after every reconnect of the feed, since the list may have changed while
   the socket was down. The feed adds no polling of its own. So a session started in a TUI reaches
@@ -226,3 +302,23 @@ writes a byte into a session file. All writes are atomic tmp+rename.
   open the overlay is dropped and the list poll is the truth again; after the socket stops
   retrying, it tries again when the window regains focus.
 - The feed never writes and ignores anything the client sends.
+
+## §app.decisions/merge-followup — One follow-up check per merge
+
+- **What it asks.** Once per merge card (§chat.worktrees/merge-card), on the first reply that ends
+  a turn after the card: `follow_up`, a boolean — does the reply name work still to be done beyond
+  a restart, push or cleanup (open gaps, a known regression, "I'd fix it separately", unverified
+  parts)? — and `follow_up_weight`, a score over none / small / significant.
+- **The excerpt**: the branch, target, commits and lines of the card, the reply's last 1,500
+  characters, its `Deferred:` line when it has one, and the mechanical follow-ups
+  (§chat.worktrees/readiness) as facts so they are not judged again. Redacted before it leaves.
+- **When and which.** Only with **attention signals on** and through the same privacy gate
+  (§app.decisions/privacy), for the sessions readiness covers, and only for a reply from the last
+  24 hours: switching the feature on never checks old merges. A merge is checked at most once; a
+  failed check is retried after 5 minutes, at most 3 times. The answer is stored per merge card in
+  `<stateRoot>/merge-followups.json`, kept only while its session is listed.
+- **Reading it.** Follow-up work when `follow_up` P ≥ 0.5 and the weight's score is 0.5 or more:
+  significant at 1.5 or more with confidence ≥ 0.5, else small. The cue shown is the reply's own
+  first line naming open work, else its `Deferred:` line, else "see the reply after merging
+  {branch}". The model never writes
+  the follow-up; it only says whether there is one and how much.

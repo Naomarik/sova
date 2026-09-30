@@ -86,10 +86,13 @@ textarea. The textarea stays visible and editable throughout.
 
 - **One gesture.** The `AudioContext` is created synchronously in the press handler (iOS leaves a
   context created after an `await` suspended), then `getUserMedia({audio: {channelCount: 1,
-  echoCancellation: true, noiseSuppression: true, autoGainControl: true}})` and `ctx.resume()`.
+  echoCancellation: false, noiseSuppression: false, autoGainControl: false}})` and `ctx.resume()`:
+  the browser's own noise suppression and gain control smear consonants and, stacked on a system
+  noise gate, cut words, so the speech models get the mic's raw signal.
 - **PCM, not MediaRecorder.** An AudioWorklet (`/voice-capture-worklet.js`) posts mono Float32
   batches and their RMS; where AudioWorklet is missing a ScriptProcessorNode does the same.
-- **Stop** flushes the worklet, stops every mic track (which releases the OS mic indicator), closes
+- **Stop** keeps recording for 350 ms more (post-roll, so a stop tapped on the last syllable
+  doesn't cut it), then flushes the worklet, stops every mic track (which releases the OS mic indicator), closes
   the context, resamples to 16 kHz through an `OfflineAudioContext`, and encodes a 16-bit mono WAV
   (32 KB per second).
 - **Warm-up.** Starting a recording sends `POST /api/voice/warm`, so the model loads while you
@@ -126,7 +129,8 @@ launch of the installed app; the permission prompt's reason is the browser's own
 multipart), at most 12 MB (about 6 minutes).
 
 - **200** `{text, ms, audioSec}` — `text` is the transcript with whisper's non-speech markers
-  (`[BLANK_AUDIO]`, `(music)` and the like) removed and whitespace collapsed; it may be empty.
+  (`[BLANK_AUDIO]`, `(music)` and the like) removed, whitespace collapsed and Sova's jargon
+  corrected (§chat.voice/jargon-fixes); it may be empty.
 - **400** the body isn't a 16 kHz, 16-bit PCM, mono RIFF/WAVE file. **409** voice isn't installed.
   **413** the body is over the limit. **503** whisper is starting and failed, has crashed too often,
   or two requests are already waiting.
@@ -139,6 +143,16 @@ multipart), at most 12 MB (about 6 minutes).
   the same words — plus `hint`, the session folder's name, when it is a short plain word that
   doesn't repeat a hotword of 3 or more letters (a lowercase "sova-voice-input" turned "Sova" into
   "sova"). Parakeet takes no prompt, so on it the hotwords and `hint` are not sent.
+
+## §chat.voice/jargon-fixes — Jargon post-correction
+
+Every transcript (dictation, calibration and the self-test) goes through one small fixed table of
+whole-word corrections for Sova's jargon, after the non-speech markers are removed: "work tree" and
+"worktreet" become "worktree", "sub agent", "sub-agent" and "subagen" become "subagent", "state
+chart" and "state-chart" become "statechart" (each with its plural), "Claud" becomes "Claude", and
+"sova" or "SOVA" becomes "Sova" and "overseer" becomes "Overseer". Only misspellings with no
+everyday meaning are in the table, so ordinary speech is never rewritten; a lowercase correction
+keeps a sentence-initial capital ("Work tree" becomes "Worktree").
 
 ## §chat.voice/runtime — The engine supervisor
 

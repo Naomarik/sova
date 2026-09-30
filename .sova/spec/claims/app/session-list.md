@@ -123,15 +123,17 @@
                    looked is new activity too. Both come from the server and clear on a visit alike.
                    Then at most ONE needs-you mark, the most urgent kind first:
                      questions    count alone, --color-accent    "3 open questions. "  (§chat.alignment/session-mark)
+                     asks-you     chat,         --color-accent   "Asks you something. "  (§app.decisions/asks-user)
                      looping      refresh,      --status-warn    "May be looping. "  (a subagent's: "A subagent may be stuck. ")
-                   Open questions come from the session's `align` counts; looping from the server's
+                   Open questions come from the session's `align` counts; asks-you and looping from the server's
                    attention signals (the session's `signals.kinds`, and its subagents'
                    `workerSignals` counts, §app.decisions/attention-signals); kind precedence first,
                    then the session's own signal over its subagents'. The glyph sits in a span whose
                    `title` says the fact in one sentence ("3 open questions in 2 alignments", "The
-                   last turn looks like it went in circles.", "A subagent looks stuck.").
+                   last reply asks you something.", "The last turn looks like it went in circles.",
+                   "A subagent looks stuck.").
                    Kinds differ in shape as well as tone: questions are the bare accent count, no glyph. The looping mark is gone once the session
-                   is seen after it was classified; open questions stay until they are answered, the user moves on, or align is turned off. No
+                   is seen after it was classified; asks-you stays until the user answers (their next turn replaces it); open questions stay until they are answered, the user moves on, or align is turned off. No
                    mark shows while this tab runs a turn there.
                    Every line-1 mark is hidden on the open session,
                    so this row (the open one) has none; on another row line 1 reads:
@@ -149,15 +151,16 @@
                 <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
                 <span class="session-topics text-num" title="7 topics in this session">7</span>
               </div>
-              <!-- line 3: time, the tag's status word when there is one (§app.decisions/session-tags:
-                   done, in progress, abandoned, blocked — lowercase, the meta's own muted voice, no
-                   tone), and model, then the context ring. A tagged row's `.list-meta` has the `title`
-                   "Topic: bug fix · status: in progress (tagged automatically)" ("Status: done (tagged
-                   automatically)" without a topic); the topic shows nowhere else on the row. A remote row opens the line with its
+              <!-- line 3: time, the readiness badge when there is one (§chat.worktrees/readiness:
+                   "ready ✓", "waiting for your OK", "restart pending", "merged · 2 follow-ups",
+                   "merged" — lowercase, the meta's own muted voice, no tone, never wrapped; its `title`
+                   the badge's per-worktree lines), and model, then the context ring. A tagged row's
+                   `.list-meta` has the `title` "Topic: bug fix (tagged automatically)"; the topic
+                   shows nowhere else on the row. A remote row opens the line with its
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
                    open with the time, as here. -->
               <div class="list-line list-meta-row">
-                <p class="list-meta">2h ago · <span class="session-status-word">in progress</span> · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
+                <p class="list-meta">2h ago · <span class="session-readiness" title="feat/x: ready, checks passed">ready ✓</span> · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
                 <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
                   <svg viewBox="0 0 12 12" aria-hidden="true">
                     <circle class="context-ring-track" cx="6" cy="6" r="5" fill="none"/>
@@ -245,6 +248,8 @@ label a person reads says "sessions pane".
       <button class="button button-icon spine-item" type="button" aria-label="Resource monitor" title="Resource monitor">…activity…</button>
       <a class="button button-icon spine-item" href="#/agents"
          aria-label="{the agents sentence, else Agents}" title="{the same}">…worker…</a>
+      <!-- §app.session-share/shares-page -->
+      <a class="button button-icon spine-item" href="#/shares" aria-label="Shares" title="Shares">…external…</a>
       <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
     </div>
   </div>
@@ -646,7 +651,9 @@ label a person reads says "sessions pane".
 
 The very top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
-(§chat.alignment/session-mark), or a stuck subagent. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
+(§chat.alignment/session-mark), a last reply that asks you something (§app.decisions/asks-user), a
+session waiting on a team gone quiet (§app.decisions/team-stall), or a worktree ready and waiting
+for your OK to merge (§chat.worktrees/readiness); a stuck subagent is not one: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
@@ -1754,8 +1761,8 @@ record whose transcript is gone.
 ## §app.session-list/search — Search
 
 - **Matching.** Case-insensitive substring match on `title`, `cwd`, `model`, and the session's
-  tags (§app.decisions/session-tags: its topic and status, as stored and as displayed — `bugfix`
-  and "bug fix", `in_progress` and "in progress" — and its manual tags), filtered on the client as
+  tags (§app.decisions/session-tags: its topic, as stored and as displayed — `bugfix` and
+  "bug fix" — and its manual tags), filtered on the client as
   the user types (no debounce needed for fewer than 2k rows). Without tags, a row matches as before.
 - **Empty groups.** A group with no matching rows is hidden, and so is a region with none.
 - **Organization rows** also match on the org's name, the project's name and the baton holder's

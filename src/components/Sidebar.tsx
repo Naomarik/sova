@@ -55,7 +55,8 @@ import {
 } from "../lib/session-groups";
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
-import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagStatusWord, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
+import { readinessBadge, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
@@ -88,6 +89,7 @@ import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon } from "./ui";
+import { SHARES_HREF } from "../lib/session-shares";
 import { showSummaries } from "../lib/summary-line";
 import {
   effectiveHostFilter,
@@ -291,7 +293,8 @@ function SessionRow(props: {
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy() }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
   const leadMark = () => rowLeadMark(s(), props.selected);
-  const statusWord = () => tagStatusWord(s().tags);
+  /** Line 3's merge-readiness badge (src/lib/readiness.ts): the server's answer, worded. */
+  const badge = () => readinessBadge(s().readiness);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -599,12 +602,14 @@ function SessionRow(props: {
             </Show>
             <p class="list-meta" title={tagsTitle(s().tags) ?? undefined}>
               {relativeTime(s().lastActiveAt, props.now)}
-              {/* The session's status tag, between the time and the model. The topic is search-only. */}
-              <Show when={statusWord()}>
+              {/* The merge-readiness badge, between the time and the model. The topic is search-only. */}
+              <Show when={badge()}>
                 {(w) => (
                   <>
                     {" · "}
-                    <span class="session-status-word">{w()}</span>
+                    <span class="session-readiness" title={readinessTitle(s().readiness) ?? undefined}>
+                      {w()}
+                    </span>
                   </>
                 )}
               </Show>
@@ -1052,6 +1057,8 @@ export function Sidebar(props: {
   agents: AgentsInsight | undefined;
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
+  /** `#/shares` is open, for aria-current on its foot row (§app.session-share/shares-page). */
+  sharesOpen?: boolean;
   /** Opens the Settings dialog from the foot's gear. */
   onOpenSettings(): void;
   /** The viewport is ≥768px: the only width where the pane can collapse to the spine. */
@@ -1854,6 +1861,9 @@ export function Sidebar(props: {
           >
             <Icon name="worker" />
           </a>
+          <a class="button button-icon spine-item" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined} title="Shares" aria-label="Shares">
+            <Icon name="external" />
+          </a>
           <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
             <Icon name="settings" />
           </button>
@@ -2407,6 +2417,11 @@ export function Sidebar(props: {
               <Icon name="settings" small />
             </button>
           </div>
+          {/* Every public link, and who is looking (§app.session-share/shares-page). */}
+          <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
+            <Icon name="external" />
+            <span class="insights-row-text">Shares</span>
+          </a>
         </div>
       </Show>
     </aside>

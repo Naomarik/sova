@@ -1326,7 +1326,17 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  height: 100dvh;
+  /* 100%, not 100dvh: html, body and #root are 100% of the window (app.css), and one measure all
+     the way down means the document can never be taller than the window. A 100dvh shell grows
+     past a 100% root whenever the two disagree (an installed app's first layout after a launch),
+     and that extra range is what a restored scroll or a keyboard reveal then uses to push the
+     head off the top. */
+  height: 100%;
+  /* index.html's viewport-fit=cover lets the page reach under system bars. The bottom inset is
+     paid by what sits on the bottom edge (.composer, .sidebar-foot, .spine-foot) so their
+     surface runs under the gesture bar; top and sides are paid here (0 wherever the browser
+     keeps the status bar and cutouts outside the page, as Chrome on Android does). */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
   /* clip, not hidden: a hidden box still scrolls programmatically, so a scrollIntoView (a
      transcript jump) could shift the whole shell up, and nothing would scroll it back. */
   overflow: clip;
@@ -5664,9 +5674,10 @@ a.subagent-row { text-decoration: none; }
 /* A session that needs you: one glyph after the unread dot (or the turn-error mark), before
    the draft pencil. It is inline text like the pencil, not an indicator, so line 1 stays the
    title's. One mark per row, the most urgent kind: open alignment questions (§chat.alignment/
-   session-mark), then looping. The kind differs in shape as well as tone, so hue never carries it
-   alone: open questions are a speech bubble in the accent (the accent's one spend, "this needs
-   you") followed by their count, looping the refresh arrows in warn. The glyph is aria-hidden; the
+   session-mark), then a reply that asks you (§app.decisions/asks-user), then looping. The kind
+   differs in shape as well as tone, so hue never carries it alone: open questions are their count
+   in the accent (the accent's one spend, "this needs you"), an ask the speech bubble in the
+   accent, looping the refresh arrows in warn. The glyph is aria-hidden; the
    hidden words beside it name the kind. A wrapping span may carry the tooltip; it adds no box of its own. */
 .list-title .session-signal {
   width: 1em;
@@ -5682,11 +5693,13 @@ a.subagent-row { text-decoration: none; }
   color: var(--color-accent);
 }
 .list-title .session-signal-questions { margin-right: 2px; }
+.session-signal-asks { color: var(--color-accent); }
 .session-signal-looping { color: var(--status-warn); }
 
-/* The tag's status word joins line 3's facts, "2h ago · done · model", in the meta's own
-   muted voice: a tag organises, the line-1 mark is what calls. It never wraps or splits. */
-.session-row .list-meta .session-status-word { white-space: nowrap; }
+/* The merge-readiness badge joins line 3's facts, "2h ago · ready ✓ · model", in the meta's own
+   muted voice: it says where the work stands, the line-1 mark is what calls. It never wraps or
+   splits; the model's name gives way first. */
+.session-row .list-meta .session-readiness { white-space: nowrap; }
 
 /* Settings → Decisions. Each provider is one line: a chip (dot and word) for its state, then
    the fact in caption ink ("Key ending 3f9a · checked 2h ago", "Rate-limited · retrying in 30 s"). */

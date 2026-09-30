@@ -103,7 +103,8 @@ const fakeDeps: Record<string, unknown> = {
     if (!m) return null;
     const [, node, path] = m as unknown as [string, string, string];
     if (path === "/api/peer/hello") return helloReply(node);
-    if (path === "/api/peer/share-gateway/info") return infoReply(node);
+    // The routed host asks with ?kinds=1 (GatewayInfo.kinds); the fake answers either.
+    if (path === "/api/peer/share-gateway/info" || path === "/api/peer/share-gateway/info?kinds=1") return infoReply(node);
     if (path === "/api/peer/share-gateway/links" && init?.method === "PUT") return pushReply(node, JSON.parse(String(init.body)));
     return null;
   },
@@ -196,7 +197,7 @@ test("viaGatewayIdentity in address mode is null when the gateway peer has no ta
 test("refreshGateway: hello gives the public URL, info the acceptance; viaGatewayStatus caches it", async () => {
   assert.equal(gw.viaGatewayStatus(), null, "nothing learnt yet");
   const s = await gw.refreshGateway();
-  assert.deepEqual(s, { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true });
+  assert.deepEqual(s, { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true, kinds: null });
   assert.deepEqual(gw.viaGatewayStatus(), s);
 });
 
@@ -215,7 +216,7 @@ test("refreshGateway: a 404 not-gateway is not accepting; a failed hello or info
 test("viaGatewayStatus: null until the selected gateway was asked, and null when the via gateway is no peer", async () => {
   assert.equal(gw.viaGatewayStatus(), null, "routed, nothing asked yet");
   await gw.refreshGateway();
-  assert.deepEqual(gw.viaGatewayStatus(), { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true });
+  assert.deepEqual(gw.viaGatewayStatus(), { publicUrl: PUBLIC_URL, label: "VPS", reachable: true, accepting: true, kinds: null });
   setting = { version: 1, route: { via: { nodeId: "nGONE" } } };
   assert.equal(gw.viaGatewayStatus(), null, "via names no peer");
 });
@@ -1368,4 +1369,216 @@ test("B1v3 control: after switching from off to via, a clean mint is confirmed",
   push.registryRouteChanged();
   await push.pushNow();
   assert.equal((await mintH(WAIT)).outcome.warning, null);
+});
+
+// ---- session links (kind `s`) and the gateway's kinds: the version-skew gate ---------------------
+
+const sessionShares = await import("./session-shares");
+
+/** Mint a session share the way the route does: inside awaitShareLinks (the store emits the change). */
+async function mintS(waitMs?: number) {
+  const { result, outcome } = await events.awaitShareLinks(
+    () =>
+      sessionShares.createShare({
+        sessionId: `sess-${Math.random()}`,
+        sessionPath: "/nonexistent/session.jsonl",
+        title: "A shared session",
+        mode: "snapshot",
+        cut: { entryId: "e1", at: null },
+        days: 30,
+        labels: ["Ana"],
+        anyone: false,
+      }),
+    waitMs,
+  );
+  return { hash: batonLinks.hashToken(result.tokens[0]!.token), outcome };
+}
+
+const infoWithKinds = (node: string, kinds: string[]): Reply => ({ status: 200, body: { publicUrl: urlOf(node), accepting: true, seq: null, kinds } });
+
+test("parseInfo: kinds is optional; known kinds are kept, unknown ones dropped; a malformed list is no answer", () => {
+  const good = { publicUrl: PUBLIC_URL, accepting: true, seq: null };
+  assert.deepEqual(gw.parseInfo({ status: 200, body: good }), good, "an older gateway: no kinds");
+  assert.deepEqual(gw.parseInfo({ status: 200, body: { ...good, kinds: ["h", "i", "s", "x"] } }), { ...good, kinds: ["h", "i", "s", "x"] });
+  assert.deepEqual(gw.parseInfo({ status: 200, body: { ...good, kinds: ["h", "zz", "s"] } }), { ...good, kinds: ["h", "s"] });
+  assert.equal(gw.parseInfo({ status: 200, body: { ...good, kinds: "s" } }), null);
+  assert.equal(gw.parseInfo({ status: 200, body: { ...good, kinds: [1] } }), null);
+});
+
+test("the routed host asks its gateway's info with ?kinds=1", async () => {
+  await gw.refreshGateway();
+  assert.ok(calls.some((u) => u.endsWith("/api/peer/share-gateway/info?kinds=1")), calls.join("\n"));
+});
+
+test("version skew: a gateway whose info lists no kinds never receives an `s` row; h and i links still route and confirm", async () => {
+  clearStores();
+  rmSync(join(stateRoot(), "session-shares.json"), { force: true });
+  infoReply = async (n) => infoOk(n); // an older gateway: no `kinds`
+  push.startRegistryPush();
+  await gw.refreshGateway();
+  const s = await mintS(WAIT);
+  const h = await mintH(WAIT);
+  await push.pushNow();
+  assert.ok(pushed.length >= 1, "something was pushed");
+  for (const snap of pushed) assert.ok(!snap.links.some((l) => l.kind === "s"), `seq ${snap.seq} carries no s row`);
+  assert.ok(!pushed.some((snap) => snap.links.some((l) => l.h === s.hash)), "the session hash never left");
+  assert.ok(pushed.at(-1)!.links.some((l) => l.h === h.hash && l.kind === "h"), "the hand-off link still routes");
+  assert.equal(h.outcome.warning, null, "the hand-off mint is confirmed");
+  assert.notEqual(s.outcome.warning, null, "the session mint is never confirmed");
+  assert.equal(push.gatewayRoutesSessions(), false);
+});
+
+test("a gateway whose info lists `s` gets the session rows; one that starts listing it is sent them without a mint", async () => {
+  clearStores();
+  rmSync(join(stateRoot(), "session-shares.json"), { force: true });
+  infoReply = async (n) => infoOk(n);
+  push.startRegistryPush();
+  await gw.refreshGateway();
+  const s = await mintS(WAIT);
+  assert.ok(!pushed.some((snap) => snap.links.some((l) => l.h === s.hash)), "premise: not sent to the older gateway");
+  // The gateway is updated: the next refresh learns `s` and owes it the session rows.
+  infoReply = async (n) => infoWithKinds(n, ["h", "i", "s", "x"]);
+  push.registryRouteChanged();
+  await new Promise((r) => setTimeout(r, 50));
+  await push.pushNow();
+  assert.equal(push.gatewayRoutesSessions(), true);
+  assert.ok(pushed.at(-1)!.links.some((l) => l.h === s.hash && l.kind === "s"), "the session row is sent");
+  assert.equal(validateSnapshot(JSON.parse(JSON.stringify(pushed.at(-1)!)), { now: Date.now() }).ok, true);
+  // And a later mint is confirmed like any other.
+  const again = await mintS(WAIT);
+  assert.equal(again.outcome.warning, null, JSON.stringify(again.outcome));
+});
+
+// ---- review M0 B1: the `s` capability is bound to the exact target that stated it ----------------
+
+test("M0-B1 a same-node endpoint change forgets `s`: until the new endpoint states it, no snapshot carries an s row, and h still confirms", async () => {
+  clearStores();
+  rmSync(join(stateRoot(), "session-shares.json"), { force: true });
+  infoReply = async (n) => infoWithKinds(n, ["h", "i", "s", "x"]);
+  push.startRegistryPush();
+  await gw.refreshGateway();
+  assert.equal(push.gatewayRoutesSessions(), true, "premise: the first endpoint stated s");
+  // The same StableID now answers at another address, an older service whose info is slow.
+  peers = [{ ...GATEWAY, dnsName: "100.64.0.99" }, OTHER];
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  infoReply = async (n) => {
+    await held;
+    return infoOk(n);
+  };
+  gw.bumpRouteGeneration?.();
+  push.registryRouteChanged();
+  const before = pushed.length;
+  const s = await mintS(WAIT);
+  const h = await mintH(WAIT);
+  await push.pushNow();
+  const toNew = pushed.slice(before);
+  assert.ok(toNew.length >= 1, "something was sent to the new endpoint");
+  for (const snap of toNew) assert.ok(!snap.links.some((l) => l.kind === "s"), `seq ${snap.seq} carries no s row`);
+  assert.equal(h.outcome.warning, null, "h still confirms");
+  assert.notEqual(s.outcome.warning, null, "the session mint is not confirmed");
+  release();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(push.gatewayRoutesSessions(), false, "the old-shaped info never lent it s");
+});
+
+test("M0-B1 support withdrawn between building a snapshot and sending it: the s-bearing snapshot never leaves", async () => {
+  clearStores();
+  rmSync(join(stateRoot(), "session-shares.json"), { force: true });
+  infoReply = async (n) => infoWithKinds(n, ["h", "i", "s", "x"]);
+  push.startRegistryPush();
+  await gw.refreshGateway();
+  await push.pushNow();
+  // Hold the endpoint resolution of the next send; meanwhile the gateway says it no longer routes s.
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let holding = true;
+  endpointHook = async (_p, base) => {
+    if (holding) {
+      holding = false;
+      await held;
+    }
+    return base;
+  };
+  const before = pushed.length;
+  const minting = mintS(WAIT);
+  await new Promise((r) => setTimeout(r, 30));
+  endpointHook = null;
+  infoReply = async (n) => infoOk(n);
+  await gw.refreshGateway();
+  assert.equal(push.gatewayRoutesSessions(), false);
+  release();
+  await minting;
+  await push.pushNow();
+  assert.ok(pushed.length > before, "premise: a snapshot went out after the release");
+  for (const snap of pushed.slice(before)) assert.ok(!snap.links.some((l) => l.kind === "s"), `seq ${snap.seq} carries no s row`);
+});
+
+test("M0-B1 a bad-snapshot refusal of a snapshot with s rows: s is forgotten and the h/i set goes again at once", async () => {
+  clearStores();
+  rmSync(join(stateRoot(), "session-shares.json"), { force: true });
+  infoReply = async (n) => infoWithKinds(n, ["h", "i", "s", "x"]);
+  // A gateway that claims s but refuses it (an older validator behind a newer info route).
+  answer = async (snap, node) => (snap.links.some((l) => l.kind === "s") ? { ok: false, error: "bad-snapshot" } : { ok: true, seq: snap.seq, publicUrl: urlOf(node) });
+  push.startRegistryPush();
+  await gw.refreshGateway();
+  await mintS(WAIT);
+  const h = await mintH(WAIT);
+  assert.equal(h.outcome.warning, null, "h confirms without waiting for a retry timer");
+  assert.equal(push.gatewayRoutesSessions(), false);
+  assert.ok(!pushed.at(-1)!.links.some((l) => l.kind === "s"));
+});
+
+// ---- review M1 B6: a mint that makes several links is confirmed per link ------------------------
+
+const shareInput = (labels: string[]) => ({
+  sessionId: `sess-${Math.random()}`,
+  sessionPath: "/nonexistent/session.jsonl",
+  title: "A shared session",
+  mode: "snapshot" as const,
+  cut: { entryId: "e1", at: null },
+  days: 30 as const,
+  labels,
+  anyone: false,
+});
+
+async function sessionGateway() {
+  clearStores();
+  rmSync(join(stateRoot(), "session-shares.json"), { force: true });
+  infoReply = async (n) => infoWithKinds(n, ["h", "i", "s", "x"]);
+  push.startRegistryPush();
+  await gw.refreshGateway();
+  await push.pushNow();
+}
+
+test("M1-B6 two recipients minted, one revoked in the same tick: the mint is not confirmed", async () => {
+  await sessionGateway();
+  const r = await events.awaitShareLinks(() => {
+    const made = sessionShares.createShare(shareInput(["Ana", "Ben"]));
+    sessionShares.revokeRecipient(made.share.id, made.tokens[0]!.recipientId);
+    return made;
+  }, WAIT);
+  const ana = batonLinks.hashToken(r.result.tokens[0]!.token);
+  assert.ok(!pushed.some((snap) => snap.links.some((l) => l.h === ana)), "premise: Ana's link never left");
+  assert.notEqual(r.outcome.warning, null, "a returned link was never sent: never confirmed");
+});
+
+test("M1-B6 a share minted and one of its links relinked in the same tick: the share's mint warns, the relink confirms", async () => {
+  await sessionGateway();
+  let made!: ReturnType<typeof sessionShares.createShare>;
+  const first = events.awaitShareLinks(() => (made = sessionShares.createShare(shareInput(["Ana", "Ben"]))), WAIT);
+  const second = events.awaitShareLinks(() => sessionShares.relinkRecipient(made.share.id, made.tokens[0]!.recipientId), WAIT);
+  const [a, b] = await Promise.all([first, second]);
+  assert.notEqual(a.outcome.warning, null, "Ana's first link was rotated before it was sent");
+  assert.equal(b.outcome.warning, null, JSON.stringify(b.outcome));
+});
+
+test("M1-B6 control: a clean two-recipient mint confirms, and Extend (no new link) confirms without being a mint", async () => {
+  await sessionGateway();
+  const r = await events.awaitShareLinks(() => sessionShares.createShare(shareInput(["Ana", "Ben"])), WAIT);
+  assert.equal(r.outcome.warning, null, JSON.stringify(r.outcome));
+  const sent = new Set(pushed.at(-1)!.links.map((l) => l.h));
+  for (const t of r.result.tokens) assert.ok(sent.has(batonLinks.hashToken(t.token)));
+  const x = await events.awaitShareLinks(() => sessionShares.extendShare(r.result.share.id, 7), WAIT);
+  assert.equal(x.outcome.warning, null, JSON.stringify(x.outcome));
 });

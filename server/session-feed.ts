@@ -74,11 +74,12 @@ export function diffMarks(prev: ReadonlyMap<string, SessionMarks>, list: readonl
  * its organization (an archived project leaves the Organizations region, §app.organizations/archive;
  * that changes in its project chart, not the session file), and its title (a stored title changes in
  * Sova's title store, never in the file: the Overseer's rename, the automatic namer's,
- * §app.session-list/auto-titles). A change to any of these is `list_changed` (the
+ * §app.session-list/auto-titles), and its merge readiness (read from git in the background,
+ * §chat.worktrees/readiness). A change to any of these is `list_changed` (the
  * client re-reads the list); a session a TUI just created is a new path here.
  */
 export function rowSignature(s: SessionSummary): string {
-  return JSON.stringify([s.live?.pid ?? null, s.live?.status ?? null, s.busy, s.activity?.state ?? null, s.lastActiveAt, s.archived, s.baton ?? null, s.org ?? null, s.title]);
+  return JSON.stringify([s.live?.pid ?? null, s.live?.status ?? null, s.busy, s.activity?.state ?? null, s.lastActiveAt, s.archived, s.baton ?? null, s.org ?? null, s.title, s.readiness ?? null]);
 }
 
 /** Did the listed rows change beyond the marks: a path added or removed, or a signature changed. */

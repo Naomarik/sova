@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import type { AttentionDigest, AttentionItem, AttentionKind, AttentionTier, SessionSummary } from "../shared/protocol";
+import { readinessItems } from "./merge-readiness";
 
 /**
  * The Overseer's attention digest: what needs the user, what finished, what is running — built
@@ -27,9 +28,12 @@ export interface AttentionRow {
   activitySince: number;
   /** ms epoch of the last assistant reply; undefined unknown. */
   lastReplyAt?: number;
-  /** Words for the decision-signal items (signals-store.ts signalTextOf): the names of subagents
-      that look stuck. Absent: the fixed fallbacks. */
-  signalText?: { stuckWorkers: string[] };
+  /** Words for the decision-signal items (signals-store.ts signalTextOf): the reply's asking
+      sentence, and the names of subagents that look stuck. Absent: the fixed fallbacks. */
+  signalText?: { sentence?: string; stuckWorkers: string[] };
+  /** The session waits on subagents that have all gone quiet (signals-store.ts teamStallOf,
+      §app.decisions/team-stall): since when, and who. Absent: not stalled, or the feature is off. */
+  teamStall?: { since: number; names: string[] };
 }
 
 export const DIGEST_MAX = 30;
@@ -108,17 +112,32 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
   // Open alignment questions (§chat.alignment/session-mark): a fact of the file, no model. Waiting
   // on the user only while nothing runs; an archived session is out of the way on purpose.
-  if (s.align && s.align.openQuestions > 0 && !running && !s.archived) add("act", "open-questions", row.lastReplyAt ?? lastActive, openQuestionsText(s.align));
+  const questions = !!s.align && s.align.openQuestions > 0 && !running && !s.archived;
+  if (questions) add("act", "open-questions", row.lastReplyAt ?? lastActive, openQuestionsText(s.align!));
   // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
-  // with the kinds already derived from the fixed thresholds. A main session's "looping" is a
-  // judgement call (decide); a looping subagent is a blocker (act).
+  // with the kinds already derived from the fixed thresholds. A reply that asks the user something
+  // is a blocker (act), unless open questions already say so (§app.decisions/asks-user). "looping"
+  // is a judgement call (decide), a subagent's too: the user acts through the parent session, and
+  // a subagent counts only after two looping checks in a row.
   const sig = s.signals?.kinds ?? [];
   const at = s.signals?.at ?? lastActive;
+  const asks = sig.includes("asks-you") && !questions && !s.archived;
+  if (asks) {
+    const sentence = row.signalText?.sentence;
+    add("act", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.");
+  }
+  // A stalled team (counted in code, §app.decisions/team-stall): a blocker (act), only when the
+  // session is not already waiting on the user. Not a push kind: it never sends a notification.
+  const stall = row.teamStall;
+  if (stall && !questions && !asks && !running && !s.archived) {
+    const who = stall.names.length > 3 ? `${stall.names.slice(0, 3).join(", ")} and ${stall.names.length - 3} more` : stall.names.join(", ");
+    add("act", "team-stalled", stall.since, `Waiting on ${who}, quiet for ${Math.max(1, Math.round((now - stall.since) / 60_000))} min.`);
+  }
   const ws = s.workerSignals;
   if (ws?.stuck) {
     const names = row.signalText?.stuckWorkers ?? [];
     const who = names.length === 1 ? `A subagent looks stuck: ${names[0]}.` : names.length > 1 ? `Subagents look stuck: ${names.join(", ")}.` : ws.stuck === 1 ? "A subagent looks stuck." : `${ws.stuck} subagents look stuck.`;
-    add("act", "looping", at, sig.includes("looping") ? `${who} The last turn looks like it went in circles too.` : who);
+    add("decide", "looping", at, sig.includes("looping") ? `${who} The last turn looks like it went in circles too.` : who);
   } else if (sig.includes("looping")) add("decide", "looping", at, "The last turn looks like it went in circles.");
   // An archived session is out of the user's way on purpose: only a blocker brings it back.
   if (s.archived) return out;
@@ -127,6 +146,8 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   if (s.unread) add("decide", "finished", row.lastReplyAt ?? lastActive, s.outlineNow ?? s.outlineGist);
   if (!running && s.hasDraft) add("decide", "draft", lastActive, s.draftPreview ? `Unsent draft: ${s.draftPreview}` : "Unsent draft.");
   if (!running && row.queued > 0) add("decide", "queued", lastActive, `${row.queued} queued message${row.queued === 1 ? "" : "s"} not sent yet.`);
+  // Merge readiness (server/merge-readiness.ts): a branch waiting on the go-ahead, a merge with open work.
+  for (const it of readinessItems(s)) add(it.tier, it.kind, it.since, it.detail);
 
   // fyi: running, nearly full, stale.
   const workers = s.workers?.working ?? s.live?.workers?.working ?? 0;

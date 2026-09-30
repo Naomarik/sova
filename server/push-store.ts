@@ -56,12 +56,13 @@ export function readOrCreateVapid(file = vapidFile()): VapidKeys {
 
 /** The kind "open-questions" replaced (the asks-you classifier), still found in older push.json files. */
 const LEGACY_ASKS_YOU = "asks-you";
+/** A retired kind (a stuck subagent is a decide item now, never a blocker): a stored choice is dropped. */
+const RETIRED_LOOPING = "looping";
 
 export const DEFAULT_KINDS: Record<PushKind, boolean> = {
   "needs-input": true,
   "open-questions": true,
   error: true,
-  looping: true,
   "baton-needs-you": true,
   "worker-error": false,
 };
@@ -103,6 +104,8 @@ export function parsePushSettings(raw: unknown, strict: boolean): PushSettings |
           if (!isObj(raw.kinds) || raw.kinds["open-questions"] === undefined) out.kinds["open-questions"] = v;
           continue;
         }
+        // Dropped, and a stale client still sending it is not refused for it.
+        if (k === RETIRED_LOOPING && typeof v === "boolean") continue;
         if (!(PUSH_KINDS as readonly string[]).includes(k) || typeof v !== "boolean") {
           const e = fail(`kinds.${k} isn't a notification kind with a true or false value.`);
           if (e) return e;

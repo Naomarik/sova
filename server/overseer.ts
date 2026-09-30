@@ -22,6 +22,7 @@ import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./a
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-pipeline";
 import { conflictAttention } from "./decisions";
+import { restartItems } from "./merge-readiness";
 import {
   acquireChat,
   BusyError,
@@ -73,7 +74,8 @@ import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { markOwned } from "./write-guard";
-import { signalTextOf } from "./signals-store";
+import { signalTextOf, teamStallOf } from "./signals-store";
+import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 
@@ -331,6 +333,8 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
       });
     }
     const nowMs = Date.now();
+    // A stalled team (§app.decisions/team-stall) shows only while attention signals are on.
+    const stallsOn = readDecisionSettings().features.attention;
     for (const p of [...failedRise.keys()]) if (!byPath.get(p)?.failed) failedRise.delete(p);
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = heldChat(s.path);
@@ -345,15 +349,23 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         activitySince: live?.since ?? 0,
         lastReplyAt: lastReplyAtOf(s.path),
         ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
+        ...(stallsOn ? teamStallField(s.id) : {}),
       };
     });
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention()]);
+    // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
+    // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {
     if (digestMemo?.value === value) digestMemo = null;
   });
   return value;
+}
+
+function teamStallField(id: string): { teamStall?: { since: number; names: string[] } } {
+  const stall = teamStallOf(id);
+  return stall ? { teamStall: stall } : {};
 }
 
 /** The digest as the wire has it (no badge). */

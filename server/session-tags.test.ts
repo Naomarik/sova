@@ -71,19 +71,19 @@ function freshId(): string {
 
 const REPLY = {
   topic: { probabilities: { bugfix: 0.9, feature: 0.1 } },
-  status: { probabilities: { done: 0.8, in_progress: 0.2 } },
   throwaway: { p: 0.1 },
 };
 
-test("wireTags: confidence gate ≥ 0.5 on choices, P ≥ 0.75 on throwaway, manual tags always", () => {
+test("wireTags: confidence gate ≥ 0.5 on the topic, P ≥ 0.75 on throwaway, manual tags always; a stored status is never sent", () => {
   const choice = (choice: string, confidence: number) => ({ type: "choice" as const, choice, probabilities: {}, confidence });
   assert.equal(tags.wireTags(undefined), undefined);
   assert.equal(tags.wireTags({ at: 1, answers: { topic: choice("bugfix", 0.49), status: choice("done", 0.2), throwaway: { type: "boolean", p: 0.74 } } }), undefined);
-  assert.deepEqual(tags.wireTags({ at: 1, answers: { topic: choice("bugfix", 0.5), status: choice("done", 0.5), throwaway: { type: "boolean", p: 0.75 } } }), {
+  assert.deepEqual(tags.wireTags({ at: 1, answers: { topic: choice("bugfix", 0.5), status: choice("done", 0.99), throwaway: { type: "boolean", p: 0.75 } } }), {
     topic: "bugfix",
-    status: "done",
     throwaway: true,
   });
+  // A record from before the status tag was retired still reads; its status stays in the store.
+  assert.equal(tags.wireTags({ at: 1, answers: { status: choice("done", 0.99) } }), undefined);
   // An answer outside the fixed taxonomy (a hand-edited file, an older taxonomy) never reaches the wire.
   assert.equal(tags.wireTags({ at: 1, answers: { topic: choice("gardening", 0.99) } }), undefined);
   assert.deepEqual(tags.wireTags({ user: ["later"] }), { user: ["later"] });
@@ -172,15 +172,15 @@ test("SessionTagger: classifies once per reply, stores raw answers, keeps manual
 
   tags.setUserTags(id, ["later"]);
   const out = await tagger.tag(row(id, path));
-  assert.deepEqual(out, { kind: "tagged", tags: { topic: "bugfix", status: "done", user: ["later"] } satisfies SessionTags });
+  assert.deepEqual(out, { kind: "tagged", tags: { topic: "bugfix", user: ["later"] } satisfies SessionTags });
   assert.equal(fake.calls.length, 1);
   assert.equal(fake.calls[0]?.purpose, "tags");
-  assert.deepEqual(Object.keys(fake.calls[0]?.questions ?? {}).sort(), ["status", "throwaway", "topic"]);
+  assert.deepEqual(Object.keys(fake.calls[0]?.questions ?? {}).sort(), ["throwaway", "topic"]);
   const stored = JSON.parse(readFileSync(storeFile, "utf8")).sessions[id];
   assert.equal(stored.basis.turnId, "a1");
   assert.equal(stored.answers.throwaway.p, 0.1, "the raw answer is stored, not only what passed the gate");
-  assert.deepEqual(tags.tagsFor(id), { topic: "bugfix", status: "done", user: ["later"] });
-  assert.deepEqual(seen.at(-1), [{ id, path, tags: { topic: "bugfix", status: "done", user: ["later"] } }]);
+  assert.deepEqual(tags.tagsFor(id), { topic: "bugfix", user: ["later"] });
+  assert.deepEqual(seen.at(-1), [{ id, path, tags: { topic: "bugfix", user: ["later"] } }]);
 
   // Same reply → fresh, no call.
   assert.equal((await tagger.tag(row(id, path))).kind, "fresh");

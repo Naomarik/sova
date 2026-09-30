@@ -1,6 +1,6 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { type RegistryAck, REGISTRY_LIMITS, type RegistryLink, type RegistryLinkKind, type RoutedHost, type ShareGatewaySetting } from "../../shared/public-links";
+import { type RegistryAck, REGISTRY_LIMITS, REGISTRY_LINK_KINDS, type RegistryLink, type RegistryLinkKind, type RoutedHost, type ShareGatewaySetting } from "../../shared/public-links";
 import type { PeerEntry } from "../mesh/peers";
 import { parsePublicUrl, publicLinksFile, readPublicLinks, sharePin } from "../public-links";
 import { stateRoot } from "../state-root";
@@ -80,10 +80,10 @@ function hashesIn(name: string): string[] {
   }
 }
 
-/** Every token hash this host minted (hand-off and owner links, live or not): the first claimant of
-    each, whatever a peer registers. Read from the link stores' files. */
+/** Every token hash this host minted (hand-off, owner and session links, live or not): the first
+    claimant of each, whatever a peer registers. Read from the link stores' files. */
 export function localShareHashes(): Set<string> {
-  return new Set([...hashesIn("baton-links.json"), ...hashesIn("person-links.json")].map((h) => h.toLowerCase()));
+  return new Set([...hashesIn("baton-links.json"), ...hashesIn("person-links.json"), ...hashesIn("session-shares.json")].map((h) => h.toLowerCase()));
 }
 
 // ---- the store ----------------------------------------------------------------------------------
@@ -244,7 +244,7 @@ export class GatewayRegistry {
 
   /** Where a hash goes for a route of `kind`, or null: unknown, expired, of another kind, or its
       host no longer live. */
-  lookup(h: string, kind: "h" | "i", now: number, live: (nodeId: string) => boolean): RegistryHit | null {
+  lookup(h: string, kind: "h" | "i" | "s", now: number, live: (nodeId: string) => boolean): RegistryHit | null {
     this.hosts();
     const row = this.byHash.get(h);
     if (!row || row.kind !== kind || row.exp <= now || !live(row.host.nodeId)) return null;
@@ -308,7 +308,7 @@ export function validateStore(raw: unknown): { hosts: HostRows[] } | { why: stri
       if (!isObj(l) || !onlyKeys(l, ["h", "exp", "kind"]) || !isHash(l.h) || held.has(l.h)) return bad("link hash");
       held.add(l.h);
       if (!isTime(l.exp) || l.exp > (h.at as number) + REGISTRY_LIMITS.maxExpiryAheadMs) return bad("link exp");
-      if (l.kind !== "h" && l.kind !== "i" && l.kind !== "x") return bad("link kind");
+      if (!REGISTRY_LINK_KINDS.includes(l.kind as RegistryLinkKind)) return bad("link kind");
     }
     if (!Array.isArray(h.assets) || h.assets.length > REGISTRY_LIMITS.maxAssets || !h.assets.every(isAsset) || new Set(h.assets).size !== h.assets.length) return bad("assets");
     if (!Array.isArray(h.collisions) || h.collisions.length > REGISTRY_LIMITS.maxLinks || !h.collisions.every(isHash)) return bad("collisions");

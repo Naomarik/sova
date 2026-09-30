@@ -30,7 +30,7 @@ export type Answer =
   /** score = the expectation over levels, in [0, levels-1]. */
   | { type: "score"; score: number; probabilities: number[]; confidence: number };
 
-export type DecisionPurpose = "attention" | "worker" | "tags" | "probe" | "reconcile";
+export type DecisionPurpose = "attention" | "worker" | "tags" | "probe" | "reconcile" | "merge-followup";
 
 export interface DecisionRequest {
   /** Which feature asks: logs, and the LLM system prompt. */

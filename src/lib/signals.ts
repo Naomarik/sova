@@ -10,7 +10,7 @@ import type { SessionMarks, SessionSummary, SessionTags, SignalKind } from "../.
 export type NeedsYouKind = "questions" | SignalKind;
 
 /** The mark's kinds, most urgent first: one mark per row, the first of these that applies. */
-export const SIGNAL_PRECEDENCE: readonly NeedsYouKind[] = ["questions", "looping"];
+export const SIGNAL_PRECEDENCE: readonly NeedsYouKind[] = ["questions", "asks-you", "looping"];
 
 /** What a row's line-1 mark says: the kind, whether it is about a subagent rather than the session,
     and, for open questions, the session's counts. */
@@ -51,7 +51,9 @@ export function rowNeedsYou(
 ): NeedsYouMark | null {
   if (s.path === opts.selected || opts.busy) return null;
   if (s.align && s.align.openQuestions > 0) return { kind: "questions", worker: false, align: s.align };
-  const own = s.signals && !(s.seenAt !== undefined && s.seenAt >= s.signals.at) ? s.signals.kinds : [];
+  // A reply that asks stays until the user answers; the other kinds are news, gone once seen.
+  const seen = !!s.signals && s.seenAt !== undefined && s.seenAt >= s.signals.at;
+  const own = s.signals ? (seen ? s.signals.kinds.filter((k) => k === "asks-you") : s.signals.kinds) : [];
   const w = s.workerSignals;
   const workers: SignalKind[] = w && w.stuck > 0 ? ["looping"] : [];
   for (const kind of SIGNAL_PRECEDENCE) {
@@ -63,9 +65,10 @@ export function rowNeedsYou(
 }
 
 /** The mark's glyph and class (src/design/base.css, "DECISIONS"): the shape differs per kind, so hue isn't alone. */
-export const SIGNAL_ICON = { questions: "chat", looping: "refresh" } as const satisfies Record<NeedsYouKind, string>;
+export const SIGNAL_ICON = { questions: "chat", "asks-you": "chat", looping: "refresh" } as const satisfies Record<NeedsYouKind, string>;
 export const SIGNAL_CLASS: Record<NeedsYouKind, string> = {
   questions: "session-signal session-signal-questions",
+  "asks-you": "session-signal session-signal-asks",
   looping: "session-signal session-signal-looping",
 };
 
@@ -74,6 +77,7 @@ const questionsText = (n: number) => `${n} open question${n === 1 ? "" : "s"}`;
 /** The mark's hidden words, read as part of the row's name (trailing space: the title follows). */
 export function signalWords(m: NeedsYouMark): string {
   if (m.kind === "questions") return `${questionsText(m.align?.openQuestions ?? 0)}. `;
+  if (m.kind === "asks-you") return "Asks you something. ";
   if (m.worker) return "A subagent may be stuck. ";
   return "May be looping. ";
 }
@@ -85,38 +89,27 @@ export function signalTitle(m: NeedsYouMark): string {
     if (!a) return "Open questions";
     return a.questionDocs === 1 && a.lead ? `${questionsText(a.openQuestions)} in ${a.lead.id} ${a.lead.title}` : `${questionsText(a.openQuestions)} in ${a.questionDocs} alignments`;
   }
+  if (m.kind === "asks-you") return "The last reply asks you something.";
   if (m.worker) return "A subagent looks stuck.";
   return "The last turn looks like it went in circles.";
 }
 
-const STATUS_WORD: Record<NonNullable<SessionTags["status"]>, string> = {
-  done: "done",
-  in_progress: "in progress",
-  abandoned: "abandoned",
-  blocked: "blocked",
-};
 /** Topic display words; a topic not listed shows as its id. */
 const TOPIC_WORD: Partial<Record<NonNullable<SessionTags["topic"]>, string>> = { bugfix: "bug fix" };
-
-/** The status tag's word on line 3, or null with no status tag. */
-export const tagStatusWord = (tags: SessionTags | undefined): string | null => (tags?.status ? STATUS_WORD[tags.status] ?? null : null);
 
 /** The topic's display word, or null with no topic tag. */
 export const tagTopicWord = (tags: SessionTags | undefined): string | null => (tags?.topic ? TOPIC_WORD[tags.topic] ?? tags.topic : null);
 
-/** Line 3's tooltip when the session is tagged: "Topic: bug fix · status: done (tagged automatically)". */
+/** Line 3's tooltip when the session is tagged: "Topic: bug fix (tagged automatically)". */
 export function tagsTitle(tags: SessionTags | undefined): string | null {
   const topic = tagTopicWord(tags);
-  const status = tagStatusWord(tags);
-  if (!topic && !status) return null;
-  const parts = [topic && `Topic: ${topic}`, status && `${topic ? "status" : "Status"}: ${status}`].filter(Boolean);
-  return `${parts.join(" · ")} (tagged automatically)`;
+  return topic ? `Topic: ${topic} (tagged automatically)` : null;
 }
 
-/** What the session search matches in a row's tags: topic and status, by id and by display word, and the user's own tags. */
+/** What the session search matches in a row's tags: the topic, by id and by display word, and the user's own tags. */
 export function tagSearchText(tags: SessionTags | undefined): string {
   if (!tags) return "";
-  return [tags.topic, tagTopicWord(tags), tags.status, tagStatusWord(tags), ...(tags.user ?? [])].filter(Boolean).join(" ");
+  return [tags.topic, tagTopicWord(tags), ...(tags.user ?? [])].filter(Boolean).join(" ");
 }
 
 // ---- The live feed's overlay ---------------------------------------------------------------------

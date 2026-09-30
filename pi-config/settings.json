@@ -7,12 +7,6 @@
   "packages": [
     "npm:pi-web-access@0.29.0",
     {
-      "source": "npm:pi-lens@4.1.6",
-      "extensions": [
-        "!dist/index.js"
-      ]
-    },
-    {
       "source": "npm:pi-powerline-footer@0.17.1",
       "extensions": [
         "!index.ts"

@@ -29,7 +29,7 @@ unfolded (≥768)                                  folded (<768)
   `.workspace` instead of `.app-main`, holding N panes and one group composer. The sidebar,
   the resizer and the portals are unchanged, the second column keeps the same width and floor,
   and below 768px the workspace is the one column, tabs-only.
-- **Columns.** `.app` is `height: 100dvh`. At 768px and up the grid is `--sidebar-width` (320px
+- **Columns.** `.app` is `height: 100%`, the window's height (§app.shell/viewport). At 768px and up the grid is `--sidebar-width` (320px
   by default, 64px while the sessions pane is collapsed into the spine — §app.shell/spine-column)
   plus `1fr`, with a border between the columns. Below 768px it's one column, and `data-view`
   decides which one shows: `list` when no session is selected, `session` when one is (or a page,
@@ -61,6 +61,37 @@ unfolded (≥768)                                  folded (<768)
   remote extension's connection notices (below): the chips hold the fact, so the toast is just the
   event.
 
+## §app.shell/viewport — The shell fills the visible viewport
+
+On a phone (a browser tab or the installed app) the shell is exactly the visible window: the
+list's head sits on the window's top edge and the composer's bottom edge on its bottom edge,
+never clipped under the system gesture bar and never leaving the page scrollable, from the first
+paint on (a reload, a relaunch of the installed app, or the tab reconnecting after a server
+restart) and not only after the keyboard has opened once.
+
+- **The shell is the window's height.** `.app` is `height: 100%`, the same measure as its
+  ancestors (`html`, `body`, `#root`: `100%` of the window), not `100dvh`: two viewport measures
+  that disagree (a browser's `100dvh` taller than the window after a launch) would give the
+  document scroll range, and the head would ride up off the top once anything used it.
+- **The document never scrolls.** `html` and `body` are `overflow: clip` with
+  `overscroll-behavior: none`, so the user can't drag the page, and pulling at its ends neither
+  bounces nor refreshes it. On the root, `clip` acts as `hidden`: a script or the browser could
+  still scroll it if it had range, which the shell's height denies it.
+- **A reload doesn't restore a document scroll.** `history.scrollRestoration` is `manual`, set
+  before the first render, so a reload or relaunch never puts back a document offset left from
+  before it. Each scroll pane keeps its own rules for where it starts.
+- **The keyboard shrinks the shell.** The viewport meta says
+  `interactive-widget=resizes-content`: opening the soft keyboard resizes the page to the space
+  above it, so the whole shell shrinks, the head stays on screen and the composer rides on top of
+  the keyboard. Closing it gives the height back. The page is never panned.
+- **Edge to edge, with safe areas.** The viewport meta says `viewport-fit=cover`, so the page may
+  run under the system bars and `env(safe-area-inset-*)` carries their size. The bottom inset is
+  padded by what sits on the bottom edge (the composer, §chat.composer/tokens; the sidebar foot;
+  the spine foot), so their surface continues under the gesture bar while their controls stay
+  above it. `.app` pads the top, left and right insets itself, so the head is never under a status
+  bar or a cutout; where the browser keeps those outside the page (Chrome on Android, in a tab or
+  installed) they are 0 and nothing moves.
+
 ## §app.shell/overview — The overview on a phone (`#/overview`)
 
 - **At 768px and up nothing changes.** The overview (§chat.transcript/landing-page) is the
@@ -82,7 +113,7 @@ unfolded (≥768)                                  folded (<768)
   its two entries, the overview and the New Session dialog (§workspace.fanout/entry-points).
   On a phone the overview holds the Start cards (New Session, Fan Out), the Sessions card,
   Mesh, Extensions, the Explanations card (the way to `#/explanations`) and the Organizations card; the list holds New Session in its head
-  and Usage, Agents and Settings in its foot.
+  and Usage, Agents, Shares and Settings in its foot.
 
 ## §app.shell/remote-session-chips — Remote session chips
 

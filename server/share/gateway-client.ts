@@ -1,5 +1,5 @@
 import { isIP } from "node:net";
-import { REGISTRY_LIMITS, type GatewayInfo, type PublicLinksFile, type RegistryAck, type RegistrySnapshot } from "../../shared/public-links";
+import { REGISTRY_LIMITS, REGISTRY_LINK_KINDS, type GatewayInfo, type RegistryLinkKind, type PublicLinksFile, type RegistryAck, type RegistrySnapshot } from "../../shared/public-links";
 import { meshApi } from "../mesh";
 import { entryAddresses, tailnetIp } from "../mesh/address-identity";
 import type { GatewayIdentity } from "../mesh/gate";
@@ -37,6 +37,10 @@ export interface ViaGatewayStatus {
   reachable: boolean;
   /** null: not asked yet. */
   accepting: boolean | null;
+  /** The link kinds the CURRENT target said it routes (GatewayInfo.kinds), from its own info
+      since it became the target (targetKinds); null until then. An older gateway never lists
+      them: it gets no `s` row. */
+  kinds: RegistryLinkKind[] | null;
 }
 
 const CALL_TIMEOUT_MS = 10_000;
@@ -165,10 +169,15 @@ export function parseInfo(reply: GatewayReply | null): GatewayInfo | "not-gatewa
   if (!reply || !isObj(reply.body)) return null;
   const b = reply.body;
   if (reply.status === 404) return onlyKeys(b, ["error"]) && b.error === "not-gateway" ? "not-gateway" : null;
-  if (reply.status !== 200 || !onlyKeys(b, ["publicUrl", "accepting", "seq"]) || typeof b.accepting !== "boolean") return null;
+  if (reply.status !== 200 || !onlyKeys(b, ["publicUrl", "accepting", "seq", "kinds"]) || typeof b.accepting !== "boolean") return null;
   if (b.seq !== null && !seqOk(b.seq)) return null;
+  // `kinds` is optional (an older gateway omits it); a kind this build doesn't know is dropped.
+  if (b.kinds !== undefined && !(Array.isArray(b.kinds) && b.kinds.length <= 16 && b.kinds.every((k) => typeof k === "string" && k.length <= 16))) return null;
   const publicUrl = publicOrigin(b.publicUrl);
-  return publicUrl ? { publicUrl, accepting: b.accepting, seq: b.seq as number | null } : null;
+  if (!publicUrl) return null;
+  const info: GatewayInfo = { publicUrl, accepting: b.accepting, seq: b.seq as number | null };
+  if (Array.isArray(b.kinds)) info.kinds = REGISTRY_LINK_KINDS.filter((k) => (b.kinds as string[]).includes(k));
+  return info;
 }
 
 /** A hello's advertised share URL (a discovery hint), or null. */
@@ -212,7 +221,7 @@ export function viaGatewayIdentity(): GatewayIdentity | null {
 let cache: { node: string; status: ViaGatewayStatus; stated: boolean; asked: boolean } | null = null;
 
 function cached(peer: PeerEntry): ViaGatewayStatus {
-  if (cache?.node !== peer.nodeId) cache = { node: peer.nodeId, status: { publicUrl: null, label: peer.label, reachable: false, accepting: null }, stated: false, asked: false };
+  if (cache?.node !== peer.nodeId) cache = { node: peer.nodeId, status: { publicUrl: null, label: peer.label, reachable: false, accepting: null, kinds: null }, stated: false, asked: false };
   cache.status.label = peer.label;
   return cache.status;
 }
@@ -253,6 +262,26 @@ export interface GatewayTarget {
   key: string;
 }
 
+// The link kinds a gateway said it routes, bound to the exact target (generation and entry) whose
+// own info said so: a new generation, a changed entry, an unreachable or restarted gateway, or a
+// snapshot it refused all drop it, and until the current target states `s` again it gets no `s`
+// row (§mesh.public/registry).
+let kindsEvidence: { generation: number; key: string; kinds: RegistryLinkKind[] } | null = null;
+
+/** The kinds `target` itself stated since it became the target; null when it hasn't. */
+export function targetKinds(target: GatewayTarget | null): RegistryLinkKind[] | null {
+  const e = kindsEvidence;
+  return target && e && e.generation === target.generation && e.key === target.key ? [...e.kinds] : null;
+}
+
+/** Whether `target` stated that it routes session links (kind `s`). */
+export const routesSessions = (target: GatewayTarget | null): boolean => targetKinds(target)?.includes("s") ?? false;
+
+/** Forget what any gateway said about its kinds (a refusal, a restart, the gateway unreachable). */
+export function forgetKinds(): void {
+  kindsEvidence = null;
+}
+
 /** The via gateway as a call target, or null when not routed / not a peer. */
 export function currentTarget(): GatewayTarget | null {
   const peer = viaGatewayPeer();
@@ -277,15 +306,15 @@ export function viaGatewayStatus(): ViaGatewayStatus | null {
   const peer = viaGatewayPeer();
   if (!peer) return null;
   const s = cached(peer);
-  return cache!.asked ? { ...s } : null;
+  return cache!.asked ? { ...s, kinds: targetKinds(currentTarget()) } : null;
 }
 
 /** <gateway><path> at its verified address. "withdrawn": the target changed before the request
     went out (nothing was sent); null: no address, or nothing answered. */
-async function callGateway(target: GatewayTarget, path: string, init?: RequestInit): Promise<GatewayReply | null | "withdrawn"> {
-  if (!stillCurrent(target)) return "withdrawn";
+async function callGateway(target: GatewayTarget, path: string, init?: RequestInit, ready: () => boolean = () => true): Promise<GatewayReply | null | "withdrawn"> {
+  if (!stillCurrent(target) || !ready()) return "withdrawn";
   const base = await deps.endpoint(target.peer).catch(() => null);
-  if (!stillCurrent(target)) return "withdrawn"; // resolving the address took a while
+  if (!stillCurrent(target) || !ready()) return "withdrawn"; // resolving the address took a while
   if (!base) return null;
   return deps.call(`${base}${path}`, init).catch(() => null);
 }
@@ -295,7 +324,7 @@ async function callGateway(target: GatewayTarget, path: string, init?: RequestIn
 export async function refreshGateway(): Promise<ViaGatewayStatus | null> {
   const target = currentTarget();
   if (!target) return viaGatewayStatus();
-  const [hello, info] = await Promise.all([callGateway(target, "/api/peer/hello"), callGateway(target, "/api/peer/share-gateway/info")]);
+  const [hello, info] = await Promise.all([callGateway(target, "/api/peer/hello"), callGateway(target, "/api/peer/share-gateway/info?kinds=1")]);
   if (hello === "withdrawn" || info === "withdrawn" || !stillCurrent(target)) return viaGatewayStatus(); // the target changed meanwhile
   const peer = target.peer;
   const s = cached(peer);
@@ -303,13 +332,18 @@ export async function refreshGateway(): Promise<ViaGatewayStatus | null> {
   const hint = parseHelloUrl(hello);
   if (hint && !cache!.stated) s.publicUrl = hint;
   const parsed = parseInfo(info);
-  if (!info) s.reachable = false;
-  else if (parsed === "not-gateway") {
+  if (!info) {
+    s.reachable = false;
+    forgetKinds(); // a gateway that comes back renegotiates
+  } else if (parsed === "not-gateway") {
     s.reachable = true;
     s.accepting = false; // not (or no longer) a gateway
+    forgetKinds();
   } else if (parsed) {
     s.reachable = true;
     s.accepting = parsed.accepting;
+    // An info without `kinds` (an older gateway) states none: nothing is believed.
+    kindsEvidence = parsed.kinds ? { generation: target.generation, key: target.key, kinds: parsed.kinds } : null;
     stateUrl(peer, parsed.publicUrl);
   }
   // A reply that doesn't parse: nothing learnt, nothing changed.
@@ -337,12 +371,19 @@ export function noteAck(target: GatewayTarget, ack: RegistryAck | null, answered
 /** Send a snapshot to `target` at its verified address. `withdrawn`: the target changed before
     the request went out or before its answer came (nothing learnt; send again to the new one);
     `answered`: something replied; `ack`: the reply parsed as a RegistryAck (else null). */
-export async function pushSnapshot(target: GatewayTarget, snapshot: RegistrySnapshot): Promise<{ withdrawn: boolean; answered: boolean; ack: RegistryAck | null }> {
-  const reply = await callGateway(target, "/api/peer/share-gateway/links", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(snapshot),
-  });
+export async function pushSnapshot(target: GatewayTarget, snapshot: RegistrySnapshot, ready?: () => boolean): Promise<{ withdrawn: boolean; answered: boolean; ack: RegistryAck | null }> {
+  // `ready`: judged again right before the request goes out (the capability evidence the snapshot
+  // was built on still holds); false withdraws it, and the caller builds another.
+  const reply = await callGateway(
+    target,
+    "/api/peer/share-gateway/links",
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(snapshot),
+    },
+    ready,
+  );
   if (reply === "withdrawn" || !stillCurrent(target)) return { withdrawn: true, answered: false, ack: null };
   const ack = parseAck(reply);
   noteAck(target, ack, !!reply);
@@ -352,6 +393,7 @@ export async function pushSnapshot(target: GatewayTarget, snapshot: RegistrySnap
 /** Tests: forget what was learnt. */
 export function resetGatewayClient(): void {
   cache = null;
+  kindsEvidence = null;
   lastEntry = null;
   routeGeneration += 1;
 }

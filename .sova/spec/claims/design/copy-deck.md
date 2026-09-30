@@ -1009,3 +1009,65 @@ merge, commit, repo, session, token, spec, L0–L3, workspace, roster.
 | Baton strip | `Hide From {first}` / `Show To {first}` · while hidden: "Hidden from {first}'s owner page." · toasts "Hidden from {first}'s owner page." / "Shown on {first}'s owner page." |
 | Person page | chip `Owner` beside the status · link row title "The owner page", state `Can read` / `Turned off` / `Expired` · visit row "Opened the owner page · {device} · {relative time}" |
 | Overseer tool refusals (the model reads them; the activity list shows them) | "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged." · "An update was posted {relative time}: at most one a day." · "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words." · "This update repeats private text (a conversation's goal or briefing, the operator's instructions, or a person's profile or contact). Updates are for the client: write it again in your own words." · "An update is at most 2,000 characters." · "This organization has no owner, so there is no page to post to." |
+
+## §design.copy-deck/session-share — Session share links (§app/session-share)
+
+`{title}` is the share's public title, `{label}` a recipient's label, `{n}` a count, `{time}` a
+relative time, `{date}` a short date ("Sep 29"), `{host}` a host's name. The share page names no
+host, person or recipient.
+
+**Share page (what a recipient reads)**
+
+| Where | Copy |
+|---|---|
+| Head | `{title}` · "Shared {date} · read only"; a snapshot: "Shared {date} · up to {date, time} · read only"; Follow live: chip `Live` |
+| Thread | `Show Earlier` (`Loading Earlier Messages`) · failed: "Couldn't load earlier messages. Try again." |
+| No messages | "Nothing to read yet." · snapshot "This session had no messages when it was shared." · live "This session has no messages yet. New ones show up here as they're written." |
+| Drawings | a caption over a source: "An interactive drawing, shown as its source." (html) · "Code" (code, untitled) · a broken or other kind: "A drawing couldn't be shown here." |
+| Dead link | **This link is no longer active.** It was turned off, or the session isn't shared anymore. Ask the person who sent it for a new one. |
+| Expired | **This link has expired.** Ask the person who sent it for a new one. |
+| Unknown | **This link doesn't open a shared session.** Check that you copied the whole link, or ask the person who sent it for a new one. |
+| Busy (429 on the first read) | **This link is being read a lot right now.** Nothing is wrong with it. Try again in a minute. |
+| Offline | "Offline. We'll keep trying, and the page stays as it is." |
+
+**Share sheet**
+
+| Where | Copy |
+|---|---|
+| Titles | "Share Session" · "Manage Share" · Preview: "As they see it", line "{title} · Read only. No visit is recorded." |
+| Intro | "People you send a link to can read this conversation: your messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." |
+| Title field | "Title they see" · hint "The session's own title may say more than you mean to." |
+| People | "People" · placeholder "A name only you see, like Ana" · `Add` · hint "Each person gets their own link, so you see who opened it and can turn one off alone." · remove "Remove {label}" |
+| Anyone | "Anyone with the link" · "One more link anyone can open. Its visits show the device type only." |
+| Follow live | "Follow live" · off "Off: they see the conversation as it is now. You can update it to now later." · on "They see new messages as the session goes on, including ones you haven't read yet." · managing, off: "Off: turning it on shows them new messages as the session goes on." · on: "They see new messages as the session goes on." |
+| Expiry | "Links expire after" · `1 day` / `7 days` / `30 days` / `90 days` |
+| What goes out | "{n} messages will be shared, up to {date time}." (Follow live: ", and every one after."; "{n}+" when earlier pages exist; "1 message"; none: "No messages yet.") · `Preview Again` (title "Read the conversation again, as it is now.") · reading: "Reading the conversation…" |
+| Images | eyebrow "{n} images" ("1 image") · "Images are shared as they are: nothing in them is hidden." · "Loading images · {n} of {total}" · "{n} of {total} images didn't load, so nothing can be shared until they do." ("…until it does.") · `Retry Images` |
+| Blocked Create (its title) | "Give the share a title." · "Add a person, or turn on Anyone with the link." · "At most 20 links per share." · "Reading the conversation first." · "The conversation couldn't be read, so nothing can be shared yet." · "Loading the images first: every image is shown before anything is shared." · "An image didn't load. Retry it first: every image is shown before anything is shared." |
+| Stale preview (warn banner) | **The session changed. Preview it again.** Nothing was shared. We read it again: check it, then create the links. · confirming an update: **The session changed. Preview it again.** Nothing changed for them. We read it again: check it, then confirm. |
+| Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
+| Foot | `Cancel` · `Preview` · `Create Link` / `Create Links` (`Creating…`) · Preview: `Back to Sharing` / `Back to Share` · managing: `Stop Sharing` (armed `Stop Every Link?`), `Preview`, `Done` |
+| New links | eyebrow "New link · shown once" / "{n} new links · shown once" · `Copy Link` (toast "Link copied.") · "We keep only a fingerprint of each link. If one is lost, Get New Link makes another." · the `linkWarning` text with `Open Settings` |
+| Managing | "Snapshot up to {date time}." · `Update to Now` (title "Their pages show the conversation as it is now.") · eyebrows "People", "Expiry" · `Get New Link` (title "A new link for them. This one stops working.") · `Turn Off` (armed "Turn Off {label}'s Link?", the anyone row "Turn Off This Link?") · placeholder "Add a person, like Ben" · `Add Person` · `Add Anyone Link` · "{n} days from now" · `Extend` · "Every live link then expires {n} days from now." · `Save Title` |
+| Stopped / gone | **Stopped {time}.** Every link is off. The session itself didn't change. · **The session file is gone.** Every link answers that it's no longer active. |
+| Errors | **Couldn't read the conversation to preview it.** Nothing was shared. {reason} `Try Again` · **Couldn't create the links.** Nothing was shared. {reason} · **That didn't go through.** Nothing changed. {reason} · "Couldn't read the preview. {reason}" |
+
+**Recipient rows (sheet, Sharing section, Shares page)**
+
+| Where | Copy |
+|---|---|
+| Presence chips | `Viewing now` (success) · `Open in a tab` (neutral) · `Expired` (warn) · `Turned off` (neutral) |
+| Opened line | "Opened {n}× · last {time}" · "Not opened yet" · "Expires in {n} days" / "Expires tomorrow" / "Expires in {n} hours" / "Expires within the hour" / "Expired" |
+| Visits | disclosure "Visits · {n}" · "Opened · {device} · {time} · {n} min" · "Link preview · {device} · {time}" · "Refused · {device} · {time}" · "More opens that day, not listed" · a bot "(automated)" |
+| Mode line | "Snapshot up to {date time}" · "Follows live" · "Stopped {time}" |
+
+**Session detail · Sharing, and #/shares**
+
+| Where | Copy |
+|---|---|
+| Section | eyebrow "Sharing" · `All Shares` · none: "Not shared with anyone." · `Share Session` · `Manage` · an older host: "This host can't share sessions yet. It needs an update." · failed: "Couldn't read this session's shares. {reason}" |
+| Sidebar foot | row "Shares" · spine "Shares" |
+| Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
+| Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
+| Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Turn Off Link` (armed "Turn Off {person}'s Link?") |
+| Empty and hosts | **No public links are open.** Share a session from its Session tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |

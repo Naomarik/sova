@@ -1,6 +1,12 @@
 /* Sova glue that base.css doesn't cover. Token values only. */
 
 html, body, #root { height: 100%; }
+/* The shell (.app, 100% like these) is the window; the document never scrolls. clip stops the
+   user dragging the page, but on the root it is propagated to the viewport as hidden: a script,
+   scroll restoration or a keyboard reveal could still scroll it if it had range. What denies it
+   range is the one height measure (base.css .app), plus manual scroll restoration (main.tsx).
+   overscroll-behavior: no pull-to-refresh or bounce on the document itself. */
+html, body { overflow: clip; overscroll-behavior: none; }
 
 /* Positions .jump-latest over the transcript pane without scrolling with it. */
 .transcript-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }

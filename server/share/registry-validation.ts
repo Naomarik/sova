@@ -1,4 +1,4 @@
-import { REGISTRY_LIMITS, type RegistryLink, type RegistryLinkKind, type RegistrySnapshot } from "../../shared/public-links";
+import { REGISTRY_LIMITS, REGISTRY_LINK_KINDS, type RegistryLink, type RegistryLinkKind, type RegistrySnapshot } from "../../shared/public-links";
 
 /**
  * The registry snapshot check (§mesh.public/registry): pure, all or nothing, against
@@ -15,7 +15,7 @@ export type SnapshotCheck = { ok: true; snapshot: RegistrySnapshot } | { ok: fal
 
 const SNAPSHOT_KEYS = ["assets", "ingressPort", "links", "seq", "v"];
 const LINK_KEYS = ["exp", "h", "kind"];
-const KINDS: readonly RegistryLinkKind[] = ["h", "i", "x"];
+const KINDS: readonly RegistryLinkKind[] = REGISTRY_LINK_KINDS;
 
 function plainObject(v: unknown): v is Record<string, unknown> {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;

@@ -61,6 +61,8 @@ import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
 import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
+import { SharesPage } from "./components/SharesPage";
+import { isSharesHash } from "./lib/session-shares";
 import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
 import { ResourceMonitor } from "./components/ResourceMonitor";
@@ -279,6 +281,8 @@ export function App() {
   const [overseerRoute, setOverseerRoute] = createSignal(overseerRouteFromHash(location.hash));
   const [extRoute, setExtRoute] = createSignal(extRouteFromHash(location.hash));
   const [meshRoute, setMeshRoute] = createSignal(isMeshHash(location.hash));
+  /** `#/shares`: every public link this host and its peers serve (§app.session-share/shares-page). */
+  const [sharesRoute, setSharesRoute] = createSignal(isSharesHash(location.hash));
   /** An org page's address names its host when the org is a peer's: noted before the page reads it. */
   const orgsRouteOf = (hash: string) => {
     const r = orgsRouteFromHash(hash);
@@ -419,6 +423,7 @@ export function App() {
     setOverseerRoute(overseerRouteFromHash(location.hash));
     setExtRoute(extRouteFromHash(location.hash));
     setMeshRoute(isMeshHash(location.hash));
+    setSharesRoute(isSharesHash(location.hash));
     setOrgsRoute(orgsRouteOf(location.hash));
     setOverviewRoute(isOverviewHash(location.hash));
   };
@@ -645,6 +650,8 @@ export function App() {
   let extTitleEl: HTMLHeadingElement | undefined;
   let meshTitleEl: HTMLHeadingElement | undefined;
   createEffect(on(meshRoute, (open) => open && folded() && queueMicrotask(() => meshTitleEl?.focus()), { defer: true }));
+  let sharesTitleEl: HTMLHeadingElement | undefined;
+  createEffect(on(sharesRoute, (open) => open && folded() && queueMicrotask(() => sharesTitleEl?.focus()), { defer: true }));
   let orgsTitleEl: HTMLHeadingElement | undefined;
   /** Which organizations page is showing: an org's tabs and its `/start/<person>` are the same page,
       so switching tabs keeps focus on the tab (the memo only changes when the page does). */
@@ -963,7 +970,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -977,6 +984,7 @@ export function App() {
           claudeLogin={usageLogin()}
           agents={agents.data()}
           insightsPage={footPage()}
+          sharesOpen={sharesRoute()}
           onRefresh={refresh}
           onArchiveChanged={onArchived}
           onNew={() => setCreating(true)}
@@ -1130,6 +1138,10 @@ export function App() {
               <Match when={meshRoute()}>
                 <MeshView now={now()} titleRef={(el) => (meshTitleEl = el)} />
               </Match>
+              {/* Every public link: session shares and org links, here and on up peers (#/shares). */}
+              <Match when={sharesRoute()}>
+                <SharesPage now={now()} titleRef={(el) => (sharesTitleEl = el)} />
+              </Match>
               {/* An installed extension's own UI (#/ext/<id>). */}
               <Match when={extId()} keyed>
                 {(id) => (
@@ -1151,7 +1163,7 @@ export function App() {
                   />
                 )}
               </Match>
-              <Match when={!route() && !groupRoute() && !meshRoute() && !orgsRoute()}>
+              <Match when={!route() && !groupRoute() && !meshRoute() && !sharesRoute() && !orgsRoute()}>
                 {/* A phone keeps the list's head over its overview (§app.shell/overview): the
                     brand back to the list, and New Session. */}
                 <Show when={!unfolded()}>

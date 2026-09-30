@@ -22,7 +22,10 @@ import type { MeshHello } from "./protocol";
  *
  * Peer routes (peer listener; the caller is its verified StableID, and the address the gateway
  * dials back ALWAYS comes from peers.json, never from a body):
- * GET  /api/peer/share-gateway/info   -> GatewayInfo | 404 { error: "not-gateway" } (this host is no gateway)
+ * GET  /api/peer/share-gateway/info[?kinds=1] -> GatewayInfo | 404 { error: "not-gateway" } (this
+ *                                     host is no gateway). `kinds` is answered only when asked with
+ *                                     `?kinds=1`: an older routed host parses the info strictly and
+ *                                     would refuse a key it doesn't know.
  * PUT  /api/peer/share-gateway/links  body RegistrySnapshot (≤ SNAPSHOT_MAX_BYTES, refused before
  *                                     parsing when larger) -> RegistryAck
  */
@@ -175,16 +178,25 @@ export type MeshHelloPublic = MeshHello & ShareGatewayHello;
 // ---- registry (routed host → gateway) -----------------------------------------------------------
 
 /** GET /api/peer/share-gateway/info, for the calling peer: whether its links are accepted here,
-    and `seq`, the last snapshot stored for it, or null. */
+    and `seq`, the last snapshot stored for it, or null. `kinds`: the registry row kinds this
+    gateway accepts in a snapshot (`x` is accepted but never routed), only when asked
+    (`?kinds=1`). A gateway that omits it (an older one) accepts `h`, `i` and `x` only, and a
+    routed host sends it no `s` row: one unknown kind rejects the whole snapshot, so none of that
+    update (new h and i links included) would land. A routed host believes `kinds` only from the
+    exact target (generation and entry) that stated it, until a refusal, a restart or a change. */
 export interface GatewayInfo {
   publicUrl: string;
   accepting: boolean;
   seq: number | null;
+  kinds?: RegistryLinkKind[];
 }
 
 /** A link's kind, which binds the routes its row may serve: `h` hand-off (/h/, /api/h/, /ws/h),
-    `i` owner page (/i/, /api/i/), `x` reserved for exposures (phase 2; never a share route). */
-export type RegistryLinkKind = "h" | "i" | "x";
+    `i` owner page (/i/, /api/i/), `s` session share (/s/, /api/s/, /ws/s, §app/session-share),
+    `x` reserved for exposures (phase 2; never a share route). */
+export type RegistryLinkKind = "h" | "i" | "s" | "x";
+/** Every kind this build's gateway accepts, in GatewayInfo.kinds. */
+export const REGISTRY_LINK_KINDS: readonly RegistryLinkKind[] = ["h", "i", "s", "x"];
 
 export interface RegistryLink {
   /** Lowercase 64-hex sha256 of the token: the gateway never sees a token. */
@@ -270,8 +282,9 @@ export const INGRESS_STRIP_HEADERS = ["forwarded", "x-forwarded-*", "x-real-ip",
 // ---- offline ------------------------------------------------------------------------------------
 
 /** A known hash whose host is down or refused (or a hop that failed with 502/504): the page shell
-    is a static 503 (no names, no token), `/api/h|i/…` is 503 `OfflineBody` (never buffered or
-    replayed), a `/ws/h` upgrade is 503, an asset with no source is 503. An unknown hash stays 404. */
+    is a static 503 (no names, no token), `/api/h|i|s/…` is 503 `OfflineBody` (never buffered or
+    replayed), a `/ws/h` or `/ws/s` upgrade is 503, an asset with no source is 503. An unknown hash
+    stays 404. */
 export const OFFLINE_RETRY_AFTER_S = 60;
 /** The offline page shell's text (§design.copy-deck/public-links): static, no names, no token. */
 export const OFFLINE_PAGE = {
@@ -283,6 +296,6 @@ export interface OfflineBody {
   error: "offline";
   retryAfter: number;
 }
-/** The close code of a live `/ws/h` hop whose host went away; the page reconnects with backoff. */
+/** The close code of a live `/ws/h` or `/ws/s` hop whose host went away; the page reconnects with backoff. */
 export const HOP_LOST_CLOSE = 4503;
 export const RECONNECT_BACKOFF_MS = { first: 5000, max: 60_000 } as const;

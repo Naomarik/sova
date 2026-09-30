@@ -9,6 +9,7 @@ import { REFUSED_HEADER } from "../mesh/hello";
 import { addWatcher, viewForToken } from "./hub";
 import { socketClosed, socketOpened } from "../visits";
 import { createShareApp, logVisit, PAGE_CSP } from "./routes";
+import { sessionShareUpgrade } from "./session-routes";
 import { clientAddress, trustedClient } from "./security";
 
 // The old client-address rule lives with the other trust helpers; its old import path stays.
@@ -40,7 +41,15 @@ const ROUTES: { method: string; re: RegExp }[] = [
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/p/q_[a-z2-9]{8}$`) },
   { method: "GET", re: new RegExp(`^/api/i/${TOKEN}/c/k_[a-z2-9]{8}$`) },
+  // Session shares (§app/session-share): read-only, GET only; their socket is /ws/s.
+  { method: "GET", re: new RegExp(`^/s/${TOKEN}$`) },
+  { method: "GET", re: new RegExp(`^/api/s/${TOKEN}$`) },
+  { method: "GET", re: new RegExp(`^/api/s/${TOKEN}/img/(?:0|[1-9][0-9]{0,4})$`) },
 ];
+
+/** The share sockets, by path: `/ws/h` a hand-off's, `/ws/s` a session share's. */
+export type ShareSocketKind = "h" | "s";
+const SOCKETS: Readonly<Record<string, ShareSocketKind>> = { "/ws/h": "h", "/ws/s": "s" };
 
 /** The raw request target split into path and query, or null unless it is origin-form: "/"
     then anything but a second "/" (absolute-form "http://…", authority-form "host:443", "*" and
@@ -84,7 +93,7 @@ export class RateLimiter {
   }
 }
 
-const PAGE_SHELL = new RegExp(`^/[hi]/${TOKEN}$`);
+const PAGE_SHELL = new RegExp(`^/[his]/${TOKEN}$`);
 /** A phone past the address limit reloading its link gets a page, not raw JSON. Static: no token,
     no names. */
 const TOO_MANY_PAGE =
@@ -108,8 +117,8 @@ function json(res: ServerResponse, status: number, body: object, headers: Record
   res.end(JSON.stringify(body));
 }
 
-/** A client→server `/ws/h` message larger than this closes the socket. Whatever answers a `/ws/h`
-    upgrade enforces it BEFORE forwarding a message anywhere (the in-process upgrader does it with
+/** A client→server `/ws/h` or `/ws/s` message larger than this closes the socket. Whatever answers
+    a share socket's upgrade enforces it BEFORE forwarding a message anywhere (the in-process upgrader does it with
     maxPayload; a gateway's hop must too); the edge itself sees no frames. Messages to the client
     (the filtered view) are not capped by it. */
 export const SHARE_WS_MAX_PAYLOAD = 1024;
@@ -129,9 +138,10 @@ function refuseMarked(socket: Duplex): void {
 /** What a request is, for a log line: its route family, never its path (a path carries a token). */
 function routeKind(pathname: string): string {
   if (pathname.startsWith("/h/assets/")) return "asset";
-  if (pathname.startsWith("/api/")) return pathname.startsWith("/api/i/") ? "owner api" : "api";
+  if (pathname.startsWith("/api/")) return pathname.startsWith("/api/i/") ? "owner api" : pathname.startsWith("/api/s/") ? "session api" : "api";
   if (pathname === "/ws/h") return "socket";
-  return pathname.startsWith("/i/") ? "owner page" : "page";
+  if (pathname === "/ws/s") return "session socket";
+  return pathname.startsWith("/i/") ? "owner page" : pathname.startsWith("/s/") ? "session page" : "page";
 }
 
 /** What a request passed on its way through the edge. */
@@ -143,16 +153,18 @@ export interface ShareRequestContext {
   client: string;
 }
 
-/** A `/ws/h` upgrade that passed the edge: the path, the token's shape and the address limit. */
+/** A `/ws/h` or `/ws/s` upgrade that passed the edge: the path, the token's shape and the address limit. */
 export interface ShareUpgradeContext extends ShareRequestContext {
   /** The `token` query parameter (exactly one), matching TOKEN_RE. */
   token: string;
+  /** Which socket: from the path, never from anything else. */
+  kind: ShareSocketKind;
 }
 
 /** Answers a request that passed the edge. It owns `res` from here; a throw or rejection becomes
     a 500 (or a destroyed socket once headers went out). */
 export type ShareDispatch = (req: IncomingMessage, res: ServerResponse, ctx: ShareRequestContext) => void | Promise<void>;
-/** Answers a `/ws/h` upgrade that passed the edge. It owns `socket` from here, and enforces
+/** Answers a `/ws/h` or `/ws/s` upgrade that passed the edge. It owns `socket` from here, and enforces
     SHARE_WS_MAX_PAYLOAD before forwarding any client message; a throw or rejection ends the
     socket (a 500 if nothing was written yet). */
 export type ShareUpgrade = (req: IncomingMessage, socket: Duplex, head: Buffer, ctx: ShareUpgradeContext) => void | Promise<void>;
@@ -170,7 +182,8 @@ export interface ShareServerOptions {
   client?: (req: IncomingMessage) => string;
   /** Default: the in-process share app. */
   dispatch?: ShareDispatch;
-  /** Default: the in-process `/ws/h` (the link's session, read-only). */
+  /** Default: the in-process `/ws/h` (the link's session, read-only) and `/ws/s` (a session share's
+      presence and view pushes). */
   upgrade?: ShareUpgrade;
 }
 
@@ -183,7 +196,10 @@ export function inProcessShare(): { dispatch: ShareDispatch; upgrade: ShareUpgra
   const dispatch: ShareDispatch = (req, res) => {
     handle(req, res);
   };
-  const upgrade: ShareUpgrade = (req, socket, head, { url, token }) => {
+  const sessionUpgrade = sessionShareUpgrade();
+  const upgrade: ShareUpgrade = (req, socket, head, ctx) => {
+    if (ctx.kind === "s") return sessionUpgrade(req, socket, head, ctx);
+    const { url, token } = ctx;
     const access = linkAccess(token);
     if (!access.ok) {
       refuse(socket, access.status, { error: access.status === 410 ? "This link is no longer active." : "Unknown link.", ...(access.why ? { why: access.why } : {}) });
@@ -329,10 +345,11 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       refuse(socket, 400, { error: "Bad request" });
       return;
     }
-    const url = target.path === "/ws/h" && req.method === "GET" ? parsedTarget(target) : null;
+    const kind = Object.hasOwn(SOCKETS, target.path) ? SOCKETS[target.path]! : null;
+    const url = kind && req.method === "GET" ? parsedTarget(target) : null;
     const tokens = url?.searchParams.getAll("token") ?? [];
     const token = tokens.length === 1 ? tokens[0]! : "";
-    if (!url || !TOKEN_RE.test(token)) {
+    if (!url || !kind || !TOKEN_RE.test(token)) {
       refuse(socket, 404, { error: "Not found" });
       return;
     }
@@ -352,7 +369,7 @@ export function createShareServer(opts: ShareServerOptions = {}): Server {
       refuse(socket, 429, { error: "Too many requests" });
       return;
     }
-    guarded(() => upgrade(req, socket, head, { url, token, client }), failed("upgrade"));
+    guarded(() => upgrade(req, socket, head, { url, token, client, kind }), failed("upgrade"));
   };
   const admit = opts.admit;
   const server = createServer(options, (req, res) => {

@@ -23,6 +23,7 @@ import { attachedWorkspaces } from "./orgs";
 import { WorkspaceCommitter } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
+import { registerSessionShareRoutes } from "./session-shares-routes";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
@@ -232,6 +233,9 @@ registerProjectCostRoutes(app);
 registerDecisionRoutes(app);
 // Voice input: setup, status and transcription on this host (server/voice/; §chat/voice).
 registerVoiceRoutes(app);
+// Session share links: the operator's routes and Follow live (server/session-shares-routes.ts;
+// §app/session-share). The recipients' routes are the share listener's (server/share/session-routes.ts).
+registerSessionShareRoutes(app);
 
 // The sidebar's user-made groups: Sova's own grouping of
 // sessions, stored in ~/.pi/agent/sova/session-groups.json. Keyed by

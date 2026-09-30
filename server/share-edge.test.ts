@@ -342,3 +342,46 @@ test("every copy string is written: no placeholder left in the frozen contract",
   const all = [...Object.values(contract.LINK_WARNINGS), ...Object.values(contract.FRONT_LABELS), ...Object.values(contract.OFFLINE_PAGE)];
   for (const text of all) assert.ok(!/^[A-Z-]+$/.test(text) && !/PENDING|TODO/.test(text), text);
 });
+
+test("session shares: /s/, /api/s/ and its image route are allowed, GET only; nothing else under /s", () => {
+  const ok = [`/s/${TOKEN}`, `/api/s/${TOKEN}`, `/api/s/${TOKEN}/img/0`, `/api/s/${TOKEN}/img/7`, `/api/s/${TOKEN}/img/99999`];
+  for (const p of ok) assert.equal(edge.shareMayReach("GET", p), true, p);
+  const no: [string, string][] = [
+    ["POST", `/api/s/${TOKEN}`],
+    ["POST", `/api/s/${TOKEN}/message`],
+    ["GET", `/api/s/${TOKEN}/message`],
+    ["GET", `/api/s/${TOKEN}/img/01`],
+    ["GET", `/api/s/${TOKEN}/img/-1`],
+    ["GET", `/api/s/${TOKEN}/img/100000`],
+    ["GET", `/api/s/${TOKEN}/img/`],
+    ["GET", `/s/${TOKEN}/x`],
+    ["GET", `/s/assets/index.js`],
+    ["GET", `/api/s/${TOKEN}/img/1%2e`],
+  ];
+  for (const [m, p] of no) assert.equal(edge.shareMayReach(m, p), false, `${m} ${p}`);
+});
+
+test("the upgrade hook gets /ws/h and /ws/s with their kind from the path; no other socket", async () => {
+  const got: [string, string][] = [];
+  const s = await bound(
+    edge.createShareServer({
+      upgrade: (_req, socket, _head, ctx) => {
+        got.push([ctx.kind, ctx.token]);
+        socket.end("HTTP/1.1 418 Teapot\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+      },
+    }),
+  );
+  try {
+    assert.equal((await wsStatus(`ws://${s.base}/ws/s?token=${TOKEN}`)).status, 418);
+    assert.equal((await wsStatus(`ws://${s.base}/ws/h?token=${TOKEN}`)).status, 418);
+    assert.equal((await wsStatus(`ws://${s.base}/ws/s?token=short`)).status, 404);
+    assert.equal((await wsStatus(`ws://${s.base}/ws/i?token=${TOKEN}`)).status, 404);
+    assert.equal((await wsStatus(`ws://${s.base}/ws/s/?token=${TOKEN}`)).status, 404);
+    assert.deepEqual(got, [
+      ["s", TOKEN],
+      ["h", TOKEN],
+    ]);
+  } finally {
+    s.close();
+  }
+});

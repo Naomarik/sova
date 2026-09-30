@@ -86,6 +86,7 @@ import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon } from "./ui";
+import { SHARES_HREF } from "../lib/session-shares";
 import { showSummaries } from "../lib/summary-line";
 import {
   effectiveHostFilter,
@@ -1053,6 +1054,8 @@ export function Sidebar(props: {
   agents: AgentsInsight | undefined;
   /** The insights page that's open (`#/usage` or `#/agents`), for aria-current on its foot row. */
   insightsPage: "usage" | "agents" | null;
+  /** `#/shares` is open, for aria-current on its foot row (§app.session-share/shares-page). */
+  sharesOpen?: boolean;
   /** Opens the Settings dialog from the foot's gear. */
   onOpenSettings(): void;
   /** The viewport is ≥768px: the only width where the pane can collapse to the spine. */
@@ -1852,6 +1855,9 @@ export function Sidebar(props: {
           >
             <Icon name="worker" />
           </a>
+          <a class="button button-icon spine-item" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined} title="Shares" aria-label="Shares">
+            <Icon name="external" />
+          </a>
           <button type="button" class="button button-icon spine-item" title="Settings" aria-label="Settings" onClick={() => props.onOpenSettings()}>
             <Icon name="settings" />
           </button>
@@ -2397,6 +2403,11 @@ export function Sidebar(props: {
               <Icon name="settings" small />
             </button>
           </div>
+          {/* Every public link, and who is looking (§app.session-share/shares-page). */}
+          <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
+            <Icon name="external" />
+            <span class="insights-row-text">Shares</span>
+          </a>
         </div>
       </Show>
     </aside>

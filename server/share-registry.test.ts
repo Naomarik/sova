@@ -430,3 +430,23 @@ test("the gateway's address follows the setting's pin rule (sharePin): a refused
   assert.match(out, /SOVA_SHARE_PUBLIC_URL ignored/);
   assert.equal(gatewayPublicUrl({ SOVA_SHARE_PUBLIC_URL: "https://pinned.example.com/" }), "https://pinned.example.com");
 });
+
+test("info lists this gateway's kinds only when asked (?kinds=1); the plain answer keeps the older exact shape", async () => {
+  setGateway(GATEWAY);
+  const { a } = app("n1");
+  assert.deepEqual(await (await a.request("/api/peer/share-gateway/info")).json(), { publicUrl: URL_, accepting: true, seq: null });
+  assert.deepEqual(await (await a.request("/api/peer/share-gateway/info?kinds=1")).json(), { publicUrl: URL_, accepting: true, seq: null, kinds: ["h", "i", "s", "x"] });
+});
+
+test("an s row is a valid snapshot row, stored and looked up for kind s only", async () => {
+  const { validateSnapshot } = await import("./share/registry-validation");
+  const { file, reg } = fresh(validateSnapshot as never);
+  const ack = reg.commit("n1", snap(1, [row(H("5"), "s" as never)]), URL_, everyone);
+  assert.equal(ack.ok, true, JSON.stringify(ack));
+  assert.deepEqual(reg.lookup(H("5"), "s", NOW, () => true), { nodeId: "n1", ingressPort: 4802 });
+  assert.equal(reg.lookup(H("5"), "h", NOW, () => true), null);
+  assert.equal(reg.lookup(H("5"), "i", NOW, () => true), null);
+  // The stored file (with its s row) passes the strict store check on the next read.
+  const again = new GatewayRegistry({ file: () => file, validate: passing });
+  assert.deepEqual(again.lookup(H("5"), "s", NOW, () => true), { nodeId: "n1", ingressPort: 4802 });
+});

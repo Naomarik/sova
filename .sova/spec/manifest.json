@@ -55,7 +55,7 @@
     "§app.insights/sidebar-foot": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -8133,7 +8133,7 @@
         "§mesh.public/offline"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/share/router.ts",
         "server/share/ws-hop.ts",
@@ -8238,6 +8238,221 @@
         "§chat.worktrees/merge-card",
         "§chat.alignment/session-mark",
         "§app.decisions/attention-signals"
+      ]
+    },
+    "§app.shell/viewport": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app/shell",
+        "§chat.composer/tokens"
+      ],
+      "code": [
+        "index.html",
+        "src/app.css",
+        "src/design/base.css",
+        "src/main.tsx"
+      ]
+    },
+    "§app.session-share/content": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/snapshot",
+        "§app.session-share/never"
+      ],
+      "code": [
+        "server/session-share-view.ts",
+        "server/share/routes.ts",
+        "src/share/SessionShareApp.tsx",
+        "shared/session-share.ts",
+        "server/share/session-routes.ts"
+      ]
+    },
+    "§app.session-share/link": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/links",
+        "§app.baton/share-listener",
+        "§mesh.public/registry"
+      ],
+      "code": [
+        "server/session-shares.ts",
+        "server/session-shares-routes.ts",
+        "shared/session-share.ts",
+        "server/share/routes.ts",
+        "server/share/registry-push.ts",
+        "server/share/links-events.ts",
+        "server/share/listener.ts",
+        "server/share/session-routes.ts",
+        "server/share/edge.ts",
+        "server/share/router.ts",
+        "server/share-ingress.test.ts",
+        "server/session-shares.test.ts",
+        "server/index.ts"
+      ]
+    },
+    "§app.session-share/never": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "server/session-share-view.ts",
+        "server/session-share-privacy.test.ts"
+      ]
+    },
+    "§app.session-share/overview": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/visits",
+        "§app.baton/visits",
+        "§app.baton/links",
+        "§app.owner-page/link"
+      ],
+      "code": [
+        "server/shares-overview.ts",
+        "server/session-share-activity.test.ts"
+      ]
+    },
+    "§app.session-share/page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/content",
+        "§app.baton/outsider-view",
+        "§mesh.public/offline"
+      ],
+      "code": [
+        "src/share/SessionShareApp.tsx",
+        "src/share/main.tsx",
+        "src/share/markdown.ts",
+        "src/share/thread.tsx",
+        "src/share/session-share.css",
+        "src/vis/share-views.ts",
+        "src/vis/share-markdown.test.ts"
+      ]
+    },
+    "§app.session-share/presence": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/link",
+        "§app.session-share/visits",
+        "§mesh.public/routing"
+      ],
+      "code": [
+        "server/session-share-presence.ts",
+        "server/share/session-routes.ts",
+        "server/session-share-activity.test.ts"
+      ]
+    },
+    "§app.session-share/rejected": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": []
+    },
+    "§app.session-share/shares-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/sheet",
+        "§app.insights/placement"
+      ],
+      "code": [
+        "src/components/SharesPage.tsx",
+        "src/App.tsx",
+        "src/components/Sidebar.tsx",
+        "src/lib/session-shares.ts",
+        "src/shares.css"
+      ]
+    },
+    "§app.session-share/sheet": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/link",
+        "§app.session-share/snapshot",
+        "§app.session-share/content",
+        "§app.subagents-pane/tabs",
+        "§app.baton/links"
+      ],
+      "code": [
+        "src/components/ShareSheet.tsx",
+        "src/components/SessionDetails.tsx",
+        "src/lib/session-shares.ts",
+        "src/shares.css",
+        "src/lib/session-shares.test.ts"
+      ]
+    },
+    "§app.session-share/snapshot": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/link"
+      ],
+      "code": [
+        "server/session-shares.ts",
+        "server/session-shares-routes.ts",
+        "server/session-share-view.ts",
+        "server/share/session-live.ts",
+        "server/session-shares.test.ts"
+      ]
+    },
+    "§app.session-share/visits": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/visits",
+        "§app.session-share/link"
+      ],
+      "code": [
+        "server/visits.ts",
+        "server/share/session-routes.ts",
+        "server/session-share-activity.test.ts"
+      ]
+    },
+    "§app/session-share": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "shared/session-share.ts",
+        "server/session-shares.ts",
+        "server/session-shares-routes.ts",
+        "server/session-share-view.ts",
+        "src/share/SessionShareApp.tsx"
+      ]
+    },
+    "§design.copy-deck/session-share": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§app.session-share/page",
+        "§app.session-share/sheet",
+        "§app.session-share/shares-page"
+      ],
+      "code": [
+        "src/share/SessionShareApp.tsx",
+        "src/share/markdown.ts",
+        "src/components/ShareSheet.tsx",
+        "src/components/SharesPage.tsx",
+        "src/components/SessionDetails.tsx",
+        "src/lib/session-shares.ts"
       ]
     }
   },

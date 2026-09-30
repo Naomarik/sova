@@ -1,8 +1,8 @@
 # §mesh/public — Public links through a gateway
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-People outside the tailnet open hand-off links (`/h/`) and owner-page links (`/i/`) on a public
-address. One host, usually the VPS, can be the **public gateway**: its share listener
+People outside the tailnet open hand-off links (`/h/`), owner-page links (`/i/`) and session share
+links (`/s/`, §app/session-share) on a public address. One host, usually the VPS, can be the **public gateway**: its share listener
 (§app.baton/share-listener) sits on `127.0.0.1` behind a **front** outside Sova that terminates TLS
 for one hostname. Any other host can send its links **through** that gateway: it registers the
 SHA-256 of each live token with the gateway over the tailnet, and the gateway forwards a request
@@ -44,8 +44,8 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
 - **The effective address**, first match wins: `SOVA_SHARE_PUBLIC_URL` (an `http` or `https` bare
   origin; any other value is ignored with one warning, and the setting decides); this host's own
   gateway address; the via gateway's address (as its info or ack last stated it, else its hello's,
-  else `lastKnownUrl`); the bound address; none. Every `/h/` and `/i/` link is built by one helper
-  on that address, or is just the path with none. The answer is a `ShareState`: `state` off,
+  else `lastKnownUrl`); the bound address; none. Every `/h/`, `/i/` and `/s/` link is built by one
+  helper on that address, or is just the path with none. The answer is a `ShareState`: `state` off,
   configured, verified or unreachable; `source` env, setting, gateway or bound; `publicUrl`; `via`
   (the gateway peer's current id); and `warning` with its `warningCode` whenever a link may not
   open from outside.
@@ -77,11 +77,14 @@ links". When nothing answers in time, it replies with the state as it stands.
   peer answers `up` and the URL is exactly a bare `https` origin.
 - `acceptFrom` is `"all"` or a list of StableIDs. `GET /api/peer/share-gateway/info` tells the
   calling peer `{publicUrl, accepting, seq}` (`seq`: the last snapshot stored for it, null when not
-  accepting); a host that is no gateway answers 404 `{error: "not-gateway"}`.
+  accepting); a host that is no gateway answers 404 `{error: "not-gateway"}`. Asked with
+  `?kinds=1`, the answer adds `kinds`, the link kinds this gateway accepts and routes (`h`, `i`,
+  `s`, `x`); without it the answer keeps exactly the three keys, since an older routed host parses
+  it strictly.
 - `routed` (in `GET /api/public-links`, only while this host is the gateway): every host that
   registered links here, then every other host `acceptFrom` lists, each `{nodeId, peer, links, up,
-  lastPushAt, accepted}`: its peer id (null when no longer in `peers.json`), its live `h` and `i`
-  rows, whether its hello answers now, when its last snapshot was stored, and whether
+  lastPushAt, accepted}`: its peer id (null when no longer in `peers.json`), its live `h`, `i`
+  and `s` rows, whether its hello answers now, when its last snapshot was stored, and whether
   `acceptFrom` accepts it now.
 
 ## §mesh.public/front — The front and Verify
@@ -117,9 +120,19 @@ links". When nothing answers in time, it replies with the state as it stands.
 ## §mesh.public/registry — Which host minted a token
 
 - **Push.** A routed host sends its gateway its whole live set as a `RegistrySnapshot`, `PUT
-  /api/peer/share-gateway/links` `{v: 1, seq, links: {h, exp, kind: "h" | "i" | "x"}[], assets,
-  ingressPort}`: every hand-off and owner link not revoked or expired, as the lowercase hex SHA-256
-  of its token, and the names in its own share build's `assets/`. It sends on every mint and
+  /api/peer/share-gateway/links` `{v: 1, seq, links: {h, exp, kind: "h" | "i" | "s" | "x"}[],
+  assets, ingressPort}`: every hand-off, owner and session share link not revoked or expired, as
+  the lowercase hex SHA-256 of its token, and the names in its own share build's `assets/`.
+  Session links (`s`) go only to a gateway target whose own info listed `s` in `kinds`: an older
+  gateway rejects a snapshot with an unknown kind whole, which would block that update and every
+  new h and i link in it. The statement binds to that exact target (route generation and peer
+  entry): a changed entry or route, an unreachable or restarted gateway, or a `bad-snapshot`
+  refusal of a snapshot with `s` rows drops it, and the h/i set is sent again at once without
+  them. It is judged again right before a snapshot with `s` rows goes out. Until the target
+  states `s`, a session link mint carries the `gateway-old` warning; when a later info states
+  it, the session rows are sent without waiting for a mint. A mint that makes several links
+  (one per recipient) is confirmed only when each of its own hashes was sent and accepted; an
+  extension of links' expiry is no mint. It sends on every mint and
   revoke, when it starts routed or its route changes, when the gateway comes up, and every 60
   seconds while a snapshot is still owed. `seq` grows by one per snapshot and is kept in
   `<stateRoot>/share-gateway-outbox.json` (0600) across restarts; the outbox records only that a
@@ -156,7 +169,7 @@ links". When nothing answers in time, it replies with the state as it stands.
 
 - With `route: {via}` and the gateway listed in `peers.json`, the host binds a share ingress on its
   tailnet addresses (`SOVA_PEER_HOST` when set), never loopback or a wildcard, at `ingressPort`
-  (4802 by default). It serves exactly the share listener's paths and `/ws/h`, with the same edge
+  (4802 by default). It serves exactly the share listener's paths, `/ws/h` and `/ws/s`, with the same edge
   (§app.baton/share-listener), and retries every 15 seconds when it can't bind.
 - Every request and upgrade must come from the via gateway: its StableID by Tailscale `whois`, and
   in address-identity mode (§mesh.peers/address-identity) also one of its pinned addresses. Anyone
@@ -175,20 +188,21 @@ links". When nothing answers in time, it replies with the state as it stands.
   the request is served in-process, which answers 404 for an unknown token's API and socket (the
   page shell answers 200 for any token). An unknown hash is never asked of any host.
 - **Kinds bind routes.** An `h` row serves `/h`, `/api/h` and `/ws/h`; an `i` row serves `/i` and
-  `/api/i`; an `x` row never routes.
+  `/api/i`; an `s` row serves `/s`, `/api/s` (its image route included) and `/ws/s`; an `x` row
+  never routes. A socket's kind comes from its path.
 - A hop dials a literal tailnet address verified to belong to the row's StableID (from Tailscale's
   status, at most 5 seconds old, or the pinned address in address-identity mode), never a name, at
   the row's ingress port. Authorization is judged again after each wait and for as long as a hop
   stays open: a hop whose host no longer holds the hash (setting gone, peer removed or not
   accepted, row withdrawn or expired, port or address moved) is closed, checked on every registry
-  commit, setting change and each second. One exception: a `/ws/h` hop whose own host withdrew the
-  row first waits up to 3 s for that host's own close (§mesh.public/withdrawn-hop). A hop is tried
-  once; a POST is never retried or
-  replayed. At most 256 HTTP hops and 256 `/ws/h` hops (4 per link) are open at once.
+  commit, setting change and each second. One exception: a `/ws/h` or `/ws/s` hop whose own host
+  withdrew the row first waits up to 3 s for that host's own close (§mesh.public/withdrawn-hop). A
+  hop is tried once; a POST is never retried or replayed. At most 256 HTTP hops and 256 socket hops
+  (`/ws/h` and `/ws/s` together, 4 per link) are open at once.
 - A hop's answer passes through without cookies or `x-sova-*` headers and always with
   `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `nosniff`. The minting host keeps
   its per-token limits, visits and CSP.
-- `/ws/h` through a hop: the page's handshake is checked first (400 otherwise); the page is
+- `/ws/h` and `/ws/s` through a hop: the page's handshake is checked first (400 otherwise); the page is
   accepted only after the host's side opened and the route was judged again (404 otherwise). The
   page's messages keep the 1 KB cap before anything is forwarded; the host's messages to the page
   aren't capped by it. The origin's own closes (1000, 4000, 4410) and statuses (404, 410, 429) pass
@@ -201,7 +215,7 @@ links". When nothing answers in time, it replies with the state as it stands.
 
 - The gateway may see a hash leave the registry while its host stays live and accepted, because
   that host's newer snapshot no longer lists it (revoked or expired). Open `/ws/h` hops on that
-  hash are then not cut at once. The gateway stops passing on the page's messages, and waits up to
+  hash (and `/ws/s` hops alike) are then not cut at once. The gateway stops passing on the page's messages, and waits up to
   3 seconds for the host's own close. That close passes through as it is: after a revoke, 4410
   gone, so the page says the link is no longer active, not that it is reconnecting. Only when no
   close comes in time does the gateway close the page's socket with 4503.
@@ -216,10 +230,10 @@ A registered hash whose host is down, has no verified address, refuses the gatew
 
 | Request | Answer |
 |---|---|
-| Page shell `/h/<t>`, `/i/<t>` | 503 static page that names no host and repeats no token; `Retry-After: 60`, `no-store`, `no-referrer`, `nosniff`, the share page's CSP |
-| `/api/h/…`, `/api/i/…`, POST included | 503 `{error: "offline", retryAfter: 60}`; the body is dropped, never buffered or replayed |
-| `/ws/h` upgrade | 503 |
-| A live `/ws/h` hop whose host goes away | Close 4503 |
+| Page shell `/h/<t>`, `/i/<t>`, `/s/<t>` | 503 static page that names no host and repeats no token; `Retry-After: 60`, `no-store`, `no-referrer`, `nosniff`, the share page's CSP |
+| `/api/h/…`, `/api/i/…`, `/api/s/…`, POST included | 503 `{error: "offline", retryAfter: 60}`; the body is dropped, never buffered or replayed |
+| `/ws/h` or `/ws/s` upgrade | 503 |
+| A live `/ws/h` or `/ws/s` hop whose host goes away | Close 4503 |
 | An asset whose source fails | 503 |
 | An unknown hash | 404, never asked of any host |
 

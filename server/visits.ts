@@ -1,8 +1,10 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
+import type { SessionShareVisit } from "../shared/session-share";
 import type { LinkRecord } from "./baton-links";
 import { orgDir } from "./orgs";
+import { stateRoot } from "./state-root";
 
 /**
  * The visit log (§app.baton/visits): each time a person opened one of their links, in the org's
@@ -25,9 +27,15 @@ import { orgDir } from "./orgs";
  *
  * Continuation state is folded from the file (re-folded whenever the file changed under us), so it
  * survives a restart and a move. Logging never fails a request: callers catch.
+ *
+ * Each link kind names its own log (§app.session-share/visits): an org's links log to its workspace
+ * `visits.jsonl`; session share links (`via: "session"`, no org) to the host-local
+ * `<stateRoot>/session-share-visits.jsonl`, never synced or committed, with the share and recipient
+ * ids instead of a person. The rules above are the same for both.
  */
 
 export const VISITS_FILE = "visits.jsonl";
+export const SESSION_VISITS_FILE = "session-share-visits.jsonl";
 export const VISIT_WINDOW_MS = 10 * 60_000;
 export const SEEN_EVERY_MS = 5 * 60_000;
 export const VISITS_PER_DAY = 20;
@@ -35,21 +43,35 @@ export const VISITS_PER_DAY = 20;
 /** The page's per-tab id: 16 random bytes, base64url. Anything else is ignored (no tab). */
 export const TAB_RE = /^[A-Za-z0-9_-]{22}$/;
 
-/** handoff: a hand-off link (/h/); owner: the org's Owner page (/i/, §app.owner-page/link). */
-export type Via = "handoff" | "owner";
+/** handoff: a hand-off link (/h/); owner: the org's Owner page (/i/, §app.owner-page/link);
+    session: a session share link (/s/, §app/session-share). */
+export type Via = "handoff" | "owner" | "session";
 
-/** A hand-off link's key carries its session and hand-off; an owner link's, its generation. */
+/** A hand-off link's key carries its session and hand-off; an owner link's, its generation; a
+    session share link's, its share and recipient (and no person). */
 interface LinkKey {
-  personId: string;
+  personId?: string;
   via: Via;
   sessionId?: string;
   n?: number;
   offerId?: string;
   gen?: number;
+  shareId?: string;
+  recipientId?: string;
 }
 
-/** What a visit is recorded against: a hand-off link's record, or an owner link's. */
-export type VisitLink = Pick<LinkRecord, "orgId" | "sessionId" | "n" | "personId" | "offerId"> | { orgId: string; personId: string; via: "owner"; gen: number };
+/** A session share link: its share and recipient. */
+export interface SessionVisitLink {
+  via: "session";
+  shareId: string;
+  recipientId: string;
+}
+
+/** What a visit is recorded against: a hand-off link's record, an owner link's, or a session share link. */
+export type VisitLink =
+  | Pick<LinkRecord, "orgId" | "sessionId" | "n" | "personId" | "offerId">
+  | { orgId: string; personId: string; via: "owner"; gen: number }
+  | SessionVisitLink;
 
 export type VisitLine =
   | (LinkKey & { kind: "visit"; id: string; at: string; tab?: string; device: string; bot?: true })
@@ -164,9 +186,14 @@ interface OrgLog {
   dayCount: Map<string, { day: string; n: number }>;
 }
 
+/** Folded logs by log key: `org:<id>`, or SESSION_LOG. */
 const logs = new Map<string, OrgLog>();
+const SESSION_LOG = "session";
+const logKeyOf = (link: VisitLink): string => ("orgId" in link ? `org:${link.orgId}` : SESSION_LOG);
+const fileOf = (logKey: string): string => (logKey === SESSION_LOG ? join(stateRoot(), SESSION_VISITS_FILE) : join(orgDir(logKey.slice(4)), VISITS_FILE));
 
-const keyOf = (k: LinkKey): string => `${k.via}|${k.sessionId ?? ""}|${k.n ?? ""}|${k.personId}|${k.offerId ?? ""}|${k.gen ?? ""}`;
+const keyOf = (k: LinkKey): string =>
+  k.via === "session" ? `session|${k.shareId ?? ""}|${k.recipientId ?? ""}` : `${k.via}|${k.sessionId ?? ""}|${k.n ?? ""}|${k.personId}|${k.offerId ?? ""}|${k.gen ?? ""}`;
 const dayOf = (ms: number): string => new Date(ms).toISOString().slice(0, 10);
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 
@@ -218,12 +245,12 @@ function stat(file: string): { size: number; mtimeMs: number } {
   }
 }
 
-/** The org's folded log, re-read when the file isn't as this process left it. Open-socket counts and
-    unwritten last-seen times carry over a re-fold. */
-function logOf(orgId: string): OrgLog {
-  const file = join(orgDir(orgId), VISITS_FILE);
+/** A folded log (`org:<id>` or SESSION_LOG), re-read when the file isn't as this process left it.
+    Open-socket counts and unwritten last-seen times carry over a re-fold. */
+function logOf(logKey: string): OrgLog {
+  const file = fileOf(logKey);
   const s = stat(file);
-  const had = logs.get(orgId);
+  const had = logs.get(logKey);
   if (had && had.file === file && had.size === s.size && had.mtimeMs === s.mtimeMs) return had;
   let text = "";
   try {
@@ -241,25 +268,28 @@ function logOf(orgId: string): OrgLog {
       now.sockets = v.sockets;
       now.lastSeen = Math.max(now.lastSeen, v.lastSeen);
     }
-  logs.set(orgId, log);
+  logs.set(logKey, log);
   return log;
 }
 
-function append(orgId: string, log: OrgLog, line: VisitLine): void {
-  appendFileSync(log.file, `${JSON.stringify(line)}\n`);
+function append(logKey: string, log: OrgLog, line: VisitLine): void {
+  // The session log is host-local state: owner-only, like the share store.
+  appendFileSync(log.file, `${JSON.stringify(line)}\n`, logKey === SESSION_LOG ? { mode: 0o600 } : undefined);
   log.lines.push(line);
   apply(log, line);
   const s = stat(log.file);
   log.size = s.size;
   log.mtimeMs = s.mtimeMs;
-  logs.set(orgId, log);
+  logs.set(logKey, log);
 }
 
 const newId = (): string => `v_${randomBytes(6).toString("base64url")}`;
 
 const linkKeyOf = (link: VisitLink): LinkKey =>
   "via" in link
-    ? { personId: link.personId, via: "owner", gen: link.gen }
+    ? link.via === "session"
+      ? { via: "session", shareId: link.shareId, recipientId: link.recipientId }
+      : { personId: link.personId, via: "owner", gen: link.gen }
     : {
         personId: link.personId,
         via: "handoff",
@@ -289,11 +319,11 @@ function continued(log: OrgLog, key: string, tab: string | undefined, dev: Devic
 }
 
 /** Note activity on a visit; writes a seen line when the throttle allows (or `force`). */
-function touch(orgId: string, log: OrgLog, v: VisitState, now: number, bindTab: string | undefined, force = false): void {
+function touch(logKey: string, log: OrgLog, v: VisitState, now: number, bindTab: string | undefined, force = false): void {
   v.lastSeen = Math.max(v.lastSeen, now);
   const newTab = !!bindTab && !v.tabs.has(bindTab);
   if (newTab || (force && v.lastSeen > v.lastWritten) || now - v.lastWritten >= SEEN_EVERY_MS)
-    append(orgId, log, { kind: "seen", id: v.id, at: iso(v.lastSeen), ...(newTab ? { tab: bindTab } : {}) });
+    append(logKey, log, { kind: "seen", id: v.id, at: iso(v.lastSeen), ...(newTab ? { tab: bindTab } : {}) });
 }
 
 export interface OpenInput {
@@ -314,38 +344,39 @@ export function recordOpen(link: VisitLink, input: OpenInput = {}): string | nul
   const dev = classify(input.userAgent);
   const k = linkKeyOf(link);
   const key = keyOf(k);
-  const log = logOf(link.orgId);
+  const lk = logKeyOf(link);
+  const log = logOf(lk);
   if (dev.kind === "preview") {
-    recordPreviewIn(link.orgId, log, k, dev, now);
+    recordPreviewIn(lk, log, k, dev, now);
     return null;
   }
   const tab = tabOf(input.tab);
   const hit = continued(log, key, tab, dev, now);
   if (hit) {
-    touch(link.orgId, log, hit, now, tab);
+    touch(lk, log, hit, now, tab);
     return hit.id;
   }
-  if (capped(link.orgId, log, k, now)) return null;
+  if (capped(lk, log, k, now)) return null;
   const id = newId();
-  append(link.orgId, log, { kind: "visit", id, at: iso(now), ...k, ...(tab ? { tab } : {}), device: dev.device, ...(dev.kind === "bot" ? { bot: true as const } : {}) });
+  append(lk, log, { kind: "visit", id, at: iso(now), ...k, ...(tab ? { tab } : {}), device: dev.device, ...(dev.kind === "bot" ? { bot: true as const } : {}) });
   return id;
 }
 
 /** The link reached today's cap: true, and the day's one `capped` line is written. A continued
     visit is never capped (callers check this only for new lines). */
-function capped(orgId: string, log: OrgLog, k: LinkKey, now: number): boolean {
+function capped(logKey: string, log: OrgLog, k: LinkKey, now: number): boolean {
   const key = keyOf(k);
   const today = dayOf(now);
   const c = log.dayCount.get(key);
   if (!c || c.day !== today || c.n < VISITS_PER_DAY) return false;
-  if (log.cappedDay.get(key) !== today) append(orgId, log, { kind: "capped", id: newId(), at: iso(now), ...k });
+  if (log.cappedDay.get(key) !== today) append(logKey, log, { kind: "capped", id: newId(), at: iso(now), ...k });
   return true;
 }
 
-function recordPreviewIn(orgId: string, log: OrgLog, k: LinkKey, dev: Device, now: number): void {
+function recordPreviewIn(logKey: string, log: OrgLog, k: LinkKey, dev: Device, now: number): void {
   const pk = `${keyOf(k)}|${dev.device}`;
-  if (now - (log.previewAt.get(pk) ?? 0) < VISIT_WINDOW_MS || capped(orgId, log, k, now)) return;
-  append(orgId, log, { kind: "preview", id: newId(), at: iso(now), ...k, device: dev.device });
+  if (now - (log.previewAt.get(pk) ?? 0) < VISIT_WINDOW_MS || capped(logKey, log, k, now)) return;
+  append(logKey, log, { kind: "preview", id: newId(), at: iso(now), ...k, device: dev.device });
 }
 
 /** The static shell was fetched: a `preview` line when the user agent is a known link previewer,
@@ -353,7 +384,7 @@ function recordPreviewIn(orgId: string, log: OrgLog, k: LinkKey, dev: Device, no
 export function recordShellFetch(link: VisitLink, userAgent: string | null | undefined, now = Date.now()): boolean {
   const dev = classify(userAgent);
   if (dev.kind !== "preview") return false;
-  recordPreviewIn(link.orgId, logOf(link.orgId), linkKeyOf(link), dev, now);
+  recordPreviewIn(logKeyOf(link), logOf(logKeyOf(link)), linkKeyOf(link), dev, now);
   return true;
 }
 
@@ -362,34 +393,42 @@ export function recordRefused(link: VisitLink, userAgent?: string | null, now = 
   const dev = classify(userAgent);
   if (dev.kind === "preview") return false;
   const k = linkKeyOf(link);
-  const log = logOf(link.orgId);
-  if (now - (log.refusedAt.get(keyOf(k)) ?? 0) < VISIT_WINDOW_MS || capped(link.orgId, log, k, now)) return false;
-  append(link.orgId, log, { kind: "refused", id: newId(), at: iso(now), ...k, status: 410, device: dev.device, ...(dev.kind === "bot" ? { bot: true as const } : {}) });
+  const lk = logKeyOf(link);
+  const log = logOf(lk);
+  if (now - (log.refusedAt.get(keyOf(k)) ?? 0) < VISIT_WINDOW_MS || capped(lk, log, k, now)) return false;
+  append(lk, log, { kind: "refused", id: newId(), at: iso(now), ...k, status: 410, device: dev.device, ...(dev.kind === "bot" ? { bot: true as const } : {}) });
   return true;
 }
 
 /** A share socket opened: it continues the link's visit (never starts one). Returns a handle for
     socketClosed, or null when there is no visit to continue. */
-export function socketOpened(link: LinkRecord, input: OpenInput = {}): { orgId: string; id: string } | null {
+export function socketOpened(link: VisitLink, input: OpenInput = {}): VisitHandle | null {
   const now = input.now ?? Date.now();
   const dev = classify(input.userAgent);
   if (dev.kind === "preview") return null;
-  const log = logOf(link.orgId);
+  const lk = logKeyOf(link);
+  const log = logOf(lk);
   const tab = tabOf(input.tab);
   const v = continued(log, keyOf(linkKeyOf(link)), tab, dev, now);
   if (!v) return null;
   v.sockets++;
-  touch(link.orgId, log, v, now, tab);
-  return { orgId: link.orgId, id: v.id };
+  touch(lk, log, v, now, tab);
+  return { log: lk, id: v.id };
+}
+
+/** An open socket's visit, for socketClosed. Opaque to callers. */
+export interface VisitHandle {
+  log: string;
+  id: string;
 }
 
 /** Its socket closed: the visit's last seen is written now. */
-export function socketClosed(handle: { orgId: string; id: string }, now = Date.now()): void {
-  const log = logOf(handle.orgId);
+export function socketClosed(handle: VisitHandle, now = Date.now()): void {
+  const log = logOf(handle.log);
   const v = log.visits.get(handle.id);
   if (!v) return;
   v.sockets = Math.max(0, v.sockets - 1);
-  touch(handle.orgId, log, v, now, undefined, true);
+  touch(handle.log, log, v, now, undefined, true);
 }
 
 /**
@@ -398,19 +437,19 @@ export function socketClosed(handle: { orgId: string; id: string }, now = Date.n
  */
 export function flushOpenVisits(now = Date.now()): number {
   let wrote = 0;
-  for (const orgId of [...logs.keys()]) {
+  for (const logKey of [...logs.keys()]) {
     let log: OrgLog;
     try {
-      log = logOf(orgId);
+      log = logOf(logKey);
     } catch {
-      logs.delete(orgId); // detached
+      logs.delete(logKey); // detached
       continue;
     }
     for (const v of log.visits.values()) {
       if (v.sockets <= 0 && v.lastSeen <= v.lastWritten) continue;
       if (v.sockets > 0) v.lastSeen = Math.max(v.lastSeen, now);
       const before = log.lines.length;
-      touch(orgId, log, v, now, undefined, true);
+      touch(logKey, log, v, now, undefined, true);
       wrote += log.lines.length - before;
     }
   }
@@ -445,7 +484,7 @@ export interface FoldedVisit {
 
 /** One person's log, folded: one row per visit (with its last seen), preview, refusal or cap; newest first. */
 export function readVisits(orgId: string, personId: string): FoldedVisit[] {
-  const log = logOf(orgId);
+  const log = logOf(`org:${orgId}`);
   const out: FoldedVisit[] = [];
   for (const l of log.lines) {
     if (l.kind === "seen" || l.personId !== personId) continue;
@@ -463,7 +502,7 @@ export function readVisits(orgId: string, personId: string): FoldedVisit[] {
 /** Per person, the start of their newest visit by a person (not a scanner): the People card's line. */
 export function lastVisits(orgId: string): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const l of logOf(orgId).lines) if (l.kind === "visit" && !l.bot && (!out[l.personId] || l.at > out[l.personId]!)) out[l.personId] = l.at;
+  for (const l of logOf(`org:${orgId}`).lines) if (l.kind === "visit" && !l.bot && l.personId && (!out[l.personId] || l.at > out[l.personId]!)) out[l.personId] = l.at;
   return out;
 }
 
@@ -476,13 +515,46 @@ const openedBy = new WeakMap<OrgLog, { lines: number; ids: Set<string> }>();
  * again only when it has grown.
  */
 export function openedSessions(orgId: string): ReadonlySet<string> {
-  const log = logOf(orgId);
+  const log = logOf(`org:${orgId}`);
   const had = openedBy.get(log);
   if (had && had.lines === log.lines.length) return had.ids;
   const ids = new Set<string>();
   for (const l of log.lines) if (l.kind === "visit" && !l.bot && l.via !== "owner" && l.sessionId) ids.add(l.sessionId);
   openedBy.set(log, { lines: log.lines.length, ids });
   return ids;
+}
+
+/**
+ * One session share recipient's log, folded like readVisits: one row per visit (with its last
+ * seen), preview, refusal or cap; newest first. Device families only.
+ */
+export function readSessionVisits(shareId: string, recipientId: string): SessionShareVisit[] {
+  const log = logOf(SESSION_LOG);
+  const out: SessionShareVisit[] = [];
+  for (const l of log.lines) {
+    if (l.kind === "seen" || l.via !== "session" || l.shareId !== shareId || l.recipientId !== recipientId) continue;
+    if (l.kind === "visit") {
+      const v = log.visits.get(l.id);
+      const last = v ? Math.max(v.lastSeen, v.lastWritten) : 0;
+      out.push({ kind: "visit", at: l.at, device: l.device, ...(l.bot ? { bot: true as const } : {}), ...(v && last > v.at ? { lastSeenAt: iso(last) } : {}) });
+    } else if (l.kind === "capped") out.push({ kind: "capped", at: l.at, device: "" });
+    else out.push({ kind: l.kind, at: l.at, device: l.device, ...(l.kind === "refused" && l.bot ? { bot: true as const } : {}) });
+  }
+  return out.sort((a, b) => b.at.localeCompare(a.at));
+}
+
+/** What a recipient row shows: visits by a person (not previews, scanners or refused opens), and
+    the newest one's last activity. */
+export function visitSummary(visits: readonly SessionShareVisit[]): { opened: number; lastAt?: string } {
+  let opened = 0;
+  let lastAt: string | undefined;
+  for (const v of visits) {
+    if (v.kind !== "visit" || v.bot) continue;
+    opened++;
+    const at = v.lastSeenAt ?? v.at;
+    if (!lastAt || at > lastAt) lastAt = at;
+  }
+  return { opened, ...(lastAt ? { lastAt } : {}) };
 }
 
 /** Forget every folded log (tests: a fresh process). */

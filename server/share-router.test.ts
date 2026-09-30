@@ -85,6 +85,7 @@ interface GatewayOpts {
   setting?: typeof GATEWAY | null;
   hasAsset?: (n: string) => boolean;
   assetMaxBytes?: number;
+  imageMaxBytes?: number;
   preflight?: (url: string) => Promise<boolean | "recent">;
   resolve?: (p: PeerEntry) => Promise<string | null>;
   wsHop?: ReturnType<typeof createWsHop>;
@@ -116,6 +117,7 @@ async function gateway(o: GatewayOpts) {
       return o.preflight ? o.preflight(url) : (await import("./mesh/proxy")).preflight(url);
     },
     assetMaxBytes: o.assetMaxBytes,
+    imageMaxBytes: o.imageMaxBytes,
   });
   // The client address as M2's trustedClient gives it for a front on loopback: never a header the
   // client sent (the edge's M0 default still believes the last X-Forwarded-For hop).
@@ -693,3 +695,83 @@ for (const changed of [false, true])
     assert.notEqual(o.upgraded[0]!.readyState, WebSocket.OPEN, "and its socket is closed");
     assert.equal(hops.total(), 0, "the slot is released");
   });
+
+// ---- session shares (kind `s`) ---------------------------------------------------------------------
+
+test("routeOf: the session share paths are kind s", () => {
+  assert.deepEqual(routeOf(`/s/${T("a")}`), { kind: "s", token: T("a") });
+  assert.deepEqual(routeOf(`/api/s/${T("a")}`), { kind: "s", token: T("a") });
+  assert.deepEqual(routeOf(`/api/s/${T("a")}/img/12`), { kind: "s", token: T("a") });
+  assert.equal(routeOf(`/api/s/${T("a")}/message`), null);
+});
+
+test("kinds bind routes: an s row serves /s, /api/s and its images; an h row never serves /s, an s row never /h", async () => {
+  const o = await origin((_req, res) => res.writeHead(200, { "Content-Type": "application/json" }).end('{"from":"origin"}'));
+  const g = await gateway({ port: o.port, links: [row(T("s"), "s" as never), row(T("h"))] });
+  for (const p of [`/api/s/${T("s")}`, `/api/s/${T("s")}/img/3`, `/s/${T("s")}`]) {
+    const r = await get(`${g.base}${p}`);
+    assert.equal(r.body, '{"from":"origin"}', p);
+  }
+  assert.deepEqual(o.seen.map((s) => s.url), [`/api/s/${T("s")}`, `/api/s/${T("s")}/img/3`, `/s/${T("s")}`]);
+  const before = o.seen.length;
+  // The h row's token on an /s route, and the s row's on an /h route: this host's own 404, never a hop.
+  assert.equal((await get(`${g.base}/api/s/${T("h")}`)).status, 404);
+  assert.equal((await get(`${g.base}/api/h/${T("s")}`)).status, 404);
+  assert.equal(o.seen.length, before, "nothing reached the routed host");
+});
+
+test("/ws/s hops on an s row only; /ws/h never hops on one", async () => {
+  const o = await wsOrigin();
+  const g = await gateway({ port: o.port, links: [row(T("s"), "s" as never), row(T("h"))] });
+  const r = await open(`ws://127.0.0.1:${g.port}/ws/s?token=${T("s")}&v=tab`);
+  assert.ok("ws" in r, JSON.stringify(r));
+  assert.equal(r.first, "view");
+  assert.equal(o.headers.length, 1);
+  assert.deepEqual(await open(`ws://127.0.0.1:${g.port}/ws/h?token=${T("s")}`), { status: 404 });
+  assert.deepEqual(await open(`ws://127.0.0.1:${g.port}/ws/s?token=${T("h")}`), { status: 404 });
+  assert.equal(o.headers.length, 1, "neither mismatch dialed the host");
+  // A 1 KB-plus page message never reaches the host.
+  const closed = new Promise<number>((res) => r.ws.once("close", (code) => res(code)));
+  r.ws.send("z".repeat(2048));
+  assert.equal(await closed, 1009);
+  assert.deepEqual(o.got, []);
+});
+
+test("/ws/s: a down host is 503; a lost host closes 4503; a withdrawn row passes the host's own 4410", async () => {
+  const down = await gateway({ port: await deadPort(), links: [row(T("s"), "s" as never)] });
+  assert.deepEqual(await open(`ws://127.0.0.1:${down.port}/ws/s?token=${T("s")}`), { status: 503 });
+  const o = await wsOrigin();
+  const g = await gateway({ port: o.port, links: [row(T("s"), "s" as never)] });
+  const r = await open(`ws://127.0.0.1:${g.port}/ws/s?token=${T("s")}`);
+  assert.ok("ws" in r);
+  const closed = new Promise<number>((res) => r.ws.once("close", (code) => res(code)));
+  o.sockets[0]!.terminate();
+  assert.equal(await closed, HOP_LOST_CLOSE);
+  // Withdrawn by its own host (a newer snapshot without it), the host still accepted: its 4410 passes.
+  const a = await open(`ws://127.0.0.1:${g.port}/ws/s?token=${T("s")}`);
+  assert.ok("ws" in a);
+  const aClosed = new Promise<number>((res) => a.ws.once("close", (code) => res(code)));
+  g.reg.commit("n1", { v: 1, seq: 2, links: [], assets: [], ingressPort: o.port }, GATEWAY.publicUrl, { now: Date.now(), local: new Set(), live: () => true });
+  g.hooks.sweep();
+  o.sockets.at(-1)!.close(4410, "gone");
+  assert.equal(await aClosed, 4410);
+});
+
+test("a hopped session image over the gateway's cap is refused (declared) or cut (streamed); a small one passes", async () => {
+  const o = await origin((req, res) => {
+    const body = Buffer.alloc(req.url!.endsWith("/img/1") ? 100 : 10, 1);
+    if (req.url!.endsWith("/img/2")) {
+      res.writeHead(200, { "Content-Type": "image/png" }); // chunked: no length
+      res.write(Buffer.alloc(60, 1));
+      res.end(Buffer.alloc(60, 1));
+      return;
+    }
+    res.writeHead(200, { "Content-Type": "image/png", "Content-Length": String(body.length) }).end(body);
+  });
+  const g = await gateway({ port: o.port, links: [row(T("s"), "s" as never)], imageMaxBytes: 50 });
+  const small = await get(`${g.base}/api/s/${T("s")}/img/0`);
+  assert.deepEqual([small.status, small.body.length], [200, 10]);
+  assert.equal((await get(`${g.base}/api/s/${T("s")}/img/1`)).status, 503, "declared over the cap");
+  const streamed = await get(`${g.base}/api/s/${T("s")}/img/2`);
+  assert.ok(streamed.error || streamed.body.length <= 50, "streamed past the cap: cut, never passed whole");
+});

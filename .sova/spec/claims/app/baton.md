@@ -338,7 +338,8 @@ once), **lease** (an offer's lock on its first taker).
   state), `POST /api/h/<token>/message {text}` and the WebSocket `/ws/h?token=`, the page's
   visit id riding along as `?v=` on the view and the socket (§app.baton/visits); and, for the owner
   page, only `GET /i/<token>`, `GET /api/i/<token>` and its `/p/<q_handle>` and `/c/<k_handle>`
-  (§app.owner-page/page). Every other path
+  (§app.owner-page/page); and, for session shares, only `GET /s/<token>`, `GET /api/s/<token>`,
+  `GET /api/s/<token>/img/<n>` and the WebSocket `/ws/s?token=` (§app/session-share). Every other path
   answers 404 before any routing (the path is judged raw, before any decoding: a dot segment, an
   escape or a non-origin-form target never reaches a route); the operator app, `/api/*`, `/ws/chat`, `/ws/watch`, `/peer/*` and
   `/ext/*` are unreachable on it. The main listener never serves the share page.
@@ -406,6 +407,9 @@ once), **lease** (an offer's lock on its first taker).
     (below).
   An owner link's lines (§app.owner-page/link) carry `via:"owner"` and no `sessionId`, `n` or
   `offerId`; they follow every rule here.
+  A session share link's lines (§app.session-share/visits) carry `via:"session"`, `shareId` and
+  `recipientId` and no `personId`, and go to a host-local log instead of the workspace repo; they
+  follow every rule here too.
   An unknown token (404) records nothing: there is no person to record it against.
 - **Never recorded**: the token, its hash or any part of either, an IP address or anything
   derived from one, the raw user agent, cookies or headers, and anything the person wrote. The

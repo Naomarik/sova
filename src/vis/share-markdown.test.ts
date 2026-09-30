@@ -68,3 +68,24 @@ test("ordinary code and raw HTML stay escaped text", () => {
 test("the share page draws exactly the kinds the gathering guide teaches", () => {
   assert.deepEqual([...SHARE_VIS_KINDS].sort(), [...TAUGHT].sort());
 });
+
+// Session shares (§app.session-share/page): the business kinds plus sequence and state drawn, svg
+// as an image, code and html as escaped source.
+test("a session share draws sequence and state, and shows svg as an image and code and html as their source", async () => {
+  const { SESSION_VIS_KINDS } = await import("../share/markdown");
+  const seq = renderShareMarkdown(fence("vis sequence", 'actor a "A"\nactor b "B"\na -> b "hi"'), false, SESSION_VIS_KINDS);
+  assert.equal(seq.visuals[0]?.kind, "sequence");
+  const state = renderShareMarkdown(fence("vis state", "idle -> busy"), false, SESSION_VIS_KINDS);
+  assert.equal(state.visuals[0]?.kind, "state");
+  const svg = renderShareMarkdown(fence("vis svg", 'title: Sketch\n<svg xmlns="http://www.w3.org/2000/svg"><text>hi & "q"</text></svg>'), false, SESSION_VIS_KINDS);
+  assert.equal(svg.visuals.length, 0);
+  assert.match(svg.html, /<figure class="share-vis-image"><figcaption class="share-vis-caption">Sketch<\/figcaption><img src="data:image\/svg\+xml;charset=utf-8,%3Csvg[^"]*" alt="Sketch"><\/figure>/);
+  const html = renderShareMarkdown(fence("vis html", '<script>alert(1)</script><p onclick="x">hi</p>'), false, SESSION_VIS_KINDS);
+  assert.doesNotMatch(html.html, /<script|<p onclick/);
+  assert.match(html.html, /<pre><code>&#60;script&#62;alert\(1\)&#60;\/script&#62;/);
+  assert.match(html.html, /An interactive drawing, shown as its source\./);
+  const code = renderShareMarkdown(fence("vis code", "lang: ts\n---\nconst a = '<b>';"), false, SESSION_VIS_KINDS);
+  assert.match(code.html, /<figcaption class="share-vis-caption">Code<\/figcaption><pre><code>const a = &#39;&#60;b&#62;&#39;;<\/code><\/pre>/);
+  // The hand-off page's kinds are unchanged: the same fences are the quiet line there.
+  assert.match(renderShareMarkdown(fence("vis svg", "<svg></svg>")).html, /share-vis-broken/);
+});

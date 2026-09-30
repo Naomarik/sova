@@ -104,7 +104,7 @@
                                {:kind "promote" :n (count (get-in (e d) [:result :promoted])) :by by-actor :ledger ledger}))})
    (b/tell-watch (fn [d] (let [res (get-in (e d) [:result]) ids (vec (:promoted res))]
                            (when (seq ids)
-                             {:kind "reconcile/promoted" :params {:ids ids :by (get-in (e d) [:effect :by])}
+                             {:kind "reconcile/promoted" :params {:ids ids :by (get-in (e d) [:effect :by])} :asks false
                               :by (get-in (e d) [:effect :by-actor]) :key (str "promoted:" (str/join "," ids))}))))
    (b/send-all (fn [d] (let [res (get-in (e d) [:result])]
                          (for [id (:promoted res) :let [sid (get-in d [:index id :sid])] :when sid]
@@ -124,9 +124,23 @@
            (for [c (:resolved res)]
              {:target (b/conflict-sid (:org-id d) (:project-id d) (:id c)) :event :conflict/resolved :data c})))))
 
+(defn auto-promoted?
+  "r14 `:unless-auto-promoted`: the chart promotes these drafted decisions itself (its L2 drive): the
+   level in force when the run was asked for is L2 or more, and each is in its author's own area."
+  [d ids]
+  (and (lv/level-at-least? (:request-autonomy d) "L2")
+       (every? #(true? (get-in d [:index (str %) :author-owns-area])) ids)))
+
+(def finished-asks
+  "r14: what each reason of a run's results asks of the overseer (a conflict to route, a resolved
+   conflict: always; drafted decisions: unless the chart promotes them itself)."
+  {"reconcile/conflict" true "reconcile/resolved" true "reconcile/drafted" :unless-auto-promoted})
+
 (defn- reasons-of [d]
   (let [res (e d) by (:by d)
-        mk (fn [kind ids] (when (seq ids) {:kind kind :params {:ids (vec ids)} :by by :key (str kind ":" (str/join "," ids))}))]
+        mk (fn [kind ids] (when (seq ids) {:kind kind :params {:ids (vec ids)} :by by :key (str kind ":" (str/join "," ids))
+                                          :asks (let [rule (finished-asks kind)]
+                                                  (if (= :unless-auto-promoted rule) (not (auto-promoted? d ids)) rule))}))]
     (vec (keep identity [(mk "reconcile/conflict" (map :id (:conflicts res)))
                          (mk "reconcile/resolved" (map :id (:resolved res)))
                          (mk "reconcile/drafted" (:drafted-ids res))]))))
@@ -145,7 +159,9 @@
 (defn request-ops [d]
   (let [ev (e d)]
     [(ops/assign :by (or (some-> (:by ev) name) "operator"))
-     (ops/assign :owner (or (:owner ev) (:owner d) "operator"))]))
+     (ops/assign :owner (or (:owner ev) (:owner d) "operator"))
+     ;; r14: the level in force when it was asked for (did the chart promote the drafted ones itself?)
+     (ops/assign :request-autonomy (some-> (:autonomy ev) name))]))
 
 (def chart
   (statechart {:initial :reconciler}
@@ -176,7 +192,7 @@
       ;; ── what works in every state, the switch aside ────────────────────────────────────────
       (dsl/act {:sova/feed :feed :event :decision/promote :checks [promote-check promote-cap]}
         (promote-effect))
-      (transition {:sova/feed :quiet :event :effect/done :cond (fn [_ d] (= "promote" (:kind (e d))))}
+      (transition {:sova/feed :quiet :sova/asks-overseer false :event :effect/done :cond (fn [_ d] (= "promote" (:kind (e d))))}
         (promote-done))
       (transition {:sova/feed :quiet :event :settle/results}
         (b/send-all (fn [d] (for [row (:decisions (e d))]
@@ -232,11 +248,11 @@
         (invoke {:id :run :type :sova/reconcile :params (fn [_ d] {:by (:by d) :owner (:owner d) :project-id (:project-id d)})})
         (dsl/act {:sova/feed :feed :event :reconcile/request}
           (script {:expr (fn [_ d] [(ops/assign :again true)])}))
-        (transition {:sova/feed :quiet :event :reconcile/finished :cond (fn [_ d] (and (nil? (:error (e d))) (:again d))) :target :running}
+        (transition {:sova/feed :quiet :sova/asks-overseer finished-asks :event :reconcile/finished :cond (fn [_ d] (and (nil? (:error (e d))) (:again d))) :target :running}
           (finished-content))
-        (transition {:sova/feed :quiet :event :reconcile/finished :cond (fn [_ d] (nil? (:error (e d)))) :target :idle}
+        (transition {:sova/feed :quiet :sova/asks-overseer finished-asks :event :reconcile/finished :cond (fn [_ d] (nil? (:error (e d)))) :target :idle}
           (finished-content))
-        (transition {:sova/feed :quiet :event :reconcile/finished :target :failed}
+        (transition {:sova/feed :quiet :sova/asks-overseer finished-asks :event :reconcile/finished :target :failed}
           (finished-content))
         (transition {:sova/feed :quiet :event :reconcile/stopped :target :failed}
           (script {:expr (fn [_ d] [(ops/assign :last-run {:at (b/now-ms d) :compared 0 :found 0 :error (or (:detail (e d)) "The run stopped.")})])}))

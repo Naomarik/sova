@@ -157,10 +157,11 @@
        (person-act :person/revert nil [revert-check])])))
 
 (defn effective-hours
-  "r13: `[effective inherited?]`: their own hours, else the company's (the org's, as last moved), else
-   nil (always in hours). What every act that reaches them reads (exported: `effective-hours`)."
+  "r13: `[effective inherited? from]`: their own hours, else the company's (the org's, as last moved),
+   else nil (always in hours), and which (\"own\" | \"company\" | \"none\"). What every act that reaches
+   them reads (exported: `effective-hours`, `hours-inherited`, `hours-from`)."
   [d]
-  [(hours/effective d (:company-hours d)) (hours/inherited? d (:company-hours d))])
+  [(hours/effective d (:company-hours d)) (hours/inherited? d (:company-hours d)) (hours/hours-from d (:company-hours d))])
 
 (defn- entered [status]
   (on-entry {} (script {:expr (fn [_ data] [(ops/assign :status status)])})))
@@ -175,9 +176,9 @@
       (transition {:sova/feed :quiet :event :link/moved :cond (b/moved-from? "org")}
         (script {:expr (fn [_ d] [(ops/assign :company-hours (select-keys (:exported (b/moved d)) [:tz :hours]))])}))
       (transition {:sova/feed :quiet :cond (fn [_ d] (or (not (contains? d :hours-inherited))
-                                                           (not= [(:effective-hours d) (:hours-inherited d)] (effective-hours d))))}
-        (script {:expr (fn [_ d] (let [[eff inh] (effective-hours d)]
-                                   [(ops/assign :effective-hours eff) (ops/assign :hours-inherited inh)]))}))
+                                                           (not= [(:effective-hours d) (:hours-inherited d) (:hours-from d)] (effective-hours d))))}
+        (script {:expr (fn [_ d] (let [[eff inh from] (effective-hours d)]
+                                   [(ops/assign :effective-hours eff) (ops/assign :hours-inherited inh) (ops/assign :hours-from from)]))}))
       (state {:id :born}
         (on-entry {}
           (script {:expr (fn [_ d] (into [(ops/assign :status (get-in d [:person :status] "active"))]
@@ -245,7 +246,7 @@
    :version  version
    :migrate  {}
    :storage  :portable
-   :exported [:name :decides :referral :status :tz :hours :effective-hours :hours-inherited]
+   :exported [:name :decides :referral :status :tz :hours :effective-hours :hours-inherited :hours-from]
    :acts     acts
    :not-here not-here
    :redact   {:contact :contact}})

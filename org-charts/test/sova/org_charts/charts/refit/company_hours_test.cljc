@@ -21,7 +21,9 @@
   (is (hours/inherited? {:name "Bo"} company))
   (is (nil? (hours/effective {:name "Bo"} nil)) "neither: always in hours")
   (is (nil? (hours/effective {:name "Bo"} {:tz "UTC"})) "a company zone without hours is no hours")
-  (is (= company (hours/effective {:tz "Europe/Istanbul"} company)) "a zone alone of their own is no hours: the company's"))
+  (is (= company (hours/effective {:tz "Europe/Istanbul"} company)) "a zone alone of their own is no hours: the company's pair")
+  (is (= ["own" "company" "none" "company"] [(hours/hours-from own company) (hours/hours-from {} company) (hours/hours-from {} nil)
+                                             (hours/hours-from {:tz "Europe/Istanbul"} company)])))
 
 ;; ---- the org sets them ----------------------------------------------------------------------------
 
@@ -48,10 +50,12 @@
     (h/start! (h/new-host) "person" psid {:org-id "o1" :id "p1" :person person :changed changed :by {:kind "operator"}})))
 (defn org-moved [x c] (h/send! x psid :link/moved {:from osid :chart "org" :states [:org :owner-none] :exported (merge {:name "Acme"} c)}))
 (defn eff [x] (select-keys (h/data x psid) [:effective-hours :hours-inherited]))
+(defn from [x] (:hours-from (h/data x psid)))
 
 (deftest each-person-reads-them
   (is (some #(= {:op :watch :target osid} %) (h/directives (person {}) psid)) "the person watches its org")
   (is (= {:effective-hours company :hours-inherited true} (eff (org-moved (person {}) company))) "company only")
+  (is (= ["company" "own" "none"] [(from (org-moved (person {}) company)) (from (org-moved (person own) company)) (from (person {}))]))
   (is (= {:effective-hours own :hours-inherited false} (eff (org-moved (person own) company))) "own over company")
   (is (= {:effective-hours nil :hours-inherited false} (eff (org-moved (person {}) {}))) "neither")
   (testing "their own cleared: the company's again; the company's cleared: always in hours"

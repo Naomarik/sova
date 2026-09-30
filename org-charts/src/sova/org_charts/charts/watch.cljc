@@ -82,12 +82,14 @@
 
 (defn own-act?
   "C2: its own acts, made while it runs: a reason whose `by` is the overseer, noted while one of its
-   turns runs, is not a reason to look (it knows). R3 (r8): news of the chart's own acts (`by`
-   chart) never is: it starts no look and uses no look; it reaches the overseer as the next look's
-   feed."
+   turns runs, is not a reason to look (it knows). R3 as narrowed by r14: news of the chart's own
+   acts (`by` chart) is no reason to look unless it asks something of the overseer (`:asks`, resolved
+   from its transition's `:sova/asks-overseer`): then it wakes it and counts, as on master; else it
+   starts no look and uses none, and reaches the overseer as the next look's feed."
   [env reason]
   (let [by (some-> (:by reason) name)]
-    (or (= "chart" by) (and (= "overseer" by) (running-turn? env)))))
+    (or (and (= "chart" by) (not (true? (:asks reason))))
+        (and (= "overseer" by) (running-turn? env)))))
 
 (defn kept [env data]
   (->> (incoming data)

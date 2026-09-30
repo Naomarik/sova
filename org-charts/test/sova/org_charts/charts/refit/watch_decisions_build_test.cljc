@@ -174,7 +174,8 @@
           (is (h/in? m bsid :merging))
           (let [done (h/send! m bsid :effect/done {:kind "merge" :result {:commit "c0ffee"}})]
             (is (= "c0ffee" (get-in (h/data done bsid) [:merged :commit])))
-            (is (some #(= "build/merged" (get-in % [:data :kind])) (h/elsewhere done))))
+            (is (some #(= "build/merged" (get-in % [:data :kind])) (h/elsewhere done)) "master's reason for the operator's merge")
+            (is (some #(= {:kind "build-merged"} (:data %)) (h/elsewhere done)) "still a milestone for the owner page"))
           (testing "a refusal about the root's checkout is not the overseer's news"
             (is (not (some #(= "build/merge-refused" (get-in % [:data :kind])) (h/elsewhere (h/send! m bsid :effect/failed {:kind "merge" :detail "The project root has main checked out, not dev."})))))))))
     (is (= "It runs in the project root: it isn't a Git repository."

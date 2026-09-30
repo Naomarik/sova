@@ -206,14 +206,15 @@
   []
   [(dsl/hold-approve-correction)
    ;; F19: a hold id is per session, so the reason names the hold as `<session-id>:<hold-id>`
-   (com.fulcrologic.statecharts.elements/transition {:sova/feed :feed :event :hold/waiting}
-     (script {:expr (fn [env d]
+   (com.fulcrologic.statecharts.elements/transition {:sova/feed :feed :sova/asks-overseer true :event :hold/waiting}
+     (script {:sova/reason true
+              :expr (fn [env d]
                       (when-let [p (or (:project-id (evt d)) (:project-id d))]
                         (let [e    (evt d)
                               hold (str (sc-env/session-id env) ":" (:id e))]
                           (queue-sends d [{:target (watch-sid (:org-id d) p) :event :reason/noted
                                            :data {:kind "hold/review" :by "system" :at (now-ms d) :key (str "hold/review:" hold)
-                                                  :params {:id (:id e) :hold hold :what (:what e) :act (some-> (:event e) name)}}}]))))})
+                                                  :asks true :params {:id (:id e) :hold hold :what (:what e) :act (some-> (:event e) name)}}}]))))})
      (com.fulcrologic.statecharts.elements/raise {:event :sova.charts/flush}))])
 
 (defn flush-transition

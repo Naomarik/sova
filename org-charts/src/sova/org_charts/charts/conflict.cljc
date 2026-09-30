@@ -116,7 +116,7 @@
      (transition {:sova/feed :feed :event :conflict/resolved :target :settled}
        (script {:expr (fn [_ d] ((settle-ops (:outcome (e d)) (:resolved-by (e d))) d))}))
      ;; settled by hand: the session still asking is over
-     (dsl/act {:sova/feed :feed :event :conflict/settle :target :settled :checks [settle-check]}
+     (dsl/act {:sova/feed :feed :sova/asks-overseer true :event :conflict/settle :target :settled :checks [settle-check]}
        (script {:expr (fn [_ d] ((settle-ops (if (:statement (e d)) "neither" (:keep (e d))) (:decision-id (e d))) d))})
        (script {:expr (fn [_ d] [(ops/assign :asking (:baton-session-id d))])})
        (script {:expr (fn [_ d] [(ops/assign :baton-session-id nil)])})

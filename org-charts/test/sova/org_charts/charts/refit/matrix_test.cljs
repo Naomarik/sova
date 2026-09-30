@@ -80,6 +80,7 @@
      "^Give a summary of what was established\\.$" "^by must be a whole number from 1 to 1000$"
      "^A conversation's limit is at most 1000 messages \\(it is \\d+ now\\)\\.$" "^You are no longer taking part in this conversation\\.$"
      "^Someone else is answering right now\\.$" "^It's not your turn anymore\\.$" "^This offer has not reached you yet\\.$" "^.* holds the baton\\. Take it back to write\\.$"
+     "^.* already has an open build \\(\".*\"\\): merge it or remove its worktree first; a decision promoted since is built after\\.$"
      "^Only the operator sets the company's working hours\\.$" "^tz must be an IANA time zone, like Europe/Istanbul$"
      "^The baton is offered to people right now\\. Take it back to write\\.$" "^Give the area, the statement and their exact words\\.$"
      "^\".*\" is not an owner area\\. Use one of: .* or \"none\"\\.$" "^The wrap-up is already running\\.$"
@@ -140,7 +141,7 @@
 (def names {"p1" "Ana" "p2" "Bob"})
 
 (deftest person-matrix
-  (let [person (fn [status extra] {:org-id "o1" :id "p1" :person (merge {:name "Ana" :status status :role "R" :contact {:email "a@b.co"}} extra) :changed [] :by {:kind "operator"}})
+  (let [person (fn [status extra] {:org-id "o1" :id "p1" :person (merge {:name "Ana" :status status :role "R" :contact {:email "ana@example.test"}} extra) :changed [] :by {:kind "operator"}})
         referral {:why "w" :referred-by "p2"}]
     (clean! "person"
       (run "person" "person/o1/p1"

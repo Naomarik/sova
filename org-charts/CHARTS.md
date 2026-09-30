@@ -55,13 +55,22 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
   envelope's records and their `link/moved`), ONE re-armed timer `offer-reach` (`dsl/timer-at`) at the
   next waiting window; entering `pool` reaches (a new offer, a lapse), `offer/reach` fires it, an
   invitee's hours edit re-reckons; a `mint-link {offer-id person-id n key}`
-  per invitee as reached, keyed `reach/<offer>/<pid>` (`via "act"` in the offer's own step, `via "reach"` after it) (no `mint-links` for an offer; an offer the operator makes, or one in a turn they started, reaches everyone at once: `:at-once`). Only the reached may claim ("This offer has not
+  per invitee reached in the offer's own step, keyed `reach/<offer>/<pid>` (a later reach only marks
+  them reached: coordinator-50) (no `mint-links` for an offer; an offer the operator makes, or one in a turn they started, reaches everyone at once: `:at-once`). Only the reached may claim ("This offer has not
   reached you yet."). Rule 12: `leased` pauses it (timer stopped, nobody reached); a lapse resumes it;
   the offer ending (`offered` exit) stops it for good. Tests: `reach_test` (scope tests 1–8, 12),
   `baton-matrix-an-offer-in-hours`.
+- **r14 (narrows R3; q12)**: every transition that sends the watch a reason declares
+  `:sova/asks-overseer` (true · false · `:unwritten-false` · `:unless-auto-promoted` · a map kind → rule);
+  the reason carries the resolved `:asks`; the watch (`own-act?`) looks for chart news only when it asks.
+  True: a conflict to route, a resolved conflict, drafted decisions the chart won't promote itself, a
+  gathering someone wrote in closed, a review, a stall, sessions' news; false: the chart's own
+  promotion, its close of its own unwritten gathering. (The operator's merge keeps master's reason.) Tests: `asks_test` (none undeclared; golden
+  `asks_golden`), `asks_rules_test` (both branches of each rule, the watch waking or not).
 - **r13 company hours (q16)**: org `org/hours {tz hours}` (operator only, a person's validation;
   exported); each person watches its org and exports `effective-hours` (`rules/hours effective`: own,
-  else the company's, else nil = always in hours) and `hours-inherited` (one quiet eventless transition
+  else the company's, else nil = always in hours; zone and hours as a pair), `hours-inherited` and
+  `hours-from` (own · company · none) (one quiet eventless transition
   keeps them current); a baton re-reckons an open offer's reach from an invitee's `effective-hours`, so
   a company edit re-arms reach timers; hours waits are re-armed by the host (`sova/rewindow`, engine).
   Looks and held acts that reach nobody read no hours. Tests: `company_hours_test`.
@@ -84,7 +93,7 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
 Tests: `test/sova/org_charts/charts/refit/` — `host.cljc` (a deterministic JVM/Node host: the real
 processor, a virtual clock, the engine's level and `:pre` checks; hosts are values) and one test
 namespace per chart group. Run on the JVM:
-`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test 'sova.org-charts.charts.refit.hours-test 'sova.org-charts.charts.refit.decision-results-test 'sova.org-charts.charts.refit.server4-findings-test 'sova.org-charts.charts.refit.started-test 'sova.org-charts.charts.refit.pins-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
+`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test 'sova.org-charts.charts.refit.hours-test 'sova.org-charts.charts.refit.decision-results-test 'sova.org-charts.charts.refit.server4-findings-test 'sova.org-charts.charts.refit.started-test 'sova.org-charts.charts.refit.pins-test 'sova.org-charts.charts.refit.reach-test 'sova.org-charts.charts.refit.company-hours-test 'sova.org-charts.charts.refit.asks-rules-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
 `pins_test` holds the pins for chart mutants that survived verifier-2's run2 (each assertion names its mutant id).
 The engine-level tests (`*_test.cljs`: matrix per chart and per baton start kind, registry, feed, holds,
 world) run in the shadow `:test` build. The whole CLJS suite (engine + charts, JVM-free under Node):

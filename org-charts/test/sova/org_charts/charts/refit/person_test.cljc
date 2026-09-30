@@ -8,7 +8,7 @@
     [sova.org-charts.charts.rules.person :as rp]))
 
 (def op {:by "operator"})
-(def ana {:name "Ana Ruiz" :status "active" :role "CFO" :decides ["payroll"] :contact {:email "ana@x.co"}})
+(def ana {:name "Ana Ruiz" :status "active" :role "CFO" :decides ["payroll"] :contact {:email "ana@example.test"}})
 (def referral {:why "Knows invoicing" :referred-by "p_bob00000" :session-id "s1" :quote "Ask Carla"})
 (def carla {:name "Carla Diaz" :status "proposed" :role "Accountant" :contact {:phone "+57 300 123 4567"} :referral referral})
 
@@ -84,7 +84,7 @@
   (is (= "competence.go must be {level 1–5, n ≥ 0}" (:sentence (rp/clean-field :competence {"go" {:level 7 :n 1}}))))
   (is (= ["the email is not an email address" "the phone is not a phone number" "the other channel names no handle or number"]
          (rp/contact-problems {:email "ask tony" :phone "12" :other "ask tony"})))
-  (is (= [] (rp/contact-problems {:email "a@b.co" :whatsapp "+1 (555) 123-4567" :other "Slack: @bob"})))
+  (is (= [] (rp/contact-problems {:email "ana@example.test" :whatsapp "+1 (555) 123-4567" :other "Slack: @bob"})))
   (is (= "A referral may only create a proposed person." (:sentence (rp/apply-change nil {:name "X" :status "active"} "referral" #{}))))
   (is (= "Not recorded yet: still missing a real contact channel (the phone is not a phone number; never write a placeholder). Ask Bob for it, then call propose_roster_edit again with everything."
          (:sentence (rp/referral-refusal {:name "C" :role "R" :contact {:phone "ask"} :why "w" :quote "q"} nil "Bob"))))
@@ -133,7 +133,7 @@
       (let [z (h/send! y sid :person/edit (assoc op :patch {:tz "" :hours nil}))]
         (is (= "" (:tz (h/data z sid))))
         (is (nil? (:hours (h/data z sid))))))
-    (is (= [:name :decides :referral :status :tz :hours :effective-hours :hours-inherited] (:exported person/entry)) "the hours checks read them")))
+    (is (= [:name :decides :referral :status :tz :hours :effective-hours :hours-inherited :hours-from] (:exported person/entry)) "the hours checks read them")))
 
 (deftest r7-reverting-hours-and-zone
   ;; server-6/ui: "hours — → Mon–Fri 09:00–17:00" (from absent), Revert → it clears (never a 400)

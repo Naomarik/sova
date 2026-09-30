@@ -104,6 +104,12 @@
 (defn inherited? "Their effective hours are the company's." [person company]
   (and (not (own-hours? person)) (own-hours? company)))
 
+(defn hours-from
+  "Which hours `effective` used: \"own\", \"company\" or \"none\" (always in hours). The zone and the
+   hours go together: a zone of their own without hours takes the company's pair."
+  [person company]
+  (cond (own-hours? person) "own" (own-hours? company) "company" :else "none"))
+
 (defn next-window
   "When an act that reaches this person may go: nil when they have no zone or hours (as today) or
    `now` is inside a window; else the instant (ms) their next window opens."

@@ -1,7 +1,8 @@
 (ns sova.org-charts.charts.refit.reach-test
   "r12 (q15 = C, offer-delivery-scope.md §7 tests 1–8 and rule 12): an offer reaches each invitee only
-   in their own hours, one re-armed reach timer per offer, links minted per invitee as each is
-   reached, only the reached may claim, and reaching pauses while the offer is held."
+   in their own hours, one re-armed reach timer per offer, a link minted per invitee reached in the
+   offer's own step (a later reach only marks them reached), only the reached may claim, and reaching
+   pauses while the offer is held."
   (:require
     #?(:clj [clojure.test :refer [deftest is testing]] :cljs [cljs.test :refer-macros [deftest is testing]])
     [sova.org-charts.charts.refit.host :as h]
@@ -40,14 +41,12 @@
     (is (= wed-03 (get-in (o x) [:reach "p2" :next])))
     (is (= ["p1" "p3"] (minted x)) "a link per reached invitee, none for Bo")
     (is (= "reach/off_s1_1/p1" (:key (first (filter #(= "mint-link" (:kind %)) (h/outbox x sid))))))
-    (is (every? #(= "act" (:via %)) (filter #(= "mint-link" (:kind %)) (h/outbox x sid))) "reached in the offer's own step: via act, minted and shown by its caller")
     (is (not (some #{"mint-links"} (h/kinds x sid))) "no link for everyone at once")
     (is (= [[:offer/reach wed-03]] (reach-timers x)) "one timer, at Bo's window")
     (let [y (h/advance! x (- wed-03 t0))]
       (is (= "reached" (state-of y "p2")) "his window opens: reached")
       (is (= wed-03 (get-in (o y) [:reach "p2" :at])))
-      (is (= ["p1" "p3" "p2"] (minted y)))
-      (is (= "reach" (:via (last (filter #(= "mint-link" (:kind %)) (h/outbox y sid))))) "coordinator-49: the timer's reach says via reach (the link is made on the operator's send)")
+      (is (= ["p1" "p3"] (minted y)) "coordinator-50: a reach after the offer's own step mints nothing; Needs you asks the operator to send Bo's link")
       (is (empty? (reach-timers y)) "nobody waits: no timer"))))
 
 (deftest t2-the-offer-act
@@ -91,7 +90,7 @@
     (testing "his hours cleared: always in hours, reached at once"
       (let [y (person x (dissoc bo :hours :tz))]
         (is (= "reached" (state-of y "p2")))
-        (is (= ["p1" "p3" "p2"] (minted y)))
+        (is (= ["p1" "p3"] (minted y)) "reached, no link minted (not the offer's own step)")
         (is (empty? (reach-timers y)))))
     (testing "Bo leaves: the offer goes back to the operator (as today) and nobody is reached after"
       (let [y (person x bo [:person :left])]
@@ -112,8 +111,7 @@
       (let [lapsed (h/advance! during (* 10 minute))]                 ; 03:10: the lease lapses (15 min)
         (is (h/in? lapsed sid :pool))
         (is (= "reached" (state-of lapsed "p2")) "the lease lapsed: reaching resumes, Bo is in hours")
-        (is (some #{"p2"} (minted lapsed)))
-        (is (= "reach" (:via (last (filter #(= "mint-link" (:kind %)) (h/outbox lapsed sid))))) "a lapse's reach: via reach too")))
+        (is (not (some #{"p2"} (minted lapsed))) "a lapse's reach mints nothing either")))
     (testing "a lapse while Bo is out of hours: he waits for his next window"
       (let [late (-> (offer) (h/advance! (+ (- wed-03 t0) (* 7 hour) (* 50 minute)))) ; 10:50 Wed: Bo reached at 03:00
             fresh (offer {:targets ["p1" "p4"] :target-people [ana (assoc bo :id "p4")]})

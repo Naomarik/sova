@@ -101,7 +101,7 @@
 
 (defn- reason [kind params-fn]
   (b/tell-watch (fn [d] (when-let [p (params-fn d)]
-                          {:kind kind :params (assoc p :item (:idea-id d)) :key (str kind ":" (:id d) "@" (b/now-ms d))}))))
+                          {:kind kind :params (assoc p :item (:idea-id d)) :key (str kind ":" (:id d) "@" (b/now-ms d)) :asks true}))))
 
 (defn- to-phase [here targets phase-fn]
   (for [t targets :when (not= t here)]
@@ -368,7 +368,7 @@
         ;; ── attention ─────────────────────────────────────────────────────────────────────────────
         (state {:id :attention :initial :calm}
           (state {:id :calm}
-            (transition {:sova/feed :feed :event :item/stalled
+            (transition {:sova/feed :feed :sova/asks-overseer true :event :item/stalled
                          :cond (fn [env d] (let [p (:phase (e d))]
                                              (or (= p (:phase d))
                                                  (and (str/starts-with? (str p) "follow-up") (b/in? env (keyword p))))))
@@ -406,6 +406,10 @@
       (= event :item/hold) (str gap " is already on hold.")
       (= event :item/resume) (str gap " is not on hold.")
       (contains? config :on-hold) (str gap " is on hold: only the operator resumes it.")
+      ;; one open build per gap (ui-2's walk: the old sentence read as stale)
+      (and (= event :build/start) (some config [:build-starting :working :idle :failed]))
+      (str gap " already has an open build (\"" (or (some #(not-empty (:title (ri/ex %))) (remove ri/build-landed? (ri/live-builds data))) "its build")
+           "\"): merge it or remove its worktree first; a decision promoted since is built after.")
       (= event :build/start) (str gap " has no promoted decision to build yet.")
       (= event :correct/reopen) (str gap " is not done.")
       (= event :correct/skip-stall) (str gap " is not waiting on a start.")

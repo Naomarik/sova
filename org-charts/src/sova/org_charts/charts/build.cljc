@@ -152,7 +152,7 @@
                                          (dsl/effect-ops d (dsl/effect-map :worktree-note (fn [_] {:text (commit-paragraph d)}) d))))}))
             ;; its mode could not be set: started, not prompted (master); the overseer is told, since a
             ;; build the chart started has no caller to answer
-            (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "set-mode") :target :ready}
+            (transition {:sova/feed :feed :sova/asks-overseer true :event :effect/failed :cond (done-kind? "set-mode") :target :ready}
               (script {:expr (fn [_ d] [(ops/assign :mode-not-set (or (:detail (e d)) true))])})
               (b/tell-watch (fn [d] (when-not (lv/blank? (:prompt d))
                                       {:kind "build/not-prompted" :by "system" :params {:title (shown-title d) :session-id (:session-id d)}
@@ -169,16 +169,16 @@
           (state {:id :turn-idle} (region :turn "idle")
             (transition {:sova/feed :quiet :event :turn/started :target :working}))
           (state {:id :working} (region :turn "working")
-            (transition {:sova/feed :quiet :event :turn/ended :cond (fn [_ d] (true? (:failed (e d)))) :target :turn-failed}
+            (transition {:sova/feed :quiet :sova/asks-overseer true :event :turn/ended :cond (fn [_ d] (true? (:failed (e d)))) :target :turn-failed}
               (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
-              (b/send-if :reason/noted (fn [d] (when (coding? d) (b/watch-sid (:org-id d) (:project-id d))))
-                (fn [d] {:kind "coding/settled" :params {:title (shown-title d) :failed true :session-id (:session-id d)} :by "system"
-                         :key (str "coding/settled:" (:session-id d) ":failed")})))
-            (transition {:sova/feed :quiet :event :turn/ended :target :turn-idle}
+              (b/tell-watch (fn [d] (when (coding? d)
+                                      {:kind "coding/settled" :params {:title (shown-title d) :failed true :session-id (:session-id d)} :by "system"
+                                       :key (str "coding/settled:" (:session-id d) ":failed")}))))
+            (transition {:sova/feed :quiet :sova/asks-overseer true :event :turn/ended :target :turn-idle}
               (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
-              (b/send-if :reason/noted (fn [d] (when (coding? d) (b/watch-sid (:org-id d) (:project-id d))))
-                (fn [d] {:kind "coding/settled" :params {:title (shown-title d) :failed false :session-id (:session-id d)} :by "system"
-                         :key (str "coding/settled:" (:session-id d) ":ok")}))))
+              (b/tell-watch (fn [d] (when (coding? d)
+                                      {:kind "coding/settled" :params {:title (shown-title d) :failed false :session-id (:session-id d)} :by "system"
+                                       :key (str "coding/settled:" (:session-id d) ":ok")})))))
           (state {:id :turn-failed} (region :turn "failed")
             (transition {:sova/feed :quiet :event :turn/started :target :working})))
 
@@ -206,20 +206,20 @@
                                                             root-check busy-check]}
               (dsl/effect :remove-worktree (fn [d] {:branch (:branch d) :merged (= "merged" (:branch-state d))}))))
           (state {:id :merging}
-            (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "merge") :target :merge-idle}
+            ;; the operator's merge: master's reason (the overseer can't see it otherwise)
+            (transition {:sova/feed :feed :sova/asks-overseer true :event :effect/done :cond (done-kind? "merge") :target :merge-idle}
               (script {:expr (fn [_ d] [(ops/assign :merged {:at (b/now-ms d) :commit (:commit (result d))})
                                         (ops/assign :merge-refused nil)])})
-              (b/send-if :reason/noted (fn [d] (b/watch-sid (:org-id d) (:project-id d)))
-                (fn [d] {:kind "build/merged" :params {:title (shown-title d) :branch (:branch d) :target (:target d)} :by "operator"
-                         :key (str "build/merged:" (:session-id d) "@" (:commit (result d)))}))
+              (b/tell-watch (fn [d] {:kind "build/merged" :params {:title (shown-title d) :branch (:branch d) :target (:target d)} :by "operator"
+                                     :key (str "build/merged:" (:session-id d) "@" (:commit (result d)))}))
               (b/send-if :milestone/noted (fn [d] (b/project-sid (:org-id d) (:project-id d))) (fn [_] {:kind "build-merged"})))
             ;; git refused (the reason in today's words): the overseer is told unless it is about the
             ;; root's own checkout (the operator's to fix)
-            (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "merge") :target :merge-idle}
+            (transition {:sova/feed :feed :sova/asks-overseer true :event :effect/failed :cond (done-kind? "merge") :target :merge-idle}
               (script {:expr (fn [_ d] [(ops/assign :merge-refused (:detail (e d)))])})
-              (b/send-if :reason/noted (fn [d] (when-not (str/starts-with? (str (:detail (e d))) "The project root") (b/watch-sid (:org-id d) (:project-id d))))
-                (fn [d] {:kind "build/merge-refused" :params {:title (shown-title d) :reason (:detail (e d))} :by "operator"
-                         :key (str "build/merge-refused:" (:session-id d) ":" (:detail (e d)))})))))))))
+              (b/tell-watch (fn [d] (when-not (str/starts-with? (str (:detail (e d))) "The project root")
+                                      {:kind "build/merge-refused" :params {:title (shown-title d) :reason (:detail (e d))} :by "operator"
+                                       :key (str "build/merge-refused:" (:session-id d) ":" (:detail (e d)))}))))))))))
 
 (def acts
   {:build/prompt          {:needs "L3" :tool "sova_send" :code-facing true :counts "prompt" :hold true :confirm-kind "prompt"

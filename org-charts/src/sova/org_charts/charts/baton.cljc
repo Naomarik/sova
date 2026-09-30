@@ -132,7 +132,8 @@
 
 (defn reach-ops
   "Bring the current offer's reaching up to date at now (`d` as it will be): reach whoever waiting
-   is in hours (a `mint-link` each, keyed per invitee, unless the offer mints none), and re-arm the
+   is in hours (in the offer's own step a `mint-link` each, keyed per invitee, unless the offer mints
+   none; later, only marked reached), and re-arm the
    one reach timer at the next waiting invitee's window. Held, nobody is reached and the timer stops
    (rule 12). An offer from before r12 (no `:reach`) is left alone: it reached everyone."
   [d]
@@ -142,15 +143,14 @@
             d2 (assoc d :offers (mapv #(if (= (:id %) (:id o)) offer %) (:offers d)))]
         (vec (concat
           [(ops/assign :offers (:offers d2))]
-          (when (and (:mint? o) (seq reached))
+          ;; a link only in the offer's own step, whose caller shows it; one reached later (its timer, a
+          ;; lapse, an hours edit) is only marked reached, and Needs you asks the operator to send it
+          ;; (coordinator-50: no mint after that step)
+          (when (and (:mint? o) (seq reached) (not (later-reach? d2)))
             [(ops/assign :outbox (into (vec (:outbox d2))
                                    (for [pid reached]
-                                     ;; via "act": the offer's own step, whose caller shows the link; via "reach": later
-                                     ;; (its timer, a lapse, an hours edit), no caller, so none is minted until the
-                                     ;; operator sends it (coordinator-49)
                                      (dsl/effect-map :mint-link (fn [_] {:n (:n o) :offer-id (:id o) :person-id pid
-                                                                        :key (str "reach/" (:id o) "/" pid)
-                                                                        :via (if (later-reach? d2) "reach" "act")}) d2))))])
+                                                                        :key (str "reach/" (:id o) "/" pid)}) d2))))])
           (dsl/timer-at-ops d2 reach-timer :offer/reach at {:offer-id (:id o)})))))))
 
 (defn- reach-now [] (script {:expr (fn [_ d] (reach-ops d))}))
@@ -162,11 +162,23 @@
                                [(ops/assign :watching (into (vec (:watching d)) new))
                                 (ops/assign :sova/directives (into (vec (:sova/directives d)) (for [p new] {:op :watch :target (b/person-sid (:org-id d) p)})))])))}))
 
-(defn- reason [kind params-fn & {:keys [soon-only-own]}]
+(defn asks?
+  "r14: a baton reason's `:sova/asks-overseer` rule, resolved: true, or `:unwritten-false` (a gathering
+   closed asks the overseer only when someone wrote in it; the chart closing its own unwritten one is
+   feed only)."
+  [rule d]
+  (case rule
+    :unwritten-false (some? (:person-wrote-at d))
+    (true? rule)))
+
+(defn- reason
+  "A reason to the project's watch; `asks` is its transition's `:sova/asks-overseer` rule (r14)."
+  [kind asks params-fn]
   (b/tell-watch (fn [d] (let [params (params-fn d)]
                           (when params
                             {:kind kind :params (assoc params :title (:public-title d) :session-id (:session-id d))
-                             :key (str kind ":" (:session-id d) (when-let [k (:key params)] (str ":" k)))})))))
+                             :key (str kind ":" (:session-id d) (when-let [k (:key params)] (str ":" k)))
+                             :asks (asks? asks d)})))))
 
 (defn owned-by-overseer? [d] (map? (:owner d)))
 
@@ -434,7 +446,7 @@
                  :content (fn [_ d] {:delay-ms 2000 :by "sova" :owner (:owner d) :settle (:session-id d)})})))
       (apply dsl/act {:sova/feed :feed :event :baton/record-decision :checks record-checks} (record-content))
 
-      (dsl/act {:sova/feed :feed :event :baton/propose :checks [(fn [d] (when (rb/ended? d) (r/refuse 409 (str "This conversation is " (:course d) "."))))
+      (dsl/act {:sova/feed :feed :sova/asks-overseer true :event :baton/propose :checks [(fn [d] (when (rb/ended? d) (r/refuse 409 (str "This conversation is " (:course d) "."))))
                                               (fn [d] (rp/referral-refusal (e d) (:same (e d)) (rb/name-of d (or (:holder d) operator))))
                                               (fn [d] (let [c (rp/apply-change nil (merge (select-keys (e d) [:name :role :contact :decides])
                                                                                          {:status "proposed" :referral {:why (:why (e d)) :referred-by (or (:holder d) operator)
@@ -451,7 +463,7 @@
                                     {:org-id (:org-id d) :id (:person-id ev) :person person :changed changed
                                      :by {:kind "referral" :session-id (:session-id d) :quote (:quote ev)}}))})
         (entry-effect "proposal" (fn [d] {:person-id (:person-id (e d)) :name (:name (e d)) :role (:role (e d)) :why (:why (e d)) :by (or (:holder d) operator)}))
-        (reason "baton/proposal" (fn [d] {:key (:person-id (e d))})))
+        (reason "baton/proposal" true (fn [d] {:key (:person-id (e d))})))
 
       (dsl/act {:sova/feed :feed :event :baton/hide :checks [(lv/invalid-check b/evt)]}
         (script {:expr (fn [_ d] [(ops/assign :hidden-from-owner (true? (:hidden (e d))))])}))
@@ -482,23 +494,23 @@
             (move-transitions)
             (cascade-move)
             ;; goal_done: the model's own, inside its turn
-            (dsl/act {:sova/feed :feed :event :baton/goal-done :target :done :checks [(mk rb/goal-done-refusal)]}
+            (dsl/act {:sova/feed :feed :sova/asks-overseer true :event :baton/goal-done :target :done :checks [(mk rb/goal-done-refusal)]}
               (revoke-withdrawn)
               (script {:expr (fn [_ d] (ended-ops d))})
               (entry-effect "done" (fn [d] {:summary (str/trim (:summary (e d)))}))
-              (reason "baton/done" (fn [d] (when-not (:hidden-from-owner d) {})))
+              (reason "baton/done" true (fn [d] (when-not (:hidden-from-owner d) {})))
               (Send {:event :milestone/noted :targetexpr (fn [_ d] (b/project-sid (:org-id d) (:project-id d)))
                      :content (fn [_ d] {:kind "baton-done" :shown (not (:hidden-from-owner d))})}))
-            (dsl/act {:sova/feed :feed :event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
+            (dsl/act {:sova/feed :feed :sova/asks-overseer :unwritten-false :event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
               (script {:expr (fn [_ d] (ended-ops d))})
               (dsl/effect :revoke-links (fn [_] {:all true :why "closed"}))
-              (reason "baton/closed" (fn [_] {})))
+              (reason "baton/closed" :unwritten-false (fn [_] {})))
             ;; hand_to: the model's own, inside its turn (no link is minted)
-            (dsl/act {:sova/feed :feed :event :baton/hand-to :target :with-operator :checks [(mk rb/hand-to-refusal)]
+            (dsl/act {:sova/feed :feed :sova/asks-overseer true :event :baton/hand-to :target :with-operator :checks [(mk rb/hand-to-refusal)]
                       :cond (fn [_ d] (= operator (get-in (e d) [:target :id])))}
               (revoke-withdrawn)
               (script {:expr (fn [_ d] (move-ops d operator (str/trim (:question (e d))) (:briefing (e d))))})
-              (reason "baton/asked-operator" (fn [d] (when (owned-by-overseer? d) {:question (:question (e d)) :key (count (:handoffs d))}))))
+              (reason "baton/asked-operator" true (fn [d] (when (owned-by-overseer? d) {:question (:question (e d)) :key (count (:handoffs d))}))))
             (dsl/act {:sova/feed :feed :event :baton/hand-to :target :with-person :checks [(mk rb/hand-to-refusal)]}
               (revoke-withdrawn)
               (script {:expr (fn [_ d] (move-ops d (get-in (e d) [:target :id]) (str/trim (:question (e d))) (:briefing (e d))))})
@@ -547,10 +559,10 @@
           (state {:id :done}
             (set-course "done")
             (reconcile-when-ended)
-            (dsl/act {:sova/feed :feed :event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
+            (dsl/act {:sova/feed :feed :sova/asks-overseer :unwritten-false :event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
               (script {:expr (fn [_ d] (ended-ops d))})
               (dsl/effect :revoke-links (fn [_] {:all true :why "closed"}))
-              (reason "baton/closed" (fn [_] {}))))
+              (reason "baton/closed" :unwritten-false (fn [_] {}))))
           (state {:id :closed}
             (set-course "closed")
             (reconcile-when-ended)))

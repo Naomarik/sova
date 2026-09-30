@@ -55,6 +55,18 @@
               (testing "a newer decision reopens it"
                 (is (h/in? (decision m "d2" "pending") sid :unreconciled))))))))))
 
+(deftest one-open-build-per-gap
+  ;; ui-2's walk: with a build open, a new build is refused with a sentence that says why
+  (let [p (-> (start) (watch-at "L0") (baton 1 [:done] :decisions ["d1"]) (decision "d1" "promoted"))
+        open (build p 1 [:turn-idle :unmerged] :title "Build §gap/invoicing")
+        ask {:by "operator" :session-id "c9"}]
+    (is (h/in? open sid :idle))
+    (is (= "§gap/invoicing already has an open build (\"Build §gap/invoicing\"): merge it or remove its worktree first; a decision promoted since is built after."
+           (h/refusal (decision open "d2" "promoted") sid :build/start ask)))
+    (is (= "§gap/invoicing has no promoted decision to build yet." (h/refusal (start) sid :build/start ask)) "nothing promoted: as before")
+    (is (nil? (h/refusal (-> (build p 1 [:turn-idle :merged] :title "Build §gap/invoicing") (decision "d2" "promoted")) sid :build/start ask))
+        "merged: a new build for the newer decision may start")))
+
 (deftest follows-a-superseding-winner
   ;; server-6's syn-conflict-two-gaps: a settle answers with another gap's decision; this item follows it
   (let [y (-> (start) (watch-at "L0") (baton 1 [:done] :decisions ["d1"]) (decision "d1" "conflict"))

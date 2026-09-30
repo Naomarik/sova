@@ -84,11 +84,12 @@ Start: `{orgId, id, person (cleaned), changed [{field,from,to}], by: ChangeBy}` 
 
 Effects: `roster-history {personId, lines, by, revertOf?}` (the host appends with a unique `at`),
 `revoke-person-links {personId}` (entry of `left`). Exported: `name, decides, referral, status, tz, hours,
-effectiveHours, hoursInherited`.
+effectiveHours, hoursInherited, hoursFrom`.
 
 r13: the person watches its org (`link/moved` from `org/<org>`: the company's `tz, hours`) and exports
 `effectiveHours` = `rules.hours/effective [person company]` (own when valid, else the company's, else
-null = always in hours) and `hoursInherited` (they are the company's). A baton reads an invitee's
+null = always in hours; zone and hours go as a pair), `hoursInherited` (they are the company's) and
+`hoursFrom` ("own" | "company" | "none"). A baton reads an invitee's
 `effectiveHours` from their `link/moved`, so a company edit reaches every open offer's reach.
 
 r7 working hours: `person/edit {patch {tz, hours}}` (the operator's; history lines like contact, not
@@ -169,8 +170,8 @@ person (unless `mintLink: false` or to the operator); an offer mints per invitee
 
 Effects: `baton-entry {type: handoff|offer|lease|done|proposal, …}` (the transcript entry), `mint-link
 {n, personId}` (a hand-off) or `{n, offerId, personId, key: "reach/<offerId>/<personId>" (the host sees it as `chartKey`)}` (an offer's
-invitee, once, when reached: r12; `via: "act"` in the offer's own step, whose caller shows the link, or
-`via: "reach"` after it, by its timer, a lapse or an hours edit: nothing is minted until the operator sends it), `mint-links {n}`, `revoke-links {all|offerId, why}`, `stop-reply`.
+invitee reached in the offer's own step, whose caller shows the link: r12; one reached later, by its timer,
+a lapse or an hours edit, is only marked reached, no effect: Needs you asks the operator to send it), `mint-links {n}`, `revoke-links {all|offerId, why}`, `stop-reply`.
 An offer's `reach {personId {state: waiting|reached, at?, next?}}` is in `offers[]` (exported).
 Exported: `course, holder, needsYou, offerId, offers, wroteAt, owner, conflict, decisions, publicTitle,
 budget, hiddenFromOwner, wrapup, handoffs, participants, reply, createdAt, closedAt`.
@@ -239,8 +240,12 @@ Exported: `…, turn, workers, running, tree, branchState, merged, lastTurnAt`.
 
 `reason/noted {kind, params, key, by}`; kinds and sentences in `reasons.cljc`: baton/done, baton/closed,
 baton/proposal, baton/asked-operator, reconcile/{conflict,resolved,drafted,promoted}, coding/settled,
-build/merged, build/merge-refused, held/{looks,day,message,raised}, item/{stalled,built}, hold/review.
-`key` is typed (C3). A reason sent in a step whose event is `by` chart (r3, a drive) says `by: chart`,
-and the watch never looks for it (R3): it starts no look and uses none, and reaches the overseer as
-the next look's feed. item/answered-nothing and item/reopened are feed entries only, never sent (R4);
+build/not-prompted, build/merged, build/merge-refused, held/{looks,day,message,raised}, item/{stalled,built}, hold/review.
+`key` is typed (C3). A reason sent in a step whose event is `by` chart (r3, a drive) says `by: chart`.
+r14 (narrowing R3): every reason carries `asks` (bool), resolved from its transition's declaration
+`:sova/asks-overseer` (true, false, `:unwritten-false`: a closed gathering asks only when someone wrote in
+it; `:unless-auto-promoted`: drafted decisions ask unless the chart promotes them itself, i.e. L2 in force
+at the request and every one in its author's area; or a map of kind → rule). The watch looks for chart
+news only when it asks (then it wakes and counts, as on master); chart news that asks nothing starts no
+look, uses none, and reaches the overseer as the next look's feed. item/answered-nothing and item/reopened are feed entries only, never sent (R4);
 their sentences stay in `reasons.cljc` for older rows.

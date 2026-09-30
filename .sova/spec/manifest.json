@@ -1553,8 +1553,11 @@
     },
     "§workspace.groups/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/App.tsx"
+      ]
     },
     "§workspace.groups/announcements": {
       "kind": "behavior",
@@ -1563,7 +1566,7 @@
     },
     "§workspace.groups/classes": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/data": {
@@ -1659,7 +1662,10 @@
     "§workspace/groups": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/GroupView.tsx"
+      ]
     },
     "§chat.transcript/setup-card-figures": {
       "kind": "behavior",
@@ -8957,6 +8963,28 @@
         "pi-config/extensions/provider-limits/stream.ts",
         "pi-config/extensions/provider-limits/README.md",
         "pi-config/README.md"
+      ]
+    },
+    "§workspace.groups/send-all-mode": {
+      "kind": "behavior",
+      "requires": [
+        "§workspace.groups/the-group-composer",
+        "§workspace.groups/layout-tabs",
+        "§workspace.groups/shell",
+        "§workspace.groups/announcements",
+        "§design.copy-deck/workspace"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/GroupView.tsx",
+        "src/components/GroupComposer.tsx",
+        "src/lib/group-layout.ts",
+        "src/lib/group-layout.test.ts",
+        "src/lib/ui-state.ts",
+        "src/App.tsx",
+        "src/app.css",
+        "src/components/Composer.tsx"
       ]
     }
   },

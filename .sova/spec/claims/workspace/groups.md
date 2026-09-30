@@ -4,7 +4,8 @@
 A group stops being only a section in the sidebar and becomes a place you can open. The
 **workspace** is a second view over the groups that already exist (§app.session-list/groups): every member of
 one group side by side, each one a whole chat — its own transcript, its own composer, its own
-socket — plus one composer at the foot that writes to all of them at once.
+socket. Switch on **Send to All** and one composer at the foot takes the place of every pane's
+own, writing to all of them at once.
 
 It answers the question the sidebar can't: *what did all of these say to the same prompt?*
 Fanout (§workspace/fanout) is how a group full of members gets made in one gesture; this file is the surface
@@ -24,6 +25,7 @@ a group, and no group that can't be opened as a workspace.
 | Split is one horizontal row that scrolls | No grid, no tiling, no cap on how many members a group holds. A pane never goes under 440px |
 | Every pane stays mounted, including hidden tabs | A member that streams while you read another one must not lose its turn. Tabs hide, they don't unmount |
 | One group composer, all members, all-or-nothing | A shared follow-up is a single server-side batch. If one member can't take it, none of them do, and the refusal names each one |
+| The group composer is a mode, off by default | A workspace opens with each member's own composer and nothing else at the foot. `Send to All` in the head swaps every pane composer for the one group composer, and its `×` swaps them back. There is one kind of composer on screen at a time, never two rows of them |
 | The pre-check is also what makes this surface testable for nothing | A refused batch has no side effects, so the whole refusal path — parsing, the banner, every member named in Sova's words, `Send to the Rest`, the draft surviving — can be exercised against a real server with **zero model calls**, e.g. by a group whose members are all TUI-live. A transactional design would have something to undo on every run. Noted beside the decision because it is a property of it, not a testing trick |
 | All-or-nothing is a **pre-check**, not a transaction | The server checks every member before it prompts any of them, so the refusal is complete and nothing is half-sent by our own doing. A member lost *between* the check and the send (a TUI grabs it in the same second) makes the batch partial, and we say so — a prompt a model is already answering cannot be recalled, and claiming otherwise would be the one lie this surface can't afford |
 | Promote removes from the group; Eliminate removes and archives | Neither deletes a transcript. Both are the group's writes, never the session file's |
@@ -119,10 +121,12 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 `.session-head`, no single-session composer.
 
 ```html
+<!-- Send to All on; off, "Skip to Transcript" at the focused pane (see Accessibility) -->
 <a class="button skip-link" href="#group-composer">Skip to Group Composer</a>
 <div class="app" data-view="workspace">
   <aside class="app-sidebar" aria-label="Sessions">…§app/session-list…</aside>
-  <main class="workspace" aria-label="Workspace: Fanout · retry backoff">
+  <!-- data-send-all only while Send to All is on -->
+  <main class="workspace" aria-label="Workspace: Fanout · retry backoff" data-send-all="true">
     <header class="workspace-head">
       <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…chevron-left…</a>
       <div class="workspace-head-main">
@@ -137,6 +141,8 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
       <span class="chip chip-count workspace-promoted">Promoted: Retry with jitter
         <button type="button" class="button button-sm button-ghost">Add Back</button></span>
       <button type="button" class="button button-sm button-ghost" aria-pressed="false">Tabs</button>
+      <!-- at every width of 640px and up; see §workspace.groups/send-all-mode -->
+      <button type="button" class="button button-sm button-ghost workspace-send-all" aria-pressed="true">Send to All</button>
       <button type="button" class="button button-sm button-ghost workspace-align">…branch… Align to Fork</button>
       <button type="button" class="button button-sm button-ghost">Add Members</button>
       <button type="button" class="button button-sm button-ghost">Dissolve</button>
@@ -161,11 +167,13 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
                   aria-haspopup="menu" aria-label="Pane actions · control · claude-opus-5">…more…</button>
         </header>
         <div class="workspace-pane-body">…§chat/transcript transcript, with pane-scoped ids…</div>
-        <footer class="composer workspace-pane-composer" data-collapsed="true">…§chat/composer, collapsed…</footer>
+        <!-- mounted always; not displayed while Send to All is on -->
+        <footer class="composer workspace-pane-composer">…§chat/composer…</footer>
       </section>
       …one per member…
     </div>
 
+    <!-- mounted always (with members); `hidden` while Send to All is off -->
     <footer class="composer group-composer" id="group-composer">…"The group composer" below…</footer>
   </main>
 </div>
@@ -177,8 +185,10 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
   pane (§app/subagents-pane) is **not** available in a workspace, because it is a per-session surface and there
   are N sessions here. A member's own `/agents` opens `#/agents`, which is cross-session already.
 - **The head is 56px**, like `.session-head` and `.subagents-head`, so the band across the window
-  still reads as one. Under 640px of head width the four tool buttons collapse into one
-  `More Actions` ghost icon button opening the skill's plain action menu, in the order above.
+  still reads as one. Under 640px of head width the tool buttons collapse into one
+  `More Actions` ghost icon button opening the skill's plain action menu, in the order above,
+  with `Send to All` as its first row (`Tabs` and `Fit All` have no row: under 640 the workspace
+  is tabs-only).
 - **The meta line is the workspace's one roll-up**: `{n} members`, then the cwd every member
   shares (or `{n} folders` when they don't — the one fact that says "these are not the same
   task"), then — after a shared send — the completion count `{r} of {t} replied`, with
@@ -381,9 +391,47 @@ The assignment outlives the file **on purpose**: the server prunes a member's gr
 
 The excluded count is always visible in the group composer's foot, never discovered at send time.
 
+## §workspace.groups/send-all-mode — Send to All
+
+**Send to All** is a mode of the workspace, and it is **off by default**: a workspace opens with
+each member's own composer in its pane and no group composer on screen.
+
+- **The toggle** is a pressed-state ghost button labelled `Send to All` (`aria-pressed`, the same
+  word pressed or not) in the head beside `Tabs`. Unlike `Tabs` it stays in the head under 768px,
+  because it means the same thing in tabs and in split. Under 640px of head width it is the first
+  row of `More Actions`, a `menuitemcheckbox` carrying the same state (`aria-checked`). It is
+  offered only while the group has members; with none there is no group composer to switch to.
+- **On, the group composer takes the pane composers' place.** Every pane's own composer is not
+  displayed, in tabs and in split alike, and the group composer (§workspace.groups/the-group-composer)
+  stands alone at the foot of the workspace. The pane composers stay mounted, so a pane's draft
+  and attachments are there again when the mode goes off.
+- **Off, the group composer is hidden, not removed.** It stays mounted with its draft, its
+  refusal and its partial-send report, so switching off and back on finds the box as it was
+  left, and a report of a member who missed a message is not lost to a toggle.
+- **Remembered per workspace for the browser session**, in
+  `sessionStorage["sova:group-send-all-{id}"]` (`"1"` on, `"0"` off; anything else, or a store
+  that can't be read, is off). Another workspace keeps its own; opening a group reads its own
+  value, and a blocked or full store keeps the choice for the page only.
+- **Two ways out, both saying so.** The head toggle, and the `×` at the start of the group
+  composer's row: a ghost icon button named `Back to One Member` that switches the mode off. Beside
+  it an accent chip, `All {n} members` (1 member: `1 member`), where {n} is the group's size,
+  says who the box writes to. Under 480px of composer width the chip is visually hidden and still
+  read, as Send's word is (§chat/composer), so the box keeps room to type; the placeholder and the
+  foot still carry the count.
+- **Focus follows the switch.** Switching on puts the caret in the group composer's box;
+  switching off puts it in the focused pane's own composer, or on the pane itself when that pane
+  has no composer (a watch pane, a gone member). Each switch announces once through the
+  workspace's live region: "Send to All on. One message goes to all {n} members." · "Send to All
+  off. Each member has its own composer again."
+- **The skip link follows the mode**: while it is on, `Skip to Group Composer`, landing on the
+  group composer's box; while it is off, `Skip to Transcript` at the focused pane, the same as a
+  workspace with no members (§workspace.groups/accessibility).
+- **No keyboard shortcut.**
+
 ## §workspace.groups/the-group-composer — The group composer
 
-One composer at the foot of the workspace, full width of the main column, writing to every
+While Send to All is on (§workspace.groups/send-all-mode), one composer at the foot of the
+workspace, full width of the main column, in place of the pane composers, writing to every
 member at once.
 
 ```html
@@ -391,8 +439,10 @@ member at once.
   <form class="composer-inner" aria-label="Message every member">
     <!-- dictation strip while recording or transcribing (§chat.voice/states) -->
     <div class="composer-row">
-      <!-- the same mic as a pane composer's, first in the row (§chat.voice/button); dictated text
-           lands in this box -->
+      <!-- the way back to each pane's own composer, then who this box writes to -->
+      <button class="button button-icon button-ghost" type="button" aria-label="Back to One Member" title="Back to One Member">…close…</button>
+      <span class="chip chip-accent group-composer-all">All 4 members</span>
+      <!-- the same mic as a pane composer's (§chat.voice/button); dictated text lands in this box -->
       <button class="button button-icon button-ghost voice-button" type="button" aria-label="Dictate" title="Dictate">…mic…</button>
       <label class="visually-hidden" for="group-composer-input">Message every member</label>
       <textarea class="input textarea composer-input" id="group-composer-input" rows="1"
@@ -414,9 +464,9 @@ member at once.
 ```
 
 - **It is the workspace's one primary.** §design/ground-rules allows one accent button in view, so while the
-  workspace is open no pane composer's Send is `.button-primary`: a pane's Send becomes
-  `.button` (secondary) with the same label and the same behavior. The accent says "this sends
-  to all of them", which is the choice worth marking.
+  workspace is open no pane composer's Send is `.button-primary`, whichever composer is on screen:
+  a pane's Send is `.button` (secondary) with the same label and the same behavior. The accent
+  says "this sends to all of them", which is the choice worth marking.
 - **It sends one request**, `POST /api/session-groups/{id}/prompt {text, members?: string[]}`,
   and the server prompts each member. The client does not fan the request out itself: N sockets
   racing would give N outcomes and no way to be all-or-nothing about them. `members` is **session
@@ -545,42 +595,25 @@ already happened does not.** The distinction decides dismissal everywhere on thi
 | Partial creation (§workspace/fanout) | **Report** — these members exist, these never started | Persists, for the same reason |
 
 Getting this wrong is quiet: a keystroke that dismisses a report destroys the only notice that a
-member is out of sync, and it looks like tidy-up rather than loss. Two consequences follow, and
-both are rules rather than details:
+member is out of sync, and it looks like tidy-up rather than loss. One consequence follows, and
+it is a rule rather than a detail:
 
 - **Only the box's own send clears the box.** A retry from a banner must not wipe what is being
   typed — that would be the composer destroying work in order to report success.
-- **Collapse follows the box, not the send.** Pane composers stay collapsed while the group
-  composer still holds text, because the rule (§workspace/groups "Pane composers…") is about the box being
-  non-empty, and a send that left text behind has not emptied it.
 
-### Pane composers while the group composer is in use
+### Pane composers while Send to All is on
 
-The rule, exactly: **while the group composer is focused or holds text, every pane composer that
-is neither focused nor holding its own draft collapses.** A pane with a draft never collapses —
-its text must stay visible — and a focused pane composer never collapses under you.
+**Every pane composer is out of view, whatever it holds.** There is no in-between state: a pane
+composer is either the §chat/composer composer, whole, or not displayed at all, and which one
+follows the mode alone — never where the caret is or what a box holds.
 
-| State | Height | What is in it |
-|---|---|---|
-| Expanded (the §chat/composer composer) | 96px: 12 top padding + 44 row + 8 gap + 20 foot + 12 bottom | Everything §chat/composer names |
-| Collapsed | 68px: 12 + 44 + 12 | The same `.composer-row` — flyout trigger, textarea pinned to 1 line, Send. `.composer-foot` (model indicator, mode trigger, reason) and the attachments list are `hidden` |
-| Collapsing / expanding | `height` over `--dur-fast`, `--ease-standard` | State change, §design/ground-rules's duration. Off under `prefers-reduced-motion` |
-
-- **No control is removed, and no target shrinks.** The row keeps its 44px, so Send and the
-  flyout trigger stay full-size tap targets and stay in the tab order. What goes is the foot —
-  the model id, the mode switch and the reason line — which is reference, not action, and which
-  the pane head's own chips and the flyout still carry.
-- **The textarea is pinned to one line while collapsed** (`field-sizing` off, `rows="1"`, no
-  auto-grow) and released the moment it takes focus, which expands the pane composer in the same
-  frame. Typing is never done in a box that is deciding whether to grow.
-- **A collapsed composer keeps its reason as an accessible description.** `.composer-reason` is
-  hidden visually, not removed, so `aria-describedby="composer-reason-p2"` still reads "This
-  session is open in a terminal, so Sova won't write to it." to AT. A disabled pane composer
-  that collapses must not become a Send button with no explanation.
-- **`data-collapsed="true"` is the only hook**, on `.composer`, so the state is one attribute and
-  the styling is one rule.
-- **Nothing is announced when composers collapse.** It is layout responding to where the caret
-  is, and a live region that fires on every focus change is noise.
+- **Hidden by one rule, not unmounted.** `.workspace[data-send-all="true"]` hides every
+  `.workspace-pane .composer`, so a pane's draft, attachments and dictation survive the mode and
+  a hidden composer takes no focus and has no place in the tab order.
+- **A pane's own state still reads in its head.** The member's chips (Working, TUI, Archived,
+  Can't open, Busy) are the pane head's, so hiding the composer and its reason line hides no
+  member state; the group composer's foot counts the excluded members, as ever.
+- **Nothing extra is announced** beyond the switch's own sentence (§workspace.groups/send-all-mode).
 
 ## §workspace.groups/group-lifecycle — Group lifecycle
 
@@ -861,21 +894,22 @@ registered on the workspace only, so it exists nowhere else in the product.
 - `.workspace` is the `main`, labelled "Workspace: {name}". Its `h1` is the group name.
 - Panes are `role="region"` in split and `role="tabpanel"` in tabs, always named "{label or
   title} · {model}", always in DOM order = `members` order.
-- **Before the group composer exists**, the skip link points at the focused pane's transcript
-  and reads `Skip to Transcript`. The target and the name move together — a link that says
-  "Group Composer" and lands on a transcript is worse than either, and dropping the skip link
-  entirely would make the workspace the one view in the product without one. "One of N" isn't a
-  problem here: focus picks it.
-- The skip link points at the group composer, because that is the workspace's action; a skip link
-  to "the transcript" would have to pick one of N.
+- **While the group composer is not on screen** — Send to All off, or a workspace with no
+  members — the skip link points at the focused pane's transcript and reads `Skip to Transcript`.
+  The target and the name move together — a link that says "Group Composer" and lands on a
+  transcript (or on a hidden box) is worse than either, and dropping the skip link entirely would
+  make the workspace the one view in the product without one. "One of N" isn't a problem here:
+  focus picks it.
+- While Send to All is on, the skip link points at the group composer and reads `Skip to Group
+  Composer`, because that is then the workspace's one action.
 - Contrast: the pane head is ink-2 on sunken, the sidebar region head's pair (7.65 dark / 7.22
   light). The pane seam is `--color-border`, decoration, and carries no meaning that isn't also
   in the pane's name.
 - Every state in "Member states" pairs its color with a word or an icon. The `TUI` chip is
   accent and static; the tab's live dot is the only looping thing in the view, and only while a
   turn runs.
-- A member whose composer is disabled keeps its reason readable to AT even when collapsed (see
-  above).
+- A member whose composer is disabled keeps its reason readable to AT whenever that composer is
+  on screen; while Send to All hides it, the pane head's chip carries the member's state.
 
 ## §workspace.groups/classes — Classes
 
@@ -885,8 +919,8 @@ registered on the workspace only, so it exists nowhere else in the product.
 | Head | `.workspace-head` `.workspace-head-main` `.workspace-title` `.workspace-meta` `.workspace-count` `.workspace-promoted` `.workspace-align` |
 | Tabs | `.workspace-modes` (the Split/Tabs group) `.workspace-tabs[role=tablist]` `button.workspace-tab[role=tab]` `.workspace-tab-title` (+ `.live-dot`) |
 | Panes | `.workspace-row` `.workspace-pane` (+ `.workspace-pane-focused`, and a per-pane width set inline) `.workspace-pane-head` `.workspace-pane-name` `.workspace-pane-tools` `.workspace-pane-body` `.workspace-pane-composer` |
-| Group composer | `.composer.group-composer` `.group-composer-targets` · refusal: `.banner.banner-warn` with `.banner-action` |
-| Collapsed pane composer | `.composer[data-collapsed="true"]` |
+| Group composer | `.composer.group-composer` `.group-composer-all` `.group-composer-targets` · refusal: `.banner.banner-warn` with `.banner-action` |
+| Send to All | `.workspace[data-send-all="true"]` (hides every `.workspace-pane .composer`) `.workspace-send-all` |
 
 Everything else is reused as it stands: `.composer*`, `.transcript*`, `.chip*`, `.banner*`,
 `.empty*`, `.context-gauge`, `.live-dot`, `.button*`, `.pane`.

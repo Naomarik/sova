@@ -657,11 +657,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Skip link | Skip to Group Composer · before the group composer exists: `Skip to Transcript`, targeting the focused pane |
+| Skip link | Skip to Group Composer while Send to All is on · otherwise (off, or no members): `Skip to Transcript`, targeting the focused pane |
 | Main landmark | `aria-label`: Workspace: {name} |
 | Title and meta | {name} · `{n} members` (1: `1 member`) · `·` · the cwd when every member shares one, else `{n} folders` · after a shared send: `{r} of {t} replied` (then `· {w} still working` while any of them runs, and `· {e} errored` whenever a member's turn failed — the failure is always named, so the count can never hide a broken member) |
 | Back | `aria-label`: Back to Sessions |
-| Head buttons | `Tabs` (`aria-pressed`; pressed reads the same word) · `Fit All` (split only, 2+ members) · `Align to Fork` · `Add Members` · `Dissolve` · collapsed under 640px into `More Actions` |
+| Head buttons | `Tabs` (`aria-pressed`; pressed reads the same word) · `Fit All` (split only, 2+ members) · `Send to All` (`aria-pressed`; pressed reads the same word; `title`: "Write one message to every member, in place of each pane's own composer.") · `Align to Fork` · `Add Members` · `Dissolve` · collapsed under 640px into `More Actions`, whose first row is `Send to All` (checked while on) |
+| Send to All, in the group composer | chip `All {n} members` (1 member: `1 member`; {n} is the group's size) · the `×` before it: `aria-label` and `title` "Back to One Member" · announce on: "Send to All on. One message goes to all {n} members." (1: "… goes to 1 member.") · off: "Send to All off. Each member has its own composer again." |
 | Unknown group id (toast) | That group is gone. |
 | Promoted chip | Promoted: {title} · button `Add Back` · `title`: You took this session out of “{name}”. Add Back puts it back where it was |
 | Tab | {label or title} · `aria-label`: the pane's own name, byte for byte (label/title or the repeat's `{model} #n` — one rule for strip and pane, so they can never disagree about which #2 is which) |

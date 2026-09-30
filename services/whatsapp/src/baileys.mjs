@@ -54,7 +54,7 @@ export function createBaileysDriver({ authDir, deviceName, logLevel, log }) {
         auth: state,
         ...(version ? { version } : {}),
         browser: Browsers.ubuntu(deviceName),
-        logger: baileysLogger(logLevel, (line) => log('debug', line)),
+        logger: baileysLogger(logLevel), // its own lines, at the configured level, redacted
         printQRInTerminal: false,
         markOnlineOnConnect: false, // stay "offline" so the phone keeps its notifications
         // The default history policy stays: turning sync off loses the LID mappings and privacy tokens that

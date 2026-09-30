@@ -589,12 +589,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Delete confirm (banner-warn) | **Delete {name}?** "Its {size} file goes away. Its calibration results stay, in case you download it again." · `Cancel` · `Delete` (destructive) |
 | Disk line | `{n} models · {size} on disk · {free} free on this disk` (1: `1 model`) |
 | This Device heading | This Device · "This device: {label}" (installed app: `{label} (app)`) |
-| This device, not calibrated | {model} uses the defaults on this device. Calibrating takes a few minutes: you read 6 sentences, then we try {24 \| 8} settings on them. · `Calibrate This Device` |
+| This device, not calibrated | {model} uses the defaults on this device. Calibrating takes a few minutes: you read 6 sentences, then we try {12 \| 4} settings on them. · `Calibrate This Device` |
 | This device, calibrated | Calibrated {date} on {n} clips · {p}% word error · {s} s per clip. · `Calibrate Again` · `Delete Clips` · confirm (banner-warn): **Delete this device's clips?** "Its {n} recorded sentences and their results go. Its saved settings stay." · `Cancel` · `Delete Clips` (destructive) |
 | This device, Parakeet active | Parakeet has no settings to tune. Calibrating scores it on your clips, to compare with the whisper models. · scored: "Scored {date} on {n} clips · {p}% word error · {s} s per clip." · `Calibrate This Device` (or `Calibrate Again`) |
 | Other devices | Other devices · row `{label}` · caption `seen {relative time} · calibrated for {models}` · `Forget` · confirm: **Forget {label}?** "Its settings and calibration clips go. It dictates with the defaults until it's calibrated again." · `Cancel` · `Forget` (destructive) |
 | Sentence step | eyebrow `Sentence {i} of {n}` (the passage: `Passage`, "Optional. About 35 seconds.") · `Record Sentence` · recording: `Stop Recording`, `Recording {m:ss}` · after: "Got {s} s." · `Next Sentence` · `Record Again` · `Skip Sentence` · top right `Cancel Calibration` |
-| Sentence problems | Didn't catch any speech. Record it again. · Recording stopped when the app went to the background. Record this sentence again. · At least 4 clips are needed. |
+| Sentence problems | Didn't catch any speech. Record it again. · the clip check's sentence (§app.settings-dialog/voice-clip-check) · Recording stopped when the app went to the background. Record this sentence again. · At least 4 clips are needed. |
 | Find Best Settings | `Find Best Settings` · estimate: "{n} settings × {c} clips ≈ {time} on {backend}" |
 | Sweep progress | Trying setting {i} of {n} · clip {j} of {c} · `{p}%` · About {time} left. · Best so far: {p}% word error · {s} s per clip. · Paused for dictation. · "You can close Settings; the run keeps going on this host." · `Stop Calibration` |
 | Sweep on Parakeet | the run button reads `Score This Model` (not `Find Best Settings`) · Parakeet has no settings to try. Scoring it on your {c} clips. · progress `Clip {j} of {c}` · its results show no sort caption |
@@ -604,7 +604,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Voice detection skipped (results, caption) | Couldn't get the voice-detection model, so the {n} settings that use it were skipped. |
 | Results row | `{settings in words, e.g. beam 5 · hotword sentence · voice detection on · no fallback}` · `{p}% word error` · `{h} of {n} jargon` · `{s} s per clip` · labels `Best` · `Current` · open: "Read: {reference}" / "Heard: {text}", missed words `−`, extra words `+`, a jargon word heard in the wrong case `~` (`title`: Heard in the wrong case) |
 | Applied | Saved the best settings for this device on {model}. · `Revert to Previous` · other rows: `Use These Settings` · after a revert: "Back to the previous settings." |
-| Current won | Your current settings scored best. Nothing changed. · `Done` (returns the section to rest) |
+| Current won | No setting beat your current ones by 3 words or more. Nothing changed. · `Done` (returns the section to rest) |
 | Stopped | Stopped after {i} of {n} settings. Nothing was saved; pick a row to use it. |
 | Parakeet score | a results row labelled with the row name, `Parakeet TDT 0.6B v2 · q8_0` · `{p}% word error` · `{h} of {n} jargon` · `{s} s per clip` · "Parakeet has no settings, so nothing is saved." |
 | Sweep failed | **Calibration stopped at setting {i} of {n}.** {error}. Your clips are kept; Find Best Settings tries again. (on Parakeet: **Scoring stopped at clip {j} of {c}.** {error}. Your clips are kept; Score This Model tries again.) |

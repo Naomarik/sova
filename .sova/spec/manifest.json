@@ -7489,7 +7489,7 @@
     "§chat.voice/capture": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/voice/capture.ts",
         "src/lib/voice/wav.ts",
@@ -8453,6 +8453,32 @@
         "src/components/SharesPage.tsx",
         "src/components/SessionDetails.tsx",
         "src/lib/session-shares.ts"
+      ]
+    },
+    "§app.settings-dialog/voice-clip-check": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/wav.ts",
+        "server/voice/wav.test.ts",
+        "server/voice/calibration.ts",
+        "src/components/VoiceCalibration.tsx"
+      ],
+      "requires": [
+        "§app.settings-dialog/voice-calibration"
+      ]
+    },
+    "§chat.voice/jargon-fixes": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/wav.ts",
+        "server/voice/wav.test.ts"
+      ],
+      "requires": [
+        "§chat.voice/transcribe"
       ]
     }
   },

@@ -141,6 +141,7 @@ export async function send(input: SendInput, channel: Channel = channels.whatsap
     const line: OutreachLogLine = { at: r.at, ...base, ...ids, event: "sent" };
     appendSendLog(orgId, line);
     rememberRef(r.ref, orgId, line);
+    if (resolver?.settle && resolved) resolver.settle(resolved.minted);
     setPending(key, null);
     return { outcome: "sent", channel: channel.id };
   }

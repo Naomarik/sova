@@ -40,6 +40,8 @@ export interface LinkResolver {
   resolve(ctx: LinkContext & { key: string }, ref: LinkRef): Promise<Resolved>;
   /** Turn off what `resolve` made. */
   revoke(minted: Record<string, string>): void;
+  /** The send went: what it replaces stops (a hand-off's older links), never before. */
+  settle?(minted: Record<string, string>): void;
 }
 
 /** The public address's own refusal: a link nobody outside can open is not sent. */
@@ -75,19 +77,23 @@ const handoff: LinkResolver = {
     const row = batonById(ref.session)!.row;
     const offer = currentOffer(row);
     const n = offer ? offer.n : row.handoffs[row.handoffs.length - 1]!.n;
-    // As Get Link: the older links of that hand-off (or that invitee's, in the offer) stop working.
-    if (offer) revokeLinks((l) => l.sessionId === row.sessionId && l.offerId === offer.id && l.personId === personId);
-    else revokeLinks((l) => l.sessionId === row.sessionId && l.n === n);
     const { result: token } = await awaitShareLinks(() => mintLink({ orgId, sessionId: row.sessionId, n, personId, ...(offer ? { offerId: offer.id } : {}), key }));
     return {
       url: linkUrl("h", token),
       line: handoffLine(operatorName(), row.publicTitle),
       log: { sessionId: row.sessionId, n, ...(offer ? { offerId: offer.id } : {}) },
-      minted: { linkKey: key },
+      minted: { linkKey: key, sessionId: row.sessionId, n: String(n), personId, ...(offer ? { offerId: offer.id } : {}) },
     };
   },
   revoke(minted) {
     if (minted.linkKey) revokeLinks((l) => l.key === minted.linkKey);
+  },
+  // As Get Link, once the new link went: the older links of that hand-off (or that invitee's, in the
+  // offer) stop working. A failed send leaves them as they were.
+  settle(m) {
+    if (!m.linkKey || !m.sessionId) return;
+    if (m.offerId) revokeLinks((l) => l.sessionId === m.sessionId && l.offerId === m.offerId && l.personId === m.personId && l.key !== m.linkKey);
+    else revokeLinks((l) => l.sessionId === m.sessionId && l.n === Number(m.n) && l.key !== m.linkKey);
   },
 };
 

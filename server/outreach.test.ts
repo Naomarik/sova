@@ -153,10 +153,11 @@ describe("§app.outreach/send-link", () => {
 
     const sidG = await gathering(gone.id);
     const ng = batonById(sidG)!.row.handoffs.at(-1)!.n;
+    const startLinks = liveLinks(sidG, ng).map((l) => l.hash);
     const rg = await sendLink(sidG);
     assert.equal(rg.body.outcome, "failed");
     assert.equal(rg.body.code, "not-on-whatsapp");
-    assert.equal(liveLinks(sidG, ng).length, 0, "the minted link was turned off: Needs you asks again");
+    assert.deepEqual(liveLinks(sidG, ng).map((l) => l.hash), startLinks, "the minted link was turned off; the older one still works");
 
     await json("PUT", "/api/outreach", { paused: true });
     const rp = await sendLink(await gathering(ann.id));
@@ -178,11 +179,12 @@ describe("§app.outreach/send-link", () => {
     await stopFake();
     const sid = await gathering(ann.id);
     const n = batonById(sid)!.row.handoffs.at(-1)!.n;
+    const before = liveLinks(sid, n).map((l) => l.hash);
     const r = await sendLink(sid);
     assert.equal(r.body.outcome, "failed");
     assert.equal(r.body.code, "unreachable");
     assert.equal(r.body.retryable, true);
-    assert.equal(liveLinks(sid, n).length, 0);
+    assert.deepEqual(liveLinks(sid, n).map((l) => l.hash), before, "nothing new stays minted; the older link is untouched");
     const info = await json("GET", "/api/outreach");
     assert.equal(info.body.sender.state, "unreachable");
   });

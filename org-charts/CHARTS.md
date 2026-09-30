@@ -158,7 +158,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-082 | Field ownership in the project spec | host | promotion effect's spec writer |
 | F-083 | Owner area | chart | `decision/owner-area` (`rules/baton owner-area-refusal`, superseded 409, history) → `decision/owner-area-changed` → reconciler `route-conflict-of` → `conflict/reroute {keepIfSame}` |
 | F-084 | Reconciler switch | chart | `reconciler.off`: only `reconcile/request` refused (`reconcile-off`); automatic ones record the error |
-| F-085 | When the reconciler runs | chart | `reconciler` `reconcile/request` (op, `sova_reconcile` L1, GO, sova 2 s `debouncing` durable C4, chart L1 drive) |
+| F-085 | When the reconciler runs | chart | `reconciler` `reconcile/request` (op, `sova_reconcile` L1, GO, sova 2 s `debouncing` durable C4; the L1 drive when a gathering ends with pending decisions is the baton's `reconcile-when-ended`, not the item's) |
 | F-086 | What the reconciler sends | host | decide seam in `:sova/reconcile` |
 | F-087 | Area filing | host | inside `:sova/reconcile` |
 | F-088 | Contradiction check | host | inside `:sova/reconcile` |

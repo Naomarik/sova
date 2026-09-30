@@ -288,7 +288,17 @@ user row.
   inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read; both it and `sova_project` name the main stakeholder, as the prompt
   does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
   `sova_previews` (the project's preview links, §app.project-overseer/previews; `sova_project`
-  lists its active ones too, under "Previews").
+  lists its active ones too, under "Previews"), `sova_send_status` (below).
+- **Whether a message arrived.** `sova_send_status {person?, limit?, hours?}` (read) lists the
+  project's WhatsApp sends from the send log (§app.outreach/log), newest first: each send's id,
+  the person's name, what went (a gathering link, a preview, a note), who sent it (you, the
+  operator, the Overseer), its latest event — held (still in the project's hold, with when it
+  goes), refused, sent, delivered, read, failed or unknown — its code and its time. `person` (id or
+  exact name) keeps one person's; `limit` (default 10, at most 50) and `hours` keep the most
+  recent. It never shows a number, a link or a note's text. Its description and the prompt say
+  plainly that it can check whether a message arrived. A look (§app.project-overseer/watch-loop)
+  after one of its own sends ended refused, failed or unknown notes each once, "Your WhatsApp
+  message to {name} did not go: {reason} ({code}).", the reason said from the code.
 - **Builds.** `sova_list_sessions` lists each coding session the project started with who started
   it ("started by you" for its own, "started by the operator" for the operator's), working or idle,
   its branch, and whether that branch is merged, as the project page reads it from git
@@ -886,7 +896,9 @@ user row.
   until it does (§app.project-overseer/reviews); it goes through every guard again with what holds at that moment: one
   now refused (the level lowered, the project archived, the gap put on hold, a limit reached) is
   dropped and logged with its sentence. An act counts against its allowance only when it is taken;
-  a cancelled or dropped hold counts nothing.
+  a cancelled or dropped hold counts nothing. What the act then did is its own outcome, not the
+  release's: a WhatsApp message that is refused or fails when it goes is "not sent", with its reason,
+  to the overseer's `sova_hold` approval, its feed and Needs you (§app.outreach/send).
 - **How long.** `holdMin` in the project's `overseer.json`: a whole number of minutes from 0 to
   1440, default 10; 0 means nothing is held and each act goes ahead at once. `PATCH …/overseer
   {holdMin}` refuses any other value whole, 400, "The hold must be a whole number of minutes from 0

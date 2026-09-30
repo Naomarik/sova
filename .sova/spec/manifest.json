@@ -2651,7 +2651,8 @@
         "server/align-state.ts",
         "server/server-stop.ts",
         "server/server-stop.test.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/outreach/log.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -4469,7 +4470,9 @@
         "server/baton-loadout.ts",
         "server/chat-manager.ts",
         "server/project-coding-runtime.test.ts",
-        "server/project-overseer-tools-charts.test.ts"
+        "server/project-overseer-tools-charts.test.ts",
+        "server/outreach/log.ts",
+        "server/outreach.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -9990,7 +9993,11 @@
         "src/components/BatonStrip.tsx",
         "src/components/SendOnWhatsApp.tsx",
         "src/lib/api.ts",
-        "src/lib/project-overseer-view.ts"
+        "src/lib/project-overseer-view.ts",
+        "server/outreach/log.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "shared/outreach.ts"
       ],
       "requires": [
         "§app.baton/links",

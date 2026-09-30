@@ -144,6 +144,43 @@ export const OUTREACH_NOT_READY = {
   paused: "Outreach is paused.",
 } as const;
 
+/** Why a link can't go (§app.outreach/links): the send log's `code` and the sentence. Never a URL or a number. */
+export interface LinkRefusal {
+  code: string;
+  why: string;
+}
+
+/**
+ * A send's log code as a clause, for "The WhatsApp message to {name} was not sent: {reason}."
+ * (Needs you, §app.outreach/send): the log keeps codes only, so the reason is said from the code.
+ */
+export const NOT_SENT_REASONS: Record<string, string> = {
+  off: "outreach is off (Settings → Outreach)",
+  paused: "outreach is paused",
+  "no-number": "they have no WhatsApp number on the roster",
+  "session-unknown": "the gathering session isn't in this organization",
+  "other-project": "the link belongs to another project",
+  "session-ended": "the gathering session has ended",
+  "not-invited": "they are not invited to the open offer",
+  "not-reached": "they are not reached yet",
+  "not-holder": "they don't hold the baton",
+  "preview-unknown": "the preview doesn't exist",
+  "preview-off": "the preview was turned off",
+  "preview-expired": "the preview expired",
+  "preview-address": "no preview address was available (Settings → Public links)",
+  "address-off": "no public address is set (Settings → Public links)",
+  "address-unreachable": "the public address can't be reached",
+  "address-not-accepted": "the gateway doesn't accept this host's links",
+  "not-on-whatsapp": "the number has no WhatsApp account",
+  limited: "the sender's rate limit was reached",
+  "not-connected": "the sender wasn't connected",
+  unreachable: "the sender couldn't be reached",
+  unknown: "the sender didn't say whether it went",
+  "unknown-after-restart": "Sova restarted during the send",
+};
+
+export const notSentReason = (code: string | undefined): string => (code && NOT_SENT_REASONS[code]) || (code ? `the send ended with code ${code}` : "the send didn't go");
+
 /** A gathering link's default line (§app.outreach/channels): fixed, never model-written. */
 export const handoffLine = (operatorName: string, publicTitle: string): string => `${operatorName} asked you a question: ${publicTitle}`;
 

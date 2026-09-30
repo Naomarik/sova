@@ -1672,7 +1672,9 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
   held act (§app.project-overseer/holds), the one going ahead soonest on top, its sentence recounted
   on the list's clock and **Cancel** beside the row; then, newest first, each conflict for the
   operator to settle (`conflict-to-operator`, §app.requirements/routing) and each project whose main
-  stakeholder left (§app.organizations/stakeholder). Line 3 names the org. The block, and the
+  stakeholder left (§app.organizations/stakeholder), and each overseer's WhatsApp message that was
+  not sent (`outreach-not-sent`, §app.outreach/send), which opens the person's page instead. Line 3
+  names the org. The block, and the
   region, show while only such items wait.
 - **Organization → project → rows, always.** The org level is drawn even with one org, so the shape
   doesn't change when a second is attached. There are no `cwd` folder heads: every gathering session

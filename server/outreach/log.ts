@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
 import { appendFileSync, chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { OutreachLogLine, PersonSendRow } from "../../shared/outreach";
-import { orgDir } from "../orgs";
+import { notSentReason, type OutreachLogLine, type PersonSendRow } from "../../shared/outreach";
+import type { AttentionItem } from "../../shared/protocol";
+import { orgDir, readIndex, readOrgOrPlaceholder, readProjects, readRoster } from "../orgs";
 import { stateRoot } from "../state-root";
 import type { Receipt } from "./types";
 
@@ -45,9 +46,139 @@ export function readSendLog(orgId: string): OutreachLogLine[] {
   return out;
 }
 
+const RANK = { refused: 0, failed: 0, unknown: 0, sent: 1, delivered: 2, read: 3 } as const;
+const NOT_SENT_DAYS = 7;
+
+/**
+ * A project overseer's sends that did not go (§app.outreach/send), as Needs-you items: act tier, kind
+ * `outreach-not-sent`, never pushed, opening the person's page. One per send whose last outcome is refused,
+ * failed or unknown, until a later send to that person in that project went, or 7 days pass. The reason is
+ * said from the log's code: the log keeps no sentence.
+ */
+export function notSentAttention(now = Date.now()): AttentionItem[] {
+  const out: AttentionItem[] = [];
+  for (const o of readIndex().orgs) {
+    let orgName = "";
+    let projects: { id: string; name: string; archived?: unknown }[] = [];
+    let roster: { id: string; name: string }[] = [];
+    try {
+      orgName = readOrgOrPlaceholder(o.id).name;
+      projects = readProjects(o.id);
+      roster = readRoster(o.id);
+    } catch {
+      continue;
+    }
+    const last = new Map<string, OutreachLogLine>();
+    const went: OutreachLogLine[] = [];
+    for (const l of readSendLog(o.id)) {
+      const had = last.get(l.id);
+      if (!had || (RANK[l.event] ?? 0) >= (RANK[had.event] ?? 0)) last.set(l.id, l);
+      if (l.event === "sent") went.push(l);
+    }
+    for (const l of last.values()) {
+      if (l.by !== "project-overseer" || RANK[l.event] !== 0) continue;
+      const at = Date.parse(l.at);
+      if (!(now - at < NOT_SENT_DAYS * 86_400_000)) continue;
+      if (went.some((w) => w.personId === l.personId && w.projectId === l.projectId && Date.parse(w.at) > at)) continue;
+      const p = projects.find((x) => x.id === l.projectId);
+      const name = roster.find((x) => x.id === l.personId)?.name ?? "someone";
+      out.push({
+        id: `outreach-not-sent:${l.id}`,
+        path: "",
+        title: p?.name ?? orgName,
+        where: orgName,
+        tier: "act",
+        kind: "outreach-not-sent",
+        since: at || 0,
+        detail: `The WhatsApp message to ${name} was not sent: ${notSentReason(l.code)}.`,
+        href: `#/orgs/${encodeURIComponent(o.id)}/people/${encodeURIComponent(l.personId)}`,
+        org: { orgId: o.id, orgName, ...(p ? { projectId: p.id, projectName: p.name, ...(p.archived ? { projectArchived: true as const } : {}) } : {}) },
+      });
+    }
+  }
+  return out;
+}
+
+/** One send of a project as its overseer reads it (sova_send_status): never a number, a link or the note. */
+export interface ProjectSend {
+  id: string;
+  personId: string;
+  link?: OutreachLogLine["link"];
+  note: boolean;
+  by: OutreachLogLine["by"];
+  /** The latest event (a receipt moves a send on, never back), its code and when it was logged. */
+  event: OutreachLogLine["event"];
+  code?: string;
+  at: string;
+  /** When the send was first logged. */
+  sentAt: string;
+}
+
+/** A project's sends, newest first by their latest event. */
+export function projectSends(orgId: string, projectId: string): ProjectSend[] {
+  const byId = new Map<string, ProjectSend>();
+  for (const l of readSendLog(orgId)) {
+    if (l.projectId !== projectId) continue;
+    const had = byId.get(l.id);
+    if (had && (RANK[l.event] ?? 0) < (RANK[had.event] ?? 0)) continue;
+    byId.set(l.id, {
+      id: l.id,
+      personId: l.personId,
+      ...(l.link ?? had?.link ? { link: l.link ?? had?.link } : {}),
+      note: !!(l.note ?? had?.note),
+      by: had?.by ?? l.by,
+      event: l.event,
+      ...(l.code ? { code: l.code } : {}),
+      at: l.at,
+      sentAt: had?.sentAt ?? l.at,
+    });
+  }
+  return [...byId.values()].sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+}
+
+// ---- what a look has noted -----------------------------------------------------------------------
+
+/** Host-local: per project, the latest time of a send that did not go that a look already noted. */
+const notedFile = (): string => join(stateRoot(), "outreach-noted.json");
+
+function readNoted(): Record<string, string> {
+  try {
+    const raw = JSON.parse(readFileSync(notedFile(), "utf8"));
+    return raw && typeof raw === "object" && raw.projects && typeof raw.projects === "object" ? raw.projects : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The project overseer's own sends that ended refused, failed or unknown and no look has noted yet
+ * (§app.project-overseer/tools), oldest first; none older than 7 days.
+ */
+export function sendsToNote(orgId: string, projectId: string, now = Date.now()): ProjectSend[] {
+  const since = readNoted()[`${orgId}/${projectId}`] ?? "";
+  const floor = new Date(now - NOT_SENT_DAYS * 86_400_000).toISOString();
+  return projectSends(orgId, projectId)
+    .filter((s) => s.by === "project-overseer" && RANK[s.event] === 0 && s.at > since && s.at > floor)
+    .reverse();
+}
+
+/** A look noted these: later looks don't repeat them. */
+export function markSendsNoted(orgId: string, projectId: string, sends: ProjectSend[]): void {
+  if (!sends.length) return;
+  const all = readNoted();
+  const k = `${orgId}/${projectId}`;
+  const latest = sends.reduce((m, s) => (s.at > m ? s.at : m), all[k] ?? "");
+  all[k] = latest;
+  const path = notedFile();
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify({ version: 1, projects: all })}\n`, { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
 /** A person's sends, newest first: the latest event of each (a receipt moves a send on, never back). */
 export function personSends(orgId: string, personId: string, titleOf: (sessionId: string) => string | undefined): PersonSendRow[] {
-  const rank = { refused: 0, failed: 0, unknown: 0, sent: 1, delivered: 2, read: 3 } as const;
+  const rank = RANK;
   const byId = new Map<string, { first: OutreachLogLine; last: OutreachLogLine }>();
   for (const l of readSendLog(orgId)) {
     if (l.personId !== personId) continue;

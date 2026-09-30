@@ -5250,7 +5250,11 @@
     "§design.copy-deck/project-stakeholder": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectPage.tsx",
+        "src/components/ProjectOverseerPanel.tsx"
+      ]
     },
     "§app.insights/summary-sections": {
       "kind": "behavior",
@@ -5907,7 +5911,9 @@
         "server/project-overseer-watch-run.test.ts",
         "server/stream-stub.ts",
         "src/lib/project-overseer-view.test.ts",
-        "server/org-envelope.ts"
+        "server/org-envelope.ts",
+        "src/lib/project-page.ts",
+        "src/lib/project-page.test.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels",
@@ -5917,7 +5923,11 @@
     "§design.copy-deck/project-limits": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-page.ts"
+      ]
     },
     "§chat.transcript/rendering": {
       "kind": "behavior",
@@ -6754,7 +6764,10 @@
     "§design.copy-deck/overseer-orgs": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectPage.tsx"
+      ]
     },
     "§chat.markdown/vis-flow-sections": {
       "kind": "behavior",
@@ -8684,7 +8697,9 @@
         "statecharts/test/sova/statecharts/refit/feed_golden.cljs",
         "statecharts/src/sova/statecharts/base.cljc",
         "statecharts/src/sova/statecharts/reasons.cljc",
-        "server/project-previews.test.ts"
+        "server/project-previews.test.ts",
+        "src/lib/project-page.ts",
+        "src/lib/project-page.test.ts"
       ],
       "requires": [
         "§app.project-overseer/holds",
@@ -10275,6 +10290,37 @@
       "code": [
         "pi-config/extensions/worktrees/git.ts",
         "pi-config/extensions/worktrees/git.test.ts"
+      ]
+    },
+    "§app.organizations/project-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/org-page",
+        "§app.organizations/archive",
+        "§app.organizations/stakeholder",
+        "§app/project-overseer",
+        "§app.project-overseer/limits",
+        "§app.project-overseer/reviews",
+        "§app.project-overseer/coding-worktrees",
+        "§app.project-overseer/pipeline",
+        "§app.project-overseer/ideas-and-todos",
+        "§app.project-costs/card",
+        "§app/requirements",
+        "§mesh.public/preview-card",
+        "§app.owner-page/controls"
+      ],
+      "code": [
+        "src/components/ProjectPage.tsx",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/ProjectCostCard.tsx",
+        "src/components/PipelineCard.tsx",
+        "src/components/OrgsView.tsx",
+        "src/lib/orgs-route.ts",
+        "src/lib/project-page.ts",
+        "src/lib/project-page.test.ts",
+        "src/projects.css"
       ]
     }
   },

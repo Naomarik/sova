@@ -121,16 +121,18 @@ the org page's Projects tab. The owner page and the project overseer never do.
 
 ## §app.project-costs/card — The Cost card on the project page
 
-- A **Cost** card, right after the Overseer card on the project page (§app.organizations/org-page).
+- A **Cost** card, the project page's Cost tab (§app.organizations/project-page).
 - **Head:** the total (`$12.48`, mono) and "at API prices", then one line: "What these sessions would
   cost at each provider's API prices. Your subscriptions bill differently."
 - **By who started it:** one line, only the starters with a cost ("Started by the overseer $8.10 ·
   by you $4.02 · by Sova on its own $0.36").
+- **Breakdown**, after the top sessions, a disclosure closed by default ("Breakdown by kind and model") holding the two
+  tables below.
 - **By kind:** a table, `Kind` · `Cost`, one row per kind with a cost, in the order of
   §app.project-costs/scope.
 - **By model:** a table, `Model` · `Input` · `Output` · `Cache read` · `Cache write` · `Cost`; each
   token cell is the dollars for that kind with the token count under it, muted (`$0.56` /
-  `2.8M`); the last row, `All models`, sums each column. Unpriced models are rows with their counts
+  `2.8M`); the last row, `All models`, sums each column, and is left out when there is only one model. Unpriced models are rows with their counts
   and `unpriced` in the cost cells. Under 560px of page width each row stacks, every figure under
   its column's name.
 - **Top sessions:** up to 20, most expensive first: title (a link when the session is on this

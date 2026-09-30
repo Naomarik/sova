@@ -381,7 +381,8 @@ mesh off. Copy is §design.copy-deck/public-links.
   serves it now), its kept link (`url`, null when none is kept), purpose, coding session and branch
   (a recorded one, else the one matched by its worktree, §app.project-overseer/previews), with the
   preview address's state; a sibling carries `siblingOf`, `sentTo` and `sentToName`, and the lists
-  show it as "sent to {name}".
+  name it on its original's **Sent to** line, or as "sent to {name}" on a row of its own when its
+  original isn't listed (§mesh.public/preview-card).
 - A routed host sends each live preview's hash as a `p` row (§mesh.public/registry) only to a
   gateway target whose own info listed `p`; its gateway routes the preview host to its ingress
   (§mesh.public/routing).
@@ -455,27 +456,38 @@ would have expired, and answers them 410 too.
 
 ## §mesh.public/preview-card — Previews on the project page
 
-- The project page has a **Previews** card: each active preview, one row each. The row's title is
-  its purpose, else "Preview of port {n}" or "Preview of {folder}" ("the worktree" for the
-  worktree itself). Under it: its coding session's title (a link to that session) · its branch in
-  mono · what it serves ("app on port {n}" or "static files"), each part only when known; then
-  "Matched by the app's folder" when the session was matched now by the listener's worktree rather
-  than recorded (§app.project-overseer/previews); then a state chip, `Serving` (success) when the
-  app answers on its port or Sova serves its folder, else `Nothing on port {n}` or `Folder not
-  served` (warn); who made it ("Made by you", or "Made by the overseer", a link to that
-  conversation); "sent to {name}" for a person's own copy sent on WhatsApp (§app.outreach/links);
-  and "Expires in {time}". Then **Copy Link** ("Link copied.") when a link is kept
-  or this page just minted it, else the line "Link shown only when it was made."; and **Turn Off**
-  (a second click confirms: "Turn Off Preview?"; done: "Preview turned off."). Turned-off and
-  expired previews are not listed. Below 480px each row stacks its lines above its buttons, which
-  share the row's width, and a long title, branch or folder wraps instead of widening the page.
-- Then **New Preview**: Port, Expires (1, 7 or 30 days), an optional Purpose (at most 200
-  characters, sent only when not blank) and
-  the warning "Anyone with this link can use the app on port {n} as if they were on this
-  computer, including its logins, admin pages and anything it can change." A refused mint shows
-  its reason on the form. With no preview address the card says so and how to set it.
-- The Shares page lists this host's live previews, one row each, with the project, port, expiry
-  and Turn Off.
+- The project page has a **Previews** card: one row per active preview, where a person's own link
+  (a sibling, §mesh.public/preview) is not a row of its own but a recipient of its original's row.
+  The row's title is its purpose, else "Preview of port {n}" or "Preview of {folder}" ("the
+  worktree" for the worktree itself). Under it, on one line that wraps only when it must: its
+  coding session's title (a link to that session) · its branch in mono, cut to one line with the
+  whole name on hover · what it serves ("app on port {n}" or "static files") · "Matched by the
+  app's folder" when the session was matched now by the listener's worktree rather than recorded
+  (§app.project-overseer/previews) · a state chip, `Serving` (success) when the app answers on its
+  port or Sova serves its folder, else `Nothing on port {n}` or `Folder not served` (warn) · who
+  made it ("Made by you", or "Made by the overseer", a link to that conversation) · "Expires in
+  {time}", each part only when known. Then **Copy Link** ("Link copied.") when a link is kept or
+  this page just minted it, else, for an original only, the line "Link shown only when it was
+  made."; and **Turn Off** (a second click confirms: "Turn Off Preview?", or "Turn Off All {n}
+  Links?" counting the preview and its listed recipients when it has any; its tooltip says it
+  turns off the preview and every link sent from it; done: "Preview turned off.").
+- A row with active siblings has a **Sent to** line under it: each recipient's name (else "a
+  person"; its tooltip says who sent it, "Sent by you" or "Sent by the overseer") with its own small **Turn Off** (tooltip "Turns off only {name}'s link."; a second
+  click confirms: "Turn Off {name}'s Link?"; done: "{name}'s link turned off."), which turns off
+  only that person's link. A sibling whose original is not listed (turned off, expired or gone)
+  keeps a row of its own, with "sent to {name}" among its parts, no Copy Link and no "Link shown
+  only when it was made." line. Turned-off and expired previews are not listed. Below 480px each
+  row stacks its lines above its buttons, which share the row's width, and a long title or folder
+  wraps instead of widening the page.
+- Then a **New Preview** button, which opens the form in place: Port, Expires (1, 7 or 30 days),
+  an optional Purpose (at most 200 characters, sent only when not blank), the warning "Anyone with
+  this link can use the app on port {n} as if they were on this computer, including its logins,
+  admin pages and anything it can change.", **Create Preview** and **Cancel** (closes it). A
+  refused mint shows its reason on the form; a made one closes it. With no preview address the
+  card says so and how to set it, and offers no New Preview.
+- The Shares page lists this host's live previews the same way, one row per original with the
+  project, port, expiry and Turn Off, its recipients on a **Sent to** line each with its own Turn
+  Off, and a sibling whose original is not listed on a row of its own.
 
 ## §mesh.public/preview-serve — A preview of a folder, served by Sova
 

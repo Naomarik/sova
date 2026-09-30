@@ -1,0 +1,31 @@
+# A systemd USER unit for the WhatsApp sender. Copy it to ~/.config/systemd/user/sova-whatsapp.service,
+# set the two paths marked EDIT, then: systemctl --user daemon-reload && systemctl --user enable --now sova-whatsapp
+# Guide: docs/outreach/whatsapp.md. Check the settings it will use with `sova-whatsapp check-config`.
+[Unit]
+Description=Sova WhatsApp sender
+After=network-online.target
+Wants=network-online.target
+# At most 3 starts an hour: every start is a WhatsApp connection, and connection storms are a ban signal.
+StartLimitIntervalSec=3600
+StartLimitBurst=3
+
+[Service]
+Type=simple
+# Settings live in $SOVA_WA_HOME/config.json, so the unit and your shell read the same ones. Only a
+# non-default home is set here, and then exported in your shell profile too:
+#Environment=SOVA_WA_HOME=%h/some/other/dir
+# EDIT: the node binary (`command -v node`) and the checkout's services/whatsapp directory.
+ExecStart=/usr/bin/node %h/sova/services/whatsapp/bin/sova-whatsapp.mjs run
+WorkingDirectory=%h/sova/services/whatsapp
+UMask=0077
+Restart=on-failure
+RestartSec=60
+# 2 = a configuration problem, 3 = another sender owns the socket: restarting would not help.
+RestartPreventExitStatus=2 3
+# SIGTERM ends the connection without logging out.
+KillSignal=SIGTERM
+TimeoutStopSec=20
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

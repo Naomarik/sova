@@ -71,7 +71,7 @@ Error codes:
 |---|---|---|
 | `invalid` | no | bad `digits`, `text` or `idem` |
 | `unpaired` | no | no linked device yet |
-| `not-connected` | yes | not `open` within the wait; nothing was sent |
+| `not-connected` | yes | not `open` within the wait; nothing was sent (retryable `false` when the sender is `down`) |
 | `not-on-whatsapp` | no | the number has no WhatsApp account |
 | `logged-out` | no | the phone unlinked this device |
 | `replaced` | no | another process opened these creds |
@@ -109,6 +109,13 @@ The relay refuses these (`code: "refused"`); only someone on the sender host lin
   WhatsApp error number as a string, e.g. `"463"`). `idem` lets the relay pass each caller only its own.
 - `qr {qr}`: while linking only. Never replayed and never stored.
 - `paired {me}`: linking finished (`me` masked as in `status`). Never replayed.
+
+## What never crosses the socket or reaches a log
+
+No frame carries a credential, and none but `send`/`check` requests carries a full number. The sender's
+own files (`state.json`, `events.json`) hold no number and no message body; its log masks digit runs to
+the last three. Its dependencies' `console` output is dropped (libsignal prints whole sessions, ratchet
+private keys included; see `src/quiet-console.mjs`), so a client never needs to filter what it relays.
 
 ## States
 

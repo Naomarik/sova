@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// sova-whatsapp: run | pair [--code <digits>] | status [--json] | unlink --yes | check-config
+// sova-whatsapp: run | pair [--code <digits>] | status [--json] | unlink --yes | reconnect | pause | resume | check-config
 // See docs/outreach/whatsapp.md for the guide and IPC.md for the protocol.
 import { quietConsole } from '../src/quiet-console.mjs' // first: before any dependency can print keys
 import { existsSync, mkdirSync, chmodSync, readFileSync } from 'node:fs'
@@ -160,6 +160,16 @@ async function unlink() {
   await local.shutdown(0)
 }
 
+/** reconnect | pause | resume: operator ops on the running sender (they have nothing to act on otherwise). */
+async function operatorOp(op, fields, done) {
+  if (!(await socketAlive(config.socket))) die(1, `The sender is not running (nothing answers on ${config.socket}). Start it first.`)
+  const client = await connectIpc(config.socket)
+  const r = await client.request(op, fields)
+  client.close()
+  if (!r.ok) die(1, `Cannot ${cmd}: ${r.why}`)
+  out(done(r))
+}
+
 async function checkConfig() {
   const { isPairedDir } = await import('../src/baileys.mjs').catch(() => ({ isPairedDir: null }))
   const p = problems(config)
@@ -185,6 +195,8 @@ const USAGE = `sova-whatsapp ${VERSION}: Sova's WhatsApp sender
   pair [--code <digits>] link this host to a phone (QR, or a pairing code for that number)
   status [--json]       the sender's state, from the running sender or its files
   unlink --yes          log this device out and delete its credentials
+  reconnect             after down, replaced or blocked: one connection attempt now
+  pause | resume        stop or allow sending (the connection stays up)
   check-config          print the resolved configuration and any problem`
 
 switch (cmd) {
@@ -199,6 +211,13 @@ switch (cmd) {
     break
   case 'unlink':
     await unlink()
+    break
+  case 'reconnect':
+    await operatorOp('reconnect', {}, (r) => `Reconnecting (state: ${r.state}). Check with: sova-whatsapp status`)
+    break
+  case 'pause':
+  case 'resume':
+    await operatorOp('pause', { on: cmd === 'pause' }, (r) => (r.paused ? 'Sending paused.' : 'Sending resumed.'))
     break
   case 'check-config':
     await checkConfig()

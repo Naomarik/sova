@@ -426,3 +426,34 @@ describe("outreach sends a folder preview by its id (§app.outreach/links, §mes
     assert.equal((await fetchVia(label, "/")).status, 410, "turned off with its original");
   });
 });
+
+describe("the session list never shows part of a kept link (§app.session-list/content-rules)", () => {
+  test("a link across the title's or the summary line's cut is redacted before the cut", async () => {
+    const { getSessionSummary } = await import("./sessions-index");
+    const { setSessionTitle } = await import("./session-titles");
+    const url = (await list()).map((v) => v.url).find(Boolean)!;
+    const label = labelOf(url);
+    const id = "0199dddd-straddle-q7x";
+    const dir = join(agentDir, "sessions", "--straddle--");
+    mkdirSync(dir, { recursive: true });
+    const path = join(dir, `2026-09-30T05-00-00-000Z_${id}.jsonl`);
+    // The label starts before the title's 80th character and ends after it; the same across the summary's 200.
+    const first = `${"a".repeat(60)} ${url} and more`;
+    const now = `${"b".repeat(180)} ${url} and more`;
+    const rows = [
+      { type: "session", version: 3, id, timestamp: "2026-09-30T05:00:00.000Z", cwd: dir },
+      { type: "message", id: "s-u1", parentId: null, timestamp: "2026-09-30T05:00:01.000Z", message: { role: "user", content: first, timestamp: 1 } },
+      { type: "message", id: "s-a1", parentId: "s-u1", timestamp: "2026-09-30T05:00:02.000Z", message: { role: "assistant", content: [{ type: "text", text: "ok" }], provider: "zai", model: "glm-5.3", stopReason: "stop", timestamp: 2 } },
+      { type: "custom", id: "s-o1", parentId: "s-a1", timestamp: "2026-09-30T05:00:03.000Z", customType: "topic-outline", data: { now, overall: `gist ${url}` } },
+    ];
+    writeFileSync(path, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+    // Renamed: the derived title rides along as originalTitle, as the checker found it.
+    setSessionTitle(id, "Renamed by the operator");
+    const s = await getSessionSummary(path);
+    assert.ok(s);
+    assert.equal(s.title, "Renamed by the operator");
+    assert.ok(s.originalTitle?.includes("[preview link]"), s.originalTitle);
+    const body = JSON.stringify(s);
+    assert.ok(!body.includes(label.slice(0, 8)), `part of a kept link in the summary: ${body.slice(0, 300)}`);
+  });
+});

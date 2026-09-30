@@ -167,7 +167,9 @@ test("flow inline style: the first string labels an unlabelled node, the next la
   // A target with a node line: its one string is the edge's, a second is an error.
   const lined = ok<FlowSpec>("flow", 'a "A" -> b\nnode b "B"\na -> b "go"');
   assert.deepEqual(edges(lined), ["a>b", "a>b:go"]);
-  assert.equal(err("flow", 'a "A" -> b\nnode b "B"\na -> b "go" "more"').message, 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
+  // A target with a node line: two strings are the edge's two lines (§chat.markdown/vis-lenience); a third is an error.
+  assert.equal(ok<FlowSpec>("flow", 'a "A" -> b\nnode b "B"\na -> b "go" "more"').edges[1]!.label, "go\nmore");
+  assert.equal(err("flow", 'a "A" -> b\nnode b "B"\na -> b "go" "more" "most"').message, 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"', "three strings: as before");
   assert.equal(err("flow", 'a "A" -> b "B" "e" "extra"').message, 'unexpected "extra" after b: one label and one edge label per target; for a second line use node b "B" "extra"');
 });
 
@@ -175,18 +177,25 @@ test("flow: a stray string after a target says what to write instead", () => {
   const msg = (body: string) => err("flow", body).message;
   // Labelled on this line: the third string reads as a second line, which only a node line has.
   assert.equal(msg('ai1 "AI" --> d1 "Decision" "yes" "own states"'), 'unexpected "own states" after d1: one label and one edge label per target; for a second line use node d1 "Decision" "own states"');
-  // Labelled earlier: the first string was the edge's, so the second reads as a two-line edge label.
+  // Labelled earlier: both strings are the edge's, its label on two lines; a third string is an error.
+  const two = ok<FlowSpec>("flow", 'api "API Server" -> db\nclient "Client" -> api "Notify completion" "POST /confirm-upload"');
+  assert.deepEqual([two.nodes.find((n) => n.id === "api")!.label, two.edges[1]!.label], ["API Server", "Notify completion\nPOST /confirm-upload"]);
   assert.equal(
-    msg('api "API Server" -> db\nclient "Client" -> api "Notify completion" "POST /confirm-upload"'),
+    msg('api "API Server" -> db\nclient "Client" -> api "Notify completion" "POST /confirm-upload" "x"'),
     'unexpected "POST /confirm-upload" after api: api is labelled "API Server" already, so "Notify completion" labels the edge; one string per edge label (\\n breaks a line): -> api "Notify completion\\nPOST /confirm-upload"',
   );
-  // A string after a shape or tone word: the strings go first.
-  assert.equal(msg('staging "Deploy to staging" -> x\napproval "OK?" -> staging error "rejected"'), 'unexpected "rejected" after staging: strings go before shape and tone words: -> staging "rejected" error');
-  assert.equal(msg('a "A" -> b "B" decision warn "go"'), 'unexpected "go" after b: strings go before shape and tone words: -> b "B" "go" decision warn');
+  // A string after a shape or tone word, when it can only be the edge's (the target is labelled, no
+  // edge label yet): read as if written first (§chat.markdown/vis-lenience). Otherwise the strings go first.
+  const late = ok<FlowSpec>("flow", 'staging "Deploy to staging" -> x\napproval "OK?" -> staging error "rejected"');
+  assert.deepEqual([late.edges[1]!.label, late.nodes.find((n) => n.id === "staging")!.tone], ["rejected", "error"]);
+  assert.equal(ok<FlowSpec>("flow", 'a "A" -> b "B" decision warn "go"').edges[0]!.label, "go");
+  assert.equal(ok<FlowSpec>("flow", 'a -> b warn "go"').edges[0]!.label, "go", "outside inline style a string after a target is the edge's");
+  assert.equal(msg('a "A" -> b error "rejected"'), 'unexpected "rejected" after b: strings go before shape and tone words: -> b "rejected" error', "b unlabelled: its label or the edge's");
+  assert.equal(msg('a "A" -> b "B" "e" warn "go"'), 'unexpected "go" after b: strings go before shape and tone words: -> b "B" "e" "go" warn', "the edge has its label");
   // Outside inline style: one string, the edge's.
   assert.equal(msg('a -> b "go" "more"'), 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
   // A stray word keeps its message.
-  assert.equal(msg("a -> b decision"), "unexpected decision after b");
+  assert.equal(msg("a -> b cloud"), "unexpected cloud after b");
 });
 
 test("flow: a second string after a chain's source is its second line; before the arrow it can't be an edge's", () => {
@@ -251,7 +260,8 @@ test("flow inline style: shape and tone words may follow an inline label, on sou
   // A node line's own shape wins over none, and disagrees with a different chain shape.
   assert.equal(ok<FlowSpec>("flow", 'a "A" -> b decision\nnode b "B"').nodes.find((n) => n.id === "b")!.shape, "decision");
   assert.match(err("flow", 'a "A" -> b decision\nnode b "B" store').message, /shaped store on its node line and decision/);
-  // Outside inline style, a shape word in a chain is still an error, as on master.
-  assert.match(err("flow", "a -> b decision").message, /unexpected decision after b/);
-  assert.match(err("state", 'idle -> busy "prompt" round').message, /unexpected round after busy/);
+  // Outside inline style too (§chat.markdown/vis-lenience): a shape word after a chain id is its shape.
+  assert.equal(ok<FlowSpec>("flow", "a -> b decision").nodes[1]!.shape, "decision");
+  const st = ok<FlowSpec>("state", 'idle -> busy "prompt" circle');
+  assert.deepEqual([st.nodes[1]!.shape, st.edges[0]!.label], ["circle", "prompt"]);
 });

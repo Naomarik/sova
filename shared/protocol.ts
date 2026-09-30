@@ -2569,6 +2569,7 @@ export type AttentionKind =
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
   | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
   | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)

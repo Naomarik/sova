@@ -1,13 +1,14 @@
 import { chmodSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { OPERATOR } from "../../shared/baton";
-import { composeMessage, OUTREACH_NOT_READY, waDigits, type ChannelId, type LinkRef, type OutreachLogLine, type SendAnswer, type SendOutcome } from "../../shared/outreach";
+import { composeMessage, notSentReason, OUTREACH_NOT_READY, waDigits, type ChannelId, type LinkRef, type OutreachLogLine, type SendAnswer, type SendOutcome } from "../../shared/outreach";
 import { batonById, currentOffer, targetOfPerson } from "../baton";
 import { hostOf, heldAt, onOrgHostOpened, refusalError, type Effect, type OrgHostApi } from "../org-engine";
 import type { Envelope } from "../org-envelope";
 import { OrgError, readRoster } from "../orgs";
+import { readOverseerState } from "../overseer-store";
 import { stateRoot } from "../state-root";
-import { parseLinkRef, RESOLVERS } from "./links";
+import { LinkRefused, parseLinkRef, RESOLVERS } from "./links";
 import { appendSendLog, applyReceipt, newSendId, rememberRef } from "./log";
 import { readOutreach } from "./settings";
 import type { Channel } from "./types";
@@ -37,6 +38,8 @@ export interface SendInput {
   link?: LinkRef;
   note?: string;
   by: OutreachLogLine["by"];
+  /** Who a link made in this step records as its maker: `operator`, or the sending overseer's `session:<id>`. */
+  createdBy?: string;
   /** The effect's key: part of the channel's idempotency key, and what a step run again finds. */
   key: string;
 }
@@ -122,15 +125,15 @@ export async function send(input: SendInput, channel: Channel = channels.whatsap
   const resolver = link ? RESOLVERS[link.kind] : null;
   const ctx = { orgId, projectId, personId };
   const bad = resolver && link ? resolver.check(ctx, link) : null;
-  if (bad) return refuse("link", bad);
+  if (bad) return refuse(bad.code, bad.why);
   const digits = waDigits(readRoster(orgId).find((x) => x.id === personId)?.contact?.whatsapp)!;
 
   let resolved: Awaited<ReturnType<NonNullable<typeof resolver>["resolve"]>> | null = null;
   if (resolver && link) {
     try {
-      resolved = await resolver.resolve({ ...ctx, key }, link);
+      resolved = await resolver.resolve({ ...ctx, key, createdBy: input.createdBy ?? "operator" }, link);
     } catch (err) {
-      return refuse("link", err instanceof Error ? err.message : String(err));
+      return refuse(err instanceof LinkRefused ? err.code : "link", err instanceof Error ? err.message : String(err));
     }
     setPending(key, { kind: link.kind, minted: resolved.minted });
   }
@@ -177,7 +180,7 @@ export async function sendAct(input: { orgId: string; projectId: string; personI
   const { orgId, projectId, personId, link } = input;
   const p = readRoster(orgId).find((x) => x.id === personId);
   const note = (input.note ?? "").trim();
-  const invalid = p && link ? RESOLVERS[link.kind].check({ orgId, projectId, personId }, link) : null;
+  const invalid = p && link ? (RESOLVERS[link.kind].check({ orgId, projectId, personId }, link)?.why ?? null) : null;
   const leak = await noteLeak(orgId, projectId, note);
   const payload = {
     ...(p ? { target: targetOfPerson({ ...p, orgId }) } : {}),
@@ -217,14 +220,45 @@ export async function sendHandoffLink(sessionId: string, personId: string | unde
 
 // ---- the effect --------------------------------------------------------------------------------------
 
+/** Who a link a send makes records as its maker (§app.outreach/links): the operator, else the overseer that sent it —
+    the project's overseer conversation (the project statechart's own), or the current global Overseer. */
+function makerOf(host: OrgHostApi, sessionId: string, by: OutreachLogLine["by"]): string {
+  const id = by === "project-overseer" ? (host.data(sessionId)?.overseer as { id?: unknown } | undefined)?.id : by === "operator-via-overseer" ? readOverseerState()?.current : null;
+  return typeof id === "string" && id ? `session:${id}` : "operator";
+}
+
+/**
+ * A project overseer's send that did not go (§app.outreach/send) is a feed entry of its project, so its
+ * pipeline and next look say "not sent" with the reason; the release that ran it never reads as a send.
+ */
+async function feedNotSent(host: OrgHostApi, orgId: string, sessionId: string, projectId: string, personId: string, r: SendResult): Promise<void> {
+  const name = readRoster(orgId).find((x) => x.id === personId)?.name ?? "They";
+  await host.logAct({
+    session: sessionId,
+    statechart: host.statechartOf(sessionId) ?? null,
+    event: "outreach/not-sent",
+    by: "overseer",
+    project: projectId,
+    before: [],
+    after: [],
+    effects: [],
+    refused: `Not sent to ${name}: ${r.why ?? notSentReason(r.code)}`,
+    ...(r.code ? { code: r.code } : {}),
+  });
+}
+
 function registerOutreachEffects(host: OrgHostApi, orgId: string): void {
   host.effects.register("outreach-send", async (e: Effect) => {
     // `project/<org>/<project>`
-    const projectId = String(e.sessionId).split("/").slice(2).join("/");
+    const sessionId = String(e.sessionId);
+    const projectId = sessionId.split("/").slice(2).join("/");
     const link = parseLinkRef(e.link) ?? undefined;
     const by = e.by === "operator-via-overseer" || e.by === "project-overseer" ? e.by : "operator";
     const key = typeof e.statechartKey === "string" && e.statechartKey ? e.statechartKey : String(e.key);
-    return send({ orgId, projectId, personId: String(e.personId), ...(link ? { link } : {}), ...(typeof e.note === "string" ? { note: e.note } : {}), by, key });
+    const personId = String(e.personId);
+    const r = await send({ orgId, projectId, personId, ...(link ? { link } : {}), ...(typeof e.note === "string" ? { note: e.note } : {}), by, createdBy: makerOf(host, sessionId, by), key });
+    if (r.outcome !== "sent" && by === "project-overseer") await feedNotSent(host, orgId, sessionId, projectId, personId, r).catch((err) => console.warn(`[outreach] could not log a send that did not go: ${err instanceof Error ? err.name : "error"}`));
+    return r;
   });
 }
 onOrgHostOpened(registerOutreachEffects);

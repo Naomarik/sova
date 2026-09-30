@@ -2651,7 +2651,8 @@
         "server/align-state.ts",
         "server/server-stop.ts",
         "server/server-stop.test.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/outreach/log.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -4469,7 +4470,9 @@
         "server/baton-loadout.ts",
         "server/chat-manager.ts",
         "server/project-coding-runtime.test.ts",
-        "server/project-overseer-tools-charts.test.ts"
+        "server/project-overseer-tools-charts.test.ts",
+        "server/outreach/log.ts",
+        "server/outreach.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -9321,6 +9324,12 @@
         "src/vis/kinds/chart/parse.ts",
         "src/vis/kinds/chart/parts.test.ts",
         "src/vis/lenience.test.ts",
+        "src/vis/core/emphasis.ts",
+        "src/vis/core/emphasis.test.ts",
+        "src/vis/multimark.test.ts",
+        "src/vis/core/grammar.ts",
+        "src/vis/kinds/layers/parse.ts",
+        "src/vis/kinds/timeline/parse.ts",
         "pi-config/extensions/mode/vis-mode.md",
         "src/vis/guide.test.ts"
       ]
@@ -9990,7 +9999,11 @@
         "src/components/BatonStrip.tsx",
         "src/components/SendOnWhatsApp.tsx",
         "src/lib/api.ts",
-        "src/lib/project-overseer-view.ts"
+        "src/lib/project-overseer-view.ts",
+        "server/outreach/log.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "shared/outreach.ts"
       ],
       "requires": [
         "§app.baton/links",

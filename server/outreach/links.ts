@@ -1,13 +1,13 @@
 import { OPERATOR } from "../../shared/baton";
 import { LINK_WARNINGS } from "../../shared/public-links";
-import { handoffLine, type LinkKind, type LinkRef, type OutreachLogLine } from "../../shared/outreach";
+import { handoffLine, type LinkKind, type LinkRef, type LinkRefusal, type OutreachLogLine } from "../../shared/outreach";
 import { linksOfKey, mintLink, revokeLinks } from "../baton-links";
 import { batonById, currentOffer, reachedBy } from "../baton";
 import { operatorName, readRoster } from "../orgs";
 import { listPreviews, mintSibling, revokePreview } from "../preview-links";
 import { awaitShareLinks } from "../share/links-events";
 import { linkUrl, shareState } from "../share/listener";
-import { previewAddress, previewOrigin } from "../share/preview-address";
+import { previewAddress, previewOrigin, zoneOf } from "../share/preview-address";
 
 /**
  * Link references (§app.outreach/links): a send carries a reference, never a URL; the resolver of its
@@ -19,6 +19,16 @@ export interface LinkContext {
   orgId: string;
   projectId: string;
   personId: string;
+}
+
+/** A resolve that can't make its link: the send is refused with `code` (the log's) and the message. */
+export class LinkRefused extends Error {
+  constructor(
+    readonly code: string,
+    why: string,
+  ) {
+    super(why);
+  }
 }
 
 export interface Resolved {
@@ -33,11 +43,12 @@ export interface Resolved {
 
 export interface LinkResolver {
   kind: LinkKind;
-  /** Why this link can't go to this person now (one sentence), or null. */
-  check(ctx: LinkContext, ref: LinkRef): string | null;
+  /** Why this link can't go to this person now (its code and one sentence), or null. */
+  check(ctx: LinkContext, ref: LinkRef): LinkRefusal | null;
   /** The sessions a confirm card must list for it. */
   sessions(ref: LinkRef): string[];
-  resolve(ctx: LinkContext & { key: string }, ref: LinkRef): Promise<Resolved>;
+  /** Throws LinkRefused when it can't make the link. `createdBy`: who sends it (`operator`, or an overseer's `session:<id>`). */
+  resolve(ctx: LinkContext & { key: string; createdBy?: string }, ref: LinkRef): Promise<Resolved>;
   /** Turn off what `resolve` made. */
   revoke(minted: Record<string, string>): void;
   /** The send went: what it replaces stops (a hand-off's older links), never before. */
@@ -45,10 +56,12 @@ export interface LinkResolver {
 }
 
 /** The public address's own refusal: a link nobody outside can open is not sent. */
-function addressRefusal(): string | null {
+function addressRefusal(): LinkRefusal | null {
   const warn = shareState().warningCode;
-  return warn === "off" || warn === "unreachable" || warn === "not-accepted" ? LINK_WARNINGS[warn] : null;
+  return warn === "off" || warn === "unreachable" || warn === "not-accepted" ? { code: `address-${warn}`, why: LINK_WARNINGS[warn] } : null;
 }
+
+const no = (code: string, why: string): LinkRefusal => ({ code, why });
 
 const nameOf = (orgId: string, personId: string) => readRoster(orgId).find((p) => p.id === personId)?.name ?? "They";
 
@@ -58,22 +71,22 @@ const handoff: LinkResolver = {
   kind: "handoff",
   sessions: (ref) => (ref.kind === "handoff" ? [ref.session] : []),
   check({ orgId, projectId, personId }, ref) {
-    if (ref.kind !== "handoff") return "Not a gathering link.";
+    if (ref.kind !== "handoff") return no("link", "Not a gathering link.");
     const hit = batonById(ref.session);
-    if (!hit || hit.row.orgId !== orgId) return "That gathering session isn't in this organization.";
+    if (!hit || hit.row.orgId !== orgId) return no("session-unknown", "That gathering session isn't in this organization.");
     const row = hit.row;
-    if (row.projectId !== projectId) return "That gathering session belongs to another project.";
-    if (row.state === "done" || row.state === "closed") return `That gathering session is ${row.state}.`;
+    if (row.projectId !== projectId) return no("other-project", "That gathering session belongs to another project.");
+    if (row.state === "done" || row.state === "closed") return no("session-ended", `That gathering session is ${row.state}.`);
     const name = nameOf(orgId, personId);
     const offer = currentOffer(row);
     if (offer) {
-      if (!offer.to.includes(personId)) return `${name} is not invited to its open offer.`;
-      if (!reachedBy(offer, personId)) return `${name} is not reached yet: their link is made when their working hours start.`;
-    } else if (row.holder !== personId || row.holder === OPERATOR) return `${name} does not hold the baton, so there is no link to send.`;
+      if (!offer.to.includes(personId)) return no("not-invited", `${name} is not invited to its open offer.`);
+      if (!reachedBy(offer, personId)) return no("not-reached", `${name} is not reached yet: their link is made when their working hours start.`);
+    } else if (row.holder !== personId || row.holder === OPERATOR) return no("not-holder", `${name} does not hold the baton, so there is no link to send.`);
     return addressRefusal();
   },
   async resolve({ orgId, personId, key }, ref) {
-    if (ref.kind !== "handoff") throw new Error("Not a gathering link.");
+    if (ref.kind !== "handoff") throw new LinkRefused("link", "Not a gathering link.");
     const row = batonById(ref.session)!.row;
     const offer = currentOffer(row);
     const n = offer ? offer.n : row.handoffs[row.handoffs.length - 1]!.n;
@@ -104,26 +117,31 @@ const preview: LinkResolver = {
   kind: "preview",
   sessions: () => [],
   check({ orgId, projectId }, ref) {
-    if (ref.kind !== "preview") return "Not a preview link.";
+    if (ref.kind !== "preview") return no("link", "Not a preview link.");
     const p = listPreviews({ orgId }).find((v) => v.id === ref.preview);
-    if (!p) return "No such preview in this organization.";
-    if (p.projectId !== projectId) return "That preview belongs to another project.";
-    if (p.state !== "active") return `That preview is ${p.state === "off" ? "turned off" : "expired"}.`;
+    if (!p) return no("preview-unknown", "No such preview in this organization.");
+    if (p.projectId !== projectId) return no("other-project", "That preview belongs to another project.");
+    if (p.state !== "active") return p.state === "off" ? no("preview-off", "That preview is turned off.") : no("preview-expired", "That preview is expired.");
     const address = previewAddress();
-    if (!address.url) return address.message ?? "No preview address is set.";
+    if (!address.url) return no("preview-address", address.message ?? "No preview address is set.");
     return addressRefusal();
   },
   // The host keeps only a preview's hash, so its URL exists only at a mint: the person gets their own
   // sibling of it (same port, its expiry, turned off with it), listed as "sent to {name}".
-  async resolve({ personId }, ref) {
-    if (ref.kind !== "preview") throw new Error("Not a preview link.");
-    const { result } = await awaitShareLinks(() => mintSibling(ref.preview, personId));
-    const origin = previewOrigin(previewAddress().url!, result.label);
-    if (!origin) {
-      revokePreview(result.record.id);
-      throw new Error("The preview address can't make this link.");
+  async resolve({ personId, createdBy }, ref) {
+    if (ref.kind !== "preview") throw new LinkRefused("link", "Not a preview link.");
+    // One reading, before the mint: a routed host's address reads as unset for a moment while its gateway
+    // states its kinds again after a comeback, which the mint's own wait for the gateway can land in.
+    const address = previewAddress();
+    const zone = address.url && zoneOf(address.url) ? address.url : null;
+    if (!zone) throw new LinkRefused("preview-address", address.message ?? "No preview address is set.");
+    let result: ReturnType<typeof mintSibling>;
+    try {
+      result = (await awaitShareLinks(() => mintSibling(ref.preview, personId, createdBy ?? "operator"))).result;
+    } catch (err) {
+      throw new LinkRefused("preview-off", err instanceof Error ? err.message : String(err));
     }
-    return { url: `${origin}/`, line: `${operatorName()} shared a preview with you.`, log: { previewId: result.record.id }, minted: { previewId: result.record.id } };
+    return { url: `${previewOrigin(zone, result.label)}/`, line: `${operatorName()} shared a preview with you.`, log: { previewId: result.record.id }, minted: { previewId: result.record.id } };
   },
   revoke(minted) {
     if (minted.previewId) revokePreview(minted.previewId);

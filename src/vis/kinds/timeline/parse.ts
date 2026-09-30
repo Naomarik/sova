@@ -1,7 +1,7 @@
 /** `vis timeline`: `when | label | note | tone` rows and `== section ==` lines. */
 
 import { applyMarks, takeMarks } from "../../core/emphasis";
-import { divider, fail, fields, lines, popTone, takeSettings, type Tone, type VisBase } from "../../core/grammar";
+import { divider, fail, fields, lines, popTone, swapToneNote, takeSettings, type Tone, type VisBase } from "../../core/grammar";
 
 export type TimelineItem = { type: "event"; when: string; label: string; note?: string; tone?: Tone } | { type: "section"; label: string };
 export interface TimelineSpec extends VisBase {
@@ -24,6 +24,7 @@ export function parseTimeline(body: string): TimelineSpec {
       continue;
     }
     const fs = fields(line);
+    swapToneNote(fs, 4);
     const tone = popTone(fs);
     if (fs.length < 2 || fs.length > 3) fail(line.n, "a row is: when | label | note (optional) | tone (optional)");
     const [when, label, note] = fs as [string, string, string | undefined];

@@ -403,7 +403,7 @@ describe("outreach sends a folder preview by its id (§app.outreach/links, §mes
     const ref = { kind: "preview" as const, preview: made.preview.id };
     const ctx = { orgId: org.id, projectId: project.id, personId: person.id };
     const refused = RESOLVERS.preview.check(ctx, ref);
-    assert.ok(refused === null || !/No such preview|another project|turned off|expired/.test(refused), String(refused));
+    assert.ok(refused === null || !/No such preview|another project|turned off|expired/.test(refused.why), JSON.stringify(refused));
     const sent = await RESOLVERS.preview.resolve({ ...ctx, key: "k1" }, ref);
     const label = labelOf(sent.url);
     assert.notEqual(label, labelOf(made.url), "the person's own link");

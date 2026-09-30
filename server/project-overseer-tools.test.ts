@@ -37,6 +37,7 @@ const PREVIEW: PreviewView = {
 
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+type SendStatusRow = import("./project-overseer-tools").SendStatusRow;
 const { projectOverseerTools, TOOL_NEEDS, COUNTS, operatorOnlyRefusal, underRoot, buildState } = await import("./project-overseer-tools");
 const { statechartInfo, statechartVersions } = await import("./statecharts");
 const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER_REASON } = await import("./project-overseer-store");
@@ -61,7 +62,7 @@ const person = (id: string, name: string, status: Person["status"] = "active"): 
 });
 
 let n = 0;
-function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; open?: number; builds?: CodingWorktree[]; refuse?: InstanceType<typeof OrgError>; previews?: PreviewView[]; previewHeld?: boolean } = {}) {
+function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]; settings?: Partial<ProjectOverseerSettings>; hasSpec?: boolean; open?: number; builds?: CodingWorktree[]; refuse?: InstanceType<typeof OrgError>; previews?: PreviewView[]; previewHeld?: boolean; sends?: SendStatusRow[] } = {}) {
   const calls: string[] = [];
   /** The allowances a statechart refused, as the tools told the watch (limit/refused). */
   const limited: string[] = [];
@@ -163,6 +164,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
       return { message: of({ gather: "gatherPerTurn", promote: "promotePerTurn", create: "createPerTurn", prompt: "promptsPerTurn" }), today: of({ gather: "gatherPerDay", promote: "promotePerDay", create: "createPerDay", prompt: "promptsPerDay" }) } as never;
     },
     previews: async () => opts.previews ?? [],
+    sendStatus: () => opts.sends ?? [],
     startPreview: async (input: { session: string; target: { port: number } | { folder: string }; purpose: string; days?: number }) => {
       calls.push(`preview:${input.session}:${JSON.stringify(input.target)}:${input.purpose}`);
       if (opts.previewHeld) return { held: { id: "project/org_aaaaaaaa/prj_bbbbbbbb:h7", until: Date.parse("2026-09-30T10:10:00.000Z") } };
@@ -650,6 +652,42 @@ describe("the statechart tools (q2, q9, q10)", () => {
     await assert.rejects(() => f.run("sova_set_state", { session: "item/o/p/g_1", states: [], reason: "r" }), /Give the target states/);
     const out = textOf(await f.run("sova_set_state", { session: "item/o/p/g_1", states: ["asking"], reason: "the operator asked" }));
     assert.equal(out, "item/o/p/g_1 is now in asking.");
+  });
+});
+
+describe("sova_send_status (§app.project-overseer/tools): whether a message arrived", () => {
+  const ago = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const SENDS: SendStatusRow[] = [
+    { id: "project/o/p:send#0", personId: "p_tony0001", person: "Tony", link: "preview", note: true, by: "project-overseer", event: "held", at: new Date(Date.now() + 600_000).toISOString() },
+    { id: "o_read0001", personId: "p_tony0001", person: "Tony", note: true, by: "project-overseer", event: "read", at: ago(1) },
+    { id: "o_refu0001", personId: "p_ana00001", person: "Ana", link: "preview", note: false, by: "project-overseer", event: "refused", code: "preview-address", at: ago(2) },
+    { id: "o_fail0001", personId: "p_tony0001", person: "Tony", link: "handoff", note: false, by: "operator", event: "failed", code: "not-on-whatsapp", at: ago(30) },
+  ];
+  const roster = () => [person("p_tony0001", "Tony"), person("p_ana00001", "Ana")];
+
+  test("a read at every level, in the prompt's snippet; its description says it checks whether a message arrived", () => {
+    assert.equal(TOOL_NEEDS.sova_send_status, "read");
+    const t = fake().tools.find((x) => x.name === "sova_send_status")!;
+    assert.match(t.description, /Check whether a WhatsApp message arrived/);
+    assert.match(t.description, /never see their number, the link or the note's text/);
+  });
+
+  test("each send's id, person, what went, who, latest state with its reason, and time; held first; filters by person, limit and hours", async () => {
+    const f = fake({ autonomy: "L0", roster: roster(), sends: SENDS });
+    const all = ((await f.run("sova_send_status")) as { content: { text: string }[] }).content[0]!.text.split("\n");
+    assert.equal(all.length, 4);
+    assert.match(all[0]!, /^- project\/o\/p:send#0 · Tony · a preview link with a note · by you · held · goes at /);
+    assert.match(all[1]!, /^- o_read0001 · Tony · a note · by you · read · at /);
+    assert.match(all[2]!, /^- o_refu0001 · Ana · a preview link · by you · refused \(preview-address: no preview address was available \(Settings → Public links\)\) · at /);
+    assert.match(all[3]!, /by the operator · failed \(not-on-whatsapp: the number has no WhatsApp account\)/);
+    const ana = ((await f.run("sova_send_status", { person: "ana" })) as { content: { text: string }[] }).content[0]!.text;
+    assert.deepEqual(ana.split("\n").map((l) => l.split(" · ")[0]), ["- o_refu0001"]);
+    const recent = ((await f.run("sova_send_status", { hours: 24 })) as { content: { text: string }[] }).content[0]!.text;
+    assert.doesNotMatch(recent, /o_fail0001/, "older than 24 h");
+    assert.match(recent, /send#0/, "a held one is always current");
+    const one = ((await f.run("sova_send_status", { limit: 1 })) as { content: { text: string }[] }).content[0]!.text;
+    assert.equal(one.split("\n").length, 1);
+    await assert.rejects(f.run("sova_send_status", { person: "Zed" }), /Zed is not on the roster/);
   });
 });
 

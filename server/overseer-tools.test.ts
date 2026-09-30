@@ -31,7 +31,7 @@ describe("per-turn caps", () => {
     assert.equal(l.take("create", caps), null);
     const refused = l.take("create", caps);
     assert.match(refused ?? "", /at most 2 new sessions per message from the user/);
-    assert.match(refused ?? "", /sova_confirm/);
+    assert.match(refused ?? "", /sova_card/);
     assert.equal(l.count("create"), 2);
     assert.equal(l.take("prompt", caps), null); // another kind is untouched
     assert.notEqual(l.take("prompt", caps), null);
@@ -55,8 +55,9 @@ describe("per-turn caps", () => {
   });
 
   test("the concurrency cap refuses at the limit, not before", () => {
-    assert.equal(concurrencyRefusal(4, DEFAULT_CAPS), null);
-    assert.match(concurrencyRefusal(5, DEFAULT_CAPS) ?? "", /5 sessions you started are running/);
+    assert.equal(DEFAULT_CAPS.concurrentSessions, 10, "the default was raised from 5 (§app.overseer/caps)");
+    assert.equal(concurrencyRefusal(9, DEFAULT_CAPS), null);
+    assert.match(concurrencyRefusal(10, DEFAULT_CAPS) ?? "", /10 sessions you started are running.*the limit is 10 at once \(Settings → Overseer → Limits\)/);
   });
 });
 
@@ -85,29 +86,59 @@ describe("the prompt and the tool set stay in step", () => {
     for (const banned of ["bash", "edit", "write", "agent_spawn", "team_create"]) assert.ok(!names.includes(banned));
   });
 
-  test("sova_confirm returns at once and ends the batch; its details are the card", async () => {
-    const confirm = buildOverseerTools().find((t) => t.name === "sova_confirm")!;
-    const out = await confirm.execute("c1", { title: "Archive 12 sessions?", options: [{ label: "Archive", tone: "danger" }, { label: "Cancel", reply: "no" }] }, undefined, undefined, {} as never);
-    assert.equal(out.terminate, true);
-    assert.deepEqual(out.details, { title: "Archive 12 sessions?", options: [{ label: "Archive", tone: "danger" }, { label: "Cancel", reply: "no" }] });
+  test("sova_card never ends the turn; its details are the card, and a later call sees it", async () => {
+    const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
+    const branch: unknown[] = [];
+    const ctx = { sessionManager: { getBranch: () => branch, getSessionId: () => "sess-1" } };
+    const out = await card.execute("k1", { ops: [{ op: "create", title: "Archive 12 sessions?", options: [{ label: "Archive", tone: "danger" }, { label: "Cancel", reply: "no" }] }] }, undefined, undefined, ctx as never);
+    assert.equal(out.terminate, undefined);
+    assert.equal(out.details.card.id, "c_1");
+    assert.deepEqual(out.details.card.options, [{ label: "Archive", tone: "danger" }, { label: "Cancel", reply: "no" }]);
+    assert.match((out.content[0] as { text: string }).text, /^c_1 "Archive 12 sessions\?" · open · v1 · created/);
+    // The same batch: the branch doesn't hold the first result yet, and the second call still sees c_1.
+    const answered = await card.execute("k2", { card: "c_1", ops: [{ op: "answer", text: "c_1 b: no", option: "b" }] }, undefined, undefined, ctx as never);
+    assert.equal(answered.details.card.phase, "answered");
+    // Once the branch holds both, the pending copies are dropped and the branch is the state.
+    branch.push(
+      { type: "message", message: { role: "toolResult", toolName: "sova_card", toolCallId: "k1", details: out.details } },
+      { type: "message", message: { role: "toolResult", toolName: "sova_card", toolCallId: "k2", details: answered.details } },
+    );
+    const next = await card.execute("k3", { ops: [{ op: "create", title: "Next?", options: [{ label: "Go" }] }] }, undefined, undefined, ctx as never);
+    assert.equal(next.details.card.id, "c_2");
+    await assert.rejects(card.execute("k4", { card: "c_1", ops: [{ op: "drop", reason: "x" }] }, undefined, undefined, ctx as never), /c_1 is already answered\. Nothing was changed\./);
   });
 
-  test("sova_confirm resolves its items against the ideas and todos on disk, and refuses an unknown session id", async () => {
+  test("sova_card resolves its items against the ideas and todos on disk, and refuses an unknown session id", async () => {
     const { addIdea } = await import("./overseer-ideas");
     const { addTodo } = await import("./overseer-todos");
     addIdea({ id: "§sova/confirm-rows", title: "Cards list their subject" });
     const todo = addTodo({ text: "Tick the done ones" });
-    const confirm = buildOverseerTools().find((t) => t.name === "sova_confirm")!;
-    const out = await confirm.execute("c2", { title: "Tick?", options: [{ label: "Tick" }], items: { ideas: ["sova/confirm-rows"], todos: [todo.id] } }, undefined, undefined, {} as never);
-    assert.equal(out.terminate, true);
-    assert.deepEqual(out.details.items, [
-      { kind: "idea", id: "§sova/confirm-rows", title: "Cards list their subject" },
-      { kind: "todo", id: todo.id, text: "Tick the done ones" },
+    const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
+    const out = await card.execute("c2", { ops: [{ op: "create", title: "Tick?", options: [{ label: "Tick" }], items: { ideas: ["sova/confirm-rows"], todos: [todo.id] } }] }, undefined, undefined, {} as never);
+    assert.deepEqual(out.details.card.items, [
+      { kind: "idea", id: "§sova/confirm-rows", title: "Cards list their subject", n: 1 },
+      { kind: "todo", id: todo.id, text: "Tick the done ones", n: 2 },
     ]);
-    assert.match((out.content[0] as { text: string }).text, /§sova\/confirm-rows — Cards list their subject/);
+    assert.match((out.content[0] as { text: string }).text, /1\. §sova\/confirm-rows — Cards list their subject/);
     await assert.rejects(
-      confirm.execute("c3", { title: "Archive?", options: [{ label: "Archive" }], items: { sessions: ["sova://s/nope-1"], todos: [todo.id, "td_missing0"] } }, undefined, undefined, {} as never),
+      card.execute("c3", { ops: [{ op: "create", title: "Archive?", options: [{ label: "Archive" }], items: { sessions: ["sova://s/nope-1"], todos: [todo.id, "td_missing0"] } }] }, undefined, undefined, {} as never),
       /No card was shown\. These ids match nothing \(sessions: sova:\/\/s\/nope-1; todos: td_missing0\)/,
+    );
+  });
+
+  test("sova_card link options resolve like sova_navigate, plus https; anything else refuses the card", async () => {
+    const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
+    const out = await card.execute(
+      "l1",
+      { ops: [{ op: "create", title: "Where next?", options: [{ label: "Done" }, { label: "Usage", link: { page: "usage" } }, { label: "PR", link: { url: "https://github.com/x/y/pull/1" } }, { label: "Settings", link: { page: "settings", settings_tab: "overseer" } }] }] },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    assert.deepEqual(out.details.card.options.map((o: { href?: string }) => o.href), [undefined, "#/usage", "https://github.com/x/y/pull/1", "settings:overseer"]);
+    await assert.rejects(
+      card.execute("l2", { ops: [{ op: "create", title: "?", options: [{ label: "Go" }, { label: "Bad", link: { url: "http://x.test" } }, { label: "Creds", link: { url: "https://u:p@x.test" } }] }] }, undefined, undefined, {} as never),
+      /No card was shown\. options\[1\]\.link: url must be an https URL without credentials\. options\[2\]\.link: url must be/,
     );
   });
 
@@ -116,7 +147,7 @@ describe("the prompt and the tool set stay in step", () => {
     const out = await nav.execute("n1", { page: "settings", settings_tab: "overseer" }, undefined, undefined, {} as never);
     assert.deepEqual(out.details, { href: "settings:overseer", label: "Open Settings → Overseer" });
     await assert.rejects(nav.execute("n2", { page: "settings", settings_tab: "nope" }, undefined, undefined, {} as never));
-    await assert.rejects(nav.execute("n3", {}, undefined, undefined, {} as never), /Give a session, a group, or a page/);
+    await assert.rejects(nav.execute("n3", {}, undefined, undefined, {} as never), /Give a session, a group, a page, an org, or a url/);
   });
 });
 
@@ -295,8 +326,12 @@ describe("sova_session's Topics line", () => {
   });
 });
 
-describe("sova_confirm items", async () => {
-  const { resolveConfirmItems, confirmResult, CONFIRM_ITEMS_MAX } = await import("./overseer-confirm");
+describe("card items", async () => {
+  const { resolveConfirmItems, CONFIRM_ITEMS_MAX } = await import("./overseer-confirm");
+  const { cardLines, displayOrder } = await import("../shared/overseer-card");
+  /** The card echo's item lines, as the model reads them (items numbered in display order). */
+  const echo = (items: Awaited<ReturnType<typeof resolveConfirmItems>>) =>
+    cardLines({ id: "c_1", title: "t", options: [{ label: "Go" }], items: displayOrder(items).map((it, i) => ({ ...it, n: i + 1 })), phase: "open", rev: 1, createdAt: now, updatedAt: now }, "").join("\n");
   const { CONFIRM_NOTE_MAX } = await import("../shared/protocol");
   const now = "2026-09-20T10:00:00.000Z";
   const sessions: Record<string, SessionSummary> = {
@@ -337,16 +372,17 @@ describe("sova_confirm items", async () => {
     assert.deepEqual(await resolveConfirmItems(undefined, lookup, refusal), []);
   });
 
-  test("the result repeats the items with exact ids and links; without items it is the plain notice", async () => {
+  test("the echo repeats the items, numbered, with exact ids and links", async () => {
     const items = await resolveConfirmItems({ sessions: ["s1"], ideas: ["§sova/x"], todos: ["td_aaaaaaaa"] }, lookup, refusal);
-    const out = confirmResult(items, "user");
-    assert.match(out, /^Shown to the user under your reply\. The card ends your turn/);
-    assert.match(out, /3 items; a pick refers to exactly these:/);
-    assert.ok(out.includes("Sessions:\n- [Fix the parser](sova://s/s1) (s1)"), out);
-    assert.ok(out.includes("Ideas:\n- §sova/x — X"), out);
-    assert.ok(out.includes("Todos:\n- td_aaaaaaaa · Do it"), out);
-    assert.doesNotMatch(confirmResult([], "operator"), /items|Sessions/);
-    assert.match(confirmResult([], "operator"), /^Shown to the operator/);
+    const out = echo(items);
+    assert.ok(out.includes("  1. §sova/x — X"), out);
+    assert.ok(out.includes("  2. td_aaaaaaaa · Do it"), out);
+    assert.ok(out.includes("  3. [Parser fixed, tests green](sova://s/s1) (s1)"), out); // named summary-first (§app.overseer/session-names)
+  });
+
+  test("an entry's default rides along to the card, lowercased", async () => {
+    const items = await resolveConfirmItems({ sessions: [{ id: "s1", default: "B" }, "s2"] }, lookup, refusal);
+    assert.deepEqual(items.map((i) => i.default), ["b", undefined]);
   });
 
   test("an entry is a bare id or { id, note }; the note is snapshotted with whitespace collapsed", async () => {
@@ -375,15 +411,15 @@ describe("sova_confirm items", async () => {
     await assert.rejects(resolveConfirmItems({ sessions: ["s1", { id: "sova://s/me", note: "Me." }] }, lookup, refusal), /No card was shown\. sova:\/\/s\/me is your own conversation; a card never lists it/);
   });
 
-  test("the result carries each note after its item", async () => {
+  test("the echo carries each note after its item", async () => {
     const items = await resolveConfirmItems(
       { sessions: [{ id: "s1", note: "Parser fix. Merged." }], ideas: [{ id: "sova/x", note: "Done by the sweep." }], todos: [{ id: "td_aaaaaaaa", note: "Covered." }] },
       lookup,
       refusal,
     );
-    const out = confirmResult(items, "user");
-    assert.ok(out.includes("- [Fix the parser](sova://s/s1) (s1) — Parser fix. Merged."), out);
-    assert.ok(out.includes("- §sova/x — X — Done by the sweep."), out);
-    assert.ok(out.includes("- td_aaaaaaaa · Do it — Covered."), out);
+    const out = echo(items);
+    assert.ok(out.includes("3. [Parser fixed, tests green](sova://s/s1) (s1) — Parser fix. Merged."), out);
+    assert.ok(out.includes("1. §sova/x — X — Done by the sweep."), out);
+    assert.ok(out.includes("2. td_aaaaaaaa · Do it — Covered."), out);
   });
 });

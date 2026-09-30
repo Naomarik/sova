@@ -16,11 +16,14 @@ import type {
 } from "../../shared/protocol";
 import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
-import { OverseerThreadContext, QuickActions } from "./OverseerCards";
+import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
+import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
+import { cardFold, openCards } from "../lib/overseer";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { createFork, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { createFork, getOverseerAutonomy, revokeOverseerPermit, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import type { OverseerAutonomy } from "../../shared/protocol";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
   addPendingPrompt,
@@ -281,6 +284,53 @@ export function ChatView(props: {
   const aligns = createMemo(() => foldAlignRows(items() ?? [], liveAligns(), older()?.summary.aligns ?? []));
   /** Documents this run changed: their settled cards collapse to revision rows until the refetch. */
   const liveAlignIds = createMemo(() => new Set(liveAligns().flatMap((r) => (r.doc ? [r.doc.id] : []))));
+  /** This run's sova_card results, in call order, and the thread's cards with them (§app.overseer/confirm). */
+  const liveCards = createMemo(() => Object.values(live.tools).filter((t) => t.name === CARD_TOOL && t.status === "done").map((t) => t.details));
+  const cards = createMemo(() => cardFold(items() ?? [], liveCards()));
+  /** Cards this run changed: their settled rows read as one line until the refetch. */
+  const liveCardIds = createMemo(() => new Set([...cards().cards.keys()].filter((id) => !cards().newest.has(id))));
+  /** What a click on each card sent, until the turn it started settles (the card shows "Sent: b"). */
+  const [cardSent, setCardSent] = createSignal<Record<string, string>>({});
+  const jumpToCard = (card: OverseerCard) => {
+    if (scrollToCard(card.id)) return;
+    const row = cards().newest.get(card.id);
+    if (row && jumpToEntry(row, props.path)) return;
+    toast("That card isn't in the transcript on screen.");
+  };
+  // The Overseer's running count and approvals (§app.overseer/approvals, §app.overseer/caps): read
+  // on open, at every turn's end and every 15 s, so an expiry or a use elsewhere shows.
+  const [autonomy, setAutonomy] = createSignal<OverseerAutonomy | undefined>(undefined);
+  const refreshAutonomy = () => {
+    if (!props.overseer) return;
+    void getOverseerAutonomy().then(setAutonomy, () => {});
+  };
+  if (props.overseer) {
+    refreshAutonomy();
+    const timer = setInterval(refreshAutonomy, 15_000);
+    onCleanup(() => clearInterval(timer));
+  }
+  const revokePermit = async (id: string): Promise<string | null> => {
+    try {
+      await revokeOverseerPermit(id);
+      refreshAutonomy();
+      return null;
+    } catch (err) {
+      refreshAutonomy();
+      return err instanceof Error ? err.message : String(err);
+    }
+  };
+  const jumpToCardId = (id: string) => {
+    const card = cards().cards.get(id);
+    if (card) jumpToCard(card);
+    else toast("That card isn't in the transcript on screen.");
+  };
+  const jumpToToolCall = (toolCallId: string) => {
+    // The call's row draws the act (its result folds into it and renders nothing of its own).
+    const rows = items()?.filter((it) => it.toolCallId === toolCallId) ?? [];
+    rows.sort((a, b) => Number(b.kind === "tool-call") - Number(a.kind === "tool-call"));
+    if (rows.some((row) => jumpToEntry(row.id, props.path))) return;
+    toast("That act isn't in the transcript on screen.");
+  };
   const jumpToAlign = (entry: AlignEntry) => {
     if (entry.rowId && jumpToEntry(entry.rowId, props.path)) return;
     // A revision above the rows held: fetch down to it, then land.
@@ -472,6 +522,8 @@ export function ChatView(props: {
         if (isObj(ev) && ev.type === "agent_settled") {
           settled = true;
           owner.settled();
+          setCardSent({});
+          refreshAutonomy();
         }
       }
     });
@@ -1605,7 +1657,21 @@ export function ChatView(props: {
       >
         <Show when={items()} fallback={<TranscriptSkeleton />}>
           {(list) => (
-            <OverseerThreadContext.Provider value={props.overseer ? { answer: (text, card) => send(text, false, [], card) } : null}>
+            <OverseerThreadContext.Provider
+              value={
+                props.overseer
+                  ? {
+                      answer: (text, card, sent) => {
+                        const ok = send(text, false, [], card);
+                        if (ok && card && sent) setCardSent({ ...cardSent(), [card]: sent });
+                        return ok;
+                      },
+                      sent: (card) => cardSent()[card],
+                      permits: () => autonomy()?.permits ?? [],
+                    }
+                  : null
+              }
+            >
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
               <HistoryItems
@@ -1619,6 +1685,7 @@ export function ChatView(props: {
                 actions={chatActions}
                 older={olderRows.api}
                 liveAlignIds={liveAlignIds()}
+                liveCardIds={liveCardIds()}
               />
               </ChangesSession.Provider>
               <LiveEntries
@@ -1738,6 +1805,12 @@ export function ChatView(props: {
         inputsPending={inputsPending(inputCount(), items(), !!props.summary?.() && knownInputs(props.summary()!))}
         aligns={aligns()}
         onJumpAlign={jumpToAlign}
+        cards={openCards(cards())}
+        onJumpCard={jumpToCard}
+        autonomy={props.overseer ? autonomy() : undefined}
+        onRevokePermit={props.overseer ? revokePermit : undefined}
+        onJumpCardId={jumpToCardId}
+        onJumpToolCall={jumpToToolCall}
         autofocus={props.autofocus}
         model={modelControl}
         claudeLogin={claudeLogin}

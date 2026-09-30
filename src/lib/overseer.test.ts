@@ -1,8 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { TranscriptItem } from "../../shared/protocol";
+import { applyCardCall, type CardDetails } from "../../shared/overseer-card";
 import {
   briefBody,
+  cardFold,
+  openCards,
   confirmAnswer,
   confirmDetails,
   confirmReply,
@@ -25,7 +28,7 @@ import {
 const row = (id: string, kind: TranscriptItem["kind"], text?: string): TranscriptItem => ({ id, kind, text, raw: {} });
 const confirm = { title: "Archive 12 sessions?", options: [{ label: "Archive All" }, { label: "Keep Them", reply: "No, keep them." }] };
 
-test("a confirm card is answered by the next user message, clicked or typed", () => {
+test("a legacy confirm card is answered by the next user message, clicked or typed (read-only, from before card ids)", () => {
   const items = [row("u1", "user", "tidy up"), row("c1", "tool-call", "sova_confirm"), row("r1", "tool-result")];
   assert.deepEqual(confirmAnswer(items, 1, confirm), { answered: false, choice: null }, "nothing after it yet");
 
@@ -212,4 +215,45 @@ test("a card's project and person rows keep their org and status; one without it
     { kind: "project", id: "prj_1", orgId: "org_1", name: "Ledger", orgName: "Harbor Works", note: "Its site." },
     { kind: "person", id: "p_1", orgId: "org_1", name: "Tony", orgName: "Harbor Works", status: "proposed" },
   ]);
+});
+
+// ---- sova_card (§app.overseer/confirm) ----
+
+const NOW = "2026-09-30T10:00:00.000Z";
+const call = (id: string): TranscriptItem => ({ id, kind: "tool-call", text: "sova_card", toolCallId: `t-${id}`, raw: {} });
+const result = (id: string, details: unknown, isError = false): TranscriptItem => ({
+  id: `r-${id}`,
+  kind: "tool-result",
+  toolCallId: `t-${id}`,
+  raw: { type: "message", message: { role: "toolResult", toolName: "sova_card", isError, details, content: [] } },
+});
+const created = applyCardCall([], { ops: [{ op: "create", title: "Archive?", options: [{ label: "Archive" }, { label: "Keep" }] }] }, { now: NOW, prepared: { items: [], hrefs: [] } }).details;
+const answered = applyCardCall([created.card!], { card: "c_1", ops: [{ op: "answer", text: "c_1 a: Archive", option: "a" }] }, { now: NOW }).details;
+
+test("a card stays open after an unrelated message: its state comes from the fold, never from later messages", () => {
+  const items = [row("u1", "user", "tidy"), call("k1"), result("k1", created), row("u2", "user", "what else is running?")];
+  const fold = cardFold(items);
+  assert.equal(fold.cards.get("c_1")?.phase, "open");
+  assert.deepEqual(openCards(fold).map((c) => c.id), ["c_1"]);
+  assert.equal(fold.newest.get("c_1"), "k1");
+});
+
+test("the row that last touched a card renders it; an answer op moves it there and closes it", () => {
+  const items = [call("k1"), result("k1", created), row("u2", "user", "c_1 a: Archive"), call("k2"), result("k2", answered)];
+  const fold = cardFold(items);
+  assert.equal(fold.newest.get("c_1"), "k2");
+  assert.equal(fold.cards.get("c_1")?.phase, "answered");
+  assert.equal(fold.rows.get("k1")?.card?.phase, "open", "the earlier row keeps its own snapshot, for its one line");
+  assert.deepEqual(openCards(fold), []);
+});
+
+test("an error result, bad details and a legacy sova_confirm row are never state; live results fold last", () => {
+  const legacy: TranscriptItem = { id: "L", kind: "tool-call", text: "sova_confirm", toolCallId: "t-L", raw: {} };
+  const items = [call("k1"), result("k1", created), call("k2"), result("k2", answered, true), call("k3"), result("k3", { v: 1, card: { id: "c_1" }, changes: [], line: "" }), legacy, result("L", { title: "Old", options: [{ label: "Yes" }] })];
+  const fold = cardFold(items);
+  assert.equal(fold.cards.get("c_1")?.phase, "open");
+  assert.equal(fold.cards.size, 1);
+  const live = cardFold(items, [answered as CardDetails]);
+  assert.equal(live.cards.get("c_1")?.phase, "answered");
+  assert.equal(live.newest.has("c_1"), false, "a card this run changed has no settled row to render it in full");
 });

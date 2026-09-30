@@ -7,7 +7,8 @@ import type { OrgProject, Person } from "../shared/orgs";
 import type { ProjectUpdate } from "../shared/owner";
 import { GAP_TAG, LIMIT_WHAT, PER_DAY, PER_TURN, PO_LIMIT_KINDS, type AllowanceUse, type Autonomy, type CodingWorktree, type HeldItem, type PoLimitKind, type ProjectCodingMode, type ProjectOverseerCaps, type ProjectOverseerSettings } from "../shared/project-overseer";
 import type { IdeaStatus, SessionSummary, TranscriptItem } from "../shared/protocol";
-import { confirmTool } from "./overseer-confirm";
+import { cardTool } from "./overseer-card-tool";
+import { safeHttpsUrl } from "../shared/overseer-card";
 import { addIdea, IdeaError, readManifest, readProse, resolveIdeaId, updateIdea } from "./overseer-ideas";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
@@ -201,7 +202,7 @@ export function overRefusal(o: Over, now: Date): { said: string; tail: string; h
     };
   return {
     said: `This message's allowance is used: ${o.used} of ${o.max} ${what} per message you send.`,
-    tail: "Stop here and tell the operator what is done and what is left, or ask with sova_confirm.",
+    tail: "Stop here and tell the operator what is done and what is left, or ask with sova_card.",
     held: { key: `message:${o.kind}`, what, why: `This message's allowance is used: ${o.used} of ${o.max} ${what}.`, retryAt: now.toISOString() },
   };
 }
@@ -220,7 +221,7 @@ export const TOOL_NEEDS: Record<string, Need> = {
   sova_roster: "read", // approve/decline: L2, checked per op
   sova_todos: "operator", // the operator's own list: read when they ask
   sova_note: "L0",
-  sova_confirm: "L0",
+  sova_card: "L0",
   sova_idea: "L0",
   sova_start_gathering: "L1",
   sova_owner_update: "L1",
@@ -239,11 +240,11 @@ export function autonomyRefusal(name: string, need: Need, attended: boolean, eff
   if (need === "operator")
     return name === "sova_todos"
       ? "The to-do list is the operator's own: you read it only when the operator asks, in a turn they started. Don't act on their to-dos or ideas on your own."
-      : `${name} changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_confirm card with what you would change.`;
+      : `${name} changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_card card with what you would change.`;
   if (levelAtLeast(effective.autonomy, need)) return null;
   return (
     `This run was not started by the operator, and your autonomy here is ${effective.autonomy}${effective.reason ? ` (${effective.reason})` : ""}; ` +
-    `${name} needs ${need}. Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_confirm card that says what and why; ` +
+    `${name} needs ${need}. Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_card card that says what and why; ` +
     "the operator's click starts a turn in which you may act."
   );
 }
@@ -391,6 +392,17 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
 
   /** This project overseer's own conversation: by id, or by its marker for this project. */
   const isOwn = (s: SessionSummary) => s.id === host.overseerId() || (s.projectOverseer?.projectId === host.project().id && s.projectOverseer?.orgId === host.project().orgId);
+  /** A session a card may list or link: the project's coding and gathering sessions (its own
+      conversation is found too, only so a refusal can say why). */
+  const cardSession = async (id: string): Promise<SessionSummary | null> => {
+    const own = (await host.sessions()).find((x) => x.id === id && isOwn(x));
+    if (own) return own;
+    const { coding, batons } = await scoped();
+    const s = coding.find((x) => x.id === id);
+    if (s) return s;
+    if (!batons.some((b) => b.sessionId === id)) return null;
+    return (await host.sessions()).find((x) => x.id === id) ?? null;
+  };
 
   const names = () => {
     const out: Record<string, string> = {};
@@ -655,20 +667,13 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         return { content: text(`Notes saved (${saved.length} characters).`), details: { length: saved.length } };
       }),
     },
-    confirmTool({
+    cardTool({
       audience: "operator",
       lookup: {
         // The sessions it may read: the project's coding sessions and its gathering sessions.
         session: async (ref) => {
           const id = sessionRef(ref);
-          // Its own conversation is out of scope; found here only so the refusal can say why.
-          const own = (await host.sessions()).find((x) => x.id === id && isOwn(x));
-          if (own) return own;
-          const { coding, batons } = await scoped();
-          const s = coding.find((x) => x.id === id);
-          if (s) return s;
-          if (!batons.some((b) => b.sessionId === id)) return null;
-          return (await host.sessions()).find((x) => x.id === id) ?? null;
+          return id ? cardSession(id) : null;
         },
         isSelf: isOwn,
         idea: (ref) => {
@@ -678,7 +683,19 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         },
         todo: (ref) => readTodos(p.todos).todos.find((t) => t.id === ref) ?? null,
       },
-      wrap: (run) => act("sova_confirm", run),
+      // A session it may read, or an outside https URL; never an org page (§app.overseer/confirm).
+      link: async (t) => {
+        if (t.url !== undefined) {
+          const url = typeof t.url === "string" ? safeHttpsUrl(t.url) : null;
+          if (!url) throw new Refusal("url must be an https URL without credentials.");
+          return url;
+        }
+        const id = typeof t.session === "string" ? sessionRef(t.session) : null;
+        const s = id && Object.keys(t).length === 1 ? await cardSession(id) : null;
+        if (!s || isOwn(s)) throw new Refusal("A link here opens one of the project's sessions ({session}) or an https URL ({url}).");
+        return `#/s/${encodeURIComponent(s.path)}`;
+      },
+      wrap: (run) => act("sova_card", run),
       refusal: (m) => new Refusal(m),
     }),
     {

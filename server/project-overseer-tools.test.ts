@@ -435,19 +435,27 @@ describe("coding sessions' modes (the operator's ceiling)", () => {
   });
 });
 
-describe("sova_confirm items (the shared tool)", () => {
+describe("sova_card items (the shared tool)", () => {
+  const create = (fields: Record<string, unknown>) => ({ ops: [{ op: "create", title: "?", options: [{ label: "Go" }], ...fields }] });
   test("it resolves only the project's sessions, and runs in an unattended L0 run", async () => {
     const f = fake({ autonomy: "L0" });
-    const out = await f.run("sova_confirm", { title: "Stop these?", options: [{ label: "Stop" }], items: { sessions: ["in-root", "sova://s/in-tree"] } });
-    assert.equal(out.terminate, true);
+    const out = await f.run("sova_card", create({ title: "Stop these?", options: [{ label: "Stop" }], items: { sessions: ["in-root", "sova://s/in-tree"] } }));
+    assert.equal(out.terminate, undefined);
     assert.deepEqual(
-      out.details.items.map((i: { id: string; project?: string }) => [i.id, i.project]),
-      [["in-root", "app"], ["in-tree", "proj-fix-abc123"]],
+      out.details.card.items.map((i: { id: string; project?: string; n: number }) => [i.n, i.id, i.project]),
+      [[1, "in-root", "app"], [2, "in-tree", "proj-fix-abc123"]],
     );
-    assert.match((out.content[0] as { text: string }).text, /^Shown to the operator under your reply/);
-    assert.match((out.content[0] as { text: string }).text, /- \[Inside\]\(sova:\/\/s\/in-root\) \(in-root\)/);
-    await assert.rejects(f.run("sova_confirm", { title: "?", options: [{ label: "Go" }], items: { sessions: ["in-root", "outside", "global"] } }), /sessions: outside, global/);
-    await assert.rejects(f.run("sova_confirm", { title: "?", options: [{ label: "Go" }], items: { sessions: ["po-self"] } }), /po-self is your own conversation/);
+    assert.match((out.content[0] as { text: string }).text, /Shown to the operator under your reply/);
+    assert.match((out.content[0] as { text: string }).text, /1\. \[Inside\]\(sova:\/\/s\/in-root\) \(in-root\)/);
+    await assert.rejects(f.run("sova_card", create({ items: { sessions: ["in-root", "outside", "global"] } })), /sessions: outside, global/);
+    await assert.rejects(f.run("sova_card", create({ items: { sessions: ["po-self"] } })), /po-self is your own conversation/);
+  });
+  test("its link options open the project's sessions or an https URL, never an org page", async () => {
+    const f = fake({ autonomy: "L0" });
+    const out = await f.run("sova_card", create({ options: [{ label: "Go" }, { label: "Open", link: { session: "in-root" } }, { label: "Doc", link: { url: "https://example.com/doc" } }] }));
+    assert.deepEqual(out.details.card.options.map((o: { href?: string }) => o.href?.split("%2F")[0]), [undefined, "#/s/", "https://example.com/doc"]);
+    await assert.rejects(f.run("sova_card", create({ options: [{ label: "Go" }, { label: "X", link: { session: "global" } }] })), /A link here opens one of the project's sessions/);
+    await assert.rejects(f.run("sova_card", create({ options: [{ label: "Go" }, { label: "X", link: { org: "any" } }] })), /A link here opens one of the project's sessions/);
   });
 });
 

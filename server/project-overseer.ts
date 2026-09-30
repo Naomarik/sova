@@ -60,7 +60,8 @@ import {
   operatorName,
   stakeholderLine,
 } from "./orgs";
-import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
+import { appRequest, cardsNoteMessage, pathOfId, promptSession, toolCatalogue } from "./overseer";
+import { CARDS_NOTE_MESSAGE, cardsNote, foldCards } from "../shared/overseer-card";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
@@ -957,8 +958,14 @@ registerSpecialLoadout({
             name: "sova-project-overseer",
             factory: (pi) => {
               for (const t of tools) pi.registerTool(t);
-              pi.on("before_agent_start", (event) => {
+              pi.on("before_agent_start", (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = renderProjectOverseerPrompt(rt.orgId, rt.projectId, tools, template);
+                // The open cards, hidden, as the Overseer's (§app.overseer/confirm).
+                return cardsNoteMessage(ctx.sessionManager.getBranch());
+              });
+              pi.on("session_compact", (_event, ctx) => {
+                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true);
+                if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               pi.on("context", (event) => {
                 const messages = redactExtensionMessages(event.messages, serverRedactor());

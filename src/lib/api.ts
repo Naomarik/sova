@@ -25,6 +25,7 @@ import type {
   IdeaPatch,
   OverseerIdeaDetail,
   OverseerIdeasInfo,
+  OverseerAutonomy,
   OverseerInfo,
   OverseerSaveResult,
   OverseerSettings,
@@ -283,6 +284,11 @@ export const getOverseer = () => request<OverseerInfo>("/api/overseer");
 
 /** `/clear`: stops a running turn and starts a new Overseer file. Never refuses. */
 export const clearOverseer = () => request<OverseerInfo>("/api/overseer/clear", { method: "POST" });
+
+/** The Overseer's running count and its approvals and rules (§app.overseer/approvals). */
+export const getOverseerAutonomy = () => request<OverseerAutonomy>("/api/overseer/autonomy");
+export const revokeOverseerPermit = (id: string) =>
+  request<{ ok: true }>("/api/overseer/autonomy/revoke", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
 
 /** The Overseer's standing notes (`overseer-notes.md`): they survive /clear. */
 export const getOverseerNotes = () => request<{ text: string }>("/api/overseer/notes");

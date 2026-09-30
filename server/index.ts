@@ -14,6 +14,7 @@ import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
+import { runLedger } from "./auto-resume";
 import { startBatonMarksBackfill } from "./baton-marks";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
@@ -100,6 +101,9 @@ import {
   OVERSEER_SENDER_HEADER,
   saveOverseerSettings,
   setOverseerDispatch,
+  overseerAutonomy,
+  revokePermit,
+  startAutoResume,
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
@@ -1016,6 +1020,15 @@ app.get("/api/explanations", async (c) => c.json(await listExplanations(c.req.qu
 app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
 app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
 app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
+// Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).
+// There is no route that makes one: only a card click does, in the Overseer's own runtime.
+app.get("/api/overseer/autonomy", async (c) => c.json(await overseerAutonomy(), 200, { "Cache-Control": "no-store" }));
+app.post("/api/overseer/autonomy/revoke", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { id?: unknown } | null;
+  if (typeof body?.id !== "string" || !/^[gr]_[1-9]\d*$/.test(body.id)) return c.json({ error: "id must be a g_N or r_N" }, 400);
+  const r = await revokePermit(body.id);
+  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
+});
 app.get("/api/overseer/notes", (c) => c.json({ text: readNotes() }, 200, { "Cache-Control": "no-store" }));
 // `base` (optional): the notes the editor started from. When the file no longer holds them (the
 // Overseer's sova_note wrote meanwhile) the save is refused with 409 and the current text, so a
@@ -1369,6 +1382,8 @@ attachWebSockets(server);
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
+// The runs the last stop cut off get one "continue" each (§app.overseer/auto-resume).
+startAutoResume();
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
@@ -1463,6 +1478,8 @@ async function shutdown() {
   // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
   // Marked first, so a run that records how it ended says the shutdown cut it off.
   markShutdown();
+  // The aborts below settle every run: the ledger keeps them as cut off (§app.overseer/auto-resume).
+  runLedger.freeze();
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   priceRefresh.stop();

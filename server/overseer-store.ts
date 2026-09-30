@@ -39,7 +39,7 @@ const CAP_MAX = 500;
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh", "max"];
 const PROACTIVITY: readonly OverseerProactivity[] = ["off", "badge", "brief"];
 
-export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 5, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 };
+export const DEFAULT_CAPS: OverseerCaps = { createPerTurn: 5, promptsPerTurn: 10, archivesPerTurn: 50, concurrentSessions: 10, explorePerTurn: 2, linksPerTurn: 3, orgWritesPerTurn: 20, gatherPerTurn: 3 };
 
 /** Claude Opus 5 by any spelling (a CLI id, a 1M variant, a pi ref), never Opus 5.5 (`claude-opus-5-5`). */
 const OPUS_5 = /(^|\/)claude-opus-5(\[[^\]]*\])?$/i;
@@ -177,6 +177,13 @@ export function parseSettings(raw: unknown, strict: boolean): OverseerSettings |
     const choice = "error" in parsed || !OPUS_5.test(parsed.model) ? parsed : { error: `${parsed.model} is not allowed for the exploratory agent; use opus or opus[1m] (Claude Opus 5.5)` };
     if (!("error" in choice)) out.explorer = choice;
     else if (strict) return { error: `explorer: ${choice.error}` };
+  }
+  if (raw.autoResume !== undefined) {
+    if (typeof raw.autoResume === "boolean") out.autoResume = raw.autoResume;
+    else {
+      const e = fail("autoResume must be true or false");
+      if (e) return e;
+    }
   }
   return out;
 }

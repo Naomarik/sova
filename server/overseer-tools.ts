@@ -21,6 +21,7 @@ import { newestTopics, topicTime } from "../shared/outline-order";
 import { OVERSEER_BRIEF_PREFIX } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { whereOf } from "./attention";
+import { idOfAlias, sessionName } from "./session-names";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { logAction, readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
 import { parseModePatch } from "./mode-state";
@@ -28,9 +29,11 @@ import { ideaTools, type IdeaToolHost, type ToolCall } from "./overseer-idea-too
 import { todoTools } from "./overseer-todo-tools";
 import { readTodos } from "./overseer-todos";
 import { readManifest, resolveIdeaId } from "./overseer-ideas";
-import { confirmTool } from "./overseer-confirm";
+import { cardTool, type CardLinkInput } from "./overseer-card-tool";
+import { CARDS_NOTE_MESSAGE, safeHttpsUrl } from "../shared/overseer-card";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
+import { resolveOrg, resolvePerson, resolveProject } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import type { PeerLinkRead } from "../shared/mesh-links";
 
@@ -85,6 +88,15 @@ export interface OverseerToolHost extends IdeaToolHost {
   /** The items of the confirm card whose click opened this turn (the user's own run, not typed);
       null when no card click opened it (§app.overseer/org-people-facing). */
   confirmed(): SovaConfirmItem[] | null;
+  /** The live approval for later or standing rule that covers `tool` on every one of `sessions`
+      (ids), or null (§app.overseer/approvals). Absent: none ever does. */
+  permit?(tool: string, sessions: string[]): { id: string; label: string } | null;
+  /** Record that an act ran under that approval or rule. */
+  used?(id: string, tool: string, sessions: string[], toolCallId: string): void;
+  /** Session id → the user's alias (§app.overseer/session-names). Absent: none. */
+  aliases?(): Record<string, string>;
+  /** Set or ("") clear a session's alias; the refusal sentence, or null. */
+  setAlias?(id: string, alias: string): string | null;
   /** A mesh peer by id, with its state now (a briefly cached hello); null while the mesh is off
       or when this host has no such peer. */
   peer(id: string): Promise<PeerRef | null>;
@@ -148,6 +160,8 @@ export interface TurnEvent {
     the SDK's loadout declarations and summaries. Every other role (a user message, an extension's
     custom message, anything new) is input, and input decides who the run belongs to. */
 const NEUTRAL_ROLES = new Set(["assistant", "toolResult", "system", "compactionSummary", "branchSummary", "bashExecution"]);
+/** A custom message only the server writes: the hidden open-cards note. */
+const isCardsNote = (m: unknown): boolean => (m as { role?: unknown; customType?: unknown } | undefined)?.role === "custom" && (m as { customType?: unknown }).customType === CARDS_NOTE_MESSAGE;
 
 /**
  * Whether the Overseer is answering the user: the one source of truth for both the per-turn caps
@@ -188,9 +202,9 @@ const NEUTRAL_ROLES = new Set(["assistant", "toolResult", "system", "compactionS
 export class UserTurns {
   private readonly sending = new AsyncLocalStorage<{ open: boolean; confirm?: string }>();
   private readonly fromUser = new WeakSet<object>();
-  /** A marked message that is a click on a confirm card: that card's tool call id. */
+  /** A marked message that is a click on a card: that card's id (`c_N`). */
   private readonly confirmOf = new WeakMap<object, string>();
-  /** The confirm card whose click opened the user's part of this run, while it lasts. */
+  /** The card whose click opened the user's part of this run, while it lasts. */
   private card: string | null = null;
   private retryCard: string | null = null;
   private rerunCard: string | null = null;
@@ -203,7 +217,7 @@ export class UserTurns {
   /** The run started as a re-run, and nothing has entered it yet. */
   private rerun: boolean | null = null;
   /** Run the SDK call that hands a message the user sent to the runtime. `confirm`: the message is a
-      click on the confirm card of that tool call (the chat runtime says so; typed text never is). */
+      click on the card with that id, `c_N` (the chat runtime says so; typed text never is). */
   send<T>(send: () => T, confirm?: string): T {
     return this.sending.run({ open: true, ...(confirm ? { confirm } : {}) }, send);
   }
@@ -278,7 +292,9 @@ export class UserTurns {
       this.batch = false;
       return false;
     }
-    if (typeof role === "string" && NEUTRAL_ROLES.has(role)) {
+    // The Overseer's own open-cards note is state, not input (§app.overseer/confirm): it never
+    // changes who the run belongs to, wherever it lands.
+    if ((typeof role === "string" && NEUTRAL_ROLES.has(role)) || isCardsNote(message)) {
       this.rerun = rerun;
       this.rerunCard = rerunCard;
       return false;
@@ -324,8 +340,25 @@ export class UserTurns {
 /** The acting tools' refusal in a turn the user did not start. */
 export const UNATTENDED_REFUSAL =
   "This turn was not started by the user (it is a brief, a wake-up or another automatic message), so it is read-only: " +
-  "you may read, keep notes and ask, but nothing that changes a session runs here. Stop, and raise a sova_confirm card " +
-  "that says what you would do and why; the user's click starts a turn in which you may act.";
+  "you may read, keep notes and ask, but nothing that changes a session runs here, and no approval for later or standing rule " +
+  "the user adopted covers this act. Stop, and raise a sova_card card that says what you would do and why; the user's click " +
+  "starts a turn in which you may act.";
+
+/** The sessions an act names, for the approvals check: null for an act that names none. */
+export function actTargets(tool: string, params: any): string[] | null {
+  switch (tool) {
+    case "sova_send":
+    case "sova_set_session":
+    case "sova_answer_dialog":
+      return typeof params?.session === "string" ? [params.session] : null;
+    case "sova_archive":
+      return Array.isArray(params?.sessions) && params.sessions.length ? params.sessions.map(String) : null;
+    case "sova_group":
+      return (params?.op === "add" || params?.op === "remove") && Array.isArray(params?.sessions) && params.sessions.length ? params.sessions.map(String) : null;
+    default:
+      return null;
+  }
+}
 
 // ---- per-turn limits ---------------------------------------------------------------------------
 
@@ -386,7 +419,7 @@ export class TurnLimits {
       const what = WHAT[kind];
       return (
         `Limit reached: at most ${max} ${what} per message from the user (${this.used[kind]} used; Settings → Overseer → Limits). ` +
-        "Stop here. Tell the user what is done and what is left, or ask with sova_confirm before doing more. " +
+        "Stop here. Tell the user what is done and what is left, or ask with sova_card before doing more. " +
         "Do not schedule a wake_nudge to carry on: wake-ups and briefs share this budget, and only the user's next message renews it."
       );
     }
@@ -444,7 +477,9 @@ export function concurrencyRefusal(running: number, caps: OverseerCaps): string 
   if (running < caps.concurrentSessions) return null;
   return (
     `Limit reached: ${running} ${running === 1 ? "session you started is" : "sessions you started are"} running or starting, and the limit is ${caps.concurrentSessions} at once ` +
-    "(Settings → Overseer → Limits). Wait for one to finish, or tell the user and ask with sova_confirm."
+    "(Settings → Overseer → Limits). Wait for one to finish, or tell the user and ask with sova_card. When you tell them, say " +
+    "in plain words that the running-at-once limit was reached (how many of your sessions are working, and the limit), and " +
+    "that they can raise it in Settings → Overseer → Limits."
   );
 }
 
@@ -463,7 +498,11 @@ function ago(ms: number, now = Date.now()): string {
   return `${Math.round(s / 86_400)}d ago`;
 }
 
-const link = (s: Pick<SessionSummary, "id" | "title">) => `[${s.title.replace(/[[\]]/g, "")}](sova://s/${s.id})`;
+/** The aliases the links read (the tools' host sets it; none in a bare call). */
+let aliasesNow: () => Record<string, string> = () => ({});
+/** A session as a link, named summary-first (§app.overseer/session-names). */
+const link = (s: Pick<SessionSummary, "id" | "title"> & Partial<Pick<SessionSummary, "titleBy" | "outlineGist" | "outlineNow">>) =>
+  `[${sessionName(s, aliasesNow()[s.id]).replace(/[[\]]/g, "")}](sova://s/${s.id})`;
 
 function stateOf(s: SessionSummary): string {
   if (s.pendingDialogs) return "needs-input";
@@ -493,6 +532,7 @@ function row(s: SessionSummary, now = Date.now()): string {
   const parts = [
     `${s.id}`,
     `"${cut(s.title, 70)}"`,
+    ...(aliasesNow()[s.id] ? [`alias "${aliasesNow()[s.id]}"`] : []),
     whereOf(s),
     s.model ?? "no model",
     stateOf(s),
@@ -612,6 +652,7 @@ const bool = (description: string) => ({ type: "boolean", description });
  * Every tool's `promptSnippet` is its one line in the prompt's catalogue ({{TOOLS}}).
  */
 export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redactor: () => Redactor = serverRedactor): Tool[] {
+  aliasesNow = () => host.aliases?.() ?? {};
   async function call(method: string, path: string, body?: unknown, headers: Record<string, string> = {}): Promise<{ status: number; json: any }> {
     const res = await host.request(path, {
       method,
@@ -631,11 +672,20 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     new Refusal(typeof r.json?.error === "string" ? r.json.error : `${what} failed (HTTP ${r.status}).`);
 
   /** Resolve a session reference, refusing the Overseer's own files. */
+  /** A session by any form the tools print its id in, or by its alias; null when none matches. */
+  async function lookup(ref: unknown): Promise<SessionSummary | null> {
+    const raw = sessionRef(ref);
+    if (!raw) return null;
+    const s = await host.session(raw);
+    if (s) return s;
+    const id = idOfAlias(raw, host.aliases?.() ?? {});
+    return id ? host.session(id) : null;
+  }
   async function resolve(ref: unknown): Promise<SessionSummary> {
     const raw = sessionRef(ref);
     if (!raw) throw new Refusal("Name the session by its id (from sova_list_sessions or sova_attention).");
-    const s = await host.session(raw);
-    if (!s) throw new Refusal(`No session with id ${raw}. List sessions again; it may have been deleted.`);
+    const s = await lookup(raw);
+    if (!s) throw new Refusal(`No session with id ${raw} (nor a session with that alias). List sessions again; it may have been deleted.`);
     return s;
   }
   /** For acts: never the Overseer itself, never a TUI-live session, never a worker's own session. */
@@ -687,6 +737,59 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
   const oldBuild = (r: { status: number; json: any }) => r.status === 404 && r.json?.error === "Not found";
   const oldBuildRefusal = (peer: PeerRef, what: string) => new Refusal(`${peer.label} (${peer.id}) runs a Sova build without ${what}; update it first.`);
 
+  /**
+   * A target the user's tab can open (§app.overseer/navigation): sova_navigate's, and a card's link
+   * options (§app.overseer/confirm), which also take an https URL. Validates it; never moves anything.
+   */
+  async function navTarget(p: CardLinkInput): Promise<SovaNavigateDetails> {
+    if (p.url !== undefined) {
+      const url = typeof p.url === "string" ? safeHttpsUrl(p.url) : null;
+      if (!url) throw new Refusal("url must be an https URL without credentials.");
+      return { href: url, label: cut(url, 80) };
+    }
+    if (p.group) {
+      const r = await call("GET", "/api/session-groups");
+      const g = ((Array.isArray(r.json) ? r.json : []) as SessionGroup[]).find((x) => x.id === p.group);
+      if (!g) throw new Refusal(`No group with id ${p.group}.`);
+      const s = p.session ? await resolve(p.session) : null;
+      return {
+        href: `#/g/${encodeURIComponent(g.id)}${s ? `/${encodeURIComponent(s.path)}` : ""}`,
+        label: s ? `Open "${s.title}" in ${g.name}` : `Open ${g.name}`,
+      };
+    }
+    if (p.session) {
+      const s = await resolve(p.session);
+      return { href: `#/s/${encodeURIComponent(s.path)}`, label: `Open "${cut(s.title, 60)}"` };
+    }
+    if (p.org !== undefined) {
+      // An org attached here, and one of its projects or roster people, as the org tools take them.
+      try {
+        const org = resolveOrg(p.org);
+        if (p.project !== undefined) {
+          const project = resolveProject(org.id, p.project);
+          return { href: `#/orgs/${org.id}/projects/${project.id}`, label: `Open ${project.name} in ${org.name}` };
+        }
+        if (p.person !== undefined) {
+          const person = resolvePerson(org.id, p.person);
+          return { href: `#/orgs/${org.id}/people/${person.id}`, label: `Open ${person.name} in ${org.name}` };
+        }
+        return { href: `#/orgs/${org.id}`, label: `Open ${org.name}` };
+      } catch (err) {
+        throw new Refusal(err instanceof Error ? err.message : String(err));
+      }
+    }
+    if (p.project !== undefined || p.person !== undefined) throw new Refusal("A project or a person needs its org.");
+    if (p.page === "usage") return { href: "#/usage", label: "Open Usage" };
+    if (p.page === "agents") return { href: p.team ? `#/agents/${encodeURIComponent(p.team)}` : "#/agents", label: "Open Agents" };
+    if (p.page === "overseer") return { href: "#/overseer", label: "Open the Overseer" };
+    if (p.page === "settings") {
+      const tab = p.settings_tab ?? "general";
+      if (!(SETTINGS_TABS as readonly string[]).includes(tab)) throw new Refusal(`settings_tab must be one of ${SETTINGS_TABS.join(", ")}.`);
+      return { href: `settings:${tab}`, label: `Open Settings → ${tab[0]!.toUpperCase()}${tab.slice(1)}` };
+    }
+    throw new Refusal("Give a session, a group, a page, an org, or a url.");
+  }
+
   /** Wrap an act: audit every call, refusal or not. Refused in a turn the user did not start
       (UserTurns) unless `unattended: true` (notes, confirm cards, navigate: they change no session). */
   function act(
@@ -695,12 +798,20 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     opts: { unattended?: boolean } = {},
   ) {
     return async (toolCallId: string, params: any, signal?: AbortSignal, _onUpdate?: unknown, ctx?: unknown) => {
+      let under: { id: string; label: string; sessions: string[] } | null = null;
       try {
-        if (!opts.unattended && !host.attended()) throw new Refusal(UNATTENDED_REFUSAL);
+        if (!opts.unattended && !host.attended()) {
+          under = await covering(name, params);
+          if (!under) throw new Refusal(UNATTENDED_REFUSAL);
+        }
         const out = await run(params, toolCallId, { signal, ctx });
+        if (under) {
+          host.used?.(under.id, name, under.sessions, toolCallId);
+          out.content = [...out.content, { type: "text" as const, text: `Done under ${under.id} (${under.label}).` }];
+        }
         // No contact in the log (§app.overseer/org-projection): a contact argument is `[contact]`, and any value on a roster too.
         const c = contactRedactor();
-        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: c.deep(loggedArgs(name, params)), outcome: "ok" });
+        logAction({ at: new Date().toISOString(), overseerId: host.overseerId(), toolCallId, tool: name, args: c.deep(loggedArgs(name, params)), outcome: "ok", ...(under ? { under: under.id } : {}) });
         return out;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -713,10 +824,25 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           args: c.deep(loggedArgs(name, params)),
           outcome: err instanceof Refusal ? "refused" : "error",
           error: c.text(message),
+          ...(under ? { under: under.id } : {}),
         });
         throw err instanceof Error ? err : new Error(message);
       }
     };
+  }
+  /** The live approval or rule that lets an unattended run do this act: it must name sessions, and
+      cover every one of them (resolved to ids, aliases included). Null otherwise. */
+  async function covering(name: string, params: any): Promise<{ id: string; label: string; sessions: string[] } | null> {
+    const refs = actTargets(name, params);
+    if (!refs || !host.permit) return null;
+    const ids: string[] = [];
+    for (const ref of refs) {
+      const s = await lookup(ref).catch(() => null);
+      if (!s) return null;
+      ids.push(s.id);
+    }
+    const p = host.permit(name, ids);
+    return p ? { ...p, sessions: ids } : null;
   }
   /** A read: errors surface as-is, nothing is logged. */
   function read(run: (params: any, call: ToolCall & { toolCallId: string }) => Promise<{ content: ReturnType<typeof text>; details: unknown }>) {
@@ -849,7 +975,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         const items = p.include_fyi ? d.items : d.items.filter((i) => i.tier !== "fyi");
         const lines = items.map(
           (i) =>
-            `- [${i.tier}] ${i.kind} · [${cut(i.title, 70).replace(/[[\]]/g, "")}](sova://s/${i.id}) · ${i.where}${i.tuiLive ? " · TUI-live (read-only)" : ""} · ${i.since ? ago(i.since) : "?"}${i.detail ? `\n  ${i.detail}` : ""}`,
+            `- [${i.tier}] ${i.kind} · [${cut(i.name ?? i.title, 70).replace(/[[\]]/g, "")}](sova://s/${i.id}) · ${i.where}${i.tuiLive ? " · TUI-live (read-only)" : ""} · ${i.since ? ago(i.since) : "?"}${i.detail ? `\n  ${i.detail}` : ""}`,
         );
         const head = `Needs you: ${d.counts.act} · Finished/decide: ${d.counts.decide} · FYI: ${d.counts.fyi}`;
         return { content: text([head, ...(lines.length ? lines : ["Nothing in these tiers right now."])].join("\n")), details: d };
@@ -1138,12 +1264,13 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_set_session",
       label: "Set session",
       description:
-        "Rename a session, or set its model, thinking level or mode (normal/delegate; minor modes such as spec). Model, thinking and mode need the session idle. Terminal-owned sessions are read-only.",
-      promptSnippet: "rename a session, or set its model, thinking or mode",
+        "Rename a session, give it an alias (a short name the user chose, which every tool then takes in place of its id), or set its model, thinking level or mode (normal/delegate; minor modes such as spec). Model, thinking and mode need the session idle. Terminal-owned sessions are read-only.",
+      promptSnippet: "rename a session, alias it, or set its model, thinking or mode",
       parameters: obj(
         {
           session: str("Session id."),
           title: str("New title (empty string clears it back to the first message)."),
+          alias: str('A short name the user gave it, e.g. "overseer fixes" (at most 40 characters, unique; empty string clears it).'),
           model: str('Model ref "provider/model".'),
           thinking: str("off | minimal | low | medium | high | xhigh | max"),
           mode: str("normal | delegate"),
@@ -1159,6 +1286,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           const r = await call("POST", "/api/sessions/title", { path: s.path, title: t, source: "overseer" });
           if (r.status !== 200) throw failed(r, "Renaming");
           done.push(t ? `renamed to "${t}"` : "title cleared");
+        }
+        if (p.alias !== undefined) {
+          if (!host.setAlias) throw new Refusal("Aliases are not available here.");
+          const refused = host.setAlias(s.id, String(p.alias));
+          if (refused) throw new Refusal(refused);
+          done.push(String(p.alias).trim() ? `alias "${String(p.alias).replace(/\s+/g, " ").trim()}"` : "alias cleared");
         }
         if (p.model) {
           await host.setModel(s.path, p.model);
@@ -1179,7 +1312,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
           });
           done.push(`mode ${r.json?.mode ?? p.mode ?? ""}${Array.isArray(r.json?.minorModes) && r.json.minorModes.length ? ` + ${r.json.minorModes.join(", ")}` : ""}${r.json?.applies && r.json.applies !== "now" ? ` (applies ${r.json.applies})` : ""}`);
         }
-        if (!done.length) throw new Refusal("Nothing to change: give title, model, thinking, mode or minor_modes.");
+        if (!done.length) throw new Refusal("Nothing to change: give title, alias, model, thinking, mode or minor_modes.");
         return { content: text(`${link(s)}: ${done.join(", ")}.`), details: { id: s.id, path: s.path } };
       }),
     },
@@ -1309,7 +1442,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_navigate",
       label: "Navigate",
       description:
-        "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, or a Settings tab. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
+        "Move the user's browser tab (only the tab that sent the current message; never on a brief or wake-up) to a session, a group workspace, the usage or agents page, the Overseer, a Settings tab, or an organization, project or person page. Validates the target and returns its link. Make it the LAST call of a turn: the view changes when it lands.",
       promptSnippet: "open a session, workspace, page or Settings tab in the user's tab (last call)",
       parameters: obj({
         session: str("Session id to open (alone, or focused inside `group`)."),
@@ -1317,29 +1450,12 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         page: str("usage | agents | overseer | settings", { enum: ["usage", "agents", "overseer", "settings"] }),
         team: str("With page agents: a team id."),
         settings_tab: str(`With page settings: ${SETTINGS_TABS.join(" | ")}`, { enum: [...SETTINGS_TABS] }),
+        org: str("An organization, by id or exact name: open its page (or, with project or person, theirs)."),
+        project: str("With org: a project, by id or exact name."),
+        person: str("With org: a roster person, by id or exact name."),
       }),
       execute: act("sova_navigate", async (p) => {
-        let details: SovaNavigateDetails;
-        if (p.group) {
-          const r = await call("GET", "/api/session-groups");
-          const g = ((Array.isArray(r.json) ? r.json : []) as SessionGroup[]).find((x) => x.id === p.group);
-          if (!g) throw new Refusal(`No group with id ${p.group}.`);
-          const s = p.session ? await resolve(p.session) : null;
-          details = {
-            href: `#/g/${encodeURIComponent(g.id)}${s ? `/${encodeURIComponent(s.path)}` : ""}`,
-            label: s ? `Open "${s.title}" in ${g.name}` : `Open ${g.name}`,
-          };
-        } else if (p.session) {
-          const s = await resolve(p.session);
-          details = { href: `#/s/${encodeURIComponent(s.path)}`, label: `Open "${cut(s.title, 60)}"` };
-        } else if (p.page === "usage") details = { href: "#/usage", label: "Open Usage" };
-        else if (p.page === "agents") details = { href: p.team ? `#/agents/${encodeURIComponent(p.team)}` : "#/agents", label: "Open Agents" };
-        else if (p.page === "overseer") details = { href: "#/overseer", label: "Open the Overseer" };
-        else if (p.page === "settings") {
-          const tab = p.settings_tab ?? "general";
-          if (!(SETTINGS_TABS as readonly string[]).includes(tab)) throw new Refusal(`settings_tab must be one of ${SETTINGS_TABS.join(", ")}.`);
-          details = { href: `settings:${tab}`, label: `Open Settings → ${tab[0]!.toUpperCase()}${tab.slice(1)}` };
-        } else throw new Refusal("Give a session, a group, or a page.");
+        const details = await navTarget(p);
         return { content: text(`${details.label}: ${details.href}. End your turn now.`), details };
       }, { unattended: true }),
     },
@@ -1363,8 +1479,9 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         return { content: text(`Notes saved (${saved.length} characters). They are in your prompt from your next run on (the next message, brief or wake-up); you know them now.`), details: { length: saved.length } };
       }, { unattended: true }),
     },
-    confirmTool({
+    cardTool({
       audience: "user",
+      grants: true,
       lookup: {
         // Any session: a card only points at it, so TUI-live and archived sessions are fine.
         session: async (ref) => {
@@ -1382,7 +1499,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         person: orgConfirmLookup.person,
         project: orgConfirmLookup.project,
       },
-      wrap: (run) => act("sova_confirm", run, { unattended: true }),
+      link: async (target) => (await navTarget(target)).href,
+      wrap: (run) => act("sova_card", run, { unattended: true }),
       refusal: (m) => new Refusal(m),
     }),
     ...ideaTools({

@@ -28,7 +28,7 @@
              "Nothing starts before then. Tell the operator what is waiting; don't promise an earlier look.")
           (explain host :gather/start (merge l3 m/gather-args {:allowance m/spent}))))
     (is (= (str "This message's allowance is used: 3 of 3 gathering sessions started per message you send. "
-             "Stop here and tell the operator what is done and what is left, or ask with sova_confirm.")
+             "Stop here and tell the operator what is done and what is left, or ask with sova_card.")
           (explain host :gather/start (merge (:attended m/envelopes) m/gather-args {:allowance {:gather {:used 3 :max 3}}}))))
     (is (nil? (explain host :gather/start (merge l3 m/gather-args {:allowance {:gather {:used 6 :max nil}}})))
       "Unlimited (max null) never refuses"))

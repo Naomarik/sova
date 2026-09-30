@@ -74,7 +74,7 @@ import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Fourteen screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Fifteen screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
@@ -84,6 +84,7 @@ const TABS = [
   { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "teams", label: "Teams", icon: "command" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
+  { id: "notifications", label: "Notifications", icon: "bell" as const },
   { id: "decisions", label: "Decisions", icon: "shield" as const },
   { id: "summaries", label: "Summaries", icon: "chat" as const },
   { id: "organizations", label: "Organizations", icon: "network" as const },
@@ -250,6 +251,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "overseer"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-overseer" aria-labelledby="settings-tab-overseer">
               <OverseerSettingsSection />
+            </div>
+          </Show>
+          {/* Mounted only while its tab is: the devices and settings are read when it opens. */}
+          <Show when={tab() === "notifications"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-notifications" aria-labelledby="settings-tab-notifications">
               <PushSettingsSection />
             </div>
           </Show>

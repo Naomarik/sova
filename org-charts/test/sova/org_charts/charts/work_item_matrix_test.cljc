@@ -301,7 +301,7 @@
         why  (wi/explain {:config (h/config host "item") :data (h/data host "item") :running? true}
                :decision/promote (merge (:l0 envelopes) {:ids ["d1"]}))]
     (is (= (str "This run was not started by the operator, and your autonomy here is L0; sova_promote needs L2. "
-             "Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_confirm card that says what and why; "
+             "Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_card card that says what and why; "
              "the operator's click starts a turn in which you may act.")
           why)))
   (let [host (place :open)

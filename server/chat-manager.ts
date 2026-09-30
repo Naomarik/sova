@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { runLedger } from "./auto-resume";
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import {
   type AgentSession,
@@ -1472,6 +1473,9 @@ class ChatSession {
           this.releaseLinks(false);
         });
       if (event.type === "agent_start") this.releaseLinks(true);
+      // The runs in flight, for resuming what a restart cuts off (§app.overseer/auto-resume).
+      if (event.type === "agent_start") runLedger.started(this.path);
+      if (event.type === "agent_settled") runLedger.settled(this.path);
       if (event.type === "message_start" && this.linkInSdk.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
         const content = (event as { message: { content?: unknown } }).message.content;
         const i = this.linkInSdk.indexOf(typeof content === "string" ? content : textBlocks(content));

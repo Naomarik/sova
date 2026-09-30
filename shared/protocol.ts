@@ -7,6 +7,7 @@ import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
 import type { LinkedAgentInfo } from "./mesh-links";
+import type { Permit } from "./overseer-grants";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -1744,9 +1745,11 @@ export type ChatClientMessage =
       its pending row by a value it already has instead of waiting to be told one. Omitted = the
       server allocates an id, and the row is only nameable from the next `queue` snapshot. */
   | { type: "prompt"; text: string; images?: OutboundImage[]; clientId?: string;
-      /** The Overseer only: this message is a click on the `sova_confirm` card whose tool call has
-          this id (never a typed answer). The turn it opens may run the acts that card listed
-          (§app.overseer/org-people-facing). Ignored anywhere else. */
+      /** The Overseer only: this message is a click on the `sova_card` card with this id (`c_N`,
+          shared/overseer-card.ts; never a typed answer). The turn it opens may run the acts that
+          card listed, while the card is open and the text is exactly what the click composes
+          (§app.overseer/org-people-facing). A tool call id (a card from before card ids) approves
+          nothing. Ignored anywhere else. */
       confirm?: string }
   | { type: "steer"; text: string; images?: OutboundImage[]; clientId?: string }
   | { type: "abort" }
@@ -2689,7 +2692,7 @@ export interface OverseerCaps {
   createPerTurn: number;      // default 5
   promptsPerTurn: number;     // default 10
   archivesPerTurn: number;    // default 50
-  concurrentSessions: number; // default 5: Overseer-started sessions running at once
+  concurrentSessions: number; // default 10 (5 before): Overseer-started sessions running at once
   explorePerTurn: number;     // default 2: explorer subagents launched (sova_idea explore); absent on read → default
   linksPerTurn: number;       // default 3: links made (sova_link, §app.overseer/links-tools); absent on read → default
   orgWritesPerTurn: number;   // default 20: organization writes (§app.overseer/org-tools); absent on read → default
@@ -2712,6 +2715,8 @@ export interface OverseerSettings {
       `{backend:"claude-code", model:"opus[1m]", effort:"medium"}` (Claude Opus 5.5). Absent or
       invalid on read → the default. */
   explorer: WorkerChoice;
+  /** Resume the runs a server restart cut off (§app.overseer/auto-resume). Absent = on. */
+  autoResume?: boolean;
 }
 
 export interface OverseerSettingsInfo {
@@ -2787,6 +2792,9 @@ export interface AttentionItem {
   detail?: string;
   /** `#/s/<path>`. */
   href: string;
+  /** The session's name summary-first (§app.overseer/session-names): its alias, a title someone
+      set, its one-line summary, else `title`. Briefs, sova_attention and push use it. */
+  name?: string;
   /** The session is open in a TUI: read-only for the Overseer. */
   tuiLive?: true;
   /** An organizational session's item (its `SessionSummary.org`, names only): the sidebar lists it
@@ -2837,6 +2845,17 @@ export interface OverseerAction {
   error?: string;
   /** A done act's one-line result worth showing (a project overseer's promotion commit, a coding session's branch). */
   note?: string;
+  /** The approval for later or standing rule (`g_N` / `r_N`) an unattended act ran under (§app.overseer/approvals). */
+  under?: string;
+}
+
+/** GET /api/overseer/autonomy (§app.overseer/approvals, §app.overseer/caps): the running count
+    beside its cap, and every approval for later and standing rule of the current conversation
+    (the shape is shared/overseer-grants.ts `Permit`). */
+export interface OverseerAutonomy {
+  running: number;
+  cap: number;
+  permits: Permit[];
 }
 
 // --- Tool results the Overseer ChatView renders specially (tool_execution_end `result.details`
@@ -2850,7 +2869,9 @@ export interface SovaNavigateDetails {
   label: string;
 }
 
-/** `sova_confirm` details. Non-blocking: the tool returns at once and the model ends its turn.
+/** `sova_confirm` details: the card tool before `sova_card` (shared/overseer-card.ts `CardDetails`),
+    kept to render older conversations read-only (§app.overseer/confirm). The item rows below are
+    also the `sova_card` card's item snapshot. As it was: non-blocking, the model ended its turn.
     The card shows `options` as buttons; a click sends the option's `reply` (or its label) as the
     next user message. Answered/disabled once any later user message exists in the transcript
     (`answer` = that message's text when it matches an option). `items`: what the question is

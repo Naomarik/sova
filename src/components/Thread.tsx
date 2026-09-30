@@ -33,8 +33,9 @@ import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { ShowChangesCard } from "./ChangesViewer";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { Banner, Chip, Icon } from "./ui";
-import { BriefRow, ConfirmCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
-import { confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
+import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
+import { cardFold, confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
+import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
 import { type MessageStrip, sameStrip, stripLabel, stripsByRow } from "../lib/message-actions";
 
@@ -423,6 +424,9 @@ export function HistoryItems(props: {
   /** Alignments this streaming run already changed: their settled cards read as revision rows
       until the refetch brings the new revision (§chat.alignment/card). */
   liveAlignIds?: ReadonlySet<string>;
+  /** Cards this streaming run already changed: their settled rows read as one line until the
+      refetch brings the new snapshot (§app.overseer/confirm). */
+  liveCardIds?: ReadonlySet<string>;
 }) {
   /**
    * The items the thread may render: the settings-change rows are dropped before anything else,
@@ -467,6 +471,16 @@ export function HistoryItems(props: {
   const latestAlign = createMemo(() => latestAlignId(props.items));
   /** The newest revision of each alignment renders as the card; the rest as one line each. */
   const newestAligns = createMemo(() => newestAlignRows(props.items));
+  /** The thread's cards, folded from their results: the row that last touched a card itself renders
+      it in full, with the card's newest snapshot; an earlier row is one line. */
+  const cards = createMemo(() => cardFold(props.items));
+  const cardRow = (item: TranscriptItem) => {
+    const d = cards().rows.get(item.id);
+    if (!d?.card) return undefined;
+    const id = d.card.id;
+    const newest = cards().newest.get(id) === item.id && !props.liveCardIds?.has(id);
+    return { details: d, card: newest ? (cards().cards.get(id) ?? d.card) : d.card, newest };
+  };
   const alignNewest = (item: TranscriptItem) => newestAligns().has(item.id) && !(item.align?.doc && props.liveAlignIds?.has(item.align.doc.id));
 
   /** User rows a baton participant sent: target id → their ref, in any order (§app.baton/attribution). */
@@ -736,15 +750,25 @@ export function HistoryItems(props: {
                     const r = item.toolCallId ? results().get(item.toolCallId) : undefined;
                     return r ? detailsOf(r.raw) : undefined;
                   };
+                  // A legacy card (from before card ids): read-only, answered by the rule it had then.
                   const confirm = () =>
-                    item.text === "sova_confirm" && status() !== "error"
+                    item.text === LEGACY_CONFIRM_TOOL && status() !== "error"
                       ? (confirmDetails(resultDetails()) ?? confirmDetails(toolCallArgs(item.raw, item.toolCallId)))
                       : null;
+                  const card = () => (item.text === CARD_TOOL && status() === "done" ? cardRow(item) : undefined);
                   /** A made or ended link reads as a card naming its members (§app.overseer/links-tools);
                       running or failed, the plain tool card. */
                   const linked = () =>
                     (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
                   return (
+                    <Show
+                      when={!card()}
+                      fallback={
+                        <Show when={card()!.newest} fallback={<CardRevision card={card()!.card} line={card()!.details.line} />}>
+                          <DeckCard card={card()!.card} line={card()!.details.line} />
+                        </Show>
+                      }
+                    >
                     <Show
                       when={confirm()}
                       fallback={
@@ -769,8 +793,9 @@ export function HistoryItems(props: {
                     >
                       {(details) => {
                         const answer = () => confirmAnswer(props.items, props.items.indexOf(item), details());
-                        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} card={item.toolCallId} />;
+                        return <ConfirmCard details={details()} answered={answer().answered} choice={answer().choice} />;
                       }}
+                    </Show>
                     </Show>
                   );
                 })()}
@@ -845,15 +870,14 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
             if (t) return t.status;
             return props.live.running ? "running" : "none";
           };
-          const confirm = () => (b().name === "sova_confirm" && status() !== "error" ? confirmDetails(tool()?.details) ?? confirmDetails(b().args) : null);
+          /** A card this run raised or changed: the card itself, as soon as the result lands. */
+          const card = () => (b().name === CARD_TOOL && status() === "done" ? normalizeCardDetails(tool()?.details) : undefined);
           const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
           /** An align result that changed an alignment: its card, as soon as the result lands. */
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           return (
             <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
-            <Show
-              when={confirm()}
-              fallback={
+            <Show when={!card()?.card} fallback={<DeckCard card={card()!.card!} line={card()!.line} />}>
                 <Show
                   when={linked()}
                   fallback={
@@ -871,9 +895,6 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
                 >
                   {(d) => <LinkCard details={d()} ended={b().name === "sova_unlink"} />}
                 </Show>
-              }
-            >
-              {(details) => <ConfirmCard details={details()} answered={false} choice={null} pending={props.live.running} card={b().id} />}
             </Show>
             </Show>
           );

@@ -288,7 +288,7 @@
     (is (nil? (why {:tool "sova_roster" :op "read"})))
     (is (str/includes? (why {:tool "sova_roster" :op "approve"}) "sova_roster needs L2."))
     (is (str/includes? (why {:tool "sova_promote" :n 1}) "sova_promote needs L2."))
-    (is (= "sova_todo changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_confirm card with what you would change."
+    (is (= "sova_todo changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_card card with what you would change."
           (why {:tool "sova_todo"})))
     (is (str/starts-with? (why {:tool "sova_todos"}) "The to-do list is the operator's own"))
     (is (nil? (why {:tool "sova_todo" :attended true})))

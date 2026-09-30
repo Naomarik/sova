@@ -125,11 +125,19 @@ export interface Trace {
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const FIXTURES = join(HERE, "fixtures", "org-charts");
 
+/** Tools renamed since a trace was mined, by their old name: the same tool, so the same rule
+    (`sova_confirm` became `sova_card`, §app.overseer/confirm). */
+const RENAMED_TOOLS: Record<string, string> = { sova_confirm: "sova_card" };
+
 export function loadTraces(dir = FIXTURES): Trace[] {
   return readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
     .sort()
-    .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as Trace);
+    .map((f) => {
+      const t = JSON.parse(readFileSync(join(dir, f), "utf8")) as Trace;
+      for (const s of t.events) if (s.name && RENAMED_TOOLS[s.name]) s.name = RENAMED_TOOLS[s.name]!;
+      return t;
+    });
 }
 
 // ---- the engine (server/org-charts.ts), as the replay uses it -------------------------------------------

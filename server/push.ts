@@ -26,7 +26,9 @@ export const PUSH_KIND_LABEL: Record<PushKind, string> = {
 
 const isPushKind = (k: string): k is PushKind => (PUSH_KINDS as readonly string[]).includes(k);
 
-type Blocker = Pick<AttentionItem, "id" | "kind" | "title" | "detail">;
+type Blocker = Pick<AttentionItem, "id" | "kind" | "title" | "detail"> & Partial<Pick<AttentionItem, "name">>;
+/** A blocker's session as the notification names it: summary-first (§app.overseer/session-names). */
+const nameOf = (b: Blocker) => b.name || b.title || "Untitled session";
 
 export interface PushDecisionInput {
   /** The digest's act tier, in its order (most urgent first). */
@@ -87,11 +89,11 @@ export function pushPayload(send: Blocker[], count: number, now: number, redacto
   if (sessions.length === 1) {
     const items = sessions[0]!;
     const first = items[0]!;
-    const title = clip(r.redact(`${labelOf(first.kind)} · ${first.title || "Untitled session"}`), TITLE_MAX);
+    const title = clip(r.redact(`${labelOf(first.kind)} · ${nameOf(first)}`), TITLE_MAX);
     const body = clip(r.redact(items.map((i) => i.detail ?? labelOf(i.kind)).join(" ")), BODY_MAX);
     return { v: 1, title, body, tag: `sova:${first.id}`, hash: `#/sid/${encodeURIComponent(first.id)}`, count, ts: now };
   }
-  const body = clip(r.redact(sessions.map((items) => `${items[0]!.title || "Untitled session"} — ${labelOf(items[0]!.kind)}`).join("\n")), BODY_MAX);
+  const body = clip(r.redact(sessions.map((items) => `${nameOf(items[0]!)} — ${labelOf(items[0]!.kind)}`).join("\n")), BODY_MAX);
   return { v: 1, title: `${sessions.length} sessions need you`, body, tag: "sova:several", hash: "#/overseer", count, ts: now };
 }
 

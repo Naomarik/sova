@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import type { AttentionDigest, AttentionItem, AttentionKind, AttentionTier, SessionSummary } from "../shared/protocol";
 import { readinessItems } from "./merge-readiness";
+import { sessionName } from "./session-names";
 
 /**
  * The Overseer's attention digest: what needs the user, what finished, what is running — built
@@ -34,6 +35,8 @@ export interface AttentionRow {
   /** The session waits on subagents that have all gone quiet (signals-store.ts teamStallOf,
       §app.decisions/team-stall): since when, and who. Absent: not stalled, or the feature is off. */
   teamStall?: { since: number; names: string[] };
+  /** The user's alias for the session (§app.overseer/session-names), when it has one. */
+  alias?: string;
 }
 
 export const DIGEST_MAX = 30;
@@ -70,6 +73,7 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     id: s.id,
     path: s.path,
     title: s.title,
+    name: sessionName(s, row.alias),
     where: whereOf(s, home),
     href: `#/s/${encodeURIComponent(s.path)}`,
     ...(s.live ? { tuiLive: true as const } : {}),

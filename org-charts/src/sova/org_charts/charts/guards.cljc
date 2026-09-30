@@ -44,7 +44,7 @@
    "sova_roster"          "read"
    "sova_todos"           "operator"
    "sova_note"            "L0"
-   "sova_confirm"         "L0"
+   "sova_card"            "L0"
    "sova_idea"            "L0"
    "sova_start_gathering" "L1"
    "sova_owner_update"    "L1"
@@ -64,12 +64,12 @@
     (= need "operator")
     (if (= tool "sova_todos")
       "The to-do list is the operator's own: you read it only when the operator asks, in a turn they started. Don't act on their to-dos or ideas on your own."
-      (str tool " changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_confirm card with what you would change."))
+      (str tool " changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_card card with what you would change."))
     (level-at-least? autonomy need) nil
     :else
     (str "This run was not started by the operator, and your autonomy here is " autonomy
       (when reason (str " (" reason ")")) "; "
-      tool " needs " need ". Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_confirm card that says what and why; "
+      tool " needs " need ". Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_card card that says what and why; "
       "the operator's click starts a turn in which you may act.")))
 
 (defn tool-refusal
@@ -105,7 +105,7 @@
       {:said (str "Today's allowance is used: " used " of " max " " what " on its own. It looks again at midnight.")
        :tail "Nothing starts before then. Tell the operator what is waiting; don't promise an earlier look."}
       {:said (str "This message's allowance is used: " used " of " max " " what " per message you send.")
-       :tail "Stop here and tell the operator what is done and what is left, or ask with sova_confirm."})))
+       :tail "Stop here and tell the operator what is done and what is left, or ask with sova_card."})))
 
 (defn at-once-refusal
   "The at-once refusals of gather() and sova_create_session, or nil."

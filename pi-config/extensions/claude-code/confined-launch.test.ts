@@ -268,6 +268,7 @@ test("hosted: the host confines the launch itself; the runner hands it plain dat
 	assert.deepEqual(hosted.token, { module: fileURLToPathOf("./accounts.ts"), dir: loginDir(s.agentDir, A), fd: TOKEN_FD, force: false });
 	assert.equal(hosted.needs.tmpDir, path.join(s.root, "hosted-tmp"));
 	assert.equal(hosted.needs.fds, undefined);
+	assert.ok(hosted.dropEnv.includes("CLAUDE_CODE_OAUTH_TOKEN") && hosted.dropEnv.includes("CLAUDE_CONFIG_DIR"));
 	assert.ok(!JSON.stringify(hosted).includes("tok-"), "no token in what crosses to the host");
 	const file = child.argv[child.argv.indexOf("--append-system-prompt-file") + 1]!;
 	assert.match(file, /^\/tmp\/pi-claude-[^/]+\/system\.md$/);

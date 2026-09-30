@@ -45,6 +45,8 @@ export const CLAUDE_API_HOSTS = ["api.anthropic.com"];
 export const CONFINED_SETTINGS = { sandbox: { enabled: false } } as const;
 /** Credentials a confined worker never inherits: its login's token comes on the fd only. */
 const SECRET_VARS = ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", TOKEN_FD_ENV];
+/** What a confined launch's source environment drops: the credentials and the login's directory (confinedSourceEnv). */
+export const CONFINED_DROP_ENV: readonly string[] = [...SECRET_VARS, "CLAUDE_CONFIG_DIR"];
 /** Entries of the login's directory the private one links to, read-only through their targets (user memory, agents, commands, skills). */
 const LINKED = ["CLAUDE.md", "agents", "commands", "skills", "plugins"];
 /** The CLI keeps a project slug whole up to this length; a longer one gets a hash suffix only it can compute. */
@@ -123,7 +125,7 @@ function link(target: string, at: string): void {
 /** The launch environment a confined claude is picked from: the unconfined one, without any credential or login dir. */
 export function confinedSourceEnv(env: NodeJS.ProcessEnv): Record<string, string> {
 	const out: Record<string, string> = {};
-	for (const [name, value] of Object.entries(env)) if (typeof value === "string" && !SECRET_VARS.includes(name) && name !== "CLAUDE_CONFIG_DIR") out[name] = value;
+	for (const [name, value] of Object.entries(env)) if (typeof value === "string" && !CONFINED_DROP_ENV.includes(name)) out[name] = value;
 	return out;
 }
 

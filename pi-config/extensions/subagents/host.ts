@@ -51,6 +51,39 @@ export interface HostSpawnSpec {
 	lingerMs?: number;
 	/** Stop the worker after this long without an attached manager. Default 24h. */
 	orphanTtlMs?: number;
+	/**
+	 * Run the worker confined by the sandbox, as this host process sets it up (it owns the launch's
+	 * proxy and tmp, which then outlive the manager): `module`'s `confineLaunch(scope, needs, launch)`
+	 * wraps `command`/`args`, and a secret the host reads itself is handed over on an fd. Plain data only.
+	 */
+	confine?: HostConfine;
+}
+/** A confined launch as the manager hands it to the host (no secret in it: the host reads that itself). */
+export interface HostConfine {
+	/** The sandbox's launch module (`confineLaunch`), by path. */
+	module: string;
+	scope: string;
+	/** The launch's needs, fds aside. */
+	needs: Record<string, unknown>;
+	/** `module.freshAccessToken(dir, { force })` → `{ token }`, handed over on `fd`. */
+	token: { module: string; dir: string; fd: number; force: boolean };
+	/** Variables of this host's environment the launch never gets (credentials, the login dir). */
+	dropEnv?: string[];
+}
+interface Target { command: string; args: string[]; env: NodeJS.ProcessEnv; fds: { fd: number; data: string }[]; cleanup?: () => Promise<void> }
+/** What the host spawns: the worker as given, or wrapped by the sandbox. Throws the refusal. */
+async function target(spec: HostSpawnSpec): Promise<Target> {
+	const c = spec.confine;
+	if (!c) return { command: spec.command, args: spec.args, env: process.env, fds: [] };
+	const secrets = await import(c.token.module) as { freshAccessToken(dir: string, o: { force?: boolean }): Promise<{ token: string } | undefined> };
+	const token = await secrets.freshAccessToken(c.token.dir, { force: c.token.force });
+	if (!token) throw new Error(`no access token to hand over in ${c.token.dir} (sign the login in again)`);
+	const env: Record<string, string> = {};
+	for (const [name, value] of Object.entries(process.env)) if (typeof value === "string" && !c.dropEnv?.includes(name)) env[name] = value;
+	const sandbox = await import(c.module) as { confineLaunch(scope: string, needs: unknown, launch: unknown): Promise<{ refused: string } | { command: string; args: string[]; spawnEnv: Record<string, string>; fds: { fd: number; data: string }[]; cleanup(): Promise<void> }> };
+	const confined = await sandbox.confineLaunch(c.scope, { ...c.needs, fds: [{ fd: c.token.fd, data: token.token }] }, { command: spec.command, args: spec.args, cwd: spec.cwd ?? process.cwd(), env });
+	if ("refused" in confined) throw new Error(confined.refused);
+	return { command: confined.command, args: confined.args, env: confined.spawnEnv, fds: confined.fds, cleanup: () => confined.cleanup() };
 }
 
 const DEFAULT_LINGER_MS = 60_000;
@@ -60,7 +93,14 @@ const PIPE_DRAIN_MS = 250;
 const REPLAY_CHUNK = 1024 * 1024;
 const MAX_FRAME_CHARS = 16 * 1024 * 1024;
 
-export function runHost(spec: HostSpawnSpec): void {
+export async function runHost(spec: HostSpawnSpec): Promise<void> {
+	let run: Target;
+	try { run = await target(spec); }
+	catch (error) {
+		// Never run unconfined: record why and leave (the manager finalizes from status.json).
+		try { writeJson(spec.statusFile, { exitCode: null, signal: null, endedAt: Date.now(), error: `Sandbox: ${(error as Error).message}` }); } catch { /* no status */ }
+		process.exit(1);
+	}
 	const lingerMs = spec.lingerMs ?? DEFAULT_LINGER_MS;
 	const orphanTtlMs = spec.orphanTtlMs ?? DEFAULT_ORPHAN_TTL_MS;
 	const outFd = fs.openSync(spec.outLog, "a", 0o600);
@@ -80,7 +120,14 @@ export function runHost(spec: HostSpawnSpec): void {
 
 	let worker: ChildProcess;
 	try {
-		worker = spawn(spec.command, spec.args, { cwd: spec.cwd, env: process.env, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
+		const stdio: ("pipe" | "ignore")[] = ["pipe", "pipe", "pipe"];
+		for (const { fd } of run.fds) { while (stdio.length < fd) stdio.push("ignore"); stdio[fd] = "pipe"; }
+		worker = spawn(run.command, run.args, { cwd: spec.cwd, env: run.env, stdio, detached: process.platform !== "win32" });
+		for (const { fd, data } of run.fds) {
+			const pipe = worker.stdio[fd] as NodeJS.WritableStream | null;
+			pipe?.on("error", () => { /* the worker reports its own failure */ });
+			pipe?.end(data);
+		}
 	} catch (error) {
 		// Nothing to serve: record why and leave (the manager finalizes from status.json).
 		try { writeJson(spec.statusFile, { exitCode: null, signal: null, endedAt: Date.now(), error: `Spawn failed: ${String(error)}` }); } catch { /* no status */ }
@@ -136,6 +183,7 @@ export function runHost(spec: HostSpawnSpec): void {
 	};
 	worker.once("exit", (code, signal) => {
 		exitStatus = { exitCode: code, signal, endedAt: Date.now() };
+		void run.cleanup?.().catch(() => undefined);
 		// Detached descendants can hold stdout open; only proven leader exit lets us cut it off.
 		drainTimer = setTimeout(completeExit, PIPE_DRAIN_MS);
 	});
@@ -289,5 +337,5 @@ if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(file
 		process.stderr.write("usage: host.ts <spawn.json>\n");
 		process.exit(2);
 	}
-	runHost(JSON.parse(fs.readFileSync(specPath, "utf8")) as HostSpawnSpec);
+	void runHost(JSON.parse(fs.readFileSync(specPath, "utf8")) as HostSpawnSpec);
 }

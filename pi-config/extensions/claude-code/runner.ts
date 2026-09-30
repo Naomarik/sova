@@ -13,7 +13,7 @@ import {
 	type ClaudeToolPermissionRequest, type ControlAck, type Deferred,
 } from "./transport.ts";
 import { freshAccessToken, refreshLogin, switchText, type RefreshImpl, type ClaudeAccountFailure, type ClaudeLoginChoice, type LoginUser } from "./accounts.ts";
-import { ACCOUNTS_MODULE, CONFINED_SETTINGS, TOKEN_FD, claudeNeeds, confinedSourceEnv, launchModule, loginDirOf, type ClaudeConfine } from "./confined-launch.ts";
+import { ACCOUNTS_MODULE, CONFINED_DROP_ENV, CONFINED_SETTINGS, TOKEN_FD, claudeNeeds, confinedSourceEnv, launchModule, loginDirOf, type ClaudeConfine } from "./confined-launch.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
 
@@ -111,6 +111,8 @@ export interface ClaudeHostedConfine {
 	needs: ReturnType<typeof claudeNeeds>;
 	/** The token the host reads itself (accounts.ts freshAccessToken of `dir`) and hands over on `fd`. */
 	token: { module: string; dir: string; fd: number; force: boolean };
+	/** The host's own environment minus these is the launch's source environment (confinedSourceEnv). */
+	dropEnv: string[];
 }
 /** What a worker needs of the host's logins; accounts.ts ClaudeLogins is the real one. */
 export interface ClaudeWorkerLogins {
@@ -439,7 +441,7 @@ export class ClaudeRunner implements Worker {
 		const source = confinedSourceEnv(claudeEnv(env));
 		const command = o.executable ?? "claude";
 		if (this.viaHost) {
-			const hosted: ClaudeHostedConfine = { module: confine.module, scope: confine.scope, needs, token: { module: ACCOUNTS_MODULE, dir: loginDir, fd: TOKEN_FD, force } };
+			const hosted: ClaudeHostedConfine = { module: confine.module, scope: confine.scope, needs, token: { module: ACCOUNTS_MODULE, dir: loginDir, fd: TOKEN_FD, force }, dropEnv: [...CONFINED_DROP_ENV] };
 			try { transport.launch(command, args, { cwd: o.cwd, env, hosted }); }
 			catch (error) { this.fail(`Spawn failed: ${String(error)}`); return false; }
 			this.trackLogin();

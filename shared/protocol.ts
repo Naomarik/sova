@@ -2155,6 +2155,11 @@ export interface WorktreeStatus {
   removed?: number;
   /** Uncommitted changes (tracked or untracked) in the worktree. */
   dirty?: boolean;
+  /** How many paths `git status --porcelain` lists, and the first few (repo-relative). */
+  dirtyCount?: number;
+  dirtyFiles?: string[];
+  /** merged "no" only: files the trial merge into the base conflicts on. */
+  conflicts?: number;
   /** Why a reading is missing, when git failed. */
   error?: string;
 }
@@ -3626,6 +3631,14 @@ export interface WorktreeReadiness {
   /** Why, in a few words: "uncommitted changes", "TEMP commit", "the last check failed", "checks
       passed", "no check run seen", "still tracked active". */
   why?: string;
+  /** The line a person reads without hovering (the Session tab): state and why, joined by " · " —
+      "Ready to merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files". */
+  reason?: string;
+  /** Uncommitted files: how many, and the first few (repo-relative). Absent when clean or unknown. */
+  dirtyCount?: number;
+  dirtyFiles?: string[];
+  /** Files a trial merge into the base conflicts on. Absent when none or unknown. */
+  conflicts?: number;
 }
 
 /** The row's badge, the first that holds (§chat.worktrees/readiness). */
@@ -3640,7 +3653,7 @@ export interface SessionReadiness {
   branch?: string;
   /** ms epoch the badge's condition began: the last reply for ready/waiting, the merge for merged. */
   since: number;
-  /** "merged · {n} follow-ups": cleanup plus the follow-up check's answer. */
+  /** "merged · {n} follow-ups": only the follow-up check's answer (cleanup is said in the title). */
   followUps?: number;
   /** A merge of this session changed the server since this process started. */
   restartPending?: true;

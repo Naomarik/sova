@@ -145,9 +145,11 @@ export interface FollowUpDeps {
 export function followUpState(input: FollowUpInput): JsonObject {
   const text = input.reply.text;
   const deferred = deferredOf(text);
+  // Readiness keeps the reply's body tail with its Deferred: line after it: that line goes apart.
+  const body = deferred && text.endsWith(deferred) ? text.slice(0, -deferred.length).trimEnd() : text;
   return {
     merge: { ...input.card },
-    reply: text.length > REPLY_TAIL_MAX ? text.slice(-REPLY_TAIL_MAX) : text,
+    reply: body.length > REPLY_TAIL_MAX ? body.slice(-REPLY_TAIL_MAX) : body,
     ...(deferred ? { deferred } : {}),
     routine: { ...input.routine },
   };

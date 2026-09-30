@@ -78,6 +78,31 @@ export const execGit: GitRunner = (args, opts) =>
   });
 
 /** The first line of git's complaint, for `error`. */
+/** How many paths `git status --porcelain` lists, and the first three (a rename's new name). */
+export function porcelainFiles(stdout: string): { count: number; first: string[] } {
+  const paths = stdout
+    .split("\n")
+    .filter((l) => l.trim() !== "")
+    .map((l) => {
+      const p = l.slice(3);
+      const arrow = p.indexOf(" -> ");
+      const name = arrow >= 0 ? p.slice(arrow + 4) : p;
+      return name.startsWith('"') && name.endsWith('"') ? name.slice(1, -1) : name;
+    });
+  return { count: paths.length, first: paths.slice(0, 3) };
+}
+
+/** Distinct files in `merge-tree --write-tree`'s conflicted-file lines (after the tree's oid). */
+export function conflictedFiles(stdout: string): number {
+  const files = new Set<string>();
+  for (const line of stdout.split("\n").slice(1)) {
+    if (line.trim() === "") break;
+    const tab = line.indexOf("\t");
+    files.add(tab >= 0 ? line.slice(tab + 1) : line);
+  }
+  return files.size;
+}
+
 function gitError(what: string, r: GitResult): string {
   const line = r.stderr.split("\n").map((s) => s.trim()).find(Boolean);
   return `${what}: ${line ?? (r.code === null ? "git did not finish" : `exit ${r.code}`)}`;
@@ -89,6 +114,8 @@ interface SessionCandidates { cwd: string | null; workerCwds: string[] }
 interface Comparison {
   base: string;
   merged: "ancestor" | "content" | "no";
+  /** merged "no": files the trial merge conflicts on. */
+  conflicts?: number;
   ahead?: number;
   behind?: number;
   added?: number;
@@ -109,7 +136,7 @@ export class WorktreeInsights {
   private readonly run: GitRunner;
   private readonly now: () => number;
   private readonly compared = new Map<string, { key: string; value: Comparison; seenAt: number }>();
-  private readonly dirty = new Map<string, { at: number; dirty: boolean | null; error?: string }>();
+  private readonly dirty = new Map<string, { at: number; dirty: boolean | null; files?: { count: number; first: string[] }; error?: string }>();
   private readonly sessions = new Map<string, { mtimeMs: number; size: number; value: SessionCandidates; seenAt: number }>();
   private mergeTreeOk: Promise<boolean> | null = null;
   private running = 0;
@@ -264,6 +291,7 @@ export class WorktreeInsights {
     const out: WorktreeStatus = { ...tree };
     const errors: string[] = [];
     if (dirty.dirty !== null) out.dirty = dirty.dirty;
+    if (dirty.dirty && dirty.files) Object.assign(out, { dirtyCount: dirty.files.count, dirtyFiles: dirty.files.first });
     if (dirty.error) errors.push(dirty.error);
     if (head?.ref.startsWith("refs/heads/")) out.branch = head.ref.slice("refs/heads/".length);
     const base = refs.code === 0 ? pickBase(refs.stdout) : null;
@@ -290,11 +318,11 @@ export class WorktreeInsights {
     return out;
   }
 
-  private async dirtyOf(cwd: string): Promise<{ dirty: boolean | null; error?: string }> {
+  private async dirtyOf(cwd: string): Promise<{ dirty: boolean | null; files?: { count: number; first: string[] }; error?: string }> {
     const hit = this.dirty.get(cwd);
     if (hit && this.now() - hit.at < DIRTY_TTL_MS) return hit;
     const r = await this.git(cwd, ["status", "--porcelain"]);
-    const value = r.code === 0 ? { at: this.now(), dirty: r.stdout.trim() !== "" } : { at: this.now(), dirty: null, error: gitError("git status", r) };
+    const value = r.code === 0 ? { at: this.now(), dirty: r.stdout.trim() !== "", files: porcelainFiles(r.stdout) } : { at: this.now(), dirty: null, error: gitError("git status", r) };
     this.dirty.delete(cwd);
     if (value.dirty !== null) this.dirty.set(cwd, value);
     return value;
@@ -311,6 +339,7 @@ export class WorktreeInsights {
       const content = await this.mergesToBase(cwd, layout, base.oid, head);
       if (content === true) out.merged = "content";
       else if (typeof content === "string") errors.push(content);
+      else if (typeof content === "object") out.conflicts = content.conflicts;
     }
     const [counts, mb] = await Promise.all([
       this.git(cwd, ["rev-list", "--left-right", "--count", `${base.oid}...${head}`]),
@@ -330,9 +359,10 @@ export class WorktreeInsights {
   }
 
   /** Whether merging HEAD into the base would leave the base's tree unchanged (a squash or rebase
-      merge already landed it). true / false, or why it couldn't tell. The merge's new objects go
-      to a temporary object directory, so the repository is not written. */
-  private async mergesToBase(cwd: string, layout: Layout, base: string, head: string): Promise<boolean | string> {
+      merge already landed it). true / false, `{conflicts}` when the merge conflicts (how many
+      files), or why it couldn't tell. The merge's new objects go to a temporary object directory,
+      so the repository is not written. */
+  private async mergesToBase(cwd: string, layout: Layout, base: string, head: string): Promise<boolean | { conflicts: number } | string> {
     let scratch: string | null = null;
     try {
       scratch = await mkdtemp(join(tmpdir(), "sova-merge-tree-"));
@@ -341,7 +371,7 @@ export class WorktreeInsights {
         this.git(cwd, ["merge-tree", "--write-tree", "--no-messages", base, head], env),
         this.git(cwd, ["rev-parse", `${base}^{tree}`]),
       ]);
-      if (merged.code === 1) return false; // conflicts: not in the base
+      if (merged.code === 1) return { conflicts: conflictedFiles(merged.stdout) }; // conflicts: not in the base
       if (merged.code !== 0) return gitError("merge-tree", merged);
       if (baseTree.code !== 0) return gitError("rev-parse base^{tree}", baseTree);
       return (merged.stdout.split("\n", 1)[0] ?? "").trim() === baseTree.stdout.trim();

@@ -227,18 +227,24 @@ async function runSuite(
     const stA = await s.verb("status A", "status", { instance: a.instance });
     const view = (r: VerbResult) => r.services.map((x) => [x.name, x.state, x.pid, x.ports]);
     if (!s.check("status-a", stA.ok && sameJson(view(stA), view(upA)), sameJson(view(stA), view(upA)) ? "status agrees with up" : `status ${JSON.stringify(view(stA))} vs up ${JSON.stringify(view(upA))}`, t0)) return;
-    // 5. B in parallel with a second call for B (exactly one is busy) and A again.
+    // 5. B (created by its up) in parallel with A's up again.
     t0 = Date.now();
-    const [bUp, bRace, aRace] = await Promise.all([
-      s.verb("up B", "up", { project, branch: branchB, from: commit, slot: slotB }),
-      new Promise<VerbResult>((r) => setTimeout(r, 30)).then(() => s.verb("up B (concurrent)", "up", { project, branch: branchB, from: commit, slot: slotB })),
-      s.verb("up A (concurrent)", "up", { instance: a.instance }),
-    ]);
-    b = bUp.error?.code === "busy" ? bRace : bUp;
+    const [bUp, aRace] = await Promise.all([s.verb("up B", "up", { project, branch: branchB, from: commit, slot: slotB }), s.verb("up A (concurrent)", "up", { instance: a.instance })]);
+    b = bUp;
     recB = recOf(b.instance);
-    const busy = [bUp, bRace].filter((r) => r.error?.code === "busy").length;
     if (!s.check("up-b-parallel", b.ok && b.state === "running" && aRace.ok && !aRace.changed, `B: ${describe(b)}; A: ${describe(aRace)}`, t0, b.error?.code ?? aRace.error?.code)) return;
-    s.check("lock-busy", busy === 1, `${busy} of two concurrent calls for B answered busy (want exactly 1)`, t0);
+    // The lock, whatever the timing: while B's lock is held, a verb on B answers busy (exit 4) and does nothing.
+    t0 = Date.now();
+    const held = tryLock(instanceLockFile(project, recB!.checkout));
+    let busy: VerbResult | null = null;
+    if ("release" in held)
+      try {
+        busy = await s.verb("down B while its lock is held", "down", { instance: b.instance });
+      } finally {
+        held.release();
+      }
+    const stillUp = await s.verb("status B after the busy call", "status", { instance: b.instance });
+    if (!s.check("lock-busy", busy?.error?.code === "busy" && !busy.steps.length && stillUp.state === "running", busy ? `${describe(busy)}; B then ${stillUp.state}` : "could not hold B's lock", t0)) return;
     t0 = Date.now();
     const overlap = portsOf(upA).filter((p) => portsOf(b!).includes(p));
     const refsA = upA.data.map((d) => d.ref);

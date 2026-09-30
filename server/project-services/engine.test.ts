@@ -134,6 +134,9 @@ test("a second verb on a busy instance answers busy at once", async () => {
   const busy = [x, y].find((r) => r.error?.code === "busy")!;
   assert.equal(exitOf(busy), 4);
   assert.ok(busy.steps.length === 0, "the refused call did nothing");
+  const won = [x, y].find((r) => r !== busy)!;
+  assert.equal(won.ok, true, `the other call ran: ${JSON.stringify(won.error)} ${JSON.stringify(won.steps)}`);
+  assert.equal(won.state, "running", JSON.stringify(won.services));
 });
 
 test("apply signals a service whose reload is a signal, and waits for readiness again", async () => {

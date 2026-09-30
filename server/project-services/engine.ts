@@ -856,8 +856,20 @@ export class ProjectEngine {
       const had = st.state !== "missing";
       if (had) await this.driver.stop(unit);
       if (s?.container && def) await this.removeContainer(def, scope, s);
+      if (had && s && def) await this.portsReleased(def, scope, s);
       return had && st.state !== "inactive" ? { result: "done", detail: unit } : { result: "skipped" };
     });
+  }
+
+  /**
+   * After stopping its own process, wait (at most 5 s) until the service's ports have no listener:
+   * a socket can outlive its process by a moment, and a start right after would take it for a
+   * foreign holder.
+   */
+  private async portsReleased(def: ProjectDef, scope: Scope, s: ServiceDecl): Promise<void> {
+    const ports = Object.values(this.allPorts(def, scope)[s.name] ?? {});
+    const until = Date.now() + 5_000;
+    while (ports.some((p) => this.portOwner(p) !== "none") && Date.now() < until) await sleep(50);
   }
 
   /** Bring the project's shared services `names` up, one caller at a time per project. */
@@ -985,6 +997,7 @@ export class ProjectEngine {
         if (how === "restart") {
           await this.driver.stop(unit);
           await this.removeContainer(def, scope, s);
+          await this.portsReleased(def, scope, s);
           this.preflight(def, scope, s);
           const vars = this.vars(def, scope);
           await this.driver.start({ unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) });

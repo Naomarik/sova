@@ -9324,6 +9324,12 @@
         "src/vis/kinds/chart/parse.ts",
         "src/vis/kinds/chart/parts.test.ts",
         "src/vis/lenience.test.ts",
+        "src/vis/core/emphasis.ts",
+        "src/vis/core/emphasis.test.ts",
+        "src/vis/multimark.test.ts",
+        "src/vis/core/grammar.ts",
+        "src/vis/kinds/layers/parse.ts",
+        "src/vis/kinds/timeline/parse.ts",
         "pi-config/extensions/mode/vis-mode.md",
         "src/vis/guide.test.ts"
       ]

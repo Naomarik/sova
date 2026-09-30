@@ -351,9 +351,21 @@ function SessionRow(props: {
   let menu: RowMenuHandle | undefined;
   let link: HTMLAnchorElement | undefined;
   let pressAt = { x: 0, y: 0 };
+  /**
+   * Where the menu opens once the press that asked for it ends. Never during it: the menu is a
+   * `popover="auto"`, and a press that went down before it existed and comes up outside it is a
+   * light dismiss — it would close the moment the finger or button let go.
+   */
+  let menuOnRelease: { x: number; y: number } | null = null;
+  const openMenuAfterRelease = () => {
+    const at = menuOnRelease;
+    menuOnRelease = null;
+    // After this pointerup (and its click) have been dispatched.
+    if (at) setTimeout(() => menu?.openAt(at.x, at.y));
+  };
   const hold = createHoldGesture({
     onHold: () => {
-      if (props.onLater && menu && !selectionMode()) menu.openAt(pressAt.x, pressAt.y);
+      if (props.onLater && menu && !selectionMode()) menuOnRelease = pressAt;
       else select();
     },
   });
@@ -362,6 +374,7 @@ function SessionRow(props: {
   const finishHold = () => {
     hold.finish();
     watchPress(false);
+    openMenuAfterRelease();
   };
   /**
    * Only while a press is in flight: one set of listeners per PRESSED row, never one per row on
@@ -387,6 +400,7 @@ function SessionRow(props: {
   const endPress = () => {
     hold.cancel();
     watchPress(false);
+    menuOnRelease = null;
   };
   onCleanup(endPress);
   /** The rail's own controls (the state pills, the checkbox) are pressed, not held. */
@@ -433,6 +447,7 @@ function SessionRow(props: {
       onPointerUp={() => {
         hold.finish();
         watchPress(false);
+        openMenuAfterRelease();
       }}
       onPointerCancel={endPress}
       // The pointer left this row before the hold fired — a slide off the row, or the list moving
@@ -448,7 +463,12 @@ function SessionRow(props: {
         if (hold.suppressed()) return e.preventDefault();
         if (!props.onLater || !menu || selecting()) return;
         e.preventDefault();
-        menu.openAt(e.clientX, e.clientY);
+        // Linux and macOS fire this on the button going DOWN: open on its release (see
+        // menuOnRelease). Windows fires it after the release, and the keyboard's menu key with no
+        // button at all: open now.
+        if (e.buttons === 0) return menu.openAt(e.clientX, e.clientY);
+        menuOnRelease = { x: e.clientX, y: e.clientY };
+        addEventListener("pointerup", openMenuAfterRelease, { capture: true, once: true });
       }}
     >
       <div class="session-rail">

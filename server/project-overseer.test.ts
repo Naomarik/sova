@@ -797,6 +797,8 @@ describe("the watch loop's decision, on its watch chart", async () => {
       await to(t + 2 * 60_000 + 20_000);
     }
     assert.equal(looks.length, seen + 20, "one every 2 minutes, past any daily count");
+    // Unlimited (null) is no count at all: one day's unattended looks go past the default 12.
+    assert.ok(Math.max(...Object.values(store.readMemo(p).perDay)) > 12, JSON.stringify(store.readMemo(p).perDay));
   });
 
   test("the gap's boundary, to the millisecond: the first 20 s tick at or after last look + gap (the project's own 2 minutes)", async () => {

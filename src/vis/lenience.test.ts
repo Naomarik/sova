@@ -117,3 +117,18 @@ test("replay: a layer label with a space marks it; an unreadable mark is dropped
   assert.deepEqual(arrow.warnings, [{ line: 2, message: 'mark: unexpected -> (after the target: a tone and/or a "note"); mark dropped' }]);
   assert.deepEqual((arrow.spec as FlowSpec).emphasis!.map((e) => e.key), ["b"]);
 });
+
+test("replay: a layers row with its tone before its note (eval, glm-5.3) draws with the two swapped; timeline too", () => {
+  const r = parseVis("layers", "title: The TCP/IP model\ncaption: Ports live at the Transport layer — TCP and UDP carry the port numbers.\nApplication | HTTP, DNS\nTransport | TCP, UDP | accent | where ports live\nInternet | IP, ICMP\nLink | Ethernet, Wi-Fi\nmark Transport \"port numbers appear here\"\n");
+  if (!r.ok) assert.fail(`line ${r.line}: ${r.message}`);
+  assert.deepEqual(r.warnings, []);
+  assert.deepEqual((r.spec as { layers: unknown[] }).layers[1], { label: "Transport", items: ["TCP", "UDP"], note: "where ports live", tone: "accent" });
+  const t = parseVis("timeline", "Sep 30 | Outage | error | 47 minutes\n");
+  assert.ok(t.ok);
+  assert.deepEqual((t.spec as { items: unknown[] }).items[0], { type: "event", when: "Sep 30", label: "Outage", note: "47 minutes", tone: "error" });
+  // Only a row that couldn't be read otherwise: a trailing tone reads as before, no tone at all is still an error.
+  const both = parseVis("layers", "A | b | warn | error\n");
+  assert.deepEqual(both.ok && (both.spec as { layers: unknown[] }).layers[0], { label: "A", items: ["b"], note: "warn", tone: "error" });
+  assert.equal(parseVis("layers", "A | b | c | d\n").ok, false);
+  assert.equal(parseVis("timeline", "2020 | a | b | c\n").ok, false);
+});

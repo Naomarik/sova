@@ -269,6 +269,15 @@ export function commaList(s: string, n: number): string[] {
 }
 
 /** The last field is a tone when it is exactly a tone word. */
+/**
+ * `a | b | warn | note` in a kind whose rows end `| note | tone` (`max` fields with the tone): a row
+ * one field too long, its next-to-last field a tone and its last not, has the two swapped. Only a
+ * row that couldn't be read otherwise is touched.
+ */
+export function swapToneNote(fs: string[], max: number): void {
+  if (fs.length === max && isTone(fs[max - 2]!) && !isTone(fs[max - 1]!)) fs.splice(max - 2, 2, fs[max - 1]!, fs[max - 2]!);
+}
+
 export function popTone(fs: string[]): Tone | undefined {
   const last = fs[fs.length - 1];
   if (fs.length > 1 && last !== undefined && isTone(last)) {

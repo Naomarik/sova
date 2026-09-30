@@ -730,3 +730,26 @@
         (is (= [:sova/rewindow] (map :event (:steps r))))
         (is (not-any? :saved (:steps r)) "no save, no row"))
       (is (= [(+ t0 8000000)] (map :until (core/holds eng)))))))
+
+
+;; ---- an answered fire-and-forget effect is saved as answered -------------------------------------------
+
+(def fire-and-forget-chart
+  "An effect the chart never listens for the answer of (the baton's per-invitee mint-link)."
+  (chart/statechart {:initial :s}
+    (elements/state {:id :s}
+      (elements/transition {:event :go} (dsl/effect "ping")))))
+
+(deftest an-answer-the-chart-ignores-still-reaches-the-snapshot
+  (let [mk  #(core/new-engine {"ff" {:chart fire-and-forget-chart :version 1}} {})
+        eng (mk)]
+    (core/start! eng "f" "ff" {} t0)
+    (let [k (:key (first (:outbox (core/send! eng "f" :go {} {:now t0}))))
+          r (core/send! eng "f" :effect/done {:key k} {:now (+ t0 1)})]
+      (is (= [true] (map :saved (:steps r))) "a saved row, though no transition took it")
+      (is (= :quiet (:feed (first (:steps r)))))
+      (is (contains? (:snapshots r) "f") "the call writes the snapshot")
+      (let [e2 (mk)]
+        (core/load! e2 "f" (get (:snapshots r) "f"))
+        (is (empty? (:sova/pending (core/data e2 "f"))) "after a restart it is not pending again"))
+      (is (empty? (:steps (core/send! eng "f" :effect/done {:key k} {:now (+ t0 2)}))) "a second answer is stale"))))

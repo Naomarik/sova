@@ -569,7 +569,15 @@
       (nil? eff) (do (cx! eng :stale {:session-id sid :event (:name event) :key k}) [])
       :else (do
               (swap! (sessions* eng) update-in [sid data-key :sova/pending] dissoc k)
-              (run-step! eng sid (update event :data #(merge {:kind (:kind eff)} % {:effect eff})))))))
+              (let [steps (run-step! eng sid (update event :data #(merge {:kind (:kind eff)} % {:effect eff})))]
+                (if (:saved (first steps))
+                  steps
+                  ;; the chart ignores the answer (a fire-and-forget effect): its pending entry is gone all
+                  ;; the same, and that must reach the snapshot, or a restart runs the effect again
+                  (do (save! eng sid (wmem-of eng sid))
+                      (into [(assoc (first steps) :saved true :ignored false :refused nil :feed :quiet
+                               :changed {(str "sova/pending." k) [(:kind eff) nil]})]
+                        (rest steps)))))))))
 
 (defn- scope-of
   "Whose ledger an act draws on: its project (`:project-id`, stamped by the host), else `:scope`."

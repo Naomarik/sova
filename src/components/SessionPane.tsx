@@ -1,5 +1,4 @@
 import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
-import type { SessionShare } from "../../shared/session-share";
 import type { ExplanationInfo, SessionInsight, SessionSkillOffer, SessionSkillUse, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptLight } from "../lib/api";
 import { formatTokens } from "../lib/context";
@@ -10,8 +9,8 @@ import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state"
 import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, type UsageView, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
 import { jumpWhenArrived } from "../lib/jump";
-import { hostOf } from "../lib/mesh";
-import { listSessionShares, ShareApiError, shareLive, sharingTabLabel, viewingNow } from "../lib/session-shares";
+import { paneShares } from "../lib/pane-shares";
+import { sharingTabLabel } from "../lib/session-shares";
 import { RemotePaneStatus } from "./RemoteStatus";
 import { SessionDetails, SharingSection } from "./SessionDetails";
 import { SessionTimeline } from "./SessionTimeline";
@@ -293,57 +292,6 @@ export function SessionPane(props: {
       </div>
     </aside>
   );
-}
-
-// ---- Sharing ----------------------------------------------------------------------------------
-
-/** A live share's presence is read again this often while the page is visible. */
-const SHARING_REFRESH_MS = 5_000;
-
-/**
- * The session's shares, read once for the whole pane: the Sharing tab's list and its tab's
- * viewing-now badge render from this one read. Read on open (and when the session changes), after
- * the sheet changes something, and every SHARING_REFRESH_MS while a share is live and the page is
- * visible, from the host that holds the session.
- */
-function paneShares(summary: () => SessionSummary | undefined) {
-  const [shares, setShares] = createSignal<SessionShare[] | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
-  let run = 0;
-  const reload = async () => {
-    const s = summary();
-    if (!s) return;
-    const mine = ++run;
-    try {
-      const next = await listSessionShares(hostOf(s.path), s.id);
-      if (mine !== run) return;
-      setShares(next);
-      setError(null);
-    } catch (x) {
-      if (mine !== run) return;
-      // An older host has no share routes: said once, never a retry loop of errors.
-      setError(x instanceof ShareApiError && x.status === 404 && !x.code ? "This host can't share sessions yet. It needs an update." : `Couldn't read this session's shares. ${(x as Error).message}`);
-    }
-  };
-  createEffect(
-    on(
-      () => summary()?.id,
-      () => {
-        run++;
-        setShares(null);
-        setError(null);
-        void reload();
-      },
-    ),
-  );
-  const tick = setInterval(() => {
-    if (document.visibilityState === "visible" && (shares() ?? []).some(shareLive)) void reload();
-  }, SHARING_REFRESH_MS);
-  onCleanup(() => {
-    run++;
-    clearInterval(tick);
-  });
-  return { shares, error, reload: () => void reload(), viewing: () => viewingNow(shares() ?? []) };
 }
 
 // ---- Session ----------------------------------------------------------------------------------

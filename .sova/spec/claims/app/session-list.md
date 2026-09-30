@@ -11,7 +11,12 @@
     <button class="button button-icon button-ghost sidebar-overview" type="button" aria-label="Overview"
             title="Overview"><svg class="icon" aria-hidden="true">…grid…</svg></button>
     <span class="sidebar-spacer"></span>
-    <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
+    <span class="new-session-split">
+      <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
+      <!-- the saved profiles (§app.session-list/profile-shelf) -->
+      <button class="button button-icon new-session-menu-trigger" type="button" aria-haspopup="menu"
+              aria-label="New Session with a profile">…chevron-down…</button>
+    </span>
     <!-- unfolded (≥768) only: collapses the pane into the spine (§app.session-list/spine) -->
     <button class="button button-icon sidebar-spine-toggle" type="button" aria-expanded="true"
             aria-label="Collapse sessions pane" title="Collapse sessions pane · Ctrl/⌘+B">
@@ -59,7 +64,8 @@
     </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
-    <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
+    <!-- First region: Profiles (§app.session-list/profile-shelf), only while a session runs with a
+         profile. Then Needs you (§app.session-list/needs-you), only while a session is blocked on
          you. Then Recent (§app.session-list/recent), then the user's own groups (§app.session-list/groups).
          All three omitted here for length. Live & web comes next (below); then Organizations
          (§app.session-list/organizations), then the Archive (§app.session-list/regions-top-and-archive). -->
@@ -429,9 +435,11 @@ label a person reads says "sessions pane".
   </h3>
   ```
 - **Row line 1.** `SessionSummary.title`, truncated to one line; the full title goes in `title=`.
-  `Untitled` renders in `--color-ink-muted`.
+  `Untitled` renders in `--color-ink-muted`. A session with a profile has its icon just before the
+  title, in accent ink, with "Profile: {label}" as its `title` (§chat.profiles/after-first-message).
 - **Draft rows.** An empty husk — a session whose file holds no user message anywhere — is never
-  listed, with one exception: **a husk with a stored draft is** (§chat.composer/behavior, Drafts). The server sends it
+  listed, with two exceptions: **a husk with a stored draft is** (§chat.composer/behavior, Drafts),
+  and so is a husk that carries a profile (§chat.profiles/singleton), as an ordinary `Untitled` row. The server sends it
   with `SessionSummary.draftPreview`, the draft's first non-empty line cut to about 80 characters.
   A draft holding only images counts too, and its preview is the count: `1 image`, `2 images`.
   The row keeps its `Untitled` title in `--color-ink-muted`. Line 2 leads with the `pencil` icon,
@@ -647,9 +655,49 @@ label a person reads says "sessions pane".
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
 
+## §app.session-list/profile-shelf — Profiles
+
+The first region of the list, above Needs you: the sessions that run with a profile
+(§chat/profiles), grouped by profile. It is a **shortcut, not a place**: every row also keeps its
+place in Live & web (and Groups).
+
+```html
+<details class="sidebar-region sidebar-profiles" open>
+  <summary class="sidebar-region-head"><span>Profiles</span><span class="sidebar-region-count">· 3</span></summary>
+  <!-- one sub-group per profile in use -->
+  <div class="profile-shelf-group">
+    <p class="profile-shelf-head">…icon… Read-only reviewer <span class="text-muted">2 live</span>
+      <button class="button button-sm button-ghost">Run</button></p>
+    <ul class="list">…session rows…</ul>
+  </div>
+  <!-- a One at a time profile run at least once, with no live session: one line -->
+  <p class="profile-shelf-slot">…icon… Merge captain · <span class="text-muted">Not running</span>
+    <button class="button button-sm">Start</button></p>
+</details>
+```
+
+- **Rows**: every non-archived session on this host whose `SessionSummary.profile` is set, under
+  its profile's sub-head, newest started first; a custom (unsaved) pick is grouped by its label. A
+  sub-head carries the profile's icon and label, then "{n} live" and **Run**, or, for a One at a
+  time profile, "One at a time" and no Run. The region's count is its rows.
+- **One at a time slots.** A One at a time profile that has been run at least once keeps a one-line
+  slot while none of its sessions is live: "{label} · Not running · Start". Once run it stays, for as
+  long as the profile exists (a deleted profile loses its slot).
+- **Shown** only while it has a row or a slot; hidden while searching.
+- **Run / Start** open a small sheet, "Start {label}": the profile's description, Folder (the recent
+  folders, the current session's first), First message (optional, prefilled with the profile's own)
+  and **Start Session**. It creates the session with that profile (`POST /api/sessions` with
+  `profile` and `prompt`), then opens it. Start on a One at a time profile that is live answers with
+  the same alert as the picker (§chat.profiles/singleton).
+- **New Session ▾.** The New Session button gains a narrow menu button joined to it, listing the
+  profiles (built-ins not hidden, Default left out, then yours), each opening the same sheet in the
+  open session's folder; a live One at a time profile reads **Running** and answers with the alert
+  (**Open the Running {Label}**, **Pick Another Profile**). **Manage Profiles** closes the list.
+  The New Session dialog itself is unchanged, and its fan-out sessions start as Default.
+
 ## §app.session-list/needs-you — Needs you
 
-The very top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
+The top of the list, under Profiles (§app.session-list/profile-shelf) when it shows and above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
 (§chat.alignment/session-mark), a last reply that asks you something (§app.decisions/asks-user), a
 session waiting on a team gone quiet (§app.decisions/team-stall), or a worktree ready and waiting
@@ -668,7 +716,7 @@ never a row here. Nothing is moved or hidden,
 and the region has **no actions of its own** beyond its twist.
 
 ```html
-<!-- First in .sidebar-list, above Recent. Only while it has rows and proactivity is not Off. -->
+<!-- First in .sidebar-list after the Profiles region, above Recent. Only while it has rows and proactivity is not Off. -->
 <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open>
   <!-- The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. -->
   <summary class="sidebar-needs-you-summary">
@@ -1275,7 +1323,8 @@ forced open (case 1 below).
   When the condition ends, it goes back to the stored choice. Case 2 is the exception: it doesn't
   close under the user while they're on that session.
 
-**Ordering.** The top region comes first and the Archive last, with Organizations between them. Inside each region, groups and
+**Ordering.** The top region comes first and the Archive last, with Organizations between them;
+above them all sit the shortcut regions, Profiles first (§app.session-list/profile-shelf). Inside each region, groups and
 rows are ordered by the rules above. A session moves between regions in place on refresh, for
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
 `aria-current`, and case 2 keeps the archive open.

@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Modes, Teams,
-Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Voice, Experimental.
+Profiles, Overseer, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
@@ -374,6 +374,31 @@ broken. Polling stops when the tab loses focus or the dialog closes.
 
 While the list loads, the panel shows skeleton rows. If the folder can't be read, an error banner
 offers Retry and the built-in themes list anyway — the app's own themes don't depend on it.
+
+## §app.settings-dialog/profiles — Profiles
+
+The tab after Teams: the profile library (§chat.profiles/model). "Profiles set what a new session
+can do. Edits reach new sessions only."
+
+- **The list.** Built-ins first, each with a **Built in** badge, its summary line of what it changes
+  ("sees and messages all sessions · no web · One at a time"; Default "Nothing changed") and
+  **Duplicate** and **Hide From Picker** (**Show In Picker** and a **Hidden** badge once hidden;
+  Default has neither). A duplicate is named "{label} copy" and opens in the editor. Then yours, each with **Edit**, **Duplicate** and
+  **Delete**. **New Profile** under them.
+- **The editor** (a new profile, a duplicate, or Edit), inline under its row: Name (required, unique), Icon, Description
+  (one line), **Can** (Read other sessions, Message other sessions, See all Sova sessions), **Can't**
+  (Shell, Edit files, Workers & teams, Web, Worktrees, Mesh links, Timers, under
+  §chat.profiles/enforcement's workers rule), **One at a time**, **Limits** (the five of
+  §chat.profiles/limits, whole numbers from 1), **Starts with** (Mode: "Session default", normal or
+  delegate; Model: "Session default" or a model; First message, optional) and **The Overseer may
+  start it**.
+- **See all and Web.** With both on, a warn note under See all: "This profile can read every
+  session and reach the web, so what it reads could leave this host." It is a warning, not a rule.
+- **Saving** goes through the dialog's one footer (§app.settings-dialog/save-bar): the whole file is
+  written in one `PUT /api/profiles`. A name already taken, or no name, keeps Save disabled with the
+  reason under the field.
+- **Delete** asks first: "Delete {name}? It leaves the picker. Sessions started with it keep their
+  permissions." Deleting is part of the draft the footer saves.
 
 ## §app.settings-dialog/overseer — Overseer
 

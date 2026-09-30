@@ -737,7 +737,25 @@ export class OrgHost {
         this.broken.set(sid, { ...b, why: message(err) });
       }
     }
-    if (fixed.length && !this.journalProblem) this.commit(this.engine.resume(fixed, { now: this.clock() }));
+    if (!this.journalProblem) {
+      // Resume again every session that is a problem, not only the files fixed now: a session whose
+      // resume failed because another one couldn't load (a link/moved to the broken org) is fine by now.
+      // Each alone, so one still failing never holds the others back.
+      const again = [...new Set([...fixed, ...this.stuck.flatMap((p) => (p.sessionId ? [p.sessionId] : []))])];
+      this.stuck.splice(0, this.stuck.length, ...this.stuck.filter((p) => !p.sessionId));
+      for (const sid of again)
+        try {
+          this.commit(this.engine.resume([sid], { now: this.clock() }));
+        } catch (err) {
+          this.stuck.push({ kind: "resume", file: this.index.get(sid)?.file ?? sid, why: message(err), sessionId: sid });
+        }
+      // and give stalled timers another go (one still throwing is stalled again, once)
+      if (this.stalled.size) {
+        this.stalled.clear();
+        this.engine.setAside([]);
+        this.fireTimers((f) => this.step(f));
+      }
+    }
     this.arm();
     return this.problems();
   }

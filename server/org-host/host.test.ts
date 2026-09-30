@@ -464,4 +464,42 @@ describe("org host", () => {
     assert.equal(host.nextDueAt(), null);
     await host.close();
   });
+
+  test("reload resumes every problem session: one that failed only because another's snapshot was broken, and a stalled timer", async () => {
+    const at = place();
+    const host = await open(at);
+    // p/1 reaches p/2 when it resumes (as a person's link/moved reaches the org)
+    await host.start("p/1", "host-probe", { pingOnResume: "p/2" }, operator);
+    await host.start("p/2", "host-probe", {}, operator);
+    await host.start("p/3", "host-probe", {}, operator);
+    await host.act("p/3", "arm-bomb", {}, operator);
+    await host.close();
+    const file = scanSnapshots(join(at.workspaceDir, "charts")).find((s) => s.sid === "p/2")!.file;
+    const good = readFileSync(file, "utf8");
+    writeFileSync(file, "<<<<<<< HEAD\n{:broken");
+    await tick(120);
+    const again = await open(at);
+    assert.deepEqual(again.problems().map((p) => [p.kind, p.sessionId]).sort(), [["resume", "p/1"], ["snapshot", "p/2"], ["timer", "p/3"]]);
+    assert.match(again.problems().find((p) => p.sessionId === "p/1")!.why, /p%2F2\.edn can't be read/, "p/1's own file is fine: it failed on p/2's");
+    // reload with p/2 still broken: p/1 stays a problem (retried, fails the same way), nothing else changes
+    assert.deepEqual((await again.reload()).map((p) => [p.kind, p.sessionId]).sort(), [["resume", "p/1"], ["snapshot", "p/2"], ["timer", "p/3"]]);
+    writeFileSync(file, good);
+    await again.act("p/3", "defuse", {}, operator);
+    assert.deepEqual(await again.reload(), [], "p/2 loads, p/1 resumes, p/3's timer goes on: no restart needed");
+    assert.equal((await again.act("p/1", "count", {}, operator)).taken, true);
+    assert.equal((await again.act("p/2", "count", {}, operator)).taken, true);
+    await again.close();
+  });
+
+  test("reload gives a stalled timer another go: still throwing, it is stalled again (once, no loop)", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("p/3", "host-probe", {}, operator);
+    await host.act("p/3", "arm-bomb", {}, operator);
+    for (let i = 0; i < 100 && host.problems().length === 0; i++) await tick(20);
+    assert.deepEqual(host.problems().map((p) => [p.kind, p.sessionId]), [["timer", "p/3"]]);
+    assert.deepEqual((await host.reload()).map((p) => [p.kind, p.sessionId]), [["timer", "p/3"]]);
+    assert.equal(host.nextDueAt(), null, "set aside again");
+    await host.close();
+  });
 });

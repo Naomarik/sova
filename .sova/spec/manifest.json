@@ -8821,6 +8821,143 @@
         "§app.project-overseer/corrections",
         "§app.project-overseer/chart-tools"
       ]
+    },
+    "§app.provider-limits/file": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/gate.ts",
+        "pi-config/extensions/provider-limits/gate.test.ts",
+        "server/provider-limits.ts",
+        "server/provider-limits.test.ts",
+        "shared/provider-limits.ts",
+        "server/index.ts"
+      ],
+      "requires": []
+    },
+    "§app.provider-limits/in-flight": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/stream.ts",
+        "pi-config/extensions/provider-limits/index.ts",
+        "pi-config/extensions/provider-limits/stream.test.ts",
+        "pi-config/extensions/provider-limits/index.test.ts",
+        "pi-config/extensions/provider-limits/tests/multiprocess.mjs",
+        "pi-config/extensions/provider-limits/tests/pi-e2e.mjs",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "server/decide-llm.ts",
+        "server/decide-llm.test.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/file"
+      ]
+    },
+    "§app.provider-limits/per-device": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sync/docs.ts",
+        "server/sync/docs.test.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/file"
+      ]
+    },
+    "§app.provider-limits/queue": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/gate.ts",
+        "pi-config/extensions/provider-limits/gate.test.ts",
+        "pi-config/extensions/provider-limits/index.ts",
+        "server/overseer.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/in-flight"
+      ]
+    },
+    "§app.provider-limits/rate-limit": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/stream.ts",
+        "pi-config/extensions/provider-limits/stream.test.ts",
+        "pi-config/extensions/provider-limits/gate.ts",
+        "src/components/SettingsDialog.tsx"
+      ],
+      "requires": [
+        "§app.provider-limits/queue"
+      ]
+    },
+    "§app.provider-limits/setting": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SettingsDialog.tsx",
+        "src/lib/provider-limits.ts",
+        "src/lib/provider-limits.test.ts",
+        "src/lib/provider-limits-draft.ts",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "server/index.ts",
+        "src/lib/provider-groups.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/file",
+        "§app.settings-dialog/models"
+      ]
+    },
+    "§app.provider-limits/stale": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/gate.ts",
+        "pi-config/extensions/provider-limits/gate.test.ts",
+        "pi-config/extensions/provider-limits/tests/multiprocess.mjs"
+      ],
+      "requires": [
+        "§app.provider-limits/in-flight"
+      ]
+    },
+    "§app.provider-limits/waiting-shown": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/provider-limits/index.ts",
+        "server/provider-limits.ts",
+        "shared/provider-limits.ts",
+        "src/lib/provider-waiting.ts",
+        "src/lib/api.ts",
+        "src/components/ChatView.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/SubagentPane.tsx"
+      ],
+      "requires": [
+        "§app.provider-limits/queue",
+        "§app.subagents-pane/worker-rows"
+      ]
+    },
+    "§app/provider-limits": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/index.ts",
+        "pi-config/extensions/provider-limits/gate.ts",
+        "pi-config/extensions/provider-limits/stream.ts",
+        "pi-config/extensions/provider-limits/README.md",
+        "pi-config/README.md"
+      ]
     }
   },
   "boundary": {

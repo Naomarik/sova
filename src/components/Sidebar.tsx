@@ -78,6 +78,8 @@ import {
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
+import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
+import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
@@ -289,6 +291,12 @@ function SessionRow(props: {
     return m ? remoteMarkTitle(m, props.targets.find((t) => t.name === m.place.target)?.host) : "";
   };
   const isBusy = () => sessionBusy(s());
+  /** While its turn's model request waits on the provider's limit, the busy mark says so (§app.provider-limits/waiting-shown). */
+  watchProviderWaits(isBusy);
+  const busyWords = () => {
+    const w = providerWait(s().id);
+    return w ? waitingSentence(w) : "pi is replying in this session";
+  };
   /** Line 1's "needs you" mark (src/lib/signals.ts): the server's kinds, never on the open or a running session. */
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy() }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
@@ -445,9 +453,9 @@ function SessionRow(props: {
               type="button"
               tabindex="-1"
               class="session-rail-item session-rail-state chip chip-info chip-live"
-              aria-label="pi is replying in this session"
-              title="pi is replying in this session"
-              onClick={() => toast("pi is replying in this session")}
+              aria-label={busyWords()}
+              title={busyWords()}
+              onClick={() => toast(busyWords())}
             >
               <span class="session-rail-dot" />
             </button>
@@ -641,7 +649,7 @@ function SessionRow(props: {
           <span class="visually-hidden">{TUI_CLAUSE}</span>
         </Show>
         <Show when={isBusy()}>
-          <span class="visually-hidden">{BUSY_CLAUSE}</span>
+          <span class="visually-hidden">{providerWait(s().id) ? `, ${busyWords()}` : BUSY_CLAUSE}</span>
         </Show>
         <Show when={working()}>{(n) => <span class="visually-hidden">, {workingNow(n())}</span>}</Show>
         {/* Remote-ness is a fact a row is picked by, so it rides the link's name — the same deal the

@@ -5,6 +5,7 @@ import type { SyncCategory } from "../../shared/protocol";
 import { parseTheme } from "../../shared/theme";
 import { parseDelegate } from "../../pi-config/extensions/mode/delegate.ts";
 import { parseSpec } from "../../pi-config/extensions/mode/spec.ts";
+import { parseProviderLimits } from "../../pi-config/extensions/provider-limits/gate.ts";
 import { clockSkewed } from "./logins-merge";
 import { writeFileAtomic } from "./logins-stores";
 
@@ -118,6 +119,16 @@ export function settingsDocs(agentDir: string, stateDir: string): DocSpec[] {
       valid: (t) => validFavorites(t),
     },
     { key: "settings:model-policy.json", category: "settings", path: join(agentDir, "model-policy.json"), valid: (t) => validPolicy(t) },
+    // The same numbers on every device; each device counts its own requests (§app.provider-limits/per-device).
+    {
+      key: "settings:provider-limits.json",
+      category: "settings",
+      path: join(agentDir, "provider-limits.json"),
+      valid: (t) => {
+        const o = jsonObject(t);
+        return o !== null && parseProviderLimits(o).ok;
+      },
+    },
     { key: "settings:mode.json", category: "settings", path: join(agentDir, "mode.json"), valid: (t) => jsonObject(t) !== null },
     {
       key: "settings:mode-delegate.json",

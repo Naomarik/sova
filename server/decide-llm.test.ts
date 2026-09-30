@@ -2,9 +2,12 @@
 // and a fake spawn (no model is ever called).
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { PassThrough } from "node:stream";
 import { describe, test } from "node:test";
+import { acquireSlot, holdsSlot, writeProviderLimits } from "../pi-config/extensions/provider-limits/gate.ts";
 import { DecisionError, type Question } from "./decide";
 import { answerSchema, buildPrompt, claudeArgs, claudeEnvelopeUsage, createLlmProvider, textFailure, type LlmRuntime } from "./decide-llm";
 
@@ -173,5 +176,56 @@ describe("claude-code backend", () => {
     assert.deepEqual(s.required, ["asks", "outcome", "stuck"]);
     assert.deepEqual(s.properties.outcome!.properties.probabilities!.required, ["done", "blocked_on_user"]);
     assert.equal(s.properties.stuck!.properties.probabilities!.minItems, 3);
+  });
+});
+
+describe("provider request limits (§app.provider-limits/queue)", () => {
+  const cc = { backend: "claude-code" as const, model: "haiku", effort: "low" };
+  const withLimits = (limits: Record<string, number>) => {
+    const dir = mkdtempSync(join(tmpdir(), "sova-decide-limits-"));
+    writeProviderLimits(dir, { version: 1, limits });
+    return dir;
+  };
+  test("a pi call waits for its provider's slot, as background work, and holds it while it runs", async () => {
+    const dir = withLimits({ prov: 1 });
+    const held = await acquireSlot("prov", { agentDir: dir, kind: "interactive" });
+    let during = false;
+    const f = fakeRuntime(() => ((during = holdsSlot("prov")), text(JSON.stringify(good))));
+    const call = createLlmProvider(pi, { runtime: f.runtime, agentDir: () => dir }).decide(req);
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal(f.calls.length, 0, "nothing sent while the provider is full");
+    held!.release();
+    await call;
+    assert.equal(f.calls.length, 1);
+    assert.equal(during, true, "a gated stream it reaches would claim no second slot");
+    assert.equal(readdirSync(join(dir, "provider-limits", "prov", "slots")).length, 0, "released");
+    rmSync(dir, { recursive: true, force: true });
+  });
+  test("the wait counts toward the call's timeout", async () => {
+    const dir = withLimits({ prov: 1 });
+    const held = await acquireSlot("prov", { agentDir: dir, kind: "interactive" });
+    const f = fakeRuntime(() => text(JSON.stringify(good)));
+    const e = await failure(createLlmProvider(pi, { runtime: f.runtime, agentDir: () => dir, timeoutMs: 60 }).decide(req));
+    assert.equal(e.failure, "timeout");
+    assert.equal(f.calls.length, 0);
+    held!.release();
+    rmSync(dir, { recursive: true, force: true });
+  });
+  test("a Claude one-shot takes one `claude-code` slot, only when that limit is set", async () => {
+    const dir = withLimits({ "claude-code": 1 });
+    const held = await acquireSlot("claude-code", { agentDir: dir, kind: "interactive" });
+    const f = fakeSpawn(JSON.stringify({ type: "result", is_error: false, result: "", structured_output: good }));
+    const call = createLlmProvider(cc, { spawn: f.spawn, agentDir: () => dir }).decide(req);
+    await new Promise((r) => setTimeout(r, 80));
+    assert.equal(f.seen.length, 0, "no claude spawned while the limit is full");
+    held!.release();
+    await call;
+    assert.equal(f.seen.length, 1);
+    const none = withLimits({});
+    const g = fakeSpawn(JSON.stringify({ type: "result", is_error: false, result: "", structured_output: good }));
+    await createLlmProvider(cc, { spawn: g.spawn, agentDir: () => none }).decide(req);
+    assert.equal(g.seen.length, 1, "no limit: runs at once");
+    rmSync(dir, { recursive: true, force: true });
+    rmSync(none, { recursive: true, force: true });
   });
 });

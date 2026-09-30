@@ -277,8 +277,15 @@ export const MARKER_EXTENSION = path.join(SELF_DIR, "worker-mark.ts");
  * run with --no-extensions and so never have the mode extension's own census hook.
  */
 export const SPEC_WORKER_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "mode", "spec-worker.ts"));
-/** The spawn summary names the extensions a worker was given; the marker and the spec hook are plumbing, not among them. */
-const listedExtensions = (worker: Worker): string[] => worker.extensions.filter((source) => source !== MARKER_EXTENSION && source !== SPEC_WORKER_EXTENSION);
+/**
+ * The per-provider request limits (provider-limits/, a sibling extension), loaded right after the
+ * marker into every pi worker: a worker's model requests claim its provider's slots on this device
+ * like any session's, as background work (the marker's role event says so).
+ */
+export const PROVIDER_LIMITS_EXTENSION = realpathOr(path.join(SELF_DIR, "..", "provider-limits", "index.ts"));
+/** The spawn summary names the extensions a worker was given; the marker, the limits and the spec hook are plumbing, not among them. */
+const listedExtensions = (worker: Worker): string[] =>
+	worker.extensions.filter((source) => source !== MARKER_EXTENSION && source !== PROVIDER_LIMITS_EXTENSION && source !== SPEC_WORKER_EXTENSION);
 /**
  * The same member tools as a stdio MCP server for claude-code members (the CLI
  * launches it from a per-worker mcp.json; Claude sees mcp__team__<tool>). It is
@@ -1256,7 +1263,7 @@ export function registerSubagents(
 			// Spec on: a code-writing worker gets the brief (below) and the census hook; a worktree-config worker
 			// already loads the whole mode extension, and a remote one runs its tools elsewhere.
 			const specWorker = specOn && !remote && !treeConfig && writesCode(tools);
-			const sources = [MARKER_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
+			const sources = [MARKER_EXTENSION, PROVIDER_LIMITS_EXTENSION, ...(remote ? [REMOTE_EXTENSION] : []), ...(treeConfig ? [treeConfig.modeExtension] : []), ...(specWorker ? [SPEC_WORKER_EXTENSION] : []), ...(own ?? [])];
 			const modeFlags = treeConfig ? { major: "normal", minor: "spec" } : undefined;
 			// A pi worker inside a tracked worktree writes only there: the sandbox extension's scope for
 			// that root, whether the parent's sandbox is on (narrowed) or off (write-only).

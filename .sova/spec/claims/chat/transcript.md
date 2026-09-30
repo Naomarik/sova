@@ -515,7 +515,7 @@ Driven by `ChatServerMessage.event`.
   **Screen readers hear the words once in either form**: the one words span is visible in the wide
   form and visually hidden in the narrow one, and the icon and the dot are `aria-hidden`.
   **Stopping and the rare states keep their words in both forms**, after the dot: "Stopping…",
-  "Compacting context", "Retrying after a provider error". Short of room they end in an ellipsis,
+  "Compacting context", "Retrying after a provider error", "Waiting for zai · 5 of 5 in use" (§app.provider-limits/waiting-shown). Short of room they end in an ellipsis,
   with the whole text in the tooltip; in the narrow form they give way first, down to about 4em of
   their words. The row is shared: it also carries the subagents trigger (§app/subagents-pane)
   and the inputs trigger ("7 inputs", which opens the Timeline with Inputs Only on, §chat/timeline), and it

@@ -875,7 +875,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .model-policy-head,
 .model-policy-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 72px 88px;
+  grid-template-columns: minmax(0, 1fr) 72px 88px 72px;
   align-items: center;
   gap: var(--space-2);
 }
@@ -971,6 +971,17 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 /* Each switch centers in its column, and keeps the 44px target around a 40px
    control. A switch whose answer is decided elsewhere (its provider is off) is
    dimmed by the toggle's own disabled rule, and keeps the state it remembers. */
+/* A provider's "At once" field (§app.provider-limits/setting): a short number box in the fourth
+   column, 44px tall like every other target; model rows leave the column empty. */
+.model-policy-limit {
+  justify-self: center;
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: 0 var(--space-1);
+  text-align: center;
+}
+.model-policy-limit::placeholder { font-size: var(--fs-caption); }
+
 .model-policy-switch {
   justify-self: center;
   justify-content: center;
@@ -999,7 +1010,7 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
      one size where they fit over the switches they name. The provider's count
      drops: the name and its two answers are what the width is for. */
   .model-policy-head,
-  .model-policy-row { grid-template-columns: minmax(0, 1fr) 64px 78px; gap: var(--space-1); }
+  .model-policy-row { grid-template-columns: minmax(0, 1fr) 64px 78px 60px; gap: var(--space-1); }
   .model-policy-head { font-size: 10px; letter-spacing: normal; }
   .model-policy-provider .model-policy-meta { display: none; }
 }

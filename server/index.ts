@@ -62,6 +62,7 @@ import { configureSession } from "./sessions-configure";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
+import { providerLimitsInfo, providerWaiting, saveProviderLimits } from "./provider-limits";
 import { modelDenial, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
@@ -620,6 +621,23 @@ app.put("/api/settings/models", async (c) => {
   const result = writeModelPolicy(body);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
+
+// Settings → Models' "At once" field: how many of each provider's model requests may run at once on
+// this device (server/provider-limits.ts). GET reads the file (missing → the defaults), PUT replaces
+// it; one that can't be read is never overwritten (409). Every pi process's gate reads it per request.
+app.get("/api/settings/provider-limits", (c) => c.json(providerLimitsInfo()));
+app.put("/api/settings/provider-limits", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected a JSON body { limits }" }, 400);
+  }
+  const result = saveProviderLimits(body);
+  return c.json(result.body, result.status);
+});
+// Who waits on a provider's limit now, by session id (the queue files; the web polls it while anything runs).
+app.get("/api/provider-limits/waiting", (c) => c.json(providerWaiting()));
 
 // Every theme we can find: the 18 shipped ones plus whatever is in
 // ~/.pi/agent/sova/themes/, rescanned per request. Read-only — the choice is the browser's, kept

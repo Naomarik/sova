@@ -194,3 +194,8 @@
     (is (= "Unknown mode" (h/refusal x psid :session/prompt (assoc att :session-id "c9" :text "t" :invalid "Unknown mode"))) "the host's mode refusal")
     (is (re-find #"sova_send needs L3" (h/refusal x psid :session/prompt {:by "overseer" :autonomy "L2" :roster-active true :session-id "c9" :text "t"})))
     (is (re-find #"^Today's allowance is used: 12 of 12" (h/refusal x psid :session/prompt (assoc att :attended false :session-id "c9" :text "t" :ledger "day" :allowance {:prompt {:used 12 :max 12}}))))))
+
+(deftest server-3-p3-2-a-freeze-keeps-the-specs-hash
+  (let [y (h/send! (project) psid :spec/freeze (assoc op :frozen true :spec-hash "sha-abc"))]
+    (is (= {:frozen true :spec-hash "sha-abc" :at (h/now y)} (:spec (h/data y psid))))
+    (is (= {:frozen false :at (h/now y)} (:spec (h/data (h/send! y psid :spec/freeze (assoc op :frozen false)) psid))))))

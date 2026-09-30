@@ -196,9 +196,12 @@
       (state {:id :off}
         (transition {:sova/feed :quiet :cond (fn [_ d] (enabled? d)) :target :idle})
         ;; an automatic request (a settle session's decision, the chart's own at L1) is recorded
+        ;; the act first, so a refused request (the operator's, the overseer's) answers its sentence
+        ;; (server-3 P3 1: the engine's explain met the automatic one's failed cond first)
+        (dsl/act {:sova/feed :feed :event :reconcile/request :checks [(fn [_] (r/refuse 409 reconcile-off))]
+                  :cond (fn [_ d] (not (contains? #{"sova" "chart"} (some-> (:by (e d)) name))))})
         (transition {:sova/feed :quiet :event :reconcile/request :cond (fn [_ d] (contains? #{"sova" "chart"} (some-> (:by (e d)) name)))}
-          (script {:expr (fn [_ d] [(ops/assign :last-run {:at (b/now-ms d) :compared 0 :found 0 :error reconcile-off})])}))
-        (dsl/act {:sova/feed :feed :event :reconcile/request :checks [(fn [_] (r/refuse 409 reconcile-off))]}))
+          (script {:expr (fn [_ d] [(ops/assign :last-run {:at (b/now-ms d) :compared 0 :found 0 :error reconcile-off})])})))
 
       (state {:id :idle}
         (transition {:sova/feed :quiet :cond (fn [_ d] (not (enabled? d))) :target :off})

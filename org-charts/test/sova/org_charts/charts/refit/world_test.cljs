@@ -76,3 +76,17 @@
       (is (= 1 (count (:reasons (core/data e wsid)))))
       (is (= soon (:soon-at (core/data e wsid))) "the folded second one leaves it")
       (is (<= (core/next-due-at e) (+ t 80000)) "the look is due on the first tick after t+60 s"))))
+
+(deftest server-3-p3-1-reconcile-off-answers-its-sentence
+  (let [e   (core/new-engine registry/charts {:level-check lv/level-check :absorb-unknown true})
+        sid "reconciler/o1/pr1"]
+    (core/start! e sid "reconciler" {:org-id "o1" :project-id "pr1"} t0)
+    (core/send! e sid :settings/reconcile {:on false} {:now t0})
+    (is (in? e sid :off))
+    (is (= "Turn on Reconcile decisions in Settings → Decisions."
+           (:sentence (core/explain e sid :reconcile/request {:by "operator" :delay-ms 0} {:now (+ t0 1)}))))
+    (is (= "Turn on Reconcile decisions in Settings → Decisions."
+           (:sentence (:refused (first (filter #(= :reconcile/request (:event %)) (:steps (core/send! e sid :reconcile/request {:by "operator" :delay-ms 0} {:now (+ t0 1)}))))))))
+    (testing "an automatic one is recorded, not refused"
+      (core/send! e sid :reconcile/request {:by "sova" :delay-ms 0} {:now (+ t0 2)})
+      (is (= "Turn on Reconcile decisions in Settings → Decisions." (get-in (core/data e sid) [:last-run :error]))))))

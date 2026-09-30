@@ -191,7 +191,11 @@
                                      (:root e) (conj (ops/assign :root (:root e)))
                                      (contains? e :owner-hidden) (conj (ops/assign :owner-hidden (true? (:owner-hidden e)))))))}))
       (dsl/act {:sova/feed :feed :event :spec/freeze :checks [invalid]}
-        (script {:expr (fn [_ d] [(ops/assign :spec {:frozen (true? (:frozen (b/evt d)))})])}))
+        ;; the spec's hash at the freeze: "edited outside" compares the spec with the later of this and
+        ;; the last promotion's hash (server-3 P3 2)
+        (script {:expr (fn [_ d] (let [ev (b/evt d)]
+                                   [(ops/assign :spec (cond-> {:frozen (true? (:frozen ev)) :at (b/now-ms d)}
+                                                        (:spec-hash ev) (assoc :spec-hash (:spec-hash ev))))]))}))
 
       ;; A gap the overseer files (`sova_idea add §gap/…`, L0) is an item; the operator's ideas never are.
       (dsl/act {:sova/feed :feed :event :gap/file :checks [invalid]}

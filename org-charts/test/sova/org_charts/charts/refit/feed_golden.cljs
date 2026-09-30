@@ -364,8 +364,8 @@
    ["reconciler" ":idle" [":reconcile/request"] "[:debouncing]" 0] :feed
    ["reconciler" ":idle" [":reconcile/request"] "[:running]" 0] :feed
    ["reconciler" ":off" [] "[:idle]" 0] :quiet
-   ["reconciler" ":off" [":reconcile/request"] "[]" 0] :quiet
-   ["reconciler" ":off" [":reconcile/request"] "[]" 1] :feed
+   ["reconciler" ":off" [":reconcile/request"] "[]" 0] :feed
+   ["reconciler" ":off" [":reconcile/request"] "[]" 1] :quiet
    ["reconciler" ":reconciler" [":decision/owner-area-changed"] "[]" 0] :quiet
    ["reconciler" ":reconciler" [":decision/promote"] "[]" 0] :feed
    ["reconciler" ":reconciler" [":decision/recorded"] "[]" 0] :quiet

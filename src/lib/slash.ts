@@ -44,6 +44,37 @@ export function rankCommands(commands: SlashCommand[], query: string): SlashComm
   return [...prefix.sort(byName), ...inName.sort(byName), ...inDescription.sort(byName)];
 }
 
+/** Commands whose runtime interface is the terminal UI's alone (overlays, pickers, a browser on
+    the server machine): Sova can't show them, so the "/" menu leaves them out. */
+export const TUI_ONLY_COMMANDS: ReadonlySet<string> = new Set([
+  "palette",
+  "sessions",
+  "sessions-back",
+  "codefold",
+  "usage",
+  "usage-refresh",
+  "working-count",
+  "extensions",
+  "websearch",
+  "subagents",
+]);
+
+/** Whether the "/" menu leaves this command out: TUI-only ones, and "team" in every form. */
+export function hiddenFromMenu(name: string): boolean {
+  return TUI_ONLY_COMMANDS.has(name) || /^team($|[:-])/.test(name);
+}
+
+/** The commands the "/" menu offers. The full list still decides what a typed "/word" is. */
+export function menuCommands(commands: SlashCommand[]): SlashCommand[] {
+  return commands.filter((c) => !hiddenFromMenu(c.name));
+}
+
+/** The TUI-only command a message is, typed in full with no arguments ("/sessions"). */
+export function tuiOnlyCommand(text: string): string | null {
+  const name = /^\/(\S+)$/.exec(text.trim())?.[1];
+  return name && TUI_ONLY_COMMANDS.has(name) ? name : null;
+}
+
 /** A command Sova answers itself rather than sending to the runtime. */
 export type LocalCommand = "subagents" | "new" | "tree" | "timeline" | "clear" | "mode";
 

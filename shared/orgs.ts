@@ -491,7 +491,8 @@ export type PersonPreview = BatonView & { linkOpens: boolean };
 /** GET /api/orgs/:id/people/:pid. */
 export interface PersonPage {
   person: Person;
-  org: { id: string; name: string };
+  /** `tz`/`hours` (r13): the company's, for "(company hours)" on the Hours row. */
+  org: { id: string; name: string; tz?: string; hours?: PersonHours | null };
   operatorName: string;
   /** Newest activity first. */
   sessions: PersonSessionRow[];

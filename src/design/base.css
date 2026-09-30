@@ -2325,6 +2325,9 @@ a.group-option { color: inherit; text-decoration: none; }
   .session-row-shell-current .session-later { background: var(--color-accent-tint); }
   .session-row-shell-later:hover .session-later,
   .session-row-shell-later:focus-within .session-later { opacity: 1; pointer-events: auto; }
+  /* .button:active's 1px press would replace the centring transform and drop the button 19px
+     under the pointer, so the release lands on the row and the click never reaches Later. */
+  .session-later:active { transform: translateY(-50%) translateY(1px); }
 }
 .session-row .list-title { font-size: var(--session-title-fs); line-height: var(--lh-body); }
 /* The draft pencil leading line 1: 1em square so it follows the title's own size (the Typography

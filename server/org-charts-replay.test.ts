@@ -83,17 +83,9 @@ const REPLAY_TIMEOUT_MS = 60_000;
 /** The engine's per-event microstep limit (server/org-charts.ts), and how far under it the corpus must stay. */
 const MAX_MICROSTEPS = 200;
 
-/** The replay was reworked onto the real host and the refit's charts: its divergences are being classified or
-    fixed (chart findings with charts-2). Until then the lanes run and report, and do not fail the suite. */
-const REWORK = "reworked onto the real host: unexplained divergences being classified (server-5)";
-/** The lanes whose divergences are still being classified: every other lane must replay with none unexplained. */
-const PENDING = new Set([
-  "real-26",
-] as string[]);
-
 const reports: Report[] = [];
 for (const t of traces)
-  test(`replay ${t.id} (${t.source}, Sova ${t.sova.commit ?? "?"}): zero unexplained divergences`, { timeout: REPLAY_TIMEOUT_MS, ...(PENDING.has(t.id) ? { todo: REWORK } : {}) }, async () => {
+  test(`replay ${t.id} (${t.source}, Sova ${t.sova.commit ?? "?"}): zero unexplained divergences`, { timeout: REPLAY_TIMEOUT_MS }, async () => {
     const r = await replay(t);
     reports.push(r);
     const unexplained = r.divergences.filter((d) => d.cls === null || d.cls === "chart-bug");

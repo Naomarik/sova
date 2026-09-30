@@ -231,6 +231,8 @@ test("real bwrap: secrets arrive inside but never on argv; binds, .agent, tmp an
 	try {
 		assert.ok(!JSON.stringify([c.command, c.args, c.spawnEnv]).includes("tok-123"));
 		assert.ok(c.args.includes("--args"));
+		assert.ok(!c.args.includes("--setenv"), "no variable on bwrap's argv under workspace-write");
+		assert.ok(!c.args.some((a) => a.startsWith("PROGRAM_CONFIG_DIR") || a === "PATH"), "not even the plain ones");
 		const { code, out } = await run(c, w.ws);
 		assert.equal(code, 0, out);
 		for (const line of [`token=tok-123 cfg=${w.priv}`, "fd3=fd-token", "priv-ok", "ledger-ok", "bind-ok", "agent-ro", "hidden-count=0", "tmp-ok", "argv-hits=0", "ssh=0"]) assert.ok(out.includes(line), `${line} in:\n${out}`);

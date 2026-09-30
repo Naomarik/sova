@@ -798,8 +798,7 @@ sessions shows as empty.
       Groups <span class="sidebar-region-count">· 2</span>
       <!-- The region's one action, at the head's right end: there with the region shut, and
            hidden while searching. Click and keydown stop here, as a group's `⋯` does, or they
-           would toggle the region. Fanout is NOT here — it creates sessions rather than curating
-           them, and its front door is the overview beside New Session (§workspace.fanout/entry-points). -->
+           would toggle the region. -->
       <button type="button" class="button button-icon button-ghost group-new-toggle"
               aria-label="New group" title="New group">
         <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
@@ -900,8 +899,8 @@ opened is shut again.
 default on the same terms: memory only, no storage key, reopened by hand each page.
 - **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag one here.": it is
 what a group is when the user makes it, and a drop target is what fills it. While a search is on,
-a group with no matching session is left out entirely. A **fanout** group never reaches this
-state: it dissolves itself on the write that empties it (§workspace/groups "Emptying a group").
+a group with no matching session is left out entirely. Every group reaches this state when its
+last member leaves, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups).
 - **Creating.** The region's one action is a `+` at the right end of its head
 (`.button-icon.button-ghost`, `aria-label` and `title` "New group"), not a row: a row read as one
 of the things it makes and sat inside the list it adds to. On the head it is there with the region
@@ -938,12 +937,9 @@ the group's members side by side, each a whole chat, with one composer that writ
 label ("Nothing is in it yet. Drag a session here first."), said before the press rather than
 discovered as a blank workspace. The
 section is still the place you file sessions into; the workspace is the place you read them in.
-- **Fanning out is not entered from here.** The Groups region's one action is making an empty
-group to curate; a fanout — which makes the group AND its members in one gesture — is a
-creation action and lives beside `New Session` on the overview (§workspace.fanout/entry-points).
-A group made that way is an ordinary group here all the same: it holds ordinary sessions, and
-the only difference is that it dissolves itself when its last member leaves (§workspace/groups "Emptying a
-group"), because its name and its fork point mean nothing without them.
+- **This is where membership changes.** The Groups region, the selection toolbar and the
+session details' `Move into group` are where a person puts a session into a group; the workspace
+takes members out but adds none (§workspace.groups/group-lifecycle).
 - **Renaming.** `Rename…` swaps the menu's rows for the same field, pre-filled, without closing
 the menu — one question at a time, and nothing in the list below moves while it is answered. The
 name is trimmed, 1–60 characters, and duplicates are allowed (nothing keys on a name).
@@ -1133,8 +1129,9 @@ Overseer set while the call was out wins, and the model's answer is dropped.
   switch on starts a run at once.
 - **Which.** A session with no stored title at all, with a summary line, quiet for the *quiet
   period* (default 5 minutes, by its file's modification time), and none of: archived by hand, an
-  empty husk, a subagent's or team member's own session, a member of a fanout group Sova made, an
-  Overseer or project overseer file. Most recently active first.
+  empty husk, a subagent's or team member's own session, an Overseer or project overseer file. A
+  group member is swept like any session, in a group an older build made included
+  (§workspace.groups/legacy-groups). Most recently active first.
 - **How much.** At most 10 sessions per run, 2 at a time. Existing unnamed sessions are backfilled
   the same way, 10 per run, until none is left.
 - **Once.** A session the sweep named has a stored title, so no later run looks at it again, and a
@@ -1344,7 +1341,7 @@ for the same reason: something other than the operator runs them.
   the server's guard is §app.session-list/cleanup-org-guard);
 - the **Groups** region and every way into a group (§app.session-list/groups);
 - the **recent folders** offered for a new session (`GET /api/cwds`, the New Session dialog's Recent
-  folders, `sova_list_folders`) and the fanout dialog's folder suggestions: never the Overseer's folder
+  folders, `sova_list_folders`): never the Overseer's folder
   (`<stateRoot>/overseer/`), never an attached org's workspace dir, and never a folder only an org's
   own conversations (a hand-off, a project overseer) ran in. A project root is still offered once an
   ordinary or coding session has run there: the operator codes there.

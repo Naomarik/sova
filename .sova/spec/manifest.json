@@ -230,7 +230,8 @@
         "src/design/base.css",
         "src/components/Groups.tsx",
         "src/components/Sidebar.tsx",
-        "server/index.ts"
+        "server/index.ts",
+        "server/session-groups-index.test.ts"
       ]
     },
     "§app.session-list/recent": {
@@ -535,7 +536,8 @@
       "authority": "accepted",
       "evidence": "unreviewed",
       "code": [
-        "src/components/NewSessionDialog.tsx"
+        "src/components/NewSessionDialog.tsx",
+        "server/targets.ts"
       ]
     },
     "§app/session-list": {
@@ -1109,8 +1111,7 @@
         "§app.session-list/needs-you",
         "§app.session-list/recent",
         "§mesh.ui/card",
-        "§app.extensions/cards",
-        "§workspace.fanout/entry-points"
+        "§app.extensions/cards"
       ]
     },
     "§chat.transcript/live-watch": {
@@ -1292,11 +1293,6 @@
       "authority": "accepted",
       "evidence": "reviewed"
     },
-    "§design.copy-deck/fanout": {
-      "kind": "note",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
     "§design.copy-deck/images": {
       "kind": "note",
       "authority": "accepted",
@@ -1386,7 +1382,7 @@
     "§design.copy-deck/workspace": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§design.ground-rules/color-budget": {
       "kind": "note",
@@ -1472,76 +1468,6 @@
       "authority": "accepted",
       "evidence": "verified"
     },
-    "§workspace.fanout/classes": {
-      "kind": "note",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/cost-preview": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/entry-points": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "src/components/ComposerMenu.tsx",
-        "src/components/ChatView.tsx",
-        "src/lib/older-rows.ts",
-        "shared/row-counts.ts",
-        "src/lib/message-count.ts"
-      ]
-    },
-    "§workspace.fanout/states": {
-      "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/the-dialog": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/the-fork-point-in-a-transcript": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "reviewed",
-      "code": [
-        "src/components/GroupView.tsx",
-        "src/lib/jump.ts"
-      ]
-    },
-    "§workspace.fanout/the-route": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/targets.ts",
-        "server/fanout.ts"
-      ]
-    },
-    "§workspace.fanout/tokens": {
-      "kind": "note",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/two-sources": {
-      "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
-    },
-    "§workspace.fanout/what-creation-does": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/fanout.ts",
-        "server/chat-manager.ts",
-        "server/fork.ts"
-      ]
-    },
     "§workspace.groups/a-pane": {
       "kind": "behavior",
       "requires": [
@@ -1558,8 +1484,11 @@
     },
     "§workspace.groups/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/App.tsx"
+      ]
     },
     "§workspace.groups/announcements": {
       "kind": "behavior",
@@ -1568,23 +1497,23 @@
     },
     "§workspace.groups/classes": {
       "kind": "note",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§workspace.groups/data": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§workspace.groups/decisions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§workspace.groups/group-lifecycle": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§workspace.groups/keyboard": {
       "kind": "behavior",
@@ -1607,7 +1536,7 @@
     "§workspace.groups/member-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed"
     },
     "§workspace.groups/rejected": {
       "kind": "note",
@@ -1648,7 +1577,8 @@
         "src/lib/group-prompt.ts",
         "src/lib/group-prompt.test.ts",
         "src/lib/input-mode.ts",
-        "src/components/VoiceInput.tsx"
+        "src/components/VoiceInput.tsx",
+        "server/group-prompt.ts"
       ]
     },
     "§workspace.groups/tokens": {
@@ -1656,15 +1586,13 @@
       "authority": "accepted",
       "evidence": "verified"
     },
-    "§workspace/fanout": {
-      "kind": "surface",
-      "authority": "accepted",
-      "evidence": "unreviewed"
-    },
     "§workspace/groups": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/GroupView.tsx"
+      ]
     },
     "§chat.transcript/setup-card-figures": {
       "kind": "behavior",
@@ -2188,9 +2116,9 @@
         "shared/image-note.ts",
         "server/transcript.ts",
         "server/sessions-index.ts",
-        "server/fork.ts",
         "server/chat-manager.ts",
-        "src/lib/live.ts"
+        "src/lib/live.ts",
+        "server/image-note.test.ts"
       ]
     },
     "§mesh.peers/allowlist": {
@@ -5116,7 +5044,6 @@
         "src/lib/recent.test.ts",
         "src/lib/home-sessions.ts",
         "src/lib/home-sessions.test.ts",
-        "src/components/FanoutDialog.tsx",
         "src/components/Groups.tsx",
         "src/components/SelectionToolbar.tsx",
         "src/lib/session-selection.ts",
@@ -9032,6 +8959,68 @@
         "server/session-share-privacy.test.ts",
         "server/session-shares.test.ts",
         "src/share/SessionShareApp.tsx"
+      ]
+    },
+    "§workspace.groups/legacy-groups": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/auto-titles"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-groups.ts",
+        "server/session-groups.test.ts",
+        "server/group-prompt-wiring.test.ts",
+        "server/chat-manager.ts",
+        "server/session-autotitle.ts",
+        "server/session-autotitle.test.ts",
+        "server/index.ts",
+        "shared/protocol.ts",
+        "src/lib/session-groups.ts",
+        "src/lib/session-groups.test.ts",
+        "src/components/GroupView.tsx"
+      ]
+    },
+    "§workspace.groups/making-a-comparison": {
+      "kind": "behavior",
+      "requires": [
+        "§app.overseer/tools",
+        "§app.session-list/groups"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/overseer-prompt.md",
+        "server/index.ts",
+        "server/merge-routes.test.ts",
+        "server/chat-model.test.ts",
+        "src/components/GroupView.tsx",
+        "src/components/NewSessionDialog.tsx",
+        "src/components/OverviewActions.tsx",
+        "src/App.tsx"
+      ]
+    },
+    "§workspace.groups/send-all-mode": {
+      "kind": "behavior",
+      "requires": [
+        "§workspace.groups/the-group-composer",
+        "§workspace.groups/layout-tabs",
+        "§workspace.groups/shell",
+        "§workspace.groups/announcements",
+        "§design.copy-deck/workspace"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/GroupView.tsx",
+        "src/components/GroupComposer.tsx",
+        "src/lib/group-layout.ts",
+        "src/lib/group-layout.test.ts",
+        "src/lib/ui-state.ts",
+        "src/App.tsx",
+        "src/app.css",
+        "src/components/Composer.tsx"
       ]
     }
   },

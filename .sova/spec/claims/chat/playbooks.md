@@ -75,8 +75,7 @@ in (below).
 - **Disabled while the composer is blocked.** The row is `aria-disabled`, with
   `aria-describedby="composer-reason"` pointing at the composer's own reason line. That covers
   connecting, reconnecting, not connected, an archived pane, saving a turn, and a model switch in
-  flight (§chat.composer/disabled-states). It is the same treatment Attach images gets, not `Fan Out…`'s
-  absence.
+  flight (§chat.composer/disabled-states). It is the same treatment Attach images gets.
 
 ## §chat.playbooks/the-modal — The modal
 

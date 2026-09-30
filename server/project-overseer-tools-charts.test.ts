@@ -449,6 +449,15 @@ describe("the operator's own gap ideas (the project page's Ideas)", async () => 
   const base = `/api/orgs/${org.id}/projects/${project.id}/overseer`;
   const send = (method: string, path: string, body: unknown) => page.request(`${base}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
 
+  test("the operator's own §gap/… idea is no gap until the overseer files it: sova_idea add on it makes it one, its text kept", async () => {
+    const r = await send("POST", "/ideas", { id: "§gap/logout", title: "Logout", text: "The operator's words." });
+    assert.equal(r.status, 201, await r.text());
+    assert.equal(po.itemOfGap(org.id, project.id, "§gap/logout"), null, "the operator's idea is their own list");
+    assert.equal(textOf(await run("sova_idea", { op: "add", id: "§gap/logout", title: "other" })), "Filed §gap/logout as a gap (the idea was already on the list; its text is unchanged).");
+    assert.ok(po.itemOfGap(org.id, project.id, "§gap/logout"));
+    assert.match(textOf(await run("sova_idea", { op: "get", id: "§gap/logout" })), /Logout\n\nThe operator's words\./);
+  });
+
   test("the operator's own §gap idea is never an item; dropping one the overseer filed ends its item", async () => {
     const items = hostOf(org.id).sessions("item").length;
     assert.equal((await send("POST", "/ideas", { id: "§gap/parking", title: "Parking" })).status, 201);

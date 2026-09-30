@@ -1232,6 +1232,13 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
   const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
   const title = typeof body.title === "string" ? body.title.trim() : "";
   if (!item && (!prompt || !title)) throw new OrgError("Without an item (todo or idea), give both prompt and title.");
+  // A §gap/… idea whose gap has promoted decisions not built yet: the gap's own build (its Pipeline row), as Send to
+  // person… starts the gap's gathering; otherwise a plain coding session linked to the idea, as before.
+  const gapItem = item?.kind === "idea" ? itemOfGap(orgId, projectId, item.id) : null;
+  const onGap =
+    gapItem && hostOf(orgId).trial(gapItem, "build/start", { sessionId: "trial", title: "trial" }, envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(via ? { via } : {}) })).taken
+      ? gapItem
+      : null;
   // Recorded at once as organizational (server/org-sessions.ts), under its own kind so the
   // overseer's caps, which read only "coding", never count the operator's sessions.
   const made = await startCodingSession(orgId, projectId, {
@@ -1241,6 +1248,7 @@ export async function codeItem(orgId: string, projectId: string, body: ItemCodeI
     ...(body.thinking ? { thinking: body.thinking } : {}),
     kind: "operator-coding",
     ...(via ? { via } : {}),
+    ...(onGap ? { item: onGap } : {}),
   });
   if (item) linkItem(p, item, made.sessionId);
   return {

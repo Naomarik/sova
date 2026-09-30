@@ -643,6 +643,14 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           if (q.op === "add") {
             const tags = Array.isArray(q.tags) ? q.tags.map(String) : [];
             if (ns === "gap" && !tags.includes(GAP_TAG)) tags.unshift(GAP_TAG);
+            // A §gap/… idea already on the list (the operator's own Add files none): filing it makes it a gap, its text as it is.
+            const key = id.startsWith("§") ? id : `§${id}`;
+            const have = ns === "gap" ? readManifest(p.ideas).ideas[key] : undefined;
+            if (have) {
+              if (have.status === "dropped") throw new Refusal(`${key} is dropped: set its status first (sova_idea status) to file it as a gap again.`);
+              await host.fileGap(key);
+              return { content: text(`Filed ${key} as a gap (the idea was already on the list; its text is unchanged).`), details: { id: key, op: "add", status: have.status } };
+            }
             const r = addIdea({ id, title: q.title, text: q.text ?? "", tags }, p.ideas);
             // A gap is an item chart from now on: its Pipeline row, its gatherings and builds (gap/file).
             if (ns === "gap") await host.fileGap(r.id);

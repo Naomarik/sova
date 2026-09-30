@@ -440,6 +440,29 @@ describe("a project's coding sessions", async () => {
     store.patchPoSettings(p, { caps: { codingRunning: 2 } });
   });
 
+  test("the operator's Start coding on a §gap/… idea: the gap's own build when it has promoted decisions to build, else a plain one", async () => {
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
+    const idea = po.toolsForTest(org.id, project.id, { attended: true }).find((t) => t.name === "sova_idea")!;
+    await idea.execute("gx", { op: "add", id: "§gap/export", title: "Export to CSV" }, undefined, undefined, undefined as never);
+    const itemSid = po.itemOfGap(org.id, project.id, "§gap/export")!;
+    assert.ok(itemSid);
+    const gapBuilds = () => pipelineInfo(org.id, project.id).rows.find((r) => r.gap === "§gap/export")?.builds ?? [];
+    // Nothing promoted yet: a plain coding session, as before.
+    const plain = await po.codeItem(org.id, project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));
+    assert.ok(!gapBuilds().some((b) => b.sessionId === plain.sessionId), "not the gap's");
+    // A promoted decision of the gap: Start coding is the gap's build, on its Pipeline row.
+    await hostOf(org.id).act(
+      itemSid,
+      "link/moved",
+      { from: `decision/${org.id}/${project.id}/d_export1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Export writes CSV.", record: "§req/export" } },
+      envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+      { settle: true },
+    );
+    const onGap = await po.codeItem(org.id, project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));
+    assert.ok(gapBuilds().some((b) => b.sessionId === onGap.sessionId), "the gap's build");
+    assert.equal(readBuild(org.id, project.id, onGap.sessionId)?.kind, "operator-coding", "still the operator's (never on the overseer's caps)");
+  });
+
   test("gathering sessions stay mode-less, whatever the project's coding mode and the default", async () => {
     const p = store.projectOverseerPaths(org.id, project.id);
     // No hold (q10): the unattended start goes at once, so its session exists to open.

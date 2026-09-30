@@ -144,9 +144,9 @@ export function closeShare(shareId: string): number {
 
 /** Push every open page of a share its view (Update to now, a mode switch, a live share's growth).
     One view for all: a share's view never depends on who holds the link. */
-export function pushView(shareId: string, view: SessionShareView): number {
+export function pushView(shareId: string, view: SessionShareView, reset = false): number {
   const set = [...(viewers.get(shareId) ?? [])];
-  for (const v of set) send(v, { type: "view", view });
+  for (const v of set) send(v, { type: "view", view, ...(reset ? { reset: true as const } : {}) });
   return set.length;
 }
 

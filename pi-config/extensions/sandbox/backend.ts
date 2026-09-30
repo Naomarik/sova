@@ -52,6 +52,10 @@ export interface Policy {
 	 * writable, so what a sandboxed tool writes there is never read by a host tool. Canonical.
 	 * Build `source` with `shadowSource`. Ignored under read-only. */
 	shadowed?: Shadow[];
+	/** A confined launch's own state (`launch.ts` needs): `source` (a file or directory on the host)
+	 * is writable inside at `path`, whatever the level, deeper than every other rule. Canonical;
+	 * `path === source` binds in place. Never set for a tool call. */
+	binds?: Shadow[];
 }
 
 export interface Shadow {
@@ -66,6 +70,15 @@ export interface ConfineRequest {
 	policy: Policy;
 	/** Per-call variables the caller has vetted (pi's PI_SESSION_ID and friends); merged over policy.env. */
 	env?: Record<string, string>;
+	/** Variables set inside that never appear in the returned argv or env: the backend hands them in
+	 * on the inherited fd `secretFd` (returned in `Confined.fds`). Requires `secretFd`. */
+	secretEnv?: Record<string, string>;
+	/** A free fd number (≥ 3) for `secretEnv`'s payload. */
+	secretFd?: number;
+	/** Every variable, not only `secretEnv`, goes on `secretFd` where the backend would put it on
+	 * argv (bwrap `--setenv`): a whole process's environment (a write-only one is the host's) never
+	 * lands in a world-readable /proc/<pid>/cmdline. Requires `secretFd`. */
+	envOnFd?: boolean;
 }
 
 export interface RunnerFailureSpec {
@@ -90,7 +103,15 @@ export interface Confined {
 	/** Output substrings meaning "the sandbox refused something the command tried". */
 	denialSignatures: string[];
 	runnerFailure: RunnerFailureSpec;
+	/** Payloads the spawner writes to a pipe at `stdio[fd]` (then closes its end); set only for `secretEnv`. */
+	fds?: FdPayload[];
 	cleanup?: () => Promise<void>;
+}
+
+/** Data handed to a spawned process on an inherited fd, never through argv or the environment. */
+export interface FdPayload {
+	fd: number;
+	data: string;
 }
 
 export type ConfineResult =
@@ -175,6 +196,7 @@ export function policyKey(policy: Policy): string {
 		network: { mode: policy.network.mode, socket: policy.network.proxy?.socket, localPorts: policy.network.localPorts ?? [] },
 		env: Object.keys(policy.env).sort(),
 		shadowed: (policy.shadowed ?? []).map((sh) => `${sh.path}=${sh.source}`).sort(),
+		...(policy.binds?.length ? { binds: policy.binds.map((b) => `${b.path}=${b.source}`).sort() } : {}),
 	});
 }
 

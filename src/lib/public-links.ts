@@ -206,8 +206,10 @@ export const resetPublicLinksDraft = store.reset;
 
 // ---- words ----------------------------------------------------------------------------------------
 
-/** The state chip (§design.copy-deck/public-links): a word and its tone. */
+/** The state chip (§design.copy-deck/public-links): a word and its tone. A share port that won't
+    open wins over every state (§mesh.public/listener-failure). */
 export function stateChip(s: ShareState): { word: string; tone?: "success" | "warn" | "error" } {
+  if (s.listener) return { word: "Not listening", tone: "error" };
   switch (s.state) {
     case "off":
       return { word: "Off" };

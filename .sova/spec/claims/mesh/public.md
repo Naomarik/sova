@@ -47,8 +47,8 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
   else `lastKnownUrl`); the bound address; none. Every `/h/`, `/i/` and `/s/` link is built by one
   helper on that address, or is just the path with none. The answer is a `ShareState`: `state` off,
   configured, verified or unreachable; `source` env, setting, gateway or bound; `publicUrl`; `via`
-  (the gateway peer's current id); and `warning` with its `warningCode` whenever a link may not
-  open from outside.
+  (the gateway peer's current id); `warning` with its `warningCode` whenever a link may not
+  open from outside; and `listener` while the share port won't open (§mesh.public/listener-failure).
 - **State and warning.** An address of this host's own is `verified` after a Verify of it passed
   (a bound address only by a Verify in this process), `unreachable` after one failed, else
   `configured` with the `unverified` warning. Through a gateway: `unreachable` when it didn't
@@ -91,13 +91,18 @@ links". When nothing answers in time, it replies with the state as it stands.
 
 - The front is anything that terminates TLS for the public hostname and forwards it to
   `127.0.0.1:<sharePort>`. For the chosen front Sova generates the steps from the setting: the
-  host's web server (an nginx server block, and a note for any other server), Caddy on this host
-  (a one-time `setcap` so it can bind 80 and 443, the Caddyfile, then `caddy run`), Tailscale Funnel
-  (a one-time `tailscale set --operator`, then `tailscale funnel --bg --https=443`, with a note that
+  host's web server (an nginx server block with its certificate lines at certbot's paths, a note
+  to get that certificate before adding the block, `certbot certonly --nginx -d <host>`, or to use
+  another certificate's paths, and a note for any other server), Caddy on this host (a one-time
+  `setcap` so it can bind 80 and 443, the Caddyfile, then `caddy run`), Tailscale Funnel (a
+  one-time `tailscale set --operator`, then `tailscale funnel --bg --https=443`, with a note that
   it is a preview until Funnel is confirmed to pass visitor addresses and live updates), or a
   Cloudflare Tunnel (create and route, `config.yml`, run). Each step says whether it needs root.
-  Every snippet sets `X-Forwarded-For` to the one client address the front saw. Sova never runs
-  these steps and never writes the front's configuration.
+  The nginx and Caddy snippets set `X-Forwarded-For` to the one client address the front saw;
+  Funnel sets its own, which its preview note covers. A tunnel's `config.yml` can't set a header,
+  so the Cloudflare Tunnel guide carries a preview note instead: it relies on the tunnel's `X-Forwarded-For` ending with the visitor's
+  address, which isn't confirmed yet, and until it is, every visitor may share one rate limit.
+  Sova never runs these steps and never writes the front's configuration.
 - **Verify** checks the effective address as it is now: it fetches `<address>/api/h/<random
   token>` and passes only on the share app's own answer for an unknown link, 404 with JSON `code:
   "not-found"` and `X-Content-Type-Options: nosniff` (the page shell answers 200 for any token, so
@@ -116,6 +121,10 @@ links". When nothing answers in time, it replies with the state as it stands.
   `real_ip_header` for its client-address header (`CF-Connecting-IP` for Cloudflare). The note also
   says never to forward that header unchecked, because anyone who reaches the server directly can
   set it.
+- The Caddy guide carries the same case as a note: behind a CDN, `{remote_host}` is the CDN's
+  address, so add a global `servers` block with `trusted_proxies static` and the CDN's published
+  ranges and `client_ip_headers` with its client-address header (`CF-Connecting-IP` for
+  Cloudflare), and forward `{client_ip}` in place of `{remote_host}`.
 
 ## §mesh.public/registry — Which host minted a token
 
@@ -248,9 +257,11 @@ reads again. Copy: §design.copy-deck/public-links.
 - The gateway's share listener keys its per-address limit on the last `X-Forwarded-For` hop only
   when the connection comes from loopback (its front); from any other address, tailnet included,
   it uses the socket address. A value that isn't an IP literal falls back to the socket address.
-  `Forwarded`, `X-Real-IP`, `Tailscale-*` and `x-sova-*` are never read.
+  `Forwarded`, `X-Real-IP`, `CF-Connecting-IP`, `True-Client-IP`, `Tailscale-*` and `x-sova-*` are
+  never read.
 - On every hop the gateway first strips every incoming `Forwarded`, `X-Forwarded-*`, `X-Real-IP`,
-  `Tailscale-*` and `x-sova-*` header (any case), the hop-by-hop headers and every header named in
+  `CF-Connecting-IP`, `True-Client-IP`, `Tailscale-*` and `x-sova-*` header (any case), the
+  hop-by-hop headers and every header named in
   `Connection`, then sets exactly one `X-Forwarded-For` (the client address it computed),
   `X-Forwarded-Proto: https` and `X-Forwarded-Host` from its configured public URL, never from the
   incoming `Host`.
@@ -264,7 +275,8 @@ A Settings tab of its own, **Public links**, after Mesh (§app/settings-dialog).
 mesh off. Copy is §design.copy-deck/public-links.
 
 - **Top to bottom:** the title with the state chip (`Off`, `Not verified` warn, `Verified` success,
-  `Unreachable` error), the line, then the **Address** row: the effective address in mono and its
+  `Unreachable` error, or `Not listening` error while the share port won't open,
+  §mesh.public/listener-failure), the line, then the **Address** row: the effective address in mono and its
   source (`Set by environment ({var})`, `From this setting`, `From {gateway}`, `Bound address`), or
   `None`. Then **Where links open**, radios: `Off`, `This host is the gateway`, and one `Through
   {gateway}` per peer advertising a gateway (a saved gateway no longer advertised keeps its radio),
@@ -291,3 +303,17 @@ mesh off. Copy is §design.copy-deck/public-links.
   {status}").
 - The Mesh card (§mesh.ui/card) carries a second chip while a route is on, `Public links: gateway`
   or `Public links: through {gateway}`, in the state chip's tone.
+
+## §mesh.public/listener-failure — A share port that won't open
+
+- When this host should bind its share listener (it is the gateway, or `SOVA_SHARE_HOST` and
+  `SOVA_SHARE_PORT` are both set) and can't, the share state carries `listener: {host, port,
+  reason}` beside its other fields, which stay as they were: the port is taken, the host doesn't
+  allow it, the address isn't one of this host's, `SOVA_SHARE_PORT` isn't a port number (`port` is
+  then null), or any other error opening it. `reason` is one sentence naming the cause. A later bind that succeeds, or a setting
+  that binds nothing, clears it; the server log still says so either way.
+- A `PUT /api/public-links` answers after the rebind it caused settles, so its answer carries the
+  bind as it came out.
+- In Settings → Public links the state chip reads `Not listening` (error) in place of the others,
+  the Mesh card's Public links chip (while a route is on) takes the error tone, and an error banner under the Address row
+  says "The share port isn't open." with the reason. Copy: §design.copy-deck/public-links.

@@ -7,6 +7,7 @@ import {
   type SessionShareCreate,
   type SessionShareDays,
   type SessionShareMinted,
+  type SessionShareOutline,
   type SessionSharePatch,
   type SessionSharePresence,
   type SessionSharePreview,
@@ -16,6 +17,7 @@ import {
   type SharesOverview,
 } from "../../shared/session-share";
 import { hostUrl } from "./mesh";
+import { rangeLabel } from "./share-slice";
 
 // Session share links (§app/session-share): the operator app's calls and words. Every call names
 // the host that holds the session (null: this one), reached through /peer/<id>/api/… like the
@@ -87,11 +89,28 @@ export function modeLine(s: Pick<SessionShare, "mode" | "cutAt">, abs: (iso: str
   return s.cutAt ? `Snapshot up to ${abs(s.cutAt)}` : "Snapshot";
 }
 
+/** The line a share's row leads with: a slice says which messages ("Messages 12–18 of 40"), a
+    whole session says its mode. */
+export function shareLine(s: Pick<SessionShare, "mode" | "cutAt" | "span">, abs: (iso: string) => string): string {
+  return s.span ? rangeLabel(s.span) : modeLine(s, abs);
+}
+
+/** The sheet's slice line, beside Change Slice. */
+export const sliceLine = (s: Pick<SessionShare, "span">): string => (s.span ? rangeLabel(s.span) : "The whole session.");
+
+/** The pane's viewing-now count: recipients whose page is visible now, over the session's live
+    shares (a background tab doesn't count). */
+export const viewingNow = (shares: readonly SessionShare[]): number => shares.filter(shareLive).reduce((n, s) => n + viewingCount(s), 0);
+/** The Sharing tab's accessible name, the badge's count said in words. */
+export const sharingTabLabel = (viewing: number): string => (viewing > 0 ? `Sharing, ${viewing} viewing now` : "Sharing");
+
 // ---- the reviewed snapshot ----
 
 /** A 409 from a mint or update whose previewed cut is no longer in the session file. */
 export const isStalePreview = (x: unknown): boolean => x instanceof ShareApiError && x.status === 409 && x.code === "stale-preview";
 export const STALE_PREVIEW = "The session changed. Preview it again.";
+/** A 409 from a change whose share was changed meanwhile (another tab, the share page). */
+export const isShareChanged = (x: unknown): boolean => x instanceof ShareApiError && x.status === 409 && x.code === "share-changed";
 
 /** Where the images of a preview stand: every index loaded, some failed, or some still loading. */
 export interface ThumbState {
@@ -167,20 +186,21 @@ const base = "/api/session-shares";
 const one = (id: string) => `${base}/${encodeURIComponent(id)}`;
 const rec = (id: string, r: string) => `${one(id)}/recipients/${encodeURIComponent(r)}`;
 const q = (sessionId: string) => `session=${encodeURIComponent(sessionId)}`;
+const param = (key: string, v: string | undefined) => (v === undefined ? "" : `&${key}=${encodeURIComponent(v)}`);
 
 /** The shares of one session, newest first. */
 export const listSessionShares = (host: string | null, sessionId: string) => call<SessionShare[]>(host, `${base}?${q(sessionId)}`);
 /** What a recipient would see, before any link exists. The first read (no `cut`) fixes the cut;
     its earlier pages pass it, so every page and image is of that one snapshot (409 stale-preview
-    once the cut is gone from the file). */
-export const previewNew = (host: string | null, sessionId: string, opts: { cut?: string; before?: number } = {}) =>
-  call<SessionSharePreview>(
-    host,
-    `${base}/preview?${q(sessionId)}${opts.cut === undefined ? "" : `&cut=${encodeURIComponent(opts.cut)}`}${opts.before === undefined ? "" : `&before=${opts.before}`}`,
-  );
-/** Image `n` of the preview built at `cut`. */
-export const previewNewImage = (host: string | null, sessionId: string, cut: string, n: number) =>
-  hostUrl(host, `${base}/preview/img/${n}?${q(sessionId)}&cut=${encodeURIComponent(cut)}`);
+    once the cut is gone from the file). `from` slices it (§app.session-share/slice). */
+export const previewNew = (host: string | null, sessionId: string, opts: { cut?: string; from?: string; before?: number } = {}) =>
+  call<SessionSharePreview>(host, `${base}/preview?${q(sessionId)}${param("cut", opts.cut)}${param("from", opts.from)}${opts.before === undefined ? "" : `&before=${opts.before}`}`);
+/** Image `n` of the preview built at `cut` (and sliced at `from`: its indices are the slice's). */
+export const previewNewImage = (host: string | null, sessionId: string, cut: string, n: number, from?: string) =>
+  hostUrl(host, `${base}/preview/img/${n}?${q(sessionId)}${param("cut", cut)}${param("from", from)}`);
+/** The share page's picker: every message the share would show at `cut`, with its entry id. */
+export const previewOutline = (host: string | null, sessionId: string, cut?: string) =>
+  call<SessionShareOutline>(host, `${base}/preview?${q(sessionId)}&outline=1${param("cut", cut)}`);
 /** What this share's recipients see now. */
 export const previewShare = (host: string | null, shareId: string, before?: number) =>
   call<SessionShareView>(host, `${one(shareId)}/preview${before === undefined ? "" : `?before=${before}`}`);

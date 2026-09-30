@@ -14,6 +14,12 @@ import {
   overseerDirty,
   overseerDraft,
   overseerDraftProblem,
+  overseerDraftIssue,
+  capsChangedFromDefault,
+  perMessageSummary,
+  runningNowLine,
+  PER_MESSAGE_CAP_KEYS,
+  CAP_KEYS,
   resetOverseerDraft,
   setOverseerDraft,
   setOverseerSaved,
@@ -194,7 +200,7 @@ test("the exploratory agent: an edit is dirty, deep-cloned, rebased as one choic
 
   const blank = cloneOverseer({ settings: settings(), notes: "" });
   blank.settings.explorer = { backend: "pi", model: "", effort: "" };
-  assert.match(overseerDraftProblem(blank)!, /exploratory agent/);
+  assert.match(overseerDraftProblem(blank)!, /idea explorer/);
   const badCap = cloneOverseer({ settings: settings(), notes: "" });
   badCap.settings.caps.explorePerTurn = -1;
   assert.match(overseerDraftProblem(badCap)!, /Ideas explored/);
@@ -222,4 +228,39 @@ test("the explorer's model lists: the shipped default is known, Claude Opus 5 is
   const down = explorerOptions({ backends: [{ id: "claude-code", label: "Claude Code", models: null, error: "no CLI" }] }, info, shipped)!;
   assert.equal(down.backends[0]!.models, null);
   assert.equal(explorerOptions(undefined, info, shipped), undefined);
+});
+
+test("Per-message limits: all eight limits are on the page, seven folded, and the head counts the ones off their default", () => {
+  assert.deepEqual([...PER_MESSAGE_CAP_KEYS, "concurrentSessions"].sort(), [...CAP_KEYS].sort(), "Running at once plus the folded seven is every limit");
+  assert.equal(PER_MESSAGE_CAP_KEYS.length, 7);
+  const defaults = settings().caps;
+  assert.equal(capsChangedFromDefault(defaults, defaults), 0);
+  assert.equal(perMessageSummary(0), "All at default");
+  assert.equal(capsChangedFromDefault({ ...defaults, concurrentSessions: 99 }, defaults), 0, "Running at once isn't in the folded group, so it isn't counted there");
+  assert.equal(capsChangedFromDefault({ ...defaults, createPerTurn: 6, gatherPerTurn: 0 }, defaults), 2);
+  assert.equal(capsChangedFromDefault({ ...defaults, linksPerTurn: Number.NaN }, defaults), 1, "a cleared field is a change");
+  assert.equal(perMessageSummary(2), "2 changed from default");
+});
+
+test("the reason Save waits says where it is, so the folded group holding that field can open", () => {
+  const base = settings();
+  const at = (s: OverseerSettings) => overseerDraftIssue({ settings: s, notes: "" });
+  assert.equal(at(base), null);
+  for (const k of PER_MESSAGE_CAP_KEYS) assert.deepEqual(at({ ...base, caps: { ...base.caps, [k]: -1 } })?.at, { group: "per-message", key: k }, k);
+  assert.deepEqual(at({ ...base, caps: { ...base.caps, concurrentSessions: 1.5 } })?.at, { group: "running" }, "Running at once is never folded");
+  const qa = at({ ...base, quickActions: [...base.quickActions, { id: "custom-2", label: "", description: "", prompt: "x" }] });
+  assert.deepEqual(qa?.at, { group: "quick-action", index: 1 });
+  assert.equal(qa?.message, "Quick action 2 needs a label and a prompt.");
+  const ex = at({ ...base, explorer: { backend: "pi", model: "", effort: "" } });
+  assert.deepEqual(ex?.at, { group: "advanced" });
+  assert.equal(ex?.message, "The idea explorer needs a model and an effort.");
+  // The message the footer shows is the same sentence.
+  assert.equal(overseerDraftProblem({ settings: { ...base, explorer: { backend: "pi", model: "", effort: "" } }, notes: "" }), ex?.message);
+});
+
+test("Running at once's live line pairs the count now with the number in the field, or the saved limit while the field is invalid", () => {
+  assert.equal(runningNowLine(3, 10, 10), "Now: 3 of 10 running.");
+  assert.equal(runningNowLine(3, 20, 10), "Now: 3 of 20 running.", "an unsaved edit shows what it would allow");
+  assert.equal(runningNowLine(0, Number.NaN, 10), "Now: 0 of 10 running.");
+  assert.equal(runningNowLine(2, -4, 5), "Now: 2 of 5 running.");
 });

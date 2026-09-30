@@ -49,8 +49,9 @@ export function cleanGroupLabel(raw: unknown): { ok: true; label: string | null 
   return label.length > GROUP_LABEL_MAX ? { ok: false } : { ok: true, label };
 }
 
-/** A stored seed, read leniently: both fields must be non-empty strings or the group is simply
-    not a fanout group (and so is never auto-dissolved). */
+/** A stored seed (an older build's, §workspace.groups/legacy-groups), read leniently: both fields
+    must be non-empty strings or the group simply has none. Nothing writes one any more and nothing
+    acts on one; it is read only so it survives every write. */
 function readSeed(raw: unknown): GroupSeed | null {
   if (!isObj(raw)) return null;
   const { parentSessionPath, leafId } = raw as { parentSessionPath?: unknown; leafId?: unknown };
@@ -75,9 +76,8 @@ function readMember(raw: unknown): GroupMember | null {
  * written last, over the top.
  *
  * The consequence, which is why this is worth keeping when someone is tempted to simplify it
- * away: a fanout group's `seed` written by a newer build would be erased by an older build
- * RENAMING the group, and with it that group's fork markers and Align to Fork — silently, with
- * nothing erroring, and nobody would trace the loss back to a rename.
+ * away: a field another build wrote would be erased by this one RENAMING the group — silently,
+ * with nothing erroring, and nobody would trace the loss back to a rename.
  */
 function passThrough(raw: Record<string, unknown>, known: readonly string[]): Record<string, unknown> {
   const rest: Record<string, unknown> = {};
@@ -188,12 +188,11 @@ export function readAssignments(): Record<string, string> {
 export type GroupResult = { ok: true; group: SessionGroup } | { ok: false; status: 400 | 404; error: string };
 
 /**
- * POST /api/session-groups: a new, empty group at the end of the list. `seed` is written only by
- * Sova's own fanout (fork mode) and carries lineage; `autoDissolve` is what decides whether the
- * group is removed once emptied, and the fanout sets it only when it also chose the NAME. A group
- * the user named survives being emptied whether or not it has lineage.
+ * POST /api/session-groups: a new, empty group at the end of the list. It never carries `seed` or
+ * `autoDissolve`: only an older build wrote those (§workspace.groups/legacy-groups), so a group
+ * made now survives being emptied.
  */
-export function createGroup(rawName: unknown, seed?: GroupSeed, autoDissolve?: boolean): GroupResult {
+export function createGroup(rawName: unknown): GroupResult {
   const name = cleanGroupName(rawName);
   if (!name) return { ok: false, status: 400, error: `name must be 1–${GROUP_NAME_MAX} characters` };
   const group: StoredGroup = {
@@ -201,8 +200,6 @@ export function createGroup(rawName: unknown, seed?: GroupSeed, autoDissolve?: b
     name,
     createdAt: new Date().toISOString(),
     members: [],
-    ...(seed ? { seed } : {}),
-    ...(autoDissolve !== undefined ? { autoDissolve } : {}),
   };
   return edit((store) => {
     store.groups.push(group);
@@ -258,14 +255,7 @@ export function updateGroup(id: string, patch: GroupPatch): GroupResult {
   return edit((store) => {
     const group = store.groups.find((g) => g.id === id);
     if (!group) return { ok: false, status: 404, error: "Group not found" };
-    if (name && name !== group.name) {
-      group.name = name;
-      // A rename revokes the second half of "Sova made it AND named it": Sova made this one,
-      // the USER named it, and renaming something is the clearest signal there is that they mean
-      // to keep it. Set by the event rather than remembered as a rule (the workspace spec spares a group
-      // whose name is the user's work, however it came by that name).
-      group.autoDissolve = false;
-    }
+    if (name && name !== group.name) group.name = name;
     if (order) {
       const byId = new Map(group.members.map((m) => [m.id, m]));
       const moved: GroupMember[] = [];
@@ -306,74 +296,12 @@ export function readGroup(id: string): SessionGroup | null {
 }
 
 /**
- * Give a group the seed of the fanout landing in it. Only ever called for a group that has none
- * (the caller checks, because a DIFFERING seed is a refusal rather than an overwrite): one group
- * carries one seed, since the fork marker reads it.
- *
- * Adoption also RECORDS `autoDissolve: false`, and that is not belt-and-braces. The legacy rule
- * reads an absent flag plus a seed as "a fanout group written before the flag existed", and an
- * adopted group looks exactly like that from disk — seed present, flag absent. Leaving it
- * implicit would delete a group the user named the moment its last member left, which is the
- * whole thing the flag was split out to prevent. Only ever written when absent, so an explicit
- * value already there still wins.
+ * Assign never deletes a group, whatever it holds afterwards (§workspace.groups/group-lifecycle,
+ * "Emptying a group"): a group's name is the user's work, and an empty group is a real state the
+ * workspace renders and offers Dissolve on. An older build's `autoDissolve` (and `seed`) is still
+ * read and written back unchanged, but decides nothing here (§workspace.groups/legacy-groups).
  */
-export function adoptGroupSeed(id: string, seed: GroupSeed): SessionGroup | null {
-  return edit((store) => {
-    const group = store.groups.find((g) => g.id === id);
-    if (!group) return null;
-    group.seed ??= seed; // never overwrite: the caller has already refused a mismatch
-    group.autoDissolve ??= false; // the user named this group; lineage doesn't change that
-    return { ...group, members: group.members.map((m) => ({ ...m })) };
-  });
-}
-
-export type AssignResult = { ok: true; dissolved?: true } | { ok: false; status: 400 | 404; error: string };
-
-/**
- * Whether this group deletes itself when its last member leaves. `autoDissolve` is the ONE truth
- * of that, and it is set only when Sova both created AND named the group (fanout without a
- * groupId). It used to be inferred from `seed` — but seed is lineage, and a hand-made group can
- * now adopt one, so the inference would have deleted a group the USER named. Absent means the
- * record predates the flag, and only then does `seed` imply it: those are Sova's own fanouts.
- * That fallback cannot misfire on an ADOPTED group, which looks identical from disk — seed
- * present, flag absent — because `seed` was only ever written by a fanout that also CREATED the
- * group, and the adoption path arrived in the same commit as this flag. There is no window in
- * which an adopted group exists without an explicit flag.
- *
- * A RENAME clears it (updateGroup): Sova may remove a group it both made and named, and the
- * user renaming it falsifies the second half.
- */
-function dissolvesWhenEmpty(group: StoredGroup): boolean {
-  return group.autoDissolve ?? group.seed !== undefined;
-}
-
-/**
- * The workspace spec, "Emptying a group": a group Sova fanned out exists to hold that fanout, so the write
- * that removes its last member removes the group too — in the SAME atomic write, so the store is
- * never briefly a fanout group with nothing in it. A hand-made group is left standing: its name is
- * the user's work, and the session list already specs an empty one as a real state.
- *
- * Deliberately only here, on the assign GESTURE — never on "the group happens to be empty now".
- * Nothing else empties a group behind the user's back: a member whose file is gone KEEPS its
- * assignment (the "This session's file is gone" pane renders it; see dropGroupAssignments for
- * the decision), and Archive cleanup prunes only the ids it deleted itself — so a rule keyed on
- * emptiness rather than the gesture could still only ever fire under the user's own hands, and
- * would let a background event silently delete a group the user made — with nobody listening
- * to that call to even report it. An empty
- * fanout group is a real state instead, and the workspace offers Dissolve by hand.
- *
- * Returns whether it dissolved, so the caller can tell the client the group it was viewing is gone.
- */
-function dissolveIfEmptied(store: Store, groupId: string | null): boolean {
-  if (!groupId) return false;
-  const at = store.groups.findIndex((g) => g.id === groupId);
-  if (at < 0) return false;
-  const group = store.groups[at]!;
-  if (!dissolvesWhenEmpty(group)) return false;
-  if (Object.values(store.assignments).includes(groupId)) return false; // still has members
-  store.groups.splice(at, 1);
-  return true;
-}
+export type AssignResult = { ok: true } | { ok: false; status: 400 | 404; error: string };
 
 /**
  * POST /api/session-groups/assign: one session, at most one group (`null` takes it out of the one
@@ -416,7 +344,7 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
     }
     if (!group) {
       delete store.assignments[sessionId];
-      return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
+      return { ok: true };
     }
     const member: GroupMember = { ...carried, id: sessionId };
     if (label === null) delete member.label; // an explicit clear
@@ -424,9 +352,7 @@ export function assignSession(sessionId: string, groupId: string | null, label?:
     const at = index === undefined ? group.members.length : Math.min(index, group.members.length);
     group.members.splice(at, 0, member);
     store.assignments[sessionId] = group.id;
-    // A move out of a fanout group empties it just as surely as an unassign does (never the
-    // same-group case: that returned above).
-    return { ok: true, ...(dissolveIfEmptied(store, from) ? { dissolved: true as const } : {}) };
+    return { ok: true };
   });
 }
 

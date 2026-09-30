@@ -194,13 +194,18 @@ export const eyeLabel = (project: string, mark: ReturnType<typeof overseerEye>["
  * org card counts): so the region's Needs you never depends on the digest's 30-item cap or on the
  * Overseer's proactivity. Sentences match the digest's (server/attention.ts).
  */
-export function batonWaitDetail(s: Pick<SessionSummary, "baton">): { text: string; since: number } | null {
+export function batonWaitDetail(s: Pick<SessionSummary, "baton">, putAway: ReadonlySet<string> = new Set()): { text: string; since: number; later: string[] } | null {
   const b = s.baton;
   if (!b) return null;
-  if (b.needsYou) return { text: `${b.needsYou.from} → you: ${b.needsYou.question}`, since: b.needsYou.since || 0 };
-  if (b.sendLink) return { text: `Send ${b.sendLink.to} their link: ${b.sendLink.question}`, since: b.sendLink.since };
-  const p = b.proposals?.[0];
-  if (p) return { text: `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`, since: p.since };
+  // A wait put away with Later (its key in `putAway`) is skipped here at once; the server leaves it out of the next list.
+  const kept = (later: string | undefined) => !later || !putAway.has(later);
+  const keys = (later: string | undefined) => (later ? [later] : []);
+  if (b.needsYou && kept(b.needsYou.later))
+    return { text: `${b.needsYou.from} → you: ${b.needsYou.question}`, since: b.needsYou.since || 0, later: keys(b.needsYou.later) };
+  if (b.sendLink && kept(b.sendLink.later))
+    return { text: `Send ${b.sendLink.to} their link: ${b.sendLink.question}`, since: b.sendLink.since, later: keys(b.sendLink.later) };
+  const p = b.proposals?.find((q) => kept(q.later));
+  if (p) return { text: `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`, since: p.since, later: keys(p.later) };
   return null;
 }
 
@@ -209,14 +214,19 @@ export function batonWaitDetail(s: Pick<SessionSummary, "baton">): { text: strin
  * (a dialog, an errored turn, a question) joined to the org hits, plus any baton wait the digest
  * didn't carry. Newest first, like the global list.
  */
-export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
+export function orgNeedsYouRows(
+  digest: Pick<AttentionDigest, "items"> | undefined,
+  sessions: readonly SessionSummary[],
+  /** Later's keys this tab put away (lib/needs-you): a digest row goes at once; a baton wait has no key and stays. */
+  putAway: ReadonlySet<string> = new Set(),
+): NeedsYouRow[] {
   const org = sessions.filter(isOrgSession);
-  const rows = needsYouRows(digest, org);
+  const rows = needsYouRows(digest, org, putAway);
   const listed = new Set(rows.map((r) => r.session.path));
   for (const s of org) {
     if (listed.has(s.path) || orgDone(s)) continue;
-    const w = batonWaitDetail(s);
-    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since });
+    const w = batonWaitDetail(s, putAway);
+    if (w) rows.push({ session: s, detail: w.text, details: [w.text], since: w.since, later: w.later });
   }
   return rows.sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }

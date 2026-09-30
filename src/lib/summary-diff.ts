@@ -37,7 +37,6 @@ const FIELDS: { [K in keyof Required<SessionSummary>]: "compare" | { exempt: str
   remoteCwd: "compare",
   draftPreview: "compare",
   hasDraft: "compare",
-  legacyFormat: "compare",
   overseer: "compare",
   baton: "compare",
   projectOverseer: "compare",

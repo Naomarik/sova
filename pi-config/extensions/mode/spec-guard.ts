@@ -1627,6 +1627,22 @@ export function ledgerPath(agentDir: string, parentSessionId: string): string {
 	return join(agentDir, "sova", "spec-ledger", `${parentSessionId.replace(/[^\w.-]/g, "_")}.jsonl`);
 }
 
+/**
+ * A confined worker's own ledger file (its sandbox makes only this file writable, never the parent's):
+ * `<agentDir>/sova/spec-ledger/<parentSessionId>.workers/<worker key>.jsonl`. The parent reads it with its own (ledgerFiles).
+ */
+export function workerLedgerPath(agentDir: string, parentSessionId: string, workerKey: string): string {
+	return join(dirname(ledgerPath(agentDir, parentSessionId)), `${parentSessionId.replace(/[^\w.-]/g, "_")}.workers`, `${workerKey.replace(/[^\w.-]/g, "_")}.jsonl`);
+}
+/** Every ledger file of a parent session: its own, then each confined worker's (workerLedgerPath). */
+export function ledgerFiles(agentDir: string, parentSessionId: string): string[] {
+	const own = ledgerPath(agentDir, parentSessionId);
+	const dir = join(dirname(own), `${parentSessionId.replace(/[^\w.-]/g, "_")}.workers`);
+	let names: string[] = [];
+	try { names = readdirSync(dir).filter((name) => name.endsWith(".jsonl")).sort(); } catch { /* no confined worker */ }
+	return [own, ...names.map((name) => join(dir, name))];
+}
+
 /** Append one entry (creating the file); never throws. */
 export function appendLedger(path: string, entry: LedgerEntry): void {
 	try {

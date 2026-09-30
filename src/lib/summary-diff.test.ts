@@ -33,7 +33,6 @@ const full = (): Required<SessionSummary> => ({
   remoteCwd: "/r",
   draftPreview: "draft",
   hasDraft: true,
-  legacyFormat: true,
   overseer: true,
   baton: { holder: "Tony", state: "open" },
   projectOverseer: { orgId: "org_a", projectId: "prj_a" },

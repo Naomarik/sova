@@ -89,6 +89,16 @@ export interface ShareState {
       from outside; absent when verified. */
   warning?: string;
   warningCode?: LinkWarningCode;
+  /** While this host should bind its share listener and can't (§mesh.public/listener-failure):
+      where, and why in one sentence. `port` is null when SOVA_SHARE_PORT isn't a port. The other
+      fields stay as they were. */
+  listener?: ShareListenerFailure;
+}
+
+export interface ShareListenerFailure {
+  host: string;
+  port: number | null;
+  reason: string;
 }
 
 /** Why a minted link may not open from outside. `off`: no public links. `unverified`: an address
@@ -276,8 +286,9 @@ export const ASSET_TYPES: Readonly<Record<string, string>> = {
     computed), `https`, and the host of the configured publicUrl (never the incoming Host). */
 export const INGRESS_SET_HEADERS = ["x-forwarded-for", "x-forwarded-proto", "x-forwarded-host"] as const;
 /** Removed from every hop by the gateway before it sets its own, matched case-insensitively,
-    besides hop-by-hop headers and any header named in Connection. A trailing "*" is a prefix. */
-export const INGRESS_STRIP_HEADERS = ["forwarded", "x-forwarded-*", "x-real-ip", "tailscale-*", "x-sova-*"] as const;
+    besides hop-by-hop headers and any header named in Connection. A trailing "*" is a prefix.
+    `cf-connecting-ip` and `true-client-ip` are CDN client-address headers nothing reads; they go too. */
+export const INGRESS_STRIP_HEADERS = ["forwarded", "x-forwarded-*", "x-real-ip", "cf-connecting-ip", "true-client-ip", "tailscale-*", "x-sova-*"] as const;
 
 // ---- offline ------------------------------------------------------------------------------------
 

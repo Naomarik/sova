@@ -1,6 +1,6 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { closeSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from "node:fs";
-import { stat } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { type AgentSession, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -9,16 +9,16 @@ import {
   OVERSEER_ENTRY,
   type AttentionDigest,
   type AttentionItem,
+  type OverseerAutonomy,
   type OverseerInfo,
   type OverseerSaveResult,
   type OverseerSettings,
   type OverseerSettingsInfo,
   type SessionSummary,
-  type SovaConfirmDetails,
   type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerKey, buildDigest, laterFilter, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-pipeline";
 import { conflictAttention } from "./decisions";
@@ -48,6 +48,7 @@ import {
   parseSettings,
   patchOverseerSettings,
   readNotes,
+  logAction,
   readOverseerSettings,
   readOverseerState,
   rotateState,
@@ -61,6 +62,10 @@ import type { SubagentTool } from "./overseer-idea-tools";
 import { workerDenial } from "./delegate";
 import { BUILTIN_ALLOWED, overseerTools, type OverseerToolHost, renderTranscript, TurnLimits, userMessageText, UserTurns } from "./overseer-tools";
 import { contactRedactor } from "./overseer-org-view";
+import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } from "../shared/overseer-card";
+import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, REVOKE_ENTRY, RULE_ENTRY, type RuleEntry, sessionsText, USE_ENTRY } from "../shared/overseer-grants";
+import { readAliases, sessionName, setAlias } from "./session-names";
+import { RESUME_DELAY_MS, resumeInterrupted, runLedger } from "./auto-resume";
 import { overseerFileTools } from "./overseer-file-tools";
 import { OverseerGuard } from "./overseer-deny";
 import { projectOverseerOfPath } from "./project-overseer-store";
@@ -73,11 +78,12 @@ import { meshApi } from "./mesh";
 import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
-import { normalizeEntries, readActiveBranch } from "./transcript";
+import { activeBranch, normalizeEntries, parseLines, readActiveBranch } from "./transcript";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
+import { pruneLater } from "./needs-you-later";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 
 /**
@@ -156,8 +162,9 @@ export async function pathOfId(id: string): Promise<string | null> {
   return null;
 }
 
-/** A new, empty Overseer file: header + marker, written now (like every web session), ours. */
-function createOverseerFile(): { id: string; path: string } {
+/** A new Overseer file: header + marker (and the rules a /clear carries, §app.overseer/approvals),
+    written now (like every web session), ours. */
+function createOverseerFile(carried: readonly RuleEntry[] = []): { id: string; path: string } {
   const dir = overseerDir();
   mkdirSync(dir, { recursive: true });
   const sm = SessionManager.create(dir);
@@ -167,6 +174,7 @@ function createOverseerFile(): { id: string; path: string } {
   // The marker rides the hand-written file, like the fanout member marker: appended to the manager
   // first, then [header, ...entries] is the whole file (SessionManager.create defers its own write).
   sm.appendCustomEntry(OVERSEER_ENTRY, { v: 1 });
+  for (const rule of carried) sm.appendCustomEntry(RULE_ENTRY, rule);
   writeFileSync(raw, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
   const path = canonicalPath(raw);
   markOwned(path);
@@ -239,6 +247,9 @@ export function ensureOverseer(): Promise<{ id: string; path: string }> {
 export async function clearOverseer(): Promise<OverseerInfo> {
   const st = readOverseerState();
   const oldPath = st ? await pathOfId(st.current) : null;
+  // Live standing rules outlive the conversation; approvals for later lapse (§app.overseer/approvals).
+  const old = oldPath ? await overseerEntries() : null;
+  const carried = old && st ? carriedRules(old.branch, old.all, st.current) : [];
   if (oldPath) {
     const chat = heldChat(oldPath);
     if (chat?.session.isStreaming) await drainQueueThenAbort(chat.session, (m) => chat.broadcast(m), chat.queue).catch(() => {});
@@ -246,7 +257,7 @@ export async function clearOverseer(): Promise<OverseerInfo> {
   }
   limits.reset();
   turns.reset();
-  const made = createOverseerFile();
+  const made = createOverseerFile(carried);
   const { state, dropped } = rotateState(readOverseerState(), made.id);
   writeOverseerState(state);
   await dropHistory(dropped);
@@ -337,12 +348,15 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     // A stalled team (§app.decisions/team-stall) shows only while attention signals are on.
     const stallsOn = readDecisionSettings().features.attention;
     for (const p of [...failedRise.keys()]) if (!byPath.get(p)?.failed) failedRise.delete(p);
+    const aliases = readAliases();
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = heldChat(s.path);
       const live = byPath.get(s.path);
+      const pending = chat ? chat.pendingDialogs() : [];
       return {
         summary: s,
-        dialogs: chat ? chat.pendingDialogs().map((d) => d.title || d.method) : [],
+        dialogs: pending.map((d) => d.title || d.method),
+        dialogIds: pending.map((d) => d.id),
         queued: chat ? chat.queue.size : 0,
         failedWorkers: live?.failed ?? 0,
         workerErrorAt: live?.failed ? workerErrorTime(live.failed, live.errorTimes, noteFailedRise(s.path, live.failed, nowMs)) : undefined,
@@ -351,11 +365,16 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         lastReplyAt: lastReplyAtOf(s.path),
         ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
         ...(stallsOn ? teamStallField(s.id) : {}),
+        ...(aliases[s.id] ? { alias: aliases[s.id] } : {}),
       };
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)]);
+    // Items put away with Later (§app.overseer/attention-digest) leave the digest until their anchor
+    // moves; entries of sessions no longer listed at all are dropped.
+    const extra = [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)];
+    pruneLater(new Set([...sessions.map((s) => s.id), ...extra.map((i) => i.id)]));
+    return buildDigest(rows, Date.now(), homedir(), extra, laterFilter());
   })();
   digestMemo = { at: now, value };
   value.catch(() => {
@@ -597,6 +616,20 @@ const host: OverseerToolHost = {
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => turns.attended(),
   confirmed: () => confirmedItems(turns.confirmedCard(), overseerSession?.sessionManager.getBranch() ?? []),
+  // Approvals and rules (§app.overseer/approvals): read from the current runtime's file each call,
+  // so a revoke applies from the next act on.
+  permit(tool, sessions) {
+    const sm = overseerSession?.sessionManager;
+    if (!sm) return null;
+    const now = Date.now();
+    const p = coveringPermit(foldPermits(sm.getBranch(), sm.getEntries(), now), tool, sessions, now);
+    return p ? { id: p.id, label: permitLabel(p) } : null;
+  },
+  aliases: () => readAliases(),
+  setAlias: (id, alias) => setAlias(id, alias),
+  used(id, tool, sessions, toolCallId) {
+    overseerSession?.sessionManager.appendCustomEntry(USE_ENTRY, { v: 1, id, tool, sessions, toolCallId, at: new Date().toISOString() });
+  },
   explorer: () => readOverseerSettings().explorer,
   explorerCwd: () => overseerDir(),
   subagent: (name) => (overseerSession?.extensionRunner?.getToolDefinition(name) as SubagentTool | undefined) ?? null,
@@ -628,26 +661,96 @@ export async function renderPeerRead(
 }
 
 /**
- * The items of the confirm card `card` (its tool call id), when the run's opening message is the
- * click on it: the card's result is on the branch, the first user message after it is the run's own
- * (the latest), and that text is one of the card's options. Null otherwise: a typed answer, a later
- * turn, a card nobody clicked. Pure over the branch, for the tests.
+ * The items a click on card `card` (its id, `c_N`) approves, when the run's opening message is that
+ * click (§app.overseer/org-people-facing): the latest user message on the branch is exactly a
+ * message a click on the card composes, and the card was open when it arrived (folded from what
+ * precedes it). A card-level option approves every item; a per-item Apply only those it gave a
+ * choice. Null otherwise: typed text, a closed card, a card id that matches nothing (a tool call id
+ * from before card ids included). Pure over the branch, for the tests.
  */
 export function confirmedItems(card: string | null, branch: readonly unknown[]): SovaConfirmItem[] | null {
   if (!card) return null;
-  type E = { type?: string; message?: { role?: string; toolCallId?: string; toolName?: string; details?: unknown } };
-  const entries = branch as E[];
-  const at = entries.findIndex((e) => e.type === "message" && e.message?.role === "toolResult" && e.message.toolCallId === card && e.message.toolName === "sova_confirm");
-  if (at < 0) return null;
-  const details = entries[at]!.message!.details as SovaConfirmDetails | undefined;
-  if (!details || !Array.isArray(details.options)) return null;
-  const users = entries.map((e, i) => ({ e, i })).filter(({ e, i }) => i > at && e.type === "message" && e.message?.role === "user");
-  const click = users[0];
-  const last = [...entries.keys()].reverse().find((i) => entries[i]!.type === "message" && entries[i]!.message?.role === "user");
-  if (!click || click.i !== last) return null;
-  const said = userMessageText(click.e.message)?.trim() ?? "";
-  if (!details.options.some((o) => (o.reply?.trim() || o.label) === said || o.label === said)) return null;
-  return details.items ?? [];
+  const entries = branch as { type?: string; message?: { role?: string } }[];
+  let last = -1;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i]?.type === "message" && entries[i]!.message?.role === "user") {
+      last = i;
+      break;
+    }
+  }
+  if (last < 0) return null;
+  const c = foldCards(entries.slice(0, last)).find((x) => x.id === card);
+  if (!c || c.phase !== "open") return null;
+  const click = matchCardClick(c, userMessageText(entries[last]!.message)?.trim() ?? "");
+  if (!click) return null;
+  return clickItems(c, click).map(({ n: _n, default: _d, decided: _x, ...item }) => item as SovaConfirmItem);
+}
+
+/**
+ * The approval for later or standing rule a card click writes (§app.overseer/approvals), or
+ * nothing: the latest user message on `branch` must be exactly what a click on `card` composes,
+ * with the card open when it arrived (the people-facing gate's own test), and the option it chose
+ * must carry `later` or `rule`. `all` is the whole file (numbering, one write per click). Pure.
+ */
+export function permitOnClick(card: string | null, branch: readonly unknown[], all: readonly unknown[], now = new Date().toISOString()): ReturnType<typeof permitFromClick> {
+  if (!card) return undefined;
+  const entries = branch as { type?: string; id?: string; message?: { role?: string } }[];
+  let last = -1;
+  for (let i = entries.length - 1; i >= 0; i--) {
+    if (entries[i]?.type === "message" && entries[i]!.message?.role === "user") {
+      last = i;
+      break;
+    }
+  }
+  const message = entries[last]?.id;
+  if (last < 0 || !message || clickWrote(all, message)) return undefined;
+  const c = foldCards(entries.slice(0, last)).find((x) => x.id === card);
+  if (!c || c.phase !== "open") return undefined;
+  const click = matchCardClick(c, userMessageText(entries[last]!.message)?.trim() ?? "");
+  return click ? permitFromClick(c, click, all, message, now) : undefined;
+}
+
+/** "any act on these 3 sessions until 6:00 PM" / "rule: <text>". */
+export function permitLabel(p: Permit): string {
+  if (p.kind === "grant") return `${p.card} ${p.option}: any act on ${sessionsText(p.sessions)} until ${p.until}`;
+  return `${p.card} ${p.option}: "${p.text}" (${actsText(p.acts)} on ${sessionsText(p.sessions)})`;
+}
+
+/** The Overseer file's entries: the held runtime's, else read from disk. */
+async function overseerEntries(): Promise<{ path: string; branch: readonly unknown[]; all: readonly unknown[] } | null> {
+  const st = readOverseerState();
+  const path = st ? await pathOfId(st.current) : null;
+  if (!path) return null;
+  const chat = heldChat(path);
+  if (chat) return { path, branch: chat.session.sessionManager.getBranch(), all: chat.session.sessionManager.getEntries() };
+  const all = parseLines(await readFile(path, "utf8").catch(() => ""));
+  return { path, branch: activeBranch(all), all };
+}
+
+/** GET /api/overseer/autonomy: the running count and cap, and every grant and rule. */
+export async function overseerAutonomy(): Promise<OverseerAutonomy> {
+  const cap = readOverseerSettings().caps.concurrentSessions;
+  const count = countRunning(started, running, promptedAt);
+  const e = await overseerEntries();
+  return { running: count, cap, permits: e ? foldPermits(e.branch, e.all, Date.now()) : [] };
+}
+
+/** POST /api/overseer/autonomy/revoke: append the revoke through the Overseer's own runtime. */
+export async function revokePermit(id: string): Promise<{ ok: true } | { ok: false; status: 404 | 409; error: string }> {
+  const e = await overseerEntries();
+  const p = e ? foldPermits(e.branch, e.all, Date.now()).find((x) => x.id === id) : undefined;
+  if (!e || !p) return { ok: false, status: 404, error: `No approval or rule ${id} in the current Overseer conversation.` };
+  if (p.status !== "live") return { ok: false, status: 409, error: `${id} has already ${p.status === "expired" ? "expired" : "been revoked"}.` };
+  const chat = await acquireChat(e.path);
+  chat.session.sessionManager.appendCustomEntry(REVOKE_ENTRY, { v: 1, id, at: new Date().toISOString(), by: "user" });
+  return { ok: true };
+}
+
+/** before_agent_start's hidden open-cards note for a branch (§app.overseer/confirm), or nothing when
+    no card is open. Shared with the project overseer. */
+export function cardsNoteMessage(branch: readonly unknown[]): { message: { customType: string; content: string; display: false } } | undefined {
+  const note = cardsNote(foldCards(branch));
+  return note ? { message: { customType: CARDS_NOTE_MESSAGE, content: note, display: false } } : undefined;
 }
 
 /** An in-process call exactly as the Overseer's tools make it. Exported for the tests. */
@@ -774,8 +877,16 @@ setOverseerRuntime({
             factory: (pi) => {
               for (const t of tools) pi.registerTool(t);
               // A run started by a message: its prompt, with the notes and settings as they are now.
-              pi.on("before_agent_start", (event) => {
+              // The open cards ride the prompt as a hidden message, never the system prompt (a prompt
+              // change restarts a Claude Code CLI): persisted, so a restart or a fold keeps it.
+              pi.on("before_agent_start", (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = prompt.refresh();
+                return cardsNoteMessage(ctx.sessionManager.getBranch());
+              });
+              // A compaction summarizes the card results away: the exact open cards, once, after it.
+              pi.on("session_compact", (_event, ctx) => {
+                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true);
+                if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               // Worker reports and other extension messages reach the model redacted, like every tool's output.
               pi.on("context", (event) => {
@@ -812,6 +923,20 @@ setOverseerRuntime({
     session.subscribe((event) => {
       if (event.type === "agent_start") prompt?.rebase(session);
       if (turns.observe(event)) limits.reset();
+      // A click that approves for later or adopts a rule: the server writes it, once the click's
+      // message is in the file (the SDK appends it right after this event's listeners run).
+      if (event.type === "message_end" && (event.message as { role?: string } | undefined)?.role === "user" && turns.confirmedCard()) {
+        const card = turns.confirmedCard();
+        setImmediate(() => {
+          try {
+            const sm = session.sessionManager;
+            const w = permitOnClick(card, sm.getBranch(), sm.getEntries());
+            if (w) sm.appendCustomEntry(w.type, w.data);
+          } catch (err) {
+            console.warn("[overseer] approval not written:", err instanceof Error ? err.message : String(err));
+          }
+        });
+      }
     });
   },
   userSend(send, confirm) {
@@ -902,8 +1027,8 @@ let lastBriefAt = 0;
 let unattended = 0;
 
 /** The brief's message. Titles and details come from other sessions: redacted like any tool output. */
-export function briefText(items: Pick<AttentionItem, "kind" | "title" | "id" | "detail">[], redactor: () => Redactor = serverRedactor): string {
-  const lines = items.map((i) => `- ${i.kind}: [${i.title.replace(/[[\]]/g, "")}](sova://s/${i.id})${i.detail ? ` — ${i.detail}` : ""}`);
+export function briefText(items: Pick<AttentionItem, "kind" | "title" | "id" | "detail" | "name">[], redactor: () => Redactor = serverRedactor): string {
+  const lines = items.map((i) => `- ${i.kind}: [${(i.name ?? i.title).replace(/[[\]]/g, "")}](sova://s/${i.id})${i.detail ? ` — ${i.detail}` : ""}`);
   return redactor().redact(`${OVERSEER_BRIEF_PREFIX} ${items.length === 1 ? "A new blocker" : `${items.length} new blockers`} appeared while you were idle:\n${lines.join("\n")}`);
 }
 
@@ -940,6 +1065,49 @@ async function tick(): Promise<void> {
   } catch (err) {
     console.warn("[overseer] brief skipped:", err instanceof Error ? err.message : String(err));
   }
+}
+
+/** One brief to the Overseer under Brief Me (the auto-resume report); nothing under any other proactivity. */
+async function sendBrief(body: string): Promise<void> {
+  if (readOverseerSettings().proactivity !== "brief") return;
+  const st = readOverseerState();
+  const path = st ? await pathOfId(st.current) : null;
+  if (!path) return;
+  const overseer = await acquireChat(path);
+  overseer.assertModelAllowed();
+  const { turn } = overseer.acceptPrompt(serverRedactor().redact(`${OVERSEER_BRIEF_PREFIX} ${body}`), undefined, "server");
+  void turn.catch((err) => overseer.reportTurnFailure(err));
+  lastBriefAt = Date.now();
+}
+
+/**
+ * Resume the runs the last stop cut off (§app.overseer/auto-resume), once, a few seconds after
+ * start: read and empty the ledger now, before this process starts runs of its own.
+ */
+export function startAutoResume(): void {
+  const runs = runLedger.takeInterrupted();
+  if (!runs.size) return;
+  const timer = setTimeout(() => {
+    const settings = readOverseerSettings();
+    void resumeInterrupted(runs, {
+      enabled: settings.autoResume !== false,
+      session: async (path) => {
+        const s = await getSessionSummary(path);
+        if (!s) return null;
+        return { ...s, name: sessionName(s, readAliases()[s.id]), projectOverseer: !!projectOverseerOfPath(path) };
+      },
+      freeSlots: () => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt),
+      prompt: async (path, text) => {
+        const r = await promptSession(path, text, readOverseerState()?.current);
+        if (!r.ok) throw new Error(r.error);
+        host.started(path, true);
+      },
+      log: (path, outcome, why) =>
+        logAction({ at: new Date().toISOString(), overseerId: readOverseerState()?.current ?? "", toolCallId: "", tool: "auto_resume", args: { path }, outcome, ...(why ? { error: why } : {}) }),
+      brief: sendBrief,
+    }).catch((err) => console.warn("[auto-resume] failed:", err instanceof Error ? err.message : String(err)));
+  }, RESUME_DELAY_MS);
+  timer.unref();
 }
 
 let ticking = false;

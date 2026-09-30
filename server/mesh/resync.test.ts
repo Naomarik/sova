@@ -64,11 +64,11 @@ describe("relation", () => {
 describe("recipes", () => {
   test("a vps and a termux recipe parse; the args are kept as given", () => {
     const { recipes, errors } = parseRecipes({
-      hosts: { vps: { kind: "vps" }, fold8: { kind: "termux", ssh: "u0_a1@fold8", sshPort: 8022, args: ["--node-id", "n1", "--dns", "fold8.ts.net"] } },
+      hosts: { vps: { kind: "vps" }, phone: { kind: "termux", ssh: "u0_a1@phone", sshPort: 8022, args: ["--node-id", "n1", "--dns", "phone.example.ts.net"] } },
     });
     assert.deepEqual(errors, []);
     assert.deepEqual(recipes.get("vps"), { kind: "vps", args: [] });
-    assert.deepEqual(recipes.get("fold8"), { kind: "termux", args: ["--node-id", "n1", "--dns", "fold8.ts.net"], ssh: "u0_a1@fold8", sshPort: 8022 });
+    assert.deepEqual(recipes.get("phone"), { kind: "termux", args: ["--node-id", "n1", "--dns", "phone.example.ts.net"], ssh: "u0_a1@phone", sshPort: 8022 });
   });
 
   test("a bad entry is left out with its reason; the others stay", () => {

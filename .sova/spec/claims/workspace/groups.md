@@ -4,11 +4,13 @@
 A group stops being only a section in the sidebar and becomes a place you can open. The
 **workspace** is a second view over the groups that already exist (§app.session-list/groups): every member of
 one group side by side, each one a whole chat — its own transcript, its own composer, its own
-socket — plus one composer at the foot that writes to all of them at once.
+socket. Switch on **Send to All** and one composer at the foot takes the place of every pane's
+own, writing to all of them at once.
 
 It answers the question the sidebar can't: *what did all of these say to the same prompt?*
-Fanout (§workspace/fanout) is how a group full of members gets made in one gesture; this file is the surface
-they land in, and it works exactly the same for a group you filed by hand.
+A group's members are ordinary sessions, filed by hand in the sidebar or by the Overseer
+(§workspace.groups/making-a-comparison); this file is the surface they are read in, and it works the
+same for every group.
 
 **One registry, not two.** The workspace reads and writes `~/.pi/agent/sova/session-groups.json`
 through the routes §app/session-list already names. There is no second grouping concept, no workspace that isn't
@@ -18,16 +20,18 @@ a group, and no group that can't be opened as a workspace.
 
 | Decision | What it means here |
 |---|---|
-| The registry is the existing group store, extended | `SessionGroup` gains `members` (display order, optional label) and an optional `seed`. Nothing new is invented, and a hand-made group opens as a workspace with no migration |
-| Lineage is the session header, and it is never rewritten | `parentSession` in the file says where a fork came from; `SessionSummary.parent` carries it to the client. Sova reads it and never writes over it. `seed` is Sova's own note about a fanout it performed, not a claim about the session file |
+| The registry is the existing group store, extended | `SessionGroup` gains `members` (display order, optional label). Nothing new is invented, and a hand-made group opens as a workspace with no migration |
+| Lineage is the session header, and it is never rewritten | `parentSession` in the file says where a fork came from; `SessionSummary.parent` carries it to the client. Sova reads it and never writes over it |
+| Membership changes outside the workspace | Sessions join a group from the sidebar (§app.session-list/groups) or through the Overseer. The workspace reads its members and can take one out; it has no control that adds one |
 | One group per session | The `assignments` map already enforces it. A session is in one workspace or none, so "which workspace am I looking at" is never ambiguous |
 | Split is one horizontal row that scrolls | No grid, no tiling, no cap on how many members a group holds. A pane never goes under 440px |
 | Every pane stays mounted, including hidden tabs | A member that streams while you read another one must not lose its turn. Tabs hide, they don't unmount |
 | One group composer, all members, all-or-nothing | A shared follow-up is a single server-side batch. If one member can't take it, none of them do, and the refusal names each one |
+| The group composer is a mode, off by default | A workspace opens with each member's own composer and nothing else at the foot. `Send to All` in the head swaps every pane composer for the one group composer, and its `×` swaps them back. There is one kind of composer on screen at a time, never two rows of them |
 | The pre-check is also what makes this surface testable for nothing | A refused batch has no side effects, so the whole refusal path — parsing, the banner, every member named in Sova's words, `Send to the Rest`, the draft surviving — can be exercised against a real server with **zero model calls**, e.g. by a group whose members are all TUI-live. A transactional design would have something to undo on every run. Noted beside the decision because it is a property of it, not a testing trick |
 | All-or-nothing is a **pre-check**, not a transaction | The server checks every member before it prompts any of them, so the refusal is complete and nothing is half-sent by our own doing. A member lost *between* the check and the send (a TUI grabs it in the same second) makes the batch partial, and we say so — a prompt a model is already answering cannot be recalled, and claiming otherwise would be the one lie this surface can't afford |
 | Promote removes from the group; Eliminate removes and archives | Neither deletes a transcript. Both are the group's writes, never the session file's |
-| A group that a fanout created dissolves when its last member leaves | See "Emptying a group". A hand-made group survives empty, as §app/session-list already says |
+| A group survives being emptied | See "Emptying a group". Every group, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups): nothing deletes a group but Dissolve and Delete group |
 | Announcements and DOM ids are pane-scoped | Three panes finishing in the same second must read as three facts, each naming its member |
 
 ## §workspace.groups/rejected — Rejected
@@ -39,7 +43,7 @@ a group, and no group that can't be opened as a workspace.
 | A session in more than one group | One assignment is the whole reason "this session's workspace" is a fact rather than a list |
 | Group-level rewind | Rewinding is a write into each session file with its own guards (§chat/timeline). One button that writes into 5 files, some of which may refuse, is 5 outcomes wearing one label |
 | A member-versus-member diff view | Diffing model prose is a different product. The panes are side by side; reading them is the comparison |
-| Fanout onto a remote target | Every member would open a runtime on the same host at once. The connection surfaces (§app/shell) are per session for a reason, and N of them is a new failure mode we have no words for yet |
+| Creating members from inside the workspace | Making N sessions in one gesture needed its own dialog, route, cost preview and failure grammar, and a second creation path kept two sets of rules alive. A comparison is a group plus ordinary sessions (§workspace.groups/making-a-comparison) |
 
 ## §workspace.groups/data — Data
 
@@ -53,9 +57,9 @@ interface SessionGroup {
   id: string; name: string; createdAt: string;
   /** The group's sessions in display order, reconciled against the assignments on every read. */
   members?: GroupMember[];
-  /** Recorded only when Sova itself forked or fanned this group out (§workspace/fanout). Absent for a
-      group made by hand, and never written from a session file's own lineage. */
+  /** Kept, never set, by this build: an older build's marks (§workspace.groups/legacy-groups). */
   seed?: { parentSessionPath: string; leafId: string };
+  autoDissolve?: boolean;
 }
 ```
 
@@ -67,33 +71,24 @@ interface SessionGroup {
   the label first and the title under it. A member with no label shows the title alone. A label
   survives a move between groups, because it describes the session, not the group.
 - **A field this build doesn't know is kept, not dropped.** The store preserves unrecognized keys
-  on a group through a rename or a reassign, so a `seed` written by a newer Sova survives an
-  older one touching the same group. Without that, the fork markers and `Align to Fork` of a
-  fanout would quietly disappear the first time an older build renamed the group — the kind of
-  loss nobody would connect to its cause.
+  on a group through a rename or a reassign, and it keeps `seed` and `autoDissolve` the same way,
+  so a group's record survives any build touching it with nothing quietly erased.
 - **Membership is still the assignments map.** `members` is reconciled against it on read: an id
   that left the group drops out, an id the array never learned about is appended. A workspace
   therefore cannot show a member that isn't assigned, whatever the store says.
-- **`seed.leafId`** is the entry every member was forked from. It is what the fork-point marker
-  and `Align to Fork` (§workspace/fanout) point at, and it is the one thing that makes a fanout group
-  different from a folder of unrelated chats.
 - **`SessionSummary.parent` and `parentId`** are the session header's `parentSession`, as a
   canonical path and as the session id, set together or not at all. Read-only lineage: they
   survive a promote, a dissolve and a rename, because Sova never writes the header. Use
   `parent` to link or open (routes take paths), `parentId` to match against `GroupMember.id` and
   the assignments, which are id-keyed.
-- **Two identifier vocabularies, on purpose.** Lineage is **paths** (`seed.parentSessionPath`,
-  `SessionSummary.parent`) because a path is what the session header stores and what the routes
-  open. Membership is **ids** (`members[].id`, the assignments map, `SessionSummary.parentId`)
-  because an id is what the store keys on. Neither is converted on the way in: a value is used in
-  the vocabulary it arrives in, and the two are paired on the summary so nothing has to look one
-  up from the other.
-- **Lineage says *that*; `seed` says *where*.** `parentId` can tell you two members of a
-  hand-made group came from one session; it cannot tell you which entry they diverged at, and
-  without that there is no row to draw and nothing to align to. So the fork marker and
-  `Align to Fork` (§workspace/fanout) are `seed` features, and a group Sova didn't fan out has neither —
-  even when every member is visibly a fork. A marker placed at a guessed position would be worse
-  than no marker.
+- **Two identifier vocabularies, on purpose.** Lineage is **paths** (`SessionSummary.parent`)
+  because a path is what the session header stores and what the routes open. Membership is
+  **ids** (`members[].id`, the assignments map, `SessionSummary.parentId`) because an id is what
+  the store keys on. Neither is converted on the way in: a value is used in the vocabulary it
+  arrives in, and the two are paired on the summary so nothing has to look one up from the other.
+- **Lineage says *that*, never *where*.** `parentId` can tell you two members came from one
+  session; it cannot tell you which entry they diverged at, so the workspace draws no fork point
+  and aligns nothing to one — a marker placed at a guessed position would be worse than none.
 
 ## §workspace.groups/routes — Routes
 
@@ -119,26 +114,25 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 `.session-head`, no single-session composer.
 
 ```html
+<!-- Send to All on; off, "Skip to Transcript" at the focused pane (see Accessibility) -->
 <a class="button skip-link" href="#group-composer">Skip to Group Composer</a>
 <div class="app" data-view="workspace">
   <aside class="app-sidebar" aria-label="Sessions">…§app/session-list…</aside>
-  <main class="workspace" aria-label="Workspace: Fanout · retry backoff">
+  <!-- data-send-all only while Send to All is on -->
+  <main class="workspace" aria-label="Workspace: Retry backoff" data-send-all="true">
     <header class="workspace-head">
       <a class="button button-icon button-ghost app-back" href="#/" aria-label="Back to Sessions">…chevron-left…</a>
       <div class="workspace-head-main">
-        <h1 class="workspace-title" tabindex="-1">Fanout · retry backoff</h1>
+        <h1 class="workspace-title" tabindex="-1">Retry backoff</h1>
         <p class="workspace-meta">
           <span class="workspace-count">4 members</span>
           <span aria-hidden="true">·</span>
           <span class="text-mono" title="/home/user/webapps/sova">~/webapps/sova</span>
         </p>
       </div>
-      <!-- only while a session that was in this group is still on screen; see "Promote" -->
-      <span class="chip chip-count workspace-promoted">Promoted: Retry with jitter
-        <button type="button" class="button button-sm button-ghost">Add Back</button></span>
       <button type="button" class="button button-sm button-ghost" aria-pressed="false">Tabs</button>
-      <button type="button" class="button button-sm button-ghost workspace-align">…branch… Align to Fork</button>
-      <button type="button" class="button button-sm button-ghost">Add Members</button>
+      <!-- at every width of 640px and up; see §workspace.groups/send-all-mode -->
+      <button type="button" class="button button-sm button-ghost workspace-send-all" aria-pressed="true">Send to All</button>
       <button type="button" class="button button-sm button-ghost">Dissolve</button>
     </header>
 
@@ -161,11 +155,13 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
                   aria-haspopup="menu" aria-label="Pane actions · control · claude-opus-5">…more…</button>
         </header>
         <div class="workspace-pane-body">…§chat/transcript transcript, with pane-scoped ids…</div>
-        <footer class="composer workspace-pane-composer" data-collapsed="true">…§chat/composer, collapsed…</footer>
+        <!-- mounted always; not displayed while Send to All is on -->
+        <footer class="composer workspace-pane-composer">…§chat/composer…</footer>
       </section>
       …one per member…
     </div>
 
+    <!-- mounted always (with members); `hidden` while Send to All is off -->
     <footer class="composer group-composer" id="group-composer">…"The group composer" below…</footer>
   </main>
 </div>
@@ -177,8 +173,10 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
   pane (§app/subagents-pane) is **not** available in a workspace, because it is a per-session surface and there
   are N sessions here. A member's own `/agents` opens `#/agents`, which is cross-session already.
 - **The head is 56px**, like `.session-head` and `.subagents-head`, so the band across the window
-  still reads as one. Under 640px of head width the four tool buttons collapse into one
-  `More Actions` ghost icon button opening the skill's plain action menu, in the order above.
+  still reads as one. Under 640px of head width the tool buttons collapse into one
+  `More Actions` ghost icon button opening the skill's plain action menu, in the order above,
+  with `Send to All` as its first row (`Tabs` and `Fit All` have no row: under 640 the workspace
+  is tabs-only).
 - **The meta line is the workspace's one roll-up**: `{n} members`, then the cwd every member
   shares (or `{n} folders` when they don't — the one fact that says "these are not the same
   task"), then — after a shared send — the completion count `{r} of {t} replied`, with
@@ -200,7 +198,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
 |---|---|---|
 | Direction | `flex-direction: row`, `overflow-x: auto`, `overflow-y: hidden` | One axis of overflow. A pane never wraps to a second row, so "left of" and "right of" stay true |
 | Pane width | `flex: 0 0 var(--workspace-pane-w)` — a pane nobody has stepped takes the row's own share (`max(--workspace-pane-width, row ÷ panes)`, `autoPaneWidth`; `--workspace-pane-width` is `clamp(440px, 34vw, 720px)`), floor `--workspace-pane-min` (440px) and ceiling `PANE_MAX_WIDTH` (1040px, in code; there is no CSS token for it) | 440 is `--main-min`, the transcript's floor, for the same reason: under it the reading column stops being one. 34vw is a guess at a comfortable column made without knowing the row; when it leaves the row half empty the measured share wins, because an empty strip to the right of the last pane is a workspace that isn't using the screen it was given — up to the ceiling, past which a wider reading column is not the answer |
-| Count | Uncapped | A fanout of 9 is a legitimate thing to ask for, and the row already scrolls. What protects the layout is the floor, not a cap |
+| Count | Uncapped | A group of 9 is a legitimate thing to compare, and the row already scrolls. What protects the layout is the floor, not a cap |
 | Snap | `scroll-snap-type: x proximity` on the row, `scroll-snap-align: start` on each pane | Proximity, not mandatory: you must be able to park two panes half-and-half to read them together |
 | Gap and seam | No gap; each pane has a left border (`--color-border`), the first none | Panes are columns of one surface, not cards on a canvas. A gap here would read as N windows |
 | Scrollbar | The row's own, always at the foot of the panes and above the group composer | The one place a horizontal scrollbar is allowed in this product |
@@ -215,7 +213,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
   and the row scrolls, as they did before this existed. So `Wider` on a row the auto-fit filled can
   bring the scrollbar back — the pane beside it holds its floor rather than shrinking to make room
   for the step. An **auto-fit only ever widens**
-  a pane; it never squeezes one, which is why it cannot be the thing that makes a 4-way fanout
+  a pane; it never squeezes one, which is why it cannot be the thing that makes a 4-member group
   unreadable. A pane the user has stepped is out of the calculation entirely: a chosen width is a
   posture, and filling the row by rewriting one is the bug §workspace/groups already paid for once (the `gid`
   memo in GroupView.tsx).
@@ -231,7 +229,7 @@ The workspace is a third value of `.app`'s `data-view`, and it takes the whole m
   number, so that width is re-derived every time the row changes. That width
   is **allowed below the 440 floor, and Fit is the only thing that is** — the floor's own words are
   "a pane narrower than this can't hold a transcript and a composer", and that is true: comparison
-  wins here because the user asked for exactly it, and the alternative is that a 4-way fanout fits
+  wins here because the user asked for exactly it, and the alternative is that a 4-member group fits
   no viewport at all (4×440 = 1760). A fitted pane under 440px carries an inline `min-width: 0`
   beside the width, because the stylesheet's floor would otherwise quietly re-apply. **A fitted
   pane is a posture, not a number**: it keeps taking the row's share when the row changes (the row shrinks, the panes shrink together, still with no
@@ -284,7 +282,7 @@ apply verbatim. What changes is scoping and chrome:
 - **Pane head, 40px**, sunken, under the 56px workspace head: the member name, the context gauge
   (§chat/context-window, the percent-only step — a pane is never a 720px head), its state chips, and the tools.
   The name is `{label} · {model}` when a label exists, else `{title} · {model}` — and for
-  members that share a title with no label (the canonical `opus ×3` fanout) the model with its
+  members that share a title with no label (three `opus` members of one comparison) the model with its
   `#n` ALONE: `claude-opus-5 #2`. The suffix is numbered in member order and is **the same rule
   the tab strip reads** (`paneNames` in `session-groups.ts`, one implementation), because the tab
   strip and the pane head naming the same member differently — or the pane names omitting the
@@ -327,9 +325,9 @@ apply verbatim. What changes is scoping and chrome:
   widths in the same view. One `Pane actions` trigger, the skill's plain action menu, named for
   the pane it acts on (`Pane actions · {pane name}`) so three of them on screen are three
   different menus to AT. The labels inside are the ones below, unabbreviated.
-- **`Rename…` is the comparison's naming act** (§workspace/fanout "Member labels"). The useful name — "the
-  one that read the tests", "control" — is only known AFTER reading output, which is why the
-  fanout dialog sets no label and this gesture lives in the pane that output is read in: a field
+- **`Rename…` is the comparison's naming act.** The useful name — "the
+  one that read the tests", "control" — is only known AFTER reading output, which is why this
+  gesture lives in the pane that output is read in: a field
   in the pane's own menu, one write (`PATCH {labels}`), and every surface that names the member
   (head, tab, aria-label, announcements) moves in the same breath because they read one rule.
   Empty clears the label; the pane shows the title — or the repeat suffix — again. `Move Left`
@@ -363,9 +361,9 @@ cache), because a member that silently drops out between polls is exactly the lo
 exists to prevent — the pane disappearing IS the bug, not the report of it. Detection reads the
 WHOLE session list, never this group's filter: a member moved to another group out-of-band has no
 row here but a live file, and "gone" would be a lie about a session that is merely elsewhere. It
-also waits for one list load to land after the workspace opened, because the fanout dialog
-refreshes the list and navigates in the same breath, and a just-created member is the one thing
-"file is gone" must never be said about; before that load a member with no row is absent, the
+also waits for one list load to land after the workspace opened, because a member assigned a
+moment before the workspace opened may not be in the first list yet, and a just-made member is the
+one thing "file is gone" must never be said about; before that load a member with no row is absent, the
 same as it ever was.
 
 **The assignment outlives the file on purpose.** `dropGroupAssignments` runs only from Archive
@@ -373,17 +371,55 @@ cleanup (ids it deleted itself), never on the listing pass — a prune there wou
 own `Remove From Group`, and the member would vanish silently instead of rendering this state.
 Removing the ghost is the user's gesture, **by session id** (`POST /api/session-groups/assign
 { id, groupId: null }` — there is no file left to resolve a path through; the id form is
-removal-only), and it is what dissolves an emptied fanout group, exactly like any other
-last-member removal. The group composer counts these members in its foot (`· 1 file gone`) so a
+removal-only), and like any other last-member removal it leaves the group standing, empty
+(§workspace.groups/group-lifecycle). The group composer counts these members in its foot (`· 1 file gone`) so a
 send the server refuses on one is a confirmation, not a discovery.
 
-The assignment outlives the file **on purpose**: the server prunes a member's group assignment only from Archive cleanup (ids it deleted itself, inside Sova), never on the listing pass — a prune there would race this pane's own Remove From Group and the member would vanish silently instead of rendering this state. Removing the ghost is the user's gesture (`POST …/assign { id, groupId: null }`, the store keys on ids so no file is needed), and it is what dissolves an emptied fanout group. A reader tempted to "clean up" stale assignments in the lister owns re-deriving who else deletes members.
+The assignment outlives the file **on purpose**: the server prunes a member's group assignment only from Archive cleanup (ids it deleted itself, inside Sova), never on the listing pass — a prune there would race this pane's own Remove From Group and the member would vanish silently instead of rendering this state. Removing the ghost is the user's gesture (`POST …/assign { id, groupId: null }`, the store keys on ids so no file is needed), and like any last-member removal it leaves the group standing. A reader tempted to "clean up" stale assignments in the lister owns re-deriving who else deletes members.
 
 The excluded count is always visible in the group composer's foot, never discovered at send time.
 
+## §workspace.groups/send-all-mode — Send to All
+
+**Send to All** is a mode of the workspace, and it is **off by default**: a workspace opens with
+each member's own composer in its pane and no group composer on screen.
+
+- **The toggle** is a pressed-state ghost button labelled `Send to All` (`aria-pressed`, the same
+  word pressed or not) in the head beside `Tabs`. Unlike `Tabs` it stays in the head under 768px,
+  because it means the same thing in tabs and in split. Under 640px of head width it is the first
+  row of `More Actions`, a `menuitemcheckbox` carrying the same state (`aria-checked`). It is
+  offered only while the group has members; with none there is no group composer to switch to.
+- **On, the group composer takes the pane composers' place.** Every pane's own composer is not
+  displayed, in tabs and in split alike, and the group composer (§workspace.groups/the-group-composer)
+  stands alone at the foot of the workspace. The pane composers stay mounted, so a pane's draft
+  and attachments are there again when the mode goes off.
+- **Off, the group composer is hidden, not removed.** It stays mounted with its draft, its
+  refusal and its partial-send report, so switching off and back on finds the box as it was
+  left, and a report of a member who missed a message is not lost to a toggle.
+- **Remembered per workspace for the browser session**, in
+  `sessionStorage["sova:group-send-all-{id}"]` (`"1"` on, `"0"` off; anything else, or a store
+  that can't be read, is off). Another workspace keeps its own; opening a group reads its own
+  value, and a blocked or full store keeps the choice for the page only.
+- **Two ways out, both saying so.** The head toggle, and the `×` at the start of the group
+  composer's row: a ghost icon button named `Back to One Member` that switches the mode off. Beside
+  it an accent chip, `All {n} members` (1 member: `1 member`), where {n} is the group's size,
+  says who the box writes to. Under 480px of composer width the chip is visually hidden and still
+  read, as Send's word is (§chat/composer), so the box keeps room to type; the placeholder and the
+  foot still carry the count.
+- **Focus follows the switch.** Switching on puts the caret in the group composer's box;
+  switching off puts it in the focused pane's own composer, or on the pane itself when that pane
+  has no composer (a watch pane, a gone member). Each switch announces once through the
+  workspace's live region: "Send to All on. One message goes to all {n} members." · "Send to All
+  off. Each member has its own composer again."
+- **The skip link follows the mode**: while it is on, `Skip to Group Composer`, landing on the
+  group composer's box; while it is off, `Skip to Transcript` at the focused pane, the same as a
+  workspace with no members (§workspace.groups/accessibility).
+- **No keyboard shortcut.**
+
 ## §workspace.groups/the-group-composer — The group composer
 
-One composer at the foot of the workspace, full width of the main column, writing to every
+While Send to All is on (§workspace.groups/send-all-mode), one composer at the foot of the
+workspace, full width of the main column, in place of the pane composers, writing to every
 member at once.
 
 ```html
@@ -391,8 +427,10 @@ member at once.
   <form class="composer-inner" aria-label="Message every member">
     <!-- dictation strip while recording or transcribing (§chat.voice/states) -->
     <div class="composer-row">
-      <!-- the same mic as a pane composer's, first in the row (§chat.voice/button); dictated text
-           lands in this box -->
+      <!-- the way back to each pane's own composer, then who this box writes to -->
+      <button class="button button-icon button-ghost" type="button" aria-label="Back to One Member" title="Back to One Member">…close…</button>
+      <span class="chip chip-accent group-composer-all">All 4 members</span>
+      <!-- the same mic as a pane composer's (§chat.voice/button); dictated text lands in this box -->
       <button class="button button-icon button-ghost voice-button" type="button" aria-label="Dictate" title="Dictate">…mic…</button>
       <label class="visually-hidden" for="group-composer-input">Message every member</label>
       <textarea class="input textarea composer-input" id="group-composer-input" rows="1"
@@ -414,9 +452,9 @@ member at once.
 ```
 
 - **It is the workspace's one primary.** §design/ground-rules allows one accent button in view, so while the
-  workspace is open no pane composer's Send is `.button-primary`: a pane's Send becomes
-  `.button` (secondary) with the same label and the same behavior. The accent says "this sends
-  to all of them", which is the choice worth marking.
+  workspace is open no pane composer's Send is `.button-primary`, whichever composer is on screen:
+  a pane's Send is `.button` (secondary) with the same label and the same behavior. The accent
+  says "this sends to all of them", which is the choice worth marking.
 - **It sends one request**, `POST /api/session-groups/{id}/prompt {text, members?: string[]}`,
   and the server prompts each member. The client does not fan the request out itself: N sockets
   racing would give N outcomes and no way to be all-or-nothing about them. `members` is **session
@@ -441,7 +479,7 @@ member at once.
   the wait, because a bound would have to guess how long a cold runtime may legitimately take,
   and cutting a member loose at the guess would report a failure for a turn that then starts
   anyway — a worse lie than a slow button. Waiting would contradict the two things this
-  surface is built on: turns **start together** (§workspace/fanout's rate-limit note exists because they do),
+  surface is built on: turns **start together** (so one provider may answer some members with 429),
   and the group composer **clears once the server accepts**. A request that resolved only when
   five full turns had finished would hold the composer for minutes and serialize the very thing
   the workspace exists to run in parallel — member 2 would not start until member 1 was done.
@@ -542,73 +580,39 @@ already happened does not.** The distinction decides dismissal everywhere on thi
 |---|---|---|
 | Refusal (`409`, nothing sent) | **Offer** — `Send to the Rest` sends what the box holds | Dismisses it. The offer was about that text, and that text just changed |
 | Partial send (`200` with `failed`) | **Report** — k members have a message and one doesn't | **Persists.** It stays true however the box reads, and it is the only record of which member missed out. It clears on a send, not a keystroke |
-| Partial creation (§workspace/fanout) | **Report** — these members exist, these never started | Persists, for the same reason |
 
 Getting this wrong is quiet: a keystroke that dismisses a report destroys the only notice that a
-member is out of sync, and it looks like tidy-up rather than loss. Two consequences follow, and
-both are rules rather than details:
+member is out of sync, and it looks like tidy-up rather than loss. One consequence follows, and
+it is a rule rather than a detail:
 
 - **Only the box's own send clears the box.** A retry from a banner must not wipe what is being
   typed — that would be the composer destroying work in order to report success.
-- **Collapse follows the box, not the send.** Pane composers stay collapsed while the group
-  composer still holds text, because the rule (§workspace/groups "Pane composers…") is about the box being
-  non-empty, and a send that left text behind has not emptied it.
 
-### Pane composers while the group composer is in use
+### Pane composers while Send to All is on
 
-The rule, exactly: **while the group composer is focused or holds text, every pane composer that
-is neither focused nor holding its own draft collapses.** A pane with a draft never collapses —
-its text must stay visible — and a focused pane composer never collapses under you.
+**Every pane composer is out of view, whatever it holds.** There is no in-between state: a pane
+composer is either the §chat/composer composer, whole, or not displayed at all, and which one
+follows the mode alone — never where the caret is or what a box holds.
 
-| State | Height | What is in it |
-|---|---|---|
-| Expanded (the §chat/composer composer) | 96px: 12 top padding + 44 row + 8 gap + 20 foot + 12 bottom | Everything §chat/composer names |
-| Collapsed | 68px: 12 + 44 + 12 | The same `.composer-row` — flyout trigger, textarea pinned to 1 line, Send. `.composer-foot` (model indicator, mode trigger, reason) and the attachments list are `hidden` |
-| Collapsing / expanding | `height` over `--dur-fast`, `--ease-standard` | State change, §design/ground-rules's duration. Off under `prefers-reduced-motion` |
-
-- **No control is removed, and no target shrinks.** The row keeps its 44px, so Send and the
-  flyout trigger stay full-size tap targets and stay in the tab order. What goes is the foot —
-  the model id, the mode switch and the reason line — which is reference, not action, and which
-  the pane head's own chips and the flyout still carry.
-- **The textarea is pinned to one line while collapsed** (`field-sizing` off, `rows="1"`, no
-  auto-grow) and released the moment it takes focus, which expands the pane composer in the same
-  frame. Typing is never done in a box that is deciding whether to grow.
-- **A collapsed composer keeps its reason as an accessible description.** `.composer-reason` is
-  hidden visually, not removed, so `aria-describedby="composer-reason-p2"` still reads "This
-  session is open in a terminal, so Sova won't write to it." to AT. A disabled pane composer
-  that collapses must not become a Send button with no explanation.
-- **`data-collapsed="true"` is the only hook**, on `.composer`, so the state is one attribute and
-  the styling is one rule.
-- **Nothing is announced when composers collapse.** It is layout responding to where the caret
-  is, and a live region that fires on every focus change is noise.
+- **Hidden by one rule, not unmounted.** `.workspace[data-send-all="true"]` hides every
+  `.workspace-pane .composer`, so a pane's draft, attachments and dictation survive the mode and
+  a hidden composer takes no focus and has no place in the tab order.
+- **A pane's own state still reads in its head.** The member's chips (Working, TUI, Archived,
+  Can't open, Busy) are the pane head's, so hiding the composer and its reason line hides no
+  member state; the group composer's foot counts the excluded members, as ever.
+- **Nothing extra is announced** beyond the switch's own sentence (§workspace.groups/send-all-mode).
 
 ## §workspace.groups/group-lifecycle — Group lifecycle
 
-All four are writes to the group registry. None of them touches a session's JSONL.
+All three are writes to the group registry. None of them touches a session's JSONL. The workspace
+takes members out and dissolves the group; it never adds one. A session joins a group only from
+the sidebar (§app.session-list/groups: dragging a row onto the group, the selection toolbar),
+the session details' `Move into group` (§app.subagents-pane/tabs), or the Overseer
+(§workspace.groups/making-a-comparison).
 
 - **Promote** — `POST /api/session-groups/assign {path, groupId: null}`, then navigate to
-  `#/s/{path}`. The member you picked is the answer; the workspace has done its job. The group
-  header keeps a `Promoted: {title}` chip with `Add Back` for as long as the workspace stays
-  mounted in this tab, so a promote made by mistake is one press from undone. The chip is not
-  persisted: it is an undo for the gesture, not a record of it. **It carries the member's label
-  and position**, because ungrouping drops the member entry: the pane comes back named what it
-  was called and where it was. An undo that silently dropped the name you gave a member, or put
-  it back in a different place, would not be one.
-  - **One write, not two.** `Add Back` sends `assign {path, groupId, label, index}` — position
-    included, `0` being first and anything at or past the end landing at the end — so the restore
-    cannot half-succeed. `index` works here precisely because a promoted session has **left** the
-    group: assign is a position no-op for a member already in its target, and moving one that is
-    already there is `PATCH {order}`'s job, not assign's. One route changes membership, the other
-    changes arrangement. This is the one gesture where atomicity is
-    worth a field: it is the undo for Promote, and an undo that partly works is worse than one
-    that fails cleanly and says so.
-  - **Against a server that doesn't take `index`** the field is ignored and the member lands at
-    the end of the group, which is exactly when §design/copy-deck's "It's at the end." is true. The fallback
-    copy is for that case, not for a race.
-  - **If a follow-up `PATCH {order}` is ever sent instead, it carries the WHOLE array.** `order`
-    means "the listed ids first, in that order; everything left out keeps its relative order
-    behind them", so `order: ["restored-id"]` puts the member **first** — a wrong answer that
-    looks deliberate. Same rule as `Move Left` / `Move Right`: always the full order.
+  `#/s/{path}`. The member you picked is the answer; the workspace has done its job. There is no
+  undo chip: putting it back is the sidebar's gesture, like adding any session.
 - **Eliminate** — the same assign-to-null, plus
   `POST /api/sessions/archive {path, archived:true}`. Two writes, one gesture, and **the second
   can refuse in three ways** (`archiveSession` in `server/sessions-index.ts`): the session
@@ -625,9 +629,7 @@ All four are writes to the group registry. None of them touches a session's JSON
     kept showing one that isn't would be the workspace disagreeing with the group.
   - **What "reversible" means, exactly.** Nothing is destroyed: the transcript is intact, the
     session is readable at `#/s/{path}`, and it sits in the Archive. Getting it back is two
-    deliberate gestures — Unarchive, then `Add Members` — and there is no undo chip, unlike
-    Promote. Promote gets one because it also navigates you away, so a mis-click moves the ground
-    under you; Eliminate leaves you exactly where you were, looking at the members you kept.
+    deliberate gestures — Unarchive, then move it into the group from the sidebar.
 
   The toast names both writes: "Removed **{title}** and archived it." For a session Sova did not start, the
   archive half is not available (§app/session-list "Archiving" is web-origin only), the button reads
@@ -640,187 +642,54 @@ All four are writes to the group registry. None of them touches a session's JSON
   purpose:** there the control is `Delete group` and it removes a row from a list of groups; here
   it sits above 4 open transcripts, where "Delete" would read as deleting them. Same endpoint,
   same outcome, and both confirmations say the sessions stay.
-- **Add Members** — the §app/session-list popover radio list in reverse: a popover of ungrouped sessions,
-  filtered by the same search, plus `Fan Out…` (§workspace/fanout) at the end. Adding a session that is in
-  another group moves it, and the row says so ("in “Home”"). **The same picker serves every
-  width**: under 640px the narrow head's menu opens into this exact popover (search field
-  included), not a truncated list of its own — a picker that silently caps at 40 rows and loses
-  the search is a different picker wearing the same label. Its rows are keyboard-complete
-  (Enter and Space activate), like every menuitem in the product. The empty state's and the
-  partial-creation banner's `Add Members` buttons open it too, at any width — under 640 they
-  flip the same open state the narrow head's menu answers, because a button that flips a signal
-  nothing is listening to is a dead button. When the group carries a `seed`, the popover's
-  `Fan Out…` hands the dialog that seed (§workspace.fanout/entry-points: the append case).
 
 ### Emptying a group
 
-**A group whose name is the user's work stands empty. Everything else here follows from that.**
-Sova deletes a group it both created *and* named, on the write that removes its last member;
-it never deletes one a person named — whether they typed the name when they made the group, or
-typed it later over a generated one.
-
-This is the one place the two kinds of group differ, and the reason is what they are. A hand-made
-group is a name the user typed and a place they drag things into; §app/session-list already specs it standing
-empty, with "No sessions yet. Drag one here.", because empty is a state it is supposed to have.
-A fanout group is scaffolding: it was born with its members in one gesture, its name was generated
-from the prompt, and with no members left it holds nothing but a fork point nobody can reach. The
-alternative — eliminating your way down to one winner, promoting it, and leaving a phantom section
-in the sidebar forever — is litter the user has to notice and clean up.
-
-**Only the assign gesture dissolves.** Two other paths can leave a fanout group empty, and
-neither of them may delete it: archive cleanup, which removes session files in bulk, and the
-listing pass itself, which prunes assignments whose file has gone (deleted by hand, or by a TUI).
-Both are **bookkeeping about files that disappeared outside Sova**, there is no client waiting
-on either to be told what happened, and a group vanishing during a background refresh is
-unexplained loss — the exact thing this spec spends its words preventing. The rule is about the
-gesture that empties a group, not about the group ever being empty. The prune already holds the
-same instinct one level down — it is keyed on a file being gone, never on a summary failing, so
-an unreadable file keeps its group — and this extends that caution upward: bookkeeping about
-files may forget an assignment, but it may not delete something the user named. So an empty fanout group
-**is** reachable, and the workspace renders it (below) rather than pretending it can't exist.
-
-**`seed` is not the test, and never was a good proxy for one.** A seed says where a fork came
-from — it is marker data, nothing more. Dissolution turns on a different question: *did anyone
-type this name?* So the group carries an explicit flag, **`autoDissolve`**, set only when a
-fanout creates a group and generates its name — Sova made it and named it, so Sova may
-remove it — and **that flag is the one truth of dissolution**. Nothing else confers it.
-
-**It is named for the behaviour, not the property, and that is the point.** This whole
-correction exists because a field describing one thing (`seed`, lineage) was used to decide an
-unrelated thing (deletion). A name like `scaffold` would describe a property again and invite
-the same second use; `autoDissolve` says exactly what it controls and can proxy for nothing.
-Do not re-derive dissolution from any other field, and do not use this one to mean anything
-else.
-
-**A rename revokes it.** `autoDissolve` says "Sova made this and named it", so a rename that
-actually changes the name falsifies the second half and clears the flag. Renaming
-"Fanout · retry backoff" to "Backoff experiments" is the plainest statement a user can make that
-they mean to keep something, and it would be a poor reading of it to delete the group weeks
-later. Renaming to the same string changes nothing, because nothing happened — and
-**reorder and relabel never touch it**, even in the same `PATCH`. Only the name moves this
-flag, because only the name is what it is about.
-
-This is the property the flag's name was chosen for, generalised: **it is set and cleared by the
-events that make it true or false, so nobody has to remember a rule.** The working method that
-falls out of it, for the next field like this one: **`autoDissolve` encodes a claim — "Sova
-owns this group" — so enumerate the events that transfer ownership, because each one is a defect
-until it clears the field.** Four were found that way, each a separate round: adoption (the user's
-group gains lineage), the legacy fallback (an adopted group is indistinguishable on disk from a
-pre-flag fanout group), rename (the user names it themselves), and **the user typing the
-dialog's name before Create** — the same transfer as rename, one moment earlier, and the only
-one found by asking rather than by being hit.
-
-**That enumeration is only half the method, and the missing half has its own failure.** Events
-catch a claim that *drifts* — one that was true when written and outlived its conditions. It
-cannot catch a claim that was **never true in one branch**: born half-false, and looking whole
-because the other branch is the common one. For those, enumerate the **inputs**: *who can supply
-this value?* For a group's name that list is short — `createGroup` (the user), `updateGroup` (the
-user), and the fanout dialog's name field, which is **Sova's generated default OR the user's
-typing**. One input, two cases, and a flag that only ever encoded the first — closed
-by `FanoutRequest.named` (§workspace/fanout), which is the client telling the server which of the
-two it is. Run both enumerations when a field encodes a claim: the events that falsify it, and
-the inputs that were never covered by it.
-
-**With that input closed the enumeration is complete, and completeness is the point.** Who can
-supply a group's name? `createGroup` — the user, no claim made. `updateGroup` — the user, and it
-clears the claim. The fanout dialog — Sova's generated default *or* the user's typing, now
-distinguished by `FanoutRequest.named` (§workspace/fanout). There is no fourth supplier, so
-"Sova may remove what it both made and named" is **literally** true rather than nearly true.
-Every round of this family lived in the gap between those two words.
-
-**The dangerous state must be the one a check has to ASSERT**, because absence is the state you
-do not control — an older client, an older record, a field nobody set. Two ways to satisfy that,
-depending on shape: **polarise a boolean so its falsehood is safe**, and **compare an enum
-positively** (`x === "dangerous"`) rather than negatively (`x !== "safe"`). Both shapes fail the
-same way under the negative form, which is why the rule is about the check and not only about
-the type — and why a spec that names a field's absence rule should name its **check** too.
-**Read it exactly, never by truthiness:** a JSON body is not a typed value, and `"false"`,
-`"yes"`, `1` and `{}` are all truthy, so `if (flag)` claims the dangerous state for four inputs
-that never asserted it. `=== true` for a boolean, `=== "the-dangerous-value"` for an enum. An
-absence rule alone does not cover this, because absence and `"false"` take different paths
-through the same careless check. Two fields
-can carry identical information and fail in opposite directions — had `named` been a boolean, the
-pair shows it exactly: `nameIsGenerated` absent reads as *the user named it*, and the group
-survives; `nameEdited` absent reads as *untouched*, so Sova claims the name and deletes it.
-Same fact, same size, one of them safe by construction.
-The name that reads most naturally is not reliably the one that fails safe, so choose the
-polarity first and the wording second.
-
-**A safe absence default means the field cannot be migrated additively.** The property that
-protects you from an old client — absence reads as the harmless answer — is the same property
-that hides a half-finished migration. Add a replacement field beside the old one and the client
-still sends the old; the server reads the new one, sees absence, applies the safe default, and
-**the feature goes quietly inert**: nothing errors, nothing is destroyed, and the behaviour the
-field existed to produce simply never happens. That is the failure shape hardest to notice,
-because it looks like the system working. So a field with a safe absence default is replaced in
-**one atomic change** — add, delete the old, update every reader and writer in the same window
-— never additively, and never "deprecate and clean up later".
-
-**A safe default does not remove a failure; it relocates one.** Everything else on this surface
-fails toward **loss** — a name deleted, a group dissolved — and absence-means-safe exists to make
-that impossible. What it produces in exchange is a failure toward **inertness**: the feature
-quietly doing nothing. That trade is usually worth taking, because litter is recoverable and loss
-is not, but it must be taken **knowingly**, because the second failure is the one the first rule
-conceals. Whenever you choose a safe default, ask what now goes unnoticed — the answer is never
-"nothing".
-
-**And the build will not remind you.** Renaming this contract's field in a scratch tree produced
-six errors in `server/` and **zero in `src/`**: TypeScript does not excess-property-check through
-a spread, so a client assembling its body as `{ ...target, … }` keeps compiling while sending a
-field the server no longer reads. The function's return annotation looks like protection and
-isn't. So the atomicity rule is not a preference backed by a red build — **the red build only
-appears on one side**, and the silent side is the one that decides whether the feature does
-anything. The durable remedy is to make the client's construction excess-checked, which turns
-this class of rename into a compile error at both ends; until then the rule is the only guard.
-
-**Name the event, not the moment.** A rule anchored to a moment — "capture it at prefill" —
-assumes the value is written once, which is true until some mode writes it repeatedly. Anchor
-to the event instead: *whenever we write this field*. The moment form is the same mistake as
-"the last line is the last rendered entry", true until a feature existed that rewrites the tail.
-It reads as more concrete and is less durable. The alternative — a
-renamed fanout group that still dissolves, "stated loudly" somewhere — is defensible on origin,
-but it asks the user to carry a rule that only fires much later, at the moment of loss.
-
-It is a **boolean, not a true-only flag**, because an explicit `false` has to be sayable: a
-seeded group that must survive being emptied is the case this fixes, and absence now means
-something else. **Absent** means "written before this field existed", and only then does `seed`
-imply dissolution — those older groups are Sova's own fanouts, and **no adopted hand-made
-group can be among them**: `seed` is written only by a fork-mode fanout, which until the
-`groupId` path existed always created the group, and that path shipped in the same change as
-the flag. There is no window, so the fallback cannot catch a group a user named. An explicit
-value always wins.
-
-The proxy came apart at adoption. Fanning out into a hand-made group (§workspace/fanout's `groupId`) writes
-a seed into it so the new members get fork markers — and keying on seed presence would have made
-that group auto-dissolving, destroying a name the user typed on the strength of an unrelated
-later fanout. That name is the exact property this rule exists to protect, so the case that
-breaks the proxy is also the case that matters most.
-
-**Adoption therefore changes nothing about dissolution**, and needs no warning in the fanout
-dialog: there is nothing to warn about. A hand-made group gains fork markers and keeps every
-other property it had, which is what a user would assume without being told. A warning would be
-the interface apologising for a rule we chose not to have.
-
-The delete happens server-side, in the same write, so no second request can fail halfway — and
-**the response has to say so**, because the client cannot infer it from a member count it just
-changed: `POST /api/session-groups/assign` answers `{ok: true, dissolved?: true}`, with
-`dissolved` set only on the write that removed the last member of a group that dissolves itself
-(`SessionGroup.autoDissolve`). **Not a `seed` group** — that was the rule before the two were
-decoupled, and it is precisely the case the decoupling exists for: a hand-made group that adopts
-a fanout's seed must keep standing empty, because its name is the user's work whether they typed
-it at creation or at rename. This is a
-behavioural change to a route the frontend already calls, so it is announced like any other. The
-toast says what happened to both things at once: "Removed **{title}** and archived it. Dissolved
-“{name}” — nothing was left in it." Routing then leaves for `#/`, because the route you were on
-no longer names anything.
+**A group stands empty.** Its name is the user's work, so taking out its last member — Promote,
+Remove From Group, Eliminate, or removing a member whose file is gone — leaves the group in the
+sidebar and the workspace on screen, showing the empty state below. There is no exception: a
+group an older build marked `autoDissolve` (§workspace.groups/legacy-groups) stands empty like any
+other. `POST /api/session-groups/assign` answers `{ok: true}` and never deletes a group; only
+Dissolve (here) and Delete group (the sidebar) do.
 
 ### One member, and none
 
 | Case | The workspace |
 |---|---|
-| 1 member | Renders normally: one pane at its width, the row not scrolling, the group composer reading "1 member" and sending to that one. **It does not silently become `#/s/`** — you are one `Add Members` away from a comparison, and a view that redirects out from under you can't be built on |
-| 0 members, hand-made | `.empty` in the pane area: **"“{name}” has no sessions yet."** Add some here, or drag a row onto the group in the sidebar. · buttons `Add Members` · `Fan Out…`. The group composer is not rendered — there is nothing to send to |
-| 0 members, fanout group | Reachable **two ways, and the group cannot tell them apart**: every member removed or promoted (a renamed fanout group carries `autoDissolve: false`, so it survives being emptied), or every member's file deleted outside Sova. The store holds `seed` and members, never a *reason*, so no rule can separate the causes and the copy must not name one — the same refusal as everywhere else on this surface: do not assert a datum the contract does not carry. The pane area is an `.empty` (§design/copy-deck), and there is no `Add Members`: the fork point aims at a branch these members left, so filling the group with unrelated chats would make it lie about what it is · button `Dissolve` |
+| 1 member | Renders normally: one pane at its width, the row not scrolling, the group composer reading "1 member" and sending to that one. **It does not silently become `#/s/`** — a view that redirects out from under you can't be built on |
+| 0 members | `.empty` in the pane area: **"“{name}” has no sessions yet."** Drag a session onto the group in the sidebar, or use Move into group in its details. No button: the workspace adds nothing. The group composer is not rendered — there is nothing to send to. The same state for every group, whether or not an older build gave it a `seed` |
+
+## §workspace.groups/making-a-comparison — Making a comparison
+
+A comparison is a group of ordinary sessions. There is no gesture that creates several sessions
+at once, and nothing marks a session as a comparison's member.
+
+- **By hand:** `+ New group` in the sidebar, then a session per model — New Session, with the
+  model picked in its own composer — moved into the group from the sidebar.
+- **Through the Overseer:** `sova_group` with `op: "create"` makes the group, then one
+  `sova_create_session` per member names that group with its own `model` and `thinking`, and may
+  send the first prompt. The Overseer's prompt (`server/overseer-prompt.md`) says this in one
+  sentence, so asking it to compare models builds exactly that. Its per-turn caps
+  (§app.overseer/tools) apply unchanged: a group larger than the caps allow is finished on the
+  next turn.
+- **A member is an ordinary session.** It runs the topic outline and the auto-title sweep like
+  any other; only sessions an older build made keep that build's marker (§workspace.groups/legacy-groups).
+
+## §workspace.groups/legacy-groups — Groups an older build made
+
+Earlier builds could create a whole group in one gesture and left three marks this build reads
+but never writes:
+
+- **`SessionGroup.seed`** (`{parentSessionPath, leafId}`) is kept in the store through every
+  rename, reorder, relabel and reassign, and no screen reads it: such a group opens as a plain
+  workspace, with no fork-point row in its transcripts and nothing to align to.
+- **`SessionGroup.autoDissolve`** is kept the same way, a non-boolean read as absent, and it no
+  longer deletes anything: such a group stands when its last member leaves, like any other
+  (§workspace.groups/group-lifecycle), and it keeps the flag on disk, a rename included. Nothing
+  else reads it: such a group's members are auto-titled like any session
+  (§app.session-list/auto-titles). Past the two stored fields, such a group is a plain group.
+- **The member marker** (`sova-fanout-member` custom entry) still turns the topic outline off for
+  the session that carries it. Nothing writes a new one.
 
 ## §workspace.groups/announcements — Announcements
 
@@ -861,32 +730,33 @@ registered on the workspace only, so it exists nowhere else in the product.
 - `.workspace` is the `main`, labelled "Workspace: {name}". Its `h1` is the group name.
 - Panes are `role="region"` in split and `role="tabpanel"` in tabs, always named "{label or
   title} · {model}", always in DOM order = `members` order.
-- **Before the group composer exists**, the skip link points at the focused pane's transcript
-  and reads `Skip to Transcript`. The target and the name move together — a link that says
-  "Group Composer" and lands on a transcript is worse than either, and dropping the skip link
-  entirely would make the workspace the one view in the product without one. "One of N" isn't a
-  problem here: focus picks it.
-- The skip link points at the group composer, because that is the workspace's action; a skip link
-  to "the transcript" would have to pick one of N.
+- **While the group composer is not on screen** — Send to All off, or a workspace with no
+  members — the skip link points at the focused pane's transcript and reads `Skip to Transcript`.
+  The target and the name move together — a link that says "Group Composer" and lands on a
+  transcript (or on a hidden box) is worse than either, and dropping the skip link entirely would
+  make the workspace the one view in the product without one. "One of N" isn't a problem here:
+  focus picks it.
+- While Send to All is on, the skip link points at the group composer and reads `Skip to Group
+  Composer`, because that is then the workspace's one action.
 - Contrast: the pane head is ink-2 on sunken, the sidebar region head's pair (7.65 dark / 7.22
   light). The pane seam is `--color-border`, decoration, and carries no meaning that isn't also
   in the pane's name.
 - Every state in "Member states" pairs its color with a word or an icon. The `TUI` chip is
   accent and static; the tab's live dot is the only looping thing in the view, and only while a
   turn runs.
-- A member whose composer is disabled keeps its reason readable to AT even when collapsed (see
-  above).
+- A member whose composer is disabled keeps its reason readable to AT whenever that composer is
+  on screen; while Send to All hides it, the pane head's chip carries the member's state.
 
 ## §workspace.groups/classes — Classes
 
 | Need | Classes |
 |---|---|
 | Shell | `.app[data-view="workspace"]` `.workspace` |
-| Head | `.workspace-head` `.workspace-head-main` `.workspace-title` `.workspace-meta` `.workspace-count` `.workspace-promoted` `.workspace-align` |
+| Head | `.workspace-head` `.workspace-head-main` `.workspace-title` `.workspace-meta` `.workspace-count` |
 | Tabs | `.workspace-modes` (the Split/Tabs group) `.workspace-tabs[role=tablist]` `button.workspace-tab[role=tab]` `.workspace-tab-title` (+ `.live-dot`) |
 | Panes | `.workspace-row` `.workspace-pane` (+ `.workspace-pane-focused`, and a per-pane width set inline) `.workspace-pane-head` `.workspace-pane-name` `.workspace-pane-tools` `.workspace-pane-body` `.workspace-pane-composer` |
-| Group composer | `.composer.group-composer` `.group-composer-targets` · refusal: `.banner.banner-warn` with `.banner-action` |
-| Collapsed pane composer | `.composer[data-collapsed="true"]` |
+| Group composer | `.composer.group-composer` `.group-composer-all` `.group-composer-targets` · refusal: `.banner.banner-warn` with `.banner-action` |
+| Send to All | `.workspace[data-send-all="true"]` (hides every `.workspace-pane .composer`) `.workspace-send-all` |
 
 Everything else is reused as it stands: `.composer*`, `.transcript*`, `.chip*`, `.banner*`,
 `.empty*`, `.context-gauge`, `.live-dot`, `.button*`, `.pane`.

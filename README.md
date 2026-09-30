@@ -21,7 +21,7 @@ work without digging through terminal scrollback. Your existing setup stays your
 Requires Git, Node.js ≥22.19, and pnpm (without pnpm, the installer runs it through npx).
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/v0.1.0/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
 ```
 
 Then run `sova` and open **http://127.0.0.1:4800**. Uses your existing pi provider login.
@@ -42,6 +42,8 @@ Then run `sova` and open **http://127.0.0.1:4800**. Uses your existing pi provid
   runs session tools on your configured SSH, AWS SSM, Docker, or Incus targets.
 - **Use several machines as one.** The [mesh](docs/mesh.md) lists and drives sessions on every Sova
   host on your tailnet from any one page. Every host in a mesh must be reachable by the same devices.
+- **Share a session with anyone.** Send a read-only link to a whole session or just part of it, with
+  [public links](docs/public-links.md) on an address you set up. Recipients need no account or tailnet.
 
 Single-user, loopback by default, no built-in authentication. Protect access before exposing it
 beyond your machine. Model requests go to your configured provider; tools and extensions may also

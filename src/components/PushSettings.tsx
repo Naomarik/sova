@@ -26,7 +26,7 @@ const KIND: Record<PushKind, { label: string; hint: string }> = {
 };
 
 /**
- * Settings → Overseer → Phone Notifications: this device's subscription (an action, at once), the
+ * Settings → Notifications → Phone Notifications: this device's subscription (an action, at once), the
  * device list with Remove and Send Test (actions), and the settings the dialog's Save Changes
  * writes (push-draft.ts): the switch, the contact address, the kinds and quiet hours.
  */

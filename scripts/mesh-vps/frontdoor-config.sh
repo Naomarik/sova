@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ON THE VPS: write ~/sova-mesh/Caddyfile from Sova's own GET /api/mesh/front-door (Sova must be running), made
 # local-only: the site listens on 127.0.0.1:$FRONTDOOR_PORT and the admin API on $CADDY_ADMIN (loopback).
-# `tailscale serve` (set up by the parent) is the only way in. Sova's Caddyfile takes its listen address from
+# `tailscale serve` (set up once as root, SUDO.md) is the only way in. Sova's Caddyfile takes its listen address from
 # Caddy's environment (SOVA_FRONT_DOOR_BIND, SOVA_FRONT_DOOR_PORT); Caddy expands those when it ADAPTS the file,
 # which for validate/adapt/reload is this process, so they are exported here as in the unit. The adapted config
 # must listen on 127.0.0.1:$FRONTDOOR_PORT only; a running sova-frontdoor unit is reloaded.

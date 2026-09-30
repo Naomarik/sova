@@ -6,7 +6,7 @@ import { PROXIED_HEADER } from "./mesh/proxy";
 import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
 import { frontGuide, verifyPublicUrl } from "./share/front";
 import { refreshGateway } from "./share/gateway-client";
-import { noteVerify, shareState } from "./share/listener";
+import { noteVerify, shareListenerSettled, shareState } from "./share/listener";
 import { routedHosts } from "./share/registry";
 import { publicLinksChanged } from "./share/setting-events";
 
@@ -57,6 +57,8 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     const r = patchPublicLinks(body);
     if ("error" in r) return c.json({ error: r.error }, 400);
     publicLinksChanged(r.file);
+    // The answer carries the bind as it came out (§mesh.public/listener-failure).
+    await shareListenerSettled();
     if (typeof r.file.route === "object") {
       let timer: ReturnType<typeof setTimeout> | undefined;
       await Promise.race([refreshGateway().catch(() => null), new Promise((res) => (timer = setTimeout(res, VIA_ANSWER_WAIT_MS)))]);

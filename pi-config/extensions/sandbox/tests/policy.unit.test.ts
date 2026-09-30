@@ -327,6 +327,41 @@ test("tracked worktrees: writable roots of the session, their .agent read-only; 
 	rmSync(ws, { recursive: true, force: true });
 });
 
+test("a worker keeps a tracked worktree's .agent read-only: full scope, narrowed and write-only", () => {
+	const ws = tmp();
+	const agentDir = join(ws, "agent");
+	mkdirSync(join(agentDir, "sandbox-policy", "linux"), { recursive: true });
+	writeFileSync(join(agentDir, "sandbox-policy", "linux", "policy.json"), JSON.stringify(template()));
+	const live = join(ws, "live");
+	const wt = join(ws, "wt");
+	mkdirSync(live);
+	mkdirSync(join(wt, ".agent"), { recursive: true });
+	const session = resolvePolicy({ agentDir, cwd: live, tmpDir: join(ws, "t"), platform: "linux", extraWritable: [wt], extraReadOnly: [join(wt, ".agent")] });
+	assert.ok(session.ok);
+	const full = parseParentScope(JSON.stringify(parentScopeOf(session.value)));
+	assert.ok(full.ok);
+	assert.ok(full.value.readOnly?.includes(join(wt, ".agent")), "the scope carries the worktree's .agent");
+	assert.ok(!full.value.readOnly?.includes(agentDir), "only paths inside the roots handed down");
+	const narrowed = narrowScope(full.value, wt);
+	assert.deepEqual(narrowed.readOnly, [join(wt, ".agent")], "narrowed: only the read-only paths under the new root");
+	assert.equal(narrowScope({ ...full.value, level: "read-only" }, wt).readOnly, undefined);
+	const wo = writeOnlyScope(wt);
+	assert.deepEqual(parseParentScope(JSON.stringify(wo)), { ok: true, value: wo });
+	const noPolicy = join(ws, "no-policy-agent");
+	mkdirSync(noPolicy);
+	for (const [name, parent, dir] of [["full scope", full.value, agentDir], ["narrowed", narrowed, agentDir], ["write-only", wo, noPolicy]] as const) {
+		const w = resolvePolicy({ agentDir: dir, cwd: wt, tmpDir: join(ws, "t2"), platform: "linux", parent });
+		assert.ok(w.ok, name);
+		assert.equal(w.value.outsideParent, undefined, name);
+		assert.ok(w.value.readOnlyWithinWritable.includes(join(wt, ".agent")), `${name}: the backend mounts it read-only`);
+		assert.match(writeDenial(w.value, join(wt, ".agent", "settings.json")) ?? "", /read-only/, name);
+		assert.match(writeDenial(w.value, join(wt, ".agent", "sandbox-policy", "linux", "policy.json"), { creating: true }) ?? "", /read-only/, name);
+		assert.equal(writeDenial(w.value, join(wt, "src", "a.ts"), { creating: true }), undefined, `${name}: the rest of the worktree stays writable`);
+	}
+	assert.equal(parseParentScope(JSON.stringify({ ...wo, readOnly: ["rel"] })).ok, false, "a relative read-only path is malformed");
+	rmSync(ws, { recursive: true, force: true });
+});
+
 test("a worker is held to its parent's hidden list and allowlists, not a looser file in its own agent dir", () => {
 	const ws = tmp();
 	const agentDir = join(ws, "tree-agent");

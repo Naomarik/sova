@@ -324,6 +324,47 @@ describe("the listener follows the setting", () => {
   });
 });
 
+describe("a share port that won't open (§mesh.public/listener-failure)", () => {
+  afterEach(reset);
+
+  test("a taken port shows on the state with its reason; a PUT answers after the rebind, and a bind that works clears it", async () => {
+    const [p1, p2] = [await freePort(), await freePort()];
+    const taken = createServer();
+    await new Promise<void>((r) => taken.listen(p1, "127.0.0.1", r));
+    try {
+      store.patchPublicLinks({ route: "self", gateway: { ...GATEWAY, sharePort: p1 } });
+      assert.equal(await listener.startShareListener({}), null);
+      const s = listener.shareState({});
+      assert.deepEqual(s.listener, { host: "127.0.0.1", port: p1, reason: `Another program is already using 127.0.0.1:${p1}.` });
+      assert.deepEqual([s.state, s.source, s.publicUrl, s.warningCode], ["configured", "setting", GATEWAY.publicUrl, "unverified"], "the other fields stay as they were");
+      const a = app();
+      const got = (await (await a.request("/api/public-links")).json()) as { share: { listener?: unknown } };
+      assert.equal((got.share.listener as { port: number }).port, p1, "GET carries it");
+      const moved = (await (await a.request("/api/public-links", put({ gateway: { ...GATEWAY, sharePort: p2 } }))).json()) as { share: { listener?: unknown } };
+      assert.equal(moved.share.listener, undefined, "the PUT's own answer: bound, no failure");
+      assert.equal(listener.shareListenerState()?.port, p2);
+      const back = (await (await a.request("/api/public-links", put({ gateway: { ...GATEWAY, sharePort: p1 } }))).json()) as { share: { listener?: { port: number } } };
+      assert.equal(back.share.listener?.port, p1, "the PUT's own answer carries a failed rebind");
+      await a.request("/api/public-links", put({ route: "off" }));
+      assert.equal(listener.shareState({}).listener, undefined, "a setting that binds nothing clears it");
+    } finally {
+      await new Promise<void>((r) => taken.close(() => r()));
+    }
+  });
+
+  test("a SOVA_SHARE_PORT that isn't a port is a failure when a bind is wanted, and nothing otherwise", async () => {
+    const env = { SOVA_SHARE_HOST: "127.0.0.1", SOVA_SHARE_PORT: "48o2" };
+    assert.equal(await listener.startShareListener(env), null);
+    assert.deepEqual(listener.shareState(env).listener, { host: "127.0.0.1", port: null, reason: "SOVA_SHARE_PORT isn't a port number." });
+    store.patchPublicLinks({ route: "self", gateway: GATEWAY });
+    assert.equal(await listener.startShareListener({ SOVA_SHARE_PORT: "70000" }), null);
+    assert.equal(listener.shareState({ SOVA_SHARE_PORT: "70000" }).listener?.reason, "SOVA_SHARE_PORT isn't a port number.");
+    store.patchPublicLinks({ route: "off" });
+    assert.equal(await listener.startShareListener({ SOVA_SHARE_PORT: "70000" }), null);
+    assert.equal(listener.shareState({ SOVA_SHARE_PORT: "70000" }).listener, undefined, "the setting binds nothing and the host isn't pinned: no bind was wanted");
+  });
+});
+
 describe("where links point", () => {
   afterEach(reset);
 

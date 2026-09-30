@@ -16,10 +16,9 @@ interface Action {
  * something. The whole card is the control, a button that opens its dialog, named by its title and
  * described by its line.
  */
-export function OverviewActions(props: { onNewSession(): void; onFanOut(): void }) {
+export function OverviewActions(props: { onNewSession(): void }) {
   const actions: Action[] = [
     { id: "new", icon: "plus", title: "New Session", body: "Start a chat with pi in any folder or on any host.", run: () => props.onNewSession() },
-    { id: "fanout", icon: "branch", title: "Fan Out", body: "Send one prompt to several models and compare the replies side by side.", run: () => props.onFanOut() },
   ];
   return (
     <section class="explain-section" aria-labelledby="overview-start-title">

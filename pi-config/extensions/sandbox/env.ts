@@ -46,6 +46,13 @@ export function scrubEnv(source: NodeJS.ProcessEnv | Record<string, string | und
 	return out;
 }
 
+/** A write-only worker's environment: the host's as it is, minus what the backend sets itself. */
+export function hostEnv(source: NodeJS.ProcessEnv | Record<string, string | undefined>): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [k, v] of Object.entries(source)) if (v !== undefined && k !== "TMPDIR") out[k] = v;
+	return out;
+}
+
 /** Variables the relay needs (both spellings; many tools read only one). */
 export function proxyEnv(port: number): Record<string, string> {
 	const url = `http://127.0.0.1:${port}`;

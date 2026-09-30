@@ -145,8 +145,8 @@ export interface SdkQueueView {
 
 /**
  * Everything outside this module, injected so the rules can be driven without an SDK, a socket or
- * a disk. EACH COMMENT IS A SPECIFICATION a fake gets written against — the same rule fanout's
- * `FanoutDeps` earned: a fake that agrees with a wrong comment proves nothing.
+ * a disk. EACH COMMENT IS A SPECIFICATION a fake gets written against: a fake that agrees with a
+ * wrong comment proves nothing.
  */
 export interface QueueDeps {
   /** The SDK's queues RIGHT NOW. Read again after every await; they change under us. */

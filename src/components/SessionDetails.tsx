@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show
 import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, SessionWorktreeInfo, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
-import { readinessChip, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
+import { readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
 import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
@@ -29,12 +29,13 @@ import { copyText, home } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
-import { GroupWithParent, MoveToGroupMenu } from "./Groups";
+import { MoveToGroupMenu } from "./Groups";
 import { ChangesDialog } from "./ChangesViewer";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
 import type { SessionShare } from "../../shared/session-share";
 import { hostOf } from "../lib/mesh";
-import { listSessionShares, modeLine, openedLine, ShareApiError, SHARES_HREF, shareLive } from "../lib/session-shares";
+import { openedLine, SHARES_HREF, shareLine } from "../lib/session-shares";
+import { shareHref } from "../lib/share-slice";
 
 /** Long machine facts wrap instead of widening the sheet. */
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
@@ -204,8 +205,6 @@ export function SessionDetails(props: {
               {/* The same assignment, read as a place to work: file it and open that group's
                   workspace with this session focused. */}
               <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged()} variant="beside" />
-              {/* Forked from a session and in no group: one press puts the pair in one workspace. */}
-              <GroupWithParent session={s()} onChanged={() => props.onGroupsChanged()} />
               <Show when={s().origin === "web"}>
                 <ArchiveAction
                   session={s()}
@@ -222,11 +221,7 @@ export function SessionDetails(props: {
         )}
       </Show>
 
-      {/* 6 · Sharing. This session's share links (§app.session-share/sheet), read from the host
-          that holds the session. */}
-      <Show when={summary()}>{(s) => <SharingSection session={s()} now={now()} labelId={id("sharing")} />}</Show>
-
-      {/* 7 · Compactions. Where the transcript was summarized, on demand. */}
+      {/* 6 · Compactions. Where the transcript was summarized, on demand. */}
       <Show when={compactions().length > 0}>
         <details class="disclosure">
           <summary class="disclosure-summary">
@@ -243,7 +238,7 @@ export function SessionDetails(props: {
         </details>
       </Show>
 
-      {/* 8 · Changes. Model, thinking and mode changes, in the order they happened. The pane's
+      {/* 7 · Changes. Model, thinking and mode changes, in the order they happened. The pane's
           Timeline tab is the session's whole axis; this stays the settings history. */}
       <Show when={timeline().length > 0}>
         <details class="disclosure">
@@ -282,53 +277,28 @@ export function SessionDetails(props: {
   );
 }
 
-/** A live share's presence is read again this often while the page is visible. */
-const SHARING_REFRESH_MS = 5_000;
-
 /**
- * The session's share links (§app.session-share/sheet): each share's title, mode and recipients
- * with presence and opens, Manage for each, and Share Session. Read on open, after the sheet
- * changes something, and every SHARING_REFRESH_MS while a share is live and the page is visible.
+ * The Sharing tab's body (§app.session-share/sheet): each share's title, its slice or mode line and
+ * its recipients with presence and opens, Manage for each, and Share Session, which opens the share
+ * page. The pane owns the read (`shares`, `error`), so its tab's badge and this list agree.
  */
-function SharingSection(props: { session: SessionSummary; now: number; labelId: string }) {
+export function SharingSection(props: {
+  session: SessionSummary;
+  shares: SessionShare[] | null;
+  error: string | null;
+  now: number;
+  /** The sheet changed a share: read the list again. */
+  onChanged(): void;
+}) {
   const host = () => hostOf(props.session.path);
-  const [shares, setShares] = createSignal<SessionShare[] | null>(null);
-  const [error, setError] = createSignal<string | null>(null);
-  const [sheet, setSheet] = createSignal<{ share: SessionShare | null } | null>(null);
-  let run = 0;
-  const load = async () => {
-    const mine = ++run;
-    try {
-      const next = await listSessionShares(host(), props.session.id);
-      if (mine !== run) return;
-      setShares(next);
-      setError(null);
-    } catch (x) {
-      if (mine !== run) return;
-      // An older host has no share routes: said once, never a retry loop of errors.
-      setError(x instanceof ShareApiError && x.status === 404 && !x.code ? "This host can't share sessions yet. It needs an update." : `Couldn't read this session's shares. ${(x as Error).message}`);
-    }
-  };
-  const id = createMemo(() => props.session.id);
-  createEffect(
-    on(id, () => {
-      setShares(null);
-      void load();
-    }),
-  );
-  const tick = setInterval(() => {
-    if (document.visibilityState === "visible" && (shares() ?? []).some(shareLive)) void load();
-  }, SHARING_REFRESH_MS);
-  onCleanup(() => {
-    run++;
-    clearInterval(tick);
-  });
+  const [sheet, setSheet] = createSignal<SessionShare | null>(null);
   const abs = (iso: string) => absoluteTime(iso, props.now);
+  const newShare = () => shareHref(props.session.id, { host: host() });
 
   return (
-    <section class="stack-2" aria-labelledby={props.labelId}>
+    <section class="stack-2" aria-labelledby="sharing-label">
       <div class="spread">
-        <h3 class="text-eyebrow" id={props.labelId}>
+        <h3 class="text-eyebrow" id="sharing-label">
           Sharing
         </h3>
         <a class="button button-sm button-ghost" href={SHARES_HREF}>
@@ -336,23 +306,23 @@ function SharingSection(props: { session: SessionSummary; now: number; labelId: 
         </a>
       </div>
       <Switch>
-        <Match when={error()}>{(msg) => <p class="usage-note">{msg()}</p>}</Match>
-        <Match when={shares() === null}>
+        <Match when={props.error}>{(msg) => <p class="usage-note">{msg()}</p>}</Match>
+        <Match when={props.shares === null}>
           <p class="usage-note text-skeleton" aria-hidden="true">
             <Bone width="40%" />
           </p>
         </Match>
-        <Match when={shares()!.length === 0}>
+        <Match when={props.shares!.length === 0}>
           <p class="usage-note">Not shared with anyone.</p>
         </Match>
-        <Match when={shares()!.length > 0}>
+        <Match when={props.shares!.length > 0}>
           <ul class="list sharing-list">
-            <For each={shares()}>
+            <For each={props.shares}>
               {(sh) => (
                 <li class="list-row sharing-row">
                   <div class="list-main">
                     <p class="list-title">{sh.title}</p>
-                    <p class="list-meta">{sh.stoppedAt ? `Stopped ${relativeTime(sh.stoppedAt, props.now)}` : modeLine(sh, abs)}</p>
+                    <p class="list-meta">{sh.stoppedAt ? `Stopped ${relativeTime(sh.stoppedAt, props.now)}` : shareLine(sh, abs)}</p>
                     <ul class="shares-recipients">
                       <For each={sh.recipients}>
                         {(r) => (
@@ -365,7 +335,7 @@ function SharingSection(props: { session: SessionSummary; now: number; labelId: 
                       </For>
                     </ul>
                   </div>
-                  <button type="button" class="button button-sm" aria-label={`Manage ${sh.title}`} onClick={() => setSheet({ share: sh })}>
+                  <button type="button" class="button button-sm" aria-label={`Manage ${sh.title}`} onClick={() => setSheet(sh)}>
                     Manage
                   </button>
                 </li>
@@ -374,24 +344,22 @@ function SharingSection(props: { session: SessionSummary; now: number; labelId: 
           </ul>
         </Match>
       </Switch>
-      <Show when={!error()}>
+      <Show when={!props.error}>
         <div class="cluster">
-          <button type="button" class="button" onClick={() => setSheet({ share: null })}>
+          <a class="button" href={newShare()}>
             Share Session
-          </button>
+          </a>
         </div>
       </Show>
       <Show when={sheet()}>
         {(open) => (
           <ShareSheet
             host={host()}
-            sessionId={props.session.id}
-            sessionTitle={props.session.title}
-            share={open().share}
-            onChanged={() => void load()}
+            share={open()}
+            onChanged={() => props.onChanged()}
             onClose={() => {
               setSheet(null);
-              void load();
+              props.onChanged();
             }}
           />
         )}
@@ -677,6 +645,7 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?:
             )}
           </Show>
         </div>
+        <Show when={readinessReason(w())}>{(line) => <p class="list-meta worktree-reason">{line()}</p>}</Show>
       </div>
       <Show when={w().status === "active" && w().exists}>
         <button

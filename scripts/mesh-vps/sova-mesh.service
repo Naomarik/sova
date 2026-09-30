@@ -1,8 +1,8 @@
-# systemd USER unit for Sova on the VPS (deploy). Install (as deploy, no sudo, after the parent ran
-# `sudo loginctl enable-linger deploy`):
+# systemd USER unit for Sova on the VPS (the VPS user). Install (as that user, no sudo, after an admin ran
+# `sudo loginctl enable-linger <user>`, SUDO.md):
 #   mkdir -p ~/.config/systemd/user && cp ~/sova-mesh/app/scripts/mesh-vps/sova-mesh.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload && systemctl --user enable --now sova-mesh.service
-# Main listener 127.0.0.1:4800 (tailnet: `tailscale serve --https=10443`, https://<vps>.<tailnet>.ts.net:10443/),
+# Main listener 127.0.0.1:4800 (optionally over the tailnet: `tailscale serve --https=10443`, https://<vps>.<tailnet>.ts.net:10443/),
 # peer listener <vps-tailnet-ip>:4801 (see ~/sova-mesh/sova-mesh.env).
 [Unit]
 Description=Sova (mesh host)

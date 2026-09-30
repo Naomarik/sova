@@ -14,6 +14,8 @@ const suites = [
 	"runtime-escapes.mjs",
 	"midflight.mjs",
 	"worker-inheritance.mjs",
+	"claude-confine.mjs",
+	"claude-worker.mjs",
 ];
 
 const results = [];

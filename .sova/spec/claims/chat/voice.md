@@ -17,8 +17,9 @@ no live partials.
 ## §chat.voice/button — The mic button
 
 The session composer and the group composer (§workspace.groups/the-group-composer) each carry one
-mic button, the first child of `.composer-row`: in the session composer it sits immediately left
-of the `plus` trigger. It is a ghost `.button-icon`, 44×44 at every width, with `mic.svg`.
+mic button in `.composer-row`: in the session composer it is the row's first child, immediately
+left of the `plus` trigger; in the group composer it follows the row's `×` and its `All {n}
+members` chip (§workspace.groups/send-all-mode). It is a ghost `.button-icon`, 44×44 at every width, with `mic.svg`.
 
 ```html
 <button class="button button-icon button-ghost voice-button" type="button"

@@ -1,48 +1,77 @@
-# mesh-vps: Sova on a VPS (the real mesh, milestone M5)
+# mesh-vps: Sova on a VPS
 
-The VPS may be a shared host that also runs other services. These scripts run as `deploy`
-with NO sudo, write only under `~deploy/sova-mesh`, and never touch /etc, system packages or any
-running service. Root steps are listed in SUDO.md for the parent.
+Deploy Sova from your own machine (the laptop, below) to a Linux VPS on your Tailscale tailnet, as a mesh host
+([docs/mesh.md](../../docs/mesh.md)), as the gateway for public share links
+([docs/public-links.md](../../docs/public-links.md)), or both. For public links on a single machine with no tailnet,
+you don't need this kit: install Sova with `scripts/install.sh --service` and follow the single-host walkthrough in
+docs/public-links.md.
 
-Layout on the VPS (`~/sova-mesh`): `node/` (Node 22 LTS, sha256-pinned), `bin/caddy` (sha512-pinned), `app/`
-(git archive of a commit; `app.prev` = the previous one), `agent/` (PI_CODING_AGENT_DIR; `auth.json` starts EMPTY,
-keys arrive by sync; `sova/peers.json` is seeded once with self id `$VPS_ID` (default `vps`), no peers (logins of every kind sync, subscriptions included; Settings → Mesh can switch this host to API keys only); the
-self id is never rewritten, since host filters and the front-door order reference it), `home/` (isolated HOME), `tmp/` (TMPDIR for every build/run step, 0700: nothing of ours in /tmp; holds jiti's
-extension cache, re-warmed by `run-warm.sh` / `warm-extensions.mjs` after each build and at each unit start, so the first
-session never stalls Sova compiling 16 extensions), `sova-mesh.env` (SOVA_SYNC_CLAUDE_DIR = `home/.claude`, 0700: the Claude Code store that login sync fills), `Caddyfile`.
-Ports: Sova main 127.0.0.1:4800; peer listener <vps-tailnet-ip>:4801 (only while peers.json lists a peer);
-front door Caddy 127.0.0.1:4890 (admin 127.0.0.1:2089); share links 127.0.0.1:4802 when this host is the share gateway.
-Nothing of Sova's binds the public interface.
+What the VPS needs: Linux on x86_64 or aarch64 (any other architecture is refused before anything is downloaded),
+systemd user services, outbound HTTPS to nodejs.org, github.com and the npm registry, Tailscale, and an ordinary user
+you reach over the tailnet with ssh (`VPS_SSH`, `<user>` below). The VPS may be a shared host that also runs other
+services: these scripts run as `<user>` with no sudo, write only under `~<user>/sova-mesh`, and never touch /etc,
+system packages or any running service. The few root steps are in [SUDO.md](SUDO.md), for whoever administers the VPS.
+
+## Set up
+
+1. `cp local.env.example local.env` and fill it in: the VPS's ssh target, public IP and tailnet IP, and for a mesh the
+   laptop's peer values. `local.env` is untracked; versions, checksums and ports are in `config.sh`.
+2. `./deploy.sh` from the laptop.
+3. The root steps in [SUDO.md](SUDO.md): section 1 always, 2 and 3 for a mesh host, 4 for a share gateway.
+4. Optionally `./smoke.sh` and `./exposure.sh probe` to check nothing of Sova's is public.
+
+## What is on the VPS
+
+Layout (`~/sova-mesh`): `node/` (Node 22 LTS, sha256-pinned per architecture), `bin/caddy` (sha512-pinned per
+architecture), `app/` (git archive of a commit; `app.prev` = the previous one), `agent/` (PI_CODING_AGENT_DIR;
+`auth.json` starts EMPTY, keys arrive by sync; `sova/peers.json` is seeded once with self id `$VPS_ID` (default `vps`)
+and no peers (logins of every kind sync, subscriptions included; Settings → Mesh can switch this host to API keys
+only); the self id is never rewritten, since host filters and the front-door order reference it), `home/` (isolated
+HOME), `tmp/` (TMPDIR for every build/run step, 0700: nothing of ours in /tmp; holds jiti's extension cache, re-warmed
+by `run-warm.sh` / `warm-extensions.mjs` after each build and at each unit start, so the first session never stalls
+Sova compiling its extensions), `sova-mesh.env` (SOVA_SYNC_CLAUDE_DIR = `home/.claude`, 0700: the Claude Code store
+that login sync fills), `Caddyfile`.
+
+Ports: Sova main 127.0.0.1:4800; peer listener <vps-tailnet-ip>:4801 (only while peers.json lists a peer); front door
+Caddy 127.0.0.1:4890 (admin 127.0.0.1:2089; optional, SUDO.md section 3); share links 127.0.0.1:4802 when this host is
+the share gateway. Nothing of Sova's binds the public interface. Your firewall (e.g. ufw) keeps it that way: allow
+4801 on the tailnet interface only, and 80/443 only for a public share front.
 
 Public share links (optional): in Sova, Settings → Public links → "This host is the gateway", with a public address
-(https://share.example.com) and a front. Sova shows the front's one-time step and a Verify button; it never runs the
-step and never writes the front's config. The public front is separate from the private front door (4890 / 8443),
-which stays tailnet only. Set SHARE_FRONT in local.env to the front you chose so `exposure.sh probe` expects 443 open;
-every Sova port, 4802 included, must still time out. The front's root step, if any, is in SUDO.md.
+(https://share.example.com) and a front, or the same over ssh when this host's page isn't reachable
+([docs/public-links.md](../../docs/public-links.md#set-up-a-gateway-with-no-page)). Sova shows the front's one-time
+steps and a Verify button; it never runs the steps and never writes the front's config. The public front is separate
+from the private front door (4890 / 8443), which stays tailnet only. Set SHARE_FRONT in local.env to the front you
+chose so `exposure.sh probe` expects 443 open; every Sova port, 4802 included, must still time out. The front's root
+steps, if any, are in SUDO.md section 4.
+
+## The scripts
 
 From the laptop:
-- `deploy.sh [--rev <sha>] [--claude-bin <path>]`: stream `git archive <sha>` over ssh into `app.new`, install Node/Caddy,
-  pnpm install --frozen-lockfile and both vite builds in `app.new`, and only then swap it in (a failed install or build
-  stops there and the running app is untouched), agent dir, env. Restarts the sova-mesh user unit if it is running. Claude Code is not
-  installed by us: the directory of deploy's own `claude` (`--claude-bin` / CLAUDE_BIN, else `command -v claude` in
-  deploy's login shell, else ~/.local/bin and other common locations) is appended to the unit's PATH in `sova-mesh.env`;
-  if none is found the deploy warns "Claude Code not found: claude-code models will fail" and carries on.
-- `smoke.sh [--keep-peers]`: start Sova by hand, check health, mesh off = no peer port, PUT peers.json (the
-  laptop's team server; self.id must be $VPS_ID, loginKinds not pinned) → the peer listener binds the tailnet IP only, exposure probe, stop, and compare the
-  production state (listening sockets + `systemctl is-active` of PROD_UNITS, if set) before and after.
-- `exposure.sh probe`: public 4800/4801/4802/4890/2089/8443/10443 must time out (VPS_CONTROL_PORTS, if set, are controls that must connect;
-  with SHARE_FRONT = vhost, caddy or funnel, 443 is one too). ssh goes over the tailnet
+- `deploy.sh [--rev <sha>] [--claude-bin <path>]`: stream `git archive <sha>` over ssh into `app.new`, install
+  Node/Caddy for the VPS's architecture, pnpm install --frozen-lockfile and both vite builds in `app.new`, and only then
+  swap it in (a failed install or build stops there and the running app is untouched), agent dir, env. Restarts the
+  sova-mesh user unit if it is running. Claude Code is not installed by us: the directory of the VPS user's own
+  `claude` (`--claude-bin` / CLAUDE_BIN, else `command -v claude` in that user's login shell, else ~/.local/bin and
+  other common locations) is appended to the unit's PATH in `sova-mesh.env`; if none is found the deploy warns
+  "Claude Code not found: claude-code models will fail" and carries on.
+- `smoke.sh [--keep-peers]`: start Sova by hand, check health, mesh off = no peer port, PUT peers.json (the laptop's
+  Sova; self.id must be $VPS_ID, loginKinds not pinned) → the peer listener binds the tailnet IP only, exposure probe,
+  stop, and compare the production state (listening sockets + `systemctl is-active` of PROD_UNITS, if set) before
+  and after.
+- `exposure.sh probe`: public 4800/4801/4802/4890/2089/8443/10443 must time out (VPS_CONTROL_PORTS, if set, are
+  controls that must connect; with SHARE_FRONT = vhost, caddy or funnel, 443 is one too). ssh goes over the tailnet
   ($VPS_SSH).
+- `laptop-forwarder.sh start|stop|status`: on the laptop, a user-level socat <laptop-tailnet-ip>:4872 -> the laptop's
+  Sova (LAPTOP_TARGET, default 127.0.0.1:4870), the front door's upstream for the laptop (LAPTOP_SERVE_URL). Killable;
+  the laptop's own `tailscale serve` is untouched. Only for the front door.
 
-Tailnet URLs (tailscale serve, set by the parent; tailnet only): front door
-https://<vps>.<tailnet>.ts.net:8443/ (Caddy 127.0.0.1:4890), this host https://<vps>.<tailnet>.ts.net:10443/ (Sova 127.0.0.1:4800).
-- `laptop-forwarder.sh start|stop|status`: on the laptop, a user-level socat <laptop-tailnet-ip>:4872 -> 127.0.0.1:4870 (the team
-  server), the front door's upstream for the laptop (LAPTOP_SERVE_URL). Killable; the laptop's own `tailscale serve` is untouched.
+Tailnet URLs (optional, `tailscale serve` from SUDO.md section 3; tailnet only): front door
+https://<vps>.<tailnet>.ts.net:8443/ (Caddy 127.0.0.1:4890), this host https://<vps>.<tailnet>.ts.net:10443/ (Sova
+127.0.0.1:4800).
 
-On the VPS: `run-sova.sh`, `run-frontdoor.sh` (the units' ExecStart), `frontdoor-config.sh` (Caddyfile from
-Sova's own GET /api/mesh/front-door, rebound to 127.0.0.1).
-Settings (versions, checksums, ports) are in `config.sh`; the site-specific values (VPS addresses, the laptop peer,
-VPS_CONTROL_PORTS, PROD_UNITS) in the untracked `local.env`: `cp local.env.example local.env` and fill it in.
+On the VPS: `run-sova.sh`, `run-frontdoor.sh` (the units' ExecStart), `frontdoor-config.sh` (Caddyfile from Sova's own
+GET /api/mesh/front-door, rebound to 127.0.0.1).
 
 ## Resync from the host menu
 

@@ -132,7 +132,7 @@
         go  {:by "operator" :via "overseer" :session-id "s1" :public-title "T" :goal "G" :question "Q"}
         one (assoc go :to "p1")
         two (assoc go :targets ["p1" "p2"])]
-    (is (= "This reaches people or ends something: ask with sova_confirm, listing the project pr1, p1 in its items, and act in the turn the user's click starts."
+    (is (= "This reaches people or ends something: ask with sova_card, listing the project pr1, p1 in its items, and act in the turn the user's click starts."
            (h/refusal x psid :baton/start one)))
     (is (some? (h/refusal x psid :baton/start (assoc one :card {:projects ["pr1"]}))) "every person must be on it")
     (is (nil? (h/refusal x psid :baton/start (assoc one :card {:projects ["pr1"] :people ["p1"]}))))

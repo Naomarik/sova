@@ -181,27 +181,61 @@ export const resetOverseerDraft = store.reset;
 export const CAP_KEYS = ["createPerTurn", "promptsPerTurn", "archivesPerTurn", "concurrentSessions", "explorePerTurn", "linksPerTurn", "orgWritesPerTurn", "gatherPerTurn"] as const satisfies readonly (keyof OverseerCaps)[];
 
 export const CAP_LABEL: Record<keyof OverseerCaps, { label: string; hint: string }> = {
-  createPerTurn: { label: "Sessions created", hint: "Per message you send." },
-  promptsPerTurn: { label: "Prompts to other sessions", hint: "Per message you send." },
-  archivesPerTurn: { label: "Sessions archived", hint: "Per message you send." },
-  concurrentSessions: { label: "Running at once", hint: "Sessions the Overseer started that are working at the same time." },
-  explorePerTurn: { label: "Ideas explored", hint: "Exploratory agents launched, per message you send." },
-  linksPerTurn: { label: "Links made", hint: "Sessions linked across hosts, per message you send." },
-  orgWritesPerTurn: { label: "Organization changes", hint: "Changes to organizations, projects, rosters and project overseers, per message you send." },
-  gatherPerTurn: { label: "Gathering sessions started", hint: "Gathering sessions and offers started, per message you send." },
+  createPerTurn: { label: "Sessions created", hint: "New sessions it may create, per message you send." },
+  promptsPerTurn: { label: "Prompts to other sessions", hint: "Messages it may send to other sessions, per message you send." },
+  archivesPerTurn: { label: "Sessions archived", hint: "Sessions it may archive, per message you send." },
+  concurrentSessions: {
+    label: "Running at once",
+    hint:
+      "How many sessions the Overseer started or messaged may be working at the same time. Starting a session, or messaging one " +
+      "that isn't already counted, needs a free slot; when none is free, the Overseer waits or asks you. Sessions you started " +
+      "count only once the Overseer messages them.",
+  },
+  explorePerTurn: { label: "Ideas explored", hint: "Idea explorers it may launch, per message you send." },
+  linksPerTurn: { label: "Links made", hint: "Sessions it may link across hosts, per message you send." },
+  orgWritesPerTurn: { label: "Organization changes", hint: "Changes it may make to organizations, projects, rosters and project overseers, per message you send." },
+  gatherPerTurn: { label: "Gathering sessions started", hint: "Gathering sessions and offers it may start, per message you send." },
 };
 
-/** Why the draft can't be saved, one sentence, or null. */
-export function overseerDraftProblem(d: OverseerDraft): string | null {
+/** The seven limits counted per message: the folded group under Running at once. */
+export const PER_MESSAGE_CAP_KEYS = CAP_KEYS.filter((k) => k !== "concurrentSessions");
+
+/** A limit the form can take: a whole number from 0 to 1000. */
+export const capValid = (v: number): boolean => Number.isInteger(v) && v >= 0 && v <= 1000;
+
+/** Where the draft's problem is, so the form can open the folded group that holds the field. */
+export type OverseerIssueAt =
+  | { group: "running" }
+  | { group: "per-message"; key: keyof OverseerCaps }
+  | { group: "quick-action"; index: number }
+  | { group: "advanced" };
+
+/** Why the draft can't be saved, one sentence, and where; null when it can. First match wins, in page order. */
+export function overseerDraftIssue(d: OverseerDraft): { message: string; at: OverseerIssueAt } | null {
   for (const k of CAP_KEYS) {
-    const v = d.settings.caps[k];
-    if (!Number.isInteger(v) || v < 0 || v > 1000) return `${CAP_LABEL[k].label} must be a whole number from 0 to 1000.`;
+    if (!capValid(d.settings.caps[k]))
+      return { message: `${CAP_LABEL[k].label} must be a whole number from 0 to 1000.`, at: k === "concurrentSessions" ? { group: "running" } : { group: "per-message", key: k } };
   }
   const blank = d.settings.quickActions.findIndex((a) => !a.label.trim() || !a.prompt.trim());
-  if (blank >= 0) return `Quick action ${blank + 1} needs a label and a prompt.`;
-  if (!d.settings.explorer.model || !d.settings.explorer.effort) return "The exploratory agent needs a model and an effort.";
+  if (blank >= 0) return { message: `Quick action ${blank + 1} needs a label and a prompt.`, at: { group: "quick-action", index: blank } };
+  if (!d.settings.explorer.model || !d.settings.explorer.effort) return { message: "The idea explorer needs a model and an effort.", at: { group: "advanced" } };
   return null;
 }
+
+/** Why the draft can't be saved, one sentence, or null. */
+export const overseerDraftProblem = (d: OverseerDraft): string | null => overseerDraftIssue(d)?.message ?? null;
+
+/** How many of the per-message limits differ from their defaults (a cleared field counts). */
+export function capsChangedFromDefault(caps: OverseerCaps, defaults: OverseerCaps): number {
+  return PER_MESSAGE_CAP_KEYS.filter((k) => !Object.is(caps[k], defaults[k])).length;
+}
+
+/** The folded Per-message limits group's head: "All at default", "2 changed from default". */
+export const perMessageSummary = (changed: number): string => (changed === 0 ? "All at default" : `${changed} changed from default`);
+
+/** Running at once's live line: the count now, of the number in the field, or of the saved limit
+    while the field doesn't hold a valid one. */
+export const runningNowLine = (running: number, field: number, saved: number): string => `Now: ${running} of ${capValid(field) ? field : saved} running.`;
 
 /** A fresh quick action: an id no other row has. */
 export function newQuickAction(existing: readonly OverseerQuickAction[]): OverseerQuickAction {

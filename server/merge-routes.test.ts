@@ -10,8 +10,7 @@ process.env.PI_CODING_AGENT_DIR = dir;
 process.env.PORT = "0";
 const { app, server } = await import("./index");
 const { assignSession, readGroup } = await import("./session-groups");
-const { targetDir, writeTargets } = await import("./targets");
-const { realFanoutDeps } = await import("./fanout");
+const { targetDir, validateNewSessionCwd, writeTargets } = await import("./targets");
 after(async () => {
   await new Promise<void>((resolve, reject) => server.close((err) => err ? reject(err) : resolve()));
   rmSync(dir, { recursive: true, force: true });
@@ -20,9 +19,8 @@ const request = (method: string, path: string, body: unknown) => app.request(pat
   method, headers: { "content-type": "application/json" }, body: JSON.stringify(body),
 });
 
-test("merge routes: seven required registrations exist exactly once; mount endpoint is absent", () => {
+test("merge routes: the required registrations exist exactly once; removed endpoints are absent", () => {
   const required = [
-    ["POST", "/api/session-groups/fanout"],
     ["PATCH", "/api/session-groups/:id"],
     ["POST", "/api/session-groups/:id/prompt"],
     ["POST", "/api/session-groups/assign"],
@@ -36,7 +34,10 @@ test("merge routes: seven required registrations exist exactly once; mount endpo
   for (const [method, path] of required) {
     assert.equal(app.routes.filter((r) => r.method === method && r.path === path).length, 1, `${method} ${path}`);
   }
-  assert.equal(app.routes.filter((r) => r.path === "/api/targets/:name/mount").length, 0);
+  // Retired creation paths: one gesture making a group of sessions, and a per-message fork.
+  for (const path of ["/api/targets/:name/mount", "/api/session-groups/fanout", "/api/sessions/fork"]) {
+    assert.equal(app.routes.filter((r) => r.path === path).length, 0, path);
+  }
 });
 
 test("merged handlers keep group name/order/labels and fileless assign removal", async () => {
@@ -58,13 +59,12 @@ test("merged handlers keep group name/order/labels and fileless assign removal",
   assert.equal((await request("POST", "/api/session-groups/assign", { id: "gone-b", groupId: null })).status, 200);
   assert.deepEqual(readGroup(group.id)?.members, [{ id: "gone-a" }]);
   assert.equal((await request("POST", `/api/session-groups/${group.id}/prompt`, { text: "" })).status, 400);
-  assert.equal((await request("POST", "/api/session-groups/fanout", {})).status, 400);
 });
 
 test("merged sessions use shared cwd refusal and placeholders, never mounted creation", async () => {
   const missing = join(dir, "no-such-folder");
   assert.equal(existsSync(missing), false);
-  const expected = await realFanoutDeps.validateCwd(missing);
+  const expected = await validateNewSessionCwd(missing);
   assert.match(expected!, /does not exist/);
   const refused = await request("POST", "/api/sessions", { cwd: missing });
   assert.equal(refused.status, 400);

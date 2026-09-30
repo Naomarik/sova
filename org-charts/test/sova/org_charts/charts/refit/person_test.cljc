@@ -93,7 +93,7 @@
 
 (deftest global-overseer-and-the-chart
   (let [x (born ana)]
-    (is (re-find #"^This reaches people or ends something: ask with sova_confirm, listing p1 in its items" (h/refusal x sid :person/leave {:by "operator" :via "overseer"})))
+    (is (re-find #"^This reaches people or ends something: ask with sova_card, listing p1 in its items" (h/refusal x sid :person/leave {:by "operator" :via "overseer"})))
     (is (nil? (h/refusal x sid :person/leave {:by "operator" :via "overseer" :card {:people ["p1"]}})))
     (testing "a revert that sets left needs the card; another revert does not"
       (is (some? (h/refusal x sid :person/revert {:by "operator" :via "overseer" :row {:at 3 :field "status" :from "left" :to "active"}})))

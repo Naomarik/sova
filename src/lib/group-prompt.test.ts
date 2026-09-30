@@ -52,11 +52,8 @@ test("a refusal is Sova's sentence, composed from the code and never parsed from
   assert.equal(refusalSentence(refusal("tui-live"), "control"), "control is open in a terminal");
   assert.equal(refusalSentence(refusal("missing"), "control"), "control's file is gone");
   assert.equal(refusalSentence(refusal("config"), "control"), "control can't be opened");
-  assert.equal(refusalSentence(refusal("old-format"), "control"), "control is in an older session format");
-  assert.equal(
-    refusalSentence(refusal("stale-leaf"), "control"),
-    "the fork point you picked isn't control's latest message anymore",
-  );
+  assert.equal(refusalSentence(refusal("archived"), "control"), "control is archived");
+  assert.equal(refusalSentence(refusal("busy"), "control"), "control is busy");
 });
 
 test("a code this build has no words for hands the server's sentence over verbatim", () => {

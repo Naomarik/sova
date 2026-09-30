@@ -11,12 +11,7 @@
     <button class="button button-icon button-ghost sidebar-overview" type="button" aria-label="Overview"
             title="Overview"><svg class="icon" aria-hidden="true">…grid…</svg></button>
     <span class="sidebar-spacer"></span>
-    <span class="new-session-split">
-      <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
-      <!-- the saved profiles (§app.session-list/profile-shelf) -->
-      <button class="button button-icon new-session-menu-trigger" type="button" aria-haspopup="menu"
-              aria-label="New Session with a profile">…chevron-down…</button>
-    </span>
+    <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
     <!-- unfolded (≥768) only: collapses the pane into the spine (§app.session-list/spine) -->
     <button class="button button-icon sidebar-spine-toggle" type="button" aria-expanded="true"
             aria-label="Collapse sessions pane" title="Collapse sessions pane · Ctrl/⌘+B">
@@ -64,8 +59,7 @@
     </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
-    <!-- First region: Profiles (§app.session-list/profile-shelf), only while a session runs with a
-         profile. Then Needs you (§app.session-list/needs-you), only while a session is blocked on
+    <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
          you. Then Recent (§app.session-list/recent), then the user's own groups (§app.session-list/groups).
          All three omitted here for length. Live & web comes next (below); then Organizations
          (§app.session-list/organizations), then the Archive (§app.session-list/regions-top-and-archive). -->
@@ -157,10 +151,13 @@
                 <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
                 <span class="session-topics text-num" title="7 topics in this session">7</span>
               </div>
-              <!-- line 3: time, the readiness badge when there is one (§chat.worktrees/readiness:
-                   "ready ✓", "waiting for your OK", "restart pending", "merged · 2 follow-ups",
-                   "merged" — lowercase, the meta's own muted voice, no tone, never wrapped; its `title`
-                   the badge's per-worktree lines), and model, then the context ring. A tagged row's
+              <!-- line 3: the readiness chip when a worktree is ready or waiting for your OK
+                   (§chat.worktrees/readiness), leading the line, then time, the muted readiness
+                   badge when there is one ("restart pending", "merged · 2 follow-ups", "merged" —
+                   lowercase, the meta's own muted voice, no tone, never wrapped; its `title` the
+                   per-worktree lines), and model, then the context ring. With a chip:
+                   <span class="chip chip-success session-readiness-chip" title="feat/x: ready to merge, checks passed"><span class="chip-dot" aria-hidden="true"></span>Ready to merge</span>
+                   before the <p class="list-meta">. A tagged row's
                    `.list-meta` has the `title` "Topic: bug fix (tagged automatically)"; the topic
                    shows nowhere else on the row. A remote row opens the line with its
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
@@ -435,11 +432,9 @@ label a person reads says "sessions pane".
   </h3>
   ```
 - **Row line 1.** `SessionSummary.title`, truncated to one line; the full title goes in `title=`.
-  `Untitled` renders in `--color-ink-muted`. A session with a profile has its icon just before the
-  title, in accent ink, with "Profile: {label}" as its `title` (§chat.profiles/after-first-message).
+  `Untitled` renders in `--color-ink-muted`.
 - **Draft rows.** An empty husk — a session whose file holds no user message anywhere — is never
-  listed, with two exceptions: **a husk with a stored draft is** (§chat.composer/behavior, Drafts),
-  and so is a husk that carries a profile (§chat.profiles/singleton), as an ordinary `Untitled` row. The server sends it
+  listed, with one exception: **a husk with a stored draft is** (§chat.composer/behavior, Drafts). The server sends it
   with `SessionSummary.draftPreview`, the draft's first non-empty line cut to about 80 characters.
   A draft holding only images counts too, and its preview is the count: `1 image`, `2 images`.
   The row keeps its `Untitled` title in `--color-ink-muted`. Line 2 leads with the `pencil` icon,
@@ -494,7 +489,15 @@ label a person reads says "sessions pane".
   beside (`readTailOutline` returns gist, "now" and count from the accepted entry), so the sentence
   and the figure can never disagree. No count, no chip — and no chip without a summary line either,
   since the line is what it rides on: a hidden line hides its count.
-- **Row line 3.** Relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
+- **Row line 3.** When the session's readiness badge is ready or waiting (§chat.worktrees/readiness),
+  a toned chip **leads the line**, at the same left edge on every row that has one: "● Ready to
+  merge" in success, "● Waiting for your OK" in info — a dot and the word, sentence case (the
+  `.org-needs-chip` treatment), `flex: none`, its `title` each worktree's state and reason. It comes
+  before a remote row's mark. Every other readiness (restart pending, merged, merged · {n}
+  follow-ups) stays muted text after the time, where it was; a leftover worktree is only in the
+  `title`, never counted. The chip never truncates: the text block after it does, so the model's
+  name gives way first, then the badge, then the time — at a 280px desktop sidebar and on a 390px
+  phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
   then ` · `, then the model in mono. Show only the part after the first `/` and put the full
   `provider/model` in `title`. If `model` is null, omit the separator and the model. The line is
   `--fs-micro`, the model's mono included: two facts, never a sentence, under a title and a summary
@@ -655,53 +658,15 @@ label a person reads says "sessions pane".
 - **Refreshing** (polling or a WS nudge). Update rows in place and never re-show the skeleton.
   Keep scroll position and focus. If the focused row moves, it stays focused.
 
-## §app.session-list/profile-shelf — Profiles
-
-The first region of the list, above Needs you: the sessions that run with a profile
-(§chat/profiles), grouped by profile. It is a **shortcut, not a place**: every row also keeps its
-place in Live & web (and Groups).
-
-```html
-<details class="sidebar-region sidebar-profiles" open>
-  <summary class="sidebar-region-head"><span>Profiles</span><span class="sidebar-region-count">· 3</span></summary>
-  <!-- one sub-group per profile in use -->
-  <div class="profile-shelf-group">
-    <p class="profile-shelf-head">…icon… Read-only reviewer <span class="text-muted">2 live</span>
-      <button class="button button-sm button-ghost">Run</button></p>
-    <ul class="list">…session rows…</ul>
-  </div>
-  <!-- a One at a time profile run at least once, with no live session: one line -->
-  <p class="profile-shelf-slot">…icon… Merge captain · <span class="text-muted">Not running</span>
-    <button class="button button-sm">Start</button></p>
-</details>
-```
-
-- **Rows**: every non-archived session on this host whose `SessionSummary.profile` is set, under
-  its profile's sub-head, newest started first; a custom (unsaved) pick is grouped by its label. A
-  sub-head carries the profile's icon and label, then "{n} live" and **Run**, or, for a One at a
-  time profile, "One at a time" and no Run. The region's count is its rows.
-- **One at a time slots.** A One at a time profile that has been run at least once keeps a one-line
-  slot while none of its sessions is live: "{label} · Not running · Start". Once run it stays, for as
-  long as the profile exists (a deleted profile loses its slot).
-- **Shown** only while it has a row or a slot; hidden while searching.
-- **Run / Start** open a small sheet, "Start {label}": the profile's description, Folder (the recent
-  folders, the current session's first), First message (optional, prefilled with the profile's own)
-  and **Start Session**. It creates the session with that profile (`POST /api/sessions` with
-  `profile` and `prompt`), then opens it. Start on a One at a time profile that is live answers with
-  the same alert as the picker (§chat.profiles/singleton).
-- **New Session ▾.** The New Session button gains a narrow menu button joined to it, listing the
-  profiles (built-ins not hidden, Default left out, then yours), each opening the same sheet in the
-  open session's folder; a live One at a time profile reads **Running** and answers with the alert
-  (**Open the Running {Label}**, **Pick Another Profile**). **Manage Profiles** closes the list.
-  The New Session dialog itself is unchanged, and its fan-out sessions start as Default.
-
 ## §app.session-list/needs-you — Needs you
 
-The top of the list, under Profiles (§app.session-list/profile-shelf) when it shows and above Recent: the sessions blocked on you right now — a dialog open, an
+The very top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
-(§chat.alignment/session-mark), a last reply that asks you something (§app.decisions/asks-user), a
-session waiting on a team gone quiet (§app.decisions/team-stall), or a worktree ready and waiting
-for your OK to merge (§chat.worktrees/readiness); a stuck subagent is not one: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
+(§chat.alignment/session-mark), and a baton hand-off (the baton is with you, or a person needs
+their link, §app.baton/needs-you); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
+a team gone quiet (§app.decisions/team-stall) are not blockers: each is a quiet mark on its row,
+never a row here. Neither is a worktree ready to merge or waiting for your OK: that is the row's
+readiness chip (§chat.worktrees/readiness). A stuck subagent is not one either: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes
@@ -713,10 +678,10 @@ reach only the digest.
 Needs you is a **shortcut, not a place a session lives**, exactly like Recent: every row is still in
 Recent (when it moved lately), Live & web or the Archive, and its group. An organization session is
 never a row here. Nothing is moved or hidden,
-and the region has **no actions of its own** beyond its twist.
+and the region's only actions are its twist and each row's **Later**.
 
 ```html
-<!-- First in .sidebar-list after the Profiles region, above Recent. Only while it has rows and proactivity is not Off. -->
+<!-- First in .sidebar-list, above Recent. Only while it has rows and proactivity is not Off. -->
 <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open>
   <!-- The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. -->
   <summary class="sidebar-needs-you-summary">
@@ -743,6 +708,21 @@ and the region has **no actions of its own** beyond its twist.
   or the draft preview, and shown even with summaries hidden in Settings › General. Its `title` is
   every act sentence the session has, newest first. An act item with no sentence leaves line 2 as
   the row draws it elsewhere. The rules live in `src/lib/needs-you.ts`.
+- **Later.** Every row can be put away: `Later` sends the `later` key of each of the session's act
+  items (`POST /api/attention/later {keys}`) and hides the row until something new happens for one
+  of those items — a new or reopened open question (one answered is not new), a new dialog, a new
+  errored turn, a new subagent error. The Organizations region's baton and roster rows (a person
+  waiting on you, a link to send, a roster proposal) put away the same way: a new hand-off or
+  offer, or a new proposal, brings them back (§app.baton/needs-you). A message
+  you send or a look at the session is not new. The choice is the server's (§app.overseer/attention-digest), so it survives a restart and is the same
+  on phone and desktop; the row goes at once, before the server answers, and comes back with a
+  toast if the server refuses. On desktop `Later` is a small ghost button at the row's right end,
+  shown while the row is hovered or has keyboard focus within it, and an item in the row's
+  right-click menu. On a phone (no hover) it is always shown at the row's right end, a 44px target,
+  and an item in the row's long-press menu. On a Needs you row a press held (~500ms) opens that
+  menu — `Later`, then `Select`, which enters selection mode with the row selected
+  (§app.session-list/selecting-several-sessions) — instead of selecting at once; everywhere else a
+  held row selects as before. The menu is a popover: Escape and a press outside close it.
 - **The open session stays listed**, drawn with the current tint like any row: the count is the
   digest's, and a number must match its list.
 - **Open by default, collapsible.** The head is a twist (`<details>`, the Groups head's
@@ -846,8 +826,7 @@ sessions shows as empty.
       Groups <span class="sidebar-region-count">· 2</span>
       <!-- The region's one action, at the head's right end: there with the region shut, and
            hidden while searching. Click and keydown stop here, as a group's `⋯` does, or they
-           would toggle the region. Fanout is NOT here — it creates sessions rather than curating
-           them, and its front door is the overview beside New Session (§workspace.fanout/entry-points). -->
+           would toggle the region. -->
       <button type="button" class="button button-icon button-ghost group-new-toggle"
               aria-label="New group" title="New group">
         <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
@@ -948,8 +927,8 @@ opened is shut again.
 default on the same terms: memory only, no storage key, reopened by hand each page.
 - **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag one here.": it is
 what a group is when the user makes it, and a drop target is what fills it. While a search is on,
-a group with no matching session is left out entirely. A **fanout** group never reaches this
-state: it dissolves itself on the write that empties it (§workspace/groups "Emptying a group").
+a group with no matching session is left out entirely. Every group reaches this state when its
+last member leaves, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups).
 - **Creating.** The region's one action is a `+` at the right end of its head
 (`.button-icon.button-ghost`, `aria-label` and `title` "New group"), not a row: a row read as one
 of the things it makes and sat inside the list it adds to. On the head it is there with the region
@@ -986,12 +965,9 @@ the group's members side by side, each a whole chat, with one composer that writ
 label ("Nothing is in it yet. Drag a session here first."), said before the press rather than
 discovered as a blank workspace. The
 section is still the place you file sessions into; the workspace is the place you read them in.
-- **Fanning out is not entered from here.** The Groups region's one action is making an empty
-group to curate; a fanout — which makes the group AND its members in one gesture — is a
-creation action and lives beside `New Session` on the overview (§workspace.fanout/entry-points).
-A group made that way is an ordinary group here all the same: it holds ordinary sessions, and
-the only difference is that it dissolves itself when its last member leaves (§workspace/groups "Emptying a
-group"), because its name and its fork point mean nothing without them.
+- **This is where membership changes.** The Groups region, the selection toolbar and the
+session details' `Move into group` are where a person puts a session into a group; the workspace
+takes members out but adds none (§workspace.groups/group-lifecycle).
 - **Renaming.** `Rename…` swaps the menu's rows for the same field, pre-filled, without closing
 the menu — one question at a time, and nothing in the list below moves while it is answered. The
 name is trimmed, 1–60 characters, and duplicates are allowed (nothing keys on a name).
@@ -1039,7 +1015,9 @@ them to eight sessions one row at a time is eight round trips through a pane the
 to open. So the list itself can be picked from.
 
 **The way in is a press held on a row**, ~500ms, mouse or thumb alike: that row is selected and
-the sidebar enters **selection mode**. Press-and-hold is the accelerator; the **Select** button
+the sidebar enters **selection mode** — except on a Needs you row, where the hold opens the row's menu, `Later` then
+`Select`, and `Select` starts selection with that row picked (§app.session-list/needs-you).
+Press-and-hold is the accelerator; the **Select** button
 beside the session count is the door, for a keyboard and for anyone who has never held a row in
 their life — on a phone it shares the one toolbar line with the count, before the search icon
 (§app.session-list/search), and leaves it while the search is open. There is never only one way in.
@@ -1181,8 +1159,9 @@ Overseer set while the call was out wins, and the model's answer is dropped.
   switch on starts a run at once.
 - **Which.** A session with no stored title at all, with a summary line, quiet for the *quiet
   period* (default 5 minutes, by its file's modification time), and none of: archived by hand, an
-  empty husk, a subagent's or team member's own session, a member of a fanout group Sova made, an
-  Overseer or project overseer file. Most recently active first.
+  empty husk, a subagent's or team member's own session, an Overseer or project overseer file. A
+  group member is swept like any session, in a group an older build made included
+  (§workspace.groups/legacy-groups). Most recently active first.
 - **How much.** At most 10 sessions per run, 2 at a time. Existing unnamed sessions are backfilled
   the same way, 10 per run, until none is left.
 - **Once.** A session the sweep named has a stored title, so no later run looks at it again, and a
@@ -1323,8 +1302,7 @@ forced open (case 1 below).
   When the condition ends, it goes back to the stored choice. Case 2 is the exception: it doesn't
   close under the user while they're on that session.
 
-**Ordering.** The top region comes first and the Archive last, with Organizations between them;
-above them all sit the shortcut regions, Profiles first (§app.session-list/profile-shelf). Inside each region, groups and
+**Ordering.** The top region comes first and the Archive last, with Organizations between them. Inside each region, groups and
 rows are ordered by the rules above. A session moves between regions in place on refresh, for
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
 `aria-current`, and case 2 keeps the archive open.
@@ -1393,7 +1371,7 @@ for the same reason: something other than the operator runs them.
   the server's guard is §app.session-list/cleanup-org-guard);
 - the **Groups** region and every way into a group (§app.session-list/groups);
 - the **recent folders** offered for a new session (`GET /api/cwds`, the New Session dialog's Recent
-  folders, `sova_list_folders`) and the fanout dialog's folder suggestions: never the Overseer's folder
+  folders, `sova_list_folders`): never the Overseer's folder
   (`<stateRoot>/overseer/`), never an attached org's workspace dir, and never a folder only an org's
   own conversations (a hand-off, a project overseer) ran in. A project root is still offered once an
   ordinary or coding session has run there: the operator codes there.
@@ -1517,7 +1495,11 @@ no region (they are in the overseer's own History, §app.project-overseer/page).
   the model (no project: "{time} · {org}"). Order: newest waiting item first (`since`), ties on path.
   Like the global Needs you, it is a **shortcut, not a place a session lives**: each row is still under
   its project. Not collapsible (the region's own twist collapses it); omitted when it has no rows. The
-  global Needs you never lists these sessions (§app.session-list/needs-you).
+  global Needs you never lists these sessions (§app.session-list/needs-you). Every row here has
+  **Later**, exactly as a global Needs you row has it — the button, its desktop and phone
+  placements, the right-click and long-press menu. A row the digest's act items put here goes until
+  something new happens for those items; a row the baton puts here (a question, a link to send, a
+  referral) goes until a new hand-off or offer (a referral: a new proposal).
 - **A project's items, too.** The same block lists the digest's items that belong to a project
   rather than a session, each a row opening the project page with the digest's sentence: first each
   held act (§app.project-overseer/holds), the one going ahead soonest on top, its sentence recounted

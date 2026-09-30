@@ -47,6 +47,8 @@ import {
 	appendLedger,
 	readLedger,
 	ledgerPath,
+	ledgerFiles,
+	workerLedgerPath,
 	driftNote,
 	driftWarningsIn,
 	currentSpecPath,
@@ -770,6 +772,14 @@ test("the workers' ledger: append, read since, malformed lines skipped", () => {
 		assert.deepEqual(readLedger(file).map((e) => e.after), ["b", "c"]);
 		assert.deepEqual(readLedger(file, 11).map((e) => e.kind), ["promote"]);
 		assert.deepEqual(readLedger(join(dir, "none.jsonl")), []);
+		// A confined worker's own file, beside the parent's: every one of them is the parent's ledger.
+		const own = workerLedgerPath(dir, "01a0/../x y", "01a0-ag_03");
+		assert.equal(own, join(dir, "sova", "spec-ledger", "01a0_.._x_y.workers", "01a0-ag_03.jsonl"));
+		assert.deepEqual(ledgerFiles(dir, "01a0/../x y"), [file], "no worker file yet");
+		appendLedger(own, { v: 1, at: 15, actor: { runtime: "claude-code", session: "c" }, top: "/r", before: "c", after: "d", kind: "commit" });
+		writeFileSync(join(dirname(own), "note.txt"), "not a ledger");
+		assert.deepEqual(ledgerFiles(dir, "01a0/../x y"), [file, own]);
+		assert.deepEqual(ledgerFiles(dir, "01a0/../x y").flatMap((f) => readLedger(f)).map((e) => e.after), ["b", "c", "d"]);
 	} finally {
 		rmSync(dir, { recursive: true, force: true });
 	}

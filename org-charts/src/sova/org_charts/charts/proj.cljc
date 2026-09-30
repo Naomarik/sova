@@ -135,7 +135,7 @@
   [data]
   (let [e (b/evt data)]
     (when (and (= "overseer" (some-> (:by e) name)) (not (true? (:attended e))))
-      (r/refuse 409 "Without a gap, a coding session starts only in a turn the operator started: name the gap whose promoted decisions it builds (gap), or ask with sova_confirm."))))
+      (r/refuse 409 "Without a gap, a coding session starts only in a turn the operator started: name the gap whose promoted decisions it builds (gap), or ask with sova_card."))))
 
 (defn baton-data
   "A gathering the project starts (no gap): the start data the baton chart reads."

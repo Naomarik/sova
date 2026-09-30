@@ -384,6 +384,22 @@ test("a folded tool result under its cap is verbatim", () => {
 // Launch and handshake
 // ---------------------------------------------------------------------------
 
+// The provider's claude is NOT wrapped by the sandbox (§chat.sandbox/workers): it may run no tool of
+// its own, only pi's (confined by pi's sandbox). That holds only while these three stay in its argv.
+test("pin (unwrapped provider): no built-in tools, no settings sources, no ambient MCP servers", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const frames = bridge.runTurn(request([user("hi")]))[Symbol.asyncIterator]();
+	void frames.next();
+	const cli = await child(children, 1);
+	const after = (flag: string) => cli.argv[cli.argv.indexOf(flag) + 1];
+	assert.ok(cli.argv.includes("--tools") && after("--tools") === "", "--tools '' (no Bash, Read, Edit, Write, …)");
+	assert.ok(cli.argv.includes("--setting-sources") && after("--setting-sources") === "", "--setting-sources '' (no user or project hooks, permissions or MCP servers)");
+	assert.ok(cli.argv.includes("--strict-mcp-config"), "--strict-mcp-config (only the configured servers)");
+	assert.ok(!cli.argv.includes("--mcp-config"), "and none configured: its one server, sova, is answered in-process");
+	assert.equal(cli.argv.filter((a) => a === "--tools").length, 1, "one --tools, never widened by a later one");
+	await bridge.disposeAll();
+});
+
 test("argv, env and the MCP handshake match the spike's recorded shapes", { timeout: 8000 }, async () => {
 	const { bridge, children } = harness();
 	const frames = bridge.runTurn(request([user("hi")]))[Symbol.asyncIterator]();

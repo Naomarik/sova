@@ -1,4 +1,4 @@
-import { nextWindow } from "./org-charts";
+import { nextWindow } from "./statecharts";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -32,6 +32,7 @@ import { hostIdentity } from "./org-holder";
 import { OrgHost, OrgWorkspaceError } from "./org-host";
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
+import { migrateHostLocal, migrateOrg, migrateWorkspace, StatechartMigrationError } from "./statechart-migration";
 import { commitEveryMs } from "./workspace-commits";
 import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-git";
 
@@ -40,7 +41,7 @@ import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-g
  *
  * - This host's index, `<stateRoot>/orgs.json`: which orgs are ATTACHED here (resident) and where
  *   their workspace repos are, plus the operator's display name. Host state, never committed.
- * - Each org's workspace repo: its statecharts (`charts/`: every lifecycle — the org, its people and
+ * - Each org's workspace repo: its statecharts (`statecharts/`: every lifecycle — the org, its people and
  *   projects, gatherings, decisions, builds — and the transition log; server/org-engine.ts opens one
  *   engine per attached org), `about.md` and `org-history.jsonl` (the org's About text and its
  *   history), `roster-history.jsonl` (profile values, written by the person statechart's effect),
@@ -217,11 +218,11 @@ export const personSid = (orgId: string, pid: string) => `person/${orgId}/${pid}
 export const projectSid = (orgId: string, pid: string) => `project/${orgId}/${pid}`;
 export const watchSid = (orgId: string, pid: string) => `watch/${orgId}/${pid}`;
 
-/** The org id a workspace's org snapshot names (`charts/org/<org%2F<id>>.edn`), or null: not a workspace repo. */
+/** The org id a workspace's org snapshot names (`statecharts/org/<org%2F<id>>.edn`), or null: not a workspace repo. */
 export function orgIdIn(dir: string): string | null {
   let files: string[];
   try {
-    files = readdirSync(join(dir, "charts", "org"));
+    files = readdirSync(join(dir, "statecharts", "org"));
   } catch {
     return null;
   }
@@ -234,8 +235,10 @@ export function orgIdIn(dir: string): string | null {
 }
 
 /** Open an org's engine; the org statecharts' effect handlers (history lines, links, commits) are registered
-    on it first (loaded here, not imported above: that module imports this one). */
+    on it first (loaded here, not imported above: that module imports this one). Its data still under the
+    old names moves first (§app.organizations/statechart-migration). */
 async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
+  await migrated(() => migrateOrg(orgId, dir, stateRoot()));
   await import("./org-effects");
   await import("./baton-loadout"); // the baton statecharts' effects (the session file, links, entries) and its reply runner
   await import("./build-loadout"); // the build statecharts' effects (worktree, session file, mode, prompts, merge)
@@ -243,14 +246,34 @@ async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
   return openOrgHost({ orgId, workspaceDir: dir, stateDir: stateRoot() });
 }
 
-/** Open every attached org's engine (server start). One that fails is logged; its pages say why. */
+/** A migration step; its refusal as the OrgError callers show. */
+async function migrated<T>(step: () => T | Promise<T>): Promise<T> {
+  try {
+    return await step();
+  } catch (err) {
+    if (err instanceof StatechartMigrationError) throw new OrgError(err.message, 409);
+    throw err;
+  }
+}
+
+/** Open every attached org's engine (server start): every org's data moves to the new names first
+    (§app.organizations/statechart-migration), then the orgs open. One that fails is logged; its pages say why. */
 export async function openAttachedOrgs(): Promise<void> {
+  const failed = new Set<string>();
   for (const o of readIndex().orgs)
     try {
-      await openHost(o.id, o.dir);
+      await migrateOrg(o.id, o.dir, stateRoot());
     } catch (err) {
-      console.warn(`[orgs] ${o.id}: ${err instanceof Error ? err.message : String(err)}`);
+      failed.add(o.id);
+      console.error(`[orgs] ${o.id}: not opened: ${err instanceof Error ? err.message : String(err)}`);
     }
+  for (const o of readIndex().orgs)
+    if (!failed.has(o.id))
+      try {
+        await openHost(o.id, o.dir);
+      } catch (err) {
+        console.warn(`[orgs] ${o.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
 }
 
 /** Every attached org's workspace repo (the shutdown commit). */
@@ -307,6 +330,7 @@ export async function createOrg(input: { name: unknown; dir?: unknown }): Promis
   if (!(typeof input.dir === "string" && input.dir.trim()) && existsSync(dir)) dir = join(defaultWorkspacesDir(), `${slug}-${id.slice(4)}`);
   const problem = await workspaceDirProblem(dir);
   if (problem) throw new OrgError(problem);
+  if (existsSync(dir)) await migrated(() => migrateWorkspace(dir));
   if (orgIdIn(dir)) throw new OrgError("That dir already holds an organization: attach it instead.", 409);
   mkdirSync(join(dir, "sessions"), { recursive: true });
   // Its own repo, even when the dir sits inside another one (the hermetic .agent/ is inside Sova's).
@@ -338,9 +362,11 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Pro
   if (!dir) throw new OrgError("dir is required");
   const problem = await workspaceDirProblem(dir);
   if (problem) throw new OrgError(problem);
+  await migrated(() => migrateWorkspace(dir));
   const id = orgIdIn(dir);
   if (!id) throw new OrgError("No organization in that dir: not a workspace repo.");
   if (readIndex().orgs.some((o) => o.id === id)) throw new OrgError("That organization is already attached here.", 409);
+  await migrated(() => migrateHostLocal(id, dir, stateRoot()));
   mkdirSync(join(dir, "sessions"), { recursive: true });
   OrgHost.forgetLocal(id, stateRoot());
   const host = await openHost(id, dir);

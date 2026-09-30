@@ -146,6 +146,23 @@ export function commitAll(dir: string, message: string): Promise<CommitOutcome> 
   });
 }
 
+/** Whether the repo's index tracks anything under `path` (false outside a repo). */
+export async function tracks(dir: string, path: string): Promise<boolean> {
+  const r = await git(dir, ["ls-files", "--", path]);
+  return r.code === 0 && r.stdout.trim() !== "";
+}
+
+/** Stage `paths` (additions and deletions) and commit only them with `message`; no push. Throws on a failure. */
+export function commitPaths(dir: string, paths: string[], message: string): Promise<void> {
+  return serial(dir, async () => {
+    const add = await git(dir, ["add", "-A", "--", ...paths]);
+    if (add.code !== 0) throw new Error(`git add failed: ${add.stderr.trim()}`);
+    if ((await git(dir, ["diff", "--cached", "--quiet", "--", ...paths])).code === 0) return;
+    const commit = await git(dir, ["commit", "-q", "--no-verify", "-m", message, "--", ...paths], SOVA_IDENTITY);
+    if (commit.code !== 0) throw new Error(`git commit failed: ${commit.stderr.trim()}`);
+  });
+}
+
 /** Whether HEAD has commits `origin` lacks, going by the remote-tracking branch (no network):
     none known for this branch counts as all of them. False without a commit or on a detached HEAD. */
 async function unpushed(dir: string): Promise<boolean> {

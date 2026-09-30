@@ -9349,7 +9349,8 @@
       "requires": [
         "§chat.profiles/model",
         "§chat.profiles/singleton",
-        "§app.session-list/needs-you"
+        "§app.session-list/needs-you",
+        "§app.session-list/groups"
       ]
     },
     "§app.settings-dialog/profiles": {

@@ -63,3 +63,9 @@ test("org sessions: counted in the total, never Live & web, Last active or Needs
   assert.equal(g.needsYou, 1, "the global Needs you leaves the org row to its region");
   assert.deepEqual(g.needsYouFirst.map((s) => s.id), ["a"]);
 });
+
+test("Last active skips a profile session, however new: Profiles lists it", () => {
+  const profile = { id: "reviewer", label: "Reviewer", icon: "eye" } as SessionSummary["profile"];
+  const withProfile = [...list, session("p", { profile, origin: "web", lastActiveAt: "2026-02-01T00:00:00Z" })];
+  assert.equal(sessionsGlance(withProfile, undefined, "badge").last?.id, "a");
+});

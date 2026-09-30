@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/session-shares.test.ts. §app.session-share/link and /snapshot end
-// to end: the operator's routes mint, relink, revoke, extend, update and stop; the share listener's
+// to end: the operator's routes mint, relink, revoke, extend, update and stop, and slice (/slice); the share listener's
 // /s/, /api/s/, image route and /ws/s answer each link's state; the store file's shape and mode. A
 // throwaway PI_CODING_AGENT_DIR in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { Hono } from "hono";
 import { WebSocket } from "ws";
-import type { SessionShare, SessionShareMinted, SessionShareView } from "../shared/session-share";
+import type { SessionShare, SessionShareMinted, SessionShareOutline, SessionSharePreview, SessionShareView } from "../shared/session-share";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-session-shares-")));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
@@ -213,7 +213,7 @@ test("stop: every link answers 410 and the share reads stopped", async () => {
 
 async function mint(mode: "snapshot" | "live", labels = ["Ana"]) {
   const pv = (await op(`/api/session-shares/preview?session=${SID}`)).body as SessionShareView & { cut: string };
-  const r = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Review", mode, cut: pv.cut, expiresInDays: 30, recipients: labels, anyone: false } });
+  const r = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Review", mode, ...(mode === "snapshot" ? { cut: pv.cut } : {}), expiresInDays: 30, recipients: labels, anyone: false } });
   assert.equal(r.status, 201, JSON.stringify(r.body));
   const m = r.body as SessionShareMinted;
   return { share: m.share, tokens: m.links.map((l) => tokenOf(l.link)), preview: pv };
@@ -400,6 +400,289 @@ test("R2 expire → add → relink: a relink that would break a limit is refused
   store.revokeRecipient(big.share.id, zed.recipientId);
   assert.equal(codeOf(() => store.relinkRecipient(big.share.id, big.tokens[0]!.recipientId)), null);
   assert.equal(liveOf(big.share.id).length, 20);
+});
+
+// ---- slices (§app.session-share/slice) ----------------------------------------------------------
+
+const { sourceKey } = await import("./share/session-routes");
+type Frame = { type: string; view?: SessionShareView; reset?: true };
+const lastFrame = async (frames: string[]): Promise<Frame> => {
+  for (let i = 0; i < 40 && !frames.length; i++) await new Promise((r) => setTimeout(r, 25));
+  return JSON.parse(frames.at(-1)!) as Frame;
+};
+const texts = (v: SessionShareView) => v.items.map((i) => i.text);
+const sl: Record<string, string> = {};
+const storedShare = (id: string) => (JSON.parse(readFileSync(sharesFile(), "utf8")) as { shares: Record<string, unknown>[] }).shares.find((x) => x.id === id)!;
+const storedFrom = (id: string) => storedShare(id).from as { entryId: string } | undefined;
+
+test("slice: the outline names every shown message; preview and create take a start on the previewed branch", async () => {
+  sl.s1 = append("user", "SLICE-ONE");
+  sl.s2 = append("assistant", "SLICE-TWO", true);
+  sl.s3 = append("user", "SLICE-THREE");
+  const outline = (await op(`/api/session-shares/preview?session=${SID}&outline=1`)).body as SessionShareOutline;
+  assert.equal(outline.cut, sl.s3);
+  assert.deepEqual(outline.items.slice(-3).map((i) => [i.id, i.kind, i.excerpt, i.images]), [
+    [sl.s1, "user", "SLICE-ONE", 0],
+    [sl.s2, "reply", "SLICE-TWO", 1],
+    [sl.s3, "user", "SLICE-THREE", 0],
+  ]);
+  const pv = (await op(`/api/session-shares/preview?session=${SID}&cut=${outline.cut}&from=${sl.s2}`)).body as SessionSharePreview;
+  assert.deepEqual([texts(pv), pv.earlier, pv.from, pv.images], [["SLICE-TWO", "SLICE-THREE"], true, sl.s2, 1]);
+  assert.equal((await op(`/api/session-shares/preview?session=${SID}&cut=${sl.s1}&from=${sl.s2}`)).status, 409, "a start after the cut");
+  assert.equal((await op(`/api/session-shares/preview?session=${SID}&from=a%20b`)).status, 400);
+
+  const body = { sessionId: SID, title: "A slice", mode: "snapshot", cut: outline.cut, expiresInDays: 30, recipients: ["Cy"], anyone: false };
+  const off = await op("/api/session-shares", { method: "POST", body: { ...body, from: "not-on-it" } });
+  assert.deepEqual([off.status, (off.body as { code: string }).code], [409, "stale-preview"]);
+  assert.equal((await op("/api/session-shares", { method: "POST", body: { ...body, cut: sl.s1, from: sl.s2 } })).status, 409, "a start after the end");
+  assert.equal((await op("/api/session-shares", { method: "POST", body: { ...body, from: 7 } })).status, 400);
+  const r = await op("/api/session-shares", { method: "POST", body: { ...body, from: sl.s2 } });
+  assert.equal(r.status, 201, JSON.stringify(r.body));
+  const m = r.body as SessionShareMinted;
+  assert.equal(m.share.from, sl.s2);
+  assert.equal(m.share.cut, sl.s3);
+  const span = m.share.span!;
+  assert.ok(span.first > 1 && span.last === span.first + 1 && span.total === span.last, JSON.stringify(span));
+  assert.equal(storedFrom(m.share.id)?.entryId, sl.s2, "the store keeps the start");
+  const v = await view(tokenOf(m.links[0]!.link));
+  assert.deepEqual([texts(v.body), v.body.earlier, v.body.images], [["SLICE-TWO", "SLICE-THREE"], true, 1]);
+  const listed = ((await op(`/api/session-shares?session=${SID}`)).body as SessionShare[]).find((x) => x.id === m.share.id)!;
+  assert.deepEqual(listed.span, span);
+  const whole = ((await op(`/api/session-shares?session=${SID}`)).body as SessionShare[]).find((x) => !x.from)!;
+  assert.equal(whole.span, undefined, "a whole-session share has no span");
+  sl.share = m.share.id;
+  sl.token = tokenOf(m.links[0]!.link);
+});
+
+test("slice: PATCH moves the start (open pages get a reset view) or the end; a start after the end is refused", async () => {
+  const held = (await view(sl.token!)).body.lineage;
+  const page = await openSocket(sl.token!);
+  page.frames.length = 0;
+  let r = await op(`/api/session-shares/${sl.share}`, { method: "PATCH", body: { from: sl.s3 } });
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  let f = await lastFrame(page.frames);
+  // The first push knows no earlier one; the lineage alone tells the page to replace its view.
+  assert.deepEqual(texts(f.view!), ["SLICE-THREE"]);
+  assert.notEqual(f.view!.lineage, held);
+  page.frames.length = 0;
+  r = await op(`/api/session-shares/${sl.share}`, { method: "PATCH", body: { title: "Renamed" } });
+  f = await lastFrame(page.frames);
+  assert.equal(f.reset, undefined, "a title change merges as before");
+  page.frames.length = 0;
+  r = await op(`/api/session-shares/${sl.share}`, { method: "PATCH", body: { from: null } });
+  assert.equal((r.body as SessionShare).from, undefined);
+  assert.equal((r.body as SessionShare).span, undefined);
+  f = await lastFrame(page.frames);
+  assert.equal(f.reset, true);
+  assert.equal(f.view!.earlier, undefined);
+  assert.ok(!("from" in storedShare(sl.share!)), "from null leaves the store");
+  r = await op(`/api/session-shares/${sl.share}`, { method: "PATCH", body: { from: sl.s2, cut: sl.s2 } });
+  assert.equal(r.status, 200, "Save Slice: one message");
+  assert.deepEqual(texts((await view(sl.token!)).body), ["SLICE-TWO"]);
+  const bad = await op(`/api/session-shares/${sl.share}`, { method: "PATCH", body: { from: sl.s3 } });
+  assert.deepEqual([bad.status, (bad.body as { code: string }).code], [409, "stale-preview"], "a start after the end");
+  assert.deepEqual(texts((await view(sl.token!)).body), ["SLICE-TWO"], "nothing changed");
+  page.ws.close();
+});
+
+test("slice: Follow live may have a start; Update to now keeps the start; a rewind above it refuses the update and kills the live link", async () => {
+  const live = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Live slice", mode: "live", from: sl.s2, expiresInDays: 30, recipients: ["Di"], anyone: false } });
+  assert.equal(live.status, 201, JSON.stringify(live.body));
+  assert.equal((live.body as SessionShareMinted).share.span!.last, null);
+  assert.equal((await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "L", mode: "live", from: "nope", expiresInDays: 30, recipients: ["Di"], anyone: false } })).status, 409);
+  const liveToken = tokenOf((live.body as SessionShareMinted).links[0]!.link);
+  sl.s4 = append("assistant", "SLICE-FOUR");
+  assert.deepEqual(texts((await view(liveToken)).body), ["SLICE-TWO", "SLICE-THREE", "SLICE-FOUR"]);
+  // The snapshot slice (from s2, cut s2): Update to now moves the end and keeps the start.
+  const u = await op(`/api/session-shares/${sl.share}/update`, { method: "POST" });
+  assert.equal(u.status, 200, JSON.stringify(u.body));
+  assert.deepEqual([(u.body as SessionShare).from, (u.body as SessionShare).cut], [sl.s2, sl.s4]);
+  assert.deepEqual(texts((await view(sl.token!)).body), ["SLICE-TWO", "SLICE-THREE", "SLICE-FOUR"]);
+  // A rewind above the start: a new leaf on s1.
+  parent = sl.s1!;
+  append("assistant", "REWOUND");
+  const refused = await op(`/api/session-shares/${sl.share}/update`, { method: "POST" });
+  assert.deepEqual([refused.status, (refused.body as { error: string }).error], [409, "The start of this share is no longer in the session."]);
+  assert.equal(((await op(`/api/session-shares?session=${SID}`)).body as SessionShare[]).find((x) => x.id === sl.share)!.cut, sl.s4, "nothing changed");
+  assert.equal((await view(liveToken)).status, 410, "the live slice's start left the branch");
+  const toLive = await op(`/api/session-shares/${sl.share}`, { method: "PATCH", body: { mode: "live" } });
+  assert.equal(toLive.status, 409, "Follow live on a slice whose start left the current branch");
+});
+
+test("slice: the start is part of the share's source; the store accepts `from` and still refuses an unknown key", () => {
+  const rec = { id: "ss_aaaaaaaaaaaaaaaa", sessionId: SID, sessionPath: FILE, title: "T", mode: "snapshot" as const, cut: { entryId: "e1", at: null }, createdAt: new Date().toISOString() };
+  assert.notEqual(sourceKey(rec), sourceKey({ ...rec, from: { entryId: "e2", at: null } }), "a push begun before a narrowing is dropped");
+  assert.equal(sourceKey(rec), sourceKey({ ...rec }));
+  const file = (share: Record<string, unknown>) => ({ version: 1, shares: [share], links: [] });
+  assert.ok(!("why" in store.validateSharesFile(file({ ...rec, from: { entryId: "e2", at: null } }))));
+  assert.deepEqual(store.validateSharesFile(file({ ...rec, from: { entryId: "", at: null } })), { why: "share 0: from" });
+  assert.deepEqual(store.validateSharesFile(file({ ...rec, from: null })), { why: "share 0: from" });
+  assert.deepEqual(store.validateSharesFile(file({ ...rec, to: "e3" })), { why: "share 0: keys" });
+});
+
+// ---- M1 review B1: an end is a snapshot's, never dropped -------------------------------------------
+
+const storedBounds = (id: string) => {
+  const x = storedShare(id);
+  return { mode: x.mode, cut: (x.cut as { entryId: string } | null)?.entryId ?? null };
+};
+
+test("B1 Follow live with an end is refused, on create and on PATCH, and nothing changes", async () => {
+  const before = store.listShares().shares.length;
+  const pv = (await op(`/api/session-shares/preview?session=${SID}`)).body as SessionSharePreview;
+  const create = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "L", mode: "live", from: sl.s1, cut: pv.cut, expiresInDays: 30, recipients: ["Ed"], anyone: false } });
+  assert.deepEqual([create.status, (create.body as { code: string }).code], [400, "live-end"]);
+  assert.equal(store.listShares().shares.length, before, "nothing minted");
+  assert.throws(() => store.createShare({ sessionId: SID, sessionPath: FILE, title: "L", mode: "live", cut: { entryId: pv.cut, at: null }, days: 30, labels: ["Ed"], anyone: false }), /no end/);
+
+  const { share } = await mint("live");
+  for (const body of [{ cut: pv.cut }, { cut: "bad cut!" }, { mode: "live", cut: pv.cut }]) {
+    const r = await op(`/api/session-shares/${share.id}`, { method: "PATCH", body });
+    assert.deepEqual([r.status, (r.body as { code: string }).code], [400, "live-end"], JSON.stringify(body));
+    assert.deepEqual(storedBounds(share.id), { mode: "live", cut: null });
+  }
+  const snap = await mint("snapshot");
+  const r = await op(`/api/session-shares/${snap.share.id}`, { method: "PATCH", body: { mode: "live", cut: pv.cut } });
+  assert.equal(r.status, 400, "a switch to live that names an end");
+  assert.equal(storedBounds(snap.share.id).mode, "snapshot");
+  assert.throws(() => store.patchShare(share.id, { cut: { entryId: pv.cut, at: null } }), /no end/, "the store refuses it too");
+});
+
+test("B1 Update to now on a live share refuses an end, valid or malformed, and changes nothing; with none it still answers", async () => {
+  const { share, preview } = await mint("live");
+  const update = (body?: unknown) =>
+    app.request(`/api/session-shares/${share.id}/update`, { method: "POST", ...(body !== undefined ? { body: JSON.stringify(body), headers: { "Content-Type": "application/json" } } : {}) });
+  for (const body of [{ cut: preview.cut }, { cut: "bad cut!" }, { cut: null }]) {
+    const r = await update(body);
+    assert.deepEqual([r.status, ((await r.json()) as { code: string }).code], [400, "live-end"], JSON.stringify(body));
+    assert.deepEqual(storedBounds(share.id), { mode: "live", cut: null });
+  }
+  assert.equal((await update()).status, 200, "no body: the live refresh keeps its meaning");
+  assert.equal((await update({})).status, 200, "an empty body too");
+  assert.deepEqual(storedBounds(share.id), { mode: "live", cut: null });
+  // Control: a snapshot's Update to now with the previewed cut still moves its end.
+  const snap = await mint("snapshot");
+  append("assistant", "UPDATE-CONTROL");
+  const pv = (await op(`/api/session-shares/preview?session=${SID}`)).body as SessionSharePreview;
+  const moved = await op(`/api/session-shares/${snap.share.id}/update`, { method: "POST", body: { cut: pv.cut } });
+  assert.deepEqual([moved.status, (moved.body as SessionShare).cut], [200, pv.cut]);
+});
+
+test("B1 a stored live share with an end is refused by the strict parse", () => {
+  const rec = { id: "ss_bbbbbbbbbbbbbbbb", sessionId: SID, sessionPath: FILE, title: "T", mode: "live", cut: { entryId: "e1", at: null }, createdAt: new Date().toISOString() };
+  assert.deepEqual(store.validateSharesFile({ version: 1, shares: [rec], links: [] }), { why: "share 0: live with a cut" });
+});
+
+test("B1 a new end validated while another write switched the share live is refused: nothing publishes past it", async () => {
+  const { share, preview } = await mint("snapshot");
+  // A large entry, so the PATCH's validation read takes a while.
+  append("assistant", "slow ".repeat(4 * 1024 * 1024));
+  const patching = op(`/api/session-shares/${share.id}`, { method: "PATCH", body: { cut: preview.cut } });
+  await new Promise((r) => setTimeout(r, 5));
+  store.patchShare(share.id, { mode: "live" });
+  const r = await patching;
+  assert.deepEqual([r.status, (r.body as { code: string }).code], [409, "share-changed"]);
+  assert.deepEqual(storedBounds(share.id), { mode: "live", cut: null }, "the other write stands; the end was not applied, nor acknowledged");
+});
+
+// ---- M1 review B2: a reset is owed until a pushed view carries it -----------------------------------
+
+test("B2 a long slice: a moved start's reset survives a build that overtakes it; an append merges; a stale page read shows another lineage", async () => {
+  sl.long0 = append("user", "LONG-0");
+  for (let i = 1; i < 260; i++) append(i % 2 ? "assistant" : "user", `LONG-${i}`);
+  const created = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Long", mode: "live", from: sl.long0, expiresInDays: 30, recipients: ["Flo"], anyone: false } });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  const m = created.body as SessionShareMinted;
+  const token = tokenOf(m.links[0]!.link);
+  const first = (await view(token)).body;
+  assert.equal(first.items.length, 200);
+  assert.ok(first.lineage && first.before, "a lineage, and an earlier page");
+  const earlierPage = (await (await fetch(`${base}/api/s/${token}?before=${first.before}`)).json()) as SessionShareView;
+  assert.equal(earlierPage.lineage, first.lineage, "pages of one view share its lineage");
+  const page = await openSocket(token);
+
+  // Control: an append extends the slice, so it merges (no reset, same lineage).
+  page.frames.length = 0;
+  append("assistant", "LONG-APPENDED");
+  await pushShareView(m.share.id);
+  let f = await lastFrame(page.frames);
+  assert.deepEqual([f.reset, f.view!.lineage], [undefined, first.lineage]);
+
+  // The start moves on; its push is overtaken by a same-source rebuild (a title change, a watch).
+  page.frames.length = 0;
+  const newStart = append("user", "LONG-NEW-START");
+  append("assistant", "LONG-AFTER-NEW-START");
+  store.patchShare(m.share.id, { from: { entryId: newStart, at: null } });
+  await Promise.all([pushShareView(m.share.id), pushShareView(m.share.id)]);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.equal(page.frames.length, 1, "one view, from the newest build");
+  f = JSON.parse(page.frames[0]!) as Frame;
+  assert.equal(f.reset, true, "the reset was carried by the build that was sent");
+  assert.notEqual(f.view!.lineage, first.lineage);
+  assert.deepEqual(texts(f.view!), ["LONG-NEW-START", "LONG-AFTER-NEW-START"]);
+  // A page read begun before the move and answered after it: its lineage tells the page to drop it.
+  const late = (await (await fetch(`${base}/api/s/${token}?before=1`)).json()) as SessionShareView;
+  assert.notEqual(late.lineage, first.lineage);
+  page.ws.close();
+});
+
+test("B2 an end on another branch or moved back resets; Update to now along the same path merges", async () => {
+  const a = append("user", "BRANCH-A");
+  const b = append("assistant", "BRANCH-B");
+  const created = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Ends", mode: "snapshot", cut: b, expiresInDays: 30, recipients: ["Gus"], anyone: false } });
+  const m = created.body as SessionShareMinted;
+  const token = tokenOf(m.links[0]!.link);
+  const lineages = [(await view(token)).body.lineage];
+  const page = await openSocket(token);
+  const step = async (act: () => Promise<{ status: number }>) => {
+    page.frames.length = 0;
+    assert.equal((await act()).status, 200);
+    const f = await lastFrame(page.frames);
+    lineages.push(f.view!.lineage);
+    return f;
+  };
+  const update = () => op(`/api/session-shares/${m.share.id}/update`, { method: "POST" });
+  // Update to now along the same path: an extension, so it merges.
+  append("user", "BRANCH-C");
+  let f = await step(update);
+  assert.deepEqual([f.reset, lineages[1]], [undefined, lineages[0]]);
+  // A rewind above the end (to A), then Update to now: another branch.
+  parent = a;
+  append("assistant", "BRANCH-D");
+  f = await step(update);
+  assert.deepEqual([f.reset, texts(f.view!).slice(-2)], [true, ["BRANCH-A", "BRANCH-D"]]);
+  assert.notEqual(lineages[2], lineages[1]);
+  // Save Slice with an earlier end: a page may still hold the longer view, so it resets.
+  f = await step(() => op(`/api/session-shares/${m.share.id}`, { method: "PATCH", body: { cut: a } }));
+  assert.equal(f.reset, true);
+  assert.equal(new Set(lineages).size, 3);
+  page.ws.close();
+});
+
+test("B2 a view read in flight when the start moves answers the narrowed view", async () => {
+  const s1 = append("user", "FLIGHT-OLD");
+  const s2 = append("assistant", "FLIGHT-NEW");
+  const created = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Flight", mode: "live", from: s1, expiresInDays: 30, recipients: ["Hal"], anyone: false } });
+  const m = created.body as SessionShareMinted;
+  append("user", "flight ".repeat(4 * 1024 * 1024));
+  const reading = view(tokenOf(m.links[0]!.link));
+  await new Promise((r) => setTimeout(r, 5));
+  store.patchShare(m.share.id, { from: { entryId: s2, at: null } });
+  const r = await reading;
+  assert.equal(r.status, 200);
+  assert.ok(!texts(r.body).includes("FLIGHT-OLD"), "nothing from before the new start");
+  assert.equal(r.body.items[0]!.text, "FLIGHT-NEW");
+});
+
+test("a live slice whose start left the branch: its open page closes on the sweep", async () => {
+  const s1 = append("user", "SWEEP-ONE");
+  const s2 = append("assistant", "SWEEP-TWO");
+  const created = await op("/api/session-shares", { method: "POST", body: { sessionId: SID, title: "Sweep", mode: "live", from: s2, expiresInDays: 30, recipients: ["Ivy"], anyone: false } });
+  const page = await openSocket(tokenOf((created.body as SessionShareMinted).links[0]!.link));
+  parent = s1;
+  append("assistant", "SWEEP-REWOUND");
+  await sweepSessionViewers();
+  assert.equal(await Promise.race([page.closed, new Promise<number>((r) => setTimeout(() => r(-1), 1000))]), 4410);
 });
 
 test("a broken store serves nothing and is never overwritten", async () => {

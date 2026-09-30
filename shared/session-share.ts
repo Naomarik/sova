@@ -225,6 +225,10 @@ export interface SessionShareView {
   images: number;
   /** The share starts after a message the whole session would show (no count, nothing of it). */
   earlier?: true;
+  /** Opaque and random: the same while each view extends or shortens the one before (same start,
+      one path, so item numbers keep their meaning). A view of another lineage replaces the page's
+      (earlier pages included), and an earlier page read in another lineage is dropped. */
+  lineage?: string;
 }
 
 /** The operator's Preview (never on the share page): the view plus the cut it was built at, to
@@ -257,8 +261,8 @@ export const SESSION_SHARE_EXCERPT_MAX = 160;
 
 export type SessionShareServerMessage =
   /** The newest page again: sent on Update to now, a mode switch, and in live mode when the
-      session grew. `reset`: the slice's start moved, so the page replaces its view (earlier pages
-      already read included) instead of merging. */
+      session grew. `reset`: its lineage differs from the last view pushed, so the page replaces
+      its view (earlier pages already read included) instead of merging. */
   | { type: "view"; view: SessionShareView; reset?: true }
   | { type: "error"; code: "gone"; why?: "expired" };
 

@@ -27,6 +27,8 @@ const watching = new Map<string, { path: string; watcher: FSWatcher; timer: Node
 /** Per share, the newest build started: an older one that finishes later is never sent. */
 const builds = new Map<string, number>();
 let buildSeq = 0;
+/** Per share, the lineage of the last view pushed. */
+const pushed = new Map<string, string | undefined>();
 
 /**
  * Rebuild a share's view (its newest page) and push it to its open pages. The build is bound to
@@ -34,6 +36,10 @@ let buildSeq = 0;
  * await, a share that narrowed or changed meanwhile (live → snapshot, a new cut, stopped) gets
  * nothing from this build (the change pushes its own), and a build overtaken by a newer one is
  * dropped. Right before sending, every open page whose link no longer reads is closed first.
+ * The frame says `reset` whenever its view's lineage differs from the last one pushed, so a reset
+ * owed by a build that was overtaken or dropped is carried by the next one that is sent. Every view
+ * carries its lineage, and a page replaces a view of another lineage whatever the flag says (the
+ * first push after a start knows no earlier one, so it says nothing).
  */
 export async function pushShareView(shareId: string): Promise<void> {
   if (!viewerCount(shareId)) return;
@@ -48,7 +54,9 @@ export async function pushShareView(shareId: string): Promise<void> {
   const now = getShare(shareId);
   if (!view || !now || now.share.stoppedAt || sourceKey(now.share) !== key) return;
   closeDeadViewers();
-  pushView(shareId, view);
+  const reset = pushed.has(shareId) && pushed.get(shareId) !== view.lineage;
+  pushed.set(shareId, view.lineage);
+  pushView(shareId, view, reset);
 }
 
 function unwatch(shareId: string): void {

@@ -18,7 +18,7 @@ import { stateRoot } from "./state-root";
 /**
  * Session shares (§app.session-share/link): `<stateRoot>/session-shares.json` (0600, atomic),
  * host-local, never synced or committed. A share names a session file and a cut (snapshot) or
- * none (Follow live); each recipient has its own `/s/<token>` link, built like a hand-off link (32
+ * none (Follow live), and optionally a start (`from`, §app.session-share/slice); each recipient has its own `/s/<token>` link, built like a hand-off link (32
  * random bytes, base64url; only the SHA-256 is kept, compared in constant time). The link rows keep
  * the baton store's shape (`hash`, `expiresAt`, `revokedAt`), so the registry push reads them as
  * kind `s` rows unchanged.
@@ -40,6 +40,8 @@ export interface ShareRecord {
   mode: SessionShareMode;
   /** Snapshot: the leaf entry at mint (or the last Update to now) and its time; null while live. */
   cut: { entryId: string; at: string | null } | null;
+  /** A slice's start entry and its time; absent (never written) for a whole-session share. */
+  from?: { entryId: string; at: string | null };
   createdAt: string;
   stoppedAt?: string;
 }
@@ -98,14 +100,18 @@ export function validateSharesFile(raw: unknown): StoreFile | { why: string } {
   const ids = new Set<string>();
   for (const [i, s] of (raw.shares as unknown[]).entries()) {
     const bad = (what: string) => ({ why: `share ${i}: ${what}` });
-    if (!isObj(s) || !onlyKeys(s, ["id", "sessionId", "sessionPath", "title", "mode", "cut", "createdAt", "stoppedAt"])) return bad("keys");
+    if (!isObj(s) || !onlyKeys(s, ["id", "sessionId", "sessionPath", "title", "mode", "cut", "from", "createdAt", "stoppedAt"])) return bad("keys");
     if (typeof s.id !== "string" || !SHARE_ID.test(s.id) || ids.has(s.id)) return bad("id");
     ids.add(s.id);
     if (typeof s.sessionId !== "string" || !s.sessionId || typeof s.sessionPath !== "string" || !s.sessionPath.startsWith("/")) return bad("session");
     if (typeof s.title !== "string" || s.title.length > SHARE_TITLE_MAX) return bad("title");
     if (s.mode !== "snapshot" && s.mode !== "live") return bad("mode");
-    if (s.cut !== null && !(isObj(s.cut) && onlyKeys(s.cut, ["entryId", "at"]) && typeof s.cut.entryId === "string" && s.cut.entryId && (s.cut.at === null || ISO(s.cut.at)))) return bad("cut");
+    const entryRef = (r: unknown) => isObj(r) && onlyKeys(r, ["entryId", "at"]) && typeof r.entryId === "string" && !!r.entryId && (r.at === null || ISO(r.at));
+    if (s.cut !== null && !entryRef(s.cut)) return bad("cut");
+    if (s.from !== undefined && !entryRef(s.from)) return bad("from");
     if (s.mode === "snapshot" && s.cut === null) return bad("snapshot without a cut");
+    // An end is a snapshot's: a live record with one would publish past it.
+    if (s.mode === "live" && s.cut !== null) return bad("live with a cut");
     if (!ISO(s.createdAt) || (s.stoppedAt !== undefined && !ISO(s.stoppedAt))) return bad("times");
   }
   const hashes = new Set<string>();
@@ -229,6 +235,7 @@ export interface CreateInput {
   title: string;
   mode: SessionShareMode;
   cut: { entryId: string; at: string | null } | null;
+  from?: { entryId: string; at: string | null } | null;
   days: SessionShareDays;
   labels: string[];
   anyone: boolean;
@@ -263,9 +270,11 @@ export function createShare(input: CreateInput, now = Date.now()): { share: Shar
     title: input.title,
     mode: input.mode,
     cut: input.mode === "snapshot" ? input.cut : null,
+    ...(input.from ? { from: input.from } : {}),
     createdAt: iso(now),
   };
   if (share.mode === "snapshot" && !share.cut) throw new ShareError(400, "empty-session", "This session has nothing to share yet.");
+  if (share.mode === "live" && input.cut) throw liveEnd();
   store.shares.push(share);
   const expiresAt = iso(now + input.days * DAY_MS);
   const tokens = input.labels.map((label) => mintLink(store, share.id, { label }, expiresAt, now));
@@ -429,13 +438,38 @@ export function extendShare(shareId: string, days: SessionShareDays, now = Date.
   return { renewed: renewed.length, kept };
 }
 
-/** Change the title, the mode, or the cut (Update to now, or a switch back to snapshot). */
-export function patchShare(shareId: string, patch: { title?: string; mode?: SessionShareMode; cut?: { entryId: string; at: string | null } }): ShareRecord {
+/** An end given to a share that follows live: refused, never dropped (it would publish past it). */
+export const liveEnd = () => new ShareError(400, "live-end", "A share that follows live has no end. Turn Follow live off to end it.");
+
+/** What a patch was validated against: its mode, end and start as they were read. */
+export interface ShareBounds {
+  mode: SessionShareMode;
+  cut: string | null;
+  from: string | null;
+}
+export const boundsOf = (s: ShareRecord): ShareBounds => ({ mode: s.mode, cut: s.cut?.entryId ?? null, from: s.from?.entryId ?? null });
+
+/** Change the title, the mode, the cut (Update to now, a switch back to snapshot, a slice's end)
+    or the start (null: from the first message again). `expect`: the bounds the caller validated
+    the patch against; when another write changed them meanwhile, nothing is written (409). A cut
+    on a share that ends up live is refused, never dropped. */
+export function patchShare(
+  shareId: string,
+  patch: { title?: string; mode?: SessionShareMode; cut?: { entryId: string; at: string | null }; from?: { entryId: string; at: string | null } | null },
+  expect?: ShareBounds,
+): ShareRecord {
   const store = read();
   const share = liveShareOf(store, shareId);
+  if (expect) {
+    const now = boundsOf(share);
+    if (now.mode !== expect.mode || now.cut !== expect.cut || now.from !== expect.from) throw new ShareError(409, "share-changed", "This share changed meanwhile. Try again.");
+  }
   if (patch.title !== undefined) share.title = patch.title;
   if (patch.mode !== undefined) share.mode = patch.mode;
+  if (patch.cut !== undefined && share.mode === "live") throw liveEnd();
   if (patch.cut !== undefined) share.cut = patch.cut;
+  if (patch.from === null) delete share.from;
+  else if (patch.from !== undefined) share.from = patch.from;
   if (share.mode === "live") share.cut = null;
   else if (!share.cut) throw new ShareError(400, "empty-session", "This session has nothing to share yet.");
   write(store);

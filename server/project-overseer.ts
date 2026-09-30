@@ -29,6 +29,7 @@ import {
   type StartedSession,
 } from "../shared/project-overseer";
 import { ORG_ABOUT_MAX } from "../shared/orgs";
+import { notSentReason } from "../shared/outreach";
 import { clockTime } from "../pi-config/extensions/stamp/format.ts";
 import type { OverseerState, SessionSummary } from "../shared/protocol";
 import { allBatons, batonById, closeBaton, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
@@ -656,7 +657,16 @@ function toolHost(rt: Rt): PoToolHost {
       if (bare.length > 1) throw new OrgError(`Several held acts are ${id}: name one by its id from sova_pipeline (${bare.map(holdRef).join(", ")}).`, 409);
       const h = bare[0] ?? holdByRef(orgId, id);
       if (!h || !inProject(h)) throw new OrgError(`No held act ${id} in this project: sova_pipeline lists them.`, 404);
-      await actOrThrow(orgId, h.sessionId, approve ? "hold/approve" : "hold/cancel", { id: h.id, reason }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), { settle: true });
+      const out = await actOrThrow(orgId, h.sessionId, approve ? "hold/approve" : "hold/cancel", { id: h.id, reason }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), { settle: true });
+      // §app.outreach/send: what the released act did is its own outcome; a message that did not go is never an approval that went.
+      const fx = approve ? out.effects?.find((e) => e.kind === "outreach-send") : undefined;
+      const r = fx ? ((fx.result ?? null) as { outcome?: string; why?: string; code?: string } | null) : null;
+      if (fx && r?.outcome !== "sent") {
+        const target = (h.data?.["target"] ?? null) as { id?: unknown; name?: unknown } | null;
+        const name = typeof target?.name === "string" ? target.name : (readRoster(orgId).find((x) => x.id === target?.id)?.name ?? "the person");
+        return { notSent: { name, why: r?.why ?? fx.error ?? notSentReason(r?.code) } };
+      }
+      return {};
     },
     async correct(session, event, payload, reason) {
       const sid = projectSessionOrThrow(orgId, projectId, session);

@@ -115,7 +115,7 @@ export interface PoToolHost {
       sessions in full: configuration, the events enabled for this turn (with each refusal) and its declared corrections. */
   pipeline(q: { session?: string; includeQuiet?: boolean; limit?: number }): PipelineRead;
   /** Cancel or approve early one of the project's held acts, with a reason (the chart's hold/cancel or hold/approve). */
-  decideHold(id: string, approve: boolean, reason: string): Promise<void>;
+  decideHold(id: string, approve: boolean, reason: string): Promise<{ notSent?: { name: string; why: string } } | void>;
   /** A declared correction (q9) on one of the project's chart sessions, with its reason. */
   correct(session: string, event: string, payload: Record<string, unknown>, reason: string): Promise<{ held?: { id: string; until: number } }>;
   /** Free set-state (q9/r5): the engine takes it only in a turn the operator started. */
@@ -1086,7 +1086,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if (!reason) throw new Refusal("Say why (reason).");
         if (q.op !== "cancel" && q.op !== "approve") throw new Refusal("op is cancel or approve.");
         const id = String(q.id ?? "").trim();
-        await host.decideHold(id, q.op === "approve", reason);
+        const out = await host.decideHold(id, q.op === "approve", reason);
+        // §app.outreach/send: the released message did not go, so the approval never reads as ok.
+        if (out?.notSent) throw new Refusal(`Approved ${id}, but the WhatsApp message to ${out.notSent.name} was not sent: ${out.notSent.why}`);
         return { content: text(q.op === "approve" ? `Approved ${id}: it goes ahead now.` : `Cancelled ${id}: it will not go ahead.`), details: { id, op: q.op, note: `${q.op === "approve" ? "Approved" : "Cancelled"} a held act: ${cut(reason, 160)}` } };
       }),
     },

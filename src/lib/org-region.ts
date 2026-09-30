@@ -221,14 +221,15 @@ export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefin
   return rows.sort((a, b) => b.since - a.since || a.session.path.localeCompare(b.session.path));
 }
 
-/** The digest kinds that are a project's, not a session's: each opens its project page. */
-const PROJECT_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["held-act", "conflict-to-operator", "project-stakeholder"]);
+/** The digest kinds that are a project's, not a session's: each opens its project page (a message not sent, the person's). */
+const PROJECT_KINDS: ReadonlySet<AttentionItem["kind"]> = new Set(["held-act", "conflict-to-operator", "project-stakeholder", "outreach-not-sent"]);
 
 /**
  * The region's Needs you items that belong to no session: an act waiting in a hold before it
  * reaches a person or the code (§app.project-overseer/holds), a conflict for the operator to settle
  * that no session asks about (§app.requirements/routing), a project whose main stakeholder left
- * (§app.organizations/stakeholder). Each opens its project page and says the digest's own sentence.
+ * (§app.organizations/stakeholder), an overseer's WhatsApp message that was not sent (§app.outreach/send).
+ * Each opens its project page (the last, the person's page) and says the digest's own sentence.
  * A search keeps only those whose project or org name matches. Held acts first, the one going
  * ahead soonest on top (they can't wait); then the rest newest first.
  */

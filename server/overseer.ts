@@ -22,6 +22,7 @@ import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./a
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-pipeline";
 import { conflictAttention } from "./decisions";
+import { notSentAttention } from "./outreach/log";
 import { restartItems } from "./merge-readiness";
 import {
   acquireChat,
@@ -374,7 +375,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)]);
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...notSentAttention(), ...conflictAttention(), ...restartItems(sessions)]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

@@ -14,7 +14,8 @@ export function scheduleStateText(s: PlaybookSchedule, now = Date.now()): string
     case "active":
       return s.next ? `Next ${stampTime(s.next, now)}` : "Approved";
     case "paused":
-      return `Paused: ${s.reason ?? "Not running"}`;
+      // The automatic pause's reason already says so ("Paused after 10 runs nobody opened.").
+      return s.reason?.startsWith("Paused") ? s.reason : `Paused: ${s.reason ?? "Not running"}`;
     case "invalid":
       return `Schedule not valid: ${s.reason ?? s.when}`;
     case "not-project":

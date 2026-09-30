@@ -12,6 +12,7 @@ test("each state reads as the schedule, then its state", () => {
   assert.equal(scheduleLine({ when: "x", text, state: "active", id: "s1", next }), `${text} · Next ${clockTime(next)}`);
   assert.equal(scheduleLine({ when: "x", text: "When a Claude limit resets", state: "active", id: "s1" }), "When a Claude limit resets · Approved");
   assert.equal(scheduleLine({ when: "x", text, state: "paused", id: "s1", reason: "Changed since you approved it" }), `${text} · Paused: Changed since you approved it`);
+  assert.equal(scheduleLine({ when: "x", text, state: "paused", id: "s1", reason: "Paused after 10 runs nobody opened." }), `${text} · Paused after 10 runs nobody opened.`);
   assert.equal(scheduleLine({ when: "every 10m", state: "invalid", reason: "every takes 30m" }), "Schedule not valid: every takes 30m");
   assert.equal(scheduleLine({ when: "daily 09:00", state: "not-project", reason: "Schedules run only from a project's playbooks." }), "Schedules run only from a project's playbooks.");
 });

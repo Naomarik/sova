@@ -13,10 +13,11 @@ import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
 import { createMemo, onCleanup } from "solid-js";
-import { retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
+import { getBatonTold, retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
 import { abilityToast } from "../lib/gathering-abilities";
 import { firstName } from "../lib/person-page";
-import { starterHref, starterName, whyText } from "../lib/baton-told";
+import { starterHref, starterName, toldMarkdown, whyText } from "../lib/baton-told";
+import { openMarkdown } from "../lib/markdown-viewer";
 import { relativeTime } from "../lib/format";
 import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
@@ -178,6 +179,21 @@ export function BatonStrip(props: {
                 Hand On…
               </button>
             </Show>
+            {/* What It's Told (§app.baton/told): read-only, fetched when opened, at every width. */}
+            <button
+              type="button"
+              class="button button-sm button-ghost"
+              onClick={() =>
+                void getBatonTold(sid())
+                  .then((t) => {
+                    setError(null);
+                    openMarkdown({ title: "What It's Told", subtitle: t.publicTitle, markdown: toldMarkdown(t, Date.now()) });
+                  })
+                  .catch((err) => setError(errText(err)))
+              }
+            >
+              What It's Told
+            </button>
             {/* Hide From / Show To the org's owner (§app.owner-page/controls): this conversation on their page. */}
             <Show when={i().owner}>
               {(o) => (

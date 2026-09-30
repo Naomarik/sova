@@ -175,9 +175,12 @@ restarts the sender, and restarting Sova does not touch it.
 
 Without systemd, use any supervisor that restarts on failure with a delay and never runs two
 copies (runit, s6, supervisord, a container with `restart: on-failure`), running
-`node <checkout>/services/whatsapp/bin/sova-whatsapp.mjs run` with a umask of 077. A second copy
-refuses to start while the first answers on the socket; two copies on two hosts with the same
-credentials knock each other off (`replaced`).
+`node <checkout>/services/whatsapp/bin/sova-whatsapp.mjs run` with a umask of 077. A second copy on
+the same host refuses to start (exit 3, "another sender (pid N) holds …/sender.lock"): the running
+sender holds `$SOVA_WA_HOME/sender.lock`. After a crash or a `kill -9` the lock names a process that
+is gone, and the next start takes it over by itself; never delete it while a sender runs. Two copies
+on two hosts with the same credentials can't see each other's lock, and knock each other off
+(`replaced`).
 
 ## 6. Connect Sova
 
@@ -238,6 +241,11 @@ as your number, from anywhere, until you unlink the device on the phone.
 - **Pause.** **Pause all sending** in Settings → Outreach stops that host's sends. `sova-whatsapp
   pause` stops every host's, at the sender (`resume` undoes it; the sender also pauses itself when
   WhatsApp blocks or restricts the account). The connection stays up either way.
+- **Commands that act on the number** — `pair`, `unlink`, `reconnect`, `pause`, `resume` — work only
+  on the sender's host: they talk to the sender's own socket, which nothing off the host can reach.
+  Other hosts' Sovas reach the sender only through this host's Sova, which passes on sends, number
+  checks, status and receipts, and refuses everything else. So on a headless gateway you run them
+  over SSH.
 - **Logs.** `journalctl --user -u sova-whatsapp`: state changes and failures, warn level by default.
   They name no message and no full number; digit runs show as their last three digits.
   `SOVA_WA_LOG_LEVEL=info` adds each send's reference. The sender silences everything its libraries
@@ -318,6 +326,10 @@ On the sender's host, `sova-whatsapp status` should say `running: yes`; if not,
 `systemctl --user status sova-whatsapp` and the log say why. Check that Sova uses the same socket
 path as `sova-whatsapp check-config` prints (a different `PI_CODING_AGENT_DIR` changes the default).
 From another host, check that the two are peers and that the sender's host allows this one.
+
+If `run` exits with "another sender (pid N) holds …/sender.lock", a sender is already running on
+this host: `ps -p N` shows it (often a manual `run` next to the service). Stop that one; don't
+start a second.
 
 ## Move the sender to another host
 

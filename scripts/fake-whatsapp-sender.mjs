@@ -16,6 +16,8 @@ import { fileStore } from '../services/whatsapp/src/store.mjs'
 import { Sender } from '../services/whatsapp/src/core.mjs'
 import { serveIpc, connectIpc } from '../services/whatsapp/src/ipc.mjs'
 import { makeLog } from '../services/whatsapp/src/log.mjs'
+import { acquireLock } from '../services/whatsapp/src/lock.mjs'
+import { mkdirSync } from 'node:fs'
 
 const argv = process.argv.slice(2)
 const env = process.env
@@ -48,6 +50,17 @@ if (config.home === realDefault || config.authDir.startsWith(realDefault)) {
   process.stderr.write(`fake-whatsapp-sender: refusing to run on the real sender directory ${realDefault}\n`)
   process.exit(2)
 }
+
+// The same one-sender-per-home lock as the real sender.
+mkdirSync(config.home, { recursive: true, mode: 0o700 })
+let lock
+try {
+  lock = acquireLock(config.lockFile)
+} catch (err) {
+  process.stderr.write(`fake-whatsapp-sender: ${err.message}\n`)
+  process.exit(3)
+}
+process.on('exit', () => lock.release())
 
 const log = makeLog(env.SOVA_WA_LOG_LEVEL || 'info')
 const absent = new Set((env.SOVA_WA_FAKE_ABSENT || '').split(',').map((s) => s.trim()).filter(Boolean))

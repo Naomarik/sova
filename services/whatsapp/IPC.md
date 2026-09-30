@@ -9,6 +9,8 @@ other hosts. `scripts/fake-whatsapp-sender.mjs` speaks it too, with the sender's
 - A Unix socket at `$SOVA_WA_SOCKET`, else `$SOVA_WA_HOME/sender.sock`; `SOVA_WA_HOME` defaults to
   `<PI_CODING_AGENT_DIR or ~/.pi/agent>/sova/whatsapp`. The socket is `0600` in a `0700` directory.
   The sender never listens on a network.
+- One sender per home: it holds `$SOVA_WA_HOME/sender.lock` (its pid, created exclusively) while it
+  runs. A second start refuses while that pid lives; a dead holder's lock is taken over.
 - NDJSON both ways: one JSON object per line, UTF-8, `\n`-terminated, at most 64 KiB per line. A line
   that is not a JSON object gets `{id: null, ok: false, code: "bad-request"}`; an over-long line closes
   the connection.
@@ -82,13 +84,19 @@ Error codes:
 | `failed` | no | WhatsApp or Baileys failed the send |
 | `unknown` | no | the outcome of that idem is unknown; it is never resent |
 
-### `pause {on: boolean}`
+### Operator-only ops: the sender host only
 
-→ `{paused}`. Persisted. While paused, `send` answers `paused`; the connection stays up.
+`pause`, `link`, `reconnect` and `unlink` act on the number itself, so only someone on the sender's
+host uses them: `sova-whatsapp pause | resume | pair | reconnect | unlink` on its socket (and Sova's own
+page there never sends them either). The sender cannot tell a relayed request from a local one, since
+the relay is a local client too, so the guarantee is the relay's: it forwards exactly `status`, `check`,
+`send` and `events`, each rebuilt from named fields (never a caller's frame passed through), and
+answers every other op with 403 `code: "refused"`. Keep it that way: an op added to the relay's
+allowlist becomes callable by every accepted peer. Nothing else reaches the socket from off the host:
+it is a Unix socket, `0600`, and the sender never listens on a network.
 
-### Operator-only ops
-
-The relay refuses these (`code: "refused"`); only someone on the sender host links or unlinks the number.
+- `pause {on: boolean}` → `{paused}`. Persisted. While paused, `send` answers `paused`; the connection
+  stays up. The sender also sets it on its own when WhatsApp blocks or restricts the account.
 
 - `link {phone?}` → `{started: true, pairingCode?}`. Starts linking a device on an unpaired sender:
   `qr` events follow (scan within about a minute; WhatsApp refreshes it about five times, then stops).

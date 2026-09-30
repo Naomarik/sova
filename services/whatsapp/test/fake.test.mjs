@@ -39,3 +39,18 @@ test('the fake serves IPC, sends with receipts, and exits promptly on SIGTERM wi
   assert.ok(Date.now() - t < 2000, `exit took ${Date.now() - t} ms`)
   assert.equal(existsSync(sock), false)
 })
+
+test('a second fake on the same home refuses while the first holds the lock', async () => {
+  const env = { PATH: process.env.PATH, SOVA_WA_HOME: home, SOVA_WA_LOG_LEVEL: 'warn' }
+  const first = spawn(process.execPath, [fake], { env, stdio: 'ignore' })
+  await waitFor(() => existsSync(join(home, 'sender.sock')))
+  const second = spawn(process.execPath, [fake], { env, stdio: ['ignore', 'ignore', 'pipe'] })
+  let err = ''
+  second.stderr.on('data', (d) => (err += d))
+  const code = await new Promise((r) => second.once('exit', r))
+  assert.equal(code, 3)
+  assert.match(err, /holds .*sender\.lock/)
+  const exited = new Promise((r) => first.once('exit', r))
+  first.kill('SIGTERM')
+  await exited
+})

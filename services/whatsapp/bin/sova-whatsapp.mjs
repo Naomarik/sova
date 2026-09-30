@@ -8,6 +8,7 @@ import { makeLog } from '../src/log.mjs'
 import { fileStore } from '../src/store.mjs'
 import { Sender } from '../src/core.mjs'
 import { serveIpc, socketAlive, connectIpc } from '../src/ipc.mjs'
+import { acquireLock } from '../src/lock.mjs'
 
 // Every file this process creates (creds, signal keys, state) is owner-only.
 process.umask(0o077)
@@ -44,6 +45,14 @@ function refuseOnProblems() {
 async function startSender() {
   mkdirSync(config.home, { recursive: true, mode: 0o700 })
   refuseOnProblems()
+  // Exactly one sender per home: taken before anything reads its state or opens its credentials.
+  let lock
+  try {
+    lock = acquireLock(config.lockFile)
+  } catch (err) {
+    die(3, `sova-whatsapp: ${err.message}. Only one sender may own ${config.authDir}.`)
+  }
+  process.on('exit', () => lock.release())
   const { createBaileysDriver } = await import('../src/baileys.mjs')
   const driver = createBaileysDriver({ authDir: config.authDir, deviceName: config.deviceName, logLevel: config.logLevel, log })
   const core = new Sender({ config, store: fileStore(config), driver, log, version: VERSION })

@@ -75,6 +75,7 @@ export function resolveConfig(env = process.env, { home = homedir() } = {}) {
     configFile,
     authDir,
     socket,
+    lockFile: join(waHome, 'sender.lock'),
     stateFile: join(waHome, 'state.json'),
     eventsFile: join(waHome, 'events.json'),
     limits,

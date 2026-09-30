@@ -126,7 +126,7 @@ export function inPhaseFor(since: string, now: number): string {
 
 /** The stalled chip's title: how long nothing moved. */
 export const stalledTitle = (row: Pick<PipelineRowLike, "phase" | "since" | "stalled">, now: number): string =>
-  row.stalled ? `Waiting past its stall time: ${phaseDetail(row.phase).toLowerCase()} ${inPhaseFor(row.since, now)}. The overseer was asked to look.` : "";
+  row.stalled ? `Waiting past its stall time: ${[phaseDetail(row.phase).toLowerCase(), inPhaseFor(row.since, now)].filter((x) => x && x !== "just now").join(" ")}. The overseer was asked to look.` : "";
 
 /** An on-hold row's line: where it goes back to on Resume. */
 export const heldFromLine = (row: Pick<PipelineRowLike, "held">): string =>

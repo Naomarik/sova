@@ -9168,6 +9168,75 @@
         "scripts/mesh-vps/deploy.sh",
         "scripts/mesh-vps/config.sh"
       ]
+    },
+    "§app.claude-logins/switch-cost": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/switch-login",
+        "§chat.context-window/last-reply",
+        "§chat.context-window/format"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/lib/claude-login.test.ts",
+        "src/design/base.css"
+      ]
+    },
+    "§app.claude-logins/switch-login": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/active-login",
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/failover",
+        "§app.claude-logins/borrow-return",
+        "§chat.composer/composer-flyout"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/index.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "server/claude-pool/agent.ts",
+        "server/chat-manager.ts",
+        "server/claude-login-state.ts",
+        "shared/protocol.ts",
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/design/base.css",
+        "pi-config/extensions/claude-code/provider/login-command.ts",
+        "src/lib/api.ts",
+        "pi-config/extensions/claude-code/provider/login-failover.test.ts",
+        "pi-config/extensions/claude-code/provider/registration.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts",
+        "server/claude-pool/agent.test.ts",
+        "src/lib/claude-login.test.ts"
+      ]
+    },
+    "§app.claude-logins/switch-queue": {
+      "kind": "behavior",
+      "requires": [
+        "§app.claude-logins/switch-login"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/claude-login-state.ts",
+        "shared/protocol.ts",
+        "src/lib/claude-login.ts",
+        "src/components/ComposerMenu.tsx",
+        "src/components/Composer.tsx",
+        "server/claude-login-state.test.ts",
+        "src/components/ChatView.tsx",
+        "src/design/base.css"
+      ]
     }
   },
   "boundary": {

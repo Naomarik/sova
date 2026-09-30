@@ -179,6 +179,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Thinking rows | the model's levels, verbatim and in ladder order: off · minimal · low · medium · high · xhigh · max |
 | Thinking disabled `title` | Thinking changes wait until this turn finishes. · else the composer reason for that state |
 | Back from the picker (to the model panel) | `Back` |
+| Login panel `aria-label` | Claude login |
+| Login panel rows | a group per account (its email · Unknown account), then This device; each login's name, and "Borrow" · "After this reply" · or the disabled reason; the waiting line, Cancel switch, and the resend note, per §app.claude-logins/switch-login, /switch-queue and /switch-cost |
 | Thinking error title | Couldn't set thinking to `{level}`. |
 | Thinking error: running | Thinking changes wait until this turn finishes. You're still on `{level}`. |
 | Thinking error: unknown level | pi doesn't know this thinking level. You're still on `{level}`. |

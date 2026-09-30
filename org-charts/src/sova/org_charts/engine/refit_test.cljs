@@ -607,6 +607,11 @@
       (let [r (core/resume! eng2 ["kid/ana"] {:now (+ t0 1)})]
         (is (= [{:from "kid/ana" :watcher "par"}] (:dangling r)) "reported, not thrown")
         (is (= [] (:sova/watchers (core/data eng2 "kid/ana"))) "and taken off the watchers")
+        (is (= [{:session-id "kid/ana" :event :sova/unwatched :data {:watcher "par" :dangling true} :by "system"
+                 :feed :quiet :saved true :changed {"sova/watchers" [["par"] []]}}]
+              (map #(select-keys % [:session-id :event :data :by :feed :saved :changed])
+                (filter #(= :sova/unwatched (:event %)) (:steps r))))
+          "one quiet, saved system row on the watched session (it stays out of the project feed)")
         (is (contains? (:snapshots r) "kid/ana")))
       (testing "later moves notify no one and throw nothing"
         (is (empty? (:dangling (core/send! eng2 "kid/ana" :kid/grow {} {:now (+ t0 2)})))))

@@ -113,7 +113,7 @@ restart) and not only after the keyboard has opened once.
   its two entries, the overview and the New Session dialog (§workspace.fanout/entry-points).
   On a phone the overview holds the Start cards (New Session, Fan Out), the Sessions card,
   Mesh, Extensions, the Explanations card (the way to `#/explanations`) and the Organizations card; the list holds New Session in its head
-  and Usage, Agents and Settings in its foot.
+  and Usage, Agents, Shares and Settings in its foot.
 
 ## §app.shell/remote-session-chips — Remote session chips
 

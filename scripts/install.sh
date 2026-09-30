@@ -3,7 +3,7 @@
 # launcher on PATH, link Sova's pi extensions into pi's agent directory and, if you want one,
 # install a login service. Safe to pipe from curl:
 #
-#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/v0.1.0/scripts/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
 #
 # What it needs on the machine already: git, node (>= 22.19) and pnpm. Without pnpm it runs the
 # version the repository pins through npx (npm ships with Node). It installs no toolchain, no
@@ -48,7 +48,9 @@
 set -euo pipefail
 
 repo=${SOVA_REPO:-https://github.com/Naomarik/sova.git}
-ref=${SOVA_REF:-v0.1.0}
+# RELEASE: vNEXT is a placeholder for the next release tag. Replace every vNEXT (this file, README.md,
+# docs/getting-started.md) with that tag in the commit the tag points at, so the tagged installer installs itself.
+ref=${SOVA_REF:-vNEXT}
 dir=${SOVA_DIR:-$HOME/.local/share/sova}
 bindir=${SOVA_BIN:-$HOME/.local/bin}
 tty=${SOVA_TTY:-/dev/tty}

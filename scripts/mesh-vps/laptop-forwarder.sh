@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ON THE LAPTOP: the VPS front door's upstream for the laptop's team server (M5):
+# ON THE LAPTOP: the VPS front door's upstream for the laptop's Sova (its team server):
 #   scripts/mesh-vps/laptop-forwarder.sh start|stop|status
 # A user-level socat on the laptop's TAILNET IP only (LAPTOP_SERVE_URL, <laptop-tailnet-ip>:4872) -> the team server 127.0.0.1:4870. No sudo, no
 # `tailscale serve` (the laptop's serve config stays untouched), stopped with `stop` (pid in ~/.cache/sova-mesh/lab-engineer).

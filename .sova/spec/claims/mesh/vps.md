@@ -16,3 +16,12 @@ is added to the end of the service's `PATH`, after the bundled Node, so Sova's C
 start `claude` on the VPS. Each deploy looks again, so a moved or newly installed `claude` is picked up
 by the next deploy. When no `claude` is found, the deploy prints "Claude Code not found: claude-code
 models will fail" and finishes anyway; everything else on the host works as before.
+
+## §mesh.vps/arch — x86-64 and arm64 hosts
+
+The VPS setup reads the host's architecture (`uname -m`) before it downloads anything. On `x86_64`
+it installs the `linux-x64` Node and the `linux_amd64` Caddy builds; on `aarch64` or `arm64` the
+`linux-arm64` Node and the `linux_arm64` Caddy builds. Each download is checked against its own
+pinned checksum in `config.sh`. On any other architecture the deploy stops before downloading,
+with "unsupported architecture {name}: the VPS kit supports x86_64 and aarch64", and the running
+app is left as it was.

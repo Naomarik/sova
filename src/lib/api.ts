@@ -998,6 +998,8 @@ export const patchOrg = (id: string, patch: { name?: string; about?: string }) =
 /** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
 export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
+/** Reload the org's charts from its workspace (a fixed journal, restored snapshots): `problems` is what is still wrong. */
+export const reloadOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/reload`, jsonInit("POST"));
 export const commitOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/commit`, jsonInit("POST"));
 export const setOrgRemote = (id: string, url: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/remote`, jsonInit("PUT", { url }));
 export const addPerson = (id: string, person: PersonInput) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people`, jsonInit("POST", person));

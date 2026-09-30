@@ -373,3 +373,6 @@
 .person-hours-day { justify-content: flex-start; min-height: var(--tap-min); min-width: var(--tap-min); }
 .person-hours-times { max-width: 28rem; }
 .person-off-hours { margin: 0; color: var(--status-warn); }
+
+/* A workspace problem names a file path with no spaces: let it break anywhere, so it never runs under Reload or widens the page. */
+.org-problem .banner-body { overflow-wrap: anywhere; }

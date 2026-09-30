@@ -11,6 +11,7 @@ import {
   declinePerson,
   attachOrg,
   commitOrg,
+  reloadOrg,
   createOrg,
   getOrg,
   getOrgs,
@@ -26,7 +27,7 @@ import {
   getBatonSettings,
   getProjectOverseer,
 } from "../lib/api";
-import { commitNowWords } from "../lib/commit-now";
+import { commitNowWords, reloadWords } from "../lib/commit-now";
 import { usd } from "../lib/costs";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
@@ -357,7 +358,25 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
       <Show when={org.data()}>
         {(o) => (
           <>
-            <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
+            {/* A problem stays until the file is fixed or restored and the org reloaded: Reload rides on the last one. */}
+            <For each={o().problems}>
+              {(p, i) => (
+                <div class="org-problem">
+                <Banner
+                  tone="warn"
+                  title="The workspace repo has a problem."
+                  body={p}
+                  action={
+                    i() === o().problems.length - 1 ? (
+                      <button type="button" class="button button-sm" onClick={() => void act(() => reloadOrg(props.id), (r) => reloadWords((r as OrgDetail | undefined)?.problems.length ?? 0))}>
+                        Reload
+                      </button>
+                    ) : undefined
+                  }
+                />
+                </div>
+              )}
+            </For>
             <Show when={links()}>{(l) => <LinksBanner links={l()} warning={linkWarning()} onDismiss={() => setLinks(null)} />}</Show>
             <OrgTabs org={o()} tab={tab()} />
             <div class="org-tabpanel" role="tabpanel" id="org-tabpanel" aria-labelledby={`org-tab-${tab()}`}>

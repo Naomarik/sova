@@ -209,9 +209,14 @@ export function batonWaitDetail(s: Pick<SessionSummary, "baton">): { text: strin
  * (a dialog, an errored turn, a question) joined to the org hits, plus any baton wait the digest
  * didn't carry. Newest first, like the global list.
  */
-export function orgNeedsYouRows(digest: Pick<AttentionDigest, "items"> | undefined, sessions: readonly SessionSummary[]): NeedsYouRow[] {
+export function orgNeedsYouRows(
+  digest: Pick<AttentionDigest, "items"> | undefined,
+  sessions: readonly SessionSummary[],
+  /** Later's keys this tab put away (lib/needs-you): a digest row goes at once; a baton wait has no key and stays. */
+  putAway: ReadonlySet<string> = new Set(),
+): NeedsYouRow[] {
   const org = sessions.filter(isOrgSession);
-  const rows = needsYouRows(digest, org);
+  const rows = needsYouRows(digest, org, putAway);
   const listed = new Set(rows.map((r) => r.session.path));
   for (const s of org) {
     if (listed.has(s.path) || orgDone(s)) continue;

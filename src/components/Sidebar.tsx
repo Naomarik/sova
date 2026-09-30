@@ -1540,7 +1540,12 @@ export function Sidebar(props: {
   /** The region counts rows: a project's eye is not one. */
   const orgRowCount = () => regionCount(orgs());
   const orgTotal = () => regionCount(orgSections(all().filter(isOrgSession)));
-  const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits()));
+  const orgNeedsYou = createMemo(() => orgNeedsYouRows(props.attention, orgHits(), putAway()));
+  /** Later on an org row the digest put here; a baton-only row has no key and clears when answered. */
+  const orgNeedsYouLater = (path: string) => {
+    const r = orgNeedsYou().find((row) => row.session.path === path);
+    return r && r.later.length > 0 ? () => putLater(r) : undefined;
+  };
   /** Its Needs you items that are no session: projects to pick a main stakeholder for. */
   const orgItems = createMemo(() => orgProjectItems(props.attention, query()));
   const orgWaitingCount = () => orgNeedsYou().length + orgItems().length;
@@ -2327,6 +2332,7 @@ export function Sidebar(props: {
                           targets={targets()}
                           detail={orgNeedsYouDetail(s.path)}
                           place={orgPlaceLabel(s)}
+                          onLater={orgNeedsYouLater(s.path)}
                         />
                       )}
                     </For>

@@ -244,6 +244,20 @@ test("the region's Needs you: org digest items plus baton waits the digest lacks
   assert.equal(rows[2]?.detail, "Send Ali their link: Hours?");
 });
 
+test("the region's Needs you and Later: a digest row carries its keys and goes at once; a baton wait has none", () => {
+  const item = (id: string, later: string): AttentionItem =>
+    ({ id, path: `/s/${id}.jsonl`, title: id, where: "~", tier: "act", kind: "error", since: 5, href: "", detail: "The last turn stopped with an error.", later }) as AttentionItem;
+  const sessions = [
+    session("err", { org: org() }),
+    session("both", { org: org(), baton: { holder: null, state: "open", needsYou: { from: "Sara", question: "Which logo?", since: 3 } } as SessionSummary["baton"] }),
+  ];
+  const d = { items: [item("err", "k-err"), item("both", "k-both")] };
+  const rows = orgNeedsYouRows(d, sessions);
+  assert.deepEqual(Object.fromEntries(rows.map((r) => [r.session.id, r.later])), { err: ["k-err"], both: ["k-both"] });
+  const after = orgNeedsYouRows(d, sessions, new Set(["k-err", "k-both"]));
+  assert.deepEqual(after.map((r) => [r.session.id, r.later, r.detail]), [["both", [], "Sara → you: Which logo?"]], "the baton wait stays, keyless, until it is answered");
+});
+
 test("labels, titles and search text", () => {
   assert.equal(orgPlaceLabel(session("a", { org: org() })), "Mamluk Arabia · Rakiba site");
   assert.equal(orgPlaceLabel(session("a", { org: org({ projectId: undefined, projectName: undefined }) })), "Mamluk Arabia");

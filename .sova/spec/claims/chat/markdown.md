@@ -1,7 +1,10 @@
 # §chat/markdown — Markdown and code
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-**Scope.** **assistant-text** rows render markdown. Everything else stays as it is:
+**Scope.** **assistant-text** rows render markdown, and so do the other places that show model- or
+agent-written prose with this same renderer: the alignment viewer, report rows and team-message
+cards, linked-session messages, the Overseer's briefs and idea text, and the markdown viewer
+(§app/markdown-viewer). Everything else stays as it is:
 
 - **user** text is plain, keeping `.message-text` and `white-space: pre-wrap`;
 - **thinking** is plain inside its disclosure;

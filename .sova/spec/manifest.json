@@ -9436,6 +9436,21 @@
         "src/components/ChatView.tsx",
         "src/design/base.css"
       ]
+    },
+    "§app/markdown-viewer": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/markdown-viewer.ts",
+        "src/lib/markdown-viewer.test.ts",
+        "src/components/MarkdownViewer.tsx",
+        "src/design/markdown-viewer.css",
+        "src/components/ui.tsx"
+      ],
+      "requires": [
+        "§chat/markdown"
+      ]
     }
   },
   "boundary": {

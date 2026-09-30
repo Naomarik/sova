@@ -33,8 +33,8 @@ import { clockTime } from "../pi-config/extensions/stamp/format.ts";
 import type { OverseerState, SessionSummary } from "../shared/protocol";
 import { allBatons, batonById, closeBaton, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
 import { noteBuildMerged } from "./build-merged";
-import { applyCodingMode, buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, probeBuild, readBuild, readBuilds, syncBuildTurn, withWorktreePath } from "./build-loadout";
-import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
+import { applyCodingMode, buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, noteBuildStarted, probeBuild, readBuild, readBuilds, syncBuildTurn, syncProjectBuilds, withWorktreePath } from "./build-loadout";
+import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, onAgentStarted, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
 import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
 import { workingSubagents } from "./live";
@@ -831,6 +831,8 @@ async function startCodingSession(
   // The title store first: the worktree's branch is named after a title given.
   if (title) setSessionTitle(sessionId, title);
   const envelope = input.envelope ?? envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(input.via ? { via: input.via } : {}) });
+  // F21: the project's builds as their runtimes stand now (a turn running, workers), so the at-once cap counts them.
+  await syncProjectBuilds(orgId, projectId);
   let out;
   try {
     // A gap's build is its item's (build/start: it rests on the gap's promoted decisions); a gap-less one the project's.
@@ -1509,4 +1511,6 @@ export function startProjectOverseerLoop(): void {
   started = true;
   // A coding session finished a turn: its build hears it (the overseer's own wake it; the operator's never).
   onAgentSettled((path) => noteCodingSettled(path));
+  // F21: and its turn's start, so the at-once cap and the Pipeline see it working.
+  onAgentStarted((path) => void noteBuildStarted(path).catch((err) => console.warn(`[project-overseer] a build's turn: ${err instanceof Error ? err.message : String(err)}`)));
 }

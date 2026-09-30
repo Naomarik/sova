@@ -27,12 +27,12 @@ const { server } = await import("./index");
 const orgs = await import("./orgs");
 const po = await import("./project-overseer");
 const store = await import("./project-overseer-store");
-const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-manager");
+const { acquireChat, disposeAllChats, disposeHeldChat, onAgentStarted } = await import("./chat-manager");
 const { addTodo } = await import("./overseer-todos");
 const { resolveChatMode } = await import("./mode-state");
 const { settled } = await import("./workspace-git");
 const { offersMerge } = await import("../src/lib/coding-worktrees");
-const { readBuilds, withWorktreePath } = await import("./build-loadout");
+const { noteBuildStarted, readBuild, readBuilds, withWorktreePath } = await import("./build-loadout");
 const { seedBuild } = await import("./org-test-fixtures");
 const { envelopeFor, hostOf } = await import("./org-engine");
 const { pipelineInfo } = await import("./project-pipeline");
@@ -408,6 +408,36 @@ describe("a project's coding sessions", async () => {
     } finally {
       writeFileSync(settingsFile, had);
     }
+  });
+
+  test("F21: a build's turn start reaches its chart: the Pipeline reads it working, and the at-once cap counts it", async () => {
+    const p = store.projectOverseerPaths(org.id, project.id);
+    store.patchPoSettings(p, { autonomy: "L3", holdMin: 0, caps: { codingRunning: 1, createPerTurn: null, createPerDay: null } });
+    const asked = po.toolsForTest(org.id, project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
+    // Another build may still run from an earlier test: the cap counts only this one's.
+    for (const s of hostOf(org.id).sessions("build")) if (s.data.turn === "working") await hostOf(org.id).act(s.id, "turn/ended", {}, { by: "system" } as never);
+    const before = readBuilds(org.id, project.id).length;
+    await asked.execute("f21a", { gap: "none", prompt: "Cap test", title: "Cap test" }, undefined, undefined, undefined as never).catch((e: Error) => assert.fail(e.message));
+    const row = readBuilds(org.id, project.id).slice(before).find((r) => r.title === "Cap test")!;
+    assert.ok(row?.path);
+    const sid = `build/${org.id}/${project.id}/${row.sessionId}`;
+    // The runtime's own agent_start (its session's event; no model runs here) reaches the chart.
+    const seen: string[] = [];
+    const off = onAgentStarted((path) => seen.push(path));
+    const chat = await acquireChat(row.path!);
+    (chat.session as unknown as { _emit(e: unknown): void })._emit({ type: "agent_start" });
+    off();
+    assert.ok(seen.includes(row.path!), "agent_start reached the listener");
+    for (let i = 0; i < 100 && hostOf(org.id).data(sid)?.turn !== "working"; i++) await new Promise((r) => setTimeout(r, 20));
+    assert.ok(hostOf(org.id).log.rows({ sessions: [sid] }).some((r) => r.event === "turn/started"), "its chart heard the turn start");
+    // Mid-turn (as agent_start leaves it): the Pipeline's turn is working, and a second build is over the cap.
+    assert.equal(readBuild(org.id, project.id, row.sessionId)?.turn, "working");
+    await assert.rejects(
+      () => asked.execute("f21b", { gap: "none", prompt: "Second", title: "Second" }, undefined, undefined, undefined as never),
+      /1 of its coding sessions are running, and the limit is 1 at once\./,
+    );
+    await hostOf(org.id).act(sid, "turn/ended", {}, { by: "system" } as never);
+    store.patchPoSettings(p, { caps: { codingRunning: 2 } });
   });
 
   test("gathering sessions stay mode-less, whatever the project's coding mode and the default", async () => {

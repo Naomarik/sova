@@ -418,6 +418,32 @@ export async function syncBuildTurn(orgId: string, sid: string, path: string | n
   if (workers !== (typeof d.workers === "number" ? d.workers : 0)) await host.act(sid, "workers/changed", { n: workers }, SYSTEM);
 }
 
+/** The build a hosted session file is, with its org (fresh ones first, then the index). */
+function buildOfPath(path: string): { orgId: string; projectId: string; sid: string } | null {
+  const want = canonicalPath(path);
+  for (const [id, p] of [...fresh, ...indexedSessionPaths()]) if (canonicalPath(p) === want) return buildOfSession(id);
+  return null;
+}
+
+/** A build's turn started (agent_start, F21): its chart says working from now, so the Pipeline shows it and the
+    at-once cap counts it while the turn runs. */
+export async function noteBuildStarted(path: string): Promise<void> {
+  const hit = buildOfPath(path);
+  if (!hit) return;
+  const host = hostOf(hit.orgId);
+  if (host.data(hit.sid)?.turn !== "working") await host.act(hit.sid, "turn/started", {}, SYSTEM);
+}
+
+/** Every build of the project on this host: its runtime's facts now (working, workers) to its chart, before an act
+    that counts them (the at-once coding cap, F21). */
+export async function syncProjectBuilds(orgId: string, projectId: string): Promise<void> {
+  if (!isOrgHostOpen(orgId)) return;
+  for (const s of hostOf(orgId).sessions("build")) {
+    if (s.data.projectId !== projectId || !s.running) continue;
+    await syncBuildTurn(orgId, s.id, buildSessionPath(str(s.data.sessionId)));
+  }
+}
+
 /** A build's turn ended (agent_settled): the chart hears the turn (and its end), so the overseer is told of its own. */
 export async function noteBuildSettled(path: string, failed: boolean): Promise<void> {
   const want = canonicalPath(path);

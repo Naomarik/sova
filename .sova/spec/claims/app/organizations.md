@@ -276,6 +276,10 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     heading after their links: `The owner page`, its state (`Can read`, `Turned off`, `Expired`),
     `sent {relative time}`, `expires {relative time}` while it can open, `{n} visits`, and on the
     live one `Turn Off Owner Link`. `Turn Off All` never touches them.
+  - **Sent on WhatsApp** (§app.outreach/log), after the owner links, when they were sent anything:
+    one row per send, newest first: what went (the gathering's public title, "A preview" or "A
+    message"), the latest event as a chip (Sent, Delivered, Read, Failed, Unknown, Not sent), when,
+    and a failure's code.
   - **Visits**, newest first, one row per visit (§app.baton/visits): `Opened {session title}`
     (`Opened the owner page` for a visit through an owner link),
     the device family, `for about {duration}` once it lasted a minute or more, and the relative
@@ -347,7 +351,9 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     watch, extra instructions), `notes.md`, `ideas/` and `todos.json`;
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
     link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
-    an IP address or a raw user agent.
+    an IP address or a raw user agent;
+  - `outreach.jsonl`, the send log (§app.outreach/log): each link sent to a person outside Sova and
+    its receipts — never a number, a token, a link, a message id or the message.
   JSONL files are only ever appended to. A `.gitignore` excludes temp files (`*.tmp`, `*.lock`).
 - Sova opens those transcripts like any session: a `.jsonl` directly inside an attached
   org's `sessions/` is accepted wherever a session path is (nothing nested, nothing else in the

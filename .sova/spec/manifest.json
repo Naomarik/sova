@@ -9853,6 +9853,213 @@
         "src/vis/kinds/wireframe/previews.fixture.ts",
         "pi-config/extensions/mode/vis-mode.md"
       ]
+    },
+    "§app.outreach/channels": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/outreach.ts",
+        "server/outreach/types.ts",
+        "server/outreach/whatsapp.ts",
+        "server/outreach/core.ts",
+        "server/outreach.test.ts"
+      ]
+    },
+    "§app.outreach/decisions": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-org-tools.ts",
+        "server/overseer-org-tools.test.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-prompt.md",
+        "server/project-overseer-tools.test.ts",
+        "server/outreach.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/org-people-facing",
+        "§app.project-overseer/tools"
+      ]
+    },
+    "§app.outreach/guide": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "docs/outreach/README.md",
+        "docs/outreach/whatsapp.md",
+        "services/whatsapp/sova-whatsapp.service.example",
+        "services/whatsapp/README.md"
+      ],
+      "requires": [
+        "§app.outreach/sender"
+      ]
+    },
+    "§app.outreach/limits-and-pause": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/settings.ts",
+        "server/outreach/core.ts",
+        "server/outreach.test.ts"
+      ]
+    },
+    "§app.outreach/links": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/links.ts",
+        "shared/outreach.ts",
+        "server/preview-links.ts",
+        "server/preview-links-routes.ts",
+        "shared/preview-links.ts",
+        "src/lib/previews.ts",
+        "src/components/PreviewsCard.tsx",
+        "src/components/SharesPage.tsx",
+        "server/outreach.test.ts"
+      ],
+      "requires": [
+        "§app.baton/links",
+        "§mesh.public/preview"
+      ]
+    },
+    "§app.outreach/log": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/log.ts",
+        "server/person-page.ts",
+        "shared/orgs.ts",
+        "src/components/PersonPage.tsx",
+        "server/outreach.test.ts"
+      ],
+      "requires": [
+        "§app.organizations/workspace-repo"
+      ]
+    },
+    "§app.outreach/secrets": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/protected-paths.ts",
+        "server/outreach/settings.ts",
+        "server/overseer-deny.ts",
+        "server/overseer-prompt.md",
+        "pi-config/sandbox-policy/linux/policy.json",
+        "pi-config/sandbox-policy/darwin/policy.json",
+        "server/outreach.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.outreach/send": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "org-charts/src/sova/org_charts/charts/proj.cljc",
+        "server/org-charts-replay.ts",
+        "server/outreach.test.ts",
+        "server/outreach/core.ts",
+        "server/outreach/ipc-client.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "server/project-overseer-settings.test.ts",
+        "server/project-pipeline.ts",
+        "server/vendor/org-charts.js",
+        "shared/project-overseer.ts",
+        "src/components/BatonStrip.tsx",
+        "src/components/SendOnWhatsApp.tsx",
+        "src/lib/api.ts",
+        "src/lib/project-overseer-view.ts"
+      ],
+      "requires": [
+        "§app.baton/links",
+        "§app.baton/needs-you",
+        "§app.project-overseer/holds",
+        "§app.project-overseer/reviews",
+        "§app.organizations/working-hours"
+      ]
+    },
+    "§app.outreach/sender": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "services/whatsapp/bin/sova-whatsapp.mjs",
+        "services/whatsapp/src/core.mjs",
+        "services/whatsapp/src/config.mjs",
+        "services/whatsapp/src/ipc.mjs",
+        "services/whatsapp/src/store.mjs",
+        "services/whatsapp/src/log.mjs",
+        "services/whatsapp/src/quiet-console.mjs",
+        "services/whatsapp/src/baileys.mjs",
+        "services/whatsapp/IPC.md",
+        "services/whatsapp/package.json",
+        "services/whatsapp/pnpm-workspace.yaml",
+        "services/whatsapp/pnpm-lock.yaml",
+        "services/whatsapp/test/core.test.mjs",
+        "services/whatsapp/test/config.test.mjs",
+        "services/whatsapp/test/ipc.test.mjs",
+        "services/whatsapp/test/cli.test.mjs",
+        "services/whatsapp/test/quiet-console.test.mjs",
+        "services/whatsapp/test/helpers.mjs",
+        "scripts/fake-whatsapp-sender.mjs",
+        "services/whatsapp/test/fake.test.mjs",
+        "services/whatsapp/test/log.test.mjs",
+        "services/whatsapp/src/lock.mjs",
+        "services/whatsapp/test/lock.test.mjs"
+      ],
+      "requires": []
+    },
+    "§app.outreach/sender-route": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/outreach/settings.ts",
+        "server/outreach/ipc-client.ts",
+        "server/outreach/relay.ts",
+        "server/outreach/routes.ts",
+        "server/outreach/whatsapp.ts",
+        "server/index.ts",
+        "server/outreach.test.ts"
+      ],
+      "requires": [
+        "§mesh.peers/listener"
+      ]
+    },
+    "§app.settings-dialog/outreach": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/OutreachSettings.tsx",
+        "src/lib/outreach.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/lib/settings-nav.ts",
+        "src/lib/settings-nav.test.ts"
+      ],
+      "requires": [
+        "§app.settings-dialog/save-bar"
+      ]
+    },
+    "§app/outreach": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/outreach.ts",
+        "server/outreach/core.ts"
+      ]
     }
   },
   "boundary": {

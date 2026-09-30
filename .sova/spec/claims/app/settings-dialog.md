@@ -8,7 +8,7 @@ the session stays behind, closed by the scrim, Esc, or its Close button (Cancel 
 is unsaved, §app.settings-dialog/save-bar).
 
 The rail is the structure: each settings screen is one tab — General, Models, Accounts, Modes, Teams,
-Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Voice, Experimental.
+Profiles, Overseer, Notifications, Decisions, Summaries, Organizations, Themes, Mesh, Public links, Outreach, Voice, Experimental.
 Tabs move with the arrow keys as well as the pointer, and the selected tab has focus on open: the
 two have to name the same screen. The gear opens General; the mode menu's **Configure Delegate** gear
 (§chat/mode-menu) opens Modes directly, and nothing else about the chat changes. Which tab is open lives in
@@ -896,3 +896,26 @@ sentence step shows that sentence on its status line; nothing is kept:
   zeros only come from processing.
 - **Cut off** — the last 100 ms still above −45 dBFS: "This clip ends mid-word. Record it again and
   stop a moment after the last word."
+
+## §app.settings-dialog/outreach — Outreach
+
+Settings → Outreach (§app/outreach) sets how this host reaches the WhatsApp sender, after Public
+links in the rail. It is Save-gated (§app.settings-dialog/save-bar): **Sender** and **Accept sends
+from** are staged and written by Save Changes, as the form "Outreach".
+
+- **Sender**: **Off** · **This host** (the sender runs here; an optional socket path, placeholder
+  the default) · **Via a peer** (a select of this host's peers, §mesh/peers). Under it, the sender's
+  state as the server last read it, as a chip and a sentence: Off; "Not reachable: {why}";
+  Connected (with the number's last three digits); Connecting; Not paired ("Pair it on the sender's
+  host: sova-whatsapp pair."); Logged out ("Pair it again on the sender's host:
+  sova-whatsapp pair."); Replaced ("Another copy of the sender took over this number."); Blocked;
+  Down ("Reconnect it on the sender's host."). **Check Again** re-reads it at once.
+- **Accept sends from** (shown only while Sender is This host): **No other host** · **All peers** ·
+  a checkbox per peer; other hosts send through this host's sender only as listed here.
+- **Pause all sending**, a switch that applies at once (an action, not part of the draft): while on,
+  every send from this host is refused with "Outreach is paused.".
+- **Protected paths**: the paths §app.outreach/secrets covers, one per line, under "Hidden from
+  the Overseer's file tools:"; a warn banner when the sender reports an auth directory that
+  sandboxed agents can still read.
+- A closing note: "Links you send stay in your own WhatsApp chat history: anyone with your phone
+  can open them." and a pointer to `docs/outreach/whatsapp.md`, the setup guide.

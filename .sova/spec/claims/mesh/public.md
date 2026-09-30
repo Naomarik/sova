@@ -339,8 +339,10 @@ mesh off. Copy is §design.copy-deck/public-links.
   previews are two separate sites.
 - `<stateRoot>/preview-links.json` (0600, written atomically, parsed strictly: a file that breaks a
   rule serves no preview and is never overwritten) keeps, per link, `{id, hash, orgId, projectId,
-  port, createdAt, expiresAt, revokedAt?, createdBy}`, where `hash` is the SHA-256 of the label and
-  `createdBy` is `operator` or `session:<id>`. The label itself is never stored: the mint's answer
+  port, createdAt, expiresAt, revokedAt?, createdBy, siblingOf?, sentTo?}`, where `hash` is the
+  SHA-256 of the label and `createdBy` is `operator` or `session:<id>`. A **sibling** (`siblingOf`,
+  `sentTo`) is a person's own link to another preview, made when it is sent to them
+  (§app.outreach/links): same project and port, expiring with it. The label itself is never stored: the mint's answer
   carries the link once.
 - **Mint** (`POST /api/previews {orgId, projectId, port, days?}`, main listener only, like the
   other local acts): `port` must be an integer 1–65535, not 4800, 4801, 4802 or 4810, and not a
@@ -350,12 +352,13 @@ mesh off. Copy is §design.copy-deck/public-links.
   doesn't list kind `p`: "{gateway} needs updating before it can carry preview links.").
 - The app is always dialed at `127.0.0.1:<port>`, then `[::1]:<port>` when nothing listens there,
   and never at any other address.
-- **Turn Off** (`POST /api/previews/<id>/off`) revokes it: from then on its origin answers 410,
+- **Turn Off** (`POST /api/previews/<id>/off`) revokes it, and every sibling of it: from then on its origin answers 410,
   and every open HTTP connection and websocket through it is closed at once. The same happens
   when it expires. **Extend** (`POST /api/previews/<id>/extend {days}`) moves its expiry to `days`
-  from now (at most 30). `GET /api/previews?orgId&projectId` lists a project's previews (every
+  from now (at most 30; a sibling's, never past its original's). `GET /api/previews?orgId&projectId` lists a project's previews (every
   project's without them) with each one's port, expiry, state and whether something listens on
-  its port now (`running`), with the preview address's state.
+  its port now (`running`), with the preview address's state; a sibling carries `siblingOf`,
+  `sentTo` and `sentToName`, and the lists show it as "sent to {name}".
 - A routed host sends each live preview's hash as a `p` row (§mesh.public/registry) only to a
   gateway target whose own info listed `p`; its gateway routes the preview host to its ingress
   (§mesh.public/routing).
@@ -429,7 +432,8 @@ would have expired, and answers them 410 too.
 
 ## §mesh.public/preview-card — Previews on the project page
 
-- The project page has a **Previews** card: each active preview with its port, `Expires {time}`,
+- The project page has a **Previews** card: each active preview with its port, `Expires {time}`
+  (after "sent to {name} · " for a person's own copy sent on WhatsApp, §app.outreach/links),
   whether something listens on the port (`App is running` / `Nothing on port {n}`), **Copy Link**
   (only in the page that minted it, since the link is shown once) and **Turn Off**; turned-off
   and expired previews are not listed. Then **New Preview**: Port, Expires (1, 7 or 30 days) and

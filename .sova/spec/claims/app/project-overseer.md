@@ -311,6 +311,8 @@ user row.
 - L0: `sova_note`, `sova_card`, `sova_idea`. L1: `sova_start_gathering` (one active roster
   person, or the operator), `sova_offer` (two or more), `sova_reconcile`,
   `sova_owner_update` (an update on the owner page, §app.owner-page/updates),
+  `sova_send_to_person` (L1: a WhatsApp message to a roster person — their gathering link, a preview
+  link, a note, or a link with a note; §app.outreach/decisions),
   `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
   within the project's ceiling (§app.baton/abilities) and a required `why`. L2: `sova_promote`,
   `sova_roster` approve/decline (history records the overseer as the writer). L3:
@@ -646,7 +648,7 @@ user row.
 - **The charts are the state.** Every lifecycle and every link of an organization's work is a
   statechart session, and nothing else stores it: the org (its owner), each person (proposed,
   active, left, and a referral), each project (archived, its overseer, its main stakeholder, its
-  owner updates), each gathering session (holder, hand-offs, offers and leases, the message
+  owner updates, and every WhatsApp send to its people, `outreach/send`, §app.outreach/send), each gathering session (holder, hand-offs, offers and leases, the message
   budget, the reply running, the wrap-up), each decision, each conflict, each project's
   reconciler, each gap (§app.project-overseer/gaps), and each coding session with its worktree and
   branch; and, host-local, this host's hold on the org (attach and commits) and each project's
@@ -791,7 +793,8 @@ user row.
 
 - **What is held.** An act that reaches a person or the client's code — starting a gathering
   session or an offer, closing one, promoting decisions, starting a coding session or sending one
-  a prompt, posting an owner update, approving or declining a referral — waits in a **hold**
+  a prompt, posting an owner update, messaging a person on WhatsApp (§app.outreach/send),
+  approving or declining a referral — waits in a **hold**
   before it is done, when a chart starts it on its own (§app.project-overseer/drive) or the
   overseer's own tool call makes it in a run the operator did not start
   (§app.project-overseer/autonomy-levels). Never held: acts in a turn the operator started, the
@@ -856,9 +859,9 @@ user row.
 - **The acts it must confirm.** The project's overseer settings, next to the level,
   carry a checklist of the kinds of act that need the overseer's confirmation (`confirmKinds` in
   `overseer.json`): starting, offering or closing a gathering session,
-  promoting, starting or prompting a coding session, an owner update, approving or declining a
-  referral (`gather`, `offer`, `close`, `promote`, `build`, `prompt`, `owner-update`,
-  `roster-approve`, `roster-decline`, in that order). Every kind is on by default. `PATCH
+  promoting, starting or prompting a coding session, an owner update, messaging a person on
+  WhatsApp, approving or declining a referral (`gather`, `offer`, `close`, `promote`, `build`,
+  `prompt`, `owner-update`, `send`, `roster-approve`, `roster-decline`, in that order). Every kind is on by default. `PATCH
   …/overseer {confirmKinds}` refuses anything but a list of those kinds (400, "confirmKinds must
   list act kinds from: gather, offer, …"); a hand-edited value that can't be read reads as the
   default, and an unknown kind in it is dropped. The list is stamped on every act of the
@@ -967,7 +970,7 @@ user row.
   first,
   each with its time ("14:06" today, "Mar 4 14:06" before, with the year when it isn't this year),
   what happened as a sentence (each chart event has its own: "The overseer filed this gap.", "A held
-  act waits for the overseer's review.", "The session was retired: the project keeps the 200
+  act waits for the overseer's review.", "A person was sent a WhatsApp message.", "The session was retired: the project keeps the 200
   sessions it started most recently, and this one was finished."; a move with no sentence is
   quiet, never a raw event name), who (You, You via the Overseer, Overseer, Sova, or a person's name), the
   move ("{from} → {to}"), and "Reason: …" for a correction or a cancel, "Refused: …" for a refusal.

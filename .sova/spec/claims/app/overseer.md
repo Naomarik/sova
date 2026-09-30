@@ -167,9 +167,11 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
     `models.json` anywhere under `~/.pi` and under the active agent dir (the model registry, whose
     `apiKey` and headers may be a literal key or a `!command`); Claude Code's
     `~/.claude/.credentials.json` and `~/.claude.json`; `~/.netrc`; `~/.config/gh/hosts.yml`;
+    `<stateRoot>/outreach.json` and `outreach-receipts.json` (§app.outreach/secrets);
   - whole directories: `~/.ssh`, `~/.gnupg`, `~/.aws`, `~/.claude/backups`, `/proc` (every
     process's environment and command line, the server's own included), `/sys` and `/dev/fd`
-    (the server's own open files; on Linux it resolves into `/proc`, on macOS it does not);
+    (the server's own open files; on Linux it resolves into `/proc`, on macOS it does not), and
+    the WhatsApp sender's home and its auth directory wherever configured (§app.outreach/secrets);
   - names, anywhere on the machine, so a copy is denied like the original (another worktree's
     `.agent/auth.json`, a `.credentials.json.mtn` backup): `auth.json` and `auth.json.*`;
     `.claude.json` and `.claude.json.*`; any name containing `credentials`; `.env` and `.env.*`
@@ -1213,8 +1215,8 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
 - **`sova_gather {op}`**: `start {org, project, to, public_title, question, goal, why, briefing?,
   model?, thinking?, messages_max?, abilities?}` (`to`: a person, `operator`, or two or more people
   for an offer at start; `abilities` within the project's ceiling, §app.baton/abilities), `offer {session, to[], question?, briefing?}`, `handoff {session, to, question,
-  briefing?}`, `take {session}` (Take Back), `close {session}`, `extend {session, by}` and
-  `revoke_link {session, person?}`. The rules of §app.baton/goal-and-loadout,
+  briefing?}`, `take {session}` (Take Back), `close {session}`, `extend {session, by}`,
+  `revoke_link {session, person?}` and `send_link {session, person?, note?}` or `{preview, person, note?}` (§app.outreach/decisions). The rules of §app.baton/goal-and-loadout,
   /offers-and-leases and /links apply as on the page; the tool descriptions carry the project
   overseer's wording rules for `public_title`, `question` and `goal`
   (§app.project-overseer/tools). `why` is required: one or two sentences for the user saying why
@@ -1225,13 +1227,16 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   (`mintLink: false`), owned by the operator; the session then needs the user to send each person
   their link (§app.baton/needs-you), and the result says so: "No link was made: Needs you asks you
   to send {name} their link." A hand-off moves the baton in-process and mints none either (the
-  page's hand-off route mints one for the operator to copy). No op gets, shows or re-mints a link.
+  page's hand-off route mints one for the operator to copy). No op gets or shows a link: `send_link`
+  mints one and hands it straight to the person on WhatsApp (§app.outreach/send), and its
+  result says only "Sent {name} their link on WhatsApp." or why not — never the link, the token or
+  the number.
 - **Behind a confirm card, enforced.** These ops act on people or end something, and run only in a
   turn the user opened by clicking a card (§app.overseer/confirm) that lists every person, project
   and session the call acts on: the run's opening message is a click on that card, its text exactly
   the message the click composes, and the card was open when it arrived. A card-level option approves
   every item on the card; a per-item Apply approves only the items it gave a choice. The ops: `sova_gather` `start`, `offer`,
-  `handoff`, `take`, `close` and `revoke_link`; `sova_roster` `leave`, and a `revert` that sets
+  `handoff`, `take`, `close`, `revoke_link` and `send_link`; `sova_roster` `leave`, and a `revert` that sets
   `left`; `sova_project_overseer` `clear`; `sova_org_project` `archive`. Anywhere else (a typed
   "yes", a card that didn't list the target, a card already answered, superseded or dropped, a
   later turn, a card from before card ids) the op refuses without doing anything, before any other

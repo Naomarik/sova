@@ -199,26 +199,38 @@ appends (one line each).
 - It shows while the feature is on and the session is idle, and, unlike the other signals, a look
   does not clear it: opening or viewing the session leaves it, as with open questions. It clears
   when the user answers (a turn runs, and the next turn replaces or drops it) or the session is
-  archived. An open alignment question that appears later takes its place in Needs you.
+  archived. An open alignment question that appears later takes its place.
+- It is a guess, so it is **never a blocker**: the attention digest carries it as a **decide**
+  item (§app.overseer/attention-digest), a quiet mark on the session's row (a chat glyph in muted
+  ink, never the accent, §app.session-list/anatomy) and a line in the
+  Overseer's digest. It is not in Needs you, not in the Overseer's "need you" count, never wakes
+  the Overseer with a brief and never sends a phone notification.
 
 ## §app.decisions/team-stall — A team gone quiet
 
 - Counted in code, never asked of a model, by the attention signals' 10 s scan while the feature
   is on: a session **waits on a stalled team** when all of these hold —
   - it is idle (not running a turn), not archived, and not an Overseer, worker or baton session;
-  - it has live subagents, at least one of them neither killed nor a team member whose duty is
-    `monitor` or `coordinator`, and none of them is working;
+  - it has live subagents, none of them working, and at least one that **counts**: not killed,
+    not a team member whose duty is `monitor` or `coordinator`, not one that has delivered a
+    finished report (idle with a successful outcome), and whose last activity came **after** the
+    session's last reply. A leftover worker of a finished session — its report delivered and
+    answered before the last reply, like one restored idle when an old session is opened again —
+    never counts; it is never stopped for this either;
   - the end of its last reply (after the closing spec lines) says it waits on them: "still
     running", "in progress", "when it arrives", "once the verifier signs off", "reports to me",
-    "will send me", "as they come", "waiting on the team" and the like;
-  - nothing has happened for 15 minutes: not its last reply, and no subagent's last activity
-    (monitors' and coordinators' check-ins never count).
+    "will send me", "as they come", "waiting on the team" and the like. A phrase whose subject
+    is "you" ("When you report a bug…") is advice to the user and never counts;
+  - nothing has happened for 15 minutes: no counted subagent's last activity (monitors' and
+    coordinators' check-ins never count).
 - It is stored in `<stateRoot>/signals.json` with the time the quiet began and the quiet
   subagents' names, re-checked every scan, and dropped as soon as any condition fails.
-- The attention digest shows it as an **act** item of the session (Needs you, the Overseer's
-  count and briefs), kind `team-stalled`: "Waiting on {names}, quiet for {n} min.", dated by when
-  the quiet began — unless the session already has an `open-questions` or `asks-you` item. It is
-  not a phone notification kind: the notifier tells it without sending (§app.notifications/delivery).
+- The attention digest shows it as a **decide** item of the session, kind `team-stalled`:
+  "Waiting on {names}, quiet for {n} min.", dated by when the quiet began — unless the session
+  already has an `open-questions` or `asks-you` item. Like `asks-you` it is a quiet row mark (a clock glyph in muted ink, never the accent,
+  §app.session-list/anatomy) and a line
+  in the Overseer's digest only: never Needs you, the "need you" count, a brief or a phone
+  notification.
 
 ## §app.decisions/call-ledger — The call ledger
 

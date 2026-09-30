@@ -171,7 +171,7 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -179,7 +179,9 @@
         "src/lib/storage-keys.ts",
         "src/lib/signals.ts",
         "src/lib/signals.test.ts",
-        "src/lib/summary-diff.ts"
+        "src/lib/summary-diff.ts",
+        "src/lib/readiness.ts",
+        "src/lib/readiness.test.ts"
       ]
     },
     "§app.session-list/archive-by-date": {
@@ -219,7 +221,9 @@
         "src/lib/folder-open.ts",
         "server/sessions-index.ts",
         "server/sessions-context.test.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/lib/readiness.ts",
+        "src/lib/readiness.test.ts"
       ]
     },
     "§app.session-list/groups": {
@@ -280,7 +284,7 @@
     "§app.session-list/selecting-several-sessions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/lib/session-selection.ts",
         "src/lib/session-selection.test.ts",
@@ -1351,12 +1355,15 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",
         "src/lib/session-selection.ts",
-        "src/lib/org-region.ts"
+        "src/lib/org-region.ts",
+        "src/lib/readiness.ts",
+        "src/lib/needs-you.ts",
+        "src/lib/signals.ts"
       ]
     },
     "§design.copy-deck/slash-commands": {
@@ -2625,7 +2632,10 @@
         "server/signals-store.ts",
         "server/attention.test.ts",
         "shared/protocol.ts",
-        "server/align-state.ts"
+        "server/align-state.ts",
+        "server/needs-you-later.ts",
+        "server/needs-you-later.test.ts",
+        "server/index.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -3388,7 +3398,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3401,7 +3411,11 @@
         "server/attention-memo.test.ts",
         "server/org-routes.ts",
         "server/overseer.ts",
-        "server/attention.ts"
+        "server/attention.ts",
+        "src/components/RowMenu.tsx",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "src/lib/org-region.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest",
@@ -3926,7 +3940,9 @@
         "server/baton-offers.test.ts",
         "src/lib/org-region.ts",
         "server/baton-links.ts",
-        "src/components/Sidebar.tsx"
+        "src/components/Sidebar.tsx",
+        "shared/baton.ts",
+        "server/needs-you-later.test.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest"
@@ -4755,7 +4771,7 @@
         "§chat.worktrees/inherit"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "server/insights.ts",
         "server/worktrees-state.ts",
@@ -5074,7 +5090,7 @@
     "§app.session-list/organizations": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "requires": [
         "§app.session-list/ordinary-surfaces",
         "§app.organizations/org-sessions",

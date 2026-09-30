@@ -154,9 +154,12 @@ names the branch and the path, and carries a status chip — Active, Dropped, or
 this session's workers with a live process inside it, and "Shared with session <id>" linking the
 session it was inherited from. An active worktree whose branch git finds already in its target
 reads Merged too, with a title saying this session didn't record it. A row with a readiness
-(§chat.worktrees/readiness) adds a chip after the status chip — Ready, Waiting for your OK, In
-progress, Blocked or Stale, with the reason as its `title` — and none while merged, which the
-status chip already says. The section follows the
+(§chat.worktrees/readiness) adds a chip after the status chip — Ready to merge (the row's and
+the digest's words), Waiting for your OK, In progress, Blocked or Stale, with the reason as its
+`title` — and none while merged, which the status chip already says. Under the facts, one visible
+muted line gives the reason, so a phone gets it without hover: the readiness's `reason` ("Ready to
+merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files"), else the chip's
+word and the why joined by " · ", and no line when there is neither. It wraps; it never truncates. The section follows the
 file: it updates as the session's file changes, with no control of its own.
 
 ## §chat.worktrees/readiness — Is it ready to merge, and what did a merge leave
@@ -175,17 +178,30 @@ no model call (`server/merge-readiness.ts`):
 - **stale** — merged, but the tree has uncommitted changes while nothing runs in the session:
   never "merged". A branch with no commit of its own is never merged, dirty or not.
 - **in progress** — a turn is running or subagents are working in the session, the tree has
-  uncommitted changes, the branch has no commit of its own yet, a commit subject on the branch
-  starts with `TEMP`, `WIP`, `fixup!`, `squash!` or `amend!`, or the session's newest check run
-  (a `bash` call running a test, typecheck or build) failed.
+  three or more uncommitted files, the branch has no commit of its own yet, it **conflicts with
+  its base** (the trial merge git already runs for an unmerged branch reports conflicts), a
+  commit subject on the branch starts with `TEMP`, `WIP`, `fixup!`, `squash!` or `amend!`, or the
+  session's newest check run (a `bash` call running a test, typecheck or build) failed.
 - **blocked** — the session waits on open alignment questions (§chat.alignment/session-mark).
-- **ready** — at least one commit ahead, clean, and none of the above. The session's newest
-  check run passing is recorded with it; a session that ran none is still ready, and says so.
+- **ready** — at least one commit ahead, and none of the above. One or two uncommitted files do
+  not stop it: it is ready with a caveat that names them (a regenerated report file is the usual
+  case). The session's newest check run passing is recorded with it; a session that ran none is
+  still ready, and says so.
 - **waiting for your OK** — ready, and the session's last reply (no user prompt after it) asks the
   user something: the attention signal's ask answer when it has one for that reply
-  (§app.decisions/attention-signals), else the reply's last 600 characters, before its closing
-  `Also changes:` / `Deferred:` lines, asking to merge ("Shall I … merge…?", "Want me to merge…",
-  "OK to merge?", "ready to merge", "say merge").
+  (§app.decisions/attention-signals), else the reply's last 600 characters asking to merge ("Shall
+  I … merge…?", "Want me to merge…", "OK to merge?", "ready to merge", "say merge"). The closing
+  spec lines (`Also changes:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut from the
+  whole reply **before** its last 1,500 characters are kept, here and for the follow-up check
+  (§app.decisions/merge-followup), so a long spec line never crowds out the reply's body.
+
+Each worktree carries a **reason**, one line a person reads without hovering (the Session tab
+shows it under the worktree, §chat.worktrees/pane): its state and why, joined by " · " — "Ready to
+merge · checks passed · 19 commits ahead", "Ready to merge · 1 uncommitted file:
+NAIVE-RUN.txt", "Waiting for your OK · checks passed", "Conflicts with master · 17 files",
+"Blocked · 2 open questions", "In progress · 3 uncommitted files: a.ts and 2 more", "In progress ·
+working now", "Merged", "Merged · still tracked active", "Stale · merged, with uncommitted
+changes". Uncommitted files are named by the first one and how many more.
 
 Routine follow-ups, also mechanical:
 
@@ -201,17 +217,20 @@ Git is read in the background, at most every 20 seconds per session while the fi
 and only for session files that ever wrote a `worktrees` entry, so a listing never waits on git.
 
 **The row's badge** (§app.session-list/anatomy) is one short phrase from the session's worktrees,
-the first that holds: "waiting for your OK" (a worktree waits for the go-ahead), "ready ✓" (one is
-ready), none while another worktree is in progress, stale or blocked (the busy and open-question
-marks say it), "restart pending", "merged · {n} follow-up(s)" ({n} = cleanup, plus the
-§app.decisions/merge-followup answer when it names small or significant work), "merged". Its
-`title` names each worktree with its state and every routine follow-up in words, one line each.
+the first that holds: "Waiting for your OK" (a worktree waits for the go-ahead) and "Ready to
+merge" (one is ready), each a toned chip leading the row's third line; none while another worktree is in progress, stale or blocked (the busy and open-question
+marks say it), "restart pending", "merged · {n} follow-up(s)" ({n} = only the
+§app.decisions/merge-followup answer when it names small or significant work; leftover worktrees
+— cleanup — are said only in the `title`, never counted), "merged". An **empty leftover
+worktree** — no commit of its own, a clean tree, nothing running — does not hide the merged badge
+of the session's merged worktrees. Its `title` names each worktree with its state and every
+routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
 so the Overseer reads the same answer.
 
-**In the attention digest** (§app.overseer/attention-digest): "Ready to merge: {branch}" for a
-worktree waiting for the go-ahead, act tier, so the sidebar's Needs you lists it
-(§app.session-list/needs-you) — it is not a push kind, so it never sends a phone notification;
-and, decide tier, "Merged with open work: {cue}" for a merge the follow-up check calls
-significant, and one "Restart pending" item for the whole server, however many sessions' merges
-ask for it, naming how many merges and their branches.
+**In the attention digest** (§app.overseer/attention-digest), decide tier, never Needs you, a brief
+or a phone notification: "Ready to merge: {branch}" for a ready worktree and "Waiting for your OK:
+{branch}" for one waiting for the go-ahead, while the session is idle; "Merged with open work:
+{cue}" for a merge the follow-up check calls significant; and one "Restart pending" item for the
+whole server, however many sessions' merges ask for it, naming how many merges and their
+branches.

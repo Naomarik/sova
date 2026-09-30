@@ -621,7 +621,30 @@ itself.
   since the alignment last changed), is `open-questions` ("{n} open
   question(s) in {al_N} {title}" with one open alignment, else "… in {m} alignments"), dated by its
   last reply. It needs no signal and no model; it shows with the attention feature off too.
-- **Needs you, from signals** (§app.decisions/attention-signals, only while the list carries them):
+- **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
+  briefs and phone notifications — is exactly: open alignment questions, open dialogs, errored
+  turns, subagent errors, and the baton and roster hand-offs and held acts below. A guess (a
+  reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
+  items: a line in the digest and a quiet mark on the session's row, never a brief.
+- **Later.** An act item the user put away with Later (§app.session-list/needs-you) is left out
+  of the digest — its items, its counts and the "need you" count — until its **anchor** changes:
+  the thing whose change counts as new. Each act item carries a `later` key naming its session,
+  its kind and its anchor as the user saw it; `POST /api/attention/later {keys}` puts them away,
+  `POST /api/attention/later/undo {keys}` brings them back, and either drops the digest's memo.
+  The anchors: open questions — the open questions' ids (a new or reopened question is new; one
+  answered is not); a dialog — the open dialogs (a new one is new); an errored turn — its reply's
+  time; a subagent error — the latest error's time; a baton hand-off — the hand-off (or open
+  offer) (§app.baton/needs-you); a roster proposal, which
+  carries a key though it is a decide item — its proposed person; any other act item — its
+  `since`. A message the user sends or a look at the session changes no anchor. The store is
+  `<stateRoot>/needs-you-later.json` (atomic tmp+rename), one entry per session and kind (per
+  proposed person for roster proposals), so it
+  survives a restart and is the same on every device; an entry whose anchor has moved on is
+  dropped, and so is one whose session (or project item) is no longer listed at all. Time alone
+  never brings an item back, and neither does its absence: open questions leave the digest while a
+  turn runs, and stay put away when it ends. A reopened question is new because the question's id
+  carries how often the branch reopened it (`al_9/q1#1`).
+- **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
   `asks-you` when the last reply asks the user something (§app.decisions/asks-user) and the
   session has no `open-questions` item, "Asks you: {the asking sentence}", else "The last reply
   asks you something.", dated by the classification; `team-stalled` when the session waits on
@@ -647,9 +670,9 @@ itself.
   {area}.", linking to the project page. Never a phone notification.
 - **Finished (decide):** replied since last seen and now idle; idle with an unsent draft or queued
   input.
-- **Needs you, ready to merge (act)** (§chat.worktrees/readiness): an idle, unarchived session
-  with a worktree ready and waiting for the go-ahead, "Ready to merge: {branch}". Not a push kind
-  (§app/notifications): it never sends a notification.
+- **Ready to merge (decide)** (§chat.worktrees/readiness): an idle, unarchived session with a
+  worktree ready, "Ready to merge: {branch}", or ready and waiting for the go-ahead, "Waiting for
+  your OK: {branch}". Never Needs you, a brief or a notification.
 - **Merges (decide)** (§chat.worktrees/readiness): a merge the follow-up check
   (§app.decisions/merge-followup) calls significant, "Merged with open work: {cue}"; and one
   `restart-pending` item of no session, "Restart pending: {n} merge(s) changed the server since it

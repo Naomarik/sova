@@ -250,7 +250,8 @@ function ProfileEditor(props: { profile: Profile; models: string[]; nameProblem:
           {(r: Removable) => {
             const why = () => lockedReason(r, p().remove);
             return (
-              <label class="toggle" title={why() ?? undefined}>
+              <label class="toggle toggle-switch" title={why() ?? undefined}>
+                <span>{CAPABILITY_LABEL[r]}</span>
                 <input
                   type="checkbox"
                   checked={p().remove.includes(r)}
@@ -262,7 +263,6 @@ function ProfileEditor(props: { profile: Profile; models: string[]; nameProblem:
                   }}
                 />
                 <span class="toggle-box" />
-                <span>{CAPABILITY_LABEL[r]}</span>
               </label>
             );
           }}

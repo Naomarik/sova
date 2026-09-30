@@ -1,5 +1,5 @@
 import { createResource, createSignal, For, Show } from "solid-js";
-import { CAPABILITY_LABEL, profileSentence, type Profile } from "../../shared/profiles";
+import { CAPABILITY_LABEL, profileSentence, titleCase, type Profile } from "../../shared/profiles";
 import type { ChatProfileInfo, SessionSummary } from "../../shared/protocol";
 import { fetchProfiles, setSessionArchived } from "../lib/api";
 import { openProfileStart } from "../lib/profile-start";
@@ -101,7 +101,7 @@ export function ProfileChip(props: { summary: SessionSummary; info: ChatProfileI
                 </Show>
                 <Show when={f().singleton && !props.summary.archived}>
                   <button type="button" class="button button-sm button-ghost" onClick={() => void stop()}>
-                    Stop {f().label}
+                    Stop {titleCase(f().label)}
                   </button>
                 </Show>
               </div>

@@ -19,6 +19,9 @@ import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { Banner, Icon, trapFocus } from "./ui";
 
+/** Sessions whose Custom board is open, by path (module state: see `board`). */
+const boardsOpen = new Set<string>();
+
 /**
  * The empty screen's Profile select and what it changes (§chat.profiles/picker). A pick is written
  * to the session at once and its runtime reopens (§chat.profiles/applying); the socket's next
@@ -40,7 +43,13 @@ export function ProfilePicker(props: {
   const [query, setQuery] = createSignal("");
   const [pending, setPending] = createSignal<string | null>(null);
   const [alert, setAlert] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
-  const [board, setBoard] = createSignal(false);
+  // Each flip reopens the runtime and remounts this picker: the board stays open across that.
+  const [board, setBoardOpen] = createSignal(boardsOpen.has(props.path));
+  const setBoard = (on: boolean) => {
+    if (on) boardsOpen.add(props.path);
+    else boardsOpen.delete(props.path);
+    setBoardOpen(on);
+  };
   const [saving, setSaving] = createSignal(false);
   const [showAll, setShowAll] = createSignal(false);
 
@@ -127,7 +136,7 @@ export function ProfilePicker(props: {
             aria-labelledby="profile-label profile-current"
             onClick={() => setOpen(!open())}
           >
-            <Icon name={profileIconName(current()?.icon)} small />
+            <Icon name={profileIconName(current()?.icon ?? "grid")} small />
             <span id="profile-current">{label()}</span>
             <Icon name="chevron-down" small />
           </button>

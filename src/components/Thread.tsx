@@ -94,7 +94,7 @@ function UserTurn(props: {
   attachments?: TmpAttachment[];
 }) {
   const author = () =>
-    props.fromSession ? `From ${props.fromSession.title}` : props.overseer ? "Overseer" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
+    props.fromSession ? "From a session" : props.overseer ? "Overseer" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
   // The model reads the header line; the row shows it as the sender header instead.
   const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.text);
   return (

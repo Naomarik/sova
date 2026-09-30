@@ -408,20 +408,20 @@ html, body { overflow: clip; overscroll-behavior: none; }
 /* The Groups and Needs you region heads: a <details> like the Archive, but
    its <summary> wraps the region's own <h2> so the heading and `aria-labelledby` survive the
    twist. base.css styles the h2; everything the summary itself needs is here. */
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary {
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary {
   display: block;
   cursor: pointer;
   list-style: none;
   user-select: none;
 }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary::-webkit-details-marker { display: none; }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary:hover > .sidebar-region-head { color: var(--color-ink); }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs) > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs)[open] > summary .icon-twist { transform: rotate(90deg); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary::-webkit-details-marker { display: none; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary > .sidebar-region-head { transition: color var(--dur-fast) var(--ease-standard); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary:hover > .sidebar-region-head { color: var(--color-ink); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); border-radius: 0; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles) > summary .icon-twist { flex: none; transition: transform var(--dur-fast) var(--ease-standard); }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles)[open] > summary .icon-twist { transform: rotate(90deg); }
 /* Collapsed, the head is the region's last row: the region rule below it is the only divider. */
-:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs):not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
+:is(.sidebar-groups, .sidebar-needs-you, .sidebar-orgs, .sidebar-profiles):not([open]) > summary > .sidebar-region-head { border-bottom: 0; }
 
 /* ---- ORGANIZATIONS (§app.session-list/organizations): last before the Archive. Its own Needs you
    list, then org (a group-section head) → project (a sticky label) → rows, each project with a
@@ -856,3 +856,25 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profile-editor-limits { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
 .profiles-yours-head { margin: var(--space-4) 0 var(--space-1); }
 @media (max-width: 640px) { .profiles-row { grid-template-columns: auto 1fr; } .profiles-row-actions { grid-column: 1 / -1; justify-content: flex-start; } }
+/* New Session and its profile menu read as one split button; the menu half is narrow so the head keeps its toggle. */
+.new-session-split > .button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+.sidebar-head .new-session-menu-trigger {
+  width: 32px;
+  min-width: 0;
+  padding: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: -1px;
+}
+.session-sender a { max-width: 48ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-sender { max-width: 100%; min-width: 0; }
+.session-sender > span { min-width: 0; white-space: nowrap; }
+.session-sender > span:nth-of-type(2) { display: flex; gap: 0.3em; overflow: hidden; }
+.session-sender > span:nth-of-type(2) > a { min-width: 0; }
+.profile-card .card-body { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; min-width: 0; }
+.profile-card .card-body > .text-muted { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-changes-head { flex-wrap: wrap; }
+.profile-changes-head > * { white-space: nowrap; }
+@media (max-width: 767px) {
+  .profile-chip-wrap .profile-popover { position: fixed; top: 64px; left: var(--space-3); right: var(--space-3); width: auto; }
+}

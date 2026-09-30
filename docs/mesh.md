@@ -37,3 +37,9 @@ The Mesh page generates a [Caddy](https://caddyserver.com) configuration that se
 the first healthy host in the order you set, and back when it recovers. Run it behind
 `tailscale serve` (never Funnel). An open tab that lands on another host says so and keeps the
 session it had open on its own host.
+
+## Public links through a gateway
+
+One host, usually an always-on VPS, can serve the public links of every host in the mesh: each other
+host sends its links through it, and only that host needs a public address. See
+[Public links](public-links.md#route-other-hosts-through-a-gateway).

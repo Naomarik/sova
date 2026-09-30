@@ -8,10 +8,10 @@ Have Git, Node.js ≥22.19, and pnpm installed, plus `curl` and Bash for this co
 pnpm, the installer runs the version Sova pins through npx):
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/v0.1.0/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/Naomarik/sova/vNEXT/scripts/install.sh | bash
 ```
 
-The installer builds the published `v0.1.0` release in `~/.local/share/sova` and creates
+The installer builds the published `vNEXT` release in `~/.local/share/sova` and creates
 `~/.local/bin/sova`. It does **not** start the server. Run:
 
 ```sh
@@ -24,7 +24,7 @@ Keep the process running while you use the app; `Ctrl+C` stops it.
 
 The installer uses no `sudo`, installs no toolchain, and changes no shell profiles or autostart
 services. It does not read or write `~/.pi`, or install the optional pi configuration.
-You can [inspect the published script](https://github.com/Naomarik/sova/blob/v0.1.0/scripts/install.sh)
+You can [inspect the published script](https://github.com/Naomarik/sova/blob/vNEXT/scripts/install.sh)
 before running it. Its `--dir` and `--bin` flags select different install and launcher directories.
 
 ## First-time provider login
@@ -68,6 +68,9 @@ Setting `HOST=0.0.0.0` exposes the backend on all interfaces; it does not add pr
 Anyone who can reach the unprotected app can read files and run commands with
 the server user's permissions. Sova has no built-in authentication and is not a multi-user service.
 
+To send people outside your devices a read-only link to a session, set up
+[public links](public-links.md). They use a separate, locked-down port, never Sova's own.
+
 For home-screen installation, use a browser that supports PWAs over HTTPS. The cached app shell
 can open offline; transcripts and chat still require the running server. Model requests send
 prompts and context to your configured provider, and tools and extensions may contact other services.
@@ -79,8 +82,12 @@ prompts and context to your configured provider, and tools and extensions may co
 | `PORT` | `4800` | HTTP and WebSocket port |
 | `HOST` | `127.0.0.1` | Bind address; keep private unless protected as above |
 | `PI_CODING_AGENT_DIR` | `~/.pi/agent` | Shared pi credentials, sessions, and extensions |
+| `SOVA_SHARE_PUBLIC_URL` | unset | The address every public link is built on, such as `https://share.example.com`; wins over Settings → Public links |
+| `SOVA_SHARE_HOST` | unset (`127.0.0.1` for a gateway) | Address the share port binds; with both it and `SOVA_SHARE_PORT` set, Sova binds there even with Public links off |
+| `SOVA_SHARE_PORT` | unset (`4802` for a gateway) | Port the share listener binds |
 
-For example, `PORT=4801 sova` changes the port.
+For example, `PORT=4801 sova` changes the port. The `SOVA_SHARE_*` variables are for
+[public links](public-links.md#pin-it-with-environment-variables); leave them unset to use Settings → Public links.
 
 Sova keeps its app state under `~/.pi/agent/sova/`, including groups, archive metadata, drafts,
 attachments, and themes. The embedded pi runtime also reads and writes pi sessions; model policy

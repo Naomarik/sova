@@ -1,33 +1,43 @@
 #!/usr/bin/env bash
-# Runs ON THE VPS as deploy (piped by deploy.sh: `ssh … bash -s`). No sudo, and nothing outside ~/$R:
+# Runs ON THE VPS as the VPS user (piped by deploy.sh: `ssh … bash -s`). No sudo, and nothing outside ~/$R:
 #   ~/$R/node     Node $NODE_VERSION (official tarball, sha256 checked)
 #   ~/$R/bin      caddy $CADDY_VERSION (official release, sha512 checked)
+#                 both for this host's `uname -m`: x86_64, or aarch64/arm64; any other stops before downloading
 #   ~/$R/app      the git archive staged in ~/$R/app.new, built there (pnpm install --frozen-lockfile + vite build,
 #                 both modes; pnpm via this node's corepack), then swapped in (previous kept as app.prev); a failed
 #                 build stops before the swap
 #   ~/$R/agent    the agent dir (PI_CODING_AGENT_DIR); auth.json created EMPTY ({}, 0600) if absent, never overwritten
-#   ~/$R/home     the isolated HOME for every build and run step (deploy's own dotfiles are never read)
+#   ~/$R/home     the isolated HOME for every build and run step (the user's own dotfiles are never read)
 #   ~/$R/tmp      TMPDIR for every build and run step (0700): nothing of ours lands in /tmp; holds jiti's extension cache,
 #                 cleared and re-warmed after every build (warm-extensions.mjs) so the first session never compiles cold
 #   ~/$R/sova-mesh.env   the environment the unit and run-sova.sh use
 #   ~/$R/agent/sova/peers.json   seeded ONCE (only if absent) with this host's self id/label/serveUrl and no peers
 #                 (mesh stays off); the self id must never change on a running host, so it is never rewritten here
-#   Claude Code   not installed here: the claude-code extension spawns plain `claude`, so the directory of deploy's own
-#                 claude (CLAUDE_BIN, else `command -v claude` in deploy's login shell, else common install locations) is
+#   Claude Code   not installed here: the claude-code extension spawns plain `claude`, so the directory of the user's own
+#                 claude (CLAUDE_BIN, else `command -v claude` in the user's login shell, else common install locations) is
 #                 appended to PATH in sova-mesh.env; not found = a warning, never a failed deploy
-# Env in: R NODE_VERSION NODE_SHA256 CADDY_VERSION CADDY_SHA512 SOVA_PORT SOVA_PEER_PORT VPS_TAILNET_IP VPS_ID VPS_LABEL
+# Env in: R NODE_VERSION NODE_SHA256_X64 NODE_SHA256_ARM64 CADDY_VERSION CADDY_SHA512_AMD64 CADDY_SHA512_ARM64 SOVA_PORT SOVA_PEER_PORT VPS_TAILNET_IP VPS_ID VPS_LABEL
 #         CLAUDE_BIN (optional, the claude executable to use)
 set -euo pipefail
-: "${R:?}" "${NODE_VERSION:?}" "${NODE_SHA256:?}" "${CADDY_VERSION:?}" "${CADDY_SHA512:?}" "${SOVA_PORT:?}" "${SOVA_PEER_PORT:?}" "${VPS_TAILNET_IP:?}"
+: "${R:?}" "${NODE_VERSION:?}" "${NODE_SHA256_X64:?}" "${NODE_SHA256_ARM64:?}" "${CADDY_VERSION:?}" "${CADDY_SHA512_AMD64:?}"
+: "${CADDY_SHA512_ARM64:?}" "${SOVA_PORT:?}" "${SOVA_PEER_PORT:?}" "${VPS_TAILNET_IP:?}"
 : "${VPS_ID:?}" "${VPS_LABEL:?}"
 BASE="$HOME/$R"
 log() { printf '[vps] %s\n' "$*" >&2; }
+
+# --- architecture: pick the builds and their pinned checksums before anything is downloaded ------------
+arch=$(uname -m)
+case "$arch" in
+  x86_64|amd64) NODE_ARCH=x64; NODE_SHA256=$NODE_SHA256_X64; CADDY_ARCH=amd64; CADDY_SHA512=$CADDY_SHA512_AMD64 ;;
+  aarch64|arm64) NODE_ARCH=arm64; NODE_SHA256=$NODE_SHA256_ARM64; CADDY_ARCH=arm64; CADDY_SHA512=$CADDY_SHA512_ARM64 ;;
+  *) log "error: unsupported architecture $arch: the VPS kit supports x86_64 and aarch64"; exit 1 ;;
+esac
 mkdir -p "$BASE"/{node,bin,home,agent,dl,tmp}
 chmod 700 "$BASE/agent" "$BASE/home" "$BASE/tmp"
 
 # --- Node -----------------------------------------------------------------------------------------
 if [ "$("$BASE/node/bin/node" -v 2>/dev/null || true)" != "$NODE_VERSION" ]; then
-  f="node-$NODE_VERSION-linux-x64.tar.xz"
+  f="node-$NODE_VERSION-linux-$NODE_ARCH.tar.xz"
   log "node: downloading $f"
   curl -fsSL --retry 3 -o "$BASE/dl/$f" "https://nodejs.org/dist/$NODE_VERSION/$f"
   echo "$NODE_SHA256  $BASE/dl/$f" | sha256sum -c --quiet - || { log "node: sha256 MISMATCH"; exit 1; }
@@ -39,7 +49,7 @@ log "node: $("$BASE/node/bin/node" -v) (sha256 verified at install)"
 
 # --- Caddy ----------------------------------------------------------------------------------------
 if ! "$BASE/bin/caddy" version 2>/dev/null | grep -q "^v$CADDY_VERSION "; then
-  f="caddy_${CADDY_VERSION}_linux_amd64.tar.gz"
+  f="caddy_${CADDY_VERSION}_linux_${CADDY_ARCH}.tar.gz"
   log "caddy: downloading $f"
   curl -fsSL --retry 3 -o "$BASE/dl/$f" "https://github.com/caddyserver/caddy/releases/download/v$CADDY_VERSION/$f"
   echo "$CADDY_SHA512  $BASE/dl/$f" | sha512sum -c --quiet - || { log "caddy: sha512 MISMATCH"; exit 1; }
@@ -50,7 +60,7 @@ fi
 log "caddy: $("$BASE/bin/caddy" version | cut -d' ' -f1) (sha512 verified at install)"
 
 # --- Claude Code ----------------------------------------------------------------------------------
-# looked up with deploy's real HOME and login PATH (before the isolated ones below); </dev/null: our stdin is this script
+# looked up with the user's real HOME and login PATH (before the isolated ones below); </dev/null: our stdin is this script
 is_exe() { case "$1" in /*) [ -x "$1" ] && [ ! -d "$1" ] ;; *) false ;; esac; }
 claude=
 if [ -n "${CLAUDE_BIN:-}" ]; then
@@ -68,7 +78,7 @@ if [ -n "$claude" ]; then
   d=$(cd "$(dirname "$claude")" && pwd)
   case "$d" in /usr/bin|/bin) ;; *) SERVICE_PATH="$SERVICE_PATH:$d" ;; esac
 else
-  log "WARNING: Claude Code not found${CLAUDE_BIN:+ (CLAUDE_BIN=$CLAUDE_BIN is not executable)}: claude-code models will fail (install it for deploy, or set CLAUDE_BIN in local.env)"
+  log "WARNING: Claude Code not found${CLAUDE_BIN:+ (CLAUDE_BIN=$CLAUDE_BIN is not executable)}: claude-code models will fail (install it for this user, or set CLAUDE_BIN in local.env)"
 fi
 
 # --- the app --------------------------------------------------------------------------------------
@@ -104,7 +114,7 @@ if [ ! -e "$BASE/agent/auth.json" ]; then
 fi
 chmod 600 "$BASE/agent/auth.json"
 # Claude Code's credential store for login sync: the unit's own HOME/.claude (a hermetic agent dir syncs Claude only when
-# SOVA_SYNC_CLAUDE_DIR names the store; deploy's real ~/.claude is never used)
+# SOVA_SYNC_CLAUDE_DIR names the store; the user's real ~/.claude is never used)
 mkdir -p "$BASE/home/.claude" && chmod 700 "$BASE/home/.claude"
 # this host's identity: self.id (default would be the machine hostname), label, front-door upstream
 if [ ! -e "$BASE/agent/sova/peers.json" ]; then

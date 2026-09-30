@@ -97,7 +97,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     },
     decideReferral: async (id: string, approve: boolean) => {
       calls.push(`${approve ? "approve" : "decline"}:${id}`);
-      return { person: { ...roster.find((p) => p.id === id)!, status: approve ? ("active" as const) : ("left" as const) } };
+      return { gap: "none", person: { ...roster.find((p) => p.id === id)!, status: approve ? ("active" as const) : ("left" as const) } };
     },
     sessions: async () => sessions,
     transcript: async () => [],
@@ -119,6 +119,8 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     builds: async () => opts.builds ?? [],
     startedCoding: () => new Map([["in-tree", { removed: false }], ["gone-tree", { removed: true }]]),
     limitRefused: async (kind: string) => void limited.push(kind),
+    fileGap: async (ideaId: string) => void calls.push(`gap/file:${ideaId}`),
+    dropGap: async (ideaId: string) => void calls.push(`gap/drop:${ideaId}`),
     pipeline: (q: { session?: string }) =>
       q.session
         ? { kind: "session" as const, id: q.session, chart: "item", configuration: ["asking"], enabled: [{ event: "correct/reopen", enabled: false, refusal: { sentence: "It is not done." } }], corrections: ["correct/reopen"], holds: [] }
@@ -152,11 +154,11 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
 
 /** A call per tool that does something when allowed (each the tool's "act" form). */
 const ACTS: Record<string, Record<string, unknown>> = {
-  sova_start_gathering: { person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" },
-  sova_offer: { people: ["Tony", "p_tony0002"], public_title: "Invoicing", goal: "g", question: "q?" },
+  sova_start_gathering: { gap: "none", person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" },
+  sova_offer: { gap: "none", people: ["Tony", "p_tony0002"], public_title: "Invoicing", goal: "g", question: "q?" },
   sova_reconcile: {},
   sova_promote: { ids: ["s:1"] },
-  sova_create_session: { prompt: "Build it" },
+  sova_create_session: { gap: "none", prompt: "Build it" },
   sova_send: { session: "in-root", text: "go on" },
   sova_todo: { op: "add", text: "Ask about VAT" },
   sova_idea: { op: "add", id: "§gap/vat", title: "Nobody decided VAT" },
@@ -191,7 +193,7 @@ describe("the levels, as the charts declare them", () => {
 });
 
 describe("the wrapper relays a chart's refusal", () => {
-  const gather = { person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
+  const gather = { gap: "none", person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
 
   test("the model gets the sentence and its tail; the activity log the sentence only, as a refusal", async () => {
     const said = "Today's allowance is used: 0 of 0 gathering sessions started on its own. It looks again at midnight.";
@@ -204,7 +206,7 @@ describe("the wrapper relays a chart's refusal", () => {
 
   test("an allowance refusal is held by the watch for the tool's kind; any other refusal holds nothing", async () => {
     const f = fake({ refuse: new OrgError("x", 409, "allowance", "t"), roster: [person("p_tony0001", "Tony"), person("p_tony0002", "Toni")] });
-    await assert.rejects(() => f.run("sova_offer", { people: ["Tony", "p_tony0002"], public_title: "I", goal: "g", question: "q?" }));
+    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony", "p_tony0002"], public_title: "I", goal: "g", question: "q?" }));
     assert.deepEqual(f.limited, ["gather"]);
     const g = fake({ refuse: new OrgError("2 of its gathering sessions are open, and the limit is 2 at once.", 409, "at-once", "One reaching its goal or being closed is a reason to look again; don't promise when.") });
     await assert.rejects(() => g.run("sova_start_gathering", gather), /2 of its gathering sessions are open, and the limit is 2 at once\. One reaching its goal/);
@@ -230,7 +232,7 @@ describe("the wrapper relays a chart's refusal", () => {
 });
 
 describe("gathering abilities (§app.baton/abilities)", () => {
-  const gather = { person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
+  const gather = { gap: "none", person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
   test("a start with no abilities gets the project's set: Automatic is draw on, read links off", async () => {
     const f = fake({ attended: true });
     await f.run("sova_start_gathering", gather);
@@ -239,7 +241,7 @@ describe("gathering abilities (§app.baton/abilities)", () => {
   test("it may turn draw off or on, and read links only when the project allows it", async () => {
     const f = fake({ attended: true, roster: [person("p_tony0001", "Tony"), person("p_ana00001", "Ana")], settings: { gatheringAbilities: { draw: false, readLinks: false } } });
     await f.run("sova_start_gathering", { ...gather, abilities: { draw: true } });
-    await assert.rejects(() => f.run("sova_offer", { people: ["Tony", "Ana"], public_title: "x", goal: "g", question: "q?", abilities: { read_links: true } }), /Reading links is off for this project's gathering sessions; the operator can allow it on the project page\./);
+    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony", "Ana"], public_title: "x", goal: "g", question: "q?", abilities: { read_links: true } }), /Reading links is off for this project's gathering sessions; the operator can allow it on the project page\./);
     assert.deepEqual(f.abilities, [{ draw: true, readLinks: false }]);
     assert.deepEqual(f.calls.filter((c) => c.startsWith("gather:")).length, 1, "the refusal reached no chart, so it counted nothing");
     const g = fake({ attended: true, settings: { gatheringAbilities: { draw: true, readLinks: true } } });
@@ -258,19 +260,19 @@ describe("gathering abilities (§app.baton/abilities)", () => {
 describe("scope and caps", () => {
   test("gathering refuses people not on the roster, proposed people, and a one-person offer", async () => {
     const f = fake({ attended: true });
-    await assert.rejects(() => f.run("sova_start_gathering", { person: "Zed", public_title: "x", goal: "y", question: "q" }), /not on the roster/);
-    await assert.rejects(() => f.run("sova_start_gathering", { person: "Bob", public_title: "x", goal: "y", question: "q" }), /proposed but not approved/);
-    await assert.rejects(() => f.run("sova_offer", { people: ["Tony"], public_title: "x", goal: "y", question: "q" }), /at least two/);
-    await assert.rejects(() => f.run("sova_start_gathering", { person: "Tony", public_title: "x", goal: "y" }), /question \(both shown to the person as written/, "no question: no fallback to internal text");
-    await assert.rejects(() => f.run("sova_offer", { people: ["Tony", "p_tony0002"], goal: "y", question: "q" }), /Give public_title and question/);
+    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Zed", public_title: "x", goal: "y", question: "q" }), /not on the roster/);
+    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Bob", public_title: "x", goal: "y", question: "q" }), /proposed but not approved/);
+    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony"], public_title: "x", goal: "y", question: "q" }), /at least two/);
+    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Tony", public_title: "x", goal: "y" }), /question \(both shown to the person as written/, "no question: no fallback to internal text");
+    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony", "p_tony0002"], goal: "y", question: "q" }), /Give public_title and question/);
     assert.deepEqual(f.calls, []);
   });
 
   test("coding sessions stay inside the project root; sends only to its sessions", async () => {
     const f = fake({ attended: true });
-    await assert.rejects(() => f.run("sova_create_session", { prompt: "p", folder: "/proj-evil" }), /outside the project root/);
+    await assert.rejects(() => f.run("sova_create_session", { gap: "none", prompt: "p", folder: "/proj-evil" }), /outside the project root/);
     await assert.rejects(() => f.run("sova_send", { session: "outside", text: "hi" }), /No coding session "outside" in this project/);
-    await f.run("sova_create_session", { prompt: "p", folder: "/proj/app" });
+    await f.run("sova_create_session", { gap: "none", prompt: "p", folder: "/proj/app" });
     await f.run("sova_send", { session: "in-root", text: "hi" });
     assert.deepEqual(f.calls, ["create:/proj/app", "send:in-root"]);
     assert.equal(underRoot("/proj", "/proj"), true);
@@ -301,15 +303,15 @@ describe("scope and caps", () => {
   test("sova_create_session refuses an escaping folder before reaching the host", async () => {
     const f = fake({ attended: true });
     for (const folder of ["/proj/../etc", "/proj/app/../../etc", "/proj-evil", "../etc", "app/../../x", "./../proj-evil"]) {
-      await assert.rejects(() => f.run("sova_create_session", { prompt: "p", folder }), /outside the project root/, folder);
+      await assert.rejects(() => f.run("sova_create_session", { gap: "none", prompt: "p", folder }), /outside the project root/, folder);
     }
     assert.deepEqual(f.calls, []);
   });
 
   test("sova_create_session resolves a relative folder against the project root", async () => {
     const f = fake({ attended: true });
-    await f.run("sova_create_session", { prompt: "p", folder: "app" });
-    await f.run("sova_create_session", { prompt: "p", folder: "./app/sub/.." });
+    await f.run("sova_create_session", { gap: "none", prompt: "p", folder: "app" });
+    await f.run("sova_create_session", { gap: "none", prompt: "p", folder: "./app/sub/.." });
     assert.deepEqual(f.calls, ["create:/proj/app", "create:/proj/app"]);
   });
 
@@ -368,9 +370,9 @@ describe("coding sessions' modes (the operator's ceiling)", () => {
 
   test("Automatic: spec on when the project has a spec, off otherwise; never delegate", async () => {
     const f = fake({ attended: true, hasSpec: true });
-    await f.run("sova_create_session", { prompt: "p" });
+    await f.run("sova_create_session", { gap: "none", prompt: "p" });
     const g = fake({ attended: true, hasSpec: false });
-    await g.run("sova_create_session", { prompt: "p" });
+    await g.run("sova_create_session", { gap: "none", prompt: "p" });
     assert.deepEqual([f.modes, g.modes], [[N(["spec"])], [N()]]);
   });
 
@@ -384,7 +386,7 @@ describe("coding sessions' modes (the operator's ceiling)", () => {
     ];
     for (const [ask, why] of asks) {
       const f = fake({ attended: true, hasSpec: true });
-      await assert.rejects(() => f.run("sova_create_session", { prompt: "p", ...ask }), why, JSON.stringify(ask));
+      await assert.rejects(() => f.run("sova_create_session", { gap: "none", prompt: "p", ...ask }), why, JSON.stringify(ask));
       await assert.rejects(() => f.run("sova_send", { session: "in-root", text: "p", ...ask }), why, JSON.stringify(ask));
       assert.deepEqual(f.calls, [], JSON.stringify(ask));
     }
@@ -392,18 +394,18 @@ describe("coding sessions' modes (the operator's ceiling)", () => {
 
   test("a mode refusal comes before the caps", async () => {
     const f = fake({ attended: true });
-    await assert.rejects(() => f.run("sova_create_session", { prompt: "p", mode: "delegate" }), /Delegate is off/);
+    await assert.rejects(() => f.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate" }), /Delegate is off/);
   });
 
   test("delegate once the operator chose it; spec may be turned on; normal is always allowed", async () => {
     const f = fake({ attended: true, settings: { codingMode: { mode: "delegate", minorModes: [] } } });
-    await f.run("sova_create_session", { prompt: "p" });
-    await f.run("sova_create_session", { prompt: "p", mode: "normal", minor_modes: ["spec"] });
+    await f.run("sova_create_session", { gap: "none", prompt: "p" });
+    await f.run("sova_create_session", { gap: "none", prompt: "p", mode: "normal", minor_modes: ["spec"] });
     assert.deepEqual(f.modes, [{ mode: "delegate", minorModes: [] }, N(["spec"])]);
     // The setting says normal: the overseer can't raise it to delegate, but may add spec.
     const g = fake({ attended: true, settings: { codingMode: N() } });
-    await assert.rejects(() => g.run("sova_create_session", { prompt: "p", mode: "delegate" }), /Delegate is off/);
-    await g.run("sova_create_session", { prompt: "p", minor_modes: ["spec"] });
+    await assert.rejects(() => g.run("sova_create_session", { gap: "none", prompt: "p", mode: "delegate" }), /Delegate is off/);
+    await g.run("sova_create_session", { gap: "none", prompt: "p", minor_modes: ["spec"] });
     assert.deepEqual(g.modes, [N(["spec"])]);
   });
 

@@ -2,11 +2,11 @@ import type { Context, Hono } from "hono";
 import type { CodingStartInput, ItemCodeInput, ItemSendInput } from "../shared/project-overseer";
 import type { IdeaUpdate } from "./overseer-ideas";
 import { BusyError } from "./chat-manager";
-import { archivedOverseerRefusal, OrgError } from "./orgs";
+import { archivedOverseerRefusal, OrgError, operatorEnvelope } from "./orgs";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem, startCoding } from "./project-overseer";
+import { clearProjectOverseer, codeItem, dropGap, fileGap, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem, startCoding } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
 import { awaitShareLinks } from "./share/links-events";
 import { linkUrl as shareLinkUrl, linkWarning } from "./share/listener";
@@ -112,7 +112,9 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
   app.post(`${base}/ideas`, handle(async (c) => {
     const p = pathsOf(c);
     const b = await body(c);
-    addIdea({ id: b.id, title: b.title, text: b.text, tags: b.tags }, p.ideas);
+    const made = addIdea({ id: b.id, title: b.title, text: b.text, tags: b.tags }, p.ideas);
+    // A gap is an item chart from its filing (its Pipeline row).
+    await fileGap(p.orgId, p.projectId, made.id, operatorEnvelope(p.orgId, p.projectId));
     // The operator's items reach its next look: a reason to look, the item itself in its prompt.
     return c.json(ideasInfo(p.ideas), 201, NO_STORE);
   }));
@@ -141,7 +143,9 @@ export function registerProjectOverseerRoutes(app: Hono<any>): void {
     }
     if (b.newId !== undefined) return c.json({ error: "Renaming a project idea is not supported." }, 400);
     if (!ideaDetail(id, p.ideas)) return c.json({ error: `No idea ${id}` }, 404);
-    return c.json(updateIdea(id, patch, p.ideas), 200, NO_STORE);
+    const out = updateIdea(id, patch, p.ideas);
+    if (out.idea.status === "dropped") await dropGap(p.orgId, p.projectId, out.idea.id, operatorEnvelope(p.orgId, p.projectId));
+    return c.json(out, 200, NO_STORE);
   }));
 
   // ---- to-dos ------------------------------------------------------------------------------------

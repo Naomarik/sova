@@ -56,7 +56,7 @@ export interface PoToolHost {
   reconcile(): Promise<DecisionsInfo>;
   promote(ids: string[]): Promise<PromoteResult>;
   /** Start a gathering session (one person) or an offer (≥ 2), owned by this overseer. */
-  startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; model?: string; thinking?: string; abilities: GatheringAbilities }): Promise<{ sessionId: string; path: string; invited: string[]; held?: { id: string; until: number } }>;
+  startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; model?: string; thinking?: string; abilities: GatheringAbilities; gap: string; plan?: boolean }): Promise<{ sessionId: string; path: string; invited: string[]; held?: { id: string; until: number }; planned?: true }>;
   /** What a gathering session gets for the `abilities` arg (the project's set, under the
       operator's ceiling, §app.baton/abilities), or the refusal. Pure: nothing is created or counted. */
   gatheringAbilities(arg: unknown): GatheringAbilities | { error: string };
@@ -72,7 +72,7 @@ export interface PoToolHost {
   codingMode(req: ModeRequest): { mode: ProjectCodingMode } | { error: string };
   /** A new ordinary session for `cwd` (inside the root; it runs in the same folder of its own
       worktree when the root is in git), its mode set and pinned, then its first prompt sent. */
-  createCoding(input: { cwd: string; prompt: string; title?: string; model?: string; thinking?: string; mode: ProjectCodingMode }): Promise<{ id: string; path: string; cwd: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string; held?: { id: string; until: number } }>;
+  createCoding(input: { cwd: string; prompt: string; title?: string; model?: string; thinking?: string; mode: ProjectCodingMode; gap: string; decisions?: string[] }): Promise<{ id: string; path: string; cwd: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string; held?: { id: string; until: number } }>;
   /** One message to a coding session, as its composer would send it (a build's through its chart's build/prompt, `live`
       when a terminal holds it); with `mode`, the session's mode is set and pinned first. Held when the chart holds it. */
   send(sessionId: string, text: string, mode?: ProjectCodingMode): Promise<{ queued: boolean; modeApplies?: "now" | "after-turn" } | { held: { id: string; until: number } }>;
@@ -92,6 +92,9 @@ export interface PoToolHost {
   limitRefused(kind: PoLimitKind): Promise<void>;
   /** Both allowances' use and limits, from the watch chart's ledgers. */
   allowance(): { message: AllowanceUse; today: AllowanceUse };
+  /** A `§gap/…` idea filed (its item chart, gap/file) or dropped (gap/drop). */
+  fileGap(ideaId: string): Promise<void>;
+  dropGap(ideaId: string): Promise<void>;
   /** What is held for a later look now (sova_project). */
   held?(): HeldItem[];
   /** sova_pipeline: the project's gaps, its held acts and its feed (quiet rows too when asked); or one of its chart
@@ -260,6 +263,15 @@ function personOf(roster: Person[], ref: string): Person | null {
 
 const IDEA_NS = new Set(["gap", "idea"]);
 
+/** The `gap` every start names (q7, §app.project-overseer/gaps): a filed "§gap/<name>", or "none". */
+const GAP_PARAM = 'The gap this serves: its idea id "§gap/<name>" (sova_idea lists them; file one first), or "none" for work no gap covers. Unattended, a coding session needs a gap (only the operator\'s turn may start one with "none").';
+function gapOf(q: { gap?: unknown }): string {
+  const g = typeof q.gap === "string" ? q.gap.trim() : "";
+  if (g === "none") return g;
+  if (!/^§?gap\/[a-z0-9-]+$/.test(g)) throw new Refusal('Say which gap this is for: gap "§gap/<name>" (sova_idea lists them) or "none".');
+  return g.startsWith("§") ? g : `§${g}`;
+}
+
 // ---- the tools -------------------------------------------------------------------------------------
 
 export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor = serverRedactor): Tool[] {
@@ -316,6 +328,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
   };
 
   async function gather(p0: any, many: boolean): Promise<Out> {
+    const gap = gapOf(p0);
     const publicTitle = typeof p0.public_title === "string" ? p0.public_title.trim() : "";
     const question = typeof p0.question === "string" ? p0.question.trim() : "";
     const goal = typeof p0.goal === "string" ? p0.goal.trim() : "";
@@ -339,8 +352,11 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     const abilities = host.gatheringAbilities(p0.abilities);
     if ("error" in abilities) throw new Refusal(abilities.error);
     const choice = { ...(typeof p0.model === "string" && p0.model.trim() ? { model: p0.model.trim() } : {}), ...(typeof p0.thinking === "string" && p0.thinking.trim() ? { thinking: p0.thinking.trim() } : {}) };
-    const made = await host.startGathering({ to: many ? to : to[0]!, publicTitle, goal, question, ...choice, abilities });
+    const plan = p0.plan === true;
+    if (plan && gap === "none") throw new Refusal("A planned gathering belongs to a gap: name it (gap \"§gap/<name>\").");
+    const made = await host.startGathering({ to: many ? to : to[0]!, publicTitle, goal, question, ...choice, abilities, gap, ...(plan ? { plan } : {}) });
     const who = made.invited.join(", ");
+    if (made.planned) return { content: text(`Planned "${publicTitle}" ${many ? `as an offer to ${who}` : `with ${who}`} on ${gap}: the chart starts it once your level reaches L1 (not again to someone whose attempt on this gap ended with no decision).`), details: { planned: gap } };
     if (made.held) return { content: text(heldText(`starting "${publicTitle}" ${many ? `as an offer to ${who}` : `with ${who}`}`, made.held)), details: { held: made.held.id } };
     return {
       content: text(
@@ -628,6 +644,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
             const tags = Array.isArray(q.tags) ? q.tags.map(String) : [];
             if (ns === "gap" && !tags.includes(GAP_TAG)) tags.unshift(GAP_TAG);
             const r = addIdea({ id, title: q.title, text: q.text ?? "", tags }, p.ideas);
+            // A gap is an item chart from now on: its Pipeline row, its gatherings and builds (gap/file).
+            if (ns === "gap") await host.fileGap(r.id);
             return { content: text(`Filed ${r.id}.`), details: { id: r.id, op: "add", status: r.status } };
           }
           if (q.op === "append") {
@@ -637,6 +655,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           }
           if (q.op === "status") {
             const out = updateIdea(id, { status: q.status as IdeaStatus }, p.ideas);
+            if (ns === "gap" && out.idea.status === "dropped") await host.dropGap(out.idea.id);
             return { content: text(`${out.idea.id} is ${out.idea.status}.`), details: { id: out.idea.id, op: "update", status: out.idea.status } };
           }
           throw new Refusal("op is list, get, add, append or status.");
@@ -661,8 +680,10 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           model: str('Optional model ref "provider/model" the person talks to (default: the project\'s gathering model, else yours).'),
           question: str(`The first question to put to them. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
           abilities: ABILITIES_PARAM,
+          gap: str(GAP_PARAM),
+          plan: { type: "boolean", description: "With a gap: file it as the gap's planned gathering instead (allowed at L0); the chart starts it itself once the level reaches L1." },
         },
-        ["person", "public_title", "goal", "question"],
+        ["person", "public_title", "goal", "question", "gap"],
       ),
       execute: act("sova_start_gathering", async (q) => gather(q, false)),
     },
@@ -679,8 +700,10 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           model: str('Optional model ref "provider/model" (default: the project\'s gathering model, else yours).'),
           question: str(`The first question. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
           abilities: ABILITIES_PARAM,
+          gap: str(GAP_PARAM),
+          plan: { type: "boolean", description: "With a gap: file it as the gap's planned gathering instead (allowed at L0)." },
         },
-        ["people", "public_title", "goal", "question"],
+        ["people", "public_title", "goal", "question", "gap"],
       ),
       execute: act("sova_offer", async (q) => gather(q, true)),
     },
@@ -791,8 +814,10 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           thinking: str("off | minimal | low | medium | high | xhigh"),
           mode: str("normal | delegate (delegate only if the operator allows it). Omitted: the project's coding mode."),
           minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes, e.g. ["spec"]. Omitted: the project\'s. Never "align"; never without "spec" when the project has it on.' },
+          gap: str(GAP_PARAM),
+          decisions: strs("With a gap: the promoted, not yet built decisions it builds (DecisionRow ids); omitted: all of them."),
         },
-        ["prompt"],
+        ["prompt", "gap"],
       ),
       execute: act("sova_create_session", async (q) => {
         // The mode is checked first: a refusal creates nothing and takes no cap.
@@ -805,7 +830,9 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         if (!underRoot(root, asked)) throw new Refusal(`${asked} is outside the project root ${root}.`);
         const cwd = resolve(asked);
         if (typeof q.prompt !== "string" || !q.prompt.trim()) throw new Refusal("prompt must not be blank.");
-        const made = await host.createCoding({ cwd, prompt: q.prompt, mode: m.mode, ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
+        const gap = gapOf(q);
+        const decisions = Array.isArray(q.decisions) ? q.decisions.map(String) : undefined;
+        const made = await host.createCoding({ cwd, prompt: q.prompt, mode: m.mode, gap, ...(decisions?.length ? { decisions } : {}), ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
         if (made.held) return { content: text(heldText(`starting the coding session "${q.title ? String(q.title) : cut(q.prompt, 60)}"`, made.held)), details: { held: made.held.id } };
         const where = made.worktree ? `its worktree ${made.worktree.path} on ${made.worktree.branch}` : `the project root ${made.cwd} (${made.note ?? "no worktree"})`;
         const note = made.worktree ? `On ${made.worktree.branch}.` : `In the project root: ${made.note ?? "no worktree."}`;

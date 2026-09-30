@@ -191,23 +191,23 @@ describe("a project's coding sessions", async () => {
     await po.ensureProjectOverseer(org.id, project.id);
     const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_create_session")!;
     // Unattended at L1: refused before anything. At L3, delegate without the operator's opt-in: refused.
-    await assert.rejects(tool.execute("t1", { prompt: "Build it" }, undefined, undefined, undefined as never), /needs L3/);
+    await assert.rejects(tool.execute("t1", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /needs L3/);
     store.patchPoSettings(store.projectOverseerPaths(org.id, project.id), { autonomy: "L3", holdMin: 0 });
     // q7: unattended, a build names the gap whose promoted decisions it builds; with none it is refused.
-    await assert.rejects(tool.execute("t1b", { prompt: "Build it" }, undefined, undefined, undefined as never), /Without a gap, a coding session starts only in a turn the operator started/);
+    await assert.rejects(tool.execute("t1b", { gap: "none", prompt: "Build it" }, undefined, undefined, undefined as never), /Without a gap, a coding session starts only in a turn the operator started/);
     // In a turn the operator started it may start one tied to no gap.
     const asked = po.toolsForTest(org.id, project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
     const before = readBuilds(org.id, project.id).length;
-    await assert.rejects(asked.execute("t2", { prompt: "Build it", mode: "delegate" }, undefined, undefined, undefined as never), /Delegate is off/);
+    await assert.rejects(asked.execute("t2", { gap: "none", prompt: "Build it", mode: "delegate" }, undefined, undefined, undefined as never), /Delegate is off/);
     assert.equal(readBuilds(org.id, project.id).length, before, "nothing created");
-    await asked.execute("t3", { prompt: "Build the API", title: "API" }, undefined, undefined, undefined as never).catch(() => {});
+    await asked.execute("t3", { gap: "none", prompt: "Build the API", title: "API" }, undefined, undefined, undefined as never).catch(() => {});
     const row = (await buildsOf(org.id, project.id, client)).find((r) => r.kind === "coding");
     assert.ok(row?.worktree && row.path, JSON.stringify(row));
     assert.match(row.worktree.branch, /^sova\/api-[0-9a-f]{6}$/);
     assert.equal(row.title, "API");
     // Untitled: the build still carries one, the prompt's first line (never Sova's commit paragraph).
     const before2 = readBuilds(org.id, project.id).length;
-    await asked.execute("t4", { prompt: "Fix the footer\nIt overlaps the menu on phones." }, undefined, undefined, undefined as never).catch(() => {});
+    await asked.execute("t4", { gap: "none", prompt: "Fix the footer\nIt overlaps the menu on phones." }, undefined, undefined, undefined as never).catch(() => {});
     const rows2 = readBuilds(org.id, project.id);
     assert.equal(rows2.length, before2 + 1);
     assert.equal(rows2.at(-1)!.title, "Fix the footer");
@@ -344,7 +344,7 @@ describe("a project's coding sessions", async () => {
     // No hold (q10): the unattended start goes at once, so its session exists to open.
     store.patchPoSettings(p, { codingMode: { mode: "delegate", minorModes: ["spec"] }, holdMin: 0 });
     const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_start_gathering")!;
-    const out = await tool.execute("g1", { person: "Tony", public_title: "Hosting", goal: "Where it runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
+    const out = await tool.execute("g1", { gap: "none", person: "Tony", public_title: "Hosting", goal: "Where it runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
     const path = (out.details as { path: string }).path;
     const chat = await acquireChat(path);
     assert.equal(chat.special, "baton");

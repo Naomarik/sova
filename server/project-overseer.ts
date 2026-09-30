@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, relative } from "node:path";
@@ -548,10 +549,16 @@ function toolHost(rt: Rt): PoToolHost {
           ...(await gatheringChoice(orgId, projectId, input)),
           abilities: input.abilities,
         },
-        { envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), mintLink: false, startedVia: "overseer" },
+        {
+          envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()),
+          mintLink: false,
+          startedVia: "overseer",
+          // A gap's gathering is its item's (gather/start, or gather/plan): the Pipeline links it.
+          ...(input.gap !== "none" ? { item: itemOfGapOrThrow(orgId, projectId, input.gap), ...(input.plan ? { plan: true } : {}) } : {}),
+        },
       );
       const to = Array.isArray(input.to) ? input.to : [input.to];
-      return { sessionId: made.sessionId, path: made.path, invited: to.map((ref) => nameOf(orgId, ref)), ...(made.held ? { held: made.held } : {}) };
+      return { sessionId: made.sessionId, path: made.path, invited: to.map((ref) => nameOf(orgId, ref)), ...(made.held ? { held: made.held } : {}), ...(made.planned ? { planned: true as const } : {}) };
     },
     async closeGathering(sessionId, reason) {
       // As the operator's Close does (POST /api/baton/:sid/close): the chart closes it, tells its share page and
@@ -568,7 +575,13 @@ function toolHost(rt: Rt): PoToolHost {
       return codingModeChoice(req, baseCodingMode(s.codingMode, projectOf(orgId, projectId).root), s.codingMode);
     },
     async createCoding(input) {
-      const made = await startCodingSession(orgId, projectId, { ...input, kind: "coding", envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()) });
+      const { gap, ...rest } = input;
+      const made = await startCodingSession(orgId, projectId, {
+        ...rest,
+        kind: "coding",
+        envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()),
+        ...(gap !== "none" ? { item: itemOfGapOrThrow(orgId, projectId, gap) } : {}),
+      });
       if (made.held) return { id: "", path: "", cwd: "", held: made.held };
       return {
         id: made.sessionId,
@@ -606,6 +619,8 @@ function toolHost(rt: Rt): PoToolHost {
       if (a.max !== null) await watchFact(orgId, projectId, "limit/refused", { kind, ledger: e.ledger, used: a.used, max: a.max });
     },
     allowance: () => allowanceUse(orgId, projectId, settings().caps),
+    fileGap: (ideaId) => fileGap(orgId, projectId, ideaId, overseerEnvelope(orgId, projectId, paths, rt.turns.attended())),
+    dropGap: (ideaId) => dropGap(orgId, projectId, ideaId, overseerEnvelope(orgId, projectId, paths, rt.turns.attended())),
     pipeline(q) {
       const host = hostOf(orgId);
       if (q.session) {
@@ -786,7 +801,7 @@ export const NOT_PROMPTED = "Started, but not prompted: its mode could not be se
 async function startCodingSession(
   orgId: string,
   projectId: string,
-  input: { cwd?: string; prompt?: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding"; via?: "overseer"; envelope?: Envelope },
+  input: { cwd?: string; prompt?: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding"; via?: "overseer"; envelope?: Envelope; item?: string; decisions?: string[] },
 ): Promise<StartedCoding> {
   const prompt = input.prompt?.trim() ?? "";
   const project = projectOf(orgId, projectId);
@@ -803,12 +818,14 @@ async function startCodingSession(
   const envelope = input.envelope ?? envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(input.via ? { via: input.via } : {}) });
   let out;
   try {
+    // A gap's build is its item's (build/start: it rests on the gap's promoted decisions); a gap-less one the project's.
     out = await actOrThrow(
       orgId,
-      `project/${orgId}/${projectId}`,
+      input.item ?? `project/${orgId}/${projectId}`,
       "build/start",
       {
         sessionId,
+        ...(input.decisions?.length ? { decisions: input.decisions } : {}),
         ...(rowTitle ? { title: rowTitle } : {}),
         ...(prompt ? { prompt } : {}),
         ...(choice.model ? { model: choice.model } : {}),
@@ -1079,6 +1096,34 @@ function linkItem(p: ProjectOverseerPaths, item: { kind: "todo" | "idea"; id: st
   else updateIdea(item.id, { sessionId }, p.ideas);
 }
 
+// ---- gaps: a §gap/… idea is an item chart (§app.project-overseer/gaps) ------------------------------------
+
+/** The item chart of a `§gap/…` idea of the project (the live one), or null. */
+export function itemOfGap(orgId: string, projectId: string, gap: string): string | null {
+  if (!isOrgHostOpen(orgId)) return null;
+  const id = gap.startsWith("§") ? gap : `§${gap}`;
+  return hostOf(orgId).sessions("item").find((s) => s.running && !s.configuration.includes("dropped") && s.data["projectId"] === projectId && s.data["ideaId"] === id)?.id ?? null;
+}
+
+/** The item of a gap, or the refusal the model reads. */
+export function itemOfGapOrThrow(orgId: string, projectId: string, gap: string): string {
+  const sid = itemOfGap(orgId, projectId, gap);
+  if (!sid) throw new OrgError(`No gap ${gap} in this project: file it first (sova_idea add §gap/<name>), or say gap "none".`, 404);
+  return sid;
+}
+
+/** A `§gap/…` idea was filed (the overseer's sova_idea, the operator's Add): the project chart's gap/file spawns its item. */
+export async function fileGap(orgId: string, projectId: string, ideaId: string, envelope: Envelope): Promise<void> {
+  if (!/^§gap\//.test(ideaId) || itemOfGap(orgId, projectId, ideaId)) return;
+  await actOrThrow(orgId, `project/${orgId}/${projectId}`, "gap/file", { gapId: `g_${randomBytes(6).toString("hex").slice(0, 8)}`, ideaId }, envelope, { settle: true });
+}
+
+/** A `§gap/…` idea was set dropped: its item ends (`fromIdea`: the idea already says so). */
+export async function dropGap(orgId: string, projectId: string, ideaId: string, envelope: Envelope): Promise<void> {
+  const sid = itemOfGap(orgId, projectId, ideaId);
+  if (sid) await actOrThrow(orgId, sid, "gap/drop", { fromIdea: true }, envelope, { settle: true });
+}
+
 /** One of the project's chart sessions (its id's project part, or its data's), or a 404 the model reads. */
 function projectSessionOrThrow(orgId: string, projectId: string, session: string): string {
   const host = hostOf(orgId);
@@ -1338,6 +1383,12 @@ async function runLook(orgId: string, projectId: string, text: string, report: I
 }
 
 onOrgHostOpened((host, orgId) => {
+  // An item dropped on its own (gap/drop not from the idea): its idea says so.
+  host.effects.register("idea-status", async (e) => {
+    const [, , projectId] = String(e.sessionId).split("/");
+    const out = updateIdea(String(e.ideaId), { status: e.status === "dropped" ? "dropped" : "done" }, projectOverseerPaths(orgId, projectId ?? "").ideas);
+    return { status: out.idea.status };
+  });
   // The project chart's owner-update/post, taken (or released from its hold): the update is written.
   host.effects.register("owner-update", async (e) => {
     const projectId = String(e.sessionId).split("/")[2] ?? "";

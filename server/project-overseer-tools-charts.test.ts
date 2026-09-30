@@ -25,7 +25,8 @@ const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
 const { envelopeFor, hostOf, setOrgClockForTest } = await import("./org-engine");
-const { heldAttention } = await import("./project-pipeline");
+const { heldAttention, pipelineInfo } = await import("./project-pipeline");
+const pipelineInfoOf = () => pipelineInfo(org.id, project.id);
 const { fakeLooks } = await import("./org-test-fixtures");
 
 after(async () => {
@@ -55,7 +56,7 @@ const actions = () =>
   existsSync(store.projectOverseerPaths(org.id, project.id).actions)
     ? readFileSync(store.projectOverseerPaths(org.id, project.id).actions, "utf8").trim().split("\n").map((l) => JSON.parse(l))
     : [];
-const gather = (title: string, person = "Tony Reyes") => ({ person, public_title: title, goal: "Who hosts the portal", question: "Who hosts the portal?" });
+const gather = (title: string, person = "Tony Reyes") => ({ gap: "none", person, public_title: title, goal: "Who hosts the portal", question: "Who hosts the portal?" });
 const settings = (patch: Parameters<typeof po.patchProjectOverseer>[2]) => po.patchProjectOverseer(org.id, project.id, patch);
 const holdsOf = () => hostOf(org.id).holds().filter((h) => (h.projectId ?? h.sessionId.split("/")[2]) === project.id);
 /** Cancel every held act of the project (a test's leftovers), as the operator. */
@@ -86,9 +87,9 @@ describe("the level is the charts' (§app.project-overseer/autonomy-levels)", ()
 
   test("an autonomy change applies at the next tool call", async () => {
     await settings({ autonomy: "L0" });
-    await assert.rejects(() => run("sova_offer", { people: ["Tony Reyes", "Toni Diaz"], public_title: "Pay day", goal: "g", question: "q?" }), /sova_offer needs L1|sova_start_gathering needs L1/);
+    await assert.rejects(() => run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], public_title: "Pay day", goal: "g", question: "q?" }), /sova_offer needs L1|sova_start_gathering needs L1/);
     await settings({ autonomy: "L1" });
-    assert.match(textOf(await run("sova_offer", { people: ["Tony Reyes", "Toni Diaz"], public_title: "Pay day", goal: "g", question: "q?" })), /^Held: starting "Pay day" as an offer to Tony Reyes, Toni Diaz/);
+    assert.match(textOf(await run("sova_offer", { gap: "none", people: ["Tony Reyes", "Toni Diaz"], public_title: "Pay day", goal: "g", question: "q?" })), /^Held: starting "Pay day" as an offer to Tony Reyes, Toni Diaz/);
     await clearHolds();
   });
 
@@ -301,5 +302,72 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
     assert.match(out, /is now in .*needs-operator/);
     const row = hostOf(org.id).log.rows({ session: itemSid, newestFirst: true })[0]!;
     assert.deepEqual([row.event, row.reason], ["sova/set-state", "the operator asked: Tony answered by phone"]);
+  });
+});
+
+describe("every start names its gap (§app.project-overseer/gaps, q7)", () => {
+  test("sova_idea add §gap/… files the gap's item; a start on it is the item's, linked in the Pipeline", async () => {
+    await clearHolds();
+    await settings({ autonomy: "L1", holdMin: 0, caps: { gatherPerDay: null, gatheringsOpen: 20 } });
+    await run("sova_idea", { op: "add", id: "§gap/payday", title: "Nobody decided the pay day" });
+    const item = po.itemOfGap(org.id, project.id, "§gap/payday")!;
+    assert.match(item, new RegExp(`^item/${org.id}/${project.id}/g_[0-9a-f]{8}$`));
+    await run("sova_idea", { op: "add", id: "§gap/payday", title: "again" }).catch(() => {});
+    assert.equal(hostOf(org.id).sessions("item").filter((s) => s.data["ideaId"] === "§gap/payday").length, 1, "one item per gap");
+    await run("sova_start_gathering", { gap: "§gap/payday", person: "Toni Diaz", public_title: "Pay day", goal: "Which day salaries go out", question: "Which day do salaries go out?" });
+    const row = pipelineInfoOf().rows.find((r) => r.gap === "§gap/payday")!;
+    assert.deepEqual(row.gatherings.map((g) => g.title), ["Pay day"]);
+    assert.equal(row.phase, "asking");
+  });
+
+  test("a start with no gap, or an unknown one, is refused before anything starts", async () => {
+    const before = baton.allBatons().length;
+    await assert.rejects(() => run("sova_start_gathering", { person: "Toni Diaz", public_title: "x", goal: "g", question: "q?" }), /^Error: Say which gap this is for: gap "§gap\/<name>" \(sova_idea lists them\) or "none"\.$/);
+    await assert.rejects(() => run("sova_start_gathering", { gap: "§gap/nope", person: "Toni Diaz", public_title: "x", goal: "g", question: "q?" }), /No gap §gap\/nope in this project: file it first/);
+    await assert.rejects(() => run("sova_create_session", { prompt: "Build it" }), /Say which gap this is for/);
+    assert.equal(baton.allBatons().length, before);
+  });
+
+  test("a planned gathering (L0) is filed on the item, started by the chart once the level reaches L1", async () => {
+    await settings({ autonomy: "L0" });
+    await run("sova_idea", { op: "add", id: "§gap/vat", title: "VAT" });
+    const out = textOf(await run("sova_start_gathering", { gap: "§gap/vat", plan: true, person: "Toni Diaz", public_title: "VAT rate", goal: "Which VAT rate applies", question: "Which VAT rate do we charge?" }));
+    assert.match(out, /^Planned "VAT rate" with Toni Diaz on §gap\/vat: the chart starts it once your level reaches L1/);
+    assert.ok(!baton.allBatons().some((b) => b.publicTitle === "VAT rate"), "nothing started at L0");
+    await assert.rejects(() => run("sova_start_gathering", { gap: "none", plan: true, person: "Toni Diaz", public_title: "x", goal: "g", question: "q?" }), /A planned gathering belongs to a gap/);
+    await settings({ autonomy: "L1" });
+    await new Promise((r) => setTimeout(r, 100));
+    assert.ok(baton.allBatons().some((b) => b.publicTitle === "VAT rate"), "L1: the chart started it");
+  });
+
+  test("a gap's build rests on its promoted decisions (the item's build/start); none: the chart's refusal", async () => {
+    await settings({ autonomy: "L3" });
+    await assert.rejects(() => run("sova_create_session", { gap: "§gap/payday", prompt: "Build pay day", decisions: ["d_nope"] }), /^Error: §gap\/payday has no promoted decision to build yet\.$/);
+  });
+
+  test("dropping the idea ends its item", async () => {
+    const item = po.itemOfGap(org.id, project.id, "§gap/vat")!;
+    await run("sova_idea", { op: "status", id: "§gap/vat", status: "dropped" });
+    assert.equal(po.itemOfGap(org.id, project.id, "§gap/vat"), null);
+    assert.ok(!pipelineInfoOf().rows.some((r) => r.gap === "§gap/vat"));
+    assert.ok(hostOf(org.id).configuration(item)?.includes("dropped"), "its chart ended in dropped (final)");
+  });
+});
+
+describe("the operator's own gap ideas (the project page's Ideas)", async () => {
+  const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
+  const page = new Hono();
+  registerProjectOverseerRoutes(page);
+  const base = `/api/orgs/${org.id}/projects/${project.id}/overseer`;
+  const send = (method: string, path: string, body: unknown) => page.request(`${base}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+
+  test("Add a §gap idea files its item; setting it dropped ends it; an §idea files none", async () => {
+    assert.equal((await send("POST", "/ideas", { id: "§gap/parking", title: "Parking" })).status, 201);
+    assert.ok(po.itemOfGap(org.id, project.id, "§gap/parking"));
+    const items = hostOf(org.id).sessions("item").length;
+    assert.equal((await send("POST", "/ideas", { id: "§idea/logo", title: "A logo" })).status, 201);
+    assert.equal(hostOf(org.id).sessions("item").length, items);
+    assert.equal((await send("PATCH", `/idea?id=${encodeURIComponent("§gap/parking")}`, { status: "dropped" })).status, 200);
+    assert.equal(po.itemOfGap(org.id, project.id, "§gap/parking"), null);
   });
 });

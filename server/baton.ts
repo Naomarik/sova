@@ -357,6 +357,8 @@ export interface Created {
   links?: { personId: string; token: string }[];
   /** Held (q10): an unattended overseer's start waits in a hold; nothing exists yet. */
   held?: { id: string; until: number };
+  /** Filed as its gap's planned gathering (gather/plan): nothing exists yet; the chart starts it at L1. */
+  planned?: true;
 }
 
 /** An offer's invitees: ≥ 2 distinct ACTIVE people (never the operator), resolved like hand_to. */
@@ -476,6 +478,10 @@ export interface CreateOptions {
   startedVia?: "overseer";
   /** Sova's own item for it (the operator's to-do it came from). */
   opItem?: string;
+  /** A gap's item chart (`item/…`): it starts the gathering (gather/start) and links it, instead of the project. */
+  item?: string;
+  /** With `item`: file it as the gap's planned gathering (gather/plan), started by the chart itself at L1 (r3). */
+  plan?: boolean;
 }
 
 /**
@@ -536,9 +542,11 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
     operatorName: operatorName(),
   };
   const envelope = { ...(opts.envelope ?? operatorEnvelope(orgId, project.id, opts.by)), ...(invalid ? { invalid } : {}) };
-  const out = await hostOf(orgId).act(`project/${orgId}/${project.id}`, "baton/start", payload, envelope, { settle: true });
+  const [sid, event] = opts.item ? [opts.item, opts.plan ? "gather/plan" : "gather/start"] : [`project/${orgId}/${project.id}`, "baton/start"];
+  const out = await hostOf(orgId).act(sid, event, payload, envelope, { settle: true });
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
   if (out.held) return { path: "", sessionId, held: { id: out.held.id, until: out.held.until } };
+  if (opts.plan) return { path: "", sessionId: "", planned: true };
   for (const e of out.effects ?? []) if (e.kind === "create-session" && e.error) throw new Error(e.error);
   const dir = orgDir(orgId);
   const path = canonicalPath(join(dir, batonFileOf(dir, sessionId)));

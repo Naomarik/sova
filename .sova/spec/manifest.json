@@ -9836,6 +9836,23 @@
         "src/lib/hold-select.test.ts",
         "src/design/base.css"
       ]
+    },
+    "§chat.markdown/vis-wireframe-items": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/vis-wireframe"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/wireframe/View.tsx",
+        "src/vis/kinds/wireframe/wireframe.css",
+        "src/vis/kinds/wireframe/layout.ts",
+        "src/vis/kinds/wireframe/layout.test.ts",
+        "src/vis/kinds/wireframe/parse.test.ts",
+        "src/vis/kinds/wireframe/previews.fixture.ts",
+        "pi-config/extensions/mode/vis-mode.md"
+      ]
     }
   },
   "boundary": {

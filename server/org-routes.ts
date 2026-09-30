@@ -98,7 +98,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
     orgName: readOrg(row.orgId).name,
     projectName: readProjects(row.orgId).find((p) => p.id === row.projectId)?.name ?? "",
     names: namesOf(row.orgId),
-    active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role })),
+    active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role, ...(p.tz ? { tz: p.tz } : {}), ...(p.hoursNow ? { hoursNow: p.hoursNow } : {}) })),
     liveLinks: liveLinkCount(row),
     linkAt: linkTimes(row),
     share: { ...shareInfo(), state: shareState() },
@@ -616,6 +616,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
           ...(created.token ? { link: linkUrl(created.token) } : {}),
           ...(created.links ? { links: offerLinks(orgId, created.links) } : {}),
           ...(created.token || created.links ? linkWarning(outcome) : {}),
+          ...(created.offHours ? { offHours: created.offHours } : {}),
         },
         201,
       );
@@ -732,10 +733,10 @@ export function registerOrgRoutes(app: Hono<any>): void {
       // The chart refuses who and what in today's words; the link is the move's own (shown once).
       const { result, outcome } = await awaitShareLinks(async () => {
         const moved = await handoffTo(sid, to, question, briefing, operatorBy(c));
-        return moved.token ? { token: moved.token } : rotateLink(sid);
+        return { ...(moved.token ? { token: moved.token } : rotateLink(sid)), offHours: moved.offHours };
       });
-      const { token } = result;
-      return c.json({ info: infoOf(sid), link: linkUrl(token), ...mintedAt(token), ...linkWarning(outcome) });
+      const { token, offHours } = result;
+      return c.json({ info: infoOf(sid), link: linkUrl(token), ...mintedAt(token), ...linkWarning(outcome), ...(offHours ? { offHours } : {}) });
     }),
   );
 }

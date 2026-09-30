@@ -18,7 +18,7 @@ import {
   type SpecStatus,
 } from "../shared/decisions";
 import type { Person } from "../shared/orgs";
-import { namesOf } from "./baton";
+import { namesOf, offHoursOf, targetOfPerson } from "./baton";
 import { commitSpec, specSnapshot } from "./project-worktrees";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
 import type { CostStarter } from "../shared/costs";
@@ -40,7 +40,7 @@ import {
   reconcilerSid,
   type DecisionStore,
 } from "./decisions";
-import { hostOf, isOrgHostOpen, onOrgHostOpened, refusalError, type Effect, type OrgHostApi } from "./org-engine";
+import { hostOf, isOrgHostOpen, onOrgHostOpened, refusalError, type ActResult, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
 import { operatorEnvelope, operatorName, OrgError, projectSid, readHistory, readProjects, readRoster, shortId } from "./orgs";
@@ -124,9 +124,10 @@ async function currentDeps(): Promise<ReconcileDeps> {
 // ---- the charts ------------------------------------------------------------------------------------------
 
 /** Send an act; a refusal throws as the route answers it. */
-async function act(orgId: string, sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope): Promise<void> {
+async function act(orgId: string, sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope): Promise<ActResult> {
   const out = await hostOf(orgId).act(sid, event, payload, envelope, { settle: true });
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
+  return out;
 }
 
 /** Whether the project's reconciler is comparing now (or waits to: a settle session's 2 s). */
@@ -1035,23 +1036,24 @@ function openConflict(orgId: string, projectId: string, conflictId: string): Con
 function routeTarget(orgId: string, to: string): Record<string, unknown> | null {
   if (to === OPERATOR) return null;
   const p = readRoster(orgId).find((x) => x.id === to);
-  return p ? { id: p.id, name: p.name, status: p.status } : { id: to, name: to, status: "unknown" };
+  // r7: with their zone and hours, so a settle session to someone off hours waits for their window.
+  return p ? targetOfPerson(p) : { id: to, name: to, status: "unknown" };
 }
 
 /** POST …/conflicts/:cid/route {to?}: its settle session again, to `to` (else where it goes): the
     conflict chart closes the earlier one first, so two people are never asked the same thing. */
-export async function routeConflictNow(orgId: string, projectId: string, conflictId: string, to?: string, _owner?: BatonOwner, envelope?: Envelope): Promise<DecisionsInfo> {
+export async function routeConflictNow(orgId: string, projectId: string, conflictId: string, to?: string, _owner?: BatonOwner, envelope?: Envelope): Promise<DecisionsInfo & { offHours?: string }> {
   projectOf(orgId, projectId);
   const c = openConflict(orgId, projectId, conflictId);
   const target = to ?? c.routedTo;
-  await act(
+  const out = await act(
     orgId,
     conflictSid(orgId, projectId, c.id),
     "conflict/reroute",
     { to: target, sessionId: randomUUID(), ...(to ? {} : { routeReason: c.routeReason, ...(c.selfAsserted ? { selfAsserted: true } : {}) }), ...(routeTarget(orgId, target) ? { target: routeTarget(orgId, target) } : {}) },
     envelope ?? operatorEnvelope(orgId, projectId, undefined, { operatorName: operatorName() }),
   );
-  return listDecisions(orgId, projectId);
+  return { ...listDecisions(orgId, projectId), ...offHoursOf(out) };
 }
 
 /**

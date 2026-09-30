@@ -381,6 +381,8 @@ export interface ItemSendResult {
   sessionId: string;
   /** One per invitee, shown once. */
   links: { personId: string; name: string; link: string }[];
+  /** r7: the person is off hours; it went at once (the operator's own act): when their window opens (ISO). */
+  offHours?: string;
 }
 
 /** Start an ordinary coding session in the project root with the item as its first prompt. */

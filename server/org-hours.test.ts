@@ -106,4 +106,25 @@ describe("an act that reaches them outside their hours (r7)", () => {
     const row = hostOf(org.id).log.rows({ newestFirst: true }).find((r) => r.event === "baton/start" && !r.held)!;
     assert.ok(typeof row.offHours === "number" && row.offHours > Date.now(), "the operator's act went at once, noted off hours");
   });
+
+  test("the operator's routes that reach them say so (offHours: when their window opens); the strip's people carry tz and hoursNow", async () => {
+    await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
+    const opens = orgs.findPerson(org.id, sam.id)!.hoursNow!.nextOpen!;
+    const post = (path: string, b: unknown) => app.request(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(b) });
+    const r = await post("/api/baton", { orgId: org.id, projectId: project.id, to: sam.id, publicTitle: "Route", goal: "g" });
+    assert.equal(r.status, 201);
+    const started = (await r.json()) as { sessionId: string; path: string; offHours?: string };
+    assert.equal(started.offHours, opens);
+    const info = (await (await app.request(`/api/baton?path=${encodeURIComponent(started.path)}`)).json()) as { active: { id: string; tz?: string; hoursNow?: { open: boolean } }[] };
+    assert.deepEqual(info.active.find((p) => p.id === sam.id), { id: sam.id, name: "Sam Okafor", role: "Pricing", tz: "UTC", hoursNow: { open: false, nextOpen: opens } });
+    // Back to the operator, then on to Sam again: the hand-off's answer says it too.
+    assert.equal((await post(`/api/baton/${started.sessionId}/take`, {})).status, 200);
+    const h = await post(`/api/baton/${started.sessionId}/handoff`, { to: sam.id, question: "Again?" });
+    assert.equal(h.status, 200);
+    assert.equal(((await h.json()) as { offHours?: string }).offHours, opens);
+    // In their hours: no note.
+    await patch({ hours: { days: ALL, from: hm(-1), to: hm(1) } });
+    const inHours = (await (await post("/api/baton", { orgId: org.id, projectId: project.id, to: sam.id, publicTitle: "Now", goal: "g" })).json()) as { offHours?: string };
+    assert.equal(inHours.offHours, undefined);
+  });
 });

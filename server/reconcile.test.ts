@@ -493,7 +493,13 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(c.routedTo, OPERATOR, "nobody decides payroll export");
     const first = c.batonSessionId!;
     ended.length = 0;
+    // r7: Carlos is off hours; the operator's own re-route goes at once, and its answer says when his window opens.
+    const hm = (h: number) => new Date(Date.now() + h * 3_600_000).toISOString().slice(11, 16);
+    await orgs.applyChange(org.id, carlos.id, { tz: "UTC", hours: { days: [0, 1, 2, 3, 4, 5, 6], from: hm(2), to: hm(3) } }, { kind: "operator" });
+    const opens = orgs.findPerson(org.id, carlos.id)!.hoursNow!.nextOpen!;
     info = await reconcile.routeConflictNow(org.id, project.id, c.id, carlos.id);
+    assert.equal((info as { offHours?: string }).offHours, opens);
+    await orgs.applyChange(org.id, carlos.id, { tz: "", hours: null }, { kind: "operator" });
     const again = info.conflicts.find((k) => k.id === c.id)!;
     assert.equal(again.routedTo, carlos.id);
     assert.notEqual(again.batonSessionId, first);

@@ -1167,7 +1167,7 @@ export async function sendItem(orgId: string, projectId: string, body: ItemSendI
   });
   linkItem(p, item, made.sessionId);
   const links = made.links ?? (made.token && typeof body.to === "string" && body.to !== OPERATOR ? [{ personId: body.to, token: made.token }] : []);
-  return { path: made.path, sessionId: made.sessionId, links: links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) })) };
+  return { path: made.path, sessionId: made.sessionId, links: links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) })), ...(made.offHours ? { offHours: made.offHours } : {}) };
 }
 
 /**

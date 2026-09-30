@@ -20,7 +20,7 @@
  *                                                        area or "none"; kept in ownerAreaHistory; re-routes its open conflict)
  * POST  /api/orgs/:id/projects/:pid/decisions/:did/text body { action: "keep" | "restore" } -> DecisionsInfo (a promoted
  *                                                        decision edited in the spec: keep the spec's words, or promote theirs again)
- * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/route  body { to?: PersonRef } -> DecisionsInfo (start its baton session now)
+ * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/route  body { to?: PersonRef } -> DecisionsInfo & { offHours?: ISO } (start its baton session now; r7 offHours: the person is off hours, it went at once)
  * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/resolve body ConflictResolveInput -> DecisionsInfo (the operator decides)
  * GET   /api/orgs/:id/projects/:pid/spec                 -> SpecStatus
  * PATCH /api/orgs/:id/projects/:pid/spec                 body { frozen: boolean } -> SpecStatus

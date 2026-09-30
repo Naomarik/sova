@@ -367,6 +367,14 @@ export interface Created {
   held?: { id: string; until: number };
   /** Filed as its gap's planned gathering (gather/plan): nothing exists yet; the chart starts it at L1. */
   planned?: true;
+  /** r7: the operator's own act went at once although the person is off hours: when their window opens (ISO). */
+  offHours?: string;
+}
+
+/** r7: when the act went to someone off hours, when their window opens (the engine's step says so). */
+export function offHoursOf(out: ActResult): { offHours?: string } {
+  const at = out.result?.steps.find((s) => s.offHours != null)?.offHours;
+  return typeof at === "number" ? { offHours: new Date(at).toISOString() } : {};
 }
 
 /** An offer's invitees: ≥ 2 distinct ACTIVE people (never the operator), resolved like hand_to. */
@@ -560,17 +568,18 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
   for (const e of out.effects ?? []) if (e.kind === "create-session" && e.error) throw new Error(e.error);
   const dir = orgDir(orgId);
   const path = canonicalPath(join(dir, batonFileOf(dir, sessionId)));
-  if (!mint) return { path, sessionId };
+  const off = offHoursOf(out);
+  if (!mint) return { path, sessionId, ...off };
   if (targets) {
     const links: { personId: string; token: string }[] = [];
     for (const personId of targets) {
       const token = await takeMinted(sessionId, 1, personId);
       if (token) links.push({ personId, token });
     }
-    return { path, sessionId, links };
+    return { path, sessionId, links, ...off };
   }
   const token = to && to !== OPERATOR ? await takeMinted(sessionId, 1, to) : undefined;
-  return { path, sessionId, ...(token ? { token } : {}) };
+  return { path, sessionId, ...(token ? { token } : {}), ...off };
 }
 
 // ---- the model's acts (its tools) ----------------------------------------------------------------------------
@@ -651,15 +660,15 @@ async function until(sessionId: string, done: (row: BatonSession) => boolean, ms
  * Hand the baton to a roster person (the operator's hand-off, §app.baton/hand-off): the chart checks
  * who and what, stops a reply in flight and moves once it ended, and mints their link, returned once.
  */
-export async function handoffTo(sessionId: string, personId: string, question: string, briefing: string, by?: OperatorBy, opts: { mintLink?: boolean } = {}): Promise<{ n: number; token?: string }> {
+export async function handoffTo(sessionId: string, personId: string, question: string, briefing: string, by?: OperatorBy, opts: { mintLink?: boolean } = {}): Promise<{ n: number; token?: string; offHours?: string }> {
   const { orgId } = orgOfBaton(sessionId);
   const p = readRoster(orgId).find((x) => x.id === personId);
   const before = batonById(sessionId)!.row.handoffs.length;
-  await batonAct(sessionId, "baton/handoff", { question, briefing, ...(p ? { target: targetOfPerson(p) } : {}), ...(opts.mintLink === false ? { mintLink: false } : {}) }, operatorOn(by), { settle: true });
+  const out = await batonAct(sessionId, "baton/handoff", { question, briefing, ...(p ? { target: targetOfPerson(p) } : {}), ...(opts.mintLink === false ? { mintLink: false } : {}) }, operatorOn(by), { settle: true });
   const row = await until(sessionId, (r) => r.handoffs.length > before, 30_000);
   const n = row && row.handoffs.length > before ? row.handoffs.length : before;
   const token = n > before && opts.mintLink !== false ? await takeMinted(sessionId, n, personId, 5_000) : undefined;
-  return { n, ...(token ? { token } : {}) };
+  return { n, ...(token ? { token } : {}), ...offHoursOf(out) };
 }
 
 /**

@@ -22,6 +22,7 @@
  */
 
 import type { LinkWarningCode, ShareState } from "./public-links";
+import type { Person } from "./orgs";
 
 /** `customType` of the marker a baton session's file carries (data `BatonMarkerData`). */
 export const BATON_ENTRY = "sova-baton";
@@ -289,6 +290,8 @@ export interface BatonStartResult {
   linkWarning?: string;
   /** Which of those it is. */
   linkWarningCode?: LinkWarningCode;
+  /** r7: the first holder is off hours; it went at once (the operator's own act): when their window opens (ISO). */
+  offHours?: string;
 }
 
 /** An offer as the operator's strip shows it. */
@@ -324,7 +327,7 @@ export interface BatonInfo {
   /** personId → name, for every participant and roster person (the operator under "operator"). */
   names: Record<string, string>;
   /** Active roster people, for Take back / the operator's pickers. */
-  active: { id: string; name: string; role: string }[];
+  active: { id: string; name: string; role: string; tz?: string; hoursNow?: Person["hoursNow"] }[];
   /** Links of the current hand-off that still write (count only: the host keeps hashes, never tokens). */
   liveLinks: number;
   /** personId → when their newest live link of the current hand-off (or open offer) was minted (ISO):

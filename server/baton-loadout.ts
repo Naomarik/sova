@@ -534,11 +534,9 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     const holder = typeof d.holder === "string" && d.holder !== OPERATOR && d.holder !== POOL ? [d.holder] : [];
     return mint(e, holder);
   });
-  // An offer's invitee reached later (r12: their hours came, by the chart's timer): no caller waits for a token, so none
-  // is made; Needs you asks the operator to send them their link.
-  host.effects.register("mint-link", async (e) =>
-    e.via === "reach" ? { minted: 0 } : mint(e, typeof e.personId === "string" ? [e.personId] : [], typeof e.offerId === "string" && e.offerId ? e.offerId : undefined),
-  );
+  // r12: only in an offer's own step (the chart emits none for an invitee reached later: nobody could take that token;
+  // Needs you asks the operator to send it).
+  host.effects.register("mint-link", async (e) => mint(e, typeof e.personId === "string" ? [e.personId] : [], typeof e.offerId === "string" && e.offerId ? e.offerId : undefined));
 
   host.effects.register("revoke-links", async (e) => {
     const sessionId = sidOfEffect(e);

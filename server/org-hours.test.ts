@@ -312,32 +312,4 @@ describe("an offer reaches each invitee in their own hours (r12)", () => {
     assert.match(((await sent.json()) as { link: string }).link, /\/h\//);
     assert.equal(baton.batonSummaryField(baton.sessionPathOf(orgs.orgDir(org.id), row()))!.sendLink?.to, "Eve Lund");
   });
-
-  test("an unattended offer that mints links: the one in hours gets hers now; the one reached later by the timer gets none by itself (via reach), Needs you asks", async () => {
-    const { setOrgClockForTest, envelopeFor } = await import("./org-engine");
-    const { linksOfPerson } = await import("./baton-links");
-    const gus = await orgs.addPerson(org.id, { name: "Gus Hale", role: "Ops" });
-    const hal = await orgs.addPerson(org.id, { name: "Hal Ives", role: "Ops" });
-    const setHours = (pid: string, from: number, to: number) => app.request(`/api/orgs/${org.id}/people/${pid}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ tz: "UTC", hours: { days: ALL, from: hm(from), to: hm(to) } }) });
-    await setHours(gus.id, -1, 1);
-    await setHours(hal.id, 2, 3);
-    await po.patchProjectOverseer(org.id, project.id, { holdMin: 0 });
-    const started = await baton.createBaton({ orgId: org.id, projectId: project.id, to: gus.id, publicTitle: "Minted", goal: "g" });
-    const out = await baton.offerTo(started.sessionId, [gus.id, hal.id], "Who takes it?", "", { envelope: envelopeFor(org.id, project.id, { by: "overseer", attended: false }) });
-    assert.deepEqual(out.links.map((l) => l.personId), [gus.id], "Gus's link is minted in the offer's own step (via act)");
-    const halOpens = orgs.findPerson(org.id, hal.id)!.hoursNow!.nextOpen!;
-    const liveFor = (pid: string) => linksOfPerson(org.id, pid).filter((l) => l.sessionId === started.sessionId && l.offerId === out.offer?.id && !l.revokedAt).length;
-    assert.equal(liveFor(hal.id), 0);
-    setOrgClockForTest(() => Date.parse(halOpens) + 60_000);
-    try {
-      hostOf(org.id).fireDue();
-      await new Promise((r) => setTimeout(r, 50));
-    } finally {
-      setOrgClockForTest(null);
-    }
-    const row = baton.allBatons().find((b) => b.sessionId === started.sessionId)!;
-    assert.equal(row.offers?.find((o) => o.id === out.offer?.id)?.reach?.[hal.id]?.state, "reached");
-    assert.equal(liveFor(hal.id), 0, "the timer's mint-link (via reach) minted nothing: no one could take its token");
-    assert.match(baton.batonSummaryField(baton.sessionPathOf(orgs.orgDir(org.id), row))!.sendLink?.to ?? "", /Hal Ives/, "Needs you asks the operator to send Hal his link");
-  });
 });

@@ -506,7 +506,7 @@ describe("org host", () => {
     await host.close();
   });
 
-  test("r13: rewindowHours moves an hours wait after an hours edit; one in hours now goes at once under the fresh stamp; the log replays", async () => {
+  test("r13: rewindowHours moves only hours waits (a timed hold beside it keeps its end) after an hours edit; one in hours now goes at once under the fresh stamp; the log replays", async () => {
     const at = place();
     let now = 1_000_000;
     let fresh: number | null = null; // the people's current next window, as the host's stamp would give it
@@ -516,14 +516,19 @@ describe("org host", () => {
     const r = await host.act("p/1", "say", { window: now + 3_600_000 }, unattended);
     assert.equal(r.held?.wait, "hours");
     assert.equal(r.held?.until, now + 3_600_000);
-    assert.equal(await host.rewindowHours(() => now + 7_200_000), 1, "a later window");
-    assert.equal(host.holds()[0]?.until, now + 7_200_000);
-    assert.equal(host.nextDueAt(), now + 7_200_000);
+    // a plain timed hold (q10) of another session: an hours edit never touches it (verifier-3 H10n00)
+    await host.start("p/2", "host-probe", {}, operator);
+    await host.act("p/2", "gather/start", {}, { ...unattended, holdMs: 600_000 });
+    const timed = host.holds().find((h) => h.sessionId === "p/2")!;
+    assert.equal(timed.wait, undefined);
+    assert.equal(await host.rewindowHours(() => now + 7_200_000), 1, "a later window: the hours wait only");
+    assert.equal(host.holds().find((h) => h.sessionId === "p/2")?.until, timed.until, "the timed hold keeps its end");
+    assert.equal(host.holds().find((h) => h.sessionId === "p/1")?.until, now + 7_200_000);
     assert.equal(await host.rewindowHours(() => now + 7_200_000), 0, "unchanged: nothing sent");
     now += 60_000;
     fresh = null; // in hours now
-    assert.equal(await host.rewindowHours(() => null), 1, "in hours now");
-    assert.deepEqual(host.holds(), []);
+    assert.equal(await host.rewindowHours(() => null), 1, "in hours now: the hours wait only");
+    assert.deepEqual(host.holds().map((h) => [h.sessionId, h.until]), [["p/2", timed.until]], "the timed hold is still there, same end");
     assert.equal(host.data("p/1")?.["said"], 1, "it went at once");
     const rows = host.log.rows({ session: "p/1" });
     assert.deepEqual(rows.filter((x) => x.event === "sova/rewindow").map((x) => x.feed), ["quiet", "quiet"]);

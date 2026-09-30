@@ -79,7 +79,7 @@ describe("the snapshot a session keeps", () => {
     assert.deepEqual(profileField({ v: 1, profile: { ...captain, builtin: true }, by: "overseer" }), {
       id: "merge-captain",
       label: "Merge captain",
-      icon: "git-branch",
+      icon: "branch",
       singleton: true,
       builtin: true,
       by: "overseer",
@@ -102,7 +102,7 @@ describe("the snapshot a session keeps", () => {
   });
 
   test("One at a time: a live holder elsewhere counts; an archived one or the session itself doesn't", () => {
-    const s = (id: string, extra: Partial<SessionSummary>) => ({ id, path: `/s/${id}`, title: id, archived: false, profile: { id: "merge-captain", label: "Merge captain", icon: "git-branch", singleton: true }, ...extra }) as SessionSummary;
+    const s = (id: string, extra: Partial<SessionSummary>) => ({ id, path: `/s/${id}`, title: id, archived: false, profile: { id: "merge-captain", label: "Merge captain", icon: "branch", singleton: true }, ...extra }) as SessionSummary;
     assert.equal(singletonHolder("merge-captain", [s("a", { archived: true })]), null);
     assert.equal(singletonHolder("merge-captain", [s("a", {})], "/s/a"), null);
     assert.equal(singletonHolder("merge-captain", [s("a", { archived: true }), s("b", {})])?.id, "b");

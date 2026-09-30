@@ -8,6 +8,7 @@ import type {
   ContextInfo,
   OverseerQuickAction,
   SandboxInfo,
+  ChatProfileInfo,
   SessionSummary,
   SlashCommand,
   TeamInfo,
@@ -82,7 +83,8 @@ import {
 import { stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce, usePaneId, usePaneScope } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
-import { isChangeRow } from "../lib/change-rows";
+import { isChangeRow, isProfileRow } from "../lib/change-rows";
+import { ProfilePicker } from "./ProfilePicker";
 import type { RewindControl, RewindResult } from "../lib/inputs";
 import type { RewindRefusal } from "../../shared/protocol";
 import { COMPACT_IMAGES_REFUSAL, compactCommand } from "../../shared/compact";
@@ -178,6 +180,8 @@ export function ChatView(props: {
   /** This chat's Claude login (WS "claude_login"; null after each hello), for the sidebar foot's
       usage glance. */
   onClaudeLogin?(login: ChatClaudeLogin | null): void;
+  /** The session's profile as the socket said it (the head chip, §chat.profiles/after-first-message). */
+  onProfile?(info: ChatProfileInfo): void;
   /** Toggles the subagents pane from the composer's subagents row. */
   onShowWorkers?(): void;
   /** The pane is open for this session ON THE AGENTS TAB (the subagents trigger's aria-expanded). */
@@ -368,6 +372,10 @@ export function ChatView(props: {
   const [modeState, setModeState] = createSignal<ModeState | null>(null);
   /** This chat's sandbox (WS "sandbox"), null while its runtime has no sandbox extension. */
   const [sandbox, setSandboxState] = createSignal<SandboxInfo | null>(null);
+  /** The socket's `profile` message (§chat.profiles/applying); null until one arrives. */
+  const [profileInfo, setProfileInfo] = createSignal<ChatProfileInfo | null>(null);
+  /** A One at a time race at Send (§chat.profiles/singleton): the session that has it. */
+  const [profileRace, setProfileRace] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
   const [sandboxPending, setSandboxPending] = createSignal(false);
   /** This chat's Claude login (WS "claude_login"), null until told or when the host can't name one. */
   const [claudeLogin, setClaudeLogin] = createSignal<ChatClaudeLogin | null>(null);
@@ -584,6 +592,7 @@ export function ChatView(props: {
           });
           setModel(msg.model);
           setSandboxState(null); // a "sandbox" message follows when the runtime has the extension
+          setProfileInfo(null); // a "profile" message follows for a profile or a session before its first message
           setClaudeLogin(null); // a "claude_login" message follows when this host has several logins
           props.onClaudeLogin?.(null);
           batch(() => {
@@ -775,6 +784,13 @@ export function ChatView(props: {
         case "sandbox":
           setSandboxState({ on: msg.on, enforcement: msg.enforcement, status: msg.status });
           break;
+        case "profile": {
+          const { type: _t, ...info } = msg;
+          setProfileInfo(info);
+          props.onProfile?.(info);
+          if (info.locked) setProfileRace(null);
+          break;
+        }
         case "claude_login":
           setClaudeLogin(msg.login);
           props.onClaudeLogin?.(msg.login);
@@ -814,6 +830,7 @@ export function ChatView(props: {
             // someone else): the words as they are, the draft back in the box, the socket kept, no
             // turn failure. The composer's own blocked reason says the same once the list catches up.
             case "refused":
+              if (msg.profileRunning) setProfileRace({ label: profileInfo()?.profile?.label ?? "This profile", running: msg.profileRunning });
               restoreUnsent();
               if (!live.entries.some((e) => e.kind === "assistant")) setLive("running", false);
               toast(msg.message);
@@ -1674,7 +1691,7 @@ export function ChatView(props: {
               <Show
                 when={
                   whole() &&
-                  (props.overseer ? list().every((it) => it.kind === "info") : list().every(isChangeRow)) &&
+                  (props.overseer ? list().every((it) => it.kind === "info") : list().every((it) => isChangeRow(it) || isProfileRow(it))) &&
                   live.entries.length === 0 &&
                   commandRows().length === 0
                 }
@@ -1686,6 +1703,20 @@ export function ChatView(props: {
                       <p class="empty-title">
                         New session in <code>{props.cwdLabel}</code>.
                       </p>
+                      <Show when={profileInfo()?.pickable && !profileInfo()?.locked && profileInfo()}>
+                        {(info) => (
+                          <ProfilePicker
+                            path={props.path}
+                            info={info()}
+                            mode={modeState()?.mode}
+                            model={model()}
+                            race={profileRace()}
+                            onFirstMessage={(text) => {
+                              if (!drafts.get(props.path)?.trim()) setDraftText(props.path, text);
+                            }}
+                          />
+                        )}
+                      </Show>
                       <SessionSetupCard path={props.path} />
                       <p class="empty-body">Your first message becomes its title.</p>
                     </div>

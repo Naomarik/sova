@@ -71,12 +71,13 @@ import { SessionTitleSettingsSection } from "./SessionTitleSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
 import { BatonSettingsSection } from "./BatonSettings";
 import { TeamSettingsSection } from "./TeamSettings";
+import { ProfilesSettingsSection } from "./ProfilesSettings";
 import { TypographySection } from "./TypographySection";
 import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Fourteen screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Fifteen screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
@@ -85,6 +86,7 @@ const TABS = [
   { id: "accounts", label: "Accounts", icon: "refresh" as const },
   { id: "modes", label: "Modes", icon: "worker" as const },
   { id: "teams", label: "Teams", icon: "command" as const },
+  { id: "profiles", label: "Profiles", icon: "wrench" as const },
   { id: "overseer", label: "Overseer", icon: "eye" as const },
   { id: "decisions", label: "Decisions", icon: "shield" as const },
   { id: "summaries", label: "Summaries", icon: "chat" as const },
@@ -247,6 +249,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "teams"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-teams" aria-labelledby="settings-tab-teams">
               <TeamSettingsSection />
+            </div>
+          </Show>
+          <Show when={tab() === "profiles"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-profiles" aria-labelledby="settings-tab-profiles">
+              <ProfilesSettingsSection />
             </div>
           </Show>
           <Show when={tab() === "overseer"}>

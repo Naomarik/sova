@@ -15,3 +15,9 @@ export function isChangeRow(item: TranscriptItem): boolean {
   const { type, customType } = item.raw;
   return type === "model_change" || type === "thinking_level_change" || (type === "custom" && customType === "mode");
 }
+
+/** The session's profile entry (§chat.profiles/after-first-message): like the change rows it never
+    counts toward the empty state; the thread draws it as one muted row once a message is sent. */
+export function isProfileRow(item: TranscriptItem): boolean {
+  return item.kind === "info" && item.profileMark !== undefined;
+}

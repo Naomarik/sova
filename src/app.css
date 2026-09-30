@@ -672,3 +672,187 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .message-images-single > li.thumb-sized { width: calc(var(--thumb-w) + 2 * var(--stroke-thin)); }
 .message-images-single > li.thumb-sized .thumb { width: 100%; }
 .message-images-single > li.thumb-sized .thumb img { width: 100%; aspect-ratio: var(--thumb-ratio); }
+
+/* ---- Session profiles (§chat/profiles) ---------------------------------------------------- */
+/* The empty screen's picker: left-aligned, the setup card's measure, above it. */
+.profile-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  width: 100%;
+  max-width: 560px;
+  text-align: left;
+  margin: var(--space-2) 0;
+}
+.profile-select-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.profile-select { position: relative; }
+.profile-select-button { gap: var(--space-2); min-height: var(--tap-min); }
+.profile-menu,
+.profile-popover {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + var(--space-1));
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: min(360px, calc(100vw - var(--space-6)));
+  max-height: min(420px, 70vh);
+  overflow-y: auto;
+  padding: var(--space-3);
+  background: var(--color-surface);
+  border: var(--stroke-thin) solid var(--color-border-strong);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-2, 0 8px 24px rgb(0 0 0 / 0.18));
+  text-align: left;
+}
+.profile-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.profile-options-group {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-mono-caps);
+  color: var(--color-ink-muted);
+  padding: var(--space-2) var(--space-2) var(--space-1);
+}
+.profile-option {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-areas: "icon name chip" "icon meta chip";
+  align-items: center;
+  column-gap: var(--space-2);
+  min-height: var(--tap-min);
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  background: none;
+  border: 0;
+  color: var(--color-ink);
+  text-align: left;
+  font: inherit;
+  width: 100%;
+}
+.profile-option > .icon { grid-area: icon; color: var(--color-ink-muted); }
+.profile-option-name { grid-area: name; }
+.profile-option-meta { grid-area: meta; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.profile-option > .chip { grid-area: chip; }
+.profile-option:hover,
+.profile-option:focus-visible { background: var(--color-sunken); }
+.profile-option[aria-selected="true"] { background: var(--color-accent-tint); }
+.profile-applying { display: inline-flex; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.profile-muted { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.profile-description { margin: 0; color: var(--color-ink-2); }
+.profile-alert-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.profile-changes {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.profile-changes-head { display: flex; align-items: baseline; gap: var(--space-2); margin: 0; }
+.profile-changes-head .chip { margin-left: auto; }
+.profile-change-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.profile-change {
+  display: grid;
+  grid-template-columns: 1.25em 1fr;
+  grid-template-areas: "sign name" "sign detail";
+  column-gap: var(--space-1);
+}
+.profile-change-sign { grid-area: sign; font-family: var(--font-mono); color: var(--color-ink-muted); }
+.profile-change-name { grid-area: name; color: var(--color-ink); }
+.profile-change-detail { grid-area: detail; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.profile-change-add { background: var(--color-accent-tint); border-radius: var(--r-sm); padding: var(--space-1) var(--space-2); }
+.profile-change-add .profile-change-sign { color: var(--color-accent); }
+.profile-change:not(.profile-change-add) { padding: 0 var(--space-2); }
+.profile-change:not(.profile-change-add) .profile-change-name { text-decoration: line-through; text-decoration-color: var(--color-ink-muted); }
+.profile-same { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.button-link { background: none; border: 0; padding: 0; color: var(--color-accent); font: inherit; cursor: pointer; text-decoration: underline; }
+.profile-tool-names { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.profile-board {
+  border: var(--stroke-thin) dashed var(--color-border-strong);
+  border-radius: var(--r-md);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.profile-board-head { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; margin: 0; font-weight: var(--fw-medium); }
+.profile-board-head > span { margin-right: auto; }
+.profile-board-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2) var(--space-4); }
+.profile-toggle { justify-content: space-between; min-height: var(--tap-min); }
+.profile-toggle-grant > span:first-child { color: var(--color-accent); }
+.profile-warn { color: var(--status-warn, var(--color-ink-2)); }
+/* After the first message: the thread's muted profile row, the head chip and its popover. */
+.profile-row { display: flex; align-items: center; gap: var(--space-2); margin: 0 0 var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.profile-chip-wrap { position: relative; display: inline-flex; flex: none; }
+.profile-chip {
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  padding: 0 var(--space-2);
+  background: var(--color-accent-tint);
+  color: var(--color-ink);
+  border-radius: var(--r-full);
+  font-size: var(--fs-caption);
+}
+.profile-chip-wrap .profile-popover { left: auto; right: 0; }
+.profile-popover-sentence { margin: 0; color: var(--color-ink); }
+.profile-popover-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+@container (max-width: 520px) { .profile-chip-label { display: none; } }
+@media (max-width: 520px) { .profile-chip-label { display: none; } .profile-board-grid { grid-template-columns: 1fr; } }
+/* A message another session sent: a sender header, and a neutral bubble that never reads as "You". */
+.session-sender {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin: var(--space-2) 0 calc(var(--space-1) * -1);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.message-from-session .message-body { background: var(--color-surface); border: var(--stroke-thin) solid var(--color-border-strong); }
+.profile-card .card-head { display: flex; align-items: center; gap: var(--space-2); }
+.profile-card .card-title { font-size: var(--fs-body); margin: 0; }
+.profile-card .card-head > .text-muted { margin-left: auto; font-size: var(--fs-caption); }
+.profile-card-refused .card-head > .icon { color: var(--status-warn, var(--color-ink-muted)); }
+/* The list: the badge, the shelf and New Session's menu. */
+.session-profile-badge { display: inline-flex; vertical-align: -2px; margin-right: var(--space-1); color: var(--color-accent); }
+.sidebar-profiles > .profile-shelf-group:last-child,
+.sidebar-profiles > .profile-shelf-slot:last-child { padding-bottom: var(--space-2); }
+.profile-shelf-head,
+.profile-shelf-slot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-1) var(--space-4);
+  min-height: var(--tap-min);
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.profile-shelf-name { font-weight: var(--fw-medium); color: var(--color-ink); }
+.profile-shelf-run { margin-left: auto; }
+.new-session-split { display: inline-flex; align-items: stretch; gap: 1px; }
+.new-session-menu-wrap { position: relative; display: inline-flex; }
+.new-session-menu-wrap .profile-popover { left: auto; right: 0; }
+/* Settings → Profiles. */
+.profiles-list { list-style: none; margin: 0 0 var(--space-4); padding: 0; display: flex; flex-direction: column; }
+.profiles-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.profiles-row-main { display: flex; flex-direction: column; min-width: 0; }
+.profiles-row-name { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
+.profiles-row-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); justify-content: flex-end; }
+.profiles-row .profile-editor { grid-column: 1 / -1; }
+.profile-editor { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) 0; }
+.profile-editor fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
+.profile-editor-limits { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
+.profiles-yours-head { margin: var(--space-4) 0 var(--space-1); }
+@media (max-width: 640px) { .profiles-row { grid-template-columns: auto 1fr; } .profiles-row-actions { grid-column: 1 / -1; justify-content: flex-start; } }

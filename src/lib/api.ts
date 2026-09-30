@@ -1,3 +1,4 @@
+import type { Profile, ProfilesFile, ProfilesListing } from "../../shared/profiles";
 import type {
   VoiceDeviceInfo,
   VoiceStatus,
@@ -478,6 +479,18 @@ export const setSessionTitle = (path: string, title: string | null) =>
 
 /** The sidebar's user-made groups, in creation order. */
 export const listSessionGroups = () => request<SessionGroup[]>("/api/session-groups");
+
+/** Profiles (§chat/profiles): the library, one pick, Save as Profile, the whole file (Settings). */
+export const fetchProfiles = () => request<ProfilesListing>("/api/profiles", { cache: "no-store" });
+export const pickProfile = (path: string, profile: string | { remove: string[]; grant: string[]; from?: string } | null) =>
+  request<{ ok: true }>("/api/sessions/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, profile }) });
+export const saveNewProfile = (profile: Partial<Profile>) =>
+  request<Profile>("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profile) });
+export const saveProfiles = (file: ProfilesFile) =>
+  request<ProfilesListing>("/api/profiles", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(file) });
+/** A new session with a profile, and optionally its first message (the start sheet). */
+export const startProfileSession = (cwd: string, profile: string, prompt?: string) =>
+  request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile, ...(prompt?.trim() ? { prompt } : {}) }) });
 
 export const createSessionGroup = (name: string) =>
   request<SessionGroup>("/api/session-groups", {

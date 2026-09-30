@@ -1,3 +1,5 @@
+import { NewSessionProfileMenu, ProfileShelf } from "./ProfileShelf";
+import { profileIconName } from "../lib/profiles";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
@@ -546,6 +548,17 @@ function SessionRow(props: {
             <Show when={showsDraftMark(s(), hasLocalDraft(s().path))}>
               <Icon name="pencil" small class="list-title-draft" />
               <span class="visually-hidden">Draft. </span>
+            </Show>
+            {/* Its profile (§chat.profiles/after-first-message): the icon, the label as its title. */}
+            <Show when={s().profile}>
+              {(p) => (
+                <>
+                  <span class="session-profile-badge" title={`Profile: ${p().label}`}>
+                    <Icon name={profileIconName(p().icon)} small />
+                  </span>
+                  <span class="visually-hidden">Profile {p().label}. </span>
+                </>
+              )}
             </Show>
             {s().title}
             {/* A baton session (§app/baton): who holds the baton now. */}
@@ -1893,10 +1906,13 @@ export function Sidebar(props: {
             </button>
           </Show>
           <span class="sidebar-spacer" />
-          <button type="button" class="button" onClick={() => props.onNew()}>
-            <Icon name="plus" />
-            New Session
-          </button>
+          <span class="new-session-split">
+            <button type="button" class="button" onClick={() => props.onNew()}>
+              <Icon name="plus" />
+              New Session
+            </button>
+            <NewSessionProfileMenu cwd={props.sessions?.find((x) => x.path === props.selected)?.cwd} />
+          </span>
           <Show when={props.unfolded}>
             <button
               ref={collapseToggle}
@@ -2028,6 +2044,13 @@ export function Sidebar(props: {
               </button>
             </div>
           </Show>
+
+          {/* Profiles, above everything (§app.session-list/profile-shelf): a shortcut, grouped by profile. */}
+          <ProfileShelf
+            sessions={all()}
+            searching={!!query().trim()}
+            row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
+          />
 
           {/* Needs you, above everything: the sessions blocked on you, from the attention digest.
               A shortcut like Recent below it — every row is still where it lives — and flat for the

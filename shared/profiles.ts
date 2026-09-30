@@ -52,7 +52,7 @@ export const CAPABILITY_LABEL: Record<Removable | Grantable, string> = {
   "sessions.all": "See all Sova sessions",
 };
 
-export const PROFILE_ICONS = ["grid", "eye", "network", "git-branch", "wrench", "shield", "search", "list-checks"] as const;
+export const PROFILE_ICONS = ["grid", "eye", "network", "branch", "wrench", "shield", "search", "terminal", "bulb", "building"] as const;
 export type ProfileIcon = (typeof PROFILE_ICONS)[number];
 
 /** §chat.profiles/limits. */
@@ -173,7 +173,7 @@ export const BUILTIN_PROFILES: readonly Profile[] = [
     ...base,
     id: "merge-captain",
     label: "Merge captain",
-    icon: "git-branch",
+    icon: "branch",
     description: "Sees and messages every Sova session, and keeps the shell for git and builds. No web.",
     remove: ["workers", "web"],
     grant: ["sessions.read", "sessions.message", "sessions.all"],

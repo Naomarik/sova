@@ -15,6 +15,9 @@ import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, lin
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
+import { stripSessionHeader } from "../../shared/profiles";
+import { profileIconName } from "../lib/profiles";
+import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
 import { ImageStrip } from "./ImageStrip";
@@ -85,12 +88,35 @@ function UserTurn(props: {
   overseer?: boolean;
   /** A baton participant's name (its `sova-baton-sent` marker names this row, §app.baton/attribution). */
   sender?: string;
+  /** Another session sent this message (its `sova-session-sent` marker, §chat.profiles/delivery). */
+  fromSession?: { sessionId: string; title: string; hop?: number };
   images?: string[];
   attachments?: TmpAttachment[];
 }) {
-  const author = () => (props.overseer ? "Overseer" : (props.sender ?? AUTHOR[props.origin ?? "client"]));
+  const author = () =>
+    props.fromSession ? `From ${props.fromSession.title}` : props.overseer ? "Overseer" : (props.sender ?? AUTHOR[props.origin ?? "client"]);
+  // The model reads the header line; the row shows it as the sender header instead.
+  const text = () => (props.fromSession ? stripSessionHeader(props.text) : props.text);
   return (
-    <article class="message message-user" aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}>
+    <>
+    <Show when={props.fromSession}>
+      {(from) => (
+        <p class="session-sender">
+          <Icon name="network" small />
+          <span>
+            From <a href={`#/sid/${encodeURIComponent(from().sessionId)}`}>{from().title || "another session"}</a>
+          </span>
+          <Show when={from().hop !== undefined}>
+            <span class="text-muted">· hop {from().hop}</span>
+          </Show>
+        </p>
+      )}
+    </Show>
+    <article
+      class="message message-user"
+      classList={{ "message-from-session": !!props.fromSession }}
+      aria-label={props.time ? `${author()}, ${stampTime(props.time)}` : author()}
+    >
       <div class="message-head">
         <Show when={props.overseer} fallback={<span class="message-author">{author()}</span>}>
           <span class="message-author overseer-author" title="Sent by the Overseer">
@@ -105,10 +131,11 @@ function UserTurn(props: {
       </div>
       <ImageStrip images={props.images} where="in your message" />
       <For each={props.attachments}>{(a) => <PathAttachment attachment={a} where="in your message" />}</For>
-      <Show when={props.text}>
-        <div class="message-body message-text">{props.text}</div>
+      <Show when={text()}>
+        <div class="message-body message-text">{text()}</div>
       </Show>
     </article>
+    </>
   );
 }
 
@@ -482,6 +509,14 @@ export function HistoryItems(props: {
     for (const it of props.items) if (it.overseerMark?.kind === "sent") ids.add(it.overseerMark.targetId);
     return ids;
   });
+  /** User rows another session sent (§chat.profiles/delivery): target id → sender, in any order. */
+  const sessionSent = createMemo(() => {
+    const by = new Map<string, { sessionId: string; title: string; hop: number }>();
+    for (const it of props.items) if (it.sessionMark?.kind === "sent") by.set(it.sessionMark.targetId, { ...it.sessionMark.from, hop: it.sessionMark.hop });
+    return by;
+  });
+  /** The profile row shows once a message is on the branch (§chat.profiles/after-first-message). */
+  const hasUserRow = createMemo(() => props.items.some((it) => it.kind === "user"));
   /**
    * Where the action strips go, by rendered-row index. One per ENTRY: a reply rendered as three
    * blocks is one message, and three strips under it would be three Regenerates for one turn.
@@ -657,6 +692,7 @@ export function HistoryItems(props: {
                   time={timestampOf(item.raw)}
                   overseer={overseerSent().has(entryIdOf(item.id))}
                   sender={batonSent().has(entryIdOf(item.id)) ? nameOf(batonSent().get(entryIdOf(item.id))!) : undefined}
+                  fromSession={sessionSent().get(entryIdOf(item.id))}
                   images={item.images}
                   attachments={item.attachments}
                 />
@@ -664,6 +700,19 @@ export function HistoryItems(props: {
               {/* The sent marker draws nothing itself: it tags the row it names (above). */}
               <Match when={item.overseerMark?.kind === "sent"}>{null}</Match>
               <Match when={item.batonMark?.kind === "sent"}>{null}</Match>
+              <Match when={item.sessionMark?.kind === "sent"}>{null}</Match>
+              <Match when={item.profileMark}>
+                {(mark) => (
+                  <Show when={hasUserRow() && mark().profile}>
+                    {(p) => (
+                      <p class="profile-row" title="The profile this session runs with. It was fixed when the first message was sent.">
+                        <Icon name={profileIconName(p().icon)} small />
+                        {item.text}
+                      </p>
+                    )}
+                  </Show>
+                )}
+              </Match>
               <Match when={item.batonMark && item.batonMark.kind !== "sent" && item.batonMark}>
                 {(mark) => <BatonCard mark={mark() as Exclude<BatonMark, { kind: "sent" }>} name={nameOf} wrapupShown={showWrapup()} onWrapupToggle={() => setShowWrapup(!showWrapup())} />}
               </Match>
@@ -744,12 +793,17 @@ export function HistoryItems(props: {
                       running or failed, the plain tool card. */
                   const linked = () =>
                     (item.text === "sova_link" || item.text === "sova_unlink") && status() === "done" ? linkDetails(resultDetails()) : null;
+                  /** session_send and a profile's sova_create_session read as cards (§chat.profiles/delivery). */
+                  const profileCard = () => profileToolCard(item.text, status(), toolCallArgs(item.raw, item.toolCallId), resultDetails(), view()?.output);
                   return (
                     <Show
                       when={confirm()}
                       fallback={
                     <Show
                       when={linked()}
+                      fallback={
+                    <Show
+                      when={profileCard()}
                       fallback={
                     <ToolCard
                       name={item.text ?? "tool"}
@@ -761,6 +815,10 @@ export function HistoryItems(props: {
                       attachments={item.toolCallId ? results().get(item.toolCallId)?.attachments : undefined}
                       action={item.text === "sova_navigate" && status() === "done" ? <NavigateGo details={resultDetails()} /> : undefined}
                     />
+                      }
+                    >
+                      {(card) => <ProfileToolCardView card={card()} />}
+                    </Show>
                       }
                     >
                       {(d) => <LinkCard details={d()} ended={item.text === "sova_unlink"} />}
@@ -932,6 +990,7 @@ export function LiveEntries(props: {
                         state={e().state}
                         origin={e().origin}
                         overseer={e().overseer}
+                        fromSession={e().fromSession}
                         sender={e().by ? (props.names?.[e().by!] ?? (e().by === "operator" ? "You" : "Someone")) : undefined}
                         images={e().images}
                         attachments={e().attachments}

@@ -381,7 +381,7 @@ describe("the Overseer may start only profiles marked for it (§app.overseer/too
   });
 
   test("a live One at a time profile answers with its card and creates nothing; a free one is passed to the route", async () => {
-    const holder = { id: "cap1", path: "/s/cap1.jsonl", title: "Merge round", archived: false, profile: { id: "merge-captain", label: "Merge captain", icon: "git-branch", singleton: true } } as SessionSummary;
+    const holder = { id: "cap1", path: "/s/cap1.jsonl", title: "Merge round", archived: false, profile: { id: "merge-captain", label: "Merge captain", icon: "branch", singleton: true } } as SessionSummary;
     const busy = harness([holder]);
     const r = await busy.call({ cwd, profile: "merge-captain" });
     assert.deepEqual((r.details as { refused?: string; running?: { id: string } }).refused, "singleton");

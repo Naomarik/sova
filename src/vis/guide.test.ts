@@ -65,9 +65,9 @@ test("the guide's flow and state examples mean what the text says", () => {
     const db = s.nodes.find((n) => n.id === "db")!;
     assert.deepEqual([db.label, db.shape, s.edges[0]!.label], ["Orders", "store", "SQL"]);
   }
-  // The eval (EVAL-REPORT.md): showing any two-string node in the flow section led a weak model to
-  // write `-> b "B" "role"` on targets, drawing the role on the arrow. The parser reads a source's
-  // second string and a declaration without `node`, but the guide teaches only `\n`.
+  // In an offline eval of weak models (2026-09-30), showing any two-string node in the flow section
+  // led one to write `-> b "B" "role"` on targets, drawing the role on the arrow. The parser reads a
+  // source's second string and a declaration without `node`, but the guide teaches only `\n`.
   const flowSection = sections.find((s) => s.heading === "flow")!.text.replace(/<!--[\s\S]*?-->/g, "");
   // An id then two strings, at a line's or a bullet's start: only the target bullet's label + edge pair.
   const pairs = [...flowSection.matchAll(/(?:^|`)([a-z]\w*) "[^"]*" "[^"]*"/gm)].map((m) => m[1]);

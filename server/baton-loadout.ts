@@ -581,10 +581,14 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     stop() {},
   });
 
-  // After a restart no reply runs: every session whose chart still says one does hears it ended.
+  // After a restart no reply runs: every session whose chart still says one does hears it ended, cold ones
+  // included, on this very host (it may not be registered as open yet while its opened hooks run; a reply left
+  // "starting" would stay so forever, its lease never lapsing: F-049/F-050).
   void (async () => {
-    for (const s of host.sessions("baton", { warmOnly: true })) {
-      if (s.data.reply && s.data.reply !== "idle") await replyFact(String(s.data.sessionId), "reply/ended");
+    for (const s of host.sessions("baton")) {
+      if (!s.running || !s.data.reply || s.data.reply === "idle") continue;
+      const out = await host.act(s.id, "reply/ended", {}, { by: "system" } as unknown as Envelope);
+      if (!out.taken) console.warn(`[baton] ${orgId}: ending the reply cut off in ${s.id}: ${out.refusal?.sentence ?? "not taken"}`);
     }
   })().catch((err) => console.warn(`[baton] ${orgId}: resuming replies: ${err instanceof Error ? err.message : String(err)}`));
 }

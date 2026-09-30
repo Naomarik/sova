@@ -25,7 +25,7 @@ const { batonView } = await import("./baton-view");
 const wrap = await import("./baton-wrapup");
 const { registerOrgRoutes } = await import("./org-routes");
 const { sessionItems } = await import("./attention");
-const { envelopeFor, hostOf, setOrgClockForTest } = await import("./org-engine");
+const { closeOrgHost, envelopeFor, hostOf, setOrgClockForTest } = await import("./org-engine");
 const { replyEnded } = await import("./org-test-fixtures");
 
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -194,6 +194,42 @@ describe("offers and leases", async () => {
     assert.equal(baton.noteMessage(l.sessionId, maria.id).claimed, true);
     assert.equal(row().holder, maria.id);
     assert.deepEqual([...row().participants].sort(), [OPERATOR, maria.id, tony.id].sort());
+  });
+
+  test("a crash mid-reply (F-049/F-050): after the restart the reply is over and the lease counts again, lapsing on time", async () => {
+    process.env.SOVA_BATON_LEASE_MS = "1000";
+    let l;
+    try {
+      l = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Crash", goal: "g", question: "Who hosts?" });
+    } finally {
+      delete process.env.SOVA_BATON_LEASE_MS;
+    }
+    const sid = `baton/${org.id}/${l.sessionId}`;
+    const t0 = Date.now();
+    const at = (ms: number) => {
+      setOrgClockForTest(() => t0 + ms);
+      hostOf(org.id).fireDue();
+    };
+    try {
+      at(0);
+      baton.noteMessage(l.sessionId, tony.id);
+      at(100);
+      await hostOf(org.id).act(sid, "reply/starting", {}, envelopeFor(org.id, project.id, { by: "system", attended: false }), { settle: true });
+      assert.equal(hostOf(org.id).data(sid)!.reply, "starting");
+      // The process dies mid-reply: nothing ends the reply. The org opens again.
+      await closeOrgHost(org.id);
+      setOrgClockForTest(() => t0 + 200);
+      await orgs.openAttachedOrgs();
+      await waitFor(() => hostOf(org.id).data(sid)?.reply === "idle");
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, tony.id, "still his until the lease ends");
+      // Cut off before a word was written, the reply renewed nothing: the lease runs from his message.
+      at(999);
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, tony.id);
+      at(1001);
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, null, "the lease lapsed on time: the pool takes it back");
+    } finally {
+      setOrgClockForTest(null);
+    }
   });
 
   test("handing on withdraws the offer: invitees who never held it get 410, those who did read on", async () => {

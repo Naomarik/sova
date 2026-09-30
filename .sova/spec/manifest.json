@@ -9577,6 +9577,38 @@
         "server/share-preview-proxy.test.ts",
         "server/share-preview-router.test.ts"
       ]
+    },
+    "§app.baton/told": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/baton-told.ts",
+        "server/baton-told.test.ts",
+        "src/lib/baton-told.ts",
+        "src/lib/baton-told.test.ts",
+        "src/components/BatonStrip.tsx",
+        "shared/baton.ts",
+        "server/org-routes.ts",
+        "server/baton.ts",
+        "src/orgs.css",
+        "src/lib/api.ts",
+        "server/baton-view.test.ts",
+        "server/session-share-privacy.test.ts",
+        "server/share-listener.test.ts",
+        "server/owner-page-privacy.test.ts",
+        "server/overseer-org-tools.test.ts"
+      ],
+      "requires": [
+        "§app.baton/goal-and-loadout",
+        "§app.baton/goal-on-strip",
+        "§app.baton/outsider-view",
+        "§app.owner-page/never",
+        "§app.baton/abilities",
+        "§app.organizations/privacy",
+        "§app.project-overseer/org-charts",
+        "§app/markdown-viewer"
+      ]
     }
   },
   "boundary": {

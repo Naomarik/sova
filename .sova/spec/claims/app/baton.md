@@ -33,6 +33,14 @@ once), **lease** (an offer's lock on its first taker).
   with `mintLink: false` and no `owner` (the session is the operator's), and its chart records
   `startedVia: "overseer"` (§app.overseer/org-people-facing). A request body's `owner`, `mintLink`
   and `startedVia` are ignored.
+- **Who started it, and why.** Every start records it in the chart's start data as `started {by,
+  overseerId?, why?}`: `by` is `operator` (the Start form, Send to person…), `overseer` (the global
+  Overseer's `sova_gather start`) or `project-overseer` (`sova_start_gathering`, `sova_offer`, a
+  planned gathering the chart starts later); `overseerId` is that overseer's conversation; `why` is
+  the overseer's required reason, one or two sentences for the operator (§app.overseer/org-people-facing,
+  §app.project-overseer/tools). The operator's Start form asks for no reason. A request body's
+  `started` and `why` are ignored. The why is never in the session's prompt, so its model never sees
+  it.
 - It is a webapp-owned session whose file lives in the org's workspace repo (`sessions/`), whose
   cwd is that repo, and whose file carries an invisible `sova-baton` marker `{v:1, orgId,
   projectId}`. Its standing — holder, hand-offs, offers and leases, budget, the reply running, the
@@ -41,8 +49,9 @@ once), **lease** (an offer's lock on its first taker).
   the file can't be made, the chart says so and nothing half-made is left. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its
   public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
   holder, state and message count — and the public title, only when the session head above shows a
-  different one (a renamed session): otherwise it would say the title twice — its goal, folded under
-  **Goal** (§app.baton/goal-on-strip), and Get Link / Turn Off Link / Take Back / Close
+  different one (a renamed session): otherwise it would say the title twice — who started it and
+  when (§app.baton/told), its why and goal, folded under **Why and goal** (§app.baton/goal-on-strip),
+  What It's Told (§app.baton/told), and Get Link / Turn Off Link / Take Back / Close
   Session, and, while the org has an owner, Hide From / Show To the owner (§app.owner-page/conversations); the strip never shows a profile. Each strip action re-reads the session list at once,
   so the ` · <holder>` suffix moves without waiting for the list's next poll.
 - **Loadout.** No pi-config extension, skill, prompt template or context file is loaded; the only
@@ -101,17 +110,60 @@ once), **lease** (an offer's lock on its first taker).
   (<used> of <max>). Extend it to go on." with **Extend by** [20] and **Extend**, and its where-line
   reads "with you — extend the limit to write" while the operator holds it.
 
-## §app.baton/goal-on-strip — The goal, folded on the strip
+## §app.baton/goal-on-strip — The why and the goal, folded on the strip
 
-- The strip (§app.baton/goal-and-loadout) shows the session's goal to the operator under a
-  **Goal** disclosure, below the org, project and **It can:** lines, whenever the goal (trimmed) is
-  not empty. It is folded each time the session opens (no open state is kept), and its summary
-  says only "Goal", with no preview of the text; the whole summary row is a 44px target.
-- Opened, it shows the goal as written (line breaks kept), then one muted line: "Only you see
-  this. It's never on their page."
-- The goal reaches only the operator app's `GET /api/baton` (`BatonInfo.session.goal`); it never
-  reaches the person's page (§app.baton/outsider-view), the owner page (§app.owner-page/never) or
-  any share.
+- The strip (§app.baton/goal-and-loadout) shows the session's why and goal to the operator under a
+  **Why and goal** disclosure, below the org, project, **It can:** and **Started by** lines. It is
+  folded each time the session opens (no open state is kept), and its summary says only "Why and
+  goal", with no preview of the text; the whole summary row is a 44px target.
+- Opened, it shows **Why**: the reason the overseer that started it gave (§app.baton/told), as
+  written; "Not recorded: you started it." for a session the operator started, and "Not recorded."
+  for an overseer's session from before a reason was asked. Then **Goal**: the goal as written
+  (line breaks kept), left out when it is empty. Then one muted line: "Only you see this. It's
+  never on their page."
+- The why and the goal reach only the operator app: `GET /api/baton` (`BatonInfo.session.goal`,
+  `BatonInfo.started.why`) and What It's Told (§app.baton/told). They never reach the person's page
+  (§app.baton/outsider-view), the owner page (§app.owner-page/never) or any share.
+
+## §app.baton/told — Who started it, and what it is told
+
+- **Started by.** The strip always shows one line under **It can:**: "Started by you · {relative
+  time}", "Started by the {project} overseer · {relative time}" or "Started by you, via the
+  Overseer · {relative time}" (the time is the session's start). The overseer part links to that
+  overseer: the project's overseer page, or the Overseer (its current conversation, else that
+  conversation read-only from its History).
+- **Where it comes from.** Read from the chart's `started` (§app.baton/goal-and-loadout). A session
+  from before `started` reads its `owner` (`{overseerOf}`: the project's overseer) and `startedVia`
+  (`"overseer"`: you, via the Overseer), else you; the Overseer's conversation, when the chart lacks
+  it, from the session's start row in the transition log (§app.project-overseer/org-charts). Nothing
+  else is inferred: a part not recorded reads "Not recorded.".
+- **What It's Told**, a strip button at every width, opens the markdown viewer (§app/markdown-viewer) on one read-only
+  document titled "What It's Told", with the public title under it, fetched when opened from
+  `GET /api/baton/:sid/told` (404 for a session that isn't a gathering session). Its sections:
+  - **Started by**: who, with the strip's link, and when; and what it was started for: the gap (its id
+    and title), the conflict it settles (its area), the session it came from (a link), or the to-do
+    or idea Send to person… started it from.
+  - **Why** and **Goal**, as the strip's disclosure shows them.
+  - **Prompt**: the system prompt as the session file last recorded it — pi's system entries on its
+    active branch, replayed as pi replays them, never rendered again — with "Last changed {time},
+    sent with every reply since.", in a fenced block. Before its first reply the file has none: the
+    prompt the next reply would get is rendered then, headed "Not sent yet: what the next reply
+    would get.". Once the wrap-up has begun (§app.organizations/wrap-up), the conversation's prompt
+    is the one before it and the wrap-up's prompt is a section of its own, **Wrap-up prompt**.
+  - **Tools**: each tool the conversation's model has, as last recorded before any wrap-up (before
+    its first reply, the ones the next reply would get), with its description, the ability that
+    turns it on (`read_link`: Read links, §app.baton/abilities) and its parameters in a JSON block;
+    then the loadout's tools it doesn't have now (`read_link` while it can't read links,
+    `write_profile_updates` outside the wrap-up), by name.
+  - **Model**: the model and thinking level its file last recorded, else the chart's, else "the
+    new-session default"; and the message limit, {used} of {max}.
+  - It ends with "Only you see this. It's never on their page."
+- **The operator's only.** The prompt holds the holder's private steering profile and the "who
+  decides what" list, and nothing here is for anyone else: none of it — who started it, the
+  overseer's id, the why, the prompt, the tools — reaches the person's page or its socket
+  (§app.baton/outsider-view), the owner page (§app.owner-page/never), a session share, the session
+  list's baton field or the org page's session rows. The share listener answers 404 for
+  `/api/baton/:sid/told`. Nothing on it changes the session.
 
 ## §app.baton/hand-off — hand_to, goal_done, record_decision
 

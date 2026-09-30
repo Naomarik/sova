@@ -679,7 +679,8 @@ Organizations region's own Needs you, never the global one.
   `roster-history.jsonl` and the person's own chart are the only places a contact value lives in
   the workspace repo.
 - Profiles appear only on the org's own pages (the org page and a person's page), never in a baton
-  session pane. The owner page shows people by name only (§app.owner-page/never).
+  session pane, except the holder's steering profile inside the prompt What It's Told shows the
+  operator on request (§app.baton/told). The owner page shows people by name only (§app.owner-page/never).
 
 ## §app.organizations/referrals — People not on the roster
 

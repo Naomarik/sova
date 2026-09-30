@@ -239,3 +239,20 @@ with the snapshot by `core/outline` (states, running, links, watchers, own timer
 chart, rows, same, differences: [{what, replayed, snapshot, why}], divergence}`. Reads only, never
 restores. Log rows gain `start` (a host start's data), `invokeId`, `t` (the engine's time when `at`
 was moved on) and `plain: true` (a `logAct` row: never replayed). Set-state's event data carries `patch`.
+
+## 9. Shadowing keys, stalled timers, hold notices, nextWindow (engine-2)
+
+**Payload vs envelope (9a929761, 01933b8b).** The host merges payload and envelope for the engine; a payload
+key the envelope also carries with a DIFFERENT value throws `OrgPayloadError` (code
+`payload-shadows-envelope`, a caller's bug: never stepped, never logged); equal values pass. The matrix fails
+such a cell ("a payload key shadows the envelope's"; `matrix/shadowed`). Name a payload field something the
+envelope doesn't use (baton/extend reads `{more}`).
+**Stalled timers (3e482c49, 3d20894a).** `fireDue(now, {only, except})`, `dueSessions(now)`,
+`setAside(sids)`: no call delivers a set-aside session's due events and `nextDueAt` skips them (what a call
+queues for them still goes). The host fires what is due; when that throws, one due session at a time, and a
+session still throwing is a `{kind: "timer"}` problem, set aside until one of its steps commits.
+**Hold notices (c708a572).** A held act's session hears `hold/held {id event kind what until project-id
+confirm by wait?}` in the same call (ignored unless the chart listens); `hold/waiting` carries `project-id`.
+**Log.** `prompt` is a digest (DEFAULT_REDACT).
+**nextWindow(person, nowMs)** (0f2cee96): the charts' `rules.hours/next-window`, exported; null = open now
+or no hours.

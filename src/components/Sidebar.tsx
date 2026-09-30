@@ -1439,7 +1439,7 @@ export function Sidebar(props: {
   const orgNeedsYouDetail = (path: string) => {
     const r = orgNeedsYou().find((row) => row.session.path === path);
     // r12: an open offer's invitees not reached yet (their hours haven't come) are said after the row's own detail.
-    const waiting = waitingWords(props.attention?.items.find((it) => it.path === path && it.waiting?.length)?.waiting, props.now);
+    const waiting = waitingWords(props.attention?.items.find((it) => it.path === path && it.waiting?.length)?.waiting ?? r?.session.baton?.waiting, props.now);
     const text = [r?.detail, waiting].filter(Boolean).join(" · ");
     return text ? { text, title: [...(r?.details ?? []), waiting ?? ""].filter(Boolean).join(" ") } : null;
   };

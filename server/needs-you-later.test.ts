@@ -143,13 +143,12 @@ describe("Later on the Organizations region's baton and roster rows", () => {
   type Baton = NonNullable<SessionSummary["baton"]>;
   const baton = (over: Partial<Baton>, at = NOW - 60_000) => row(summary("g", { lastActiveAt: new Date(at).toISOString(), baton: { holder: null, state: "needs-you", ...over } as Baton }));
 
-  test("a person waiting on you: hidden until a new hand-off or a new message on it", () => {
+  test("a person waiting on you: hidden until a new hand-off; the operator's own message (the file moving) is not new", () => {
     const file = freshFile();
     const waiting = (handoff: number, at?: number) => baton({ needsYou: { from: "Ann", question: "Which venue?", since: NOW - 90_000, handoff } }, at);
     putAway(keysOf(digest([waiting(2)], file), "g"), NOW, file);
     assert.deepEqual(acts(digest([waiting(2)], file)), []);
-    assert.deepEqual(acts(digest([waiting(2, NOW - 1000)], file)), ["g:baton-needs-you"], "a new message on the same hand-off");
-    putAway(keysOf(digest([waiting(2, NOW - 1000)], file), "g"), NOW, file);
+    assert.deepEqual(acts(digest([waiting(2, NOW - 1000)], file)), [], "the operator wrote (lastActiveAt moved): still away");
     assert.deepEqual(acts(digest([waiting(3, NOW - 1000)], file)), ["g:baton-needs-you"], "a new hand-off");
   });
 
@@ -190,7 +189,8 @@ describe("the session list's baton fields carry the same Later keys, and drop a 
     assert.equal(after.baton?.needsYou, undefined, "put away: gone from the row");
     assert.equal(after.baton?.proposals?.length, 1, "the proposal is its own");
     assert.equal(after.baton?.state, "needs-you", "the rest of the field stays");
-    const moved = withBatonLater({ ...s, lastActiveAt: new Date(NOW).toISOString() }, lat);
-    assert.ok(moved.baton?.needsYou?.later, "a new message on the hand-off: back");
+    assert.equal(withBatonLater({ ...s, lastActiveAt: new Date(NOW).toISOString() }, lat).baton?.needsYou, undefined, "the operator's own message: still away");
+    const next = { ...s, baton: { ...s.baton!, needsYou: { ...s.baton!.needsYou!, handoff: 3 } } };
+    assert.ok(withBatonLater(next, lat).baton?.needsYou?.later, "a new hand-off: back");
   });
 });

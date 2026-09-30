@@ -262,17 +262,18 @@ export function workerErrorTime(failed: number, rowTimes: number[], risenAt?: nu
 /**
  * A baton session's Later keys (§app.baton/needs-you), the same on its digest items and its
  * session-list row: a person waiting on you and a send-link are anchored on their hand-off (a
- * send-link for an open offer on the offer) and the file's newest event, so a new hand-off or a new
- * message on it is new; a roster proposal on its proposed person, one key per person.
+ * send-link for an open offer on the offer); a roster proposal on its proposed person, one key per
+ * person. No message moves them: while the baton is with the operator, or with a person who has no
+ * link, nobody else can write in the session, so the only messages are the operator's own (and the
+ * replies to them), which are not new; a new hand-off or offer is.
  */
-export function batonLaterKeys(s: Pick<SessionSummary, "id" | "lastActiveAt" | "baton">): { needsYou?: string; sendLink?: string; proposals: Map<string, string> } {
+export function batonLaterKeys(s: Pick<SessionSummary, "id" | "baton">): { needsYou?: string; sendLink?: string; proposals: Map<string, string> } {
   const b = s.baton;
-  const moved = `m${Date.parse(s.lastActiveAt) || 0}`;
   const out: { needsYou?: string; sendLink?: string; proposals: Map<string, string> } = { proposals: new Map() };
   if (!b) return out;
-  if (b.needsYou) out.needsYou = laterKey(s.id, "baton-needs-you", [b.needsYou.handoff !== undefined ? `h${b.needsYou.handoff}` : `t${b.needsYou.since}`, moved]);
+  if (b.needsYou) out.needsYou = laterKey(s.id, "baton-needs-you", [b.needsYou.handoff !== undefined ? `h${b.needsYou.handoff}` : `t${b.needsYou.since}`]);
   const l = b.sendLink;
-  if (l) out.sendLink = laterKey(s.id, "baton-needs-you", [l.offerId ? `o${l.offerId}` : l.handoff !== undefined ? `h${l.handoff}` : `t${l.since}`, moved]);
+  if (l) out.sendLink = laterKey(s.id, "baton-needs-you", [l.offerId ? `o${l.offerId}` : l.handoff !== undefined ? `h${l.handoff}` : `t${l.since}`]);
   for (const p of b.proposals ?? []) out.proposals.set(p.personId, laterKey(s.id, `roster-proposal/${p.personId}`, [`p${p.personId}`, `t${p.since}`]));
   return out;
 }
@@ -281,7 +282,7 @@ export function batonLaterKeys(s: Pick<SessionSummary, "id" | "lastActiveAt" | "
  * The session list's side of Later for a baton session: each wait carries its `later` key, and a
  * wait put away (its anchor unmoved) is dropped from the row, as the digest drops its item.
  */
-export function withBatonLater<T extends Pick<SessionSummary, "id" | "lastActiveAt" | "baton">>(
+export function withBatonLater<T extends Pick<SessionSummary, "id" | "baton">>(
   row: T,
   later: (items: { later: string }[]) => { later: string }[] = (items) => withoutLater(items),
 ): T {

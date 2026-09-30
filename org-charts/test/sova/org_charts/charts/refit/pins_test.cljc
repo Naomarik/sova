@@ -4,6 +4,7 @@
   (:require
     #?(:clj [clojure.test :refer [deftest is testing]] :cljs [cljs.test :refer-macros [deftest is testing]])
     [sova.org-charts.charts.base :as b]
+    [sova.org-charts.charts.baton :as bt]
     [sova.org-charts.charts.person :as person]
     [sova.org-charts.charts.proj :as proj]
     [sova.org-charts.charts.watch :as w]
@@ -12,7 +13,8 @@
     [sova.org-charts.charts.residence :as res]
     [sova.org-charts.charts.rules.baton :as rb]
     [sova.org-charts.charts.rules.item :as ri]
-    [sova.org-charts.charts.rules.person :as rp]))
+    [sova.org-charts.charts.rules.person :as rp]
+    [sova.org-charts.charts.rules.started :as st]))
 
 (def op {:by "operator"})
 (def t0 1700000000000)
@@ -345,3 +347,40 @@
     (is (= "2026-01-05" (b/day-key (+ (local 2026 1 5) 3600000))) "base02: January is 01")
     (is (= "2026-10-10" (b/day-key (+ (local 2026 10 10) 3600000))) "base03: 10 has no leading zero")
     (is (= "2026-12-09" (b/day-key (+ (local 2026 12 9) 3600000))))))
+
+;; ---- runF, the rest (verifier-3 FINAL complete) ------------------------------------------------------------
+
+(defn running? [x sid] (:com.fulcrologic.statecharts/running? (h/wmem x sid)))
+
+(deftest baton-runf-pins
+  (is (nil? (rb/abilities-refusal {} {:invalid ""})) "rbaton04 (abilities-refusal): a blank invalid is none")
+  (is (= "bad abilities" (:sentence (rb/abilities-refusal {} {:invalid "bad abilities"}))))
+  (is (false? (bt/asks? false {})) "r14m03: only a true rule asks")
+  (is (false? (bt/asks? nil {})))
+  (is (true? (bt/asks? true {})))
+  (let [x (baton {:to "p1"})]
+    (is (h/in? x bsid :with-person))
+    (is (= "Bob X" (get-in (h/data (h/send! x bsid :link/moved {:from "person/o1/p2" :chart "person" :states [:person :left] :exported {:name "Bob X"}}) bsid) [:names "p2"]))
+        "baton00: someone it doesn't wait on leaving is only news of their name")
+    (is (h/in? (h/send! x bsid :person/left {:person-id "p2"}) bsid :with-person) "baton04: a leaver who neither holds it nor is invited moves nothing")
+    (is (h/in? (h/send! x bsid :person/left {:person-id "p1"}) bsid :with-operator) "the holder leaving hands it to the operator"))
+  (let [y (-> (baton {:to "p1"}) (msg "p1") (h/send! bsid :reply/ended {}) (h/send! bsid :baton/goal-done {:by "model" :summary "All set"}))]
+    (is (h/in? y bsid :wrapup-running))
+    (is (running? (h/send! y bsid :session/retire {}) bsid) "r11m11: done, its wrap-up still running: not retired")
+    (is (not (running? (-> y (h/send! bsid :wrapup/finished {}) (h/send! bsid :session/retire {})) bsid)) "its wrap-up ended: retired")))
+
+(deftest build-retire-runf-pins
+  (let [w (-> (ready (build)) (h/send! csid* :turn/started {}) (h/send! csid* :git/probe {:branch "merged"}))]
+    (is (h/in? w csid* :merged))
+    (is (running? (h/send! w csid* :session/retire {}) csid*) "r11m13: merged mid-turn: not retired")
+    (is (not (running? (-> w (h/send! csid* :turn/ended {}) (h/send! csid* :session/retire {})) csid*)) "its turn over: retired"))
+  (let [made (h/send! (build {:prompt nil}) csid* :effect/done made-tree)]
+    (is (h/in? (h/send! made csid* :effect/failed {:kind "prompt" :detail "busy"}) csid* :setting-mode) "build03b: another effect's failure is not the mode's")
+    (is (h/in? (h/send! made csid* :effect/failed {:kind "set-mode"}) csid* :ready))))
+
+(deftest started-runf-pins
+  (is (not (st/settled? "baton" [:baton :open :with-person :wrapup-done])) "r11m02: an open one is live whatever its wrap-up says")
+  (is (not (st/settled? "baton" [:baton :asking])) "r11m05: only retired settles whatever the chart")
+  (is (not (st/settled? "item" [:item :asking])))
+  (is (= [{:sid "a" :settled true}] (st/note [{:sid "a" :settled true}] {:sid "a" :kind "gathering"})) "r11m10: noted twice is one row, as it was")
+  (is (= [{:sid "a" :settled true} {:sid "b" :kind "gathering" :settled false}] (st/note [{:sid "a" :settled true}] {:sid "b" :kind "gathering"}))))

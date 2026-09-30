@@ -36,10 +36,10 @@
   "TOOL_NEEDS, verbatim (a test pins it against the registry's acts). `sova_roster` approve/decline
    is L2, per op."
   {"sova_project" "read" "sova_decisions" "read" "sova_list_sessions" "read" "sova_read_session" "read"
-   "sova_roster" "read" "sova_pipeline" "read"
+   "sova_roster" "read" "sova_pipeline" "read" "sova_previews" "read"
    "sova_todos" "operator" "sova_todo" "operator"
    "sova_note" "L0" "sova_card" "L0" "sova_idea" "L0"
-   "sova_start_gathering" "L1" "sova_offer" "L1" "sova_close_gathering" "L1" "sova_reconcile" "L1" "sova_owner_update" "L1"
+   "sova_start_gathering" "L1" "sova_offer" "L1" "sova_close_gathering" "L1" "sova_reconcile" "L1" "sova_owner_update" "L1" "sova_preview" "L1"
    "sova_promote" "L2"
    "sova_create_session" "L3" "sova_send" "L3"})
 

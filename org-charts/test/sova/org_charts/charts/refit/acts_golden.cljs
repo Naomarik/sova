@@ -65,6 +65,7 @@
    ["project" ":overseer/clear"] {:card? true, :people-facing true}
    ["project" ":overseer/start"] {}
    ["project" ":owner-update/post"] {:confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_owner_update", :what? true}
+   ["project" ":preview/start"] {:confirm? true, :hold true, :needs "L1", :people-facing true, :tool "sova_preview", :what? true}
    ["project" ":project/archive"] {:card? true, :people-facing true}
    ["project" ":project/edit"] {}
    ["project" ":project/unarchive"] {}

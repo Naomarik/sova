@@ -99,6 +99,21 @@
     (is (= "The text leaks." (h/refusal x psid :owner-update/post (assoc po :attended true :leak "The text leaks."))))
     (is (nil? (h/refusal x psid :owner-update/post (assoc po :build-finished-at (h/now x)))) "a build that finished a turn since is a milestone")))
 
+(deftest preview-links
+  (let [x (project)
+        po {:by "overseer" :autonomy "L1" :roster-active true :coding-session "c1" :port 5173 :purpose "  The shop for Ana  " :overseer-id "po1"}]
+    (is (= "Say what it shows and to whom (purpose): one line." (h/refusal x psid :preview/start (assoc po :purpose " "))))
+    (is (= "The purpose is one line of at most 200 characters." (h/refusal x psid :preview/start (assoc po :purpose (apply str (repeat 201 "a"))))))
+    (is (= "The purpose is one line of at most 200 characters." (h/refusal x psid :preview/start (assoc po :purpose "a\nb"))))
+    (is (= "Nothing listens on port 5173." (h/refusal x psid :preview/start (assoc po :invalid "Nothing listens on port 5173."))) "the host's own check")
+    (let [y (h/send! x psid :preview/start po)
+          fx (first (filter #(= "preview" (:kind %)) (h/outbox y psid)))]
+      (is (some? fx))
+      (is (= "The shop for Ana" (:purpose fx)))
+      (is (= "c1" (:coding-session fx)))
+      (is (= 5173 (:port fx)))
+      (is (not-any? #(contains? fx %) [:url :label :link]) "an effect carries no link: its result and payload are logged"))))
+
 (deftest hourly-committer
   (let [sid "residence/o1"
         x (-> (h/start! (h/new-host) "residence" sid {:org-id "o1" :host-id "h_me" :host-name "me" :mode "create" :commit-every-ms 3600000})

@@ -128,6 +128,28 @@
       (not (milestone? data))
       (r/refuse 409 "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged."))))
 
+;; ---- preview links ---------------------------------------------------------------------------------
+
+(def purpose-max 200)
+
+(defn preview-check
+  "sova_preview start's purpose (§app.project-overseer/previews); the host's `invalid` carries the
+   target's own checks (the session, the port's listener, the folder, Sova's ports, the address)."
+  [data]
+  (let [p (str/trim (or (:purpose (b/evt data)) ""))]
+    (cond
+      (= "" p) (r/refuse 400 "Say what it shows and to whom (purpose): one line.")
+      (or (> (count p) purpose-max) (str/includes? p "\n")) (r/refuse 400 "The purpose is one line of at most 200 characters."))))
+
+(defn preview-effect
+  "What the effect mints from: never a link (the host keeps it; an effect's result is logged)."
+  [data]
+  (let [e (b/evt data)]
+    (cond-> {:coding-session (:coding-session e) :purpose (str/trim (:purpose e)) :overseer-id (:overseer-id e)}
+      (some? (:port e)) (assoc :port (:port e))
+      (some? (:folder e)) (assoc :folder (:folder e))
+      (some? (:days e)) (assoc :days (:days e)))))
+
 ;; ---- starts ----------------------------------------------------------------------------------------
 
 (defn gap-none-build-check
@@ -252,6 +274,10 @@
         ;; `session`, not `session-id`: an effect's own sessionId is this chart's
         (dsl/effect :prompt (fn [d] (let [ev (b/evt d)] (cond-> {:session (:session-id ev) :text (:text ev)} (:mode ev) (assoc :mode (:mode ev))))))
         (b/ledger :ledger/take "prompt" (constantly 1)))
+      ;; A preview link of one of its coding sessions' apps (§app.project-overseer/previews): L1, held
+      ;; when unattended, counted against no allowance. The effect mints it; turning one off is no act.
+      (dsl/act {:sova/feed :feed :event :preview/start :checks [not-archived invalid preview-check]}
+        (dsl/effect :preview preview-effect))
 
       (parallel {:id :regions}
         (state {:id :shelf :initial :active}
@@ -343,6 +369,8 @@
                        :what (fn [d] (str "A prompt to \"" (or (not-empty (:title (b/evt d))) (:session-id (b/evt d))) "\""))}
    :owner-update/post {:needs "L1" :tool "sova_owner_update" :people-facing true :hold true :confirm-kind "owner-update"
                        :what (fn [_] "An owner update")}
+   :preview/start     {:needs "L1" :tool "sova_preview" :people-facing true :hold true :confirm-kind "preview"
+                       :what (fn [d] (str "A preview link: " (str/trim (or (:purpose (b/evt d)) ""))))}
    :hold/cancel       {:needs "L0" :correction true}
    :hold/approve      {:needs "L0" :correction true}})
 

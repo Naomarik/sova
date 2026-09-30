@@ -26,7 +26,7 @@ const runLabel = (st: VoiceStatus) => (st.models.find((m) => m.id === st.activeM
 /** One sweep on this install: how many settings, and about how long on `clips` clips. */
 function estimate(st: VoiceStatus, clips: number): { settings: number; sec: number } {
   const active = st.models.find((m) => m.id === st.activeModel);
-  const settings = active && !active.tunable ? 1 : st.installed?.backend === "cpu" ? 8 : 24;
+  const settings = active && !active.tunable ? 1 : st.installed?.backend === "cpu" ? 4 : 12;
   // The self-test clip is 3 s; a sentence is about twice that. The current settings run twice.
   const perInference = Math.max(0.3, ((active?.selftestMs ?? st.installed?.selftestMs ?? 500) / 1000) * 2);
   return { settings, sec: (settings + (settings > 1 ? 1 : 0)) * clips * perInference };
@@ -377,7 +377,7 @@ function Results(props: { st: VoiceStatus; run: VoiceCalibrationRun; busy: boole
     if (r.phase === "stopped") return `Stopped after ${r.progress.setting} of ${r.progress.settings} settings. Nothing was saved; pick a row to use it.`;
     if (r.phase !== "done") return null;
     if (reverted()) return "Back to the previous settings.";
-    if (currentWon()) return "Your current settings scored best. Nothing changed.";
+    if (currentWon()) return "No setting beat your current ones by 3 words or more. Nothing changed.";
     return r.applied === r.best ? `Saved the best settings for this device on ${nameOf(props.st, r.model)}.` : null;
   };
   const revert = () => void props.act(() => revertCalibration(voiceDeviceInfo()), "Back to the previous settings.").then(() => setReverted(true));
@@ -504,7 +504,7 @@ export function VoiceCalibration(props: { st: VoiceStatus; busy: boolean; act: A
         : "Parakeet has no settings to tune. Calibrating scores it on your clips, to compare with the whisper models.";
     }
     const name = active() ? modelName(active()!) : props.st.activeModel;
-    return `${name} uses the defaults on this device. Calibrating takes a few minutes: you read 6 sentences, then we try ${estimate(props.st, 6).settings === 8 ? 8 : 24} settings on them.`;
+    return `${name} uses the defaults on this device. Calibrating takes a few minutes: you read 6 sentences, then we try ${estimate(props.st, 6).settings === 4 ? 4 : 12} settings on them.`;
   };
 
   return (

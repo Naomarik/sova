@@ -161,9 +161,10 @@ export const PREBUILT_TAG = "b5130";
 export const HOTWORDS = ["Sova", "pi", "SolidJS", "worktree", "Vite", "TypeScript", "subagent", "Hono", "pnpm", "Claude", "Codex", "Overseer", "statechart"];
 
 /** The same words as one punctuated sentence: whisper follows a prompt's style, and a list may
-    pull the output toward a list's. Calibration tries both. */
+    pull the output toward a list's. Calibration tries both. It shares no phrasing with the
+    calibration sentences, so it can't flatter its own rows. */
 export const PROMPT_SENTENCE =
-  "In Sova, the Overseer asks a subagent to fix the statechart in a worktree, then runs pi, pnpm, Vite, Hono, SolidJS and TypeScript checks with Claude or Codex.";
+  "Sova is written in TypeScript with SolidJS, Hono, Vite and pnpm; its Overseer, subagent, statechart and worktree code works with pi, Claude and Codex.";
 
 /** The self-test clip's words (server/voice/selftest.wav, espeak-ng): it passes on 2 of these. */
 export const SELFTEST_WORDS = ["sova", "worktree", "type", "check"];

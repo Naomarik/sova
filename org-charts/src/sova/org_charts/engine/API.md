@@ -256,3 +256,7 @@ confirm by wait?}` in the same call (ignored unless the chart listens); `hold/wa
 **Log.** `prompt` is a digest (DEFAULT_REDACT).
 **nextWindow(person, nowMs)** (0f2cee96): the charts' `rules.hours/next-window`, exported; null = open now
 or no hours.
+**dsl/timer-at (bff675ff).** `(dsl/timer-at id event at-fn)` / `(dsl/timer-at-ops data id event at payload?)`:
+after the step, this session's timer `id` is cancelled and `event` (with `payload`) is due at the instant `at`
+(ms; a past instant is due at once, in the same call); `at` nil only cancels. One pending timer per id however
+often re-armed; durable in the snapshot's queue (r12's one reach timer per offer, `reach-<offer-id>`).

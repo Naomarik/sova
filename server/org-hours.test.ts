@@ -260,3 +260,56 @@ describe("company working hours, the default (r13)", () => {
     await put({ tz: null, hours: null });
   });
 });
+
+describe("an offer reaches each invitee in their own hours (r12)", () => {
+  test("in hours now: reached at once; the others wait for their window, then Needs you asks the operator to send their link", async () => {
+    const { setOrgClockForTest } = await import("./org-engine");
+    const { batonInfo } = await import("./org-routes");
+    const eve = await orgs.addPerson(org.id, { name: "Eve Lund", role: "Sales" });
+    const fay = await orgs.addPerson(org.id, { name: "Fay Roth", role: "Sales" });
+    const setHours = (pid: string, from: number, to: number) => app.request(`/api/orgs/${org.id}/people/${pid}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ tz: "UTC", hours: { days: ALL, from: hm(from), to: hm(to) } }) });
+    await setHours(eve.id, -1, 1);
+    await setHours(fay.id, 2, 3);
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0, caps: { gatheringsOpen: 20, gatherPerTurn: null, gatherPerDay: null } });
+    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_offer")!;
+    await tool.execute("r12", { gap: "none", people: ["Eve Lund", "Fay Roth"], public_title: "Quotes", goal: "g", question: "Who sends quotes?" } as never, undefined, undefined, undefined as never);
+    const row = () => baton.allBatons().find((b) => b.publicTitle === "Quotes")!;
+    assert.ok(row(), "someone was in hours: it went now");
+    const fayOpens = orgs.findPerson(org.id, fay.id)!.hoursNow!.nextOpen!;
+    // The strip: Eve reached, Fay waiting until her window.
+    const info = batonInfo(row());
+    assert.deepEqual(
+      info.offer!.to.map((t) => [t.name, t.reach?.state, t.reach?.state === "waiting" ? t.reach.until : undefined]),
+      [["Eve Lund", "reached", undefined], ["Fay Roth", "waiting", fayOpens]],
+    );
+    // Needs you: a link only for Eve (the overseer's offer mints none), Fay listed as waiting.
+    const field = baton.batonSummaryField(baton.sessionPathOf(orgs.orgDir(org.id), row()))!;
+    assert.equal(field.sendLink?.to, "Eve Lund");
+    assert.deepEqual(field.waiting, [{ name: "Fay Roth", until: fayOpens }]);
+    // Fay's link can't be sent yet; the person page says she waits.
+    const refused = await app.request(`/api/baton/${row().sessionId}/link?person=${fay.id}`);
+    assert.equal(refused.status, 409);
+    assert.equal(((await refused.json()) as { error: string }).error, "Fay Roth is not reached yet: their link is made when their working hours start.");
+    const page = (await (await app.request(`/api/orgs/${org.id}/people/${fay.id}`)).json()) as { sessions: { sessionId: string; offer?: { reach?: { state: string } } }[] };
+    assert.equal(page.sessions.find((s) => s.sessionId === row().sessionId)?.offer?.reach?.state, "waiting");
+    // The look names her and when.
+    assert.match(po.lookAppendix(org.id, project.id), new RegExp(`Offers still reaching people[^]*- Offer 1 in "Quotes" · reaches Fay Roth at ${fayOpens.replace(/[.]/g, "\\.")} \\(their working hours\\)`));
+    // Her window opens: the chart's timer reaches her; no link is made by itself (nobody could take its token), so
+    // Needs you now asks for hers too, and the operator's send makes it, once.
+    setOrgClockForTest(() => Date.parse(fayOpens) + 60_000);
+    try {
+      hostOf(org.id).fireDue();
+      await new Promise((r) => setTimeout(r, 50));
+    } finally {
+      setOrgClockForTest(null);
+    }
+    assert.equal(batonInfo(row()).offer!.to.find((t) => t.id === fay.id)?.reach?.state, "reached");
+    const { linksOfPerson } = await import("./baton-links");
+    assert.equal(linksOfPerson(org.id, fay.id).filter((l) => l.sessionId === row().sessionId).length, 0, "no link minted by the timer");
+    assert.equal(baton.batonSummaryField(baton.sessionPathOf(orgs.orgDir(org.id), row()))!.sendLink?.to, "Eve Lund, Fay Roth");
+    const sent = await app.request(`/api/baton/${row().sessionId}/link?person=${fay.id}`);
+    assert.equal(sent.status, 200);
+    assert.match(((await sent.json()) as { link: string }).link, /\/h\//);
+    assert.equal(baton.batonSummaryField(baton.sessionPathOf(orgs.orgDir(org.id), row()))!.sendLink?.to, "Eve Lund");
+  });
+});

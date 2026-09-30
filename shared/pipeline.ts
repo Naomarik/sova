@@ -56,6 +56,8 @@ export interface PipelineBuild {
   title: string;
   turn: "idle" | "working" | "failed";
   branch?: "no-commits" | "unmerged" | "merged" | "new-since-merge";
+  /** Its mode could not be set, so its first prompt was never sent (the sentence to show). */
+  notPrompted?: string;
 }
 
 /**

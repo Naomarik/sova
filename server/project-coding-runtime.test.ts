@@ -35,6 +35,7 @@ const { offersMerge } = await import("../src/lib/coding-worktrees");
 const { readBuilds, withWorktreePath } = await import("./build-loadout");
 const { seedBuild } = await import("./org-test-fixtures");
 const { envelopeFor, hostOf } = await import("./org-engine");
+const { pipelineInfo } = await import("./project-pipeline");
 /** A project's builds with their worktree folders on this host. */
 const buildsOf = async (orgId: string, projectId: string, root: string) => Promise.all(readBuilds(orgId, projectId).map(async (r) => ({ ...r, worktree: (await withWorktreePath(r, root))?.worktree })));
 
@@ -377,6 +378,36 @@ describe("a project's coding sessions", async () => {
     assert.deepEqual([...new Set(setup)], ["making-worktree", "setting-mode", "prompting", "ready"], "mode set, then the first prompt");
     assert.ok(rows.some((r) => r.event === "effect/done" && r.before.includes("prompting") && r.after.includes("ready")), "the prompt was taken");
     assert.equal(d["promptError"], undefined);
+  });
+
+  test("F20: the chart's own build whose mode can't be set is not prompted, and its Pipeline row says so", async () => {
+    const settingsFile = join(agentDir, "settings.json");
+    const had = readFileSync(settingsFile, "utf8");
+    writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
+    try {
+      await po.patchProjectOverseer(org.id, project.id, { autonomy: "L3", holdMin: 0 });
+      const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
+      await hostOf(org.id).act(`project/${org.id}/${project.id}`, "gap/file", { gapId: "g_build2", ideaId: "§gap/logout" }, envelope, { settle: true });
+      const before = readBuilds(org.id, project.id).length;
+      await hostOf(org.id).act(
+        `item/${org.id}/${project.id}/g_build2`,
+        "link/moved",
+        { from: `decision/${org.id}/${project.id}/d_logout1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Logout clears the session.", record: "§req/logout" } },
+        envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+        { settle: true },
+      );
+      let row: ReturnType<typeof readBuilds>[number] | undefined;
+      for (let i = 0; i < 200 && !(row && hostOf(org.id).configuration(`build/${org.id}/${project.id}/${row.sessionId}`)?.includes("ready")); i++) {
+        await new Promise((r) => setTimeout(r, 50));
+        row = readBuilds(org.id, project.id).slice(before).find((r) => r.title === "Build §gap/logout");
+      }
+      assert.ok(row?.modeNotSet, "its mode was not set");
+      assert.doesNotMatch(readFileSync(row.path!, "utf8"), /"role":"user"/, "no prompt reached it");
+      const b = pipelineInfo(org.id, project.id).rows.find((r) => r.gap === "§gap/logout")?.builds.find((x) => x.sessionId === row!.sessionId);
+      assert.equal(b?.notPrompted, "Started, but not prompted: its mode could not be set.");
+    } finally {
+      writeFileSync(settingsFile, had);
+    }
   });
 
   test("gathering sessions stay mode-less, whatever the project's coding mode and the default", async () => {

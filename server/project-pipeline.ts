@@ -9,6 +9,7 @@ import { OrgError } from "./org-error";
 import type { LogRow } from "./org-host/log";
 import { operatorEnvelope, readIndex, readOrg, readProjects, type OperatorBy } from "./orgs";
 import { readManifest } from "./overseer-ideas";
+import { NOT_PROMPTED } from "./project-overseer";
 import { projectOverseerPaths } from "./project-overseer-store";
 import { listDecisions } from "./reconcile";
 
@@ -194,6 +195,7 @@ function buildOf(orgId: string, projectId: string, sid: string, fact: Record<str
     title: row?.title || sessionId,
     turn: row?.turn ?? "idle",
     ...(branch === "no-commits" || branch === "unmerged" || branch === "merged" || branch === "new-since-merge" ? { branch } : {}),
+    ...(row?.modeNotSet ? { notPrompted: NOT_PROMPTED } : {}),
   };
 }
 

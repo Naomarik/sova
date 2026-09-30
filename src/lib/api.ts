@@ -92,6 +92,7 @@ import type {
   SummarizerSettingsInfo,
 } from "../../shared/protocol";
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
+import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
@@ -193,6 +194,12 @@ export const getModelPolicy = (host?: string | null) => request<ModelPolicy>(hos
     the server refuses a model it forbids, so this is a rule, not a filter. */
 export const putModelPolicy = (policy: ModelPolicy) =>
   request<ModelPolicy>("/api/settings/models", { method: "PUT", body: JSON.stringify(policy) });
+/** How many of each provider's requests may run at once on this device (§app.provider-limits/setting). */
+export const getProviderLimits = () => request<ProviderLimitsInfo>("/api/settings/provider-limits");
+export const putProviderLimits = (limits: ProviderLimits) =>
+  request<ProviderLimitsInfo>("/api/settings/provider-limits", { method: "PUT", body: JSON.stringify({ limits }) });
+/** Who waits on a provider's limit now, by session id (§app.provider-limits/waiting-shown). */
+export const getProviderWaiting = () => request<ProviderWaiting>("/api/provider-limits/waiting");
 
 /** Delegate mode's routing (Settings → Modes → Delegate): which worker each kind of work goes to. */
 export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/settings/delegate");

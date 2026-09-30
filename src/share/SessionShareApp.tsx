@@ -8,7 +8,7 @@ import {
   type SessionShareServerMessage,
   type SessionShareView,
 } from "../../shared/session-share";
-import { earlierLine, mergeEarlier, mergeNewest } from "../lib/share-slice";
+import { earlierLine, ShareViewKeeper, type ShareAnswer } from "../lib/share-slice";
 import { SESSION_VIS_KINDS } from "./markdown";
 import { LinkedText, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
@@ -165,62 +165,45 @@ export function SessionShareApp() {
 
   /** Near the bottom when a live push lands: stay there, so new messages come into view. */
   const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
-  const applyNewest = (v: SessionShareView, reset = false) => {
-    const pin = view() !== null && atBottom();
-    setView((cur) => mergeNewest(cur, v, reset));
-    document.title = v.title;
-    if (pin) queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight));
-  };
 
-  const read = async (before?: number): Promise<SessionShareView | "failed" | null> => {
+  /** One read, with no effect of its own: the keeper decides whether its answer still acts. */
+  const read = async (before?: number): Promise<ShareAnswer> => {
     const res = await fetch(`/api/s/${TOKEN}?v=${VISIT}${before === undefined ? "" : `&before=${before}`}`, { cache: "no-store" }).catch(() => null);
-    if (!res) return "failed";
-    if (res.status === 410) {
-      setProblem(gone(((await res.json().catch(() => ({}))) as { why?: unknown }).why));
-      return null;
-    }
-    if (res.status === 404) {
-      setProblem(UNKNOWN);
-      return null;
-    }
-    if (res.status === 429) {
-      if (!view()) setProblem(BUSY);
-      return "failed";
-    }
-    if (res.status === 503) {
-      setOffline(true);
-      return "failed";
-    }
-    if (!res.ok) return "failed";
-    setOffline(false);
-    return (await res.json()) as SessionShareView;
+    if (!res) return { kind: "failed" };
+    if (res.status === 410) return { kind: "gone", why: ((await res.json().catch(() => ({}))) as { why?: unknown }).why };
+    if (res.status === 404) return { kind: "unknown" };
+    if (res.status === 429) return { kind: "busy" };
+    if (res.status === 503) return { kind: "offline" };
+    if (!res.ok) return { kind: "failed" };
+    const view = (await res.json().catch(() => null)) as SessionShareView | null;
+    return view ? { kind: "view", view } : { kind: "failed" };
   };
 
+  // Reads and pushes act in order (ShareViewKeeper): an answer overtaken by a newer view is dropped
+  // whole, its gone or offline state included, so a late wider slice never returns over a push.
+  const keeper = new ShareViewKeeper(TOKEN ? read : async () => ({ kind: "failed" }), {
+    view: (v) => {
+      const pin = view() !== null && atBottom();
+      setView(v);
+      document.title = v.title;
+      if (pin) queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight));
+    },
+    problem: (a) => setProblem(a.kind === "gone" ? gone(a.why) : a.kind === "unknown" ? UNKNOWN : BUSY),
+    offline: setOffline,
+  });
   const load = async () => {
-    if (!TOKEN) return;
-    const v = await read();
-    // Again after a reconnect, it keeps the earlier pages read only in the same lineage
-    // (mergeNewest): a start moved while the socket was down renumbers every item.
-    if (v && v !== "failed") applyNewest(v);
+    if (TOKEN) await keeper.newest();
   };
 
   const showEarlier = async () => {
-    const v = view();
-    if (v?.before === undefined || earlier() === "busy") return;
+    if (view()?.before === undefined || earlier() === "busy") return;
     setEarlier("busy");
     const doc = document.documentElement;
     const fromBottom = doc.scrollHeight - window.scrollY;
-    const page = await read(v.before);
-    if (!page) return setEarlier(null);
-    if (page === "failed") return setEarlier("Couldn't load earlier messages. Try again.");
-    setEarlier(null);
-    const cur = view();
-    const merged = cur && mergeEarlier(cur, page);
-    // Another lineage: the share changed under the reader, so the newest page is read again.
-    if (!merged) return void load();
-    setView(merged);
+    const r = await keeper.earlier();
+    setEarlier(r === "failed" ? "Couldn't load earlier messages. Try again." : null);
     // Keep the reader's place: what they were reading stays under their eyes.
-    queueMicrotask(() => window.scrollTo(0, doc.scrollHeight - fromBottom));
+    if (r === "ok") queueMicrotask(() => window.scrollTo(0, doc.scrollHeight - fromBottom));
   };
 
   let socket: WebSocket | null = null;
@@ -245,7 +228,7 @@ export function SessionShareApp() {
       } catch {
         return;
       }
-      if (msg.type === "view") applyNewest(msg.view, msg.reset === true);
+      if (msg.type === "view") keeper.push(msg.view, msg.reset === true);
       else if (msg.type === "error" && msg.code === "gone") setProblem(gone(msg.why));
     };
     ws.onclose = (e) => {

@@ -229,3 +229,100 @@ export function mergeEarlier(cur: SessionShareView, page: SessionShareView): Ses
 /** The recipient's "Earlier messages aren't part of this share." line: only above the slice's first
     item, so not while earlier pages of the slice itself remain to be read. */
 export const earlierLine = (v: Pick<SessionShareView, "earlier" | "before">): boolean => v.earlier === true && v.before === undefined;
+
+/** What one HTTP read of the share answered, before anything acts on it. */
+export type ShareAnswer =
+  | { kind: "view"; view: SessionShareView }
+  | { kind: "gone"; why?: unknown }
+  | { kind: "unknown" }
+  | { kind: "busy" }
+  | { kind: "offline" }
+  | { kind: "failed" };
+
+/** Where the keeper's accepted results go: the page's signals. */
+export interface ShareViewSink {
+  view(v: SessionShareView): void;
+  /** A dead link (`gone`), an unknown token, or too busy with nothing on screen yet. */
+  problem(a: Extract<ShareAnswer, { kind: "gone" | "unknown" | "busy" }>): void;
+  offline(on: boolean): void;
+}
+
+/**
+ * The recipient page's view, and the order its reads and pushes act in. Lineage says whether two
+ * views may merge, never which is newer: so every read takes a ticket when it starts, and a read
+ * acts (its view, or its gone, busy or offline answer) only when no newer view was accepted since:
+ * a push, or a newest-page read that started later. A superseded answer is dropped whole, so a
+ * late answer of a wider, older slice never comes back over a narrower push.
+ */
+export class ShareViewKeeper {
+  private current: SessionShareView | null = null;
+  /** Counts read starts and pushes; `origin` is the tick of the view on screen. */
+  private tick = 0;
+  private origin = 0;
+  constructor(
+    private readonly read: (before?: number) => Promise<ShareAnswer>,
+    private readonly sink: ShareViewSink,
+  ) {}
+
+  get view(): SessionShareView | null {
+    return this.current;
+  }
+
+  private set(v: SessionShareView) {
+    this.current = v;
+    this.sink.view(v);
+  }
+
+  /** A read's answer that isn't a view, acted on only while that read is current. */
+  private answerProblem(a: Exclude<ShareAnswer, { kind: "view" }>): void {
+    if (a.kind === "offline") this.sink.offline(true);
+    else if (a.kind === "gone" || a.kind === "unknown") this.sink.problem(a);
+    else if (a.kind === "busy" && !this.current) this.sink.problem(a);
+  }
+
+  /** A pushed view: the newest there is, so every read begun before it is superseded. */
+  push(v: SessionShareView, reset = false): void {
+    this.origin = ++this.tick;
+    this.set(mergeNewest(this.current, v, reset));
+  }
+
+  /** Reads the newest page; `false` when its answer was superseded or wasn't a view. */
+  async newest(): Promise<boolean> {
+    const t = ++this.tick;
+    const a = await this.read();
+    if (t <= this.origin) return false;
+    if (a.kind !== "view") {
+      this.answerProblem(a);
+      return false;
+    }
+    this.sink.offline(false);
+    this.origin = t;
+    this.set(mergeNewest(this.current, a.view));
+    return true;
+  }
+
+  /**
+   * Reads the page before the view (Show Earlier). `failed`: say so and let the reader retry.
+   * `dropped`: superseded, or of another lineage (then the newest page is read again, under the
+   * same ordering). `none`: nothing earlier, or a problem that the sink now shows.
+   */
+  async earlier(): Promise<"ok" | "failed" | "dropped" | "none"> {
+    const before = this.current?.before;
+    if (before === undefined) return "none";
+    const t = ++this.tick;
+    const a = await this.read(before);
+    if (t <= this.origin || !this.current) return "dropped";
+    if (a.kind !== "view") {
+      this.answerProblem(a);
+      return a.kind === "gone" || a.kind === "unknown" ? "none" : "failed";
+    }
+    this.sink.offline(false);
+    const merged = mergeEarlier(this.current, a.view);
+    if (!merged) {
+      void this.newest();
+      return "dropped";
+    }
+    this.set(merged);
+    return "ok";
+  }
+}

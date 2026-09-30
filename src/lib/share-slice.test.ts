@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionShareView } from "../../shared/session-share";
-import { applyHint, bounds, canFollowLive, earlierLine, endsLine, hints, inSlice, mergeEarlier, mergeNewest, normalize, rangeLabel, shareHref, shareRouteFromHash, sliceOfShare, spanOf, tap, WHOLE, type Slice, type SliceRow } from "./share-slice";
+import { applyHint, bounds, canFollowLive, earlierLine, endsLine, hints, inSlice, mergeEarlier, mergeNewest, normalize, ShareViewKeeper, type ShareAnswer, rangeLabel, shareHref, shareRouteFromHash, sliceOfShare, spanOf, tap, WHOLE, type Slice, type SliceRow } from "./share-slice";
 
 // u0 r1 r2 u3 r4 u5 r6 u7 — three turns with replies, the last question unanswered.
 const rows: SliceRow[] = ["u0", "r1", "r2", "u3", "r4", "u5", "r6", "u7"].map((id) => ({ id, kind: id.startsWith("u") ? "user" : "reply" }));
@@ -186,4 +186,124 @@ test("a Show Earlier answer of another lineage is dropped", () => {
   const cur = many(250, 450, "A", "m", { before: 250 });
   assert.equal(mergeEarlier(cur, many(50, 250, "B", "x", { before: 50 })), null);
   assert.equal(mergeEarlier(cur, many(50, 250, "A", "m", { before: 50 }))!.items.length, 400);
+});
+
+// ---- response order: the keeper, with reads held and released by hand ----
+
+/** A keeper whose reads wait until the test releases them, and everything its sink was told. */
+function harness() {
+  const pending: { before?: number; release(a: ShareAnswer): Promise<void> }[] = [];
+  const told = { views: [] as SessionShareView[], problems: [] as string[], offline: [] as boolean[] };
+  const keeper = new ShareViewKeeper(
+    (before) =>
+      new Promise<ShareAnswer>((resolve) => {
+        pending.push({ before, release: async (a) => (resolve(a), await new Promise((r) => setTimeout(r, 0))) });
+      }),
+    { view: (v) => told.views.push(v), problem: (a) => told.problems.push(a.kind), offline: (on) => told.offline.push(on) },
+  );
+  return { keeper, pending, told };
+}
+const answer = (view: SessionShareView): ShareAnswer => ({ kind: "view", view });
+
+/** The long view of lineage A on screen: its newest page and one Show Earlier page read. */
+async function wideA() {
+  const h = harness();
+  const first = h.keeper.newest();
+  await h.pending[0]!.release(answer(many(250, 450, "A", "wide", { before: 250 })));
+  await first;
+  const earlier = h.keeper.earlier();
+  await h.pending[1]!.release(answer(many(50, 250, "A", "wide", { before: 50 })));
+  assert.equal(await earlier, "ok");
+  assert.equal(h.keeper.view!.items.length, 400);
+  return h;
+}
+const narrowB = () => many(0, 120, "B", "narrow", { earlier: true });
+
+test("(a) a newest-page read overtaken by a narrower push is dropped: the view stays B, earlier pages cleared", async () => {
+  const h = await wideA();
+  const late = h.keeper.newest(); // a refresh or reconnect read, answered while A was still the share
+  h.keeper.push(narrowB(), true);
+  await h.pending[2]!.release(answer(many(250, 450, "A", "wide", { before: 250 })));
+  assert.equal(await late, false);
+  assert.deepEqual(h.keeper.view, narrowB());
+  assert.equal(h.told.views.at(-1)!.items.some((i) => i.text.startsWith("wide")), false);
+  // the same without the reset flag: the push is newer all the same
+  const h2 = await wideA();
+  const late2 = h2.keeper.newest();
+  h2.keeper.push(narrowB());
+  await h2.pending[2]!.release(answer(many(250, 450, "A", "wide", { before: 250 })));
+  await late2;
+  assert.deepEqual(h2.keeper.view, narrowB());
+});
+
+test("(a) overlapping newest-page reads: an earlier one can't win by arriving last", async () => {
+  const h = await wideA();
+  const r1 = h.keeper.newest();
+  const r2 = h.keeper.newest();
+  await h.pending[3]!.release(answer(narrowB()));
+  await h.pending[2]!.release(answer(many(250, 450, "A", "wide", { before: 250 })));
+  assert.equal(await r2, true);
+  assert.equal(await r1, false);
+  assert.deepEqual(h.keeper.view, narrowB());
+});
+
+test("(b) a Show Earlier answer overtaken by a narrower push is dropped", async () => {
+  const h = harness();
+  const first = h.keeper.newest();
+  await h.pending[0]!.release(answer(many(250, 450, "A", "wide", { before: 250 })));
+  await first;
+  const earlier = h.keeper.earlier();
+  h.keeper.push(narrowB(), true);
+  await h.pending[1]!.release(answer(many(50, 250, "A", "wide", { before: 50 })));
+  assert.equal(await earlier, "dropped");
+  assert.deepEqual(h.keeper.view, narrowB());
+});
+
+test("(b) a Show Earlier answer of another lineage reads the newest page again, under the same order", async () => {
+  const h = harness();
+  const first = h.keeper.newest();
+  await h.pending[0]!.release(answer(many(250, 450, "A", "wide", { before: 250 })));
+  await first;
+  const earlier = h.keeper.earlier();
+  await h.pending[1]!.release(answer(many(50, 250, "B", "narrow", { before: 50 })));
+  assert.equal(await earlier, "dropped");
+  assert.equal(h.pending.length, 3); // the recovery read
+  assert.equal(h.pending[2]!.before, undefined);
+  // a narrower push lands before the recovery read answers: the recovery's older answer is dropped
+  h.keeper.push(narrowB(), true);
+  await h.pending[2]!.release(answer(many(250, 450, "A", "wide", { before: 250 })));
+  assert.deepEqual(h.keeper.view, narrowB());
+});
+
+test("(c) a read nobody overtook applies: a new lineage replaces, the same lineage merges, Show Earlier merges", async () => {
+  const h = await wideA();
+  const same = h.keeper.newest();
+  await h.pending[2]!.release(answer(many(260, 460, "A", "wide", { before: 260 })));
+  assert.equal(await same, true);
+  assert.deepEqual(h.keeper.view!.items.map((i) => i.n), Array.from({ length: 410 }, (_, k) => 50 + k));
+  const moved = h.keeper.newest();
+  await h.pending[3]!.release(answer(narrowB()));
+  assert.equal(await moved, true);
+  assert.deepEqual(h.keeper.view, narrowB());
+  assert.deepEqual(h.told.offline, [false, false, false, false]);
+});
+
+test("(d) a superseded read's gone, busy or offline answer changes nothing", async () => {
+  const h = await wideA();
+  const views = h.told.views.length;
+  const offline = h.told.offline.length;
+  const reads = [h.keeper.newest(), h.keeper.newest(), h.keeper.earlier()];
+  h.keeper.push(narrowB(), true);
+  await h.pending[2]!.release({ kind: "gone", why: "expired" });
+  await h.pending[3]!.release({ kind: "offline" });
+  await h.pending[4]!.release({ kind: "unknown" });
+  await Promise.all(reads);
+  assert.deepEqual(h.told.problems, []);
+  assert.equal(h.told.offline.length, offline);
+  assert.equal(h.told.views.length, views + 1); // the push only
+  // a current read's gone still counts
+  const now = h.keeper.newest();
+  await h.pending[5]!.release({ kind: "gone" });
+  await now;
+  assert.deepEqual(h.told.problems, ["gone"]);
 });

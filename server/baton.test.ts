@@ -67,7 +67,7 @@ describe("baton sessions", async () => {
   });
 
   test("create: a file in the workspace sessions dir with the marker and hand-off 1, a link for a person, no token in the repo", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server" });
     assert.ok(c.token && c.path.startsWith(join(realpathSync(dir), "sessions")));
     const lines = readFileSync(c.path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.equal(lines[0].type, "session");
@@ -78,7 +78,9 @@ describe("baton sessions", async () => {
     // Nothing commits on its own at creation any more: the hourly commit (or Commit Now) takes whatever changed.
     assert.equal((await commitAll(dir, "test commit")).committed, true);
     const tracked = execFileSync("git", ["-C", dir, "ls-files"], { encoding: "utf8" });
-    assert.ok(tracked.includes("baton.json") && tracked.includes(row.file));
+    assert.ok(tracked.includes(row.file), "the transcript is the workspace's");
+    assert.ok(/^charts\/baton\//m.test(tracked), "the baton chart's snapshot is the workspace's");
+    assert.ok(!tracked.includes("baton.json"), "no baton.json (q1): the chart holds the row");
     const history = execFileSync("git", ["-C", dir, "log", "-p", "--all"], { encoding: "utf8" });
     for (const f of readdirSync(dir).filter((f) => !f.startsWith(".")))
       if (!statSync(join(dir, f)).isDirectory()) assert.ok(!readFileSync(join(dir, f), "utf8").includes(c.token!), `${f} has no token`);
@@ -88,7 +90,7 @@ describe("baton sessions", async () => {
   test("a Get Link elsewhere moves the link's mint time the strip and the list see; the route answers it", async () => {
     const { batonInfo, registerOrgRoutes } = await import("./org-routes");
     const { Hono } = await import("hono");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Replaced", goal: "g" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Replaced", goal: "g" });
     const row = () => baton.batonById(c.sessionId)!.row;
     const first = batonInfo(row()).linkAt[tony.id];
     assert.equal(first, links.findLink(c.token!)!.createdAt, "the link the session started with");
@@ -106,16 +108,16 @@ describe("baton sessions", async () => {
     assert.deepEqual(batonInfo(row()).linkAt, {}, "a link turned off is no newer link");
   });
 
-  test("the state machine: holder writes, the baton moves, old links read, the operator's answer clears Needs you, done ends writing", () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Payroll", goal: "g" });
+  test("the state machine: holder writes, the baton moves, old links read, the operator's answer clears Needs you, done ends writing", async () => {
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Payroll", goal: "g" });
     const sid = c.sessionId;
     assert.equal(baton.linkAccess(c.token!).ok && (baton.linkAccess(c.token!) as { canWrite: boolean }).canWrite, true);
     baton.noteMessage(sid, tony.id);
     assert.throws(() => baton.noteMessage(sid, maria.id), /not your turn/);
     assert.throws(() => baton.noteMessage(sid, OPERATOR), /holds the baton/);
-    assert.throws(() => baton.handTo(sid, tony.id, "q", "b"), /already hold/);
+    await assert.rejects(baton.handTo(sid, tony.id, "q", "b"), /already hold/);
 
-    const { n } = baton.handTo(sid, maria.id, "Which format?", "Tony says…");
+    const { n } = await baton.handTo(sid, maria.id, "Which format?", "Tony says…");
     assert.equal(n, 2);
     const old = baton.linkAccess(c.token!);
     assert.ok(old.ok && !old.canWrite && old.reason === "moved-on", "the old link still reads, never writes");
@@ -126,7 +128,7 @@ describe("baton sessions", async () => {
     const again = baton.rotateLink(sid);
     assert.deepEqual(baton.linkAccess(mariaToken), { ok: false, status: 410 }, "a new link turns off the one before");
 
-    baton.handTo(sid, OPERATOR, "Bonuses in?", "");
+    await baton.handTo(sid, OPERATOR, "Bonuses in?", "");
     let row = baton.batonById(sid)!.row;
     assert.equal(row.state, "needs-you");
     assert.deepEqual(baton.batonSummaryField(c.path)?.needsYou?.from, "Maria Lopez");
@@ -137,25 +139,25 @@ describe("baton sessions", async () => {
     assert.deepEqual([row.state, row.holder], ["open", OPERATOR]);
     assert.equal(baton.batonSummaryField(c.path)?.needsYou, undefined);
 
-    baton.markDone(sid);
+    await baton.markDone(sid);
     assert.throws(() => baton.noteMessage(sid, OPERATOR), /done/);
     const done = baton.linkAccess(again.token);
     assert.ok(done.ok && !done.canWrite && done.reason === "done", "after done a link still reads");
-    baton.closeBaton(sid);
+    await baton.closeBaton(sid);
     assert.deepEqual(baton.linkAccess(again.token), { ok: false, status: 410 }, "after close every link is gone");
     assert.deepEqual(baton.linkAccess(c.token!), { ok: false, status: 410 });
   });
 
-  test("the budget: at the limit a message is refused with BudgetSpent", () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Budget", goal: "g" });
+  test("the budget: at the limit a message is refused with BudgetSpent", async () => {
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Budget", goal: "g" });
     for (let i = 0; i < baton.MESSAGES_MAX; i++) baton.noteMessage(c.sessionId, tony.id);
-    assert.throws(() => baton.noteMessage(c.sessionId, tony.id), baton.BudgetSpent);
+    assert.throws(() => baton.noteMessage(c.sessionId, tony.id), (e: { code?: string }) => e.code === "budget");
     const access = baton.linkAccess(c.token!);
     assert.ok(access.ok && !access.canWrite && access.reason === "budget");
   });
 
   test("any write to a baton row or its links re-diffs the session list at once, with no timer tick", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Nudge", goal: "g" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Nudge", goal: "g" });
     let reads = 0;
     const f = feed.configureSessionFeed({ list: async () => [{ path: `p${++reads}` } as never], debounceMs: 0, intervalMs: 60_000 });
     const got: string[] = [];
@@ -166,7 +168,7 @@ describe("baton sessions", async () => {
       for (const act of [() => baton.rotateLink(c.sessionId), () => baton.extendBudget(c.sessionId, 1)]) {
         const before = reads;
         const changed = got.filter((t) => t === "list_changed").length;
-        act();
+        await act();
         await new Promise((r) => setTimeout(r, 5));
         await f.idle();
         assert.ok(reads > before, "the list was re-read");
@@ -179,12 +181,12 @@ describe("baton sessions", async () => {
     }
   });
 
-  test("input limits", () => {
+  test("input limits", async () => {
     const base = { orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "T", goal: "g" };
-    assert.throws(() => baton.createBaton({ ...base, publicTitle: "x".repeat(121) }), /at most 120/);
-    assert.throws(() => baton.createBaton({ ...base, goal: "" }), /goal is required/);
-    assert.throws(() => baton.createBaton({ ...base, to: "Pedro" }), /not on the roster/);
-    assert.throws(() => baton.createBaton({ ...base, projectId: "nope" }), /Unknown project/);
+    await assert.rejects(baton.createBaton({ ...base, publicTitle: "x".repeat(121) }), /at most 120/);
+    await assert.rejects(baton.createBaton({ ...base, goal: "" }), /goal is required/);
+    await assert.rejects(baton.createBaton({ ...base, to: "Pedro" }), /not on the roster/);
+    await assert.rejects(baton.createBaton({ ...base, projectId: "nope" }), /Unknown project/);
   });
 });
 
@@ -206,16 +208,16 @@ describe("after a restart each open session's count is the messages in its trans
   const used = (sid: string) => baton.batonById(sid)!.row.budget.messagesUsed;
 
   test("three counted, one in the file (two lost to a kill): the count is one; never raised; a done session untouched", async () => {
-    const lost = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Lost", goal: "g" });
+    const lost = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Lost", goal: "g" });
     for (let i = 0; i < 3; i++) baton.noteMessage(lost.sessionId, tony.id);
     userRows(lost.path, 1);
-    const kept = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Kept", goal: "g" });
+    const kept = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Kept", goal: "g" });
     baton.noteMessage(kept.sessionId, tony.id);
     userRows(kept.path, 2);
-    const done = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Done", goal: "g" });
+    const done = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Done", goal: "g" });
     baton.noteMessage(done.sessionId, tony.id);
     baton.noteMessage(done.sessionId, tony.id);
-    baton.markDone(done.sessionId);
+    await baton.markDone(done.sessionId);
 
     const changed = await recountBudgets(orgs.orgDir(org.id));
     assert.equal(used(lost.sessionId), 1);

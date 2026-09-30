@@ -13,8 +13,7 @@ import { isDirectLocal } from "./compression";
 import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
-import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
-import { startBatonMarksBackfill } from "./baton-marks";
+import { markShutdown } from "./wrapup-recovery";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
@@ -1374,11 +1373,8 @@ startResourceMonitor({
   titleOf: cachedTitleOf,
 });
 // Every attached org's workspace repo: its residence chart commits whatever changed at most hourly, then pushes.
-// A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
-startWrapupRecovery();
 // Messages a crash or kill lost stop counting against their session's limit.
 startBudgetRecount();
-startBatonMarksBackfill();
 // The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.
 autoTitleSweep.start();
 onSummaryLineChanged(() => autoTitleSweep.nudge());

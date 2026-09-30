@@ -3,7 +3,9 @@ import { OPERATOR } from "../shared/baton";
 import type { OrgDetail, Person } from "../shared/orgs";
 import type { SovaConfirmItem } from "../shared/protocol";
 import { attentionChanged } from "./attention-memo";
-import { createBaton, projectAbilities } from "./baton";
+import { cardHeader } from "./overseer-tools";
+import { createBaton, handoffTo, offerTo, projectAbilities } from "./baton";
+import type { OperatorBy } from "./orgs";
 import { ABILITIES_PARAM, overseerAbilities } from "./gathering-abilities";
 import type { ToolCall } from "./overseer-idea-tools";
 import { readHistory } from "./orgs";
@@ -132,6 +134,11 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       throw refuse(confirmRefusal(all.join(", ")));
     }
   }
+  /** The operator's act made through the Overseer, in the turn its confirm card started (the charts check the card). */
+  const goBy = (): OperatorBy => {
+    const items = d.confirmed();
+    return { kind: "operator", via: "overseer", ...(items ? { card: JSON.parse(cardHeader(items)) } : {}) };
+  };
   const orgOf = (ref: unknown) => resolveOrg(ref);
   const base = (orgId: string) => `/api/orgs/${enc(orgId)}`;
   const projectBase = (orgId: string, projectId: string) => `${base(orgId)}/projects/${enc(projectId)}`;
@@ -533,9 +540,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
                 ...(typeof p.thinking === "string" && p.thinking ? { thinking: p.thinking } : {}),
                 ...(p.messages_max !== undefined ? { messagesMax: p.messages_max } : {}),
                 abilities,
-                mintLink: false,
-                startedVia: "overseer",
-              }),
+              }, { by: goBy(), mintLink: false, startedVia: "overseer" }),
             );
             attentionChanged();
             const title = cut(String(p.public_title ?? ""), 80);
@@ -552,15 +557,13 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             if (p.op === "offer" && list.length < 2) throw refuse("An offer goes to two or more people.");
             const to = list.map((x: unknown) => resolvePerson(s.orgId, x));
             requireConfirm({ sessions: [s.id], people: to.map((x: Person) => personOf(s.orgId, x)) });
-            const { moveBaton, offerBaton } = await import("./baton-loadout");
             if (p.op === "offer") {
-              await counted("gather", () => offerBaton(s.id, to.map((x: Person) => x.id), typeof p.question === "string" ? p.question : "", typeof p.briefing === "string" ? p.briefing : "", { mintLink: false, interrupt: true }));
+              await counted("gather", () => offerTo(s.id, to.map((x: Person) => x.id), typeof p.question === "string" ? p.question : "", typeof p.briefing === "string" ? p.briefing : "", { by: goBy(), mintLink: false }));
             } else {
               const person = to[0]!;
-              if (person.status !== "active") throw refuse(person.status === "proposed" ? `Approve ${person.name} first.` : `${person.name} is not active.`);
               const question = typeof p.question === "string" ? p.question.trim().slice(0, 1000) : "";
               if (!question) throw refuse("question is required: what to ask them, shown to them.");
-              await counted("org", () => moveBaton(s.id, person.id, question, typeof p.briefing === "string" ? p.briefing.trim().slice(0, 4000) : "", { interrupt: true }));
+              await counted("org", () => handoffTo(s.id, person.id, question, typeof p.briefing === "string" ? p.briefing.trim().slice(0, 4000) : "", goBy(), { mintLink: false }));
             }
             attentionChanged();
             const names = to.map((x: Person) => x.name);

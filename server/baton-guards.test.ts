@@ -55,7 +55,7 @@ describe("hand_to: the person talking chooses who answers next", () => {
   });
 
   test("the tool refuses a person the holder did not choose, and says what to do; a chosen one goes through", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Bank details", goal: "Find out who may change supplier bank details." });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Bank details", goal: "Find out who may change supplier bank details." });
     const hand = batonTools(c.sessionId, () => {}).find((t) => t.name === "hand_to")!;
     let branch: any[] = [...user(maria.id, "No idea who handles that, sorry.")];
     const call = (person: string) => hand.execute("id", { person, question: "Who may change bank details?", briefing: "Maria asked." } as never, undefined, undefined, { sessionManager: { getBranch: () => branch } } as never);
@@ -65,7 +65,7 @@ describe("hand_to: the person talking chooses who answers next", () => {
     await call("Tony Reyes");
     assert.equal(baton.batonById(c.sessionId)!.row.holder, tony.id);
     // The operator is always reachable, and an operator holder picks freely.
-    const d = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "x", goal: "g" });
+    const d = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "x", goal: "g" });
     const handD = batonTools(d.sessionId, () => {}).find((t) => t.name === "hand_to")!;
     await handD.execute("id", { person: "operator", question: "q?", briefing: "b" } as never, undefined, undefined, { sessionManager: { getBranch: () => [] } } as never);
     assert.equal(baton.batonById(d.sessionId)!.row.holder, "operator");
@@ -87,7 +87,7 @@ describe("the wrap-up records what people say about themselves", () => {
   });
 
   test("a quote that copied the author note from the model's context still counts as their own words, and only as theirs", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: nadia.id, publicTitle: "Notes wrap", goal: "g" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: nadia.id, publicTitle: "Notes wrap", goal: "g" });
     const branch = [...user(nadia.id, "I negotiate every vendor contract in Portuguese.")];
     const tool = wrap.wrapupTool(c.sessionId);
     const r = wrap.beginWrapupRun(c.sessionId);
@@ -105,8 +105,8 @@ describe("the wrap-up records what people say about themselves", () => {
   });
 
   test("Tony's words about Bob change nobody's profile; his words about himself do", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Wrap", goal: "g" });
-    baton.handTo(c.sessionId, bob.id, "q", "", new Date());
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Wrap", goal: "g" });
+    await baton.handTo(c.sessionId, bob.id, "q", "");
     const branch = [
       ...user(tony.id, "Bob is our expert in PowerShell scripting and Azure AD automation. I approve every invoice over five thousand myself."),
       ...user(bob.id, "I have never touched QuickBooks; I do Microsoft 365 administration."),
@@ -144,8 +144,8 @@ describe("the wrap-up records what people say about themselves", () => {
   test("everyone who wrote and has no language gets the one they wrote in; a set one and a model's wrong guess don't change", async () => {
     const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Ops", language: "es-CO" });
     const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Lang", goal: "g" });
-    baton.handTo(c.sessionId, ana.id, "q", "", new Date());
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Lang", goal: "g" });
+    await baton.handTo(c.sessionId, ana.id, "q", "");
     const branch = [
       ...user(kim.id, "Yes, that is right. The export runs every night and we check it in the morning."),
       ...user(ana.id, "The bank file is ready at nine and we send it to the team before noon."),
@@ -175,7 +175,7 @@ describe("profile phrases are hidden, ordinary words are not", () => {
     // A skill that is an area name, a skill inside a job title, and a voice: only the voice is private.
     await orgs.applyChange(org.id, bob.id, { skills: ["finance approvals", "Microsoft 365 administration"] }, { kind: "operator" });
     await orgs.applyChange(org.id, maria.id, { skills: ["Accounts payable"], voice: "Wants short bullet points, no jargon" }, { kind: "operator" });
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Settle: finance approvals", goal: "g" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Settle: finance approvals", goal: "g" });
     const lines = [
       ...user(maria.id, "I only do Accounts payable, keep it short please."),
       reply("Thanks Maria Lopez (Accounts payable clerk). Two decisions about finance approvals disagree. Noted: Wants short bullet points, no jargon."),
@@ -215,8 +215,8 @@ describe("profile phrases are hidden, ordinary words are not", () => {
 });
 
 describe("outsiders learn nothing of the org beyond the title", () => {
-  test("the prompt never names the org, and says what may be said about people", () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Bank details", goal: "Find out who may change supplier bank details." });
+  test("the prompt never names the org, and says what may be said about people", async () => {
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Bank details", goal: "Find out who may change supplier bank details." });
     const prompt = renderBatonPrompt(c.sessionId);
     assert.ok(!prompt.includes("Gate Capital"), "the model is never told the org's name");
     assert.ok(!/\{\{[A-Z_]+\}\}/.test(prompt), "every placeholder filled");
@@ -227,7 +227,7 @@ describe("outsiders learn nothing of the org beyond the title", () => {
   });
 
   test("the org's name the model got elsewhere (a goal) is blanked in what it wrote, not in people's words or the title", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Laptops", goal: "For Gate Capital: laptops." });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Laptops", goal: "For Gate Capital: laptops." });
     let parent = JSON.parse(readFileSync(c.path, "utf8").trim().split("\n").at(-1)!).id;
     for (const l of [...user(bob.id, "Which company is this?"), reply("This is for Gate Capital. We delegate the rest.")] as any[]) {
       appendFileSync(c.path, `${JSON.stringify({ ...l, parentId: parent, timestamp: new Date().toISOString() })}\n`);

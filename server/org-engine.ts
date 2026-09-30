@@ -22,7 +22,7 @@ export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocat
     tests may hand in a fake with the same shape. */
 export type OrgHostApi = Pick<
   OrgHost,
-  "paths" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
+  "paths" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
 >;
 
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
@@ -58,7 +58,7 @@ export function stampProject(host: Pick<OrgHostApi, "data">, sid: string, payloa
   return projectOfSession(host, sid);
 }
 
-type Opener = (opts: OpenOptions & { stamp: Stamp }) => Promise<OrgHostApi>;
+type Opener = (opts: OpenOptions & { stamp: Stamp; clock: () => number }) => Promise<OrgHostApi>;
 
 let opener: Opener = (opts) => OrgHost.open(opts);
 
@@ -83,6 +83,12 @@ export function onOrgChange(fn: (orgId: string, change: HostChange) => void): vo
   changeHooks.push(fn);
 }
 
+let testClock: (() => number) | null = null;
+/** Tests move every org host's clock with the project overseer's (server/project-overseer.ts setClockForTest). */
+export function setOrgClockForTest(fn: (() => number) | null): void {
+  testClock = fn;
+}
+
 /** Open the org's engine (once; a second call waits for the first). */
 export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
   const have = hosts.get(opts.orgId);
@@ -97,7 +103,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
       const settings = settingsOf();
       return stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
     };
-    const host = await opener({ ...opts, stamp });
+    const host = await opener({ ...opts, stamp, clock: () => (testClock ? testClock() : Date.now()) });
     self = host;
     for (const fn of openedHooks) fn(host, opts.orgId);
     host.onChange((change) => {

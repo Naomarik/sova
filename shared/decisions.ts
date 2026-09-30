@@ -223,17 +223,6 @@ export interface PromoteResult {
 
 export type PromoteCommit = { sha: string; branch: string; files: string[]; message: string } | { skipped: string };
 
-/** In-process events (server/reconcile.ts `onReconcileEvent`). */
-export interface ReconcileEvent {
-  type: "conflict" | "resolved" | "promoted" | "drafted";
-  orgId: string;
-  projectId: string;
-  /** DecisionRow ids, or Conflict ids for conflict/resolved. */
-  ids: string[];
-  /** promoted: who asked (the operator by id or in bulk, or the project overseer). */
-  by?: "operator-explicit" | "bulk" | "overseer";
-}
-
 /** Settings → Decisions "Reconcile decisions" when the settings file doesn't say. */
 export const RECONCILE_DEFAULT = true;
 /** What every refused or skipped reconcile says while the switch is off. */

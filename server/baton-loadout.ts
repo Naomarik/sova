@@ -1,6 +1,6 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { basename, join } from "node:path";
+import { SessionManager, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import {
   abilitiesOf,
   BATON_DECISION_ENTRY,
@@ -12,55 +12,37 @@ import {
   BATON_PROPOSAL_ENTRY,
   LIMIT_QUESTION,
   OPERATOR,
+  POOL,
   type BatonDecisionData,
-  type BatonDoneData,
   type BatonHandoffData,
-  type BatonLeaseData,
+  type BatonMarkerData,
   type BatonOfferData,
-  type BatonProposalData,
   type BatonSession,
-  type PersonRef,
 } from "../shared/baton";
-import {
-  BRIEFING_MAX,
-  QUESTION_MAX,
-  allBatons,
-  batonById,
-  batonOfPath,
-  budgetSpent,
-  currentOffer,
-  expireLease,
-  handTo,
-  lapsedLeases,
-  leaseMs,
-  markDone,
-  moveRefusal,
-  nameOf,
-  namesOf,
-  noteMessage,
-  offerRefusal,
-  resolveTarget,
-  sessionPathOf,
-  setReplyProbe,
-  startOffer,
-  touchLease,
-  undoNote,
-} from "./baton";
-import { revokeLinks } from "./baton-links";
+import { actorOn, batonById, batonFileOf, batonOfPath, batonSid, BRIEFING_MAX, handTo, handToTarget, heldOffer, markDone, mintForEffect, nameOf, namesOf, noteMessage, QUESTION_MAX, sessionPathOf, undoNote } from "./baton";
+import { linksOfKey, revokeLinks } from "./baton-links";
 import { READ_LINK_TOOL, readLinkTool, READS_MAX } from "./baton-read-link";
 import { GATHERING_VIS_GUIDE } from "./baton-vis-guide";
-import { ownerAreaChoices, pickOwnerArea } from "./decisions";
+import { areaKeyOf, ownerAreaChoices, pickOwnerArea } from "./decisions";
 import { OWNER_AREA_NONE } from "../shared/decisions";
 import type { Person } from "../shared/orgs";
-import { emitBatonEvent } from "./baton-events";
 import { handoffChosen } from "./baton-guards";
 import { authorNotes, labelAuthors, streamingText } from "./baton-view";
-import { runWrapup, wantsWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
-import { acquireChat, BusyError, type ChatSession, isSessionBusy, RefusedError, registerSpecialLoadout } from "./chat-manager";
-import { addPerson, contactProblems, holderSteering, onPersonLeft, operatorName, OrgError, participantLine, profileRedactTexts, proposedGaps, publicTerms, readRoster } from "./orgs";
+import { runWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
+import { acquireChat, BusyError, type ChatSession, RefusedError, registerSpecialLoadout } from "./chat-manager";
+import { hostOf, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
+import type { Step } from "./org-charts";
+import type { Envelope } from "./org-envelope";
+import { findPerson, holderSteering, namesTaken, operatorName, orgDir, OrgError, participantLine, profileRedactTexts, publicTerms, readRoster, shortId } from "./orgs";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
+import { canonicalPath } from "./paths";
+import { markSeen } from "./seen";
+import { nudgeMarks } from "./session-feed";
+import { cleanSessionTitle, setSessionTitle } from "./session-titles";
 import { refreshShare, streamShare } from "./share/hub";
+import { addWebSession } from "./web-sessions";
 import { loadDefaults } from "./web-defaults";
+import { markOwned } from "./write-guard";
 import { redactPhrases, secretPhrases } from "./baton-view";
 
 /**
@@ -155,6 +137,9 @@ export function ownerAreaSchema(roster: readonly Person[]) {
  * whoever holds the baton next reads it and the model sees it with the next turn. A queue wake
  * could start another run as this one settles, so it checks again, a few times at most.
  */
+/** Sessions whose reply the stop-reply effect is stopping (it reports the reply's end itself). */
+const stopping = new Set<string>();
+
 async function interruptReply(chat: ChatSession): Promise<void> {
   const since = chat.leafId();
   const kept = [];
@@ -166,195 +151,48 @@ async function interruptReply(chat: ChatSession): Promise<void> {
   chat.enterQueued(kept, since);
 }
 
-/** Move the baton from outside a turn (Take back, the budget stop): registry, then the transcript
-    entry through the session's runtime, then every share page. `interrupt`: an operator's move,
-    which stops a reply in flight instead of waiting for it. */
-export async function moveBaton(sessionId: string, to: PersonRef, question: string, briefing = "", opts: { interrupt?: boolean } = {}): Promise<number> {
-  const hit = batonById(sessionId);
-  if (!hit) throw new OrgError("Unknown baton session", 404);
-  const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
-  // A turn that is starting is a reply in flight too.
-  if (chat.session.isStreaming || chat.turnStarting) {
-    if (!opts.interrupt) throw new OrgError("Wait for the reply to finish first.", 409);
-    // A move that would be refused leaves the reply alone.
-    const refused = moveRefusal(batonById(sessionId)?.row ?? hit.row, to);
-    if (refused) throw refused;
-    await interruptReply(chat);
-  }
-  const { n, from } = handTo(sessionId, to, question, briefing);
-  chat.appendSpecialEntry(BATON_HANDOFF_ENTRY, { v: 1, n, from, to, question, briefing } satisfies BatonHandoffData);
-  refreshShare(sessionId);
-  return n;
-}
-
 export { LIMIT_QUESTION };
-
-/**
- * The budget stop (§app.baton/goal-and-loadout): once a session's messages reach its limit, the
- * baton goes to the operator and the session needs them — after the reply to the last message, or
- * at once when a person tries to write past it. A no-op unless a person (or an offer's pool) holds
- * an open session at its limit. Best effort: a refusal (a reply still running) is logged, and the
- * next settle or share message tries again.
- */
-export async function budgetStop(sessionId: string): Promise<void> {
-  const row = batonById(sessionId)?.row;
-  if (!row || row.state !== "open" || row.holder === OPERATOR || !budgetSpent(row)) return;
-  try {
-    await moveBaton(sessionId, OPERATOR, LIMIT_QUESTION);
-  } catch (err) {
-    console.warn(`[baton] budget stop on ${sessionId.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-/**
- * Offer the baton to several people at once (§app.baton/offers-and-leases), from outside a turn:
- * registry (withdrawing any current offer), then the `sova-baton-offer` entry through the
- * session's runtime, then every share page. Returns one token per invitee.
- */
-export async function offerBaton(sessionId: string, to: readonly unknown[], question: string, briefing = "", opts: { mintLink?: boolean; interrupt?: boolean } = {}) {
-  const hit = batonById(sessionId);
-  if (!hit) throw new OrgError("Unknown baton session", 404);
-  const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
-  if (chat.session.isStreaming || chat.turnStarting) {
-    if (!opts.interrupt) throw new OrgError("Wait for the reply to finish first.", 409);
-    const refused = offerRefusal(batonById(sessionId)?.row ?? hit.row, to);
-    if (refused) throw refused;
-    await interruptReply(chat);
-  }
-  const out = startOffer(sessionId, to, question, briefing, new Date(), opts.mintLink !== false);
-  chat.appendSpecialEntry(BATON_OFFER_ENTRY, {
-    v: 1,
-    n: out.n,
-    offerId: out.offer.id,
-    from: out.from,
-    to: out.offer.to,
-    question: out.offer.question,
-    briefing: out.offer.briefing,
-  } satisfies BatonOfferData);
-  refreshShare(sessionId);
-  return out;
-}
-
-/** Lease entries that met a reply in flight, per session file: written when the run settles. */
-const pendingLease = new Map<string, Omit<BatonLeaseData, "v">[]>();
-
-/** Record a lease event in the transcript. Mid-reply the transcript takes no entry, so it waits
-    for the reply's end (flushLeases) rather than being lost: the registry already has it. */
-export function recordLease(chat: ChatSession, data: Omit<BatonLeaseData, "v">): void {
-  const waiting = pendingLease.get(chat.path);
-  if (waiting) {
-    waiting.push(data);
-    return;
-  }
-  try {
-    chat.appendSpecialEntry(BATON_LEASE_ENTRY, { v: 1, ...data } satisfies BatonLeaseData);
-  } catch (err) {
-    if (err instanceof BusyError) pendingLease.set(chat.path, [data]);
-    else console.warn(`[baton] lease entry not written: ${err instanceof Error ? err.message : String(err)}`);
-  }
-}
-
-/** Write the lease entries a reply held back, in order (after the run settled). */
-export async function flushLeases(path: string): Promise<void> {
-  const waiting = pendingLease.get(path);
-  if (!waiting) return;
-  const chat = await acquireChat(path);
-  if (chat.session.isStreaming || chat.isCompacting()) return; // the next settle writes them
-  pendingLease.delete(path);
-  for (const data of waiting) recordLease(chat, data);
-}
-
-/** A share message was accepted (server/share/routes.ts): write what the lease did on the way. */
-export function recordNoted(chat: ChatSession, by: PersonRef, noted: ReturnType<typeof noteMessage>): void {
-  const renewedOwn = !!noted.claimed && noted.expired?.by === by;
-  if (noted.expired && !renewedOwn) recordLease(chat, { n: noted.expired.n, offerId: noted.expired.offerId, event: "expired", by: noted.expired.by });
-  if (noted.claimed && !renewedOwn) recordLease(chat, { n: noted.claimed.n, offerId: noted.claimed.offerId, event: "claimed", by });
-}
-
-/**
- * The lease ticker: a lapsed lease goes back to the pool and every waiting page is told (they may
- * write again). The message route enforces the lease on its own (a lapsed lease is claimable there
- * even between ticks); this only makes the change visible. Skips a session mid-reply: the reply's
- * end renews the lease.
- */
-export async function tickLeases(now = Date.now()): Promise<void> {
-  for (const sessionId of lapsedLeases(now)) {
-    const hit = batonById(sessionId);
-    if (!hit) continue;
-    try {
-      const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
-      if (chat.session.isStreaming) continue;
-      const expired = expireLease(sessionId, now);
-      if (!expired) continue;
-      recordLease(chat, { n: expired.n, offerId: expired.offerId, event: "expired", by: expired.by });
-      refreshShare(sessionId);
-    } catch (err) {
-      console.warn(`[baton] lease tick on ${sessionId.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-}
-/**
- * Someone was marked left (§app.organizations/roster: only active people take part). Their links
- * stop at once, every one (410): they are no longer with the organization, so they don't read its
- * conversations either. A session they hold, or an offer waiting on a pool they are in, goes to
- * the operator (Needs you says so), stopping a reply in flight. An offer someone else holds carries
- * on; the message route refuses them if it lapses back to the pool.
- */
-export async function personLeft(orgId: string, personId: string): Promise<void> {
-  revokeLinks((l) => l.orgId === orgId && l.personId === personId);
-  const name = nameOf(orgId, personId);
-  const affected = (sessionId: string): "holder" | "invitee" | null => {
-    const row = batonById(sessionId)?.row;
-    if (!row || (row.state !== "open" && row.state !== "needs-you")) return null;
-    if (row.holder === personId) return "holder";
-    const o = currentOffer(row);
-    return o && o.state === "open" && o.to.includes(personId) ? "invitee" : null;
-  };
-  for (const row of allBatons().filter((r) => r.orgId === orgId)) {
-    refreshShare(row.sessionId);
-    if (!affected(row.sessionId)) continue;
-    try {
-      const hit = batonById(row.sessionId)!;
-      await interruptReply(await acquireChat(sessionPathOf(hit.dir, hit.row)));
-      // The reply may itself have moved the baton on before it stopped: decide on the row as it is now.
-      const why = affected(row.sessionId);
-      if (!why) continue;
-      await moveBaton(row.sessionId, OPERATOR, why === "holder" ? "(left the organization)" : `(${name} left the organization; offer withdrawn)`, "", { interrupt: true });
-    } catch (err) {
-      console.warn(`[baton] moving ${row.sessionId.slice(0, 8)} off a person who left: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
-}
-onPersonLeft((orgId, personId) => void personLeft(orgId, personId));
-
-// A lease never lapses while a reply to its holder is being written (the reply's end renews it).
-setReplyProbe((sessionId) => {
-  const hit = batonById(sessionId);
-  return !!hit && isSessionBusy(sessionPathOf(hit.dir, hit.row));
-});
-
-/** Every 30 s, or a quarter of a shortened lease (hermetic tests). */
-const LEASE_TICK_MS = Math.max(1000, Math.min(30_000, Math.floor(leaseMs() / 4)));
-setInterval(() => void tickLeases(), LEASE_TICK_MS).unref();
-
-/** Start the wrap-up of a session that wants one (after its run settles, or on close). */
-export function scheduleWrapup(sessionId: string, delayMs = 50): void {
-  const t = setTimeout(() => {
-    const row = batonById(sessionId)?.row;
-    if (!row || !wantsWrapup(row)) return;
-    void runWrapup(sessionId, activeBatonTools(sessionId)).catch((err) => console.warn(`[baton] wrap-up of ${sessionId.slice(0, 8)} failed: ${err instanceof Error ? err.message : String(err)}`));
-  }, delayMs);
-  t.unref?.();
-}
 
 type AppendEntry = (customType: string, data: unknown) => void;
 
-/** The three tools, bound to one session. `append` is the extension's own appendEntry. */
+/**
+ * While a tool of the session runs, the extension's own appendEntry writes its transcript entries
+ * (the chart's `baton-entry` effects of that step run inside the call, before it returns).
+ */
+const toolAppend = new Map<string, AppendEntry>();
+async function inTool<T>(sessionId: string, append: AppendEntry, f: () => Promise<T>): Promise<T> {
+  toolAppend.set(sessionId, append);
+  try {
+    return await f();
+  } finally {
+    if (toolAppend.get(sessionId) === append) toolAppend.delete(sessionId);
+  }
+}
+
+/** A model's act on its session; a refusal is the tool's error, in the chart's words. */
+async function modelAct(sessionId: string, event: string, payload: Record<string, unknown>): Promise<void> {
+  const hit = batonById(sessionId);
+  if (!hit) throw new Error("This conversation is no longer registered.");
+  const out = await hostOf(hit.row.orgId).act(batonSid(hit.row.orgId, sessionId), event, payload, actorOn("model")(hit.row.orgId, hit.row.projectId), { settle: true });
+  if (!out.taken) throw new Error(out.refusal?.sentence ?? "That can't be done now.");
+}
+
+/** The tools, bound to one session. `append` is the extension's own appendEntry. */
 export function batonTools(sessionId: string, append: AppendEntry): ToolDefinition<any, any>[] {
   const hit = batonById(sessionId);
   const roster = hit ? readRoster(hit.row.orgId) : [];
   const [handTo, goalDone, ...rest] = conversationTools(sessionId, append);
   return [handTo!, goalDone!, recordDecisionTool(sessionId, append, roster), ...rest];
+}
+
+/** The nearest user message up the tree from `id`: where a decision's quote was said. */
+function quoteEntryOf(sm: { getEntry(id: string): unknown } | undefined, id: string): string {
+  let cur = sm?.getEntry(id) as { id?: string; parentId?: string | null; type?: string; message?: { role?: string } } | undefined;
+  for (let hops = 0; cur && hops < 200; hops++) {
+    if (cur.type === "message" && cur.message?.role === "user" && cur.id) return cur.id;
+    cur = cur.parentId ? (sm?.getEntry(cur.parentId) as typeof cur) : undefined;
+  }
+  return id;
 }
 
 /** record_decision, its owner areas listed as the roster has them now (the call itself always
@@ -388,19 +226,20 @@ export function recordDecisionTool(sessionId: string, append: AppendEntry, roste
       const area = clip(params.area, 60);
       const statement = clip(params.statement, 500);
       const quote = clip(params.quote, 1000);
-      if (!area || !statement || !quote) throw new Error("Give the area, the statement and their exact words.");
-      const owner = pickOwnerArea(readRoster(hit.row.orgId), params.ownerArea);
+      const roster = readRoster(hit.row.orgId);
+      // Required: a call that skipped prepareArguments (or left it out) is refused with the choices.
+      const owner = pickOwnerArea(roster, params.ownerArea);
       if (!owner.ok) throw new Error(owner.error);
-      append(BATON_DECISION_ENTRY, { v: 1, area, ownerArea: owner.ownerArea, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
-      const leaf = ctx?.sessionManager?.getLeafId?.();
-      const entry = leaf ? (ctx.sessionManager.getEntry(leaf) as { type?: string; customType?: string } | undefined) : undefined;
-      emitBatonEvent({
-        type: "decision",
-        orgId: hit.row.orgId,
-        projectId: hit.row.projectId,
-        sessionId,
-        ...(leaf && entry?.type === "custom" && entry.customType === BATON_DECISION_ENTRY ? { entryId: leaf } : {}),
-      });
+      const payload = { area, areaKey: areaKeyOf(area), ownerArea: owner.ownerArea, statement, quote, ownerAreas: ownerAreaChoices(roster) };
+      // The chart's checks first (the area, the words, the owner area), then the entry (its id is the
+      // decision's), then the act that records it.
+      const host = hostOf(hit.row.orgId);
+      const sid = batonSid(hit.row.orgId, sessionId);
+      const refused = host.explain(sid, "baton/record-decision", { ...payload, decisionId: "?", entryId: "?", markerId: "?" }, actorOn("model")(hit.row.orgId, hit.row.projectId));
+      if (refused) throw new Error(refused.sentence);
+      append(BATON_DECISION_ENTRY, { v: 1, area, ownerArea: payload.ownerArea, statement, quote, by: hit.row.holder ?? OPERATOR } satisfies BatonDecisionData);
+      const marker = ctx?.sessionManager?.getLeafId?.() ?? `${Date.now()}`;
+      await modelAct(sessionId, "baton/record-decision", { ...payload, decisionId: `${sessionId}:${marker}`, markerId: marker, entryId: quoteEntryOf(ctx?.sessionManager, marker) });
       refreshShare(sessionId);
       // pi ends the run only when EVERY tool of the batch terminates: when this call rides with a
       // hand_to or goal_done, it must agree, or the model writes one more reply after the turn ended.
@@ -409,7 +248,7 @@ export function recordDecisionTool(sessionId: string, append: AppendEntry, roste
   };
 }
 
-/** hand_to, goal_done and propose_roster_edit. */
+/** hand_to, goal_done, propose_roster_edit and the wrap-up's tool. */
 function conversationTools(sessionId: string, append: AppendEntry): ToolDefinition<any, any>[] {
   return [
     {
@@ -430,26 +269,21 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
         const hit = batonById(sessionId);
         if (!hit) throw new Error("This conversation is no longer registered.");
         const row = hit.row;
-        if (row.state === "done" || row.state === "closed") throw new Error(`This conversation is ${row.state}.`);
-        const target = resolveTarget(readRoster(row.orgId), String(params.person ?? ""), operatorName());
-        if (!target.ok) throw new Error(target.error);
+        const { target } = handToTarget(row.orgId, String(params.person ?? ""));
         // The person talking chooses who answers next, unless the operator's goal already did.
-        if (row.holder && row.holder !== OPERATOR && target.ref !== OPERATOR) {
-          const [holderName, targetName] = [nameOf(row.orgId, row.holder), nameOf(row.orgId, target.ref)];
-          if (!handoffChosen(ctx?.sessionManager?.getBranch() ?? [], row.holder, targetName, row.goal))
-            throw new Error(
-              `Not handed over: ${holderName} has not chosen ${targetName}. Tell ${holderName} who could answer (name and decision area, from the list) and ask them to choose; hand over once they name or confirm someone.`,
-            );
-        }
+        const chosen =
+          !target || !row.holder || row.holder === OPERATOR || target.id === OPERATOR
+            ? true
+            : handoffChosen(ctx?.sessionManager?.getBranch() ?? [], row.holder, target.name, row.goal);
         const question = clip(params.question, QUESTION_MAX);
         const briefing = clip(params.briefing, BRIEFING_MAX);
-        if (!question) throw new Error("Give the question you need them to answer.");
-        const { n, from } = handTo(sessionId, target.ref, question, briefing);
-        append(BATON_HANDOFF_ENTRY, { v: 1, n, from, to: target.ref, question, briefing } satisfies BatonHandoffData);
+        await inTool(sessionId, append, () => handTo(sessionId, String(params.person ?? ""), question, briefing, { chosen }));
+        // The move's transcript entry, numbered as the chart numbered it.
+        const after = batonById(sessionId)!.row;
+        const h = after.handoffs[after.handoffs.length - 1]!;
+        append(BATON_HANDOFF_ENTRY, { v: 1, n: h.n, from: h.from, to: h.to, question: h.question, briefing: h.briefing } satisfies BatonHandoffData);
         refreshShare(sessionId);
-        if (target.ref === OPERATOR) emitBatonEvent({ type: "asked-operator", orgId: row.orgId, projectId: row.projectId, sessionId, question });
-        const who = nameOf(row.orgId, target.ref);
-        return { ...say(`Handed to ${who}. Your turn has ended.`), terminate: true };
+        return { ...say(`Handed to ${nameOf(row.orgId, h.to)}. Your turn has ended.`), terminate: true };
       },
     },
     {
@@ -458,10 +292,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
       description: "The goal is met and the answers are checked. Give a short summary of what was established. Ends the conversation.",
       parameters: obj({ summary: str("What was established, in a few sentences. Everyone in the conversation sees it: say it in your own words (never the goal's), name people by name only, never by role or job title, and never say how the answers are recorded or under which area.") }, ["summary"]) as any,
       async execute(_id, params: any) {
-        const summary = clip(params.summary, BRIEFING_MAX);
-        if (!summary) throw new Error("Give a summary of what was established.");
-        markDone(sessionId);
-        append(BATON_DONE_ENTRY, { v: 1, summary } satisfies BatonDoneData);
+        await inTool(sessionId, append, () => markDone(sessionId, clip(params.summary, BRIEFING_MAX)));
         refreshShare(sessionId);
         return { ...say("Recorded as done. The conversation is over."), terminate: true };
       },
@@ -493,53 +324,30 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
         const hit = batonById(sessionId);
         if (!hit) throw new Error("This conversation is no longer registered.");
         const row = hit.row;
-        if (row.state === "done" || row.state === "closed") throw new Error(`This conversation is ${row.state}.`);
-        const referrer = row.holder ?? OPERATOR;
-        const referrerName = nameOf(row.orgId, referrer);
         const name = clip(params.name, 80);
-        const role = clip(params.role, 300);
-        const why = clip(params.why, 300);
-        const quote = clip(params.quote, 300);
-        const contact = typeof params.contact === "object" && params.contact !== null ? params.contact : {};
         const roster = readRoster(row.orgId);
-        const same = roster.find((p) => name && p.name.toLowerCase() === name.toLowerCase() && p.status !== "left");
-        const former = same ? undefined : roster.find((p) => name && p.name.toLowerCase() === name.toLowerCase() && p.status === "left");
-        if (former)
-          throw new Error(
-            former.referral
-              ? `${former.name} was proposed before and the operator declined. Ask ${referrerName} who else could answer.`
-              : `${former.name} has left the organization. Tell ${referrerName} so and ask who covers their area now; if this is a different person with the same name, hand to the operator.`,
-          );
-        if (same?.status === "active") throw new Error(`${same.name} is already on the roster: hand_to them if they should answer.`);
-        if (same?.status === "proposed") throw new Error(`${same.name} was already proposed and waits for the operator's approval. Hand to the operator if you need them now.`);
-        const gaps = proposedGaps({ name, role, contact, referral: { why, referredBy: referrer } });
-        const bad = contactProblems(contact);
-        if (bad.length) gaps.push(`a real contact channel (${bad.join("; ")}; never write a placeholder)`);
-        if (!quote) gaps.push(`${referrerName}'s exact words referring them`);
-        if (gaps.length)
-          throw new Error(`Not recorded yet: still missing ${gaps.join(", ")}. Ask ${referrerName} for it, then call propose_roster_edit again with everything.`);
-        let person;
-        try {
-          person = await addPerson(
-            row.orgId,
-            {
-              name,
-              status: "proposed",
-              role,
-              contact,
-              ...(Array.isArray(params.decides) ? { decides: params.decides } : {}),
-              referral: { why, referredBy: referrer, sessionId, quote },
-            },
-            { kind: "referral", sessionId, quote },
-          );
-        } catch (err) {
-          throw new Error(`Not recorded: ${err instanceof Error ? err.message : String(err)} Ask ${referrerName} and try again.`);
-        }
-        append(BATON_PROPOSAL_ENTRY, { v: 1, personId: person.id, name: person.name, role: person.role, why, by: referrer } satisfies BatonProposalData);
-        emitBatonEvent({ type: "proposal", orgId: row.orgId, projectId: row.projectId, sessionId });
+        // The roster person of that name: one not gone first, else a former one (the chart's refusals read it).
+        const named = (p: Person) => !!name && p.name.toLowerCase() === name.toLowerCase();
+        const same = roster.find((p) => named(p) && p.status !== "left") ?? roster.find((p) => named(p) && p.status === "left");
+        const personId = shortId("p_");
+        await inTool(sessionId, append, () =>
+          modelAct(sessionId, "baton/propose", {
+            personId,
+            name,
+            role: clip(params.role, 300),
+            contact: typeof params.contact === "object" && params.contact !== null ? params.contact : {},
+            why: clip(params.why, 300),
+            quote: clip(params.quote, 300),
+            ...(Array.isArray(params.decides) ? { decides: params.decides } : {}),
+            ...(same ? { same: { name: same.name, status: same.status, referral: !!same.referral } } : {}),
+            namesTaken: namesTaken(row.orgId),
+          }),
+        );
+        const referrerName = nameOf(row.orgId, row.holder ?? OPERATOR);
+        const person = findPerson(row.orgId, personId);
         return say(
-          `Proposed ${person.name}. The operator must approve them before anyone can hand the conversation to them. ` +
-            `Tell ${referrerName} so; if you need ${person.name}'s answer to go on, hand_to the operator.`,
+          `Proposed ${person?.name ?? name}. The operator must approve them before anyone can hand the conversation to them. ` +
+            `Tell ${referrerName} so; if you need ${person?.name ?? name}'s answer to go on, hand_to the operator.`,
         );
       },
     },
@@ -607,6 +415,203 @@ export function redactContext<M>(messages: M[], phrases: readonly string[]): M[]
   });
   return changed ? out : messages;
 }
+
+// ---- the baton chart's effects, facts and wrap-up (registered on every org's engine) -----------------------
+
+/** Transcript entries that met a run in flight (the transcript takes none mid-run): written when it settles. */
+const waitingEntries = new Map<string, { customType: string; data: Record<string, unknown> }[]>();
+
+/** Whether the transcript already has the entry an effect writes (a re-run after a restart writes nothing twice). */
+const hasEntry = (chat: ChatSession, key: string): boolean =>
+  chat.session.sessionManager.getEntries().some((e: any) => e.type === "custom" && e.data?.key === key);
+
+/** Write a transcript entry the chart asked for: through the running tool, now, or once the run settles. */
+async function writeEntry(sessionId: string, customType: string, data: Record<string, unknown>): Promise<void> {
+  const inTurn = toolAppend.get(sessionId);
+  if (inTurn) return void inTurn(customType, data);
+  const hit = batonById(sessionId);
+  if (!hit) return;
+  const path = sessionPathOf(hit.dir, hit.row);
+  const chat = await acquireChat(path);
+  if (typeof data.key === "string" && hasEntry(chat, data.key)) return;
+  const waiting = waitingEntries.get(path);
+  if (waiting) return void waiting.push({ customType, data });
+  try {
+    chat.appendSpecialEntry(customType, data);
+  } catch (err) {
+    if (err instanceof BusyError) waitingEntries.set(path, [{ customType, data }]);
+    else throw err;
+  }
+}
+
+/** Write the entries a run held back, in order (after it settled). */
+export async function flushEntries(path: string): Promise<void> {
+  const waiting = waitingEntries.get(path);
+  if (!waiting) return;
+  const chat = await acquireChat(path);
+  if (chat.session.isStreaming || chat.isCompacting()) return; // the next settle writes them
+  waitingEntries.delete(path);
+  for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendSpecialEntry(e.customType, e.data);
+}
+
+/** The chart's `baton-entry` as the transcript's custom entry. */
+function entryOf(e: Effect): { customType: string; data: Record<string, unknown> } | null {
+  const key = e.key;
+  switch (e.type) {
+    case "handoff":
+      return { customType: BATON_HANDOFF_ENTRY, data: { v: 1, n: e.n, from: e.from, to: e.to, question: e.question, briefing: e.briefing ?? "", key } };
+    case "offer":
+      return { customType: BATON_OFFER_ENTRY, data: { v: 1, n: e.n, offerId: e.offerId, from: e.from, to: e.to, question: e.question, briefing: e.briefing ?? "", key } };
+    case "lease":
+      return { customType: BATON_LEASE_ENTRY, data: { v: 1, n: e.n, offerId: e.offerId, event: e.event, by: e.by, key } };
+    case "done":
+      return { customType: BATON_DONE_ENTRY, data: { v: 1, summary: e.summary, key } };
+    case "proposal":
+      return { customType: BATON_PROPOSAL_ENTRY, data: { v: 1, personId: e.personId, name: e.name, role: e.role, why: e.why, by: e.by, key } };
+    default:
+      return null;
+  }
+}
+
+/** Make the session file of a new baton session (its header, the `sova-baton` marker, the first hand-off or offer). */
+function createSessionFile(orgId: string, sessionId: string, data: Record<string, unknown>): string {
+  const dir = orgDir(orgId);
+  const have = batonFileOf(dir, sessionId);
+  if (have) return have;
+  const sessionsDir = join(dir, "sessions");
+  mkdirSync(sessionsDir, { recursive: true });
+  const sm = SessionManager.create(dir, sessionsDir, { id: sessionId });
+  const raw = sm.getSessionFile();
+  const header = sm.getHeader();
+  if (!raw || !header) throw new Error("SessionManager did not produce a session file");
+  sm.appendCustomEntry(BATON_ENTRY, { v: 1, orgId, projectId: String(data.projectId) } satisfies BatonMarkerData);
+  const first = ((data.handoffs as Record<string, unknown>[] | undefined) ?? [])[0];
+  const offer = ((data.offers as Record<string, unknown>[] | undefined) ?? [])[0];
+  if (first && offer && first.offerId === offer.id)
+    sm.appendCustomEntry(BATON_OFFER_ENTRY, { v: 1, n: 1, offerId: String(offer.id), from: OPERATOR, to: offer.to as string[], question: String(offer.question), briefing: String(offer.briefing ?? "") } satisfies BatonOfferData);
+  else if (first) sm.appendCustomEntry(BATON_HANDOFF_ENTRY, { v: 1, n: 1, from: OPERATOR, to: String(first.to), question: String(first.question), briefing: String(first.briefing ?? "") } satisfies BatonHandoffData);
+  // Written now, like every web session (SessionManager.create defers its own write).
+  writeFileSync(raw, `${[JSON.stringify(header), ...sm.getEntries().map((e) => JSON.stringify(e))].join("\n")}\n`, { flag: "wx" });
+  const path = canonicalPath(raw);
+  markOwned(path);
+  addWebSession(sessionId);
+  markSeen(sessionId);
+  // Listed under its public title, not the first message someone happens to write.
+  setSessionTitle(sessionId, cleanSessionTitle(String(data.publicTitle ?? "")) ?? null);
+  return join("sessions", basename(raw));
+}
+
+const sidOfEffect = (e: Effect): string => String(e.sessionId).split("/").slice(2).join("/");
+
+export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
+  host.effects.register("create-session", async (e) => {
+    const sessionId = sidOfEffect(e);
+    return { file: createSessionFile(orgId, sessionId, host.data(e.sessionId) ?? {}) };
+  });
+
+  // A link per person the chart names (the first holder, a hand-off's, an offer's invitees). The tokens go
+  // to the caller that asked (baton.takeMinted), never into the result: that reaches the log.
+  const mint = (e: Effect, people: string[], offerId?: string) => {
+    const sessionId = sidOfEffect(e);
+    const again = linksOfKey(e.key);
+    // Run again after a restart: nobody has the first links, so they stop and Needs you asks for new ones.
+    if (again.length) {
+      revokeLinks((l) => l.key === e.key);
+      return { minted: 0 };
+    }
+    for (const personId of people) mintForEffect({ orgId, sessionId, n: Number(e.n), personId, ...(offerId ? { offerId } : {}), key: e.key });
+    refreshShare(sessionId);
+    return { minted: people.length };
+  };
+  host.effects.register("mint-links", async (e) => {
+    const d = host.data(e.sessionId) ?? {};
+    if (typeof e.offerId === "string" && e.offerId) {
+      const offer = ((d.offers as { id?: string; to?: string[] }[] | undefined) ?? []).find((o) => o.id === e.offerId);
+      return mint(e, offer?.to ?? [], e.offerId);
+    }
+    const holder = typeof d.holder === "string" && d.holder !== OPERATOR && d.holder !== POOL ? [d.holder] : [];
+    return mint(e, holder);
+  });
+  host.effects.register("mint-link", async (e) => mint(e, typeof e.personId === "string" ? [e.personId] : []));
+
+  host.effects.register("revoke-links", async (e) => {
+    const sessionId = sidOfEffect(e);
+    const row = batonById(sessionId)?.row;
+    const why = e.why === "withdrawn" ? "withdrawn" : undefined;
+    const revoked = e.all
+      ? revokeLinks((l) => l.sessionId === sessionId)
+      : revokeLinks((l) => l.sessionId === sessionId && l.offerId === e.offerId && !(e.neverHeld && row && heldOffer(row, String(e.offerId), l.personId)), Date.now(), why);
+    refreshShare(sessionId);
+    return { revoked };
+  });
+
+  // An operator's move (or a person leaving) stops the reply in flight; the move waits for its end.
+  host.effects.register("stop-reply", async (e) => {
+    const sessionId = sidOfEffect(e);
+    const hit = batonById(sessionId);
+    if (!hit) return {};
+    const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
+    // The stopped run's own end is not the reply's end yet: the messages queued behind it are written
+    // first, then the chart hears it ended and makes the move it held (its entry comes after them).
+    stopping.add(sessionId);
+    try {
+      await interruptReply(chat);
+    } finally {
+      stopping.delete(sessionId);
+    }
+    if (!chat.session.isStreaming && !chat.turnStarting) await replyFact(sessionId, "reply/ended");
+    return {};
+  });
+
+  host.effects.register("baton-entry", async (e) => {
+    const entry = entryOf(e);
+    if (entry) await writeEntry(sidOfEffect(e), entry.customType, entry.data);
+    refreshShare(sidOfEffect(e));
+    return {};
+  });
+
+  // The wrap-up (§app.organizations/wrap-up): one unattended turn of the session's own runtime.
+  host.invocations.register("sova/wrapup", {
+    start(inv, report) {
+      const sessionId = sidOfEffect({ sessionId: inv.sessionId } as Effect);
+      void runWrapup(sessionId, activeBatonTools(sessionId))
+        .then((out) => report(out.error ? "stopped" : "finished", out.error, { applied: out.applied, refused: out.refused }))
+        .catch((err) => report("stopped", err instanceof Error ? err.message : String(err)));
+    },
+    stop() {},
+  });
+
+  // After a restart no reply runs: every session whose chart still says one does hears it ended.
+  void (async () => {
+    for (const s of host.sessions("baton", { warmOnly: true })) {
+      if (s.data.reply && s.data.reply !== "idle") await replyFact(String(s.data.sessionId), "reply/ended");
+    }
+  })().catch((err) => console.warn(`[baton] ${orgId}: resuming replies: ${err instanceof Error ? err.message : String(err)}`));
+}
+onOrgHostOpened(registerBatonEffects);
+
+/** A reply fact from the chat layer (reply/starting, reply/writing, reply/ended) to the session's chart. */
+async function replyFact(sessionId: string, event: "reply/starting" | "reply/writing" | "reply/ended"): Promise<void> {
+  const hit = batonById(sessionId);
+  if (!hit) return;
+  try {
+    await hostOf(hit.row.orgId).act(batonSid(hit.row.orgId, sessionId), event, {}, { by: "system" } as unknown as Envelope);
+  } catch (err) {
+    console.warn(`[baton] ${event} on ${sessionId.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Every change to a baton session reaches its share pages and the session list at once. */
+onOrgChange((_orgId, change) => {
+  let any = false;
+  for (const sid of change.sessions)
+    if (sid.startsWith("baton/")) {
+      refreshShare(sid.split("/").slice(2).join("/"));
+      any = true;
+    }
+  if (any) nudgeMarks();
+});
+
 
 const isBatonMarked = (sm: { getEntries(): readonly any[] }) => sm.getEntries().some((e) => e.type === "custom" && e.customType === BATON_ENTRY);
 
@@ -685,23 +690,25 @@ registerSpecialLoadout({
   watchSession(session, path) {
     const sessionId = batonOfPath(path)?.row.sessionId;
     if (!sessionId) return;
+    let writing = false;
     session.subscribe((event) => {
       const e = event as { type: string; message?: { role?: string } };
-      // The wrap-up's words are nobody's business on a share page.
+      // The wrap-up's words are nobody's business on a share page, and its turn is no reply.
       if (e.type === "message_update" && e.message?.role === "assistant") {
-        if (!wrapupActive(sessionId)) streamShare(sessionId, streamingText(e.message));
+        if (!wrapupActive(sessionId)) {
+          streamShare(sessionId, streamingText(e.message));
+          if (!writing) {
+            writing = true;
+            void replyFact(sessionId, "reply/writing");
+          }
+        }
       } else if (e.type === "message_end" || e.type === "agent_settled" || e.type === "entry_appended") refreshShare(sessionId);
       if (e.type === "agent_settled") {
-        // Lease entries that arrived mid-reply (the transcript takes none then).
-        setTimeout(() => void flushLeases(path).catch(() => {}), 0);
-        if (!wrapupActive(sessionId)) {
-          // The reply renews the holder's lease (the later of their message and the reply).
-          touchLease(sessionId);
-          // goal_done (or a close mid-turn) ended it: the wrap-up runs once this run is over.
-          scheduleWrapup(sessionId);
-          // The reply to the last message the limit allows: the baton goes to the operator.
-          setTimeout(() => void budgetStop(sessionId), 50).unref?.();
-        }
+        writing = false;
+        // Entries that arrived mid-run (the transcript takes none then).
+        setTimeout(() => void flushEntries(path).catch(() => {}), 0);
+        // The reply's end: the chart renews the lease, applies a move held for it, the budget stop, the wrap-up.
+        if (!wrapupActive(sessionId) && !stopping.has(sessionId)) void replyFact(sessionId, "reply/ended");
       }
     });
   },
@@ -711,21 +718,20 @@ registerSpecialLoadout({
     // Text only, both ways (§app.baton/outsider-view): the operator's images never reach the model.
     if (msg.images > 0) throw new RefusedError("A hand-off session is text only: images can't be sent.");
     const sessionId = hit.row.sessionId;
-    let noted: ReturnType<typeof noteMessage>;
     try {
-      noted = noteMessage(sessionId, OPERATOR);
+      noteMessage(sessionId, OPERATOR);
     } catch (err) {
       // Someone else holds the baton, it is done, the budget is spent: a refusal, said as it is.
       if (err instanceof OrgError) throw new RefusedError(err.message);
       throw err;
     }
-    refreshShare(sessionId);
+    // Its reply started with the accepted message (the chart's reply region).
     // The runtime refused the message after all: it neither counts nor clears Needs you.
     return {
       by: OPERATOR,
       undo: () => {
-        undoNote(sessionId, noted);
-        refreshShare(sessionId);
+        undoNote(sessionId);
+        void replyFact(sessionId, "reply/ended");
       },
     };
   },

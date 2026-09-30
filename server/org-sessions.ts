@@ -1,27 +1,27 @@
-import { readdirSync } from "node:fs";
-import { basename, join } from "node:path";
+import { basename } from "node:path";
 import type { BatonSession } from "../shared/baton";
 import type { SessionOrg, SessionOrgRef } from "../shared/protocol";
 import { allBatons } from "./baton";
 import { buildMerged } from "./build-merged";
 import { orgOfSessionPath, readIndex, readOrg, readProjects } from "./orgs";
-import { projectOverseerPaths, readPoMarker, readPoState, readStarted, type StartedRow } from "./project-overseer-store";
+import { readOrgBuilds, type BuildKind, type BuildRow } from "./build-loadout";
+import { projectOverseerPaths, readPoMarker, readPoState } from "./project-overseer-store";
 
 /**
  * Which sessions are ORGANIZATIONAL (§app.session-list/organizations), from the org's own records,
  * never from a folder:
- * - every file in an attached org's workspace `sessions/`: a registered baton session (baton.json),
- *   a project overseer's conversation (its marker, for THAT org; current or cleared per state.json),
+ * - every file in an attached org's workspace `sessions/`: a registered baton session (its baton chart),
+ *   a project overseer's conversation (its marker, for THAT org; current or cleared per its project chart),
  *   or an unregistered file ("other");
- * - every coding session a project's `started.json` records (`coding` from its overseer,
+ * - every coding session a project's build chart records (`coding` from its overseer,
  *   `operator-coding` from Start coding session), by session id.
  * A fork or copy of any of these has its own id and lives in the pi sessions dir, so it is ordinary;
  * so is a session the operator opens by hand in a project root, and everything of an org that is
  * not attached on this host.
  */
 
-/** The started.json kinds that make a session one of the project's coding sessions. */
-export const ORG_CODING_KINDS: ReadonlySet<StartedRow["kind"]> = new Set(["coding", "operator-coding"]);
+/** The build kinds that make a session one of the project's coding sessions. */
+export const ORG_CODING_KINDS: ReadonlySet<BuildKind> = new Set(["coding", "operator-coding"]);
 
 export interface OrgLookup {
   /** `SessionSummary.org` for a file and its session id, or undefined (ordinary). */
@@ -31,7 +31,7 @@ export interface OrgLookup {
 const NONE: OrgLookup = { of: () => undefined };
 
 /**
- * One lookup per listing: each org's names, batons, overseer states and started rows are read at
+ * One lookup per listing: each org's names, batons, overseer states and builds are read at
  * most once, and only when a file needs them.
  */
 export function orgLookup(): OrgLookup {
@@ -93,7 +93,7 @@ export function orgLookup(): OrgLookup {
     return currents.get(k) ?? null;
   };
 
-  let coding: Map<string, { orgId: string; dir: string; projectId: string; row: StartedRow }> | null = null;
+  let coding: Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }> | null = null;
   const codingOf = (id: string) => (coding ??= codingSessions(orgs)).get(id);
 
   return {
@@ -130,26 +130,12 @@ export function orgCodingIds(): Set<string> {
   return orgs.length ? new Set(codingSessions(orgs).keys()) : new Set();
 }
 
-/** Session id → project, for every coding row of every project store of the attached orgs (a
-    project removed from projects.json keeps its store, so its sessions stay organizational). */
-function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string; row: StartedRow }> {
-  const out = new Map<string, { orgId: string; dir: string; projectId: string; row: StartedRow }>();
+/** Session id → project, for every build of the attached orgs (a project removed from the org's
+    list keeps its builds, so its sessions stay organizational). */
+function codingSessions(orgs: readonly { id: string; dir: string }[]): Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }> {
+  const out = new Map<string, { orgId: string; dir: string; projectId: string; row: BuildRow }>();
   for (const o of orgs) {
-    let pids: string[];
-    try {
-      pids = readdirSync(join(o.dir, "projects"));
-    } catch {
-      continue;
-    }
-    for (const projectId of pids) {
-      let rows: StartedRow[];
-      try {
-        rows = readStarted(projectOverseerPaths(o.id, projectId, o.dir));
-      } catch {
-        continue; // not a store id shape
-      }
-      for (const r of rows) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId, row: r });
-    }
+    for (const r of readOrgBuilds(o.id)) if (ORG_CODING_KINDS.has(r.kind) && !out.has(r.sessionId)) out.set(r.sessionId, { orgId: o.id, dir: o.dir, projectId: r.projectId, row: r });
   }
   return out;
 }

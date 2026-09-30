@@ -25,6 +25,7 @@ const stub = await startStreamStub({ payload: "whitespace", perDelta: 6 });
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(stubModelsJson(stub.port)));
 
 const orgs = await import("./orgs");
+const { replyEnded } = await import("./org-test-fixtures");
 const baton = await import("./baton");
 const { BATON_TOOLS } = await import("./baton-loadout");
 const wrap = await import("./baton-wrapup");
@@ -171,7 +172,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
     mkdirSync(join(root, "bproj"), { recursive: true });
     const project = await orgs.addProject(org.id, { name: "P", root: join(root, "bproj") });
     const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server", model: "stub/runaway" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server", model: "stub/runaway" });
 
     before(async () => {
       const entries = readFileSync(c.path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
@@ -182,20 +183,27 @@ describe("the stream guard against a runaway stream (real provider path, local s
           `${JSON.stringify({ type: "custom", id: "tm1", parentId: "tu1", timestamp: at, customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "tu1", by: tony.id } })}\n`,
       );
       (await import("./write-guard")).markOwned(c.path);
-      baton.markDone(c.sessionId, new Date());
+      baton.noteMessage(c.sessionId, tony.id); // the chart counts Tony's message: a person wrote, so it wraps up
+      await replyEnded(c.sessionId); // and the reply to it ended (as the runtime wrote it above)
       const chat = await acquireChat(c.path);
       await chat.setModelRef("stub/runaway");
     });
+    /** The chart's wrap-up row once its run ended. */
+    const settled = async () => {
+      for (let i = 0; i < 800 && baton.batonById(c.sessionId)!.row.wrapup?.state !== "failed" && baton.batonById(c.sessionId)!.row.wrapup?.state !== "done"; i++) await new Promise((r) => setTimeout(r, 10));
+      return baton.batonById(c.sessionId)!.row.wrapup;
+    };
 
     test("letters past 64 K in one tool call: the turn is stopped and the wrap-up is recorded failed, naming the stop", async () => {
       stub.reset({ payload: "letters", perDelta: 128 });
-      const info = await wrap.runWrapup(c.sessionId, BATON_TOOLS);
+      // goal_done: the chart starts the wrap-up (its :sova/wrapup run) once the reply is idle.
+      await baton.markDone(c.sessionId);
+      const info = await settled();
       const chat = await acquireChat(c.path);
       evidence.baton = { argCharsSent: stub.stats.argChars, trip: chat.lastStreamTrip, wrapup: info };
       assert.equal(chat.lastStreamTrip?.kind, "tool-args");
-      assert.equal(info?.state, "failed");
+      assert.equal(info?.state, "failed", "never left running");
       assert.equal(info?.error, "A tool call's arguments passed 65,536 characters, so the stream guard ended the turn.");
-      assert.equal(baton.batonById(c.sessionId)!.row.wrapup?.state, "failed", "never left running");
       assert.equal(wrap.wantsWrapup(baton.batonById(c.sessionId)!.row), false, "and not retried on its own");
     });
 
@@ -228,7 +236,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
     mkdirSync(join(root, "cproj"), { recursive: true });
     const project = await orgs.addProject(org.id, { name: "P", root: join(root, "cproj") });
     const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server", model: "stub/runaway" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server", model: "stub/runaway" });
     const app = new Hono();
     registerWrapupRoutes(app);
     const row = () => baton.batonById(c.sessionId)!.row;
@@ -254,7 +262,8 @@ describe("the stream guard against a runaway stream (real provider path, local s
           `${JSON.stringify({ type: "message", id: "ca1", parentId: "cm1", timestamp: at, message: { role: "assistant", content: [{ type: "toolCall", id: "g1", name: "goal_done", arguments: {} }], api: "openai-completions", provider: "stub", model: "runaway", usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "toolUse", timestamp: Date.now() } })}\n`,
       );
       (await import("./write-guard")).markOwned(c.path);
-      baton.markDone(c.sessionId, new Date());
+      baton.noteMessage(c.sessionId, tony.id);
+      await replyEnded(c.sessionId);
       const chat = await acquireChat(c.path);
       await chat.setModelRef("stub/runaway");
     });
@@ -263,18 +272,17 @@ describe("the stream guard against a runaway stream (real provider path, local s
     test("a graceful shutdown during the wrap-up records it failed, saying so; Retry then runs it again", async () => {
       // The model hasn't answered yet: the stop leaves the turn no assistant message at all.
       stub.reset({ payload: "letters", perDelta: 16, holdMs: 5000 });
-      const run = wrap.runWrapup(c.sessionId, BATON_TOOLS);
+      await baton.markDone(c.sessionId);
       await requested();
       assert.equal(row().wrapup?.state, "running");
       // What index.ts's shutdown does: mark, abort every streaming turn, dispose every runtime.
       recovery.markShutdown();
       (await acquireChat(c.path)).session.abort().catch(() => {});
       await disposeAllChats();
-      const info = await run;
+      const info = await settledRow();
       recovery.clearShutdownForTest();
       assert.equal(info?.state, "failed");
       assert.equal(info?.error, "The server shut down during the wrap-up.");
-      assert.equal(row().wrapup?.state, "failed");
 
       stub.reset({ payload: "letters", perDelta: 16, pauseMs: 20 });
       const res = await app.request(`/api/baton/${c.sessionId}/wrapup/retry`, { method: "POST" });

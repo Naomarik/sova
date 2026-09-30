@@ -52,12 +52,12 @@ export interface PoToolHost {
   reconcile(): Promise<DecisionsInfo>;
   promote(ids: string[]): Promise<PromoteResult>;
   /** Start a gathering session (one person) or an offer (≥ 2), owned by this overseer. */
-  startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; model?: string; thinking?: string; abilities: GatheringAbilities }): Promise<{ sessionId: string; path: string; invited: string[] }>;
+  startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; model?: string; thinking?: string; abilities: GatheringAbilities }): Promise<{ sessionId: string; path: string; invited: string[]; held?: { id: string; until: number } }>;
   /** What a gathering session gets for the `abilities` arg (the project's set, under the
       operator's ceiling, §app.baton/abilities), or the refusal. Pure: nothing is created or counted. */
   gatheringAbilities(arg: unknown): GatheringAbilities | { error: string };
   /** Close one of this project's gathering sessions, as the operator's Close does. */
-  closeGathering(sessionId: string): Promise<void>;
+  closeGathering(sessionId: string, reason?: string): Promise<void>;
   /** Approve (active) or decline (left) a proposed person. */
   decideReferral(personId: string, approve: boolean): Promise<Person>;
   /** Every listed session (the tools keep those under the root). */
@@ -68,7 +68,7 @@ export interface PoToolHost {
   codingMode(req: ModeRequest): { mode: ProjectCodingMode } | { error: string };
   /** A new ordinary session for `cwd` (inside the root; it runs in the same folder of its own
       worktree when the root is in git), its mode set and pinned, then its first prompt sent. */
-  createCoding(input: { cwd: string; prompt: string; title?: string; model?: string; thinking?: string; mode: ProjectCodingMode }): Promise<{ id: string; path: string; cwd: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string }>;
+  createCoding(input: { cwd: string; prompt: string; title?: string; model?: string; thinking?: string; mode: ProjectCodingMode }): Promise<{ id: string; path: string; cwd: string; worktree?: { path: string; branch: string }; note?: string; notPrompted?: string; held?: { id: string; until: number } }>;
   /** One message to a session, as its composer would send it; with `mode`, the session's mode is set and pinned first. */
   send(path: string, text: string, mode?: ProjectCodingMode): Promise<{ queued: boolean; modeApplies?: "now" | "after-turn" }>;
   /** Every coding session the project started (both kinds), by id: they may run in worktrees outside
@@ -89,8 +89,8 @@ export interface PoToolHost {
   held?(): HeldItem[];
 }
 
-/** A held item as a refusal records it; the host stamps `since`. */
-export type HeldInput = Omit<HeldItem, "since">;
+/** A held item as a refusal records it; the host stamps `since`. `limit`: the refusal as the watch chart takes it (`limit/refused`). */
+export type HeldInput = Omit<HeldItem, "since"> & { limit?: { kind: PoLimitKind; ledger: "day" | "message"; used: number; max: number } };
 
 /** "3 of 6 gathering sessions started", or "3 gathering sessions started (no limit)". */
 const usedOf = (used: number, max: number | null, what: string) => (max === null ? `${used} ${what} (no limit)` : `${used} of ${max} ${what}`);
@@ -197,12 +197,12 @@ export function overRefusal(o: Over, now: Date): { said: string; tail: string; h
     return {
       said: `Today's allowance is used: ${o.used} of ${o.max} ${what} on its own. It looks again at midnight.`,
       tail: "Nothing starts before then. Tell the operator what is waiting; don't promise an earlier look.",
-      held: { key: `day:${o.kind}`, what, why: `Today's allowance is used: ${o.used} of ${o.max} ${what} on its own.`, retryAt: nextMidnight(now).toISOString() },
+      held: { key: `day:${o.kind}`, what, why: `Today's allowance is used: ${o.used} of ${o.max} ${what} on its own.`, retryAt: nextMidnight(now).toISOString(), limit: { kind: o.kind, ledger: "day", used: o.used, max: o.max } },
     };
   return {
     said: `This message's allowance is used: ${o.used} of ${o.max} ${what} per message you send.`,
     tail: "Stop here and tell the operator what is done and what is left, or ask with sova_confirm.",
-    held: { key: `message:${o.kind}`, what, why: `This message's allowance is used: ${o.used} of ${o.max} ${what}.`, retryAt: now.toISOString() },
+    held: { key: `message:${o.kind}`, what, why: `This message's allowance is used: ${o.used} of ${o.max} ${what}.`, retryAt: now.toISOString(), limit: { kind: o.kind, ledger: "message", used: o.used, max: o.max } },
   };
 }
 
@@ -432,6 +432,11 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
     const choice = { ...(typeof p0.model === "string" && p0.model.trim() ? { model: p0.model.trim() } : {}), ...(typeof p0.thinking === "string" && p0.thinking.trim() ? { thinking: p0.thinking.trim() } : {}) };
     const made = await host.startGathering({ to: many ? to : to[0]!, publicTitle, goal, question, ...choice, abilities });
     const who = made.invited.join(", ");
+    if (made.held)
+      return {
+        content: text(`Held: starting "${publicTitle}" ${many ? `as an offer to ${who}` : `with ${who}`} waits until ${new Date(made.held.until).toISOString()} so the operator can cancel it; it starts then unless cancelled.`),
+        details: { held: made.held.id },
+      };
     return {
       content: text(
         `Started ${link({ id: made.sessionId, title: publicTitle })} ${many ? `as an offer to ${who} (whoever answers first holds it)` : `with ${who}`}. ` +
@@ -789,7 +794,7 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         if (b.conflict) throw new Refusal("That is a settle session: the conflict ends when it is settled.");
         if (b.state === "done" || b.state === "closed") throw new Refusal(`It is already ${b.state}.`);
         if (b.wroteAt) throw new Refusal("Someone it went to has already written in it.");
-        await host.closeGathering(b.sessionId);
+        await host.closeGathering(b.sessionId, reason);
         return { content: text(`Closed ${link({ id: b.sessionId, title: b.publicTitle })}.`), details: { id: b.sessionId, note: `Closed: ${cut(reason, 160)}` } };
       }),
     },
@@ -906,6 +911,11 @@ export function projectOverseerTools(host: PoToolHost, limits: PoLimits, redacto
         if (running >= cap) throw new Refusal(`${running} of its coding sessions are running, and the limit is ${cap} at once.`, "One finishing its turn is a reason to look again; don't promise when.");
         take("create");
         const made = await host.createCoding({ cwd, prompt: q.prompt, mode: m.mode, ...(q.title ? { title: String(q.title) } : {}), ...(q.model ? { model: String(q.model) } : {}), ...(q.thinking ? { thinking: String(q.thinking) } : {}) });
+        if (made.held)
+          return {
+            content: text(`Held: starting the coding session "${q.title ? String(q.title) : cut(q.prompt, 60)}" waits until ${new Date(made.held.until).toISOString()} so the operator can cancel it; it starts then unless cancelled.`),
+            details: { held: made.held.id },
+          };
         const where = made.worktree ? `its worktree ${made.worktree.path} on ${made.worktree.branch}` : `the project root ${made.cwd} (${made.note ?? "no worktree"})`;
         const note = made.worktree ? `On ${made.worktree.branch}.` : `In the project root: ${made.note ?? "no worktree."}`;
         const said = link({ id: made.id, title: q.title ? String(q.title) : cut(q.prompt, 60) });

@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { type AgentSession, getAgentDir, SessionManager } from "@earendil-works/pi-coding-agent";
 import { OPERATOR, type BatonSession } from "../shared/baton";
 import {
@@ -27,11 +27,10 @@ import {
 } from "../shared/project-overseer";
 import { ORG_ABOUT_MAX } from "../shared/orgs";
 import { clockTime } from "../pi-config/extensions/stamp/format.ts";
-import type { SessionSummary } from "../shared/protocol";
-import { type BatonEvent, onBatonEvent } from "./baton-events";
+import type { OverseerState, SessionSummary } from "../shared/protocol";
 import { allBatons, batonById, closeBaton, createBaton, nameOf, sessionPathOf, workspaceHasFile } from "./baton";
-import { scheduleWrapup } from "./baton-loadout";
 import { noteBuildMerged } from "./build-merged";
+import { applyCodingMode, buildSessionPath, buildSetupEnded, buildSid, newBuildSessionId, noteBuildSettled, probeBuild, readBuild, readBuilds, syncBuildTurn, withWorktreePath } from "./build-loadout";
 import { acquireChat, BusyError, disposeHeldChat, drainQueueThenAbort, heldChat, isSessionBusy, onAgentSettled, registerSpecialLoadout, setOpeningChoice, type ChatSession } from "./chat-manager";
 import { PROCESS_START, shuttingDown } from "./wrapup-recovery";
 import { listModels } from "./models";
@@ -63,23 +62,26 @@ import {
   projectSid,
   stakeholderLine,
 } from "./orgs";
-import { hostOf } from "./org-engine";
+import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
 import { appRequest, pathOfId, promptSession, toolCatalogue } from "./overseer";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
-import { readNotes, rotateState } from "./overseer-store";
+import { readNotes } from "./overseer-store";
 import { appendUpdate, cleanUpdateText, lastUpdate } from "./project-updates";
 import { readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./overseer-tools";
 import { canonicalPath } from "./paths";
-import { listDecisions, onReconcileEvent, promoteDecisions, reconcileProject } from "./reconcile";
+import { listDecisions, promoteDecisions, reconcileProject } from "./reconcile";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session-titles";
 import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
-import { readView, refreshShare } from "./share/hub";
+import { readView } from "./share/hub";
+import { actOrThrow, envelopeFor } from "./org-engine";
+import type { ActResult } from "./org-host";
+import type { Envelope } from "./org-envelope";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -87,11 +89,9 @@ import { markOwned } from "./write-guard";
 import {
   dayKey,
   effectiveAutonomy,
-  holdItem,
   nextMidnight,
   fitThinking,
   isPoId,
-  noteStarted,
   patchPoSettings,
   projectOf,
   projectOverseerOfPath,
@@ -99,14 +99,9 @@ import {
   readMemo,
   readPoSettings,
   type WatchMemo,
-  readStarted,
   readPoState,
   sessionIdOfFile,
-  type StartedRow,
-  markStarted,
-  writeMemo,
   writePoSettings,
-  writePoState,
   type ProjectOverseerPaths,
 } from "./project-overseer-store";
 import { PO_BUILTINS, PoLimits, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
@@ -132,12 +127,15 @@ interface Rt {
   turns: UserTurns;
   limits: PoLimits;
   session: AgentSession | null;
+  /** A look's message was just handed in: the run it starts is the look's (the watch hears `turn/started {look}`). */
+  lookStarting?: boolean;
 }
 const rts = new Map<string, Rt>();
 /** The clock the watch loop, the counters and held items read (tests move it to another day). */
 let clock = (): number => Date.now();
 export function setClockForTest(fn: (() => number) | null): void {
   clock = fn ?? (() => Date.now());
+  setOrgClockForTest(fn);
 }
 const keyOf = (orgId: string, projectId: string) => `${orgId}/${projectId}`;
 
@@ -196,6 +194,12 @@ onOrgAttached((orgId, dir) => {
   }
 });
 
+/** The conversations a new one pushed past the chart's history of 20. */
+const droppedSince = (before: OverseerState | null, after: OverseerState | null): string[] => {
+  const kept = new Set(after ? [after.current, ...after.history] : []);
+  return (before ? [before.current, ...before.history] : []).filter((id) => !kept.has(id));
+};
+
 /** Archive conversations past the history's 20; they stay in the workspace repo, like every
     workspace file (Clean Up never deletes one, §app.session-list/cleanup-org-guard). */
 async function dropHistory(ids: string[]): Promise<void> {
@@ -233,12 +237,10 @@ export function ensureProjectOverseer(orgId: string, projectId: string): Promise
       }
     }
     const made = createPoFile(orgId, projectId);
-    const { state, dropped } = rotateState(st, made.id);
-    writePoState(p, state);
     await tellProjectChart(orgId, projectId, st ? "overseer/clear" : "overseer/start", made.id);
     // The settings file exists from the first open on, so the repo shows what is in force.
     writePoSettings(p, readPoSettings(p));
-    await dropHistory(dropped);
+    await dropHistory(droppedSince(st, readPoState(p)));
     return made;
   })().finally(() => ensuring.delete(k));
   ensuring.set(k, run);
@@ -259,10 +261,8 @@ export async function clearProjectOverseer(orgId: string, projectId: string): Pr
   rt.limits.reset();
   rt.turns.reset();
   const made = createPoFile(orgId, projectId);
-  const { state, dropped } = rotateState(readPoState(p), made.id);
-  writePoState(p, state);
   await tellProjectChart(orgId, projectId, "overseer/clear", made.id);
-  await dropHistory(dropped);
+  await dropHistory(droppedSince(st, readPoState(p)));
   return projectOverseerInfo(orgId, projectId);
 }
 
@@ -289,12 +289,11 @@ function batonPath(b: BatonSession): string | null {
 const projectBatons = (orgId: string, projectId: string): BatonSession[] => allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
 const ownedBy = (b: BatonSession, projectId: string) => typeof b.owner === "object" && b.owner.overseerOf === projectId;
 
-function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | null; running: boolean; createdAt: string; title?: string }[] {
-  const known = indexedSessionPaths();
-  return readStarted(p)
+function codingOf(orgId: string, projectId: string): { sessionId: string; path: string | null; running: boolean; createdAt: string; title?: string }[] {
+  return readBuilds(orgId, projectId)
     .filter((s) => s.kind === "coding")
     .map((s) => {
-      const path = known.get(s.sessionId) ?? (s.path && existsSync(s.path) ? s.path : null);
+      const path = s.path ?? null;
       return { sessionId: s.sessionId, path, running: path ? isSessionBusy(path) || workingSubagents(path) > 0 : false, createdAt: s.createdAt, title: s.title };
     });
 }
@@ -303,12 +302,10 @@ function codingOf(p: ProjectOverseerPaths): { sessionId: string; path: string | 
 const listedTitle = (t: string | undefined): string => (t && t !== "Untitled" ? t : "");
 
 /** Every coding session the project started (both kinds), with its worktree or why it runs in the root, newest first. */
-async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<CodingWorktree[]> {
-  const known = indexedSessionPaths();
+async function codingWorktrees(orgId: string, projectId: string, root: string): Promise<CodingWorktree[]> {
   const out: CodingWorktree[] = [];
-  for (const r of readStarted(p)) {
-    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
-    const path = known.get(r.sessionId) ?? (r.path && existsSync(r.path) ? r.path : null);
+  for (const r of readBuilds(orgId, projectId)) {
+    const path = r.path ?? null;
     const common = {
       sessionId: r.sessionId,
       path,
@@ -323,21 +320,24 @@ async function codingWorktrees(p: ProjectOverseerPaths, root: string): Promise<C
       workers: path ? workingSubagents(path) : 0,
       createdAt: r.createdAt,
     };
-    if (!r.worktree) {
-      // Started before worktrees (no reason recorded) or in a root that can't have one.
+    const row = await withWorktreePath(r, root);
+    if (!row) {
+      // Started in a root that can't have one.
       out.push({ ...common, branch: null, ...(r.inRoot ? { inRoot: r.inRoot } : {}), worktree: null, base: null, target: null, state: "root", merged: false, ahead: 0, dirty: false });
       continue;
     }
-    const w = await readWorktree(r.worktree, root);
+    const w = await readWorktree(row.worktree, root);
     const merged = w.branch && !w.error ? w.merged : w.merged || !!r.merged || !!r.branchDeleted;
     // The session list's Builds read the same answer (build-merged.ts): a fresh one is shared.
     noteBuildMerged(r.sessionId, merged);
+    // Git's facts reach the chart (its tree and branch states) as the page reads them.
+    await probeBuild(orgId, buildSid(orgId, projectId, r.sessionId), r, w).catch(() => {});
     out.push({
       ...common,
-      branch: r.worktree.branch,
+      branch: row.worktree.branch,
       worktree: w.worktree,
-      base: r.worktree.base,
-      target: r.worktree.target,
+      base: row.worktree.base,
+      target: row.worktree.target,
       state: r.removed ? "removed" : w.state,
       // Git decides, on every read (a branch merged once may have new commits); the recorded merge,
       // or removal with its branch (only ever a merged one), only when the branch is gone or git can't be read.
@@ -381,12 +381,12 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
         state: b.state,
         createdAt: b.createdAt,
       })),
-    ...codingOf(p).map((c) => ({ sessionId: c.sessionId, path: c.path, title: c.path ? "" : (c.title ?? "(not on this host)"), kind: "coding" as const, state: c.running ? "working" : "idle", createdAt: c.createdAt })),
+    ...codingOf(orgId, projectId).map((c) => ({ sessionId: c.sessionId, path: c.path, title: c.path ? "" : (c.title ?? "(not on this host)"), kind: "coding" as const, state: c.running ? "working" : "idle", createdAt: c.createdAt })),
   ];
   for (const s of started) if (s.kind === "coding" && s.path) s.title = (await getSessionSummary(s.path).catch(() => null))?.title || s.title;
   started.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   const repo = await gitRootOf(project.root);
-  const trees = await codingWorktrees(p, project.root);
+  const trees = await codingWorktrees(orgId, projectId, project.root);
   for (const s of started) {
     const t = trees.find((x) => x.sessionId === s.sessionId);
     if (t?.branch) s.worktree = { branch: t.branch, state: t.state };
@@ -412,7 +412,7 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     usage: {
       allowance: rtOf(orgId, projectId).limits.use(settings.caps),
       held: memo.held,
-      unattendedToday: memo.perDay[dayKey(new Date(clock()))] ?? 0,
+      unattendedToday: Object.values(memo.perDay)[0] ?? 0,
       lastWatchAt: memo.lastRunAt,
       pending: memo.pending,
     },
@@ -427,9 +427,10 @@ export async function patchProjectOverseer(orgId: string, projectId: string, bod
   const models = await listModels().catch(() => []);
   const before = readPoSettings(p);
   const s = patchPoSettings(p, body, (next, patch) => fitThinking(next, patch, models, loadDefaults().model ?? null));
-  releaseRaised(orgId, projectId, before, s);
+  // The watch runs on the settings as saved: a raised limit releases what it held (the chart's).
+  await syncWatchSettings(orgId, projectId);
   // Setting the level on this host (any level, the same one too) ends the pause an attach put on it.
-  if ((body as { autonomy?: unknown }).autonomy !== undefined) await resumeOverseer(orgId, projectId);
+  if ((body as { autonomy?: unknown }).autonomy !== undefined) await resumeOverseer(orgId, projectId, s.autonomy);
   const st = readPoState(p);
   const path = st ? await pathOfId(st.current) : null;
   const chat = path ? heldChat(path) : undefined;
@@ -525,33 +526,34 @@ function toolHost(rt: Rt): PoToolHost {
     },
     decisions: async () => listDecisions(orgId, projectId),
     // Its settle sessions get the model people talk to: its gathering choice, as its gathering sessions do.
-    reconcile: async () => reconcileProject(orgId, projectId, { owner: { overseerOf: projectId }, ...(await gatheringChoice(orgId, projectId, {})) }),
+    reconcile: async () => reconcileProject(orgId, projectId, { owner: { overseerOf: projectId }, envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), ...(await gatheringChoice(orgId, projectId, {})) }),
     // Never an out-of-area decision (the author does not own the area): refused here, in any turn; only the operator promotes one, explicitly.
-    promote: (ids) => promoteDecisions(orgId, projectId, ids, { by: "overseer" }),
+    promote: (ids) => promoteDecisions(orgId, projectId, ids, { by: "overseer", envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()) }),
     async startGathering(input) {
       // No link minted: no one would see it (and the model must never see a token), so Needs you
       // asks the operator to send one (Get Link mints it).
-      const made = createBaton({
-        orgId,
-        projectId,
-        to: input.to,
-        publicTitle: input.publicTitle,
-        goal: input.goal,
-        question: input.question,
-        ...(await gatheringChoice(orgId, projectId, input)),
-        abilities: input.abilities,
-        owner: { overseerOf: projectId },
-        mintLink: false,
-      });
+      // Its turn's envelope: the chart makes it the overseer's (owner), checks its level and limits, and holds it
+      // when the turn is unattended and the hold is on (q10).
+      const made = await createBaton(
+        {
+          orgId,
+          projectId,
+          to: input.to,
+          publicTitle: input.publicTitle,
+          goal: input.goal,
+          question: input.question,
+          ...(await gatheringChoice(orgId, projectId, input)),
+          abilities: input.abilities,
+        },
+        { envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), mintLink: false, startedVia: "overseer" },
+      );
       const to = Array.isArray(input.to) ? input.to : [input.to];
-      noteStarted(paths, made.sessionId, to.length > 1 ? "offer" : "gathering");
-      return { sessionId: made.sessionId, path: made.path, invited: to.map((ref) => nameOf(orgId, ref)) };
+      return { sessionId: made.sessionId, path: made.path, invited: to.map((ref) => nameOf(orgId, ref)), ...(made.held ? { held: made.held } : {}) };
     },
-    async closeGathering(sessionId) {
-      // As the operator's Close does (POST /api/baton/:sid/close): closed, its share page told, the wrap-up scheduled.
-      closeBaton(sessionId);
-      refreshShare(sessionId);
-      scheduleWrapup(sessionId);
+    async closeGathering(sessionId, reason) {
+      // As the operator's Close does (POST /api/baton/:sid/close): the chart closes it, tells its share page and
+      // starts the wrap-up.
+      await closeBaton(sessionId, { envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), ...(reason ? { reason } : {}), ownerProject: projectId });
     },
     decideReferral: async (personId, approve) => decidePerson(orgId, personId, approve, { kind: "overseer", sessionId: readPoState(paths)?.current ?? "" }),
     sessions: () => listSessions(),
@@ -562,7 +564,8 @@ function toolHost(rt: Rt): PoToolHost {
       return codingModeChoice(req, baseCodingMode(s.codingMode, projectOf(orgId, projectId).root), s.codingMode);
     },
     async createCoding(input) {
-      const made = await startCodingSession(orgId, projectId, { ...input, kind: "coding" });
+      const made = await startCodingSession(orgId, projectId, { ...input, kind: "coding", envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()) });
+      if (made.held) return { id: "", path: "", cwd: "", held: made.held };
       return {
         id: made.sessionId,
         path: made.path,
@@ -579,10 +582,10 @@ function toolHost(rt: Rt): PoToolHost {
       if (!r.ok) throw new Error(r.error);
       return { queued: r.queued, ...(applies ? { modeApplies: applies } : {}) };
     },
-    coding: () => codingOf(paths),
-    builds: () => codingWorktrees(paths, projectOf(orgId, projectId).root),
-    startedCoding: () => new Map(readStarted(paths).filter((r) => r.kind === "coding" || r.kind === "operator-coding").map((r) => [r.sessionId, { removed: !!r.removed }])),
-    hold: (item) => writeMemo(paths, holdItem(readMemo(paths), { ...item, since: new Date(clock()).toISOString() })),
+    coding: () => codingOf(orgId, projectId),
+    builds: () => codingWorktrees(orgId, projectId, projectOf(orgId, projectId).root),
+    startedCoding: () => new Map(readBuilds(orgId, projectId).map((r) => [r.sessionId, { removed: !!r.removed }])),
+    hold: (item) => void (item.limit ? watchFact(orgId, projectId, "limit/refused", item.limit) : Promise.resolve()),
     held: () => readMemo(paths).held,
     async postOwnerUpdate(input) {
       const owner = readRoster(orgId).find((x) => x.id === readOrg(orgId).owner && x.status === "active");
@@ -630,11 +633,9 @@ export async function milestoneSince(orgId: string, projectId: string, since: nu
   } catch {
     // an index that can't sync: no decision counts
   }
-  const known = indexedSessionPaths();
-  for (const r of readStarted(projectOverseerPaths(orgId, projectId))) {
-    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
+  for (const r of readBuilds(orgId, projectId)) {
     if (after(r.merged?.at)) return true;
-    const path = known.get(r.sessionId) ?? r.path;
+    const path = r.path;
     if (!path || !existsSync(path) || isSessionBusy(path)) continue;
     try {
       if (statSync(path).mtimeMs > since) return true;
@@ -711,21 +712,6 @@ async function overseerRunning(orgId: string, projectId: string): Promise<{ mode
   return { model: m ? `${m.provider}/${m.id}` : null, thinking: chat?.session.thinkingLevel ?? null };
 }
 
-/**
- * Set a coding session's mode and pin it (§app.project-overseer/tools, Modes): the mode extension's
- * own handler (applyMode), then the `mode` entry Sova writes itself, so the session keeps this mode
- * whatever mode.json says later. Throws when either can't be done: the caller then sends no prompt.
- * Returns when the switch applies (a running turn finishes in the old mode).
- */
-async function applyCodingMode(path: string, mode: ProjectCodingMode): Promise<"now" | "after-turn"> {
-  const chat = await acquireChat(path);
-  const plan = await chat.applyMode(mergeMode(chat.modeState, { mode: mode.mode, minorModes: mode.minorModes as never }));
-  if (plan !== "command")
-    throw new OrgError(plan === "unsupported" ? "the mode extension is not loaded in it" : "it is open in another writer (a terminal, or a process Sova doesn't know)", 409);
-  if (!chat.pinMode()) throw new OrgError("its mode entry could not be written", 409);
-  return chat.session.isStreaming ? "after-turn" : "now";
-}
-
 export interface StartedCoding {
   sessionId: string;
   path: string;
@@ -737,6 +723,8 @@ export interface StartedCoding {
   note?: string;
   /** Its mode could not be set, so no prompt was sent: the sentence to show. */
   notPrompted?: string;
+  /** The start waits in a hold (q10: the overseer's unattended act): nothing was made yet. */
+  held?: ActResult["held"];
 }
 
 export const NOT_PROMPTED = "Started, but not prompted: its mode could not be set.";
@@ -744,88 +732,88 @@ export const NOT_PROMPTED = "Started, but not prompted: its mode could not be se
 /**
  * A new ordinary coding session for the project (sova_create_session, Start coding session, New
  * Coding Session): in its own git worktree and branch cut from the root's HEAD when the root is in
- * git (else in the root, with the reason recorded), created through the same route the browser uses, recorded in
- * started.json at once (so it is listed and counted against its caps even when its prompt fails), titled, with
- * model and thinking, then its mode set and pinned, and only then its first prompt. A mode that
+ * git (else in the root, with the reason recorded): the project chart's `build/start` (its level, caps, q7
+ * and hold), then the build chart's setup (design §3.8): its worktree and session file (listed and counted
+ * against its caps even when its prompt fails), titled, with model and thinking, then its mode set and
+ * pinned, and only then its first prompt. A mode that
  * could not be set sends no prompt. With no prompt (New Coding Session) nothing is sent: a worktree
  * session gets the commit paragraph as a note, and the operator writes the first message.
  */
 async function startCodingSession(
   orgId: string,
   projectId: string,
-  input: { cwd?: string; prompt?: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding"; via?: "overseer" },
+  input: { cwd?: string; prompt?: string; title?: string; model?: string; thinking?: string; mode?: ProjectCodingMode; kind: "coding" | "operator-coding"; via?: "overseer"; envelope?: Envelope },
 ): Promise<StartedCoding> {
-  // Nothing new starts in an archived project (§app.organizations/archive).
-  assertNotArchived(orgId, projectId);
   const prompt = input.prompt?.trim() ?? "";
   const project = projectOf(orgId, projectId);
   const p = projectOverseerPaths(orgId, projectId);
   const settings = readPoSettings(p);
   const mode = input.mode ?? baseCodingMode(settings.codingMode, project.root);
-  let cwd = input.cwd ?? project.root;
-  const repo = await gitRootOf(project.root);
-  let extra: Pick<StartedRow, "worktree" | "inRoot"> = {};
-  if ("reason" in repo) extra = { inRoot: repo.reason };
-  else {
-    try {
-      const cut = await cutWorktree(repo, cwd, input.title?.trim() || prompt.split(/\s+/).slice(0, 8).join(" "));
-      cwd = cut.cwd;
-      extra = { worktree: cut.worktree };
-    } catch (err) {
-      throw new OrgError(`No session was started: its worktree could not be made (${err instanceof Error ? err.message : String(err)}).`, 409);
-    }
-  }
-  const res = await appRequest("/api/sessions", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ cwd }) });
-  const json = (await res.json().catch(() => null)) as (SessionSummary & { error?: string }) | null;
-  if (res.status !== 201 || !json?.path) {
-    // Nothing runs in it: the worktree goes again (it holds nothing).
-    if (extra.worktree) await removeWorktree(extra.worktree, project.root).catch(() => {});
-    throw new OrgError(json?.error ?? `Creating the session failed (HTTP ${res.status}).`, res.status === 409 ? 409 : 400);
-  }
+  const sessionId = newBuildSessionId();
   const title = input.title?.trim() ? cleanSessionTitle(input.title) : null;
-  // The row carries a title: the one given, else the prompt's first line; none with neither (New Coding Session).
+  // The build carries a title: the one given, else the prompt's first line; none with neither (New Coding Session).
   const rowTitle = title ?? (prompt ? cleanSessionTitle((prompt.split("\n")[0] ?? "").slice(0, 80)) : null);
-  noteStarted(p, json.id, input.kind, new Date(), json.path, { ...extra, ...(rowTitle ? { title: rowTitle } : {}), ...(input.via ? { via: input.via } : {}) });
-  if (title) setSessionTitle(json.id, title);
   const choice = codingChoice(input, settings, await overseerRunning(orgId, projectId));
-  // Opened on its model and thinking from the start (its file never records the default first);
-  // set again only when the open didn't take them (a model without auth, an unknown level).
-  setOpeningChoice(json.path, choice);
-  const chat = await acquireChat(json.path);
-  const cur = chat.session.model ? `${chat.session.model.provider}/${chat.session.model.id}` : null;
-  // (The open already clamped the thinking to the model's levels, as a later setThinking would.)
-  if (choice.model && choice.model !== cur) {
-    await chat.setModelRef(choice.model);
-    if (choice.thinking) chat.setThinking(choice.thinking);
-  }
-  const made: StartedCoding = {
-    sessionId: json.id,
-    path: json.path,
-    cwd,
-    mode,
-    ...(extra.worktree ? { worktree: { path: extra.worktree.path, branch: extra.worktree.branch } } : {}),
-    ...(extra.inRoot ? { note: extra.inRoot } : {}),
-  };
+  // The title store first: the worktree's branch is named after a title given.
+  if (title) setSessionTitle(sessionId, title);
+  const envelope = input.envelope ?? envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(input.via ? { via: input.via } : {}) });
+  let out;
   try {
-    await applyCodingMode(json.path, mode);
+    out = await actOrThrow(
+      orgId,
+      `project/${orgId}/${projectId}`,
+      "build/start",
+      {
+        sessionId,
+        ...(rowTitle ? { title: rowTitle } : {}),
+        ...(prompt ? { prompt } : {}),
+        ...(choice.model ? { model: choice.model } : {}),
+        ...(choice.thinking ? { thinking: choice.thinking } : {}),
+        mode,
+        ...(input.cwd ? { folder: input.cwd } : {}),
+      },
+      envelope,
+      { settle: true },
+    );
   } catch (err) {
-    // The session stays, listed and counted; its first turn never runs in a mode it wasn't given.
-    console.warn(`[project-overseer] ${json.id}: mode ${describeCodingMode(mode)} not set: ${err instanceof Error ? err.message : String(err)}`);
-    return { ...made, notPrompted: NOT_PROMPTED };
+    if (title) setSessionTitle(sessionId, null);
+    throw err;
   }
-  if (!prompt) {
-    // Nothing is sent: the operator writes the first message. The commit paragraph goes in first, as a note.
-    if (extra.worktree && !(await (await acquireChat(json.path)).appendNote(CODING_WORKTREE_NOTE, codingWorktreeParagraph(extra.worktree))))
-      console.warn(`[project-overseer] ${json.id}: its worktree note could not be written`);
-    return made;
+  if (out.held) {
+    if (title) setSessionTitle(sessionId, null);
+    return { sessionId, path: "", cwd: "", mode, held: out.held };
   }
-  const sent = await promptSession(json.path, codingFirstPrompt(prompt, extra.worktree));
-  if (!sent.ok) throw new OrgError(sent.error, 409);
+  const sid = buildSid(orgId, projectId, sessionId);
+  await buildSetupEnded(orgId, sid);
+  const row = readBuild(orgId, projectId, sessionId);
+  if (!row || row.notStarted) {
+    if (title) setSessionTitle(sessionId, null);
+    throw new OrgError(row?.notStarted ?? "No session was started.", 409);
+  }
+  const path = row.path ?? "";
+  const wt = row.worktree ? await withWorktreePath(row, project.root) : null;
+  const made: StartedCoding = {
+    sessionId,
+    path,
+    cwd: wt ? cwdIn(wt.worktree.path, project.root, input.cwd) : (input.cwd ?? project.root),
+    mode,
+    ...(wt ? { worktree: { path: wt.worktree.path, branch: wt.worktree.branch } } : {}),
+    ...(row.inRoot ? { note: row.inRoot } : {}),
+  };
+  if (row.modeNotSet) return { ...made, notPrompted: NOT_PROMPTED };
+  if (row.promptError) throw new OrgError(row.promptError, 409);
   return made;
 }
 
-/** `customType` of the note a coding session started with no prompt gets: its worktree paragraph. */
-export const CODING_WORKTREE_NOTE = "sova-coding-worktree";
+/** Where a session runs in its worktree: the folder asked for, inside it, when it exists there. */
+function cwdIn(worktree: string, root: string, cwd: string | undefined): string {
+  if (!cwd) return worktree;
+  const inside = relative(canonicalPath(root), canonicalPath(cwd));
+  const at = inside && !inside.startsWith("..") ? join(worktree, inside) : worktree;
+  return existsSync(at) ? at : worktree;
+}
+
+export { CODING_WORKTREE_NOTE } from "./build-loadout";
 
 /** What a worktree session is told: commit there, and merge its target in before it ends its turn (Merge Branch refuses uncommitted work and conflicts). */
 export const codingWorktreeParagraph = (worktree: { branch: string; target: string }): string =>
@@ -839,63 +827,40 @@ export function codingFirstPrompt(prompt: string, worktree: { branch: string; ta
 
 // ---- worktrees: the operator's merge and removal ------------------------------------------------------
 
-function worktreeRow(p: ProjectOverseerPaths, sessionId: unknown): StartedRow & { worktree: NonNullable<StartedRow["worktree"]> } {
+/**
+ * Merge Branch or Remove Worktree on a build's chart (the operator's only): the runtime's facts first
+ * (working, its workers) and whether its session is on this host (a gesture never acts on another
+ * host's worktree), then the act; git's refusal comes back from its effect in today's words.
+ */
+async function worktreeAct(orgId: string, projectId: string, sessionId: unknown, event: "build/merge" | "build/remove-worktree"): Promise<string | null> {
   if (typeof sessionId !== "string" || !sessionId) throw new OrgError("Give the sessionId");
-  const r = readStarted(p).find((x) => x.sessionId === sessionId && (x.kind === "coding" || x.kind === "operator-coding"));
-  if (!r) throw new OrgError("Unknown coding session of this project", 404);
-  if (!r.worktree) throw new OrgError(`It runs in the project root${r.inRoot ? `: ${r.inRoot}` : "."}`, 409);
-  return r as StartedRow & { worktree: NonNullable<StartedRow["worktree"]> };
-}
-
-/** The session file on this host, or a refusal (a gesture never acts on another host's worktree); refused while it or its workers run. */
-function refuseBusy(r: StartedRow): string {
-  const path = indexedSessionPaths().get(r.sessionId) ?? (r.path && existsSync(r.path) ? r.path : null);
-  if (!path) throw new OrgError("On another host: its worktree is there.", 409);
-  if (isSessionBusy(path)) throw new OrgError("The session is working.", 409);
-  if (workingSubagents(path) > 0) throw new OrgError("Its workers are running.", 409);
+  const row = readBuild(orgId, projectId, sessionId);
+  if (!row) throw new OrgError("Unknown coding session of this project", 404);
+  const sid = buildSid(orgId, projectId, sessionId);
+  const path = buildSessionPath(sessionId);
+  await syncBuildTurn(orgId, sid, path);
+  const out = await actOrThrow(orgId, sid, event, { elsewhere: !path }, envelopeFor(orgId, projectId, { by: "operator", attended: true }), { settle: true });
+  const failed = (out.effects ?? []).find((e) => e.error);
+  // git refused (its effect failed): today's words, a 409.
+  if (failed) throw new OrgError(failed.error!, 409);
   return path;
 }
 
 /** POST …/worktrees/merge: Merge Branch, into its target in the project root's checkout. */
 export async function mergeCodingWorktree(orgId: string, projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
-  const project = projectOf(orgId, projectId);
-  const p = projectOverseerPaths(orgId, projectId);
-  const r = worktreeRow(p, sessionId);
-  const path = refuseBusy(r);
-  const title = readSessionTitles()[r.sessionId] || r.title || listedTitle((await getSessionSummary(path).catch(() => null))?.title) || r.worktree.branch;
-  try {
-    const m = await mergeBack(r.worktree, project.root, title);
-    markStarted(p, r.sessionId, { merged: { at: new Date().toISOString(), commit: m.sha } });
-    noteBuildMerged(r.sessionId, true);
-    // The branch reached its target: news for the overseer, which can't see the operator merge otherwise.
-    noteReason(orgId, projectId, `The operator merged "${title}" (${r.worktree.branch}) into ${r.worktree.target}.`, false, true);
-  } catch (err) {
-    if (err instanceof WorktreeRefusal) {
-      // The session's or the branch's to fix (commit, resolve): the overseer is told. The root's own checkout is the operator's.
-      if (!err.message.startsWith("The project root")) noteReason(orgId, projectId, `Merge Branch for "${title}" was refused: ${err.message}`, false, true);
-      throw new OrgError(err.message, 409);
-    }
-    throw err;
-  }
+  projectOf(orgId, projectId);
+  // The branch reached its target: the build chart tells the overseer (build/merged), which can't see the
+    // operator merge otherwise; git's refusal too (build/merge-refused), unless the root's own checkout is the operator's.
+    await worktreeAct(orgId, projectId, sessionId, "build/merge");
   return projectOverseerInfo(orgId, projectId);
 }
 
 /** POST …/worktrees/remove: Remove Worktree; the branch goes too only when merged. The session stays. */
 export async function removeCodingWorktree(orgId: string, projectId: string, sessionId: unknown): Promise<ProjectOverseerInfo> {
-  const project = projectOf(orgId, projectId);
-  const p = projectOverseerPaths(orgId, projectId);
-  const r = worktreeRow(p, sessionId);
-  if (r.removed) throw new OrgError("Its worktree was already removed.", 409);
-  const path = refuseBusy(r);
-  try {
-    const out = await removeWorktree(r.worktree, project.root);
-    markStarted(p, r.sessionId, { removed: new Date().toISOString(), ...(out.branchDeleted ? { branchDeleted: true } : {}) });
-  } catch (err) {
-    if (err instanceof WorktreeRefusal) throw new OrgError(err.message, 409);
-    throw err;
-  }
+  projectOf(orgId, projectId);
+  const path = await worktreeAct(orgId, projectId, sessionId, "build/remove-worktree");
   // Its cwd is gone: a held runtime would run tools in nothing.
-  await disposeHeldChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
+  if (path) await disposeHeldChat(path, "Its worktree was removed, so it has no folder to work in.").catch(() => {});
   return projectOverseerInfo(orgId, projectId);
 }
 
@@ -1002,7 +967,17 @@ registerSpecialLoadout({
     rt.session = session;
     rt.turns.watch(session.agent);
     session.subscribe((event) => {
-      if (rt.turns.observe(event)) rt.limits.reset();
+      // The watch hears the runtime's turns: a look's, another run, the operator's message entering it.
+      if (event.type === "agent_start") {
+        const look = !!rt.lookStarting;
+        rt.lookStarting = false;
+        void watchFact(rt.orgId, rt.projectId, "turn/started", { look });
+      }
+      if (rt.turns.observe(event)) {
+        rt.limits.reset();
+        void watchFact(rt.orgId, rt.projectId, "turn/user-entered");
+      }
+      if (event.type === "agent_settled") void watchFact(rt.orgId, rt.projectId, "turn/ended");
     });
   },
   userSend(path, send) {
@@ -1024,9 +999,14 @@ registerSpecialLoadout({
 });
 
 /** The project's tools as its runtime builds them, for the tests. */
-export const toolsForTest = (orgId: string, projectId: string) => {
+export const toolsForTest = (orgId: string, projectId: string, opts: { attended?: boolean } = {}) => {
   const rt = rtOf(orgId, projectId);
-  return projectOverseerTools(toolHost(rt), rt.limits);
+  if (opts.attended === undefined) return projectOverseerTools(toolHost(rt), rt.limits);
+  // As in a turn the operator started (or not), whatever the runtime's own turn says.
+  const turns = Object.create(rt.turns) as typeof rt.turns;
+  turns.attended = () => opts.attended!;
+  const as = { ...rt, turns };
+  return projectOverseerTools(toolHost(as), rt.limits);
 };
 
 /** Whether the project's overseer is answering the operator right now (tests). */
@@ -1055,6 +1035,11 @@ function linkItem(p: ProjectOverseerPaths, item: { kind: "todo" | "idea"; id: st
   else updateIdea(item.id, { sessionId }, p.ideas);
 }
 
+/** The project overseer's envelope for an act of its turn (the chart checks its level and limits). */
+function overseerEnvelope(orgId: string, projectId: string, paths: ProjectOverseerPaths, attended: boolean): Envelope {
+  return envelopeFor(orgId, projectId, { by: "overseer", overseerId: readPoState(paths)?.current ?? "", attended });
+}
+
 /** Send to person…: a gathering session owned by the operator, prefilled from the item, linked to it. */
 export async function sendItem(orgId: string, projectId: string, body: ItemSendInput, linkUrl: (token: string) => string): Promise<ItemSendResult> {
   const p = projectOverseerPaths(orgId, projectId);
@@ -1065,7 +1050,7 @@ export async function sendItem(orgId: string, projectId: string, body: ItemSendI
   const publicTitle = typeof body.publicTitle === "string" ? body.publicTitle.trim() : "";
   const question = typeof body.question === "string" ? body.question.trim() : "";
   if (!publicTitle || !question) throw new OrgError("publicTitle and question are required: both are shown to the person as written.");
-  const made = createBaton({
+  const made = await createBaton({
     orgId,
     projectId,
     to: body.to,
@@ -1151,11 +1136,9 @@ export async function archiveBlockers(orgId: string, projectId: string): Promise
     .filter((b) => b.state === "open" || b.state === "needs-you")
     .map((b) => b.publicTitle);
   const p = projectOverseerPaths(orgId, projectId);
-  const known = indexedSessionPaths();
   const coding: string[] = [];
-  for (const r of readStarted(p)) {
-    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
-    const path = known.get(r.sessionId) ?? (r.path && existsSync(r.path) ? r.path : null);
+  for (const r of readBuilds(orgId, projectId)) {
+    const path = r.path;
     if (!path || !(isSessionBusy(path) || workingSubagents(path) > 0)) continue;
     coding.push(readSessionTitles()[r.sessionId] || r.title || (await getSessionSummary(path).catch(() => null))?.title || r.sessionId);
   }
@@ -1189,192 +1172,48 @@ export async function messageProjectOverseer(orgId: string, projectId: string, t
   return { queued, sessionId: st.current, path };
 }
 
-// ---- the watch loop ------------------------------------------------------------------------------------
+// ---- the watch loop: the watch chart (design §3.5; §app.project-overseer/watch-loop) -------------------
 
-export const WATCH_TICK_MS = 20_000;
-/** The default gap between looks on its own; a project sets its own (`watchGapMin`). */
-export const WATCH_MIN_GAP_MS = 10 * 60_000;
-/** An event that should be seen soon starts a look this long after it, by default (`soonLookSec`; bypassing the gap). */
-export const WATCH_SOON_MS = 60_000;
-export const WATCH_PREFIX = "[project watch]";
+/** The watch chart's session of a project (host-local). */
+const watchSidOf = (orgId: string, projectId: string): string => `watch/${orgId}/${projectId}`;
 
-/** Whether to start an unattended look now. Pure, for the tests. */
-export function watchDecision(input: {
-  pending: string[];
-  watch: boolean;
-  exists: boolean;
-  idle: boolean;
-  now: number;
-  lastRunAt: number;
-  today: number;
-  /** Looks per day; null = Unlimited. */
-  perDay: number | null;
-  /** The project's gap between looks (ms); default WATCH_MIN_GAP_MS. */
-  gapMs?: number;
-  force?: boolean;
-  /** When an event asked for a look soon (ms; 0 = none): due from then on, whatever the gap. */
-  soonAt?: number;
-}): { run: boolean; why?: string } {
-  if (!input.exists) return { run: false, why: "no conversation yet" };
-  if (!input.idle) return { run: false, why: "busy" };
-  if (!input.force) {
-    if (!input.watch) return { run: false, why: "watching is off" };
-    if (!input.pending.length) return { run: false, why: "nothing new" };
-    const soon = !!input.soonAt && input.now >= input.soonAt;
-    if (!soon && input.now - input.lastRunAt < (input.gapMs ?? WATCH_MIN_GAP_MS)) return { run: false, why: "too soon" };
-  }
-  if (input.perDay !== null && input.today >= input.perDay) return { run: false, why: `the daily limit of ${input.perDay} unattended runs is reached` };
-  return { run: true };
-}
-
-/** An unattended look's message. It never points at the operator's to-dos or ideas: they are the operator's own list. */
-export function watchText(reasons: string[], autonomy: string): string {
-  const list = reasons.length ? reasons.slice(-20).map((r) => `- ${r}`).join("\n") : "- (the operator asked for a look)";
-  return (
-    `${WATCH_PREFIX} Since your last look:\n${list}\n\n` +
-    `Re-read the project (sova_project, and sova_decisions where it matters). Infer gaps against the roster's decision areas and file new ones as ideas (§gap/…). ` +
-    `Then act within your autonomy (${autonomy}): the tools tell you when something needs a higher level. Keep your reply to a few lines for the operator.`
-  );
-}
-
-/**
- * Note a reason to look (an event), for a project whose overseer exists. People's events (a
- * decision, a finished gathering, a referral) are always kept, a busy overseer included: the
- * next look after its run picks them up. `own`: the reconciler's events, which while it runs are
- * its own sova_reconcile/sova_promote acts, not news to it. (The gatherings it starts emit
- * hand-off/offer events, which are never reasons.)
- */
-export function noteReason(orgId: string, projectId: string, reason: string, own = false, soon = false, now = clock()): void {
+/** A fact for the project's watch (the runtime's turns, the settings as read), when its watch is here. */
+async function watchFact(orgId: string, projectId: string, event: string, payload: Record<string, unknown> = {}): Promise<void> {
+  if (!isOrgHostOpen(orgId)) return;
+  const host = hostOf(orgId);
+  const sid = watchSidOf(orgId, projectId);
+  if (!host.configuration(sid)) return;
   try {
-    const p = projectOverseerPaths(orgId, projectId);
-    if (!readPoState(p)) return;
-    const rt = rts.get(keyOf(orgId, projectId));
-    if (own && rt?.session?.isStreaming) return;
-    writeMemo(p, withReason(readMemo(p), reason, soon ? readPoSettings(p).soonLookSec : null, now));
-  } catch {
-    // an org detached meanwhile: nothing to note
+    await host.act(sid, event, payload, { by: "system" } as unknown as Envelope);
+  } catch (err) {
+    console.warn(`[project-overseer] ${sid} ${event}: ${err instanceof Error ? err.message : String(err)}`);
   }
 }
 
-/** The memo with `reason` waiting; `soonSec` (null: none, or Off) sets when a look is due soon,
-    unless one is already set (the first such event since the last look sets when). Pure. */
-function withReason(m: WatchMemo, reason: string, soonSec: number | null, now: number): WatchMemo {
-  const pending = m.pending.includes(reason) ? m.pending : [...m.pending, reason];
-  const soonAt = soonSec !== null && !m.soonAt ? new Date(now + soonSec * 1000).toISOString() : m.soonAt;
-  return { ...m, pending, soonAt };
-}
+/** The settings the watch runs on (overseer.json as read): its level, the Watch switch, the pace, the hold, the caps. */
+const watchSettings = (s: ProjectOverseerSettings) => ({ autonomy: s.autonomy, watch: s.watch, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec, holdMin: s.holdMin, caps: s.caps });
 
-const DO: Record<PoLimitKind, string> = { gather: "start gathering sessions", promote: "promote decisions", create: "start coding sessions", prompt: "prompt coding sessions" };
+/** overseer.json as read now, to the project's watch (a PATCH, an open). */
+export async function syncWatchSettings(orgId: string, projectId: string): Promise<void> {
+  await watchFact(orgId, projectId, "settings/changed", { settings: watchSettings(readPoSettings(projectOverseerPaths(orgId, projectId))) });
+}
 
 /**
- * Held items whose time has come become reasons to look (§app.project-overseer/limits): a day's
- * allowance or the looks at midnight (soon, unless Off), the message allowance's at once (at the
- * normal pace). One with no retry time waits for the operator to raise its limit (releaseRaised).
+ * Run Now: a look now, whatever the reasons, the gap or the Watch switch; never past the looks per
+ * day, a busy overseer or an archived project (the watch chart's `operator/run-now`). A refused one is
+ * recorded on the watch as a skipped run.
  */
-export function releaseHeld(orgId: string, projectId: string, now = clock()): void {
-  const p = projectOverseerPaths(orgId, projectId);
-  let m = readMemo(p);
-  const due = m.held.filter((h) => h.retryAt !== null && Date.parse(h.retryAt) <= now);
-  if (!due.length) return;
-  const soonSec = readPoSettings(p).soonLookSec;
-  m = { ...m, held: m.held.filter((h) => !due.includes(h)) };
-  for (const h of due) {
-    const [ledger, kind] = h.key.split(":") as [string, PoLimitKind | undefined];
-    const at = clockTime(h.since);
-    if (h.key === "looks") m = withReason(m, `Today's looks are back (refused ${at}).`, soonSec, now);
-    else if (ledger === "day" && kind && DO[kind]) m = withReason(m, `Today's allowance is back: it may ${DO[kind]} again (refused ${at}).`, soonSec, now);
-    else if (ledger === "message") m = withReason(m, `The operator's last message reached its limit on ${h.what}; it may go on within today's allowance.`, null, now);
-  }
-  writeMemo(p, m);
-}
-
-/** A PATCH that raised a limit (or made it Unlimited) releases what it held, at once. */
-function releaseRaised(orgId: string, projectId: string, before: ProjectOverseerSettings, after: ProjectOverseerSettings): void {
-  const raised = (a: number | null, b: number | null) => a !== null && (b === null || b > a);
-  const keys = new Map<string, string>();
-  for (const k of PO_LIMIT_KINDS) {
-    if (raised(before.caps[PER_DAY[k]], after.caps[PER_DAY[k]])) keys.set(`day:${k}`, LIMIT_WHAT[k]);
-    if (raised(before.caps[PER_TURN[k]], after.caps[PER_TURN[k]])) keys.set(`message:${k}`, LIMIT_WHAT[k]);
-  }
-  if (raised(before.caps.unattendedPerDay, after.caps.unattendedPerDay)) keys.set("looks", "looks");
-  const p = projectOverseerPaths(orgId, projectId);
-  let m = readMemo(p);
-  const freed = m.held.filter((h) => keys.has(h.key));
-  if (!freed.length) return;
-  m = { ...m, held: m.held.filter((h) => !keys.has(h.key)) };
-  for (const h of freed) m = withReason(m, `You raised the limit on ${keys.get(h.key)}.`, after.soonLookSec, clock());
-  writeMemo(p, m);
-}
-
-/** Start one unattended look now, when the rules allow (the ticker, Run Now). */
-export async function lookNow(orgId: string, projectId: string, force = false): Promise<{ started: boolean; why?: string }> {
+export async function lookNow(orgId: string, projectId: string, _force = true): Promise<{ started: boolean; why?: string }> {
   // Archived: paused, whatever asks (§app.organizations/archive); the route words it for the page.
   if (projectArchived(orgId, projectId)) return { started: false, why: "the project is archived" };
-  const p = projectOverseerPaths(orgId, projectId);
-  const settings = readPoSettings(p);
-  const st = readPoState(p);
-  const path = st ? await pathOfId(st.current) : null;
-  const memo = readMemo(p);
-  const chat = path ? heldChat(path) : undefined;
-  const idle = !chat || (!chat.session.isStreaming && chat.queue.size === 0);
-  const now = clock();
-  const today = dayKey(new Date(now));
-  const d = watchDecision({
-    pending: memo.pending,
-    watch: settings.watch,
-    exists: !!path,
-    idle,
-    now,
-    lastRunAt: memo.lastRunAt ? Date.parse(memo.lastRunAt) : 0,
-    today: memo.perDay[today] ?? 0,
-    perDay: settings.caps.unattendedPerDay,
-    gapMs: settings.watchGapMin * 60_000,
-    force,
-    soonAt: memo.soonAt ? Date.parse(memo.soonAt) : 0,
-  });
-  if (!d.run) {
-    // Only a refusal worth showing is recorded (not the ticker's everyday "nothing new").
-    const daily = d.why?.startsWith("the daily limit");
-    if (force || (memo.pending.length && daily)) {
-      let m: WatchMemo = { ...memo, lastRun: { at: new Date(now).toISOString(), reasons: memo.pending, outcome: "skipped", ...(d.why ? { detail: d.why } : {}) } };
-      // Held until midnight, so the page says what it waits for; the reasons keep.
-      if (daily) m = holdItem(m, { key: "looks", what: "looks", why: `Today's ${settings.caps.unattendedPerDay} looks on its own are used.`, since: new Date(now).toISOString(), retryAt: nextMidnight(new Date(now)).toISOString() });
-      writeMemo(p, m);
-    }
-    return { started: false, ...(d.why ? { why: d.why } : {}) };
-  }
-  const eff = effectiveAutonomy(settings, readRoster(orgId), overseerPausedSince(orgId, projectId));
-  const reasons = memo.pending;
-  const at = new Date(now).toISOString();
-  try {
-    const po = await acquireChat(path!);
-    po.assertModelAllowed();
-    const from = po.session.sessionManager.getBranch().length;
-    const { queued, turn } = po.acceptPrompt(watchText(reasons, eff.autonomy), undefined, "server");
-    const end = (err?: unknown) => recordRunEnd(p, at, runEnd(po, from, err));
-    if (queued) {
-      // Held behind a start or a compaction: it runs as the next turn, which ends at the next settle.
-      const off = onAgentSettled((settledPath) => {
-        if (canonicalPath(settledPath) !== canonicalPath(path!)) return;
-        off();
-        end();
-      });
-    } else
-      void turn.then(
-        () => end(),
-        (err) => {
-          po.reportTurnFailure(err);
-          end(err);
-        },
-      );
-  } catch (err) {
-    const detail = err instanceof Error ? err.message : String(err);
-    memo.lastRun = { at: new Date().toISOString(), reasons, outcome: "skipped", detail };
-    writeMemo(p, memo);
-    return { started: false, why: detail };
-  }
-  writeMemo(p, { ...memo, pending: [], soonAt: null, lastRunAt: at, lastRun: { at, reasons, outcome: "started" }, perDay: { ...memo.perDay, [today]: (memo.perDay[today] ?? 0) + 1 } });
-  return { started: true };
+  const host = hostOf(orgId);
+  const sid = watchSidOf(orgId, projectId);
+  const out = await host.act(sid, "operator/run-now", {}, envelopeFor(orgId, projectId, { by: "operator", attended: true }), { settle: true });
+  if (out.taken) return { started: true };
+  const sentence = out.refusal?.sentence ?? "That can't be done now.";
+  const why = sentence.replace(/^Not started: /, "").replace(/\.$/, "");
+  await host.act(sid, "look/skipped", { detail: why }, { by: "system" } as unknown as Envelope);
+  return { started: false, why };
 }
 
 export const CUT_OFF_DETAIL = "The server restarted during the run.";
@@ -1394,66 +1233,87 @@ function runEnd(chat: ChatSession, from: number, err?: unknown): { outcome: "fin
   return { outcome: "stopped", detail: "The run ended without an answer." };
 }
 
-/** Record how the run started at `at` ended, unless a later run (or a skip) took its place. */
-function recordRunEnd(p: ProjectOverseerPaths, at: string, end: { outcome: "finished" | "stopped" | "cut-off"; detail?: string }): void {
+/**
+ * A look (`:sova/look`, the watch chart's invocation): the watch's message into the overseer's current
+ * conversation as an unattended run (the server's own, never the operator's). Reports how it ended:
+ * finished, stopped with why, or not started (its conversation gone, its model refused).
+ */
+async function runLook(orgId: string, projectId: string, text: string, report: InvocationReport): Promise<void> {
   try {
-    const m = readMemo(p);
-    if (m.lastRun?.at !== at || m.lastRun.outcome !== "started") return;
-    const { detail: _old, ...run } = m.lastRun;
-    writeMemo(p, { ...m, lastRun: { ...run, outcome: end.outcome, ...(end.detail ? { detail: end.detail } : {}) } });
+    const st = readPoState(projectOverseerPaths(orgId, projectId));
+    const path = st ? await pathOfId(st.current) : null;
+    if (!path) return report("not-started", "no conversation yet");
+    const po = await acquireChat(path);
+    po.assertModelAllowed();
+    const from = po.session.sessionManager.getBranch().length;
+    const rt = rtOf(orgId, projectId);
+    rt.lookStarting = true;
+    const { queued, turn } = po.acceptPrompt(text, undefined, "server");
+    const end = (err?: unknown) => {
+      const e = runEnd(po, from, err);
+      // Cut off by this process's shutdown: the next start's resume records it (the chart's `sova/resumed`).
+      if (e.outcome === "cut-off") return;
+      report(e.outcome === "finished" ? "finished" : "stopped", e.detail);
+    };
+    if (queued) {
+      // Held behind a start or a compaction: it runs as the next turn, which ends at the next settle.
+      const off = onAgentSettled((settledPath) => {
+        if (canonicalPath(settledPath) !== canonicalPath(path)) return;
+        off();
+        end();
+      });
+    } else
+      void turn.then(
+        () => end(),
+        (err) => {
+          po.reportTurnFailure(err);
+          end(err);
+        },
+      );
   } catch (err) {
-    console.warn("[project-overseer] run end not recorded:", err instanceof Error ? err.message : String(err));
+    rtOf(orgId, projectId).lookStarting = false;
+    report("not-started", err instanceof Error ? err.message : String(err));
   }
 }
 
-/** A run still `started` from before this process: nothing runs it now (one server per state dir). */
-export function sweepCutOffRuns(processStart = PROCESS_START): void {
-  for (const o of readIndex().orgs) {
-    let projects;
-    try {
-      projects = readProjects(o.id);
-    } catch {
-      continue;
+onOrgHostOpened((host, orgId) => {
+  host.invocations.register("sova/look", {
+    start(inv, report) {
+      const projectId = typeof inv.params?.projectId === "string" ? inv.params.projectId : String(inv.sessionId).split("/")[2] ?? "";
+      void runLook(orgId, projectId, typeof inv.params?.text === "string" ? inv.params.text : "", report);
+    },
+    stop() {},
+  });
+  // overseer.json as it is now (edited by hand, pulled from another host) and the roster: each watch runs on them.
+  void (async () => {
+    for (const s of host.sessions("watch")) {
+      const projectId = typeof s.data.projectId === "string" ? s.data.projectId : "";
+      if (projectId) await syncWatchSettings(orgId, projectId).catch(() => {});
     }
-    for (const pr of projects) {
-      try {
-        const p = projectOverseerPaths(o.id, pr.id);
-        const run = readMemo(p).lastRun;
-        if (run?.outcome === "started" && !(Date.parse(run.at) >= processStart)) recordRunEnd(p, run.at, { outcome: "cut-off", detail: CUT_OFF_DETAIL });
-      } catch {
-        // not a store id shape
-      }
-    }
+    await syncRosterActive(orgId);
+  })();
+});
+
+/** Whether the org's roster has an active person (an empty one keeps every overseer at L0), to each watch that doesn't know it yet. */
+async function syncRosterActive(orgId: string): Promise<void> {
+  if (!isOrgHostOpen(orgId)) return;
+  const host = hostOf(orgId);
+  const rosterActive = host.sessions("person").some((p) => p.configuration.includes("active"));
+  for (const s of host.sessions("watch")) {
+    if (s.data.rosterActive === rosterActive || typeof s.data.projectId !== "string") continue;
+    await watchFact(orgId, s.data.projectId, "facts/changed", { rosterActive });
   }
 }
+onOrgChange((orgId, change) => {
+  if (change.sessions.some((sid) => sid.startsWith("person/") || sid.startsWith("watch/"))) void syncRosterActive(orgId);
+});
 
 /**
- * A hosted session finished a turn: when it is one of the coding sessions a project overseer
- * started (kind "coding", never the operator's "operator-coding"), a reason to look soon.
+ * A hosted session finished a turn: when it is one of the project's builds, its chart hears the turn
+ * end (the overseer's own coding session's is a reason to look soon, the chart's `coding/settled`).
  */
-export function noteCodingSettled(path: string, now = Date.now()): void {
-  const want = canonicalPath(path);
-  for (const o of readIndex().orgs) {
-    let projects;
-    try {
-      projects = readProjects(o.id);
-    } catch {
-      continue;
-    }
-    for (const pr of projects) {
-      try {
-        const p = projectOverseerPaths(o.id, pr.id);
-        const row = readStarted(p).find((r) => r.kind === "coding" && r.path && canonicalPath(r.path) === want);
-        if (!row) continue;
-        const title = readSessionTitles()[row.sessionId] || row.sessionId;
-        const failed = lastTurnFailed(path);
-        noteReason(o.id, pr.id, `The coding session "${title}" ${failed ? "stopped with an error" : "finished its turn"}.`, false, true, now);
-        return;
-      } catch {
-        // not a store id shape
-      }
-    }
-  }
+export function noteCodingSettled(path: string): void {
+  void noteBuildSettled(path, lastTurnFailed(path)).catch((err) => console.warn(`[project-overseer] a build's turn: ${err instanceof Error ? err.message : String(err)}`));
 }
 
 /** Whether the held chat's last assistant message ended in an error or an abort. */
@@ -1468,79 +1328,11 @@ function lastTurnFailed(path: string): boolean {
   return false;
 }
 
-async function tick(): Promise<void> {
-  for (const o of readIndex().orgs) {
-    let projects;
-    try {
-      projects = readProjects(o.id);
-    } catch {
-      continue;
-    }
-    for (const pr of projects) {
-      try {
-        const p = projectOverseerPaths(o.id, pr.id);
-        // Paused by an attach: the watch loop waits (its reasons keep) until the operator sets its level here.
-        if (overseerPausedSince(o.id, pr.id)) continue;
-        // Archived: paused likewise, its reasons kept, until it is unarchived (§app.organizations/archive).
-        if (pr.archived) continue;
-        if (!readPoState(p)) continue;
-        releaseHeld(o.id, pr.id);
-        if (!readMemo(p).pending.length) continue;
-        await lookNow(o.id, pr.id);
-      } catch (err) {
-        console.warn("[project-overseer] watch failed:", err instanceof Error ? err.message : String(err));
-      }
-    }
-  }
-}
-
-const batonTitle = (sessionId: string) => batonById(sessionId)?.row.publicTitle ?? sessionId;
-
-/** A baton event as a reason to look (the loop's listener; exported for the tests). */
-export function noteBatonEvent(e: BatonEvent): void {
-  // A decision recorded mid-session is not a reason on its own: the session's end is, and it
-  // comes with its decisions (a settle session's answer reaches the reconciler, whose events are).
-  if (e.type === "done") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" reached its goal.`, false, true);
-  else if (e.type === "closed") noteReason(e.orgId, e.projectId, `The gathering session "${batonTitle(e.sessionId)}" was closed.`);
-  else if (e.type === "proposal") noteReason(e.orgId, e.projectId, `Someone was referred in "${batonTitle(e.sessionId)}" (a proposed roster person).`);
-  // Its own gathering session's model put a question to the operator (a person's request it passed
-  // on): the overseer, who started it, acts on it, not only the operator.
-  else if (e.type === "asked-operator") {
-    const row = batonById(e.sessionId)?.row;
-    if (row && ownedBy(row, e.projectId)) noteReason(e.orgId, e.projectId, `The gathering session "${row.publicTitle}" handed a question to the operator (their words, as data): "${e.question ?? ""}"`, false, true);
-  }
-}
-
-/** One tick of the watch loop, now (tests). */
-export const tickForTest = (): Promise<void> => tick();
-
 let started = false;
-/** Start the listeners and the ticker (index.ts, once). */
+/** Start the listeners (index.ts, once). The looks themselves are the watch charts' timers. */
 export function startProjectOverseerLoop(): void {
   if (started) return;
   started = true;
-  sweepCutOffRuns();
-  onBatonEvent(noteBatonEvent);
-  onReconcileEvent((e) => {
-    const n = e.ids.length;
-    if (e.type === "conflict") noteReason(e.orgId, e.projectId, `${n} new conflict${n === 1 ? "" : "s"} between decisions.`, true);
-    else if (e.type === "resolved") noteReason(e.orgId, e.projectId, `${n} conflict${n === 1 ? " was" : "s were"} resolved.`, true);
-    // The operator's promotion is news (a look soon: what it promoted may be ready to build); its own is not.
-    else if (e.type === "promoted" && e.by !== "overseer" && n) noteReason(e.orgId, e.projectId, `The operator promoted ${n} decision${n === 1 ? "" : "s"} into the spec.`, false, true);
-    else if (e.type === "promoted") noteReason(e.orgId, e.projectId, `${n} decision${n === 1 ? " was" : "s were"} promoted into the spec.`, true);
-    else if (e.type === "drafted") noteReason(e.orgId, e.projectId, `${n} decision${n === 1 ? " is" : "s are"} drafted and promotable.`, true);
-  });
-  // A coding session it started finished a turn (the operator's own never wake it).
+  // A coding session finished a turn: its build hears it (the overseer's own wake it; the operator's never).
   onAgentSettled((path) => noteCodingSettled(path));
-  let ticking = false;
-  const timer = setInterval(() => {
-    if (ticking) return;
-    ticking = true;
-    tick()
-      .catch((err) => console.warn("[project-overseer] tick failed:", err instanceof Error ? err.message : String(err)))
-      .finally(() => {
-        ticking = false;
-      });
-  }, WATCH_TICK_MS);
-  timer.unref();
 }

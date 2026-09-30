@@ -2,7 +2,7 @@
 // workspace and project root in the OS temp dir, deleted after; ~/.pi is never read or written.
 //
 // Which sessions are organizational (SessionSummary.org, server/org-sessions.ts): from the org's own
-// records — workspace files and started.json coding rows — never from a folder.
+// records — workspace files and the builds' charts — never from a folder.
 import assert from "node:assert/strict";
 import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -24,6 +24,8 @@ const { getSessionSummary, listSessions, recentCwds } = await import("./sessions
 const { sessionItems } = await import("./attention");
 const { canonicalPath } = await import("./paths");
 const { settled } = await import("./workspace-git");
+const { seedBuild, seedPoState } = await import("./org-test-fixtures");
+const { readBuilds } = await import("./build-loadout");
 
 after(async () => {
   await settled(join(root, "ws"));
@@ -55,24 +57,24 @@ describe("SessionSummary.org", async () => {
   const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
   const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
 
-  const gathering = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "g" });
-  const offer = baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Payroll", goal: "g" });
-  const done = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Budget", goal: "g" });
-  baton.markDone(done.sessionId);
+  const gathering = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "g" });
+  const offer = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Payroll", goal: "g" });
+  const done = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Budget", goal: "g" });
+  await baton.markDone(done.sessionId);
 
   const marker = { type: "custom", id: "c1", parentId: null, timestamp: "2026-09-27T00:00:00.500Z", customType: PROJECT_OVERSEER_ENTRY, data: { v: 1, orgId: org.id, projectId: project.id } };
   const cleared = sessionFile(wsSessions, join(root, "proj"), "Overseer before the clear", [marker]);
   const current = sessionFile(wsSessions, join(root, "proj"), "Overseer now", [marker]);
-  const p = store.projectOverseerPaths(org.id, project.id);
-  store.writePoState(p, { version: 1, current: current.id, history: [cleared.id] });
+  await seedPoState(org.id, project.id, { current: current.id, history: [cleared.id] });
   const stray = sessionFile(wsSessions, ws, "Unregistered file in the workspace");
 
   const userSessions = join(agentDir, "sessions", "--proj--");
   const coding = sessionFile(userSessions, join(root, "proj"), "Coding session the overseer started");
   const operatorCoding = sessionFile(userSessions, join(root, "proj"), "Start coding session on a to-do");
   const byHand = sessionFile(userSessions, join(root, "proj"), "The operator's own session in the project root");
-  store.noteStarted(p, coding.id, "coding", new Date(), coding.path);
-  store.noteStarted(p, operatorCoding.id, "operator-coding", new Date(), operatorCoding.path);
+  // The overseer's build in its worktree; the operator's in the project root.
+  await seedBuild(org.id, project.id, { sessionId: coding.id, kind: "coding", path: coding.path, worktree: { path: join(root, "wt"), branch: "sova/x", base: "abc", target: "main" } });
+  await seedBuild(org.id, project.id, { sessionId: operatorCoding.id, kind: "operator-coding", path: operatorCoding.path });
   // A copy of a baton transcript outside the workspace (same id), and a fork of the coding session (new id).
   const copyPath = join(userSessions, basename(gathering.path));
   copyFileSync(gathering.path, copyPath);
@@ -92,7 +94,7 @@ describe("SessionSummary.org", async () => {
     assert.deepEqual(list.get(stray.path)?.org, { orgId: org.id, orgName: "Mamluk Arabia", kind: "other" });
   });
 
-  test("started.json coding rows of both kinds are the project's coding sessions; the list and the single summary agree", async () => {
+  test("builds of both kinds are the project's coding sessions; the list and the single summary agree", async () => {
     const list = await byPath();
     assert.deepEqual(list.get(coding.path)?.org, { ...ref, kind: "coding" });
     assert.deepEqual(list.get(operatorCoding.path)?.org, { ...ref, kind: "coding" });
@@ -119,11 +121,7 @@ describe("SessionSummary.org", async () => {
 
   test("a build merged per git is finished; the others are not", async () => {
     const { noteBuildMerged, resetBuildMerged } = await import("./build-merged");
-    // Its row as a worktree build records it; the operator's stays in the project root.
-    const rows = store.readStarted(p);
-    const before = structuredClone(rows);
-    rows.find((r) => r.sessionId === coding.id)!.worktree = { path: join(root, "wt"), branch: "sova/x", base: "abc", target: "main" };
-    store.writeStarted(p, rows);
+    // The overseer's build is in its worktree; the operator's stays in the project root.
     try {
       noteBuildMerged(coding.id, true);
       assert.equal(orgLookup().of(coding.path, coding.id)?.finished, true);
@@ -131,13 +129,12 @@ describe("SessionSummary.org", async () => {
       noteBuildMerged(coding.id, false);
       assert.equal(orgLookup().of(coding.path, coding.id)?.finished, undefined, "new commits since: not merged");
     } finally {
-      store.writeStarted(p, before);
       resetBuildMerged();
     }
   });
 
   test("the overseer's budget and caps read only its own coding rows", () => {
-    const rows = store.readStarted(p);
+    const rows = readBuilds(org.id, project.id);
     assert.deepEqual(rows.map((r) => r.kind).sort(), ["coding", "operator-coding"]);
     // codingOf (project-overseer.ts) filters `kind === "coding"`: the one row the overseer started.
     assert.deepEqual(rows.filter((r) => r.kind === "coding").map((r) => r.sessionId), [coding.id]);

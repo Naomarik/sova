@@ -2,6 +2,7 @@
 // session's progress (§app.organizations/org-sessions): `written` once someone it was sent to has
 // written, `opened` once a person opened one of its links, `settle` for a settle session; and the
 // startup backfill for rows from before those marks. A throwaway PI_CODING_AGENT_DIR and workspace.
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -18,8 +19,7 @@ const orgs = await import("./orgs");
 const baton = await import("./baton");
 const { liveLinks } = await import("./baton-links");
 const { recordOpen } = await import("./visits");
-const { writeConflicts } = await import("./decisions");
-const { backfillBatonMarks } = await import("./baton-marks");
+const { seedConflicts } = await import("./org-test-fixtures");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
@@ -28,8 +28,7 @@ mkdirSync(join(root, "proj"));
 const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
 const sara = await orgs.addPerson(org.id, { name: "Sara Haddad", role: "Owner" });
 const ali = await orgs.addPerson(org.id, { name: "Ali Nasser", role: "IT" });
-const start = (to: string | string[], extra: Record<string, unknown> = {}) =>
-  baton.createBaton({ orgId: org.id, projectId: project.id, to, publicTitle: "Logo", goal: "Which logo?", ...extra });
+const start = (to: string | string[], extra: Record<string, unknown> = {}) => baton.createBaton({ orgId: org.id, projectId: project.id, to, publicTitle: "Logo", goal: "Which logo?", ...extra });
 const field = (path: string) => baton.batonSummaryField(path)!;
 const CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36";
 
@@ -43,8 +42,8 @@ function writeSent(path: string, by: string, at = "2026-09-01T10:00:00.000Z"): v
 }
 
 describe("written", () => {
-  test("a fresh session is not written; the operator writing in a person's session doesn't count; the person does", () => {
-    const c = start(sara.id);
+  test("a fresh session is not written; the operator writing in a person's session doesn't count; the person does", async () => {
+    const c = await start(sara.id);
     assert.equal(field(c.path).written, undefined);
     // The operator can write here only after taking it back; that message is never Sara's.
     assert.equal(baton.wroteForIt(baton.batonById(c.sessionId)!.row, OPERATOR), false, "the operator is not who it was sent to");
@@ -54,15 +53,15 @@ describe("written", () => {
     assert.ok(baton.batonById(c.sessionId)!.row.wroteAt, "kept on the registry row");
   });
 
-  test("an offer is written once any invitee writes", () => {
-    const c = start([sara.id, ali.id]);
+  test("an offer is written once any invitee writes", async () => {
+    const c = await start([sara.id, ali.id]);
     assert.equal(field(c.path).written, undefined);
     baton.noteMessage(c.sessionId, ali.id);
     assert.equal(field(c.path).written, true);
   });
 
-  test("a session sent to the operator is written once the operator writes", () => {
-    const c = start(OPERATOR);
+  test("a session sent to the operator is written once the operator writes", async () => {
+    const c = await start(OPERATOR);
     assert.equal(field(c.path).written, undefined);
     baton.noteMessage(c.sessionId, OPERATOR);
     assert.equal(field(c.path).written, true);
@@ -70,8 +69,8 @@ describe("written", () => {
 });
 
 describe("opened", () => {
-  test("a person opening a link marks it opened; a link previewer doesn't; opened is not written", () => {
-    const c = start(sara.id);
+  test("a person opening a link marks it opened; a link previewer doesn't; opened is not written", async () => {
+    const c = await start(sara.id);
     const link = liveLinks(c.sessionId, 1)[0]!;
     recordOpen(link, { userAgent: "Slackbot-LinkExpanding 1.0 (+https://api.slack.com/robots)" });
     assert.equal(field(c.path).opened, undefined, "a preview is no person");
@@ -82,36 +81,28 @@ describe("opened", () => {
 });
 
 describe("settle", () => {
-  test("a session started for a conflict carries its area; an ordinary one carries none", () => {
-    const plain = start(sara.id);
+  test("a session started for a conflict carries its area; an ordinary one carries none", async () => {
+    const plain = await start(sara.id);
     assert.equal(field(plain.path).settle, undefined);
-    const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: ali.id, publicTitle: "Settle: invoicing", goal: "g", settle: { conflictId: "cf_12345678", area: "invoicing" }, mintLink: false });
-    assert.deepEqual(baton.batonById(s.sessionId)!.row.conflict, { id: "cf_12345678", area: "invoicing" });
-    assert.deepEqual(field(s.path).settle, { area: "invoicing" });
+    // The conflict chart starts its settle session.
+    const sessions = await seedConflicts(org.id, project.id, [{ id: "cf_12345678", orgId: org.id, projectId: project.id, areaKey: "invoicing", a: "d1", b: "d2", p: 0.9, routedTo: ali.id, routeReason: "Ali decides invoicing.", batonSessionId: randomUUID(), state: "open", createdAt: new Date().toISOString() }]);
+    const s = baton.batonById(sessions.cf_12345678!)!;
+    assert.deepEqual(s.row.conflict, { id: "cf_12345678", area: "invoicing" });
+    assert.deepEqual(field(baton.sessionPathOf(s.dir, s.row)).settle, { area: "invoicing" });
   });
 });
 
-describe("backfill of rows from before the marks", () => {
-  test("wroteAt from the transcript's first message by someone it was sent to; conflict from the conflict naming the session", async () => {
-    const byPerson = start(sara.id);
-    const byOperator = start(ali.id);
-    const toOperator = start(OPERATOR);
-    writeSent(byPerson.path, OPERATOR, "2026-09-01T09:00:00.000Z");
-    writeSent(byPerson.path, sara.id, "2026-09-01T10:00:00.000Z");
-    writeSent(byOperator.path, OPERATOR);
-    writeSent(toOperator.path, OPERATOR, "2026-09-02T08:00:00.000Z");
-    const conflict: Conflict = {
-      id: "cf_abcdefgh", orgId: org.id, projectId: project.id, areaKey: "hosting", a: "x:1", b: "y:2", p: 0.9, routedTo: ali.id,
-      routeReason: "Ali decides hosting.", batonSessionId: byOperator.sessionId, state: "open", createdAt: "2026-09-01T00:00:00.000Z",
-    };
-    writeConflicts(org.id, project.id, [conflict]);
-    const changed = await backfillBatonMarks();
-    assert.deepEqual(changed.sort(), [byPerson.sessionId, byOperator.sessionId, toOperator.sessionId].sort());
-    assert.equal(baton.batonById(byPerson.sessionId)!.row.wroteAt, "2026-09-01T10:00:00.000Z", "the person's message, not the operator's earlier one");
-    assert.equal(baton.batonById(byOperator.sessionId)!.row.wroteAt, undefined);
-    assert.equal(baton.batonById(toOperator.sessionId)!.row.wroteAt, "2026-09-02T08:00:00.000Z");
-    assert.deepEqual(baton.batonById(byOperator.sessionId)!.row.conflict, { id: "cf_abcdefgh", area: "hosting" }, "the conflict's area key when no decision names it");
-    assert.deepEqual(field(byOperator.path).settle, { area: "hosting" });
-    assert.deepEqual(await backfillBatonMarks(), [], "a second pass changes nothing");
+describe("the marks are chart data from the start (C18: no backfill)", () => {
+  test("wroteAt: the first message by someone it was sent to, never the operator's", async () => {
+    const byPerson = await start(sara.id);
+    const byOperator = await start(ali.id);
+    await baton.takeBack(byOperator.sessionId);
+    baton.noteMessage(byOperator.sessionId, OPERATOR);
+    assert.equal(baton.batonById(byOperator.sessionId)!.row.wroteAt, undefined, "the operator's own message is not the person's");
+    baton.noteMessage(byPerson.sessionId, sara.id);
+    const at = baton.batonById(byPerson.sessionId)!.row.wroteAt;
+    assert.ok(at && Number.isFinite(Date.parse(at)));
+    baton.noteMessage(byPerson.sessionId, sara.id);
+    assert.equal(baton.batonById(byPerson.sessionId)!.row.wroteAt, at, "the first one stays");
   });
 });

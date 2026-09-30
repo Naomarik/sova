@@ -94,7 +94,7 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
     await orgs.setOrgOwner(org.id, alp.id);
     await orgs.patchOrg(org.id, { about: "They are selling the academy next spring and must not hear of it." });
     writeNotes("Kim tends to overpromise on delivery dates, check with Bob.\n", store.projectOverseerPaths(org.id, pa.id).notes);
-    baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "Find out whether Kim will accept weekend shifts quietly", mintLink: false });
+    await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "Find out whether Kim will accept weekend shifts quietly" }, { mintLink: false });
     const PRIVATE = "This update repeats text from About this organization or your notes. Updates are for the client: write it again in your own words.";
     for (const [text, why] of [
       ["Good news: they are selling the academy next spring.", PRIVATE],
@@ -113,12 +113,12 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
     assert.equal(po.attendedForTest(org.id, pa.id), false);
     const NOTHING = "Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged.";
     await assert.rejects(() => run("The opening hours are agreed."), (e: Error) => e.message === NOTHING);
-    const s = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "g", mintLink: false });
-    baton.setHiddenFromOwner(s.sessionId, true);
-    baton.markDone(s.sessionId);
+    const s = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours", goal: "g" }, { mintLink: false });
+    await baton.setHiddenFromOwner(s.sessionId, true);
+    await baton.markDone(s.sessionId);
     await assert.rejects(() => run("The opening hours are agreed."), (e: Error) => e.message === NOTHING, "a hidden conversation is no milestone");
-    const t = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours 2", goal: "g", mintLink: false });
-    baton.markDone(t.sessionId);
+    const t = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours 2", goal: "g" }, { mintLink: false });
+    await baton.markDone(t.sessionId);
     const out = await run("The opening hours are agreed: 9 to 6, closed Mondays. See https://demo.example.test");
     assert.match(JSON.stringify(out.content), /Posted to Alperen Kaya's owner page/);
     await assert.rejects(() => run("More news."), /^Error: An update was posted less than an hour ago: at most one a day\.$/);

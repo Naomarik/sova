@@ -1,6 +1,7 @@
 // Run: pnpm exec tsx --test server/project-costs.test.ts. A project's cost at API prices
 // (§app/project-costs): every source of a fixture org, priced per message by a fake price table.
 // A throwaway PI_CODING_AGENT_DIR, workspace and CLAUDE_CONFIG_DIR in the OS temp dir, deleted after.
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { appendFileSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ mkdirSync(join(tmp, "agent", "sessions"), { recursive: true });
 
 const orgs = await import("./orgs");
 const baton = await import("./baton");
+const { seedBuild, seedConflicts } = await import("./org-test-fixtures");
 const store = await import("./project-overseer-store");
 const costs = await import("./project-costs");
 const ledger = await import("./project-costs-ledger");
@@ -95,14 +97,16 @@ describe("a project's cost (§app/project-costs)", async () => {
   ]));
 
   // The operator's gathering session with a wrap-up; the overseer's settle session.
-  const g = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Payroll", goal: "g" });
+  const g = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Payroll", goal: "g" });
   appendFileSync(g.path, lines([
     reply(T0 + 10_000, "zai", "glm-5.3", usage(2_000_000)),
     { type: "custom", id: id(), customType: "sova-baton-wrapup", data: { v: 1, phase: "start" }, timestamp: iso(T0 + 20_000) },
     reply(T0 + 21_000, "zai", "glm-5.3", usage(0, 100_000)),
     { type: "custom", id: id(), customType: "sova-baton-wrapup", data: { v: 1, phase: "end", applied: [], refused: [] }, timestamp: iso(T0 + 22_000) },
   ]));
-  const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Settle", goal: "g", owner: { overseerOf: project.id }, settle: { conflictId: "cf_1", area: "pay" } });
+  const sessions = await seedConflicts(org.id, project.id, [{ id: "cf_1", orgId: org.id, projectId: project.id, areaKey: "pay", a: "d1", b: "d2", p: 0.9, routedTo: maria.id, routeReason: "Maria decides pay.", batonSessionId: randomUUID(), state: "open", createdAt: new Date(T0).toISOString() }], { owner: { overseerOf: project.id } });
+  const settle = baton.batonById(sessions.cf_1!)!;
+  const s = { path: baton.sessionPathOf(settle.dir, settle.row) };
   appendFileSync(s.path, lines([reply(T0 + 30_000, "free", "llama", usage(5_000_000))]));
 
   // Coding sessions: the overseer's (bridge messages, before and after the bridge fix) with a forked
@@ -139,12 +143,10 @@ describe("a project's cost (§app/project-costs)", async () => {
   ]));
   const codeB = join(sess, "code-b.jsonl");
   writeFileSync(codeB, lines([header(T0), reply(T0 + 100_000, "nopr", "spark", usage(123)), reply(T0 + 101_000, "zai", "glm-5.3", usage(400_000)), reply(T0 + 102_000, "zai", "glm-5.3", usage(3_500_000)), reply(T0 + 103_000, "period", "p", usage(1_000_000)), reply(T0 + 300_000, "period", "p", usage(1_000_000))]));
-  store.noteStarted(pp, "code-a", "coding", new Date(T0), codeA, { title: "Build A" });
-  store.noteStarted(pp, "code-b", "operator-coding", new Date(T0), codeB, { title: "Build B" });
-  // A row from another host, counted only by the removed token budget: unpriced.
-  store.noteStarted(pp, "code-far", "coding", new Date(T0), "/elsewhere/far.jsonl", { title: "Far" });
-  const rows = store.readStarted(pp);
-  store.writeStarted(pp, rows.map((r) => (r.sessionId === "code-far" ? { ...r, tokens: 4242 } : r)));
+  await seedBuild(org.id, project.id, { sessionId: "code-a", kind: "coding", path: codeA, title: "Build A", createdAt: T0 });
+  await seedBuild(org.id, project.id, { sessionId: "code-b", kind: "operator-coding", path: codeB, title: "Build B", createdAt: T0 });
+  // A build on another host with no count in the ledger: nothing to price (the legacy token count went with started.json).
+  await seedBuild(org.id, project.id, { sessionId: "code-far", kind: "coding", path: "/elsewhere/far.jsonl", title: "Far", createdAt: T0 });
 
   // The reconciler: the operator's Reconcile Now and an automatic run.
   ledger.appendUsage(lp, { at: iso(T0), kind: "reconcile", by: "operator", provider: "zai", model: "glm-5.3", input: 1_000_000, output: 0, cacheRead: 0, cacheWrite: 0 });
@@ -162,7 +164,7 @@ describe("a project's cost (§app/project-costs)", async () => {
   const CODE_B_REAL = 0.4 + 3.5 * 2 + 1 + 2; // one message under the tier, one over it; one each side of a new price period the same day
   const RECONCILE = 1;
 
-  test("every source, priced per message: kinds, starters, models, estimates, unpriced, legacy", async () => {
+  test("every source, priced per message: kinds, starters, models, estimates, unpriced", async () => {
     const c = await costs.projectCost(org.id, project.id);
     const kind = (k: string) => c.byKind.find((r) => r.kind === k)?.usd ?? 0;
     approx(kind("overseer"), PO, "overseer");
@@ -190,7 +192,7 @@ describe("a project's cost (§app/project-costs)", async () => {
     assert.equal(unpriced["jev/jev-1"]?.tokens, 55);
     assert.equal(unpriced["zai/glm-5.3"]?.tokens, 300_000, "a tool result's own usage names no model: unpriced");
     assert.equal(unpriced["zai/glm-5.3"]?.why, "A tool's own model calls, with no model recorded.");
-    assert.deepEqual(unpriced.unknown, { model: "unknown", tokens: 4242, why: "Counted before costs, no model recorded." });
+    assert.equal(unpriced.unknown, undefined, "no legacy count: a build elsewhere with no ledger row adds nothing");
 
     const local = c.byModel.find((m) => m.status === "free");
     assert.equal(local?.why, "local");
@@ -211,8 +213,6 @@ describe("a project's cost (§app/project-costs)", async () => {
     assert.ok(!text.includes(tmp), "no host path in the repo's ledger");
     const before = await costs.projectCost(org.id, project.id);
     unlinkSync(codeB);
-    // started.json keeps at most 200 rows: code-b's row falls off.
-    store.writeStarted(pp, store.readStarted(pp).filter((r) => r.sessionId !== "code-b"));
     clock += 120_000;
     const c = await costs.projectCost(org.id, project.id);
     approx(c.totalUsd, before.totalUsd, "a running cost never shrinks");
@@ -227,7 +227,7 @@ describe("a project's cost (§app/project-costs)", async () => {
     const theirs = r.projects.find((p) => p.projectId === other.id)!;
     approx(theirs.totalUsd, 2.5, "the other overseer's conversation is its own project's");
     approx(r.totalUsd, mine.totalUsd + theirs.totalUsd);
-    assert.ok(mine.unpricedTokens >= 4242);
+    assert.ok(mine.unpricedTokens >= 123 + 55 + 300_000);
   });
 
   test("an unknown project is a 404", async () => {

@@ -1,6 +1,7 @@
 // Run: pnpm exec tsx --test server/org-portable.test.ts. A throwaway PI_CODING_AGENT_DIR, workspace
 // repos, clones and project roots in the OS temp dir, deleted after; ~/.pi is never touched. No
 // model is called: runtimes are opened, never prompted.
+import { randomUUID } from "node:crypto";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
@@ -31,6 +32,8 @@ const { isWebSession, removeWebSession } = await import("./web-sessions");
 const { stateRoot } = await import("./state-root");
 const { getSessionSummary } = await import("./sessions-index");
 const { hostOf } = await import("./org-engine");
+const { seedBuild, seedConflicts } = await import("./org-test-fixtures");
+const { readBuilds } = await import("./build-loadout");
 
 after(async () => {
   await disposeAllChats();
@@ -40,58 +43,27 @@ after(async () => {
 
 const git = (dir: string, ...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
 
-describe("the overseer's started list moves from the host-local memo into the repo", async () => {
+describe("the sessions it started are the charts' (q1: no started.json; C13: no legacy list)", async () => {
   const org = await orgs.createOrg({ name: "Migrate", dir: join(root, "ws-m") });
   mkdirSync(join(root, "proj-m"));
   const project = await orgs.addProject(org.id, { name: "M", root: join(root, "proj-m") });
   const p = store.projectOverseerPaths(org.id, project.id);
-  const legacy = [
-    { sessionId: "s-gather", kind: "gathering", createdAt: "2026-09-01T00:00:00.000Z" },
-    { sessionId: "s-code", kind: "coding", createdAt: "2026-09-02T00:00:00.000Z", path: "/nowhere/s-code.jsonl" },
-  ];
-  const writeLegacy = () => {
-    mkdirSync(join(p.memo, ".."), { recursive: true });
-    writeFileSync(p.memo, JSON.stringify({ version: 1, pending: ["a reason"], lastRunAt: null, lastRun: null, perDay: { "2026-09-01": 2 }, started: legacy }));
-  };
+  const started = join(p.dir, "started.json");
 
-  test("the paths: started.json in the repo, the watch memo and turn counters under the host's state root", () => {
-    assert.ok(p.started.startsWith(join(orgs.orgDir(org.id), "projects", project.id, "overseer")));
-    assert.ok(p.memo.startsWith(stateRoot()) && p.turn.startsWith(stateRoot()));
+  test("the paths: the turn counters under the host's state root; no started.json, no watch memo", () => {
+    assert.ok(p.turn.startsWith(stateRoot()));
+    assert.equal("started" in p, false);
+    assert.equal("memo" in p, false);
   });
 
-  test("read: the old location while the new one is absent, and reading writes nothing", () => {
-    writeLegacy();
-    assert.deepEqual(store.readStarted(p).map((s) => s.sessionId), ["s-gather", "s-code"]);
-    assert.equal(existsSync(p.started), false, "a read never moves it");
-    assert.ok("started" in JSON.parse(readFileSync(p.memo, "utf8")));
-  });
-
-  test("the first write moves it: started.json has the old rows and the new one; the memo keeps only its own", () => {
-    store.noteStarted(p, "s-new", "offer");
-    const moved = JSON.parse(readFileSync(p.started, "utf8"));
-    assert.deepEqual(moved.sessions.map((s: { sessionId: string }) => s.sessionId), ["s-gather", "s-code", "s-new"]);
-    assert.equal(moved.sessions[1].path, "/nowhere/s-code.jsonl");
-    const memo = JSON.parse(readFileSync(p.memo, "utf8"));
-    assert.equal("started" in memo, false, "moved, not copied");
-    assert.deepEqual([memo.pending, memo.perDay], [["a reason"], { "2026-09-01": 2 }], "the memo's own fields stay");
-  });
-
-  test("a memo write alone also moves it, and never loses the list", () => {
-    rmSync(p.started);
-    writeLegacy();
-    store.writeMemo(p, { ...store.readMemo(p), pending: [] });
-    assert.deepEqual(store.readStarted(p).map((s) => s.sessionId), ["s-gather", "s-code"]);
-    assert.equal("started" in JSON.parse(readFileSync(p.memo, "utf8")), false);
-    // An old list reappearing beside the new file (an old server wrote it) is dropped, not merged over it.
-    writeLegacy();
-    store.noteStarted(p, "s-later", "gathering");
-    assert.deepEqual(store.readStarted(p).map((s) => s.sessionId), ["s-gather", "s-code", "s-later"]);
-  });
-
-  test("a legacy tokens count on a row still reads (the cost shows it as unpriced where the file is missing)", () => {
-    const raw = JSON.parse(readFileSync(p.started, "utf8"));
-    writeFileSync(p.started, JSON.stringify({ ...raw, sessions: raw.sessions.map((s: { sessionId: string }) => (s.sessionId === "s-code" ? { ...s, tokens: 1234 } : s)) }));
-    assert.equal(store.readStarted(p).find((s) => s.sessionId === "s-code")?.tokens, 1234);
+  test("an old memo's started list is never read nor moved (C13)", () => {
+    const memo = join(stateRoot(), "project-overseers", `${org.id}-${project.id}`, "watch.json");
+    mkdirSync(join(memo, ".."), { recursive: true });
+    const legacy = [{ sessionId: "s-code", kind: "coding", createdAt: "2026-09-02T00:00:00.000Z", path: "/nowhere/s-code.jsonl" }];
+    writeFileSync(memo, JSON.stringify({ version: 1, pending: ["a reason"], lastRunAt: null, lastRun: null, perDay: { "2026-09-01": 2 }, started: legacy }));
+    assert.deepEqual(readBuilds(org.id, project.id), []);
+    assert.deepEqual(store.readMemo(p).pending, [], "nor its reasons: the watch chart's are the loop's");
+    assert.equal(existsSync(started), false, "nothing moved into the repo");
   });
 });
 
@@ -102,12 +74,14 @@ describe("clone + attach = the whole organization", async () => {
   await orgs.applyChange(a.id, tony.id, { skills: ["SAP"] }, { kind: "wrapup", sessionId: "s", quote: "I run SAP" });
   mkdirSync(join(root, "proj-a"));
   const project = await orgs.addProject(a.id, { name: "Portal", root: join(root, "proj-a") });
-  const c1 = baton.createBaton({ orgId: a.id, projectId: project.id, to: tony.id, publicTitle: "Payroll day", goal: "Find the payroll day" });
+  const c1 = await baton.createBaton({ orgId: a.id, projectId: project.id, to: tony.id, publicTitle: "Payroll day", goal: "Find the payroll day" });
   const again = baton.rotateLink(c1.sessionId);
   const overseer = await po.ensureProjectOverseer(a.id, project.id);
-  const pA = store.projectOverseerPaths(a.id, project.id);
-  store.noteStarted(pA, c1.sessionId, "gathering");
+  // A build of the project, merged (its worktree's folder was this host's).
+  await seedBuild(a.id, project.id, { sessionId: "code-moved", kind: "coding", title: "Moved build", worktree: { path: join(root, "wt-a"), branch: "sova/moved-abc123", base: "abc", target: "main" }, merged: { commit: "c0ffee" } });
   await po.patchProjectOverseer(a.id, project.id, { autonomy: "L2" });
+  // A conflict asking Tony in its settle session (the conflict chart starts it).
+  const seeded = await seedConflicts(a.id, project.id, [{ id: "cf_moved", orgId: a.id, projectId: project.id, areaKey: "payroll", a: "x", b: "y", p: 0.9, state: "open", routedTo: tony.id, routeReason: "owner", batonSessionId: randomUUID(), createdAt: "2026-09-27T00:00:00.000Z" }]);
   await orgs.patchOrg(a.id, { about: "Northwind closes its books on the 5th." });
   const tokens = [c1.token!, again.token];
   // Tony opened his link once (§app.baton/visits): the log is in the repo and moves with it.
@@ -143,7 +117,9 @@ describe("clone + attach = the whole organization", async () => {
     for (const f of ["org.json", "roster.json", "projects.json", "holder.json"]) assert.ok(!files.includes(f), `no ${f}`);
     // Host-local charts (the residence, the watches) stay on the host.
     assert.ok(!files.some((f) => f.startsWith("charts/residence/") || f.startsWith("charts/watch/")), "nothing host-local");
-    for (const f of ["overseer.json", "state.json", "started.json"]) assert.ok(files.includes(`projects/${project.id}/overseer/${f}`), f);
+    assert.ok(files.includes(`projects/${project.id}/overseer/overseer.json`), "overseer.json");
+    for (const f of ["started.json", "state.json"]) assert.ok(!files.includes(`projects/${project.id}/overseer/${f}`), `no ${f}`);
+    assert.ok(files.includes(snapshot("build", `build/${a.id}/${project.id}/code-moved`)), "the build's snapshot");
     assert.ok(files.some((f) => f.startsWith("sessions/") && f.endsWith(`_${overseer.id}.jsonl`)), "the overseer's transcript");
   });
 
@@ -169,7 +145,8 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(info.exists, true);
     assert.equal(info.id, overseer.id);
     assert.equal(info.settings.autonomy, "L2", "its setting came along");
-    assert.ok(store.readStarted(store.projectOverseerPaths(b.id, project.id)).some((s) => s.sessionId === c1.sessionId), "the sessions it started");
+    const moved = readBuilds(b.id, project.id).find((r) => r.sessionId === "code-moved");
+    assert.deepEqual(moved && [moved.kind, moved.title, moved.worktree?.branch, moved.merged?.commit, moved.path], ["coding", "Moved build", "sova/moved-abc123", "c0ffee", undefined], "the builds it started, merged, with no file on this host");
   });
 
   test("its project overseers are paused at L0 until the operator sets a level on this host", async () => {
@@ -234,19 +211,14 @@ describe("clone + attach = the whole organization", async () => {
   test("a conflict's settle session is found by its id here; the repo keeps no host path for it", async () => {
     const decisions = await import("./decisions");
     const reconcile = await import("./reconcile");
-    const file = join(bDir, "projects", project.id, "conflicts.json");
-    const conflict = { id: "cf_moved", orgId: b.id, projectId: project.id, areaKey: "payroll", a: "x", b: "y", state: "open", routedTo: tony.id, routeReason: "owner", batonSessionId: c1.sessionId, batonPath: "/old/host/ws/sessions/gone.jsonl", createdAt: "2026-09-27T00:00:00.000Z" };
-    mkdirSync(join(bDir, "projects", project.id), { recursive: true });
-    writeFileSync(file, JSON.stringify({ version: 1, conflicts: [conflict, { ...conflict, id: "cf_unknown", batonSessionId: "not-here" }] }));
-    const here = baton.sessionPathOf(bDir, baton.batonById(c1.sessionId)!.row);
+    const settle = baton.batonById(seeded.cf_moved!)!;
+    const here = baton.sessionPathOf(bDir, settle.row);
     const read = decisions.readConflicts(b.id, project.id);
-    assert.equal(read[0]!.batonPath, here, "this host's file, not the old host's");
-    assert.equal(read[1]!.batonPath, undefined, "a session unknown here has no path");
+    assert.equal(read.find((c) => c.id === "cf_moved")!.batonPath, here, "this host's file, not the old host's");
     assert.equal(reconcile.listDecisions(b.id, project.id).conflicts.find((c) => c.id === "cf_moved")!.batonPath, here);
     assert.equal(personPage(b.id, tony.id).conflicts.find((c) => c.id === "cf_moved")!.batonPath, here, "the person page too");
-    decisions.writeConflicts(b.id, project.id, read);
-    assert.doesNotMatch(readFileSync(file, "utf8"), /batonPath/, "a write stores no path");
-    assert.equal(decisions.readConflicts(b.id, project.id)[0]!.batonPath, here, "and it is derived again on the next read");
+    const snapshot = readFileSync(join(bDir, "charts", "conflict", `${encodeURIComponent(`conflict/${b.id}/${project.id}/cf_moved`)}.edn`), "utf8");
+    assert.doesNotMatch(snapshot, /batonPath|batonpath|baton-path|ws-a|\.jsonl/, "the repo keeps its session's id, never a host path");
   });
 
   test("the visit log moved: the person's page on the new host shows the visit", () => {

@@ -17,6 +17,7 @@ const orgs = await import("./orgs");
 const baton = await import("./baton");
 const decisions = await import("./decisions");
 const reconcile = await import("./reconcile");
+const { recordDecision, seedConflicts } = await import("./org-test-fixtures");
 const writer = await import("./spec-draft-writer");
 const { settled } = await import("./workspace-git");
 
@@ -85,13 +86,10 @@ const fake: DecisionProvider = {
 
 let excluded = false;
 const ended: string[] = [];
-reconcile.setReconcileDeps({
-  provider: () => fake,
-  excluded: () => excluded,
-  endBaton: async (sid) => {
-    baton.closeBaton(sid);
-    ended.push(sid);
-  },
+reconcile.setReconcileDeps({ provider: () => fake, excluded: () => excluded });
+// The settle sessions the conflicts close (the conflict chart closes them: their baton's close act).
+(await import("./org-engine")).onOrgChange((_orgId, change) => {
+  for (const st of change.steps) if (st.sessionId.startsWith("baton/") && st.event === "baton/close" && !st.refused && !st.ignored) ended.push(st.sessionId.split("/").slice(2).join("/"));
 });
 
 // ---- helpers ----------------------------------------------------------------------------------------------
@@ -103,8 +101,10 @@ const lastId = (file: string): string => {
 let seq = 0;
 const nid = () => (++seq).toString(16).padStart(8, "0");
 
-/** What record_decision leaves in a transcript: the person's message, then the tool call, then the entry. */
-function say(file: string, by: string, text: string, decision?: { area: string; ownerArea?: string; statement: string; quote: string }): { userId: string; markerId?: string } {
+/** What record_decision leaves: the person's message, then the tool call, then the decision (its entry and
+    its chart, recorded for whoever holds the session). The owner area the model picks: the roster area
+    the topic names, else none (unless given). */
+async function say(file: string, by: string, text: string, decision?: { area: string; ownerArea?: string; statement: string; quote: string }): Promise<{ userId: string; markerId?: string }> {
   const userId = nid();
   const ts = new Date().toISOString();
   const lines: object[] = [
@@ -112,15 +112,28 @@ function say(file: string, by: string, text: string, decision?: { area: string; 
   ];
   const sent = nid();
   lines.push({ type: "custom", customType: "sova-baton-sent", data: { v: 1, targetId: userId, by }, id: sent, parentId: userId, timestamp: ts });
-  let markerId: string | undefined;
-  if (decision) {
-    const asst = nid();
-    lines.push({ type: "message", id: asst, parentId: sent, timestamp: ts, message: { role: "assistant", content: [{ type: "toolCall", name: "record_decision", arguments: decision }] } });
-    markerId = nid();
-    lines.push({ type: "custom", customType: BATON_DECISION_ENTRY, data: { v: 1, ...decision, by }, id: markerId, parentId: asst, timestamp: ts });
-  }
+  if (decision) lines.push({ type: "message", id: nid(), parentId: sent, timestamp: ts, message: { role: "assistant", content: [{ type: "toolCall", name: "record_decision", arguments: decision }] } });
   appendFileSync(file, lines.map((l) => `${JSON.stringify(l)}\n`).join(""));
-  return { userId, ...(markerId ? { markerId } : {}) };
+  if (!decision) return { userId };
+  const hit = baton.batonOfPath(file)!;
+  const pick = decisions.pickOwnerArea(orgs.readRoster(hit.row.orgId), decision.area);
+  const id = await recordDecision(file, { ...decision, ownerArea: decision.ownerArea ?? (pick.ok ? pick.ownerArea : "none") });
+  return { userId, markerId: id.slice(id.lastIndexOf(":") + 1) };
+}
+
+/** What a settle session's record_decision sends its reconciler (baton.cljc): a run 2 s later, Sova's own,
+    its settle sessions owned as that session is. */
+async function settleSessionAsks(sessionId: string): Promise<void> {
+  const row = baton.batonById(sessionId)!.row;
+  const { envelopeFor, hostOf } = await import("./org-engine");
+  await hostOf(row.orgId).act(decisions.reconcilerSid(row.orgId, row.projectId), "reconcile/request", { delayMs: 2000, by: "sova", owner: row.owner }, envelopeFor(row.orgId, row.projectId, { by: "sova", attended: false }), { settle: true });
+}
+
+/** What a reconciler run tells each decision (`reconcile/result`), sent as the run would. */
+async function asARunWould(orgId: string, projectId: string, rows: { id: string; state: string; folded?: string[]; supersededBy?: string }[]): Promise<void> {
+  const { envelopeFor, hostOf } = await import("./org-engine");
+  for (const { id, ...result } of rows)
+    await hostOf(orgId).act(decisions.decisionSid(orgId, projectId, id), "reconcile/result", result, envelopeFor(orgId, projectId, { by: "system", attended: false }), { settle: true });
 }
 
 const specManifest = (root: string) => JSON.parse(readFileSync(join(root, ".sova", "spec", "manifest.json"), "utf8"));
@@ -265,32 +278,34 @@ describe("decisions → conflicts → draft → promotion", async () => {
   await orgs.decidePerson(org.id, bob.id, true, { kind: "overseer" }, (await import("./org-engine")).envelopeFor(org.id, project.id, { by: "overseer", attended: true }));
   // The same kind of referral, approved by the operator: the say counts.
   const eve = await orgs.addPerson(org.id, { name: "Eve", status: "proposed", role: "Office manager", decides: ["parking"], contact: { email: "eve@example.com" }, referral: { why: "office", referredBy: maria.id } }, { kind: "referral" });
-  const s1 = baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Payroll", goal: "g" });
-  const s2 = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "g" });
+  const s1 = await baton.createBaton({ orgId: org.id, projectId: project.id, to: maria.id, publicTitle: "Payroll", goal: "g" });
+  const s2 = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "g" });
   const f1 = s1.path;
   const f2 = s2.path;
   let d30 = "";
   let d60 = "";
   let host = "";
 
-  before(() => {
-    d30 = `${s1.sessionId}:${say(f1, maria.id, "Clients get 30 days.", { area: "Invoicing", statement: "Invoices are due 30 days after issue.", quote: "Clients get 30 days." }).markerId}`;
-    host = `${s2.sessionId}:${say(f2, tony.id, "Run it on srv-01.", { area: "hosting", statement: "The portal runs on the office server srv-01.", quote: "Run it on srv-01." }).markerId}`;
+  before(async () => {
+    d30 = `${s1.sessionId}:${(await say(f1, maria.id, "Clients get 30 days.", { area: "Invoicing", statement: "Invoices are due 30 days after issue.", quote: "Clients get 30 days." })).markerId}`;
+    host = `${s2.sessionId}:${(await say(f2, tony.id, "Run it on srv-01.", { area: "hosting", statement: "The portal runs on the office server srv-01.", quote: "Run it on srv-01." })).markerId}`;
   });
 
-  test("the index: one row per decision entry, the quote's user message as provenance, pending; syncing twice adds nothing", () => {
-    const { store, added } = decisions.syncDecisions(org.id, project.id);
-    assert.deepEqual(new Set(added), new Set([d30, host]));
-    const r = store.decisions.find((d) => d.id === d30)!;
+  test("the index: one decision chart per record_decision, the quote's user message as provenance, pending; reading twice adds nothing", () => {
+    const rows = reconcile.listDecisions(org.id, project.id).decisions;
+    assert.deepEqual(new Set(rows.map((d) => d.id)), new Set([d30, host]));
+    const r = rows.find((d) => d.id === d30)!;
     assert.equal(r.by, maria.id);
     assert.equal(r.name, "Maria Lopez");
     assert.equal(r.areaKey, "invoicing");
     assert.equal(r.state, "pending");
     const userLine = readFileSync(f1, "utf8").split("\n").map((l) => (l ? JSON.parse(l) : null)).find((e) => e?.id === r.entryId);
     assert.equal(userLine.message.role, "user", "entryId names the user message holding the quote");
-    assert.equal(decisions.syncDecisions(org.id, project.id).added.length, 0);
+    assert.equal(reconcile.listDecisions(org.id, project.id).decisions.length, 2);
     assert.ok(reconcile.listDecisions(org.id, project.id).decisions.every((d) => d.state === "pending"), "alone in its area is still not reconciled");
-    assert.ok(existsSync(join(orgs.orgDir(org.id), "projects", project.id, "decisions.json")), "the index lives in the workspace repo");
+    const dir = orgs.orgDir(org.id);
+    assert.ok(existsSync(join(dir, "charts", "decision", `${encodeURIComponent(`decision/${org.id}/${project.id}/${d30}`)}.edn`)), "each decision is a chart in the workspace repo");
+    assert.ok(!existsSync(join(dir, "projects", project.id, "decisions.json")), "no decisions.json (q1)");
   });
 
   test("clean decisions are drafted into the project's own draft with provenance; claims/ is never written", async () => {
@@ -348,7 +363,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("a contradiction is a conflict routed to the area's owner as a baton session; neither side is drafted", async () => {
-    d60 = `${s2.sessionId}:${say(f2, tony.id, "No, billing is 60 days.", { area: "Billing", statement: "Invoices are due 60 days after issue.", quote: "No, billing is 60 days." }).markerId}`;
+    d60 = `${s2.sessionId}:${(await say(f2, tony.id, "No, billing is 60 days.", { area: "Billing", ownerArea: "invoicing", statement: "Invoices are due 60 days after issue.", quote: "No, billing is 60 days." })).markerId}`;
     const info = await reconcile.reconcileProject(org.id, project.id);
     assert.equal(info.lastRun?.found, 1, JSON.stringify({ run: info.lastRun, d: info.decisions.map((d) => [d.area, d.areaKey, d.state]) }));
     const c = info.conflicts[0]!;
@@ -374,7 +389,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const c = reconcile.listDecisions(org.id, project.id).conflicts[0]!;
     const file = baton.sessionPathOf(orgs.orgDir(org.id), baton.batonById(c.batonSessionId!)!.row);
     outcome = "neither";
-    const res = `${c.batonSessionId}:${say(file, carlos.id, "Make it 45 days for everyone.", { area: "invoicing", statement: "Invoices are due 45 days after issue.", quote: "Make it 45 days for everyone." }).markerId}`;
+    const res = `${c.batonSessionId}:${(await say(file, carlos.id, "Make it 45 days for everyone.", { area: "invoicing", statement: "Invoices are due 45 days after issue.", quote: "Make it 45 days for everyone." })).markerId}`;
     const info = await reconcile.reconcileProject(org.id, project.id);
     const done = info.conflicts.find((x) => x.id === c.id)!;
     assert.equal(done.state, "resolved");
@@ -396,11 +411,11 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("the operator resolves by hand: keep a side, or state the decision", async () => {
-    const x = `${s1.sessionId}:${say(f1, maria.id, "Payroll closes on the 25th, 10 days early.", { area: "hosting", statement: "Backups are kept 10 days.", quote: "10 days" }).markerId}`;
-    const y = `${s2.sessionId}:${say(f2, tony.id, "Backups: 90 days.", { area: "hosting", statement: "Backups are kept 90 days.", quote: "90 days" }).markerId}`;
-    let info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+    const x = `${s1.sessionId}:${(await say(f1, maria.id, "Payroll closes on the 25th, 10 days early.", { area: "hosting", statement: "Backups are kept 10 days.", quote: "10 days" })).markerId}`;
+    const y = `${s2.sessionId}:${(await say(f2, tony.id, "Backups: 90 days.", { area: "hosting", statement: "Backups are kept 90 days.", quote: "90 days" })).markerId}`;
+    let info = await reconcile.reconcileProject(org.id, project.id);
     const c = info.conflicts.find((k) => k.state === "open")!;
-    assert.ok(c && !c.batonSessionId, "route:false leaves it unrouted");
+    assert.ok(c && c.batonSessionId, "routed: its settle session asks (the conflict chart starts it)");
     assert.equal(c.routedTo, tony.id, "Tony decides hosting; Tony wrote one side, nobody else owns it");
     info = await reconcile.resolveConflict(org.id, project.id, c.id, { keep: "b" });
     const byId = new Map(info.decisions.map((d) => [d.id, d]));
@@ -412,8 +427,8 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("a self-asserted owner routes to the operator: a baton the operator holds (Needs-you)", async () => {
-    say(f2, tony.id, "Bank access: 2 days.", { area: "bank access", statement: "Bank access requests are answered in 2 days.", quote: "2 days" });
-    say(f1, maria.id, "Bank access: 5 days.", { area: "bank access", statement: "Bank access requests are answered in 5 days.", quote: "5 days" });
+    await say(f2, tony.id, "Bank access: 2 days.", { area: "bank access", statement: "Bank access requests are answered in 2 days.", quote: "2 days" });
+    await say(f1, maria.id, "Bank access: 5 days.", { area: "bank access", statement: "Bank access requests are answered in 5 days.", quote: "5 days" });
     const info = await reconcile.reconcileProject(org.id, project.id);
     const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "bank-access")!;
     assert.equal(c.routedTo, OPERATOR);
@@ -436,15 +451,13 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("a decision recorded in a conflict's session settles it without a Reconcile click", async () => {
-    const { emitBatonEvent } = await import("./baton-events");
-    const stop = reconcile.watchResolutions(10);
+    // The settle session's decision asks its reconciler to run 2 s later (the chart, durable): no Reconcile click.
+    const stop = () => {};
     try {
       const c = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.state === "open" && k.areaKey === "bank-access")!;
       const file = baton.sessionPathOf(orgs.orgDir(org.id), baton.batonById(c.batonSessionId!)!.row);
       outcome = "a";
-      const m = say(file, OPERATOR, "Two days.", { area: "bank access", statement: "Bank access requests are answered in 2 days.", quote: "Two days." }).markerId!;
-      emitBatonEvent({ type: "decision", orgId: org.id, projectId: project.id, sessionId: "unrelated", entryId: "x" });
-      emitBatonEvent({ type: "decision", orgId: org.id, projectId: project.id, sessionId: c.batonSessionId!, entryId: m });
+      const m = (await say(file, OPERATOR, "Two days.", { area: "bank access", statement: "Bank access requests are answered in 2 days.", quote: "Two days." })).markerId!;
       let done;
       for (let i = 0; i < 100 && !done; i++) {
         await new Promise((r) => setTimeout(r, 50));
@@ -473,12 +486,13 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("re-routing a conflict by hand asks the new person and closes the earlier session", async () => {
-    say(f1, maria.id, "Export: 3 days.", { area: "payroll export", statement: "The payroll export is sent 3 days before payday.", quote: "3 days" });
-    say(f2, tony.id, "Export: 5 days.", { area: "payroll export", statement: "The payroll export is sent 5 days before payday.", quote: "5 days" });
+    await say(f1, maria.id, "Export: 3 days.", { area: "payroll export", statement: "The payroll export is sent 3 days before payday.", quote: "3 days" });
+    await say(f2, tony.id, "Export: 5 days.", { area: "payroll export", statement: "The payroll export is sent 5 days before payday.", quote: "5 days" });
     let info = await reconcile.reconcileProject(org.id, project.id);
     const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "payroll-export")!;
     assert.equal(c.routedTo, OPERATOR, "nobody decides payroll export");
     const first = c.batonSessionId!;
+    ended.length = 0;
     info = await reconcile.routeConflictNow(org.id, project.id, c.id, carlos.id);
     const again = info.conflicts.find((k) => k.id === c.id)!;
     assert.equal(again.routedTo, carlos.id);
@@ -493,13 +507,13 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("the contradiction threshold is 0.7: 0.69 is compared-clean, 0.7 is a conflict", async () => {
-    say(f1, maria.id, "x", { area: "parking", statement: "Staff park in lot A. [p=0.69]", quote: "lot A" });
-    say(f2, tony.id, "y", { area: "parking", statement: "Staff park in lot B.", quote: "lot B" });
-    let info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+    await say(f1, maria.id, "x", { area: "parking", statement: "Staff park in lot A. [p=0.69]", quote: "lot A" });
+    await say(f2, tony.id, "y", { area: "parking", statement: "Staff park in lot B.", quote: "lot B" });
+    let info = await reconcile.reconcileProject(org.id, project.id);
     assert.equal(info.conflicts.filter((k) => k.areaKey === "parking").length, 0);
     assert.deepEqual(info.decisions.filter((d) => d.areaKey === "parking").map((d) => d.state), ["drafted", "drafted"]);
-    say(f2, tony.id, "z", { area: "parking", statement: "Visitors park in lot C. [p=0.7]", quote: "lot C" });
-    info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+    await say(f2, tony.id, "z", { area: "parking", statement: "Visitors park in lot C. [p=0.7]", quote: "lot C" });
+    info = await reconcile.reconcileProject(org.id, project.id);
     const parking = info.conflicts.filter((k) => k.areaKey === "parking");
     assert.equal(parking.length, 1, "0.7 is a conflict; the other pair waits while it is open");
     const lotC = info.decisions.find((d) => d.statement.startsWith("Visitors"))!;
@@ -529,7 +543,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("the switch off: a manual run is refused, the automatic one records why and sends nothing", async () => {
-    reconcile.setReconcileDeps({ provider: () => fake, excluded: () => false, enabled: () => false, endBaton: async (sid) => void baton.closeBaton(sid) });
+    reconcile.setReconcileDeps({ provider: () => fake, excluded: () => false, enabled: () => false });
     try {
       const asked = requests.length;
       await assert.rejects(reconcile.reconcileProject(org.id, project.id), (e: any) => e.status === 409 && /Turn on Reconcile decisions/.test(e.message));
@@ -537,7 +551,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
       assert.match(info.lastRun?.error ?? "", /Turn on Reconcile decisions/);
       assert.equal(requests.length, asked);
     } finally {
-      reconcile.setReconcileDeps({ provider: () => fake, excluded: () => excluded, endBaton: async (sid) => { baton.closeBaton(sid); ended.push(sid); } });
+      reconcile.setReconcileDeps({ provider: () => fake, excluded: () => excluded });
     }
   });
 
@@ -571,16 +585,16 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("a promoted decision that gains a restatement is promotable again, and carries both quotes", async () => {
-    const a = `${s1.sessionId}:${say(f1, maria.id, "q", { area: "dress code", statement: "Friday is 5 days casual.", quote: "casual Fridays" }).markerId}`;
+    const a = `${s1.sessionId}:${(await say(f1, maria.id, "q", { area: "dress code", statement: "Friday is 5 days casual.", quote: "casual Fridays" })).markerId}`;
     await reconcile.reconcileProject(org.id, project.id);
     assert.deepEqual((await reconcile.promoteDecisions(org.id, project.id, [a])).promoted, [a]);
-    say(f2, tony.id, "q", { area: "dress code", statement: "Friday is 4 days formal.", quote: "formal Fridays" });
+    await say(f2, tony.id, "q", { area: "dress code", statement: "Friday is 4 days formal.", quote: "formal Fridays" });
     let info = await reconcile.reconcileProject(org.id, project.id);
     const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "dress-code")!;
     assert.equal(info.decisions.find((d) => d.id === a)!.state, "conflict", "pending × promoted is compared");
     outcome = "a";
     const file = baton.sessionPathOf(orgs.orgDir(org.id), baton.batonById(c.batonSessionId!)!.row);
-    say(file, OPERATOR, "casual it is", { area: "dress code", statement: "Friday is 5 days casual.", quote: "casual it is" });
+    await say(file, OPERATOR, "casual it is", { area: "dress code", statement: "Friday is 5 days casual.", quote: "casual it is" });
     info = await reconcile.reconcileProject(org.id, project.id);
     assert.equal(info.decisions.find((d) => d.id === a)!.state, "drafted", "its record changed: promotable again");
     const r = await reconcile.promoteDecisions(org.id, project.id, [a]);
@@ -605,9 +619,9 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("out-of-area decisions are promoted only when the operator names them; in-area ones any way", async () => {
-    const inArea = `${s2.sessionId}:${say(f2, tony.id, "w", { area: "hosting", statement: "Backups run every night.", quote: "nightly backups" }).markerId}`;
-    const outArea = `${s1.sessionId}:${say(f1, maria.id, "w", { area: "hosting", statement: "Monitoring alerts go to the IT inbox.", quote: "IT inbox" }).markerId}`;
-    const info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+    const inArea = `${s2.sessionId}:${(await say(f2, tony.id, "w", { area: "hosting", statement: "Backups run every night.", quote: "nightly backups" })).markerId}`;
+    const outArea = `${s1.sessionId}:${(await say(f1, maria.id, "w", { area: "hosting", statement: "Monitoring alerts go to the IT inbox.", quote: "IT inbox" })).markerId}`;
+    const info = await reconcile.reconcileProject(org.id, project.id);
     const row = (id: string) => info.decisions.find((d) => d.id === id)!;
     assert.equal(row(inArea).authorOwnsArea, true, "Tony decides hosting");
     assert.equal(row(outArea).authorOwnsArea, false, "Maria does not");
@@ -630,20 +644,20 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const p = pos.projectOverseerPaths(org.id, project.id);
     pos.writePoSettings(p, { ...pos.readPoSettings(p), gatheringModel: "prov/gather", gatheringThinking: "low" });
     try {
-      const lunch = `${s1.sessionId}:${say(f1, maria.id, "l", { area: "lunch breaks", statement: "Lunch is an hour.", quote: "an hour" }).markerId}`;
-      let info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+      const lunch = `${s1.sessionId}:${(await say(f1, maria.id, "l", { area: "lunch breaks", statement: "Lunch is an hour.", quote: "an hour" })).markerId}`;
+      let info = await reconcile.reconcileProject(org.id, project.id);
       assert.equal(info.decisions.find((d) => d.id === lunch)!.authorOwnsArea, false, "no stakeholder yet: out of area");
       await orgs.patchProject(org.id, project.id, { stakeholder: maria.id });
       info = reconcile.listDecisions(org.id, project.id);
       assert.equal(info.decisions.find((d) => d.id === lunch)!.authorOwnsArea, true, "nobody decides lunch breaks by name: Maria does");
       assert.deepEqual((await reconcile.promoteDecisions(org.id, project.id, [lunch], { by: "overseer" })).promoted, [lunch], "the overseer promotes it");
       // Tony's hosting stays Tony's.
-      const hostingByMaria = `${s1.sessionId}:${say(f1, maria.id, "h", { area: "hosting", statement: "Logs are kept 9 days.", quote: "nine days" }).markerId}`;
-      info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+      const hostingByMaria = `${s1.sessionId}:${(await say(f1, maria.id, "h", { area: "hosting", statement: "Logs are kept 9 days.", quote: "nine days" })).markerId}`;
+      info = await reconcile.reconcileProject(org.id, project.id);
       assert.equal(info.decisions.find((d) => d.id === hostingByMaria)!.authorOwnsArea, false);
       // Maria contradicts herself in an area nobody decides by name: routed to her, as the stakeholder.
-      say(f1, maria.id, "a", { area: "visitor badges", statement: "Badges last 2 days.", quote: "2 days" });
-      say(f1, maria.id, "b", { area: "visitor badges", statement: "Badges last 7 days.", quote: "7 days" });
+      await say(f1, maria.id, "a", { area: "visitor badges", statement: "Badges last 2 days.", quote: "2 days" });
+      await say(f1, maria.id, "b", { area: "visitor badges", statement: "Badges last 7 days.", quote: "7 days" });
       info = await reconcile.reconcileProject(org.id, project.id);
       const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "visitor-badges")!;
       assert.ok(c, JSON.stringify(info.conflicts.map((k) => k.areaKey)));
@@ -661,15 +675,15 @@ describe("decisions → conflicts → draft → promotion", async () => {
 
   test("the run a resolution starts by itself opens its settle sessions on the project's gathering model too", async () => {
     const pos = await import("./project-overseer-store");
-    const { emitBatonEvent } = await import("./baton-events");
     const p = pos.projectOverseerPaths(org.id, project.id);
     pos.writePoSettings(p, { ...pos.readPoSettings(p), gatheringModel: "prov/gather", gatheringThinking: "low" });
-    const stop = reconcile.watchResolutions(10);
+    // The settle session's decision asks its reconciler to run 2 s later (the chart, durable): no Reconcile click.
+    const stop = () => {};
     try {
       const settle = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.batonSessionId)!;
-      say(f1, maria.id, "w", { area: "window cleaning", statement: "Windows are cleaned every 14 days.", quote: "14 days" });
-      say(f2, tony.id, "w", { area: "window cleaning", statement: "Windows are cleaned every 40 days.", quote: "40 days" });
-      emitBatonEvent({ type: "decision", orgId: org.id, projectId: project.id, sessionId: settle.batonSessionId!, entryId: "x" });
+      await say(f1, maria.id, "w", { area: "window cleaning", statement: "Windows are cleaned every 14 days.", quote: "14 days" });
+      await say(f2, tony.id, "w", { area: "window cleaning", statement: "Windows are cleaned every 40 days.", quote: "40 days" });
+      await settleSessionAsks(settle.batonSessionId!);
       let c;
       for (let i = 0; i < 100 && !c; i++) {
         await new Promise((r) => setTimeout(r, 50));
@@ -685,10 +699,9 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("the run a resolution starts by itself gives its settle sessions the owner of the session that started it", async () => {
-    const { emitBatonEvent } = await import("./baton-events");
     const overseer = { overseerOf: project.id };
-    say(f1, maria.id, "s", { area: "snow clearing", statement: "Snow is cleared within 2 days.", quote: "2 days" });
-    say(f2, tony.id, "s", { area: "snow clearing", statement: "Snow is cleared within 6 days.", quote: "6 days" });
+    await say(f1, maria.id, "s", { area: "snow clearing", statement: "Snow is cleared within 2 days.", quote: "2 days" });
+    await say(f2, tony.id, "s", { area: "snow clearing", statement: "Snow is cleared within 6 days.", quote: "6 days" });
     const ledger = await import("./project-costs-ledger");
     const lp = ledger.ledgerPaths(org.id, project.id);
     const rowsBefore = ledger.readUsageLedger(lp);
@@ -699,11 +712,12 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.ok(added.length > 0 && added.every((r) => r.by === "overseer"), "the overseer's run is its own");
     const trigger = info.conflicts.find((k) => k.state === "open" && k.areaKey === "snow-clearing")!;
     assert.deepEqual(baton.batonById(trigger.batonSessionId!)!.row.owner, overseer, "the overseer's reconcile opened it");
-    const stop = reconcile.watchResolutions(10);
+    // The settle session's decision asks its reconciler to run 2 s later (the chart, durable): no Reconcile click.
+    const stop = () => {};
     try {
-      say(f1, maria.id, "g", { area: "gritting", statement: "Paths are gritted every 3 days.", quote: "3 days" });
-      say(f2, tony.id, "g", { area: "gritting", statement: "Paths are gritted every 8 days.", quote: "8 days" });
-      emitBatonEvent({ type: "decision", orgId: org.id, projectId: project.id, sessionId: trigger.batonSessionId!, entryId: "x" });
+      await say(f1, maria.id, "g", { area: "gritting", statement: "Paths are gritted every 3 days.", quote: "3 days" });
+      await say(f2, tony.id, "g", { area: "gritting", statement: "Paths are gritted every 8 days.", quote: "8 days" });
+      await settleSessionAsks(trigger.batonSessionId!);
       let c;
       for (let i = 0; i < 100 && !c; i++) {
         await new Promise((r) => setTimeout(r, 50));
@@ -721,8 +735,8 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("settling a routed conflict by hand closes its session, so its Needs-you item goes", async () => {
-    say(f1, maria.id, "k", { area: "coffee", statement: "Coffee is free for 3 days a week.", quote: "3 days" });
-    say(f2, tony.id, "k", { area: "coffee", statement: "Coffee is free for 5 days a week.", quote: "5 days" });
+    await say(f1, maria.id, "k", { area: "coffee", statement: "Coffee is free for 3 days a week.", quote: "3 days" });
+    await say(f2, tony.id, "k", { area: "coffee", statement: "Coffee is free for 5 days a week.", quote: "5 days" });
     const info = await reconcile.reconcileProject(org.id, project.id);
     const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "coffee")!;
     assert.equal(c.routedTo, OPERATOR);
@@ -735,7 +749,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("a provider failure leaves new decisions pending and says why", async () => {
-    say(f1, maria.id, "Hosting: 7 days notice.", { area: "hosting", statement: "Server moves need 7 days notice.", quote: "7 days notice" });
+    await say(f1, maria.id, "Hosting: 7 days notice.", { area: "hosting", statement: "Server moves need 7 days notice.", quote: "7 days notice" });
     failNext = true;
     const info = await reconcile.reconcileProject(org.id, project.id);
     assert.match(info.lastRun?.error ?? "", /fake provider down/);
@@ -751,10 +765,13 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.match(info.lastRun?.error ?? "", /excluded/);
   });
 
-  test("the workspace repo holds the index and conflicts, never tokens", () => {
-    const dir = join(orgs.orgDir(org.id), "projects", project.id);
-    const text = readFileSync(join(dir, "decisions.json"), "utf8") + readFileSync(join(dir, "conflicts.json"), "utf8");
-    assert.ok(!/token|hash/i.test(text));
+  test("the workspace repo holds the decisions and conflicts (their charts), never tokens", () => {
+    const dir = join(orgs.orgDir(org.id), "charts");
+    const files = ["decision", "conflict"].flatMap((c) => readdirSync(join(dir, c)).map((f) => join(dir, c, f)));
+    assert.ok(files.length > 0);
+    const text = files.map((f) => readFileSync(f, "utf8")).join("\n");
+    assert.ok(!/token/i.test(text));
+    assert.ok(!existsSync(join(orgs.orgDir(org.id), "projects", project.id, "conflicts.json")), "no conflicts.json (q1)");
   });
 });
 
@@ -767,8 +784,8 @@ describe("restatements, confirmations and resolutions that say something else", 
   const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "CFO" });
   const bob = await orgs.addPerson(org.id, { name: "Bob Chen", role: "IT" });
   const owner = await orgs.addPerson(org.id, { name: "Carla Diaz", role: "CEO", decides: ["terms"] });
-  const st = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Terms", goal: "g" });
-  const sb = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Terms", goal: "g" });
+  const st = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Terms", goal: "g" });
+  const sb = await baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Terms", goal: "g" });
   const byId = () => new Map(reconcile.listDecisions(org.id, project.id).decisions.map((d) => [d.id, d]));
   const settleFile = (c: { batonSessionId?: string }) => baton.sessionPathOf(orgs.orgDir(org.id), baton.batonById(c.batonSessionId!)!.row);
   let t30 = "";
@@ -776,8 +793,8 @@ describe("restatements, confirmations and resolutions that say something else", 
   let cid = "";
 
   test("the pair question offers 'a different subject' as an answer of its own, not a low yes", async () => {
-    t30 = `${st.sessionId}:${say(st.path, tony.id, "30 days.", { area: "terms", statement: "Suppliers are paid within 30 days.", quote: "30 days." }).markerId}`;
-    b60 = `${sb.sessionId}:${say(sb.path, bob.id, "60 days.", { area: "terms", statement: "Suppliers are paid within 60 days.", quote: "60 days." }).markerId}`;
+    t30 = `${st.sessionId}:${(await say(st.path, tony.id, "30 days.", { area: "terms", statement: "Suppliers are paid within 30 days.", quote: "30 days." })).markerId}`;
+    b60 = `${sb.sessionId}:${(await say(sb.path, bob.id, "60 days.", { area: "terms", statement: "Suppliers are paid within 60 days.", quote: "60 days." })).markerId}`;
     const asked = requests.length;
     const info = await reconcile.reconcileProject(org.id, project.id);
     const c = info.conflicts.find((k) => k.state === "open")!;
@@ -793,7 +810,7 @@ describe("restatements, confirmations and resolutions that say something else", 
     outcome = c.a === t30 ? "a" : "b";
     restates = 0;
     try {
-      const r = `${c.batonSessionId}:${say(settleFile(c), owner.id, "Pay on Fridays.", { area: "terms", statement: "Supplier payments run on Fridays.", quote: "Pay on Fridays." }).markerId}`;
+      const r = `${c.batonSessionId}:${(await say(settleFile(c), owner.id, "Pay on Fridays.", { area: "terms", statement: "Supplier payments run on Fridays.", quote: "Pay on Fridays." })).markerId}`;
       await reconcile.reconcileProject(org.id, project.id);
       const d = byId();
       assert.equal(d.get(b60)!.supersededBy, t30, "the losing side is superseded by the kept one");
@@ -808,8 +825,8 @@ describe("restatements, confirmations and resolutions that say something else", 
   test("the losing author restating their rule opens no second conflict: the restatement is superseded with the first", async () => {
     const conflicts = reconcile.listDecisions(org.id, project.id).conflicts.length;
     const batons = baton.allBatons().length;
-    const again = `${sb.sessionId}:${say(sb.path, bob.id, "Like I said, 60 days.", { area: "terms", statement: "Suppliers get paid in 60 days. [same]", quote: "Like I said, 60 days." }).markerId}`;
-    const verbatim = `${sb.sessionId}:${say(sb.path, bob.id, "60 days!", { area: "terms", statement: "Suppliers are paid within 60 days.", quote: "60 days!" }).markerId}`;
+    const again = `${sb.sessionId}:${(await say(sb.path, bob.id, "Like I said, 60 days.", { area: "terms", statement: "Suppliers get paid in 60 days. [same]", quote: "Like I said, 60 days." })).markerId}`;
+    const verbatim = `${sb.sessionId}:${(await say(sb.path, bob.id, "60 days!", { area: "terms", statement: "Suppliers are paid within 60 days.", quote: "60 days!" })).markerId}`;
     const info = await reconcile.reconcileProject(org.id, project.id);
     assert.equal(info.conflicts.length, conflicts, JSON.stringify(info.conflicts.map((k) => [k.a, k.b, k.state])));
     assert.equal(baton.allBatons().length, batons, "nobody is asked again");
@@ -820,13 +837,12 @@ describe("restatements, confirmations and resolutions that say something else", 
   });
 
   test("a second confirmation in a settled conflict's session joins the kept record, on its own", async () => {
-    const stop = reconcile.watchResolutions(10);
+    // The settle session's decision asks its reconciler to run 2 s later (the chart, durable): no Reconcile click.
+    const stop = () => {};
     try {
-      const { emitBatonEvent } = await import("./baton-events");
       const c = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.id === cid)!;
       assert.equal(c.state, "resolved");
-      const m = say(settleFile(c), owner.id, "Confirmed, 30 days.", { area: "terms", statement: "Suppliers are paid within 30 days, confirmed. [same]", quote: "Confirmed, 30 days." }).markerId!;
-      emitBatonEvent({ type: "decision", orgId: org.id, projectId: project.id, sessionId: c.batonSessionId!, entryId: m });
+      const m = (await say(settleFile(c), owner.id, "Confirmed, 30 days.", { area: "terms", statement: "Suppliers are paid within 30 days, confirmed. [same]", quote: "Confirmed, 30 days." })).markerId!;
       const id = `${c.batonSessionId}:${m}`;
       let row;
       for (let i = 0; i < 100 && !row?.supersededBy; i++) {
@@ -853,21 +869,20 @@ describe("a fold of a fold", async () => {
   mkdirSync(client);
   const project = await orgs.addProject(org.id, { name: "Lunch", root: client });
   const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Office", decides: ["lunch"] });
-  const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Lunch", goal: "g" });
+  const s = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Lunch", goal: "g" });
 
   test("promoting the kept decision carries the quotes of what was folded into what was folded into it, once each", async () => {
-    const a = `${s.sessionId}:${say(s.path, kim.id, "Lunch at noon.", { area: "lunch", statement: "Lunch is at noon.", quote: "Lunch at noon." }).markerId}`;
-    const b = `${s.sessionId}:${say(s.path, kim.id, "Noon, as decided.", { area: "lunch hour", statement: "The lunch hour starts at noon.", quote: "Noon, as decided." }).markerId}`;
-    const c = `${s.sessionId}:${say(s.path, kim.id, "Yes, noon.", { area: "lunch time", statement: "Lunch starts at 12.", quote: "Yes, noon." }).markerId}`;
+    const a = `${s.sessionId}:${(await say(s.path, kim.id, "Lunch at noon.", { area: "lunch", statement: "Lunch is at noon.", quote: "Lunch at noon." })).markerId}`;
+    const b = `${s.sessionId}:${(await say(s.path, kim.id, "Noon, as decided.", { area: "lunch hour", statement: "The lunch hour starts at noon.", quote: "Noon, as decided." })).markerId}`;
+    const c = `${s.sessionId}:${(await say(s.path, kim.id, "Yes, noon.", { area: "lunch time", statement: "Lunch starts at 12.", quote: "Yes, noon." })).markerId}`;
     await reconcile.reconcileProject(org.id, project.id);
     // B was folded into A (a resolution restating it), and C into B (a confirmation of that),
     // with a cycle back from C to B that must not repeat anything.
-    const store = decisions.readDecisionStore(org.id, project.id);
-    const row = (id: string) => store.decisions.find((d) => d.id === id)!;
-    row(a).folded = [b];
-    Object.assign(row(b), { state: "superseded", supersededBy: a, folded: [c] });
-    Object.assign(row(c), { state: "superseded", supersededBy: b, folded: [b] });
-    decisions.writeDecisionStore(org.id, project.id, store);
+    await asARunWould(org.id, project.id, [
+      { id: a, state: "drafted", folded: [b] },
+      { id: b, state: "superseded", supersededBy: a, folded: [c] },
+      { id: c, state: "superseded", supersededBy: b, folded: [b] },
+    ]);
     await reconcile.draftProject(org.id, project.id);
     const r = await reconcile.promoteDecisions(org.id, project.id, [a]);
     assert.deepEqual(r.promoted, [a]);
@@ -888,21 +903,22 @@ describe("a multi-owner project routes by owner area", async () => {
   const project = await orgs.addProject(org.id, { name: "Site", root: client });
   const alp = await orgs.addPerson(org.id, { name: "Alperen", role: "Founder", decides: ["website", "branding"] });
   const bob = await orgs.addPerson(org.id, { name: "Bob Tan", role: "Accountant", decides: ["invoicing"] });
-  const s1 = baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Site", goal: "g" });
-  const s2 = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Billing", goal: "g" });
+  const s1 = await baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Site", goal: "g" });
+  const s2 = await baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Billing", goal: "g" });
   const id = (sid: string, m: { markerId?: string }) => `${sid}:${m.markerId}`;
   const row = (info: { decisions: { id: string }[] }, x: string) => info.decisions.find((d) => d.id === x) as any;
 
   test("free topics, roster owner areas: the owner's decisions are theirs, the overseer promotes them, and an older decision keeps the topic match", async () => {
-    const pages = id(s1.sessionId, say(s1.path, alp.id, "Two pages.", { area: "site structure / pages", ownerArea: "website", statement: "The site has two pages.", quote: "Two pages." }));
-    const old = id(s1.sessionId, say(s1.path, alp.id, "Blue.", { area: "page colours", statement: "Pages are blue.", quote: "Blue." }));
-    const byBob = id(s2.sessionId, say(s2.path, bob.id, "Footer.", { area: "site structure / pages", ownerArea: "website", statement: "The footer lists the office address.", quote: "Footer." }));
-    const info = await reconcile.reconcileProject(org.id, project.id, { route: false });
+    const pages = id(s1.sessionId, await say(s1.path, alp.id, "Two pages.", { area: "site structure / pages", ownerArea: "website", statement: "The site has two pages.", quote: "Two pages." }));
+    const old = id(s1.sessionId, await say(s1.path, alp.id, "Blue.", { area: "page colours", statement: "Pages are blue.", quote: "Blue." }));
+    const byBob = id(s2.sessionId, await say(s2.path, bob.id, "Footer.", { area: "site structure / pages", ownerArea: "website", statement: "The footer lists the office address.", quote: "Footer." }));
+    const info = await reconcile.reconcileProject(org.id, project.id);
     assert.equal(row(info, pages).ownerArea, "website");
     assert.equal(row(info, pages).areaKey, "site-structure-pages", "the topic still files the spec");
     assert.equal(row(info, pages).authorOwnsArea, true);
-    assert.equal(row(info, old).ownerArea, undefined, "nothing is backfilled");
-    assert.equal(row(info, old).authorOwnsArea, false, "an older decision: page-colours is no one's area");
+    // Every decision names an owner area (record_decision requires one; no older rows exist, ruling 1).
+    assert.equal(row(info, old).ownerArea, "none", "no roster area covers page colours: none");
+    assert.equal(row(info, old).authorOwnsArea, false, "none is the main stakeholder's, and there is none");
     assert.equal(row(info, byBob).authorOwnsArea, false, "Bob doesn't decide website");
     const r = await reconcile.promoteDecisions(org.id, project.id, [pages, byBob], { by: "overseer" });
     assert.deepEqual(r.promoted, [pages]);
@@ -911,8 +927,8 @@ describe("a multi-owner project routes by owner area", async () => {
   });
 
   test("a contradiction goes to the owner area's owner, and the settle session names the owner area", async () => {
-    say(s1.path, alp.id, "a", { area: "payment terms", ownerArea: "invoicing", statement: "Invoices are due 30 days after issue.", quote: "30 days" });
-    say(s1.path, alp.id, "b", { area: "payment terms", ownerArea: "invoicing", statement: "Invoices are due 60 days after issue.", quote: "60 days" });
+    await say(s1.path, alp.id, "a", { area: "payment terms", ownerArea: "invoicing", statement: "Invoices are due 30 days after issue.", quote: "30 days" });
+    await say(s1.path, alp.id, "b", { area: "payment terms", ownerArea: "invoicing", statement: "Invoices are due 60 days after issue.", quote: "60 days" });
     const info = await reconcile.reconcileProject(org.id, project.id);
     const c = info.conflicts.find((k) => k.state === "open" && k.areaKey === "payment-terms")!;
     assert.ok(c, JSON.stringify(info.conflicts));
@@ -929,7 +945,7 @@ describe("a multi-owner project routes by owner area", async () => {
     assert.equal(changed.ownerArea, "branding");
     assert.equal(changed.authorOwnsArea, true);
     assert.equal(changed.ownerAreaHistory.length, 1);
-    assert.deepEqual({ ...changed.ownerAreaHistory[0], at: "" }, { at: "", by: OPERATOR, name: orgs.operatorName(), from: null, to: "branding" });
+    assert.deepEqual({ ...changed.ownerAreaHistory[0], at: "" }, { at: "", by: OPERATOR, name: orgs.operatorName(), from: "none", to: "branding" });
     // Survives a sync from the transcripts.
     assert.equal(row(reconcile.listDecisions(org.id, project.id), old.id).ownerArea, "branding");
     // A side of an open conflict: re-routed by its new owner area.
@@ -980,7 +996,7 @@ describe("the decisions layer owns only its fields", async () => {
   mkdirSync(client);
   const project = await orgs.addProject(org.id, { name: "Invoices", root: client });
   const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Finance", decides: ["invoicing"] });
-  const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Invoices", goal: "g" });
+  const s = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Invoices", goal: "g" });
   const md = join(client, ".sova", "spec", "claims", "requirements", "invoicing.md");
   const manifestFile = join(client, ".sova", "spec", "manifest.json");
   let a = "";
@@ -988,8 +1004,8 @@ describe("the decisions layer owns only its fields", async () => {
   const row = (info: { decisions: { id: string }[] }, id: string) => info.decisions.find((d) => d.id === id) as any;
 
   test("a builder's evidence and code leave a promoted decision promoted, and it reads as built", async () => {
-    a = `${s.sessionId}:${say(s.path, kim.id, "Net 30 for all.", { area: "invoicing", statement: "Invoices are due after thirty days.", quote: "Net 30 for all." }).markerId}`;
-    b = `${s.sessionId}:${say(s.path, kim.id, "Blue letterhead.", { area: "invoicing", statement: "Invoices use the blue letterhead.", quote: "Blue letterhead." }).markerId}`;
+    a = `${s.sessionId}:${(await say(s.path, kim.id, "Net 30 for all.", { area: "invoicing", statement: "Invoices are due after thirty days.", quote: "Net 30 for all." })).markerId}`;
+    b = `${s.sessionId}:${(await say(s.path, kim.id, "Blue letterhead.", { area: "invoicing", statement: "Invoices use the blue letterhead.", quote: "Blue letterhead." })).markerId}`;
     await reconcile.reconcileProject(org.id, project.id);
     const r = await reconcile.promoteDecisions(org.id, project.id, [a, b]);
     assert.deepEqual(r.promoted.sort(), [a, b].sort());
@@ -1014,14 +1030,13 @@ describe("the decisions layer owns only its fields", async () => {
   });
 
   test("a re-promotion keeps the builder's fields and every byte it didn't mean to change", async () => {
-    const c = `${s.sessionId}:${say(s.path, kim.id, "Thirty, yes.", { area: "invoicing", statement: "Thirty days, confirmed.", quote: "Thirty, yes." }).markerId}`;
+    const c = `${s.sessionId}:${(await say(s.path, kim.id, "Thirty, yes.", { area: "invoicing", statement: "Thirty days, confirmed.", quote: "Thirty, yes." })).markerId}`;
     await reconcile.reconcileProject(org.id, project.id);
     // Fold C into A, as a confirmation would be.
-    const store = decisions.readDecisionStore(org.id, project.id);
-    const r = (id: string) => store.decisions.find((d) => d.id === id)!;
-    r(a).folded = [c];
-    Object.assign(r(c), { state: "superseded", supersededBy: a });
-    decisions.writeDecisionStore(org.id, project.id, store);
+    await asARunWould(org.id, project.id, [
+      { id: a, state: "drafted", folded: [c] },
+      { id: c, state: "superseded", supersededBy: a },
+    ]);
     const drafted = await reconcile.draftProject(org.id, project.id);
     assert.equal(row(drafted, a).state, "drafted", "a folded quote is the decisions layer's: promotable again");
     const ra = row(drafted, a).recordId;

@@ -33,7 +33,6 @@ reconcile.setReconcileDeps({ provider: () => never, enabled: () => enabled });
 const app = new Hono();
 registerDecisionRoutes(app);
 after(async () => {
-  reconcile.watchResolutions()();
   for (const o of orgs.readIndex().orgs) await settled(o.dir);
   rmSync(tmp, { recursive: true, force: true });
 });

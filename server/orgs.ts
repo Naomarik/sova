@@ -233,6 +233,8 @@ export function orgIdIn(dir: string): string | null {
     on it first (loaded here, not imported above: that module imports this one). */
 async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
   await import("./org-effects");
+  await import("./baton-loadout"); // the baton charts' effects (the session file, links, entries) and its reply runner
+  await import("./build-loadout"); // the build charts' effects (worktree, session file, mode, prompts, merge)
   await import("./project-overseer-store"); // the settings every act is stamped with
   return openOrgHost({ orgId, workspaceDir: dir, stateDir: stateRoot() });
 }
@@ -1000,11 +1002,11 @@ export function overseerPausedSince(orgId: string, projectId: string): string | 
   }
 }
 
-/** The operator set the project overseer's level on this host: an attach's pause ends (any level). */
-export async function resumeOverseer(orgId: string, projectId: string): Promise<void> {
+/** The operator set the project overseer's level on this host (`resumeAt`, the level they chose): an attach's pause ends (any level). */
+export async function resumeOverseer(orgId: string, projectId: string, resumeAt?: string): Promise<void> {
   const host = orgHost(orgId);
   if (!host.configuration(watchSid(orgId, projectId))) return;
-  await host.act(watchSid(orgId, projectId), "operator/level-set", {}, operatorEnvelope(orgId, projectId));
+  await host.act(watchSid(orgId, projectId), "operator/level-set", resumeAt ? { resumeAt } : {}, operatorEnvelope(orgId, projectId));
 }
 
 // ---- the org's owner (§app.owner-page/owner) ------------------------------------------------------------------

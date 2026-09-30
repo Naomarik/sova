@@ -35,7 +35,7 @@ describe("a baton session's runtime", async () => {
   mkdirSync(join(root, "proj"));
   const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
   const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT", voice: "Direct and technical, short lists." });
-  const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server" });
+  const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "Find the server" });
 
   test("opens as a baton session: exactly its tools, the wrap-up's inactive, only Sova's inline extension", async () => {
     const chat = await acquireChat(c.path);
@@ -82,7 +82,7 @@ describe("a baton session's runtime", async () => {
   test("a composer pick in an empty baton stays that session's; it never becomes the host's default", async () => {
     const defaultsFile = join(agentDir, "sova", "defaults.json");
     rmSync(defaultsFile, { force: true });
-    const fresh = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Pristine", goal: "Settle it", mintLink: false });
+    const fresh = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Pristine", goal: "Settle it" }, { mintLink: false });
     const chat = await acquireChat(fresh.path);
     assert.equal(chat.special, "baton");
     const branch = chat.session.sessionManager.getBranch();

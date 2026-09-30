@@ -6,7 +6,7 @@ import { archivedOverseerRefusal, OrgError } from "./orgs";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
 import { addIdea, IdeaConflictError, IdeaError, ideaDetail, ideasInfo, parseIdeaId, updateIdea } from "./overseer-ideas";
 import { addTodo, clearDone, removeTodo, reorderTodos, TodoConflictError, TodoError, TodoNotFoundError, todosInfo, updateTodo } from "./overseer-todos";
-import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, noteReason, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem, startCoding } from "./project-overseer";
+import { clearProjectOverseer, codeItem, ensureProjectOverseer, lookNow, mergeCodingWorktree, messageProjectOverseer, patchProjectOverseer, projectOverseerInfo, removeCodingWorktree, sendItem, startCoding } from "./project-overseer";
 import { projectOf, projectOverseerPaths, type ProjectOverseerPaths } from "./project-overseer-store";
 import { awaitShareLinks } from "./share/links-events";
 import { linkUrl as shareLinkUrl, linkWarning } from "./share/listener";

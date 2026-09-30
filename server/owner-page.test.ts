@@ -24,7 +24,7 @@ const baton = await import("./baton");
 const plinks = await import("./person-links");
 const owner = await import("./owner");
 const { ownerView } = await import("./owner-page");
-const { writeConflicts } = await import("./decisions");
+const { recordDecision, seedBuild, seedConflicts } = await import("./org-test-fixtures");
 const { registerOrgRoutes } = await import("./org-routes");
 const { createShareServer, shareMayReach } = await import("./share/listener");
 const { stateRoot } = await import("./state-root");
@@ -61,37 +61,28 @@ const said = (path: string, by: string, text: string, at = new Date().toISOStrin
 
 // Booking site: s1 with Kim (she wrote twice, decided twice: one promoted-to-be, one in a conflict);
 // s2 waits on Alperen; s3 hidden from the owner; s4 an open offer to Bob and Cara.
-const s1 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Opening hours", goal: "g" });
+const s1 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Opening hours", goal: "g" });
 said(s1.path, kim.id, "We open at nine.", "2026-09-20T10:00:00.000Z");
 said(s1.path, kim.id, "Closed on Mondays.", "2026-09-20T10:05:00.000Z");
-append(s1.path, BATON_DECISION_ENTRY, { area: "Hours", statement: "The range opens at 9.", quote: "We open at nine.", by: kim.id }, "2026-09-20T10:01:00.000Z");
-append(s1.path, BATON_DECISION_ENTRY, { area: "Pricing", statement: "A lesson costs 30.", quote: "thirty", by: kim.id }, "2026-09-20T10:06:00.000Z");
-baton.markDone(s1.sessionId);
-const s2 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: alp.id, publicTitle: "Budget", goal: "g" });
-const s3 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: bob.id, publicTitle: "HIDDEN-TITLE", goal: "g" });
+await recordDecision(s1.path, { area: "Hours", statement: "The range opens at 9.", quote: "We open at nine." }, "2026-09-20T10:01:00.000Z");
+await recordDecision(s1.path, { area: "Pricing", statement: "A lesson costs 30.", quote: "thirty" }, "2026-09-20T10:06:00.000Z");
+await baton.markDone(s1.sessionId);
+const s2 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: alp.id, publicTitle: "Budget", goal: "g" });
+const s3 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: bob.id, publicTitle: "HIDDEN-TITLE", goal: "g" });
 said(s3.path, bob.id, "Pricing is 40.", "2026-09-21T10:00:00.000Z");
-append(s3.path, BATON_DECISION_ENTRY, { area: "Pricing", statement: "A lesson costs 40.", quote: "forty", by: bob.id }, "2026-09-21T10:01:00.000Z");
-baton.setHiddenFromOwner(s3.sessionId, true);
-const s4 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: [bob.id, cara.id], publicTitle: "Parking", goal: "g", question: "Where?" });
+await recordDecision(s3.path, { area: "Pricing", statement: "A lesson costs 40.", quote: "forty" }, "2026-09-21T10:01:00.000Z");
+await baton.setHiddenFromOwner(s3.sessionId, true);
+const s4 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: [bob.id, cara.id], publicTitle: "Parking", goal: "g", question: "Where?" });
 // Payroll: one closed conversation and coding work (merged, root, removed, open).
-const s5 = baton.createBaton({ orgId: org.id, projectId: pb.id, to: cara.id, publicTitle: "Salaries", goal: "g" });
-baton.closeBaton(s5.sessionId);
-mkdirSync(join(ws, "projects", pb.id, "overseer"), { recursive: true });
-writeFileSync(
-  join(ws, "projects", pb.id, "overseer", "started.json"),
-  JSON.stringify({
-    version: 1,
-    sessions: [
-      { sessionId: "c-merged", kind: "coding", createdAt: "2026-09-22T00:00:00.000Z", worktree: { path: join(root, "nowhere1"), branch: "sova/a", base: "abc", target: "main" }, merged: { at: "2026-09-23T00:00:00.000Z", commit: "def" } },
-      { sessionId: "c-root", kind: "operator-coding", createdAt: "2026-09-22T00:00:00.000Z" },
-      { sessionId: "c-removed", kind: "coding", createdAt: "2026-09-22T00:00:00.000Z", worktree: { path: join(root, "nowhere2"), branch: "sova/b", base: "abc", target: "main" }, removed: "2026-09-23T00:00:00.000Z" },
-      { sessionId: "c-open", kind: "coding", createdAt: "2026-09-22T00:00:00.000Z", worktree: { path: join(root, "nowhere3"), branch: "sova/c", base: "abc", target: "main" } },
-      { sessionId: "g1", kind: "gathering", createdAt: "2026-09-22T00:00:00.000Z" },
-    ],
-  }),
-);
+const s5 = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: cara.id, publicTitle: "Salaries", goal: "g" });
+await baton.closeBaton(s5.sessionId);
+const at22 = "2026-09-22T00:00:00.000Z";
+await seedBuild(org.id, pb.id, { sessionId: "c-merged", kind: "coding", createdAt: at22, worktree: { path: join(root, "nowhere1"), branch: "sova/a", base: "abc", target: "main" }, merged: { at: "2026-09-23T00:00:00.000Z", commit: "def" } });
+await seedBuild(org.id, pb.id, { sessionId: "c-root", kind: "operator-coding", createdAt: at22 });
+await seedBuild(org.id, pb.id, { sessionId: "c-removed", kind: "coding", createdAt: at22, worktree: { path: join(root, "nowhere2"), branch: "sova/b", base: "abc", target: "main" }, removed: { at: "2026-09-23T00:00:00.000Z" } });
+await seedBuild(org.id, pb.id, { sessionId: "c-open", kind: "coding", createdAt: at22, worktree: { path: join(root, "nowhere3"), branch: "sova/c", base: "abc", target: "main" } });
 // Secret move: switched off the owner's page.
-baton.createBaton({ orgId: org.id, projectId: pc.id, to: kim.id, publicTitle: "OFF-PROJECT-TITLE", goal: "g" });
+await baton.createBaton({ orgId: org.id, projectId: pc.id, to: kim.id, publicTitle: "OFF-PROJECT-TITLE", goal: "g" });
 await orgs.patchProject(org.id, pc.id, { ownerHidden: true });
 
 const app = new Hono();
@@ -237,7 +228,7 @@ describe("the page's content (§app.owner-page/content)", () => {
     const kimPrice = decisions.find((d) => d.statement === "A lesson costs 30.")!;
     const kimHours = decisions.find((d) => d.statement === "The range opens at 9.")!;
     const bobPrice = decisions.find((d) => d.statement === "A lesson costs 40.")!;
-    writeConflicts(org.id, pa.id, [
+    await seedConflicts(org.id, pa.id, [
       { id: "cf_aaaaaaaa", orgId: org.id, projectId: pa.id, areaKey: "pricing", a: kimPrice.id, b: bobPrice.id, p: 0.9, routedTo: alp.id, routeReason: "self-asserted", state: "open", createdAt: "2026-09-21T00:00:00.000Z" },
       { id: "cf_bbbbbbbb", orgId: org.id, projectId: pa.id, areaKey: "hours", a: kimHours.id, b: kimPrice.id, p: 0.9, routedTo: "operator", routeReason: "nobody decides hours", state: "open", createdAt: "2026-09-21T00:00:00.000Z" },
     ]);

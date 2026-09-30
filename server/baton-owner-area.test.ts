@@ -30,7 +30,7 @@ describe("owner areas in a gathering session", async () => {
   const bob = await orgs.addPerson(org.id, { name: "Bob Tan", role: "Accountant", decides: ["invoicing"] });
   const gone = await orgs.addPerson(org.id, { name: "Gus Gone", role: "Payroll clerk", decides: ["payroll"] });
   await orgs.applyChange(org.id, gone.id, { status: "left" }, { kind: "operator" });
-  const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Our site", goal: "g" });
+  const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Our site", goal: "g" });
 
   test("the prompt lists every active person's decision areas with their job title, the holder's own included, as private", () => {
     const prompt = loadout.renderBatonPrompt(c.sessionId);

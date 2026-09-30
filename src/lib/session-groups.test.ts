@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionGroup, SessionSummary } from "../../shared/protocol";
-import { GROUP_DRAG_TYPE, dragHasRow, groupDragPath, groupNameOf, groupSections, memberLabel, orderedMembers, paneNames, quoted, tabLabels, setGroupDragData } from "./session-groups";
+import { groupNameOf, groupSections, memberLabel, orderedMembers, paneNames, quoted, tabLabels } from "./session-groups";
 
 const group = (id: string, name: string): SessionGroup => ({ id, name, createdAt: "2026-09-20T00:00:00.000Z" });
 const session = (id: string, groupId?: string): SessionSummary =>
@@ -45,30 +45,6 @@ test("groupNameOf resolves a name, and null for no group or an unknown one", () 
   assert.equal(groupNameOf([WORK, HOME], undefined), null);
   assert.equal(groupNameOf([WORK, HOME], "gone"), null);
   assert.equal(quoted("Home"), "“Home”");
-});
-
-test("the drag payload round-trips the session path, and only our own drags report as rows", () => {
-  const store = new Map<string, string>();
-  const dt = {
-    types: [GROUP_DRAG_TYPE],
-    effectAllowed: "none",
-    setData: (t: string, v: string) => void store.set(t, v),
-    getData: (t: string) => store.get(t) ?? "",
-  };
-  const drag = { dataTransfer: dt } as unknown as DragEvent;
-  setGroupDragData(drag, "/tmp/a.jsonl");
-  assert.equal(store.get(GROUP_DRAG_TYPE), "/tmp/a.jsonl");
-  assert.equal(store.get("text/plain"), "/tmp/a.jsonl");
-  assert.equal(dt.effectAllowed, "move");
-  assert.equal(groupDragPath(drag), "/tmp/a.jsonl");
-  assert.equal(dragHasRow(drag), true);
-
-  // A drag that carries files or plain text is not ours: no path, and no drop target lights up.
-  const other = {
-    dataTransfer: { types: ["Files"], getData: (t: string) => (t === GROUP_DRAG_TYPE ? "" : "hello") },
-  } as unknown as DragEvent;
-  assert.equal(groupDragPath(other), null);
-  assert.equal(dragHasRow(other), false);
 });
 
 test("orderedMembers follows the server's member order, appending what it doesn't name", () => {

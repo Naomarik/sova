@@ -1,13 +1,13 @@
-// Dragging a sidebar row out of the sidebar archives it. What the drag may do is decided once, when
-// it starts; where the pointer is decides
-// whether that is showing. Pure, so it runs under `tsx --test`; Sidebar.tsx owns the listeners.
+// Dropping a sidebar row on the drop overlay's Archive tile archives it (§app.session-list/drop-overlay).
+// What the drag may do is decided once, when it starts. Pure, so it runs under `tsx --test`;
+// Sidebar.tsx does the archive.
 
 import type { SessionSummary } from "../../shared/protocol";
 import { isTopSession } from "./regions";
 import { archiveBlockReason, type SelectableSession } from "./session-selection";
 
 /**
- * What a drop outside the sidebar would do with this row. `none`: nothing at all, and nothing
+ * What a drop on the Archive tile would do with this row. `none`: nothing at all, and nothing
  * shown — an archived row (even one a TUI keeps on top), or an external one the Archive region
  * already lists, is already where the gesture would put it. `blocked`: the rules refuse it, and `reason` is
  * archiveBlockReason's own words.
@@ -20,22 +20,15 @@ export function archiveDragOf(s: SelectableSession): ArchiveDrag {
   return reason ? { kind: "blocked", reason } : { kind: "archive" };
 }
 
-/** The drop state while the pointer is outside the sidebar; null inside it, or for an archived row. */
-export type OutsideTarget = "archive" | "archive-blocked" | null;
-
-export function outsideTarget(drag: ArchiveDrag, insideSidebar: boolean): OutsideTarget {
-  if (insideSidebar || drag.kind === "none") return null;
-  return drag.kind === "archive" ? "archive" : "archive-blocked";
-}
-
-/** The cursor a dragover outside the sidebar asks for: only an archive that would happen moves. */
-export const outsideDropEffect = (target: OutsideTarget): "move" | "none" => (target === "archive" ? "move" : "none");
-
-/** The indicator's words for each outside state, or null when nothing shows. */
-export function outsideLabel(target: OutsideTarget, drag: ArchiveDrag, title: string): string | null {
-  if (target === "archive") return `Archive “${title}”`;
-  if (target === "archive-blocked" && drag.kind === "blocked") return `Can't archive: ${drag.reason}`;
-  return null;
+/**
+ * Why the drop overlay's Archive tile can't take this row, or null when it archives. Blocked:
+ * archiveBlockReason's own words. Nothing to do: an archived row, or an external one the Archive
+ * region already lists, is already where the gesture would put it.
+ */
+export function archiveTileReason(drag: ArchiveDrag, archived: boolean | undefined): string | null {
+  if (drag.kind === "archive") return null;
+  if (drag.kind === "blocked") return `Can't archive: ${drag.reason}`;
+  return archived ? "Already archived." : "Already in the Archive.";
 }
 
 /**
@@ -57,18 +50,7 @@ export const unarchivedToast = (project?: string | null): string => (project ? `
 export const orgProjectOf = (s: Pick<SessionSummary, "org">): string | null =>
   s.org ? (s.org.projectId ? s.org.projectName || "its project" : s.org.orgName || s.org.orgId) : null;
 
-/** What a drop outside the sidebar says when it can't archive, or null when it archives (or does nothing). */
+/** What a drop on a refused Archive tile says as a toast, or null when it archives (or does nothing). */
 export function blockedDropSentence(drag: ArchiveDrag): string | null {
   return drag.kind === "blocked" ? `Can't archive this session: ${drag.reason}.` : null;
-}
-
-/**
- * Whether a dragleave took the pointer out of the window itself. Leaving the window never fires a
- * dragover outside the sidebar, so without this the indicator would promise an archive for a
- * drop that lands on the desktop. Between two elements `relatedTarget` names the next one; off
- * the window it is null and the point sits on or past the viewport's edge.
- */
-export function leftWindow(p: { relatedTarget: unknown; clientX: number; clientY: number }, view: { width: number; height: number }): boolean {
-  if (p.relatedTarget) return false;
-  return p.clientX <= 0 || p.clientY <= 0 || p.clientX >= view.width || p.clientY >= view.height;
 }

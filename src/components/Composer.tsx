@@ -51,7 +51,6 @@ import { OverseerCardChip } from "./OverseerCardChip";
 import { OverseerPermitsChip } from "./OverseerPermitsChip";
 import { livePermits, type Permit } from "../../shared/overseer-grants";
 import type { OverseerCard } from "../../shared/overseer-card";
-import { dragHasRow } from "../lib/session-groups";
 import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { showWorkersOfLabel, teamNote, type WorkingSplit, workersOfLabel, workersRunningLabel } from "../lib/workers";
@@ -666,11 +665,9 @@ export function Composer(props: {
     focusAfterRemoval(images().length + index);
   };
 
-  // Stray drops anywhere else must not navigate the tab to the image — and a dragged session row
-  // must not type its path into the composer: that drag carries a text/plain fallback
-  // so a drop outside the app is still readable. Both events, or the text lands anyway.
+  // Stray drops anywhere else must not navigate the tab to the image. Both events, or it lands anyway.
   const guard = (e: DragEvent) => {
-    if (e.dataTransfer?.types.includes("Files") || dragHasRow(e)) e.preventDefault();
+    if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
   };
   window.addEventListener("dragover", guard);
   window.addEventListener("drop", guard);

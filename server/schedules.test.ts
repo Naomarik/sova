@@ -439,3 +439,13 @@ test("an unreadable login standing skips the reset check, never the time fires",
   await tickAt(h, "2026-10-05T09:00:00Z");
   assert.equal(h.created.length, 1);
 });
+
+test("the first sight of a schedule tells the Overseer once; an invalid one or a second sight doesn't", async () => {
+  const h = harness();
+  const briefs: string[] = [];
+  (h.keeper.deps as { brief?: (t: string) => void }).brief = (t) => briefs.push(t);
+  const row = (id: string, state: "needs-approval" | "invalid") => ({ id, title: id === "merge-round" ? "Merge round" : id, description: "", source: "project" as const, dir: "", body: "", schedule: { when: "every 30m", text: "Every 30 min", state } });
+  await h.keeper.decorate({ playbooks: [row("merge-round", "needs-approval"), row("broken", "invalid")], project: { state: "ok" } }, ROOT);
+  await h.keeper.decorate({ playbooks: [row("merge-round", "needs-approval")], project: { state: "ok" } }, ROOT);
+  assert.deepEqual(briefs, ["The playbook Merge round in sova wants to run on a schedule (Every 30 min). It fires only once the user approves it in the Playbooks dialog or on your permits chip."]);
+});

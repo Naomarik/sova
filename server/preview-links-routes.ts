@@ -4,6 +4,7 @@ import type { PreviewError, PreviewList, PreviewMinted, PreviewView } from "../s
 import { peerPort } from "./mesh/peers";
 import { PROXIED_HEADER } from "./mesh/proxy";
 import { extendPreview, listPreviews, mintPreview, PreviewRefused, PreviewUnavailable, revokePreview, viewOf } from "./preview-links";
+import { readRoster } from "./orgs";
 import { readPublicLinks } from "./public-links";
 import { ingressInfo } from "./share/ingress";
 import { awaitShareLinks } from "./share/links-events";
@@ -76,12 +77,23 @@ async function mint(c: Context, input: { orgId: unknown; projectId: unknown; por
   }
 }
 
+/** A person's sibling names them for the list ("sent to {name}", §app.outreach/links). */
+function withSentToName(v: PreviewView): PreviewView {
+  if (!v.sentTo) return v;
+  try {
+    const name = readRoster(v.orgId).find((p) => p.id === v.sentTo)?.name;
+    return name ? { ...v, sentToName: name } : v;
+  } catch {
+    return v;
+  }
+}
+
 export function mountPreviewLinks(app: Hono): void {
   app.get("/api/previews", async (c) => {
     if (!local(c)) return notFound(c);
     const orgId = c.req.query("orgId");
     const projectId = c.req.query("projectId");
-    const previews = listPreviews({ ...(orgId ? { orgId } : {}), ...(projectId ? { projectId } : {}) });
+    const previews = listPreviews({ ...(orgId ? { orgId } : {}), ...(projectId ? { projectId } : {}) }).map(withSentToName);
     return c.json({ previews: await withRunning(previews), address: previewAddress() } satisfies PreviewList, 200, NO_STORE);
   });
 

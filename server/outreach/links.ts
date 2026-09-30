@@ -4,8 +4,7 @@ import { handoffLine, type LinkKind, type LinkRef, type OutreachLogLine } from "
 import { linksOfKey, mintLink, revokeLinks } from "../baton-links";
 import { batonById, currentOffer, reachedBy } from "../baton";
 import { operatorName, readRoster } from "../orgs";
-import { listPreviews, mintPreview, revokePreview } from "../preview-links";
-import { sovaPorts } from "../preview-links-routes";
+import { listPreviews, mintSibling, revokePreview } from "../preview-links";
 import { awaitShareLinks } from "../share/links-events";
 import { linkUrl, shareState } from "../share/listener";
 import { previewAddress, previewOrigin } from "../share/preview-address";
@@ -94,7 +93,6 @@ const handoff: LinkResolver = {
 
 // ---- a public preview link ------------------------------------------------------------------------
 
-const DAY_MS = 86_400_000;
 
 const preview: LinkResolver = {
   kind: "preview",
@@ -110,12 +108,10 @@ const preview: LinkResolver = {
     return addressRefusal();
   },
   // The host keeps only a preview's hash, so its URL exists only at a mint: the person gets their own
-  // preview link of the same port, until the same expiry; the one the id names stays as it is.
-  async resolve({ orgId, projectId }, ref) {
+  // sibling of it (same port, its expiry, turned off with it), listed as "sent to {name}".
+  async resolve({ personId }, ref) {
     if (ref.kind !== "preview") throw new Error("Not a preview link.");
-    const p = listPreviews({ orgId }).find((v) => v.id === ref.preview)!;
-    const days = Math.max(1, Math.ceil((Date.parse(p.expiresAt) - Date.now()) / DAY_MS));
-    const { result } = await awaitShareLinks(() => mintPreview({ orgId, projectId, port: p.port, days }, sovaPorts()));
+    const { result } = await awaitShareLinks(() => mintSibling(ref.preview, personId));
     const origin = previewOrigin(previewAddress().url!, result.label);
     if (!origin) {
       revokePreview(result.record.id);

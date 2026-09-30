@@ -679,7 +679,7 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
                 <div class="person-row-head">
                   <span class="person-row-title">{s.what}</span>
                   <Chip tone={s.event === "failed" || s.event === "refused" ? "warn" : s.event === "read" ? "success" : "info"}>
-                    {s.event === "sent" ? "Sent" : s.event === "delivered" ? "Delivered" : s.event === "read" ? "Read" : s.event === "failed" ? "Failed" : "Not sent"}
+                    {s.event === "sent" ? "Sent" : s.event === "delivered" ? "Delivered" : s.event === "read" ? "Read" : s.event === "failed" ? "Failed" : s.event === "unknown" ? "Unknown" : "Not sent"}
                   </Chip>
                 </div>
                 <span class="list-meta person-row-meta">

@@ -47,7 +47,7 @@ export function readSendLog(orgId: string): OutreachLogLine[] {
 
 /** A person's sends, newest first: the latest event of each (a receipt moves a send on, never back). */
 export function personSends(orgId: string, personId: string, titleOf: (sessionId: string) => string | undefined): PersonSendRow[] {
-  const rank = { refused: 0, failed: 0, sent: 1, delivered: 2, read: 3 } as const;
+  const rank = { refused: 0, failed: 0, unknown: 0, sent: 1, delivered: 2, read: 3 } as const;
   const byId = new Map<string, { first: OutreachLogLine; last: OutreachLogLine }>();
   for (const l of readSendLog(orgId)) {
     if (l.personId !== personId) continue;

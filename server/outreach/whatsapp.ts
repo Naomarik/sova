@@ -1,6 +1,6 @@
 import type { SenderState, SenderStatus } from "../../shared/outreach";
 import { meshPeers, peerFetch } from "../mesh";
-import { SenderClient, SenderUnreachable, type Frame, type SenderEvent } from "./ipc-client";
+import { SenderClient, SenderUncertain, SenderUnreachable, type Frame, type SenderEvent } from "./ipc-client";
 import { localSocket, noteAuthDir, readOutreach } from "./settings";
 import type { Channel, ChannelSend, Receipt } from "./types";
 
@@ -96,7 +96,9 @@ async function viaCall(nodeId: string, op: string, body: Frame = {}): Promise<Fr
   let res: Response;
   try {
     res = await peerFetch(peerId, `/api/peer/outreach/${op}`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body), signal: AbortSignal.timeout(35_000) });
-  } catch {
+  } catch (err) {
+    // A timeout means the request left: its outcome is unknown.
+    if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) throw new SenderUncertain("The sender's host didn't answer in time.");
     throw new SenderUnreachable("The sender's host can't be reached.");
   }
   let f: Frame;
@@ -154,8 +156,10 @@ export const whatsapp: Channel = {
       }
       return sendResultOf(await localClient()!.request("send", { idem: `local:${idem}`, digits: address, text }));
     } catch (err) {
-      // Unreachable before the request went out, or no answer: the idem makes a Retry safe either way.
-      return failed("unreachable", err instanceof Error ? err.message : String(err), true);
+      const why = err instanceof Error ? err.message : String(err);
+      // Sent but unanswered: it may have gone (a Retry is still safe: the same idem never sends twice).
+      if (err instanceof SenderUncertain) return failed("unknown", `${why} It may have been sent.`);
+      return failed("unreachable", why, true);
     }
   },
   onReceipt(cb) {

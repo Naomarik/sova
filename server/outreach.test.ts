@@ -218,6 +218,14 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
     const line = logOf().filter((l) => l.personId === ann.id && l.event === "sent").at(-1)!;
     assert.equal(line.link, "preview");
     assert.ok(line.previewId && line.previewId !== record.id);
+    const sib = listPreviews({ orgId: org.id }).find((v) => v.id === line.previewId)!;
+    assert.equal(sib.siblingOf, record.id);
+    assert.equal(sib.sentTo, ann.id);
+    assert.equal(sib.expiresAt, record.expiresAt, "never outlives the original");
+    assert.equal(sib.port, record.port);
+    const { revokePreview } = await import("./preview-links");
+    revokePreview(record.id);
+    assert.equal(listPreviews({ orgId: org.id }).find((v) => v.id === sib.id)!.state, "off", "turned off with the original");
     const other = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: "pv_nope" } });
     assert.equal(other.status, 409);
   });

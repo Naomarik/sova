@@ -19,6 +19,8 @@ const REQUEST_MS = 30_000;
 const MAX_LINE = 64 * 1024;
 
 export class SenderUnreachable extends Error {}
+/** The request went out but no answer came (a timeout, or the connection closed): what the sender did is unknown. */
+export class SenderUncertain extends SenderUnreachable {}
 
 export class SenderClient {
   private sock: Socket | null = null;
@@ -52,7 +54,7 @@ export class SenderClient {
     return new Promise<Frame>((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);
-        reject(new SenderUnreachable(`The sender didn't answer within ${Math.round(ms / 1000)} s.`));
+        reject(new SenderUncertain(`The sender didn't answer within ${Math.round(ms / 1000)} s.`));
       }, ms);
       timer.unref?.();
       this.pending.set(id, { resolve, reject, timer });
@@ -115,7 +117,7 @@ export class SenderClient {
     this.lastFailWhy = "The connection to the sender closed.";
     for (const [, p] of this.pending) {
       clearTimeout(p.timer);
-      p.reject(new SenderUnreachable(this.lastFailWhy));
+      p.reject(new SenderUncertain(this.lastFailWhy));
     }
     this.pending.clear();
     // Keep receiving receipts: try again once, after the retry gap.

@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { getPreviews, mintPreview, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
-import { activePreviews, parsePort, PREVIEW_EXPIRY_CHOICES, previewWarning, runningLine } from "../lib/previews";
+import { activePreviews, parsePort, PREVIEW_EXPIRY_CHOICES, previewWarning, runningLine, sentToLine } from "../lib/previews";
 import { expiresWord } from "../lib/session-shares";
 import { toast } from "../lib/ui-state";
 import { Banner } from "./ui";
@@ -97,7 +97,10 @@ export function PreviewsCard(props: { orgId: string; projectId: string }) {
                       {runningLine(v)}
                     </span>
                   </p>
-                  <p class="list-meta">{expiresWord(v.expiresAt, Date.now())}</p>
+                  <p class="list-meta">
+                    {sentToLine(v) ? `${sentToLine(v)} · ` : ""}
+                    {expiresWord(v.expiresAt, Date.now())}
+                  </p>
                   <Show when={links()[v.id]}>{(url) => <p class="list-meta text-mono previews-url">{url()}</p>}</Show>
                 </div>
                 <div class="shares-row-actions">

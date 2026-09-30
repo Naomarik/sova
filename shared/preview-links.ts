@@ -26,6 +26,11 @@ export interface PreviewView {
   revokedAt?: string;
   /** `operator` (`session:<id>` is reserved for one a session asked for and the operator approved). */
   createdBy: string;
+  /** A person's own link to preview `siblingOf`, sent to them on WhatsApp (§app.outreach/links). */
+  siblingOf?: string;
+  /** The roster person it was sent to, and their name as the list shows it ("sent to {name}"). */
+  sentTo?: string;
+  sentToName?: string;
   state: PreviewState;
   /** Something accepts connections on the port now (either loopback). Only on active ones. */
   running?: boolean;

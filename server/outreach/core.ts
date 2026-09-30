@@ -108,13 +108,13 @@ export async function send(input: SendInput, channel: Channel = channels.whatsap
     return { outcome: "refused", channel: channel.id, code, why };
   };
 
-  // Run again after a restart: whatever happened, nobody has what that step made. It stops, and nothing is sent twice.
+  // Run again after a restart: the message may or may not have gone. Nothing is sent twice; what the
+  // step made stays (the person may have it), and the send is logged as unknown.
   const again = readPending()[key];
   if (again) {
-    RESOLVERS[again.kind as keyof typeof RESOLVERS]?.revoke(again.minted);
     setPending(key, null);
-    log("failed", "unknown-after-restart");
-    return { outcome: "failed", channel: channel.id, code: "unknown-after-restart", why: "Sova restarted during the send, so it may not have gone: send it again." };
+    log("unknown", "unknown-after-restart");
+    return { outcome: "failed", channel: channel.id, code: "unknown-after-restart", why: "Sova restarted during the send, so it may or may not have gone." };
   }
   const nr = notReady(orgId, personId);
   if (nr) return refuse(nr.code, nr.why);
@@ -144,9 +144,14 @@ export async function send(input: SendInput, channel: Channel = channels.whatsap
     setPending(key, null);
     return { outcome: "sent", channel: channel.id };
   }
+  setPending(key, null);
+  // Uncertain (the request left, no answer): what the step made stays, and the send is logged as unknown.
+  if (r.code === "unknown") {
+    log("unknown", r.code, ids);
+    return { outcome: "failed", channel: channel.id, code: r.code, why: r.why, retryable: false };
+  }
   // A definite failure: exactly what this step made stops (a hand-off link's Needs you asks again).
   if (resolver && resolved) resolver.revoke(resolved.minted);
-  setPending(key, null);
   log("failed", r.code, ids);
   return { outcome: "failed", channel: channel.id, code: r.code, why: r.why, retryable: r.retryable };
 }

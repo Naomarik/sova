@@ -5,7 +5,7 @@ import { absoluteTime } from "../lib/spend";
 import { hostLabel, meshOn, meshPeers, selfLabel } from "../lib/mesh";
 import type { PreviewView } from "../../shared/preview-links";
 import { getPreviews, turnOffPreview } from "../lib/api";
-import { activePreviews, runningLine } from "../lib/previews";
+import { activePreviews, runningLine, sentToLine } from "../lib/previews";
 import { expiresWord, openedLine, presenceWord, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, visitLine } from "../lib/session-shares";
 import { InsightsPage } from "./InsightsPage";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
@@ -179,7 +179,8 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                       </span>
                     </p>
                     <p class="list-meta">
-                      Project {v.projectId} · {expiresWord(v.expiresAt, props.now)}
+                      Project {v.projectId} · {sentToLine(v) ? `${sentToLine(v)} · ` : ""}
+                      {expiresWord(v.expiresAt, props.now)}
                     </p>
                   </div>
                   <div class="shares-row-actions">

@@ -101,7 +101,7 @@ export interface BatonOutreach {
   publicTitle: string;
 }
 
-export type OutreachEvent = "sent" | "delivered" | "read" | "failed" | "refused";
+export type OutreachEvent = "sent" | "delivered" | "read" | "failed" | "refused" | "unknown";
 
 /** One line of <workspace>/outreach.jsonl: never a number, token, link, message id or body. */
 export interface OutreachLogLine {

@@ -14,6 +14,8 @@ export const previewWarning = (port: number | null): string => PREVIEW_WARNING.r
 
 /** Whether something listens on the preview's port, as the card says it. */
 export const runningLine = (v: PreviewView): string => (v.running ? "App is running" : `Nothing on port ${v.port}`);
+/** A person's own link to another preview, sent to them on WhatsApp (§app.outreach/links): "sent to {name}", else null. */
+export const sentToLine = (v: Pick<PreviewView, "siblingOf" | "sentToName">): string | null => (v.siblingOf ? `sent to ${v.sentToName ?? "a person"}` : null);
 
 /** The previews the card and the Shares page list: active ones, soonest to expire last. */
 export function activePreviews(list: readonly PreviewView[]): PreviewView[] {

@@ -18,6 +18,7 @@ as, never root. Paths below are the defaults; every one of them can be changed
 ([Configure](#3-configure)).
 
 - [Before you start: the risks](#before-you-start-the-risks)
+- [Short path: the sender on your own Sova machine](#short-path-the-sender-on-your-own-sova-machine)
 - [1. Requirements](#1-requirements)
 - [2. Install](#2-install)
 - [3. Configure](#3-configure)
@@ -47,6 +48,36 @@ as, never root. Paths below are the defaults; every one of them can be changed
   watch for `blocked` ([Recover](#10-recover)).
 - **Whoever can read the credentials directory can send as you.** It is as sensitive as the phone
   itself ([Protect](#7-protect-the-credentials)).
+
+## Short path: the sender on your own Sova machine
+
+The simplest set-up runs the sender on the same machine as Sova, a desktop or a laptop, with every
+default: the credentials in `~/.pi/agent/sova/whatsapp/auth` and Sova's sender set to **This host**.
+Moving it to an always-on server later is [one move](#move-the-sender-to-another-host). In order:
+
+1. **Install** in the Sova checkout you already have ([Install](#2-install)): `cd <your Sova
+   checkout>/services/whatsapp && pnpm install --frozen-lockfile`. Use the checkout Sova itself runs
+   from, not a feature worktree that will be removed.
+2. **Check** with `sova-whatsapp check-config`: it should show the default paths, `problems: none`,
+   and `paired: yes` if this number was linked here before (then skip step 3) or `paired: no`.
+3. **Pair** once, if needed ([Pair](#4-pair)).
+4. **Start it.** For a first try, in a terminal: `sova-whatsapp run` (Ctrl-C stops it; the device
+   stays linked). To keep it running, [install the service](#5-run-it-as-a-service); on a desktop
+   session `loginctl enable-linger` is optional. Only one may run: a second start refuses.
+5. **Check it:** in another terminal, `sova-whatsapp status` says `running: yes` and `state: open`.
+6. **Connect Sova:** Settings → Outreach → **Sender: This host**, **Socket** left empty, **Save
+   Changes**. The chip reads **Connected** ([Connect Sova](#6-connect-sova)).
+7. **Verify** with one real send ([Verify](#8-verify)).
+
+A laptop that sleeps loses the connection each time; after waking, the sender reconnects by itself
+30 seconds or more later, and each of those reconnects counts against the budget (3 an hour, 10 a
+day, starts included). A laptop that sleeps and wakes more often than that ends up `down` until
+`sova-whatsapp reconnect`; that is the budget doing its job, not a fault. Raise
+`SOVA_WA_RECONNECT_BUDGET` in `config.json` only as far as you need.
+
+A Sova started for development with its own agent directory (`pnpm run dev:hermetic`) looks for the
+socket under that directory, not the default one. Point it at the
+[fake sender](#develop-and-test-without-whatsapp) rather than your real number.
 
 ## 1. Requirements
 

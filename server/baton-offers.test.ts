@@ -232,6 +232,44 @@ describe("offers and leases", async () => {
     }
   });
 
+  test("a crash mid-reply while it WRITES (verifier-3 H10n06): after the restart the reply is over, and what it wrote renewed the lease", async () => {
+    process.env.SOVA_BATON_LEASE_MS = "1000";
+    let l;
+    try {
+      l = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Crash writing", goal: "g", question: "Who pays?" });
+    } finally {
+      delete process.env.SOVA_BATON_LEASE_MS;
+    }
+    const sid = `baton/${org.id}/${l.sessionId}`;
+    const sys = envelopeFor(org.id, project.id, { by: "system", attended: false });
+    const t0 = Date.now();
+    const at = (ms: number) => {
+      setOrgClockForTest(() => t0 + ms);
+      hostOf(org.id).fireDue();
+    };
+    try {
+      at(0);
+      baton.noteMessage(l.sessionId, tony.id);
+      at(100);
+      await hostOf(org.id).act(sid, "reply/starting", {}, sys, { settle: true });
+      at(150);
+      await hostOf(org.id).act(sid, "reply/writing", {}, sys, { settle: true });
+      assert.equal(hostOf(org.id).data(sid)!.reply, "writing");
+      // The process dies while the reply writes. The org opens again at 200.
+      await closeOrgHost(org.id);
+      setOrgClockForTest(() => t0 + 200);
+      await orgs.openAttachedOrgs();
+      await waitFor(() => hostOf(org.id).data(sid)?.reply === "idle");
+      // It wrote: its end renewed the lease, which now runs from the restart, not from his message.
+      at(1001);
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, tony.id, "renewed by the written reply's end");
+      at(1201);
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, null, "then it lapses on time");
+    } finally {
+      setOrgClockForTest(null);
+    }
+  });
+
   test("handing on withdraws the offer: invitees who never held it get 410, those who did read on", async () => {
     await baton.handTo(c.sessionId, OPERATOR, "Which plan?", "");
     const row = baton.batonById(c.sessionId)!.row;

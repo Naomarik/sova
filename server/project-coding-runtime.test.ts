@@ -470,7 +470,7 @@ describe("a project's coding sessions", async () => {
     // No hold (q10): the unattended start goes at once, so its session exists to open.
     store.patchPoSettings(p, { codingMode: { mode: "delegate", minorModes: ["spec"] }, holdMin: 0 });
     const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_start_gathering")!;
-    const out = await tool.execute("g1", { gap: "none", person: "Tony", public_title: "Hosting", goal: "Where it runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
+    const out = await tool.execute("g1", { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "Hosting", goal: "Where it runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
     const path = (out.details as { path: string }).path;
     const chat = await acquireChat(path);
     assert.equal(chat.special, "baton");

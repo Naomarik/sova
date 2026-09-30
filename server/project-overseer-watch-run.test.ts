@@ -114,7 +114,7 @@ describe("the overseer's last run says how it ended", async () => {
 describe("a story that needs 4 gathering sessions goes on by itself", async () => {
   const org = await orgs.createOrg({ name: "Story", dir: join(root, "ws2") });
   await orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["menu", "hours"] });
-  const gather = JSON.stringify({ gap: "none", person: "Alperen", public_title: "Opening hours", goal: "Settle the opening hours.", question: "When should the shop open?" });
+  const gather = JSON.stringify({ gap: "none", person: "Alperen", why: "Nobody has said this yet.", public_title: "Opening hours", goal: "Settle the opening hours.", question: "When should the shop open?" });
 
   async function setUp(name: string) {
     mkdirSync(join(root, name));

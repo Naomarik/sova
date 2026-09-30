@@ -69,7 +69,7 @@ import type {
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
-import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
+import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
@@ -971,6 +971,8 @@ export const withdrawProjectUpdate = (id: string, pid: string, uid: string) =>
 
 export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);
+/** What It's Told (§app.baton/told): fetched when opened, the operator's only. */
+export const getBatonTold = (sid: string) => request<BatonTold>(`/api/baton/${encodeURIComponent(sid)}/told`);
 export const batonLink = (sid: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link`);
 export const revokeBatonLink = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/revoke`, jsonInit("POST"));
 export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/take`, jsonInit("POST"));

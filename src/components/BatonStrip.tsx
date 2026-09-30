@@ -16,6 +16,8 @@ import { createMemo, onCleanup } from "solid-js";
 import { retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
 import { abilityToast } from "../lib/gathering-abilities";
 import { firstName } from "../lib/person-page";
+import { starterHref, starterName, whyText } from "../lib/baton-told";
+import { relativeTime } from "../lib/format";
 import { Banner, Chip, Icon } from "./ui";
 import "../orgs.css";
 
@@ -124,6 +126,14 @@ export function BatonStrip(props: {
                 )}
               </For>
             </div>
+            {/* Who started it, and when (§app.baton/told): always shown; the overseer part links to it. */}
+            <span class="baton-strip-meta baton-strip-started">
+              Started by{" "}
+              <Show when={starterHref(i().started, i().session.orgId, i().session.projectId)} fallback={starterName(i().started, i().projectName)}>
+                {(href) => <a href={href()}>{starterName(i().started, i().projectName)}</a>}
+              </Show>{" "}
+              · {relativeTime(i().started.at, now())}
+            </span>
           </div>
           <Chip tone={i().session.state === "needs-you" ? "warn" : i().session.state === "done" ? "success" : i().session.state === "open" ? "info" : undefined}>
             {i().session.state === "needs-you" ? "Needs you" : i().session.state === "open" ? (liveOffer(i()) ? "Offered" : "Open") : i().session.state === "done" ? "Done" : "Closed"}
@@ -201,22 +211,27 @@ export function BatonStrip(props: {
               </button>
             </Show>
           </div>
-          {/* The goal: folded on every open, no preview — someone may be
-              looking at this screen with the operator. It never leaves the operator app. */}
-          <Show when={goalShown(i().session)}>
-            {(g) => (
-              <details class="disclosure baton-strip-goal">
-                <summary class="disclosure-summary">
-                  <Icon name="chevron-right" small class="icon-twist" />
-                  <span class="disclosure-label">Goal</span>
-                </summary>
-                <div class="disclosure-body">
-                  <p class="baton-strip-goal-text">{g()}</p>
-                  <p class="baton-strip-goal-note">Only you see this. It's never on their page.</p>
-                </div>
-              </details>
-            )}
-          </Show>
+          {/* Why it was started, and its goal: folded on every open, no preview — someone may be
+              looking at this screen with the operator. Neither leaves the operator app (§app.baton/goal-on-strip). */}
+          <details class="disclosure baton-strip-goal">
+            <summary class="disclosure-summary">
+              <Icon name="chevron-right" small class="icon-twist" />
+              <span class="disclosure-label">Why and goal</span>
+            </summary>
+            <div class="disclosure-body">
+              <p class="baton-strip-goal-label">Why</p>
+              <p class="baton-strip-goal-text">{whyText(i().started)}</p>
+              <Show when={goalShown(i().session)}>
+                {(g) => (
+                  <>
+                    <p class="baton-strip-goal-label">Goal</p>
+                    <p class="baton-strip-goal-text">{g()}</p>
+                  </>
+                )}
+              </Show>
+              <p class="baton-strip-goal-note">Only you see this. It's never on their page.</p>
+            </div>
+          </details>
           <Show when={i().owner && i().session.hiddenFromOwner}>
             <p class="baton-strip-areas">Hidden from {firstName(i().owner!.name)}'s owner page.</p>
           </Show>

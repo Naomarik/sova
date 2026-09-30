@@ -554,6 +554,7 @@ function toolHost(rt: Rt): PoToolHost {
           envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()),
           mintLink: false,
           startedVia: "overseer",
+          why: input.why,
           // A gap's gathering is its item's (gather/start, or gather/plan): the Pipeline links it.
           ...(input.gap !== "none" ? { item: itemOfGapOrThrow(orgId, projectId, input.gap), ...(input.plan ? { plan: true } : {}) } : {}),
         },

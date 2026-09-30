@@ -466,7 +466,8 @@ export class OrgHost {
       return [run(() => this.engine.fireDue(now))];
     } catch {
       const out: StepResult[] = [];
-      for (const sid of this.engine.dueSessions(now).filter((x) => !this.stalled.has(x)))
+      // (a session already set aside is delivered nothing: firing it alone is a no-op)
+      for (const sid of this.engine.dueSessions(now))
         try {
           out.push(run(() => this.engine.fireDue(now, { only: [sid] })));
         } catch (err) {

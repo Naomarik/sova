@@ -455,7 +455,7 @@ describe("org host", () => {
     await host.act("p/2", "wait", {}, operator);
     const rows = () => host.log.rows().length;
     // (the step limit's spin takes a while: wait for the outcome, not a fixed time)
-    for (let i = 0; i < 100 && (host.problems().length === 0 || host.configuration("p/2")[1] !== "idle"); i++) await tick(20);
+    for (let i = 0; i < 100 && (host.problems().length === 0 || host.configuration("p/2")?.[1] !== "idle"); i++) await tick(20);
     assert.deepEqual(host.problems().map((p) => [p.kind, p.sessionId]), [["timer", "p/1"]]);
     assert.deepEqual(host.configuration("p/2"), ["top", "idle"]);
     const n = rows();

@@ -259,6 +259,32 @@ test("bash under the real backend: writes land in the workspace only", { skip: p
 	cleanup();
 });
 
+test("bash under the real backend: no variable on bwrap's argv; the command's environment is the one --setenv gave", { skip: process.platform !== "linux" || !existsSync("/usr/bin/bwrap") }, async () => {
+	const { ws, policy, cleanup } = setup();
+	const backend = backendFor("linux");
+	const bp = { ...backendPolicy(policy), env: { ...backendPolicy(policy).env, MISE_GITHUB_TOKEN: "gh-unit-1", LANG: "C.UTF-8" } };
+	const seen: string[][] = [];
+	const spy: typeof backend = Object.assign(Object.create(Object.getPrototypeOf(backend)), backend, {
+		confine: async (req: Parameters<typeof backend.confine>[0]) => {
+			const r = await backend.confine(req);
+			if (r.ok) seen.push(r.confined.argv);
+			return r;
+		},
+	});
+	const snap = async (): Promise<Snapshot> => ({ ok: true, policy, backendPolicy: bp, backend: spy, enforcement: "full" });
+	const viaFd = text(await run(defs(ws, snap).get("bash")!, { command: "env -0 | sort -z | tr '\\0' '\\n'; ls /proc/$$/fd | tr '\\n' ' '" }, ws));
+	assert.equal(seen.length, 1);
+	assert.ok(!seen[0]!.includes("--setenv") && !seen[0]!.join(" ").includes("gh-unit-1"), "nothing of the environment on argv");
+	// The old spelling (--setenv on argv), run directly: the same environment, and fds 0-2 only either way.
+	const old = await backend.confine({ argv: ["/bin/sh", "-c", "env -0 | sort -z | tr '\\0' '\\n'; ls /proc/$$/fd | tr '\\n' ' '"], cwd: ws, policy: bp, env: { PATH: process.env.PATH!, PI_SESSION_ID: "unit" } });
+	assert.ok(old.ok);
+	const { execFileSync } = await import("node:child_process");
+	const direct = execFileSync(old.confined.argv[0]!, old.confined.argv.slice(1), { cwd: ws, env: old.confined.env, encoding: "utf8" });
+	assert.ok(viaFd.includes("MISE_GITHUB_TOKEN=gh-unit-1"));
+	assert.equal(viaFd.replace(/^PATH=.*$/m, "").trim(), direct.replace(/^PATH=.*$/m, "").trim());
+	cleanup();
+});
+
 test("claudeSettingsFor: the CLI sandbox plus Edit/Read rules, never Write rules (PROBE.md)", () => {
 	const { ws, agentDir, home, policy, cleanup } = setup({ git: true });
 	const s = JSON.parse(claudeSettingsFor(policy));

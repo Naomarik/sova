@@ -1,19 +1,21 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { Confined, Policy } from "../../backend.ts";
 import {
 	DarwinSeatbeltBackend,
+	linkBind,
 	MACH_ALLOW,
 	profilePlan,
 	renderProfile,
 	runCapture,
 	SANDBOX_EXEC_OVERRIDE,
 	sbplString,
+	secretPrelude,
 	shadowEnv,
 	spellings,
 	writeLayers,
@@ -266,4 +268,52 @@ test("the test-only global override replaces sandbox-exec; a broken one fails th
 	assert.ok(res.ok && res.confined.argv[0] === fake);
 	const p = await b.probe(policy);
 	assert.equal(p.ok, false);
+});
+
+test("binds (a confined launch's own state): the source is writable at any level; the target is a link to it", (t) => {
+	const { policy, root, tmpDir } = setup(t);
+	const src = join(root, "projects-src");
+	mkdirSync(src);
+	const state = join(root, "state");
+	mkdirSync(state);
+	const target = join(state, "projects", "slug");
+	const binds = [{ path: state, source: state }, { path: target, source: src }];
+	const plan = profilePlan({ policy: { ...policy, level: "read-only", binds } });
+	assert.deepEqual(plan.writable, [tmpDir, state, src]);
+	assert.ok(renderProfile(plan).includes(`(subpath ${sbplString(src)})`));
+	assert.equal(linkBind(binds[1]!), undefined, "made when missing");
+	assert.ok(lstatSync(target).isSymbolicLink());
+	assert.equal(readlinkSync(target), src);
+	assert.equal(linkBind(binds[1]!), undefined, "an existing link to the source is fine");
+	assert.equal(linkBind(binds[0]!), undefined, "in place: nothing to link");
+	const taken = join(state, "taken");
+	mkdirSync(taken);
+	assert.match(linkBind({ path: taken, source: src }) ?? "", /something else is there/);
+});
+
+test("secretEnv: read from an fd by a shell inside, never on argv or in the env; malformed ones refuse", async (t) => {
+	const { policy, root } = setup(t);
+	const fake = join(root, "sandbox-exec");
+	writeFileSync(fake, "#!/bin/sh\nexit 0\n", { mode: 0o755 });
+	const b = new DarwinSeatbeltBackend({ sandboxExec: fake });
+	const res = await b.confine({ argv: ["/bin/sh", "-c", 'printf "%s|%s" "$TOKEN" "$OTHER"'], cwd: policy.workspaceRoot, policy, secretEnv: { TOKEN: "tok-123", OTHER: "a b=c" }, secretFd: 5 });
+	assert.ok(res.ok, res.ok ? "" : res.reason);
+	const c = res.confined;
+	assert.ok(!JSON.stringify([c.argv, c.env]).includes("tok-123"));
+	assert.deepEqual(c.fds, [{ fd: 5, data: "TOKEN=tok-123\nOTHER=a b=c\n" }]);
+	assert.deepEqual(c.argv.slice(3, 7), ["/bin/sh", "-c", secretPrelude(5), "sova-sandbox-env"]);
+	// The prelude itself, run here without sandbox-exec: the variables arrive, the fd is closed.
+	const { spawn } = await import("node:child_process");
+	const out = await new Promise<string>((done) => {
+		const child = spawn(c.argv[3]!, c.argv.slice(4), { env: { PATH: "/usr/bin:/bin" }, stdio: ["ignore", "pipe", "inherit", "ignore", "ignore", "pipe"] });
+		(child.stdio[5] as NodeJS.WritableStream).end(c.fds![0]!.data);
+		let o = "";
+		child.stdout!.on("data", (d) => (o += d));
+		child.on("close", () => done(o));
+	});
+	assert.equal(out, "tok-123|a b=c");
+	for (const [secretEnv, secretFd] of [[{ T: "x" }, undefined], [{ T: "x" }, 2], [{ T: "a\nb" }, 5], [{ "1T": "x" }, 5]] as const) {
+		const r = await b.confine({ argv: ["/bin/true"], cwd: policy.workspaceRoot, policy, secretEnv, ...(secretFd !== undefined ? { secretFd } : {}) });
+		assert.equal(r.ok, false, JSON.stringify(secretEnv));
+	}
 });

@@ -75,7 +75,7 @@ async function start(cwd: string, flags: Record<string, string>) {
 		for (const h of handlers.get("session_shutdown") ?? []) await h({ reason: "quit" }, ctx);
 	};
 	started.push(stop);
-	return { tools, events, notes, entries, run, stop, command: (a: string) => commands.get("sandbox")!.handler(a, ctx), last: () => events.at(-1)! };
+	return { tools, events, notes, entries, run, stop, emit: pi.events.emit, command: (a: string) => commands.get("sandbox")!.handler(a, ctx), last: () => events.at(-1)! };
 }
 
 function dirs() {
@@ -191,4 +191,73 @@ test("partial enforcement: checkWorker refuses every backend unless acceptPartia
 		writeFileSync(policyFile, original);
 		utimesSync(policyFile, new Date(), new Date(Date.now() + 120_000));
 	}
+});
+
+const { decodeLaunchScope } = await import("../launch.ts");
+
+test("workerLaunch off: none outside a tracked worktree; inside one, a write-only scope for either kind of worker", async () => {
+	const { a } = dirs();
+	const s = await start(a, {});
+	const wl = s.last().workerLaunch!;
+	assert.deepEqual(wl({ cwd: a, backend: "pi", owner: "w1" }), { kind: "none" });
+	assert.deepEqual(wl({ cwd: a, backend: "claude-code", owner: "w1" }), { kind: "none" });
+	const pi = wl({ cwd: a, root: a, backend: "pi", owner: "w1" });
+	assert.equal(pi.kind, "pi");
+	if (pi.kind !== "pi") return;
+	assert.deepEqual(pi.flags, s.last().workerFlagsIn!(a), "the same flags as today's workerFlagsIn");
+	assert.equal(JSON.parse(pi.flags["sandbox-parent"]!).writeOnly, true);
+	const cc = wl({ cwd: a, root: a, backend: "claude-code", owner: "w1" });
+	assert.equal(cc.kind, "confine");
+	if (cc.kind !== "confine") return;
+	assert.ok(cc.module.endsWith("/launch.ts") && existsSync(cc.module));
+	const d = decodeLaunchScope(cc.scope);
+	assert.ok(d.ok);
+	assert.deepEqual(d.value.parent, JSON.parse(pi.flags["sandbox-parent"]!), "the confined worker gets the pi worker's scope");
+	assert.deepEqual(d.value.parent.readOnly, [join(a, ".agent")]);
+	assert.equal(d.value.agentDir, agentDir);
+	assert.equal(d.value.owner, "w1");
+	assert.deepEqual(wl({ cwd: a, root: a, backend: "claude-code", owner: "../x" }).kind, "refused", "an owner that is no plain id");
+	await s.stop();
+});
+
+test("workerLaunch on: the parent's scope (narrowed in a worktree), the same refusals as checkWorker, pi flags unchanged", { skip: !linux }, async () => {
+	const { a, b } = dirs();
+	const s = await start(a, { sandbox: "on" });
+	const e = s.last();
+	const wl = e.workerLaunch!;
+	const pi = wl({ cwd: a, backend: "pi", owner: "w1" });
+	assert.deepEqual(pi, { kind: "pi", extensionPath: e.extensionPath, flags: e.workerFlags }, "byte-identical to workerFlags");
+	const narrowed = wl({ cwd: join(a, "sub"), root: join(a, "sub"), backend: "pi", owner: "w1" });
+	assert.deepEqual(narrowed, { kind: "pi", extensionPath: e.extensionPath, flags: e.workerFlagsIn!(join(a, "sub")) }, "byte-identical to workerFlagsIn");
+	for (const [cwd, root] of [[a, undefined], [join(a, "sub"), join(a, "sub")]] as const) {
+		const cc = wl({ cwd, ...(root ? { root } : {}), backend: "claude-code", owner: "w2" });
+		assert.equal(cc.kind, "confine");
+		if (cc.kind !== "confine") continue;
+		const d = decodeLaunchScope(cc.scope);
+		assert.ok(d.ok);
+		const flags = root ? e.workerFlagsIn!(root)! : e.workerFlags!;
+		assert.deepEqual(d.value.parent, JSON.parse(flags["sandbox-parent"]!), "the pi worker's scope");
+	}
+	for (const backend of ["pi", "claude-code"]) {
+		assert.deepEqual(wl({ cwd: b, backend, owner: "w1" }), { kind: "refused", reason: e.checkWorker!({ cwd: b, backend }) }, backend);
+		assert.deepEqual(wl({ cwd: "../b", backend, owner: "w1" }), { kind: "refused", reason: e.checkWorker!({ cwd: "../b", backend }) }, backend);
+	}
+	await s.stop();
+});
+
+test("workerLaunch: an unavailable parent refuses every backend; a remote session has none", async () => {
+	const { a } = dirs();
+	const s = await start(a, { "sandbox-parent": "{nope" });
+	for (const backend of ["pi", "claude-code"]) {
+		const r = s.last().workerLaunch!({ cwd: a, backend, owner: "w1" });
+		assert.equal(r.kind, "refused");
+		if (r.kind === "refused") assert.match(r.reason, /Sandbox unavailable in the parent/);
+	}
+	await s.stop();
+	const r = await start(a, {});
+	r.emit("remote:session", { version: 1, target: "far" });
+	await r.command("on");
+	assert.equal(r.last().on, false);
+	assert.equal(r.last().workerLaunch, undefined);
+	await r.stop();
 });

@@ -75,6 +75,10 @@ export interface ConfineRequest {
 	secretEnv?: Record<string, string>;
 	/** A free fd number (≥ 3) for `secretEnv`'s payload. */
 	secretFd?: number;
+	/** Every variable, not only `secretEnv`, goes on `secretFd` where the backend would put it on
+	 * argv (bwrap `--setenv`): a whole process's environment (a write-only one is the host's) never
+	 * lands in a world-readable /proc/<pid>/cmdline. Requires `secretFd`. */
+	envOnFd?: boolean;
 }
 
 export interface RunnerFailureSpec {
@@ -192,6 +196,7 @@ export function policyKey(policy: Policy): string {
 		network: { mode: policy.network.mode, socket: policy.network.proxy?.socket, localPorts: policy.network.localPorts ?? [] },
 		env: Object.keys(policy.env).sort(),
 		shadowed: (policy.shadowed ?? []).map((sh) => `${sh.path}=${sh.source}`).sort(),
+		...(policy.binds?.length ? { binds: policy.binds.map((b) => `${b.path}=${b.source}`).sort() } : {}),
 	});
 }
 

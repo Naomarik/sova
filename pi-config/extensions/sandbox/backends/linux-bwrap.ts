@@ -45,6 +45,8 @@ export const DENIAL_SIGNATURES: readonly string[] = [
 	"from proxy after CONNECT",
 ];
 
+const ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 /** bwrap reports its own failures as "bwrap: …" on stderr, before the command starts. */
 export const RUNNER_FATAL: readonly string[] = ["^bwrap: "];
 
@@ -150,6 +152,9 @@ export function mountPlan(policy: Policy): { ops: Op[]; ensureDirs: string[] } {
 		...uniq(pins).map((path) => withSource("bind", path)),
 		...ro.map((path) => withSource("ro", path)),
 		...hidden.map((path) => ({ op: kindOf(src(path)) === "dir" ? ("hide-dir" as const) : ("hide-file" as const), path })),
+		// A confined launch's own state, at any level: last at its depth, so it wins over a
+		// read-only path it is bound exactly onto.
+		...(policy.binds ?? []).map((b) => (b.source === b.path ? { op: "bind" as const, path: b.path } : { op: "bind" as const, path: b.path, source: b.source })),
 	];
 	// Stable sort by depth; at equal depth the order above (bind, pin, ro, hidden) is kept, and
 	// equal depth with different paths never overlaps.
@@ -262,6 +267,17 @@ export class LinuxBwrapBackend implements Backend {
 			const resolv = canonical("/etc/resolv.conf");
 			if ((resolv === "/run" || resolv.startsWith("/run/")) && kindOf(resolv) === "file") argv.push("--ro-bind", resolv, resolv);
 		}
+		// A bind needs its target to exist as a mount point: a missing directory is made on the host.
+		for (const b of policy.binds ?? []) {
+			const kind = kindOf(b.source);
+			if (kind === "missing") return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: `bind source ${b.source} does not exist` };
+			if (kindOf(b.path) === "missing" && kind === "dir") {
+				try {
+					mkdirSync(b.path, { recursive: true, mode: 0o700 });
+				} catch {}
+			}
+			if (kindOf(b.path) !== kind) return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: `bind target ${b.path} is missing or not a ${kind === "dir" ? "directory" : "file"}` };
+		}
 		const { ops } = mountPlan(policy);
 		for (const o of ops) {
 			if (o.op === "bind") argv.push("--bind", o.source ?? o.path, o.path);
@@ -276,8 +292,21 @@ export class LinuxBwrapBackend implements Backend {
 		);
 		// "host" (a write-only worker): the host's network namespace, as unconfined.
 		if (network !== "host") argv.push("--unshare-net");
-		for (const [k, v] of Object.entries(env)) argv.push("--setenv", k, v);
-		if (network === "proxy") argv.push("--setenv", "SOVA_SOCAT", socat!);
+		const plain: [string, string][] = [...Object.entries(env), ...(network === "proxy" ? [["SOVA_SOCAT", socat!] as [string, string]] : [])];
+		if (!req.envOnFd) for (const [k, v] of plain) argv.push("--setenv", k, v);
+		// Secrets (and with envOnFd every variable) never go on argv, which any local user reads in
+		// /proc/<pid>/cmdline: bwrap reads more arguments, NUL-separated, from an inherited fd.
+		const secrets = Object.entries(req.secretEnv ?? {});
+		let fds: Confined["fds"];
+		if (secrets.length || req.envOnFd) {
+			const fd = req.secretFd;
+			if (!Number.isInteger(fd) || fd! < 3) return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: "variables on an fd need a free fd (secretFd >= 3)" };
+			if (secrets.some(([k]) => !ENV_NAME.test(k))) return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: "a secret variable has an invalid name" };
+			const onFd = [...(req.envOnFd ? plain : []), ...secrets];
+			if (onFd.some(([k, v]) => k.includes("\0") || v.includes("\0"))) return { ok: false, code: "SANDBOX_UNAVAILABLE", reason: "a variable has a NUL in its name or value" };
+			fds = [{ fd: fd!, data: onFd.flatMap(([k, v]) => ["--setenv", k, v]).map((a) => `${a}\0`).join("") }];
+			argv.push("--args", String(fd));
+		}
 		argv.push("--chdir", canonical(req.cwd), "--");
 		if (network === "proxy") argv.push("/bin/sh", "-c", RELAY_SCRIPT, "sova-sandbox-relay");
 		argv.push(...req.argv);
@@ -291,6 +320,7 @@ export class LinuxBwrapBackend implements Backend {
 			runnerFailure: { fatalSignatures: [...RUNNER_FATAL] },
 		};
 		if (notes.length) confined.notes = notes;
+		if (fds) confined.fds = fds;
 		return { ok: true, confined };
 	}
 

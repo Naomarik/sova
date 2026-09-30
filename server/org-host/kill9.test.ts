@@ -11,10 +11,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import type { EngineOptions } from "../org-charts";
+import type { EngineOptions } from "../statecharts";
 import { OrgHost } from "./index";
 import { scanSnapshots } from "./store";
-import { HOST_STATECHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-statechart";
 
 const ROUNDS = Number(process.env["KILL9_ROUNDS"] ?? 40);
 const CHILD = fileURLToPath(new URL("./kill9-child.ts", import.meta.url));
@@ -50,7 +50,7 @@ test(`kill -9 at random moments, ${ROUNDS} times: every open loads everything, e
       const line = await round(root, seed, seed % 60);
       assert.equal(line, "ready []", `round ${i}: the open after a kill found no problem`);
     }
-    const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"] });
+    const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, statecharts: HOST_STATECHARTS as unknown as EngineOptions["statecharts"] });
     host.effects.register("write", async (e) => ({ wrote: e.key }));
     assert.deepEqual(host.problems(), []);
     // quiesce: pending effects answered, holds and timers due
@@ -108,7 +108,7 @@ test(`r12: offers reaching each invitee in their hours, killed at random ${Math.
       }
       const waiting = Object.values(offer?.reach ?? {}).some((r) => r.state === "waiting");
       if (waiting) {
-        const snap = scanSnapshots(join(root, "ws", "charts")).find((x) => x.sid === b.id)!;
+        const snap = scanSnapshots(join(root, "ws", "statecharts")).find((x) => x.sid === b.id)!;
         const text = readFileSync(snap.file, "utf8");
         assert.ok(text.slice(text.indexOf(":queue")).includes(":offer/reach"), `${b.id}: a waiter has its reach timer`);
         waiters++;
@@ -116,9 +116,9 @@ test(`r12: offers reaching each invitee in their hours, killed at random ${Math.
     }
     assert.ok(reached > 0, "someone was reached");
     // each invitee's link is ONE effect per offer (a crash may re-run it, under the same engine key)
-    const mints = readFileSync(join(root, "mints.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as { key: string; chartKey: string });
+    const mints = readFileSync(join(root, "mints.log"), "utf8").trim().split("\n").map((l) => JSON.parse(l) as { key: string; statechartKey: string });
     const keysPer = new Map<string, Set<string>>();
-    for (const m of mints) keysPer.set(`${m.chartKey}`, (keysPer.get(m.chartKey) ?? new Set()).add(m.key));
+    for (const m of mints) keysPer.set(`${m.statechartKey}`, (keysPer.get(m.statechartKey) ?? new Set()).add(m.key));
     for (const [ck, keys] of keysPer) assert.equal(keys.size, 1, `${ck}: minted by one effect only`);
     await host.close();
   } finally {

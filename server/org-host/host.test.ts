@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/org-host/host.test.ts. The org host over the vendored engine, on
-// a runtime JS test statechart (test-chart.ts), in temp dirs: snapshots, the redo journal and its replay,
+// a runtime JS test statechart (test-statechart.ts), in temp dirs: snapshots, the redo journal and its replay,
 // the log and its privacy, effects (answered once, re-run at open), holds, invocations, timers,
 // workspace problems.
 import assert from "node:assert/strict";
@@ -7,11 +7,11 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync,
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
-import type { EngineOptions } from "../org-charts";
+import type { EngineOptions } from "../statecharts";
 import { OrgHost, OrgPayloadError, type OrgHostOptions } from "./index";
 import { verifyOrg } from "./rebuild";
 import { scanSnapshots } from "./store";
-import { HOST_STATECHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-statechart";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -25,7 +25,7 @@ function place() {
 }
 
 function open(where: { workspaceDir: string; stateDir: string }, more: Partial<OrgHostOptions> = {}) {
-  return OrgHost.open({ orgId: "o1", ...where, durable: false, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"], ...more });
+  return OrgHost.open({ orgId: "o1", ...where, durable: false, statecharts: HOST_STATECHARTS as unknown as EngineOptions["statecharts"], ...more });
 }
 
 const tick = (ms = 0) => new Promise((r) => setTimeout(r, ms));
@@ -39,13 +39,13 @@ describe("org host", () => {
     await host.start("l/1", "host-local-probe", {}, operator);
     const r = await host.act("p/1", "count", {}, operator);
     assert.equal(r.taken, true);
-    assert.deepEqual(scanSnapshots(join(at.workspaceDir, "charts")).map((s) => s.sid), ["p/1"]);
+    assert.deepEqual(scanSnapshots(join(at.workspaceDir, "statecharts")).map((s) => s.sid), ["p/1"]);
     assert.deepEqual(scanSnapshots(host.paths.local).map((s) => s.sid), ["l/1"]);
     assert.deepEqual(readdirSync(host.paths.journal), []);
     const rows = host.log.rows({ session: "p/1" });
     assert.deepEqual(rows.map((x) => x.event), ["sova/started", "count"]);
     assert.deepEqual(host.log.rows({ session: "l/1" }).map((x) => x.event), ["sova/started"]);
-    assert.ok(!existsSync(join(at.workspaceDir, "charts", "log")) || !readdirSync(join(at.workspaceDir, "charts", "log")).some((f) => readFileSync(join(at.workspaceDir, "charts", "log", f), "utf8").includes('"l/1"')), "a host-local session never logs into the repo");
+    assert.ok(!existsSync(join(at.workspaceDir, "statecharts", "log")) || !readdirSync(join(at.workspaceDir, "statecharts", "log")).some((f) => readFileSync(join(at.workspaceDir, "statecharts", "log", f), "utf8").includes('"l/1"')), "a host-local session never logs into the repo");
     await host.close();
     const again = await open(at);
     assert.deepEqual(again.configuration("p/1"), ["top", "idle"]);
@@ -255,7 +255,7 @@ describe("org host", () => {
     await host.start("p/1", "host-probe", {}, operator);
     await host.start("p/2", "host-probe", {}, operator);
     await host.close();
-    const file = scanSnapshots(join(at.workspaceDir, "charts")).find((s) => s.sid === "p/2")!.file;
+    const file = scanSnapshots(join(at.workspaceDir, "statecharts")).find((s) => s.sid === "p/2")!.file;
     writeFileSync(file, "<<<<<<< HEAD\n{:broken");
     const again = await open(at);
     assert.deepEqual(again.problems().map((p) => [p.kind, p.sessionId]), [["snapshot", "p/2"]]);
@@ -477,7 +477,7 @@ describe("org host", () => {
     await host.start("p/3", "host-probe", {}, operator);
     await host.act("p/3", "arm-bomb", {}, operator);
     await host.close();
-    const file = scanSnapshots(join(at.workspaceDir, "charts")).find((s) => s.sid === "p/2")!.file;
+    const file = scanSnapshots(join(at.workspaceDir, "statecharts")).find((s) => s.sid === "p/2")!.file;
     const good = readFileSync(file, "utf8");
     writeFileSync(file, "<<<<<<< HEAD\n{:broken");
     await tick(120);
@@ -533,7 +533,7 @@ describe("org host", () => {
     const rows = host.log.rows({ session: "p/1" });
     assert.deepEqual(rows.filter((x) => x.event === "sova/rewindow").map((x) => x.feed), ["quiet", "quiet"]);
     await host.close();
-    const v = verifyOrg({ orgId: "o1", ...at, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"] });
+    const v = verifyOrg({ orgId: "o1", ...at, statecharts: HOST_STATECHARTS as unknown as EngineOptions["statecharts"] });
     assert.deepEqual(v.differing, [], "rebuild --verify replays the moved wait");
   });
 
@@ -543,7 +543,7 @@ describe("org host", () => {
     await host.start("org/o1", "org", { id: "o1", name: "Acme", slug: "acme", createdAt: 1 }, operator);
     await host.start("person/o1/p1", "person", { orgId: "o1", id: "p1", person: { name: "Ana", status: "active", role: "R", decides: [], skills: [] }, changed: [], by: { kind: "operator" } }, operator);
     await host.close();
-    const file = scanSnapshots(join(at.workspaceDir, "charts")).find((s) => s.sid === "person/o1/p1")!.file;
+    const file = scanSnapshots(join(at.workspaceDir, "statecharts")).find((s) => s.sid === "person/o1/p1")!.file;
     const good = readFileSync(file, "utf8");
     writeFileSync(file, "<<<<<<< HEAD\n{:broken");
     const again = await open(at);

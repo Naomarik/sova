@@ -1,7 +1,7 @@
 // Run: pnpm exec tsx --test server/project-overseer-tools.test.ts. The tools against a fake host: their
 // scope, modes, reads and how they relay a statechart's refusal; files in a throwaway dir (PI_CODING_AGENT_DIR
 // too). No model is called. The level, the allowances and the holds are the statecharts' (the real host's
-// tests: project-overseer-tools-charts.test.ts).
+// tests: project-overseer-tools-statecharts.test.ts).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -38,10 +38,10 @@ const PREVIEW: PreviewView = {
 const root = mkdtempSync(join(tmpdir(), "sova-po-tools-"));
 process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 const { projectOverseerTools, TOOL_NEEDS, COUNTS, operatorOnlyRefusal, underRoot, buildState } = await import("./project-overseer-tools");
-const { statechartInfo, statechartVersions } = await import("./org-charts");
+const { statechartInfo, statechartVersions } = await import("./statecharts");
 const { defaultPoSettings, effectiveAutonomy, projectOverseerPaths, EMPTY_ROSTER_REASON } = await import("./project-overseer-store");
 const { OrgError } = await import("./org-error");
-const { TOOL_NEEDS: MASTER_NEEDS } = await import("./org-charts-replay");
+const { TOOL_NEEDS: MASTER_NEEDS } = await import("./statecharts-replay");
 const { baseCodingMode, codingModeChoice } = await import("./project-coding-mode");
 const { baseAbilities, overseerAbilities } = await import("./gathering-abilities");
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -147,7 +147,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
     dropGap: async (ideaId: string) => void calls.push(`gap/drop:${ideaId}`),
     pipeline: (q: { session?: string }) =>
       q.session
-        ? { kind: "session" as const, id: q.session, chart: "item", configuration: ["asking"], enabled: [{ event: "correct/reopen", enabled: false, refusal: { sentence: "It is not done." } }], corrections: ["correct/reopen"], holds: [] }
+        ? { kind: "session" as const, id: q.session, statechart: "item", configuration: ["asking"], enabled: [{ event: "correct/reopen", enabled: false, refusal: { sentence: "It is not done." } }], corrections: ["correct/reopen"], holds: [] }
         : { kind: "project" as const, rows: [], held: [{ id: "h1", orgId: "org_aaaaaaaa", projectId: "prj_bbbbbbbb", what: 'A gathering session "Pay"', kind: "act", goesAt: "2026-09-30T10:10:00.000Z", since: "2026-09-30T10:00:00.000Z" }], feed: [] },
     decideHold: async (id: string, approve: boolean, reason: string) => void calls.push(`${approve ? "approve" : "cancel"}:${id}:${reason}`),
     correct: async (session: string, event: string, _payload: Record<string, unknown>, reason: string) => {

@@ -196,7 +196,7 @@ describe("organizations", async () => {
 
   test("q1: no state file is written in the workspace (only statecharts, the plain files and git)", () => {
     for (const f of ["org.json", "roster.json", "projects.json", "holder.json", "baton.json"]) assert.equal(existsSync(join(dir, f)), false, f);
-    assert.ok(existsSync(join(dir, "charts", "org")), "the org statechart's snapshot");
+    assert.ok(existsSync(join(dir, "statecharts", "org")), "the org statechart's snapshot");
     assert.ok(existsSync(join(dir, "roster-history.jsonl")));
   });
 

@@ -79,7 +79,7 @@ describe("baton sessions", async () => {
     assert.equal((await commitAll(dir, "test commit")).committed, true);
     const tracked = execFileSync("git", ["-C", dir, "ls-files"], { encoding: "utf8" });
     assert.ok(tracked.includes(row.file), "the transcript is the workspace's");
-    assert.ok(/^charts\/baton\//m.test(tracked), "the baton statechart's snapshot is the workspace's");
+    assert.ok(/^statecharts\/baton\//m.test(tracked), "the baton statechart's snapshot is the workspace's");
     assert.ok(!tracked.includes("baton.json"), "no baton.json (q1): the statechart holds the row");
     const history = execFileSync("git", ["-C", dir, "log", "-p", "--all"], { encoding: "utf8" });
     for (const f of readdirSync(dir).filter((f) => !f.startsWith(".")))

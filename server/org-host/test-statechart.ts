@@ -42,12 +42,12 @@ export const HOST_STATECHARTS = {
   "host-probe": {
     version: 1,
     storage: "portable",
-    chart: HOST_STATECHART,
+    statechart: HOST_STATECHART,
     acts: {
       "gather/start": { needs: null, hold: true, counts: "gather", what: "Gathering" },
       say: { needs: null, hours: (d: Data) => ((d["_event"] as Data | undefined)?.["data"] as Data | undefined)?.["window"] ?? null },
     },
     redact: { secretish: "drop" },
   },
-  "host-local-probe": { version: 1, storage: "host-local", chart: HOST_STATECHART, cold: (config: string[]) => config.includes("gathering") },
+  "host-local-probe": { version: 1, storage: "host-local", statechart: HOST_STATECHART, cold: (config: string[]) => config.includes("gathering") },
 };

@@ -63,7 +63,7 @@ describe("buildEnvelope (design §4.1)", () => {
 });
 
 describe("atOnceCounts: from statechart states", () => {
-  const s = (statechart: string, configuration: string[], data: Record<string, unknown>): SessionRead => ({ id: `${statechart}-${Math.random()}`, chart: statechart, configuration, data });
+  const s = (statechart: string, configuration: string[], data: Record<string, unknown>): SessionRead => ({ id: `${statechart}-${Math.random()}`, statechart, configuration, data });
   const P = "prj_a";
   test("gatherings: this overseer's batons in open, settle ones included; never the operator's, another project's, or ended ones", () => {
     const sessions = [

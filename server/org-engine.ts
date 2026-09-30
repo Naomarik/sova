@@ -1,4 +1,4 @@
-import type { Hold, Refusal, StampContext } from "./org-charts";
+import type { Hold, Refusal, StampContext } from "./statecharts";
 import { OrgHost, type ActResult, type HostChange } from "./org-host";
 import { OrgError } from "./org-error";
 import type { ActBy, Envelope } from "./org-envelope";
@@ -15,7 +15,7 @@ import type { ProjectOverseerSettings } from "../shared/project-overseer";
  * own them (`onOrgHostOpened`), so this module imports none of them.
  */
 
-export type { Refusal } from "./org-charts";
+export type { Refusal } from "./statecharts";
 export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocation, InvocationReport, SessionInfo } from "./org-host";
 
 /** The OrgHost as the server calls it (server/org-host/, the engine member's): the host itself, so
@@ -53,7 +53,7 @@ export interface OpenOptions {
 }
 
 /** The host's `stamp` option (engine API): a fresh envelope for an act the engine delivers itself
-    (a statechart's drive, a held act at its release). `who` is the act's original actor (default "chart")
+    (a statechart's drive, a held act at its release). `who` is the act's original actor (default "statechart")
     and project: an act on a person or the org (a held roster approve) is still its project's act, so
     its level, pause, archive, ledgers and hold come from that project, never from defaults. */
 export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: StampContext) => Envelope;
@@ -109,7 +109,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
       if (!self) throw new Error("The org engine stamped before it opened.");
       const pid = stampProject(self, sid, payload, who);
       const settings = settingsOf();
-      const env = stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
+      const env = stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "statechart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
       return { ...env, ...(stampPeopleSource?.(opts.orgId, payload) ?? {}) } as Envelope;
     };
     const host = await opener({ ...opts, stamp, clock: () => (testClock ? testClock() : Date.now()) });

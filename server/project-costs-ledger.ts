@@ -7,7 +7,7 @@ import { orgDir, OrgError } from "./orgs";
 /**
  * A project's cost ledger in the org's workspace repo (§app.project-costs/ledger), so it moves with
  * the org. Neither file holds a secret, a path or a host name; a snapshot keeps its session's title,
- * as the build chart does.
+ * as the build statechart does.
  *
  * - `projects/<pid>/usage.jsonl`: append-only usage that has no transcript: one row per reconciler
  *   answer (the decide chain's own cache hits spend nothing and write nothing).

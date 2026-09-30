@@ -1,6 +1,6 @@
 // The org's transition log (design §5.5): one append-only JSONL segment per month,
-// `<workspace>/charts/log/<yyyy-mm>.jsonl` for portable sessions and
-// `<stateRoot>/org-charts/<org>/log/<yyyy-mm>.jsonl` for host-local ones.
+// `<workspace>/statecharts/log/<yyyy-mm>.jsonl` for portable sessions and
+// `<stateRoot>/statecharts/<org>/log/<yyyy-mm>.jsonl` for host-local ones.
 //
 // Privacy: a row never holds link tokens or hashes, never message text, never About text or contact
 // values. `scrub` applies the statechart's `:redact` rules over the defaults, by key name, anywhere in the
@@ -10,7 +10,7 @@
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Json, Step } from "../org-charts";
+import type { Json, Step } from "../statecharts";
 
 export type RedactRule = "drop" | "contact" | "digest";
 
@@ -43,7 +43,7 @@ export interface LogRow {
   at: number;
   org: string;
   session: string | null;
-  chart: string | null;
+  statechart: string | null;
   event: string;
   by: string | null;
   via?: string;
@@ -133,7 +133,7 @@ export function rowOfStep(org: string, step: Step, rules: Record<string, RedactR
     at: step.at,
     org,
     session: step.sessionId,
-    chart: step.chart ?? null,
+    statechart: step.statechart ?? null,
     event: step.event,
     by: step.by ?? null,
     envelope: scrub(step.data ?? {}, rules),

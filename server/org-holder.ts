@@ -1,6 +1,6 @@
 /**
  * Which host holds an organization (§app.organizations/holder). The record lives in the org statechart's
- * portable snapshot (`<workspace>/charts/org/…`, r1): the org statechart writes it when this host's
+ * portable snapshot (`<workspace>/statecharts/org/…`, r1): the org statechart writes it when this host's
  * residence claims or releases the org. A host's identity is its own, made once and kept host-local
  * (`<stateRoot>/host.json`). Attach reads the record in the clone and on its remote (the residence
  * statechart's `read-holder` effect, server/org-effects.ts), so attaching an org another host still holds
@@ -10,7 +10,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { createStatecharts } from "./org-charts";
+import { createStatecharts } from "./statecharts";
 import { snapshotFile } from "./org-host/store";
 import { stateRoot } from "./state-root";
 import { remoteFileText } from "./workspace-git";
@@ -89,7 +89,7 @@ export function named(h: HolderRecord | null, me: HostIdentity = hostIdentity())
 }
 
 /** The org snapshot's path inside the workspace repo (as origin has it too). */
-export const orgSnapshotPath = (orgId: string): string => snapshotFile("charts", "org", `org/${orgId}`);
+export const orgSnapshotPath = (orgId: string): string => snapshotFile("statecharts", "org", `org/${orgId}`);
 
 /**
  * The holder record on the clone's origin (fetched, at most REMOTE_CHECK_MS), or null: no remote,

@@ -356,8 +356,8 @@ describe("a project's coding sessions", async () => {
     await hostOf(org.id).act(
       itemSid,
       "link/moved",
-      { from: `decision/${org.id}/${project.id}/d_login1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "The login page asks for email and password.", record: "§req/login" } },
-      envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+      { from: `decision/${org.id}/${project.id}/d_login1`, statechart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "The login page asks for email and password.", record: "§req/login" } },
+      envelopeFor(org.id, project.id, { by: "statechart", attended: false }),
       { settle: true },
     );
     let row: ReturnType<typeof readBuilds>[number] | undefined;
@@ -394,8 +394,8 @@ describe("a project's coding sessions", async () => {
       await hostOf(org.id).act(
         `item/${org.id}/${project.id}/g_build2`,
         "link/moved",
-        { from: `decision/${org.id}/${project.id}/d_logout1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Logout clears the session.", record: "§req/logout" } },
-        envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+        { from: `decision/${org.id}/${project.id}/d_logout1`, statechart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Logout clears the session.", record: "§req/logout" } },
+        envelopeFor(org.id, project.id, { by: "statechart", attended: false }),
         { settle: true },
       );
       let row: ReturnType<typeof readBuilds>[number] | undefined;
@@ -456,8 +456,8 @@ describe("a project's coding sessions", async () => {
     await hostOf(org.id).act(
       itemSid,
       "link/moved",
-      { from: `decision/${org.id}/${project.id}/d_export1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Export writes CSV.", record: "§req/export" } },
-      envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+      { from: `decision/${org.id}/${project.id}/d_export1`, statechart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Export writes CSV.", record: "§req/export" } },
+      envelopeFor(org.id, project.id, { by: "statechart", attended: false }),
       { settle: true },
     );
     const onGap = await po.codeItem(org.id, project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));

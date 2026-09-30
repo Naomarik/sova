@@ -1,5 +1,5 @@
 /**
- * Replays the mined organization traces (server/fixtures/org-charts/*.json: the e2e lanes' real runs,
+ * Replays the mined organization traces (server/fixtures/statecharts/*.json: the e2e lanes' real runs,
  * anonymised, and the synthetic edge cases) through a real org host (server/org-host/) running the
  * refit's statecharts, on a virtual clock, and compares every step with what really happened:
  *
@@ -134,7 +134,7 @@ export interface Trace {
 }
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-export const FIXTURES = join(HERE, "fixtures", "org-charts");
+export const FIXTURES = join(HERE, "fixtures", "statecharts");
 
 /** Tools renamed since a trace was mined, by their old name: the same tool, so the same rule
     (`sova_confirm` became `sova_card`, §app.overseer/confirm). */
@@ -239,11 +239,11 @@ export type Cls =
   | "drift" // the trace ran a Sova commit older than the behaviour the statechart models
   | "host-check" // a refusal by a host check the statechart holds no facts for (validation, per-id, abilities, privacy)
   | "store-shape" // today's stores are the wrong shape for the statecharts (a missing edge, an undated event): the `why` names the cleaner shape
-  | "chart-better" // the statechart holds what today dropped or could not see (a reason, a stall, a position)
+  | "statechart-better" // the statechart holds what today dropped or could not see (a reason, a stall, a position)
   | "cannot-express" // real behaviour the statechart's model does not have
   | "mining" // the replay's own reconstruction is approximate here (a reconstructed counter)
   | "ruling" // the operator's rulings changed this on purpose (decisions.md / coverage.md): the evidence names the ruling
-  | "chart-bug"; // the statechart is wrong: reported to `charts`
+  | "statechart-bug"; // the statechart is wrong: reported to `statecharts`
 
 export interface Divergence {
   trace: string;
@@ -253,7 +253,7 @@ export interface Divergence {
   got: unknown;
   cls: Cls | null;
   why: string;
-  /** For chart-better: the concrete step (what today did, what the statechart holds). */
+  /** For statechart-better: the concrete step (what today did, what the statechart holds). */
   evidence?: Record<string, unknown>;
 }
 
@@ -264,7 +264,7 @@ export interface Report {
   passes: number;
   divergences: Divergence[];
   skipped: string[];
-  looks: { real: number; chart: number };
+  looks: { real: number; statechart: number };
   items: Record<string, string[]>;
   /** What the statechart was actually asked: trials of real acts, item positions checked, real looks compared. */
   /** `routed`: tool calls that are a statechart act now (reads, notes, confirm cards and to-dos are none); each is trialled. */
@@ -458,7 +458,7 @@ function stubEffect(e: HostEffect, now: number): Record<string, unknown> {
 class World {
   host!: OrgHost;
   looks: StatechartLook[] = [];
-  /** The statecharts' own acts (r3 drive: by "chart"), taken: when, on which session, which event. */
+  /** The statecharts' own acts (r3 drive: by "statechart"), taken: when, on which session, which event. */
   driven: { at: number; sessionId: string; event: string; ids: string[] }[] = [];
   /** Reasons sent by the statechart (R3: news of its own acts; the watch keeps them out of its looks). */
   statechartNews: { at: number; sessionId: string; kind: string; asks?: boolean }[] = [];
@@ -493,15 +493,15 @@ class World {
       clock: this.clock,
       durable: false,
       // The traces predate holds (q10): every act goes at once (hold 0), as it did.
-      stamp: (_sid, _event, _payload, who) => self.envelope({ by: ((who?.by as ActBy | undefined) ?? "chart") as ActBy, attended: false }),
+      stamp: (_sid, _event, _payload, who) => self.envelope({ by: ((who?.by as ActBy | undefined) ?? "statechart") as ActBy, attended: false }),
     });
     this.host.onChange((c) => {
-      if (process.env.SOVA_REPLAY_DEBUG) for (const st of c.steps) if (st.by === "chart") console.log(`[drive] ${st.sessionId} ${st.event} ${st.refused ? "refused" : ""} ${JSON.stringify(st.data?.ids ?? null)} ${st.before.join(",")} -> ${st.after.join(",")}`);
+      if (process.env.SOVA_REPLAY_DEBUG) for (const st of c.steps) if (st.by === "statechart") console.log(`[drive] ${st.sessionId} ${st.event} ${st.refused ? "refused" : ""} ${JSON.stringify(st.data?.ids ?? null)} ${st.before.join(",")} -> ${st.after.join(",")}`);
       for (const st of c.steps)
         if (st.event === "reason/noted")
           for (const r of Array.isArray(st.data?.reasons) ? (st.data.reasons as Record<string, unknown>[]) : [st.data ?? {}])
-            if ((r.by ?? st.data?.by) === "chart") this.statechartNews.push({ at: this.clock(), sessionId: st.sessionId, kind: String(r.kind), ...(typeof r.asks === "boolean" ? { asks: r.asks } : {}) });
-      for (const st of c.steps) if (st.by === "chart" && !st.refused && !st.held && (st.after.join() !== st.before.join() || Object.keys(st.changed ?? {}).length > 0 || (st.effects?.length ?? 0) > 0) && !["reason/noted", "ledger/take"].includes(st.event)) this.driven.push({ at: this.clock(), sessionId: st.sessionId, event: st.event, ids: Array.isArray(st.data?.ids) ? (st.data.ids as string[]) : [] });
+            if ((r.by ?? st.data?.by) === "statechart") this.statechartNews.push({ at: this.clock(), sessionId: st.sessionId, kind: String(r.kind), ...(typeof r.asks === "boolean" ? { asks: r.asks } : {}) });
+      for (const st of c.steps) if (st.by === "statechart" && !st.refused && !st.held && (st.after.join() !== st.before.join() || Object.keys(st.changed ?? {}).length > 0 || (st.effects?.length ?? 0) > 0) && !["reason/noted", "ledger/take"].includes(st.event)) this.driven.push({ at: this.clock(), sessionId: st.sessionId, event: st.event, ids: Array.isArray(st.data?.ids) ? (st.data.ids as string[]) : [] });
     });
     const kinds = ["read-holder", "commit", "push", "pause-overseers", "revoke-owner-links", "revoke-person-links", "roster-history", "create-session", "mint-link", "mint-links", "outreach-send", "revoke-links", "stop-reply", "baton-entry", "make-worktree", "set-mode", "first-prompt", "worktree-note", "merge", "remove-worktree", "promote", "draft", "route-conflict-of", "restore-text", "settle", "idea-status", "owner-update", "hold/started"];
     for (const k of kinds)
@@ -572,7 +572,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   };
   let T0 = BASE + (phaseShift(0) ?? 0);
   let now = T0;
-  const rep: Report = { trace: trace.id, steps: trace.events.length, checks: 0, passes: 0, divergences: [], skipped: [], looks: { real: 0, chart: 0 }, items: {}, coverage: { trials: 0, routed: 0, itemChecks: 0, lookChecks: 0, expects: 0, restarts: 0, maxMicrosteps: 0 } };
+  const rep: Report = { trace: trace.id, steps: trace.events.length, checks: 0, passes: 0, divergences: [], skipped: [], looks: { real: 0, statechart: 0 }, items: {}, coverage: { trials: 0, routed: 0, itemChecks: 0, lookChecks: 0, expects: 0, restarts: 0, maxMicrosteps: 0 } };
   const F = trace.sova.features;
   let curDt = 0;
   const diverge = (check: string, expected: unknown, got: unknown, cls: Cls | null, why: string, evidence?: Record<string, unknown>) => {
@@ -769,7 +769,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         continue;
       }
       if (bugItems.has(g)) {
-        diverge("item-position", want, leaves(conf), "chart-bug", "follows from the statechart bug on this item's refused act (reported to statecharts)");
+        diverge("item-position", want, leaves(conf), "statechart-bug", "follows from the statechart bug on this item's refused act (reported to statecharts)");
         continue;
       }
       const it = gaps.get(g)!;
@@ -1020,7 +1020,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       const v = refused!;
       const got = { event: v.event, refusal: v.refusal, at: leaves(v.before) };
       if (s.name === "sova_todos" && F.mergeReasonAndTodosOperatorOnly === false)
-        return diverge("chart-vs-real", "taken", got, "drift", "sova_todos became operator-only in 77f3cdbf; this trace ran an older commit", { commits: ["77f3cdbf"] });
+        return diverge("statechart-vs-real", "taken", got, "drift", "sova_todos became operator-only in 77f3cdbf; this trace ran an older commit", { commits: ["77f3cdbf"] });
       // r3: the statechart already made this move itself (its drive); the overseer's own call then has nothing to do.
       // A promote: every id it refused was promoted by the statechart's own act. A build: the item's own build was started by the statechart.
       const refusedIds = [...(v.refusal ?? "").matchAll(/(\S+) \(([^)]*)\)/g)].map((m) => ({ id: m[1]!.replace(/^[:;]\s*/, ""), why: m[2]! }));
@@ -1042,28 +1042,28 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
             ? world.driven.filter((d) => d.event === "decision/promote" && d.ids.some((id) => ranIds.some((r) => r.id === id)))
             : []
           : world.driven.filter((d) => d.event === v.event && d.sessionId === v.sid);
-      if (done.length) return diverge("chart-vs-real", "taken", got, "ruling", "r3 (q2 drive): the statechart made this move itself before the overseer's call", { ruling: "r3", driven: done.map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event })) });
+      if (done.length) return diverge("statechart-vs-real", "taken", got, "ruling", "r3 (q2 drive): the statechart made this move itself before the overseer's call", { ruling: "r3", driven: done.map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event })) });
       // q7: an unlinked build starts only in a turn the operator started; today's unattended ones needed no gap.
       if (v.event === "build/start" && v.sid === S.project && !s.attended)
-        return diverge("chart-vs-real", "taken", got, "ruling", "q7: nothing is built that no one agreed on; an unattended build names its gap (C20), and this call named none", { ruling: "q7", act: v.event, attended: false });
+        return diverge("statechart-vs-real", "taken", got, "ruling", "q7: nothing is built that no one agreed on; an unattended build names its gap (C20), and this call named none", { ruling: "q7", act: v.event, attended: false });
       if (v.event === "gather/start" && v.before.some((x) => ["awaiting-build", "build-starting", "working", "idle", "failed", "merged", "done", "spec-edited"].includes(x)))
-        return diverge("chart-vs-real", "taken", got, "cannot-express", `a gathering named for a gap past its decisions (${got.at.join("/")}): today gathers at any time; the statechart gathers only while the gap is open or deciding`, { act: v.event, at: got.at, link: s.link ?? null });
+        return diverge("statechart-vs-real", "taken", got, "cannot-express", `a gathering named for a gap past its decisions (${got.at.join("/")}): today gathers at any time; the statechart gathers only while the gap is open or deciding`, { act: v.event, at: got.at, link: s.link ?? null });
       if (v.event === "gather/start" && v.before.some((x) => ["asking", "needs-operator", "gather-starting", "unreconciled", "conflicted", "drafted"].includes(x)))
-        return diverge("chart-vs-real", "taken", got, "cannot-express", `a second gathering for a gap that already has one (${got.at.join("/")}): the statechart gathers from open, or as a follow-up`, { act: v.event, at: got.at, link: s.link ?? null });
+        return diverge("statechart-vs-real", "taken", got, "cannot-express", `a second gathering for a gap that already has one (${got.at.join("/")}): the statechart gathers from open, or as a follow-up`, { act: v.event, at: got.at, link: s.link ?? null });
       if (v.event === "build/start" && v.item && v.before.some((x) => ["open", "asking", "gather-starting", "unreconciled", "drafted", "conflicted"].includes(x)))
-        return diverge("chart-vs-real", "taken", got, s.attended ? "cannot-express" : "chart-better", s.attended ? "the operator asked for a build before any decision on the gap was promoted; the statechart builds only from promoted decisions" : "an unattended build before the gap's decisions were promoted: the statechart holds the pipeline order the prompt only asks for", { act: v.event, at: got.at, attended: !!s.attended });
-      diverge("chart-vs-real", "taken", got, null, "the statechart refused what really ran");
+        return diverge("statechart-vs-real", "taken", got, s.attended ? "cannot-express" : "statechart-better", s.attended ? "the operator asked for a build before any decision on the gap was promoted; the statechart builds only from promoted decisions" : "an unattended build before the gap's decisions were promoted: the statechart holds the pipeline order the prompt only asks for", { act: v.event, at: got.at, attended: !!s.attended });
+      diverge("statechart-vs-real", "taken", got, null, "the statechart refused what really ran");
       return;
     }
-    if (s.refusal && HOST_CHECKS.has(s.refusal)) return diverge("chart-vs-real", "refused", "taken", "host-check", `real refusal by a host check (${s.refusal}) the statechart holds no fact for`);
+    if (s.refusal && HOST_CHECKS.has(s.refusal)) return diverge("statechart-vs-real", "refused", "taken", "host-check", `real refusal by a host check (${s.refusal}) the statechart holds no fact for`);
     if (s.refusal === "cap-open" && s.cap?.of !== "coding") {
       const closed = world.driven.filter((d) => d.event === "baton/close");
-      if (closed.length) return diverge("chart-vs-real", "refused", "taken", "ruling", "r3 (q2 drive): the statechart closed gatherings itself (an earlier one when a newer started for the same gap), so fewer were open than today's at-once limit counted", { ruling: "r3", driven: closed.map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event })) });
+      if (closed.length) return diverge("statechart-vs-real", "refused", "taken", "ruling", "r3 (q2 drive): the statechart closed gatherings itself (an earlier one when a newer started for the same gap), so fewer were open than today's at-once limit counted", { ruling: "r3", driven: closed.map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event })) });
     }
-    if (s.refusal === "budget-legacy") return diverge("chart-vs-real", "refused", "taken", "drift", "the coding token budget was removed in 320042f0", { commits: ["320042f0"] });
+    if (s.refusal === "budget-legacy") return diverge("statechart-vs-real", "refused", "taken", "drift", "the coding token budget was removed in 320042f0", { commits: ["320042f0"] });
     if (s.refusal === "cap-message" && !s.attended && F.allowanceHeld === false)
-      return diverge("chart-vs-real", "refused", "taken", "drift", "before 80a785ca an unattended run drew on the operator's per-message allowance (lane r3-R1 bug 3); the statechart draws on the day's", { commits: ["80a785ca"] });
-    diverge("chart-vs-real", `refused (${s.refusal})`, "taken", null, "the statechart took what really was refused");
+      return diverge("statechart-vs-real", "refused", "taken", "drift", "before 80a785ca an unattended run drew on the operator's per-message allowance (lane r3-R1 bug 3); the statechart draws on the day's", { commits: ["80a785ca"] });
+    diverge("statechart-vs-real", `refused (${s.refusal})`, "taken", null, "the statechart took what really was refused");
   };
 
   /** A tool call as the statechart act it is (design §7.1): on the gap's item, a session, the reconciler, or the project. */
@@ -1152,7 +1152,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   const askedNews = (kind: string, asks: boolean, at: number) =>
     world.statechartNews.filter((n) => n.kind === kind && n.asks === asks && n.at <= at && world.driven.some((d) => d.at <= n.at && DRIVE_OF[kind]?.includes(d.event)));
   /** A statechart look for its own driven news alone, every reason asking (r14). */
-  const asksLook = (l: StatechartLook) => l.rows.length > 0 && l.rows.every((r) => r.by === "chart" && askedNews(r.kind, true, r.at).some((n) => n.at === r.at));
+  const asksLook = (l: StatechartLook) => l.rows.length > 0 && l.rows.every((r) => r.by === "statechart" && askedNews(r.kind, true, r.at).some((n) => n.at === r.at));
   const r14Evidence = (news: { at: number; kind: string; asks?: boolean }[], ruling = "r3+r14") => ({
     ruling,
     news: news.map((n) => ({ kind: n.kind, at: n.at - T0, asks: n.asks })),
@@ -1223,16 +1223,16 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       else if (delayedByAsksLook(d, realKinds, pendingKinds))
         diverge("look-started", "a statechart look", { at: leaves(conf), reasons: pendingKinds }, "ruling", "r3+r14: the statechart's previous look was for its own reconcile's news that asks the overseer; master's gap after any look applies, so this reason waits for the statechart's next look (its soon time or the gap's end), which is due", delayedByAsksLook(d, realKinds, pendingKinds)!);
       else if (driftLook(d.lastRunAt))
-        diverge("look-started", "a statechart look", { at: leaves(conf), reasons: pendingKinds }, "drift", "the statechart's last look was for a reason this trace's code lacks; it restarted the statechart's gap, so the statechart's next look waits past this one", { chartLook: { at: driftLook(d.lastRunAt)!.at - T0, kinds: driftLook(d.lastRunAt)!.kinds }, commits: driftLook(d.lastRunAt)!.kinds.includes("coding/settled") ? ["239852ee"] : ["8b7f6751"] });
+        diverge("look-started", "a statechart look", { at: leaves(conf), reasons: pendingKinds }, "drift", "the statechart's last look was for a reason this trace's code lacks; it restarted the statechart's gap, so the statechart's next look waits past this one", { statechartLook: { at: driftLook(d.lastRunAt)!.at - T0, kinds: driftLook(d.lastRunAt)!.kinds }, commits: driftLook(d.lastRunAt)!.kinds.includes("coding/settled") ? ["239852ee"] : ["8b7f6751"] });
       else if (conf.includes("running") && realKinds.every((k) => k === "run-now"))
         diverge("look-started", "a statechart look", leaves(conf), "store-shape", `a Run Now while the previous look still runs in the statechart: that look's end is missing from its session (cut off); resynced. ${PROPOSE.dated}`);
-      else diverge("look-started", "a statechart look", { at: leaves(conf), reasons: pendingKinds }, null, "a real look started where the statechart started none", { chartNews: world.statechartNews.filter((n) => realKinds.includes(n.kind)).map((n) => ({ ...n, at: n.at - T0 })), watch: { lastRunAt: typeof d.lastRunAt === "number" ? d.lastRunAt - T0 : null }, lastLookAsked: (() => { const l = world.looks.find((x) => x.at === d.lastRunAt); return l ? asksLook(l) : null; })() });
+      else diverge("look-started", "a statechart look", { at: leaves(conf), reasons: pendingKinds }, null, "a real look started where the statechart started none", { statechartNews: world.statechartNews.filter((n) => realKinds.includes(n.kind)).map((n) => ({ ...n, at: n.at - T0 })), watch: { lastRunAt: typeof d.lastRunAt === "number" ? d.lastRunAt - T0 : null }, lastLookAsked: (() => { const l = world.looks.find((x) => x.at === d.lastRunAt); return l ? asksLook(l) : null; })() });
       // Resync: the look happened; the statechart takes it as a Run Now.
       if (!world.configuration(S.watch).includes("running")) {
         // Coordinator (r14): a look the statechart's own asks looks used up (the day's limit) is never explained.
         const v = trialOn(S.watch, "operator/run-now", {}, env("operator"), null);
         if (v && !v.taken && v.refusal?.includes("daily limit"))
-          diverge("look-started", "a statechart look", v.refusal, null, "the day's looks were used up (by the statechart's own looks?): report it", { chartLooks: world.looks.filter((l) => asksLook(l)).map((l) => l.at - T0) });
+          diverge("look-started", "a statechart look", v.refusal, null, "the day's looks were used up (by the statechart's own looks?): report it", { statechartLooks: world.looks.filter((l) => asksLook(l)).map((l) => l.at - T0) });
         else await send("resync look", S.watch, "operator/run-now", {}, env("operator"));
       }
       const l = world.looks.at(-1);
@@ -1248,12 +1248,12 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       else if (k === "baton/proposal") diverge("look-reasons", k, match.kinds, "store-shape", `no store dates a referral, so the replay cannot send it. ${PROPOSE.dated}`);
       else if (asksLook(match))
         diverge("look-reasons", k, match.kinds, "ruling", "r3+r14: the statechart's look started earlier, for its own reconcile's news that asks the overseer; this reason came after it and waits for the statechart's next look", { ...r14Evidence(match.rows.flatMap((r) => askedNews(r.kind, true, r.at).filter((n) => n.at === r.at))), lookAt: match.at - T0 });
-      else diverge("look-reasons", k, match.kinds, null, "the real look carried a reason the statechart's look lacks", { chartNews: world.statechartNews.filter((n) => n.kind === k).map((n) => ({ ...n, at: n.at - T0 })) });
+      else diverge("look-reasons", k, match.kinds, null, "the real look carried a reason the statechart's look lacks", { statechartNews: world.statechartNews.filter((n) => n.kind === k).map((n) => ({ ...n, at: n.at - T0 })) });
     }
     for (const k of new Set(match.kinds)) {
       if (realKinds.includes(k)) continue;
       if (cut?.kinds.has(k)) {
-        diverge("look-reasons", `no ${k}`, k, "chart-better", "C1: the look before was cut off (it did not finish); the statechart puts its reasons back in front, today lost them", { cutLookAt: cut.at - T0, requeued: [...cut.kinds] });
+        diverge("look-reasons", `no ${k}`, k, "statechart-better", "C1: the look before was cut off (it did not finish); the statechart puts its reasons back in front, today lost them", { cutLookAt: cut.at - T0, requeued: [...cut.kinds] });
         continue;
       }
       if (k === "held/message" && F.allowanceHeld === false && !realKinds.some((x) => x.startsWith("drift:"))) {
@@ -1274,7 +1274,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         continue;
       }
       if (OWN_KINDS.has(k) && match.rows.filter((r) => r.kind === k).every((r) => r.by !== "overseer" && realTurnAt(r.at)))
-        diverge("look-reasons", `no ${k}`, k, "chart-better", "C2: today dropped every reconciler reason noted while the overseer ran; the statechart drops only the overseer's own (this run was requested by another)", { design: "C2", reasons: match.rows.filter((r) => r.kind === k).map((r) => ({ ...r, at: r.at - T0 })) });
+        diverge("look-reasons", `no ${k}`, k, "statechart-better", "C2: today dropped every reconciler reason noted while the overseer ran; the statechart drops only the overseer's own (this run was requested by another)", { design: "C2", reasons: match.rows.filter((r) => r.kind === k).map((r) => ({ ...r, at: r.at - T0 })) });
       else diverge("look-reasons", `no ${k}`, k, null, "the statechart's look carried a reason the real look lacks");
     }
   };
@@ -1290,12 +1290,12 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       l.matched = true;
       if (trace.source !== "synthetic") {
         if (F.askedOperatorReason === false && l.kinds.length && l.kinds.every((k) => k === "baton/asked-operator"))
-          diverge("chart-look-extra", "no look", l.kinds, "drift", "a look for a gathering that handed a question to the operator: that reason came in 8b7f6751, which this trace's code lacks", { commits: ["8b7f6751"], lookAt: l.at - T0 });
+          diverge("statechart-look-extra", "no look", l.kinds, "drift", "a look for a gathering that handed a question to the operator: that reason came in 8b7f6751, which this trace's code lacks", { commits: ["8b7f6751"], lookAt: l.at - T0 });
         else if (F.codingSettledReason === false && l.kinds.length && l.kinds.every((k) => k === "coding/settled"))
-          diverge("chart-look-extra", "no look", l.kinds, "drift", "a look for a coding session's settled turn: that reason came in 239852ee, which this trace's code lacks", { commits: ["239852ee"], lookAt: l.at - T0 });
+          diverge("statechart-look-extra", "no look", l.kinds, "drift", "a look for a coding session's settled turn: that reason came in 239852ee, which this trace's code lacks", { commits: ["239852ee"], lookAt: l.at - T0 });
         else if (asksLook(l))
-          diverge("chart-look-extra", "no look", l.kinds, "ruling", "r3+r14: the statechart reconciled by itself and its news asks the overseer, so it looked; today the overseer's own run reconciled later", { ...r14Evidence(l.rows.flatMap((r) => askedNews(r.kind, true, r.at).filter((n) => n.at === r.at))), lookAt: l.at - T0 });
-        else diverge("chart-look-extra", "no look", l.kinds, null, "the statechart started a look where none really started", { lookAt: l.at - T0, rows: l.rows.map((r) => ({ ...r, at: r.at - T0 })) });
+          diverge("statechart-look-extra", "no look", l.kinds, "ruling", "r3+r14: the statechart reconciled by itself and its news asks the overseer, so it looked; today the overseer's own run reconciled later", { ...r14Evidence(l.rows.flatMap((r) => askedNews(r.kind, true, r.at).filter((n) => n.at === r.at))), lookAt: l.at - T0 });
+        else diverge("statechart-look-extra", "no look", l.kinds, null, "the statechart started a look where none really started", { lookAt: l.at - T0, rows: l.rows.map((r) => ({ ...r, at: r.at - T0 })) });
       }
       await endLook(l, "stop");
     }
@@ -1497,7 +1497,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
           diverge("memo-reason", k, statechartKinds, "ruling", "r3+r14: the statechart reconciled by itself earlier and its news asked the overseer then (a look took it); today's reconcile came later, in the overseer's own run", r14Evidence(askedNews(k, true, now)));
         else if (askedNews(k, false, now).length)
           diverge("memo-reason", k, statechartKinds, "ruling", "r14: news of the statechart's own act that asks nothing of the overseer (its own unwritten gathering closed) is feed only; today noted it", r14Evidence(askedNews(k, false, now), "r14"));
-        else diverge("memo-reason", k, statechartKinds, null, "today noted this reason and the statechart has none", { chartNews: world.statechartNews.filter((n) => n.kind === k).map((n) => ({ ...n, at: n.at - T0 })) });
+        else diverge("memo-reason", k, statechartKinds, null, "today noted this reason and the statechart has none", { statechartNews: world.statechartNews.filter((n) => n.kind === k).map((n) => ({ ...n, at: n.at - T0 })) });
         for (let i = 0; i < missing; i++) await fact("memo reason", S.watch, "reason/noted", { kind: k, params: { sessionId: `obs${s.dt}-${i}`, title: `obs${s.dt}-${i}`, n: 1 }, key: `${k}:obs${s.dt}-${i}`, by: "system" });
       }
       continue;
@@ -1561,7 +1561,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   await instantEnd();
   await extraLooks(true);
   checkItems();
-  rep.looks.chart = world.looks.length;
+  rep.looks.statechart = world.looks.length;
   for (const g of gaps.keys()) rep.items[g] = world.configuration(S.item(g));
   if (opts.horizon && opts.horizon > now) {
     const phase = (g: string) => world.configuration(S.item(g)).filter((x) => LEAVES.has(x) && x !== "stalled" && x !== "live");
@@ -1581,7 +1581,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   return rep;
 }
 
-// ---- report (node --import tsx server/org-charts-replay.ts [out.json]) ------------------------------------------
+// ---- report (node --import tsx server/statecharts-replay.ts [out.json]) ------------------------------------------
 
 async function main(out?: string): Promise<void> {
   const reports: Report[] = [];

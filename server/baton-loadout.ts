@@ -31,7 +31,7 @@ import { authorNotes, labelAuthors, streamingText } from "./baton-view";
 import { runWrapup, WRAPUP_SYSTEM, WRAPUP_TOOL, wrapupActive, wrapupTool } from "./baton-wrapup";
 import { acquireChat, BusyError, type ChatSession, RefusedError, registerSpecialLoadout } from "./chat-manager";
 import { hostOf, onOrgChange, onOrgHostOpened, type Effect, type OrgHostApi } from "./org-engine";
-import type { Step } from "./org-charts";
+import type { Step } from "./statecharts";
 import type { Envelope } from "./org-envelope";
 import { findPerson, holderSteering, namesTaken, operatorName, orgDir, OrgError, participantLine, profileRedactTexts, publicTerms, readRoster, shortId } from "./orgs";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
@@ -514,7 +514,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
   const mint = (e: Effect, people: string[], offerId?: string) => {
     const sessionId = sidOfEffect(e);
     // r12: a per-invitee reach names its own key (`reach/<offer>/<person>`); the host dedupes on it.
-    const key = typeof e.chartKey === "string" && e.chartKey ? e.chartKey : e.key;
+    const key = typeof e.statechartKey === "string" && e.statechartKey ? e.statechartKey : e.key;
     const again = linksOfKey(key);
     // Run again after a restart: nobody has the first links, so they stop and Needs you asks for new ones.
     if (again.length) {

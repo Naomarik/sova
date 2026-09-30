@@ -111,12 +111,12 @@ describe("clone + attach = the whole organization", async () => {
     // The statecharts' snapshots and transition log hold the state (q1): no projection file is written.
     const want = ["about.md", "org-history.jsonl", "roster-history.jsonl", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
     for (const f of want) assert.ok(files.includes(f), f);
-    const snapshot = (statechart: string, sid: string) => `charts/${statechart}/${encodeURIComponent(sid)}.edn`;
+    const snapshot = (statechart: string, sid: string) => `statecharts/${statechart}/${encodeURIComponent(sid)}.edn`;
     for (const f of [snapshot("org", `org/${a.id}`), snapshot("person", `person/${a.id}/${tony.id}`), snapshot("project", `project/${a.id}/${project.id}`)]) assert.ok(files.includes(f), f);
-    assert.ok(files.some((f) => /^charts\/log\/\d{4}-\d{2}\.jsonl$/.test(f)), "the transition log");
+    assert.ok(files.some((f) => /^statecharts\/log\/\d{4}-\d{2}\.jsonl$/.test(f)), "the transition log");
     for (const f of ["org.json", "roster.json", "projects.json", "holder.json"]) assert.ok(!files.includes(f), `no ${f}`);
     // Host-local statecharts (the residence, the watches) stay on the host.
-    assert.ok(!files.some((f) => f.startsWith("charts/residence/") || f.startsWith("charts/watch/")), "nothing host-local");
+    assert.ok(!files.some((f) => f.startsWith("statecharts/residence/") || f.startsWith("statecharts/watch/")), "nothing host-local");
     assert.ok(files.includes(`projects/${project.id}/overseer/overseer.json`), "overseer.json");
     for (const f of ["started.json", "state.json"]) assert.ok(!files.includes(`projects/${project.id}/overseer/${f}`), `no ${f}`);
     assert.ok(files.includes(snapshot("build", `build/${a.id}/${project.id}/code-moved`)), "the build's snapshot");
@@ -217,7 +217,7 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(read.find((c) => c.id === "cf_moved")!.batonPath, here, "this host's file, not the old host's");
     assert.equal(reconcile.listDecisions(b.id, project.id).conflicts.find((c) => c.id === "cf_moved")!.batonPath, here);
     assert.equal(personPage(b.id, tony.id).conflicts.find((c) => c.id === "cf_moved")!.batonPath, here, "the person page too");
-    const snapshot = readFileSync(join(bDir, "charts", "conflict", `${encodeURIComponent(`conflict/${b.id}/${project.id}/cf_moved`)}.edn`), "utf8");
+    const snapshot = readFileSync(join(bDir, "statecharts", "conflict", `${encodeURIComponent(`conflict/${b.id}/${project.id}/cf_moved`)}.edn`), "utf8");
     assert.doesNotMatch(snapshot, /batonPath|batonpath|baton-path|ws-a|\.jsonl/, "the repo keeps its session's id, never a host path");
   });
 

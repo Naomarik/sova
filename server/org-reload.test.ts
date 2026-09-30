@@ -34,7 +34,7 @@ test("a broken snapshot is refused until it is restored and reloaded; Reload ans
   const sam = await orgs.addPerson(org.id, { name: "Sam Okafor", role: "Pricing" });
   const sid = `person/${org.id}/${sam.id}`;
   await closeOrgHost(org.id);
-  const file = scanSnapshots(join(orgs.orgDir(org.id), "charts")).find((s) => s.sid === sid)!.file;
+  const file = scanSnapshots(join(orgs.orgDir(org.id), "statecharts")).find((s) => s.sid === sid)!.file;
   const good = readFileSync(file, "utf8");
   writeFileSync(file, "<<<<<<< HEAD\n{:broken");
   await orgs.openAttachedOrgs();
@@ -62,7 +62,7 @@ test("a broken org snapshot: the page still opens (id, problems, Reload), every 
   await orgs.addPerson(org.id, { name: "Lina Haddad", role: "Ops" });
   const sid = `org/${org.id}`;
   await closeOrgHost(org.id);
-  const file = scanSnapshots(join(orgs.orgDir(org.id), "charts")).find((s) => s.sid === sid)!.file;
+  const file = scanSnapshots(join(orgs.orgDir(org.id), "statecharts")).find((s) => s.sid === sid)!.file;
   const good = readFileSync(file, "utf8");
   writeFileSync(file, "<<<<<<< HEAD\n{:broken");
   await orgs.openAttachedOrgs();

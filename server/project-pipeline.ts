@@ -3,7 +3,7 @@ import type { HeldAct, PipelineBuild, PipelineDecision, PipelineGathering, Pipel
 import { OPERATOR } from "../shared/baton";
 import { batonById, namesOf, sessionPathOf } from "./baton";
 import { buildSessionPath, readBuild } from "./build-loadout";
-import type { Hold } from "./org-charts";
+import type { Hold } from "./statecharts";
 import { actOrThrow, holdByRef, holdRef, hostOf, isOrgHostOpen } from "./org-engine";
 import { OrgError } from "./org-error";
 import type { LogRow } from "./org-host/log";
@@ -101,7 +101,7 @@ function heldActOf(orgId: string, h: Hold): HeldAct {
     kind: h.kind,
     goesAt: iso(h.until),
     since: iso(h.since),
-    ...(h.by === "overseer" || h.by === "chart" ? { by: h.by } : {}),
+    ...(h.by === "overseer" || h.by === "statechart" ? { by: h.by } : {}),
     ...(h.wait === "hours" ? { wait: "hours" as const, ...(person ? { person } : {}) } : {}),
     ...(h.waiting ? { reviewSince: iso(h.until) } : {}),
   };
@@ -337,7 +337,7 @@ export const LINES: Record<string, string> = {
 function lineOf(r: LogRow, from?: string, to?: string, held?: string): string | null {
   if (r.refused) return `Refused: ${r.refused}`;
   if (r.held) return `${held || r.held.what || "An act"} was held.`;
-  return LINES[`${r.chart ?? ""}:${r.event}`] ?? LINES[r.event] ?? (from && to ? `It moved from ${from} to ${to}.` : null);
+  return LINES[`${r.statechart ?? ""}:${r.event}`] ?? LINES[r.event] ?? (from && to ? `It moved from ${from} to ${to}.` : null);
 }
 
 /** An item's rows from the org's transition log, oldest first: its own and its sessions'. */
@@ -363,7 +363,7 @@ export function itemTimeline(orgId: string, projectId: string, itemId: string, o
     // Bookkeeping with no sentence (a fact mirror, a flush, an effect's answer) is quiet, never a raw event name.
     .filter(({ r, line }) => opts.includeQuiet || (line !== null && (r.feed !== "quiet" || r.session === sid)))
     .map(({ r, from, to, moved, line }) => {
-      const by = r.by === "operator" || r.by === "overseer" || r.by === "chart" || !r.by ? (r.by ?? "chart") : (names[r.by] ?? r.by);
+      const by = r.by === "operator" || r.by === "overseer" || r.by === "statechart" || !r.by ? (r.by ?? "statechart") : (names[r.by] ?? r.by);
       return {
         at: iso(r.at),
         event: r.event,

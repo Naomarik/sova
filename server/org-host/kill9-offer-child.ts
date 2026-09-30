@@ -28,7 +28,7 @@ const operator = { by: "operator" };
 
 const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root!, "ws"), stateDir: join(root!, "state"), clock: () => now });
 host.effects.register("mint-link", async (e) => {
-  appendFileSync(join(root!, "mints.log"), `${JSON.stringify({ key: e.key, chartKey: e["chartKey"], personId: e["personId"], at: now })}\n`);
+  appendFileSync(join(root!, "mints.log"), `${JSON.stringify({ key: e.key, statechartKey: e["statechartKey"], personId: e["personId"], at: now })}\n`);
   return { minted: 1 };
 });
 process.stdout.write(`ready ${JSON.stringify(host.problems())}\n`);

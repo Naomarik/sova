@@ -92,7 +92,7 @@ describe("org engines: one host per org", () => {
     assert.equal(stamp, null);
     await openOrgHost({ orgId: "org_s", workspaceDir: "/nonexistent-ws", stateDir: "/state" });
     const e = stamp!("watch/org_s/prj_s", "gather/start", {});
-    assert.deepEqual([e.by, e.attended, e.holdMs], ["chart", false, 600_000]);
+    assert.deepEqual([e.by, e.attended, e.holdMs], ["statechart", false, 600_000]);
     assert.equal(stamp!("item/org_s/prj_s/g_1", "gather/start", {}, { by: "overseer" }).by, "overseer");
   });
 
@@ -103,7 +103,7 @@ describe("org engines: one host per org", () => {
     writeFileSync(join(ws, "projects", "prj_q", "overseer", "overseer.json"), JSON.stringify({ autonomy: "L2", holdMin: 3 }));
     const config: Record<string, string[]> = { "watch/org_q/prj_q": ["attach", "paused"], "person/org_q/p_1": ["proposed"] };
     const f = fakeHost();
-    const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (statechart?: string) => (statechart === "person" ? [{ id: "person/org_q/p_1", chart: "person", configuration: ["active"], data: {} }] : []) };
+    const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (statechart?: string) => (statechart === "person" ? [{ id: "person/org_q/p_1", statechart: "person", configuration: ["active"], data: {} }] : []) };
     let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer"; projectId?: string }) => { autonomy: string; holdMs: number; paused: boolean; projectId?: string; by: string }) | null = null;
     setOrgHostOpener(async (o) => ((stamp = o.stamp as never), host as unknown as OrgHostApi));
     await openOrgHost({ orgId: "org_q", workspaceDir: ws, stateDir: "/state" });

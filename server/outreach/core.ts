@@ -223,7 +223,7 @@ function registerOutreachEffects(host: OrgHostApi, orgId: string): void {
     const projectId = String(e.sessionId).split("/").slice(2).join("/");
     const link = parseLinkRef(e.link) ?? undefined;
     const by = e.by === "operator-via-overseer" || e.by === "project-overseer" ? e.by : "operator";
-    const key = typeof e.chartKey === "string" && e.chartKey ? e.chartKey : String(e.key);
+    const key = typeof e.statechartKey === "string" && e.statechartKey ? e.statechartKey : String(e.key);
     return send({ orgId, projectId, personId: String(e.personId), ...(link ? { link } : {}), ...(typeof e.note === "string" ? { note: e.note } : {}), by, key });
   });
 }

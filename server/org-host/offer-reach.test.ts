@@ -110,7 +110,7 @@ describe("r12 offer reach on the host", () => {
       return { minted: 1 };
     });
     await new Promise((r) => setTimeout(r, 30));
-    assert.deepEqual(runs.map((e) => e["chartKey"]).sort(), ["reach/off_s1_1/p1", "reach/off_s1_1/p3"]);
+    assert.deepEqual(runs.map((e) => e["statechartKey"]).sort(), ["reach/off_s1_1/p1", "reach/off_s1_1/p3"]);
     assert.equal(new Set(runs.map((e) => e.key)).size, 2, "two effects, two engine keys");
     await again.close();
     const third = await openAt(at, () => t0 + 2000);

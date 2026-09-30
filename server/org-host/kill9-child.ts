@@ -5,9 +5,9 @@
 // an effect answered and an act held.
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import type { EngineOptions } from "../org-charts";
+import type { EngineOptions } from "../statecharts";
 import { OrgHost } from "./index";
-import { HOST_STATECHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-statechart";
 
 const [root, seedArg] = process.argv.slice(2);
 let seed = Number(seedArg) || 1;
@@ -17,7 +17,7 @@ const host = await OrgHost.open({
   orgId: "o1",
   workspaceDir: join(root!, "ws"),
   stateDir: join(root!, "state"),
-  charts: HOST_STATECHARTS as unknown as EngineOptions["charts"],
+  statecharts: HOST_STATECHARTS as unknown as EngineOptions["statecharts"],
 });
 host.effects.register("write", async (e) => {
   appendFileSync(join(root!, "effects.log"), `${e.key}\n`);

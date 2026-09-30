@@ -638,7 +638,7 @@ function toolHost(rt: Rt): PoToolHost {
         return {
           kind: "session",
           id: sid,
-          chart: statechart,
+          statechart,
           configuration: host.configuration(sid) ?? [],
           enabled: host.enabledEvents(sid, envelope),
           corrections: host.statechartInfo(statechart)?.corrections ?? [],

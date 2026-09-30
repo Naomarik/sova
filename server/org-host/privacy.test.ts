@@ -9,10 +9,10 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
-import type { EngineOptions } from "../org-charts";
+import type { EngineOptions } from "../statecharts";
 import { OrgHost } from "./index";
 import { DEFAULT_REDACT, scrub, scrubChanged } from "./log";
-import { HOST_STATECHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-statechart";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -83,7 +83,7 @@ test("the contact marker: planted and changed through person/edit, it is in the 
   // in the repo, only the snapshot holds the value
   const repoFiles = filesUnder(workspaceDir);
   const holding = repoFiles.filter((f) => markers.some((m) => readFileSync(f, "utf8").includes(m)));
-  assert.deepEqual(holding.map((f) => f.slice(workspaceDir.length + 1)), ["charts/person/person%2Fo1%2Fp1.edn"]);
+  assert.deepEqual(holding.map((f) => f.slice(workspaceDir.length + 1)), ["statecharts/person/person%2Fo1%2Fp1.edn"]);
 });
 
 test("what a log replay needs (r9) is redacted like the rest: spawn data, a start's data and envelope, a set-state patch (contact included), a report, a plain row", async () => {
@@ -104,7 +104,7 @@ test("what a log replay needs (r9) is redacted like the rest: spawn data, a star
     plainText: "PLAIN-TEXT-MARKER a note's words",
     plainEmail: "plain.marker@example.org",
   };
-  const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_STATECHARTS as unknown as EngineOptions["charts"] });
+  const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, statecharts: HOST_STATECHARTS as unknown as EngineOptions["statecharts"] });
   host.invocations.register("sova/look", {
     start: (_inv, report) => void setTimeout(() => report("finished", undefined, { text: M.reportText, contact: { phone: M.reportPhone } }), 5),
     stop: () => {},

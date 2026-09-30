@@ -4,8 +4,8 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { statechartVersions } from "./org-charts";
-import { autonomyRefusal, DRIFT_COMMIT, expectedPhases, FIXTURES, followUpPhase, loadTraces, oracle, replay, type OracleEnvelope as Envelope, type Report } from "./org-charts-replay";
+import { statechartVersions } from "./statecharts";
+import { autonomyRefusal, DRIFT_COMMIT, expectedPhases, FIXTURES, followUpPhase, loadTraces, oracle, replay, type OracleEnvelope as Envelope, type Report } from "./statecharts-replay";
 
 const traces = loadTraces();
 
@@ -72,15 +72,15 @@ test("the facts projection: each fact set has the phases a statechart may be in"
 test("the replay's statecharts are the refit's (org, project, watch, item, baton, decision, reconciler, build), never the spike's", () => {
   const names = statechartVersions().map((c) => c.name as string);
   for (const c of ["org", "person", "project", "watch", "item", "baton", "decision", "reconciler", "build"]) assert.ok(names.includes(c), `statecharts: ${names.join(", ")}`);
-  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "org-charts-replay.ts"), "utf8");
-  assert.doesNotMatch(src, /spike-project|work-item|createStatecharts|createOrgCharts/, "no spike statechart and no bare engine: the real host");
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "statecharts-replay.ts"), "utf8");
+  assert.doesNotMatch(src, /spike-project|work-item|createStatecharts/, "no spike statechart and no bare engine: the real host");
 });
 
 // A replay takes well under a second. The limit catches a hang in anything asynchronous; a synchronous
 // eventless cycle in a statechart cannot be interrupted by a timer, and the engine's step limit throws instead
 // (an `engine:` divergence below).
 const REPLAY_TIMEOUT_MS = 60_000;
-/** The engine's per-event microstep limit (server/org-charts.ts), and how far under it the corpus must stay. */
+/** The engine's per-event microstep limit (server/statecharts.ts), and how far under it the corpus must stay. */
 const MAX_MICROSTEPS = 200;
 
 const reports: Report[] = [];
@@ -88,7 +88,7 @@ for (const t of traces)
   test(`replay ${t.id} (${t.source}, Sova ${t.sova.commit ?? "?"}): zero unexplained divergences`, { timeout: REPLAY_TIMEOUT_MS }, async () => {
     const r = await replay(t);
     reports.push(r);
-    const unexplained = r.divergences.filter((d) => d.cls === null || d.cls === "chart-bug");
+    const unexplained = r.divergences.filter((d) => d.cls === null || d.cls === "statechart-bug");
     assert.deepEqual(unexplained, [], `${t.id}: ${unexplained.length} unexplained divergences`);
     // The statecharts were really asked: every real act trialled, every item position and every real look compared.
     const tools = t.events.filter((e) => e.kind === "tool").length;
@@ -104,7 +104,7 @@ for (const t of traces)
     assert.deepEqual(r.divergences.filter((d) => d.check.startsWith("engine:")), [], `${t.id}: the engine threw`);
     assert.ok(r.coverage.maxMicrosteps > 0 && r.coverage.maxMicrosteps <= MAX_MICROSTEPS / 10, `${t.id}: an event took ${r.coverage.maxMicrosteps} microsteps`);
     // A class that says the statechart is right, or cannot say it, shows the step it rests on.
-    for (const d of r.divergences.filter((x) => x.cls === "chart-better" || x.cls === "cannot-express" || x.cls === "drift"))
+    for (const d of r.divergences.filter((x) => x.cls === "statechart-better" || x.cls === "cannot-express" || x.cls === "drift"))
       assert.ok(d.evidence && Object.keys(d.evidence).length, `${t.id} @${d.dt} ${d.cls} ${d.check}: no evidence`);
   });
 

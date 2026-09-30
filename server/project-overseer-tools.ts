@@ -18,9 +18,9 @@ import { participantLine, stakeholderLine } from "./orgs";
 import { ABILITIES_PARAM } from "./gathering-abilities";
 import { describeCodingMode, type ModeRequest } from "./project-coding-mode";
 import { OrgError } from "./org-error";
-import { statechartInfo, statechartVersions } from "./org-charts";
+import { statechartInfo, statechartVersions } from "./statecharts";
 import type { ProjectOverseerPaths } from "./project-overseer-store";
-import type { EnabledEvent } from "./org-charts";
+import type { EnabledEvent } from "./statecharts";
 import type { FeedEntry } from "./org-host";
 import type { HeldAct, PipelineRow } from "../shared/pipeline";
 import { PREVIEW_PURPOSE_MAX, type PreviewView } from "../shared/preview-links";
@@ -128,7 +128,7 @@ const usedOf = (used: number, max: number | null, what: string) => (max === null
 /** What sova_pipeline reads (the host builds it from the engine; the tool words it). */
 export type PipelineRead =
   | { kind: "project"; rows: PipelineRow[]; held: HeldAct[]; feed: FeedEntry[] }
-  | { kind: "session"; id: string; chart: string; configuration: string[]; enabled: EnabledEvent[]; corrections: string[]; holds: HeldAct[] };
+  | { kind: "session"; id: string; statechart: string; configuration: string[]; enabled: EnabledEvent[]; corrections: string[]; holds: HeldAct[] };
 
 // ---- the levels, as the statecharts declare them ------------------------------------------------------
 
@@ -1052,7 +1052,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         const heldLine = (h: HeldAct) => `- ${h.id} · ${h.what} · ${h.wait === "hours" ? `waits for ${h.person ?? "the person"}'s working hours, until ${h.goesAt}` : h.reviewSince ? `waits for your review since ${h.reviewSince}` : `goes ahead at ${h.goesAt}`}${h.itemId ? ` · item ${h.itemId}` : ""}`;
         if (r.kind === "session") {
           const lines = [
-            `# ${r.id} (${r.chart})`,
+            `# ${r.id} (${r.statechart})`,
             `Configuration: ${r.configuration.join(", ") || "(ended)"}`,
             "## Events now",
             ...r.enabled.map((e) => `- ${e.event}: ${e.enabled ? "enabled" : `refused — ${cut(e.refusal?.sentence ?? "", 200)}`}`),

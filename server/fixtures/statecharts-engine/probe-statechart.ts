@@ -1,6 +1,6 @@
-// Test-only: the "engine-probe" chart as a JS tree, registered at runtime on the shipped bundle
-// (`createEngine({charts: PROBE_STATECHARTS})`, org-charts/src/sova/org_charts/engine/js_chart.cljs) for the
-// engine's TS tests and bench. A transcription of org-charts/src/sova/org_charts/engine/probe.cljs,
+// Test-only: the "engine-probe" statechart as a JS tree, registered at runtime on the shipped bundle
+// (`createEngine({statecharts: PROBE_STATECHARTS})`, statecharts/src/sova/statecharts/engine/js_statechart.cljs) for the
+// engine's TS tests and bench. A transcription of statecharts/src/sova/statecharts/engine/probe.cljs,
 // which the CLJS tests run: keep the two in step, node for node (probe_shape.json, checked on both sides). Each function gets the data model as
 // JS (camelCase keys) and returns JSON; a script returns data-model operations.
 
@@ -117,17 +117,17 @@ export const probeStatechart: Node = [
 /** probe.cljs's `version`. */
 export const PROBE_VERSION = 2;
 
-/** For `createEngine({charts})`. */
-export const PROBE_STATECHARTS = { "engine-probe": { version: PROBE_VERSION, chart: probeStatechart } };
+/** For `createEngine({statecharts})`. */
+export const PROBE_STATECHARTS = { "engine-probe": { version: PROBE_VERSION, statechart: probeStatechart } };
 
 // The probe's shape, one line per node that matters to parity: states, transitions (events, targets,
 // whether guarded), history defaults, timers (delayed sends and their cancels), raises, sends and
-// invocations, in document order. org-charts/src/sova/org_charts/engine/probe_shape.json is the shape both
-// copies must have: org-charts.test.ts checks this tree against it, probe_parity_test.cljs checks probe.cljs.
+// invocations, in document order. statecharts/src/sova/statecharts/engine/probe_shape.json is the shape both
+// copies must have: statecharts.test.ts checks this tree against it, probe_parity_test.cljs checks probe.cljs.
 
 const list = (v: unknown): string => (v == null ? "-" : Array.isArray(v) ? v.join(",") : String(v));
 
-/** The shape lines of a JS chart tree (probe-chart.ts's form). */
+/** The shape lines of a JS statechart tree (probe-statechart.ts's form). */
 export function probeShape(root: Node): string[] {
   const out: string[] = [];
   const walk = (n: Node, state: string) => {

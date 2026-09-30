@@ -34,7 +34,7 @@ async function repo(name: string): Promise<string> {
 /** The residence's effects on `dir`'s repo, as the org's engine runs them (an org not in the index: its workspace is the host's). */
 function effects(dir: string): Record<string, (e: Record<string, unknown>) => Promise<Record<string, unknown>>> {
   const handlers: Record<string, (e: Record<string, unknown>) => Promise<Record<string, unknown>>> = {};
-  const host = { paths: { portable: join(dir, "charts") }, effects: { register: (kind: string, fn: never) => (handlers[kind] = fn) }, data: () => null, sessions: () => [] };
+  const host = { paths: { portable: join(dir, "statecharts") }, effects: { register: (kind: string, fn: never) => (handlers[kind] = fn) }, data: () => null, sessions: () => [] };
   registerOrgEffects(host as unknown as OrgHostApi, "org_commits");
   return handlers;
 }

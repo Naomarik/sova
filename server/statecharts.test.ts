@@ -1,16 +1,16 @@
-// Run: pnpm exec tsx --test server/org-charts.test.ts. Engine behaviour proven against the vendored
-// ESM bundle (server/vendor/org-charts.js) through the typed wrapper, on the "engine-probe" statechart. The
-// probe is not in the shipped file: these tests register it at runtime (`charts`), as a JS copy
-// (fixtures/org-charts-engine/probe-chart.ts) of org-charts/src/sova/org_charts/engine/probe.cljs, which
+// Run: pnpm exec tsx --test server/statecharts.test.ts. Engine behaviour proven against the vendored
+// ESM bundle (server/vendor/statecharts.js) through the typed wrapper, on the "engine-probe" statechart. The
+// probe is not in the shipped file: these tests register it at runtime (`statecharts`), as a JS copy
+// (fixtures/statecharts-engine/probe-statechart.ts) of statecharts/src/sova/statecharts/engine/probe.cljs, which
 // the CLJS tests run; probe_shape.json holds both to one shape. The replay runs the shipped statecharts. Pure: no files, no clock but `now`.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { statechartVersions, createStatecharts as createShipped, hoursInherited, nextWindow, StatechartsStepLimitError, type StatechartName, type EngineOptions, type Invocation, type Statecharts } from "./org-charts";
+import { statechartVersions, createStatecharts as createShipped, hoursInherited, nextWindow, StatechartsStepLimitError, type StatechartName, type EngineOptions, type Invocation, type Statecharts } from "./statecharts";
 import { readFileSync } from "node:fs";
-import { PROBE_STATECHARTS, probeStatechart, probeShape } from "./fixtures/org-charts-engine/probe-chart";
+import { PROBE_STATECHARTS, probeStatechart, probeShape } from "./fixtures/statecharts-engine/probe-statechart";
 
 /** The shipped engine with the probe statechart registered. */
-const createStatecharts = (opts: EngineOptions = {}): Statecharts => createShipped({ ...opts, charts: PROBE_STATECHARTS });
+const createStatecharts = (opts: EngineOptions = {}): Statecharts => createShipped({ ...opts, statecharts: PROBE_STATECHARTS });
 const PROBE = "engine-probe" as StatechartName;
 
 const T0 = 1_000_000;
@@ -26,21 +26,21 @@ function has(e: Statecharts, sid: string, ...ids: string[]): boolean {
   return ids.every((id) => c.has(id));
 }
 
-describe("org-charts engine (vendored ESM)", () => {
+describe("statecharts engine (vendored ESM)", () => {
   test("the bundle lists its statecharts, each with a positive integer version", () => {
     const names = statechartVersions().map((c) => c.name);
     assert.deepEqual(names.sort(), ["baton", "build", "conflict", "decision", "item", "org", "person", "project", "reconciler", "residence", "watch"], "the refit's eleven statecharts, nothing else");
     assert.ok(!names.includes(PROBE), "the shipped module has no test statechart");
-    assert.throws(() => createShipped().start("p", PROBE), /Unknown chart/, "the probe exists only where it is registered");
-    assert.throws(() => createShipped({ charts: { project: PROBE_STATECHARTS["engine-probe"] } }), /Chart project is already registered/);
+    assert.throws(() => createShipped().start("p", PROBE), /Unknown statechart/, "the probe exists only where it is registered");
+    assert.throws(() => createShipped({ statecharts: { project: PROBE_STATECHARTS["engine-probe"] } }), /Statechart project is already registered/);
     for (const c of statechartVersions()) {
       assert.ok(Number.isInteger(c.version) && c.version > 0, `${c.name} has version ${String(c.version)}`);
     }
   });
 
   test("the JS probe has probe.cljs's shape (probe_shape.json, which the CLJS suite checks probe.cljs against)", () => {
-    const want = JSON.parse(readFileSync(new URL("../org-charts/src/sova/org_charts/engine/probe_shape.json", import.meta.url), "utf8"));
-    assert.deepEqual(probeShape(probeStatechart), want, "probe-chart.ts differs from probe_shape.json: change probe.cljs, probe-chart.ts and the JSON together");
+    const want = JSON.parse(readFileSync(new URL("../statecharts/src/sova/statecharts/engine/probe_shape.json", import.meta.url), "utf8"));
+    assert.deepEqual(probeShape(probeStatechart), want, "probe-statechart.ts differs from probe_shape.json: change probe.cljs, probe-statechart.ts and the JSON together");
   });
 
   test("start enters every region of a parallel state, in document order", () => {
@@ -149,7 +149,7 @@ describe("org-charts engine (vendored ESM)", () => {
     const ok = e.trial("p", "act/promote", { by: "overseer", level: "L2" }, { now: T0 });
     assert.equal(ok.taken, true);
     assert.ok(ok.configuration.includes("acted"));
-    assert.deepEqual(ok.outbox.map(({ key: _k, ...o }) => o), [{ kind: "promote", chartKey: "promote/0", sessionId: "p" }]);
+    assert.deepEqual(ok.outbox.map(({ key: _k, ...o }) => o), [{ kind: "promote", statechartKey: "promote/0", sessionId: "p" }]);
     assert.equal(saves.length, before, "a trial saves nothing");
     assert.ok(has(e, "p", "ready"), "and the session did not move");
     assert.equal(e.trial("p", "act/promote", { by: "operator" }, { now: T0 }).taken, true);
@@ -158,7 +158,7 @@ describe("org-charts engine (vendored ESM)", () => {
       "probe/stop", "hold", "next", "gate/open", "spin/facts", "peer/pinged", "poke", "act/promote", "act/ping", "probe/warn", "probe/throw",
     ]);
     const r = e.send("p", "act/promote", { by: "overseer", level: "L2" }, { now: T0 });
-    assert.deepEqual(r.outbox.map(({ key: _k, ...o }) => o), [{ kind: "promote", chartKey: "promote/0", sessionId: "p" }]);
+    assert.deepEqual(r.outbox.map(({ key: _k, ...o }) => o), [{ kind: "promote", statechartKey: "promote/0", sessionId: "p" }]);
     assert.deepEqual(Object.keys((e.data("p")?.["sova/pending"] ?? {}) as object), [r.outbox[0]?.key], "the effect stays pending under its key");
     assert.deepEqual(e.data("p")?.["outbox"], [], "the outbox is drained from the data model");
   });
@@ -221,7 +221,7 @@ describe("org-charts engine (vendored ESM)", () => {
     const e2 = createStatecharts();
     const info = e2.load("p", text);
     assert.equal(info.pending, 1);
-    assert.equal(info.chart, "engine-probe");
+    assert.equal(info.statechart, "engine-probe");
     assert.deepEqual(e2.configuration("p"), e.configuration("p"));
     assert.deepEqual(e2.data("p"), e.data("p"));
     assert.equal(e2.nextDueAt(), T0 + 7 + 60_000);
@@ -276,9 +276,9 @@ describe("org-charts engine (vendored ESM)", () => {
   test("errors surface as exceptions for misuse", () => {
     const e = createStatecharts();
     assert.throws(() => e.send("nobody", "next"), /not loaded/);
-    assert.throws(() => e.start("p", "nope" as "project"), /Unknown chart/);
+    assert.throws(() => e.start("p", "nope" as "project"), /Unknown statechart/);
     e.start("p", PROBE, {}, { now: T0 });
-    assert.throws(() => e.start("p", PROBE), { name: "OrgChartsError", code: "sova/session-exists" });
+    assert.throws(() => e.start("p", PROBE), { name: "StatechartsError", code: "sova/session-exists" });
     assert.throws(() => e.load("q", "{:bad 1}"), /format/);
   });
 

@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test server/project-overseer-tools-charts.test.ts. The project overseer's tools and the
+// Run: pnpm exec tsx --test server/project-overseer-tools-statecharts.test.ts. The project overseer's tools and the
 // Pipeline/held-act routes against the real engine host: the level, the allowances and the holds are the
 // statecharts' (§app.project-overseer/autonomy-levels, /limits, /holds, /pipeline, /corrections). Throwaway
 // workspace and PI_CODING_AGENT_DIR; no model is called.
@@ -10,7 +10,7 @@ import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import type { PipelineInfo, PipelineTimeline } from "../shared/pipeline";
 
-const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-charts-")));
+const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-po-statecharts-")));
 process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 const agentDir = join(root, "agent");
 process.env.PI_CODING_AGENT_DIR = agentDir;
@@ -26,7 +26,7 @@ const { disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
 const { envelopeFor, holdRef, hostOf, setOrgClockForTest } = await import("./org-engine");
 const { heldAttention, pipelineInfo, LINES } = await import("./project-pipeline");
-const { statechartInfo } = await import("./org-charts");
+const { statechartInfo } = await import("./statecharts");
 const pipelineInfoOf = () => pipelineInfo(org.id, project.id);
 const { fakeLooks } = await import("./org-test-fixtures");
 
@@ -163,7 +163,7 @@ describe("the allowances are the watch statechart's ledgers (§app.project-overs
     await run("sova_start_gathering", gather("Unlimited"));
   });
 
-  test("one ledger (r5): a statechart act released from its hold counts on it; a chart-refused call counts nothing", async () => {
+  test("one ledger (r5): a statechart act released from its hold counts on it; a statechart-refused call counts nothing", async () => {
     // Not on the confirm list: it goes ahead when its hold ends, with no review (r8).
     await settings({ autonomy: "L1", holdMin: 10, confirmKinds: [], caps: { gatherPerDay: null, gatheringsOpen: 20 } });
     const today = () => po.allowanceUse(org.id, project.id, store.readPoSettings(store.projectOverseerPaths(org.id, project.id)).caps).today.gather.used;
@@ -242,7 +242,7 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
     for (const statechart of ["item", "baton", "build", "decision"]) {
       for (const t of statechartInfo(statechart)!.transitions.filter((x) => x["sova/feed"] !== "quiet"))
         for (const e of t.event) {
-          if (["link/moved", "sova.charts/flush", "hold/cancelled", "hold/dropped", "sova/resumed", "effect/done", "item/moved"].includes(e)) continue;
+          if (["link/moved", "sova.statecharts/flush", "hold/cancelled", "hold/dropped", "sova/resumed", "effect/done", "item/moved"].includes(e)) continue;
           if (!LINES[`${statechart}:${e}`] && !LINES[e]) missing.push(`${statechart}:${e}`);
         }
       if (!LINES[`${statechart}:sova/started`]) missing.push(`${statechart}:sova/started`);

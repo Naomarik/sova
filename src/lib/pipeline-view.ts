@@ -248,7 +248,7 @@ export interface TimelineRowLike {
 export function byWord(by: string, via?: string | null): string {
   if (by === "operator") return via === "overseer" ? "You via the Overseer" : "You";
   if (by === "overseer") return "Overseer";
-  if (by === "chart" || by === "timer" || by === "sova" || by === "system") return "Sova";
+  if (by === "statechart" || by === "timer" || by === "sova" || by === "system") return "Sova";
   return by;
 }
 

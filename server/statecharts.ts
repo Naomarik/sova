@@ -1,10 +1,10 @@
-// Typed wrapper over the vendored organization statecharts (server/vendor/org-charts.js).
+// Typed wrapper over the vendored organization statecharts (server/vendor/statecharts.js).
 //
-// The bundle is CLJS (fulcrologic/statecharts 1.4.0-RC18) compiled by shadow-cljs from org-charts/;
-// rebuild it with `node scripts/build-org-charts.mjs` (needs a JVM; `pnpm build` never runs it).
+// The bundle is CLJS (fulcrologic/statecharts 1.4.0-RC18) compiled by shadow-cljs from statecharts/;
+// rebuild it with `node scripts/build-statecharts.mjs` (needs a JVM; `pnpm build` never runs it).
 // The org host (server/org-host/) is its one user in the server; the spike replay uses it too.
 //
-// Marshalling rules (org-charts/src/sova/org_charts/api.cljs): object keys are camelCase here and
+// Marshalling rules (statecharts/src/sova/statecharts/api.cljs): object keys are camelCase here and
 // kebab keywords in the statecharts; values are untouched except keyword values, which arrive as
 // "ns/name" strings. Event names and state ids are strings ("gather/start", "needs-operator").
 // Every call takes an optional `now` (epoch ms): the engine clock for that call, so replays run on
@@ -16,7 +16,7 @@
 // and within one call that target step has already run. After a restart, load the org's sessions,
 // `resume` them, then `fireDue(now)`. With `loadCold`, a send to a session not loaded loads it; an id
 // that exists nowhere throws StatechartsError `sova/unknown-session` and the call changes nothing.
-// Full contract: org-charts/src/sova/org_charts/engine/API.md.
+// Full contract: statecharts/src/sova/statecharts/engine/API.md.
 //
 // Step limit: one event may take at most `maxMicrosteps` microsteps (default 200). An eventless cycle
 // in a statechart then throws `StatechartsStepLimitError` from start / send / trial / fireDue instead of
@@ -24,7 +24,7 @@
 // snapshots last written stay the truth. onSave and invocation callbacks already made for earlier
 // steps of that call are not taken back, which is why the host writes `result.snapshots`, not onSave's.
 
-import * as vendored from "./vendor/org-charts.js";
+import * as vendored from "./vendor/statecharts.js";
 
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
@@ -80,7 +80,7 @@ export interface Hold {
 /** One processed event (the transition log entry, before privacy scrubbing). */
 export interface Step {
   sessionId: string;
-  chart?: string;
+  statechart?: string;
   at: number;
   event: string;
   data?: JsonObject;
@@ -155,7 +155,7 @@ export interface StepResult {
   invocations: InvocationRecord[];
   /** Holds started in this call. */
   holds: Hold[];
-  spawned: { sessionId: string; chart: string; by: string; link: string | null }[];
+  spawned: { sessionId: string; statechart: string; by: string; link: string | null }[];
   /** Sessions loaded through loadCold. */
   loaded: string[];
   /** Answers for ended runs or answered effects, dropped. */
@@ -198,7 +198,7 @@ export interface EnabledEvent {
 
 export interface LoadResult {
   sessionId: string;
-  chart: StatechartName;
+  statechart: StatechartName;
   version: number;
   generation: number;
   configuration: string[];
@@ -206,7 +206,7 @@ export interface LoadResult {
 }
 
 export interface SaveInfo {
-  chart: StatechartName;
+  statechart: StatechartName;
   version: number;
   generation: number;
 }
@@ -244,9 +244,9 @@ export interface EngineOptions {
   clock?: () => number;
   /** Microsteps one event may take before the call throws StatechartsStepLimitError (default 200). */
   maxMicrosteps?: number;
-  /** More statecharts, written in JS (org-charts/src/sova/org_charts/engine/js_chart.cljs), by name. A
+  /** More statecharts, written in JS (statecharts/src/sova/statecharts/engine/js_statechart.cljs), by name. A
       shipped statechart's name is refused. The engine tests register their probe statechart this way. */
-  charts?: Record<string, { version: number; chart: unknown }>;
+  statecharts?: Record<string, { version: number; statechart: unknown }>;
 }
 
 export interface CallOptions {
@@ -271,7 +271,7 @@ export interface Statecharts {
   configuration(sessionId: string): string[] | null;
   running(sessionId: string): boolean;
   data(sessionId: string): JsonObject | null;
-  chartOf(sessionId: string): StatechartName | null;
+  statechartOf(sessionId: string): StatechartName | null;
   enabledEvents(sessionId: string, envelope?: JsonObject, opts?: CallOptions): EnabledEvent[];
   /** Sessions that may be unloaded at `now` (settled per their statechart's `cold?`, idle `minAge` ms, nothing pending). */
   coldSessions(now: number, minAge?: number | null): string[];
@@ -295,7 +295,7 @@ export interface Statecharts {
   generation(sessionId: string): number | null;
 }
 
-/** What a statechart declares (engine chart-info): acts with metadata, states, transitions, invocations. */
+/** What a statechart declares (engine statechart-info): acts with metadata, states, transitions, invocations. */
 export interface StatechartInfo {
   name: StatechartName;
   version: number;
@@ -311,19 +311,19 @@ export interface StatechartInfo {
 
 interface Vendored {
   createEngine(opts?: EngineOptions): Statecharts;
-  charts(): { name: StatechartName; version: number; storage: "portable" | "host-local" }[];
-  chartInfo(name: string): StatechartInfo | null;
+  statecharts(): { name: StatechartName; version: number; storage: "portable" | "host-local" }[];
+  statechartInfo(name: string): StatechartInfo | null;
   migrateText(text: string): string;
   peekSnapshot(text: string): SnapshotPeek;
-  verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts?: Pick<EngineOptions, "charts">): SessionVerdict;
+  verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts?: Pick<EngineOptions, "statecharts">): SessionVerdict;
   nextWindow(person: WorkingHours, nowMs: number, company?: WorkingHours | null): number | null;
   hoursInherited(person: WorkingHours, company: WorkingHours | null): boolean;
 }
 
-/** `org-charts rebuild --verify`: one session's log replayed on the current statecharts against its snapshot. */
+/** `statecharts rebuild --verify`: one session's log replayed on the current statecharts against its snapshot. */
 export interface SessionVerdict {
   session: string;
-  chart: string | null;
+  statechart: string | null;
   /** Its log rows. */
   rows: number;
   same: boolean;
@@ -335,7 +335,7 @@ export interface SessionVerdict {
 
 /** A snapshot read without loading it (cold sessions). */
 export interface SnapshotPeek {
-  chart: StatechartName;
+  statechart: StatechartName;
   configuration: string[];
   data: JsonObject;
   running: boolean;
@@ -362,7 +362,7 @@ export class StatechartsError extends Error {
     readonly sessionId: string | null,
   ) {
     super(message);
-    this.name = "OrgChartsError";
+    this.name = "StatechartsError";
   }
 }
 
@@ -374,7 +374,7 @@ export class StatechartsStepLimitError extends Error {
     readonly details: StepLimitDetails,
   ) {
     super(message);
-    this.name = "OrgChartsStepLimitError";
+    this.name = "StatechartsStepLimitError";
   }
 }
 
@@ -384,7 +384,7 @@ function typed<A extends unknown[], R>(f: (...args: A) => R): (...args: A) => R 
       return f(...args);
     } catch (err) {
       const e = err as Partial<StepLimitDetails> & { code?: string; message?: string; name?: string };
-      if (e?.name === "OrgChartsError" && typeof e.code === "string") throw new StatechartsError(String(e.message), e.code, e.sessionId ?? null);
+      if (e?.name === "StatechartsError" && typeof e.code === "string") throw new StatechartsError(String(e.message), e.code, e.sessionId ?? null);
       if (e?.code !== "sova/step-limit") throw err;
       const { limit, microsteps, sessionId, event, configuration, transitions } = e as StepLimitDetails;
       throw new StatechartsStepLimitError(String(e.message), { limit, microsteps, sessionId, event, configuration, transitions });
@@ -413,11 +413,11 @@ export function createStatecharts(opts: EngineOptions = {}): Statecharts {
 }
 
 export function statechartVersions(): { name: StatechartName; version: number; storage: "portable" | "host-local" }[] {
-  return lib.charts();
+  return lib.statecharts();
 }
 
 export function statechartInfo(name: string): StatechartInfo | null {
-  return lib.chartInfo(name);
+  return lib.statechartInfo(name);
 }
 
 /** A snapshot's statechart, configuration, data and running flag without loading it (throws when unreadable). */
@@ -431,7 +431,7 @@ export function migrateSnapshot(text: string): string {
 }
 
 /** Replay a session's log rows (oldest first) on a scratch engine and compare with its snapshot text. Writes nothing. */
-export function verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts: Pick<EngineOptions, "charts"> = {}): SessionVerdict {
+export function verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts: Pick<EngineOptions, "statecharts"> = {}): SessionVerdict {
   return typed(lib.verifySession)(sessionId, rows, snapshotText, opts);
 }
 
@@ -443,7 +443,7 @@ export interface WorkingHours {
 
 /** When an act that reaches `person` may go, by their EFFECTIVE hours (r13: their own, else the
     company's, else always in hours): null when `nowMs` is inside them or there are none, else the instant
-    the next window opens (the charts' own rules.hours effective + next-window). */
+    the next window opens (the statecharts' own rules.hours effective + next-window). */
 export function nextWindow(person: WorkingHours, nowMs: number, company?: WorkingHours | null): number | null {
   return lib.nextWindow(person, nowMs, company ?? null) ?? null;
 }

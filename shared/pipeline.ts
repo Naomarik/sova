@@ -79,7 +79,7 @@ export interface HeldAct {
   goesAt: string;
   /** ISO time it was held. */
   since: string;
-  by?: "overseer" | "chart";
+  by?: "overseer" | "statechart";
   /** "hours": it waits for a person's working hours (r7), `goesAt` is when their window opens; absent: the hold (r2). */
   wait?: "hold" | "hours";
   /** An hours wait's person, by display name. */
@@ -99,7 +99,7 @@ export interface TimelineRow {
   /** ISO; unique per org (the log's row identity). */
   at: string;
   event: string;
-  /** "operator", "overseer", "chart", or a person's display name. */
+  /** "operator", "overseer", "statechart", or a person's display name. */
   by: string;
   /** "overseer" when the operator acted through the global Overseer. */
   via?: string;

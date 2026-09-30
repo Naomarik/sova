@@ -1308,7 +1308,7 @@ function registerReconcile(host: OrgHostApi, orgId: string): void {
     start(inv, report) {
       const projectId = pidOf(inv);
       const p = (inv.params ?? {}) as { by?: string; owner?: BatonOwner };
-      const by: CostStarter = p.by === "sova" ? "sova" : p.by === "overseer" || p.by === "chart" ? "overseer" : "operator";
+      const by: CostStarter = p.by === "sova" ? "sova" : p.by === "overseer" || p.by === "statechart" ? "overseer" : "operator";
       void runReconcile(orgId, projectId, { by, ...(p.owner && p.owner !== "operator" ? { owner: p.owner } : {}) })
         .then((r) => report("finished", undefined, r as unknown as Record<string, unknown>))
         .catch((err) => report("stopped", err instanceof Error ? err.message : String(err)));

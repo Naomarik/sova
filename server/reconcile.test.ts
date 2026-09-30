@@ -304,7 +304,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(reconcile.listDecisions(org.id, project.id).decisions.length, 2);
     assert.ok(reconcile.listDecisions(org.id, project.id).decisions.every((d) => d.state === "pending"), "alone in its area is still not reconciled");
     const dir = orgs.orgDir(org.id);
-    assert.ok(existsSync(join(dir, "charts", "decision", `${encodeURIComponent(`decision/${org.id}/${project.id}/${d30}`)}.edn`)), "each decision is a statechart in the workspace repo");
+    assert.ok(existsSync(join(dir, "statecharts", "decision", `${encodeURIComponent(`decision/${org.id}/${project.id}/${d30}`)}.edn`)), "each decision is a statechart in the workspace repo");
     assert.ok(!existsSync(join(dir, "projects", project.id, "decisions.json")), "no decisions.json (q1)");
   });
 
@@ -793,7 +793,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("the workspace repo holds the decisions and conflicts (their statecharts), never tokens", () => {
-    const dir = join(orgs.orgDir(org.id), "charts");
+    const dir = join(orgs.orgDir(org.id), "statecharts");
     const files = ["decision", "conflict"].flatMap((c) => readdirSync(join(dir, c)).map((f) => join(dir, c, f)));
     assert.ok(files.length > 0);
     const text = files.map((f) => readFileSync(f, "utf8")).join("\n");

@@ -1,11 +1,11 @@
-// `org-charts rebuild --verify <org>` (operator ruling r9): every session's transition log replayed
+// `statecharts rebuild --verify <org>` (operator ruling r9): every session's transition log replayed
 // from its start on the current statecharts, compared with its snapshot (states, running, links, watchers,
 // its own timers, holds). A diagnostic: it reads the snapshot files and the log, opens no host,
 // restores nothing and writes nothing. The log is scrubbed (design §5.5), so a guard that read a
 // message, a contact value or About text may replay another way: that is listed, never repaired.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
-import type { EngineOptions, JsonObject, SessionVerdict } from "../org-charts";
-import { verifySession } from "../org-charts";
+import type { EngineOptions, JsonObject, SessionVerdict } from "../statecharts";
+import { verifySession } from "../statecharts";
 import { readRows, type LogProblem, type LogRow } from "./log";
 import { hostPaths, scanSnapshots } from "./store";
 
@@ -14,7 +14,7 @@ export interface VerifyOptions {
   workspaceDir: string;
   stateDir: string;
   /** Runtime JS statecharts (tests), as `createStatecharts`. */
-  charts?: EngineOptions["charts"];
+  statecharts?: EngineOptions["statecharts"];
 }
 
 export interface VerifyReport {
@@ -49,8 +49,8 @@ export function verifyOrg(opts: VerifyOptions): VerifyReport {
     let verdict: SessionVerdict;
     try {
       verdict = rows.length
-        ? verifySession(sid, rows as unknown as JsonObject[], file ? readFileSync(file, "utf8") : null, { charts: opts.charts })
-        : { session: sid, chart: null, rows: 0, same: false, differences: [{ what: "log", why: "It has a snapshot but no log rows." }], divergence: null };
+        ? verifySession(sid, rows as unknown as JsonObject[], file ? readFileSync(file, "utf8") : null, { statecharts: opts.statecharts })
+        : { session: sid, statechart: null, rows: 0, same: false, differences: [{ what: "log", why: "It has a snapshot but no log rows." }], divergence: null };
     } catch (err) {
       problems.push({ file: file ?? sid, why: err instanceof Error ? err.message : String(err) });
       continue;
@@ -66,7 +66,7 @@ export function formatReport(r: VerifyReport): string {
   const out = [`${r.orgId}: ${r.sessions} session(s) replayed from the log; ${r.differing.length} differ from their snapshot.`];
   if (r.pendingJournal) out.push("A journal is waiting to be applied: open the organization once, then check again.");
   for (const v of r.differing) {
-    out.push(`- ${v.session}${v.chart ? ` (${v.chart})` : ""}, ${v.rows} row(s):`);
+    out.push(`- ${v.session}${v.statechart ? ` (${v.statechart})` : ""}, ${v.rows} row(s):`);
     for (const d of v.differences)
       out.push(d.why ? `    ${d.what}: ${d.why}` : `    ${d.what}: replayed ${JSON.stringify(d.replayed)}, snapshot ${JSON.stringify(d.snapshot)}`);
     const g = v.divergence;

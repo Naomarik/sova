@@ -9,12 +9,12 @@ const P = "prj_a";
 function fakeHost(sessions: SessionInfo[]) {
   const byId = new Map(sessions.map((s) => [s.id, s]));
   return {
-    sessions: (statechart?: string) => sessions.filter((s) => !statechart || s.chart === statechart),
+    sessions: (statechart?: string) => sessions.filter((s) => !statechart || s.statechart === statechart),
     data: (sid: string) => byId.get(sid)?.data ?? null,
     configuration: (sid: string) => byId.get(sid)?.configuration ?? null,
   };
 }
-const s = (id: string, statechart: string, configuration: string[], data: Record<string, unknown> = {}): SessionInfo => ({ id, chart: statechart, configuration, data, running: true });
+const s = (id: string, statechart: string, configuration: string[], data: Record<string, unknown> = {}): SessionInfo => ({ id, statechart, configuration, data, running: true });
 const settings = { autonomy: "L3" as const, caps: { ...DEFAULT_PO_CAPS }, holdMin: 5, confirmKinds: ["gather" as const] };
 
 describe("stamping an envelope from the statecharts as they stand", () => {
@@ -44,7 +44,7 @@ describe("stamping an envelope from the statecharts as they stand", () => {
   });
 
   test("nobody active, not archived, not paused, no watch yet: the facts say so and the ledgers are 0", () => {
-    const e = stampEnvelope(fakeHost([s(`person/${O}/p_1`, "person", ["proposed"]), s(`project/${O}/${P}`, "project", ["shelf", "active"])]), O, P, { by: "chart", attended: false }, () => settings, settings);
+    const e = stampEnvelope(fakeHost([s(`person/${O}/p_1`, "person", ["proposed"]), s(`project/${O}/${P}`, "project", ["shelf", "active"])]), O, P, { by: "statechart", attended: false }, () => settings, settings);
     assert.deepEqual([e.rosterActive, e.archived, e.paused, e.allowance.gather.used, e.looks.used], [false, false, false, 0, 0]);
   });
 

@@ -11,8 +11,8 @@ import { PER_DAY, PER_TURN, PO_LIMIT_KINDS, type Allowance, type Autonomy, type 
  * ledgers and the statechart states it counts, and passes them in.
  */
 
-/** Who acts. `chart`: the statecharts on their own (a drive, a released hold); `wrapup`: a wrap-up turn's profile writes; `model`: a gathering model's tool call; `sova`: Sova on its own (a settle session's reconcile). */
-export type ActBy = "operator" | "overseer" | "chart" | "system" | "model" | "person" | "wrapup" | "sova";
+/** Who acts. `statechart`: the statecharts on their own (a drive, a released hold); `wrapup`: a wrap-up turn's profile writes; `model`: a gathering model's tool call; `sova`: Sova on its own (a settle session's reconcile). */
+export type ActBy = "operator" | "overseer" | "statechart" | "system" | "model" | "person" | "wrapup" | "sova";
 
 /** The confirm card a global Overseer act carries (§app.overseer/org-people-facing): every target it lists. */
 export interface EnvelopeCard {
@@ -111,7 +111,7 @@ export function buildEnvelope(i: EnvelopeInput): Envelope {
 /** A statechart session as the host's read API gives it. */
 export interface SessionRead {
   id: string;
-  chart: string;
+  statechart: string;
   configuration: readonly string[];
   data: Record<string, unknown>;
 }
@@ -127,10 +127,10 @@ export function atOnceCounts(sessions: readonly SessionRead[], projectId: string
   let codingRunning = 0;
   for (const s of sessions) {
     if (s.data.projectId !== projectId) continue;
-    if (s.chart === "baton") {
+    if (s.statechart === "baton") {
       const owner = s.data.owner as { overseerOf?: unknown } | undefined;
       if (typeof owner === "object" && owner !== null && owner.overseerOf === projectId && s.configuration.includes("open")) gatheringsOpen++;
-    } else if (s.chart === "build") {
+    } else if (s.statechart === "build") {
       // `running` (exported by the build) is "working or workers > 0"; read the parts when it is absent.
       const workers = typeof s.data.workers === "number" ? s.data.workers : 0;
       const running = typeof s.data.running === "boolean" ? s.data.running : s.configuration.includes("working") || workers > 0;

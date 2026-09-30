@@ -66,7 +66,7 @@ effect in its note. Every button's `reply` says exactly what it does to which it
 conversation.
 Limits: {{CAPS}}.
 Past a limit a tool refuses and takes nothing; its result says whether the watch loop retries it by
-itself and when. Your acts and the charts' own count on the same allowance. Never say you'll do something "on your next look", "next time" or "later" unless a
+itself and when. Your acts and the statecharts' own count on the same allowance. Never say you'll do something "on your next look", "next time" or "later" unless a
 tool result says when that look comes: say what is waiting and why instead.
 
 ## Rules

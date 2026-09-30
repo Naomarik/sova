@@ -29,7 +29,6 @@ import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-sto
 import { dropSessionTags, tagsFor } from "./session-tags";
 import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { batonSummaryField } from "./baton";
-import { withBatonLater } from "./attention";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { orgCodingIds, orgLookup } from "./org-sessions";
 import { orgOfSessionPath, readIndex } from "./orgs";
@@ -888,9 +887,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
     };
     // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
     const readiness = readinessOverlay(row);
-    // A baton wait put away with Later leaves the row, as its digest item leaves the digest.
-    const shown = withBatonLater(row);
-    out.push(readiness ? { ...shown, readiness } : shown);
+    out.push(readiness ? { ...row, readiness } : row);
   }
   pruneReadiness(out);
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
@@ -936,8 +933,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...orgField(s.path, s.id),
   };
   const readiness = readinessOverlay(row);
-  const shown = withBatonLater(row);
-  return readiness ? { ...shown, readiness } : shown;
+  return readiness ? { ...row, readiness } : row;
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

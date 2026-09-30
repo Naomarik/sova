@@ -265,7 +265,6 @@ describe("attention: decision signals (the list carries them only while unseen a
     const stall = { since: NOW - 22 * 60_000, names: ["verifier", "builder"] };
     const items = sessionItems(row(summary("a"), { teamStall: stall }), NOW);
     assert.deepEqual(items.map((i) => `${i.tier}:${i.kind}:${i.detail}`), ["decide:team-stalled:Waiting on verifier, builder, quiet for 22 min."]);
-    assert.equal(items[0]!.later, undefined, "a decide item has no Later key");
     assert.equal(items[0]!.since, stall.since);
     const many = sessionItems(row(summary("a"), { teamStall: { ...stall, names: ["a", "b", "c", "d", "e"] } }), NOW);
     assert.match(many[0]!.detail!, /^Waiting on a, b, c and 2 more,/);

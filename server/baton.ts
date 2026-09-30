@@ -916,7 +916,7 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
     ...(openedSessions(row.orgId).has(row.sessionId) ? { opened: true as const } : {}),
     ...(row.conflict ? { settle: { area: row.conflict.area } } : {}),
     ...(row.state === "needs-you" && last && last.to === OPERATOR
-      ? { needsYou: { from: nameOf(row.orgId, last.from), question: last.question, since: Date.parse(last.at) || 0, handoff: last.n } }
+      ? { needsYou: { from: nameOf(row.orgId, last.from), question: last.question, since: Date.parse(last.at) || 0 } }
       : {}),
     ...(() => {
       const newest = Object.values(linkTimes(row)).sort().at(-1);
@@ -924,11 +924,11 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
     })(),
     // A person holds it through a hand-off nobody has a link for yet: the operator must send one.
     ...(row.state === "open" && last && row.holder !== null && row.holder !== OPERATOR && last.to === row.holder && liveLinks(row.sessionId, last.n).length === 0
-      ? { sendLink: { to: nameOf(row.orgId, row.holder), question: last.question, since: Date.parse(last.at) || 0, handoff: last.n } }
+      ? { sendLink: { to: nameOf(row.orgId, row.holder), question: last.question, since: Date.parse(last.at) || 0 } }
       : {}),
     // An open offer with invitees nobody has a link for (started in-process without links): the
     // operator sends them — named until each has one.
-    ...(missing.length ? { sendLink: { to: missing.join(", "), question: offer!.question, since: Date.parse(last!.at) || 0, handoff: last!.n, offerId: offer!.id } } : {}),
+    ...(missing.length ? { sendLink: { to: missing.join(", "), question: offer!.question, since: Date.parse(last!.at) || 0 } } : {}),
     ...(waiting.length ? { waiting } : {}),
   };
 }

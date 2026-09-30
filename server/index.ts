@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -54,7 +54,7 @@ import { getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { AUTO_TITLE_MAX_PATHS, type AttentionLaterRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -117,8 +117,6 @@ import { findExtension, listExtensions, proxyExtension, serveExtensionFile, setS
 import { decisionRuntime, decisions, decisionSettings, decisionsReady } from "./decide-runtime";
 import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, saveDecisions } from "./decide-routes";
 import { AttentionSignals } from "./attention-signals";
-import { attentionChanged } from "./attention-memo";
-import { bringBack, putAway } from "./needs-you-later";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
 import { onTagsChanged } from "./session-tags";
 import { terminalSession } from "./decide-settings";
@@ -1036,17 +1034,6 @@ app.get("/api/explanations", async (c) => c.json(await listExplanations(c.req.qu
 app.get("/api/overseer", async (c) => c.json(await overseerInfo(), 200, { "Cache-Control": "no-store" }));
 app.post("/api/overseer/clear", async (c) => c.json(await clearOverseer()));
 app.get("/api/overseer/attention", async (c) => c.json(await attentionForWire(), 200, { "Cache-Control": "no-store" }));
-// Later (§app.overseer/attention-digest): put Needs you items away until their anchor moves, or bring them back.
-for (const [route, apply] of [["/api/attention/later", putAway], ["/api/attention/later/undo", bringBack]] as const) {
-  app.post(route, async (c) => {
-    const body = (await c.req.json().catch(() => null)) as Partial<AttentionLaterRequest> | null;
-    const keys = body && Array.isArray(body.keys) ? body.keys : null;
-    if (!keys || keys.length === 0 || keys.length > 100) return c.json({ error: "Expected JSON body { keys: string[] } (1–100 keys)" }, 400);
-    if (apply(keys) !== keys.length) return c.json({ error: "Unknown Later key" }, 400);
-    attentionChanged();
-    return c.json({ ok: true });
-  });
-}
 // Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).
 // There is no route that makes one: only a card click does, in the Overseer's own runtime.
 app.get("/api/overseer/autonomy", async (c) => c.json(await overseerAutonomy(), 200, { "Cache-Control": "no-store" }));
@@ -1410,6 +1397,14 @@ server.on("error", (err) => {
   process.exit(1);
 });
 attachWebSockets(server);
+
+// Needs you's Later is gone (§app.overseer/attention-digest): the store an earlier version kept its
+// choices in is deleted, so none of them keeps anything hidden. A no-op once it is gone.
+try {
+  rmSync(join(stateRoot(), "needs-you-later.json"), { force: true });
+} catch (err) {
+  console.warn(`[server] needs-you-later.json not deleted: ${err instanceof Error ? err.message : String(err)}`);
+}
 
 // The Overseer's tools call these same routes in-process (no socket, every guard applies).
 setOverseerDispatch((path, init) => app.request(path, init));

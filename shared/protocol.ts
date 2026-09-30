@@ -2569,16 +2569,6 @@ export interface AttentionItem {
     /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
     reviewSince?: number;
   };
-  /** Every act-tier item, and each `roster-proposal`: the key `POST /api/attention/later` takes to
-      put this item away until its anchor (what counts as new for it) changes
-      (§app.overseer/attention-digest). Opaque. */
-  later?: string;
-}
-
-/** POST /api/attention/later and /api/attention/later/undo: the `later` keys of the items to put
-    away (or bring back). Answer: `{ ok: true }`. */
-export interface AttentionLaterRequest {
-  keys: string[];
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`
@@ -3365,8 +3355,6 @@ export interface SessionTags {
 export interface SessionAlign {
   openDocs: number;
   openQuestions: number;
-  /** The open questions, `{al_N}/{q id}`: Later's anchor for open questions. */
-  questionIds?: string[];
   questionDocs: number;
   lead?: { id: string; title: string };
 }

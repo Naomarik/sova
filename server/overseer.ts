@@ -18,7 +18,7 @@ import {
   type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerKey, buildDigest, laterFilter, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-pipeline";
 import { conflictAttention } from "./decisions";
@@ -83,7 +83,6 @@ import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
 import { readDecisionSettings } from "./decide-settings";
 import { onAttentionChanged } from "./attention-memo";
-import { pruneLater } from "./needs-you-later";
 import { notifyBlockers, pushWanted, resetPushState } from "./push";
 
 /**
@@ -352,11 +351,9 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = heldChat(s.path);
       const live = byPath.get(s.path);
-      const pending = chat ? chat.pendingDialogs() : [];
       return {
         summary: s,
-        dialogs: pending.map((d) => d.title || d.method),
-        dialogIds: pending.map((d) => d.id),
+        dialogs: chat ? chat.pendingDialogs().map((d) => d.title || d.method) : [],
         queued: chat ? chat.queue.size : 0,
         failedWorkers: live?.failed ?? 0,
         workerErrorAt: live?.failed ? workerErrorTime(live.failed, live.errorTimes, noteFailedRise(s.path, live.failed, nowMs)) : undefined,
@@ -370,11 +367,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
-    // Items put away with Later (§app.overseer/attention-digest) leave the digest until their anchor
-    // moves; entries of sessions no longer listed at all are dropped.
-    const extra = [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)];
-    pruneLater(new Set([...sessions.map((s) => s.id), ...extra.map((i) => i.id)]));
-    return buildDigest(rows, Date.now(), homedir(), extra, laterFilter());
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

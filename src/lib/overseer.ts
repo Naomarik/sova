@@ -1,5 +1,6 @@
 import { OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
-import { isObj, str } from "./message";
+import { CARD_TOOL, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../../shared/overseer-card";
+import { isObj, str, toolResultView } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
 
 /** The route the Overseer lives at. Its identity is this route, never a session id. */
@@ -114,7 +115,8 @@ export function confirmRows(items: readonly SovaConfirmItem[], all: boolean): { 
 export const confirmReply = (o: SovaConfirmDetails["options"][number]): string => o.reply?.trim() || o.label;
 
 /**
- * Whether a confirm card at `index` has been answered: any later user message on the branch
+ * A legacy `sova_confirm` card (§app.overseer/confirm, cards from before ids), read-only: whether it
+ * was answered by the rule it had then. Any later user message on the branch
  * answers it (the model ended its turn, so the next thing the user says is the answer, clicked or
  * typed). A wake nudge or a proactive brief is not the user's answer. `choice` is the option that
  * message picked, when it is one of them.
@@ -133,6 +135,52 @@ export function confirmAnswer(
   }
   return { answered: false, choice: null };
 }
+
+// ---- Cards (sova_card, §app.overseer/confirm) ------------------------------------------------
+
+/** The thread's cards: each sova_card row's checked details (by the call's item id), each card's
+    newest snapshot, and the row that last touched it itself (that row renders the full card). */
+export interface CardFold {
+  rows: Map<string, CardDetails>;
+  cards: Map<string, OverseerCard>;
+  newest: Map<string, string>;
+}
+
+/**
+ * Folds the thread's `sova_card` results in order (a clone of the align fold): an error result and
+ * details that don't check out are never state, and a legacy `sova_confirm` row is never folded.
+ * `live`: this run's results not in the transcript yet, in call order.
+ */
+export function cardFold(items: readonly TranscriptItem[], live: readonly unknown[] = []): CardFold {
+  const results = new Map<string, TranscriptItem>();
+  for (const it of items) if (it.kind === "tool-result" && it.toolCallId) results.set(it.toolCallId, it);
+  const fold: CardFold = { rows: new Map(), cards: new Map(), newest: new Map() };
+  const put = (c: OverseerCard) => {
+    fold.cards.delete(c.id);
+    fold.cards.set(c.id, c);
+  };
+  const take = (d: CardDetails | undefined, rowId?: string) => {
+    if (!d) return;
+    if (rowId) fold.rows.set(rowId, d);
+    if (d.closed) put(d.closed);
+    if (d.card) {
+      put(d.card);
+      if (rowId) fold.newest.set(d.card.id, rowId);
+      else fold.newest.delete(d.card.id);
+    }
+  };
+  for (const it of items) {
+    if (it.kind !== "tool-call" || it.text !== CARD_TOOL || !it.toolCallId) continue;
+    const r = results.get(it.toolCallId);
+    if (!r || toolResultView(r.raw, r.text).isError) continue;
+    take(normalizeCardDetails(detailsOf(r.raw)), it.id);
+  }
+  for (const d of live) take(normalizeCardDetails(d));
+  return fold;
+}
+
+/** The open cards, newest touched last. */
+export const openCards = (fold: CardFold): OverseerCard[] => openCardsOf([...fold.cards.values()]);
 
 // ---- Navigation -----------------------------------------------------------------------------
 

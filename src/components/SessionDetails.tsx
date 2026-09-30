@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show
 import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, SessionWorktreeInfo, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
-import { readinessChip, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
+import { readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
 import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
@@ -29,7 +29,7 @@ import { copyText, home } from "../lib/ui-state";
 import { sessionWorking } from "../lib/workers";
 import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
-import { GroupWithParent, MoveToGroupMenu } from "./Groups";
+import { MoveToGroupMenu } from "./Groups";
 import { ChangesDialog } from "./ChangesViewer";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
 import type { SessionShare } from "../../shared/session-share";
@@ -205,8 +205,6 @@ export function SessionDetails(props: {
               {/* The same assignment, read as a place to work: file it and open that group's
                   workspace with this session focused. */}
               <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged()} variant="beside" />
-              {/* Forked from a session and in no group: one press puts the pair in one workspace. */}
-              <GroupWithParent session={s()} onChanged={() => props.onGroupsChanged()} />
               <Show when={s().origin === "web"}>
                 <ArchiveAction
                   session={s()}
@@ -647,6 +645,7 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?:
             )}
           </Show>
         </div>
+        <Show when={readinessReason(w())}>{(line) => <p class="list-meta worktree-reason">{line()}</p>}</Show>
       </div>
       <Show when={w().status === "active" && w().exists}>
         <button

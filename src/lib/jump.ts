@@ -18,8 +18,7 @@ const escape = (id: string) => (typeof CSS !== "undefined" && CSS.escape ? CSS.e
 /**
  * The ENTRY id behind a rendered row's id. The thread gives an assistant message one item per
  * content block, with ids `${entryId}:${blockIndex}` (plus `:stop`), so a row's id is frequently
- * not an entry id at all. Anything that talks to the server about an entry — a fanout's
- * `source.leafId`, which is compared against the file's own entry ids — has to send this, and
+ * not an entry id at all. Anything that talks to the server about an entry has to send this, and
  * anything matching a server-supplied entry id against rendered rows has to compare with it.
  */
 export const entryIdOf = (rowId: string): string => {
@@ -53,19 +52,6 @@ export function registerTranscript(path: string, el: HTMLElement | null): void {
 
 /**
  * The transcript to search: the pane for `path` when there is one, else the one on the page.
- *
- * This is also where a FORK POINT is read from, and that carries a contract with the server worth
- * stating on this side of the wire too: the leaf a fanout sends (`FanoutRequest.source.leafId`) is
- * the last entry the pane actually RENDERS, on the branch it is showing — read from these rows,
- * never from the newest id in memory and never from the session file's last line. The server
- * computes its own leaf the same way (`readActiveBranch` then `normalizeEntry`, server/fanout.ts),
- * and the two only agree if this side holds up its half.
- *
- * A rewound session is what separates them: its last FILE line is always a rewind marker (`sova-rewind`),
- * which renders as nothing and is not on the active branch at all. Send that id and the server
- * correctly calls it stale — and the user is told to reopen and fork from a message identical to
- * the one on screen, which is an instruction that cannot be followed. The failure lands here
- * whoever computed it wrong.
  */
 export function transcriptRoot(path?: string | null): HTMLElement | null {
   const el = path ? transcripts.get(path) : undefined;

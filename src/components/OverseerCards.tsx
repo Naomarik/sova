@@ -1,8 +1,20 @@
-import { createContext, createSignal, For, Show, useContext } from "solid-js";
+import { createContext, createSignal, For, type JSX, Show, useContext } from "solid-js";
 import type { OverseerQuickAction, SovaConfirmDetails, SovaConfirmItem } from "../../shared/protocol";
+import {
+  answerOptions,
+  cardLetter,
+  choiceByLetter,
+  itemsClick,
+  linkOptions,
+  optionByLetter,
+  optionClick,
+  type CardItem,
+  type OverseerCard,
+} from "../../shared/overseer-card";
+import { actsText, GRANT_DEFAULT_MS, GRANTABLE_ACTS, type Permit, sessionsText } from "../../shared/overseer-grants";
 import type { MeshLinkView } from "../../shared/mesh-links";
-import { briefBody, confirmReply, confirmRows, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
-import { clockTime, relativeTime } from "../lib/format";
+import { briefBody, confirmRows, goTo, navigateDetails, settingsTarget } from "../lib/overseer";
+import { clockTime, relativeTime, stampTime } from "../lib/format";
 import { groupLinkIndex, resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
 import { personHref, projectHref } from "../lib/orgs-route";
 import { openSettings } from "../lib/settings-nav";
@@ -11,27 +23,29 @@ import { Markdown } from "./Markdown";
 import { Icon } from "./ui";
 
 /**
- * What an Overseer chat hands its thread: how a confirm card's button answers. Absent everywhere
- * else (a history file, another session's transcript), where a confirm card is shown but can't
- * be answered.
+ * What an Overseer chat hands its thread: how a card's click answers. Absent everywhere else (a
+ * history file, another session's transcript), where a card is shown but can't be answered; its
+ * link options still open.
  */
 export interface OverseerThread {
-  /** Sends `text` as the user's next message; false when it couldn't be sent. `card`: the confirm
-      card's tool call id, so the server knows a click (never typed text) opened the turn. */
-  answer(text: string, card?: string): boolean;
+  /** Sends `text` as the user's next message; false when it couldn't be sent. `card`: the card's id
+      (`c_N`), so the server knows a click (never typed text) opened the turn; `sent`: what the click
+      chose ("b", "1a, 2b"), shown on the card while the turn it started runs. */
+  answer(text: string, card?: string, sent?: string): boolean;
+  /** What a click on `card` sent, while the turn it started runs; undefined otherwise. */
+  sent(card: string): string | undefined;
+  /** The conversation's approvals and rules, for an option's state line (§app.overseer/approvals). */
+  permits?(): Permit[];
 }
 export const OverseerThreadContext = createContext<OverseerThread | null>(null);
 export const useOverseerThread = () => useContext(OverseerThreadContext);
 
 /**
- * `sova_confirm`, drawn as the question it asks. Its buttons send the choice as the user's next
- * message. Once any later user message exists the card is answered: the buttons go and the
- * choice is said, so a reload or a restart shows the same thing, because it lives in the transcript.
- * A click-only card (`clickOnly`) has no "Or type your answer." hint: typed text can't approve what it gates.
+ * A legacy `sova_confirm` card (§app.overseer/confirm, from before card ids), read-only: the
+ * question it asked and its items; "You chose X" or "Answered below." by the rule it had then (any
+ * later user message answered it), else no buttons and a line saying to ask again.
  */
-export function ConfirmCard(props: { details: SovaConfirmDetails; answered: boolean; choice: string | null; pending?: boolean; card?: string }) {
-  const thread = useOverseerThread();
-  const canAnswer = () => !!thread && !props.answered && !props.pending;
+export function ConfirmCard(props: { details: SovaConfirmDetails; answered: boolean; choice: string | null }) {
   return (
     <section class="card overseer-confirm" aria-label={`Question: ${props.details.title}`}>
       <div class="card-head">
@@ -47,40 +61,280 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
         <ConfirmItems items={props.details.items!} />
       </Show>
       <div class="card-foot">
-        <Show
-          when={!props.answered}
-          fallback={
-            <p class="overseer-confirm-answer">
-              <Icon name="check" small />
-              <Show when={props.choice} fallback="Answered below.">
-                {(c) => (
-                  <span>
-                    You chose <strong>{c()}</strong>.
-                  </span>
-                )}
-              </Show>
-            </p>
-          }
-        >
-          <For each={props.details.options}>
-            {(o) => (
-              <button
-                type="button"
-                class={`button button-sm${o.tone === "danger" ? " button-destructive" : ""}`}
-                aria-disabled={canAnswer() ? undefined : "true"}
-                title={!thread ? "Read only." : props.pending ? "Wait for the turn to end." : undefined}
-                onClick={() => canAnswer() && thread!.answer(confirmReply(o), props.card)}
-              >
-                {o.label}
-              </button>
-            )}
-          </For>
-          <Show when={thread && !props.pending && !props.details.clickOnly}>
-            <span class="overseer-confirm-hint">Or type your answer.</span>
-          </Show>
+        <Show when={props.answered} fallback={<span class="overseer-confirm-hint">From before card ids: ask the Overseer again.</span>}>
+          <p class="overseer-confirm-answer">
+            <Icon name="check" small />
+            <Show when={props.choice} fallback="Answered below.">
+              {(c) => (
+                <span>
+                  You chose <strong>{c()}</strong>.
+                </span>
+              )}
+            </Show>
+          </p>
         </Show>
       </div>
     </section>
+  );
+}
+
+/** Scrolls the thread to a card's full rendering, when it is on screen. */
+export function scrollToCard(id: string): boolean {
+  const el = document.querySelector<HTMLElement>(`[data-card-id="${CSS.escape(id)}"]`);
+  el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  return !!el;
+}
+
+/**
+ * A `sova_card` card at its newest snapshot (§app.overseer/confirm): the id as the eyebrow, the
+ * title, detail, numbered items (each with its per-item choices when the card has them) and the
+ * lettered options. Its state comes from the fold, never from later messages. A click only composes
+ * a message ("c_4 b: …"); the model records it. Link options open their target, in every state and
+ * in read-only views, and never answer the card.
+ */
+export function DeckCard(props: { card: OverseerCard; line?: string }) {
+  const thread = useOverseerThread();
+  const open = () => props.card.phase === "open";
+  const sent = () => (thread ? thread.sent(props.card.id) : undefined);
+  const canAnswer = () => !!thread && open() && !sent();
+  const why = () => (!thread ? "Read only." : sent() ? "Wait for the turn to end." : undefined);
+  /** The per-item picks, from each item's decided choice, else its default. */
+  const initial = () => Object.fromEntries(props.card.items.flatMap((it) => { const l = it.decided?.choice ?? it.default; return l ? [[it.n, l]] : []; })) as Record<number, string>;
+  const [picks, setPicks] = createSignal<Record<number, string>>(initial());
+  /** What Apply sends: the items picked whose pick isn't already their recorded choice. */
+  const applyPicks = () => Object.fromEntries(Object.entries(picks()).filter(([n, l]) => props.card.items.find((it) => it.n === Number(n))?.decided?.choice !== l)) as Record<number, string>;
+  const applyText = () => itemsClick(props.card, applyPicks());
+  const click = (letter: string) => {
+    const text = optionClick(props.card, letter);
+    if (text && canAnswer()) thread!.answer(text, props.card.id, letter);
+  };
+  const apply = () => {
+    const text = applyText();
+    if (!text || !canAnswer()) return;
+    thread!.answer(text, props.card.id, Object.entries(applyPicks()).map(([n, l]) => `${n}${l}`).join(", "));
+  };
+  const rec = () => props.card.recommendation;
+  return (
+    <section class="card overseer-confirm overseer-card" data-card-id={props.card.id} data-phase={props.card.phase} aria-label={`Card ${props.card.id}: ${props.card.title}`}>
+      <div class="card-head overseer-card-head">
+        <span class="text-mono overseer-card-id">{props.card.id}</span>
+        <h3 class="card-title" title={props.card.title}>
+          {props.card.title}
+        </h3>
+        <Show when={props.line}>
+          <span class="overseer-card-change">{props.line}</span>
+        </Show>
+      </div>
+      <Show when={props.card.detail}>
+        <div class="card-body overseer-confirm-detail">{props.card.detail}</div>
+      </Show>
+      <Show when={props.card.items.length}>
+        <ConfirmItems
+          items={props.card.items}
+          below={(item) => <CardItemAnswer card={props.card} item={item as CardItem} pick={picks()[(item as CardItem).n]} disabled={!canAnswer()} onPick={(l) => setPicks({ ...picks(), [(item as CardItem).n]: l })} />}
+        />
+      </Show>
+      <div class="card-foot overseer-card-foot">
+        <Show when={open()} fallback={<CardOutcome card={props.card} />}>
+          <Show when={rec()}>
+            {(r) => (
+              <p class="overseer-card-rec">
+                <span class="align-q-kicker">Recommended</span>
+                <Show when={r().option}>
+                  {(l) => (
+                    <>
+                      <span class="text-mono align-q-letter">{l()}</span> — <strong>{optionByLetter(props.card, l())?.label}</strong>.{" "}
+                    </>
+                  )}
+                </Show>
+                {r().why}
+              </p>
+            )}
+          </Show>
+          <div class="overseer-card-buttons">
+            <For each={answerOptions(props.card)}>
+              {(o) => (
+                <button
+                  type="button"
+                  class={`button button-sm${o.option.tone === "danger" ? " button-destructive" : ""}`}
+                  aria-disabled={canAnswer() ? undefined : "true"}
+                  aria-label={`${o.letter}: ${o.option.label}`}
+                  title={why() ?? o.option.reply}
+                  onClick={() => click(o.letter)}
+                >
+                  <span class="text-mono overseer-card-letter">{o.letter}</span>
+                  {o.option.label}
+                </button>
+              )}
+            </For>
+            <Show when={props.card.choices}>
+              <button type="button" class="button button-sm" aria-disabled={canAnswer() && applyText() ? undefined : "true"} title={why() ?? (applyText() ?? "Pick a choice on an item first.")} onClick={apply}>
+                Apply
+              </button>
+            </Show>
+            <CardLinks card={props.card} />
+          </div>
+          <OptionGrants card={props.card} />
+          <Show when={sent()} fallback={<Show when={thread && !props.card.clickOnly}><span class="overseer-confirm-hint">Or type your answer.</span></Show>}>
+            {(s) => <span class="overseer-confirm-hint">Sent: {s()}</span>}
+          </Show>
+        </Show>
+        <For each={(thread?.permits?.() ?? []).filter((p) => p.card === props.card.id && !p.from)}>{(p) => <p class="overseer-card-permit">{permitState(p)}</p>}</For>
+        <Show when={!open() && linkOptions(props.card).length}>
+          <div class="overseer-card-buttons">
+            <CardLinks card={props.card} />
+          </div>
+        </Show>
+      </div>
+    </section>
+  );
+}
+
+/** What an option's click approves, under the buttons: "b · Approves any act on these 2 sessions
+    until 6:00 PM" / "c · Adopts a standing rule: …" (§app.overseer/approvals). */
+function OptionGrants(props: { card: OverseerCard }) {
+  const sessions = () => props.card.items.filter((it) => it.kind === "session").length;
+  return (
+    <For each={answerOptions(props.card).filter((o) => o.option.later || o.option.rule)}>
+      {(o) => (
+        <p class="overseer-card-grant">
+          <span class="text-mono align-q-letter">{o.letter}</span>{" "}
+          {o.option.later
+            ? `Approves any act on ${sessionsText(sessions())} until ${stampTime(o.option.later.until ?? Date.parse(o.option.later.at) + GRANT_DEFAULT_MS)}, without you.`
+            : `Adopts a standing rule until you revoke it: ${o.option.rule!.text} (${actsText(o.option.rule!.acts ?? [...GRANTABLE_ACTS])} on ${o.option.rule!.anySession ? "any session" : sessionsText(sessions())}).`}
+        </p>
+      )}
+    </For>
+  );
+}
+
+/** "Approved until 6:00 PM (g_2)", "Expired (g_2)", "Revoked (g_2)"; "Rule r_1 adopted" / "Rule r_1 revoked". */
+export function permitState(p: Permit): string {
+  if (p.kind === "rule") return p.status === "revoked" ? `Rule ${p.id} revoked` : `Rule ${p.id} adopted`;
+  return p.status === "live" ? `Approved until ${stampTime(p.until!)} (${p.id})` : `${p.status === "expired" ? "Expired" : "Revoked"} (${p.id})`;
+}
+
+/** A card's link options: an in-app target opens in this tab (a route as a link, Settings as a
+    button), an https URL in a new tab. Never a message, never a turn. */
+function CardLinks(props: { card: OverseerCard }) {
+  return (
+    <For each={linkOptions(props.card)}>
+      {(o) => {
+        const href = o.href!;
+        if (href.startsWith("https://"))
+          return (
+            <a class="button button-sm button-ghost overseer-card-link" href={href} target="_blank" rel="noopener noreferrer" title={href}>
+              {o.label}
+              <Icon name="external" small />
+            </a>
+          );
+        if (settingsTarget(href))
+          return (
+            <button type="button" class="button button-sm button-ghost overseer-card-link" title={o.label} onClick={() => goTo(href)}>
+              {o.label}
+              <Icon name="arrow-right" small />
+            </button>
+          );
+        return (
+          <a class="button button-sm button-ghost overseer-card-link" href={href} title={o.label}>
+            {o.label}
+            <Icon name="arrow-right" small />
+          </a>
+        );
+      }}
+    </For>
+  );
+}
+
+/** A closed card's state: answered (the option, or the user's words), replaced, or dropped. */
+function CardOutcome(props: { card: OverseerCard }) {
+  const c = () => props.card;
+  return (
+    <p class="overseer-confirm-answer">
+      <Show when={c().phase === "answered"}>
+        <Icon name="check" small />
+        <Show
+          when={c().answer?.option}
+          fallback={
+            <span>
+              {c().answer?.by === "accepted-recommendation" ? "Took the recommendation" : "Answered"}: {c().answer?.text}
+            </span>
+          }
+        >
+          {(l) => (
+            <span>
+              {c().answer?.by === "accepted-recommendation" ? "Took the recommendation" : "You chose"} <span class="text-mono">{l()}</span> —{" "}
+              <strong>{optionByLetter(c(), l())?.label}</strong>
+            </span>
+          )}
+        </Show>
+      </Show>
+      <Show when={c().phase === "superseded"}>
+        <span>
+          Replaced by{" "}
+          <button type="button" class="overseer-card-jump text-mono" onClick={() => scrollToCard(c().supersededBy!)}>
+            {c().supersededBy}
+          </button>
+        </span>
+      </Show>
+      <Show when={c().phase === "dropped"}>
+        <span>Dropped: {c().droppedWhy}</span>
+      </Show>
+    </p>
+  );
+}
+
+/** Under an item of a card with choices: its recorded answer, and (open) a segmented control of the
+    choices set to its pick. A card without choices shows only a recorded answer. */
+function CardItemAnswer(props: { card: OverseerCard; item: CardItem; pick?: string; disabled: boolean; onPick(letter: string): void }) {
+  const name = `card-${props.card.id}-${props.item.n}-${Math.random().toString(36).slice(2, 8)}`;
+  const decided = () => props.item.decided;
+  return (
+    <>
+      <Show when={decided()}>
+        {(d) => (
+          <span class="overseer-card-decided">
+            <Icon name="check" small />
+            {d().choice ? (
+              <>
+                <span class="text-mono">{d().choice}</span> {choiceByLetter(props.card, d().choice!)?.label ?? d().text}
+              </>
+            ) : (
+              d().text
+            )}
+            <Show when={d().by === "accepted-recommendation"}> · recommendation</Show>
+          </span>
+        )}
+      </Show>
+      <Show when={props.card.choices && props.card.phase === "open"}>
+        <div class="overseer-card-seg" role="radiogroup" aria-label={`Item ${props.item.n}`}>
+          <For each={props.card.choices}>
+            {(c, i) => (
+              <label class="overseer-card-seg-opt">
+                <input type="radio" name={name} value={cardLetter(i())} checked={props.pick === cardLetter(i())} disabled={props.disabled} onChange={() => props.onPick(cardLetter(i()))} />
+                <span class="text-mono">{cardLetter(i())}</span>
+                <span>{c.label}</span>
+              </label>
+            )}
+          </For>
+        </div>
+      </Show>
+    </>
+  );
+}
+
+/** An earlier snapshot of a card: one line, its id, title and what that call changed. */
+export function CardRevision(props: { card: OverseerCard; line: string }) {
+  return (
+    <div class="info-row overseer-card-rev" role="note">
+      <span class="info-row-text">
+        <span class="text-mono">{props.card.id}</span>
+        <span class="overseer-card-rev-title">{props.card.title}</span>
+        <Show when={props.line}>
+          <span> · {props.line}</span>
+        </Show>
+      </span>
+    </div>
   );
 }
 
@@ -92,13 +346,13 @@ export function ConfirmCard(props: { details: SovaConfirmDetails; answered: bool
  * text; a project and a person link to their page, with the org after the name (and a person's
  * status chip unless active). Each may carry the Overseer's note under it.
  */
-function ConfirmItems(props: { items: SovaConfirmItem[] }) {
+function ConfirmItems(props: { items: SovaConfirmItem[]; below?: (item: SovaConfirmItem) => JSX.Element }) {
   const [all, setAll] = createSignal(false);
   const view = () => confirmRows(props.items, all());
   return (
     <div class="card-body overseer-confirm-items">
       <ul class="overseer-confirm-list" aria-label={`${props.items.length} ${props.items.length === 1 ? "item" : "items"}`}>
-        <For each={view().rows}>{(it) => <ConfirmItemRow item={it} />}</For>
+        <For each={view().rows}>{(it) => <ConfirmItemRow item={it}>{props.below?.(it)}</ConfirmItemRow>}</For>
       </ul>
       <Show when={view().collapsible}>
         <button type="button" class="button button-ghost button-sm overseer-confirm-more" aria-expanded={all()} onClick={() => setAll(!all())}>
@@ -121,27 +375,41 @@ function ItemNote(props: { note?: string }) {
   );
 }
 
-function ConfirmItemRow(props: { item: SovaConfirmItem }) {
+/** A card item's number ("2."), when it has one (a `sova_card` card; a legacy card's rows have none). */
+function ItemNumber(props: { item: SovaConfirmItem }) {
+  const n = (props.item as { n?: number }).n;
+  return (
+    <Show when={n}>
+      <span class="text-mono overseer-card-n">{n}.</span>
+    </Show>
+  );
+}
+
+function ConfirmItemRow(props: { item: SovaConfirmItem; children?: JSX.Element }) {
   const it = props.item;
   if (it.kind === "idea")
     return (
       <li class="overseer-confirm-item">
         <span class="overseer-confirm-item-line">
+          <ItemNumber item={it} />
           <span class="overseer-confirm-idea-id">{it.id}</span>
           <Show when={it.title}>
             <span class="overseer-confirm-item-name"> — {it.title}</span>
           </Show>
         </span>
         <ItemNote note={it.note} />
+        {props.children}
       </li>
     );
   if (it.kind === "todo")
     return (
       <li class="overseer-confirm-item">
         <span class="overseer-confirm-item-line">
+          <ItemNumber item={it} />
           <span class="overseer-confirm-item-name">{it.text}</span>
         </span>
         <ItemNote note={it.note} />
+        {props.children}
       </li>
     );
   if (it.kind === "project" || it.kind === "person") {
@@ -149,6 +417,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem }) {
     return (
       <li class="overseer-confirm-item">
         <span class="overseer-confirm-item-line">
+          <ItemNumber item={it} />
           <a class="overseer-confirm-item-name" href={href}>
             {it.name}
           </a>
@@ -163,6 +432,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem }) {
           </Show>
         </span>
         <ItemNote note={it.note} />
+        {props.children}
       </li>
     );
   }
@@ -178,6 +448,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem }) {
   return (
     <li class="overseer-confirm-item">
       <span class="overseer-confirm-item-line">
+        <ItemNumber item={it} />
         <Show when={view()} fallback={<span class="overseer-confirm-item-name">{name()}</span>}>
           {(v) => (
             <a class="overseer-confirm-item-name" href={v().href} title={v().title}>
@@ -198,6 +469,7 @@ function ConfirmItemRow(props: { item: SovaConfirmItem }) {
         </Show>
       </span>
       <ItemNote note={it.note} />
+      {props.children}
     </li>
   );
 }

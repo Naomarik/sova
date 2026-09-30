@@ -15,7 +15,6 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 
 const { normalizeEntry } = await import("./transcript");
 const { rewindSession } = await import("./chat-manager");
-const { editorFor } = await import("./fork");
 const { getSessionSummary } = await import("./sessions-index");
 
 // Verbatim text blocks of three user entries pi 0.87.1 wrote in a hermetic Sova session
@@ -121,13 +120,6 @@ describe("where Sova shows a user message's text", () => {
       const out = await rewindSession(session, "u1", { guard() {}, beforeMarker() {}, queued: () => false });
       assert.deepEqual(out, { ok: true, editorText: expected });
     }
-  });
-
-  test("a fork's composer gets the typed text beside the images", () => {
-    assert.equal(editorFor(userEntry("u1", withImages(ONE, 1)))?.text, "One red image attached. Reply with just OK.");
-    const noteOnly = editorFor(userEntry("u1", withImages(NOTE_ONLY, 1)));
-    assert.equal(noteOnly?.text, undefined, "no text to put back, only the image");
-    assert.equal(noteOnly?.images?.length, 1);
   });
 
   test("the session title is the typed text", async () => {

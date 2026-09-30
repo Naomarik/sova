@@ -312,7 +312,7 @@ describe("turns the user did not start are read-only", () => {
   ];
   const ALLOWED: Record<string, Record<string, unknown>> = {
     sova_note: { op: "read" },
-    sova_confirm: { title: "Archive these?", options: ["Yes", "No"] },
+    sova_card: { ops: [{ op: "create", title: "Archive these?", options: [{ label: "Yes" }, { label: "No" }] }] },
     sova_navigate: { page: "usage" },
   };
   const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_orgs", "sova_org_person"];
@@ -324,7 +324,7 @@ describe("turns the user did not start are read-only", () => {
     assert.deepEqual(names, [...Object.keys(ACTING), ...Object.keys(ALLOWED), ...READS].sort());
   });
 
-  test("in a wake-up or brief turn every acting tool refuses, and says to ask with sova_confirm", async () => {
+  test("in a wake-up or brief turn every acting tool refuses, and says to ask with sova_card", async () => {
     writeOverseerSettings({ ...defaultSettings() });
     const chat = await overseerChat();
     const brief = () => chat.acceptPrompt(`${OVERSEER_BRIEF_PREFIX} A new blocker appeared`, undefined, "server").turn;
@@ -339,7 +339,7 @@ describe("turns the user did not start are read-only", () => {
       for (const name of READS) assert.notEqual(await run(name, {}), "readonly", `${name} stays allowed`);
       for (const [name, params] of READ_CALLS) assert.notEqual(await run(name, params), "readonly", `${name} without op stays allowed`);
     }
-    assert.match(UNATTENDED_REFUSAL, /sova_confirm/);
+    assert.match(UNATTENDED_REFUSAL, /sova_card/);
   });
 
   test("fails closed: a message nobody registered, even one that looks typed, is not the user's", async () => {

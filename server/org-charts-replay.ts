@@ -136,17 +136,26 @@ export interface Trace {
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const FIXTURES = join(HERE, "fixtures", "org-charts");
 
+/** Tools renamed since a trace was mined, by their old name: the same tool, so the same rule
+    (`sova_confirm` became `sova_card`, §app.overseer/confirm). */
+const RENAMED_TOOLS: Record<string, string> = { sova_confirm: "sova_card" };
+
 export function loadTraces(dir = FIXTURES): Trace[] {
   return readdirSync(dir)
     .filter((f) => f.endsWith(".json"))
     .sort()
-    .map((f) => JSON.parse(readFileSync(join(dir, f), "utf8")) as Trace);
+    .map((f) => {
+      const t = JSON.parse(readFileSync(join(dir, f), "utf8")) as Trace;
+      for (const s of t.events) if (s.name && RENAMED_TOOLS[s.name]) s.name = RENAMED_TOOLS[s.name]!;
+      return t;
+    });
 }
 
 // ---- today's rule, the oracle -----------------------------------------------------------------------------
 
 /* Master's tool wrapper (project-overseer-tools.ts TOOL_NEEDS, autonomyRefusal, overRefusal at 82e0429c), frozen
-   here verbatim: the charts took the rule over, and the replay checks them against what it was. */
+   here verbatim (but for `sova_confirm`, since renamed `sova_card`): the charts took the rule over, and the replay
+   checks them against what it was. */
 
 /** What a tool needs in a run the operator did not start. "operator": never outside their own turn. */
 export type Need = "read" | Autonomy | "operator";
@@ -160,7 +169,7 @@ export const TOOL_NEEDS: Record<string, Need> = {
   sova_roster: "read", // approve/decline: L2, checked per op
   sova_todos: "operator",
   sova_note: "L0",
-  sova_confirm: "L0",
+  sova_card: "L0",
   sova_idea: "L0",
   sova_start_gathering: "L1",
   sova_owner_update: "L1",
@@ -181,11 +190,11 @@ export function autonomyRefusal(name: string, need: Need, attended: boolean, eff
   if (need === "operator")
     return name === "sova_todos"
       ? "The to-do list is the operator's own: you read it only when the operator asks, in a turn they started. Don't act on their to-dos or ideas on your own."
-      : `${name} changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_confirm card with what you would change.`;
+      : `${name} changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_card card with what you would change.`;
   if (RANK[effective.autonomy] >= RANK[need]) return null;
   return (
     `This run was not started by the operator, and your autonomy here is ${effective.autonomy}${effective.reason ? ` (${effective.reason})` : ""}; ` +
-    `${name} needs ${need}. Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_confirm card that says what and why; ` +
+    `${name} needs ${need}. Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_card card that says what and why; ` +
     "the operator's click starts a turn in which you may act."
   );
 }

@@ -97,8 +97,6 @@ const REFUSAL_CLAUSE: Partial<Record<BatchRefusalCode, (name: string) => string>
   config: (n) => `${n} can't be opened`,
   busy: (n) => `${n} is busy`,
   missing: (n) => `${n}'s file is gone`,
-  "old-format": (n) => `${n} is in an older session format`,
-  "stale-leaf": (n) => `the fork point you picked isn't ${n}'s latest message anymore`,
 };
 
 /**

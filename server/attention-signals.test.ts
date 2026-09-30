@@ -694,6 +694,42 @@ describe("team stalls: a session waiting on subagents that all went quiet (count
     assert.equal(h.provider.calls.length, 0);
   });
 
+  // 01a0eced (velocity report): ag_01 delivered its report at 11:52:46Z on 29 Sep, the session
+  // answered the user after it (last reply 12:47:37Z, ending in advice to the user), and 21 h later
+  // opening the session restored the idle ag_01 into presence. It raised "quiet for 1320 min".
+  const ECED_REPLY =
+    "Tags are added in the Velocity tab.\n\nWhen you report a bug, add a tag so it counts in the velocity report. If you want, I can add a default tag for new sessions.";
+  const ECED_REPLY_AT = Date.parse("2026-09-29T12:47:37.000Z");
+  const ECED_NOW = Date.parse("2026-09-30T09:58:00.000Z");
+  const agO1 = (over: Partial<WorkerInfo> = {}): WorkerInfo => ({ id: "ag_01", name: "velocity-metrics", status: "restored", working: false, outcome: "success", startedAt: Date.parse("2026-09-29T11:30:00.000Z"), lastActivity: Date.parse("2026-09-29T11:52:46.000Z"), ...over });
+
+  test("01a0eced: a waiting phrase whose subject is 'you' never counts", () => {
+    assert.equal(sig.waitsOnTeam(ECED_REPLY), false, "When you report a bug… is advice to the user");
+    assert.equal(sig.waitsOnTeam("Once you signs off… no. Once the reviewer reports back, I'll merge."), true, "a worker subject still counts");
+  });
+
+  test("01a0eced: a worker counts only if active after the last reply and not done with a finished report", () => {
+    const eced = { at: ECED_REPLY_AT, stopReason: "stop" };
+    assert.equal(sig.quietTeam(idle, [agO1()], none, eced, ECED_NOW), null, "its report came before the last reply, and it succeeded");
+    assert.equal(sig.quietTeam(idle, [agO1({ outcome: undefined })], none, eced, ECED_NOW), null, "last activity before the last reply alone suffices");
+    assert.equal(sig.quietTeam(idle, [agO1({ lastActivity: ECED_REPLY_AT + 60_000 })], none, eced, ECED_NOW), null, "a delivered finished report alone suffices");
+    const late = agO1({ outcome: undefined, lastActivity: ECED_REPLY_AT + 60_000 });
+    assert.deepEqual(sig.quietTeam(idle, [late], none, eced, ECED_NOW), { since: ECED_REPLY_AT + 60_000, names: ["velocity-metrics"] }, "active after the reply, no report yet: a real wait");
+  });
+
+  test("01a0eced loaded again (21-h-old reply, idle worker restored on open): the scan stores no stall", async () => {
+    const path = file([user("u1", null, "why is the count off?", ECED_REPLY_AT - 60_000), assistant("a1", "u1", ECED_REPLY_AT, [{ type: "text", text: ECED_REPLY }])]);
+    let records: { sessionFile: string; pid: number; rec: { presence: object } }[] = [];
+    const h = harness({ list: async () => [summary(path)], liveRecords: () => records, decodeWorkers: () => [agO1()], provider: () => null, now: () => ECED_NOW });
+    h.replyAt.set(path, ECED_REPLY_AT);
+    await h.s.tick();
+    assert.deepEqual(h.stored().stalls, {}, "not loaded: nothing");
+    records = [{ sessionFile: path, pid: 1, rec: { presence: {} } }]; // the user opens it: ag_01 is restored
+    await h.s.tick();
+    await h.s.tick();
+    assert.deepEqual(h.stored().stalls, {}, "loaded again: still nothing");
+  });
+
   test("a reply that does not wait on the team is no stall, whatever the quiet", async () => {
     const path = file([user("u1", null, "merge it", NOW - 30 * 60_000), assistant("a1", "u1", NOW - 20 * 60_000, [{ type: "text", text: done[0]! }])]);
     const h = harness({ list: async () => [summary(path)], liveRecords: () => [{ sessionFile: path, pid: 1, rec: { presence: {} } }], decodeWorkers: () => [member()] });

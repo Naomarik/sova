@@ -1,40 +1,47 @@
-import { createEffect, createMemo, createResource, For, Index, Show } from "solid-js";
-import type { OverseerCaps, OverseerProactivity, OverseerQuickAction, OverseerSettings } from "../../shared/protocol";
-import { getDelegateOptions, getDelegateSettings, getOverseerNotes, getOverseerSettings } from "../lib/api";
+import { createEffect, createMemo, createResource, createSignal, For, Index, on, onCleanup, Show } from "solid-js";
+import type { OverseerAutonomy, OverseerCaps, OverseerProactivity, OverseerQuickAction, OverseerSettings } from "../../shared/protocol";
+import { getDelegateOptions, getDelegateSettings, getOverseerAutonomy, getOverseerNotes, getOverseerSettings } from "../lib/api";
 import { tildePath } from "../lib/format";
 import { loadModelPolicy, usableModels } from "../lib/model-policy";
 import { loadModels, modelList, thinkingLevelsFor } from "../lib/models";
 import { PROACTIVITY, PROACTIVITY_HINT, PROACTIVITY_LABEL } from "../lib/overseer";
 import {
-  CAP_KEYS,
   CAP_LABEL,
+  capsChangedFromDefault,
+  capValid,
   explorerOptions,
   moveQuickAction,
   newQuickAction,
   overseerDirty,
   overseerDraft as draft,
-  overseerDraftProblem,
+  overseerDraftIssue,
   overseerSaveError,
   overseerSaving as saving,
   overseerWarnings as warnings,
+  PER_MESSAGE_CAP_KEYS,
+  perMessageSummary,
+  runningNowLine,
   setOverseerDraft,
   setOverseerSaved,
 } from "../lib/overseer-draft";
+import { clearSettingsSection, settingsSection } from "../lib/settings-nav";
 import { home } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 import { RetryButton, sentence, WorkerSlotRow } from "./WorkerSlotRow";
 
 /**
- * Settings → Overseer: the model it runs on, what it is told beyond its own prompt, how forward it
- * is, the exploratory agent it launches per idea, its quick actions, the limits on what one message
- * can make it do, and the standing notes it keeps across /clear. Saved by the dialog's footer, with
- * the other forms (overseer-draft.ts holds the save, its error and its notes).
+ * Settings → Overseer: one page, in the order a user reaches for it — how forward it is, the model
+ * it runs on, the limits on what it may do, its quick actions and standing notes — then Advanced,
+ * folded: the idea explorer it launches, extra instructions after its own prompt, and resuming
+ * sessions after a restart. Saved by the dialog's footer, with the other forms (overseer-draft.ts
+ * holds the save, its error and its notes). A folded group opens itself when the reason Save
+ * waits is a field inside it.
  */
 export function OverseerSettingsSection() {
   const [info, { refetch }] = createResource(getOverseerSettings);
   const [notes, { refetch: refetchNotes }] = createResource(() => getOverseerNotes().then((n) => n.text));
-  // The exploratory agent's row: Delegate's backends and discovered models (it is a subagent, so
-  // the same "off for subagents" policy marks apply).
+  // The idea explorer's row: Delegate's backends and discovered models (it is a subagent, so the
+  // same "off for subagents" policy marks apply).
   const [backends] = createResource(getDelegateSettings);
   const [workerOptions, { refetch: refetchWorkerOptions }] = createResource(getDelegateOptions);
   const knownBackends = () => (backends.state === "ready" ? backends() : undefined);
@@ -42,6 +49,14 @@ export function OverseerSettingsSection() {
   // The model list and the policy that trims it, the composer picker's sources.
   void loadModels().catch(() => {});
   void loadModelPolicy().catch(() => {});
+
+  // Running at once's "Now: 3 of 10 running.": the composer's own count, read on mount and every
+  // 15 s while the tab is open; no line while it can't be read.
+  const [autonomy, setAutonomy] = createSignal<OverseerAutonomy | null>(null);
+  const readAutonomy = () => void getOverseerAutonomy().then(setAutonomy, () => setAutonomy(null));
+  readAutonomy();
+  const autonomyTimer = setInterval(readAutonomy, 15_000);
+  onCleanup(() => clearInterval(autonomyTimer));
 
   const loaded = () => (info.error ? undefined : info());
   const loadedNotes = () => (notes.error ? undefined : notes());
@@ -54,6 +69,57 @@ export function OverseerSettingsSection() {
   });
 
   const d = () => draft();
+
+  // Opened from the composer's "3 of 10 running": bring Limits into view once the form renders.
+  let limits: HTMLFieldSetElement | undefined;
+  createEffect(() => {
+    if (settingsSection() !== "overseer-limits" || !loaded() || !d()) return;
+    clearSettingsSection();
+    // The panel alone scrolls: scrollIntoView would also scroll the modal, hiding its title.
+    requestAnimationFrame(() => {
+      const panel = limits?.closest<HTMLElement>(".settings-panel");
+      if (limits && panel) panel.scrollTop += limits.getBoundingClientRect().top - panel.getBoundingClientRect().top;
+    });
+  });
+
+  // The folded groups, and the quick actions open for editing (by id, so a row that moves keeps its state).
+  const [perMessageOpen, setPerMessageOpen] = createSignal(false);
+  const [advancedOpen, setAdvancedOpen] = createSignal(false);
+  const [openActions, setOpenActions] = createSignal<ReadonlySet<string>>(new Set());
+  const actionOpen = (id: string) => openActions().has(id);
+  const setActionOpen = (id: string, open: boolean) =>
+    setOpenActions((cur) => {
+      const next = new Set(cur);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const issue = createMemo(() => {
+    const cur = d();
+    return cur ? overseerDraftIssue(cur) : null;
+  });
+  // Where the problem is, as a string, so the opening below runs when the place changes and not on
+  // every keystroke: folding a group again stays the user's until the problem moves.
+  const issuePlace = createMemo(() => {
+    const at = issue()?.at;
+    if (!at) return null;
+    if (at.group === "quick-action") return `quick-action:${d()?.settings.quickActions[at.index]?.id ?? at.index}`;
+    return at.group === "per-message" ? `per-message:${at.key}` : at.group;
+  });
+  createEffect(
+    on(issuePlace, (place) => {
+      const at = place ? issue()?.at : undefined;
+      if (!at) return;
+      if (at.group === "per-message") setPerMessageOpen(true);
+      else if (at.group === "advanced") setAdvancedOpen(true);
+      else if (at.group === "quick-action") {
+        const id = d()?.settings.quickActions[at.index]?.id;
+        if (id) setActionOpen(id, true);
+      }
+    }),
+  );
+
   const edit = (patch: Partial<OverseerSettings>) => {
     const cur = d();
     if (!cur) return;
@@ -80,12 +146,52 @@ export function OverseerSettingsSection() {
   const listed = (ref: string | null) => !ref || groups().some(([, refs]) => refs.includes(ref));
   const levels = () => thinkingLevelsFor(d()?.settings.model);
 
-  const problem = () => {
-    const cur = d();
-    return cur ? overseerDraftProblem(cur) : null;
-  };
-
   const numberOf = (v: string) => (v.trim() === "" ? Number.NaN : Number(v));
+
+  /** A group's Reset to Defaults: in the group's head row, every one worded the same; it fills the draft only. */
+  const ResetButton = (p: { onClick: () => void }) => (
+    <button type="button" class="button button-sm button-ghost overseer-reset" disabled={saving()} onClick={() => p.onClick()}>
+      Reset to Defaults
+    </button>
+  );
+
+  /** One limit's field; `wide` is Running at once, which leads the group alone. */
+  const CapField = (p: { k: keyof OverseerCaps; wide?: boolean; now?: string | null }) => {
+    const v = () => d()!.settings.caps[p.k];
+    return (
+      <div class="field" classList={{ "overseer-cap-wide": !!p.wide }}>
+        <label class="field-label" for={`overseer-cap-${p.k}`}>
+          {CAP_LABEL[p.k].label}
+        </label>
+        <div class="overseer-cap-row">
+          <input
+            class="input text-num overseer-cap-input"
+            id={`overseer-cap-${p.k}`}
+            type="number"
+            inputmode="numeric"
+            min="0"
+            max="1000"
+            step="1"
+            value={Number.isNaN(v()) ? "" : v()}
+            aria-invalid={!capValid(v()) ? "true" : undefined}
+            aria-describedby={`${p.now ? `overseer-cap-${p.k}-now ` : ""}overseer-cap-${p.k}-hint`}
+            disabled={saving()}
+            onInput={(e) => editCap(p.k, numberOf(e.currentTarget.value))}
+          />
+          <Show when={p.now}>
+            {(line) => (
+              <span class="overseer-cap-now text-num" id={`overseer-cap-${p.k}-now`}>
+                {line()}
+              </span>
+            )}
+          </Show>
+        </div>
+        <span class="field-hint" id={`overseer-cap-${p.k}-hint`}>
+          {CAP_LABEL[p.k].hint}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <section class="settings-delegate overseer-settings" aria-labelledby="settings-overseer-title">
@@ -118,10 +224,40 @@ export function OverseerSettingsSection() {
       <Show when={loaded() && d()}>
         {(_) => {
           const cur = () => d()!;
+          const defaults = () => loaded()!.defaults;
+          const changed = () => capsChangedFromDefault(cur().settings.caps, defaults().caps);
+          const now = () => {
+            const a = autonomy();
+            return a ? runningNowLine(a.running, cur().settings.caps.concurrentSessions, a.cap) : null;
+          };
           return (
             <>
               <fieldset class="settings-delegate-profile">
-                <legend class="settings-delegate-legend">Model</legend>
+                <legend class="settings-delegate-legend">Proactivity</legend>
+                <div role="radiogroup" aria-label="Proactivity" class="overseer-radios">
+                  <For each={PROACTIVITY}>
+                    {(p: OverseerProactivity) => (
+                      <label class="toggle">
+                        <input
+                          type="radio"
+                          name="overseer-proactivity"
+                          checked={cur().settings.proactivity === p}
+                          disabled={saving()}
+                          onChange={() => edit({ proactivity: p })}
+                        />
+                        <span class="toggle-box" aria-hidden="true" />
+                        <span>
+                          {PROACTIVITY_LABEL[p]}
+                          <span class="field-hint"> · {PROACTIVITY_HINT[p]}</span>
+                        </span>
+                      </label>
+                    )}
+                  </For>
+                </div>
+              </fieldset>
+
+              <fieldset class="settings-delegate-profile">
+                <legend class="settings-delegate-legend">Model and thinking</legend>
                 <div class="settings-delegate-fields overseer-model-fields">
                   <div class="field">
                     <label class="field-label" for="overseer-model">
@@ -197,157 +333,132 @@ export function OverseerSettingsSection() {
                 <p class="field-hint">Applies when the Overseer is idle. It never changes the model new sessions start with.</p>
               </fieldset>
 
-              <fieldset class="settings-delegate-profile">
-                <legend class="settings-delegate-legend">Exploratory agent</legend>
+              <fieldset class="settings-delegate-profile overseer-group" ref={limits}>
+                <legend class="settings-delegate-legend">Limits</legend>
+                <ResetButton onClick={() => edit({ caps: { ...defaults().caps } })} />
                 <p class="field-hint settings-delegate-desc">
-                  When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a
-                  repository, and reports back to the Overseer.
+                  Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts
+                  restart each time you message it.
                 </p>
-                <Show when={workerOptions.error}>
-                  <Banner
-                    tone="warn"
-                    title="Couldn't check which models are offered."
-                    body="Your saved choice stays, marked not verified."
-                    action={<RetryButton label="Check Again" onClick={() => void refetchWorkerOptions()} />}
-                  />
-                </Show>
-                <Show
-                  when={knownBackends()}
-                  fallback={
-                    <p class="field-hint">
-                      <Show when={backends.error} fallback="Loading the backends…">
-                        Couldn't load the backends. Saved: <code>{cur().settings.explorer.backend}</code> · <code>{cur().settings.explorer.model}</code> ·{" "}
-                        {cur().settings.explorer.effort}.
-                      </Show>
-                    </p>
-                  }
-                >
-                  {(b) => (
-                    <WorkerSlotRow
-                      idPrefix="overseer-explorer"
-                      slot="primary"
-                      alone="Exploratory agent"
-                      info={b()}
-                      options={explorerOptions(knownOptions(), b(), loaded()!.defaults.explorer)}
-                      choice={cur().settings.explorer}
-                      other={null}
-                      disabled={saving()}
-                      owner="The Overseer"
-                      onChange={(next) => edit({ explorer: next })}
-                    />
-                  )}
-                </Show>
-                <button
-                  type="button"
-                  class="button button-sm button-ghost overseer-caps-reset"
-                  disabled={saving()}
-                  onClick={() => edit({ explorer: { ...loaded()!.defaults.explorer } })}
-                >
-                  Reset to Default
-                </button>
+                <CapField k="concurrentSessions" wide now={now()} />
+                <details class="overseer-fold" open={perMessageOpen()} onToggle={(e) => setPerMessageOpen(e.currentTarget.open)}>
+                  <summary class="overseer-fold-summary">
+                    <Icon name="chevron-right" small class="icon-twist" />
+                    <span class="overseer-fold-label">Per-message limits</span>
+                    <span class="overseer-fold-meta">{perMessageSummary(changed())}</span>
+                  </summary>
+                  <div class="overseer-caps">
+                    <For each={PER_MESSAGE_CAP_KEYS}>{(k) => <CapField k={k} />}</For>
+                  </div>
+                </details>
               </fieldset>
 
-              <fieldset class="settings-delegate-profile">
-                <legend class="settings-delegate-legend">Proactivity</legend>
-                <div role="radiogroup" aria-label="Proactivity" class="overseer-radios">
-                  <For each={PROACTIVITY}>
-                    {(p: OverseerProactivity) => (
-                      <label class="toggle">
-                        <input
-                          type="radio"
-                          name="overseer-proactivity"
-                          checked={cur().settings.proactivity === p}
-                          disabled={saving()}
-                          onChange={() => edit({ proactivity: p })}
-                        />
-                        <span class="toggle-box" aria-hidden="true" />
-                        <span>
-                          {PROACTIVITY_LABEL[p]}
-                          <span class="field-hint"> · {PROACTIVITY_HINT[p]}</span>
-                        </span>
-                      </label>
-                    )}
-                  </For>
-                </div>
-              </fieldset>
-
-              <fieldset class="settings-delegate-profile">
+              <fieldset class="settings-delegate-profile overseer-group">
                 <legend class="settings-delegate-legend">Quick actions</legend>
-                <p class="field-hint settings-delegate-desc">The button above the Overseer's composer. Picking one sends its prompt.</p>
+                <ResetButton onClick={() => edit({ quickActions: defaults().quickActions.map((q) => ({ ...q })) })} />
+                <p class="field-hint settings-delegate-desc">
+                  The Quick Actions button in the Overseer's composer foot lists these. Picking one sends its prompt.
+                </p>
                 <ol class="overseer-actions-list">
                   <Index each={cur().settings.quickActions}>
-                    {(a, i) => (
-                      <li class="overseer-action-row">
-                        <div class="settings-delegate-fields">
-                          <div class="field">
-                            <label class="field-label" for={`overseer-qa-label-${i}`}>
-                              Label
-                            </label>
-                            <input
-                              class="input"
-                              id={`overseer-qa-label-${i}`}
-                              value={a().label}
-                              disabled={saving()}
-                              onInput={(e) => editAction(i, { label: e.currentTarget.value })}
-                            />
+                    {(a, i) => {
+                      const name = () => a().label.trim() || "Untitled action";
+                      const open = () => actionOpen(a().id);
+                      return (
+                        <li class="overseer-action-row" classList={{ "overseer-action-row-open": open() }}>
+                          <div class="overseer-action-line">
+                            <span class="overseer-action-text">
+                              <span class="overseer-action-label">{name()}</span>
+                              <span class="overseer-action-desc">{a().description.trim() || "No description"}</span>
+                            </span>
+                            <button
+                              type="button"
+                              class="button button-sm button-ghost"
+                              aria-expanded={open()}
+                              aria-controls={`overseer-qa-edit-${i}`}
+                              aria-label={open() ? `Done editing ${name()}` : `Edit ${name()}`}
+                              onClick={() => setActionOpen(a().id, !open())}
+                            >
+                              {open() ? "Done" : "Edit"}
+                            </button>
                           </div>
-                          <div class="field">
-                            <label class="field-label" for={`overseer-qa-desc-${i}`}>
-                              Description
-                            </label>
-                            <input
-                              class="input"
-                              id={`overseer-qa-desc-${i}`}
-                              value={a().description}
-                              disabled={saving()}
-                              onInput={(e) => editAction(i, { description: e.currentTarget.value })}
-                            />
-                          </div>
-                        </div>
-                        <div class="field">
-                          <label class="field-label" for={`overseer-qa-prompt-${i}`}>
-                            Prompt
-                          </label>
-                          <textarea
-                            class="input textarea"
-                            id={`overseer-qa-prompt-${i}`}
-                            rows={2}
-                            value={a().prompt}
-                            disabled={saving()}
-                            onInput={(e) => editAction(i, { prompt: e.currentTarget.value })}
-                          />
-                        </div>
-                        <div class="overseer-action-tools">
-                          <button
-                            type="button"
-                            class="button button-sm button-ghost"
-                            aria-label={`Move ${a().label || "this action"} up`}
-                            disabled={saving() || i === 0}
-                            onClick={() => edit({ quickActions: moveQuickAction(cur().settings.quickActions, i, -1) })}
-                          >
-                            Move Up
-                          </button>
-                          <button
-                            type="button"
-                            class="button button-sm button-ghost"
-                            aria-label={`Move ${a().label || "this action"} down`}
-                            disabled={saving() || i === cur().settings.quickActions.length - 1}
-                            onClick={() => edit({ quickActions: moveQuickAction(cur().settings.quickActions, i, 1) })}
-                          >
-                            Move Down
-                          </button>
-                          <button
-                            type="button"
-                            class="button button-sm button-ghost"
-                            aria-label={`Remove ${a().label || "this action"}`}
-                            disabled={saving()}
-                            onClick={() => edit({ quickActions: cur().settings.quickActions.filter((_, j) => j !== i) })}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </li>
-                    )}
+                          <Show when={open()}>
+                            <div class="overseer-action-edit" id={`overseer-qa-edit-${i}`}>
+                              <div class="settings-delegate-fields">
+                                <div class="field">
+                                  <label class="field-label" for={`overseer-qa-label-${i}`}>
+                                    Label
+                                  </label>
+                                  <input
+                                    class="input"
+                                    id={`overseer-qa-label-${i}`}
+                                    value={a().label}
+                                    disabled={saving()}
+                                    aria-invalid={!a().label.trim() ? "true" : undefined}
+                                    onInput={(e) => editAction(i, { label: e.currentTarget.value })}
+                                  />
+                                </div>
+                                <div class="field">
+                                  <label class="field-label" for={`overseer-qa-desc-${i}`}>
+                                    Description
+                                  </label>
+                                  <input
+                                    class="input"
+                                    id={`overseer-qa-desc-${i}`}
+                                    value={a().description}
+                                    disabled={saving()}
+                                    onInput={(e) => editAction(i, { description: e.currentTarget.value })}
+                                  />
+                                </div>
+                              </div>
+                              <div class="field">
+                                <label class="field-label" for={`overseer-qa-prompt-${i}`}>
+                                  Prompt
+                                </label>
+                                <textarea
+                                  class="input textarea"
+                                  id={`overseer-qa-prompt-${i}`}
+                                  rows={2}
+                                  value={a().prompt}
+                                  disabled={saving()}
+                                  aria-invalid={!a().prompt.trim() ? "true" : undefined}
+                                  onInput={(e) => editAction(i, { prompt: e.currentTarget.value })}
+                                />
+                              </div>
+                              <div class="overseer-action-tools">
+                                <button
+                                  type="button"
+                                  class="button button-sm button-ghost"
+                                  aria-label={`Move ${name()} up`}
+                                  disabled={saving() || i === 0}
+                                  onClick={() => edit({ quickActions: moveQuickAction(cur().settings.quickActions, i, -1) })}
+                                >
+                                  Move Up
+                                </button>
+                                <button
+                                  type="button"
+                                  class="button button-sm button-ghost"
+                                  aria-label={`Move ${name()} down`}
+                                  disabled={saving() || i === cur().settings.quickActions.length - 1}
+                                  onClick={() => edit({ quickActions: moveQuickAction(cur().settings.quickActions, i, 1) })}
+                                >
+                                  Move Down
+                                </button>
+                                <button
+                                  type="button"
+                                  class="button button-sm button-ghost"
+                                  aria-label={`Remove ${name()}`}
+                                  disabled={saving()}
+                                  onClick={() => edit({ quickActions: cur().settings.quickActions.filter((_, j) => j !== i) })}
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            </div>
+                          </Show>
+                        </li>
+                      );
+                    }}
                   </Index>
                 </ol>
                 <div class="settings-delegate-actions">
@@ -356,97 +467,132 @@ export function OverseerSettingsSection() {
                     class="button button-sm"
                     disabled={saving()}
                     onClick={() => {
-                      edit({ quickActions: [...cur().settings.quickActions, newQuickAction(cur().settings.quickActions)] });
+                      const added = newQuickAction(cur().settings.quickActions);
+                      setActionOpen(added.id, true);
+                      edit({ quickActions: [...cur().settings.quickActions, added] });
                       queueMicrotask(() => document.getElementById(`overseer-qa-label-${cur().settings.quickActions.length - 1}`)?.focus());
                     }}
                   >
                     <Icon name="plus" small />
                     Add Quick Action
                   </button>
-                  <button
-                    type="button"
-                    class="button button-sm button-ghost"
-                    disabled={saving()}
-                    onClick={() => edit({ quickActions: loaded()!.defaults.quickActions.map((q) => ({ ...q })) })}
-                  >
-                    Reset to Defaults
-                  </button>
                 </div>
               </fieldset>
 
               <fieldset class="settings-delegate-profile">
-                <legend class="settings-delegate-legend">Limits</legend>
-                <p class="field-hint settings-delegate-desc">
-                  Past a limit the Overseer stops and asks you. Every action it takes is logged.
-                </p>
-                <div class="overseer-caps">
-                  <For each={CAP_KEYS}>
-                    {(k) => (
-                      <div class="field">
-                        <label class="field-label" for={`overseer-cap-${k}`}>
-                          {CAP_LABEL[k].label}
-                        </label>
-                        <input
-                          class="input text-num"
-                          id={`overseer-cap-${k}`}
-                          type="number"
-                          inputmode="numeric"
-                          min="0"
-                          max="1000"
-                          step="1"
-                          value={Number.isNaN(cur().settings.caps[k]) ? "" : cur().settings.caps[k]}
-                          aria-invalid={!Number.isInteger(cur().settings.caps[k]) || cur().settings.caps[k] < 0 ? "true" : undefined}
-                          disabled={saving()}
-                          onInput={(e) => editCap(k, numberOf(e.currentTarget.value))}
-                        />
-                        <span class="field-hint">{CAP_LABEL[k].hint}</span>
-                      </div>
-                    )}
-                  </For>
-                </div>
-                <button
-                  type="button"
-                  class="button button-sm button-ghost overseer-caps-reset"
-                  disabled={saving()}
-                  onClick={() => edit({ caps: { ...loaded()!.defaults.caps } })}
-                >
-                  Reset Limits
-                </button>
-              </fieldset>
-
-              <fieldset class="settings-delegate-profile">
-                <legend class="settings-delegate-legend">Instructions</legend>
+                <legend class="settings-delegate-legend">Standing notes</legend>
                 <div class="field">
-                  <label class="field-label" for="overseer-extra-prompt">
-                    Extra system prompt
-                  </label>
-                  <textarea
-                    class="input textarea"
-                    id="overseer-extra-prompt"
-                    rows={4}
-                    value={cur().settings.extraSystemPrompt}
-                    disabled={saving()}
-                    onInput={(e) => edit({ extraSystemPrompt: e.currentTarget.value })}
-                  />
-                  <span class="field-hint">Added after the Overseer's own prompt. Applies from its next run.</span>
-                </div>
-                <div class="field">
-                  <label class="field-label" for="overseer-notes">
+                  <label class="visually-hidden" for="overseer-notes">
                     Standing notes
                   </label>
                   <textarea
                     class="input textarea"
                     id="overseer-notes"
-                    rows={4}
+                    rows={3}
                     value={cur().notes}
                     disabled={saving()}
+                    aria-describedby="overseer-notes-hint"
                     onInput={(e) => setOverseerDraft({ ...cur(), notes: e.currentTarget.value })}
                   />
-                  <span class="field-hint">The Overseer reads these every turn and can add to them. They survive /clear.</span>
+                  <span class="field-hint" id="overseer-notes-hint">
+                    The Overseer reads these every turn and can add to them. They survive /clear.
+                  </span>
                 </div>
               </fieldset>
 
-              <Show when={problem()}>{(p) => <p class="field-error">{p()}</p>}</Show>
+              <details class="overseer-fold overseer-advanced" open={advancedOpen()} onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}>
+                <summary class="overseer-fold-summary">
+                  <Icon name="chevron-right" small class="icon-twist" />
+                  <span class="overseer-fold-label">Advanced</span>
+                  <span class="overseer-fold-meta">Idea explorer, extra instructions, resume after a restart</span>
+                </summary>
+                <div class="overseer-fold-body">
+                  <fieldset class="settings-delegate-profile overseer-group">
+                    <legend class="settings-delegate-legend">Idea explorer</legend>
+                    <ResetButton onClick={() => edit({ explorer: { ...defaults().explorer } })} />
+                    <p class="field-hint settings-delegate-desc">
+                      When you keep working on an idea, the Overseer can launch an agent to plan it with you. It reads, never edits a
+                      repository, and reports back to the Overseer.
+                    </p>
+                    <Show when={workerOptions.error}>
+                      <Banner
+                        tone="warn"
+                        title="Couldn't check which models are offered."
+                        body="Your saved choice stays, marked not verified."
+                        action={<RetryButton label="Check Again" onClick={() => void refetchWorkerOptions()} />}
+                      />
+                    </Show>
+                    <Show
+                      when={knownBackends()}
+                      fallback={
+                        <p class="field-hint">
+                          <Show when={backends.error} fallback="Loading the backends…">
+                            Couldn't load the backends. Saved: <code>{cur().settings.explorer.backend}</code> · <code>{cur().settings.explorer.model}</code> ·{" "}
+                            {cur().settings.explorer.effort}.
+                          </Show>
+                        </p>
+                      }
+                    >
+                      {(b) => (
+                        <WorkerSlotRow
+                          idPrefix="overseer-explorer"
+                          slot="primary"
+                          alone="Idea explorer"
+                          info={b()}
+                          options={explorerOptions(knownOptions(), b(), defaults().explorer)}
+                          choice={cur().settings.explorer}
+                          other={null}
+                          disabled={saving()}
+                          owner="The Overseer"
+                          onChange={(next) => edit({ explorer: next })}
+                        />
+                      )}
+                    </Show>
+                  </fieldset>
+
+                  <fieldset class="settings-delegate-profile">
+                    <legend class="settings-delegate-legend">Extra instructions</legend>
+                    <div class="field">
+                      <label class="visually-hidden" for="overseer-extra-prompt">
+                        Extra instructions
+                      </label>
+                      <textarea
+                        class="input textarea"
+                        id="overseer-extra-prompt"
+                        rows={4}
+                        value={cur().settings.extraSystemPrompt}
+                        disabled={saving()}
+                        aria-describedby="overseer-extra-prompt-hint"
+                        onInput={(e) => edit({ extraSystemPrompt: e.currentTarget.value })}
+                      />
+                      <span class="field-hint" id="overseer-extra-prompt-hint">
+                        Added after the Overseer's own prompt. Applies from its next run.
+                      </span>
+                    </div>
+                  </fieldset>
+
+                  <fieldset class="settings-delegate-profile">
+                    <legend class="settings-delegate-legend">After a restart</legend>
+                    <label class="toggle toggle-switch settings-team-enable">
+                      <span>Resume interrupted sessions</span>
+                      <input
+                        type="checkbox"
+                        checked={cur().settings.autoResume !== false}
+                        disabled={saving()}
+                        aria-describedby="overseer-auto-resume-hint"
+                        onChange={(e) => edit({ autoResume: e.currentTarget.checked })}
+                      />
+                      <span class="toggle-box" />
+                    </label>
+                    <p class="field-hint" id="overseer-auto-resume-hint">
+                      A session whose turn the server's restart cut off gets one message to continue. Sessions a usage limit or you stopped
+                      stay stopped.
+                    </p>
+                  </fieldset>
+                </div>
+              </details>
+
+              <Show when={issue()}>{(p) => <p class="field-error">{p().message}</p>}</Show>
               <Show when={overseerSaveError()}>
                 {(e) => (
                   <Banner

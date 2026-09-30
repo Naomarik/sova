@@ -1,6 +1,8 @@
 import { homedir } from "node:os";
 import type { AttentionDigest, AttentionItem, AttentionKind, AttentionTier, SessionSummary } from "../shared/protocol";
 import { readinessItems } from "./merge-readiness";
+import { laterKey, withoutLater } from "./needs-you-later";
+import { sessionName } from "./session-names";
 
 /**
  * The Overseer's attention digest: what needs the user, what finished, what is running — built
@@ -16,6 +18,8 @@ export interface AttentionRow {
   summary: SessionSummary;
   /** Titles of live-pending dialogs of a hosted chat (a browser is attached and can answer). */
   dialogs: string[];
+  /** Their ids, in the same order (Later's anchor for a dialog); absent: unknown. */
+  dialogIds?: string[];
   /** Items waiting in the hosted chat's outgoing queue. */
   queued: number;
   /** Subagent workers that ended in an error (presence.workerCounts.error). */
@@ -34,6 +38,8 @@ export interface AttentionRow {
   /** The session waits on subagents that have all gone quiet (signals-store.ts teamStallOf,
       §app.decisions/team-stall): since when, and who. Absent: not stalled, or the feature is off. */
   teamStall?: { since: number; names: string[] };
+  /** The user's alias for the session (§app.overseer/session-names), when it has one. */
+  alias?: string;
 }
 
 export const DIGEST_MAX = 30;
@@ -70,30 +76,47 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
     id: s.id,
     path: s.path,
     title: s.title,
+    name: sessionName(s, row.alias),
     where: whereOf(s, home),
     href: `#/s/${encodeURIComponent(s.path)}`,
     ...(s.live ? { tuiLive: true as const } : {}),
     // The sidebar lists an org session's items in the Organizations region's own Needs you.
     ...(s.org ? { org: { orgId: s.org.orgId, orgName: s.org.orgName, ...(s.org.projectId ? { projectId: s.org.projectId } : {}), ...(s.org.projectName !== undefined ? { projectName: s.org.projectName } : {}) } } : {}),
   };
-  const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string) =>
-    out.push({ ...base, tier, kind, since, ...(detail ? { detail: cap(detail) } : {}) });
+  // An act item carries its Later key (server/needs-you-later.ts): its anchor is what counts as new
+  // for it, its `since` unless the caller names better tokens.
+  // `key`: a Later key made elsewhere (a baton wait's, the same the session list carries).
+  const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string, anchor?: string[], key?: string) =>
+    out.push({
+      ...base,
+      tier,
+      kind,
+      since,
+      ...(detail ? { detail: cap(detail) } : {}),
+      ...(key ? { later: key } : tier === "act" ? { later: laterKey(s.id, kind, anchor ?? [`t${since}`]) } : {}),
+    });
   const state = s.activity?.state;
   const running = s.busy || state === "working";
 
   // act: blocked on the user.
   // A baton session (§app.baton/needs-you): the baton is with the operator, or a person holds it
-  // through a hand-off nobody has a link for yet.
-  if (s.baton?.needsYou) add("act", "baton-needs-you", s.baton.needsYou.since || lastActive, `${s.baton.needsYou.from} → you: ${s.baton.needsYou.question}`);
-  else if (s.baton?.sendLink) {
-    add("act", "baton-needs-you", s.baton.sendLink.since || lastActive, `Send ${s.baton.sendLink.to} their link: ${s.baton.sendLink.question}`);
+  // through a hand-off nobody has a link for yet. Its Later keys are batonLaterKeys'.
+  const bk = batonLaterKeys(s);
+  if (s.baton?.needsYou) {
+    const n = s.baton.needsYou;
+    add("act", "baton-needs-you", n.since || lastActive, `${n.from} → you: ${n.question}`, undefined, bk.needsYou);
+  } else if (s.baton?.sendLink) {
+    const l = s.baton.sendLink;
+    add("act", "baton-needs-you", l.since || lastActive, `Send ${l.to} their link: ${l.question}`, undefined, bk.sendLink);
     // r12: the offer's invitees still waiting for their hours ride on it (they need nothing yet).
     if (s.baton.waiting?.length) out[out.length - 1]!.waiting = s.baton.waiting;
   }
   // decide: a referral from this session waits for the operator (§app.organizations/referrals).
+  // Each carries a Later key of its own (the Organizations region's Needs you lists it).
   for (const p of s.baton?.proposals ?? [])
-    add("decide", "roster-proposal", p.since || lastActive, `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`);
-  if (row.dialogs.length) add("act", "needs-input", row.activitySince || lastActive, `Waiting on: ${row.dialogs.join("; ")}`);
+    add("decide", "roster-proposal", p.since || lastActive, `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`, undefined, bk.proposals.get(p.personId));
+  if (row.dialogs.length)
+    add("act", "needs-input", row.activitySince || lastActive, `Waiting on: ${row.dialogs.join("; ")}`, row.dialogIds?.length ? row.dialogIds.map((d) => `d${d}`) : undefined);
   else if (state === "needs-input")
     add("act", "needs-input", row.activitySince || lastActive, s.live ? "Waiting on a dialog in the terminal." : "Waiting on a dialog.");
   // An errored turn: the file's last finished reply (turnError, already seen-gated by the list),
@@ -109,29 +132,36 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   const errorSeen =
     row.viewing === true || (s.seenAt !== undefined && row.workerErrorAt !== undefined && s.seenAt >= row.workerErrorAt);
   if (row.failedWorkers > 0 && !errorSeen)
-    add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
+    add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`, [
+      row.workerErrorAt !== undefined ? `t${row.workerErrorAt}` : `n${row.failedWorkers}`,
+    ]);
   // Open alignment questions (§chat.alignment/session-mark): a fact of the file, no model. Waiting
   // on the user only while nothing runs; an archived session is out of the way on purpose.
   const questions = !!s.align && s.align.openQuestions > 0 && !running && !s.archived;
-  if (questions) add("act", "open-questions", row.lastReplyAt ?? lastActive, openQuestionsText(s.align!));
+  if (questions) {
+    // A new or reopened question is new; one answered is not (Later's subset rule).
+    const ids = s.align!.questionIds;
+    add("act", "open-questions", row.lastReplyAt ?? lastActive, openQuestionsText(s.align!), ids?.length ? ids.map((q) => `q${q}`) : [`n${s.align!.openQuestions}`]);
+  }
   // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
-  // with the kinds already derived from the fixed thresholds. A reply that asks the user something
-  // is a blocker (act), unless open questions already say so (§app.decisions/asks-user). "looping"
-  // is a judgement call (decide), a subagent's too: the user acts through the parent session, and
-  // a subagent counts only after two looping checks in a row.
+  // with the kinds already derived from the fixed thresholds. They are guesses, so never blockers
+  // (§app.overseer/attention-digest): a reply that seems to ask the user something is a decide
+  // item — a row mark and a digest line — unless open questions already say so
+  // (§app.decisions/asks-user). "looping" is a judgement call (decide), a subagent's too: the user
+  // acts through the parent session, and a subagent counts only after two looping checks in a row.
   const sig = s.signals?.kinds ?? [];
   const at = s.signals?.at ?? lastActive;
   const asks = sig.includes("asks-you") && !questions && !s.archived;
   if (asks) {
     const sentence = row.signalText?.sentence;
-    add("act", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.");
+    add("decide", "asks-you", at, sentence ? `Asks you: ${sentence}` : "The last reply asks you something.");
   }
-  // A stalled team (counted in code, §app.decisions/team-stall): a blocker (act), only when the
-  // session is not already waiting on the user. Not a push kind: it never sends a notification.
+  // A stalled team (counted in code, §app.decisions/team-stall): a decide item, only when the
+  // session is not already waiting on the user. Never Needs you, a brief or a notification.
   const stall = row.teamStall;
   if (stall && !questions && !asks && !running && !s.archived) {
     const who = stall.names.length > 3 ? `${stall.names.slice(0, 3).join(", ")} and ${stall.names.length - 3} more` : stall.names.join(", ");
-    add("act", "team-stalled", stall.since, `Waiting on ${who}, quiet for ${Math.max(1, Math.round((now - stall.since) / 60_000))} min.`);
+    add("decide", "team-stalled", stall.since, `Waiting on ${who}, quiet for ${Math.max(1, Math.round((now - stall.since) / 60_000))} min.`);
   }
   const ws = s.workerSignals;
   if (ws?.stuck) {
@@ -146,7 +176,7 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   if (s.unread) add("decide", "finished", row.lastReplyAt ?? lastActive, s.outlineNow ?? s.outlineGist);
   if (!running && s.hasDraft) add("decide", "draft", lastActive, s.draftPreview ? `Unsent draft: ${s.draftPreview}` : "Unsent draft.");
   if (!running && row.queued > 0) add("decide", "queued", lastActive, `${row.queued} queued message${row.queued === 1 ? "" : "s"} not sent yet.`);
-  // Merge readiness (server/merge-readiness.ts): a branch waiting on the go-ahead, a merge with open work.
+  // Merge readiness (server/merge-readiness.ts): a branch ready or waiting on the go-ahead, a merge with open work.
   for (const it of readinessItems(s)) add(it.tier, it.kind, it.since, it.detail);
 
   // fyi: running, nearly full, stale.
@@ -168,14 +198,23 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
  * `items` ≤30. `badge` counts SESSIONS, not items, and each session once, at its most urgent tier:
  * a session with a dialog and an error is one "needs you", not two.
  */
-export function buildDigest(rows: AttentionRow[], now = Date.now(), home?: string, extra: AttentionItem[] = []): AttentionDigest & { badge: { act: number; decide: number } } {
+export function buildDigest(
+  rows: AttentionRow[],
+  now = Date.now(),
+  home?: string,
+  extra: AttentionItem[] = [],
+  later: (items: AttentionItem[]) => AttentionItem[] = (items) => items,
+): AttentionDigest & { badge: { act: number; decide: number } } {
   const badge = { act: 0, decide: 0 };
   // Items of no session (an org project's missing main stakeholder): each counts once in the badge.
-  const all: AttentionItem[] = [...extra];
-  for (const it of extra) if (it.tier === "act") badge.act++;
+  // An act one carries a Later key anchored on its own id and `since`.
+  const keyed = extra.map((it) => (it.tier === "act" && !it.later ? { ...it, later: laterKey(it.id, it.kind, [it.held ? `h${it.held.id}` : `t${it.since}`]) } : it));
+  const all: AttentionItem[] = later(keyed);
+  for (const it of all) if (it.tier === "act") badge.act++;
   else if (it.tier === "decide") badge.decide++;
   for (const r of rows) {
-    const items = sessionItems(r, now, home);
+    // Items put away with Later (server/needs-you-later.ts) leave the digest: items, counts, badge.
+    const items = later(sessionItems(r, now, home));
     if (items.some((i) => i.tier === "act")) badge.act++;
     else if (items.some((i) => i.tier === "decide")) badge.decide++;
     all.push(...items);
@@ -223,6 +262,57 @@ export function workerErrorTime(failed: number, rowTimes: number[], risenAt?: nu
   const t = Math.max(latest ?? 0, risenAt ?? 0);
   return t > 0 ? t : undefined;
 }
+
+/**
+ * A baton session's Later keys (§app.baton/needs-you), the same on its digest items and its
+ * session-list row: a person waiting on you and a send-link are anchored on their hand-off (a
+ * send-link for an open offer on the offer); a roster proposal on its proposed person, one key per
+ * person. No message moves them: while the baton is with the operator, or with a person who has no
+ * link, nobody else can write in the session, so the only messages are the operator's own (and the
+ * replies to them), which are not new; a new hand-off or offer is.
+ */
+export function batonLaterKeys(s: Pick<SessionSummary, "id" | "baton">): { needsYou?: string; sendLink?: string; proposals: Map<string, string> } {
+  const b = s.baton;
+  const out: { needsYou?: string; sendLink?: string; proposals: Map<string, string> } = { proposals: new Map() };
+  if (!b) return out;
+  if (b.needsYou) out.needsYou = laterKey(s.id, "baton-needs-you", [b.needsYou.handoff !== undefined ? `h${b.needsYou.handoff}` : `t${b.needsYou.since}`]);
+  const l = b.sendLink;
+  if (l) out.sendLink = laterKey(s.id, "baton-needs-you", [l.offerId ? `o${l.offerId}` : l.handoff !== undefined ? `h${l.handoff}` : `t${l.since}`]);
+  for (const p of b.proposals ?? []) out.proposals.set(p.personId, laterKey(s.id, `roster-proposal/${p.personId}`, [`p${p.personId}`, `t${p.since}`]));
+  return out;
+}
+
+/**
+ * The session list's side of Later for a baton session: each wait carries its `later` key, and a
+ * wait put away (its anchor unmoved) is dropped from the row, as the digest drops its item.
+ */
+export function withBatonLater<T extends Pick<SessionSummary, "id" | "baton">>(
+  row: T,
+  later: (items: { later: string }[]) => { later: string }[] = (items) => withoutLater(items),
+): T {
+  const b = row.baton;
+  if (!b || !(b.needsYou || b.sendLink || b.proposals?.length)) return row;
+  const k = batonLaterKeys(row);
+  const all = [k.needsYou, k.sendLink, ...k.proposals.values()].filter((x): x is string => !!x);
+  const shown = new Set(later(all.map((key) => ({ later: key }))).map((i) => i.later));
+  const { needsYou, sendLink, proposals, ...rest } = b;
+  const kept = (proposals ?? []).flatMap((p) => {
+    const key = k.proposals.get(p.personId)!;
+    return shown.has(key) ? [{ ...p, later: key }] : [];
+  });
+  return {
+    ...row,
+    baton: {
+      ...rest,
+      ...(needsYou && shown.has(k.needsYou!) ? { needsYou: { ...needsYou, later: k.needsYou! } } : {}),
+      ...(sendLink && shown.has(k.sendLink!) ? { sendLink: { ...sendLink, later: k.sendLink! } } : {}),
+      ...(kept.length ? { proposals: kept } : {}),
+    },
+  };
+}
+
+/** The digest's Later filter over the store (server/needs-you-later.ts). */
+export const laterFilter = (now = Date.now()) => (items: AttentionItem[]) => withoutLater(items, now);
 
 /** A stable key per blocker, for "Brief me": a NEW key is a new blocker. */
 export const blockerKey = (it: Pick<AttentionItem, "id" | "kind">) => `${it.id}:${it.kind}`;

@@ -54,15 +54,12 @@ export function adoptSession(s: SessionSummary): boolean {
 }
 
 /**
- * True while a workspace's group composer is focused or holds text. A pane composer that is
- * neither focused nor holding its own draft collapses under it: the caret is somewhere else, and N full
- * composers below one that is about to write to all of them is noise.
- *
- * App-wide rather than passed down, because the two ends are four components apart — the group
- * composer at the foot of the workspace and each pane's own composer — and threading a boolean
- * through SessionView, ChatView and WatchView would put a workspace concept in all three.
+ * True while the open workspace is in Send to All: its group composer is on screen and every pane
+ * composer is out of view. GroupView publishes it and clears it when it unmounts; App reads it,
+ * because the two things that follow it live there — the skip link's target and the `<main>`
+ * attribute that hides the pane composers.
  */
-export const [groupComposerActive, setGroupComposerActive] = createSignal(false);
+export const [groupSendAll, setGroupSendAll] = createSignal(false);
 
 /**
  * Running state of sessions this tab is chatting in, by path. The sidebar overlays it on the

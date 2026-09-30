@@ -29,6 +29,7 @@ const overseer = await import("./overseer");
 const tools = await import("./overseer-tools");
 const view = await import("./overseer-org-view");
 const confirm = await import("./overseer-confirm");
+const { applyCardCall, cardLines } = await import("../shared/overseer-card");
 const { DEFAULT_CAPS, overseerActionsFile, writeOverseerState } = await import("./overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { registerProjectOverseerRoutes } = await import("./project-overseer-routes");
@@ -309,7 +310,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const start = { op: "start", org: org.id, project: project.id, to: tony.id, public_title: "Backups", question: "How are backups made?", goal: "Learn the backup routine" };
     const typed = await call("sova_gather", start);
     assert.equal(typed.ok, false);
-    assert.match(typed.text, /^This reaches people or ends something: ask with sova_confirm, listing the project Ledger \(prj_[a-z0-9]+\), Tony Reyes \(p_[a-z0-9]+\) in its items, and act in the turn the user's click starts\.$/);
+    assert.match(typed.text, /^This reaches people or ends something: ask with sova_card, listing the project Ledger \(prj_[a-z0-9]+\), Tony Reyes \(p_[a-z0-9]+\) in its items, and act in the turn the user's click starts\.$/);
     card = items(projectItem(org.id, project.id));
     assert.equal((await call("sova_gather", start)).ok, false, "a card that didn't list the person");
     card = items(projectItem(org.id, project.id), personItem(org.id, tony.id));
@@ -541,7 +542,8 @@ describe("the confirm card: people and projects, and the click that opens a conf
     await assert.rejects(() => confirm.resolveConfirmItems({ people: [{ org: org.id, id: "Nobody" }] }, lookup, refusal), /These ids match nothing \(people: Nobody in /);
     const noOrgs = { ...lookup, person: undefined, project: undefined };
     await assert.rejects(() => confirm.resolveConfirmItems({ people: [{ org: org.id, id: "Lee Chan" }] }, noOrgs, refusal), /items takes only sessions, ideas and todos/);
-    assert.match(confirm.confirmResult(rows, "user"), /Projects:\n- Portal \(prj_[a-z0-9]+\) in Cardco \(org_[a-z0-9]+\) — Its site\.\nPeople:\n- Lee Chan \(p_[a-z0-9]+, active\) in Cardco/);
+    const echo = cardLines({ id: "c_1", title: "t", options: [{ label: "Go" }], items: rows.map((it, i) => ({ ...it, n: i + 1 })), phase: "open", rev: 1, createdAt: "x", updatedAt: "x" }, "").join("\n");
+    assert.match(echo, /  1\. project Portal \(prj_[a-z0-9]+\) in Cardco \(org_[a-z0-9]+\) — Its site\.\n  2\. Lee Chan \(p_[a-z0-9]+, active\) in Cardco/);
   });
 
   test("a card that may gate a people-facing act is click-only; an ordinary card, or a project overseer's, is not", async () => {
@@ -558,19 +560,34 @@ describe("the confirm card: people and projects, and the click that opens a conf
     assert.equal(await card({ sessions: ["bat"] }, po), false, "a project overseer's card gates nothing");
   });
 
-  test("the card's items count only when the run's opening message is the click on it", () => {
-    const details = { title: "Start?", options: [{ label: "Start", reply: "Start the session with Lee." }, { label: "Cancel" }], items: [{ kind: "person", id: lee.id, orgId: org.id, name: "Lee Chan", orgName: "Cardco", status: "active" }] };
-    const branch = (...more: unknown[]) => [
-      { type: "message", message: { role: "user", content: "start one with Lee" } },
-      { type: "message", message: { role: "toolResult", toolCallId: "card1", toolName: "sova_confirm", details } },
-      ...more,
-    ];
+  test("the card's items count only when the run's opening message is a click on it while it is open", () => {
+    const person = { kind: "person", id: lee.id, orgId: org.id, name: "Lee Chan", orgName: "Cardco", status: "active" } as const;
+    const bob = { kind: "person", id: "p_bob", orgId: org.id, name: "Bob", orgName: "Cardco", status: "active" } as const;
+    const created = applyCardCall(
+      [],
+      { ops: [{ op: "create", title: "Start?", options: [{ label: "Start", reply: "Start the session with Lee." }, { label: "Cancel" }], choices: ["Start", "Skip"] }] },
+      { now: "2026-09-30T10:00:00.000Z", prepared: { items: [person, bob], hrefs: [], clickOnly: true } },
+    ).details;
+    const result = (details: unknown, id = "k1") => ({ type: "message", message: { role: "toolResult", toolCallId: id, toolName: "sova_card", details } });
     const user = (text: string) => ({ type: "message", message: { role: "user", content: [{ type: "text", text }] } });
-    assert.deepEqual(overseer.confirmedItems("card1", branch(user("Start the session with Lee."))), details.items);
-    assert.equal(overseer.confirmedItems(null, branch(user("Start the session with Lee."))), null, "not a click");
-    assert.equal(overseer.confirmedItems("card1", branch(user("yes"))), null, "text that is no option");
-    assert.equal(overseer.confirmedItems("card1", branch(user("Start the session with Lee."), user("and another"))), null, "a later message");
-    assert.equal(overseer.confirmedItems("card2", branch(user("Start the session with Lee."))), null, "another card");
+    const branch = (...more: unknown[]) => [user("start one with Lee"), result(created), ...more];
+    const bare = (items: readonly { n?: number }[]) => items.map(({ n: _n, ...it }) => it);
+    // An unrelated message before the click leaves the card open: the click still approves.
+    assert.deepEqual(overseer.confirmedItems("c_1", branch(user("what's Lee working on?"), user("c_1 a: Start the session with Lee."))), bare(created.card!.items));
+    assert.equal(overseer.confirmedItems(null, branch(user("c_1 a: Start the session with Lee."))), null, "not a click");
+    assert.equal(overseer.confirmedItems("c_1", branch(user("yes"))), null, "typed text");
+    assert.equal(overseer.confirmedItems("c_1", branch(user("c_1 a: start it"))), null, "text that only looks like a click");
+    assert.equal(overseer.confirmedItems("c_1", branch(user("c_1 a: Start the session with Lee."), user("and another"))), null, "a later message");
+    assert.equal(overseer.confirmedItems("c_2", branch(user("c_1 a: Start the session with Lee."))), null, "another card");
+    assert.equal(overseer.confirmedItems("k1", branch(user("c_1 a: Start the session with Lee."))), null, "a tool call id approves nothing");
+    // A per-item Apply approves only the items it gave a choice.
+    assert.deepEqual(overseer.confirmedItems("c_1", branch(user("c_1: 1a Start"))), [person]);
+    // A card no longer open when the click arrived approves nothing.
+    const dropped = applyCardCall([created.card!], { card: "c_1", ops: [{ op: "drop", reason: "Lee left." }] }, { now: "2026-09-30T10:01:00.000Z" }).details;
+    assert.equal(overseer.confirmedItems("c_1", branch(result(dropped, "k2"), user("c_1 a: Start the session with Lee."))), null, "a dropped card");
+    // The model recording the answer later in the same run doesn't take the approval away.
+    const answered = applyCardCall([created.card!], { card: "c_1", ops: [{ op: "answer", text: "start", option: "a" }] }, { now: "2026-09-30T10:02:00.000Z" }).details;
+    assert.deepEqual(overseer.confirmedItems("c_1", [...branch(user("c_1 a: Start the session with Lee.")), result(answered, "k3")]), bare(created.card!.items), "recorded after the click");
   });
 
   test("UserTurns: a click's card lasts for its own run only; a typed message opens none", () => {
@@ -589,6 +606,27 @@ describe("the confirm card: people and projects, and the click that opens a conf
     turns.observe({ type: "message_start", message: typed });
     assert.equal(turns.attended(), true);
     assert.equal(turns.confirmedCard(), null);
+  });
+
+  test("UserTurns: the open-cards note is state, not input; any other extension message still ends the user's part", () => {
+    const turns = new tools.UserTurns();
+    const agent = { prompt: async (_m: unknown) => {}, steer: (_m: unknown) => {}, followUp: (_m: unknown) => {} };
+    turns.watch(agent as never);
+    const msg = { role: "user", content: "c_1 a: Start the session with Lee." };
+    turns.send(() => agent.prompt(msg as never), "c_1");
+    turns.observe({ type: "agent_start" });
+    turns.observe({ type: "message_start", message: msg });
+    turns.observe({ type: "message_start", message: { role: "assistant", content: [] } });
+    // After the model replied (a compaction's note steered in mid-run): the run stays the user's.
+    turns.observe({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } });
+    assert.equal(turns.attended(), true);
+    assert.equal(turns.confirmedCard(), "c_1");
+    turns.observe({ type: "message_start", message: { role: "custom", customType: "worker-report", content: "done", display: true } });
+    assert.equal(turns.attended(), false);
+    // A run a brief starts is not made the user's by the note either.
+    turns.observe({ type: "agent_start" });
+    turns.observe({ type: "message_start", message: { role: "custom", customType: "overseer-cards", content: "[cards] …", display: false } });
+    assert.equal(turns.attended(), false);
   });
 });
 

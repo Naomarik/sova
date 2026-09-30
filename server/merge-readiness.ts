@@ -5,7 +5,7 @@ import type { AttentionItem, AttentionKind, AttentionTier, ReadinessState, Sessi
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
 import { normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
-import { followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
+import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
 import { activeBranch, type Entry } from "./transcript";
 import { execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from "./worktrees";
@@ -26,8 +26,12 @@ import { execGit, type GitRunner, worktreeInsights, type WorktreeInsights } from
 export const READINESS_TTL_MS = 20_000;
 /** The reply tail the merge-ask fallback reads. */
 export const ASK_TAIL = 600;
-/** The reply tail kept for the follow-up check. */
-const REPLY_KEEP = 1500;
+/** The reply tail kept for the follow-up check, after its closing spec lines are cut. */
+export const REPLY_KEEP = 1500;
+/** A kept Deferred: line (the follow-up check's cue) is cut to this. */
+const DEFERRED_KEEP = 500;
+/** This many uncommitted files or more keep a branch in progress; fewer are a caveat on ready. */
+export const DIRTY_MAX = 3;
 
 // --- pure rules -------------------------------------------------------------------------------
 
@@ -42,8 +46,14 @@ export interface TreeFacts {
   /** Git finds the branch in its base (ancestry or content) after at least one commit of its own. */
   merged?: boolean;
   dirty?: boolean;
+  /** How many uncommitted files, and the first few (repo-relative); absent: unknown. */
+  dirtyCount?: number;
+  dirtyFiles?: string[];
   /** Commits past the base. */
   ahead?: number;
+  /** The base branch's name, and the files a trial merge into it conflicts on. */
+  base?: string;
+  conflicts?: number;
   /** A TEMP / WIP / fixup! / squash! / amend! subject on the branch, the newest. */
   tempCommit?: string;
 }
@@ -60,8 +70,41 @@ export interface SessionFacts {
   asks: boolean;
 }
 
-/** One worktree's state and a few words why (§chat.worktrees/readiness). */
-export function treeReadiness(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?: string } {
+/** "1 uncommitted file: NAIVE-RUN.txt", "4 uncommitted files: a.ts and 3 more": the first by its
+    file name, and how many more. */
+export function uncommittedWords(count: number, files: readonly string[] = []): string {
+  const n = `${count} uncommitted file${count === 1 ? "" : "s"}`;
+  const first = files[0]?.split("/").pop();
+  if (!first) return n;
+  return count > 1 ? `${n}: ${first} and ${count - 1} more` : `${n}: ${first}`;
+}
+
+const STATE_WORDS: Record<ReadinessState, string> = {
+  merged: "Merged",
+  stale: "Stale",
+  "in-progress": "In progress",
+  blocked: "Blocked",
+  ready: "Ready to merge",
+  "waiting-approval": "Waiting for your OK",
+};
+
+/** Why a clean branch has no commit of its own: an empty leftover worktree once nothing runs. */
+export const NO_COMMITS = "no commits yet";
+
+/**
+ * One worktree's state, a few words why, and the line a person reads (§chat.worktrees/readiness):
+ * "Ready to merge · checks passed · 19 commits ahead", "Conflicts with master · 17 files".
+ */
+export function treeReadiness(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?: string; reason: string } {
+  const r = treeState(t, s);
+  if (t.conflicts && r.state === "in-progress" && r.why?.startsWith("conflicts"))
+    return { ...r, reason: `Conflicts with ${t.base ?? "the base"} · ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
+  const parts = [STATE_WORDS[r.state], ...(r.why ? r.why.split(" · ") : [])];
+  if ((r.state === "ready" || r.state === "waiting-approval") && t.ahead) parts.splice(2, 0, `${t.ahead} commit${t.ahead === 1 ? "" : "s"} ahead`);
+  return { ...r, reason: parts.join(" · ") };
+}
+
+function treeState(t: TreeFacts, s: SessionFacts): { state: ReadinessState; why?: string } {
   // A folder git can't read: the record is all there is.
   if (!t.readable) return t.tracked === "merged" ? { state: "merged", why: "worktree folder gone" } : { state: "in-progress", why: "worktree folder gone" };
   if (t.merged) {
@@ -71,11 +114,16 @@ export function treeReadiness(t: TreeFacts, s: SessionFacts): { state: Readiness
   }
   if (s.running) return { state: "in-progress", why: "working now" };
   if (s.openQuestions > 0) return { state: "blocked", why: `${s.openQuestions} open question${s.openQuestions === 1 ? "" : "s"}` };
-  if (t.dirty) return { state: "in-progress", why: "uncommitted changes" };
-  if (!t.ahead) return { state: "in-progress", why: "no commits yet" };
+  // Uncommitted files: DIRTY_MAX or more (or an unknown count) keep it in progress; fewer are a
+  // caveat named on ready.
+  const dirty = t.dirty ? (t.dirtyCount ?? DIRTY_MAX) : 0;
+  if (dirty >= DIRTY_MAX) return { state: "in-progress", why: t.dirtyCount ? uncommittedWords(t.dirtyCount, t.dirtyFiles) : "uncommitted changes" };
+  if (!t.ahead) return { state: "in-progress", why: NO_COMMITS };
+  if (t.conflicts) return { state: "in-progress", why: `conflicts with ${t.base ?? "the base"}: ${t.conflicts} file${t.conflicts === 1 ? "" : "s"}` };
   if (t.tempCommit) return { state: "in-progress", why: `temporary commit: ${t.tempCommit}` };
   if (s.lastCheck && !s.lastCheck.ok) return { state: "in-progress", why: "the last check failed" };
-  const why = s.lastCheck ? "checks passed" : "no check run seen";
+  const checks = s.lastCheck ? "checks passed" : "no check run seen";
+  const why = dirty > 0 ? `${checks} · ${uncommittedWords(dirty, t.dirtyFiles)}` : checks;
   return s.asks ? { state: "waiting-approval", why } : { state: "ready", why };
 }
 
@@ -126,25 +174,30 @@ export function sessionReadinessOf(trees: WorktreeReadiness[], flags: MergeFlags
   const ready = trees.find((t) => t.state === "ready");
   if (waiting) return { ...out, badge: "waiting", branch: waiting.branch };
   if (ready) return { ...out, badge: "ready", branch: ready.branch };
-  if (trees.some((t) => t.state !== "merged")) return out;
-  const branch = flags.lastMerge?.branch ?? trees[trees.length - 1]!.branch;
+  // An empty leftover worktree (clean, no commit of its own, nothing running) hides no merged badge.
+  const empty = (t: WorktreeReadiness) => t.state === "in-progress" && t.why === NO_COMMITS && !t.dirtyCount;
+  const merged = trees.filter((t) => t.state === "merged");
+  if (!merged.length || trees.some((t) => t.state !== "merged" && !empty(t))) return out;
+  const branch = flags.lastMerge?.branch ?? merged[merged.length - 1]!.branch;
   const since = flags.lastMerge?.at ?? lastReplyAt;
   if (flags.restartPending) return { ...out, badge: "restart", branch, since };
-  const followUps = cleanup + (flags.followUp ? 1 : 0);
+  // The count is the follow-up check's named work only: leftover worktrees (cleanup) are said in the title.
+  const followUps = flags.followUp ? 1 : 0;
   return { ...out, badge: "merged", branch, since, ...(followUps ? { followUps } : {}) };
 }
 
 /**
- * The digest's merge items of one session (§app.overseer/attention-digest): a worktree waiting for
- * the go-ahead is a blocker (act: the sidebar's Needs you lists it; not a push kind, so it never
- * sends a notification); open work a merge left is a decide item.
+ * The digest's merge items of one session (§app.overseer/attention-digest), all decide tier: a
+ * worktree ready, or waiting for the go-ahead, is never a blocker (never Needs you, a brief or a
+ * notification); nor is open work a merge left.
  */
 export function readinessItems(s: SessionSummary): { tier: AttentionTier; kind: AttentionKind; since: number; detail: string }[] {
   const r = s.readiness;
   if (!r || s.archived) return [];
   const running = s.busy || s.activity?.state === "working";
   const out: { tier: AttentionTier; kind: AttentionKind; since: number; detail: string }[] = [];
-  if (r.badge === "waiting" && r.branch && !running) out.push({ tier: "act", kind: "ready-to-merge", since: r.since, detail: `Ready to merge: ${r.branch}` });
+  if ((r.badge === "waiting" || r.badge === "ready") && r.branch && !running)
+    out.push({ tier: "decide", kind: "ready-to-merge", since: r.since, detail: `${r.badge === "waiting" ? "Waiting for your OK" : "Ready to merge"}: ${r.branch}` });
   if (r.followUp?.weight === "significant") out.push({ tier: "decide", kind: "merged-open-work", since: r.since, detail: `Merged with open work: ${r.followUp.cue}` });
   return out;
 }
@@ -255,8 +308,13 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
   const m = v.message;
   if (v.type === "message" && isRecord(m)) {
     if (m.role === "assistant") {
+      // The closing spec lines go BEFORE the tail is kept, so a long one never crowds out the body;
+      // a Deferred: line rides after the tail for the follow-up check's cue.
       const text = textOf(m.content);
-      e.reply = { stop: m.stopReason === "stop", text: text.length > REPLY_KEEP ? text.slice(-REPLY_KEEP) : text };
+      const body = replyBody(text);
+      const kept = body.length > REPLY_KEEP ? body.slice(-REPLY_KEEP) : body;
+      const deferred = body.length < text.trimEnd().length ? deferredOf(text.slice(body.length)) : undefined;
+      e.reply = { stop: m.stopReason === "stop", text: deferred ? `${kept}\n${deferred.slice(0, DEFERRED_KEEP)}` : kept };
       if (e.at === undefined) e.at = timeOf(m.timestamp);
       const calls: string[] = [];
       for (const b of Array.isArray(m.content) ? m.content : []) {
@@ -489,6 +547,9 @@ async function treeFacts(t: TrackedWorktree): Promise<TreeFacts> {
     merged,
     ...(st.dirty !== undefined ? { dirty: st.dirty } : {}),
     ...(st.ahead !== undefined ? { ahead: st.ahead } : {}),
+    ...(st.dirtyCount !== undefined ? { dirtyCount: st.dirtyCount, dirtyFiles: st.dirtyFiles ?? [] } : {}),
+    ...(st.base ? { base: st.base } : {}),
+    ...(st.conflicts ? { conflicts: st.conflicts } : {}),
     ...(st.subjects ? { tempCommit: tempCommitOf(st.subjects) } : {}),
   };
 }
@@ -509,7 +570,15 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts): Pro
   for (const t of own) {
     const tf = await treeFacts(t);
     const r = treeReadiness(tf, sf);
-    trees.push({ path: t.path, branch: tf.branch, state: r.state, ...(r.why ? { why: r.why } : {}) });
+    trees.push({
+      path: t.path,
+      branch: tf.branch,
+      state: r.state,
+      ...(r.why ? { why: r.why } : {}),
+      reason: r.reason,
+      ...(tf.dirty && tf.dirtyCount ? { dirtyCount: tf.dirtyCount, dirtyFiles: tf.dirtyFiles ?? [] } : {}),
+      ...(tf.conflicts ? { conflicts: tf.conflicts } : {}),
+    });
   }
   const cards = facts.merges;
   const newest = cards[cards.length - 1];

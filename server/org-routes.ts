@@ -4,6 +4,7 @@ import { statSync } from "node:fs";
 import { join } from "node:path";
 import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
+import { withBatonLater } from "./attention";
 import { unroutedConflicts } from "./decisions";
 import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
@@ -188,7 +189,10 @@ function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): W
   }
   for (const r of rows) {
     if (r.state !== "open" && r.state !== "needs-you") continue;
-    const field = batonSummaryField(sessionPathOf(dir, r));
+    const raw = batonSummaryField(sessionPathOf(dir, r));
+    // A wait (or a proposal) put away with Later counts no more than Needs you lists it.
+    const field = raw ? withBatonLater({ id: r.sessionId, baton: raw }).baton : undefined;
+    w.needsYou.proposals -= (raw?.proposals?.length ?? 0) - (field?.proposals?.length ?? 0);
     if (field?.needsYou) {
       w.needsYou.replies++;
       w.batons.set(r.sessionId, "reply");

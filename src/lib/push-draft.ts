@@ -57,9 +57,9 @@ export function pushDraftProblem(d: PushDraft): string | null {
   return null;
 }
 
-/** Settings → Overseer → Phone Notifications' unsaved settings (settings-draft.ts: module state, held on close). */
+/** Settings → Notifications → Phone Notifications' unsaved settings (settings-draft.ts: module state, held on close). */
 const store = createDraftStore<PushDraft, PushSettings, PushSettingsInfo>({
-  tab: "overseer",
+  tab: "notifications",
   label: "Phone Notifications",
   toDraft: toPushDraft,
   same: samePush,

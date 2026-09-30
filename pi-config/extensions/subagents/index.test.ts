@@ -2525,6 +2525,26 @@ const SANDBOX_ON: SandboxStateEvent = {
 /** A worker's launch options without the per-worker identity or the fake worker's own closures. */
 const launchShape = ({ id, groupId, name, ...rest }: any) => Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== "function"));
 
+test("pin: with the sandbox off and no worktree, a claude worker's create() options are exactly these", async () => {
+	const h = harness();
+	const created: any[] = [];
+	const capture = fakeBackend(created);
+	const options: any[] = [];
+	h.bus.emit(BACKEND_REGISTER_EVENT, { ...capture, create(o: any, handlers: any) { options.push(o); return capture.create(o, handlers); } });
+	try {
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse", wake: false });
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
+		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", systemPrompt: "be terse", wake: false });
+		const want = {
+			model: "sonnet", effort: undefined, tools: undefined, systemPrompt: "be terse", extensions: undefined, forkSession: undefined,
+			backendOptions: { permissionMode: "default" }, backend: "claude-code", groupId: "run_01", name: "agent", task: "claude task", cwd: h.ctx.cwd, wake: false,
+		};
+		assert.deepEqual(Object.keys(options[0]).sort(), [...Object.keys(want), "id"].sort(), "no sandbox, env, settings, confinement or mcp key");
+		assert.deepEqual({ ...options[0], id: undefined }, { ...want, id: undefined });
+		assert.deepEqual({ ...options[1], id: undefined, groupId: "run_01" }, { ...want, id: undefined }, "an off sandbox changes nothing");
+	} finally { await h.close(); }
+});
+
 test("sandbox off: workers launch exactly as without the sandbox extension; on: pi workers load it with --sandbox on", async () => {
 	const h = harness();
 	const created: any[] = [];

@@ -100,6 +100,18 @@ once), **lease** (an offer's lock on its first taker).
   (<used> of <max>). Extend it to go on." with **Extend by** [20] and **Extend**, and its where-line
   reads "with you — extend the limit to write" while the operator holds it.
 
+## §app.baton/goal-on-strip — The goal, folded on the strip
+
+- The strip (§app.baton/goal-and-loadout) shows the session's goal to the operator under a
+  **Goal** disclosure, below the org, project and **It can:** lines, whenever the goal (trimmed) is
+  not empty. It is folded each time the session opens (no open state is kept), and its summary
+  says only "Goal", with no preview of the text; the whole summary row is a 44px target.
+- Opened, it shows the goal as written (line breaks kept), then one muted line: "Only you see
+  this. It's never on their page."
+- The goal reaches only the operator app's `GET /api/baton` (`BatonInfo.session.goal`); it never
+  reaches the person's page (§app.baton/outsider-view), the owner page (§app.owner-page/never) or
+  any share.
+
 ## §app.baton/hand-off — hand_to, goal_done, record_decision
 
 - `hand_to({person, question, briefing})`: `person` is an active roster person (by id, or exact

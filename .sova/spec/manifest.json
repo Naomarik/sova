@@ -9168,6 +9168,23 @@
         "scripts/mesh-vps/deploy.sh",
         "scripts/mesh-vps/config.sh"
       ]
+    },
+    "§app.baton/goal-on-strip": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/BatonStrip.tsx",
+        "src/lib/baton-strip.ts",
+        "src/lib/baton-strip.test.ts",
+        "src/orgs.css",
+        "server/org-routes.test.ts"
+      ],
+      "requires": [
+        "§app.baton/goal-and-loadout",
+        "§app.baton/outsider-view",
+        "§app.owner-page/never"
+      ]
     }
   },
   "boundary": {

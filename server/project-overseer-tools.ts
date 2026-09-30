@@ -23,6 +23,7 @@ import type { ProjectOverseerPaths } from "./project-overseer-store";
 import type { EnabledEvent } from "./org-charts";
 import type { FeedEntry } from "./org-host";
 import type { HeldAct, PipelineRow } from "../shared/pipeline";
+import type { LinkRef, SendAnswer } from "../shared/outreach";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -88,6 +89,9 @@ export interface PoToolHost {
   /** Post an update to the org owner's page (§app.owner-page/updates). The host refuses, with the
       reason for the model: no owner, too long, text repeating private text, and, unless the operator
       asked (`attended`), nothing new since the last post or a post under 24 hours old. */
+  /** Send a roster person a link (a reference the server resolves) and/or a short note on WhatsApp
+      (§app.outreach/send): the project chart's outreach/send, held when the run is unattended. */
+  sendToPerson(input: { personId: string; link?: LinkRef; note?: string }): Promise<SendAnswer>;
   postOwnerUpdate(input: { text: string; attended: boolean }): Promise<{ update: ProjectUpdate; owner: string } | { held: { id: string; until: number }; owner: string }>;
   /** A chart refused `kind` for its allowance: the watch holds it until it comes back (limit/refused). */
   limitRefused(kind: PoLimitKind): Promise<void>;
@@ -791,6 +795,43 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           content: text(`Posted to ${made.owner}'s owner page.`),
           details: { id: made.update.id, note: made.update.by === "operator" ? "Posted an owner update (you asked)" : "Posted an owner update" },
         };
+      }),
+    },
+    {
+      name: "sova_send_to_person",
+      label: "Send on WhatsApp",
+      description:
+        "Message a roster person on WhatsApp: a link, a short note, or both. The link is a reference the server turns into the address: session (one of this project's gathering sessions: sends them their own link to it, which they must hold or be a reached invitee of) or preview (a public preview link's id, pv_…, of this project: they get their own link to the same preview). You never see the link or their number. " +
+        "When you act on your own (not in a turn the operator started), each message first waits in the project's hold, where the operator can cancel it, and goes only in the person's working hours; in the operator's own turn it goes at once. The note is shown to the person as written: plain, short, in your own words, never an id, a cost, the About text, your notes, or anything from a profile or a contact (a note repeating those is refused).",
+      promptSnippet: "message a roster person on WhatsApp: their gathering link, a preview link, and/or a short note (waits in the hold)",
+      parameters: obj(
+        {
+          person: str("The roster person: id or exact name."),
+          session: str("Optional: a gathering session id of this project, to send them their link to it."),
+          preview: str("Optional: a public preview link id (pv_…) of this project, to send them a link to it."),
+          note: str("Optional: a short note for them, at most 500 characters, shown verbatim."),
+        },
+        ["person"],
+      ),
+      execute: act("sova_send_to_person", async (q) => {
+        const person = typeof q.person === "string" ? personOf(host.roster(), q.person) : null;
+        if (!person) throw new Refusal(`${typeof q.person === "string" ? q.person : "That person"} is not on the roster.`);
+        const session = typeof q.session === "string" && q.session.trim() ? q.session.trim() : "";
+        const preview = typeof q.preview === "string" && q.preview.trim() ? q.preview.trim() : "";
+        if (session && preview) throw new Refusal("Send one link at a time: a session or a preview.");
+        const note = typeof q.note === "string" ? q.note.trim() : "";
+        const link: LinkRef | undefined = session ? { kind: "handoff", session } : preview ? { kind: "preview", preview } : undefined;
+        if (!link && !note) throw new Refusal("Send a link, a note, or both.");
+        let r: SendAnswer;
+        try {
+          r = await host.sendToPerson({ personId: person.id, ...(link ? { link } : {}), ...(note ? { note } : {}) });
+        } catch (err) {
+          if (err instanceof OrgError) throw err;
+          throw new Refusal(err instanceof Error ? err.message : String(err));
+        }
+        if (r.held) return { content: text(heldText(`the WhatsApp message to ${person.name}`, { until: Date.parse(r.held.goesAt) })), details: { held: r.held.id } };
+        if (r.outcome === "sent") return { content: text(`Sent ${person.name} a WhatsApp message.`), details: { person: person.id, note: `Messaged ${person.name} on WhatsApp` } };
+        throw new Refusal(`Not sent to ${person.name}: ${r.why ?? "the send failed."}`);
       }),
     },
     {

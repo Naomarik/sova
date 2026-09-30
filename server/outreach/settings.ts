@@ -67,7 +67,7 @@ function parseAccept(v: unknown): "all" | string[] {
 
 export function parseOutreach(raw: unknown): OutreachFile {
   if (!isObj(raw)) return fail("not an object");
-  onlyKeys(raw, ["version", "sender", "acceptFrom", "paused", "authDir"], "outreach.json");
+  onlyKeys(raw, ["version", "sender", "acceptFrom", "paused", "authDir", "senderAuthDir"], "outreach.json");
   if (raw.version !== 1) fail("version must be 1");
   const out: OutreachFile = { version: 1, sender: parseRoute(raw.sender), acceptFrom: raw.acceptFrom === undefined ? [] : parseAccept(raw.acceptFrom), paused: false };
   if (raw.paused !== undefined) {
@@ -77,6 +77,10 @@ export function parseOutreach(raw: unknown): OutreachFile {
   if (raw.authDir !== undefined && raw.authDir !== "") {
     if (typeof raw.authDir !== "string" || !isAbsolute(raw.authDir)) fail("authDir must be an absolute path");
     out.authDir = raw.authDir as string;
+  }
+  if (raw.senderAuthDir !== undefined && raw.senderAuthDir !== "") {
+    if (typeof raw.senderAuthDir !== "string" || !isAbsolute(raw.senderAuthDir)) fail("senderAuthDir must be an absolute path");
+    out.senderAuthDir = raw.senderAuthDir as string;
   }
   return out;
 }
@@ -120,10 +124,9 @@ export function saveOutreach(patch: OutreachPatch): { file: OutreachFile } | { e
   }
 }
 
-/** Record the auth directory the local sender reports, when it differs from the default (so it is protected). */
+/** Record the auth directory the local sender reports (beside the operator's own `authDir`), so it is protected. */
 export function noteAuthDir(authDir: string): void {
   const cur = readOutreachState();
-  if (cur.problem || !isAbsolute(authDir) || cur.file.authDir === authDir) return;
-  if (authDir === join(defaultSenderHome(), "auth") && !cur.file.authDir) return;
-  write({ ...cur.file, authDir });
+  if (cur.problem || !isAbsolute(authDir) || cur.file.senderAuthDir === authDir) return;
+  write({ ...cur.file, senderAuthDir: authDir });
 }

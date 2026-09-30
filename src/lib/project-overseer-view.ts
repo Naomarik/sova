@@ -171,6 +171,7 @@ export const CONFIRM_KIND_LABEL: Record<string, string> = {
   build: "Starting a coding session",
   prompt: "Prompting a coding session",
   "owner-update": "Owner updates",
+  send: "Messaging a person on WhatsApp",
   "roster-approve": "Approving a proposed person",
   "roster-decline": "Declining a proposed person",
 };

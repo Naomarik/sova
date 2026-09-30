@@ -351,15 +351,17 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const hand = await call("sova_gather", { op: "handoff", session: id, to: "Maria Lopez", question: "Can you check?" });
     assert.ok(hand.ok, hand.text);
     assert.equal(baton.liveLinkCount(baton.batonById(id)!.row), 0, "a hand-off mints none");
-    // send_link (§app.outreach/decisions): behind a card listing the session and the person; with
-    // outreach off it says why, and no link or number reaches the model.
+    // send_link (§app.outreach/decisions): behind a card listing the session and the person; refused
+    // with its reason, and no link or number reaches the model.
     card = items(sessionItem(id));
     const unlisted = await call("sova_gather", { op: "send_link", session: id });
     assert.equal(unlisted.ok, false, "the card doesn't list Maria");
     card = items(sessionItem(id), personItem(org.id, maria.id));
     const sent = await call("sova_gather", { op: "send_link", session: id });
     assert.equal(sent.ok, false);
-    assert.match(sent.text, /Not sent: Outreach is off: set it up in Settings → Outreach\. Needs you still asks the user to send Maria Lopez their link\./);
+    // No public address here: a link nobody outside could open is refused before anything is minted.
+    assert.match(sent.text, /^This link can't be opened from outside yet\. Turn on public links in Settings → Public links\.$/);
+    assert.equal(baton.liveLinkCount(baton.batonById(id)!.row), 0, "nothing minted");
     assert.doesNotMatch(sent.text, /\/h\/|\d{7}/);
     assert.ok((await call("sova_gather", { op: "extend", session: id, by: 5 })).ok);
     card = null;

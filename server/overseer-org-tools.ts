@@ -490,7 +490,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_gather",
     label: "Gathering sessions",
     description:
-      "Gathering sessions (hand-offs) with the people of an organization, for the user. start {org, project, to, public_title, question, goal, why, briefing?, model?, thinking?, messages_max?, abilities?}: to is a person, operator (the user), or a list of two or more people for an offer. offer {session, to, question?, briefing?}, handoff {session, to, question, briefing?}, take {session} (Take Back), close {session}, extend {session, by} (more messages), revoke_link {session, person?}, send_link {session, person?} (sends the person their link on WhatsApp; you never see the link). " +
+      "Gathering sessions (hand-offs) with the people of an organization, for the user. start {org, project, to, public_title, question, goal, why, briefing?, model?, thinking?, messages_max?, abilities?}: to is a person, operator (the user), or a list of two or more people for an offer. offer {session, to, question?, briefing?}, handoff {session, to, question, briefing?}, take {session} (Take Back), close {session}, extend {session, by} (more messages), revoke_link {session, person?}, send_link {session, person?, note?} or {preview, person, note?} (sends the person their gathering link, or their own link to a public preview pv_…, with an optional short note, on WhatsApp; you never see the link or the number). " +
       "start, offer, handoff, take, close, revoke_link and send_link run only in the turn a confirm card's click opened, listing every person, project and session the call acts on; extend needs none. No link is ever shown to you: send_link hands it straight to the person, else the user sends it from Needs you. " +
       "public_title and question are shown to the person as written: plain, specific words for them, never an internal label, an id, a cost, the About text or a note about anyone; goal is what the session must find out, for its model only; why is for the user only.",
     promptSnippet: "start, offer, hand off, take back, close, extend or revoke a gathering session (people-facing: confirm first)",
@@ -512,6 +512,8 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         abilities: { ...ABILITIES_PARAM, description: `start: ${ABILITIES_PARAM.description}` },
         by: int("extend: how many more messages.", { minimum: 1 }),
         person: str("revoke_link: only this person's link (id or exact name); omit for the current hand-off's links. send_link: the person (id or exact name); omit for the holder; an open offer needs one invitee."),
+        preview: str("send_link: a public preview link's id (pv_…) to send instead of a gathering link."),
+        note: str("send_link: a short note for the person (at most 500 characters), shown as written."),
       },
       ["op"],
     ),
@@ -589,11 +591,26 @@ export function orgTools(d: OrgToolDeps): Tool[] {
           }
           case "send_link": {
             // §app.outreach/decisions: behind the card; the result names the outcome, never the link or the number.
+            const note = typeof p.note === "string" && p.note.trim() ? p.note.trim() : undefined;
+            if (typeof p.preview === "string" && p.preview.trim()) {
+              // A public preview link of a project (pv_…): the person gets their own link to it.
+              const { listPreviews } = await import("./preview-links");
+              const pv = listPreviews().find((v) => v.id === (p.preview as string).trim());
+              if (!pv) throw refuse("No such preview.");
+              if (!p.person) throw refuse("person is required with preview.");
+              const who = resolvePerson(pv.orgId, p.person);
+              requireConfirm({ people: [personOf(pv.orgId, who)] });
+              const r = await counted("org", async () =>
+                ok(await d.call("POST", "/api/outreach/send", { orgId: pv.orgId, projectId: pv.projectId, personId: who.id, link: { kind: "preview", preview: pv.id }, ...(note ? { note } : {}) }), "Sending the link"),
+              );
+              if (r?.outcome === "sent") return { content: text(`Sent ${who.name} the preview link on WhatsApp.`), details: { person: who.id } };
+              throw refuse(`Not sent: ${typeof r?.why === "string" ? r.why : "the send failed."}`);
+            }
             const s = batonSession(p.session);
             const person = p.person ? resolvePerson(s.orgId, p.person) : null;
             const who = person ?? (s.row.holder && s.row.holder !== OPERATOR ? resolvePerson(s.orgId, s.row.holder) : null);
             requireConfirm({ sessions: [s.id], ...(who ? { people: [personOf(s.orgId, who)] } : {}) });
-            const r = await counted("org", async () => ok(await d.call("POST", `/api/baton/${enc(s.id)}/send-link`, who ? { person: who.id } : {}), "Sending the link"));
+            const r = await counted("org", async () => ok(await d.call("POST", `/api/baton/${enc(s.id)}/send-link`, { ...(who ? { person: who.id } : {}), ...(note ? { note } : {}) }), "Sending the link"));
             const name = typeof r?.name === "string" ? r.name : (who?.name ?? "They");
             if (r?.outcome === "sent") return { content: text(`Sent ${name} their link on WhatsApp.`), details: { session: s.id, ...(who ? { person: who.id } : {}) } };
             throw refuse(`Not sent: ${typeof r?.why === "string" ? r.why : "the send failed."} Needs you still asks the user to send ${name} their link.`);

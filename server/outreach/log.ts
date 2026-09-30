@@ -46,21 +46,23 @@ export function readSendLog(orgId: string): OutreachLogLine[] {
 }
 
 /** A person's sends, newest first: the latest event of each (a receipt moves a send on, never back). */
-export function personSends(orgId: string, personId: string, titleOf: (sessionId: string) => string): PersonSendRow[] {
+export function personSends(orgId: string, personId: string, titleOf: (sessionId: string) => string | undefined): PersonSendRow[] {
   const rank = { refused: 0, failed: 0, sent: 1, delivered: 2, read: 3 } as const;
   const byId = new Map<string, { first: OutreachLogLine; last: OutreachLogLine }>();
   for (const l of readSendLog(orgId)) {
     if (l.personId !== personId) continue;
     const had = byId.get(l.id);
     if (!had) byId.set(l.id, { first: l, last: l });
-    else if ((rank[l.event] ?? 0) >= (rank[had.last.event] ?? 0)) had.last = l;
+    else if ((rank[l.event] ?? 0) >= (rank[had.last.event] ?? 0)) had.last = { ...l, sessionId: l.sessionId ?? had.last.sessionId };
   }
+  const whatOf = (l: OutreachLogLine): string =>
+    l.link === "preview" ? "A preview" : l.sessionId ? (titleOf(l.sessionId) ?? "A gathering") : l.link ? "A link" : "A message";
   return [...byId.values()]
     .map(({ first, last }) => ({
       id: first.id,
       at: first.at,
-      sessionId: first.sessionId,
-      publicTitle: titleOf(first.sessionId),
+      what: whatOf(last.sessionId || last.previewId ? last : first),
+      ...(first.sessionId ?? last.sessionId ? { sessionId: (first.sessionId ?? last.sessionId)! } : {}),
       channel: first.channel,
       event: last.event,
       ...(last.code ? { code: last.code } : {}),

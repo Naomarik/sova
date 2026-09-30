@@ -139,6 +139,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
       const of = (keys: Record<string, string>) => Object.fromEntries(Object.entries(keys).map(([k, cap]) => [k, { used: 0, max: (settings.caps as unknown as Record<string, number | null>)[cap] ?? null }]));
       return { message: of({ gather: "gatherPerTurn", promote: "promotePerTurn", create: "createPerTurn", prompt: "promptsPerTurn" }), today: of({ gather: "gatherPerDay", promote: "promotePerDay", create: "createPerDay", prompt: "promptsPerDay" }) } as never;
     },
+    sendToPerson: async (input: { personId: string; note?: string }) => ({ outcome: "sent" as const, channel: "whatsapp" as const, name: input.personId }),
     postOwnerUpdate: async (input: { text: string; attended: boolean }) => {
       calls.push("owner-update");
       return { update: { id: "u_1", at: "", text: input.text, by: input.attended ? ("operator" as const) : ("overseer" as const) }, owner: "Alperen" };

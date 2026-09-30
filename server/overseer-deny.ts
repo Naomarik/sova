@@ -3,7 +3,7 @@ import { homedir } from "node:os";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { stateRoot } from "./state-root";
-import { outreachSecretDirs, outreachSecretFiles } from "./outreach/secrets";
+import { outreachSecretDirs, outreachSecretFiles } from "./outreach/protected-paths";
 
 /** What the Overseer's read/grep/find/ls answer for a secret file. */
 export const SECRET_REFUSAL = "That file holds credentials; the Overseer can't read it.";

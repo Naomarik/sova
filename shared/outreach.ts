@@ -13,7 +13,7 @@
  * GET  /api/outreach                     -> OutreachInfo
  * PUT  /api/outreach                     body OutreachPatch -> OutreachInfo | 400 { error }
  * GET  /api/baton/:sid/outreach          -> BatonOutreach
- * POST /api/baton/:sid/send-link         body { person? } -> SendLinkAnswer | 409 { error }
+ * POST /api/baton/:sid/send-link         body { person?, note? } -> SendAnswer | 409 { error }
  *
  * Peer routes (peer listener; the caller is its verified StableID), only on a host whose sender is
  * `local` and whose acceptFrom lists the caller (403 { code: "not-accepted" } / 404 { code: "no-sender" }):
@@ -39,6 +39,8 @@ export interface OutreachFile {
   paused: boolean;
   /** A non-default auth directory of the local sender, so it is protected (§app.outreach/secrets). */
   authDir?: string;
+  /** The auth directory the local sender last reported (written by Sova, protected too). */
+  senderAuthDir?: string;
 }
 
 export type OutreachPatch = Partial<Pick<OutreachFile, "sender" | "acceptFrom" | "paused" | "authDir">>;
@@ -70,15 +72,27 @@ export interface OutreachInfo {
 
 export type SendOutcome = "sent" | "failed" | "refused";
 
-/** POST /api/baton/:sid/send-link. Never a link, a token or a number. */
-export interface SendLinkAnswer {
+/**
+ * What a send carries as its link: a reference the server resolves to a URL in the send's own step
+ * (§app.outreach/links), never a URL or a token. `handoff`: the person's link to a gathering session
+ * (minted then); `preview`: a public preview link of the project, by its id.
+ */
+export type LinkRef = { kind: "handoff"; session: string } | { kind: "preview"; preview: string };
+export type LinkKind = LinkRef["kind"];
+
+/** A send's answer (the routes, the tools). Never a link, a token or a number. */
+export interface SendAnswer {
   outcome: SendOutcome;
   channel: ChannelId;
   name: string;
   code?: string;
   why?: string;
   retryable?: boolean;
+  /** It waits in the project's hold (an unattended project overseer): goes at `goesAt` unless cancelled. */
+  held?: { id: string; goesAt: string; what: string };
 }
+/** @deprecated the operator's Send on WhatsApp answer: a SendAnswer. */
+export type SendLinkAnswer = SendAnswer;
 
 /** GET /api/baton/:sid/outreach: who Send on WhatsApp may go to now (the operator's own view). */
 export interface BatonOutreach {
@@ -96,11 +110,17 @@ export interface OutreachLogLine {
   id: string;
   personId: string;
   channel: ChannelId;
-  intent: "send-link";
-  sessionId: string;
-  n: number;
+  intent: "send";
+  projectId: string;
+  /** The link's kind and its reference's ids (a session and hand-off, or a preview). */
+  link?: LinkKind;
+  sessionId?: string;
+  n?: number;
   offerId?: string;
-  by: "operator" | "operator-via-overseer";
+  previewId?: string;
+  /** A note went with it (its text is never logged). */
+  note?: true;
+  by: "operator" | "operator-via-overseer" | "project-overseer";
   event: OutreachEvent;
   code?: string;
 }
@@ -109,8 +129,9 @@ export interface OutreachLogLine {
 export interface PersonSendRow {
   id: string;
   at: string;
-  sessionId: string;
-  publicTitle: string;
+  /** What went: the gathering's public title, "A preview", or "A message". */
+  what: string;
+  sessionId?: string;
   channel: ChannelId;
   event: OutreachEvent;
   code?: string;
@@ -123,9 +144,14 @@ export const OUTREACH_NOT_READY = {
   paused: "Outreach is paused.",
 } as const;
 
-/** The message a person gets: fixed, never model-written (§app.outreach/channels). */
-export const linkMessage = (operatorName: string, publicTitle: string, link: string): string =>
-  `${operatorName} asked you a question: ${publicTitle}\n\n${link}`;
+/** A gathering link's default line (§app.outreach/channels): fixed, never model-written. */
+export const handoffLine = (operatorName: string, publicTitle: string): string => `${operatorName} asked you a question: ${publicTitle}`;
+
+/** The message: the note (else the link's default line), a blank line, the link. */
+export const composeMessage = (line: string | undefined, url: string | undefined): string => [line, url].filter((x): x is string => !!x).join("\n\n");
+
+/** The gathering link's whole message, as the wa.me fallback composes it. */
+export const linkMessage = (operatorName: string, publicTitle: string, link: string): string => composeMessage(handoffLine(operatorName, publicTitle), link);
 
 /** A roster WhatsApp contact as the sender takes it: digits only (country code included), or null. */
 export function waDigits(contact: string | undefined | null): string | null {

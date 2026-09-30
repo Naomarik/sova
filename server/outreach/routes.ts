@@ -7,10 +7,11 @@ import { meshPeers } from "../mesh";
 import { PROXIED_HEADER } from "../mesh/proxy";
 import { operatorBy } from "../org-routes";
 import { batonById, currentOffer, reachedBy } from "../baton";
-import { operatorName, OrgError, readRoster } from "../orgs";
+import { operatorEnvelope, operatorName, OrgError, readRoster } from "../orgs";
 import { secretRules } from "../overseer-deny";
-import { notReady, sendLinkAct } from "./core";
-import { outreachSecretDirs, outreachSecretFiles, sandboxWarning } from "./secrets";
+import { notReady, sendAct, sendHandoffLink } from "./core";
+import { parseLinkRef } from "./links";
+import { outreachSecretDirs, outreachSecretFiles, sandboxWarning } from "./protected-paths";
 import { readOutreachState, saveOutreach } from "./settings";
 import { resetLocalClient, whatsapp } from "./whatsapp";
 
@@ -31,7 +32,7 @@ export async function outreachInfo(): Promise<OutreachInfo> {
   const denied = new Set([...secretRules().dirs, ...secretRules().files]);
   const covered = [...outreachSecretDirs(), ...outreachSecretFiles()].filter((p) => denied.has(p));
   const peers = meshPeers().map((p) => ({ nodeId: p.nodeId, label: p.label }));
-  return { file: now, sender, protected: covered, peers, sandboxWarning: file.sender === "off" ? null : sandboxWarning(now.authDir), ...(problem ? { problem } : {}) };
+  return { file: now, sender, protected: covered, peers, sandboxWarning: file.sender === "off" ? null : sandboxWarning(now.senderAuthDir ?? now.authDir), ...(problem ? { problem } : {}) };
 }
 
 export function mountOutreach(app: Hono): void {
@@ -74,22 +75,45 @@ export function mountOutreach(app: Hono): void {
     return c.json({ people, operatorName: operatorName(), publicTitle: row.publicTitle } satisfies BatonOutreach, 200, NO_STORE);
   });
   // Send on WhatsApp (§app.outreach/send-link): the chart's act, settled; the answer names the outcome only.
+  const fail = (c: Context, err: unknown) => {
+    if (err instanceof OrgError) return c.json({ error: err.message, ...(err.code ? { code: err.code } : {}) }, err.status);
+    throw err;
+  };
+  const read = async (c: Context): Promise<Record<string, unknown>> => {
+    const b = await c.req.json().catch(() => ({}));
+    return b && typeof b === "object" && !Array.isArray(b) ? (b as Record<string, unknown>) : {};
+  };
+  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
+  const sentBy = (by: ReturnType<typeof operatorBy>) => (by.via === "overseer" ? "operator-via-overseer" : "operator") as "operator" | "operator-via-overseer";
   app.post("/api/baton/:sid/send-link", small, async (c) => {
     if (!local(c)) return c.json({ error: "Not found" }, 404);
-    let person: string | undefined;
+    const b = await read(c);
+    const by = operatorBy(c);
     try {
-      const b = (await c.req.json().catch(() => ({}))) as { person?: unknown };
-      person = typeof b.person === "string" && b.person ? b.person : undefined;
-    } catch {
-      person = undefined;
-    }
-    try {
-      const r = await sendLinkAct(c.req.param("sid"), person, operatorBy(c));
+      const r = await sendHandoffLink(c.req.param("sid"), str(b.person), str(b.note), (orgId, projectId) => operatorEnvelope(orgId, projectId, by), sentBy(by));
       attentionChanged();
       return c.json(r);
     } catch (err) {
-      if (err instanceof OrgError) return c.json({ error: err.message, ...(err.code ? { code: err.code } : {}) }, err.status);
-      throw err;
+      return fail(c, err);
+    }
+  });
+  // Any send (§app.outreach/send): a person of the project's organization, a link reference and/or a note.
+  app.post("/api/outreach/send", small, async (c) => {
+    if (!local(c)) return c.json({ error: "Not found" }, 404);
+    const b = await read(c);
+    const orgId = str(b.orgId);
+    const projectId = str(b.projectId);
+    const personId = str(b.personId);
+    if (!orgId || !projectId || !personId) return c.json({ error: "orgId, projectId and personId are required" }, 400);
+    const link = b.link === undefined ? undefined : parseLinkRef(b.link);
+    if (link === null) return c.json({ error: 'link must be {kind: "handoff", session} or {kind: "preview", preview}' }, 400);
+    const by = operatorBy(c);
+    try {
+      const r = await sendAct({ orgId, projectId, personId, ...(link ? { link } : {}), ...(str(b.note) ? { note: str(b.note) } : {}), sentBy: sentBy(by) }, operatorEnvelope(orgId, projectId, by));
+      attentionChanged();
+      return c.json(r);
+    } catch (err) {
+      return fail(c, err);
     }
   });
 }

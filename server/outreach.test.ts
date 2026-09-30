@@ -16,6 +16,7 @@ process.env.PI_CODING_AGENT_DIR = agent;
 delete process.env.SOVA_WA_SOCKET;
 delete process.env.SOVA_WA_HOME;
 process.env.SOVA_SHARE_PUBLIC_URL = "https://share.example.com";
+process.env.SOVA_SHARE_PREVIEW_URL = "https://*.preview.example.com";
 mkdirSync(join(agent, "sessions"), { recursive: true });
 
 const orgs = await import("./orgs");
@@ -28,6 +29,9 @@ const { liveLinks } = await import("./baton-links");
 const { batonById } = await import("./baton");
 const { SecretGuard } = await import("./overseer-deny");
 const { disposeAllChats } = await import("./chat-manager");
+const po = await import("./project-overseer");
+const { hostOf } = await import("./org-engine");
+const { listPreviews, mintPreview } = await import("./preview-links");
 
 const socket = join(agent, "sova", "whatsapp", "sender.sock");
 let fake: ChildProcess | null = null;
@@ -138,7 +142,7 @@ describe("§app.outreach/send-link", () => {
     // the person page lists it
     const page = await json("GET", `/api/orgs/${org.id}/people/${ann.id}`);
     assert.equal(page.body.sends?.[0]?.event, "read");
-    assert.equal(page.body.sends?.[0]?.publicTitle, "Office hours");
+    assert.equal(page.body.sends?.[0]?.what, "Office hours");
   });
 
   test("no WhatsApp number, not on WhatsApp, paused: refused or failed, and the send-link wait comes back", async () => {
@@ -181,6 +185,61 @@ describe("§app.outreach/send-link", () => {
     assert.equal(liveLinks(sid, n).length, 0);
     const info = await json("GET", "/api/outreach");
     assert.equal(info.body.sender.state, "unreachable");
+  });
+});
+
+describe("§app.outreach/send: a note, a preview link, the project overseer through the hold", () => {
+  before(async () => {
+    await startFake();
+    await json("PUT", "/api/outreach", { sender: { local: {} }, paused: false });
+    for (let i = 0; i < 50 && (await json("GET", "/api/outreach")).body.sender.state !== "open"; i++) await new Promise((r) => setTimeout(r, 200));
+  });
+
+  test("a note alone; a note that repeats a contact is refused", async () => {
+    const r = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, note: "The prototype is ready to try." });
+    assert.equal(r.body.outcome, "sent", JSON.stringify(r.body));
+    const line = logOf().filter((l) => l.personId === ann.id).at(-1)!;
+    assert.equal(line.note, true);
+    assert.equal(line.link, undefined);
+    assert.doesNotMatch(readFileSync(join(root, "ws", "outreach.jsonl"), "utf8"), /prototype is ready/, "the note's text is never logged");
+    const leak = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, note: "Call Bob at +1 555 000 0999" });
+    assert.equal(leak.status, 409);
+    assert.match(leak.body.error, /repeats private text/);
+  });
+
+  test("a preview link: the person gets their own link to the same preview; the one named stays", async () => {
+    const { record } = mintPreview({ orgId: org.id, projectId: project.id, port: 5173, days: 3 }, new Set([4800]));
+    const before = listPreviews({ orgId: org.id }).length;
+    const r = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: record.id }, note: "Here is the prototype." });
+    assert.equal(r.body.outcome, "sent", JSON.stringify(r.body));
+    const all = listPreviews({ orgId: org.id });
+    assert.equal(all.length, before + 1, "a sibling preview was made for her");
+    assert.ok(all.every((v) => v.state === "active"), "the original stays on");
+    const line = logOf().filter((l) => l.personId === ann.id && l.event === "sent").at(-1)!;
+    assert.equal(line.link, "preview");
+    assert.ok(line.previewId && line.previewId !== record.id);
+    const other = await json("POST", "/api/outreach/send", { orgId: org.id, projectId: project.id, personId: ann.id, link: { kind: "preview", preview: "pv_nope" } });
+    assert.equal(other.status, 409);
+  });
+
+  test("the project overseer: sova_send_to_person waits in the hold, then goes once approved", async () => {
+    await po.ensureProjectOverseer(org.id, project.id);
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 10 });
+    const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_send_to_person")!;
+    const sid = await gathering(ann.id);
+    const count = () => logOf().filter((l) => l.by === "project-overseer").length;
+    const out = await tool.execute("t1", { person: "Ann", session: sid, note: "Your prototype is ready." } as never, undefined, undefined, undefined as never);
+    assert.match(JSON.stringify(out.content), /Held: the WhatsApp message to Ann waits until .* so the operator can cancel it/);
+    assert.doesNotMatch(JSON.stringify(out.content), /share\.example|5550000100/);
+    assert.equal(count(), 0, "nothing sent while held");
+    const hold = hostOf(org.id).holds().find((h) => h.event === "outreach/send")!;
+    assert.ok(hold, "held on the project chart");
+    await hostOf(org.id).act(`project/${org.id}/${project.id}`, "hold/approve", { id: hold.id, reason: "test: send it now" }, { by: "operator", attended: true });
+    const end = Date.now() + 8000;
+    while (count() === 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
+    const sent = logOf().filter((l) => l.by === "project-overseer");
+    assert.equal(sent[0]?.event, "sent", JSON.stringify(sent));
+    assert.equal(sent[0]?.sessionId, sid);
   });
 });
 

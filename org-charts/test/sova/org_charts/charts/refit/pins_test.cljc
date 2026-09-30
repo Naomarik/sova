@@ -8,7 +8,10 @@
     [sova.org-charts.charts.watch :as w]
     [sova.org-charts.charts.registry :as registry]
     [sova.org-charts.charts.refit.host :as h]
-    [sova.org-charts.charts.rules.baton :as rb]))
+    [sova.org-charts.charts.residence :as res]
+    [sova.org-charts.charts.rules.baton :as rb]
+    [sova.org-charts.charts.rules.item :as ri]
+    [sova.org-charts.charts.rules.person :as rp]))
 
 (def op {:by "operator"})
 (def t0 1700000000000)
@@ -72,7 +75,7 @@
 (defn baton [d] (h/start! (h/new-host) "baton" bsid (merge {:org-id "o1" :project-id "pr1" :session-id "s1" :public-title "Invoicing" :goal "Learn"
                                                            :owner {:overseer-of "pr1"} :names {"p1" "Ana Ruiz" "p2" "Bob Diaz"} :operator-name "Omar"} d)))
 (defn msg [x from] (h/send! x bsid :baton/message {:by (if (= from "operator") "operator" "person") :from from :active true}))
-(def cy {:by "model" :name "Cy Lee" :role "Accountant" :decides ["pay"] :contact {:email "cy@lee.com"} :why "knows pay" :quote "ask Cy" :person-id "p9"})
+(def cy {:by "model" :name "Cy Lee" :role "Accountant" :decides ["pay"] :contact {:email "cy@example.test"} :why "knows pay" :quote "ask Cy" :person-id "p9"})
 
 (deftest baton-pins
   (let [x (-> (baton {:targets ["p1" "p2"]}) (msg "p1"))
@@ -226,3 +229,51 @@
     (is (h/in? (h/send! attach rsid* :effect/done {:kind "commit"}) rsid* :checking) "reside05: only the holder read decides")
     (is (h/in? (h/send! attach rsid* :effect/failed {:kind "commit"}) rsid* :checking) "reside06")
     (is (h/in? (h/send! attach rsid* :effect/failed {:kind "read-holder"}) rsid* :held-here))))
+
+;; ---- run4 (verifier-3, at 1915b16c) ------------------------------------------------------------------
+
+(def osid "org/o1")
+(defn org [] (h/start! (h/new-host) "org" osid {:id "o1" :name "Acme"}))
+(defn owner [x pid & [ex]] (h/send! x osid :owner/set (merge op {:person-id pid :target {:status "active"}} ex)))
+
+(deftest org-run4-pins
+  (let [n80 (apply str (repeat 80 "a"))]
+    (is (nil? (h/refusal (org) osid :org/rename (assoc op :name n80))) "org11: 80 characters is allowed")
+    (is (= "name must be 1–80 characters" (h/refusal (org) osid :org/rename (assoc op :name (str n80 "a"))))))
+  (let [x (owner (org) "p1")]
+    (is (= "overseer" (:via (last (:owner-history (h/data (owner (org) "p1" {:via "overseer"}) osid))))) "org08: the overseer's hand")
+    (is (not (contains? (last (:owner-history (h/data x osid))) :via)) "the operator's own: no via")
+    (let [none (h/send! x osid :owner/set (assoc op :person-id nil))]
+      (is (h/in? none osid :owner-none) "org05 org10: None from a set owner")
+      (is (nil? (:owner (h/data none osid)))))
+    (is (h/in? (h/send! x osid :link/moved {:from "person/o1/p2" :chart "person" :states [:person :left] :exported {:name "Bo"}}) osid :owner-set)
+        "org01: someone else leaving clears nothing")
+    (let [cleared (h/send! x osid :link/moved {:from "person/o1/p1" :chart "person" :states [:person :left] :exported {:name "Ana"}})
+          y (owner (h/clear! cleared osid) "p2")]
+      (is (h/in? cleared osid :owner-cleared))
+      (is (some #(= {:op :watch :target "person/o1/p2"} %) (h/directives y osid)) "org04: a new owner from cleared is watched (the setting act, not the None one)")
+      (is (= "p2" (:owner (h/data y osid)))))))
+
+(deftest residence-run4-pins
+  (is (= 3600000 (res/commit-every {})) "reside11: an hour by default")
+  (is (= 5 (res/commit-every {:commit-every-ms 5})))
+  (is (= "That organization is already attached here." (res/not-here :attach/confirm #{:held-here} {})) "reside07")
+  (is (= "That can't be done now." (res/not-here :commit/now #{:held-here} {})))
+  (let [rsid* "residence/o1"
+        x (h/start! (h/new-host) "residence" rsid* {:org-id "o1" :org-name "Acme" :host-id "h_me" :host-name "me" :mode "create" :commit-every-ms 3600000})]
+    (is (h/in? (-> x (h/send! rsid* :commit/now op) (h/send! rsid* :effect/done {:kind "commit" :result {}})) rsid* :clean)
+        "reside09: a commit with nothing written meanwhile leaves it clean")))
+
+(deftest rules-run4-pins
+  (is (nil? (rb/extend-refusal {:budget {:messages-max 60}} {:more 940})) "rbaton03: to exactly 1000")
+  (is (= "A conversation's limit is at most 1000 messages (it is 60 now)." (:sentence (rb/extend-refusal {:budget {:messages-max 60}} {:more 941}))))
+  (is (nil? (rb/extend-refusal {:budget {:messages-max 60}} {:more 5 :invalid ""})) "rbaton04: a blank invalid is none")
+  (is (not (:sentence (rp/clean-field :competence {"invoicing" {:level 3 :n 0}}))) "rperson04: n 0 is allowed")
+  (is (= "competence.invoicing must be {level 1–5, n ≥ 0}" (:sentence (rp/clean-field :competence {"invoicing" {:level 3 :n -1}}))) "n −1 is not")
+  (let [f {:states #{:tree-removed} :exported {:merged {:at 1}}}]
+    (is (ri/build-landed? f))
+    (is (not (ri/build-landed? (update f :states conj :new-since-merge))) "ritem06: new commits since the merge: not landed"))
+  (let [b (fn [owner wrote at] {:states #{:open} :exported {:owner owner :wrote-at wrote :created-at at :handoffs [{:to "p1"}]}})]
+    (is (= ["baton/o1/b1" "baton/o1/b2"] (ri/same-target-older {:batons {"baton/o1/b1" (b {:overseer-of "pr1"} nil 1) "baton/o1/b2" (b {:overseer-of "pr1"} nil 2)}})))
+    (is (nil? (ri/same-target-older {:batons {"baton/o1/b1" (b "operator" nil 1) "baton/o1/b2" (b {:overseer-of "pr1"} nil 2)}})) "ritem00: the operator's own is never the chart's to close")
+    (is (nil? (ri/same-target-older {:batons {"baton/o1/b1" (b {:overseer-of "pr1"} 5 1) "baton/o1/b2" (b {:overseer-of "pr1"} nil 2)}})) "…nor one somebody wrote in")))

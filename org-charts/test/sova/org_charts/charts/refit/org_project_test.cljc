@@ -147,7 +147,7 @@
     (is (= {:kind "referral" :session-id "s1" :entry-id "e1" :quote "Ask Carla"}
            (spawned (h/send! (org) osid :person/add
                       (assoc op :person-id "p2" :by-kind "referral" :session-id "s1" :entry-id "e1" :quote "Ask Carla"
-                                :person {:name "Carla" :status "proposed" :role "Accountant" :contact {:email "c@x.co"}
+                                :person {:name "Carla" :status "proposed" :role "Accountant" :contact {:email "cy@example.test"}
                                          :referral {:why "Knows invoicing" :referred-by "p1" :session-id "s1" :quote "Ask Carla"}}))))
         "a referral's creation lines say referral (decidesTrusted relies on it)")))
 

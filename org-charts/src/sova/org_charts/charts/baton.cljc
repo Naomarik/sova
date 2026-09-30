@@ -322,7 +322,9 @@
         offers (if cl?
                  (mapv #(if (= (:id %) (:id o)) (-> % (assoc :state "held" :holder from) (update :held-by (fn [h] (vec (distinct (conj (vec h) from)))))) %) (:offers d))
                  (:offers d))
-        offers (if (and o (or cl? (= (:holder o) from)))
+        ;; with an offer out, only its claimant's or its holder's message gets here (msg-check), so
+        ;; any accepted message renews its lease
+        offers (if o
                  (mapv #(if (= (:id %) (:id o)) (assoc % :last-activity-at (b/now-ms d) :lease-until (+ (b/now-ms d) (lease-ms d))) %) offers)
                  offers)]
     (cond-> [(ops/assign :last-note {:before before :claimed cl?})

@@ -14,12 +14,3 @@
 
 (defn refusal? [x] (and (map? x) (string? (:sentence x))))
 
-(defn said
-  "What the model reads: the sentence, then its tail."
-  [x]
-  (when (refusal? x) (if (:tail x) (str (:sentence x) " " (:tail x)) (:sentence x))))
-
-(defn first-refusal
-  "The first refusal of `checks` (each `(fn [ctx])` → refusal or nil), in their order."
-  [checks ctx]
-  (some #(let [r (% ctx)] (when (refusal? r) r)) checks))

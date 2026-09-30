@@ -139,9 +139,12 @@ links". When nothing answers in time, it replies with the state as it stands.
   Session links (`s`) go only to a gateway target whose own info listed `s` in `kinds`: an older
   gateway rejects a snapshot with an unknown kind whole, which would block that update and every
   new h and i link in it. The statement binds to that exact target (route generation and peer
-  entry): a changed entry or route, an unreachable or restarted gateway, or a `bad-snapshot`
-  refusal of a snapshot with `s` rows drops it, and the h/i set is sent again at once without
-  them. It is judged again right before a snapshot with `s` rows goes out. Preview links (`p`,
+  entry): a changed entry or route, an info call the gateway doesn't answer, an info that says it
+  is no gateway, or a `bad-snapshot` refusal of a snapshot with `s` rows drops it, and the h/i
+  set is sent again at once without them. The gateway coming back up drops nothing: it is asked
+  again at once, and the statement in effect (so the preview address too) stays until an answer
+  replaces it, which a restarted gateway's info does. It is judged again right before a snapshot
+  with `s` rows goes out. Preview links (`p`,
   §mesh.public/preview) follow the same rule with `p`: a gateway that doesn't list it gets no `p`
   row, and a preview mint through it is refused as `gateway-old`. Until the target
   states `s`, a session link mint carries the `gateway-old` warning; when a later info states

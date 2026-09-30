@@ -2,9 +2,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { extname, join, resolve } from "node:path";
 import { Hono } from "hono";
 import { SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
-import { BudgetSpent, linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
+import { linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
 import { findLink, tokenTag } from "../baton-links";
-import { budgetStop, recordNoted } from "../baton-loadout";
 import { acquireChat } from "../chat-manager";
 import { OrgError } from "../orgs";
 import { refreshShare, viewForToken } from "./hub";
@@ -158,12 +157,10 @@ export function createShareApp(): Hono {
     if (text.length > SHARE_TEXT_MAX) return c.json(refusal("too-long", `Messages are limited to ${SHARE_TEXT_MAX} characters.`), 413);
     if (text.startsWith("/")) return c.json(refusal("bad-request", "Messages can't start with /."), 400);
     const sessionId = access.row.sessionId;
-    const limit = (message: string) => {
-      // At the limit the baton goes to the operator and the session needs them (§app.baton/goal-and-loadout).
-      void budgetStop(sessionId);
-      return c.json(refusal("budget", message), 409);
-    };
-    if (access.reason === "budget") return limit(new BudgetSpent().message);
+    // At the limit the baton goes to the operator and the session needs them (the chart's budget stop,
+    // §app.baton/goal-and-loadout); the page says why.
+    const limit = (message: string) => c.json(refusal("budget", message), 409);
+    if (access.reason === "budget") return limit("This conversation has reached its message limit. The operator has been told.");
     if (!access.canWrite) return c.json(refusal(access.reason ?? "not-holder", "It's not your turn in this conversation right now."), 409);
     if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
     const by = access.link.personId;
@@ -182,25 +179,26 @@ export function createShareApp(): Hono {
     // From here to the hand-over, one synchronous stretch: nothing interleaves. The lock
     // (§app.baton/offers-and-leases): noteMessage decides whether this message may enter — and on
     // an open offer, that this sender now holds it; a runtime refusal then undoes exactly that.
-    let noted;
     try {
-      noted = noteMessage(sessionId, by);
+      noteMessage(sessionId, by);
     } catch (err) {
-      if (err instanceof BudgetSpent) return limit(err.message);
+      if (err instanceof OrgError && err.code === "budget") return limit(err.message);
+      // A workspace problem is the operator's to fix; a person gets today's runtime answer (design §5.4).
+      if (err instanceof OrgError && err.code === "workspace") return busy(err);
       if (err instanceof OrgError) {
         const now = linkAccess(token);
-        return c.json(refusal(now.ok && now.reason ? now.reason : "not-holder", err.message), err.status === 404 ? 404 : 409);
+        return c.json(refusal(now.ok && now.reason ? now.reason : (err.code ?? "not-holder"), err.message), err.status === 404 ? 404 : 409);
       }
-      throw err;
+      return busy(err);
     }
     try {
       const r = chat.acceptPrompt(text, undefined, "server", undefined, { sentByBaton: { by } });
       void r.turn.catch((err) => chat.reportTurnFailure(err));
     } catch (err) {
-      undoNote(sessionId, noted);
+      undoNote(sessionId);
       return busy(err);
     }
-    recordNoted(chat, by, noted);
+    // Its reply started with the accepted message (the chart's reply region); the chat layer tells it the rest.
     refreshShare(sessionId);
     return c.json({ ok: true }, 202);
   });

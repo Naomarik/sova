@@ -25,17 +25,20 @@ once), **lease** (an offer's lock on its first taker).
   session's path and, when `to` is a person, that hand-off's link, or, when `to` is a list of two or
   more people, one link per invitee (§app.baton/offers-and-leases); links are shown once.
 - **Start a session for this person**: `parentSessionId` names the baton session it came from (a
-  referral's approval card); the new row records it as `parent`, and the project defaults to the
-  parent's. `briefing` is the first hand-off's briefing, for its addressee.
+  referral's approval card); the new session's chart records it as `parent`, and the project
+  defaults to the parent's. `briefing` is the first hand-off's briefing, for its addressee.
 - In-process callers (the project overseer, the reconciler) may also set `owner: {overseerOf:
   projectId}` and `mintLink: false` (no link minted: the session then asks the operator to send
   one, §app.baton/needs-you). The global Overseer's `sova_gather` starts in-process too, always
-  with `mintLink: false` and no `owner` (the session is the operator's), and its row records
+  with `mintLink: false` and no `owner` (the session is the operator's), and its chart records
   `startedVia: "overseer"` (§app.overseer/org-people-facing). A request body's `owner`, `mintLink`
   and `startedVia` are ignored.
 - It is a webapp-owned session whose file lives in the org's workspace repo (`sessions/`), whose
   cwd is that repo, and whose file carries an invisible `sova-baton` marker `{v:1, orgId,
-  projectId}`. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its
+  projectId}`. Its standing — holder, hand-offs, offers and leases, budget, the reply running, the
+  wrap-up, and what it was started for (a gap, a conflict, a parent session) — is its chart
+  (§app.project-overseer/org-charts). A session the chart spawned exists before its file does: if
+  the file can't be made, the chart says so and nothing half-made is left. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its
   public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
   holder, state and message count — and the public title, only when the session head above shows a
   different one (a renamed session): otherwise it would say the title twice — and Get Link / Turn Off Link / Take Back / Close
@@ -104,7 +107,7 @@ once), **lease** (an offer's lock on its first taker).
   collect the person's name, a contact channel, their role and why they are the one to ask, then
   hand to the operator with those. A proposed or former person is refused. Handing to the current
   holder is refused. Accepted: an invisible `sova-baton-handoff` entry `{v:1, n, from, to,
-  question, briefing}`, the registry moves the baton, a hand-off to a person mints their link, and
+  question, briefing}`, the chart moves the baton, a hand-off to a person mints their link, and
   the turn ends (`terminate`). The model is told to say who takes over in the same reply, before
   the call.
 - **The person talking chooses who answers next.** When a roster person holds the baton, `hand_to`
@@ -125,7 +128,10 @@ once), **lease** (an offer's lock on its first taker).
   (a value that is neither is refused, naming the choices: §app.requirements/owner-area). The turn
   goes on — unless the same reply also
   calls `hand_to` or `goal_done`, when it ends the turn with them (pi ends a run only when every
-  tool of the batch agrees). Slice 1 only logs decisions.
+  tool of the batch agrees). The entry is written first, then the decision's chart is started with
+  the entry's id and the session's links (its gap, its conflict); an entry whose chart a crash kept
+  from starting gets one when the server starts, and before the Decisions list is read
+  (§app.requirements/decisions).
 - `hand_to` also takes the roster line the prompt shows ("Maria Lopez (id p_…)", "Maria Lopez —
   Payroll"). A string whose id and name disagree, or that names two roster ids, is refused with a
   question back ("That id is Maria Lopez's, but the name says Mallory. Which did you mean?"): a
@@ -163,10 +169,10 @@ once), **lease** (an offer's lock on its first taker).
   refused: approve first); recorded like any hand-off, and answered with that hand-off's link.
 - **Close** ends it without a goal: state **closed**, every link answers 410. Done and close both
   start the wrap-up (§app.organizations/wrap-up), once.
-- In-process events (`server/baton-events.ts` `onBatonEvent`): `decision` (with the decision
-  entry's id), `handoff`, `offer`, `done`, `closed`, `wrapup`, `proposal`, each with the org,
-  project and session; the project overseer and the reconciler listen. A listener that throws is
-  logged and stops nothing.
+- What follows a move is the chart's: a session's gap, its conflict and its owner's watch loop
+  learn of each move (a hand-off, an offer, done, closed, the wrap-up, a decision, a referral) in
+  the same step, by link notification (§app.project-overseer/org-charts); there is no event bus to
+  miss one.
 
 ## §app.baton/links — One link per hand-off
 
@@ -297,15 +303,36 @@ once), **lease** (an offer's lock on its first taker).
 ## §app.baton/offers-and-leases — One baton, several people, the first to answer
 
 - The operator offers a session to two or more active people at once (`POST /api/baton/:sid/offer
-  {to[], question?, briefing?}` → `{info, links}`, one link per invitee, shown once; or `to` as a
+  {to[], question?, briefing?}` → `{info, links}`, one link per invitee reached then, shown once; or `to` as a
   list at start). An offer is a hand-off (it takes the next number) to the **pool**: nobody holds
   the baton (`holder: null`, state `open`) until someone answers. A `sova-baton-offer` entry
   `{v:1, n, offerId, from, to[], question, briefing}` records it. Starting a new offer withdraws
   the current one.
+- **Each invitee in their own hours** (§app.organizations/working-hours). An offer the operator
+  makes (or the overseer makes in a turn the operator started) reaches every invitee at once, with
+  the off-hours warning. One a chart starts on its own, or the overseer makes in a run the operator
+  did not start, reaches each invitee only inside their own working hours; someone with no hours
+  always is. An invitee **reached** is one the offer is open to: those in hours when it opens get
+  their links in its answer; for one reached after it opens (when their hours come, when a lease
+  ends, or after an hours edit), no token is made by itself: Needs you asks the operator to send
+  their link, and the token is made when the operator does (shown once, as for a routed conflict).
+  Needs you also lists the invitees still waiting. A waiting invitee's link is refused: "{name} is
+  not reached yet: their link is made when their working hours start." The offer opens with those in
+  hours then, and each of the rest is reached as their own window opens; one whose window opened and
+  closed while the server was down is reached at their next window, never outside it. Only a reached
+  invitee may claim it ("This offer has not reached you yet." otherwise); one not reached yet has no
+  link. While the offer is leased, reaching pauses: nobody still waiting is reached, so an invitee
+  never reached never learns of a lease they couldn't take. When the lease lapses, or its holder
+  withdraws or releases it, whoever is in hours then is reached, the rest at their next window. An
+  invitee who leaves is dropped from the wait; withdrawing, closing or finishing the offer ends it.
+  Each look of the overseer lists the open offers still reaching people, and when each waiting
+  invitee is reached.
 - **The first accepted message claims it.** Opening the page claims nothing (link previews open
-  links), and neither does a send the runtime refuses (503): no holder, no lease. The message route decides in one synchronous step: a lapsed lease returns to the pool,
-  then an invitee's message on an open offer makes them the holder under a **lease**, then the
-  holder rule applies as for any hand-off. Everything else is refused (409, code `taken`) — the
+  links), and neither does a send the runtime refuses (503): no holder, no lease. The message is
+  one event in the org's queue (§app.project-overseer/org-charts), decided in one step: a lease
+  whose time has passed has already returned to the pool (a timer due at or before the message
+  fires first), then an invitee's message on an open offer makes them the holder under a
+  **lease**, then the holder rule applies as for any hand-off. Everything else is refused (409, code `taken`) — the
   route is the lock, the page's state is a courtesy.
 - **Lease**: 15 minutes idle, measured from the later of the holder's last message and the last
   reply; each renews it. It never lapses while a reply to its holder is being written: that
@@ -313,8 +340,10 @@ once), **lease** (an offer's lock on its first taker).
   pool (the transcript records `sova-baton-lease` `{v:1, n, offerId, event: "claimed"|"expired",
   by}` — an event that meets a reply in flight is written when the reply ends, never dropped; the
   card reads "<name> went quiet, so the offer is open to every invitee again"), and any invitee's
-  message may claim it again — at once in the route, and within 30 seconds on every waiting page
-  (a ticker pushes their view). `SOVA_BATON_LEASE_MS` shortens the lease for hermetic tests only.
+  message may claim it again — at once in the route, and on every waiting page, whose view is
+  pushed in the lapse's own step. The lease is a chart timer, so a restart neither loses nor
+  extends it: one that lapsed while the server was down lapses when it starts.
+  `SOVA_BATON_LEASE_MS` shortens the lease for hermetic tests only.
 - **Withdrawn** when the holder hands on (`hand_to`), the operator takes it back or withdraws it
   (`POST /api/baton/:sid/offer/withdraw`: the operator then holds it), a new offer is made, or the
   session is done or closed. From then on every invitee who never held it gets 410; anyone who did
@@ -324,7 +353,17 @@ once), **lease** (an offer's lock on its first taker).
   name. Only invitees who have never held it see nothing past the offer card.
 - The operator's strip shows the offer (invitees, state, who holds it, the lease's end — "less than
   a minute" when under one is left); an offer back in its pool after a lapse reads "open again;
-  nobody is answering right now", not "nobody has answered yet". The session list shows "N
+  nobody is answering right now", not "nobody has answered yet". Reached invitees keep their New
+  Link buttons, on a row labelled "Reached · new link for" while anyone is still waiting ("New link
+  for" otherwise); each invitee not reached yet has a line of their own with no link button:
+  "{name} · waiting until {time} your time (in {n})" (the operator's time, with a weekday when it
+  isn't today), "{name} · waiting for their working hours" when no window is found, or, while the
+  offer is leased, "{name} · waiting: nobody new is reached while {holder} is answering". In the
+  Organizations region's Needs you, the offer session's row adds "{name} waiting until {time} your
+  time (in {n})" after its own detail, joined by "; " and ending with ".". On an invitee's person
+  page, the session row's who-has-it line adds " · not reached yet, waiting until {time} your time
+  (in {n})" (or "…, waiting: nobody new is reached while {holder} is answering"), and there is no
+  Get New Link for them. The session list shows "N
   invited" while it waits, then the holder's name.
 
 ## §app.baton/share-listener — The public entry point
@@ -413,7 +452,7 @@ once), **lease** (an offer's lock on its first taker).
   An unknown token (404) records nothing: there is no person to record it against.
 - **Never recorded**: the token, its hash or any part of either, an IP address or anything
   derived from one, the raw user agent, cookies or headers, and anything the person wrote. The
-  session id and hand-off number identify the link without the capability, as `baton.json`
+  session id and hand-off number identify the link without the capability, as the session's chart
   already does.
 - **Cap.** At most 20 new visits per link per day (UTC), previews and refused attempts included;
   past that, one `capped` line for that link that day and nothing more until the next day. A
@@ -448,9 +487,9 @@ once), **lease** (an offer's lock on its first taker).
 - A person proposed from the session and still waiting (§app.organizations/referrals) is a
   decide-tier item `roster-proposal`, "Approve Bob Smith (IT lead) proposed by Tony Reyes?", listed
   in the Organizations region's Needs you.
-- Any change to a baton row or its links (Get Link, a reply, Extend, Take back, a hand-off,
-  approve, decline, close) re-diffs the session list at once (a baton row's state is part of what
-  the list compares), and the page re-reads the attention digest whenever it re-reads the list for
+- Any change to a baton session's chart or its links (Get Link, a reply, Extend, Take back, a
+  hand-off, approve, decline, close) re-diffs the session list at once (a baton session's state is
+  part of what the list compares), and the page re-reads the attention digest whenever it re-reads the list for
   the session feed's `list_changed` (the Organizations region's Needs you lists the digest's
   items), so its Needs-you item clears within a second, whichever tab or host page made the change.
 - Baton sessions are not classified by attention signals (§app.decisions/attention-signals).
@@ -476,7 +515,7 @@ once), **lease** (an offer's lock on its first taker).
   under the gathering sessions' model (`PATCH …/overseer {gatheringAbilities}`); anything but null
   or two booleans refuses the patch (400), and a file with a bad value reads as Automatic.
   `GET …/overseer` answers what a session started now gets (`gatheringAbilitiesNow`).
-- **Every start writes the set on the session's row** (`baton.json` `abilities`), fixed at start:
+- **Every start writes the set on the session's chart** (`abilities`), fixed at start:
   the Start a Session form, Send to person…, the project overseer's `sova_start_gathering` and
   `sova_offer`, the global Overseer's `sova_gather start`, and a conflict's settle session. A start
   that names no abilities gets the project's set. On the form the operator may choose anything
@@ -486,7 +525,6 @@ once), **lease** (an offer's lock on its first taker).
   may be turned on, and read links only when the project's set has it: "Reading links is off for
   this project's gathering sessions; the operator can allow it on the project page." The refusal
   comes before anything is created or counted.
-- A session whose row has no `abilities` (started before them) has neither.
 - **The strip** (§app.baton/goal-and-loadout) shows **It can:** with `Draw` and `Read links`
   checkboxes, and the operator can change them while the session is open
   (`POST /api/baton/:sid/abilities {draw?, readLinks?}`, answering the strip's `BatonInfo`;

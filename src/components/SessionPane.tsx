@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, untrack } from "solid-js";
+import type { SessionShare } from "../../shared/session-share";
 import type { ExplanationInfo, SessionInsight, SessionSkillOffer, SessionSkillUse, SessionSummary, TranscriptItem, WorkerInfo } from "../../shared/protocol";
 import { fetchTranscriptLight } from "../lib/api";
 import { formatTokens } from "../lib/context";
@@ -9,8 +10,10 @@ import { activeTab, sessionContext, setActiveTab, toast } from "../lib/ui-state"
 import { capTitle, usageHeadline, usageTitle, usageTotal, type UsageTotalView, type UsageView, workerLabel, workerTeam } from "../lib/workers";
 import type { RewindControl } from "../lib/inputs";
 import { jumpWhenArrived } from "../lib/jump";
+import { hostOf } from "../lib/mesh";
+import { listSessionShares, ShareApiError, shareLive, sharingTabLabel, viewingNow } from "../lib/session-shares";
 import { RemotePaneStatus } from "./RemoteStatus";
-import { SessionDetails } from "./SessionDetails";
+import { SessionDetails, SharingSection } from "./SessionDetails";
 import { SessionTimeline } from "./SessionTimeline";
 import { SessionUsageTab } from "./SessionUsage";
 import { type AgentsView, SubagentPane } from "./SubagentPane";
@@ -28,12 +31,13 @@ export interface PaneInsight {
   changed: number;
 }
 
-export type TabId = "session" | "timeline" | "agents" | "usage" | "skills" | "explain";
+export type TabId = "session" | "timeline" | "agents" | "usage" | "sharing" | "skills" | "explain";
 const TABS: readonly { id: TabId; label: string }[] = [
   { id: "session", label: "Session" },
   { id: "timeline", label: "Timeline" },
   { id: "agents", label: "Agents" },
   { id: "usage", label: "Usage" },
+  { id: "sharing", label: "Sharing" },
   { id: "skills", label: "Skills" },
   { id: "explain", label: "Explain" },
 ];
@@ -42,8 +46,8 @@ const isTab = (id: string | null): id is TabId => TABS.some((t) => t.id === id);
 /**
  * The session detail pane: a head, a tab strip, and one tab's panel. Session is what the session
  * is (SessionDetails); Timeline is the session's one time axis; Agents is the subagents pane it grew
- * out of; Usage is what the session has spent (SessionUsage); Skills says which skills loaded and
- * when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
+ * out of; Usage is what the session has spent (SessionUsage); Sharing is its share links, with a
+ * viewing-now badge on the tab; Skills says which skills loaded and when, here and in each worker; Explain lists this session's /explain pages. The tab is kept per
  * session path; with none kept, it opens on Agents while a worker is working, else on Session —
  * never on Usage, which its tab and the head's token chip open. Read-only throughout, except the
  * Timeline's rewind, which goes through the chat.
@@ -99,6 +103,8 @@ export function SessionPane(props: {
   createEffect(on(() => props.insight.changed, () => void loadItems()));
   createEffect(on(() => props.rewound?.changed, (changed) => changed && props.rewound?.path === props.path && void loadItems(), { defer: true }));
   onCleanup(() => run++);
+
+  const sharing = paneShares(() => props.summary);
 
   const working = () => (props.chatWorkers ?? props.insight.data?.workers ?? []).filter((w) => w.working).length;
   /** The session's own spend, the Usage tab's headline. Nothing until the insight has loaded: the
@@ -201,10 +207,16 @@ export function SessionPane(props: {
               aria-controls={tab() === t.id ? "session-tabpanel" : undefined}
               tabindex={tab() === t.id ? 0 : -1}
               ref={(el) => (tabEls[i()] = el)}
+              aria-label={t.id === "sharing" ? sharingTabLabel(sharing.viewing()) : undefined}
               onClick={() => setActiveTab(props.path, t.id)}
               onKeyDown={(e) => onTabKey(e, i())}
             >
               {t.label}
+              <Show when={t.id === "sharing" && sharing.viewing() > 0}>
+                <span class="chip chip-count session-tab-badge" aria-hidden="true">
+                  {sharing.viewing()}
+                </span>
+              </Show>
             </button>
           )}
         </For>
@@ -255,6 +267,13 @@ export function SessionPane(props: {
           <Match when={tab() === "usage"}>
             <SessionUsageTab insight={props.insight} chatWorkers={props.chatWorkers} />
           </Match>
+          <Match when={tab() === "sharing"}>
+            <div class="session-panel-scroll" tabindex="0">
+              <Show when={props.summary}>
+                {(s) => <SharingSection session={s()} shares={sharing.shares()} error={sharing.error()} now={props.now} onChanged={sharing.reload} />}
+              </Show>
+            </div>
+          </Match>
           <Match when={tab() === "skills"}>
             <SkillsTab
               path={props.path}
@@ -274,6 +293,57 @@ export function SessionPane(props: {
       </div>
     </aside>
   );
+}
+
+// ---- Sharing ----------------------------------------------------------------------------------
+
+/** A live share's presence is read again this often while the page is visible. */
+const SHARING_REFRESH_MS = 5_000;
+
+/**
+ * The session's shares, read once for the whole pane: the Sharing tab's list and its tab's
+ * viewing-now badge render from this one read. Read on open (and when the session changes), after
+ * the sheet changes something, and every SHARING_REFRESH_MS while a share is live and the page is
+ * visible, from the host that holds the session.
+ */
+function paneShares(summary: () => SessionSummary | undefined) {
+  const [shares, setShares] = createSignal<SessionShare[] | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  let run = 0;
+  const reload = async () => {
+    const s = summary();
+    if (!s) return;
+    const mine = ++run;
+    try {
+      const next = await listSessionShares(hostOf(s.path), s.id);
+      if (mine !== run) return;
+      setShares(next);
+      setError(null);
+    } catch (x) {
+      if (mine !== run) return;
+      // An older host has no share routes: said once, never a retry loop of errors.
+      setError(x instanceof ShareApiError && x.status === 404 && !x.code ? "This host can't share sessions yet. It needs an update." : `Couldn't read this session's shares. ${(x as Error).message}`);
+    }
+  };
+  createEffect(
+    on(
+      () => summary()?.id,
+      () => {
+        run++;
+        setShares(null);
+        setError(null);
+        void reload();
+      },
+    ),
+  );
+  const tick = setInterval(() => {
+    if (document.visibilityState === "visible" && (shares() ?? []).some(shareLive)) void reload();
+  }, SHARING_REFRESH_MS);
+  onCleanup(() => {
+    run++;
+    clearInterval(tick);
+  });
+  return { shares, error, reload: () => void reload(), viewing: () => viewingNow(shares() ?? []) };
 }
 
 // ---- Session ----------------------------------------------------------------------------------

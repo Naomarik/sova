@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { createMemo, createSignal, For, Show } from "solid-js";
 import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
 import { promptSessionGroup } from "../lib/api";
 import { createTouchMode, enterSends } from "../lib/input-mode";
@@ -8,8 +8,9 @@ import { Banner, Icon } from "./ui";
 import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
 
 /**
- * The workspace's one composer, writing to every member at once.
- * One request, never N sockets racing: the server
+ * The workspace's one composer, writing to every member at once — on screen only while Send to
+ * All is on, in place of the pane composers. Off, it stays mounted and `hidden`, so its draft and
+ * a partial-send report survive the toggle. One request, never N sockets racing: the server
  * checks every member before it prompts any, so a refusal is complete and names each blocked one.
  *
  * What it deliberately does NOT carry: images and slash commands. An image belongs to a
@@ -31,8 +32,10 @@ export function GroupComposer(props: {
   /** Re-read the session list: after a send its `busy` is stale, and after a 400 the membership
       this composer is counting from is the thing that was wrong. */
   onRefresh(): void;
-  /** Focused or holding text — what collapses the pane composers under it. */
-  onActive(active: boolean): void;
+  /** Send to All is on: this box is on screen. Off, it is hidden but keeps its state. */
+  shown: boolean;
+  /** The row's `×`: switches Send to All off, back to each pane's own composer. */
+  onClose(): void;
   /** The ids a send REACHED (accepted, not answered), for the workspace head's completion roll-up:
    * the roll-up is anchored to a send rather than to idle-vs-busy, so it starts at the
    *  moment the server accepted. `kind` is how the workspace merges it: a box send (or "Send to
@@ -53,21 +56,10 @@ export function GroupComposer(props: {
    * message, not whatever the box reads by then.
    */
   const [partial, setPartial] = createSignal<{ failed: BatchRefusal[]; sent: number; text: string } | null>(null);
-  /** Whether the caret is in this box. Half of "in use"; the other half is holding text. */
-  const [focused, setFocused] = createSignal(false);
   /** Tapped, Enter adds a line and Send to All sends; the placeholder drops its key hint. */
   const { touch, onPointerDown } = createTouchMode();
   /** The same mic as a pane composer's (§chat.voice/button); its text lands in this box. */
   const voice = createVoiceInput({ input: () => input, announce });
-
-  /**
-   * "In use" is focused OR holding text, derived in ONE place. It used to be pushed
-   * from three — focus, blur, and the send — and they disagreed: a send cleared the box while the
-   * caret was still in it, so the panes expanded under a composer the user was still typing in and
-   * collapsed again on the next keystroke. A rule with three call sites is three chances to state
-   * it differently.
-   */
-  createEffect(() => props.onActive(focused() || !!text() || voice.phase() !== "idle"));
 
   const targets = createMemo<Targets>(() => withGone(targetsOf(props.members), props.gone ?? []));
   /** The group's size, not the list's: a gone member is a member until it is removed. */
@@ -159,7 +151,7 @@ export function GroupComposer(props: {
   });
 
   return (
-    <footer class="composer group-composer" id="group-composer">
+    <footer class="composer group-composer" id="group-composer" hidden={!props.shown}>
       <form
         class="composer-inner"
         aria-label="Message every member"
@@ -219,6 +211,13 @@ export function GroupComposer(props: {
 
         <VoiceStrip voice={voice} />
         <div class="composer-row">
+          <button type="button" class="button button-icon button-ghost" aria-label="Back to One Member" title="Back to One Member" onClick={() => props.onClose()}>
+            <Icon name="close" />
+          </button>
+          {/* Who this box writes to: the group's size, like the placeholder — availability is the foot's. */}
+          <span class="chip chip-accent group-composer-all">
+            {totalMembers() === 1 ? "1 member" : `All ${totalMembers()} members`}
+          </span>
           <VoiceButton voice={voice} />
           <label class="visually-hidden" for="group-composer-input">
             Message every member
@@ -233,8 +232,6 @@ export function GroupComposer(props: {
             aria-describedby="group-composer-reason"
             onInput={(e) => edit(e.currentTarget.value)}
             onPointerDown={onPointerDown}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
             onKeyDown={(e) => {
               if (enterSends(e, touch())) {
                 e.preventDefault();

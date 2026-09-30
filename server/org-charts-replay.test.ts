@@ -4,12 +4,10 @@ import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { DRIFT_COMMIT, expectedPhases, FIXTURES, followUpPhase, loadTraces, openEngineModule, oracle, replay, type Envelope, type Report } from "./org-charts-replay";
-import { autonomyRefusal } from "./project-overseer-tools";
+import { chartVersions } from "./org-charts";
+import { autonomyRefusal, DRIFT_COMMIT, expectedPhases, FIXTURES, followUpPhase, loadTraces, oracle, replay, type OracleEnvelope as Envelope, type Report } from "./org-charts-replay";
 
 const traces = loadTraces();
-const opened = await openEngineModule();
-const engine = "missing" in opened ? null : opened;
 
 test("the fixtures carry nothing of the real runs: no paths, links, addresses, real ids or text", () => {
   for (const f of readdirSync(FIXTURES).filter((f) => f.endsWith(".json"))) {
@@ -70,10 +68,12 @@ test("the facts projection: each fact set has the phases a chart may be in", () 
   assert.equal(followUpPhase(it({ baton: b("open") })), "no-follow-up");
 });
 
-// Without the engine every replay would check today's rule only and pass: that is a failure, not a skip.
-test("the engine is there (server/org-charts.ts with the project and work-item charts)", () => {
-  assert.ok(engine, "missing" in opened ? opened.missing : "no engine");
-  assert.ok(engine.charts.includes("project") && engine.charts.includes("work-item"), `charts: ${engine.charts.join(", ")}`);
+// The replay drives the refit's charts through a real host: every chart a lane touches must be in the bundle.
+test("the replay's charts are the refit's (org, project, watch, item, baton, decision, reconciler, build), never the spike's", () => {
+  const names = chartVersions().map((c) => c.name as string);
+  for (const c of ["org", "person", "project", "watch", "item", "baton", "decision", "reconciler", "build"]) assert.ok(names.includes(c), `charts: ${names.join(", ")}`);
+  const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "org-charts-replay.ts"), "utf8");
+  assert.doesNotMatch(src, /spike-project|work-item|createOrgCharts/, "no spike chart and no bare engine: the real host");
 });
 
 // A replay takes well under a second. The limit catches a hang in anything asynchronous; a synchronous
@@ -86,8 +86,7 @@ const MAX_MICROSTEPS = 200;
 const reports: Report[] = [];
 for (const t of traces)
   test(`replay ${t.id} (${t.source}, Sova ${t.sova.commit ?? "?"}): zero unexplained divergences`, { timeout: REPLAY_TIMEOUT_MS }, async () => {
-    assert.ok(engine, "no engine: the replay would check nothing of the charts");
-    const r = await replay(t, engine.create, engine.charts);
+    const r = await replay(t);
     reports.push(r);
     const unexplained = r.divergences.filter((d) => d.cls === null || d.cls === "chart-bug");
     assert.deepEqual(unexplained, [], `${t.id}: ${unexplained.length} unexplained divergences`);
@@ -95,7 +94,9 @@ for (const t of traces)
     const tools = t.events.filter((e) => e.kind === "tool").length;
     const looks = t.events.filter((e) => e.kind === "turn" && e.by === "watch").length;
     const expects = t.events.filter((e) => e.kind === "expect").length;
-    if (tools) assert.ok(r.coverage.trials > 0, `${t.id}: ${tools} tool calls, no chart trial`);
+    // Every tool call that is a chart act now was trialled (a read, a note, a validation refusal is none).
+    if (r.coverage.routed) assert.ok(r.coverage.trials >= r.coverage.routed, `${t.id}: ${r.coverage.routed} tool calls are chart acts, ${r.coverage.trials} trialled`);
+    assert.ok(r.coverage.routed <= tools);
     if (t.events.some((e) => e.entity === "gap" || e.args?.id?.startsWith("§gap/"))) assert.ok(r.coverage.itemChecks > 0, `${t.id}: gaps, but no item position checked`);
     assert.equal(r.coverage.lookChecks, t.events.some((e) => e.entity === "overseer") || t.source === "synthetic" ? looks : r.coverage.lookChecks, `${t.id}: real looks not all compared`);
     assert.equal(r.coverage.expects, expects, `${t.id}: expectations not all checked`);
@@ -105,10 +106,6 @@ for (const t of traces)
     // A class that says the chart is right, or cannot say it, shows the step it rests on.
     for (const d of r.divergences.filter((x) => x.cls === "chart-better" || x.cls === "cannot-express" || x.cls === "drift"))
       assert.ok(d.evidence && Object.keys(d.evidence).length, `${t.id} @${d.dt} ${d.cls} ${d.check}: no evidence`);
-    for (const d of r.divergences.filter((x) => x.cls === "chart-better" && x.check === "look-reasons" && x.got === "item/reopened")) {
-      const rows = (d.evidence as { reopened: { item: string | null; flippedBack: string[]; newDecisions: string[] }[] }).reopened;
-      assert.ok(rows.length && rows.every((e) => e.item && e.flippedBack.length + e.newDecisions.length > 0), `${t.id} @${d.dt}: reopened without its own evidence`);
-    }
   });
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -121,7 +118,8 @@ const git = (...args: string[]): string | null => {
 };
 
 // Drift: the trace ran code without the commit that changed this behaviour, and the code the charts model has
-// it. A trace may have run a side branch (real-03: feat/bw-fix-overseer), so "without" is not "an ancestor of".
+// it. A trace may have run a side branch, so "without" is not "an ancestor of"; but every trace's commit must be
+// in this clone's history (a fixture cites master's commit, not a local branch's), or "lacks" would pass untested.
 test("every drift names a commit the charts' code has and its trace's code lacks", (t) => {
   if (git("rev-parse", "--git-dir") === null) return t.skip("no git history in this copy");
   const drift = reports.flatMap((r) => r.divergences.filter((d) => d.cls === "drift").map((d) => ({ d, trace: traces.find((x) => x.id === r.trace)! })));
@@ -138,8 +136,10 @@ test("every drift names a commit the charts' code has and its trace's code lacks
       assert.equal(git("merge-base", "--is-ancestor", c, trace.sova.commit!), null, `${trace.id} @${d.dt}: the trace's ${trace.sova.commit} already has ${c}`);
     }
   }
+  for (const trace of traces)
+    if (trace.sova.commit) assert.notEqual(git("merge-base", "--is-ancestor", trace.sova.commit, "HEAD"), null, `${trace.id}: its Sova commit ${trace.sova.commit} is not in this history`);
   for (const { commit } of Object.values(DRIFT_COMMIT)) assert.notEqual(git("rev-parse", "--verify", "--quiet", `${commit}^{commit}`), null, commit);
-  assert.deepEqual([...commits].sort(), ["239852ee", "320042f0", "77f3cdbf", "80a785ca"]);
+  assert.deepEqual([...commits].sort(), ["239852ee", "320042f0", "77f3cdbf", "80a785ca", "8b7f6751"]);
 });
 
 test("allowance counts are checked against the trace's own ledger, never synced", () => {

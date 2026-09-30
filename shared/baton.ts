@@ -22,6 +22,7 @@
  */
 
 import type { LinkWarningCode, ShareState } from "./public-links";
+import type { Person } from "./orgs";
 
 /** `customType` of the marker a baton session's file carries (data `BatonMarkerData`). */
 export const BATON_ENTRY = "sova-baton";
@@ -166,6 +167,9 @@ export interface Offer {
   createdAt: string;
   /** The hand-off number it went out as. */
   n: number;
+  /** r12: each invitee reached or waiting for their window, by person id; absent: an offer from before r12 (everyone
+      reached). While withdrawn it is dropped (nobody is reached after). */
+  reach?: Record<string, OfferReach>;
 }
 
 export type BatonOwner = "operator" | { overseerOf: string /* projectId */ };
@@ -289,13 +293,23 @@ export interface BatonStartResult {
   linkWarning?: string;
   /** Which of those it is. */
   linkWarningCode?: LinkWarningCode;
+  /** r7: the first holder is off hours; it went at once (the operator's own act): when their window opens (ISO). */
+  offHours?: string;
 }
 
 /** An offer as the operator's strip shows it. */
+/** r12 (q15 C): whether an invitee of an offer has been reached (their link made, in their own working hours). */
+export type OfferReach =
+  | { state: "reached"; at?: string }
+  /** `until`: their next window (ISO), null when none is found; `paused`: the offer is leased, so nobody new is
+      reached until the lease lapses (rule 12). */
+  | { state: "waiting"; until: string | null; paused?: true };
+
 export interface OfferInfo {
   id: string;
   n: number;
-  to: { id: string; name: string }[];
+  /** `reach` is absent on an offer from before r12, and once it is withdrawn: everyone counts as reached. */
+  to: { id: string; name: string; reach?: OfferReach }[];
   state: Offer["state"];
   holder?: { id: string; name: string };
   leaseUntil?: string;
@@ -324,7 +338,7 @@ export interface BatonInfo {
   /** personId → name, for every participant and roster person (the operator under "operator"). */
   names: Record<string, string>;
   /** Active roster people, for Take back / the operator's pickers. */
-  active: { id: string; name: string; role: string }[];
+  active: { id: string; name: string; role: string; tz?: string; hoursNow?: Person["hoursNow"] }[];
   /** Links of the current hand-off that still write (count only: the host keeps hashes, never tokens). */
   liveLinks: number;
   /** personId → when their newest live link of the current hand-off (or open offer) was minted (ISO):
@@ -349,6 +363,9 @@ export interface BatonSummaryField {
   needsYou?: { from: string; question: string; since: number };
   /** Present while a person holds it through a hand-off with no live link: the operator must send one. */
   sendLink?: { to: string; question: string; since: number };
+  /** r12: an open offer's invitees not reached yet (their working hours haven't come), by name; `until`: their next
+      window (ISO), null when none is found. */
+  waiting?: { name: string; until: string | null }[];
   /** Present while an offer is open or held. `holder` is the claimer's name. */
   offer?: { state: "open" | "held"; invited: number; holder?: string };
   /** When the newest live link of the current hand-off (or open offer) was minted (ISO): it moves on

@@ -1,7 +1,9 @@
 import { createSignal, Show, type JSX } from "solid-js";
 import { unwrap } from "solid-js/store";
-import type { Person, PersonInput } from "../../shared/orgs";
+import type { Person, PersonHours, PersonInput } from "../../shared/orgs";
 import { changedFields } from "../lib/person-patch";
+import { companyHoursLine } from "../lib/working-hours";
+import { createHoursDraft, HoursFieldset } from "./HoursFields";
 
 const list = (s: string) =>
   s
@@ -10,7 +12,7 @@ const list = (s: string) =>
     .filter(Boolean);
 
 /** Add Person submits the whole profile; Edit submits only the fields changed in the form. */
-type PersonFormProps = { submitLabel: string; onCancel(): void } & (
+type PersonFormProps = { submitLabel: string; onCancel(): void; company?: { tz?: string; hours?: PersonHours | null } } & (
   | { person?: undefined; onSubmit(input: PersonInput): void }
   | { person: Person; onSubmit(input: Partial<PersonInput>): void }
 );
@@ -36,6 +38,10 @@ export function PersonForm(props: PersonFormProps) {
   const [whatsapp, setWhatsapp] = createSignal(p?.contact.whatsapp ?? "");
   const [why, setWhy] = createSignal(p?.referral?.why ?? "");
   const [by, setBy] = createSignal(p?.referral?.referredBy ?? "");
+  // Working hours (r7, §app.organizations/working-hours): a zone, and hours only once turned on.
+  const hours = createHoursDraft(p);
+  // r13: with none of their own they work the company's hours, when it has some.
+  const companyLine = props.company ? companyHoursLine(props.company) : null;
   const text = (label: string, get: () => string, set: (v: string) => void, extra: JSX.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <label class="field">
       <span class="field-label">{label}</span>
@@ -47,6 +53,8 @@ export function PersonForm(props: PersonFormProps) {
       class="orgs-form orgs-subform"
       onSubmit={(e) => {
         e.preventDefault();
+        if (hours.check()) return;
+        const zone = hours.zone();
         const contact = { ...(email().trim() ? { email: email().trim() } : {}), ...(phone().trim() ? { phone: phone().trim() } : {}), ...(whatsapp().trim() ? { whatsapp: whatsapp().trim() } : {}) };
         const input: PersonInput = {
           name: name().trim(),
@@ -58,6 +66,9 @@ export function PersonForm(props: PersonFormProps) {
           voice: voice().trim(),
           contact,
           ...(status() === "proposed" || why().trim() || by().trim() ? { referral: { why: why().trim(), referredBy: by().trim() } } : {}),
+          // A new person without them sends neither; an edit sends "" / null to clear them.
+          ...(zone || p ? { tz: zone } : {}),
+          ...(hours.on() ? { hours: hours.hours() } : p ? { hours: null } : {}),
         };
         if (!p) return (props.onSubmit as (input: PersonInput) => void)(input);
         const patch = changedFields(p, input);
@@ -88,6 +99,17 @@ export function PersonForm(props: PersonFormProps) {
         <textarea class="input textarea" rows={2} maxlength={300} value={voice()} onInput={(e) => setVoice(e.currentTarget.value)} />
         <span class="field-hint">How to talk to them. Never shown to them or anyone else outside this page.</span>
       </label>
+      <HoursFieldset
+        draft={hours}
+        hint={`What Sova starts on its own, and what the overseer does unattended, waits for their hours. Yours go at once.${
+          props.company?.hours && companyLine ? ` Leave them off to use the company's hours (${companyLine}).` : ""
+        }`}
+        noZone={
+          props.company?.hours && props.company.tz?.trim()
+            ? `Without a time zone these don't count: the company's hours apply (${companyLine}).`
+            : "Without a time zone these don't count: they are always in hours."
+        }
+      />
       <Show when={status() === "proposed"}>
         <div class="orgs-fields">
           {text("Why referred", why, setWhy, { maxlength: 300, required: true })}

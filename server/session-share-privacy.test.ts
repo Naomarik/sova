@@ -6,8 +6,10 @@
 // non-raster image, an abandoned branch, what came after a snapshot's cut, a wake nudge and a link
 // partner's message), each first shown to be really in the operator's own transcript (the positive
 // control), then asserted absent from the view (both modes, every page), every image the route
-// serves, and, through the share listener, the shell, every /api/s answer and the socket frames. A
-// throwaway PI_CODING_AGENT_DIR in the OS temp dir, deleted after; no model is called.
+// serves, and, through the share listener, the shell, every /api/s answer and the socket frames.
+// §app.session-share/slice: a slice's text, image and vis source before its start, what came after
+// its end, and every entry id never reach a recipient, in either mode. A throwaway
+// PI_CODING_AGENT_DIR in the OS temp dir, deleted after; no model is called.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
@@ -29,10 +31,11 @@ process.env.SOVA_SHARE_DIST = join(root, "dist-share");
 mkdirSync(process.env.SOVA_SHARE_DIST, { recursive: true });
 writeFileSync(join(process.env.SOVA_SHARE_DIST, "index.html"), "<!doctype html><title>Shared</title>");
 
-const { sessionShareView, sessionShareImage, currentLeaf, resetShareViewCache, SESSION_SHARE_TEXT_MAX, SESSION_SHARE_TEXT_CEILING, cutAtToken, withoutImagePaths } = await import("./session-share-view");
+const { sessionShareView, sessionShareImage, sourceReadable, currentLeaf, resetShareViewCache, SESSION_SHARE_TEXT_MAX, SESSION_SHARE_TEXT_CEILING, cutAtToken, withoutImagePaths } = await import("./session-share-view");
 const { normalizeEntries, parseLines } = await import("./transcript");
 const { createShare } = await import("./session-shares");
 const { pushView } = await import("./session-share-presence");
+const { pushShareView } = await import("./share/session-live");
 const { createShareServer } = await import("./share/listener");
 
 const server = createShareServer();
@@ -179,7 +182,7 @@ assistant([{ type: "text", text: `Later: ${M.afterCut}` }]);
 lines.push({ type: "custom", customType: "mk-noid", timestamp: at(), data: {} });
 writeFileSync(sessionPath, `${lines.map((l) => JSON.stringify(l)).join("\n")}\n`);
 
-const src = (mode: "snapshot" | "live") => ({ sessionPath, cutEntryId: mode === "snapshot" ? cut : null, title: `A title with ${M.secret}`, sharedAt: "2026-09-30T01:00:00.000Z", mode });
+const src = (mode: "snapshot" | "live") => ({ sessionPath, cutEntryId: mode === "snapshot" ? cut : null, from: null, title: `A title with ${M.secret}`, sharedAt: "2026-09-30T01:00:00.000Z", mode });
 
 /** Every page of a view, oldest first. */
 async function everyPage(mode: "snapshot" | "live"): Promise<SessionShareView[]> {
@@ -232,7 +235,7 @@ describe("nothing private reaches a session share (§app.session-share/never)", 
         }
         for (const s of never()) assert.ok(!body.includes(s), `${mode}: ${s} leaked`);
         const keys = new Set([...body.matchAll(/"([A-Za-z]+)":/g)].map((m) => m[1]!));
-        for (const k of keys) assert.ok(["title", "sharedAt", "mode", "through", "items", "before", "images", "kind", "n", "text", "at", "mime"].includes(k), `${mode}: unexpected key ${k}`);
+        for (const k of keys) assert.ok(["title", "sharedAt", "mode", "through", "items", "before", "images", "kind", "n", "text", "at", "mime", "lineage"].includes(k), `${mode}: unexpected key ${k}`);
       }
     }
   });
@@ -362,6 +365,114 @@ describe("nothing private reaches a recipient through the share listener", async
         assert.ok(!body.includes(share.id), `the share id leaked in ${label}`);
       }
     }
+  });
+});
+
+describe("a slice never reaches before its start or after its end (§app.session-share/slice)", async () => {
+  // Its own session: a marked user message with an image, a reply with a marked vis source, then
+  // the slice (start, end), then marked messages after the end. Entry ids are distinct words.
+  const S = { preText: "MK-PRETEXT-q7x", preImg: "MK-PREIMG-q7x", preVis: "MK-PREVIS-q7x", postText: "MK-POSTTEXT-q7x", postImg: "MK-POSTIMG-q7x", branchText: "MK-BRANCH-q7x" } as const;
+  /** A png the sniffer accepts, whose bytes carry `mark` (served byte for byte, so a leak shows). */
+  const png = (mark: string) => Buffer.concat([PNG.subarray(0, 8), Buffer.from(mark)]);
+  const IMG_IN = png("VISIBLE-IN-IMAGE");
+  const id = (name: string) => `slc-${name}-q7x`;
+  const slicePath = join(root, "agent", "sessions", "2026-09-30T02-00-00-000Z_0199bbbb-slice.jsonl");
+  const msg = (name: string, parent: string | null, role: string, text: string, image?: Buffer, t = 1) => ({
+    type: "message",
+    id: id(name),
+    parentId: parent === null ? null : id(parent),
+    timestamp: new Date(Date.UTC(2026, 8, 30, 2, 0, t)).toISOString(),
+    message: { role, content: [{ type: "text", text }, ...(image ? [{ type: "image", data: image.toString("base64"), mimeType: "image/png" }] : [])] },
+  });
+  const rows: Record<string, unknown>[] = [
+    { type: "session", version: 3, id: "0199bbbb-slice", timestamp: "2026-09-30T02:00:00.000Z", cwd },
+    msg("u1", null, "user", `before ${S.preText}`, png(S.preImg), 1),
+    msg("a1", "u1", "assistant", `\`\`\`vis\n{"kind":"steps","steps":["${S.preVis}","two"]}\n\`\`\``, undefined, 2),
+    msg("u2", "a1", "user", "VISIBLE-SLICE-START", IMG_IN, 3),
+    msg("a2", "u2", "assistant", "VISIBLE-SLICE-END", undefined, 4),
+    msg("u3", "a2", "user", `after ${S.postText}`, png(S.postImg), 5),
+    msg("a3", "u3", "assistant", "VISIBLE-LIVE-TAIL", undefined, 6),
+  ];
+  writeFileSync(slicePath, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+  resetShareViewCache();
+  const ids = rows.map((r) => r.id).filter((x): x is string => typeof x === "string" && x.startsWith("slc-"));
+  const sliceSrc = (mode: "snapshot" | "live") => ({ sessionPath: slicePath, cutEntryId: mode === "snapshot" ? id("a2") : null, from: id("u2"), title: "Slice", sharedAt: "2026-09-30T03:00:00.000Z", mode });
+  /** What must not reach a holder of this mode's slice. */
+  const barred = (mode: "snapshot" | "live") => [S.preText, S.preImg, S.preVis, ...(mode === "snapshot" ? [S.postText, S.postImg, "VISIBLE-LIVE-TAIL"] : []), ...ids];
+
+  await new Promise<void>((r) => (server.listening ? r() : server.listen(0, "127.0.0.1", r)));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const shares = (["snapshot", "live"] as const).map((mode) => {
+    const { share, tokens } = createShare({ sessionId: "0199bbbb-slice", sessionPath: slicePath, title: "Slice", mode, cut: mode === "snapshot" ? { entryId: id("a2"), at: null } : null, from: { entryId: id("u2"), at: null }, days: 30, labels: [`Bo ${mode}`], anyone: false });
+    return { mode, share, token: tokens[0]!.token };
+  });
+  const answers: [string, "snapshot" | "live", number, string][] = [];
+  for (const { mode, token } of shares) {
+    // Operator-only parameters on a recipient's read change nothing: the token's bounds hold.
+    const probes = [`/api/s/${token}?outline=1`, `/api/s/${token}?from=${id("u1")}&cut=${id("a3")}`, `/api/s/${token}/img/0?from=${id("u1")}`];
+    for (const p of [`/s/${token}`, `/api/s/${token}`, ...probes, ...[0, 1, 2, 3].map((n) => `/api/s/${token}/img/${n}`)]) {
+      const res = await fetch(base + p);
+      answers.push([p, mode, res.status, Buffer.from(await res.arrayBuffer()).toString("latin1")]);
+    }
+  }
+  const frames: [string, "snapshot" | "live", string][] = [];
+  for (const { mode, share, token } of shares) {
+    const ws = new WebSocket(`ws://127.0.0.1:${(server.address() as AddressInfo).port}/ws/s?token=${token}`);
+    ws.on("message", (d) => frames.push([`${mode} frame`, mode, String(d)]));
+    await new Promise<void>((ok, fail) => (ws.once("open", () => ok()), ws.once("error", fail)));
+    await new Promise((r) => setTimeout(r, 50));
+    // Through the live push itself (its scheduling and lineage), not a hand-built frame.
+    await pushShareView(share.id);
+    await new Promise((r) => setTimeout(r, 100));
+    ws.close();
+  }
+
+  test("control: the slice is what shows, with its own image as image 0 and the earlier line's flag", async () => {
+    for (const mode of ["snapshot", "live"] as const) {
+      const v = (await sessionShareView(sliceSrc(mode)))!;
+      assert.deepEqual(v.items.map((i) => i.text), mode === "snapshot" ? ["VISIBLE-SLICE-START", "VISIBLE-SLICE-END"] : ["VISIBLE-SLICE-START", "VISIBLE-SLICE-END", `after ${S.postText}`, "VISIBLE-LIVE-TAIL"]);
+      assert.equal(v.items[0]!.n, 0);
+      assert.deepEqual(v.items[0]!.images, [{ n: 0, mime: "image/png" }]);
+      assert.equal(v.earlier, true);
+      assert.deepEqual(await sessionShareImage(sliceSrc(mode), 0), { mime: "image/png", bytes: IMG_IN });
+    }
+    assert.ok(answers.some(([p, , st, b]) => p.startsWith("/api/s/") && !p.includes("/img/") && st === 200 && b.includes("VISIBLE-SLICE-START")));
+    assert.ok(answers.some(([p, , st, b]) => p.endsWith("/img/0") && st === 200 && b.includes("VISIBLE-IN-IMAGE")));
+    for (const mode of ["snapshot", "live"] as const) assert.ok(frames.some(([, m, f]) => m === mode && f.includes("VISIBLE-SLICE-START")), `${mode}: the pushed view came`);
+    const plain = answers.find(([p, m]) => m === "snapshot" && /^\/api\/s\/[^/?]+$/.test(p))![3];
+    for (const [p, m, st, b] of answers) if (m === "snapshot" && /^\/api\/s\/[^/]+\?/.test(p)) assert.deepEqual([st, JSON.parse(b).items], [200, JSON.parse(plain).items], `${p} reads the same slice`);
+  });
+
+  test("no text, image or vis source before the start, nothing after a snapshot's end, and no entry id: every image index, the shell, /api/s and the frames", async () => {
+    for (const mode of ["snapshot", "live"] as const) {
+      // Every image index up to the whole session's image count (3), straight from the builder.
+      for (const n of [0, 1, 2, 3]) {
+        const img = await sessionShareImage(sliceSrc(mode), n);
+        const body = img ? img.bytes.toString("latin1") : "";
+        for (const x of barred(mode)) assert.ok(!body.includes(x), `${mode}: image ${n} carried ${x}`);
+      }
+      assert.equal(await sessionShareImage(sliceSrc(mode), mode === "snapshot" ? 1 : 2), null, `${mode}: no image past the slice's own`);
+    }
+    for (const [label, mode, , body] of [...answers, ...frames.map(([l, m, f]) => [l, m, 0, f] as const)]) {
+      for (const x of barred(mode)) assert.ok(!body.includes(x), `${x} leaked in ${mode} ${label}`);
+      // The other session in this store: none of its markers reach this share.
+      for (const [field, mark] of Object.entries(M)) assert.ok(!body.includes(mark), `${field} (another session) leaked in ${mode} ${label}`);
+    }
+  });
+
+  test("Follow live: a rewind above the start takes the start off the branch, and the link reads as gone", async () => {
+    const live = shares.find((s) => s.mode === "live")!;
+    // A rewind to u1: a new reply on u1 becomes the leaf, leaving u2 (the start) on an old branch.
+    rows.push(msg("b1", "u1", "assistant", `rewound ${S.branchText}`, undefined, 7));
+    writeFileSync(slicePath, `${rows.map((r) => JSON.stringify(r)).join("\n")}\n`);
+    resetShareViewCache();
+    assert.equal(await sessionShareView(sliceSrc("live")), null);
+    assert.equal(await sourceReadable(sliceSrc("live")), false);
+    const res = await fetch(`${base}/api/s/${live.token}`);
+    const body = await res.text();
+    assert.equal(res.status, 410);
+    for (const x of [...barred("live"), S.branchText]) assert.ok(!body.includes(x), `${x} leaked in the dead answer`);
+    assert.equal((await fetch(`${base}/api/s/${live.token}/img/0`)).status, 404, "no image once gone");
   });
 });
 

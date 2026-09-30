@@ -34,7 +34,6 @@ import {
 import { modelProvider, shortModel } from "../lib/format";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
-  groupComposerActive,
   clearDraft,
   draftAttachments,
   drafts,
@@ -150,8 +149,7 @@ export function Composer(props: {
   /** The Overseer's "/mode": given, any "/mode" (arguments too) is ours and never reaches the
       runtime, which is always in normal mode; this says so. Absent, it is the runtime's as before. */
   onMode?: () => void;
-  /** At the right end of the foot, in the mode switch's slot (the Overseer's quick actions). It
-      stays when the foot collapses: it is an action, not reference. */
+  /** At the right end of the foot, in the mode switch's slot (the Overseer's quick actions). */
   accessory?: () => JSX.Element;
   /** Opens the session pane's Timeline tab: a bare "/timeline" unfiltered; a bare "/tree" and
       the run-status row's "N inputs" trigger with `inputsOnly`, on your own messages. */
@@ -194,8 +192,6 @@ export function Composer(props: {
   mode?: ModeControl | null;
   /** Chat sessions only: opens the Playbooks dialog (the flyout's Playbooks row). */
   onPlaybooks?: () => void;
-  /** "Fan Out…" in the flyout, for a chat session that can be forked. */
-  onFanOut?: () => void;
   /** Chat sessions only: the flyout's "Undo last turn" row. */
   undo?: UndoControl | null;
   /** Chat sessions with the sandbox extension: the flyout's Sandbox row and the foot's shield. */
@@ -252,14 +248,6 @@ export function Composer(props: {
   // The pane this composer belongs to: its id scopes every DOM id below (a workspace has N
   // composers on screen), and its label prefixes what this composer says out loud.
   const scope = usePaneScope();
-  /** Whether the caret is in THIS composer: half of what decides it may collapse. */
-  const [focused, setFocused] = createSignal(false);
-  /**
-   * Collapsed: only in a pane, only while the group composer is in use, and never when
-   * this composer is focused or holds a draft — a pane with text must keep it visible, and the one
-   * you are typing in must not shrink under you.
-   */
-  const collapsed = () => !!scope.id && groupComposerActive() && !focused() && !text() && voice.phase() === "idle";
   const paneId = (base: string) => paneScopedId(scope, base);
   const announce = usePaneAnnounce();
   /** Dictation into this box (§chat/voice): the mic in the row, its strip above it. */
@@ -924,7 +912,6 @@ export function Composer(props: {
   return (
     <footer
       class="composer"
-      data-collapsed={collapsed() ? "true" : undefined}
       data-drop={drop() ?? undefined}
       onDragOver={(e) => {
         if (disabled() || !e.dataTransfer?.types.includes("Files")) return;
@@ -1057,7 +1044,6 @@ export function Composer(props: {
             model={props.model}
             thinking={props.thinking}
             onPlaybooks={props.onPlaybooks}
-            onFanOut={props.onFanOut}
             undo={props.undo}
             sandbox={props.sandbox}
             onRefocus={() => input.focus()}
@@ -1111,9 +1097,7 @@ export function Composer(props: {
               }
             }}
             onPointerDown={onPointerDown}
-            onFocus={() => setFocused(true)}
             onBlur={() => {
-              setFocused(false);
               dropButtonSlash(); // closing by blur undoes an untouched button "/" too
               setSlashToken(null);
               setMentionToken(null);

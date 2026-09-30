@@ -74,7 +74,9 @@ confinement: its writes go only to the worktree, its git dirs and a private tmp 
 sandbox's private copies of the host caches), while nothing is hidden, the network is the host's
 (its resolver included) and the environment is passed as it is. No policy file is read for it.
 If the sandbox extension is missing or gives no scope for the worktree, the spawn is refused. A
-Claude Code worker gets only the spawn-time check.
+Claude Code worker there is confined the same way, narrowed to the worktree or write-only, with
+its own state and token as §chat.sandbox/claude-state says; in write-only its environment is the
+host's less any login or token variable.
 
 ## §chat.worktrees/worktree-config — A worker on the worktree's own agent dir
 
@@ -95,9 +97,9 @@ from the parent's branch and the tree's `mode.json`, so the worker is always in 
 spec and never strict; it is never offered a spec writer; and its spec block is the worker form
 (§chat.mode-menu/workers). The parent's own worker modes are not added on top.
 
-## §chat.worktrees/inherit — Forks and fanouts share the set
+## §chat.worktrees/inherit — Forks share the set
 
-A fork or a fanout member starts with its source's set, because the entry is on the copied
+A fork (pi's `/fork` or `/clone`) starts with its source's set, because the entry is on the copied
 branch. A worktree whose recorded session is another session is **shared** with that session;
 the pane says so.
 

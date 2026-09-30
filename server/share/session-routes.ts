@@ -20,7 +20,8 @@ import { RateLimiter, type ShareUpgrade } from "./edge";
  * WS  /ws/s?token=&v=          presence (the page's visibility) and view pushes
  *
  * A token that doesn't open answers 404 (unknown) or 410 (dead: only "expired" is ever named). A
- * live link whose session file is gone, or whose cut is no longer on it, answers the generic 410.
+ * live link whose session file is gone, or whose cut or start is no longer on it, answers the
+ * generic 410.
  */
 
 /** View reads per token per minute (the page reads once, then again on reconnect or Show earlier). */
@@ -43,14 +44,18 @@ export const visitLinkOf = (link: Pick<ShareLinkRecord, "shareId" | "recipientId
 export const sourceOf = (share: ShareRecord): ShareSource => ({
   sessionPath: share.sessionPath,
   cutEntryId: share.mode === "live" ? null : (share.cut?.entryId ?? null),
+  from: share.from?.entryId ?? null,
+  lineageKey: share.id,
   title: share.title,
   sharedAt: share.createdAt,
   mode: share.mode,
 });
 
 /** What a build of the share's view depends on: a build is published only while this is unchanged
-    (a narrowed share, live → snapshot or a new cut, or a stopped one, never gets an older build). */
-export const sourceKey = (share: ShareRecord): string => JSON.stringify([share.mode, share.mode === "live" ? null : (share.cut?.entryId ?? null), share.title, share.stoppedAt ?? null]);
+    (a narrowed share, live → snapshot, a new cut or start, or a stopped one, never gets an older
+    build). */
+export const sourceKey = (share: ShareRecord): string =>
+  JSON.stringify([share.mode, share.mode === "live" ? null : (share.cut?.entryId ?? null), share.from?.entryId ?? null, share.title, share.stoppedAt ?? null]);
 
 /**
  * Run `build` against the share `token` opens, and answer only while that still holds: after the

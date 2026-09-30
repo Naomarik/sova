@@ -4,9 +4,8 @@ import { statSync } from "node:fs";
 import { join } from "node:path";
 import type { CommitNowOutcome, OrgDetail, OrgNeedsYou, OrgsInfo, PersonInput } from "../shared/orgs";
 import { attentionChanged } from "./attention-memo";
-import { readConflicts } from "./decisions";
-import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, linkTimes, liveLinkCount, nameOf, namesOf, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner } from "./baton";
-import { moveBaton, offerBaton, scheduleWrapup } from "./baton-loadout";
+import { unroutedConflicts } from "./decisions";
+import { allBatons, batonById, batonOfPath, batonSummaryField, closeBaton, createBaton, extendBudget, handoffTo, linkTimes, liveLinkCount, nameOf, namesOf, offerTo, revokeCurrent, rotateLink, sessionPathOf, setAbilities, setHiddenFromOwner, takeBack, withdrawOffer } from "./baton";
 import { readBatonSettings, writeBatonSettings } from "./baton-settings";
 import { BusyError } from "./chat-manager";
 import {
@@ -22,21 +21,29 @@ import {
   orgDir,
   orgsInfo,
   OrgError,
+  operatorEnvelope,
   patchOrg,
   patchProject,
   readHistory,
   readOrg,
+  readOrgOrPlaceholder,
   readProjects,
   readRoster,
   recentChanges,
   revertChange,
   revertOrgChange,
+  revertOrgHoursChange,
+  setOrgHours,
+  residenceSid,
   setOperatorName,
   setProjectArchived,
   type OperatorBy,
 } from "./orgs";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
+import { OVERSEER_CARD_HEADER } from "./overseer-tools";
+import type { EnvelopeCard } from "./org-envelope";
 import { archiveBlockers } from "./project-overseer";
+import { cancelHeld, heldActs, holdItem, itemTimeline, pipelineInfo } from "./project-pipeline";
 import { resolveSessionPath } from "./paths";
 import { refreshShare } from "./share/hub";
 import { awaitShareLinks } from "./share/links-events";
@@ -49,7 +56,8 @@ import type { OwnerLinkResult } from "../shared/owner";
 import { mintOwnerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setOwner } from "./owner";
 import { ownerView } from "./owner-page";
 import { readUpdates, withdrawUpdate } from "./project-updates";
-import { commitAll, setRemote } from "./workspace-git";
+import { setRemote } from "./workspace-git";
+import { actOrThrow, hostOf } from "./org-engine";
 
 /**
  * The operator's routes for organizations and baton sessions (§app/organizations, §app/baton). On
@@ -80,7 +88,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
     ? {
         id: last.id,
         n: last.n,
-        to: last.to.map((id) => ({ id, name: nm(id) })),
+        to: last.to.map((id) => ({ id, name: nm(id), ...(last.reach?.[id] ? { reach: last.reach[id] } : {}) })),
         state: last.state,
         ...(last.holder ? { holder: { id: last.holder, name: nm(last.holder) } } : {}),
         ...(last.leaseUntil ? { leaseUntil: last.leaseUntil } : {}),
@@ -90,10 +98,10 @@ export function batonInfo(row: BatonSession): BatonInfo {
     : null;
   return {
     session: row,
-    orgName: readOrg(row.orgId).name,
+    orgName: readOrgOrPlaceholder(row.orgId).name,
     projectName: readProjects(row.orgId).find((p) => p.id === row.projectId)?.name ?? "",
     names: namesOf(row.orgId),
-    active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role })),
+    active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role, ...(p.tz ? { tz: p.tz } : {}), ...(p.hoursNow ? { hoursNow: p.hoursNow } : {}) })),
     liveLinks: liveLinkCount(row),
     linkAt: linkTimes(row),
     share: { ...shareInfo(), state: shareState() },
@@ -119,7 +127,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
 
 /** The org's owner's name for the strip's Hide From {first}, or null. */
 function ownerName(orgId: string, roster: ReturnType<typeof readRoster>): { name: string } | null {
-  const id = readOrg(orgId).owner;
+  const id = readOrgOrPlaceholder(orgId).owner;
   const p = id ? roster.find((x) => x.id === id && x.status === "active") : undefined;
   return p ? { name: p.name } : null;
 }
@@ -163,13 +171,15 @@ interface Waiting {
  * session is already that session's reply). `rows` are the org's baton rows.
  */
 function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): Waiting {
-  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0, ownerLink: 0 }, batons: new Map(), projectConflicts: {} };
+  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0, ownerLink: 0, held: 0 }, batons: new Map(), projectConflicts: {} };
   try {
     w.needsYou.ownerLink = ownerLinkNeeds(orgId);
+    // Acts waiting in a hold, one each as in Needs you (the same held-act items).
+    w.needsYou.held = heldActs(orgId).length;
     w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
     for (const project of readProjects(orgId)) {
       if (project.stakeholderCleared) w.needsYou.stakeholders = (w.needsYou.stakeholders ?? 0) + 1;
-      const n = readConflicts(orgId, project.id).filter((c) => c.state === "open" && c.routedTo === OPERATOR && !c.batonSessionId).length;
+      const n = unroutedConflicts(orgId, project.id);
       if (n) w.projectConflicts[project.id] = n;
       w.needsYou.conflicts += n;
     }
@@ -267,7 +277,21 @@ function lastOpenedOf(orgId: string): { lastOpened?: Record<string, { at?: strin
  */
 export function operatorBy(c: Context): OperatorBy {
   const overseerId = overseerSender(c.req.header(OVERSEER_SENDER_HEADER));
-  return overseerId ? { kind: "operator", via: "overseer", overseerId } : { kind: "operator" };
+  if (!overseerId) return { kind: "operator" };
+  const card = cardOf(c.req.header(OVERSEER_CARD_HEADER));
+  return { kind: "operator", via: "overseer", overseerId, ...(card ? { card } : {}) };
+}
+
+/** The confirm card the Overseer's tool call carried (overseer-tools cardHeader); null when none or unreadable. */
+function cardOf(header: string | undefined): EnvelopeCard | null {
+  if (!header) return null;
+  try {
+    const v = JSON.parse(header) as Record<string, unknown>;
+    const ids = (k: string) => (Array.isArray(v[k]) ? (v[k] as unknown[]).filter((x): x is string => typeof x === "string") : []);
+    return { people: ids("people"), projects: ids("projects"), sessions: ids("sessions") };
+  } catch {
+    return null;
+  }
 }
 
 /** A route param ("" when absent: every lookup then answers 404). */
@@ -322,8 +346,28 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id",
     handle(async (c) => {
       const b = await body(c);
-      patchOrg(p(c, "id"), { name: b.name, about: b.about }, operatorBy(c));
+      await patchOrg(p(c, "id"), { name: b.name, about: b.about }, operatorBy(c));
       return c.json(await orgPage(p(c, "id")));
+    }),
+  );
+  // r13: the company's working hours (the default for anyone without their own), operator only.
+  app.put(
+    "/api/orgs/:id/hours",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const b = await body(c);
+      await setOrgHours(id, { tz: b.tz, hours: b.hours }, operatorBy(c));
+      return c.json(await orgPage(id));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/hours/revert",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const at = (await body(c)).at;
+      if (typeof at !== "string") throw new OrgError("at is required");
+      await revertOrgHoursChange(id, at, operatorBy(c));
+      return c.json(await orgPage(id));
     }),
   );
   app.post(
@@ -349,10 +393,26 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/commit",
     handle(async (c) => {
       const id = p(c, "id");
-      const out = await commitAll(orgDir(id), `Commit now (${readOrg(id).name})`);
+      // The residence commits at once (its `commit` effect); the answer is what that commit did.
+      const act = await actOrThrow(id, residenceSid(id), "commit/now", { message: `Commit now (${readOrg(id).name})` }, operatorEnvelope(id, null, operatorBy(c)), { settle: true });
+      const done = act.effects?.find((e) => e.kind === "commit");
+      if (!done) return c.json({ error: "Nothing was committed: the workspace's commit did not run." }, 502);
+      if (done.error) return c.json({ error: done.error }, 502);
+      const out = (done.result ?? {}) as { committed?: boolean; sha?: string; pushed?: boolean; error?: string };
       if (out.error) return c.json({ error: out.error }, 502);
-      const commit: CommitNowOutcome = { committed: out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}) };
+      const commit: CommitNowOutcome = { committed: !!out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}) };
       return c.json({ ...(await orgPage(id)), commit });
+    }),
+  );
+  // The Workspace tab's Reload: retry what did not load (a fixed journal, a restored snapshot); the page's
+  // `problems` are what is still wrong.
+  app.post(
+    "/api/orgs/:id/reload",
+    handle(async (c) => {
+      const id = p(c, "id");
+      orgDir(id); // 404 for an unknown org
+      await hostOf(id).reload();
+      return c.json(await orgPage(id));
     }),
   );
   app.put(
@@ -369,7 +429,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people",
     handle(async (c) => {
       const id = p(c, "id");
-      addPerson(id, (await body(c)) as unknown as PersonInput, operatorBy(c));
+      await addPerson(id, (await body(c)) as unknown as PersonInput, operatorBy(c));
       return c.json(await orgPage(id), 201);
     }),
   );
@@ -377,7 +437,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid",
     handle(async (c) => {
       const id = p(c, "id");
-      applyChange(id, p(c, "pid"), await body(c), operatorBy(c));
+      await applyChange(id, p(c, "pid"), await body(c), operatorBy(c));
       nudgeMarks(); // a renamed or re-statused person may be a baton holder or a waiting referral
       return c.json(await orgPage(id));
     }),
@@ -386,7 +446,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid/approve",
     handle(async (c) => {
       const id = p(c, "id");
-      approvePerson(id, p(c, "pid"), operatorBy(c));
+      await approvePerson(id, p(c, "pid"), operatorBy(c));
       nudgeMarks(); // the session that proposed them loses its Approve item: re-diff the list now
       return c.json(await orgPage(id));
     }),
@@ -395,7 +455,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/people/:pid/decline",
     handle(async (c) => {
       const id = p(c, "id");
-      declinePerson(id, p(c, "pid"), operatorBy(c));
+      await declinePerson(id, p(c, "pid"), operatorBy(c));
       nudgeMarks();
       return c.json(await orgPage(id));
     }),
@@ -440,7 +500,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const at = (await body(c)).at;
       if (typeof at !== "string") throw new OrgError("at is required");
-      revertChange(id, p(c, "pid"), at, operatorBy(c));
+      await revertChange(id, p(c, "pid"), at, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
@@ -449,7 +509,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      addProject(id, { name: b.name, root: b.root });
+      await addProject(id, { name: b.name, root: b.root });
       return c.json(await orgPage(id), 201);
     }),
   );
@@ -458,7 +518,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const b = await body(c);
-      patchProject(id, p(c, "pid"), {
+      await patchProject(id, p(c, "pid"), {
         name: b.name,
         root: b.root,
         ...(b.spec !== undefined ? { spec: b.spec } : {}),
@@ -474,13 +534,8 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const id = p(c, "id");
       const pid = p(c, "pid");
-      const project = readProjects(id).find((x) => x.id === pid);
-      if (!project) throw new OrgError("Unknown project", 404);
-      if (!project.archived) {
-        const open = await archiveBlockers(id, pid);
-        if (open.length) throw new OrgError(`Stop these first: ${open.join("; ")}.`, 409);
-      }
-      setProjectArchived(id, pid, true, operatorBy(c));
+      if (!readProjects(id).some((x) => x.id === pid)) throw new OrgError("Unknown project", 404);
+      await setProjectArchived(id, pid, true, operatorBy(c), await archiveBlockers(id, pid));
       nudgeMarks(); // its sessions leave the Organizations region: re-diff the list now
       return c.json(await orgPage(id));
     }),
@@ -489,9 +544,39 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/projects/:pid/unarchive",
     handle(async (c) => {
       const id = p(c, "id");
-      setProjectArchived(id, p(c, "pid"), false, operatorBy(c));
+      await setProjectArchived(id, p(c, "pid"), false, operatorBy(c));
       nudgeMarks();
       return c.json(await orgPage(id));
+    }),
+  );
+
+  // ---- the Pipeline and held acts (§app.project-overseer/pipeline, /holds) ---------------------------------
+
+  app.get(
+    "/api/orgs/:id/projects/:pid/pipeline",
+    handle((c) => c.json(pipelineInfo(p(c, "id"), p(c, "pid")))),
+  );
+  app.post(
+    "/api/orgs/:id/projects/:pid/pipeline/:itemId/hold",
+    handle(async (c) => c.json(await holdItem(p(c, "id"), p(c, "pid"), p(c, "itemId"), false, operatorBy(c)))),
+  );
+  app.post(
+    "/api/orgs/:id/projects/:pid/pipeline/:itemId/resume",
+    handle(async (c) => c.json(await holdItem(p(c, "id"), p(c, "pid"), p(c, "itemId"), true, operatorBy(c)))),
+  );
+  app.get(
+    "/api/orgs/:id/projects/:pid/pipeline/:itemId/timeline",
+    handle((c) => c.json(itemTimeline(p(c, "id"), p(c, "pid"), p(c, "itemId"), { includeQuiet: c.req.query("quiet") === "1" }))),
+  );
+  // The operator's Cancel on a held act (Needs you, the Pipeline): the chart's hold/cancel.
+  app.post(
+    "/api/orgs/:id/held/:holdId/cancel",
+    handle(async (c) => {
+      const b = await body(c).catch(() => ({}) as Record<string, unknown>);
+      const reason = typeof b.reason === "string" && b.reason.trim() ? b.reason.trim() : undefined;
+      await cancelHeld(p(c, "id"), p(c, "holdId"), reason, operatorBy(c));
+      attentionChanged();
+      return c.json({ ok: true as const });
     }),
   );
 
@@ -503,7 +588,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const id = p(c, "id");
       const b = await body(c);
       if (!("personId" in b)) throw new OrgError("personId is required (null: no owner)");
-      setOwner(id, b.personId, operatorBy(c));
+      await setOwner(id, b.personId, operatorBy(c));
       return c.json(await orgPage(id));
     }),
   );
@@ -558,7 +643,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const b = await body(c);
       // `owner` is for in-process callers (the project overseer, the reconciler), never a request.
       const { owner: _owner, mintLink: _mint, startedVia: _via, ...input } = b;
-      const { result: created, outcome } = await awaitShareLinks(() => createBaton(input as unknown as BatonStartInput));
+      const { result: created, outcome } = await awaitShareLinks(() => createBaton(input as unknown as BatonStartInput, { by: operatorBy(c) }));
       const orgId = String(b.orgId);
       return c.json(
         {
@@ -567,6 +652,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
           ...(created.token ? { link: linkUrl(created.token) } : {}),
           ...(created.links ? { links: offerLinks(orgId, created.links) } : {}),
           ...(created.token || created.links ? linkWarning(outcome) : {}),
+          ...(created.offHours ? { offHours: created.offHours } : {}),
         },
         201,
       );
@@ -586,7 +672,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/baton/:sid/abilities",
     handle(async (c) => {
       const sid = p(c, "sid");
-      setAbilities(sid, await body(c));
+      await setAbilities(sid, await body(c), operatorBy(c));
       return c.json(infoOf(sid));
     }),
   );
@@ -594,8 +680,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/baton/:sid/extend",
     handle(async (c) => {
       const sid = p(c, "sid");
-      extendBudget(sid, (await body(c)).by);
-      refreshShare(sid);
+      await extendBudget(sid, (await body(c)).by, operatorBy(c));
       return c.json(infoOf(sid));
     }),
   );
@@ -623,7 +708,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const sid = p(c, "sid");
       const hidden = (await body(c)).hidden;
       if (typeof hidden !== "boolean") throw new OrgError("hidden must be true or false");
-      setHiddenFromOwner(sid, hidden);
+      await setHiddenFromOwner(sid, hidden, operatorBy(c));
       return c.json(infoOf(sid));
     }),
   );
@@ -636,25 +721,19 @@ export function registerOrgRoutes(app: Hono<any>): void {
       return c.json({ ok: true });
     }),
   );
+  // The operator's moves (§app.baton/hand-off): the chart checks them, stops a reply in flight, moves.
   app.post(
     "/api/baton/:sid/take",
     handle(async (c) => {
-      const sid = p(c, "sid");
-      const hit = batonById(sid);
-      if (!hit) throw new OrgError("Unknown baton session", 404);
-      if (hit.row.holder === OPERATOR) throw new OrgError("You already hold the baton.", 409);
-      await moveBaton(sid, OPERATOR, "(taken back)", "", { interrupt: true });
+      await takeBack(p(c, "sid"), operatorBy(c));
       return c.json({ ok: true });
     }),
   );
   app.post(
     "/api/baton/:sid/close",
-    handle((c) => {
-      const sid = p(c, "sid");
-      closeBaton(sid);
-      refreshShare(sid);
-      // Closing ends it as goal_done does: the wrap-up runs (now, or when a running reply settles).
-      scheduleWrapup(sid);
+    handle(async (c) => {
+      // Closing ends it as goal_done does: the chart runs the wrap-up (now, or when a running reply ends).
+      await closeBaton(p(c, "sid"), { by: operatorBy(c) });
       return c.json({ ok: true });
     }),
   );
@@ -666,7 +745,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       if (!Array.isArray(b.to)) throw new OrgError("to must be a list of people");
       const hit = batonById(sid);
       if (!hit) throw new OrgError("Unknown baton session", 404);
-      const { result: out, outcome } = await awaitShareLinks(() => offerBaton(sid, b.to as unknown[], typeof b.question === "string" ? b.question : "", typeof b.briefing === "string" ? b.briefing : "", { interrupt: true }));
+      const { result: out, outcome } = await awaitShareLinks(() => offerTo(sid, b.to as unknown[], typeof b.question === "string" ? b.question : "", typeof b.briefing === "string" ? b.briefing : "", { by: operatorBy(c) }));
       return c.json({ info: infoOf(sid), links: offerLinks(hit.row.orgId, out.links), ...linkWarning(outcome) }, 201);
     }),
   );
@@ -674,10 +753,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/baton/:sid/offer/withdraw",
     handle(async (c) => {
       const sid = p(c, "sid");
-      const hit = batonById(sid);
-      if (!hit) throw new OrgError("Unknown baton session", 404);
-      if (!hit.row.offerId) throw new OrgError("There is no open offer.", 409);
-      await moveBaton(sid, OPERATOR, "(offer withdrawn)", "", { interrupt: true });
+      await withdrawOffer(sid, operatorBy(c));
       return c.json(infoOf(sid));
     }),
   );
@@ -686,19 +762,17 @@ export function registerOrgRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const sid = p(c, "sid");
       const b = await body(c);
-      const hit = batonById(sid);
-      if (!hit) throw new OrgError("Unknown baton session", 404);
+      if (!batonById(sid)) throw new OrgError("Unknown baton session", 404);
       const to = typeof b.to === "string" ? b.to : "";
-      const target = readRoster(hit.row.orgId).find((x) => x.id === to);
-      if (!target) throw new OrgError("to must be a roster person's id", 400);
-      if (target.status !== "active") throw new OrgError(target.status === "proposed" ? `Approve ${target.name} first.` : `${target.name} is not active.`, 409);
       const question = typeof b.question === "string" ? b.question.trim().slice(0, 1000) : "";
-      if (!question) throw new OrgError("question is required");
       const briefing = typeof b.briefing === "string" ? b.briefing.trim().slice(0, 4000) : "";
-      await moveBaton(sid, to, question, briefing, { interrupt: true });
-      const { result, outcome } = await awaitShareLinks(() => rotateLink(sid));
-      const { token } = result;
-      return c.json({ info: infoOf(sid), link: linkUrl(token), ...mintedAt(token), ...linkWarning(outcome) });
+      // The chart refuses who and what in today's words; the link is the move's own (shown once).
+      const { result, outcome } = await awaitShareLinks(async () => {
+        const moved = await handoffTo(sid, to, question, briefing, operatorBy(c));
+        return { ...(moved.token ? { token: moved.token } : rotateLink(sid)), offHours: moved.offHours };
+      });
+      const { token, offHours } = result;
+      return c.json({ info: infoOf(sid), link: linkUrl(token), ...mintedAt(token), ...linkWarning(outcome), ...(offHours ? { offHours } : {}) });
     }),
   );
 }

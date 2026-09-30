@@ -72,7 +72,7 @@ export function diffMarks(prev: ReadonlyMap<string, SessionMarks>, list: readonl
  * record, whether it runs, its last activity, and a baton session's state (holder, Needs you,
  * waiting referrals: those change in the org's registry and roster, not the session file), and
  * its organization (an archived project leaves the Organizations region, §app.organizations/archive;
- * that changes in projects.json, not the session file), and its title (a stored title changes in
+ * that changes in its project chart, not the session file), and its title (a stored title changes in
  * Sova's title store, never in the file: the Overseer's rename, the automatic namer's,
  * §app.session-list/auto-titles), and its merge readiness (read from git in the background,
  * §chat.worktrees/readiness). A change to any of these is `list_changed` (the

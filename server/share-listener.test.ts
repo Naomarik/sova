@@ -70,19 +70,19 @@ test("limits: 10 messages a minute per token; the per-address limiter; the proxy
 describe("the share server", async () => {
   const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-  const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
-  const maria = orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
-  const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "SECRET-GOAL" });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+  const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
+  const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Hosting", goal: "SECRET-GOAL" });
   // The registry moves, and the transcript gets the entry hand_to writes (here by hand, no runtime).
-  const { n } = baton.handTo(c.sessionId, maria.id, "Format?", "for Maria");
+  const { n } = await baton.handTo(c.sessionId, maria.id, "Format?", "for Maria");
   const lines = readFileSync(c.path, "utf8").trim().split("\n");
   const parentId = JSON.parse(lines.at(-1)!).id;
   appendFileSync(c.path, `${JSON.stringify({ type: "custom", id: "hand2", parentId, timestamp: new Date().toISOString(), customType: BATON_HANDOFF_ENTRY, data: { v: 1, n, from: tony.id, to: maria.id, question: "Format?", briefing: "for Maria" } })}\n`);
   const tonyOld = c.token!; // moved on: reads, never writes
   const mariaToken = baton.rotateLink(c.sessionId).token;
-  const closed = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Closed one", goal: "g" });
-  baton.closeBaton(closed.sessionId);
+  const closed = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Closed one", goal: "g" });
+  await baton.closeBaton(closed.sessionId);
 
   const server = createShareServer();
   let base = "";
@@ -158,8 +158,8 @@ describe("the share server", async () => {
   });
 
   test("an offer: 'taken' for the others while one holds the lease (409, code taken, holder unnamed); 410 once withdrawn", async () => {
-    const carlos = orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
-    const o = baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id, carlos.id], publicTitle: "Offer", goal: "g", question: "Who hosts?" });
+    const carlos = await orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
+    const o = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id, carlos.id], publicTitle: "Offer", goal: "g", question: "Who hosts?" });
     const tok = (id: string) => o.links!.find((l) => l.personId === id)!.token;
     const pooled = await (await fetch(`${base}/api/h/${tok(maria.id)}`)).json();
     assert.deepEqual(pooled.viewer, { name: "Maria", canWrite: true });
@@ -171,7 +171,7 @@ describe("the share server", async () => {
     const refused = await post(tok(maria.id), JSON.stringify({ text: "me too" }));
     assert.equal(refused.status, 409);
     assert.equal((await refused.json()).code, "taken");
-    baton.handTo(o.sessionId, "operator", "q", "", new Date());
+    await baton.handTo(o.sessionId, "operator", "q", "");
     assert.equal((await fetch(`${base}/api/h/${tok(carlos.id)}`)).status, 410);
     assert.equal((await post(tok(carlos.id), JSON.stringify({ text: "hi" }))).status, 410);
     assert.equal((await fetch(`${base}/api/h/${tok(tony.id)}`)).status, 200, "the one who held it reads on");

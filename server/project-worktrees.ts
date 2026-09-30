@@ -57,7 +57,7 @@ export function worktreeSlug(title: string): string {
   return s || "coding";
 }
 
-/** A coding session's worktree as started.json records it (`path` is host-local). */
+/** A coding session's worktree (`path` is host-local: found by its branch, server/build-loadout.ts). */
 export interface WorktreeRecord {
   path: string;
   branch: string;
@@ -73,15 +73,17 @@ export interface CutWorktree {
 
 export class WorktreeRefusal extends Error {}
 
+/** A coding session's worktree folder: beside the repository's top, named after its branch (`sova/<name>`). */
+export const worktreePathOf = (top: string, branch: string): string => join(dirname(top), ".worktrees", `${basename(top)}-${branch.replace(/^sova\//, "")}`);
+
 /**
  * A new worktree on a new branch `sova/<slug>-<6 hex>`, cut from the root checkout's HEAD. `cwd` is
  * the folder the session was asked for (the root or inside it); the session runs in the matching
  * folder of the new worktree. Throws a WorktreeRefusal with git's reason when git refuses.
  */
 export async function cutWorktree(repo: GitRoot, cwd: string, title: string, git: Git = runGit, suffix = randomBytes(3).toString("hex")): Promise<CutWorktree> {
-  const name = `${worktreeSlug(title)}-${suffix}`;
-  const branch = `sova/${name}`;
-  const path = join(dirname(repo.top), ".worktrees", `${basename(repo.top)}-${name}`);
+  const branch = `sova/${worktreeSlug(title)}-${suffix}`;
+  const path = worktreePathOf(repo.top, branch);
   if (existsSync(path)) throw new WorktreeRefusal(`${path} already exists`);
   const r = await git(["worktree", "add", "-b", branch, "--", path, repo.head], repo.top);
   if (r.code !== 0) throw new WorktreeRefusal(firstLine(r.stderr || r.stdout));

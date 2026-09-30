@@ -7,7 +7,7 @@
 import type { TranscriptItem } from "../../shared/protocol";
 import { entryIdOf } from "./jump";
 
-export type MessageActionKind = "copy" | "fork" | "rewind" | "regenerate" | "remove";
+export type MessageActionKind = "copy" | "share" | "rewind" | "regenerate" | "remove";
 
 /** The actions a LANDED message offers. A queued message offers only `remove`, which is about
     the outgoing queue rather than about an entry, and carries its own reason (queueRemoveReason). */
@@ -46,7 +46,7 @@ export interface MessageStrip {
  * reply" buttons under one reply. One strip per entry, drawn after the entry's LAST row that
  * shows text — never after its tool card, which is not a bubble to hang a Copy on. Rows that are
  * neither a user message nor assistant text (wake nudges, tool calls, thinking, info, reports,
- * compactions) get nothing: there is no message there to copy, rewind, regenerate or fork from.
+ * compactions) get nothing: there is no message there to copy, rewind or regenerate.
  */
 export function messageStrips(rows: readonly TranscriptItem[]): MessageStrip[] {
   const strips: MessageStrip[] = [];
@@ -94,19 +94,19 @@ export function stripsByRow(rows: readonly TranscriptItem[]): Map<number, Messag
 }
 
 /**
- * What a strip offers, in order: the safe actions first, then a gap, then the one that changes
- * the branch. `copyable` is false for an images-only message — a Copy that copies "" would claim
- * to have copied the message.
+ * What a strip offers, in order: the safe actions first (Share opens the share page with its
+ * start on this message), then a gap, then the one that changes the branch. `copyable` is false
+ * for an images-only message — a Copy that copies "" would claim to have copied the message.
  */
 export function actionsFor(role: MessageRole, opts: { copyable: boolean }): LandedActionKind[] {
-  const safe: LandedActionKind[] = opts.copyable ? ["copy", "fork"] : ["fork"];
+  const safe: LandedActionKind[] = opts.copyable ? ["copy", "share"] : ["share"];
   return [...safe, role === "user" ? "rewind" : "regenerate"];
 }
 
 /** Each action's accessible name. Icon-only buttons have nothing else to say what they do. */
 export const ACTION_LABEL: Record<MessageActionKind, string> = {
   copy: "Copy message",
-  fork: "Fork the session from here",
+  share: "Share from here",
   rewind: "Rewind to before this message",
   regenerate: "Regenerate this reply",
   remove: "Remove this queued message",
@@ -141,6 +141,9 @@ export const REGENERATE_CONFIRM = {
 export const REGENERATE_WAKE_REASON = "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again.";
 export const REGENERATE_LINK_REASON = "That reply answered a linked session's message, not one you sent, so there's nothing to send again.";
 
+/** Share from here before the session list has named the session: the share page needs its id. */
+export const SHARE_WAIT_REASON = "Sova is still reading this session's details. Share enables itself once they load.";
+
 export const ACTION_CONFIRM: Partial<Record<MessageActionKind, { label: string; note: string }>> = {
   rewind: REWIND_CONFIRM,
   regenerate: REGENERATE_CONFIRM,
@@ -170,11 +173,6 @@ export interface ActionState {
 }
 
 export const TUI_LIVE_REASON = "This session is open in a terminal, so Sova won't write to it.";
-export const FORK_TUI_LIVE_REASON = "This session is open in a terminal, so Sova won't read it out from under that process.";
-export const FORK_MID_TURN_REASON = "This session is mid-turn. Forking reads the file, and we don't read it while it's being written. This enables itself when the turn finishes.";
-export const FORK_COMPACTING_REASON = "Wait for the compaction to finish, then fork.";
-export const FORK_PENDING_REASON = "A fork is already being made.";
-
 /**
  * Why an action is off, in user-facing words — or null when it can act. Never hidden: a button
  * that disappears takes its reason with it.
@@ -189,13 +187,8 @@ export function actionReason(kind: LandedActionKind, s: ActionState): string | n
     // Copy takes text already on the screen: nothing can refuse it, watch mode included.
     case "copy":
       return null;
-    // Fork never writes to THIS session — it reads it — so a model switch or an archived pane
-    // doesn't touch it. What stops it is somebody else writing the file.
-    case "fork":
-      if (s.live) return FORK_TUI_LIVE_REASON;
-      if (s.pending) return FORK_PENDING_REASON;
-      if (s.streaming) return FORK_MID_TURN_REASON;
-      if (s.compacting) return FORK_COMPACTING_REASON;
+    // Share only opens the share page, which reads: a watch or a live terminal can't refuse it.
+    case "share":
       return null;
     case "rewind":
     case "regenerate":
@@ -241,38 +234,6 @@ export const copyable = (strip: Pick<MessageStrip, "text">): boolean => strip.te
 
 /** What the toast says once the clipboard has it. */
 export const COPIED = "Copied message.";
-
-// ---- Fork refusals ------------------------------------------------------------------------------
-
-/**
- * The server's 409 codes, in Sova's own words (the fanout dialog's rule: never parse the
- * server's prose, and never drop a code we don't know — an older client stays honest by passing
- * the server's own sentence through).
- */
-export function forkRefusalText(code: string | undefined, message: string): string {
-  switch (code) {
-    case "tui-live":
-      return FORK_TUI_LIVE_REASON;
-    case "mid-turn":
-      return FORK_MID_TURN_REASON;
-    case "busy":
-      return "Another program wrote to this session a moment ago. Forking waits until it stops.";
-    case "old-format":
-      return "This session is in an older session format. Open it for chat once to update it, then fork.";
-    case "not-on-branch":
-      return "That message isn't on the current branch anymore. Reload the transcript and fork from a message you can see.";
-    case "nothing-before":
-      return "There's nothing before this message to fork from — it's the first thing in the session.";
-    case "missing":
-      return "This session's file couldn't be read.";
-    case "config":
-      return "This session's working directory is gone, so it cannot be opened.";
-    default: {
-      const detail = message.trim();
-      return detail ? `Couldn't fork this session. ${detail}` : "Couldn't fork this session.";
-    }
-  }
-}
 
 /**
  * Why a message left the outgoing queue, as the server broadcasts it (`queue_item_gone`) to every
@@ -330,53 +291,4 @@ export function queueRemoveRefusalText(reason: string, message: string): string 
       return detail ? `Couldn't remove it from the queue. ${detail}` : "Couldn't remove it from the queue.";
     }
   }
-}
-
-/** What a fork actually managed to put in the new session's composer. Counted from what was
-    staged, never from what the server offered — the sentence below is only as true as this. */
-export interface ForkStage {
-  /** The message's text went into the draft. */
-  text: boolean;
-  /** Images now in the CHILD's own attachments — a copy it owns, never the source's file. */
-  carried: number;
-  /** Images that could not be copied: unreadable, or the upload failed. NEVER silently dropped —
-      this is what the sentence has to say out loud. */
-  lost: number;
-}
-
-const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
-
-/**
- * What the fork says it did, counting only what it actually staged. An image whose file is gone
- * is named, never quietly left behind: "your message is in the composer" while its pictures
- * vanished is the kind of half-truth the user finds out about at send time.
- */
-export function forkSentence(stage: ForkStage): string {
-  const base = stage.text ? "Forked. Your message is in the new session's composer" : "Forked into a new session";
-  const came = stage.carried;
-  const total = came + stage.lost;
-  // Never a cause. An image can fail to come along because its file was deleted, because it sits
-  // somewhere this server won't read from, or because it was too big to re-upload — and
-  // `available: false` cannot tell those apart. "couldn't come along" is true of all of them;
-  // "gone from disk" would be a guess dressed as a fact.
-  const images =
-    total === 0
-      ? ""
-      : stage.lost === 0
-        ? `, with ${came === 1 ? "its image" : `its ${came} images`}`
-        : came === 0
-          ? `, but ${stage.lost === 1 ? "its image" : `its ${stage.lost} images`} couldn't come along`
-          : `, with ${came} of ${plural(total, "image")}. The other ${stage.lost} couldn't come along`;
-  // A message sitting in a composer is self-evidently unsent; a fork that staged none has to say
-  // so in words, or "Forked into a new session." leaves open whether the turn was re-run there.
-  // A fork never sends anything, in either shape.
-  return `${base}${images}.${stage.text ? "" : " Nothing was sent."}`;
-}
-
-/** What lands in the new session's composer after a fork from a USER message (pi's /fork): its
-    own text, ahead of anything already drafted there — nothing typed is ever replaced. */
-export function forkDraft(editorText: string | undefined, existing: string): string {
-  const text = (editorText ?? "").trim() ? editorText! : "";
-  if (!text) return existing;
-  return existing ? `${text}\n\n${existing}` : text;
 }

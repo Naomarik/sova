@@ -48,6 +48,8 @@ export class VoiceService {
   readonly models: VoiceModels;
   readonly calibrator: Calibrator;
   private readonly pathsOf: () => VoicePaths;
+  /** Each device's last dictation folder hint, for its calibration sweep. */
+  private readonly hints = new Map<string, string | null>();
   private readonly probeOf: () => Probe;
 
   constructor(o: VoiceServiceOptions = {}) {
@@ -103,6 +105,7 @@ export class VoiceService {
         }
       },
       vadReady: () => !!this.runtimeConfig()?.vadModel,
+      hint: (device) => this.hints.get(device) ?? null,
       transcribe: (wav, req) => this.runtime.transcribe(wav, req),
       dictationWaiting: () => this.runtime.dictationWaiting(),
       restartEngine: () => this.runtime.restartWhenIdle(),
@@ -252,6 +255,7 @@ export class VoiceService {
     const paths = this.paths();
     const settings = readSettings(paths.settingsFile);
     const id = device && validDeviceId(device) ? device : null;
+    if (id) this.hints.set(id, hint);
     const d = id ? settings.devices[id] : undefined;
     if (id && d && Date.now() - d.lastSeenAt > SEEN_EVERY_MS) {
       updateSettings(paths.settingsFile, (s) => {

@@ -15,6 +15,8 @@
  * POST   /api/orgs/:id/about/revert         body { at } -> OrgDetail (the About text back to that line's `from`)
  * DELETE /api/orgs/:id                      -> { ok: true } (detach: removes it from this host's index only)
  * POST   /api/orgs/:id/commit               -> OrgDetail (Commit now; pushes when a remote is set)
+ * POST   /api/orgs/:id/reload               -> OrgDetail (the Workspace tab's Reload: retries a fixed journal and restored
+ *                                    snapshots; `problems` lists what is still wrong, [] when all loaded)
  * PUT    /api/orgs/:id/remote               body { url } ("" removes it) -> OrgDetail
  * POST   /api/orgs/:id/people               body PersonInput -> 201 OrgDetail
  * PATCH  /api/orgs/:id/people/:pid          body Partial<PersonInput> -> OrgDetail
@@ -33,7 +35,7 @@
  * The org's owner and the Owner page's operator routes: see shared/owner.ts.
  */
 
-import type { BatonView } from "./baton";
+import type { BatonView, OfferReach } from "./baton";
 
 export type PersonStatus = "active" | "proposed" | "left";
 
@@ -75,11 +77,28 @@ export interface Person {
   /** How to talk to them, ≤ 300 characters. */
   voice: string;
   referral?: PersonReferral;
+  /** r7: an IANA zone ("Europe/Istanbul"). Absent or "": unknown, so no hours check. */
+  tz?: string;
+  /** r7: when they work, in `tz`: days 0 = Sunday … 6 = Saturday, "HH:MM" from–to (`to` ≤ `from`: overnight).
+      Absent or null: no hours (acts reach them at once, as before). Not private: roster history like contact. */
+  hours?: PersonHours | null;
+  /** Computed on every read from the charts' next-window rule, never stored: inside their hours now, else
+      when the next window opens (ISO). Absent: no hours set. The page's off-hours note on the operator's own acts. */
+  hoursNow?: { open: boolean; nextOpen?: string };
+  /** r13: whose hours `hoursNow` reads: their own, else the company's; absent: neither (always in hours).
+      `tz`/`hours` above stay the person's own. */
+  hoursFrom?: "own" | "company";
+}
+
+export interface PersonHours {
+  days: number[];
+  from: string;
+  to: string;
 }
 
 /** The fields a change can set, one history line each. */
-export type ProfileField = "name" | "status" | "contact" | "role" | "decides" | "skills" | "competence" | "language" | "voice" | "referral";
-export const PROFILE_FIELDS: readonly ProfileField[] = ["name", "status", "contact", "role", "decides", "skills", "competence", "language", "voice", "referral"];
+export type ProfileField = "name" | "status" | "contact" | "role" | "decides" | "skills" | "competence" | "language" | "voice" | "referral" | "tz" | "hours";
+export const PROFILE_FIELDS: readonly ProfileField[] = ["name", "status", "contact", "role", "decides", "skills", "competence", "language", "voice", "referral", "tz", "hours"];
 
 export type ChangeWriter = "operator" | "wrapup" | "referral" | "overseer";
 
@@ -171,6 +190,10 @@ export interface Org {
   ownerHistory?: OwnerChange[];
   /** Set when the owner left the org (so it has none); removed when the operator sets it again. */
   ownerCleared?: { personId: string; name: string; at: string };
+  /** r13: the company's zone and working hours, the default for a person with no hours of their own (operator only;
+      org history like About, not private). Absent / null: none. */
+  tz?: string;
+  hours?: PersonHours | null;
 }
 
 /** One change of the org's owner: the operator set it, or the person left. */
@@ -209,6 +232,12 @@ export interface OrgChange {
   /** The `at` of the change this undoes. */
   revertOf?: string;
 }
+
+/** r13: a line of `org-history.jsonl` changing the company zone or working hours (field keys as a person's
+    history). The history reads return them apart from About's (`OrgDetail.hoursHistory`); revertible like About's
+    (`POST /api/orgs/:id/hours/revert {at}`, refused when the field changed since). */
+export type OrgHoursChange = Omit<OrgChange, "field" | "from" | "to"> &
+  ({ field: "tz"; from: string; to: string } | { field: "hours"; from: PersonHours | null; to: PersonHours | null });
 
 export interface OrgGitStatus {
   /** The remote pushes go to (the repo's `origin`), or null: local commits only. */
@@ -254,6 +283,8 @@ export interface OrgNeedsYou {
   stakeholders?: number;
   /** 1 when the org has an owner whose owner link expired or has under 7 days left, with no newer one. */
   ownerLink?: number;
+  /** Acts waiting in a hold before they reach a person or the code (§app.project-overseer/holds); absent: none, or an older server. */
+  held?: number;
 }
 
 /** One baton session of the org, for its page. */
@@ -296,6 +327,8 @@ export interface OrgDetail extends OrgSummary {
   about?: string;
   /** Its history, newest first, at most 20. */
   aboutHistory?: OrgChange[];
+  /** r13: changes of the company zone and working hours, newest first. */
+  hoursHistory?: OrgHoursChange[];
   /** From the org routes: open conflicts routed to the operator with no session yet, per project id
       (projects with none are absent). */
   projectConflicts?: Record<string, number>;
@@ -351,7 +384,8 @@ export interface PersonSessionRow {
   /** This person holds it now. */
   holdsNow: boolean;
   /** The current offer (open or held), when there is one. */
-  offer?: { state: "open" | "held"; invited: number; includesThem: boolean; holder?: NamedRef };
+  /** `reach` (r12): this person's, when the offer includes them (absent: reached, or an offer from before r12). */
+  offer?: { state: "open" | "held"; invited: number; includesThem: boolean; holder?: NamedRef; reach?: OfferReach };
   relations: PersonRelation[];
   /** Messages they wrote in it. */
   messages: number;
@@ -458,7 +492,8 @@ export type PersonPreview = BatonView & { linkOpens: boolean };
 /** GET /api/orgs/:id/people/:pid. */
 export interface PersonPage {
   person: Person;
-  org: { id: string; name: string };
+  /** `tz`/`hours` (r13): the company's, for "(company hours)" on the Hours row. */
+  org: { id: string; name: string; tz?: string; hours?: PersonHours | null };
   operatorName: string;
   /** Newest activity first. */
   sessions: PersonSessionRow[];

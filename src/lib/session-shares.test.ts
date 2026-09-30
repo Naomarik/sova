@@ -1,7 +1,8 @@
 // The operator app's words for session share links (§app.session-share/sheet, /shares-page).
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { cleanLabels, createBlocked, expiresWord, imagesBlocked, isStalePreview, modeLine, openedLine, presenceWord, ShareApiError, thumbsLine, visitLine } from "./session-shares";
+import type { SessionShare, SessionSharePresence } from "../../shared/session-share";
+import { cleanLabels, createBlocked, expiresWord, imagesBlocked, isShareChanged, isStalePreview, modeLine, openedLine, presenceWord, ShareApiError, shareLine, sharingTabLabel, sliceLine, thumbsLine, viewingNow, visitLine } from "./session-shares";
 
 test("labels are trimmed, capped, deduplicated case-insensitively, and never the anyone row's label", () => {
   assert.deepEqual(cleanLabels([" Ana ", "ana", "", "Ben", "Anyone with the link", "x".repeat(80)]), ["Ana", "Ben", "x".repeat(60)]);
@@ -66,4 +67,40 @@ test("only a 409 stale-preview reads as a stale preview", () => {
   assert.equal(isStalePreview(new ShareApiError("x", 400, "preview-required")), false);
   assert.equal(isStalePreview(new ShareApiError("x", 409, "conflict")), false);
   assert.equal(isStalePreview(new Error("x")), false);
+});
+
+test("a sliced share's rows say which messages; a whole session keeps its mode line", () => {
+  const abs = () => "Sep 30 12:00 AM";
+  assert.equal(shareLine({ mode: "snapshot", cutAt: "2026-09-30T00:00:00Z", span: { first: 12, last: 18, total: 40 } }, abs), "Messages 12–18 of 40");
+  assert.equal(shareLine({ mode: "live", cutAt: null, span: { first: 12, last: null, total: 40 } }, abs), "From message 12 · follows live");
+  assert.equal(shareLine({ mode: "snapshot", cutAt: "2026-09-30T00:00:00Z" }, abs), "Snapshot up to Sep 30 12:00 AM");
+  assert.equal(sliceLine({ span: { first: 3, last: 3, total: 9 } }), "Message 3 of 9");
+  assert.equal(sliceLine({}), "The whole session.");
+});
+
+test("the Sharing tab counts recipients viewing now, never a background tab, and says so in its name", () => {
+  const share = (presences: SessionSharePresence[], extra: Partial<SessionShare> = {}): SessionShare => ({
+    id: "ss_1",
+    sessionId: "s",
+    sessionTitle: "t",
+    title: "t",
+    mode: "snapshot",
+    cutAt: null,
+    createdAt: "2026-09-30T00:00:00Z",
+    recipients: presences.map((presence, i) => ({ id: `r_${i}`, label: `P${i}`, state: "live", createdAt: "", expiresAt: "", presence, opened: 1 })),
+    ...extra,
+  });
+  assert.equal(viewingNow([]), 0);
+  assert.equal(viewingNow([share(["open", "away"])]), 0);
+  assert.equal(viewingNow([share(["viewing", "open"]), share(["viewing"])]), 2);
+  // A stopped share serves no page, whatever its last presence said.
+  assert.equal(viewingNow([share(["viewing"], { stoppedAt: "2026-09-30T00:00:00Z" })]), 0);
+  assert.equal(sharingTabLabel(0), "Sharing");
+  assert.equal(sharingTabLabel(2), "Sharing, 2 viewing now");
+});
+
+test("only a 409 share-changed reads as a share changed meanwhile", () => {
+  assert.equal(isShareChanged(new ShareApiError("x", 409, "share-changed")), true);
+  assert.equal(isShareChanged(new ShareApiError("x", 409, "stale-preview")), false);
+  assert.equal(isShareChanged(new ShareApiError("x", 400, "share-changed")), false);
 });

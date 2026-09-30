@@ -4,9 +4,9 @@
  * imports nothing at runtime.
  *
  * Source of truth: the `sova-baton-decision` entries in the baton transcripts (shared/baton.ts).
- * The index below is derived from them and kept in the org's workspace repo:
- *   <workspace>/projects/<projectId>/decisions.json   { version: 1, decisions: DecisionRow[] }
- *   <workspace>/projects/<projectId>/conflicts.json   { version: 1, conflicts: Conflict[] }
+ * The index below is derived from them and held by the org's charts (q1: no decisions.json or
+ * conflicts.json): one `decision` chart per recorded decision, one `conflict` chart per conflict, their
+ * snapshots in the org's workspace repo (`charts/`).
  *
  * Operator routes (main listener only; never on the share listener):
  * GET   /api/orgs/:id/projects/:pid/decisions            -> DecisionsInfo (syncs the index from the transcripts first)
@@ -20,7 +20,7 @@
  *                                                        area or "none"; kept in ownerAreaHistory; re-routes its open conflict)
  * POST  /api/orgs/:id/projects/:pid/decisions/:did/text body { action: "keep" | "restore" } -> DecisionsInfo (a promoted
  *                                                        decision edited in the spec: keep the spec's words, or promote theirs again)
- * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/route  body { to?: PersonRef } -> DecisionsInfo (start its baton session now)
+ * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/route  body { to?: PersonRef } -> DecisionsInfo & { offHours?: ISO } (start its baton session now; r7 offHours: the person is off hours, it went at once)
  * POST  /api/orgs/:id/projects/:pid/conflicts/:cid/resolve body ConflictResolveInput -> DecisionsInfo (the operator decides)
  * GET   /api/orgs/:id/projects/:pid/spec                 -> SpecStatus
  * PATCH /api/orgs/:id/projects/:pid/spec                 body { frozen: boolean } -> SpecStatus
@@ -222,17 +222,6 @@ export interface PromoteResult {
 }
 
 export type PromoteCommit = { sha: string; branch: string; files: string[]; message: string } | { skipped: string };
-
-/** In-process events (server/reconcile.ts `onReconcileEvent`). */
-export interface ReconcileEvent {
-  type: "conflict" | "resolved" | "promoted" | "drafted";
-  orgId: string;
-  projectId: string;
-  /** DecisionRow ids, or Conflict ids for conflict/resolved. */
-  ids: string[];
-  /** promoted: who asked (the operator by id or in bulk, or the project overseer). */
-  by?: "operator-explicit" | "bulk" | "overseer";
-}
 
 /** Settings → Decisions "Reconcile decisions" when the settings file doesn't say. */
 export const RECONCILE_DEFAULT = true;

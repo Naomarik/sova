@@ -9,8 +9,7 @@ import {
   type WrapupRefusal,
 } from "../shared/baton";
 import type { Person } from "../shared/orgs";
-import { batonById, sessionPathOf, setWrapup } from "./baton";
-import { emitBatonEvent } from "./baton-events";
+import { batonById, sessionPathOf } from "./baton";
 import { acquireChat } from "./chat-manager";
 import { readActiveBranch } from "./transcript";
 import { aboutSomeoneElse, detectLanguage } from "./baton-guards";
@@ -245,7 +244,7 @@ export function wrapupTool(sessionId: string): ToolDefinition<any, any> {
           // The field authority is applyChange's: a field outside the wrap-up's set is refused there.
           const value = (WRAPUP_FIELDS as readonly string[]).includes(field) ? mergedValue(person, field as WrapupField, u.to) : u.to;
           const before = readHistory(row.orgId, personId).length;
-          applyChange(row.orgId, personId, { [field]: value }, { kind: "wrapup", sessionId, entryId, quote });
+          await applyChange(row.orgId, personId, { [field]: value }, { kind: "wrapup", sessionId, entryId, quote });
           const lines = readHistory(row.orgId, personId).slice(before);
           for (const l of lines) run.applied.push({ personId, field: l.field, at: l.at });
         } catch (err) {
@@ -263,7 +262,7 @@ export function wrapupTool(sessionId: string): ToolDefinition<any, any> {
  * wrap-up history line quoting the start of their longest message (§app.organizations/wrap-up).
  * Nothing when their words don't show one clearly.
  */
-export function inferLanguages(sessionId: string, row: Pick<BatonSession, "orgId" | "participants">, branch: readonly Entry[], run: Pick<Run, "applied" | "refused">): void {
+export async function inferLanguages(sessionId: string, row: Pick<BatonSession, "orgId" | "participants">, branch: readonly Entry[], run: Pick<Run, "applied" | "refused">): Promise<void> {
   const mine = messagesByPerson(branch);
   for (const person of readRoster(row.orgId)) {
     const own = mine.get(person.id);
@@ -274,7 +273,7 @@ export function inferLanguages(sessionId: string, row: Pick<BatonSession, "orgId
     const quote = longest.text.trim().slice(0, 300);
     try {
       const before = readHistory(row.orgId, person.id).length;
-      applyChange(row.orgId, person.id, { language: tag }, { kind: "wrapup", sessionId, entryId: longest.id, quote });
+      await applyChange(row.orgId, person.id, { language: tag }, { kind: "wrapup", sessionId, entryId: longest.id, quote });
       for (const l of readHistory(row.orgId, person.id).slice(before)) run.applied.push({ personId: person.id, field: l.field, at: l.at });
     } catch (err) {
       run.refused.push({ personId: person.id, field: "language", reason: err instanceof Error ? err.message : String(err) });
@@ -287,26 +286,17 @@ export const wantsWrapup = (row: BatonSession): boolean =>
   (row.state === "done" || row.state === "closed") && !row.wrapup && row.participants.some((p) => p !== OPERATOR);
 
 /**
- * Run the wrap-up of a finished session: one unattended turn, its result recorded as a
- * `sova-baton-wrapup` "end" entry and on the registry row (`wrapup`).
- * Returns the outcome; a no-op (null) when the session doesn't want one or a turn is running
- * (the caller retries when it settles).
+ * The wrap-up's turn (the baton chart's `:sova/wrapup` invocation, server/baton-loadout.ts): the
+ * `sova-baton-wrapup` start entry, one unattended turn with only its tool, the languages inferred,
+ * the end entry. Returns what it wrote and why it stopped, for the chart (`wrapup/finished` or
+ * `wrapup/stopped`). The chart decides when it runs and whether it is skipped (nobody wrote).
  */
-export async function runWrapup(sessionId: string, normalTools: readonly string[]): Promise<WrapupInfo | null> {
+export async function runWrapup(sessionId: string, normalTools: readonly string[]): Promise<{ applied: number; refused: WrapupRefusal[]; error?: string }> {
   const hit = batonById(sessionId);
-  if (!hit || !wantsWrapup(hit.row) || active.has(sessionId)) return null;
-  // Nothing any person wrote, nothing to learn: no model turn. Recorded, so it never retries.
-  const branch = (await readActiveBranch(sessionPathOf(hit.dir, hit.row)).catch(() => [])) as Entry[];
-  if (messagesByPerson(branch).size === 0) {
-    const info: WrapupInfo = { state: "skipped", at: new Date().toISOString(), applied: 0, refused: [] };
-    setWrapup(sessionId, info);
-    return info;
-  }
+  if (!hit) return { applied: 0, refused: [], error: "The session is no longer registered." };
+  if (active.has(sessionId)) return { applied: 0, refused: [], error: "The wrap-up is already running." };
   const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
-  if (chat.session.isStreaming) return null;
   const row = hit.row;
-  const started = new Date().toISOString();
-  setWrapup(sessionId, { state: "running", at: started, applied: 0, refused: [] });
   let run: Run = { applied: [], refused: [], called: false };
   let error: string | undefined;
   try {
@@ -331,7 +321,7 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
     endWrapupRun(sessionId);
     chat.session.setActiveToolsByName([...normalTools]);
   }
-  inferLanguages(sessionId, row, chat.session.sessionManager.getBranch() as Entry[], run);
+  await inferLanguages(sessionId, row, chat.session.sessionManager.getBranch() as Entry[], run);
   try {
     chat.appendSpecialEntry(BATON_WRAPUP_ENTRY, {
       v: 1,
@@ -343,14 +333,5 @@ export async function runWrapup(sessionId: string, normalTools: readonly string[
   } catch (err) {
     console.warn(`[baton] wrap-up end entry not written: ${err instanceof Error ? err.message : String(err)}`);
   }
-  const info: WrapupInfo = {
-    state: error ? "failed" : "done",
-    at: started,
-    applied: run.applied.length,
-    refused: run.refused,
-    ...(error ? { error: error.slice(0, 500) } : {}),
-  };
-  setWrapup(sessionId, info);
-  emitBatonEvent({ type: "wrapup", orgId: row.orgId, projectId: row.projectId, sessionId });
-  return info;
+  return { applied: run.applied.length, refused: run.refused, ...(error ? { error: error.slice(0, 500) } : {}) };
 }

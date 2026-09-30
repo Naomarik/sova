@@ -40,36 +40,48 @@ export interface SandboxActive {
 	reasons?: string[];
 }
 
+/** Who asks `workerLaunch`: the worker about to start. */
+export interface WorkerLaunchRequest {
+	/** The worker's cwd: absolute, or relative to the parent's cwd. */
+	cwd: string;
+	/** The top level of the tracked worktree the worker starts in, if any: it then writes only there. */
+	root?: string;
+	/** The worker backend id (`pi`, …). `pi` gets extension flags; every other backend a confinement. */
+	backend: string;
+	/** A stable id of the worker (its registry id): names its sandbox tmp and proxy. Plain `[A-Za-z0-9._-]`. */
+	owner: string;
+}
+
+/**
+ * How a worker must start, from the one sandbox call both kinds of worker go through.
+ * - `pi`: load `extensionPath` with `flags` (`--sandbox on`, `--sandbox-parent <scope>`); the worker's
+ *   own extension confines its tools.
+ * - `confine`: run the worker's process inside the sandbox. `scope` is opaque, serializable data (it
+ *   may cross into a hosting process); pass it to `confineLaunch(scope, needs, launch)` exported by
+ *   `module` (the sandbox's `launch.ts`, pi-runtime-free) at every launch of that process.
+ * - `refused`: the worker must not start; the spawner throws `reason` as is.
+ * - `none`: nothing to apply (the sandbox is off and the worker is not in a tracked worktree).
+ */
+export type WorkerLaunch =
+	| { kind: "pi"; extensionPath: string; flags: Record<string, string> }
+	| { kind: "confine"; scope: string; module: string }
+	| { kind: "refused"; reason: string }
+	| { kind: "none" };
+
 export interface SandboxStateEvent {
 	version: 1;
 	on: boolean;
 	/** Real path of the sandbox extension directory, for a worker's `-e` list. */
 	extensionPath: string;
 	enforcement: Enforcement;
-	/** Opaque `--settings` JSON for Claude Code workers, when the backend provides one. */
-	claudeSettingsJson?: string;
-	/** Set when a Claude Code worker must not start under this state; the spawner throws it as is. */
-	claudeRefusal?: string;
-	/** The Claude CLI permission mode a worker must run with while on: the rules in `claudeSettingsJson` bind only under it. */
-	claudePermissionMode?: "dontAsk";
 	/**
-	 * Extension flags a pi worker must be started with while on (`--sandbox on` and
-	 * `--sandbox-parent <json>`, the parent's writable roots). The spawner merges them as is.
+	 * The one call every worker start goes through: on, the parent's scope (narrowed to a tracked
+	 * worktree's `root` when given) or a refusal (cwd outside the parent's writable roots, the
+	 * parent's sandbox unavailable, or partial without `acceptPartial`); off, a write-only scope for
+	 * a worker in a tracked worktree (reads, network and environment untouched), else `none`.
+	 * Absent in a remote session.
 	 */
-	workerFlags?: Record<string, string>;
-	/**
-	 * A refusal for a worker about to start in `cwd` (absolute, or relative to the parent's cwd),
-	 * any backend: its cwd is outside the parent's writable roots, or the parent's sandbox is
-	 * unavailable. Undefined means it may start. Present while on.
-	 */
-	checkWorker?: (req: { cwd: string; backend: string }) => string | undefined;
-	/**
-	 * The flags for a pi worker started inside one of the session's tracked worktrees, `root` (its
-	 * top level), so it writes only there: on, the parent's scope narrowed to `root`; off, a
-	 * write-only scope (reads, network and environment untouched). Undefined when on but no scope is
-	 * available (the spawner refuses). Absent in a remote session.
-	 */
-	workerFlagsIn?: (root: string) => Record<string, string> | undefined;
+	workerLaunch?: (req: WorkerLaunchRequest) => WorkerLaunch;
 }
 
 export function isLevel(value: unknown): value is SandboxLevel {

@@ -66,7 +66,7 @@ export function orderedMembers(sessions: readonly SessionSummary[], group: Sessi
 
 /**
  * What each tab SHOWS. A tab's job is to tell one member from
- * another inside this group, and a title often can't: every member of a fork shares the source's
+ * another inside this group, and a title often can't: members forked from one session share its
  * title, so a strip of five tabs reading "Retry with jitter" names nothing. The rule is the first
  * thing that distinguishes it — the label if the user set one, else the model (with a repeat
  * suffix when that model is in the group more than once) whenever members share a title, else the
@@ -106,10 +106,10 @@ export function tabLabels(members: readonly { title: string; model?: string | nu
 /**
  * The pane names in member order: the same string the pane
  * head shows, the pane's aria-label carries and the live region prefixes every fact with —
- * "{label} · {model}", "{title} · {model}", or for members that share a title with no label (the
- * canonical `opus ×3` fanout) the model with its `#n` ALONE: "claude-opus-5 #2". The suffix
- * already names the model, and appending " · claude-opus-5" would make the name stutter; the fanout spec
- * says that suffix is how repeats are distinguished "until a label is set", numbered in member
+ * "{label} · {model}", "{title} · {model}", or for members that share a title with no label (three
+ * `opus` members of one comparison) the model with its `#n` ALONE: "claude-opus-5 #2". The suffix
+ * already names the model, and appending " · claude-opus-5" would make the name stutter; that
+ * suffix is how repeats are distinguished "until a label is set", numbered in member
  * order — which is `memberTabs`' numbering, shared rather than re-derived, so the tab strip and
  * the pane head can never disagree about which #2 is which (they did, exactly there, before this
  * was one function: the pane names had no suffix at all).
@@ -244,9 +244,7 @@ export async function removeGroup(id: string): Promise<boolean> {
  * Puts a session in a group, or takes it out with null. The caller refreshes the session list
  * afterwards (the group a row shows comes from the list, not from here).
  *
- * Returns the server's answer, not just success, because one thing in it cannot be inferred from
- * the list: `dissolved` says this write emptied a fanout group and the server deleted it in the
- * same breath. Null means the write failed and a toast has already said why.
+ * Returns the server's answer, or null when the write failed and a toast has already said why.
  */
 export async function setSessionGroup(
   path: string,

@@ -4,8 +4,7 @@
     [cljs.test :refer [deftest is testing]]
     [cljs.reader :as reader]
     [com.fulcrologic.statecharts.algorithms.v20150901-validation :as validation]
-    [sova.org-charts.charts.project :as project]
-    [sova.org-charts.charts.work-item :as work-item]
+    [sova.org-charts.charts.registry :as registry]
     [sova.org-charts.engine.bounded :as bounded]
     [sova.org-charts.engine.core :as core]
     [sova.org-charts.engine.probe :as probe]))
@@ -98,7 +97,8 @@
     (let [r (core/fire-due! eng (+ t0 1))]
       (is (in? eng "p" :c))
       (is (= [{:session-id "p" :invoke-id :look :type :sova/look :params {:fired 1 :sid "p"} :op :start}]
-            (:invocations r))))
+            (map #(dissoc % :run-id) (:invocations r))))
+      (is (re-matches #"p#look#\d+" (:run-id (first (:invocations r)))) "each start gets a run id"))
     (is (= [:start "p" :look {:fired 1 :sid "p"}] (last (filter #(= :start (first %)) @log))))
     (let [r (core/send! eng "p" :next {} {:now (+ t0 2)})]
       (is (in? eng "p" :a))
@@ -127,16 +127,17 @@
     (let [r (core/trial eng "p" :act/promote {:by "overseer" :level "L2"} {:now t0})]
       (is (true? (:taken r)))
       (is (some #{:acted} (:configuration r)))
-      (is (= [{:kind "promote" :key "promote/0"}] (:outbox r)))
+      (is (= [{:kind "promote" :chart-key "promote/0" :session-id "p"}] (map #(dissoc % :key) (:outbox r))))
       (is (in? eng "p" :ready) "the real session did not move"))
     (let [r (core/trial eng "p" :act/promote {:by "operator"} {:now t0})]
       (is (true? (:taken r)) "the operator's own act passes every level"))
-    (is (not (some #{:act/promote} (core/enabled-events eng "p" {:by "overseer" :level "L1"} {:now t0}))))
-    (is (some #{:act/promote} (core/enabled-events eng "p" {:by "overseer" :level "L3"} {:now t0})))
+    (is (not (some #{:act/promote} (map :event (core/enabled-events eng "p" {:by "overseer" :level "L1"} {:now t0})))))
+    (is (some #{:act/promote} (map :event (core/enabled-events eng "p" {:by "overseer" :level "L3"} {:now t0}))))
     (is (= [:probe/stop :hold :next :gate/open :spin/facts :peer/pinged :poke :act/promote :act/ping :probe/warn :probe/throw]
-          (core/enabled-events eng "p" {:level "L2"} {:now t0})))
+          (map :event (core/enabled-events eng "p" {:level "L2"} {:now t0}))))
     (let [r (core/send! eng "p" :act/promote {:by "overseer" :level "L2"} {:now t0})]
-      (is (= [{:kind "promote" :key "promote/0" :session-id "p"}] (:outbox r)) "the outbox is returned…")
+      (is (= [{:kind "promote" :chart-key "promote/0" :session-id "p"}] (map #(dissoc % :key) (:outbox r))) "the outbox is returned…")
+      (is (= (:key (first (:outbox r))) (key (first (:sova/pending (core/data eng "p"))))) "…kept pending under its key…")
       (is (= [] (:outbox (core/data eng "p"))) "…and drained from the data model"))))
 
 (deftest trial-touches-nothing-outside-the-copy
@@ -150,7 +151,7 @@
       (let [r (core/trial eng "a" :next {} {:now t0})]
         (is (true? (:taken r)))
         (is (some #{:b2} (:configuration r)))
-        (is (= [{:to "a" :event :timer/fired :delay 1000 :data {}}] (:sends r)) "the would-be send is reported…")
+        (is (= [{:to "a" :event :timer/fired :delay 1000 :data {}}] (map #(select-keys % [:to :event :delay :data]) (:sends r))) "the would-be send is reported…")
         (is (nil? (core/next-due-at eng)) "…but not queued")))
     (testing "a trial that would start an invocation starts none"
       (core/send! eng "a" :next {} {:now t0})
@@ -321,7 +322,7 @@
             saves  (count @log)
             e      (thrown #(core/send! eng "a" :act/ping {} {:now (+ t0 1)}))]
         (is (= {:session-id "b" :event :peer/pinged} (select-keys (ex-data e) [:session-id :event])))
-        (is (= (inc saves) (count @log)) "a's step was saved (onSave is not taken back)…")
+        (is (= saves (count @log)) "no onSave ran: callbacks come only after a call commits…")
         (is (= before (into {} (for [sid ["a" "b"]] [sid [(core/dump eng sid) (core/generation eng sid)]])))
           "…but the engine holds both sessions, their generations and their queues as before the call")
         (is (nil? (:pings (core/data eng "a"))))))))
@@ -351,7 +352,7 @@
 
 (deftest the-charts-pass-the-librarys-validation
   (testing "the engine registers charts without the library's check (fixed at build time): this is that check"
-    (doseq [[nm c] {"project" project/chart "work-item" work-item/chart "engine-probe" probe/chart}]
+    (doseq [[nm c] (assoc (update-vals registry/charts :chart) "engine-probe" probe/chart)]
       (is (= [] (vec (validation/problems c))) nm))))
 
 (deftest a-snapshot-is-plain-edn-and-a-uuid-round-trips

@@ -19,7 +19,7 @@ const orgs = await import("./orgs");
 const baton = await import("./baton");
 const links = await import("./baton-links");
 const visits = await import("./visits");
-const { writeConflicts } = await import("./decisions");
+const { recordDecision, seedConflicts } = await import("./org-test-fixtures");
 const { personPage, previewAs } = await import("./person-page");
 const { registerOrgRoutes } = await import("./org-routes");
 
@@ -28,12 +28,12 @@ after(() => rmSync(root, { recursive: true, force: true }));
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "a"));
 mkdirSync(join(root, "b"));
-const pa = orgs.addProject(org.id, { name: "Portal", root: join(root, "a") });
-const pb = orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
-const kim = orgs.addPerson(org.id, { name: "Kim", role: "Ops" });
-const bob = orgs.addPerson(org.id, { name: "Bob", role: "IT" });
-const cara = orgs.addPerson(org.id, { name: "Cara", role: "CEO" });
-const dee = orgs.addPerson(org.id, { name: "Dee", role: "Legal" });
+const pa = await orgs.addProject(org.id, { name: "Portal", root: join(root, "a") });
+const pb = await orgs.addProject(org.id, { name: "Payroll", root: join(root, "b") });
+const kim = await orgs.addPerson(org.id, { name: "Kim", role: "Ops" });
+const bob = await orgs.addPerson(org.id, { name: "Bob", role: "IT" });
+const cara = await orgs.addPerson(org.id, { name: "Cara", role: "CEO" });
+const dee = await orgs.addPerson(org.id, { name: "Dee", role: "Legal" });
 
 let seq = 0;
 const append = (path: string, customType: string, data: object, at = new Date().toISOString()) => {
@@ -42,21 +42,21 @@ const append = (path: string, customType: string, data: object, at = new Date().
 };
 
 // s1 (Portal): started with Kim, who writes twice and passes it on to Bob; a conflict asks Kim about it.
-const s1 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hosting", goal: "g" });
+const s1 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hosting", goal: "g" });
 const kimS1 = links.findLink(s1.token!)!;
 append(s1.path, BATON_SENT_ENTRY, { targetId: "m1", by: kim.id }, "2026-09-20T10:00:00.000Z");
 append(s1.path, BATON_SENT_ENTRY, { targetId: "m2", by: kim.id }, "2026-09-20T10:05:00.000Z");
-append(s1.path, BATON_DECISION_ENTRY, { area: "Hosting", statement: "We host on our own box.", quote: "our box", by: kim.id }, "2026-09-20T10:06:00.000Z");
-baton.handTo(s1.sessionId, bob.id, "Which box?", "");
+await recordDecision(s1.path, { area: "Hosting", statement: "We host on our own box.", quote: "our box" }, "2026-09-20T10:06:00.000Z");
+await baton.handTo(s1.sessionId, bob.id, "Which box?", "");
 const bobS1 = baton.rotateLink(s1.sessionId).token;
 // Kim proposed Pat from s1.
-const pat = orgs.applyChange(org.id, null, { name: "Pat", role: "Finance", status: "proposed", contact: { email: "pat@example.test" }, referral: { why: "knows invoices", referredBy: kim.id, sessionId: s1.sessionId } }, { kind: "referral", sessionId: s1.sessionId });
-writeConflicts(org.id, pa.id, [
+const pat = await orgs.addPerson(org.id, { name: "Pat", role: "Finance", status: "proposed", contact: { email: "pat@example.test" }, referral: { why: "knows invoices", referredBy: kim.id, sessionId: s1.sessionId } }, { kind: "referral", sessionId: s1.sessionId });
+await seedConflicts(org.id, pa.id, [
   { id: "cf_aaaaaaaa", orgId: org.id, projectId: pa.id, areaKey: "hosting", a: `${s1.sessionId}:x3`, b: "other", p: 0.9, routedTo: kim.id, routeReason: "Kim decides hosting", batonSessionId: s1.sessionId, state: "open", createdAt: "2026-09-21T00:00:00.000Z" },
 ]);
 
 // s2 (Payroll): an offer to Kim, Bob and Cara; Bob took it and his lease lapsed; Kim never held it.
-const s2 = baton.createBaton({ orgId: org.id, projectId: pb.id, to: [kim.id, bob.id, cara.id], publicTitle: "Invoices", goal: "g", question: "Who knows?" });
+const s2 = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: [kim.id, bob.id, cara.id], publicTitle: "Invoices", goal: "g", question: "Who knows?" });
 baton.noteMessage(s2.sessionId, bob.id);
 {
   const last = JSON.parse(readFileSync(s2.path, "utf8").trim().split("\n").at(-1)!).id;
@@ -64,12 +64,14 @@ baton.noteMessage(s2.sessionId, bob.id);
 }
 append(s2.path, BATON_SENT_ENTRY, { targetId: "m3", by: bob.id });
 append(s2.path, BATON_LEASE_ENTRY, { n: 1, offerId: baton.batonById(s2.sessionId)!.row.offerId, event: "expired", by: bob.id });
-append(s2.path, BATON_DECISION_ENTRY, { area: "Invoices", statement: "Invoices go out on Fridays.", quote: "Fridays", by: kim.id }, "2026-09-22T10:00:00.000Z");
+// Kim's own Payroll session: a decision is its holder's (the chart names who the model was talking to).
+const s2k = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: "Invoice days", goal: "g" });
+await recordDecision(s2k.path, { area: "Invoices", statement: "Invoices go out on Fridays.", quote: "Fridays" }, "2026-09-22T10:00:00.000Z");
 
 // s3: Dee only; s4 closed with Kim.
-baton.createBaton({ orgId: org.id, projectId: pa.id, to: dee.id, publicTitle: "Contracts", goal: "g" });
-const s4 = baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: "Old", goal: "g", parentSessionId: s1.sessionId });
-baton.closeBaton(s4.sessionId);
+await baton.createBaton({ orgId: org.id, projectId: pa.id, to: dee.id, publicTitle: "Contracts", goal: "g" });
+const s4 = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: "Old", goal: "g", parentSessionId: s1.sessionId });
+await baton.closeBaton(s4.sessionId);
 
 const app = new Hono();
 registerOrgRoutes(app);
@@ -83,7 +85,7 @@ describe("a person's sessions", () => {
   const byTitle = (t: string, p: PersonPage = page) => p.sessions.find((s) => s.publicTitle === t)!;
 
   test("every session of theirs across projects, none of anyone else's", () => {
-    assert.deepEqual(page.sessions.map((s) => s.publicTitle).sort(), ["Hosting", "Invoices", "Old"]);
+    assert.deepEqual(page.sessions.map((s) => s.publicTitle).sort(), ["Hosting", "Invoice days", "Invoices", "Old", "Settle: hosting"]);
     assert.equal(byTitle("Invoices").projectName, "Payroll");
   });
 
@@ -93,8 +95,9 @@ describe("a person's sessions", () => {
       { kind: "started-with" },
       { kind: "passed-on", n: 2, to: [{ id: bob.id, name: "Bob" }] },
       { kind: "proposed", person: { id: pat.id, name: "Pat" } },
-      { kind: "conflict", conflictId: "cf_aaaaaaaa", area: "hosting" },
     ]);
+    // The conflict's own settle session asks her (the conflict chart started it).
+    assert.deepEqual(byTitle("Settle: hosting").relations, [{ kind: "started-with" }, { kind: "conflict", conflictId: "cf_aaaaaaaa", area: "hosting" }]);
     assert.equal(h.messages, 2);
     assert.equal(h.lastWroteAt, "2026-09-20T10:05:00.000Z");
     assert.deepEqual(h.holder, { id: bob.id, name: "Bob" });
@@ -126,13 +129,13 @@ describe("decisions, conflicts, links, visits", () => {
     assert.deepEqual(
       page.decisions.map((d) => [d.statement, d.projectName, d.publicTitle]),
       [
-        ["Invoices go out on Fridays.", "Payroll", "Invoices"],
+        ["Invoices go out on Fridays.", "Payroll", "Invoice days"],
         ["We host on our own box.", "Portal", "Hosting"],
       ],
     );
     assert.deepEqual(
       page.conflicts.map((c) => [c.id, c.state, c.projectName, c.publicTitle]),
-      [["cf_aaaaaaaa", "open", "Portal", "Hosting"]],
+      [["cf_aaaaaaaa", "open", "Portal", "Settle: hosting"]],
     );
     assert.deepEqual(personPage(org.id, bob.id).decisions, []);
   });
@@ -173,7 +176,7 @@ describe("decisions, conflicts, links, visits", () => {
   });
 
   test("a new link for the same hand-off never takes an older visit: another host's stays marked, this host's stays on its own link", async () => {
-    const s5 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: dee.id, publicTitle: "Leases", goal: "g" });
+    const s5 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: dee.id, publicTitle: "Leases", goal: "g" });
     const first = links.findLink(s5.token!)!;
     const made = Date.parse(first.createdAt);
     // Before any link of this host for it: minted on the host that held the org before the restore.

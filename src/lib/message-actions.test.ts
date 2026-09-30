@@ -6,9 +6,6 @@ import {
   actionReason,
   actionsFor,
   copyable,
-  forkDraft,
-  forkRefusalText,
-  forkSentence,
   messageStrips,
   queueRemoveReason,
   queueGoneEffect,
@@ -91,15 +88,17 @@ test("each role gets its own branch action, never the other's", () => {
   const a = actionsFor("assistant", { copyable: true });
   assert.ok(u.includes("rewind") && !u.includes("regenerate"));
   assert.ok(a.includes("regenerate") && !a.includes("rewind"));
-  // Both offer the same safe pair, and the branch-changing one is last.
-  assert.deepEqual(u.slice(0, 2), ["copy", "fork"]);
+  // Both offer the same safe two, Copy then Share, and the branch-changing one last — and nothing
+  // else: there is no Fork.
+  assert.deepEqual(u, ["copy", "share", "rewind"]);
+  assert.deepEqual(a, ["copy", "share", "regenerate"]);
   assert.equal(a[a.length - 1], "regenerate");
 });
 
-test("an images-only message keeps Fork and Rewind but offers no Copy", () => {
+test("an images-only message keeps Share and Rewind but offers no Copy", () => {
   const [strip] = messageStrips([user("u1", "", 2)]);
   assert.equal(copyable(strip!), false);
-  assert.deepEqual(actionsFor(strip!.role, { copyable: copyable(strip!) }), ["fork", "rewind"]);
+  assert.deepEqual(actionsFor(strip!.role, { copyable: copyable(strip!) }), ["share", "rewind"]);
 });
 
 test("a whitespace-only message is not copyable either", () => {
@@ -115,13 +114,9 @@ test("watch mode says which actions need a chat, in each action's own words", ()
   const watching = state({ chat: false });
   assert.match(actionReason("rewind", watching)!, /Only a chat open in Sova can rewind\./);
   assert.match(actionReason("regenerate", watching)!, /Only a chat open in Sova can regenerate\./);
-  // Fork reads the file; a watch view can still do it.
-  assert.equal(actionReason("fork", watching), null);
 });
 
-test("a terminal-owned session refuses every mutation, and fork says it is about READING", () => {
-  const live = state({ chat: false, live: true });
-  assert.match(actionReason("fork", live)!, /won't read it out from under that process/);
+test("a terminal-owned session refuses every mutation", () => {
   assert.match(actionReason("rewind", state({ live: true }))!, /won't write to it/);
 });
 
@@ -129,21 +124,17 @@ test("a streaming turn is never auto-aborted: it becomes the reason", () => {
   const streaming = state({ streaming: true });
   assert.equal(actionReason("rewind", streaming), "Stop the current turn first.");
   assert.equal(actionReason("regenerate", streaming), "Stop the current turn first.");
-  assert.match(actionReason("fork", streaming)!, /mid-turn/);
 });
 
 test("compaction and a request in flight each have their own sentence", () => {
   assert.equal(actionReason("regenerate", state({ compacting: true })), "Wait for the compaction to finish.");
   assert.equal(actionReason("regenerate", state({ pending: true })), "A regenerate is already in progress.");
   assert.equal(actionReason("rewind", state({ pending: true })), "A rewind is already in progress.");
-  assert.match(actionReason("fork", state({ pending: true }))!, /already being made/);
 });
 
 test("a paused chat (archived, reconnecting, switching model) hands its own sentence through", () => {
   const paused = "Switching model…";
   assert.equal(actionReason("rewind", state({ paused })), paused);
-  // Fork doesn't write to this session, so a model switch doesn't block it.
-  assert.equal(actionReason("fork", state({ paused })), null);
 });
 
 test("every action has an accessible name, and no two share one", () => {
@@ -158,25 +149,6 @@ test("a queued row may only be removed once the server holds it", () => {
   assert.match(queueRemoveReason({ state: "queued", pending: true, chat: true })!, /Removing/);
   assert.match(queueRemoveReason({ state: "delivered", pending: false, chat: true })!, /Already sent/);
   assert.match(queueRemoveReason({ state: "queued", pending: false, chat: false })!, /Only a chat/);
-});
-
-test("a fork refusal is always words, including for a code this build doesn't know", () => {
-  assert.match(forkRefusalText("tui-live", ""), /terminal/);
-  assert.match(forkRefusalText("mid-turn", ""), /mid-turn/);
-  assert.match(forkRefusalText("old-format", ""), /older session format/);
-  assert.match(forkRefusalText("not-on-branch", ""), /current branch/);
-  assert.match(forkRefusalText("nothing-before", ""), /nothing before this message/);
-  assert.match(forkRefusalText("missing", ""), /couldn't be read/);
-  // An unknown code keeps the server's own reason rather than dropping it.
-  assert.match(forkRefusalText("something-new", "The disk is full."), /The disk is full\./);
-  assert.match(forkRefusalText(undefined, "  "), /^Couldn't fork this session\.$/);
-});
-
-test("a fork's message goes AHEAD of whatever is already drafted, never over it", () => {
-  assert.equal(forkDraft("redo this", "half a thought"), "redo this\n\nhalf a thought");
-  assert.equal(forkDraft("redo this", ""), "redo this");
-  assert.equal(forkDraft(undefined, "half a thought"), "half a thought");
-  assert.equal(forkDraft("   ", "half a thought"), "half a thought");
 });
 
 test("the synthetic <id>:stop row is not part of the reply, and never of its Copy", () => {
@@ -211,30 +183,6 @@ test("a refused removal says which kind of no it was, and never invents one", ()
   assert.match(queueRemoveRefusalText("shared_queue", ""), /queued work of its own/);
   assert.match(queueRemoveRefusalText("internal", "Disk error."), /Disk error\./);
   assert.match(queueRemoveRefusalText("internal", ""), /^Couldn't remove it from the queue\.$/);
-});
-
-test("a fork never says it brought an image it didn't bring", () => {
-  const base = { text: true, carried: 0, lost: 0 };
-  assert.equal(forkSentence(base), "Forked. Your message is in the new session's composer.");
-  // A fork that stages no message still says that nothing was sent in the new session.
-  assert.equal(forkSentence({ ...base, text: false }), "Forked into a new session. Nothing was sent.");
-  assert.match(forkSentence({ ...base, carried: 1 }), /with its image\.$/);
-  assert.match(forkSentence({ ...base, carried: 2 }), /with its 2 images\.$/);
-  // The whole point: what was lost is counted and named, in every mix.
-  // What is lost is counted, and NEVER given a cause: available:false covers a deleted file, a
-  // path this server won't read, and an upload too big to retry, and we cannot tell them apart.
-  assert.match(forkSentence({ ...base, lost: 1 }), /but its image couldn't come along\.$/);
-  assert.match(forkSentence({ ...base, lost: 2 }), /but its 2 images couldn't come along\.$/);
-  assert.match(forkSentence({ ...base, carried: 1, lost: 1 }), /with 1 of 2 images\. The other 1 couldn't come along\.$/);
-  assert.match(forkSentence({ ...base, carried: 3, lost: 2 }), /with 3 of 5 images\. The other 2 couldn't come along\.$/);
-  // No sentence anywhere says why an image didn't make it.
-  for (const stage of [{ ...base, lost: 1 }, { ...base, carried: 1, lost: 1 }, { text: false, carried: 0, lost: 2 }])
-    assert.doesNotMatch(forkSentence(stage), /disk|deleted|missing|too big/i);
-  // A fork with nothing staged in the composer still says what happened to the images.
-  assert.equal(
-    forkSentence({ text: false, carried: 0, lost: 1 }),
-    "Forked into a new session, but its image couldn't come along. Nothing was sent.",
-  );
 });
 
 test("each way out of the queue moves the row its own way, and returns text exactly once", () => {
@@ -333,4 +281,10 @@ test("a reply to a link message is refused Regenerate; the user's next message s
   assert.equal(byEntry.get("a2")!.fromLink, undefined);
   assert.equal(actionReason("regenerate", state({ link: true, streaming: true })), REGENERATE_LINK_REASON);
   assert.equal(actionReason("regenerate", state({ link: false })), null);
+});
+
+test("Share from here only opens the share page, so nothing refuses it, a watch or a live terminal included", () => {
+  const busy = { chat: false, live: true, streaming: true, compacting: true, pending: true, paused: "Archived." };
+  assert.equal(actionReason("share", busy), null);
+  assert.equal(ACTION_LABEL.share, "Share from here");
 });

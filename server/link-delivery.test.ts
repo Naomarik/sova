@@ -35,7 +35,7 @@ const { turnQuestions, turnFacts } = await import("./attention-signals");
 const { setArchived } = await import("./archived-sessions");
 const { addWebSession } = await import("./web-sessions");
 const orgs = await import("./orgs");
-const poStore = await import("./project-overseer-store");
+const { seedBuild } = await import("./org-test-fixtures");
 const { settled } = await import("./workspace-git");
 
 after(async () => {
@@ -386,15 +386,15 @@ describe("deliverLinkMessage: the refusals, before any runtime opens", () => {
     assert.equal(((await deliverLinkMessage(join(sessionsDir, "gone.jsonl"), linkText())) as any).reason, "no-session");
   });
 
-  test("an organization's session: one of a project's coding sessions, by its started.json row", async () => {
+  test("an organization's session: one of a project's coding sessions, by its build", async () => {
     const org = await orgs.createOrg({ name: "Link Org", dir: join(agentDir, "org-ws") });
     mkdirSync(join(agentDir, "proj"), { recursive: true });
-    const project = orgs.addProject(org.id, { name: "Proj", root: join(agentDir, "proj") });
+    const project = await orgs.addProject(org.id, { name: "Proj", root: join(agentDir, "proj") });
     const path = plainSession();
     const hourAgo = new Date(Date.now() - 3_600_000);
     utimesSync(path, hourAgo, hourAgo);
     const s = (await getSessionSummary(path))!;
-    poStore.noteStarted(poStore.projectOverseerPaths(org.id, project.id), s.id, "coding", new Date(), path);
+    await seedBuild(org.id, project.id, { sessionId: s.id, kind: "coding", path });
     const org_ = (await getSessionSummary(path))?.org;
     assert.equal(org_?.kind, "coding", "the summary now calls it organizational");
     const r = await deliverLinkMessage(path, linkText());

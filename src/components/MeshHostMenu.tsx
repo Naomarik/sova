@@ -17,7 +17,7 @@ interface Option {
 }
 
 // Styles: src/mesh.css, loaded app-wide by MeshView. Not imported here: lib code that reaches this
-// file through the Sidebar (fork-stage's sessionHref) runs under node in tests, which can't load CSS.
+// file through the Sidebar (its sessionHref) runs under node in tests, which can't load CSS.
 
 /** The gap the panel keeps from the viewport edges and from its trigger. */
 const EDGE_GAP = 8;

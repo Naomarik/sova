@@ -30,6 +30,8 @@ export interface LinkRecord {
   revokedAt?: string;
   /** Set when it was turned off because its offer went to someone else (the page may say so). */
   revokedWhy?: "withdrawn";
+  /** The baton chart's effect that minted it (its key): a re-run of that effect mints nothing twice. */
+  key?: string;
 }
 
 const file = () => join(stateRoot(), "baton-links.json");
@@ -62,7 +64,7 @@ function write(links: LinkRecord[]): void {
 }
 
 /** Mint a link for hand-off `n` of a session to `personId`. Returns the token (shown once). */
-export function mintLink(input: { orgId: string; sessionId: string; n: number; personId: string; offerId?: string }, now = Date.now()): string {
+export function mintLink(input: { orgId: string; sessionId: string; n: number; personId: string; offerId?: string; key?: string }, now = Date.now()): string {
   const token = randomBytes(32).toString("base64url");
   const rec: LinkRecord = {
     hash: hashToken(token),
@@ -117,6 +119,11 @@ export function revokeLinks(match: (l: LinkRecord) => boolean, now = Date.now(),
 /** Live (unrevoked, unexpired) links of a session's hand-off `n`. */
 export function liveLinks(sessionId: string, n: number, now = Date.now()): LinkRecord[] {
   return read().filter((l) => l.sessionId === sessionId && l.n === n && !linkDead(l, now));
+}
+
+/** The links an effect (by its key) minted. */
+export function linksOfKey(key: string): LinkRecord[] {
+  return read().filter((l) => l.key === key);
 }
 
 /** Every link of an org on this host (live or not), in minting order. */

@@ -482,6 +482,14 @@ itself.
 - **Needs you, from a baton session** (§app.baton/needs-you): `baton-needs-you` while the baton is
   with the operator, "<from> → you: <question>", or while a person holds it through a hand-off no
   live link exists for, "Send <name> their link: <question>".
+- **Needs you, a held act** (§app.project-overseer/holds): `held-act`, one per act a project's
+  chart holds before it reaches a person or the client's code, "{what} starts in {n} min unless
+  you cancel it.", carrying the hold (`held: {id, goesAt, what}`) so the list can offer Cancel.
+  Never a phone notification.
+- **Finished (decide), a conflict for the operator** (§app.requirements/routing):
+  `conflict-to-operator`, one per open conflict routed to the operator, or not routed, that no open
+  settle session asks about: "Settle a conflict in {project}: {nameA} and {nameB} disagree about
+  {area}.", linking to the project page. Never a phone notification.
 - **Finished (decide):** replied since last seen and now idle; idle with an unsent draft or queued
   input.
 - **Needs you, ready to merge (act)** (§chat.worktrees/readiness): an idle, unarchived session
@@ -555,9 +563,8 @@ renders as its text, unlinked.
   slot the mode switch holds in every other chat (the Overseer has none, §app.overseer/hosting).
   It opens a flyout listing the quick actions, each with its label and a short description.
   Picking one sends its prompt (queued as a follow-up while a turn runs).
-- **It stays when the foot collapses.** A collapsed composer's foot drops everything but this
-  button, which is an action, not reference. While the composer is disabled the button still
-  opens, and each quick action carries the disabled reason instead of running.
+- While the composer is disabled the button still opens, and each quick action carries the
+  disabled reason instead of running.
 - Defaults: **What Needs Me**, **What Finished**, **What's Running**, **Tidy Up**, **Where Was I**.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
   reset to defaults).
@@ -903,7 +910,7 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
   extra instructions, both allowances used and left and the held items
   (§app.project-overseer/limits); its last 10 actions; its gathering sessions and offers; decisions
   by state and area, and the open conflicts with who they are routed to; spec status (frozen, edited
-  outside); its coding sessions from `started.json` (title, who started it, working or idle, branch,
+  outside); its coding sessions from their charts (title, who started it, working or idle, branch,
   merged, worktree removed); how many ideas and open and done to-dos it has; the last owner update;
   and the project's cost (§app.project-costs/card). `items: true` adds the open to-dos (id, text,
   linked idea or session) and the ideas' table of contents, so an act can name them.
@@ -919,8 +926,8 @@ name is a `[title](sova://s/<id>)` link; every time is relative, as in `sova_ses
 ## §app.overseer/org-projection — What never reaches the model
 
 - **One projection.** Every org read and every org act's result is built by one server module
-  (`server/overseer-org-view.ts`) that composes the org store's own functions field by field. It
-  never passes an `OrgDetail`, a `PersonPage`, a roster row or a baton row along whole, so a field
+  (`server/overseer-org-view.ts`) that composes the org reads' own functions field by field. It
+  never passes an `OrgDetail`, a `PersonPage`, a person's or a baton session's chart data along whole, so a field
   added to those later reaches the model only when this module names it.
 - **Never in a tool result, an error or the action log:**
   - **contact**, every channel, wherever it sits: a person's profile, a referral, a history line (a
@@ -985,8 +992,9 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   operator's with `via: "overseer"` and the Overseer's id: the roster history's `by: {kind:
   "operator", via: "overseer", overseerId}`, the About history's `by`, the project's
   `stakeholderHistory` and the org's `ownerHistory` lines (`why: "operator"`, `via`), the project's
-  `archived` record (§app.organizations/archive), a baton row it started (`startedVia`), and the
-  `started.json` row of a coding session it started (§app.overseer/org-project-overseers). A
+  `archived` record (§app.organizations/archive), a baton session it started (`startedVia`), and a
+  coding session it started (§app.overseer/org-project-overseers), each in its chart and its
+  transition-log rows (§app.project-overseer/org-charts). A
   request without the secret records no `via`, whatever its body says.
 - **Operator authority.** `via` changes nothing about what the write may do: field authority,
   refusals and routing read the kind, `operator` (§app.organizations/field-authority). A decision
@@ -1019,7 +1027,10 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   items list every person, project and session the call acts on: `sova_gather` `start`, `offer`,
   `handoff`, `take`, `close` and `revoke_link`; `sova_roster` `leave`, and a `revert` that sets
   `left`; `sova_project_overseer` `clear`; `sova_org_project` `archive`. Anywhere else (a typed
-  "yes", a card that didn't list the target, a later turn) the op refuses without doing anything:
+  "yes", a card that didn't list the target, a later turn) the op refuses without doing anything,
+  before any other refusal it could get (an archive with no card gets this, not "Stop these
+  first"). The charts check it (§app.project-overseer/org-charts): the Overseer's calls to the
+  routes carry its turn's card beside its sender mark:
   "This reaches people or ends something: ask with sova_confirm, listing {what} in its items, and
   act in the turn the user's click starts." `extend`, `decline`, `unarchive` and every other op
   need no card. So the card itself never invites a typed answer: a global Overseer card listing a
@@ -1062,8 +1073,8 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   `sova_session`, `sova_read_session` and `sova_send` reach them as before. **`code {prompt?,
   title?, item?, model?, thinking?}`** starts one as the project's, the same way the project page's
   Start Coding Session does: its own worktree (§app.project-overseer/coding-worktrees), the
-  project's coding mode (§app.project-overseer/coding-mode), an `operator-coding` row in
-  `started.json` marked `via: "overseer"`. `item` (a to-do or idea id) links it and gives the
+  project's coding mode (§app.project-overseer/coding-mode), an `operator-coding` session whose
+  chart is marked `via: "overseer"`. `item` (a to-do or idea id) links it and gives the
   prompt when none is given; without an item, `prompt` and `title` are required. It counts against
   the Overseer's per-turn sessions created and running at once, like any session it starts, and
   never against the project overseer's limits. The result names the session, its branch and its

@@ -74,6 +74,7 @@ describe("unattended acts under a grant (the tools' check)", () => {
       runningStarted: () => 0,
       counted: () => false,
       attended: () => false,
+      confirmed: () => null,
       permit: (tool: string, ids: string[]) => {
         const p = coveringPermit(foldPermits(entries, entries, Date.now()), tool, ids, Date.now());
         return p ? { id: p.id, label: permitLabel(p) } : null;

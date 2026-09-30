@@ -14,8 +14,9 @@ import {
 	defaultClaudeDir, deviceOrder, ensureLoginDir, groupByAccount,
 	loginDir, loginEntryFor, parseAccounts, planLabel, readAccounts, readAccountsState, readIdentityFile, recordedLogin, switchText,
 	thisDeviceId, updateAccounts, writeAccounts, type ClaudeAccountsFile, type ClaudeLoginRecord,
+	accessTokenFor, freshAccessToken, refreshLogin, REFRESH_ARGV, TOKEN_REFRESH_MARGIN_MS,
 } from "./accounts.ts";
-import { claudeEnv, classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
+import { buildDiscoveryArgv, claudeEnv, classifyClaudeFailure, ClaudeFailureDetector } from "./transport.ts";
 
 const FIXTURES = fileURLToPath(new URL("./tests/fixtures/failures/", import.meta.url));
 const events = (name: string) => fs.readFileSync(path.join(FIXTURES, name), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line));
@@ -384,4 +385,77 @@ test("leases: a dead owner's lease counts only through a live claude on that log
 		orphan.kill();
 		fs.rmSync(agentDir, { recursive: true, force: true });
 	}
+});
+
+// ---------------------------------------------------------------------------
+// The access token a confined worker is handed
+// ---------------------------------------------------------------------------
+
+const REFRESH_SECRET = "refresh-SECRET-never-leaves";
+function credentials(dir: string, token: string, expiresAt: number | undefined): void {
+	fs.mkdirSync(dir, { recursive: true });
+	fs.writeFileSync(path.join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: REFRESH_SECRET, ...(expiresAt === undefined ? {} : { expiresAt }), scopes: ["user:inference"] } }), { mode: 0o600 });
+}
+
+test("accessTokenFor: the access token and its expiry only, never the refresh token; nothing readable is undefined", (t) => {
+	const { root } = sandbox(t);
+	const dir = path.join(root, "login");
+	assert.equal(accessTokenFor(dir), undefined, "no credentials file");
+	credentials(dir, "sk-ant-oat01-access", 1_900_000_000_000);
+	const got = accessTokenFor(dir)!;
+	assert.deepEqual(got, { token: "sk-ant-oat01-access", expiresAt: 1_900_000_000_000 });
+	assert.ok(!JSON.stringify(got).includes(REFRESH_SECRET));
+	credentials(dir, "sk-ant-oat01-access", undefined);
+	assert.deepEqual(accessTokenFor(dir), { token: "sk-ant-oat01-access" });
+	for (const bad of ["", "two words", "line\nbreak"]) {
+		credentials(dir, bad, 1);
+		assert.equal(accessTokenFor(dir), undefined, JSON.stringify(bad));
+	}
+	fs.writeFileSync(path.join(dir, ".credentials.json"), "{not json");
+	assert.equal(accessTokenFor(dir), undefined);
+});
+
+test("freshAccessToken: refreshes first when under 60 minutes are left, when forced (a 401), or with no expiry; otherwise reads only", async (t) => {
+	const { root } = sandbox(t);
+	const dir = path.join(root, "login");
+	const now = 1_800_000_000_000;
+	let refreshed = 0;
+	const refresh = async (d: string) => { assert.equal(d, dir); refreshed++; credentials(dir, `new-${refreshed}`, now + 8 * 3600_000); return true; };
+	credentials(dir, "old", now + TOKEN_REFRESH_MARGIN_MS + 1);
+	assert.equal((await freshAccessToken(dir, { now: () => now, refresh }))!.token, "old");
+	assert.equal(refreshed, 0);
+	assert.equal((await freshAccessToken(dir, { now: () => now, refresh, force: true }))!.token, "new-1", "a 401 refreshes whatever is left");
+	credentials(dir, "old", now + TOKEN_REFRESH_MARGIN_MS - 1);
+	assert.equal((await freshAccessToken(dir, { now: () => now, refresh }))!.token, "new-2");
+	credentials(dir, "old", undefined);
+	assert.equal((await freshAccessToken(dir, { now: () => now, refresh }))!.token, "new-3");
+	// A refresh that changes nothing (the CLI only refreshes near expiry) still hands over the token there is.
+	credentials(dir, "kept", now + 30 * 60_000);
+	assert.equal((await freshAccessToken(dir, { now: () => now, refresh: async () => false }))!.token, "kept");
+	assert.equal(await freshAccessToken(path.join(root, "none"), { now: () => now, refresh: async () => false }), undefined);
+});
+
+test("refreshLogin: runs the discovery argv unconfined on the login dir, one initialize, then EOF; false when initialize fails or the CLI is missing", async (t) => {
+	const { root } = sandbox(t);
+	assert.deepEqual([...REFRESH_ARGV], buildDiscoveryArgv(), "the refresh run is the discovery argv");
+	const dir = path.join(root, "login");
+	credentials(dir, "before", 1);
+	const log = path.join(root, "calls.jsonl");
+	const fake = path.join(root, "fake-claude.mjs");
+	fs.writeFileSync(fake, `#!/usr/bin/env node
+import fs from "node:fs";
+fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ argv: process.argv.slice(2), dir: process.env.CLAUDE_CONFIG_DIR, cwd: process.cwd() }) + "\\n");
+let buf = "";
+process.stdin.on("data", (d) => { buf += d; const i = buf.indexOf("\\n"); if (i < 0) return; const f = JSON.parse(buf.slice(0, i));
+  if (process.env.FAKE_FAIL) { process.stdout.write(JSON.stringify({ type: "control_response", response: { request_id: f.request_id, subtype: "error", error: "no" } }) + "\\n"); return; }
+  fs.writeFileSync(process.env.CLAUDE_CONFIG_DIR + "/.credentials.json", JSON.stringify({ claudeAiOauth: { accessToken: "after", refreshToken: "r", expiresAt: 2 } }));
+  process.stdout.write(JSON.stringify({ type: "control_response", response: { request_id: f.request_id, subtype: "success", response: {} } }) + "\\n"); });
+process.stdin.on("end", () => process.exit(0));
+`, { mode: 0o755 });
+	assert.equal(await refreshLogin(dir, { executable: fake, env: { ...process.env, CLAUDE_CONFIG_DIR: "/elsewhere", CLAUDECODE: "1" } }), true);
+	assert.equal(accessTokenFor(dir)!.token, "after");
+	const call = JSON.parse(fs.readFileSync(log, "utf8").trim().split("\n")[0]);
+	assert.deepEqual(call, { argv: [...REFRESH_ARGV], dir, cwd: fs.realpathSync(dir) });
+	assert.equal(await refreshLogin(dir, { executable: fake, env: { ...process.env, FAKE_FAIL: "1" } }), false);
+	assert.equal(await refreshLogin(dir, { executable: path.join(root, "missing-claude") }), false);
 });

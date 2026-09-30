@@ -48,10 +48,9 @@ import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
-import { activeTab, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
+import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
-import { sourceBlocked } from "./lib/fanout";
 import { AgentsView } from "./components/AgentsView";
 import { NewSessionDialog } from "./components/NewSessionDialog";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -63,11 +62,12 @@ import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { SharesPage } from "./components/SharesPage";
 import { isSharesHash } from "./lib/session-shares";
+import { SharePage } from "./components/SharePage";
+import { shareRouteFromHash } from "./lib/share-slice";
 import { MeshDetails } from "./components/MeshDetails";
 import { closeMeshDetails, meshDetailsOpen } from "./lib/mesh-details";
 import { ResourceMonitor } from "./components/ResourceMonitor";
 import { closeMonitor, monitorOpen } from "./lib/monitor-nav";
-import { FanoutDialog, type FanoutSource } from "./components/FanoutDialog";
 import { GroupView, paneIdFor, workspaceFocus, type PaneWiring } from "./components/GroupView";
 import { OverseerView } from "./components/OverseerView";
 import { SessionPane, type PaneInsight, type TabId } from "./components/SessionPane";
@@ -283,6 +283,8 @@ export function App() {
   const [meshRoute, setMeshRoute] = createSignal(isMeshHash(location.hash));
   /** `#/shares`: every public link this host and its peers serve (§app.session-share/shares-page). */
   const [sharesRoute, setSharesRoute] = createSignal(isSharesHash(location.hash));
+  /** The share page (#/share/<session>): pick a slice and share it (§app.session-share/share-page). */
+  const [shareRoute, setShareRoute] = createSignal(shareRouteFromHash(location.hash));
   /** An org page's address names its host when the org is a peer's: noted before the page reads it. */
   const orgsRouteOf = (hash: string) => {
     const r = orgsRouteFromHash(hash);
@@ -424,6 +426,7 @@ export function App() {
     setExtRoute(extRouteFromHash(location.hash));
     setMeshRoute(isMeshHash(location.hash));
     setSharesRoute(isSharesHash(location.hash));
+    setShareRoute(shareRouteFromHash(location.hash));
     setOrgsRoute(orgsRouteOf(location.hash));
     setOverviewRoute(isOverviewHash(location.hash));
   };
@@ -623,23 +626,13 @@ export function App() {
   /** A session this tab just created opens for chat with its composer focused. */
   const [autofocusPath, setAutofocusPath] = createSignal<string | null>(null);
   /**
-   * The fanout dialog, when it is open: `{}` with no source is a fresh-prompt fanout, and a
-   * `source` opens it on that session with Fork selected. `presetCwd` is the New Session
-   * dialog's handoff: fresh mode starts in the folder that dialog had chosen. It
-   * lives here rather than in the workspace because it can be opened from a session too, and it
-   * outlives the surface that opened it — the dialog stays up while the request is in flight.
+   * The skip link's target and name move together: a workspace in Send to All has one action —
+   * the group composer — so the link says "Skip to Group Composer" and lands on its input; while
+   * the group composer is not on screen (Send to All off, or a workspace with no members) it is
+   * the focused pane's transcript and says so, because a link that says "Group Composer" and
+   * lands on a transcript, or on a hidden box, is worse than either.
    */
-  const [fanout, setFanout] = createSignal<{ source?: FanoutSource; into?: { id: string; name: string }; presetCwd?: string } | null>(null);
-
-  /**
-   * The skip link's target and name move together: a workspace with members
-   * has one action — the group composer — so the link says "Skip to Group Composer" and lands on
-   * its input; before the composer exists (a workspace with no members) it is the focused pane's
-   * transcript and says so, because a link that says "Group Composer" and lands on a transcript
-   * is worse than either. A link that says "Transcript" in a workspace of N panes would also
-   * have to pick one silently; the composer is the one target that needs no picking.
-   */
-  const hasGroupComposer = () => !!groupRoute() && !!openGroup() && groupMembers().length > 0;
+  const hasGroupComposer = () => !!groupRoute() && !!openGroup() && groupMembers().length > 0 && groupSendAll();
   const skipHref = () => (hasGroupComposer() ? "#group-composer" : `#${transcriptIdOf(focusedPath())}`);
   const skipLabel = () => (hasGroupComposer() ? "Skip to Group Composer" : "Skip to Transcript");
 
@@ -652,6 +645,8 @@ export function App() {
   createEffect(on(meshRoute, (open) => open && folded() && queueMicrotask(() => meshTitleEl?.focus()), { defer: true }));
   let sharesTitleEl: HTMLHeadingElement | undefined;
   createEffect(on(sharesRoute, (open) => open && folded() && queueMicrotask(() => sharesTitleEl?.focus()), { defer: true }));
+  let shareTitleEl: HTMLHeadingElement | undefined;
+  createEffect(on(shareRoute, (open) => open && folded() && queueMicrotask(() => shareTitleEl?.focus()), { defer: true }));
   let orgsTitleEl: HTMLHeadingElement | undefined;
   /** Which organizations page is showing: an org's tabs and its `/start/<person>` are the same page,
       so switching tabs keeps focus on the tab (the memo only changes when the page does). */
@@ -897,7 +892,6 @@ export function App() {
     onClaudeLogin: noteClaudeLogin,
     onRewindControl: setRewindControl,
     onRewound: noteRewound,
-    onCreated: adoptCreated,
     paneOn,
     openPane,
     toggleSubagents,
@@ -905,39 +899,6 @@ export function App() {
     inputsOnly,
     subagentsPath,
     onNewSession: startNewFrom,
-    // From a workspace: the members land in THIS group, beside the ones already there.
-    // With the group's own seed it is the APPEND case — "I want two more of these": the new
-    // members branch from the same fork point the existing ones share, which is the one `groupId`
-    // + `source` combination the route defines and the one the UI could never reach before. A
-    // hand-made group (no seed) lands beside them with no source, as before; a seed whose parent
-    // is no longer in the list falls back to that too — the fork UI would otherwise name a
-    // transcript nobody can show.
-    onFanOut: (seed?: { parentSessionPath: string; leafId: string }) => {
-      const group = openGroup();
-      if (!group) {
-        setFanout({});
-        return;
-      }
-      const into = { id: group.id, name: group.name };
-      const parent = seed ? (list() ?? []).find((s) => s.path === seed.parentSessionPath) : undefined;
-      if (!seed || !parent) {
-        setFanout({ into });
-        return;
-      }
-      setFanout({
-        into,
-        source: {
-          session: parent,
-          leafId: seed.leafId,
-          // The source is not on screen here: its fill was never reported, and the summary's own
-          // tail value is not the fork point's fill once the source ran on — so unknown, never a
-          // guess. No `messages` either: the fork note hides rather than count what it can't see.
-          context: null,
-          blocked: () => sourceBlocked(parent),
-        },
-      });
-    },
-    onFanOutFrom: (source) => setFanout({ source }),
   };
 
   return (
@@ -970,7 +931,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -996,7 +957,12 @@ export function App() {
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and
             its own head instead. */}
-        <main class={groupRoute() ? "workspace" : "app-main"} aria-label={openGroup() ? `Workspace: ${openGroup()!.name}` : undefined}>
+        <main
+          class={groupRoute() ? "workspace" : "app-main"}
+          aria-label={openGroup() ? `Workspace: ${openGroup()!.name}` : undefined}
+          /* Send to All: one rule in app.css hides every pane composer under it. */
+          data-send-all={groupRoute() && groupSendAll() ? "true" : undefined}
+        >
           <Show
             when={!insightsRoute() && !overseerRoute()}
             fallback={
@@ -1096,7 +1062,6 @@ export function App() {
                       listVersion={wiring.listVersion}
                       now={wiring.now}
                       onRefresh={wiring.onRefresh}
-                      onCreated={wiring.onCreated}
                       onArchiveChanged={wiring.onArchiveChanged}
                       onInsight={wiring.onInsight}
                       onWorkers={wiring.onWorkers}
@@ -1110,7 +1075,6 @@ export function App() {
                       inputsOnly={wiring.inputsOnly}
                       subagentsPath={wiring.subagentsPath}
                       onNewSession={wiring.onNewSession}
-                      onFanOut={wiring.onFanOutFrom}
                     />
                   );
                 }}
@@ -1142,6 +1106,10 @@ export function App() {
               <Match when={sharesRoute()}>
                 <SharesPage now={now()} titleRef={(el) => (sharesTitleEl = el)} />
               </Match>
+              {/* One session's share page (#/share/<session>): a different session or share remounts it. */}
+              <Match when={shareRoute() ? JSON.stringify([shareRoute()!.sessionId, shareRoute()!.host, shareRoute()!.share]) : null} keyed>
+                {(_key) => <SharePage route={shareRoute()!} titleRef={(el) => (shareTitleEl = el)} />}
+              </Match>
               {/* An installed extension's own UI (#/ext/<id>). */}
               <Match when={extId()} keyed>
                 {(id) => (
@@ -1163,7 +1131,7 @@ export function App() {
                   />
                 )}
               </Match>
-              <Match when={!route() && !groupRoute() && !meshRoute() && !sharesRoute() && !orgsRoute()}>
+              <Match when={!route() && !groupRoute() && !meshRoute() && !sharesRoute() && !shareRoute() && !orgsRoute()}>
                 {/* A phone keeps the list's head over its overview (§app.shell/overview): the
                     brand back to the list, and New Session. */}
                 <Show when={!unfolded()}>
@@ -1181,10 +1149,8 @@ export function App() {
                     {/* A plain title at every width: the Sessions card below is where the count lives. */}
                     <h1 class="overview-title">Overview</h1>
                   </div>
-                  {/* Ways to start something: one session, or the same prompt to N models at once (the
-                      overview is fanout's front door, which is why it is offered here and not in the
-                      sidebar). */}
-                  <OverviewActions onNewSession={() => setCreating(true)} onFanOut={() => setFanout({})} />
+                  {/* Ways to start something. */}
+                  <OverviewActions onNewSession={() => setCreating(true)} />
                   <HomeSessionsCard glance={sessionsGlance(list() ?? [], attention.data(), overseer.data()?.proactivity)} now={now()} onOpenList={openSessionList} />
                   <MeshCard />
                   <Show when={installed()}>{(list) => <ExtensionCards extensions={list()} />}</Show>
@@ -1237,28 +1203,8 @@ export function App() {
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}
-            onFanOut={(cwd) => {
-              // The type field's handoff: close this dialog, open the fanout dialog on a fresh
-              // prompt, with the folder it had chosen carried over.
-              setCreating(false);
-              setFanout({ presetCwd: cwd });
-            }}
           />
         </Portal>
-      </Show>
-      <Show when={fanout()}>
-        {(open) => (
-          <Portal>
-            <FanoutDialog
-              source={open().source}
-              into={open().into}
-              presetCwd={open().presetCwd}
-              sessions={list() ?? []}
-              onClose={() => setFanout(null)}
-              onCreated={refresh}
-            />
-          </Portal>
-        )}
       </Show>
       <Show when={settingsOpenAt()}>
         <Portal>

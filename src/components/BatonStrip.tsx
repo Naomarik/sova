@@ -1,4 +1,5 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
+import { offHoursNote, reachWords, withOffHours } from "../lib/working-hours";
 import { abilitiesOf, MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
@@ -220,10 +221,16 @@ export function BatonStrip(props: {
             </div>
           </Show>
           <Show when={liveOffer(i())}>
-            {(o) => (
+            {(o) => {
+              // r12: an invitee is reached (their link made) only in their own working hours; a waiting one has no link yet.
+              const reached = () => o().to.filter((p) => p.reach?.state !== "waiting");
+              const waiting = () => o().to.filter((p) => p.reach?.state === "waiting");
+              return (
+              <>
+              <Show when={reached().length > 0}>
               <div class="baton-strip-row baton-strip-invitees" role="group" aria-label="Invitees' links">
-                <span class="baton-strip-meta">New link for</span>
-                <For each={o().to}>
+                <span class="baton-strip-meta">{waiting().length ? "Reached · new link for" : "New link for"}</span>
+                <For each={reached()}>
                   {(p) => (
                     <button
                       type="button"
@@ -241,7 +248,21 @@ export function BatonStrip(props: {
                   )}
                 </For>
               </div>
-            )}
+              </Show>
+              <Show when={waiting().length > 0}>
+                <ul class="baton-strip-waiting" aria-label="Invitees not reached yet">
+                  <For each={waiting()}>
+                    {(p) => (
+                      <li class="baton-strip-meta">
+                        {p.name} · {reachWords(p.reach, o().holder?.name, now())}
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              </>
+              );
+            }}
           </Show>
           <Show when={handing()} keyed>
             {(pre) => (
@@ -434,7 +455,7 @@ function HandOnForm(props: {
       if (to().length === 1) {
         const who = to()[0]!;
         const r = await handBaton(sid, who, question().trim(), briefing().trim() || undefined);
-        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link, ...(r.at ? { at: r.at } : {}) }] : [], `Handed to ${nameOf(who)}.`, r.info, [who], r.linkWarning);
+        props.onDone(r.link ? [{ personId: who, name: nameOf(who), link: r.link, ...(r.at ? { at: r.at } : {}) }] : [], withOffHours(`Handed to ${nameOf(who)}.`, nameOf(who), r.offHours, Date.now()), r.info, [who], r.linkWarning);
       } else {
         const r = await offerBaton(sid, to(), question().trim(), briefing().trim() || undefined);
         props.onDone(r.links, `Offered to ${to().length} people. The first to answer takes it.`, r.info, to(), r.linkWarning);
@@ -459,6 +480,10 @@ function HandOnForm(props: {
           )}
         </For>
         <p class="field-hint">Pick 2 or more to offer it: the first to answer takes it, for as long as they keep answering.</p>
+        {/* r7: yours goes at once; say so for each ticked person who is off hours now. */}
+        <For each={props.info.active.filter((p) => to().includes(p.id))}>
+          {(p) => <Show when={offHoursNote(p, Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
+        </For>
       </fieldset>
       <label class="field">
         <span class="field-label">Question</span>

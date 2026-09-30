@@ -13,15 +13,15 @@ import { isDirectLocal } from "./compression";
 import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
-import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
+import { markShutdown } from "./wrapup-recovery";
 import { runLedger } from "./auto-resume";
-import { startBatonMarksBackfill } from "./baton-marks";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
-import { attachedWorkspaces } from "./orgs";
-import { WorkspaceCommitter } from "./workspace-commits";
+import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
+import { closeAllOrgHosts } from "./org-engine";
+import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
@@ -53,9 +53,7 @@ import { getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { runFanout } from "./fanout";
-import { runFork } from "./fork";
-import { AUTO_TITLE_MAX_PATHS, type FanoutRequest, type ForkRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -63,6 +61,7 @@ import { configureSession } from "./sessions-configure";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
+import { providerLimitsInfo, providerWaiting, saveProviderLimits } from "./provider-limits";
 import { modelDenial, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
@@ -204,7 +203,6 @@ app.post("/api/sessions", async (c) => {
     return createWebSession(c, dir);
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
-  // The one rule, shared with fanout's fresh mode (spec 14b: fresh IS this path N times).
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) return c.json({ error: cwdError }, 400);
   return createWebSession(c, cwd);
@@ -293,8 +291,7 @@ app.post("/api/session-groups/assign", async (c) => {
     if (body.path !== undefined) return c.json({ error: "send either path or id, not both" }, 400);
     if (body.label !== undefined || body.index !== undefined) return c.json({ error: "label and index belong to an assignment, not a removal" }, 400);
     const out = assignSession(body.id, null);
-    // dissolved is set only when this write emptied a fanout group, which the server then deleted.
-    return out.ok ? c.json({ ok: true, ...(out.dissolved ? { dissolved: true } : {}) }) : c.json({ error: out.error }, out.status);
+    return out.ok ? c.json({ ok: true }) : c.json({ error: out.error }, out.status);
   }
   // Omitted keeps the label the session already had (a move between groups carries it).
   const label = body.label === undefined ? { ok: true as const, label: undefined } : cleanGroupLabel(body.label);
@@ -309,8 +306,7 @@ app.post("/api/session-groups/assign", async (c) => {
   // an assignment made before that rule).
   if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
   const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
-  // dissolved is set only when this write emptied a fanout group, which the server then deleted.
-  return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
+  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
 });
 
 // The group workspace's shared follow-up: one request, N sessions, all-or-nothing.
@@ -328,37 +324,6 @@ app.post("/api/session-groups/:id/prompt", async (c) => {
   const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
   if (r.ok) return c.json(r.result);
   return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
-});
-
-// N sessions from one starting point, as one group. Fork mode branches every
-// member from one entry of one source; fresh mode makes N independent sessions in a folder.
-app.post("/api/session-groups/fanout", async (c) => {
-  let body: FanoutRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { name, members, source | cwd }" }, 400);
-  }
-  const r = await runFanout(body);
-  if (r.ok) return c.json(r.result, 201);
-  if (r.status === 409) return c.json({ refused: r.refused }, 409);
-  // One 400 carries a code (seed-conflict), so the client renders its own sentence for it.
-  return c.json({ error: r.error, ...(r.code ? { code: r.code } : {}) }, r.status);
-});
-
-// One new session branched off one entry of another: the per-message Fork action (server/fork.ts).
-// Not a one-member fanout — no group, no seed, no member marker — and nothing is ever sent.
-app.post("/api/sessions/fork", async (c) => {
-  let body: ForkRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { path, entryId, position }" }, 400);
-  }
-  const r = await runFork(body);
-  if (r.ok) return c.json(r.result, 201);
-  if (r.status === 409) return c.json({ refused: r.refused }, 409);
-  return c.json({ error: r.error }, r.status);
 });
 
 // Moves a web-spawned session between the sidebar regions. Changes Sova's own id list only, except
@@ -446,8 +411,6 @@ const titleDeps = (): NameDeps => ({
 const autoTitleSweep = new AutoTitleSweep({
   settings: () => readSessionTitleSettings(),
   list: listSessions,
-  // Groups Sova fanned out: those it made (autoDissolve) or seeded (a pre-flag fanout group).
-  fanoutGroups: () => new Set(readGroups().filter((g) => g.autoDissolve === true || (g.autoDissolve === undefined && g.seed)).map((g) => g.id)),
   name: (s) => nameSession(s.path, "sweep", titleDeps()),
   log: (line) => console.log(line),
 });
@@ -624,6 +587,23 @@ app.put("/api/settings/models", async (c) => {
   const result = writeModelPolicy(body);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
+
+// Settings → Models' "At once" field: how many of each provider's model requests may run at once on
+// this device (server/provider-limits.ts). GET reads the file (missing → the defaults), PUT replaces
+// it; one that can't be read is never overwritten (409). Every pi process's gate reads it per request.
+app.get("/api/settings/provider-limits", (c) => c.json(providerLimitsInfo()));
+app.put("/api/settings/provider-limits", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected a JSON body { limits }" }, 400);
+  }
+  const result = saveProviderLimits(body);
+  return c.json(result.body, result.status);
+});
+// Who waits on a provider's limit now, by session id (the queue files; the web polls it while anything runs).
+app.get("/api/provider-limits/waiting", (c) => c.json(providerWaiting()));
 
 // Every theme we can find: the 18 shipped ones plus whatever is in
 // ~/.pi/agent/sova/themes/, rescanned per request. Read-only — the choice is the browser's, kept
@@ -1362,6 +1342,9 @@ const linkOrigin = (port: number) => `http://${HOST === "0.0.0.0" || HOST === ":
 // Known before listen when the port is fixed, so no runtime opened meanwhile misses the flag.
 if (PORT) setLinkOrigin(linkOrigin(PORT));
 
+// Every attached org's engine opens before the first request (its pages and share links read it).
+await openAttachedOrgs();
+
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
@@ -1391,14 +1374,9 @@ startResourceMonitor({
   held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
   titleOf: cachedTitleOf,
 });
-// Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
-const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
-workspaceCommits.start();
-// A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
-startWrapupRecovery();
+// Every attached org's workspace repo: its residence chart commits whatever changed at most hourly, then pushes.
 // Messages a crash or kill lost stop counting against their session's limit.
 startBudgetRecount();
-startBatonMarksBackfill();
 // The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.
 autoTitleSweep.start();
 onSummaryLineChanged(() => autoTitleSweep.nudge());
@@ -1497,8 +1475,8 @@ async function shutdown() {
     console.warn(`[server] visit flush failed: ${err instanceof Error ? err.message : String(err)}`);
   }
   // After the runtimes' last writes: whatever changed in a workspace repo since its last commit.
-  workspaceCommits.stop();
-  await Promise.race([workspaceCommits.flush("shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);
+  await closeAllOrgHosts().catch(() => {});
+  await Promise.race([flushWorkspaces(attachedWorkspaces(), "shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);

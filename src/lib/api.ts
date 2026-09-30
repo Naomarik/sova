@@ -38,9 +38,6 @@ import type {
   AssignGroupResult,
   BatchPromptResult,
   BatchRefusal,
-  FanoutConflict,
-  FanoutRequest,
-  FanoutResult,
   SessionGroup,
   SessionHiddenWorkers,
   SessionInsight,
@@ -70,9 +67,10 @@ import type {
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
-import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
+import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
+import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
@@ -93,6 +91,7 @@ import type {
   SummarizerSettingsInfo,
 } from "../../shared/protocol";
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
+import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
@@ -108,14 +107,6 @@ export type BatchOutcome =
   /** `status` so a caller can tell "the group changed under me" (400) from "the server is gone"
       (0) — the first is recoverable by re-reading the list, the second isn't. */
   | { ok: false; error: string; status: number; refused?: undefined };
-
-/** What a fanout can come back as; the 409 is the route's answer, not an exception. */
-export type FanoutOutcome =
-  | { ok: true; result: FanoutResult }
-  | { ok: false; refused: BatchRefusal[]; error?: undefined; status?: undefined; conflict?: undefined }
-  /** `conflict` is the route's one coded 400 (`seed-conflict`): the client renders its own
-      sentence from the code, and `error` stays the fallback for every other 400. */
-  | { ok: false; error: string; status: number; refused?: undefined; conflict?: FanoutConflict["code"] };
 
 export class ApiError extends Error {
   constructor(
@@ -194,6 +185,12 @@ export const getModelPolicy = (host?: string | null) => request<ModelPolicy>(hos
     the server refuses a model it forbids, so this is a rule, not a filter. */
 export const putModelPolicy = (policy: ModelPolicy) =>
   request<ModelPolicy>("/api/settings/models", { method: "PUT", body: JSON.stringify(policy) });
+/** How many of each provider's requests may run at once on this device (§app.provider-limits/setting). */
+export const getProviderLimits = () => request<ProviderLimitsInfo>("/api/settings/provider-limits");
+export const putProviderLimits = (limits: ProviderLimits) =>
+  request<ProviderLimitsInfo>("/api/settings/provider-limits", { method: "PUT", body: JSON.stringify({ limits }) });
+/** Who waits on a provider's limit now, by session id (§app.provider-limits/waiting-shown). */
+export const getProviderWaiting = () => request<ProviderWaiting>("/api/provider-limits/waiting");
 
 /** Delegate mode's routing (Settings → Modes → Delegate): which worker each kind of work goes to. */
 export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/settings/delegate");
@@ -515,11 +512,7 @@ export const deleteSessionGroup = (id: string) =>
  * `index` is where it lands in the member order (0 first, omitted or past the end = the end), so
  * an undo restores the label AND the place in one write that can't half-succeed. It is ignored
  * when ungrouping, and ignored for a session already in that group: assign never reorders in
- * place, `PATCH {order}` is the reposition.
- *
- * `dissolved` comes back only when this write removed the last member of a group Sova fanned
- * out, which deletes it in the same atomic write — the client cannot infer that from a count it
- * just changed.
+ * place, `PATCH {order}` is the reposition. It never deletes a group, emptied or not.
  */
 export const assignSessionGroup = (path: string, groupId: string | null, opts?: { label?: string | null; index?: number }) =>
   request<AssignGroupResult>("/api/session-groups/assign", {
@@ -537,8 +530,7 @@ export const assignSessionGroup = (path: string, groupId: string | null, opts?: 
  * Removal by session id, for a member whose FILE is gone (gone from disk):
  * the path form 404s when there is no file to resolve, but the pane's `Remove From Group` still
  * has to work, so the route takes `id` for unassignment only. Same response shape as the path
- * form, `dissolved` included — taking the last member out of a fanout group dissolves it whether
- * the file existed or not.
+ * form.
  */
 export const unassignSessionById = (id: string) =>
   request<AssignGroupResult>("/api/session-groups/assign", {
@@ -571,91 +563,6 @@ export async function promptSessionGroup(id: string, text: string, members?: str
     if (refused) return { ok: false, refused };
     return { ok: false, error: (err as Error).message, status: err instanceof ApiError ? err.status : 0 };
   }
-}
-
-/**
- * N sessions from one starting point, as one group. One write:
- * the group, its members and their assignments land together, because a fanout that half-exists
- * is a sidebar section the user has to clean up.
- *
- * Like the batch prompt, the refusal is a VALUE — a source that is mid-turn, TUI-live, in an older
- * format or has moved on since the dialog opened comes back as a 409 with exactly one entry naming
- * the SOURCE (which is a member of nothing, so its `id` is empty by design). A 201 can still carry
- * `failed`: members that couldn't start, named by `ref` since they have no session.
- */
-export async function createFanout(body: FanoutRequest): Promise<FanoutOutcome> {
-  try {
-    const result = await request<FanoutResult>("/api/session-groups/fanout", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    return { ok: true, result };
-  } catch (err) {
-    const refused = err instanceof ApiError && err.status === 409 ? refusalsOf(err.body) : null;
-    if (refused) return { ok: false, refused };
-    const status = err instanceof ApiError ? err.status : 0;
-    return { ok: false, error: (err as Error).message, status, conflict: conflictOf(err) };
-  }
-}
-
-/**
- * A fork's answer. The 201 carries the new session and, for a fork taken BEFORE a user message,
- * that message for the new composer — its text, its uploaded attachments and any inline image
- * bytes — so the fork lands you exactly where you were about to send, with nothing auto-sent.
- *
- * The shapes are the server's (POST /api/sessions/fork, see the team's wire contract). They are
- * described here only as far as this client reads them; the words for a refusal are Sova's own
- * (`forkRefusalText`), never the server's prose parsed.
- */
-export interface ForkEditor {
-  text?: string;
-  attachments?: TmpAttachment[];
-  /** Inline image bytes (data URLs) the message carried. A composer draft holds uploaded files,
-      not bytes, so these can be shown but not re-staged — the announcement says so. */
-  images?: string[];
-}
-
-export type ForkOutcome =
-  | { ok: true; session: SessionSummary; editor?: ForkEditor }
-  /** A refusal is a VALUE, like the fanout's: the strip renders it on the message's own row. */
-  | { ok: false; code?: string; message: string; status: number };
-
-/**
- * Fork a session at one of its entries: `position: "before"` on a user message (pi's /fork — the
- * branch through its parent, that message handed to the new composer), `"at"` on any entry (pi's
- * /clone — everything through it). Never sends anything in the new session.
- */
-export async function createFork(body: { path: string; entryId: string; position: "before" | "at" }): Promise<ForkOutcome> {
-  try {
-    const result = await request<{ session: SessionSummary; editor?: ForkEditor }>("/api/sessions/fork", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    return { ok: true, session: result.session, editor: result.editor };
-  } catch (err) {
-    const status = err instanceof ApiError ? err.status : 0;
-    const refused = err instanceof ApiError && err.status === 409 ? forkRefusalOf(err.body) : null;
-    return { ok: false, code: refused?.code, message: refused?.message ?? (err as Error).message, status };
-  }
-}
-
-/** The 409 body's single refusal, when it is shaped like one. An unknown shape is not invented
-    into a code: the caller then says the plain "couldn't fork" sentence. */
-function forkRefusalOf(body: unknown): { code?: string; message: string } | null {
-  const list = (body as { refused?: unknown } | undefined)?.refused;
-  const first = Array.isArray(list) ? list[0] : list;
-  if (!first || typeof first !== "object") return null;
-  const { code, message } = first as { code?: unknown; message?: unknown };
-  return { code: typeof code === "string" ? code : undefined, message: typeof message === "string" ? message : "" };
-}
-
-/** The coded 400 this route can answer with, when it is one. */
-function conflictOf(err: unknown): FanoutConflict["code"] | undefined {
-  if (!(err instanceof ApiError) || err.status !== 400) return undefined;
-  const code = (err.body as { code?: unknown } | undefined)?.code;
-  return code === "seed-conflict" ? code : undefined;
 }
 
 /** The 409's members, or null when the body isn't the shape this route promises. */
@@ -1000,9 +907,15 @@ export const attachOrg = (dir: string, confirm = false) => request<OrgDetail>("/
 export const setOperatorName = (name: string) => request<OrgsInfo>("/api/orgs/operator", jsonInit("PUT", { name }));
 export const getOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`);
 export const patchOrg = (id: string, patch: { name?: string; about?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+/** r13: the company's zone and working hours, the default for anyone without their own ("" / null clear them). */
+export const putOrgHours = (id: string, body: { tz: string; hours: PersonHours | null }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/hours`, jsonInit("PUT", body));
+/** r13: the company's zone or hours back to history line `at`'s `from`; refused when that field changed since. */
+export const revertOrgHours = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/hours/revert`, jsonInit("POST", { at }));
 /** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
 export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
+/** Reload the org's charts from its workspace (a fixed journal, restored snapshots): `problems` is what is still wrong. */
+export const reloadOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/reload`, jsonInit("POST"));
 export const commitOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/commit`, jsonInit("POST"));
 export const setOrgRemote = (id: string, url: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/remote`, jsonInit("PUT", { url }));
 export const addPerson = (id: string, person: PersonInput) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people`, jsonInit("POST", person));
@@ -1070,7 +983,7 @@ export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${e
 export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
-  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
+  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string; offHours?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
 export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
 export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
 export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);
@@ -1093,11 +1006,25 @@ export const setOwnerArea = (orgId: string, projectId: string, did: string, owne
 export const settleSpecText = (orgId: string, projectId: string, did: string, action: "keep" | "restore") =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}/text`, jsonInit("POST", { action }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
-  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
+  request<DecisionsInfo & { offHours?: string }>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/resolve`, jsonInit("POST", input));
 export const setSpecFrozen = (orgId: string, projectId: string, frozen: boolean) =>
   request<SpecStatus>(`${projectBase(orgId, projectId)}/spec`, jsonInit("PATCH", { frozen }));
+
+// ---- a project's Pipeline and the acts waiting in a hold (§app.project-overseer/pipeline, /holds) -----
+
+const pipelineBase = (orgId: string, projectId: string) => `${projectBase(orgId, projectId)}/pipeline`;
+export const getPipeline = (orgId: string, projectId: string) => request<PipelineInfo>(pipelineBase(orgId, projectId));
+export const holdGap = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineInfo>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/hold`, jsonInit("POST", {}));
+export const resumeGap = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineInfo>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/resume`, jsonInit("POST", {}));
+export const getGapTimeline = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineTimeline>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/timeline`);
+/** Stop a held act before it goes ahead (the operator's Cancel). */
+export const cancelHeldAct = (orgId: string, holdId: string, reason?: string) =>
+  request<{ ok: true }>(`/api/orgs/${encodeURIComponent(orgId)}/held/${encodeURIComponent(holdId)}/cancel`, jsonInit("POST", reason ? { reason } : {}));
 
 // ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
 

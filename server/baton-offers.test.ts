@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
-import { BATON_OFFER_ENTRY, BATON_PROPOSAL_ENTRY, BATON_SENT_ENTRY, BATON_WRAPUP_ENTRY, LEASE_IDLE_MS, OPERATOR, POOL } from "../shared/baton";
+import { BATON_LEASE_ENTRY, BATON_OFFER_ENTRY, BATON_PROPOSAL_ENTRY, BATON_SENT_ENTRY, BATON_WRAPUP_ENTRY, LEASE_IDLE_MS, OPERATOR, POOL } from "../shared/baton";
 import type { Person } from "../shared/orgs";
 import type { SessionSummary } from "../shared/protocol";
 
@@ -19,23 +19,32 @@ mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 
 const orgs = await import("./orgs");
 const baton = await import("./baton");
-const { onBatonEvent } = await import("./baton-events");
+const { onOrgChange } = await import("./org-engine");
 const { batonTools } = await import("./baton-loadout");
 const { batonView } = await import("./baton-view");
 const wrap = await import("./baton-wrapup");
 const { registerOrgRoutes } = await import("./org-routes");
 const { sessionItems } = await import("./attention");
+const { closeOrgHost, envelopeFor, hostOf, setOrgClockForTest } = await import("./org-engine");
+const { replyEnded } = await import("./org-test-fixtures");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
-const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
-const carlos = orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
+const carlos = await orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
+/** Every act a baton chart took, in order (its moves as the log records them). */
 const events: { type: string; sessionId: string }[] = [];
-onBatonEvent((e) => events.push({ type: e.type, sessionId: e.sessionId }));
+onOrgChange((_orgId, change) => {
+  for (const st of change.steps)
+    if (st.refused || st.held || st.ignored) continue;
+    else if (st.sessionId.startsWith("baton/")) events.push({ type: st.event, sessionId: st.sessionId.split("/").slice(2).join("/") });
+    // The start is the project chart's act: it names the baton it spawns.
+    else if (st.event === "baton/start") events.push({ type: st.event, sessionId: String(st.data?.sessionId ?? st.data?.["session-id"] ?? "") });
+});
 
 /** Polls until `cond` holds: waits on the event itself, not on a guess at how long it takes. */
 async function waitFor(cond: () => boolean, ms = 10_000): Promise<void> {
@@ -76,8 +85,8 @@ describe("hand_to targets", () => {
   });
 });
 
-describe("offers and leases", () => {
-  const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id, carlos.id], publicTitle: "Hosting", goal: "g", question: "Who hosts?" });
+describe("offers and leases", async () => {
+  const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id, carlos.id], publicTitle: "Hosting", goal: "g", question: "Who hosts?" });
   const tokenOf = (id: string) => c.links!.find((l) => l.personId === id)!.token;
 
   test("starting as an offer: the pool holds it, one link each, an offer entry in the transcript", () => {
@@ -99,17 +108,23 @@ describe("offers and leases", () => {
 
   test("the first accepted message claims it; the others are 'taken' and refused, and see nothing past the offer", () => {
     const t0 = Date.now();
-    const noted = baton.noteMessage(c.sessionId, tony.id, t0);
-    assert.deepEqual(noted.claimed, { n: 1, offerId: noted.row.offerId });
+    setOrgClockForTest(() => t0);
+    let noted;
+    try {
+      noted = baton.noteMessage(c.sessionId, tony.id);
+    } finally {
+      setOrgClockForTest(null);
+    }
+    assert.equal(noted.claimed, true);
     const row = baton.batonById(c.sessionId)!.row;
     assert.equal(row.holder, tony.id);
     const offer = baton.currentOffer(row)!;
     assert.equal(offer.state, "held");
-    assert.equal(Date.parse(offer.leaseUntil!) - t0, LEASE_IDLE_MS);
-    const m = baton.linkAccess(tokenOf(maria.id), t0 + 1000);
+    assert.equal(Date.parse(offer.leaseUntil!) - t0, LEASE_IDLE_MS, "the lease runs from the claim");
+    const m = baton.linkAccess(tokenOf(maria.id));
     assert.equal(m.ok && m.reason, "taken");
-    assert.throws(() => baton.noteMessage(c.sessionId, maria.id, t0 + 1000), /Someone else is answering/);
-    assert.throws(() => baton.noteMessage(c.sessionId, OPERATOR, t0 + 1000), /holds the baton/);
+    assert.throws(() => baton.noteMessage(c.sessionId, maria.id), /Someone else is answering/);
+    assert.throws(() => baton.noteMessage(c.sessionId, OPERATOR), /holds the baton/);
     assert.equal(baton.batonById(c.sessionId)!.row.budget.messagesUsed, 1, "refusals are not counted");
     // The view Maria's page gets: up to the offer card, the holder unnamed.
     const branch = [
@@ -130,61 +145,160 @@ describe("offers and leases", () => {
     assert.ok(JSON.stringify(full).includes("TONY-SAYS"));
   });
 
-  test("each message and each reply renew the lease; idle past it, the pool takes it back and anyone may claim", () => {
+  test("each message and each reply renew the lease; it never lapses mid-reply; idle past it, the pool takes it back and anyone may claim", async () => {
+    // A one-second lease (SOVA_BATON_LEASE_MS, hermetic tests only): the chart's own timer lapses it.
+    process.env.SOVA_BATON_LEASE_MS = "1000";
+    let l;
+    try {
+      l = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id, carlos.id], publicTitle: "Leases", goal: "g", question: "Who hosts?" });
+    } finally {
+      delete process.env.SOVA_BATON_LEASE_MS;
+    }
+    const sid = `baton/${org.id}/${l.sessionId}`;
+    const fact = (event: string) => hostOf(org.id).act(sid, event, {}, envelopeFor(org.id, project.id, { by: "system", attended: false }), { settle: true });
+    const row = () => baton.batonById(l.sessionId)!.row;
+    const leaseEnd = () => Date.parse(baton.currentOffer(row())!.leaseUntil!);
     const t0 = Date.now();
-    baton.touchLease(c.sessionId, t0 + 10 * 60_000);
-    const until = Date.parse(baton.currentOffer(baton.batonById(c.sessionId)!.row)!.leaseUntil!);
-    assert.equal(until, t0 + 10 * 60_000 + LEASE_IDLE_MS, "the reply renewed it");
-    assert.deepEqual(baton.lapsedLeases(until - 1), []);
-    assert.deepEqual(baton.lapsedLeases(until + 1), [c.sessionId]);
-    // Maria's link may write as soon as it has lapsed, before any tick: the route is the lock.
-    const m = baton.linkAccess(tokenOf(maria.id), until + 1);
-    assert.equal(m.ok && m.canWrite, true);
-    const noted = baton.noteMessage(c.sessionId, maria.id, until + 1);
-    assert.equal(noted.expired?.by, tony.id);
-    assert.ok(noted.claimed);
-    assert.equal(baton.batonById(c.sessionId)!.row.holder, maria.id);
-    assert.deepEqual(baton.batonById(c.sessionId)!.row.participants.sort(), [OPERATOR, maria.id, tony.id].sort());
-    // The ticker's path: a lapse with no message returns it to the pool.
-    const later = until + 1 + LEASE_IDLE_MS + 1;
-    assert.equal(baton.expireLease(c.sessionId, later)?.by, maria.id);
-    assert.equal(baton.expireLease(c.sessionId, later), null, "only once");
-    assert.equal(baton.batonById(c.sessionId)!.row.holder, null);
-    assert.equal(baton.batonSummaryField(c.path)!.holder, "3 invited");
+    /** The org's clock at `t0 + ms`, its due timers fired. */
+    const at = (ms: number) => {
+      setOrgClockForTest(() => t0 + ms);
+      hostOf(org.id).fireDue();
+    };
+    const lapses = () => entriesOf(l.path).filter((e) => e.customType === BATON_LEASE_ENTRY && e.data.event === "expired" && e.data.by === tony.id).length;
+    try {
+      at(0);
+      baton.noteMessage(l.sessionId, tony.id);
+      assert.equal(leaseEnd(), t0 + 1000, "the message claims it for one lease");
+      // The reply to Tony runs past the lease: it stays his.
+      at(100);
+      await fact("reply/starting");
+      await fact("reply/writing");
+      at(1300);
+      assert.equal(row().holder, tony.id, "mid-reply a lapsed lease stays with its holder");
+      await fact("reply/ended");
+      assert.equal(leaseEnd(), t0 + 1300 + 1000, "the reply's end renewed it");
+      at(2299);
+      assert.equal(row().holder, tony.id, "not before the lease ends");
+      at(2301);
+      assert.equal(row().holder, null, "idle past it, the pool takes it back");
+      await waitFor(() => lapses() === 1); // the lapse's transcript entry is its effect's
+      at(5000);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.equal(lapses(), 1, "it lapses once");
+    } finally {
+      setOrgClockForTest(null);
+    }
+    assert.equal(baton.batonSummaryField(l.path)!.holder, "3 invited");
+    const m = baton.linkAccess(l.links!.find((x) => x.personId === maria.id)!.token);
+    assert.equal(m.ok && m.canWrite, true, "anyone invited may claim it again");
+    assert.equal(baton.noteMessage(l.sessionId, maria.id).claimed, true);
+    assert.equal(row().holder, maria.id);
+    assert.deepEqual([...row().participants].sort(), [OPERATOR, maria.id, tony.id].sort());
   });
 
-  test("handing on withdraws the offer: invitees who never held it get 410, those who did read on", () => {
-    const now = Date.now() + 3 * LEASE_IDLE_MS;
-    baton.noteMessage(c.sessionId, tony.id, now);
-    baton.handTo(c.sessionId, OPERATOR, "Which plan?", "", new Date(now));
+  test("a crash mid-reply (F-049/F-050): after the restart the reply is over and the lease counts again, lapsing on time", async () => {
+    process.env.SOVA_BATON_LEASE_MS = "1000";
+    let l;
+    try {
+      l = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Crash", goal: "g", question: "Who hosts?" });
+    } finally {
+      delete process.env.SOVA_BATON_LEASE_MS;
+    }
+    const sid = `baton/${org.id}/${l.sessionId}`;
+    const t0 = Date.now();
+    const at = (ms: number) => {
+      setOrgClockForTest(() => t0 + ms);
+      hostOf(org.id).fireDue();
+    };
+    try {
+      at(0);
+      baton.noteMessage(l.sessionId, tony.id);
+      at(100);
+      await hostOf(org.id).act(sid, "reply/starting", {}, envelopeFor(org.id, project.id, { by: "system", attended: false }), { settle: true });
+      assert.equal(hostOf(org.id).data(sid)!.reply, "starting");
+      // The process dies mid-reply: nothing ends the reply. The org opens again.
+      await closeOrgHost(org.id);
+      setOrgClockForTest(() => t0 + 200);
+      await orgs.openAttachedOrgs();
+      await waitFor(() => hostOf(org.id).data(sid)?.reply === "idle");
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, tony.id, "still his until the lease ends");
+      // Cut off before a word was written, the reply renewed nothing: the lease runs from his message.
+      at(999);
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, tony.id);
+      at(1001);
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, null, "the lease lapsed on time: the pool takes it back");
+    } finally {
+      setOrgClockForTest(null);
+    }
+  });
+
+  test("a crash mid-reply while it WRITES (verifier-3 H10n06): after the restart the reply is over, and what it wrote renewed the lease", async () => {
+    process.env.SOVA_BATON_LEASE_MS = "1000";
+    let l;
+    try {
+      l = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Crash writing", goal: "g", question: "Who pays?" });
+    } finally {
+      delete process.env.SOVA_BATON_LEASE_MS;
+    }
+    const sid = `baton/${org.id}/${l.sessionId}`;
+    const sys = envelopeFor(org.id, project.id, { by: "system", attended: false });
+    const t0 = Date.now();
+    const at = (ms: number) => {
+      setOrgClockForTest(() => t0 + ms);
+      hostOf(org.id).fireDue();
+    };
+    try {
+      at(0);
+      baton.noteMessage(l.sessionId, tony.id);
+      at(100);
+      await hostOf(org.id).act(sid, "reply/starting", {}, sys, { settle: true });
+      at(150);
+      await hostOf(org.id).act(sid, "reply/writing", {}, sys, { settle: true });
+      assert.equal(hostOf(org.id).data(sid)!.reply, "writing");
+      // The process dies while the reply writes. The org opens again at 200.
+      await closeOrgHost(org.id);
+      setOrgClockForTest(() => t0 + 200);
+      await orgs.openAttachedOrgs();
+      await waitFor(() => hostOf(org.id).data(sid)?.reply === "idle");
+      // It wrote: its end renewed the lease, which now runs from the restart, not from his message.
+      at(1001);
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, tony.id, "renewed by the written reply's end");
+      at(1201);
+      assert.equal(baton.batonById(l.sessionId)!.row.holder, null, "then it lapses on time");
+    } finally {
+      setOrgClockForTest(null);
+    }
+  });
+
+  test("handing on withdraws the offer: invitees who never held it get 410, those who did read on", async () => {
+    await baton.handTo(c.sessionId, OPERATOR, "Which plan?", "");
     const row = baton.batonById(c.sessionId)!.row;
     assert.equal(row.offerId, undefined);
     assert.equal(row.offers![0]!.state, "withdrawn");
     assert.equal(row.handoffs.at(-1)!.from, tony.id);
-    assert.deepEqual(baton.linkAccess(tokenOf(carlos.id), now), { ok: false, status: 410, why: "withdrawn" }, "never held it");
-    const t = baton.linkAccess(tokenOf(tony.id), now);
-    assert.equal(t.ok && t.reason, "needs-operator");
-    const m = baton.linkAccess(tokenOf(maria.id), now);
-    assert.equal(m.ok && m.canWrite, false, "Maria held it once: reads, never writes");
+    assert.deepEqual(baton.linkAccess(tokenOf(carlos.id)), { ok: false, status: 410, why: "withdrawn" }, "never held it");
+    assert.deepEqual(baton.linkAccess(tokenOf(maria.id)), { ok: false, status: 410, why: "withdrawn" }, "never held it");
+    const t = baton.linkAccess(tokenOf(tony.id));
+    assert.equal(t.ok && t.reason, "needs-operator", "Tony held it: reads on");
   });
 
-  test("an offer from a live session; re-mint one invitee's link; an unclaimed offer taken back revokes every link", () => {
-    const out = baton.startOffer(c.sessionId, [maria.id, carlos.id], "Payroll day?", "brief", new Date());
-    assert.equal(out.from, OPERATOR);
+  test("an offer from a live session; re-mint one invitee's link; an unclaimed offer taken back revokes every link", async () => {
+    const out = await baton.offerTo(c.sessionId, [maria.id, carlos.id], "Payroll day?", "brief");
+    assert.equal(baton.batonById(c.sessionId)!.row.handoffs.at(-1)!.from, OPERATOR);
     assert.equal(out.n, baton.batonById(c.sessionId)!.row.handoffs.length);
     assert.throws(() => baton.rotateLink(c.sessionId), /invitees/);
     const again = baton.rotateLink(c.sessionId, carlos.id);
     const first = out.links.find((l) => l.personId === carlos.id)!.token;
     assert.deepEqual(baton.linkAccess(first), { ok: false, status: 410 }, "the older link of that person stops");
     assert.equal((baton.linkAccess(again.token) as { canWrite: boolean }).canWrite, true);
-    baton.handTo(c.sessionId, OPERATOR, "(taken back)", "", new Date());
+    await baton.takeBack(c.sessionId);
     assert.equal(baton.batonById(c.sessionId)!.row.handoffs.at(-1)!.from, POOL);
     assert.deepEqual(baton.linkAccess(again.token), { ok: false, status: 410, why: "withdrawn" }, "Carlos never held it");
   });
 });
 
-describe("referrals", () => {
-  const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Bank", goal: "g" });
+describe("referrals", async () => {
+  const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Bank", goal: "g" });
   const appended: { type: string; data: any }[] = [];
   const tools = batonTools(c.sessionId, (type, data) => appended.push({ type, data }));
   const propose = tools.find((t) => t.name === "propose_roster_edit")!;
@@ -205,7 +319,7 @@ describe("referrals", () => {
     assert.ok(orgs.readHistory(org.id, bob.id).every((h) => h.by.kind === "referral"));
     assert.equal(appended.at(-1)!.type, BATON_PROPOSAL_ENTRY);
     assert.equal(appended.at(-1)!.data.by, tony.id);
-    assert.ok(events.some((e) => e.type === "proposal" && e.sessionId === c.sessionId));
+    assert.ok(events.some((e) => e.type === "baton/propose" && e.sessionId === c.sessionId));
     const field = baton.batonSummaryField(c.path)!;
     assert.equal(field.proposals?.[0]?.name, "Bob Smith");
     assert.equal(field.proposals?.[0]?.by, "Tony Reyes");
@@ -217,27 +331,28 @@ describe("referrals", () => {
     await assert.rejects(call({ name: "Bob Smith", role: "x", contact: { email: "b@example.com" }, why: "y", quote: "z" }), /already proposed/);
   });
 
-  test("approve and decline: operator or project overseer, only from proposed; the wrap-up never", () => {
+  test("approve and decline: operator or project overseer, only from proposed; the wrap-up never", async () => {
     const bob = orgs.readRoster(org.id).find((p) => p.name === "Bob Smith")!;
-    assert.throws(() => orgs.decidePerson(org.id, bob.id, true, { kind: "wrapup" }), /may not approve/);
-    assert.throws(() => orgs.applyChange(org.id, bob.id, { status: "active" }, { kind: "overseer" }), /may not write status/, "no status writes outside a decision");
-    const approved = orgs.approvePerson(org.id, bob.id, { kind: "overseer", sessionId: "po-1" });
+    await assert.rejects(orgs.decidePerson(org.id, bob.id, true, { kind: "wrapup" }), /may not approve/);
+    await assert.rejects(orgs.applyChange(org.id, bob.id, { status: "active" }, { kind: "overseer" }), /may not write status/, "no status writes outside a decision");
+    // In a turn the operator started (an unattended approval needs L2 and waits in a hold).
+    const approved = await orgs.decidePerson(org.id, bob.id, true, { kind: "overseer", sessionId: "po-1" }, (await import("./org-engine")).envelopeFor(org.id, project.id, { by: "overseer", attended: true }));
     assert.equal(approved.status, "active");
     assert.equal(orgs.readHistory(org.id, bob.id).at(-1)!.by.kind, "overseer");
-    assert.throws(() => orgs.declinePerson(org.id, bob.id), /not waiting for approval/);
+    await assert.rejects(orgs.declinePerson(org.id, bob.id), /not waiting for approval/);
     assert.equal(baton.batonSummaryField(c.path)!.proposals, undefined, "no longer waiting");
     // Decline keeps the referral and marks them left.
-    const eve = orgs.addPerson(org.id, { name: "Eve", status: "proposed", role: "Ops", contact: { phone: "1" }, referral: { why: "w", referredBy: tony.id } });
-    const declined = orgs.declinePerson(org.id, eve.id);
+    const eve = await orgs.addPerson(org.id, { name: "Eve", status: "proposed", role: "Ops", contact: { phone: "1" }, referral: { why: "w", referredBy: tony.id } });
+    const declined = await orgs.declinePerson(org.id, eve.id);
     assert.equal(declined.status, "left");
     assert.equal(declined.referral?.why, "w");
     assert.match((baton.resolveTarget(orgs.readRoster(org.id), "Eve", "Omar") as { error: string }).error, /declined/);
   });
 });
 
-describe("the wrap-up's writer", () => {
-  const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Wrap", goal: "g" });
-  baton.handTo(c.sessionId, maria.id, "q", "", new Date());
+describe("the wrap-up's writer", async () => {
+  const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Wrap", goal: "g" });
+  await baton.handTo(c.sessionId, maria.id, "q", "");
   const branch = [
     { type: "message", id: "u1", message: { role: "user", content: "We run everything on Xero and I write SQL daily" } },
     { type: "custom", id: "m1", customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "u1", by: tony.id } },
@@ -269,11 +384,11 @@ describe("the wrap-up's writer", () => {
     assert.equal(wrap.statesLanguage("Please write to me in English from now on"), true);
     assert.equal(wrap.statesLanguage("Hola, prefiero español por favor"), true);
     assert.equal(wrap.statesLanguage("We run everything on Xero and I write SQL daily"), false, "a message in English states nothing");
-    const d = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Lang", goal: "g" });
-    const ana = orgs.addPerson(org.id, { name: "Ana", role: "Ops", language: "es-CO" });
-    const ben = orgs.addPerson(org.id, { name: "Ben", role: "Ops" });
-    baton.handTo(d.sessionId, ana.id, "q", "", new Date());
-    baton.handTo(d.sessionId, ben.id, "q", "", new Date());
+    const d = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Lang", goal: "g" });
+    const ana = await orgs.addPerson(org.id, { name: "Ana", role: "Ops", language: "es-CO" });
+    const ben = await orgs.addPerson(org.id, { name: "Ben", role: "Ops" });
+    await baton.handTo(d.sessionId, ana.id, "q", "");
+    await baton.handTo(d.sessionId, ben.id, "q", "");
     const br = [
       { type: "message", id: "a1", message: { role: "user", content: "Sure, the invoices go out on Mondays." } },
       { type: "custom", id: "a2", customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "a1", by: ana.id } },
@@ -328,7 +443,7 @@ describe("the wrap-up's writer", () => {
     const line = orgs.readHistory(org.id, maria.id).at(-1)!;
     assert.deepEqual(line.by, { kind: "wrapup", sessionId: c.sessionId, entryId: "u2", quote: "prefiero español por favor" });
     // One-click revert of an autonomous change.
-    orgs.revertChange(org.id, maria.id, line.at);
+    await orgs.revertChange(org.id, maria.id, line.at);
     assert.equal(orgs.readRoster(org.id).find((p) => p.id === maria.id)!.language, "");
     const feed = orgs.recentChanges(org.id, 3);
     assert.equal(feed[0]!.revertOf, line.at);
@@ -358,12 +473,15 @@ describe("routes: spawn-for-person, owner, handoff", () => {
     app.request(path, { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
 
   test("POST /api/baton: an offer returns one link per invitee; owner from a request is ignored; a parent carries its project", async () => {
-    const res = await json("POST", "/api/baton", { orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Offer", goal: "g", owner: { overseerOf: "evil" } });
+    // In-process options in a request body are ignored (F-040): the owner, no link, how it was started.
+    const res = await json("POST", "/api/baton", { orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Offer", goal: "g", owner: { overseerOf: "evil" }, mintLink: false, startedVia: "overseer" });
     assert.equal(res.status, 201);
     const out = (await res.json()) as { sessionId: string; links: { personId: string; name: string; link: string }[] };
-    assert.deepEqual(out.links.map((l) => l.name), ["Tony Reyes", "Maria Lopez"]);
+    assert.deepEqual(out.links.map((l) => l.name), ["Tony Reyes", "Maria Lopez"], "links minted: mintLink from a body is ignored");
     assert.match(out.links[0]!.link, /\/h\/[A-Za-z0-9_-]{43}$/);
-    assert.equal(baton.batonById(out.sessionId)!.row.owner, "operator");
+    const made = baton.batonById(out.sessionId)!.row;
+    assert.equal(made.owner, "operator");
+    assert.equal((made as { startedVia?: string }).startedVia, undefined, "startedVia from a body is ignored");
     const child = await json("POST", "/api/baton", { orgId: org.id, parentSessionId: out.sessionId, to: carlos.id, publicTitle: "For Carlos", goal: "g", briefing: "Tony referred you" });
     assert.equal(child.status, 201);
     const row = baton.batonById(((await child.json()) as { sessionId: string }).sessionId)!.row;
@@ -372,17 +490,19 @@ describe("routes: spawn-for-person, owner, handoff", () => {
     assert.equal(row.handoffs[0]!.briefing, "Tony referred you");
   });
 
-  test("in-process callers may set the owner", () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Conflict", goal: "g", owner: { overseerOf: project.id } });
+  test("in-process callers set the owner by who starts it (the overseer's envelope); an owner in the input is ignored", async () => {
+    const overseer = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Conflict", goal: "g" }, { envelope: overseer });
     const row = baton.batonById(c.sessionId)!.row;
     assert.deepEqual(row.owner, { overseerOf: project.id });
     assert.ok(baton.batonSummaryField(c.path)!.needsYou, "held by the operator from the start = Needs you");
-    assert.throws(() => baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "x", goal: "g", owner: "someone" as never }), /owner/);
+    const mine = await baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "x", goal: "g", owner: { overseerOf: project.id } } as never);
+    assert.equal(baton.batonById(mine.sessionId)!.row.owner, OPERATOR, "the operator's start is the operator's");
   });
 
   test("approve/decline/changes routes; /handoff refuses a proposed person", async () => {
-    const zed = orgs.addPerson(org.id, { name: "Zed", status: "proposed", role: "Ops", contact: { email: "z@example.com" }, referral: { why: "w", referredBy: OPERATOR } });
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Hand", goal: "g" });
+    const zed = await orgs.addPerson(org.id, { name: "Zed", status: "proposed", role: "Ops", contact: { email: "z@example.com" }, referral: { why: "w", referredBy: OPERATOR } });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Hand", goal: "g" });
     const refused = await json("POST", `/api/baton/${c.sessionId}/handoff`, { to: zed.id, question: "q" });
     assert.equal(refused.status, 409);
     assert.equal((await json("POST", `/api/orgs/${org.id}/people/${zed.id}/approve`)).status, 200);
@@ -392,15 +512,17 @@ describe("routes: spawn-for-person, owner, handoff", () => {
     assert.ok(detail.recentChanges.length > 0 && detail.recentChanges.length <= 20);
   });
 
-  test("events: start, offer, hand-off, done, close", () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Ev", goal: "g" });
-    baton.startOffer(c.sessionId, [tony.id, maria.id], "q", "", new Date());
-    baton.handTo(c.sessionId, OPERATOR, "q", "", new Date());
-    baton.markDone(c.sessionId, new Date());
-    baton.closeBaton(c.sessionId);
+  test("events: start, offer, hand-off, done, close", async () => {
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Ev", goal: "g" });
+    await baton.offerTo(c.sessionId, [tony.id, maria.id], "q", "");
+    await baton.handTo(c.sessionId, OPERATOR, "q", "");
+    await baton.markDone(c.sessionId);
+    await baton.closeBaton(c.sessionId);
+    // The start is the project chart's act (baton/start); the rest are the baton's own moves.
+    const moves = new Set(["baton/start", "baton/offer", "baton/hand-to", "baton/goal-done", "baton/close"]);
     assert.deepEqual(
-      events.filter((e) => e.sessionId === c.sessionId).map((e) => e.type),
-      ["handoff", "offer", "handoff", "done", "closed"],
+      events.filter((e) => e.sessionId === c.sessionId && moves.has(e.type)).map((e) => e.type),
+      ["baton/start", "baton/offer", "baton/hand-to", "baton/goal-done", "baton/close"],
     );
   });
 });
@@ -428,14 +550,14 @@ describe("the operator's transcript", async () => {
 });
 
 describe("referral contacts", () => {
-  test("a placeholder is no contact channel; real ones pass", () => {
+  test("a placeholder is no contact channel; real ones pass", async () => {
     assert.deepEqual(orgs.contactProblems({ email: "ask Tony for Bob Smith's contact" }), ["the email is not an email address"]);
     assert.deepEqual(orgs.contactProblems({ phone: "unknown" }), ["the phone is not a phone number"]);
     assert.deepEqual(orgs.contactProblems({ whatsapp: "12 34" }), ["the WhatsApp is not a phone number"]);
     assert.deepEqual(orgs.contactProblems({ other: "ask around" }), ["the other channel names no handle or number"]);
     assert.deepEqual(orgs.contactProblems({ email: "bob@gate.example", phone: "+57 (300) 123-4567", other: "Slack: @bob" }), []);
-    assert.throws(
-      () => orgs.applyChange(org.id, null, { name: "Placeholder Pete", status: "proposed", role: "x", contact: { email: "ask Tony" }, referral: { why: "w", referredBy: tony.id } }, { kind: "referral" }),
+    await assert.rejects(
+      orgs.addPerson(org.id, { name: "Placeholder Pete", status: "proposed", role: "x", contact: { email: "ask Tony" }, referral: { why: "w", referredBy: tony.id } }, { kind: "referral" }),
       /real way to reach them/,
     );
   });
@@ -450,8 +572,8 @@ test("SOVA_BATON_LEASE_MS shortens the lease (hermetic tests only); nonsense kee
 
 describe("the share hub's streaming", async () => {
   const hub = await import("./share/hub");
-  test("a reply being written reaches the holder's page, never an invitee who has not held the offer", () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Stream", goal: "g" });
+  test("a reply being written reaches the holder's page, never an invitee who has not held the offer", async () => {
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Stream", goal: "g" });
     const tokenOf = (id: string) => c.links!.find((l) => l.personId === id)!.token;
     const got: Record<string, string[]> = { tony: [], maria: [] };
     const fake = (who: "tony" | "maria") => ({ readyState: 1, OPEN: 1, send: (m: string) => got[who]!.push(m), on: () => {}, close: () => {} }) as never;
@@ -468,30 +590,29 @@ describe("the share hub's streaming", async () => {
 });
 
 describe("createBaton without a link (in-process callers)", () => {
-  test("mintLink: false mints nothing and the session asks the operator to send one", () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Quiet", goal: "g", mintLink: false });
+  test("mintLink: false mints nothing and the session asks the operator to send one", async () => {
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Quiet", goal: "g" }, { mintLink: false });
     assert.equal(c.token, undefined);
     assert.equal(baton.liveLinkCount(baton.batonById(c.sessionId)!.row), 0);
     assert.equal(baton.batonSummaryField(c.path)!.sendLink?.to, "Tony Reyes");
-    const o = baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Quiet offer", goal: "g", mintLink: false });
+    const o = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Quiet offer", goal: "g" }, { mintLink: false });
     assert.equal(o.links, undefined);
     assert.equal(baton.batonSummaryField(o.path)!.sendLink?.to, "Tony Reyes, Maria Lopez");
     baton.rotateLink(o.sessionId, tony.id);
     assert.equal(baton.batonSummaryField(o.path)!.sendLink?.to, "Maria Lopez", "only the invitee still without a link");
     baton.rotateLink(o.sessionId, maria.id);
     assert.equal(baton.batonSummaryField(o.path)!.sendLink, undefined, "every invitee has a link now");
-    const live = baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Live offer", goal: "g" });
-    const out = baton.startOffer(live.sessionId, [tony.id, carlos.id], "q?", "", new Date(), false);
+    const live = await baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Live offer", goal: "g" });
+    const out = await baton.offerTo(live.sessionId, [tony.id, carlos.id], "q?", "", { mintLink: false });
     assert.deepEqual(out.links, []);
     assert.equal(baton.batonSummaryField(live.path)!.sendLink?.to, "Tony Reyes, Carlos");
     // The default still mints (the HTTP route; mintLink in a request body is ignored).
-    assert.ok(baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Loud", goal: "g" }).token);
+    assert.ok(await (await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Loud", goal: "g" })).token);
   });
 });
 
 describe("regressions from the slice-2 verification", async () => {
   const { createShareServer } = await import("./share/listener");
-  const { tickLeases } = await import("./baton-loadout");
   const { disposeAllChats } = await import("./chat-manager");
   const { default: WebSocket } = await import("ws");
   const server = createShareServer();
@@ -506,7 +627,7 @@ describe("regressions from the slice-2 verification", async () => {
 
   test("N first messages at once on the share route: exactly one is accepted, the rest are 'taken'", async () => {
     const people = [tony, maria, carlos];
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: people.map((p) => p.id), publicTitle: "Race", goal: "g" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: people.map((p) => p.id), publicTitle: "Race", goal: "g" });
     const res = await Promise.all(c.links!.map((l) => post(l.token, `me first, ${l.personId}`)));
     const bodies = await Promise.all(res.map((r) => r.json() as Promise<{ code?: string }>));
     const accepted = res.filter((r) => r.status === 202);
@@ -518,10 +639,12 @@ describe("regressions from the slice-2 verification", async () => {
   });
 
   test("the share WebSocket writes nothing while taken; after the lease lapses a view that may write is pushed", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "WS", goal: "g" });
+    // A one-second lease (hermetic tests only): the chart's own timer lapses it.
+    process.env.SOVA_BATON_LEASE_MS = "1000";
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "WS", goal: "g" }).finally(() => delete process.env.SOVA_BATON_LEASE_MS);
     const mariaTok = c.links!.find((l) => l.personId === maria.id)!.token;
-    const t0 = Date.now();
-    baton.noteMessage(c.sessionId, tony.id, t0); // Tony holds a live lease
+    baton.noteMessage(c.sessionId, tony.id); // Tony holds a live lease
+    await replyEnded(c.sessionId); // the reply to him ended: a lease lapses only between replies
     const views: { canWrite: boolean; reason?: string }[] = [];
     const ws = new WebSocket(`${base.replace("http", "ws")}/ws/h?token=${mariaTok}`);
     ws.on("message", (d) => {
@@ -537,18 +660,16 @@ describe("regressions from the slice-2 verification", async () => {
     const row = baton.batonById(c.sessionId)!.row;
     assert.equal(row.holder, tony.id, "a socket message claims nothing");
     assert.equal(row.budget.messagesUsed, 1, "and is not a message");
-    await tickLeases(t0 + LEASE_IDLE_MS - 1);
-    assert.equal(baton.batonById(c.sessionId)!.row.holder, tony.id, "not before the lease ends");
-    await tickLeases(t0 + LEASE_IDLE_MS + 1);
-    await waitFor(() => views.at(-1)?.canWrite === true);
+    await waitFor(() => views.at(-1)?.canWrite === true, 5000);
     ws.close();
     assert.equal(baton.batonById(c.sessionId)!.row.holder, null, "back in the pool");
     assert.deepEqual(views.at(-1), { name: "Maria Lopez", canWrite: true }, "Maria's page was told she may write");
   });
 
   test("the wrap-up also runs on close, once, and never counts against the budget", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Close wrap", goal: "g" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Close wrap", goal: "g" });
     baton.noteMessage(c.sessionId, tony.id);
+    await replyEnded(c.sessionId);
     // Tony's message, with its sender marker, as the runtime would have written them.
     const leaf = entriesOf(c.path).at(-1).id;
     const at = new Date().toISOString();
@@ -571,18 +692,18 @@ describe("regressions from the slice-2 verification", async () => {
     assert.equal(row.budget.messagesUsed, 1, "its prompt is not a message");
     const marks = entriesOf(c.path).filter((e) => e.customType === BATON_WRAPUP_ENTRY).map((e) => e.data.phase);
     assert.deepEqual(marks, ["start", "end"]);
-    assert.equal(await wrap.runWrapup(c.sessionId, []), null, "once");
+    await new Promise((r) => setTimeout(r, 100));
+    assert.notEqual(baton.batonById(c.sessionId)!.row.wrapup?.state, "running", "once: it never starts again on its own");
+    assert.equal(wrap.wantsWrapup(baton.batonById(c.sessionId)!.row), false);
   });
 
   test("W7: no person wrote anything → the wrap-up is skipped: no turn, no entries, recorded so it never retries", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Silent", goal: "g" });
-    baton.markDone(c.sessionId, new Date()); // Tony was a participant but never wrote
-    const info = await wrap.runWrapup(c.sessionId, []);
-    assert.equal(info?.state, "skipped");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Silent", goal: "g" });
+    await baton.markDone(c.sessionId); // Tony was a participant but never wrote
     assert.equal(baton.batonById(c.sessionId)!.row.wrapup?.state, "skipped");
     assert.deepEqual(entriesOf(c.path).filter((e) => e.customType === BATON_WRAPUP_ENTRY), [], "no wrap-up turn was written");
     assert.equal(wrap.wantsWrapup(baton.batonById(c.sessionId)!.row), false, "never again");
-    assert.equal(await wrap.runWrapup(c.sessionId, []), null);
+    await assert.rejects(baton.retryWrapup(c.sessionId), /Only a wrap-up that stopped/);
   });
 
   test("W1 in the prompt: a known language changes only on a stated preference", () => {

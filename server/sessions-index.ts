@@ -1,7 +1,7 @@
 import { type Dirent, statSync } from "node:fs";
 import { type FileHandle, open, readdir, stat, unlink } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
-import { CURRENT_SESSION_FORMAT, OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
+import { OVERSEER_ENTRY, type SessionSummary } from "../shared/protocol";
 import { activityOf, type LiveRecord, type RawLiveRecord, readLive, readOwnLiveRecords, workerCountsOf, workingSubagents } from "./live";
 import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESSIONS_DIR } from "./paths";
 import { isWebSession, removeWebSession } from "./web-sessions";
@@ -656,11 +656,6 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
     // THIS host; its header keeps the dir of the host that created it (§app.organizations/portability).
     const hostCwd = extraSessionRoots().includes(dirname(path)) ? cwdOverride(path) : undefined;
     const cwd = hostCwd ?? (typeof h.cwd === "string" ? h.cwd : "");
-    // An older session format is fanout-source metadata (legacyFormat ⇔ version ≠ current,
-    // pre-versioning headers read as 1 — the same rule fanout's own head read applies), so the
-    // dialog can pre-disable a fork that the route would refuse. Absent means current (or an
-    // unreadable head, which has no summary at all): never a blocker anywhere else.
-    const format = typeof h.version === "number" ? h.version : 1;
     const parent = await existingParent(h.parentSession);
     // Remote sessions use local placeholders, never mount mappings.
     const remote = parseTargetCwd(cwd);
@@ -677,7 +672,6 @@ async function summarize(path: string, resolveWindow?: WindowResolver): Promise<
       ...(ctx ? { context: { tokens: ctx.tokens, window: null } } : {}),
       ...(parent ?? {}),
       ...(remote ? { target: remote.target, remoteCwd: remote.remoteCwd } : {}),
-      ...(format !== CURRENT_SESSION_FORMAT ? { legacyFormat: true as const } : {}),
       ...(align.summary ? { align: align.summary } : {}),
     };
     const entry: CacheEntry = { mtimeMs: st.mtimeMs, size: st.size, summary, contextModel: ctx?.model ?? null, outline: scan, lastReply, marked: head.overseer, align };
@@ -1117,7 +1111,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     const matches = req.mode === "age" ? st.mtimeMs < cutoff : req.mode === "husks" ? await isZeroInput(path, st.size) : true;
     if (!matches) continue;
     // A project's coding session is empty until the operator's first message (New Coding Session):
-    // its started.json row names it, so it is never swept as a husk.
+    // its build chart names it, so it is never swept as a husk.
     if (req.mode === "husks" && (codingIds ??= orgCodingIds()).has(idOf(path))) continue;
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).

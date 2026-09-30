@@ -1,7 +1,7 @@
 import { createEffect, createMemo, createResource, createSignal, For, on, onMount, Show } from "solid-js";
 import type { ThemeInfo } from "../../shared/protocol";
-import { getClaudeCliStatus, getThemes, getWebSettings } from "../lib/api";
-import { tildePath } from "../lib/format";
+import { getClaudeCliStatus, getProviderLimits, getThemes, getWebSettings } from "../lib/api";
+import { clockTime, tildePath } from "../lib/format";
 import {
   CLAUDE_CODE_PROVIDER,
   enabledCount,
@@ -43,6 +43,8 @@ import {
   setClaudeCodeSaved,
 } from "../lib/experimental-draft";
 import { policyDraft, policySaveError, policySaving, setPolicyDraft, setPolicySaved } from "../lib/model-policy-draft";
+import { limitsDraft, limitsSaveError, limitsSaveResult, limitsSaving, setLimitsDraft, setLimitsSaved } from "../lib/provider-limits-draft";
+import { LIMIT_MAX, LIMIT_MIN, parseLimitField } from "../lib/provider-limits";
 import {
   dirtyForms,
   discardAllDrafts,
@@ -553,6 +555,10 @@ function GeneralPanel() {
  * Every switch is staged; the dialog's Save Changes writes the whole policy (model-policy-draft.ts),
  * rebased onto a fresh read, and a failed save keeps the switches and says so. A globally disabled model's Subagents switch is greyed rather than cleared: it remembers
  * what you chose, and turning the model back on returns it.
+ *
+ * Each provider row also has an "At once" field (§app.provider-limits/setting): how many of that
+ * provider's requests may run at once on this device, empty for no limit. Staged too, saved by the
+ * same Save Changes into provider-limits.json (provider-limits-draft.ts).
  */
 function ModelsPanel() {
   const [models] = createResource(() => ensureModels());
@@ -570,6 +576,27 @@ function ModelsPanel() {
 
   const busy = () => policySaving() || source.loading;
 
+  // The request limits (provider-limits.json): their own file and draft, on the same rows.
+  const [limitsSource, { refetch: refetchLimits }] = createResource(() => getProviderLimits());
+  createEffect(() => {
+    const info = limitsSource.error ? undefined : limitsSource();
+    if (info) setLimitsSaved(info.limits);
+  });
+  /** What the server said last: a save's answer, else the load's (the lowered limits, a file that can't be read). */
+  const limitsInfo = () => limitsSaveResult() ?? (limitsSource.error ? undefined : limitsSource());
+  const limitsBusy = () => limitsSaving() || limitsSource.loading || !!limitsInfo()?.error;
+  const limitField = (provider: string) => limitsDraft()?.[provider] ?? "";
+  const editLimit = (provider: string, text: string) => {
+    const current = limitsDraft();
+    if (!current || limitsBusy()) return;
+    setLimitsDraft({ ...current, [provider]: text });
+  };
+  /** "lowered to 4 until 3:12 PM" while a 429 has the provider's limit lowered (the saved number is unchanged). */
+  const loweredNote = (provider: string) => {
+    const l = limitsInfo()?.lowered?.[provider];
+    return l ? `lowered to ${l.limit} until ${clockTime(l.until)}` : undefined;
+  };
+
   /** A switch moved: staged, written by Save Changes. */
   const edit = (change: (p: ModelPolicy) => ModelPolicy) => {
     const current = policy();
@@ -584,7 +611,9 @@ function ModelsPanel() {
   // own default model included. It has no rows here because its models are the CLI's, not pi's.
   const grouper = providerGrouper({ provider: CLAUDE_CODE_PROVIDER, models: [], note: "Claude Code workers" });
   const baseGroups = createMemo(() => grouper.byModels(models() ?? []));
-  const groups = createMemo<ProviderGroup[]>(() => grouper.withPolicy(baseGroups(), policy()));
+  // A provider the limits file names is listed too, with no models here: a limit you can't see is one you can't undo.
+  const limitNames = createMemo(() => Object.keys(limitsInfo()?.limits ?? {}), undefined, { equals: (a, b) => a.join() === b.join() });
+  const groups = createMemo<ProviderGroup[]>(() => grouper.withPolicy(baseGroups(), policy(), limitNames()));
 
   /** Every query token must appear in the provider name or in one of its model refs. */
   const tokens = createMemo(() => query().toLowerCase().split(/\s+/).filter(Boolean));
@@ -611,9 +640,13 @@ function ModelsPanel() {
 
   /** What a provider row says about itself: the count that answers "how much of this is on". */
   const providerMeta = (group: ProviderGroup, p: ModelPolicy) => {
-    if (group.note) return group.note;
-    if (!providerEnabled(p, group.provider)) return `Off · ${group.models.length} ${group.models.length === 1 ? "model" : "models"}`;
-    return `${enabledCount(p, group.models)} of ${group.models.length} on`;
+    const lowered = loweredNote(group.provider);
+    const count = group.note
+      ? group.note
+      : !providerEnabled(p, group.provider)
+        ? `Off · ${group.models.length} ${group.models.length === 1 ? "model" : "models"}`
+        : `${enabledCount(p, group.models)} of ${group.models.length} on`;
+    return lowered ? `${count} · ${lowered}` : count;
   };
 
   return (
@@ -670,6 +703,7 @@ function ModelsPanel() {
                   <span>Model</span>
                   <span>Enabled</span>
                   <span>Subagents</span>
+                  <span>At once</span>
                 </div>
                 <Show
                   when={matching().length > 0}
@@ -726,6 +760,19 @@ function ModelsPanel() {
                               />
                               <span class="toggle-box" />
                             </label>
+                            <input
+                              class="input model-policy-limit text-num"
+                              type="text"
+                              inputmode="numeric"
+                              autocomplete="off"
+                              aria-label={`Requests at once for ${group.provider}`}
+                              aria-invalid={parseLimitField(limitField(group.provider)) === "invalid" ? "true" : undefined}
+                              placeholder="No limit"
+                              title={loweredNote(group.provider) ?? `How many ${group.provider} requests may run at once on this device (${LIMIT_MIN}–${LIMIT_MAX}); empty for no limit`}
+                              value={limitField(group.provider)}
+                              disabled={limitsBusy() || !limitsDraft()}
+                              onInput={(e) => editLimit(group.provider, e.currentTarget.value)}
+                            />
                           </div>
                           <Show when={group.models.length > 0 && isOpen(group.provider)}>
                             <ul class="model-policy-models" id={`models-${group.provider}`}>
@@ -763,6 +810,8 @@ function ModelsPanel() {
                                       />
                                       <span class="toggle-box" />
                                     </label>
+                                    {/* The limit is the provider's: a model row keeps the column empty. */}
+                                    <span aria-hidden="true" />
                                   </li>
                                 )}
                               </For>
@@ -783,6 +832,35 @@ function ModelsPanel() {
                 </p>
                 <Show when={policySaveError()}>
                   {(e) => <Banner tone="error" title="Couldn't save the model policy." body={`${sentence(e().message)} Your saved policy is unchanged.`} />}
+                </Show>
+                <Show when={limitsSaveError()}>
+                  {(e) => <Banner tone="error" title="Couldn't save the request limits." body={`${sentence(e().message)} Your saved limits are unchanged.`} />}
+                </Show>
+                <Show when={limitsInfo()?.error}>
+                  {(why) => (
+                    <Banner
+                      tone="error"
+                      title="Couldn't read the request limits."
+                      body={`${sentence(why())} The defaults apply, and Save won't overwrite the file until it's fixed or removed.`}
+                      action={
+                        <button type="button" class="button button-sm" onClick={() => void refetchLimits()}>
+                          Retry
+                        </button>
+                      }
+                    />
+                  )}
+                </Show>
+                <Show when={limitsSource.error}>
+                  <Banner
+                    tone="error"
+                    title="Couldn't load the request limits."
+                    body="The At once fields are off until they load. Nothing was changed."
+                    action={
+                      <button type="button" class="button button-sm" onClick={() => void refetchLimits()}>
+                        Retry
+                      </button>
+                    }
+                  />
                 </Show>
               </>
             );

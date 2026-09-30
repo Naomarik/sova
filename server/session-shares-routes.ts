@@ -12,9 +12,10 @@ import {
 } from "../shared/session-share";
 import { resolveSessionPath } from "./paths";
 import { presenceOf } from "./session-share-presence";
-import { currentLeaf, sessionShareImage, sessionShareView, type ShareSource } from "./session-share-view";
+import { currentLeaf, sessionShareImage, sessionShareOutline, sessionShareView, shareSpan, sliceBounds, type ShareSource } from "./session-share-view";
 import {
   addRecipient,
+  boundsOf,
   checkRecipients,
   cleanTitle,
   createShare,
@@ -22,6 +23,7 @@ import {
   getShare,
   linkState,
   listShares,
+  liveEnd,
   patchShare,
   relinkRecipient,
   revokeRecipient,
@@ -89,8 +91,10 @@ function recipientsOf(share: ShareRecord, links: ShareLinkRecord[], now: number)
   });
 }
 
-/** The operator's view of a share. */
-export function shareInfo(share: ShareRecord, links: ShareLinkRecord[], now = Date.now()): SessionShare {
+/** The operator's view of a share (a slice's span is read from the session file). */
+export async function shareInfo(share: ShareRecord, links: ShareLinkRecord[], now = Date.now()): Promise<SessionShare> {
+  const src = sourceOf(share);
+  const span = await shareSpan(src).catch(() => undefined);
   return {
     id: share.id,
     sessionId: share.sessionId,
@@ -98,6 +102,9 @@ export function shareInfo(share: ShareRecord, links: ShareLinkRecord[], now = Da
     title: share.title,
     mode: share.mode,
     cutAt: share.mode === "snapshot" ? (share.cut?.at ?? null) : null,
+    ...(src.cutEntryId ? { cut: src.cutEntryId } : {}),
+    ...(src.from ? { from: src.from } : {}),
+    ...(span ? { span } : {}),
     createdAt: share.createdAt,
     ...(share.stoppedAt ? { stoppedAt: share.stoppedAt } : {}),
     ...(existsSync(share.sessionPath) ? {} : { missing: true as const }),
@@ -105,21 +112,23 @@ export function shareInfo(share: ShareRecord, links: ShareLinkRecord[], now = Da
   };
 }
 
-function infoOf(shareId: string): SessionShare {
+function infoOf(shareId: string): Promise<SessionShare> {
   const hit = getShare(shareId);
   if (!hit) throw new ShareError(404, "not-found", "No such share.");
   return shareInfo(hit.share, hit.links);
 }
 
 /** Every share on this host (optionally one session's), newest first. */
-export function allShareInfos(sessionId?: string): SessionShare[] {
+export function allShareInfos(sessionId?: string): Promise<SessionShare[]> {
   const { shares, links } = listShares(sessionId);
   const now = Date.now();
-  return shares.map((s) =>
-    shareInfo(
-      s,
-      links.filter((l) => l.shareId === s.id),
-      now,
+  return Promise.all(
+    shares.map((s) =>
+      shareInfo(
+        s,
+        links.filter((l) => l.shareId === s.id),
+        now,
+      ),
     ),
   );
 }
@@ -162,11 +171,31 @@ async function cutNow(path: string): Promise<{ entryId: string; at: string | nul
 /** A cut as the preview answers it: an entry id. */
 const CUT_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
+const STALE = "The session changed. Preview it again.";
+/** Update to now (or Follow live) on a slice whose start left the branch. */
+const START_GONE = "The start of this share is no longer in the session.";
+
 /** A previewed cut, still in the file with a readable branch; else the preview is stale. */
 async function previewedCut(path: string, entryId: string): Promise<{ entryId: string; at: string | null }> {
-  const view = await sessionShareView({ sessionPath: path, cutEntryId: entryId, title: "", sharedAt: "", mode: "snapshot" }, {});
-  if (!view) throw new ShareError(409, "stale-preview", "The session changed. Preview it again.");
-  return { entryId, at: view.through };
+  const bounds = await sliceBounds({ sessionPath: path, cutEntryId: entryId, from: null });
+  if (!bounds) throw new ShareError(409, "stale-preview", STALE);
+  return { entryId, at: bounds.through };
+}
+
+/** A slice's start as the store keeps it, checked on the branch it will be read from (the cut's,
+    or the current one); off it, 409 stale-preview with `why`. null: no start. */
+async function startOn(path: string, cutEntryId: string | null, from: string | null, why = STALE): Promise<{ entryId: string; at: string | null } | null> {
+  if (from === null) return null;
+  const bounds = await sliceBounds({ sessionPath: path, cutEntryId, from });
+  if (!bounds) throw new ShareError(409, "stale-preview", why);
+  return { entryId: from, at: bounds.fromAt };
+}
+
+/** A body's `from`: an entry id, null (from the first message), or undefined (not given). */
+function fromOf(given: unknown): string | null | undefined {
+  if (given === undefined || given === null) return given;
+  if (typeof given !== "string" || !CUT_RE.test(given)) throw new ShareError(400, "bad-from", "Bad start.");
+  return given;
 }
 
 /** A previewed cut when one is given, else the current leaf. */
@@ -177,7 +206,7 @@ const cutFrom = (path: string, given: unknown): Promise<{ entryId: string; at: s
 };
 
 /** The image answer for the operator's Preview: the bytes as they will be shared. */
-async function imageAnswer(c: Context, src: Pick<ShareSource, "sessionPath" | "cutEntryId">): Promise<Response> {
+async function imageAnswer(c: Context, src: Pick<ShareSource, "sessionPath" | "cutEntryId" | "from">): Promise<Response> {
   const n = Number(c.req.param("n"));
   if (!/^(0|[1-9][0-9]{0,4})$/.test(c.req.param("n") ?? "")) throw new ShareError(404, "not-found", "No such image.");
   const img = await sessionShareImage(src, n);
@@ -202,17 +231,18 @@ export function registerSessionShareRoutes(app: Hono): void {
     }
   });
 
-  app.get("/api/session-shares", (c) => {
+  app.get("/api/session-shares", async (c) => {
     const session = c.req.query("session");
-    return c.json(allShareInfos(session || undefined), 200, NO_STORE);
+    return c.json(await allShareInfos(session || undefined), 200, NO_STORE);
   });
 
-  app.get("/api/shares-overview", async (c) => c.json(await sharesOverview(allShareInfos()), 200, NO_STORE));
+  app.get("/api/shares-overview", async (c) => c.json(await sharesOverview(await allShareInfos()), 200, NO_STORE));
 
   // Preview before any link exists: the session as a recipient would see it, bound to a cut. The
   // first read fixes the cut at the current leaf and answers it (`cut`); every later read (Show
   // earlier, images) passes `&cut=`, and the mint passes the same cut, so the snapshot minted is
-  // exactly the one previewed, images included.
+  // exactly the one previewed, images included. `&from=` slices it (§app.session-share/slice);
+  // `&outline=1` answers the share page's picker instead: the whole session at the cut.
   const previewSource = async (c: Context): Promise<ShareSource> => {
     const sessionId = c.req.query("session") ?? "";
     const path = sessionId ? await sessionPathOf(sessionId) : null;
@@ -220,14 +250,21 @@ export function registerSessionShareRoutes(app: Hono): void {
     const asked = c.req.query("cut");
     if (asked !== undefined && !CUT_RE.test(asked)) throw new ShareError(400, "bad-cut", "Bad preview.");
     const cut = asked ?? (await cutNow(path)).entryId;
-    return { sessionPath: path, cutEntryId: cut, title: await sessionTitleOf(path), sharedAt: new Date().toISOString(), mode: "snapshot" };
+    const from = c.req.query("from");
+    if (from !== undefined && !CUT_RE.test(from)) throw new ShareError(400, "bad-from", "Bad start.");
+    return { sessionPath: path, cutEntryId: cut, from: from ?? null, title: await sessionTitleOf(path), sharedAt: new Date().toISOString(), mode: "snapshot" };
   };
   app.get("/api/session-shares/preview", async (c) => {
     try {
       const src = await previewSource(c);
+      if (c.req.query("outline") === "1") {
+        const outline = await sessionShareOutline({ sessionPath: src.sessionPath, cutEntryId: src.cutEntryId! });
+        if (!outline) throw new ShareError(409, "stale-preview", STALE);
+        return c.json(outline, 200, NO_STORE);
+      }
       const view = await sessionShareView(src, { before: beforeOf(c) });
-      if (!view) throw new ShareError(409, "stale-preview", "The session changed. Preview it again.");
-      const answer: SessionSharePreview = { ...view, cut: src.cutEntryId! };
+      if (!view) throw new ShareError(409, "stale-preview", STALE);
+      const answer: SessionSharePreview = { ...view, cut: src.cutEntryId!, ...(src.from ? { from: src.from } : {}) };
       return c.json(answer, 200, NO_STORE);
     } catch (err) {
       return failed(c, err);
@@ -253,18 +290,23 @@ export function registerSessionShareRoutes(app: Hono): void {
       if (mode !== "snapshot" && mode !== "live") throw new ShareError(400, "bad-mode", "Choose Snapshot or Follow live.");
       if (!validDays(body.expiresInDays)) throw new ShareError(400, "bad-expiry", "Choose 1, 7, 30 or 90 days.");
       const recipients = checkRecipients(body.recipients, body.anyone);
+      const fromId = fromOf(body.from) ?? null;
       // A snapshot is the previewed one: its cut comes from the preview, never "now" (a session
       // that moved on after the preview would publish content, images included, nobody saw).
       // Follow live is consent to later content, so it needs none.
       let cut: { entryId: string; at: string | null } | null = null;
+      // An end makes a snapshot: Follow live with one is refused, never read as "no end".
+      if (mode === "live" && body.cut !== undefined) throw liveEnd();
       if (mode === "snapshot") {
         if (typeof body.cut !== "string" || !CUT_RE.test(body.cut)) throw new ShareError(400, "preview-required", "Preview the session before sharing it.");
         cut = await previewedCut(path, body.cut);
       }
+      // A slice's start must be on the branch it reads: the previewed cut's, or (live) the current one.
+      const from = await startOn(path, cut?.entryId ?? null, fromId);
       const { result, outcome } = await awaitShareLinks(() =>
-        createShare({ sessionId, sessionPath: path, title, mode: mode as SessionShareMode, cut, days: body.expiresInDays as never, labels: recipients.labels, anyone: recipients.anyone }),
+        createShare({ sessionId, sessionPath: path, title, mode: mode as SessionShareMode, cut, from, days: body.expiresInDays as never, labels: recipients.labels, anyone: recipients.anyone }),
       );
-      return c.json(minted(infoOf(result.share.id), result.tokens, sessionLinkWarning(outcome)), 201, NO_STORE);
+      return c.json(minted(await infoOf(result.share.id), result.tokens, sessionLinkWarning(outcome)), 201, NO_STORE);
     } catch (err) {
       return failed(c, err);
     }
@@ -295,24 +337,36 @@ export function registerSessionShareRoutes(app: Hono): void {
     try {
       const id = c.req.param("id");
       const body = await jsonBody(c);
-      if (Object.keys(body).some((k) => k !== "title" && k !== "mode" && k !== "cut")) throw new ShareError(400, "bad-request", "Only title and mode can change.");
+      if (Object.keys(body).some((k) => k !== "title" && k !== "mode" && k !== "cut" && k !== "from")) throw new ShareError(400, "bad-request", "Only the title, mode and slice can change.");
+      const hit = getShare(id);
+      if (!hit) throw new ShareError(404, "not-found", "No such share.");
+      const share = hit.share;
       const patch: Parameters<typeof patchShare>[1] = {};
       if (body.title !== undefined) {
         const t = cleanTitle(body.title);
         if (!t) throw new ShareError(400, "bad-title", "Give the share a title.");
         patch.title = t;
       }
-      if (body.mode !== undefined) {
-        if (body.mode !== "snapshot" && body.mode !== "live") throw new ShareError(400, "bad-mode", "Choose Snapshot or Follow live.");
-        const hit = getShare(id);
-        if (!hit) throw new ShareError(404, "not-found", "No such share.");
-        patch.mode = body.mode;
-        // Follow live off: the snapshot is the session as it is now (or the previewed cut).
-        if (body.mode === "snapshot" && hit.share.mode === "live") patch.cut = await cutFrom(hit.share.sessionPath, body.cut);
+      if (body.mode !== undefined && body.mode !== "snapshot" && body.mode !== "live") throw new ShareError(400, "bad-mode", "Choose Snapshot or Follow live.");
+      const mode: SessionShareMode = (body.mode as SessionShareMode | undefined) ?? share.mode;
+      if (body.mode !== undefined) patch.mode = mode;
+      if (mode === "live" && body.cut !== undefined) throw liveEnd();
+      // Follow live off: the snapshot is the session as it is now (or the previewed cut). On a
+      // snapshot, a cut given is the slice's new end (Save Slice), a previewed one.
+      if (mode === "snapshot" && (share.mode === "live" || body.cut !== undefined)) patch.cut = await cutFrom(share.sessionPath, body.cut);
+      const given = fromOf(body.from);
+      const was = share.from?.entryId ?? null;
+      const from = given === undefined ? was : given;
+      // The start (new, or kept across a new end or mode) must be on the branch the share will read.
+      if (given !== undefined || patch.cut || patch.mode) {
+        const end = mode === "live" ? null : (patch.cut?.entryId ?? share.cut?.entryId ?? null);
+        const checked = await startOn(share.sessionPath, end, from, given === undefined ? START_GONE : STALE);
+        if (given !== undefined) patch.from = checked;
       }
-      patchShare(id, patch);
+      // Written only if the mode, end and start are still the ones validated above.
+      patchShare(id, patch, boundsOf(share));
       await pushShareView(id);
-      return c.json(infoOf(id), 200, NO_STORE);
+      return c.json(await infoOf(id), 200, NO_STORE);
     } catch (err) {
       return failed(c, err);
     }
@@ -325,9 +379,16 @@ export function registerSessionShareRoutes(app: Hono): void {
       if (!hit) throw new ShareError(404, "not-found", "No such share.");
       // Optional body { cut }: the previewed cut to move to; without one, the current leaf.
       const body = c.req.header("content-type")?.includes("json") ? await jsonBody(c) : {};
-      if (hit.share.mode === "snapshot") patchShare(id, { cut: await cutFrom(hit.share.sessionPath, body.cut) });
+      // A live share has no end: one given is refused, never dropped. With none, it just re-pushes.
+      if (hit.share.mode === "live" && body.cut !== undefined) throw liveEnd();
+      if (hit.share.mode === "snapshot") {
+        // The start stays: a new end whose branch lost it is refused, and nothing changes.
+        const cut = await cutFrom(hit.share.sessionPath, body.cut);
+        await startOn(hit.share.sessionPath, cut.entryId, hit.share.from?.entryId ?? null, START_GONE);
+        patchShare(id, { cut }, boundsOf(hit.share));
+      }
       await pushShareView(id);
-      return c.json(infoOf(id), 200, NO_STORE);
+      return c.json(await infoOf(id), 200, NO_STORE);
     } catch (err) {
       return failed(c, err);
     }
@@ -340,7 +401,7 @@ export function registerSessionShareRoutes(app: Hono): void {
       const who = body.anyone === true && Object.keys(body).length === 1 ? { anyone: true as const } : typeof body.label === "string" && Object.keys(body).length === 1 ? { label: body.label } : null;
       if (!who) throw new ShareError(400, "bad-request", "Expected { label } or { anyone: true }.");
       const { result, outcome } = await awaitShareLinks(() => addRecipient(id, who));
-      return c.json(minted(infoOf(id), [result], sessionLinkWarning(outcome)), 201, NO_STORE);
+      return c.json(minted(await infoOf(id), [result], sessionLinkWarning(outcome)), 201, NO_STORE);
     } catch (err) {
       return failed(c, err);
     }
@@ -358,28 +419,28 @@ export function registerSessionShareRoutes(app: Hono): void {
         closeLinks(old);
         return minted;
       });
-      return c.json(minted(infoOf(id), [result], sessionLinkWarning(outcome)), 200, NO_STORE);
+      return c.json(minted(await infoOf(id), [result], sessionLinkWarning(outcome)), 200, NO_STORE);
     } catch (err) {
       return failed(c, err);
     }
   });
 
-  app.post("/api/session-shares/:id/recipients/:rid/revoke", (c) => {
+  app.post("/api/session-shares/:id/recipients/:rid/revoke", async (c) => {
     try {
       const id = c.req.param("id");
       closeLinks(revokeRecipient(id, c.req.param("rid")));
-      return c.json(infoOf(id), 200, NO_STORE);
+      return c.json(await infoOf(id), 200, NO_STORE);
     } catch (err) {
       return failed(c, err);
     }
   });
 
-  app.post("/api/session-shares/:id/stop", (c) => {
+  app.post("/api/session-shares/:id/stop", async (c) => {
     try {
       const id = c.req.param("id");
       stopShare(id);
       closeShare(id);
-      return c.json(infoOf(id), 200, NO_STORE);
+      return c.json(await infoOf(id), 200, NO_STORE);
     } catch (err) {
       return failed(c, err);
     }
@@ -391,7 +452,7 @@ export function registerSessionShareRoutes(app: Hono): void {
       const body = await jsonBody(c);
       if (!validDays(body.days)) throw new ShareError(400, "bad-expiry", "Choose 1, 7, 30 or 90 days.");
       await awaitShareLinks(() => extendShare(id, body.days as never));
-      return c.json(infoOf(id), 200, NO_STORE);
+      return c.json(await infoOf(id), 200, NO_STORE);
     } catch (err) {
       return failed(c, err);
     }

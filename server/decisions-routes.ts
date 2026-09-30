@@ -2,7 +2,7 @@ import type { Context, Hono } from "hono";
 import type { ConflictResolveInput } from "../shared/decisions";
 import { DecisionError } from "./decide";
 import { OrgError } from "./orgs";
-import { watchResolutions, draftProject, listDecisions, promoteDecisions, reconcileProject, resolveConflict, routeConflictNow, setFrozen, setOwnerArea, settleSpecText, specStatusOf } from "./reconcile";
+import { draftProject, listDecisions, promoteDecisions, reconcileProject, resolveConflict, routeConflictNow, setFrozen, setOwnerArea, settleSpecText, specStatusOf } from "./reconcile";
 import { SpecToolError } from "./spec-draft-writer";
 
 /**
@@ -38,7 +38,6 @@ const handle =
 const BASE = "/api/orgs/:id/projects/:pid";
 
 export function registerDecisionRoutes(app: Hono<any>): void {
-  watchResolutions();
   app.get(
     `${BASE}/decisions`,
     handle((c) => c.json(listDecisions(p(c, "id"), p(c, "pid")))),
@@ -104,7 +103,7 @@ export function registerDecisionRoutes(app: Hono<any>): void {
     handle(async (c) => {
       const frozen = (await body(c)).frozen;
       if (typeof frozen !== "boolean") throw new OrgError("Expected { frozen: boolean }");
-      return c.json(setFrozen(p(c, "id"), p(c, "pid"), frozen));
+      return c.json(await setFrozen(p(c, "id"), p(c, "pid"), frozen));
     }),
   );
 }

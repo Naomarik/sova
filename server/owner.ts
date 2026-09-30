@@ -1,21 +1,21 @@
 import type { OwnerPageInfo } from "../shared/orgs";
-import { onPersonLeft, type OperatorBy, OrgError, ownerOf, readIndex, readOrg, readRoster, setOrgOwner } from "./orgs";
+import { type OperatorBy, OrgError, ownerOf, readIndex, readOrgOrPlaceholder, readRoster, setOrgOwner } from "./orgs";
 import { findPersonLink, mintOwnerLink, ownerLinksOf, personLinkDead, personLinkState, revokePersonLinks, type PersonLinkRecord } from "./person-links";
 import { readVisits } from "./visits";
 
 /**
  * The org's owner and their link (§app.owner-page/owner, /link), for the operator's routes and the
- * share routes. The owner field itself lives in org.json (server/orgs.ts, `setOrgOwner`); the links
- * in the host's person-links.json (server/person-links.ts).
+ * share routes. The owner itself is the org chart's (server/orgs.ts, `setOrgOwner`): a change, the
+ * owner leaving and a detach turn the links off through its `revoke-owner-links` effect
+ * (server/org-effects.ts); the links live in the host's person-links.json (server/person-links.ts).
  */
 
 /** When the owner link's remaining life counts as "send a new one" (Needs you). */
 export const OWNER_LINK_SOON_MS = 7 * 86_400_000;
 
-/** Set the owner (the operator's select). A change turns the previous owner's link off at once. */
-export function setOwner(orgId: string, personId: unknown, by?: OperatorBy): void {
-  const { from, to } = setOrgOwner(orgId, personId, by);
-  if (from !== to) revokePersonLinks((l) => l.orgId === orgId && l.personId !== to, "owner-changed");
+/** Set the owner (the operator's select). A change turns the previous owner's link off at once (the org chart's effect). */
+export async function setOwner(orgId: string, personId: unknown, by?: OperatorBy): Promise<void> {
+  await setOrgOwner(orgId, personId, by);
 }
 
 /** Get Owner Link: a new link for the owner now; every older one stops working. */
@@ -26,15 +26,10 @@ export function mintOwnerLinkFor(orgId: string, now = Date.now()): PersonLinkRec
   return { ...record, token };
 }
 
-/** Turn Off Owner Link. Returns how many were live. */
-export function revokeOwnerLinks(orgId: string, why: "off" | "detached" = "off"): number {
+/** Turn Off Owner Link (and the org chart's `revoke-owner-links` effect). Returns how many were live. */
+export function revokeOwnerLinks(orgId: string, why: "off" | "detached" | "owner-changed" | "left" = "off"): number {
   return revokePersonLinks((l) => l.orgId === orgId, why);
 }
-
-// The owner who leaves reads nothing any more (orgs.ts clears the field; this turns the link off).
-onPersonLeft((orgId, personId) => {
-  revokePersonLinks((l) => l.orgId === orgId && l.personId === personId, "left");
-});
 
 export type OwnerAccess = { ok: true; link: PersonLinkRecord; orgId: string; ownerId: string } | { ok: false; status: 404 | 410; why?: "expired"; link?: PersonLinkRecord };
 
@@ -64,7 +59,7 @@ const ownerVisits = (orgId: string, personId: string) => readVisits(orgId, perso
 
 /** The owner card (OrgDetail.ownerPage). */
 export function ownerPageInfo(orgId: string, now = Date.now()): OwnerPageInfo {
-  const org = readOrg(orgId);
+  const org = readOrgOrPlaceholder(orgId);
   const person = org.owner ? readRoster(orgId).find((p) => p.id === org.owner && p.status === "active") : undefined;
   if (!person) return { person: null, link: null, opened: 0 };
   const newest = ownerLinksOf(orgId)

@@ -1,13 +1,17 @@
 /**
- * Which host holds an organization (§app.organizations/holder): `holder.json` in its workspace repo
- * names the host, or says it was released. A host's identity is its own, made once and kept
- * host-local (`<stateRoot>/host.json`). Attach reads the record in the clone and on its remote, so
- * attaching an org another host still holds warns first.
+ * Which host holds an organization (§app.organizations/holder). The record lives in the org chart's
+ * portable snapshot (`<workspace>/charts/org/…`, r1): the org chart writes it when this host's
+ * residence claims or releases the org. A host's identity is its own, made once and kept host-local
+ * (`<stateRoot>/host.json`). Attach reads the record in the clone and on its remote (the residence
+ * chart's `read-holder` effect, server/org-effects.ts), so attaching an org another host still holds
+ * warns first.
  */
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
+import { createOrgCharts } from "./org-charts";
+import { snapshotFile } from "./org-host/store";
 import { stateRoot } from "./state-root";
 import { remoteFileText } from "./workspace-git";
 
@@ -16,11 +20,15 @@ export interface HostIdentity {
   name: string;
 }
 
-export type HolderRecord =
-  | { version: 1; host: HostIdentity; since: string }
-  | { version: 1; host: null; releasedBy: HostIdentity; at: string };
+/** The org chart's holder record: this host holds it since `since` (ms), or it was released. */
+export interface HolderRecord {
+  hostId: string;
+  hostName: string;
+  since?: number;
+  releasedBy?: string;
+  releasedAt?: number;
+}
 
-export const HOLDER_FILE = "holder.json";
 /** The longest attach waits on the remote before it trusts the clone's record alone. */
 export const REMOTE_CHECK_MS = 15_000;
 
@@ -51,58 +59,42 @@ export function hostIdentity(): HostIdentity {
   return { id, name: hostname() || id };
 }
 
-function parseIdentity(v: unknown): HostIdentity | null {
-  return isObj(v) && typeof v.id === "string" && v.id ? { id: v.id, name: typeof v.name === "string" && v.name ? v.name : v.id } : null;
+/** A holder record from chart data (camelCase), or null. */
+export function parseHolder(v: unknown): HolderRecord | null {
+  if (!isObj(v) || typeof v.hostId !== "string" || !v.hostId) return null;
+  return {
+    hostId: v.hostId,
+    hostName: typeof v.hostName === "string" && v.hostName ? v.hostName : v.hostId,
+    ...(typeof v.since === "number" ? { since: v.since } : {}),
+    ...(typeof v.releasedBy === "string" ? { releasedBy: v.releasedBy } : {}),
+    ...(typeof v.releasedAt === "number" ? { releasedAt: v.releasedAt } : {}),
+  };
 }
 
-export function parseHolder(text: string | null): HolderRecord | null {
+/** The holder record an org snapshot's text carries (read without an engine of the org's own), or null. */
+export function holderOfSnapshot(sid: string, text: string | null): HolderRecord | null {
   if (!text) return null;
-  let raw: unknown;
   try {
-    raw = JSON.parse(text);
-  } catch {
-    return null;
-  }
-  if (!isObj(raw)) return null;
-  const host = parseIdentity(raw.host);
-  if (host) return { version: 1, host, since: typeof raw.since === "string" ? raw.since : "" };
-  const by = parseIdentity(raw.releasedBy);
-  return raw.host === null && by ? { version: 1, host: null, releasedBy: by, at: typeof raw.at === "string" ? raw.at : "" } : null;
-}
-
-export function readHolder(dir: string): HolderRecord | null {
-  try {
-    return parseHolder(readFileSync(join(dir, HOLDER_FILE), "utf8"));
+    const engine = createOrgCharts();
+    engine.load(sid, text);
+    return parseHolder(engine.data(sid)?.holder);
   } catch {
     return null;
   }
 }
 
-/** This host holds it now. */
-export const writeHeld = (dir: string, now = new Date()): void => writeJson(join(dir, HOLDER_FILE), { version: 1, host: hostIdentity(), since: now.toISOString() });
-/** This host let it go (detach). */
-export const writeReleased = (dir: string, now = new Date()): void => writeJson(join(dir, HOLDER_FILE), { version: 1, host: null, releasedBy: hostIdentity(), at: now.toISOString() });
-
-/** Another host, and not released: who holds it and since when. */
-function elsewhere(r: HolderRecord | null, me: HostIdentity): { host: HostIdentity; since: string } | null {
-  return r?.host && r.host.id !== me.id ? { host: r.host, since: r.since } : null;
+/** Two installs on one machine share its name: another host of the same name is named with its id. */
+export function named(h: HolderRecord | null, me: HostIdentity = hostIdentity()): HolderRecord | null {
+  return h && h.hostId !== me.id && h.hostName === me.name ? { ...h, hostName: `${h.hostName} (${h.hostId})` } : h;
 }
+
+/** The org snapshot's path inside the workspace repo (as origin has it too). */
+export const orgSnapshotPath = (orgId: string): string => snapshotFile("charts", "org", `org/${orgId}`);
 
 /**
- * Whether another host holds the org in `dir`: by the clone's record, or by its origin's (fetched,
- * at most REMOTE_CHECK_MS). An unreachable remote leaves the clone's record to decide.
+ * The holder record on the clone's origin (fetched, at most REMOTE_CHECK_MS), or null: no remote,
+ * an unreachable one, or no org snapshot there.
  */
-export async function heldElsewhere(dir: string): Promise<{ host: HostIdentity; since: string } | null> {
-  const me = hostIdentity();
-  const remote = await remoteFileText(dir, HOLDER_FILE, REMOTE_CHECK_MS);
-  const held = elsewhere(parseHolder(remote), me) ?? elsewhere(readHolder(dir), me);
-  // Two installs on one machine share its name: the id tells them apart.
-  return held && held.host.name === me.name ? { ...held, host: { ...held.host, name: `${held.host.name} (${held.host.id})` } } : held;
-}
-
-/** The attach form's warning. */
-export function heldSentence(h: { host: HostIdentity; since: string }): string {
-  const name = h.host.name;
-  const since = h.since ? ` (since ${h.since.replace("T", " ").slice(0, 16)} UTC)` : "";
-  return `${name} holds this organization${since}. If it still runs there, attaching it here too makes two copies that drift apart, and one host's work can't be pushed. Detach it on ${name} first, or attach anyway if ${name} is gone.`;
+export async function remoteHolder(dir: string, orgId: string, timeoutMs = REMOTE_CHECK_MS): Promise<HolderRecord | null> {
+  return named(holderOfSnapshot(`org/${orgId}`, await remoteFileText(dir, orgSnapshotPath(orgId), timeoutMs)));
 }

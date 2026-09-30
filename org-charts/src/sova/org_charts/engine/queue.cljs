@@ -97,13 +97,26 @@
   [queue target]
   (sort-by (fn [e] [(deliver-at e) (ordinal-of e)]) (get @(:session-queues queue) target)))
 
+(defn event-ordinal "The queue ordinal of a pending event." [evt] (ordinal-of evt))
+
+(defn- next-due-where
+  [queue pred-target pred-event]
+  (->> @(:session-queues queue)
+    (mapcat (fn [[target q]]
+              (when (pred-target target)
+                (keep (fn [e] (when (pred-event e) [(deliver-at e) (ordinal-of e) target])) q))))
+    (sort)
+    (first)))
+
 (defn take-due!
   "Remove and return the single earliest deliverable event (delivery-time <= now) across targets
-   satisfying `pred`, or nil. Taking one at a time keeps cross-session delivery in global
-   `(time, ordinal)` order even when handling an event enqueues more."
-  [queue pred]
+   satisfying `pred` (and, when given, events satisfying `pred-event`), or nil. Taking one at a time
+   keeps cross-session delivery in global `(time, ordinal)` order even when handling an event
+   enqueues more."
+  ([queue pred] (take-due! queue pred nil))
+  ([queue pred pred-event]
   (let [now ((:clock queue))]
-    (when-let [[tm ord target] (next-due queue pred)]
+    (when-let [[tm ord target] (if pred-event (next-due-where queue pred pred-event) (next-due queue pred))]
       (when (<= tm now)
         (let [picked (volatile! nil)]
           (swap! (:session-queues queue) update target
@@ -111,7 +124,7 @@
               (let [[a b] (split-with #(not (and (= tm (deliver-at %)) (= ord (ordinal-of %)))) q)]
                 (vreset! picked (first b))
                 (into (vec a) (rest b)))))
-          @picked)))))
+          @picked))))))
 
 (defn snapshot-session
   "Plain-data, EDN-serializable pending events for `target`: `[{:event … :delivery-time … :ordinal …}]`.
@@ -134,3 +147,8 @@
 (defn drop-session! [queue target] (swap! (:session-queues queue) dissoc target) nil)
 
 (defn ordinal [queue] @(:next-ordinal queue))
+
+(defn next-ordinal!
+  "Take a fresh ordinal (unique per engine, persisted with every snapshot)."
+  [queue]
+  (swap! (:next-ordinal queue) inc))

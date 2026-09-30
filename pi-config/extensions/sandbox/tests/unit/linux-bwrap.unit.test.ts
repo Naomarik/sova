@@ -522,3 +522,46 @@ test("host network (a write-only worker): the host's interfaces, the probe passe
 	const none = await b.confine({ argv: ["/bin/true"], cwd: ws, policy: makePolicy(ws, tmp) });
 	assert.ok(none.ok && none.confined.argv.includes("--unshare-net"));
 });
+
+test("binds: last at their depth (over a read-only path they sit exactly on), at any level; a missing dir target is made", (t) => {
+	const ws = scratch(t, "sbx-ws-");
+	const tmp = scratch(t, "sbx-tmp-");
+	const state = join(ws, ".state");
+	mkdirSync(state);
+	const src = scratch(t, "sbx-src-");
+	const { ops } = mountPlan(makePolicy(ws, tmp, { readOnlyWithinWritable: [state], binds: [{ path: state, source: state }, { path: join(state, "p"), source: src }] }));
+	const at = (p: string) => ops.map((o, i) => [o, i] as const).filter(([o]) => o.path === p);
+	const onState = at(state);
+	assert.deepEqual(onState.map(([o]) => o.op), ["ro", "bind"], "the bind comes after the read-only overlay");
+	assert.deepEqual(at(join(state, "p")).map(([o]) => o), [{ op: "bind", path: join(state, "p"), source: src }]);
+	const ro = mountPlan(makePolicy(ws, tmp, { level: "read-only", binds: [{ path: state, source: state }] })).ops;
+	assert.ok(ro.some((o) => o.op === "bind" && o.path === state), "under read-only too");
+});
+
+test("secretEnv: bwrap reads it from an fd (--args), never from argv or the returned env", { skip }, async (t) => {
+	const ws = scratch(t, "sbx-ws-");
+	const tmp = scratch(t, "sbx-tmp-");
+	const b = new LinuxBwrapBackend();
+	const policy = makePolicy(ws, tmp);
+	const res = await b.confine({ argv: ["/bin/true"], cwd: ws, policy, secretEnv: { TOKEN: "tok-123" }, secretFd: 7 });
+	assert.ok(res.ok);
+	const c = res.confined;
+	assert.ok(!JSON.stringify([c.argv, c.env]).includes("tok-123"));
+	assert.equal(c.argv[c.argv.indexOf("--args") + 1], "7");
+	assert.ok(c.argv.indexOf("--args") < c.argv.indexOf("--"));
+	assert.deepEqual(c.fds, [{ fd: 7, data: "--setenv\0TOKEN\0tok-123\0" }]);
+	for (const [secretEnv, secretFd] of [[{ T: "x" }, undefined], [{ T: "a\0b" }, 7], [{ "T-1": "x" }, 7]] as const) {
+		const r = await b.confine({ argv: ["/bin/true"], cwd: ws, policy, secretEnv, ...(secretFd !== undefined ? { secretFd } : {}) });
+		assert.equal(r.ok, false, JSON.stringify(secretEnv));
+	}
+	const all = await b.confine({ argv: ["/bin/true"], cwd: ws, policy: { ...policy, env: { ...policy.env, GH_TOKEN: "gh-1" } }, secretFd: 4, envOnFd: true });
+	assert.ok(all.ok);
+	assert.ok(!all.confined.argv.includes("--setenv") && !all.confined.argv.join(" ").includes("gh-1"), "envOnFd: no variable on argv");
+	assert.ok(all.confined.fds![0]!.data.includes("--setenv\0GH_TOKEN\0gh-1\0") && all.confined.fds![0]!.data.includes("TMPDIR\0/tmp\0"));
+	assert.equal((await b.confine({ argv: ["/bin/true"], cwd: ws, policy, envOnFd: true })).ok, false, "envOnFd needs an fd");
+	const bind = await b.confine({ argv: ["/bin/true"], cwd: ws, policy: { ...policy, binds: [{ path: join(ws, "made", "here"), source: tmp }] } });
+	assert.ok(bind.ok);
+	assert.ok(existsSync(join(ws, "made", "here")), "the mount point of a directory bind");
+	const missing = await b.confine({ argv: ["/bin/true"], cwd: ws, policy: { ...policy, binds: [{ path: join(ws, "f"), source: join(ws, "nope") }] } });
+	assert.equal(missing.ok, false);
+});

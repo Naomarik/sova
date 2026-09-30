@@ -25,12 +25,12 @@ after(async () => {
 describe("owner areas in a gathering session", async () => {
   const org = await orgs.createOrg({ name: "Studio", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Site", root: join(root, "proj") });
-  const alp = orgs.addPerson(org.id, { name: "Alperen Kaya", role: "Founder", decides: ["website", "branding"] });
-  const bob = orgs.addPerson(org.id, { name: "Bob Tan", role: "Accountant", decides: ["invoicing"] });
-  const gone = orgs.addPerson(org.id, { name: "Gus Gone", role: "Payroll clerk", decides: ["payroll"] });
-  orgs.applyChange(org.id, gone.id, { status: "left" }, { kind: "operator" });
-  const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Our site", goal: "g" });
+  const project = await orgs.addProject(org.id, { name: "Site", root: join(root, "proj") });
+  const alp = await orgs.addPerson(org.id, { name: "Alperen Kaya", role: "Founder", decides: ["website", "branding"] });
+  const bob = await orgs.addPerson(org.id, { name: "Bob Tan", role: "Accountant", decides: ["invoicing"] });
+  const gone = await orgs.addPerson(org.id, { name: "Gus Gone", role: "Payroll clerk", decides: ["payroll"] });
+  await orgs.applyChange(org.id, gone.id, { status: "left" }, { kind: "operator" });
+  const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: alp.id, publicTitle: "Our site", goal: "g" });
 
   test("the prompt lists every active person's decision areas with their job title, the holder's own included, as private", () => {
     const prompt = loadout.renderBatonPrompt(c.sessionId);
@@ -61,10 +61,10 @@ describe("owner areas in a gathering session", async () => {
   });
 
   test("the choices follow the roster: a new area is offered at the next run, and a removed one is refused", async () => {
-    orgs.applyChange(org.id, bob.id, { decides: ["invoicing", "hosting"] }, { kind: "operator" });
+    await orgs.applyChange(org.id, bob.id, { decides: ["invoicing", "hosting"] }, { kind: "operator" });
     assert.deepEqual(loadout.ownerAreaSchema(orgs.readRoster(org.id)).enum, ["website", "branding", "invoicing", "hosting", "none"]);
     const tool = loadout.batonTools(c.sessionId, () => {}).find((t) => t.name === "record_decision")!;
-    orgs.applyChange(org.id, bob.id, { decides: ["hosting"] }, { kind: "operator" });
+    await orgs.applyChange(org.id, bob.id, { decides: ["hosting"] }, { kind: "operator" });
     // A tool built before the change still checks the roster as it is now.
     await assert.rejects(
       tool.execute("tc", { area: "x", ownerArea: "invoicing", statement: "s", quote: "q" }, undefined, undefined, undefined as never),

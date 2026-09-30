@@ -41,6 +41,7 @@ const { markOwned } = await import("./write-guard");
 const { getSessionSummary } = await import("./sessions-index");
 const { normalizeEntries, readActiveBranch } = await import("./transcript");
 const { orgLookup } = await import("./org-sessions");
+const { readBuilds, setBuildSessionMakerForTest } = await import("./build-loadout");
 const { setReconcileDeps } = await import("./reconcile");
 const { OVERSEER_SENT_ENTRY } = await import("../shared/protocol");
 
@@ -59,18 +60,23 @@ const app = new Hono();
 registerOrgRoutes(app);
 registerProjectOverseerRoutes(app);
 registerDecisionRoutes(app);
-/** New coding sessions: a session file of its own, as POST /api/sessions writes one. */
-app.post("/api/sessions", async (c) => {
-  const body = (await c.req.json()) as { cwd: string };
-  const id = randomUUID();
+/** New coding sessions: a session file of its own, as POST /api/sessions writes one, on a stub runtime. */
+async function codingSessionFile(cwd: string, id: string): Promise<string> {
   const dir = join(agentDir, "sessions", "--coding--");
   mkdirSync(dir, { recursive: true });
   const file = join(dir, `2026-09-28T00-00-00-000Z_${id}.jsonl`);
-  writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: new Date().toISOString(), cwd: body.cwd })}\n`);
+  writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: new Date().toISOString(), cwd })}\n`);
   markOwned(canonicalPath(file));
   await stubbed(canonicalPath(file));
-  return c.json({ id, path: canonicalPath(file) }, 201);
+  return canonicalPath(file);
+}
+app.post("/api/sessions", async (c) => {
+  const body = (await c.req.json()) as { cwd: string };
+  const id = randomUUID();
+  return c.json({ id, path: await codingSessionFile(body.cwd, id) }, 201);
 });
+// A project's builds make theirs the same way (server/build-loadout.ts).
+setBuildSessionMakerForTest(codingSessionFile);
 overseer.setOverseerDispatch((path, init) => app.request(path, init));
 /** The current Overseer, so the sender secret names someone (overseerSender reads the state). */
 const OVERSEER_ID = "ov-test-0001";
@@ -184,12 +190,12 @@ function leaksContact(s: string): string | null {
 describe("the organization tools (§app.overseer/org-tools)", async () => {
   const org = await orgs.createOrg({ name: "Qorvex Holdings", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
-  const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT", decides: ["servers"], contact: { email: CONTACT, phone: PHONE } });
-  const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
-  orgs.patchOrg(org.id, { about: ABOUT });
+  const project = await orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
+  const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT", decides: ["servers"], contact: { email: CONTACT, phone: PHONE } });
+  const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
+  await orgs.patchOrg(org.id, { about: ABOUT });
   // A hand-off session with a link minted (the page's way), a person typing their own contact, and a referral call.
-  const withLink = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Servers", goal: "Where it runs" });
+  const withLink = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Servers", goal: "Where it runs" });
   const TOKEN = withLink.token!;
   const TOKEN2 = baton.rotateLink(withLink.sessionId).token;
   {
@@ -288,7 +294,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     assert.equal(b.status, 201);
     const row = baton.batonById(((await b.json()) as { sessionId: string }).sessionId)!.row;
     assert.equal(row.startedVia, undefined, "a request body can't claim the Overseer");
-    baton.closeBaton(row.sessionId);
+    await baton.closeBaton(row.sessionId);
   });
 
   test("decisions: reconcile, a promotion of an unknown id refused by the route, freeze", async () => {
@@ -367,7 +373,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const two = await call("sova_gather", g);
     assert.match(two.text, /at most 1 gathering sessions or offers started/);
     assert.equal(baton.allBatons().length, before, "nothing started past the cap");
-    baton.closeBaton((one.details as { session: string }).session);
+    await baton.closeBaton((one.details as { session: string }).session);
     caps = { ...DEFAULT_CAPS };
     card = null;
     limits.reset();
@@ -408,7 +414,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const viaPrompt = await overseer.promptSession(path, "hello", OVERSEER_ID);
     assert.deepEqual(viaPrompt, { ok: false, status: 409, error: "That is a project overseer's own conversation." });
     mkdirSync(join(root, "proj-b"), { recursive: true });
-    const other = orgs.addProject(org.id, { name: "Fresh", root: join(root, "proj-b") });
+    const other = await orgs.addProject(org.id, { name: "Fresh", root: join(root, "proj-b") });
     const none = await overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${other.id}/overseer/message`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ text: "hi" }) });
     assert.equal(none.status, 409);
     // The Overseer's own cap bounds repeats: at the limit nothing is sent.
@@ -423,7 +429,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const made = await call("sova_project_overseer", { op: "code", org: org.id, project: project.id, prompt: "Add a CSV export", title: "CSV export" });
     assert.ok(made.ok, made.text);
     assert.equal(limits.count("create"), 1);
-    const rows = store.readStarted(store.projectOverseerPaths(org.id, project.id));
+    const rows = readBuilds(org.id, project.id);
     const row = rows.find((r) => r.sessionId === (made.details as { session: string }).session)!;
     assert.equal(row.kind, "operator-coding");
     assert.equal(row.via, "overseer");
@@ -447,17 +453,19 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
 describe("archive a project (§app.organizations/archive)", async () => {
   const org = await orgs.createOrg({ name: "Archivers", dir: join(root, "ws2") });
   mkdirSync(join(root, "proj2"));
-  const project = orgs.addProject(org.id, { name: "Old Site", root: join(root, "proj2") });
-  const kim = orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
-  const archive = () => overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/archive`, { method: "POST" });
+  const project = await orgs.addProject(org.id, { name: "Old Site", root: join(root, "proj2") });
+  const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
+  // As the tool sends it: in the turn a confirm card listing the project started (the chart checks the card first).
+  const archive = () =>
+    overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/archive`, { method: "POST", headers: { [tools.OVERSEER_CARD_HEADER]: JSON.stringify({ projects: [project.id] }) } });
 
   test("refused while a gathering session is open, naming it; nothing written", async () => {
-    const open = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Hosting", goal: "g", mintLink: false });
+    const open = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Hosting", goal: "g" }, { mintLink: false });
     const r = await archive();
     assert.equal(r.status, 409);
     assert.deepEqual(await r.json(), { error: "Stop these first: 1 gathering session open (Hosting)." });
     assert.equal(orgs.readProjects(org.id)[0]!.archived, undefined);
-    baton.closeBaton(open.sessionId);
+    await baton.closeBaton(open.sessionId);
   });
 
   test("the tool asks first, then archives: via the Overseer, left out of counts and the Organizations region", async () => {
@@ -508,10 +516,10 @@ describe("archive a project (§app.organizations/archive)", async () => {
 
   test("its composer is closed while archived (the project overseer's own)", async () => {
     const { path } = await po.ensureProjectOverseer(org.id, project.id);
-    orgs.setProjectArchived(org.id, project.id, true);
+    await orgs.setProjectArchived(org.id, project.id, true);
     const chat = await acquireChat(path);
     assert.equal(chat.specialEntry?.composerClosed?.(path), "Old Site is archived. Unarchive it to use its overseer.");
-    orgs.setProjectArchived(org.id, project.id, false);
+    await orgs.setProjectArchived(org.id, project.id, false);
     assert.equal(chat.specialEntry?.composerClosed?.(path), null);
   });
 });
@@ -519,8 +527,8 @@ describe("archive a project (§app.organizations/archive)", async () => {
 describe("the confirm card: people and projects, and the click that opens a confirmed turn", async () => {
   const org = await orgs.createOrg({ name: "Cardco", dir: join(root, "ws3") });
   mkdirSync(join(root, "proj3"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj3") });
-  const lee = orgs.addPerson(org.id, { name: "Lee Chan", role: "Design" });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj3") });
+  const lee = await orgs.addPerson(org.id, { name: "Lee Chan", role: "Design" });
   const { orgConfirmLookup } = await import("./overseer-org-tools");
   const lookup = { session: async () => null, isSelf: () => false, idea: () => null, todo: () => null, ...orgConfirmLookup };
   const refusal = (m: string) => new Error(m);

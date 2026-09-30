@@ -4,11 +4,17 @@ import {
   AT_ONCE_MAX,
   AUTONOMY_LEVELS,
   capProblem,
+  CONFIRM_KINDS,
+  confirmKindsProblem,
+  DEFAULT_CONFIRM_KINDS,
   DEFAULT_AUTONOMY,
   DEFAULT_PO_CAPS,
+  DEFAULT_HOLD_MIN,
   DEFAULT_SOON_LOOK_SEC,
   DEFAULT_WATCH_GAP_MIN,
   gapProblem,
+  holdProblem,
+  HOLD_MIN_MAX,
   isAtOnce,
   soonProblem,
   type HeldItem,
@@ -22,18 +28,18 @@ import {
 } from "../shared/project-overseer";
 import type { OrgProject, Person } from "../shared/orgs";
 import type { OverseerState } from "../shared/protocol";
-import { EXTRA_PROMPT_MAX, HISTORY_MAX, readOverseerState, writeAtomic, writeOverseerState } from "./overseer-store";
+import { hostOf, isOrgHostOpen, setProjectSettingsSource } from "./org-engine";
+import { EXTRA_PROMPT_MAX, HISTORY_MAX, writeAtomic } from "./overseer-store";
 import { orgDir, OrgError, orgOfSessionPath, readProjects } from "./orgs";
 import { checkAbilitiesPatch, parseAbilities } from "./gathering-abilities";
 import { checkCodingModePatch, parseCodingMode } from "./project-coding-mode";
-import type { WorktreeRecord } from "./project-worktrees";
 import { stateRoot } from "./state-root";
 
 /**
  * The project overseer's files (§app.project-overseer/identity): per project, in the org's
  * workspace repo, under `projects/<projectId>/overseer/`, so they move with the org and are
- * committed with it — settings, state, notes, actions, ideas, to-dos, and the sessions it started
- * (`started.json`). What the project's sessions cost is in `projects/<projectId>/costs.json` and
+ * committed with it — settings, state, notes, actions, ideas and to-dos (the sessions it started are
+ * the build and baton charts', server/build-loadout.ts). What the project's sessions cost is in `projects/<projectId>/costs.json` and
  * `usage.jsonl` (server/project-costs.ts, §app.project-costs/ledger).
  * Only the counters (each message's and each day's) and the watch loop's timing (pending reasons,
  * last run, runs per day, held items) are host-local: a restore starts them fresh. The stores are the Overseer's own
@@ -46,17 +52,10 @@ export interface ProjectOverseerPaths {
   /** `<workspace>/projects/<pid>/overseer`. */
   dir: string;
   settings: string;
-  state: string;
   notes: string;
   actions: string;
   ideas: string;
   todos: string;
-  /** The sessions it started. */
-  started: string;
-  /** Host-local: TurnLimits counters. */
-  turn: string;
-  /** Host-local: the watch loop's memo. */
-  memo: string;
 }
 
 const SAFE_ID = /^[a-z0-9_]{1,40}$/;
@@ -65,20 +64,15 @@ export function projectOverseerPaths(orgId: string, projectId: string, workspace
   // Both ids become path segments: never anything but the store's own id shape.
   if (!SAFE_ID.test(orgId) || !SAFE_ID.test(projectId)) throw new OrgError("Unknown project", 404);
   const dir = join(workspace, "projects", projectId, "overseer");
-  const local = join(stateRoot(), "project-overseers", `${orgId}-${projectId}`);
   return {
     orgId,
     projectId,
     dir,
     settings: join(dir, "overseer.json"),
-    state: join(dir, "state.json"),
     notes: join(dir, "notes.md"),
     actions: join(dir, "actions.jsonl"),
     ideas: join(dir, "ideas"),
     todos: join(dir, "todos.json"),
-    started: join(dir, "started.json"),
-    turn: join(local, "turn.json"),
-    memo: join(local, "watch.json"),
   };
 }
 
@@ -109,6 +103,8 @@ export function defaultPoSettings(): ProjectOverseerSettings {
     watchGapMin: DEFAULT_WATCH_GAP_MIN,
     soonLookSec: DEFAULT_SOON_LOOK_SEC,
     watch: true,
+    holdMin: DEFAULT_HOLD_MIN,
+    confirmKinds: [...DEFAULT_CONFIRM_KINDS],
     extraSystemPrompt: "",
   };
 }
@@ -151,6 +147,10 @@ export function parsePoSettings(raw: unknown): ProjectOverseerSettings {
     watchGapMin: gapProblem(raw.watchGapMin) === null ? (raw.watchGapMin as number) : d.watchGapMin,
     soonLookSec: "soonLookSec" in raw && soonProblem(raw.soonLookSec) === null ? (raw.soonLookSec as number | null) : d.soonLookSec,
     watch: typeof raw.watch === "boolean" ? raw.watch : d.watch,
+    // Over the maximum still means "as long as allowed"; any other bad value, the default.
+    holdMin: typeof raw.holdMin === "number" && Number.isInteger(raw.holdMin) && raw.holdMin > HOLD_MIN_MAX ? HOLD_MIN_MAX : holdProblem(raw.holdMin) === null ? (raw.holdMin as number) : d.holdMin,
+    // An unknown kind (a newer host's) is dropped; anything else unreadable, the default.
+    confirmKinds: Array.isArray(raw.confirmKinds) ? CONFIRM_KINDS.filter((k) => (raw.confirmKinds as unknown[]).includes(k)) : [...d.confirmKinds],
     extraSystemPrompt: typeof raw.extraSystemPrompt === "string" ? raw.extraSystemPrompt.slice(0, EXTRA_PROMPT_MAX) : "",
   };
 }
@@ -241,6 +241,16 @@ export function patchPoSettings(p: ProjectOverseerPaths, body: unknown, check?: 
     if (typeof patch.watch !== "boolean") throw new OrgError("watch must be true or false");
     next.watch = patch.watch;
   }
+  if (patch.holdMin !== undefined) {
+    const why = holdProblem(patch.holdMin);
+    if (why) throw new OrgError(why);
+    next.holdMin = patch.holdMin;
+  }
+  if (patch.confirmKinds !== undefined) {
+    const why = confirmKindsProblem(patch.confirmKinds);
+    if (why) throw new OrgError(why);
+    next.confirmKinds = CONFIRM_KINDS.filter((k) => patch.confirmKinds!.includes(k));
+  }
   if (patch.extraSystemPrompt !== undefined) {
     if (typeof patch.extraSystemPrompt !== "string" || patch.extraSystemPrompt.length > EXTRA_PROMPT_MAX)
       throw new OrgError(`extraSystemPrompt must be text of at most ${EXTRA_PROMPT_MAX} characters`);
@@ -283,14 +293,21 @@ export const levelAtLeast = (have: Autonomy, need: Autonomy): boolean => AUTONOM
 
 // ---- state: current conversation + history ------------------------------------------------------
 
-export const readPoState = (p: ProjectOverseerPaths): OverseerState | null => readOverseerState(p.state);
-export const writePoState = (p: ProjectOverseerPaths, s: OverseerState): void => writeOverseerState(s, p.state);
+/** Its conversations, current and at most 20 earlier ones, newest first: the project chart's overseer
+    region (q1: no state.json). Null while it has none (or its org's engine is not open here). */
+export function readPoState(p: Pick<ProjectOverseerPaths, "orgId" | "projectId">): OverseerState | null {
+  if (!isOrgHostOpen(p.orgId)) return null;
+  const o = hostOf(p.orgId).data(`project/${p.orgId}/${p.projectId}`)?.overseer as { id?: unknown; history?: unknown } | undefined;
+  if (!o || typeof o.id !== "string" || !o.id) return null;
+  return { version: 1, current: o.id, history: Array.isArray(o.history) ? o.history.filter((x): x is string => typeof x === "string") : [] };
+}
 export const isPoId = (p: ProjectOverseerPaths, id: string | undefined, state = readPoState(p)): boolean =>
   !!id && !!state && (state.current === id || state.history.includes(id));
 export { HISTORY_MAX };
 
-// ---- the watch memo (host-local) ------------------------------------------------------------------
+// ---- the watch loop, as the pages read it (host-local: its watch chart) ------------------------------
 
+/** The watch chart's loop as the pages and tools read it (design §3.5; q1: no watch.json). */
 export interface WatchMemo {
   version: 1;
   /** Reasons noted since the last look. */
@@ -299,11 +316,11 @@ export interface WatchMemo {
   lastRunAt: string | null;
   /** The last unattended run: `started` while it runs, then how it ended (§app.project-overseer/watch-loop). */
   lastRun: { at: string; reasons: string[]; outcome: LastRunOutcome; detail?: string } | null;
-  /** Unattended runs per local day, `YYYY-MM-DD` → count (the last few days only). */
+  /** Unattended runs today, `YYYY-MM-DD` → count. */
   perDay: Record<string, number>;
-  /** ISO time a look is due regardless of the 10-minute gap: set by an event that should be seen
-      soon (a gathering session done, a coding session's turn over, the operator's promotion), about
-      a minute after the first such event since the last look. Null: none waiting. */
+  /** ISO time a look is due regardless of the gap: set by an event that should be seen soon (a
+      gathering session done, a coding session's turn over, the operator's promotion), about a minute
+      after the first such event since the last look. Null: none waiting. */
   soonAt: string | null;
   /** What refusals held for later, one per key, at most HELD_MAX (§app.project-overseer/limits). */
   held: HeldItem[];
@@ -311,162 +328,36 @@ export interface WatchMemo {
 
 export const HELD_MAX = 10;
 
-function parseHeld(v: unknown): HeldItem[] {
-  if (!Array.isArray(v)) return [];
-  const out: HeldItem[] = [];
-  for (const h of v) {
-    if (!isObj(h) || typeof h.key !== "string" || typeof h.what !== "string" || typeof h.why !== "string" || typeof h.since !== "string") continue;
-    if (h.retryAt !== null && typeof h.retryAt !== "string") continue;
-    // The coding token budget is gone (§app.project-overseer/limits): nothing can release its held item.
-    if (h.key === "budget" || out.some((x) => x.key === h.key)) continue;
-    out.push({ key: h.key, what: h.what, why: h.why, since: h.since, retryAt: h.retryAt });
-  }
-  return out.slice(-HELD_MAX);
-}
+const isoAt = (v: unknown): string | null => (typeof v === "number" && Number.isFinite(v) ? new Date(v).toISOString() : typeof v === "string" && v ? v : null);
 
-/** Add or replace the held item with this key (the first refusal's time kept); at most HELD_MAX. */
-export function holdItem(m: WatchMemo, h: HeldItem): WatchMemo {
-  const prev = m.held.find((x) => x.key === h.key);
-  const held = [...m.held.filter((x) => x.key !== h.key), { ...h, since: prev?.since ?? h.since }].slice(-HELD_MAX);
-  return { ...m, held };
-}
-
-export function readMemo(p: ProjectOverseerPaths): WatchMemo {
-  const raw = readJson(p.memo);
+/** The project's watch as it stands (an empty loop when its org's engine or watch isn't here). */
+export function readMemo(p: Pick<ProjectOverseerPaths, "orgId" | "projectId">): WatchMemo {
   const m: WatchMemo = { version: 1, pending: [], lastRunAt: null, lastRun: null, perDay: {}, soonAt: null, held: [] };
-  if (!isObj(raw)) return m;
-  if (Array.isArray(raw.pending)) m.pending = raw.pending.filter((x): x is string => typeof x === "string").slice(-50);
-  if (typeof raw.lastRunAt === "string") m.lastRunAt = raw.lastRunAt;
-  if (isObj(raw.lastRun) && typeof raw.lastRun.at === "string") m.lastRun = raw.lastRun as WatchMemo["lastRun"];
-  if (isObj(raw.perDay)) for (const [k, v] of Object.entries(raw.perDay)) if (typeof v === "number") m.perDay[k] = v;
-  if (typeof raw.soonAt === "string") m.soonAt = raw.soonAt;
-  m.held = parseHeld(raw.held);
+  if (!isOrgHostOpen(p.orgId)) return m;
+  const d = hostOf(p.orgId).data(`watch/${p.orgId}/${p.projectId}`);
+  if (!d) return m;
+  if (Array.isArray(d.reasons)) m.pending = d.reasons.filter(isObj).map((r) => String(r.text ?? ""));
+  m.lastRunAt = isoAt(d.lastRunAt);
+  const run = d.lastRun;
+  if (isObj(run) && isoAt(run.at))
+    m.lastRun = {
+      at: isoAt(run.at)!,
+      reasons: Array.isArray(run.reasons) ? run.reasons.filter((x): x is string => typeof x === "string") : [],
+      outcome: run.outcome as LastRunOutcome,
+      ...(typeof run.detail === "string" ? { detail: run.detail } : {}),
+    };
+  const day = typeof d.day === "string" ? d.day : dayKey(new Date(typeof d.now === "number" ? d.now : Date.now()));
+  if (typeof d.looksToday === "number") m.perDay[day] = d.looksToday;
+  m.soonAt = isoAt(d.soonAt);
+  if (Array.isArray(d.held))
+    m.held = d.held.filter(isObj).map((h) => ({ key: String(h.key), what: String(h.what ?? ""), why: String(h.why ?? ""), since: isoAt(h.since) ?? "", retryAt: isoAt(h.retryAt) }));
   return m;
-}
-
-export function writeMemo(p: ProjectOverseerPaths, m: WatchMemo): void {
-  // The first write of the memo also moves a legacy `started` list out of it into the repo.
-  migrateStarted(p);
-  const days = Object.keys(m.perDay).sort().slice(-7);
-  const { version, pending, lastRunAt, lastRun, soonAt } = m;
-  writeAtomic(p.memo, `${JSON.stringify({ version, pending, lastRunAt, lastRun, perDay: Object.fromEntries(days.map((d) => [d, m.perDay[d]])), soonAt, held: parseHeld(m.held) }, null, 2)}\n`);
-}
-
-// ---- the sessions it started (in the repo) ----------------------------------------------------------
-
-export interface StartedRow {
-  sessionId: string;
-  /** `coding`: started by the overseer (its caps count these, and only these);
-      `operator-coding`: started by the operator's Start coding session on an item — organizational
-      (listed under the project), never counted against the overseer. An older Sova ignores it. */
-  kind: "gathering" | "offer" | "coding" | "operator-coding";
-  createdAt: string;
-  /** A coding session's file on the host that started it (coding sessions are not in the repo). */
-  path?: string;
-  /** Legacy, read only: a coding session's input + output + cache tokens as the removed token
-      budget last counted them. No model or token kinds, so the project's cost shows them as
-      unpriced when the session's file isn't on this host (server/project-costs.ts). */
-  tokens?: number;
-  /** A coding session's own git worktree (§app.project-overseer/coding-worktrees). `path` is
-      host-local (the host that started it); the branch is in the client repo. */
-  worktree?: WorktreeRecord;
-  /** The operator's Merge Branch: when, and the target's commit after it. */
-  merged?: { at: string; commit: string };
-  /** When the operator's Remove Worktree ran (ISO). */
-  removed?: string;
-  /** Remove Worktree deleted the branch too, which it does only for a merged one. */
-  branchDeleted?: boolean;
-  /** Why a coding session runs in the root itself (a tail: "it isn't a Git repository."). */
-  inRoot?: string;
-  /** A coding session's title when it started, for a host without its file (§app.project-overseer/coding-worktrees). */
-  title?: string;
-  /** An `operator-coding` row the global Overseer started for the operator (§app.overseer/org-attribution). */
-  via?: "overseer";
-}
-
-function parseWorktree(v: unknown): WorktreeRecord | undefined {
-  if (!isObj(v)) return undefined;
-  const { path, branch, base, target } = v;
-  if (typeof path !== "string" || !path || typeof branch !== "string" || !branch || typeof base !== "string" || typeof target !== "string") return undefined;
-  return { path, branch, base, target };
-}
-
-const STARTED_MAX = 200;
-
-function parseStarted(v: unknown): StartedRow[] {
-  if (!Array.isArray(v)) return [];
-  return v
-    .filter((s): s is StartedRow => isObj(s) && typeof s.sessionId === "string" && typeof s.kind === "string")
-    .map((s) => ({
-      sessionId: s.sessionId,
-      kind: s.kind,
-      createdAt: typeof s.createdAt === "string" ? s.createdAt : "",
-      ...(typeof s.path === "string" && s.path ? { path: s.path } : {}),
-      ...(typeof s.tokens === "number" && Number.isFinite(s.tokens) && s.tokens >= 0 ? { tokens: s.tokens } : {}),
-      ...(parseWorktree(s.worktree) ? { worktree: parseWorktree(s.worktree) } : {}),
-      ...(isObj(s.merged) && typeof s.merged.at === "string" && typeof s.merged.commit === "string" ? { merged: { at: s.merged.at, commit: s.merged.commit } } : {}),
-      ...(typeof s.removed === "string" && s.removed ? { removed: s.removed } : {}),
-      ...(s.branchDeleted === true ? { branchDeleted: true } : {}),
-      ...(typeof s.inRoot === "string" && s.inRoot ? { inRoot: s.inRoot } : {}),
-      ...(typeof s.title === "string" && s.title ? { title: s.title } : {}),
-      ...(s.via === "overseer" ? { via: "overseer" as const } : {}),
-    }))
-    .slice(-STARTED_MAX);
-}
-
-/** Before the list moved into the repo it lived in the host-local memo (`watch.json` `started`). */
-const legacyStarted = (p: ProjectOverseerPaths): unknown => {
-  const raw = readJson(p.memo);
-  return isObj(raw) ? raw.started : undefined;
-};
-
-/** The sessions it started, oldest first: `started.json`, or the legacy memo's list while that file is absent. */
-export function readStarted(p: ProjectOverseerPaths): StartedRow[] {
-  const raw = readJson(p.started);
-  if (isObj(raw)) return parseStarted(raw.sessions);
-  return existsSync(p.started) ? [] : parseStarted(legacyStarted(p));
-}
-
-export function writeStarted(p: ProjectOverseerPaths, rows: StartedRow[]): void {
-  writeAtomic(p.started, `${JSON.stringify({ version: 1, sessions: rows.slice(-STARTED_MAX) }, null, 2)}\n`);
-  dropLegacyStarted(p);
-}
-
-/** Move a legacy memo list into `started.json` (once: only while that file is absent). */
-function migrateStarted(p: ProjectOverseerPaths): void {
-  if (existsSync(p.started)) return dropLegacyStarted(p);
-  const legacy = parseStarted(legacyStarted(p));
-  if (legacy.length) writeStarted(p, legacy);
-}
-
-function dropLegacyStarted(p: ProjectOverseerPaths): void {
-  const raw = readJson(p.memo);
-  if (!isObj(raw) || !("started" in raw)) return;
-  const { started: _gone, ...rest } = raw;
-  writeAtomic(p.memo, `${JSON.stringify(rest, null, 2)}\n`);
 }
 
 /** The next local midnight after `d`: when a day's allowances and looks come back. */
 export const nextMidnight = (d = new Date()): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1);
 
 export const dayKey = (d = new Date()): string => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-
-/** Record a session it started (the listing and the concurrency caps). */
-export function noteStarted(p: ProjectOverseerPaths, sessionId: string, kind: StartedRow["kind"], now = new Date(), path?: string, extra: Pick<StartedRow, "worktree" | "inRoot" | "title" | "via"> = {}): void {
-  const rows = readStarted(p);
-  if (rows.some((s) => s.sessionId === sessionId)) return;
-  writeStarted(p, [...rows, { sessionId, kind, createdAt: now.toISOString(), ...(path ? { path } : {}), ...extra }]);
-}
-
-/** Record the operator's merge or removal on a coding session's row; false when the row or its worktree is unknown. */
-export function markStarted(p: ProjectOverseerPaths, sessionId: string, patch: Pick<StartedRow, "merged" | "removed" | "branchDeleted">): boolean {
-  const rows = readStarted(p);
-  const r = rows.find((x) => x.sessionId === sessionId);
-  if (!r?.worktree) return false;
-  Object.assign(r, patch);
-  writeStarted(p, rows);
-  return true;
-}
 
 // ---- which files are project overseers ------------------------------------------------------------
 
@@ -535,3 +426,6 @@ export function sessionIdOfFile(path: string): string {
   const i = b.indexOf("_");
   return i >= 0 ? b.slice(i + 1) : b;
 }
+
+// The org engine stamps every act with its project's settings as read now.
+setProjectSettingsSource({ read: (orgId, projectId, workspace) => readPoSettings(projectOverseerPaths(orgId, projectId, workspace)), defaults: defaultPoSettings });

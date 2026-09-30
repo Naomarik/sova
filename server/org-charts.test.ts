@@ -2,11 +2,12 @@
 // ESM bundle (server/vendor/org-charts.js) through the typed wrapper, on the "engine-probe" chart. The
 // probe is not in the shipped file: these tests register it at runtime (`charts`), as a JS copy
 // (fixtures/org-charts-engine/probe-chart.ts) of org-charts/src/sova/org_charts/engine/probe.cljs, which
-// the CLJS tests run. The replay runs the shipped charts. Pure: no files, no clock but `now`.
+// the CLJS tests run; probe_shape.json holds both to one shape. The replay runs the shipped charts. Pure: no files, no clock but `now`.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { chartVersions, createOrgCharts as createShipped, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
-import { PROBE_CHARTS } from "./fixtures/org-charts-engine/probe-chart";
+import { chartVersions, createOrgCharts as createShipped, hoursInherited, nextWindow, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
+import { readFileSync } from "node:fs";
+import { PROBE_CHARTS, probeChart, probeShape } from "./fixtures/org-charts-engine/probe-chart";
 
 /** The shipped engine with the probe chart registered. */
 const createOrgCharts = (opts: EngineOptions = {}): OrgCharts => createShipped({ ...opts, charts: PROBE_CHARTS });
@@ -28,12 +29,18 @@ function has(e: OrgCharts, sid: string, ...ids: string[]): boolean {
 describe("org-charts engine (vendored ESM)", () => {
   test("the bundle lists its charts, each with a positive integer version", () => {
     const names = chartVersions().map((c) => c.name);
-    assert.deepEqual(names.sort(), ["project", "work-item"], "the shipped module has no test chart");
+    assert.deepEqual(names.sort(), ["baton", "build", "conflict", "decision", "item", "org", "person", "project", "reconciler", "residence", "watch"], "the refit's eleven charts, nothing else");
+    assert.ok(!names.includes(PROBE), "the shipped module has no test chart");
     assert.throws(() => createShipped().start("p", PROBE), /Unknown chart/, "the probe exists only where it is registered");
     assert.throws(() => createShipped({ charts: { project: PROBE_CHARTS["engine-probe"] } }), /Chart project is already registered/);
     for (const c of chartVersions()) {
       assert.ok(Number.isInteger(c.version) && c.version > 0, `${c.name} has version ${String(c.version)}`);
     }
+  });
+
+  test("the JS probe has probe.cljs's shape (probe_shape.json, which the CLJS suite checks probe.cljs against)", () => {
+    const want = JSON.parse(readFileSync(new URL("../org-charts/src/sova/org_charts/engine/probe_shape.json", import.meta.url), "utf8"));
+    assert.deepEqual(probeShape(probeChart), want, "probe-chart.ts differs from probe_shape.json: change probe.cljs, probe-chart.ts and the JSON together");
   });
 
   test("start enters every region of a parallel state, in document order", () => {
@@ -110,17 +117,21 @@ describe("org-charts engine (vendored ESM)", () => {
     e.send("p", "next", {}, { now: T0 });
     const r = e.fireDue(T0 + 1);
     assert.ok(has(e, "p", "c"));
-    assert.deepEqual(started, [{ sessionId: "p", invokeId: "look", type: "sova/look", params: { fired: 1, sid: "p" } }]);
+    assert.deepEqual(started.map(({ runId: _r, ...i }) => i), [{ op: "start", sessionId: "p", invokeId: "look", type: "sova/look", params: { fired: 1, sid: "p" } }]);
+    const runId = started[0]?.runId ?? "";
+    assert.match(runId, /^p#look#\d+$/, "each start has a run id");
     assert.deepEqual(r.invocations.map((i) => i.op), ["start"]);
     const r2 = e.send("p", "next", {}, { now: T0 + 2 });
     assert.ok(has(e, "p", "a"));
-    assert.deepEqual(stopped, [{ sessionId: "p", invokeId: "look", type: "sova/look" }]);
+    assert.deepEqual(stopped, [{ op: "stop", sessionId: "p", invokeId: "look", type: "sova/look", runId }]);
     assert.deepEqual(r2.invocations.map((i) => i.op), ["stop"]);
     // The host reports a look back with its invoke id.
     e.send("p", "next", {}, { now: T0 + 3 });
     e.send("p", "next", {}, { now: T0 + 3 });
-    e.fireDue(T0 + 4);
-    e.send("p", "look/finished", {}, { now: T0 + 5, invokeId: "look" });
+    const again = e.fireDue(T0 + 4).invocations[0]?.runId ?? "";
+    assert.deepEqual(e.send("p", "look/finished", {}, { now: T0 + 5, invokeId: runId }).steps, [], "a result for an ended run is stale");
+    assert.ok(has(e, "p", "c"));
+    e.send("p", "look/finished", {}, { now: T0 + 5, invokeId: again });
     assert.ok(has(e, "p", "a"));
     assert.equal(e.data("p")?.["looks"], 1);
   });
@@ -138,16 +149,17 @@ describe("org-charts engine (vendored ESM)", () => {
     const ok = e.trial("p", "act/promote", { by: "overseer", level: "L2" }, { now: T0 });
     assert.equal(ok.taken, true);
     assert.ok(ok.configuration.includes("acted"));
-    assert.deepEqual(ok.outbox, [{ kind: "promote", key: "promote/0" }]);
+    assert.deepEqual(ok.outbox.map(({ key: _k, ...o }) => o), [{ kind: "promote", chartKey: "promote/0", sessionId: "p" }]);
     assert.equal(saves.length, before, "a trial saves nothing");
     assert.ok(has(e, "p", "ready"), "and the session did not move");
     assert.equal(e.trial("p", "act/promote", { by: "operator" }, { now: T0 }).taken, true);
-    assert.ok(!e.enabledEvents("p", { by: "overseer", level: "L1" }).includes("act/promote"));
-    assert.deepEqual(e.enabledEvents("p", { level: "L2" }), [
+    assert.ok(!e.enabledEvents("p", { by: "overseer", level: "L1" }).some((x) => x.event === "act/promote"));
+    assert.deepEqual(e.enabledEvents("p", { level: "L2" }).map((x) => x.event), [
       "probe/stop", "hold", "next", "gate/open", "spin/facts", "peer/pinged", "poke", "act/promote", "act/ping", "probe/warn", "probe/throw",
     ]);
     const r = e.send("p", "act/promote", { by: "overseer", level: "L2" }, { now: T0 });
-    assert.deepEqual(r.outbox, [{ kind: "promote", key: "promote/0", sessionId: "p" }]);
+    assert.deepEqual(r.outbox.map(({ key: _k, ...o }) => o), [{ kind: "promote", chartKey: "promote/0", sessionId: "p" }]);
+    assert.deepEqual(Object.keys((e.data("p")?.["sova/pending"] ?? {}) as object), [r.outbox[0]?.key], "the effect stays pending under its key");
     assert.deepEqual(e.data("p")?.["outbox"], [], "the outbox is drained from the data model");
   });
 
@@ -164,7 +176,7 @@ describe("org-charts engine (vendored ESM)", () => {
     calls.length = 0;
     const armed = e.trial("a", "next", {}, { now: T0 });
     assert.ok(armed.configuration.includes("b2"));
-    assert.deepEqual(armed.sends, [{ to: "a", event: "timer/fired", delay: 1000, data: {} }]);
+    assert.deepEqual(armed.sends.map(({ to, event, delay, data }) => ({ to, event, delay, data })), [{ to: "a", event: "timer/fired", delay: 1000, data: {} }]);
     assert.equal(e.nextDueAt(), null, "the would-be timer is reported, not queued");
     e.send("a", "next", {}, { now: T0 });
     calls.length = 0;
@@ -236,7 +248,7 @@ describe("org-charts engine (vendored ESM)", () => {
     e2.send("p", "sova/resumed", {}, { now: T0 + 100 });
     assert.ok(has(e2, "p", "a"));
     assert.equal(e2.data("p")?.["resumes"], 1);
-    assert.deepEqual(calls, ["stop", "save"], "exiting stops the dead look, then the step is saved");
+    assert.deepEqual(calls, ["save", "stop"], "once the call committed: the step is saved, then the dead look is stopped");
     assert.equal(e2.generation("p"), (gen ?? 0) + 1, "the generation continues from the snapshot");
   });
 
@@ -266,7 +278,7 @@ describe("org-charts engine (vendored ESM)", () => {
     assert.throws(() => e.send("nobody", "next"), /not loaded/);
     assert.throws(() => e.start("p", "nope" as "project"), /Unknown chart/);
     e.start("p", PROBE, {}, { now: T0 });
-    assert.throws(() => e.start("p", PROBE), /already loaded/);
+    assert.throws(() => e.start("p", PROBE), { name: "OrgChartsError", code: "sova/session-exists" });
     assert.throws(() => e.load("q", "{:bad 1}"), /format/);
   });
 
@@ -322,5 +334,35 @@ describe("org-charts engine (vendored ESM)", () => {
     const r = e.send("p", "probe/stop", {}, { now: T0 });
     assert.deepEqual(e.configuration("p"), ["probe", "stopped"]);
     assert.equal(r.steps[0]?.running, true);
+  });
+});
+
+describe("nextWindow (r7: the charts' rules.hours, exported)", () => {
+  const weekdays = { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" };
+  test("before, inside and after a person's hours; the weekend; a zone with DST; no hours", () => {
+    const mon = Date.UTC(2026, 8, 28); // Monday 2026-09-28 00:00 UTC
+    const h = 3600_000;
+    assert.equal(nextWindow({ tz: "UTC", hours: weekdays }, mon + 8 * h), mon + 9 * h, "before: today's window");
+    assert.equal(nextWindow({ tz: "UTC", hours: weekdays }, mon + 10 * h), null, "inside: now");
+    assert.equal(nextWindow({ tz: "UTC", hours: weekdays }, mon + 5 * 24 * h + 12 * h), mon + 7 * 24 * h + 9 * h, "Saturday: Monday 09:00");
+    // New York is UTC-4 in September: 09:00 local is 13:00 UTC
+    assert.equal(nextWindow({ tz: "America/New_York", hours: weekdays }, mon + 12 * h), mon + 13 * h);
+    assert.equal(nextWindow({}, mon), null, "no zone or hours: always open");
+    assert.equal(nextWindow({ tz: "Not/AZone", hours: weekdays }, mon), null);
+  });
+
+  test("r13: effective hours: own over the company's, the company's when none, neither = always", () => {
+    const mon = Date.UTC(2026, 8, 28);
+    const h = 3600_000;
+    const company = { tz: "UTC", hours: { days: [1, 2, 3, 4, 5], from: "07:00", to: "15:00" } };
+    const own = { tz: "UTC", hours: weekdays };
+    assert.equal(nextWindow(own, mon + 8 * h, company), mon + 9 * h, "own hours win");
+    assert.equal(nextWindow({}, mon + 5 * h, company), mon + 7 * h, "none of their own: the company's");
+    assert.equal(nextWindow({}, mon + 8 * h, company), null, "in the company's hours");
+    assert.equal(nextWindow({}, mon + 5 * h, null), null, "neither: always in hours");
+    assert.equal(nextWindow({ tz: "UTC" }, mon + 5 * h, company), mon + 7 * h, "a zone without hours isn't own hours");
+    assert.equal(hoursInherited({}, company), true);
+    assert.equal(hoursInherited(own, company), false);
+    assert.equal(hoursInherited({}, null), false);
   });
 });

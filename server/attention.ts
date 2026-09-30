@@ -89,8 +89,11 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   // A baton session (§app.baton/needs-you): the baton is with the operator, or a person holds it
   // through a hand-off nobody has a link for yet.
   if (s.baton?.needsYou) add("act", "baton-needs-you", s.baton.needsYou.since || lastActive, `${s.baton.needsYou.from} → you: ${s.baton.needsYou.question}`);
-  else if (s.baton?.sendLink)
+  else if (s.baton?.sendLink) {
     add("act", "baton-needs-you", s.baton.sendLink.since || lastActive, `Send ${s.baton.sendLink.to} their link: ${s.baton.sendLink.question}`);
+    // r12: the offer's invitees still waiting for their hours ride on it (they need nothing yet).
+    if (s.baton.waiting?.length) out[out.length - 1]!.waiting = s.baton.waiting;
+  }
   // decide: a referral from this session waits for the operator (§app.organizations/referrals).
   for (const p of s.baton?.proposals ?? [])
     add("decide", "roster-proposal", p.since || lastActive, `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`);

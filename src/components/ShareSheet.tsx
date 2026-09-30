@@ -1,8 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Portal } from "solid-js/web";
 import {
-  ANYONE_LABEL,
-  RECIPIENTS_MAX,
   SESSION_SHARE_DAYS,
   SESSION_SHARE_DEFAULT_DAYS,
   SHARE_TITLE_MAX,
@@ -20,15 +18,14 @@ import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
 import {
   addRecipient,
-  cleanLabels,
-  createBlocked,
-  createShare,
   daysWord,
   expiresWord,
   extendShare,
   imagesBlocked,
+  isShareChanged,
   isStalePreview,
   modeLine,
+  sliceLine,
   openedLine,
   patchShare,
   presenceWord,
@@ -47,6 +44,7 @@ import {
   visitLine,
 } from "../lib/session-shares";
 import { openSettings } from "../lib/settings-nav";
+import { shareHref } from "../lib/share-slice";
 import { copyText } from "../lib/ui-state";
 import { SessionThread } from "../share/SessionShareApp";
 import { Banner, CopyButton, Icon, trapFocus } from "./ui";
@@ -58,26 +56,22 @@ const ACTIVITY_MS = 5_000;
 const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
 
 /**
- * The Share sheet (§app.session-share/sheet): a dialog, a sheet at folded width. Without `share` it
- * creates one for the session; with it, it manages that share. Everything goes to `host`, the host
- * that holds the session (null: this one).
+ * The Share sheet (§app.session-share/sheet): a dialog, a sheet at folded width, that manages one
+ * share. Shares are created on the share page (§app.session-share/share-page), whose Change Slice
+ * door this sheet holds. Everything goes to `host`, the host that holds the session (null: this one).
  */
 export function ShareSheet(props: {
   host: string | null;
-  sessionId: string;
-  sessionTitle: string;
-  share?: SessionShare | null;
+  share: SessionShare;
   onClose(): void;
-  /** A share was created or changed: the caller's list re-reads or takes it. */
+  /** The share changed: the caller's list re-reads or takes it. */
   onChanged?(share: SessionShare): void;
 }) {
   const titleId = `share-sheet-${Math.random().toString(36).slice(2, 8)}`;
-  const [share, setShare] = createSignal<SessionShare | null>(props.share ?? null);
+  const [share, setShare] = createSignal<SessionShare>(props.share);
   /** What the sheet shows in place of its form: the thread as recipients see it, or a fresh
       preview to confirm before Update to Now or before Follow live stops. */
   const [previewing, setPreviewing] = createSignal<Stage>(null);
-  /** The links Create just minted: Manage shows them once, at its top. */
-  const [minted, setMinted] = createSignal<SessionShareMinted | null>(null);
   const changed = (s: SessionShare) => {
     setShare(s);
     props.onChanged?.(s);
@@ -87,7 +81,7 @@ export function ShareSheet(props: {
     if (st === "preview") return "As they see it";
     if (st === "update") return "Update to Now";
     if (st === "snapshot") return "Stop Following Live";
-    return share() ? "Manage Share" : "Share Session";
+    return "Manage Share";
   };
 
   return (
@@ -112,15 +106,7 @@ export function ShareSheet(props: {
             {heading()}
           </h2>
         </div>
-        <Show
-          when={share()}
-          fallback={<CreateShare host={props.host} sessionId={props.sessionId} sessionTitle={props.sessionTitle} previewing={previewing()} setPreviewing={setPreviewing} onClose={props.onClose} onCreated={(m) => {
-            setMinted(m);
-            changed(m.share);
-          }} />}
-        >
-          {(s) => <ManageShare host={props.host} share={s()} minted={minted()} previewing={previewing()} setPreviewing={setPreviewing} onClose={props.onClose} onChanged={changed} />}
-        </Show>
+        <ManageShare host={props.host} share={share()} previewing={previewing()} setPreviewing={setPreviewing} onClose={props.onClose} onChanged={changed} />
       </div>
     </Portal>
   );
@@ -133,7 +119,7 @@ export function ShareSheet(props: {
 type Stage = null | "preview" | "update" | "snapshot";
 
 /** The thread as the share page draws it, with Show Earlier. */
-function PreviewBody(props: { first: SessionShareView; title?: string; read(before: number): Promise<SessionShareView>; imageUrl(n: number): string }) {
+export function PreviewBody(props: { first: SessionShareView; title?: string; read(before: number): Promise<SessionShareView>; imageUrl(n: number): string }) {
   const [view, setView] = createSignal(props.first);
   const [earlier, setEarlier] = createSignal<"busy" | string | null>(null);
   const more = async () => {
@@ -162,14 +148,14 @@ function PreviewBody(props: { first: SessionShareView; title?: string; read(befo
 /** Retry shows for a thumbnail that hasn't loaded after this long, as for one that failed. */
 const SLOW_THUMB_MS = 10_000;
 
-const NO_THUMBS: ThumbState = { total: 0, loaded: new Set(), failed: new Set() };
+export const NO_THUMBS: ThumbState = { total: 0, loaded: new Set(), failed: new Set() };
 
 /**
  * Every image a preview shares, as thumbnails loaded at once (never lazily: each must be on screen
  * before anything is shared), with Retry for one that failed or is slow. `onState` reports which
  * loaded, for the gate on Create, Update to Now and Stop Following Live.
  */
-function ImagesShared(props: { count: number; url(n: number): string; onState(t: ThumbState): void }) {
+export function ImagesShared(props: { count: number; url(n: number): string; onState(t: ThumbState): void }) {
   const ns = () => Array.from({ length: props.count }, (_, i) => i);
   /** Each loaded index, with the attempt it loaded on: its key, so it never mounts again. */
   const [loadedOn, setLoadedOn] = createSignal<ReadonlyMap<number, number>>(new Map());
@@ -243,7 +229,7 @@ function ImagesShared(props: { count: number; url(n: number): string; onState(t:
 }
 
 /** Freshly minted links, each shown once with Copy Link, and the warning when they may not open. */
-function MintedLinks(props: { links: SessionShareLink[]; warning?: string }) {
+export function MintedLinks(props: { links: SessionShareLink[]; warning?: string }) {
   return (
     <div class="stack-2">
       <ul class="list share-links">
@@ -277,282 +263,11 @@ function MintedLinks(props: { links: SessionShareLink[]; warning?: string }) {
   );
 }
 
-// ---- create -------------------------------------------------------------------------------------
-
-function CreateShare(props: {
-  host: string | null;
-  sessionId: string;
-  sessionTitle: string;
-  previewing: Stage;
-  setPreviewing(st: Stage): void;
-  onClose(): void;
-  onCreated(m: SessionShareMinted): void;
-}) {
-  const [title, setTitle] = createSignal(props.sessionTitle.slice(0, SHARE_TITLE_MAX));
-  const [labels, setLabels] = createSignal<string[]>([]);
-  const [draft, setDraft] = createSignal("");
-  const [anyone, setAnyone] = createSignal(false);
-  const [live, setLive] = createSignal(false);
-  const [days, setDays] = createSignal<SessionShareDays>(SESSION_SHARE_DEFAULT_DAYS);
-  /** The preview on screen, fixed at its `cut`: a snapshot is minted at exactly that cut. */
-  const [preview, setPreview] = createSignal<SessionSharePreview | null>(null);
-  const [previewError, setPreviewError] = createSignal<string | null>(null);
-  const [thumbs, setThumbs] = createSignal<ThumbState>(NO_THUMBS);
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  /** The mint found its previewed cut gone: the preview was read again, to be reviewed again. */
-  const [stale, setStale] = createSignal(false);
-  let labelInput!: HTMLInputElement;
-
-  const readPreview = async () => {
-    setPreviewError(null);
-    setPreview(null);
-    setThumbs(NO_THUMBS);
-    try {
-      setPreview(await previewNew(props.host, props.sessionId));
-    } catch (x) {
-      setPreviewError(errText(x));
-    }
-  };
-  onMount(() => void readPreview());
-
-  const total = () => labels().length + (anyone() ? 1 : 0);
-  const addLabel = () => {
-    const next = cleanLabels([...labels(), draft()]);
-    if (next.length === labels().length) return;
-    setLabels(next.slice(0, RECIPIENTS_MAX - (anyone() ? 1 : 0)));
-    setDraft("");
-    labelInput.focus();
-  };
-  const blocked = (): string | null =>
-    createBlocked({
-      title: title(),
-      recipients: total(),
-      max: RECIPIENTS_MAX,
-      preview: preview() ? "ready" : previewError() ? "failed" : "loading",
-      thumbs: preview() ? { ...thumbs(), total: preview()!.images } : NO_THUMBS,
-    });
-  const create = async () => {
-    const p = preview();
-    if (busy() || blocked() || !p) return;
-    setBusy(true);
-    setError(null);
-    setStale(false);
-    try {
-      const m = await createShare(props.host, {
-        sessionId: props.sessionId,
-        title: title().trim(),
-        mode: live() ? "live" : "snapshot",
-        // A snapshot is exactly the preview on screen; Follow live has no cut by design.
-        ...(live() ? {} : { cut: p.cut }),
-        expiresInDays: days(),
-        recipients: labels(),
-        anyone: anyone(),
-      });
-      props.onCreated(m);
-    } catch (x) {
-      if (isStalePreview(x)) {
-        setStale(true);
-        void readPreview();
-      } else setError(errText(x));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Switch>
-      <Match when={props.previewing === "preview" && preview()}>
-        {(v) => (
-          <>
-            <div class="modal-body share-preview-body" tabindex="0" aria-label="Preview">
-              <PreviewBody
-                first={v()}
-                title={title().trim() || undefined}
-                read={(b) => previewNew(props.host, props.sessionId, { cut: v().cut, before: b })}
-                imageUrl={(n) => previewNewImage(props.host, props.sessionId, v().cut, n)}
-              />
-            </div>
-            <div class="modal-foot">
-              <button type="button" class="button" onClick={() => props.setPreviewing(null)}>
-                <Icon name="chevron-left" small />
-                Back to Sharing
-              </button>
-            </div>
-          </>
-        )}
-      </Match>
-      <Match when={true}>
-        <div class="modal-body">
-          <p class="usage-note">
-            People you send a link to can read this conversation: your messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs.
-          </p>
-          <div class="field">
-            <label class="field-label" for="share-title">
-              Title they see
-            </label>
-            <input id="share-title" class="input" maxlength={SHARE_TITLE_MAX} value={title()} onInput={(e) => setTitle(e.currentTarget.value)} />
-            <p class="field-hint">The session's own title may say more than you mean to.</p>
-          </div>
-
-          <div class="field">
-            <label class="field-label" for="share-person">
-              People
-            </label>
-            <div class="share-add-row">
-              <input
-                id="share-person"
-                ref={labelInput}
-                class="input"
-                maxlength={RECIPIENT_LABEL_MAX}
-                placeholder="A name only you see, like Ana"
-                value={draft()}
-                onInput={(e) => setDraft(e.currentTarget.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    addLabel();
-                  }
-                }}
-              />
-              <button type="button" class="button" aria-disabled={!draft().trim() ? "true" : undefined} onClick={addLabel}>
-                <Icon name="plus" small />
-                Add
-              </button>
-            </div>
-            <p class="field-hint">Each person gets their own link, so you see who opened it and can turn one off alone.</p>
-            <Show when={labels().length > 0}>
-              <ul class="share-people" aria-label="Added people">
-                <For each={labels()}>
-                  {(l) => (
-                    <li class="chip share-person">
-                      {l}
-                      <button type="button" class="share-person-remove" aria-label={`Remove ${l}`} title={`Remove ${l}`} onClick={() => setLabels((ls) => ls.filter((x) => x !== l))}>
-                        <Icon name="close" small />
-                      </button>
-                    </li>
-                  )}
-                </For>
-              </ul>
-            </Show>
-          </div>
-
-          <label class="toggle toggle-switch share-switch">
-            <span class="share-switch-text">
-              <span>{ANYONE_LABEL}</span>
-              <span class="field-hint">One more link anyone can open. Its visits show the device type only.</span>
-            </span>
-            <input type="checkbox" checked={anyone()} onChange={(e) => setAnyone(e.currentTarget.checked)} />
-            <span class="toggle-box" />
-          </label>
-
-          <label class="toggle toggle-switch share-switch">
-            <span class="share-switch-text">
-              <span>Follow live</span>
-              <span class="field-hint">
-                {live() ? "They see new messages as the session goes on, including ones you haven't read yet." : "Off: they see the conversation as it is now. You can update it to now later."}
-              </span>
-            </span>
-            <input type="checkbox" checked={live()} onChange={(e) => setLive(e.currentTarget.checked)} />
-            <span class="toggle-box" />
-          </label>
-
-          <div class="field">
-            <label class="field-label" for="share-days">
-              Links expire after
-            </label>
-            <span class="select-wrap">
-              <select id="share-days" class="select" value={days()} onChange={(e) => setDays(Number(e.currentTarget.value) as SessionShareDays)}>
-                <For each={SESSION_SHARE_DAYS}>{(d) => <option value={d}>{daysWord(d)}</option>}</For>
-              </select>
-              <span class="select-caret" aria-hidden="true">
-                <Icon name="chevron-down" small />
-              </span>
-            </span>
-          </div>
-
-          <Show when={stale()}>
-            {/* Beside the preview it is about, brought into view: the press that found it is at the foot. */}
-            <div ref={(el) => queueMicrotask(() => el.scrollIntoView({ block: "nearest" }))}>
-              <Banner tone="warn" title={STALE_PREVIEW} body="Nothing was shared. We read it again: check it, then create the links." />
-            </div>
-          </Show>
-          <Switch>
-            <Match when={previewError()}>
-              {(msg) => (
-                <Banner
-                  tone="error"
-                  title="Couldn't read the conversation to preview it."
-                  body={`Nothing was shared. ${msg()}`}
-                  action={
-                    <button type="button" class="button button-sm button-ghost" onClick={() => void readPreview()}>
-                      Try Again
-                    </button>
-                  }
-                />
-              )}
-            </Match>
-            <Match when={!preview()}>
-              <p class="usage-note text-muted" aria-busy="true">
-                Reading the conversation…
-              </p>
-            </Match>
-            <Match when={preview()}>
-              {(v) => (
-                <>
-                  <div class="share-snapshot">
-                    <p class="usage-note">
-                      {v().items.length === 0 ? "No messages yet." : `${v().items.length}${v().before !== undefined ? "+" : ""} ${v().items.length === 1 ? "message" : "messages"} will be shared`}
-                      {v().items.length === 0 ? "" : live() ? ", and every one after." : v().through ? `, up to ${absoluteTime(v().through!)}.` : "."}
-                    </p>
-                    <button type="button" class="button button-sm button-ghost" title="Read the conversation again, as it is now." onClick={() => void readPreview()}>
-                      <Icon name="refresh" small />
-                      Preview Again
-                    </button>
-                  </div>
-                  <Show when={v().images > 0}>
-                    {/* Keyed on the cut: a new preview reviews its images from scratch. */}
-                    <Show when={v().cut} keyed>
-                      {(cut) => <ImagesShared count={v().images} url={(n) => previewNewImage(props.host, props.sessionId, cut, n)} onState={setThumbs} />}
-                    </Show>
-                  </Show>
-                </>
-              )}
-            </Match>
-          </Switch>
-
-          <Show when={error()}>
-            {(msg) => (
-              <div ref={(el) => queueMicrotask(() => el.scrollIntoView({ block: "nearest" }))}>
-                <Banner tone="error" title="Couldn't create the links." body={`Nothing was shared. ${msg()}`} />
-              </div>
-            )}
-          </Show>
-        </div>
-        <div class="modal-foot share-foot">
-          <button type="button" class="button button-ghost" onClick={() => props.onClose()}>
-            Cancel
-          </button>
-          <span class="modal-spacer" />
-          <button type="button" class="button" aria-disabled={!preview() ? "true" : undefined} onClick={() => preview() && props.setPreviewing("preview")}>
-            Preview
-          </button>
-          <button type="button" class="button button-primary" title={blocked() ?? undefined} aria-disabled={blocked() || busy() ? "true" : undefined} onClick={() => void create()}>
-            {busy() ? "Creating…" : total() === 1 ? "Create Link" : "Create Links"}
-          </button>
-        </div>
-      </Match>
-    </Switch>
-  );
-}
-
 // ---- manage -------------------------------------------------------------------------------------
 
 function ManageShare(props: {
   host: string | null;
   share: SessionShare;
-  /** Links Create just minted, shown once. */
-  minted?: SessionShareMinted | null;
   previewing: Stage;
   setPreviewing(st: Stage): void;
   onClose(): void;
@@ -566,7 +281,7 @@ function ManageShare(props: {
   const [days, setDays] = createSignal<SessionShareDays>(SESSION_SHARE_DEFAULT_DAYS);
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
-  const [fresh, setFresh] = createSignal<{ links: SessionShareLink[]; warning?: string } | null>(props.minted ? { links: props.minted.links, warning: props.minted.linkWarning } : null);
+  const [fresh, setFresh] = createSignal<{ links: SessionShareLink[]; warning?: string } | null>(null);
   const [stopArmed, setStopArmed] = createSignal(false);
   const [preview, setPreview] = createSignal<SessionShareView | null>(null);
   /** The fresh preview an Update to Now or Stop Following Live stops at, with its images' state. */
@@ -663,6 +378,10 @@ function ManageShare(props: {
       if (isStalePreview(x)) {
         setStale(true);
         void readNext();
+      } else if (isShareChanged(x)) {
+        // The share moved under this confirm: back to Manage, whose banner says so, to look again.
+        props.setPreviewing(null);
+        setError(errText(x));
       } else setNextError(errText(x));
     } finally {
       setBusy(null);
@@ -785,6 +504,13 @@ function ManageShare(props: {
           </div>
 
           <Show when={!stopped()}>
+            {/* What the share holds, and the door to the share page to pick it again. */}
+            <div class="share-snapshot">
+              <p class="usage-note">{sliceLine(s())}</p>
+              <a class="button button-sm" href={shareHref(s().sessionId, { host: props.host, share: s().id })} onClick={() => props.onClose()}>
+                Change Slice
+              </a>
+            </div>
             <label class="toggle toggle-switch share-switch">
               <span class="share-switch-text">
                 <span>Follow live</span>

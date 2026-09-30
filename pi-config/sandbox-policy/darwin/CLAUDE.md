@@ -31,6 +31,10 @@ Seatbelt filters operations; it cannot remap paths as bwrap's mounts do. So on m
   logging, certificate checks), so pasteboard, Apple events (`osascript`), and the GUI do not
   work.
 - **setuid programs cannot run** (`sudo`, `ps`, `top`): Seatbelt refuses the exec.
+- **Claude Code workers** run whole under the same profile, with the CLI's own sandbox off. Their
+  private state is linked in rather than bound, because Seatbelt cannot remap paths. A confined
+  `claude --version` must succeed before the first one starts; if it fails, the worker is refused,
+  never run unconfined.
 
 The platform adds its own lists on top: more credential stores, browser, Mail, Messages, Safari,
 cookie and TCC data hidden; `~/Library/LaunchAgents`, `~/Library/Preferences`, shell rc files and

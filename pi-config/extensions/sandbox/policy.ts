@@ -318,6 +318,9 @@ export function isWithin(child: string, parent: string): boolean {
  * along, so a worker whose own agent dir holds a looser policy file (a worktree's `.agent`) is held
  * to the parent's: hidden paths add, the two allowlists replace the worker's own.
  *
+ * `readOnly`: the parent's read-only paths inside those roots (each tracked worktree's `.agent`, git
+ * hooks and config, the policy file's `readOnlyWithinWritable`), read-only for the worker too.
+ *
  * `writeOnly` (§chat.worktrees/workers): the worker's parent is NOT sandboxed and confines it to
  * writing inside `writable` only. No policy file is read; nothing is hidden, the network and the
  * environment stay as they are.
@@ -327,18 +330,25 @@ export interface ParentScope {
 	level: SandboxLevel;
 	workspaceRoot: string;
 	writable: string[];
+	readOnly?: string[];
 	hidden?: string[];
 	proxyAllow?: string[];
 	envAllow?: string[];
 	writeOnly?: true;
 }
 
-export function parentScopeOf(policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir"> & Partial<Pick<ResolvedPolicy, "hidden" | "proxyAllow" | "envAllow">>): ParentScope {
+export function parentScopeOf(
+	policy: Pick<ResolvedPolicy, "level" | "workspaceRoot" | "writable" | "tmpDir"> & Partial<Pick<ResolvedPolicy, "readOnlyWithinWritable" | "hidden" | "proxyAllow" | "envAllow">>,
+): ParentScope {
+	const writable = policy.level === "read-only" ? [] : policy.writable.filter((w) => w !== policy.tmpDir);
+	// Only what lies inside a root handed down matters: anything else is not writable for the worker anyway.
+	const readOnly = (policy.readOnlyWithinWritable ?? []).filter((p) => writable.some((w) => isWithin(p, w)));
 	return {
 		version: 1,
 		level: policy.level,
 		workspaceRoot: policy.workspaceRoot,
-		writable: policy.level === "read-only" ? [] : policy.writable.filter((w) => w !== policy.tmpDir),
+		writable,
+		...(readOnly.length ? { readOnly } : {}),
 		...(policy.hidden ? { hidden: [...policy.hidden] } : {}),
 		...(policy.proxyAllow ? { proxyAllow: [...policy.proxyAllow] } : {}),
 		...(policy.envAllow ? { envAllow: [...policy.envAllow] } : {}),
@@ -347,12 +357,17 @@ export function parentScopeOf(policy: Pick<ResolvedPolicy, "level" | "workspaceR
 
 /** A parent scope narrowed to one root (a worker started inside a tracked worktree): it writes there only. */
 export function narrowScope(scope: ParentScope, root: string): ParentScope {
-	return { ...scope, writable: scope.level === "read-only" ? [] : [root] };
+	const { readOnly: _, ...rest } = scope;
+	if (scope.level === "read-only") return { ...rest, writable: [] };
+	// The parent's read-only paths under the new root stay read-only (a tracked worktree's `.agent`).
+	const r = canonicalize(root);
+	const readOnly = (scope.readOnly ?? []).filter((p) => isWithin(p, r));
+	return { ...rest, writable: [root], ...(readOnly.length ? { readOnly } : {}) };
 }
 
-/** The scope an unsandboxed parent gives a worker it confines to `root`: writes there only, nothing else changed. */
+/** The scope an unsandboxed parent gives a worker it confines to `root`: writes there only (its `.agent` read-only), nothing else changed. */
 export function writeOnlyScope(root: string): ParentScope {
-	return { version: 1, level: "workspace-write", workspaceRoot: root, writable: [root], writeOnly: true };
+	return { version: 1, level: "workspace-write", workspaceRoot: root, writable: [root], readOnly: [join(root, ".agent")], writeOnly: true };
 }
 
 /** Parse the `--sandbox-parent` flag. Anything malformed is an error: the worker then refuses every tool. */
@@ -371,6 +386,11 @@ export function parseParentScope(value: unknown): Result<ParentScope> {
 	const writable = stringList(raw.writable, "--sandbox-parent writable", (p) => isAbsolute(p));
 	if (!writable.ok) return writable;
 	const scope: ParentScope = { version: 1, level: raw.level, workspaceRoot: raw.workspaceRoot, writable: writable.value };
+	if (raw.readOnly !== undefined) {
+		const readOnly = stringList(raw.readOnly, "--sandbox-parent readOnly", (p) => isAbsolute(p));
+		if (!readOnly.ok) return readOnly;
+		scope.readOnly = readOnly.value;
+	}
 	if (raw.hidden !== undefined) {
 		const hidden = stringList(raw.hidden, "--sandbox-parent hidden", (p) => isAbsolute(p));
 		if (!hidden.ok) return hidden;
@@ -464,7 +484,7 @@ function resolveWriteOnly(input: ResolveInput, parent: ParentScope): Result<Reso
 			defaultOn: false,
 			workspaceRoot,
 			writable: [...new Set(writable)],
-			readOnlyWithinWritable: [...new Set([...canon(d.readOnlyWithinWritable), ...gitReadOnly, agentDir, pDir])],
+			readOnlyWithinWritable: [...new Set([...canon(d.readOnlyWithinWritable), ...gitReadOnly, ...(parent.readOnly ?? []).map(canonicalize), agentDir, pDir])],
 			hidden: [],
 			proxyAllow: [],
 			envAllow: [],
@@ -524,8 +544,9 @@ export function resolvePolicy(input: ResolveInput): Result<ResolvedPolicy> {
 						// Tracked worktrees are roots like the cwd: one inside a shadow stays real.
 						...canon(input.extraWritable ?? []),
 					];
-	// The tracked worktrees' own agent dirs: read-only whenever their worktree is writable.
-	const extraReadOnly = level === "read-only" || parentRoots ? [] : canon(input.extraReadOnly ?? []);
+	// The tracked worktrees' own agent dirs: read-only whenever their worktree is writable. A worker
+	// gets its parent's read-only paths inside the roots it was handed instead.
+	const extraReadOnly = level === "read-only" ? [] : parentRoots ? (input.parent?.readOnly ?? []).map(canonicalize) : canon(input.extraReadOnly ?? []);
 	const outsideParent = level !== "read-only" && parentRoots !== undefined && !parentRoots.some((r) => isWithin(workspaceRoot, r));
 	const gitReadOnly: string[] = [];
 	if (level !== "read-only" && input.git) {

@@ -261,6 +261,72 @@ test("real host: kill through the transport signals the worker's group", { skip,
 	await until(() => !pidAlive(hostPid), 5000, "host exit");
 });
 
+/** The sandbox's launch module and the token reader, faked for a host that confines its worker. */
+function confineModules(root: string, refuse?: string): { module: string; token: string; log: string } {
+	const log = path.join(root, "confine.jsonl");
+	const module = path.join(root, "launch.mjs");
+	fs.writeFileSync(module, `
+import fs from "node:fs";
+export async function confineLaunch(scope, needs, launch) {
+	fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ scope, needs: { ...needs, fds: needs.fds.map((f) => ({ fd: f.fd, bytes: f.data.length })) }, launch: { command: launch.command, args: launch.args, cwd: launch.cwd, envHasSecret: "CLAUDE_CODE_OAUTH_TOKEN" in launch.env, envConfigDir: launch.env.CLAUDE_CONFIG_DIR ?? null } }) + "\\n");
+	${refuse ? `return { refused: ${JSON.stringify(refuse)} };` : ""}
+	return { command: process.execPath, args: ["-e", ${JSON.stringify("const fs=require('fs');const t=fs.readFileSync(3,'utf8');process.stdout.write(JSON.stringify({wrapped:process.argv.slice(1),fd3ok:t==='TKN',tokenInEnv:Object.values(process.env).includes('TKN'),dir:process.env.CLAUDE_CONFIG_DIR})+'\\n');process.stdin.on('data',()=>{});process.stdin.on('end',()=>process.exit(0));")}, launch.command, ...launch.args],
+		spawnEnv: { PATH: process.env.PATH, ...needs.spawnEnv }, fds: needs.fds, env: needs.env, tmpDir: needs.tmpDir, tmpInside: "/tmp", enforcement: "full",
+		async cleanup() { fs.appendFileSync(${JSON.stringify(log)}, JSON.stringify({ cleanup: true }) + "\\n"); } };
+}
+`);
+	const token = path.join(root, "token.mjs");
+	fs.writeFileSync(token, `export async function freshAccessToken(dir, o) { return dir.endsWith("none") ? undefined : { token: "TKN", force: o.force }; }\n`);
+	return { module, token, log };
+}
+
+test("real host, confined: the host reads the token, calls confineLaunch itself, hands the token on fd 3 and cleans up at exit", { skip, timeout: 20_000 }, async (t) => {
+	const dir = tempRoot(t);
+	const sock = sockIn(t);
+	const m = confineModules(dir);
+	let hostPid: number | undefined;
+	t.after(() => { if (hostPid) try { process.kill(hostPid, "SIGKILL"); } catch { /* gone */ } });
+	const hosted = {
+		module: m.module, scope: "SCOPE", needs: { writable: ["/w"], spawnEnv: { CLAUDE_CONFIG_DIR: "/login/dir" }, tmpDir: path.join(dir, "tmp") },
+		token: { module: m.token, dir: "/login/dir", fd: 3, force: false }, dropEnv: ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"],
+	};
+	fs.mkdirSync(path.join(dir, "tmp", "pi-claude-x"), { recursive: true });
+	const env = { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: "leak", CLAUDE_CONFIG_DIR: "/login/dir" } as Record<string, string>;
+	const transport = hostedSpawnImpl({ dir, sock, lingerMs: 100, onHostStarted: (pid) => { hostPid = pid; } })("claude", ["-p", "x"], { cwd: dir, env, stdio: [], hosted }) as unknown as HostTransport;
+	const out: string[] = [];
+	transport.stdout.on("data", (c: Buffer) => out.push(...c.toString().trim().split("\n")));
+	await until(() => out.length === 1, 8000, "the wrapped worker's line");
+	assert.deepEqual(JSON.parse(out[0]), { wrapped: ["claude", "-p", "x"], fd3ok: true, tokenInEnv: false, dir: "/login/dir" }, "wrapped, the token on fd 3 only, the login dir in its spawn env");
+	const spec = JSON.parse(fs.readFileSync(files(dir).spawn, "utf8"));
+	assert.ok(!JSON.stringify(spec).includes("TKN") && !JSON.stringify(spec).includes("leak"), "no secret on disk");
+	const call = JSON.parse(fs.readFileSync(m.log, "utf8").split("\n")[0]);
+	assert.deepEqual(call.needs.fds, [{ fd: 3, bytes: 3 }]);
+	assert.equal(call.launch.envHasSecret, false, "dropEnv applied to the host's environment");
+	assert.equal(call.launch.envConfigDir, null);
+	let closed = false;
+	transport.on("close", () => { closed = true; });
+	transport.stdin.end();
+	await until(() => closed, 5000, "close");
+	await until(() => fs.readFileSync(m.log, "utf8").includes('"cleanup":true'), 3000, "cleanup");
+	await until(() => !fs.existsSync(path.join(dir, "tmp")), 3000, "the host's own tmp removed with the worker");
+});
+
+test("real host, confined: a refusal or a missing token never runs the worker; status.json says why", { skip, timeout: 20_000 }, async (t) => {
+	for (const [refuse, tokenDir, why] of [["Sandbox refused it", "/login/dir", /^Sandbox: Sandbox refused it$/], [undefined, "/login/none", /^Sandbox: no access token/]] as const) {
+		const dir = tempRoot(t);
+		const sock = sockIn(t);
+		const m = confineModules(dir, refuse);
+		const hosted = { module: m.module, scope: "S", needs: {}, token: { module: m.token, dir: tokenDir, fd: 3, force: false }, dropEnv: [] };
+		const transport = hostedSpawnImpl({ dir, sock, lingerMs: 100 })("claude", [], { cwd: dir, env: process.env, stdio: [], hosted }) as unknown as HostTransport;
+		let closed = false;
+		transport.on("close", () => { closed = true; });
+		transport.on("error", () => {});
+		await until(() => fs.existsSync(files(dir).status), 8000, "status.json");
+		assert.match(readJson<any>(files(dir).status)?.error ?? "", why);
+		await until(() => closed, 8000, "the transport closes");
+	}
+});
+
 // ── registry lifecycle ───────────────────────────────────────────────────────
 
 function fakeWorker(id: string) {

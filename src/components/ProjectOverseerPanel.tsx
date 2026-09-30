@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, Show } from "solid-js";
+import { offHoursNote, withOffHours } from "../lib/working-hours";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
   ALLOWANCE_MAX,
@@ -6,13 +7,16 @@ import {
   capProblem,
   DEFAULT_PO_CAPS,
   DEFAULT_SOON_LOOK_SEC,
+  DEFAULT_HOLD_MIN,
   DEFAULT_WATCH_GAP_MIN,
   GAP_CHOICES,
+  HOLD_CHOICES,
+  holdProblem,
   isAtOnce,
   SOON_CHOICES,
   type ProjectOverseerCaps,
 } from "../../shared/project-overseer";
-import { AUTONOMY_LEVELS, AUTONOMY_MEANING, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
+import { AUTONOMY_LEVELS, AUTONOMY_MEANING, CONFIRM_KINDS, type ConfirmKind, type Autonomy, type CodingStartResult, type ItemCodeInput, type ItemCodeResult, type ItemSendInput, type ItemSendResult, type CodingWorktree, type ProjectOverseerInfo, type ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { OrgDetail } from "../../shared/orgs";
 import {
   addProjectOverseerIdea,
@@ -40,7 +44,7 @@ import { relativeTime, tildePath } from "../lib/format";
 import { hostLabel, orgHostOf } from "../lib/mesh";
 import { unchangedError } from "../lib/unchanged-error";
 import { createPoll } from "../lib/poll";
-import { actionLine, allowanceLine, gapArea, gapWords, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
+import { actionLine, allowanceLine, confirmKindDone, confirmKindLabel, gapArea, gapWords, holdHint, holdWords, toggleConfirmKind, isGap, IDEA_TITLE_MAX, itemSendInput, lastRunTail, limitsProblem, openIdeas, operatorIdeaId, pendingLine, soonWords, STARTED_KIND, waitingLines, watchHint } from "../lib/project-overseer-view";
 import { adoptSession, announce, home, toast } from "../lib/ui-state";
 import { LinksBanner, type Links } from "./LinksBanner";
 import { Banner, Chip, Icon } from "./ui";
@@ -169,6 +173,16 @@ export function ProjectOverseerPanel(props: {
               )}
             </Show>
             <AutonomyPicker info={i()} busy={busy()} onPick={setAutonomy} />
+            <ConfirmKindsPicker
+              info={i()}
+              busy={busy()}
+              onPick={(kind, checked) =>
+                void run(
+                  () => patchProjectOverseer(o(), p(), { confirmKinds: toggleConfirmKind(CONFIRM_KINDS, i().settings.confirmKinds, kind, checked) }),
+                  confirmKindDone(kind, checked),
+                )
+              }
+            />
             <div class="project-overseer-settings">
               <label class="toggle toggle-switch">
                 <span>Watch this project</span>
@@ -308,6 +322,33 @@ function AutonomyPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPic
         </p>
       </Show>
       <p class="field-hint">Your own messages to it can always use every tool.</p>
+    </fieldset>
+  );
+}
+
+/**
+ * The confirm list (r8, q14): the act kinds that, once held, wait for the overseer to approve
+ * them. The rest go ahead when their hold ends. Each tick saves at once, like the level.
+ */
+function ConfirmKindsPicker(props: { info: ProjectOverseerInfo; busy: boolean; onPick(kind: ConfirmKind, checked: boolean): void }) {
+  const on = () => new Set<string>(props.info.settings.confirmKinds ?? []);
+  return (
+    <fieldset class="project-confirm">
+      <legend class="field-label">Waits for the overseer's approval</legend>
+      <p class="field-hint project-confirm-hint">
+        When one of these is held, it goes ahead only once the overseer approves it; you can cancel it in Needs you. The rest go ahead when their hold ends.
+      </p>
+      <div class="project-confirm-list">
+        <For each={CONFIRM_KINDS}>
+          {(kind) => (
+            <label class="toggle project-confirm-row">
+              <input type="checkbox" checked={on().has(kind)} disabled={props.busy} onChange={(e) => props.onPick(kind, e.currentTarget.checked)} />
+              <span class="toggle-box" />
+              <span>{confirmKindLabel(kind)}</span>
+            </label>
+          )}
+        </For>
+      </div>
     </fieldset>
   );
 }
@@ -503,8 +544,9 @@ interface LimitsDraft {
   caps: Record<keyof ProjectOverseerCaps, number | null>;
   watchGapMin: number;
   soonLookSec: number | null;
+  holdMin: number;
 }
-const limitsOf = (s: ProjectOverseerInfo["settings"]): LimitsDraft => ({ caps: { ...s.caps }, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec });
+const limitsOf = (s: ProjectOverseerInfo["settings"]): LimitsDraft => ({ caps: { ...s.caps }, watchGapMin: s.watchGapMin, soonLookSec: s.soonLookSec, holdMin: s.holdMin });
 // A hint that names a host takes the org's host (a peer's day ends at its own midnight).
 const LIMIT_GROUPS: { legend: string; hint?: string | ((host: string) => string); keys: (keyof ProjectOverseerCaps)[] }[] = [
   { legend: "Each message you send", keys: ["gatherPerTurn", "promotePerTurn", "createPerTurn", "promptsPerTurn"] },
@@ -550,12 +592,13 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
   const submit = async (e: Event) => {
     e.preventDefault();
     const d = draft();
-    const why = limitsProblem(d);
+    const why = limitsProblem(d) ?? holdProblem(d.holdMin);
     setProblem(why);
     if (why) return;
-    await props.save({ caps: d.caps as ProjectOverseerCaps, watchGapMin: d.watchGapMin, soonLookSec: d.soonLookSec });
+    await props.save({ caps: d.caps as ProjectOverseerCaps, watchGapMin: d.watchGapMin, soonLookSec: d.soonLookSec, holdMin: d.holdMin });
   };
   const gaps = createMemo(() => [...new Set([...GAP_CHOICES, draft().watchGapMin])].sort((a, b) => a - b));
+  const holds = createMemo(() => [...new Set<number>([...HOLD_CHOICES, draft().holdMin])].sort((a, b) => a - b));
   const soons = createMemo(() => {
     const cur = draft().soonLookSec;
     const nums = new Set<number>(cur === null ? [] : [cur]);
@@ -645,6 +688,25 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
               </For>
             </select>
           </label>
+          <label class="field">
+            <span class="field-label">Hold before it reaches people or the code</span>
+            <select
+              class="select"
+              aria-describedby="project-hold-hint"
+              onChange={(e) => setDraft((d) => ({ ...d, holdMin: Number(e.currentTarget.value) }))}
+            >
+              <For each={holds()}>
+                {(m) => (
+                  <option value={m} selected={m === draft().holdMin}>
+                    {holdWords(m)}
+                  </option>
+                )}
+              </For>
+            </select>
+            <span class="field-hint" id="project-hold-hint">
+              {holdHint(draft().holdMin)}
+            </span>
+          </label>
         </div>
       </fieldset>
       <Show when={problem()}>{(why) => <p class="field-error">{why()}</p>}</Show>
@@ -657,7 +719,7 @@ function Limits(props: { info: ProjectOverseerInfo; host: string | null; save(pa
           class="button button-ghost"
           onClick={() => {
             setProblem(null);
-            setDraft({ caps: { ...DEFAULT_PO_CAPS }, watchGapMin: DEFAULT_WATCH_GAP_MIN, soonLookSec: DEFAULT_SOON_LOOK_SEC });
+            setDraft({ caps: { ...DEFAULT_PO_CAPS }, watchGapMin: DEFAULT_WATCH_GAP_MIN, soonLookSec: DEFAULT_SOON_LOOK_SEC, holdMin: DEFAULT_HOLD_MIN });
           }}
         >
           Reset Limits
@@ -1168,7 +1230,8 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
       setSending(false);
       setTo([]);
       props.onLinks(r.links);
-      toast(r.links.length > 1 ? `Offered to ${r.links.length} people.` : "Hand-off session started.");
+      const one = r.links.length === 1 ? r.links[0]! : null;
+      toast(r.links.length > 1 ? `Offered to ${r.links.length} people.` : withOffHours("Hand-off session started.", one?.name ?? "Their", r.offHours, Date.now()));
       props.after();
     } catch (x) {
       setErr(unchangedError(errText(x), "Nothing was sent."));
@@ -1228,6 +1291,10 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
               </For>
             </Show>
             <p class="field-hint">Pick 2 or more to offer it: the first to answer takes it.</p>
+            {/* r7: yours goes at once; say so for each ticked person who is off hours now. */}
+            <For each={active().filter((x) => to().includes(x.id))}>
+              {(x) => <Show when={offHoursNote(x, Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
+            </For>
           </fieldset>
           <label class="field">
             <span class="field-label">Public title</span>

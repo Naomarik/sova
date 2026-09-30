@@ -155,6 +155,37 @@ export function limitsProblem(d: { caps: Record<keyof ProjectOverseerCaps, numbe
 
 /** A gap in minutes as the page says it: "10 min", "1 hour". */
 export const gapWords = (min: number): string => (min % 60 === 0 ? `${min / 60} ${min === 60 ? "hour" : "hours"}` : `${min} min`);
+/** The hold before an act reaches a person or the code (§app.project-overseer/holds): "No hold", "10 min", "1 hour". */
+export const holdWords = (min: number): string => (min === 0 ? "No hold" : gapWords(min));
+/** The hold field's hint: what the choice means for the operator. */
+export const holdHint = (min: number): string =>
+  min === 0
+    ? "What it starts on its own that reaches a person or the code goes ahead at once."
+    : `What it starts on its own that reaches a person or the code waits ${gapWords(min)} in Needs you, where you can cancel it.`;
+/** The confirm list's rows (r8, q14): each act kind that, held, waits for the overseer's approval. */
+export const CONFIRM_KIND_LABEL: Record<string, string> = {
+  gather: "Starting a gathering",
+  offer: "Offering a gathering",
+  close: "Closing a gathering",
+  promote: "Promoting decisions",
+  build: "Starting a coding session",
+  prompt: "Prompting a coding session",
+  "owner-update": "Owner updates",
+  "roster-approve": "Approving a proposed person",
+  "roster-decline": "Declining a proposed person",
+};
+/** A kind's row label; one this table lacks reads as its id. */
+export const confirmKindLabel = (kind: string): string => CONFIRM_KIND_LABEL[kind] ?? kind;
+/** The list after ticking or unticking one kind, in the server's order. */
+export function toggleConfirmKind<K extends string>(all: readonly K[], on: readonly K[], kind: K, checked: boolean): K[] {
+  const set = new Set(on);
+  if (checked) set.add(kind);
+  else set.delete(kind);
+  return all.filter((k) => set.has(k));
+}
+/** Said after a tick is saved. */
+export const confirmKindDone = (kind: string, checked: boolean): string =>
+  `${confirmKindLabel(kind)}: ${checked ? "waits for the overseer's approval once its hold ends." : "goes ahead when its hold ends."}`;
 /** A delay in seconds: "30 s", "1 min". */
 export const soonWords = (sec: number): string => (sec % 60 === 0 ? `${sec / 60} min` : `${sec} s`);
 

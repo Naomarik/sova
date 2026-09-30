@@ -74,6 +74,9 @@ export interface Step {
   ownerArea?: boolean | null;
   baton?: string;
   supersededBy?: string;
+  /** conflict: its settle session's baton, and how it was resolved. */
+  settleBaton?: string;
+  outcome?: string;
   /** decision: its spec record's built / not-built (promoted). */
   build?: string | null;
   wrote?: boolean;
@@ -391,6 +394,7 @@ const S = {
   baton: (b: string) => `baton/${ORG}/${b}`,
   decision: (d: string) => `decision/${ORG}/${PROJECT}/${d}`,
   build: (c: string) => `build/${ORG}/${PROJECT}/${c}`,
+  conflict: (k: string) => `conflict/${ORG}/${PROJECT}/${k}`,
 };
 /** A fixture's gap (`§gap/g1`) as the item chart's id (`g_g1`). */
 export const gapIdOf = (g: string) => `g_${g.replace(/^§gap\//, "").replace(/[^a-zA-Z0-9_-]/g, "_")}`;
@@ -832,7 +836,10 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   };
   /** Decision state changes of this instant: one reconciler run reports them (the reconciler's own path). */
   const pendingResults: Record<string, unknown>[] = [];
+  const pendingConflicts: Record<string, unknown>[] = [];
+  const pendingResolved: Record<string, unknown>[] = [];
   const operatorPromotes: string[] = [];
+  const overseerPromotes: string[] = [];
   const decisionFact = async (s: Step) => {
     const id = s.id!;
     const prev = decisions.get(id);
@@ -860,6 +867,9 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       // Not promoted yet, or promoted but stale (promotable again): this is its promotion.
       const due = !world.configuration(sid).includes("promoted") || world.configuration(sid).includes("stale");
       if (due && s.by === "operator") operatorPromotes.push(id);
+      // The overseer's promotion landing after its run (no turn, no tool this instant): the reconciler's own
+      // promotion, news to the next look (C2: own acts are those during its run).
+      else if (due && s.by === "overseer" && !turn && !trace.events.some((e) => e.dt === s.dt && e.kind === "tool")) overseerPromotes.push(id);
       else if (due) await send("promote/done", sid, "promote/done", { textHash: "h", commit: "c0ffee" }, { by: "system" });
       const built = s.build ?? finalBuild.get(id) ?? null;
       if (built || s.edited !== undefined) await fact("spec/facts", sid, "spec/facts", { recordPresent: true, fieldsMatch: true, editedInSpec: !!s.edited, build: built });
@@ -874,15 +884,32 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       pendingResults.push({ id, state: s.state, ...(s.supersededBy ? { supersededBy: s.supersededBy } : {}), authorOwnsArea: decisions.get(id)!.authorOwnsArea });
     }
   };
+  /** A conflict fact: a new one goes out with this instant's run (its sides are the decisions this instant put in
+      conflict), a resolved one likewise. */
+  const conflictFact = (s: Step) => {
+    const sid = S.conflict(s.id!);
+    if (s.state === "open" && !world.exists(sid)) {
+      const sides = pendingResults.filter((r) => r.state === "conflict").map((r) => String(r.id)).slice(-2);
+      if (sides.length < 2) {
+        rep.skipped.push(`${s.dt}: conflict ${s.id} whose two decisions the trace doesn't name`);
+        return;
+      }
+      const side = (id: string) => ({ id, by: "operator", name: "Someone", statement: `Decision ${id}`, quote: "their words", at: now });
+      pendingConflicts.push({ id: s.id, a: side(sides[0]!), b: side(sides[1]!), area: "area", areaKey: "area", p: 0.9, routedTo: "operator", routedToName: "Operator", routeReason: "Nobody decides it.", batonSessionId: s.settleBaton ?? `settle_${s.id}`, operatorName: "Operator" });
+    } else if (s.state === "resolved" && world.exists(sid) && !world.configuration(sid).includes("settled"))
+      pendingResolved.push({ id: s.id, outcome: s.outcome ?? "neither", resolvedBy: "" });
+  };
   const flushResults = async () => {
-    if (!pendingResults.length) return;
+    if (!pendingResults.length && !pendingConflicts.length && !pendingResolved.length) return;
     const results = pendingResults.splice(0);
+    const conflicts = pendingConflicts.splice(0);
+    const resolved = pendingResolved.splice(0);
     // A run of the project's reconciler: the one running (the overseer's sova_reconcile), else a request of the
     // host's (the operator's click or the auto-run); then its results.
     if (!world.reconcileRuns.length) await send("reconcile/request", S.reconciler, "reconcile/request", { delayMs: 0, by: "operator" }, env("operator"));
     const run = world.reconcileRuns.shift();
     if (run) {
-      run.report("finished", undefined, { decisions: results, conflicts: [], resolved: [], compared: results.length, draftedIds: results.filter((r) => r.state === "drafted").map((r) => r.id) });
+      run.report("finished", undefined, { decisions: results, conflicts, resolved, compared: results.length, draftedIds: results.filter((r) => r.state === "drafted").map((r) => r.id) });
       await settleWorld();
     } else for (const r of results) await fact("reconcile/result", S.decision(String(r.id)), "reconcile/result", r);
   };
@@ -1139,6 +1166,10 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         diverge("look-reasons", `no ${k}`, k, "chart-better", "C1: the look before was cut off (it did not finish); the chart puts its reasons back in front, today lost them", { cutLookAt: cut.at - T0, requeued: [...cut.kinds] });
         continue;
       }
+      if (k === "coding/settled" && F.codingSettledReason === false) {
+        diverge("look-reasons", `no ${k}`, k, "drift", "a coding session's settled turn became a reason to look in 239852ee; this trace's code has no such reason", { commits: ["239852ee"] });
+        continue;
+      }
       const older = Object.keys(DRIFT_SAME).find((d) => DRIFT_SAME[d] === k && realKinds.includes(d));
       if (older) {
         diverge("look-reasons", `no ${k}`, k, "drift", `the real look carried this reason under its older name (${older})`, driftEvidence([older]));
@@ -1162,6 +1193,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       l.matched = true;
       if (trace.source !== "synthetic") {
         if (l.kinds.some((k) => k.startsWith("item/"))) diverge("chart-look-extra", "no look", l.kinds, "chart-better", "the chart looked for an item's own reason (stall, reopen, answered-nothing, built) today has no reason for", { lookAt: l.at - T0 });
+        else if (F.codingSettledReason === false && l.kinds.length && l.kinds.every((k) => k === "coding/settled"))
+          diverge("chart-look-extra", "no look", l.kinds, "drift", "a look for a coding session's settled turn: that reason came in 239852ee, which this trace's code lacks", { commits: ["239852ee"], lookAt: l.at - T0 });
         else if (l.rows.length && l.rows.every((r) => DRIVEN_NEWS[r.kind] && world.driven.some((d) => d.event === DRIVEN_NEWS[r.kind] && d.at === r.at)))
           drivenLookAts.push(l.at),
           diverge("chart-look-extra", "no look", l.kinds, "ruling", "r3 (q2 drive): the look is for the chart's own act (news the overseer is told of); today that act never happened", { ruling: "r3", lookAt: l.at - T0, driven: l.rows.map((r) => ({ kind: r.kind, at: r.at - T0 })) });
@@ -1173,9 +1206,17 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
 
   // ---- the events -----------------------------------------------------------------------------------------
   const instantEnd = async () => {
-    const ran = pendingResults.length > 0 || operatorPromotes.length > 0;
+    const ran = pendingResults.length > 0 || pendingConflicts.length > 0 || pendingResolved.length > 0 || operatorPromotes.length > 0 || overseerPromotes.length > 0;
     await flushResults();
     if (operatorPromotes.length) await send("operator promote", S.reconciler, "decision/promote", { ids: operatorPromotes.splice(0) }, env("operator"));
+    if (overseerPromotes.length) {
+      // One the project overseer may not promote (outside its author's area) was the operator's, through the
+      // global Overseer (attributed "overseer" in the stores).
+      const ids = overseerPromotes.splice(0);
+      const v = trialOn(S.reconciler, "decision/promote", { ids }, env("overseer", false), null);
+      if (v?.taken) await send("overseer promote", S.reconciler, "decision/promote", { ids }, env("overseer", false));
+      else await send("operator promote via the Overseer", S.reconciler, "decision/promote", { ids }, env("operator", true, { via: "overseer" }));
+    }
     await settleWorld();
     if (ran) checkItems();
   };
@@ -1210,6 +1251,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       } else if (s.entity === "baton") await batonFact(s);
       else if (s.entity === "decision") await decisionFact(s);
       else if (s.entity === "build") await buildFact(s);
+      else if (s.entity === "conflict") conflictFact(s);
       // conflict facts: their decisions' `conflict` results carry them. A decision's new state reaches the
       // charts with its reconciler run at the instant's end: the items are checked then.
       await settleWorld();

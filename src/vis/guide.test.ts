@@ -45,15 +45,33 @@ test("the guide's flow and state examples mean what the text says", () => {
   assert.deepEqual(labels(main), { web: "Browser tab", srv: "Sova server", sdk: "pi session", done: "Reply streamed?" });
   assert.deepEqual(main.edges.map((e) => [e.from, e.to, e.label ?? null]), [["web", "srv", "WS /ws/chat"], ["srv", "sdk", null], ["sdk", "srv", "events"], ["srv", "done", null], ["done", "web", "yes"]]);
   assert.deepEqual(main.nodes.map((n) => n.shape), ["box", "box", "store", "decision"]);
-  // A second string before the first arrow is the source's second line; after a target it is the edge's.
-  assert.deepEqual(main.nodes.map((n) => n.note ?? null), ["Solid app", null, null, null]);
-  for (const quoted of ['web "Browser tab" "Solid app" ->', 'srv "Sova server" "WS /ws/chat"', 'sdk --> srv "events"', 'done "Reply streamed?" decision']) assert.ok(GUIDE.includes(`\`${quoted}\``), `the bullets quote the example: ${quoted}`);
-  assert.ok(GUIDE.includes("after a target, the first string labels it and the second labels the edge, never a second line"));
-  // The node-line bullet: its line declares db, and a string after db as a target is then the edge's.
-  const declared = parseVis("flow", 'node db "Orders" "Postgres" store\napi "API" -> db "SQL"');
-  assert.ok(GUIDE.includes('`node db "Orders" "Postgres" store`') && declared.ok);
-  const db = (declared.spec as FlowSpec).nodes.find((n) => n.id === "db")!;
-  assert.deepEqual([db.label, db.note, db.shape, (declared.spec as FlowSpec).edges[0]!.label], ["Orders", "Postgres", "store", "SQL"]);
+  for (const quoted of ['web "Browser tab" ->', 'srv "Sova server" "WS /ws/chat"', 'sdk --> srv "events"', 'done "Reply streamed?" decision']) assert.ok(GUIDE.includes(`\`${quoted}\``), `the bullets quote the example: ${quoted}`);
+  // Each bullet's own example means what the bullet says. Two lines anywhere: \n in the label.
+  const flow = (body: string) => {
+    const r = parseVis("flow", body);
+    assert.ok(r.ok, body);
+    return r.spec as FlowSpec;
+  };
+  assert.ok(GUIDE.includes('`-> gw "Gateway\\nKong"`'));
+  assert.deepEqual(flow('web "Web" -> gw "Gateway\\nKong"').nodes[1]!.label, "Gateway\nKong");
+  // After a target, the second string is the edge's, never a second line (the eval's most common misread).
+  assert.ok(GUIDE.includes("after a target, the first string labels it and the second labels the edge, never a second line."));
+  const kong = flow('web "Web" -> gw "Gateway" "Kong"');
+  assert.deepEqual([kong.nodes[1]!.note, kong.edges[0]!.label], [undefined, "Kong"]);
+  // A declaration alone on a line, then a string after db as a target is the edge's (inline fence or not).
+  assert.ok(GUIDE.includes('`node db "Orders" store` alone on a line declares a node; then `api -> db "SQL"` labels the edge'));
+  for (const body of ['node db "Orders" store\napi -> db "SQL"', 'node db "Orders" store\napi "API" -> db "SQL"']) {
+    const s = flow(body);
+    const db = s.nodes.find((n) => n.id === "db")!;
+    assert.deepEqual([db.label, db.shape, s.edges[0]!.label], ["Orders", "store", "SQL"]);
+  }
+  // The eval (EVAL-REPORT.md): showing any two-string node in the flow section led a weak model to
+  // write `-> b "B" "role"` on targets, drawing the role on the arrow. The parser reads a source's
+  // second string and a declaration without `node`, but the guide teaches only `\n`.
+  const flowSection = sections.find((s) => s.heading === "flow")!.text.replace(/<!--[\s\S]*?-->/g, "");
+  // An id then two strings, at a line's or a bullet's start: only the target bullet's label + edge pair.
+  const pairs = [...flowSection.matchAll(/(?:^|`)([a-z]\w*) "[^"]*" "[^"]*"/gm)].map((m) => m[1]);
+  assert.deepEqual(pairs, ["srv"], "no two-string node is shown");
   // Groups: the main example frames the server and the session it holds.
   assert.deepEqual(main.groups, [{ label: "One process", nodes: ["srv", "sdk"] }]);
   // Panels: the same ids in both panels are two nodes each.
@@ -118,7 +136,7 @@ test("the rules keep the '- The parser is strict:' line the gathering guide rewr
   assert.match(GUIDE, /^Rules for every kind:\n(?:- .*\n)*- The parser is strict: .*$/m);
   const g = gatheringVisGuide(GUIDE);
   assert.match(g, /^- The parser is strict: use only the syntax below, or the person sees no drawing at all\.$/m);
-  assert.doesNotMatch(g, /shows the block as plain source/);
+  assert.doesNotMatch(g, /shows the block as source/);
 });
 
 // A gathering session's guide (§app.baton/abilities): the business kinds' sections of this same

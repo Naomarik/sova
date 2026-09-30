@@ -17,36 +17,36 @@ Rules for every kind:
 - One statement per line; `#` starts a comment. Settings are `key: value` lines; every kind takes `title:` and `caption:` (one short sentence).
 - Ids are letters, digits, `_ . -`, starting with a letter. Labels with spaces go in "double quotes" (`\n` breaks a line); any text is at most 200 characters.
 - Tones (optional, never the only signal): `accent ok warn error info muted`.
-- The parser is strict: anything it doesn't understand shows the block as plain source with the error. Use only the syntax below.
-- Don't nest a vis fence in another fence. Not vis (Mermaid, PlantUML, ASCII art): `A->>B: msg` is `a -> b "msg"`; `A[Label] --> B` is `a "Label" --> b`.
+- The parser is strict: a line it can't read shows the block as source, with the error. Use only the syntax below.
+- Don't nest a vis fence in another fence. Not vis (Mermaid, ASCII art): `A->>B: msg` is `a -> b "msg"`; `A[Label] --> B` is `a "Label" --> b`.
 
 ## Shared: emphasis
 <!-- owner: foundation. core/emphasis.ts implements this; every kind calls it. -->
-To point at what matters, add a `mark` line (at the start of a line, after the settings): `mark <target> [tone] ["short note"]`. The item is highlighted (tone defaults to accent); a note gets a number and is listed under the drawing. Mark at most 1–3 things; a note is a phrase under 120 characters. Several targets share one mark and its note: `mark a, b, c "the scope set"`.
+To point at what matters, add a `mark` line (at the start of a line, after the settings): `mark <target> [tone] ["short note"]` (quote a target with spaces). The item is highlighted (tone defaults to accent); a note gets a number and is listed under the drawing. Mark at most 1–3 things; a note is a phrase under 120 characters. Several targets share one mark and its note: `mark a, b, c "the scope set"`.
 - Targets: flow and state, a node's id or label; sequence, an actor, a message's "label" or its number (1 = the first message; notes and dividers don't count); code, a line or a range `20-23` as displayed; matrix, a row's criterion or a column's name; wireframe, see its section; any other kind, a row's (layer's, item's) label.
 
 ## flow
-<!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). Labels: kinds/flow/parse.ts decides the style per fence (a string after a chain's first id = inline style); guide.test.ts pins each bullet's meaning. -->
-Boxes and arrows: architecture, pipelines, request paths, decisions; laid out automatically. A screen layout is a wireframe, not a flow.
+<!-- owner: process member. Emphasis target: node id or label. Phones re-lay it out (dir: right turns down). kinds/flow/parse.ts picks the label style per fence; guide.test.ts pins each bullet. -->
+Boxes and arrows: architecture, pipelines, request paths, decisions. A screen layout is a wireframe, not a flow.
 ```vis flow
 title: How a prompt reaches the model
 caption: The server owns the session; the browser only streams.
-web "Browser tab" "Solid app" -> srv "Sova server" "WS /ws/chat" -> sdk "pi session" store
+web "Browser tab" -> srv "Sova server" "WS /ws/chat" -> sdk "pi session" store
 sdk --> srv "events"
 srv -> done "Reply streamed?" decision
 done -> web "yes"
 group "One process" srv sdk
 mark sdk "one writer per session file"
 ```
-- `web "Browser tab" "Solid app" ->`: label a node where it first appears; a second string before the first arrow is its smaller second line.
+- `web "Browser tab" ->`: label a node where it first appears. Two lines in a box: `\n` in its label, `-> gw "Gateway\nKong"`.
 - `srv "Sova server" "WS /ws/chat"`: after a target, the first string labels it and the second labels the edge, never a second line.
 - `sdk --> srv "events"`: a node already labelled takes one string, the edge's.
-- `done "Reply streamed?" decision`: a shape (`box round store decision circle`) and a tone may follow a label.
-- `node db "Orders" "Postgres" store` declares a node on its own line; then a string after db as a target is the edge's.
-- If no line has a string right after its first id, every string after a target is an edge label (as in state).
-- Edges `->`, dashed `-->`, both ways `<->`; chains `a -> b -> c`. `dir: right`. Under 12 nodes, short labels.
-- `group "Label" id id …` frames nodes that belong together; a node is in one group at most.
-- `== Label ==` lines start side-by-side panels (before/after), each with its own ids:
+- `done "Reply streamed?" decision`: a shape (`box round store decision circle`) and a tone may follow.
+- `node db "Orders" store` alone on a line declares a node; then `api -> db "SQL"` labels the edge.
+- With no string right after any line's first id, strings after targets are all edge labels.
+- Edges `->`, dashed `-->`, two-way `<->`; chains `a -> b -> c`; `dir: right`; under 12 nodes.
+- `group "Label" id id …` frames related nodes (a node in one group at most).
+- `== Label ==` lines start side-by-side panels (before/after) with their own ids:
 ```vis flow
 == Before ==
 app "App" -> db "Database"
@@ -102,7 +102,7 @@ src/
   main.tsx
 mark markdown.ts "the vis hook lives here"
 ```
-- Quote a name that has spaces or quotes, a folder's `/` inside: `"My Docs/" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest.
+- Quote names with spaces or quotes, a folder's `/` inside: `"My Docs/" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest.
 
 ## chart
 <!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->
@@ -117,7 +117,7 @@ mark "Bubble sort" warn "quadratic"
 ```
 - A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives and `12%` are fine; no thousands commas. At most 40 rows, 6 series.
 - Scatter rows are `label x y [tone]`, with no `series:`.
-- `type: parts`: one bar split into its rows, for a whole and its parts; `of:` a capacity draws the unused rest.
+- `type: parts`: one bar split into its rows, for a whole and its parts; `of:` a capacity draws the unused rest (rows past it don't draw: drop `of:`, say so in the caption).
 ```vis chart
 type: parts
 unit: tokens

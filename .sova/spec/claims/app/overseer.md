@@ -149,9 +149,12 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   terminal-owned, archived or worker session, and never the Overseer's own. The route is
   `POST /api/sessions/prompt` (`delivery` optional, `"followUp"` or `"steer"`; anything else is a
   400).
-- **Profiles (§chat/profiles).** `sova_create_session` takes `profile`: a built-in's or a saved
-  profile's id, on this host only. Only a profile marked "The Overseer may start it" is taken; any
-  other refuses before anything is created. The session is created with that profile's snapshot
+- **Profiles (§chat/profiles).** `sova_create_session` takes `profile`: a profile's id, on this
+  host only, resolved against the new session's folder (its project first, then yours, then built
+  in, §chat.profiles/projects). Only a profile marked "The Overseer may start it" is taken, and a
+  project profile only once you approved it (§chat.profiles/trust); any other refuses before
+  anything is created. A profile that links a playbook sends that playbook as the first message,
+  with `prompt` as its text (§chat.profiles/playbook). The session is created with that profile's snapshot
   (and its mode and model unless the call names its own), and the tool's result renders as a
   **Started from {label}** card with Open Session. A One at a time profile that is live refuses
   with a card saying "{label} is already running. It's set to One at a time, so only 1 session can

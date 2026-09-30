@@ -1707,7 +1707,8 @@
         "server/playbooks.ts",
         "src/lib/playbooks.ts",
         "src/components/PlaybooksDialog.tsx",
-        "server/files.ts"
+        "server/files.ts",
+        "server/project-root.ts"
       ]
     },
     "§chat.playbooks/tokens": {
@@ -1723,7 +1724,8 @@
         "src/lib/playbooks.ts",
         "src/components/PlaybooksDialog.tsx",
         "src/components/ChatView.tsx",
-        "server/chat-manager.ts"
+        "server/chat-manager.ts",
+        "shared/playbooks.ts"
       ]
     },
     "§chat.playbooks/when-sending-stops-being-possible": {
@@ -1742,7 +1744,9 @@
       "code": [
         "server/playbooks.ts",
         "src/lib/playbooks.ts",
-        "src/components/PlaybooksDialog.tsx"
+        "src/components/PlaybooksDialog.tsx",
+        "server/project-root.ts",
+        "server/playbooks.test.ts"
       ]
     },
     "§chat/playbooks": {
@@ -2910,7 +2914,7 @@
         "server/overseer-link-tools.ts",
         "server/overseer-org-tools.test.ts",
         "src/components/ProfileCards.tsx",
-        "server/profiles-store.ts"
+        "server/profile-sources.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -9308,7 +9312,6 @@
       "evidence": "verified",
       "code": [
         "src/components/ProfileShelf.tsx",
-        "src/components/ProfileStartSheet.tsx",
         "src/lib/profile-start.ts",
         "src/components/Sidebar.tsx",
         "src/App.tsx",
@@ -9326,15 +9329,16 @@
       "evidence": "verified",
       "code": [
         "src/components/ProfilesSettings.tsx",
-        "src/lib/profiles-draft.ts",
-        "server/profiles-store.ts",
+        "server/session-profile-routes.ts",
         "src/components/SettingsDialog.tsx",
         "src/lib/settings-nav.ts",
-        "src/lib/settings-nav.test.ts"
+        "src/lib/settings-nav.test.ts",
+        "src/App.tsx"
       ],
       "requires": [
         "§chat.profiles/model",
-        "§app.settings-dialog/save-bar"
+        "§chat.profiles/projects",
+        "§chat.profiles/trust"
       ]
     },
     "§chat.profiles/after-first-message": {
@@ -9345,7 +9349,8 @@
         "src/components/ProfileChip.tsx",
         "src/components/SessionView.tsx",
         "src/components/Sidebar.tsx",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "src/lib/profile-start.ts"
       ],
       "requires": [
         "§chat.profiles/model"
@@ -9418,7 +9423,11 @@
         "server/profiles-store.ts",
         "server/session-profile.ts",
         "server/sessions-index.ts",
-        "server/session-profiles.test.ts"
+        "server/session-profiles.test.ts",
+        "profiles/reviewer.json",
+        "profiles/mini-overseer.json",
+        "shared/protocol.ts",
+        "src/lib/summary-diff.test.ts"
       ],
       "requires": []
     },
@@ -9432,7 +9441,8 @@
         "src/lib/profiles.ts",
         "src/lib/change-rows.ts",
         "src/lib/api.ts",
-        "src/app.css"
+        "src/app.css",
+        "src/components/ProfilePlaybookCard.tsx"
       ],
       "requires": [
         "§chat.profiles/model",
@@ -9447,7 +9457,8 @@
         "server/session-powers.ts",
         "server/session-guards.ts",
         "server/session-profile-routes.ts",
-        "server/session-profiles-runtime.test.ts"
+        "server/session-profiles-runtime.test.ts",
+        "server/session-profiles.test.ts"
       ],
       "requires": [
         "§chat.profiles/enforcement",
@@ -9462,7 +9473,10 @@
         "server/session-profile.ts",
         "server/session-profile-routes.ts",
         "server/sessions-index.ts",
-        "src/components/ProfilePicker.tsx"
+        "src/components/ProfilePicker.tsx",
+        "server/chat-manager.ts",
+        "server/index.ts",
+        "server/overseer-tools.ts"
       ],
       "requires": [
         "§chat.profiles/model",
@@ -9559,6 +9573,73 @@
       ],
       "requires": [
         "§chat/markdown"
+      ]
+    },
+    "§chat.profiles/live-commit": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/index.ts",
+        "server/mesh/mesh.test.ts"
+      ],
+      "requires": []
+    },
+    "§chat.profiles/playbook": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/playbooks.ts",
+        "src/components/ProfilePlaybookCard.tsx",
+        "server/overseer-tools.ts",
+        "src/lib/playbooks.ts",
+        "src/components/ProfilePicker.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/Composer.tsx",
+        "server/session-profiles-runtime.test.ts",
+        "src/app.css"
+      ],
+      "requires": [
+        "§chat.profiles/projects",
+        "§chat.playbooks/what-gets-sent"
+      ]
+    },
+    "§chat.profiles/projects": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-root.ts",
+        "server/profile-sources.ts",
+        "shared/profiles.ts",
+        "profiles/reviewer.json",
+        "profiles/mini-overseer.json",
+        "docs/profiles.md",
+        "server/profiles-store.ts",
+        "server/playbooks.ts",
+        "server/session-profiles.test.ts",
+        ".sova/profiles/merge-captain.json"
+      ],
+      "requires": [
+        "§chat.profiles/model"
+      ]
+    },
+    "§chat.profiles/trust": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/profile-trust.ts",
+        "server/session-profile.ts",
+        "server/session-profile-routes.ts",
+        "src/components/ProfilePicker.tsx",
+        "server/session-profiles.test.ts",
+        "src/components/ProfilesSettings.tsx",
+        "src/lib/api.ts"
+      ],
+      "requires": [
+        "§chat.profiles/projects"
       ]
     }
   },

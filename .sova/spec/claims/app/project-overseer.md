@@ -520,17 +520,18 @@ user row.
   sessions' running apps to a stakeholder, the whole site at its own public address, until it is
   turned off or expires. The prompt has a **Previews** section, and the two tools' descriptions
   say the same: what previews are for, that a link reaches anyone who has it, to make one only
-  for a stakeholder who should see the app now, to check it answers before handing it over, to
-  give the link to the operator (who sends it on) rather than to a person or the owner page, and
-  to turn it off once it has served its purpose. If the app went down, whoever runs it (the
-  coding session, prompted with `sova_send`) starts it again: Sova never starts an app for a
-  preview.
+  for a stakeholder who should see the app now, to check it answers, that the overseer never sees
+  a link, that a preview reaches a person by its id with `sova_send_to_person` (when it has that
+  tool) or through the operator, who has the link on the project page, and to turn it off once it
+  has served its purpose. If the app went down, whoever runs it (the coding session, prompted with
+  `sova_send`) starts it again: Sova never starts an app for a preview.
 - **See.** `sova_previews` (read, any level) lists the project's previews, active ones first:
-  each one's id, its link when one is kept, what it serves ("port {n}", or "folder {path}" relative
-  to its worktree), its coding session and branch, its purpose, who made it (you or the
-  operator), its expiry and its state ("active, app is running", "active, nothing on port {n}",
-  "active, not serving the folder", "turned off", "expired"). `sova_project` lists the active ones
-  under "Previews" the same way.
+  each one's id, whether its link is kept ("link kept (send it by id)", or "no link kept (shown
+  only when it was made)"), what it serves ("port {n}", or "folder {path}" relative to its
+  worktree), its coding session and branch, its purpose, who made it (you or the operator), its
+  expiry and its state ("active, app is running", "active, nothing on port {n}", "active, not
+  serving the folder", "turned off", "expired"). `sova_project` lists the active ones under
+  "Previews" the same way.
 - **Make.** `sova_preview {op: "start", session, port | folder, purpose, days?}`. `session` is one
   of the project's coding sessions with a worktree on this host (addressed as the other tools
   address one). `folder` is a folder inside that worktree (relative to it, or absolute), served by
@@ -540,7 +541,8 @@ user row.
   process listens is refused, naming why, and so is a port of Sova's own. `purpose` (required, one
   line, at most 200 characters) says what it shows and to whom. `days` is 1 to 30, default 1.
   Every preview rule holds (§mesh.public/preview): loopback only, never Sova's own ports, a
-  preview address needed. The link is kept (§mesh.public/preview), and the result carries it.
+  preview address needed. The link is kept for the operator (§mesh.public/preview); the result
+  names the preview by its id and never carries the link.
 - **Guarded as the people-facing act it is.** A start is the project chart's `preview/start`
   act: L1 (§app.project-overseer/autonomy-levels), confirm kind `preview`
   (§app.project-overseer/reviews), held (§app.project-overseer/holds). In a turn the operator
@@ -556,20 +558,22 @@ user row.
   away. It is the card's Turn Off (`POST /api/previews/<id>/off`), and it is logged in the
   overseer's activity.
 - **One shape for what comes next.** Both tools put each preview in their result's `details` in one
-  fixed shape, `PreviewHandoff` (`shared/preview-links.ts`): `{v: 1, id, url, purpose, expiresAt,
-  orgId, projectId, sessionId, branch, target, state, running, createdBy}`, `url` null when no
-  link is kept, `purpose`, `sessionId` and `branch` null when unknown, `target` `{kind: "port",
-  port}` or `{kind: "static", folder}`, `running` null unless it is active; `sova_previews` as
-  `{v: 1, previews}`, a start as `{v: 1, preview}`, a held start as `{v: 1, held}`. A later tool
-  that sends a preview on takes it as it is.
+  fixed shape, `PreviewHandoff` (`shared/preview-links.ts`): `{v: 1, id, linkKept, purpose,
+  expiresAt, orgId, projectId, sessionId, branch, target, state, running, createdBy}`, never the
+  link: `linkKept` says whether there is one to send; `purpose`, `sessionId` and `branch` null
+  when unknown, `target` `{kind: "port", port}` or `{kind: "static", folder}`, `running` null
+  unless it is active; `sova_previews` as `{v: 1, previews}`, a start as `{v: 1, preview}`, a held
+  start as `{v: 1, held}`. A tool that sends a preview to a person takes its `id` and resolves
+  the link on the server.
 - **Matched by its worktree.** A preview with no recorded coding session (one made before this,
   or the operator's by port) is matched whenever it is read: the process listening on its port,
   when its working folder is inside one of the project's coding sessions' worktrees, names that
   session and its branch. Nothing is written: its records stay as they are.
-- **The link is a secret.** A kept link is only in the operator's `/api/previews` answers (main
-  listener only) and in the overseer's own tool results, which are part of its conversation and
-  so of its session file in the org's workspace repo (§app.project-overseer/identity), like
-  anything else it reads. It is never in the session list
+- **The link is a secret, and the overseer never sees it.** A kept link is only in the operator's
+  `/api/previews` answers (main listener only) and on the project page. It is never in any of the
+  overseer's tool results or errors (they are part of its session file, which the org's workspace
+  repo commits): every one of its tools passes its result through a filter that shows "[preview
+  link]" in place of a kept link, whatever text held it. Nor is it in the session list
   (`SessionSummary`: a title or summary line that holds one shows "[preview link]" in its place),
   the org's gathering rows, the owner page, the share payloads (`/h/`, `/i/`, `/s/`), the
   transition log, the overseer's activity log or the server's own logs. An owner update, or a

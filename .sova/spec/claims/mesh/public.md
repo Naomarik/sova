@@ -347,7 +347,8 @@ mesh off. Copy is §design.copy-deck/public-links.
   or `static` with the folder Sova serves, §mesh.public/preview-serve), the coding session and
   branch it shows, and its purpose, each only when known. It is read tolerantly: a file that
   can't be read keeps no link and serves no folder, and every preview still opens. The link is a
-  secret kept for the operator and the project overseer (§app.project-overseer/previews); a
+  secret kept for the operator: the project overseer never sees it, and names a preview by its id
+  (§app.project-overseer/previews); a
   preview made before this file existed has no kept link, only its hash: its link was shown once,
   when it was made, and is never guessed.
 - **Mint** (`POST /api/previews {orgId, projectId, port | folder, sessionId?, purpose?, days?}`,

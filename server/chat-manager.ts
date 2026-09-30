@@ -18,7 +18,7 @@ import {
   type Theme,
   type ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
+import { LOGIN_UNCHANGED, OVERSEER_DIALOG_ANSWER_ENTRY, OVERSEER_ENTRY, OVERSEER_SENT_ENTRY } from "../shared/protocol";
 import { BATON_SENT_ENTRY, type BatonSentData, OPERATOR } from "../shared/baton";
 import type { ChatClientMessage, ChatModeResult, ChatServerMessage, CompactRefusal, ModeApplies, ModeInfo, OverseerDialogAnswerData, OverseerSentMarkerData, QueueItem, RegenerateRefusal, RewindRefusal, SandboxApplyResult, SlashCommand, TranscriptItem, WorkerInfo } from "../shared/protocol";
 import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shared/compact";
@@ -36,7 +36,7 @@ import { toContextInfo, workerWindowResolver } from "./models";
 import { claudeSpawnModels, WorkerContextReader, withWorkerContext } from "./worker-context";
 import { resumeCommandOf, resumeWorker, type ResumeOutcome } from "./worker-resume";
 import { applySandbox, onSandboxAppend, sandboxCommandOf, sandboxMessage, type SandboxHost } from "./sandbox-state";
-import { claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry } from "./claude-login-state";
+import { chatClaudeLogin, claudeLoginAfterHello, claudeLoginMessage, isClaudeLoginEntry, LoginPick, loginName } from "./claude-login-state";
 import { contextForBranch, normalizeEntries, normalizeEntry } from "./transcript";
 import { cutTail, type HistoryPart, pullFields } from "./tail-hello";
 import { isOverseerId } from "./overseer-store";
@@ -919,6 +919,12 @@ class ChatSession {
    * here is only a placeholder until bind() runs.
    */
   modeState: ModeState = readMode();
+  /** A Claude login picked while a reply ran, applied when it ends (§app.claude-logins/switch-queue);
+      also set while an idle pick is landing. Kept in memory only: a server restart drops it. */
+  private readonly loginPick = new LoginPick();
+  private get loginPending() { return this.loginPick.pending; }
+  /** A pick is landing (a borrow can take up to 30 s): the web queue holds its items meanwhile. */
+  private get loginApplying() { return this.loginPick.applying; }
 
   /**
    * Sova's own outgoing queue (server/queue.ts). Every message that would have gone straight
@@ -948,7 +954,8 @@ class ChatSession {
       mirrorHas: (kind, text) => (kind === "steer" ? this.session.getSteeringMessages() : this.session.getFollowUpMessages()).includes(text),
     },
     streaming: () => this.session.isStreaming,
-    paused: () => this.isCompacting() || this.starting !== null,
+    // A Claude login switch landing holds it too, so the next turn starts on the new login.
+    paused: () => this.isCompacting() || this.starting !== null || this.loginApplying,
     // Every clear of the SDK's queue (Stop, the Overseer's stop, a removal) keeps the link messages
     // in it: they are never the user's to take back (§mesh.links/delivery).
     clearSdkQueue: () => this.clearSdkQueue(),
@@ -1152,7 +1159,7 @@ class ChatSession {
   private waking = false;
 
   private wakeQueuedRun(): void {
-    if (this.disposed || this.session.isStreaming || this.isCompacting()) return;
+    if (this.disposed || this.session.isStreaming || this.isCompacting() || this.loginApplying) return;
     if (!this.session.agent.hasQueuedMessages()) return;
     try {
       assertNotLive(this.path);
@@ -1435,6 +1442,10 @@ class ChatSession {
     });
     this.unsubscribe?.();
     this.unsubscribe = session.subscribe((event) => {
+      // A Claude login picked during the reply goes in now, before the queue wake below can start
+      // the next turn: applyLoginPick holds the web queue until it has landed
+      // (§app.claude-logins/switch-queue).
+      if (event.type === "agent_settled" && this.loginPending && !this.loginApplying) void this.applyLoginPick();
       if (this.starting && this.session.isStreaming) {
         this.startedNow(); // the run has begun: a send now queues on isStreaming
         this.queue.onSdkEvent();
@@ -1487,7 +1498,7 @@ class ChatSession {
         const items = normalizeEntry((event as { entry: Record<string, any> }).entry);
         if (items.length) this.broadcast({ type: "append", items });
         onSandboxAppend(this.sandboxHost, (event as { entry: unknown }).entry);
-        if (isClaudeLoginEntry((event as { entry: unknown }).entry)) this.broadcast(claudeLoginMessage(this.session.sessionManager.getBranch()));
+        if (isClaudeLoginEntry((event as { entry: unknown }).entry)) this.broadcast(this.loginMessage());
       }
       if (event.type === "message_end" && this.senderMarks.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
         this.markSend((event as { message: { content?: unknown } }).message);
@@ -1674,6 +1685,74 @@ class ChatSession {
   }
 
   /**
+   * The claude-code extension's own /claude-login command in this runtime (its provider registers
+   * it; the source is the extension's entry), or undefined (not loaded, a name clash). Checked by
+   * source, like modeCommand.
+   */
+  private claudeLoginCommand() {
+    const cmd = this.session.extensionRunner.getCommand("claude-login");
+    return cmd && /[\\/]extensions[\\/]claude-code[\\/]index\.ts$/.test(cmd.sourceInfo?.path ?? "") ? cmd : undefined;
+  }
+
+  /** This chat's Claude login with its waiting pick, as every tab is told it. */
+  loginMessage(): ChatServerMessage {
+    return claudeLoginMessage(this.session.sessionManager.getBranch(), undefined, { pending: this.loginPending });
+  }
+
+  /**
+   * `set_claude_login` (§app.claude-logins/switch-login): move this chat to a Claude login now, or,
+   * while a reply runs, when it ends (§app.claude-logins/switch-queue). `null` cancels a waiting
+   * pick; picking the chat's own login cancels one too. The write guards are a model change's.
+   */
+  setClaudeLogin(login: string | null): void {
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    const current = chatClaudeLogin(this.session.sessionManager.getBranch())?.id;
+    if (login !== null && login !== current) {
+      if (!/^(default|l-[0-9a-f]{8})$/.test(login)) throw new Error("There's no such Claude login.");
+      if (!(modelLabel(this.session) ?? "").startsWith("claude-code-cli/")) throw new Error("This chat isn't on a Claude Code model.");
+      if (!this.claudeLoginCommand()) throw new Error("This chat's runtime has no /claude-login command. Turn on Claude Code models, then reopen the chat.");
+    }
+    const busy = this.session.isStreaming || this.isCompacting() || !!this.starting;
+    const outcome = this.loginPick.choose(login === null ? null : { id: login, name: loginName(login) }, current, busy);
+    if (outcome === "landing") throw new Error("A switch of Claude login is already landing. Pick again once it has.");
+    if (outcome === "cancelled" || outcome === "queued") this.broadcast(this.loginMessage());
+    if (outcome === "apply") void this.applyLoginPick();
+  }
+
+  /**
+   * Apply the waiting pick through the extension's /claude-login handler, called directly like
+   * /mode (never through prompt()). The web queue holds while it lands, so no turn starts on the
+   * old login in between; a refusal drops the pick and says why.
+   */
+  private async applyLoginPick(): Promise<void> {
+    if (this.disposed) return;
+    const pick = this.loginPick.start();
+    if (!pick) return;
+    const cmd = this.claudeLoginCommand();
+    this.broadcast(this.loginMessage()); // the label shows the pick while it lands (a borrow)
+    let failure: string | null = null;
+    try {
+      if (!cmd) throw new Error("This chat's runtime has no /claude-login command.");
+      assertNotLive(this.path);
+      this.assertNoForeignWrites();
+      this.flushDeferredAppends(); // open-time entries go before the claude-login entry
+      await cmd.handler(pick.id, this.session.extensionRunner.createCommandContext());
+      if (!this.foreignWrite) markOwned(this.path); // the claude-login entry is our write
+    } catch (err) {
+      failure = err instanceof Error ? err.message : String(err);
+    } finally {
+      this.loginPick.done(pick);
+    }
+    if (this.disposed) return;
+    if (failure) this.broadcast({ type: "error", code: "internal", message: `${LOGIN_UNCHANGED} ${failure.replace(/\.$/, "")}.` });
+    this.broadcast(this.loginMessage());
+    // Whatever was sent meanwhile goes now, on the new login.
+    this.queue.onSdkEvent();
+    this.wakeQueuedRun();
+  }
+
+  /**
    * A note for the session's model, shown in the chat, that starts no turn (a project coding
    * session started with no prompt gets its worktree paragraph this way). pi appends it to the file
    * at once while idle, and it is context from the next turn on. False when this runtime may not
@@ -1791,7 +1870,7 @@ class ChatSession {
     client.send({ type: "queue", items: this.queue.snapshot() });
     client.send(this.modeMessage());
     this.sendSandbox((m) => client.send(m));
-    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch());
+    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch(), undefined, { pending: this.loginPending });
     if (login) client.send(login);
     const snap = this.workersSnapshot();
     if (snap) client.send(snap);
@@ -2273,6 +2352,15 @@ class ChatSession {
         case "set_model":
           this.setModelRef(String(msg.ref ?? ""), { save: true }).catch(fail);
           return;
+        case "set_claude_login":
+          try {
+            this.setClaudeLogin(typeof msg.login === "string" ? msg.login : null);
+          } catch (err) {
+            // A TUI or a foreign writer keeps its busy code; every other refusal is this switch's banner.
+            if (err instanceof BusyError) throw err;
+            throw new Error(`${LOGIN_UNCHANGED} ${(err instanceof Error ? err.message : String(err)).replace(/\.$/, "")}.`);
+          }
+          return;
         case "rewind": {
           const refused = this.specialEntry?.refuses?.("rewind");
           if (refused) throw new Error(refused);
@@ -2525,7 +2613,7 @@ class ChatSession {
     this.modeState = resolveChatMode(this.session.sessionManager.getBranch());
     this.broadcast(this.modeMessage());
     this.sendSandbox((m) => this.broadcast(m)); // the extension re-restores on session_tree too
-    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch()); // the new branch's newest entry
+    const login = claudeLoginAfterHello(this.session.sessionManager.getBranch(), undefined, { pending: this.loginPending }); // the new branch's newest entry
     if (login) this.broadcast(login);
     pushLinks(this); // after every hello, as attach() does
     return () => sendHistory(cut, tails, (c) => this.clients.has(c));

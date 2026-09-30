@@ -896,7 +896,12 @@ export interface ChatClaudeLogin {
   recorded: boolean;
   /** This host lists more than one login: only then is the choice worth showing. */
   several: boolean;
+  /** A pick waiting for the running reply to end, or being applied (a borrow in flight)
+      (§app.claude-logins/switch-queue). */
+  pending?: { id: string; name: string };
 }
+/** How every refusal of `set_claude_login` begins, so the chat shows it as that switch's banner. */
+export const LOGIN_UNCHANGED = "Claude login unchanged:";
 /** PUT /api/claude/accounts/order */
 export interface ClaudeLoginOrderRequest { order: string[] }
 /** PATCH /api/claude/accounts/:id */
@@ -1441,6 +1446,10 @@ export type ChatClientMessage =
   | { type: "abort" }
   | { type: "set_model"; ref: string }   // calls session.setModel; server replies {type:"model"} or error
   | { type: "set_thinking"; level: string } // calls session.setThinkingLevel (clamped to the model); server replies {type:"thinking"}
+  // Move the chat to a Claude login (§app.claude-logins/switch-login): a login id, or null to cancel
+  // a pick waiting for the reply to end. The server answers with {type:"claude_login"} (its
+  // `pending` while a pick waits) or an error whose message starts with LOGIN_UNCHANGED.
+  | { type: "set_claude_login"; login: string | null }
   | { type: "ui_response"; id: string; value: unknown }
   /** Rewind to just before a user input on the active branch (the TUI's /tree on a user message):
       the tip moves to that message's parent and its text comes back for the composer. `id` is the

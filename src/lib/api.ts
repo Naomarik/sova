@@ -219,6 +219,9 @@ export const getTeamDefaults = () => request<TeamDefaultsInfo>("/api/settings/te
 
 /** Settings → Accounts: this host's Claude logins in order, their standing, and the add-login flow. */
 export const getClaudeAccounts = () => request<ClaudeAccountsInfo>("/api/claude/accounts");
+/** The logins of the host that holds chat `path` (the query only routes the request there). */
+export const getChatClaudeAccounts = (path: string) =>
+  request<ClaudeAccountsInfo>(`/api/claude/accounts?path=${encodeURIComponent(path)}`);
 /** Start `claude auth login` for a new login; answers once its sign-in URL is out. */
 /** Add a login, or (with `login`) sign an existing one in again on this device. */
 export const startClaudeLogin = (login?: string) =>

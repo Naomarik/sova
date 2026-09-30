@@ -640,6 +640,32 @@
                                                     true (assoc :confirm (boolean (:confirm hold)) :by "system")
                                                     (:wait hold) (assoc :wait (:wait hold)))}))))))
 
+(defn- rewindow-hold!
+  "r13: the host moves an hours hold's end (`:until`) after a working-hours edit (a person's or the
+   company's): a later end re-arms its timer; nil or one due now releases it now (the release checks
+   the act again under a fresh stamp, so fresh target records decide). Anything else is ignored."
+  [eng sid event]
+  (let [{:keys [queue env clock]} (engine eng)
+        {:keys [id until]} (:data event)
+        wm   (wmem-of eng sid)
+        hold (get-in wm [data-key :sova/holds id])
+        now  (clock)
+        c    (configuration eng sid)]
+    (cond
+      (not (and hold (= "hours" (:wait hold)))) [(assoc (refused-step eng sid event nil) :refused nil :ignored true)]
+      (or (nil? until) (<= until now)) (release-now! eng sid id)
+      (= until (:until hold)) [(assoc (refused-step eng sid event nil) :refused nil :ignored true)]
+      :else
+      (let [wm' (assoc-in wm [data-key :sova/holds id :until] until)]
+        (sp/cancel! queue env sid (hold-send-id id))
+        (sp/send! queue env {:event :sova/hold-due :data {:id id} :target sid :source-session-id sid
+                             :send-id (hold-send-id id) :delay (- until now)})
+        (save! eng sid wm')
+        [(assoc (base-step eng sid event)
+           :before c :after c :changed {(str "sova/holds." id ".until") [(:until hold) until]}
+           :effects [] :outbox [] :holds [] :holds-ended [] :running (running? eng sid)
+           :microsteps 0 :saved true :feed :quiet)]))))
+
 (defn- process-one
   "Deliver `event` (an event map) to `sid`: the steps it produced. An act is gated first (final,
    level, the act's pre checks) with the pending holds reserved (F2); an act the hold policy holds
@@ -651,6 +677,7 @@
         act   (get-in (entry-of eng sid) [:acts ename])]
     (cond
       (= ename :sova/hold-due) (release-hold! eng sid event)
+      (= ename :sova/rewindow) (rewindow-hold! eng sid event)
       (#{:effect/done :effect/failed} ename) (answer-effect! eng sid event)
       (nil? act) (run-step! eng sid event)
       :else

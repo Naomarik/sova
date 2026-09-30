@@ -693,3 +693,39 @@
     (is (nil? (core/next-due-at eng)) "nil only cancels")
     (let [r (core/send! eng "t" :arm {:when (- t0 10)} {:now (+ t0 4)})]
       (is (= [:arm :ding] (map :event (:steps r))) "an instant already past is due at once, in the same call"))))
+
+;; ---- r13: the host moves an hours wait after a working-hours edit -------------------------------------
+
+(deftest an-hours-wait-is-moved-by-sova-rewindow
+  (let [fresh (atom nil) ; the stamp's fresh target facts at release (the host's current effective hours)
+        eng   (parent (new-eng {:stamp (fn [_ _ _ _] (merge unattended {:hold-ms 0} (when @fresh {:window @fresh})))}))
+        w1    (+ t0 3600000)
+        hold  #(first (core/holds eng))]
+    (core/send! eng "par" :message/send (assoc unattended :hold-ms 0 :window w1) {:now t0})
+    (is (= w1 (:until (hold))))
+    (testing "a later window: the timer moves, nothing goes at the old one"
+      (let [r (core/send! eng "par" :sova/rewindow {:id "message/send#0" :until (+ t0 7200000)} {:now (+ t0 1)})]
+        (is (= [:sova/rewindow] (map :event (:steps r))))
+        (is (= :quiet (:feed (first (:steps r)))))
+        (is (= {"sova/holds.message/send#0.until" [w1 (+ t0 7200000)]} (:changed (first (:steps r))))))
+      (is (= (+ t0 7200000) (:until (hold)) (core/next-due-at eng)))
+      (is (empty? (:steps (core/fire-due! eng w1)))))
+    (testing "an earlier window: due then, and the fresh facts let it go"
+      (core/send! eng "par" :sova/rewindow {:id "message/send#0" :until (+ t0 3600500)} {:now (+ t0 3600100)})
+      (is (= (+ t0 3600500) (core/next-due-at eng)))
+      (reset! fresh (+ t0 3600500))
+      (is (= [:message/send :hold/released] (map :event (:steps (core/fire-due! eng (+ t0 3600500))))))
+      (is (= 1 (count (:messages (core/data eng "par"))))))
+    (testing "open now (nil): released at once; fresh facts saying later hold it again until then"
+      (reset! fresh nil)
+      (core/send! eng "par" :message/send (assoc unattended :hold-ms 0 :window (+ t0 9000000)) {:now (+ t0 4000000)})
+      (let [id (:id (hold))]
+        (reset! fresh (+ t0 8000000))
+        (let [r (core/send! eng "par" :sova/rewindow {:id id :until nil} {:now (+ t0 4000001)})]
+          (is (= "hours" (:wait (:held (first (:steps r))))) "re-checked: still off hours by the fresh facts")
+          (is (= [(+ t0 8000000)] (map :until (core/holds eng)))))))
+    (testing "an unknown hold, or one that isn't an hours wait, is ignored"
+      (let [r (core/send! eng "par" :sova/rewindow {:id "nope#9" :until (+ t0 1)} {:now (+ t0 4000002)})]
+        (is (= [:sova/rewindow] (map :event (:steps r))))
+        (is (not-any? :saved (:steps r)) "no save, no row"))
+      (is (= [(+ t0 8000000)] (map :until (core/holds eng)))))))

@@ -108,7 +108,11 @@
                                       :version (unchecked-get c "version")}
                                (:storage meta) (assoc :storage (keyword (:storage meta)))
                                (:exported meta) (assoc :exported (mapv keyword (:exported meta)))
-                               (:acts meta) (assoc :acts (into {} (map (fn [[k v]] [(keyword (subs (str k) 1)) v])) (:acts meta)))
+                               (:acts meta) (assoc :acts (into {} (map (fn [[k v]]
+                                                                         [(keyword (subs (str k) 1))
+                                                                          ;; a JS `hours` (r7) reads the data model as JS
+                                                                          (cond-> v (fn? (:hours v)) (update :hours (fn [f] (fn [view] (f (->js view))))))]))
+                                                               (:acts meta)))
                                (fn? (unchecked-get c "cold")) (assoc :cold? (let [f (unchecked-get c "cold")]
                                                                               (fn [config data] (boolean (f (->js (vec config)) (->js data))))))))))
       charts (js-keys extra))

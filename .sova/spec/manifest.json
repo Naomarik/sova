@@ -1184,7 +1184,7 @@
     "§chat.transcript/transcript-items": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/transcript.ts",
         "src/lib/change-rows.ts",
@@ -1696,7 +1696,8 @@
       "evidence": "verified",
       "code": [
         "src/components/PlaybooksDialog.tsx",
-        "src/components/ChatView.tsx"
+        "src/components/ChatView.tsx",
+        "src/components/ScheduleCard.tsx"
       ]
     },
     "§chat.playbooks/the-project-listing": {
@@ -2648,7 +2649,7 @@
     "§app.overseer/caps": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer-tools.ts",
         "server/overseer-store.ts",
@@ -2809,7 +2810,7 @@
     "§app.overseer/proactivity": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "server/overseer.ts",
         "src/components/OverseerView.tsx",
@@ -9687,6 +9688,123 @@
         "§app.organizations/privacy",
         "§app.project-overseer/org-charts",
         "§app/markdown-viewer"
+      ]
+    },
+    "§chat.schedules/approval": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/schedules.ts",
+        "server/schedule-routes.ts",
+        "shared/schedules.ts",
+        "server/schedules.test.ts",
+        "src/lib/api.ts"
+      ],
+      "requires": [
+        "§chat.profiles/projects",
+        "§chat.profiles/trust",
+        "§app.overseer/approvals"
+      ]
+    },
+    "§chat.schedules/fire": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/schedules.ts",
+        "server/schedule-routes.ts",
+        "server/overseer.ts",
+        "server/index.ts",
+        "shared/schedules.ts",
+        "shared/wake.ts",
+        "server/schedules.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/singleton",
+        "§chat.profiles/applying",
+        "§chat.playbooks/what-gets-sent",
+        "§chat.profiles/limits",
+        "§app.overseer/auto-resume"
+      ]
+    },
+    "§chat.schedules/header": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/schedules.ts",
+        "server/playbooks.ts",
+        "server/schedules.ts",
+        "shared/schedules.test.ts",
+        "server/playbooks.test.ts"
+      ],
+      "requires": [
+        "§chat.playbooks/where-playbooks-come-from",
+        "§chat.profiles/projects"
+      ]
+    },
+    "§chat.schedules/limit-reset": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/schedules.ts",
+        "server/schedule-routes.ts",
+        "server/schedules.test.ts"
+      ],
+      "requires": [
+        "§app/claude-logins",
+        "§chat.schedules/fire"
+      ]
+    },
+    "§chat.schedules/limits": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/schedules.ts",
+        "shared/schedules.ts",
+        "server/schedules.test.ts",
+        "shared/schedules.test.ts"
+      ],
+      "requires": [
+        "§chat.schedules/fire"
+      ]
+    },
+    "§chat.schedules/where-shown": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/PlaybooksDialog.tsx",
+        "src/components/ScheduleCard.tsx",
+        "src/components/OverseerPermitsChip.tsx",
+        "src/components/Composer.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/schedules.ts",
+        "src/lib/schedules.test.ts",
+        "src/app.css",
+        "shared/protocol.ts",
+        "shared/wake.ts",
+        "server/overseer.ts"
+      ],
+      "requires": [
+        "§chat.playbooks/the-modal",
+        "§app.overseer/approvals",
+        "§chat.transcript/transcript-items",
+        "§app.overseer/proactivity"
+      ]
+    },
+    "§chat/schedules": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/schedules.ts",
+        "shared/schedules.ts",
+        "server/schedule-routes.ts",
+        ".sova/playbooks/merge-round/PLAYBOOK.md"
       ]
     }
   },

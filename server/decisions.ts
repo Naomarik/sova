@@ -1,9 +1,10 @@
 import { OPERATOR } from "../shared/baton";
 import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionState, type OwnerAreaChange, type Provenance, type ReconcileRun } from "../shared/decisions";
-import type { Person } from "../shared/orgs";
+import type { OrgProject, Person } from "../shared/orgs";
+import type { AttentionItem } from "../shared/protocol";
 import { allBatons, sessionPathOf } from "./baton";
 import { hostOf, isOrgHostOpen, type SessionInfo } from "./org-engine";
-import { isoOf, operatorName, orgDir, OrgError, readProjects } from "./orgs";
+import { isoOf, operatorName, orgDir, OrgError, readIndex, readOrg, readProjects, readRoster } from "./orgs";
 
 /**
  * The decision index (§app.requirements/decisions), read from the charts (q1: no decisions.json, no
@@ -250,9 +251,64 @@ export const STATES: readonly DecisionState[] = ["pending", "drafted", "promoted
 /** Open conflicts routed to the operator that no settle session asks about (routing failed, or the
     session closed without a re-route): theirs to route or settle (a Needs-you item, C17). */
 export function unroutedConflicts(orgId: string, projectId: string): number {
-  if (!isOrgHostOpen(orgId)) return 0;
+  return unrouted(orgId, projectId).length;
+}
+
+function unrouted(orgId: string, projectId: string): SessionInfo[] {
+  if (!isOrgHostOpen(orgId)) return [];
   return hostOf(orgId)
     .sessions("conflict")
     .filter(ofProject(projectId))
-    .filter((s) => s.configuration.includes("unrouted") && (s.data.routedTo ?? OPERATOR) === OPERATOR).length;
+    .filter((s) => s.configuration.includes("unrouted") && (s.data.routedTo ?? OPERATOR) === OPERATOR);
+}
+
+/**
+ * Those conflicts as Needs-you items (C17, §app.requirements/routing): decide tier, kind
+ * `conflict-to-operator`, never pushed, opening the project page; one per conflict, so the org card,
+ * its tab and Needs you count the same ones.
+ */
+export function conflictAttention(): AttentionItem[] {
+  const out: AttentionItem[] = [];
+  for (const o of readIndex().orgs) {
+    if (!isOrgHostOpen(o.id)) continue;
+    let orgName = "";
+    let projects: OrgProject[] = [];
+    try {
+      orgName = readOrg(o.id).name;
+      projects = readProjects(o.id);
+    } catch {
+      continue;
+    }
+    const names = new Map<string, string>();
+    try {
+      for (const p of readRoster(o.id)) names.set(p.id, p.name);
+    } catch {
+      // an unreadable roster: the names the decisions were recorded with
+    }
+    names.set(OPERATOR, operatorName());
+    for (const p of projects) {
+      const sessions = unrouted(o.id, p.id);
+      if (!sessions.length) continue;
+      const byId = new Map(readDecisionStore(o.id, p.id).decisions.map((d) => [d.id, d]));
+      for (const s of sessions) {
+        const c = conflictOf(o.id, s, new Map());
+        const a = byId.get(c.a);
+        const b = byId.get(c.b);
+        const who = (d: DecisionRow | undefined) => (d ? (names.get(d.by) ?? d.name) : "someone");
+        out.push({
+          id: `conflict-to-operator:${c.id}`,
+          path: "",
+          title: p.name,
+          where: orgName,
+          tier: "decide",
+          kind: "conflict-to-operator",
+          since: Date.parse(c.createdAt) || 0,
+          detail: `Settle a conflict in ${p.name}: ${who(a)} and ${who(b)} disagree about ${a?.area ?? b?.area ?? c.areaKey}.`,
+          href: `#/orgs/${encodeURIComponent(o.id)}/projects/${encodeURIComponent(p.id)}`,
+          org: { orgId: o.id, orgName, projectId: p.id, projectName: p.name, ...(p.archived ? { projectArchived: true as const } : {}) },
+        });
+      }
+    }
+  }
+  return out;
 }

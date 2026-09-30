@@ -40,7 +40,7 @@ import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
 import { OVERSEER_CARD_HEADER } from "./overseer-tools";
 import type { EnvelopeCard } from "./org-envelope";
 import { archiveBlockers } from "./project-overseer";
-import { cancelHeld, holdItem, itemTimeline, pipelineInfo } from "./project-pipeline";
+import { cancelHeld, heldActs, holdItem, itemTimeline, pipelineInfo } from "./project-pipeline";
 import { resolveSessionPath } from "./paths";
 import { refreshShare } from "./share/hub";
 import { awaitShareLinks } from "./share/links-events";
@@ -168,9 +168,11 @@ interface Waiting {
  * session is already that session's reply). `rows` are the org's baton rows.
  */
 function waitingIn(orgId: string, dir: string, rows: readonly BatonSession[]): Waiting {
-  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0, ownerLink: 0 }, batons: new Map(), projectConflicts: {} };
+  const w: Waiting = { needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, stakeholders: 0, ownerLink: 0, held: 0 }, batons: new Map(), projectConflicts: {} };
   try {
     w.needsYou.ownerLink = ownerLinkNeeds(orgId);
+    // Acts waiting in a hold, one each as in Needs you (the same held-act items).
+    w.needsYou.held = heldActs(orgId).length;
     w.needsYou.proposals = readRoster(orgId).filter((p) => p.status === "proposed").length;
     for (const project of readProjects(orgId)) {
       if (project.stakeholderCleared) w.needsYou.stakeholders = (w.needsYou.stakeholders ?? 0) + 1;

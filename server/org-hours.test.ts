@@ -100,6 +100,11 @@ describe("an act that reaches them outside their hours (r7)", () => {
     assert.equal(item.held?.wait, "hours");
     assert.match(item.detail!, /^A gathering session "Prices" waits for Sam Okafor's working hours: it starts in 1[12]\d min unless you cancel it\.$/);
     assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Prices"), "nothing reached them");
+    // The org's card and page count it once, as Needs you lists it.
+    const card = ((await (await app.request("/api/orgs")).json()) as { orgs: { id: string; needsYou?: { held?: number } }[] }).orgs.find((o) => o.id === org.id)!;
+    assert.equal(card.needsYou?.held, heldAttention().filter((i) => i.org?.orgId === org.id).length);
+    assert.equal(((await (await app.request(`/api/orgs/${org.id}`)).json()) as { needsYou: { held?: number } }).needsYou.held, card.needsYou?.held);
+    assert.ok(card.needsYou!.held! >= 1);
     // The operator's own start goes at once (q13), its step marked off hours.
     const mine = await baton.createBaton({ orgId: org.id, projectId: project.id, to: sam.id, publicTitle: "Mine", goal: "g" });
     assert.ok(mine.sessionId && !mine.held);

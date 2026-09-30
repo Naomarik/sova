@@ -512,6 +512,23 @@ describe("decisions → conflicts → draft → promotion", async () => {
     await assert.rejects(reconcile.routeConflictNow(org.id, project.id, c.id, "p_nobody"), /active person/);
   });
 
+  test("a conflict for the operator with no session asking is a decide-tier Needs-you item (conflict-to-operator), counted once", async () => {
+    const { conflictAttention, unroutedConflicts } = await import("./decisions");
+    const c = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.state === "open" && k.areaKey === "payroll-export")!;
+    const mine = (await reconcile.routeConflictNow(org.id, project.id, c.id, OPERATOR)).conflicts.find((k) => k.id === c.id)!;
+    assert.equal(mine.routedTo, OPERATOR);
+    assert.ok(!conflictAttention().some((i) => i.id === `conflict-to-operator:${c.id}`), "a session asks the operator: that session's reply, not a second item");
+    await baton.closeBaton(mine.batonSessionId!);
+    const items = conflictAttention().filter((i) => i.org?.projectId === project.id);
+    assert.equal(items.length, unroutedConflicts(org.id, project.id), "Needs you and the org card count the same conflicts");
+    const it = items.find((i) => i.id === `conflict-to-operator:${c.id}`)!;
+    assert.deepEqual([it.kind, it.tier, it.path, it.href], ["conflict-to-operator", "decide", "", `#/orgs/${org.id}/projects/${project.id}`]);
+    assert.equal(it.detail, `Settle a conflict in ${project.name}: Maria Lopez and Tony Reyes disagree about payroll export.`);
+    // Routed again to someone: no longer the operator's.
+    await reconcile.routeConflictNow(org.id, project.id, c.id, carlos.id);
+    assert.ok(!conflictAttention().some((i) => i.id === `conflict-to-operator:${c.id}`));
+  });
+
   test("the contradiction threshold is 0.7: 0.69 is compared-clean, 0.7 is a conflict", async () => {
     await say(f1, maria.id, "x", { area: "parking", statement: "Staff park in lot A. [p=0.69]", quote: "lot A" });
     await say(f2, tony.id, "y", { area: "parking", statement: "Staff park in lot B.", quote: "lot B" });

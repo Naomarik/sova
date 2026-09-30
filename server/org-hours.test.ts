@@ -86,6 +86,28 @@ describe("a person's zone and hours (the person routes)", () => {
   });
 });
 
+test("reverting an hours or zone line works both ways: set from nothing → cleared; a later change → the earlier one", async () => {
+  const rev = await orgs.addPerson(org.id, { name: "Rae Voss", role: "Ops" });
+  const req = (method: string, path: string, body: unknown) => app.request(`/api/orgs/${org.id}/people/${rev.id}${path}`, { method, headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const line = (field: string) => orgs.readHistory(org.id, rev.id).filter((h) => h.field === field && !h.revertOf).at(-1)!;
+  const revert = async (field: string) => {
+    const r = await req("POST", "/revert", { at: line(field).at });
+    assert.equal(r.status, 200, await r.clone().text());
+  };
+  const first = { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" };
+  assert.equal((await req("PATCH", "", { tz: "Europe/Istanbul", hours: first })).status, 200);
+  await revert("hours");
+  assert.equal(orgs.findPerson(org.id, rev.id)!.hours, undefined, "hours set from nothing: reverting clears them");
+  await revert("tz");
+  assert.equal(orgs.findPerson(org.id, rev.id)!.tz, undefined, "the zone likewise");
+  assert.equal((await req("PATCH", "", { tz: "Europe/Istanbul", hours: first })).status, 200);
+  assert.equal((await req("PATCH", "", { tz: "Asia/Dubai", hours: { days: [0], from: "22:00", to: "06:00" } })).status, 200);
+  await revert("hours");
+  await revert("tz");
+  const p = orgs.findPerson(org.id, rev.id)!;
+  assert.deepEqual([p.tz, p.hours], ["Europe/Istanbul", first], "a later change's revert restores the earlier hours and zone");
+});
+
 describe("an act that reaches them outside their hours (r7)", () => {
   test("the overseer's unattended gathering waits for their window, in the Pipeline and Needs you; the operator's own goes at once", async () => {
     await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });

@@ -78,7 +78,9 @@
 
 (defn- reroute-ops [d]
   (let [ev (e d)]
-    [(ops/assign :routed-to (:to ev))
+    [;; an owner-area change re-routes and changes the conflict's owner area (setOwnerArea)
+     (ops/assign :owner-area (if (contains? ev :owner-area) (:owner-area ev) (:owner-area d)))
+     (ops/assign :routed-to (:to ev))
      (ops/assign :route-reason (or (:route-reason ev) (str (if (= "operator" (:to ev)) (:operator-name d) (get-in ev [:target :name])) " chosen by " (:operator-name d) ".")))
      (ops/assign :self-asserted (true? (:self-asserted ev)))
      (ops/assign :baton-session-id (:session-id ev))
@@ -107,8 +109,10 @@
 (defn- open-transitions []
   (concat
     (reroute-transitions)
-    ;; the same target again (an owner-area change that routes where it already goes): nothing
-    [(dsl/act {:event :conflict/reroute :checks [reroute-check] :cond same-target?})
+    ;; the same target again (an owner-area change that routes where it already goes): no new
+    ;; session, only the owner area changes
+    [(dsl/act {:event :conflict/reroute :checks [reroute-check] :cond same-target?}
+       (script {:expr (fn [_ d] (when (contains? (e d) :owner-area) [(ops/assign :owner-area (:owner-area (e d)))]))}))
      ;; settled by the reconciler's run (the first decision in its settle session)
      (transition {:event :conflict/resolved :target :settled}
        (script {:expr (fn [_ d] ((settle-ops (:outcome (e d)) (:resolved-by (e d))) d))}))

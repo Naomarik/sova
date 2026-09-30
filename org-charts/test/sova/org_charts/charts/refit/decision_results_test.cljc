@@ -30,3 +30,24 @@
         y (h/send! s dsid :reconcile/result {:state "superseded" :superseded-by "d9" :folded ["d3" "d4"]})]
     (is (h/in? y dsid :superseded))
     (is (= ["d3" "d4"] (:folded (h/data y dsid))))))
+
+;; ---- P3 3: a re-route carries the conflict's new owner area ------------------------------------------
+
+(def csid "conflict/o1/pr1/cf1")
+(defn conflict [d]
+  (h/start! (h/new-host) "conflict" csid
+    (merge {:org-id "o1" :project-id "pr1" :id "cf1" :area "Pay" :owner-area "payroll" :baton-session-id "s9"
+            :a {:id "d1" :name "Ana" :statement "Monthly" :quote "monthly" :at 0} :b {:id "d2" :name "Bob" :statement "Weekly" :quote "weekly" :at 0}} d)))
+
+(deftest P3-3-an-owner-area-change-re-routes-and-changes-the-area
+  (let [x (conflict {:routed-to "p3" :route-reason "Cy decides pay."})]
+    (testing "to someone else: a new session, and the new area"
+      (let [y (h/send! x csid :conflict/reroute {:by "operator" :to "operator" :session-id "s10" :operator-name "Omar" :owner-area "finance"})]
+        (is (h/in? y csid :routed-to-operator))
+        (is (= "finance" (:owner-area (h/data y csid))))))
+    (testing "to the same person (keepIfSame): no new session, the area still changes"
+      (let [y (h/send! x csid :conflict/reroute {:by "operator" :to "p3" :target {:status "active"} :keep-if-same true :owner-area "finance"})]
+        (is (= "s9" (:baton-session-id (h/data y csid))))
+        (is (= "finance" (:owner-area (h/data y csid))))))
+    (testing "a re-route without one keeps the area"
+      (is (= "payroll" (:owner-area (h/data (h/send! x csid :conflict/reroute {:by "operator" :to "operator" :session-id "s10" :operator-name "Omar"}) csid)))))))

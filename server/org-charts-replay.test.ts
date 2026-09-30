@@ -5,8 +5,7 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { chartVersions } from "./org-charts";
-import { DRIFT_COMMIT, expectedPhases, FIXTURES, followUpPhase, loadTraces, oracle, replay, type OracleEnvelope as Envelope, type Report } from "./org-charts-replay";
-import { autonomyRefusal } from "./project-overseer-tools";
+import { autonomyRefusal, DRIFT_COMMIT, expectedPhases, FIXTURES, followUpPhase, loadTraces, oracle, replay, type OracleEnvelope as Envelope, type Report } from "./org-charts-replay";
 
 const traces = loadTraces();
 

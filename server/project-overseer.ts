@@ -9,7 +9,9 @@ import {
   PER_DAY,
   PER_TURN,
   PO_LIMIT_KINDS,
+  type AllowanceUse,
   type PoLimitKind,
+  type ProjectOverseerCaps,
   type ProjectOverseerSettings,
   PROJECT_OVERSEER_ENTRY,
   type CodingStartInput,
@@ -43,7 +45,7 @@ import {
   type ArchiveBlockers,
   archivedOverseerRefusal,
   assertNotArchived,
-  decidePerson,
+  decidePersonAct,
   onOrgAttached,
   orgDir,
   orgOfSessionPath,
@@ -69,7 +71,7 @@ import { overseerFileTools } from "./overseer-file-tools";
 import { getIdea, promptToc, readManifest, readProse, updateIdea } from "./overseer-ideas";
 import { redactExtensionMessages, serverRedactor } from "./overseer-redact";
 import { readNotes } from "./overseer-store";
-import { appendUpdate, cleanUpdateText, lastUpdate } from "./project-updates";
+import { appendUpdate, cleanUpdateText } from "./project-updates";
 import { readTodos, updateTodo } from "./overseer-todos";
 import { UserTurns } from "./overseer-tools";
 import { canonicalPath } from "./paths";
@@ -79,9 +81,12 @@ import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session
 import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
 import { readView } from "./share/hub";
-import { actOrThrow, envelopeFor } from "./org-engine";
+import { actOrThrow, envelopeFor, refusalError } from "./org-engine";
+import { heldActs, pipelineInfo } from "./project-pipeline";
 import type { ActResult } from "./org-host";
-import type { Envelope } from "./org-envelope";
+import type { Envelope, LedgerCounts } from "./org-envelope";
+import { ledgerOf } from "./org-stamp";
+import type { ProjectUpdate } from "../shared/owner";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
@@ -104,7 +109,7 @@ import {
   writePoSettings,
   type ProjectOverseerPaths,
 } from "./project-overseer-store";
-import { PO_BUILTINS, PoLimits, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
+import { PO_BUILTINS, projectOverseerTools, type PoToolHost } from "./project-overseer-tools";
 
 /**
  * The project overseer (§app/project-overseer): one special session per org project. Like the
@@ -125,7 +130,6 @@ interface Rt {
   orgId: string;
   projectId: string;
   turns: UserTurns;
-  limits: PoLimits;
   session: AgentSession | null;
   /** A look's message was just handed in: the run it starts is the look's (the watch hears `turn/started {look}`). */
   lookStarting?: boolean;
@@ -144,7 +148,7 @@ function rtOf(orgId: string, projectId: string): Rt {
   let rt = rts.get(k);
   if (!rt) {
     const p = projectOverseerPaths(orgId, projectId);
-    rt = { orgId, projectId, turns: new UserTurns(), limits: new PoLimits(p.turn, () => new Date(clock())), session: null };
+    rt = { orgId, projectId, turns: new UserTurns(), session: null };
     rts.set(k, rt);
   }
   return rt;
@@ -258,7 +262,6 @@ export async function clearProjectOverseer(orgId: string, projectId: string): Pr
     await disposeHeldChat(oldPath, "The project overseer was cleared. Opening the new conversation.");
   }
   const rt = rtOf(orgId, projectId);
-  rt.limits.reset();
   rt.turns.reset();
   const made = createPoFile(orgId, projectId);
   await tellProjectChart(orgId, projectId, "overseer/clear", made.id);
@@ -410,7 +413,7 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     started,
     unread: exists && path && !isViewing(st!.current) ? await unreadReplies(path, readSeen()[st!.current]) : 0,
     usage: {
-      allowance: rtOf(orgId, projectId).limits.use(settings.caps),
+      allowance: allowanceUse(orgId, projectId, settings.caps),
       held: memo.held,
       unattendedToday: Object.values(memo.perDay)[0] ?? 0,
       lastWatchAt: memo.lastRunAt,
@@ -555,7 +558,8 @@ function toolHost(rt: Rt): PoToolHost {
       // starts the wrap-up.
       await closeBaton(sessionId, { envelope: overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), ...(reason ? { reason } : {}), ownerProject: projectId });
     },
-    decideReferral: async (personId, approve) => decidePerson(orgId, personId, approve, { kind: "overseer", sessionId: readPoState(paths)?.current ?? "" }),
+    decideReferral: async (personId, approve) =>
+      decidePersonAct(orgId, personId, approve, { kind: "overseer", sessionId: readPoState(paths)?.current ?? "" }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended())),
     sessions: () => listSessions(),
     transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
     gatheringAbilities: (arg) => overseerAbilities(arg, baseAbilities(settings().gatheringAbilities)),
@@ -575,75 +579,115 @@ function toolHost(rt: Rt): PoToolHost {
         ...(made.notPrompted ? { notPrompted: made.notPrompted } : {}),
       };
     },
-    async send(path, text, mode) {
-      let applies: "now" | "after-turn" | undefined;
-      if (mode) applies = await applyCodingMode(path, mode);
-      const r = await promptSession(path, text);
-      if (!r.ok) throw new Error(r.error);
-      return { queued: r.queued, ...(applies ? { modeApplies: applies } : {}) };
+    async send(sessionId, text, mode) {
+      // A build's build/prompt; any other coding session in the root, the project chart's session/prompt (r10). Both L3,
+      // counted as a prompt and held when unattended; the chart refuses a terminal's session, a removed worktree, a blank text.
+      const path = await pathOfId(sessionId);
+      const listed = path ? await getSessionSummary(path).catch(() => null) : null;
+      const live = !!listed?.live;
+      const envelope = overseerEnvelope(orgId, projectId, paths, rt.turns.attended());
+      const build = readBuild(orgId, projectId, sessionId);
+      const title = readSessionTitles()[sessionId] || build?.title || listed?.title || sessionId;
+      const out = build
+        ? await actOrThrow(orgId, buildSid(orgId, projectId, sessionId), "build/prompt", { text, ...(mode ? { mode } : {}), live }, envelope, { settle: true })
+        : await actOrThrow(orgId, `project/${orgId}/${projectId}`, "session/prompt", { sessionId, title, text, ...(mode ? { mode } : {}), live }, envelope, { settle: true });
+      if (out.held) return { held: { id: out.held.id, until: out.held.until } };
+      const fx = out.effects?.find((e) => e.kind === "prompt");
+      if (fx?.error) throw new Error(fx.error);
+      const r = (fx?.result ?? {}) as { queued?: boolean; modeApplies?: "now" | "after-turn" };
+      return { queued: !!r.queued, ...(r.modeApplies ? { modeApplies: r.modeApplies } : {}) };
     },
     coding: () => codingOf(orgId, projectId),
     builds: () => codingWorktrees(orgId, projectId, projectOf(orgId, projectId).root),
     startedCoding: () => new Map(readBuilds(orgId, projectId).map((r) => [r.sessionId, { removed: !!r.removed }])),
-    hold: (item) => void (item.limit ? watchFact(orgId, projectId, "limit/refused", item.limit) : Promise.resolve()),
+    async limitRefused(kind) {
+      const e = overseerEnvelope(orgId, projectId, paths, rt.turns.attended());
+      const a = e.allowance[kind];
+      if (a.max !== null) await watchFact(orgId, projectId, "limit/refused", { kind, ledger: e.ledger, used: a.used, max: a.max });
+    },
+    allowance: () => allowanceUse(orgId, projectId, settings().caps),
+    pipeline(q) {
+      const host = hostOf(orgId);
+      if (q.session) {
+        const sid = projectSessionOrThrow(orgId, projectId, q.session);
+        const chart = host.chartOf(sid) ?? "";
+        const envelope = overseerEnvelope(orgId, projectId, paths, rt.turns.attended());
+        return {
+          kind: "session",
+          id: sid,
+          chart,
+          configuration: host.configuration(sid) ?? [],
+          enabled: host.enabledEvents(sid, envelope),
+          corrections: host.chartInfo(chart)?.corrections ?? [],
+          holds: heldActs(orgId, projectId).filter((h) => host.holds().some((x) => x.id === h.id && x.sessionId === sid)),
+        };
+      }
+      const info = pipelineInfo(orgId, projectId);
+      return { kind: "project", rows: info.rows, held: info.held, feed: host.feed(projectId, { includeQuiet: q.includeQuiet, limit: q.limit, newestFirst: true }) };
+    },
+    async decideHold(id, approve, reason) {
+      const h = hostOf(orgId).holds().find((x) => x.id === id && (x.projectId ?? x.sessionId.split("/")[2]) === projectId);
+      if (!h) throw new OrgError(`No held act ${id} in this project: sova_pipeline lists them.`, 404);
+      await actOrThrow(orgId, h.sessionId, approve ? "hold/approve" : "hold/cancel", { id, reason }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), { settle: true });
+    },
+    async correct(session, event, payload, reason) {
+      const sid = projectSessionOrThrow(orgId, projectId, session);
+      const chart = hostOf(orgId).chartOf(sid) ?? "";
+      if (!(hostOf(orgId).chartInfo(chart)?.corrections ?? []).includes(event)) throw new OrgError(`${sid} declares no ${event}: sova_pipeline with this session lists its corrections.`, 409);
+      const out = await actOrThrow(orgId, sid, event, { ...payload, reason }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), { settle: true });
+      return out.held ? { held: { id: out.held.id, until: out.held.until } } : {};
+    },
+    async setState(session, states, reason, patch) {
+      const sid = projectSessionOrThrow(orgId, projectId, session);
+      const out = await hostOf(orgId).setState(sid, { states, reason, ...(patch ? { patch } : {}) }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()));
+      if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
+      return hostOf(orgId).configuration(sid) ?? [];
+    },
     held: () => readMemo(paths).held,
     async postOwnerUpdate(input) {
+      // The project chart's owner-update/post: an owner, the text, the leak backstop, and (unattended) the 24 h and
+      // milestone gates; held when unattended (q10). Its effect writes the update.
       const owner = readRoster(orgId).find((x) => x.id === readOrg(orgId).owner && x.status === "active");
-      if (!owner) throw new Error("This organization has no owner, so there is no page to post to.");
       const text = cleanUpdateText(input.text);
       const leak = ownerUpdateLeak(orgId, projectId, text);
-      if (leak) throw new Error(leak);
-      if (!input.attended) {
-        const last = lastUpdate(orgId, projectId);
-        const now = Date.now();
-        if (last && now - Date.parse(last.at) < OWNER_UPDATE_EVERY_MS) throw new Error(`An update was posted ${hoursAgo(last.at, now)}: at most one a day.`);
-        if (!(await milestoneSince(orgId, projectId, last ? Date.parse(last.at) : 0)))
-          throw new Error("Nothing new since the last update: post one when a conversation finishes, a decision is agreed, or a coding session finishes or is merged.");
-      }
-      const update = appendUpdate(orgId, projectId, { text, run: input.attended ? "operator" : "auto" });
-      return { update, owner: owner.name };
+      const finished = lastBuildFinishedAt(orgId, projectId);
+      const out = await actOrThrow(
+        orgId,
+        `project/${orgId}/${projectId}`,
+        "owner-update/post",
+        { text, ownerActive: !!owner, ...(leak ? { leak } : {}), ...(finished ? { buildFinishedAt: finished } : {}) },
+        overseerEnvelope(orgId, projectId, paths, rt.turns.attended()),
+        { settle: true },
+      );
+      if (out.held) return { held: { id: out.held.id, until: out.held.until }, owner: owner?.name ?? "" };
+      const fx = out.effects?.find((e) => e.kind === "owner-update");
+      if (fx?.error) throw new Error(fx.error);
+      return { update: fx?.result as ProjectUpdate, owner: owner?.name ?? "" };
     },
   };
 }
 
 /** The shortest repeated run that counts as copying private text into an owner update. */
 export const OWNER_UPDATE_REPEAT = 24;
-/** At most one owner update per project in this long, in runs the operator did not start. */
-export const OWNER_UPDATE_EVERY_MS = 24 * 3_600_000;
-
-const hoursAgo = (at: string, now: number): string => {
-  const h = Math.floor((now - Date.parse(at)) / 3_600_000);
-  return h < 1 ? "less than an hour ago" : h === 1 ? "1 hour ago" : `${h} hours ago`;
-};
 
 /**
- * A real milestone of the project since `since` (ms), for an update in a run the operator did not
- * start (§app.owner-page/updates): a conversation shown on the owner page finished, a decision was
- * agreed (promoted), or a coding session of the project was merged, or finished (not working now,
- * its file last written after `since`).
+ * When a build of the project last finished a turn (not working now: its file's last write), or null. The
+ * project chart's owner-update gate counts it as a milestone after the last post (§app.owner-page/updates);
+ * a shown conversation done, a decision promoted and a build merged reach it from their own charts.
  */
-export async function milestoneSince(orgId: string, projectId: string, since: number): Promise<boolean> {
-  const after = (t: string | undefined) => !!t && Date.parse(t) > since;
-  const project = projectOf(orgId, projectId);
-  const shown = projectBatons(orgId, projectId).filter((b) => !b.hiddenFromOwner && !project.ownerHidden);
-  if (shown.some((b) => b.state === "done" && after(b.closedAt))) return true;
-  const shownIds = new Set(shown.map((b) => b.sessionId));
-  try {
-    if (listDecisions(orgId, projectId).decisions.some((d) => d.state === "promoted" && shownIds.has(d.sessionId) && after(d.promotedAt))) return true;
-  } catch {
-    // an index that can't sync: no decision counts
-  }
+export function lastBuildFinishedAt(orgId: string, projectId: string): number | null {
+  let last: number | null = null;
   for (const r of readBuilds(orgId, projectId)) {
-    if (after(r.merged?.at)) return true;
     const path = r.path;
     if (!path || !existsSync(path) || isSessionBusy(path)) continue;
     try {
-      if (statSync(path).mtimeMs > since) return true;
+      const t = statSync(path).mtimeMs;
+      if (last === null || t > last) last = t;
     } catch {
       // gone
     }
   }
-  return false;
+  return last;
 }
 
 /**
@@ -923,7 +967,7 @@ registerSpecialLoadout({
     if (readPoState(p)?.current !== sessionIdOfFile(path))
       throw new BusyError("This is a previous conversation of the project overseer. It is read-only; open the current one from the project page.", "busy");
     const project = projectOf(rt.orgId, rt.projectId);
-    const tools = projectOverseerTools(toolHost(rt), rt.limits);
+    const tools = projectOverseerTools(toolHost(rt));
     const template = readFileSync(PROMPT_FILE, "utf8");
     const settings = readPoSettings(p);
     const defaults = loadDefaults();
@@ -974,7 +1018,7 @@ registerSpecialLoadout({
         void watchFact(rt.orgId, rt.projectId, "turn/started", { look });
       }
       if (rt.turns.observe(event)) {
-        rt.limits.reset();
+        // The watch starts a fresh message allowance (its ledger/reset-message).
         void watchFact(rt.orgId, rt.projectId, "turn/user-entered");
       }
       if (event.type === "agent_settled") void watchFact(rt.orgId, rt.projectId, "turn/ended");
@@ -1001,12 +1045,12 @@ registerSpecialLoadout({
 /** The project's tools as its runtime builds them, for the tests. */
 export const toolsForTest = (orgId: string, projectId: string, opts: { attended?: boolean } = {}) => {
   const rt = rtOf(orgId, projectId);
-  if (opts.attended === undefined) return projectOverseerTools(toolHost(rt), rt.limits);
+  if (opts.attended === undefined) return projectOverseerTools(toolHost(rt));
   // As in a turn the operator started (or not), whatever the runtime's own turn says.
   const turns = Object.create(rt.turns) as typeof rt.turns;
   turns.attended = () => opts.attended!;
   const as = { ...rt, turns };
-  return projectOverseerTools(toolHost(as), rt.limits);
+  return projectOverseerTools(toolHost(as));
 };
 
 /** Whether the project's overseer is answering the operator right now (tests). */
@@ -1033,6 +1077,23 @@ function itemOf(p: ProjectOverseerPaths, input: { todoId?: unknown; ideaId?: unk
 function linkItem(p: ProjectOverseerPaths, item: { kind: "todo" | "idea"; id: string }, sessionId: string): void {
   if (item.kind === "todo") updateTodo(item.id, { sessionId }, p.todos);
   else updateIdea(item.id, { sessionId }, p.ideas);
+}
+
+/** One of the project's chart sessions (its id's project part, or its data's), or a 404 the model reads. */
+function projectSessionOrThrow(orgId: string, projectId: string, session: string): string {
+  const host = hostOf(orgId);
+  const sid = session.trim();
+  const mine = host.configuration(sid) !== null && (sid.split("/")[2] === projectId || host.data(sid)?.["projectId"] === projectId);
+  if (!mine || sid.startsWith("watch/") || sid.startsWith("residence/")) throw new OrgError(`No chart session ${sid} in this project: sova_pipeline lists them.`, 404);
+  return sid;
+}
+
+/** Both allowances' use and limits, for the page and sova_project: the watch chart's ledgers against the caps. */
+export function allowanceUse(orgId: string, projectId: string, caps: ProjectOverseerCaps): { message: AllowanceUse; today: AllowanceUse } {
+  const used = ledgerOf(isOrgHostOpen(orgId) ? hostOf(orgId).data(watchSidOf(orgId, projectId)) : null);
+  const of = (u: LedgerCounts["message"], keys: Record<PoLimitKind, keyof ProjectOverseerCaps>) =>
+    Object.fromEntries(PO_LIMIT_KINDS.map((k) => [k, { used: u[k] ?? 0, max: caps[keys[k]] as number | null }])) as AllowanceUse;
+  return { message: of(used.message, PER_TURN), today: of(used.day, PER_DAY) };
 }
 
 /** The project overseer's envelope for an act of its turn (the chart checks its level and limits). */
@@ -1277,6 +1338,11 @@ async function runLook(orgId: string, projectId: string, text: string, report: I
 }
 
 onOrgHostOpened((host, orgId) => {
+  // The project chart's owner-update/post, taken (or released from its hold): the update is written.
+  host.effects.register("owner-update", async (e) => {
+    const projectId = String(e.sessionId).split("/")[2] ?? "";
+    return appendUpdate(orgId, projectId, { text: e.text, run: e.run === "operator" ? "operator" : "auto" });
+  });
   host.invocations.register("sova/look", {
     start(inv, report) {
       const projectId = typeof inv.params?.projectId === "string" ? inv.params.projectId : String(inv.sessionId).split("/")[2] ?? "";

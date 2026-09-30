@@ -22,7 +22,7 @@ export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocat
     tests may hand in a fake with the same shape. */
 export type OrgHostApi = Pick<
   OrgHost,
-  "paths" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
+  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
 >;
 
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
@@ -151,7 +151,7 @@ const STATUSES = new Set([400, 404, 409, 410]);
 /** A chart refusal as the route answers it: its status (409 when the chart names none) and sentence; `code` passes through. */
 export function refusalError(r: Refusal): OrgError {
   const status = (STATUSES.has(r.status ?? 0) ? r.status : 409) as 400 | 404 | 409 | 410;
-  return new OrgError(r.sentence, status, r.code ?? undefined);
+  return new OrgError(r.sentence, status, r.code ?? undefined, r.tail ?? undefined);
 }
 
 /** The envelope for an act of `who` on the org's project (null: an org-level act), from the charts as they stand now. */

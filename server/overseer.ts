@@ -20,6 +20,7 @@ import {
 import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
+import { heldAttention } from "./project-pipeline";
 import {
   acquireChat,
   BusyError,
@@ -345,7 +346,7 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         ...(s.signals || s.workerSignals ? { signalText: signalTextOf(s.id, nowMs) } : {}),
       };
     });
-    return buildDigest(rows, Date.now(), homedir(), stakeholderAttention());
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention()]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

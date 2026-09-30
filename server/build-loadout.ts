@@ -328,13 +328,15 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
     return {};
   });
 
-  // sova_send: its mode first when asked (mid-turn, after the running turn), then the text.
+  // sova_send: its mode first when asked (mid-turn, after the running turn), then the text. A build's own
+  // session, or (`session`, the project chart's act) a coding session in the project root that is no build.
   host.effects.register("prompt", async (e) => {
-    const { sessionId } = sessionOf(host, e);
-    const path = pathOrThrow(sessionId);
+    const overseer = await import("./overseer");
+    const path = typeof e.session === "string" ? await overseer.pathOfId(e.session) : pathOrThrow(sessionOf(host, e).sessionId);
+    if (!path) throw new Error("That session is not on this host.");
     let modeApplies: "now" | "after-turn" | undefined;
     if (e.mode) modeApplies = await applyCodingMode(path, e.mode as ProjectCodingMode);
-    const r = await (await import("./overseer")).promptSession(path, str(e.text));
+    const r = await overseer.promptSession(path, str(e.text));
     if (!r.ok) throw new Error(r.error);
     return { queued: r.queued, ...(modeApplies ? { modeApplies } : {}) };
   });

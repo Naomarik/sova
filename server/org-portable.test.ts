@@ -50,8 +50,8 @@ describe("the sessions it started are the charts' (q1: no started.json; C13: no 
   const p = store.projectOverseerPaths(org.id, project.id);
   const started = join(p.dir, "started.json");
 
-  test("the paths: the turn counters under the host's state root; no started.json, no watch memo", () => {
-    assert.ok(p.turn.startsWith(stateRoot()));
+  test("the paths: no turn counters (the watch chart's ledgers), no started.json, no watch memo", () => {
+    assert.equal("turn" in p, false);
     assert.equal("started" in p, false);
     assert.equal("memo" in p, false);
   });

@@ -22,7 +22,6 @@ const pathsIn = (dir: string): ProjectOverseerPaths => ({
   actions: join(dir, "actions.jsonl"),
   ideas: join(dir, "ideas"),
   todos: join(dir, "todos.json"),
-  turn: join(dir, "turn.json"),
 });
 
 const SENTENCE = `The hold must be a whole number of minutes from 0 to ${HOLD_MIN_MAX} (0: no hold).`;

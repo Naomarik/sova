@@ -27,8 +27,7 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { autonomyRefusal, overRefusal, TOOL_NEEDS, type Need } from "./project-overseer-tools";
-import { DEFAULT_PO_CAPS, type Autonomy, type ProjectOverseerSettings } from "../shared/project-overseer";
+import { DEFAULT_PO_CAPS, LIMIT_WHAT, type Autonomy, type PoLimitKind, type ProjectOverseerSettings } from "../shared/project-overseer";
 import { OrgHost, type ActResult, type Effect as HostEffect, type InvocationReport, type InvocationRunner } from "./org-host";
 import { stampEnvelope } from "./org-stamp";
 import type { ActBy, Envelope } from "./org-envelope";
@@ -142,6 +141,59 @@ export function loadTraces(dir = FIXTURES): Trace[] {
 }
 
 // ---- today's rule, the oracle -----------------------------------------------------------------------------
+
+/* Master's tool wrapper (project-overseer-tools.ts TOOL_NEEDS, autonomyRefusal, overRefusal at 82e0429c), frozen
+   here verbatim: the charts took the rule over, and the replay checks them against what it was. */
+
+/** What a tool needs in a run the operator did not start. "operator": never outside their own turn. */
+export type Need = "read" | Autonomy | "operator";
+
+/** Master's tool levels, in one table. */
+export const TOOL_NEEDS: Record<string, Need> = {
+  sova_project: "read",
+  sova_decisions: "read",
+  sova_list_sessions: "read",
+  sova_read_session: "read",
+  sova_roster: "read", // approve/decline: L2, checked per op
+  sova_todos: "operator",
+  sova_note: "L0",
+  sova_confirm: "L0",
+  sova_idea: "L0",
+  sova_start_gathering: "L1",
+  sova_owner_update: "L1",
+  sova_offer: "L1",
+  sova_close_gathering: "L1",
+  sova_reconcile: "L1",
+  sova_promote: "L2",
+  sova_create_session: "L3",
+  sova_send: "L3",
+  sova_todo: "operator",
+};
+
+const RANK: Record<Autonomy, number> = { L0: 0, L1: 1, L2: 2, L3: 3 };
+
+/** Master's autonomyRefusal: why a tool may not run now, or null. Pure. */
+export function autonomyRefusal(name: string, need: Need, attended: boolean, effective: { autonomy: Autonomy; reason?: string }): string | null {
+  if (attended || need === "read") return null;
+  if (need === "operator")
+    return name === "sova_todos"
+      ? "The to-do list is the operator's own: you read it only when the operator asks, in a turn they started. Don't act on their to-dos or ideas on your own."
+      : `${name} changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_confirm card with what you would change.`;
+  if (RANK[effective.autonomy] >= RANK[need]) return null;
+  return (
+    `This run was not started by the operator, and your autonomy here is ${effective.autonomy}${effective.reason ? ` (${effective.reason})` : ""}; ` +
+    `${name} needs ${need}. Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_confirm card that says what and why; ` +
+    "the operator's click starts a turn in which you may act."
+  );
+}
+
+/** Master's overRefusal, the sentence only (the operator's, logged). */
+export function overRefusal(o: { ledger: "message" | "day"; kind: PoLimitKind; max: number; used: number }): { said: string } {
+  const what = LIMIT_WHAT[o.kind];
+  return o.ledger === "day"
+    ? { said: `Today's allowance is used: ${o.used} of ${o.max} ${what} on its own. It looks again at midnight.` }
+    : { said: `This message's allowance is used: ${o.used} of ${o.max} ${what} per message you send.` };
+}
 
 /** What `act()` needs for a call: TOOL_NEEDS, with sova_roster approve/decline at L2 (checked per op). */
 export function needOf(name: string, op?: string): Need {
@@ -845,7 +897,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     let driftWhy: string | null = null;
     if (s.refusal === "autonomy" || s.refusal === "operator-only") want = oracle(s.name!, s.args?.op, o);
     else if ((s.refusal === "cap-day" || s.refusal === "cap-message") && s.cap?.max != null && KIND_OF[s.name!]) {
-      want = overRefusal({ ledger: s.refusal === "cap-day" ? "day" : "message", kind: KIND_OF[s.name!]!, used: s.cap.used, max: s.cap.max }, new Date(now)).said;
+      want = overRefusal({ ledger: s.refusal === "cap-day" ? "day" : "message", kind: KIND_OF[s.name!]!, used: s.cap.used, max: s.cap.max }).said;
       if (F.allowanceHeld === false) driftWhy = "the allowance sentences were rewritten in 80a785ca";
     } else if (s.refusal === "cap-open" && s.cap?.max != null) {
       want = `${s.cap.used} of its ${s.cap.of === "coding" ? "coding sessions are running" : "gathering sessions are open"}, and the limit is ${s.cap.max} at once.`;

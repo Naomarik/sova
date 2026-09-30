@@ -40,6 +40,7 @@ import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
 import { OVERSEER_CARD_HEADER } from "./overseer-tools";
 import type { EnvelopeCard } from "./org-envelope";
 import { archiveBlockers } from "./project-overseer";
+import { cancelHeld, holdItem, itemTimeline, pipelineInfo } from "./project-pipeline";
 import { resolveSessionPath } from "./paths";
 import { refreshShare } from "./share/hub";
 import { awaitShareLinks } from "./share/links-events";
@@ -510,6 +511,36 @@ export function registerOrgRoutes(app: Hono<any>): void {
       await setProjectArchived(id, p(c, "pid"), false, operatorBy(c));
       nudgeMarks();
       return c.json(await orgPage(id));
+    }),
+  );
+
+  // ---- the Pipeline and held acts (§app.project-overseer/pipeline, /holds) ---------------------------------
+
+  app.get(
+    "/api/orgs/:id/projects/:pid/pipeline",
+    handle((c) => c.json(pipelineInfo(p(c, "id"), p(c, "pid")))),
+  );
+  app.post(
+    "/api/orgs/:id/projects/:pid/pipeline/:itemId/hold",
+    handle(async (c) => c.json(await holdItem(p(c, "id"), p(c, "pid"), p(c, "itemId"), false, operatorBy(c)))),
+  );
+  app.post(
+    "/api/orgs/:id/projects/:pid/pipeline/:itemId/resume",
+    handle(async (c) => c.json(await holdItem(p(c, "id"), p(c, "pid"), p(c, "itemId"), true, operatorBy(c)))),
+  );
+  app.get(
+    "/api/orgs/:id/projects/:pid/pipeline/:itemId/timeline",
+    handle((c) => c.json(itemTimeline(p(c, "id"), p(c, "pid"), p(c, "itemId"), { includeQuiet: c.req.query("quiet") === "1" }))),
+  );
+  // The operator's Cancel on a held act (Needs you, the Pipeline): the chart's hold/cancel.
+  app.post(
+    "/api/orgs/:id/held/:holdId/cancel",
+    handle(async (c) => {
+      const b = await body(c).catch(() => ({}) as Record<string, unknown>);
+      const reason = typeof b.reason === "string" && b.reason.trim() ? b.reason.trim() : undefined;
+      await cancelHeld(p(c, "id"), p(c, "holdId"), reason, operatorBy(c));
+      attentionChanged();
+      return c.json({ ok: true as const });
     }),
   );
 

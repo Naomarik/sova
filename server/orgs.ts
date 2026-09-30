@@ -727,9 +727,13 @@ export async function applyChange(orgId: string, personId: string, patch: Record
  * (by.kind "overseer": the one status write that writer may make, only from proposed).
  */
 export async function decidePerson(orgId: string, personId: string, approve: boolean, by: ProfileChange["by"] = { kind: "operator" }, envelope?: Envelope): Promise<Person> {
+  return (await decidePersonAct(orgId, personId, approve, by, envelope)).person;
+}
+/** decidePerson, and the hold when the chart holds it (the overseer's unattended approve or decline, q10/r6). */
+export async function decidePersonAct(orgId: string, personId: string, approve: boolean, by: ProfileChange["by"], envelope?: Envelope): Promise<{ person: Person; held?: { id: string; until: number } }> {
   if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
-  await actOrThrow(orgId, personSid(orgId, personId), approve ? "person/approve" : "person/decline", { namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, envelope ?? writerEnvelope(orgId, by), SETTLE);
-  return findPerson(orgId, personId)!;
+  const out = await actOrThrow(orgId, personSid(orgId, personId), approve ? "person/approve" : "person/decline", { namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, envelope ?? writerEnvelope(orgId, by), SETTLE);
+  return { person: findPerson(orgId, personId)!, ...(out.held ? { held: { id: out.held.id, until: out.held.until } } : {}) };
 }
 export const approvePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, true, by);
 export const declinePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, false, by);

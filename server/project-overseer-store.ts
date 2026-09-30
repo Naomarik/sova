@@ -56,8 +56,6 @@ export interface ProjectOverseerPaths {
   actions: string;
   ideas: string;
   todos: string;
-  /** Host-local: TurnLimits counters. */
-  turn: string;
 }
 
 const SAFE_ID = /^[a-z0-9_]{1,40}$/;
@@ -66,7 +64,6 @@ export function projectOverseerPaths(orgId: string, projectId: string, workspace
   // Both ids become path segments: never anything but the store's own id shape.
   if (!SAFE_ID.test(orgId) || !SAFE_ID.test(projectId)) throw new OrgError("Unknown project", 404);
   const dir = join(workspace, "projects", projectId, "overseer");
-  const local = join(stateRoot(), "project-overseers", `${orgId}-${projectId}`);
   return {
     orgId,
     projectId,
@@ -76,7 +73,6 @@ export function projectOverseerPaths(orgId: string, projectId: string, workspace
     actions: join(dir, "actions.jsonl"),
     ideas: join(dir, "ideas"),
     todos: join(dir, "todos.json"),
-    turn: join(local, "turn.json"),
   };
 }
 

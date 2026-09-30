@@ -30,6 +30,7 @@ const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
 const { TOOL_NEEDS } = await import("./project-overseer-tools");
 const { settled } = await import("./workspace-git");
+const { hostOf, setOrgClockForTest } = await import("./org-engine");
 
 after(async () => {
   await disposeAllChats();
@@ -119,18 +120,31 @@ describe("sova_owner_update, as the project overseer's runtime builds it", async
     await assert.rejects(() => run("The opening hours are agreed."), (e: Error) => e.message === NOTHING, "a hidden conversation is no milestone");
     const t = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours 2", goal: "g" }, { mintLink: false });
     await baton.markDone(t.sessionId);
+    // With the hold on (the default), the unattended post waits in a hold the operator may cancel (q10/r4).
+    const held = await run("The opening hours are agreed: 9 to 6, closed Mondays. See https://demo.example.test");
+    assert.match(JSON.stringify(held.content), /Held: the update to Alperen Kaya's owner page waits until .* so the operator can cancel it/);
+    assert.equal(updates.readUpdates(org.id, pa.id).length, 0, "nothing posted while it is held");
+    const hold = hostOf(org.id).holds().find((h) => h.event === "owner-update/post")!;
+    await hostOf(org.id).act(`project/${org.id}/${pa.id}`, "hold/cancel", { id: hold.id, reason: "test: post it without the hold" }, { by: "operator", attended: true });
+    await po.patchProjectOverseer(org.id, pa.id, { holdMin: 0 });
     const out = await run("The opening hours are agreed: 9 to 6, closed Mondays. See https://demo.example.test");
     assert.match(JSON.stringify(out.content), /Posted to Alperen Kaya's owner page/);
     await assert.rejects(() => run("More news."), /^Error: An update was posted less than an hour ago: at most one a day\.$/);
-    // Were that post a day old, the conversation that finished after it would allow the next one.
-    const file = join(orgs.orgDir(org.id), "projects", pa.id, "updates.jsonl");
-    writeFileSync(file, readFileSync(file, "utf8").replace(/"at":"[^"]+"/, `"at":"${new Date(Date.now() - 25 * 3_600_000).toISOString()}"`));
-    await run("Parking is sorted too.");
-    await assert.rejects(() => run("More news."), /at most one a day/);
+    // A day later: nothing new since the post still refuses; a conversation finished after it allows the next one.
+    const later = Date.now() + 25 * 3_600_000;
+    setOrgClockForTest(() => later);
+    try {
+      await assert.rejects(() => run("Parking is sorted too."), (e: Error) => e.message === NOTHING);
+      const u = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Parking", goal: "g" }, { mintLink: false });
+      await baton.markDone(u.sessionId);
+      await run("Parking is sorted too.");
+      await assert.rejects(() => run("More news."), /at most one a day/);
+    } finally {
+      setOrgClockForTest(null);
+    }
     assert.deepEqual(updates.readUpdates(org.id, pa.id).map((u) => u.by), ["overseer", "overseer"]);
     const actions = readFileSync(store.projectOverseerPaths(org.id, pa.id).actions, "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((a) => a.tool === "sova_owner_update");
-    assert.equal(actions.filter((a) => a.outcome === "ok").length, 2);
-    assert.equal(actions.find((a) => a.outcome === "ok").note, "Posted an owner update");
+    assert.deepEqual(actions.filter((a) => a.outcome === "ok").map((a) => a.note), [undefined, "Posted an owner update", "Posted an owner update"], "the held call, then the two posts");
     assert.ok(actions.some((a) => a.outcome === "refused" && a.error === NOTHING), "refusals are in the activity list");
   });
 

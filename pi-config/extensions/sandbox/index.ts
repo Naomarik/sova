@@ -41,7 +41,7 @@ import {
 	type WorkerLaunch,
 	type WorkerLaunchRequest,
 } from "./state.ts";
-import { claudeSettingsFor, confinedDefinitions, type Snapshot, type StockOptions, stockDefinitions } from "./tools.ts";
+import { confinedDefinitions, type Snapshot, type StockOptions, stockDefinitions } from "./tools.ts";
 
 const FLAG = "sandbox";
 /** Set by a sandboxed parent on its workers: its level and writable roots (`ParentScope` JSON). */
@@ -204,35 +204,7 @@ export default function sandbox(pi: ExtensionAPI) {
 	function emitState(): void {
 		const on = active.on && !remote;
 		const event: SandboxStateEvent = { version: 1, on, extensionPath: SELF_DIR, enforcement: on ? active.enforcement : "none" };
-		// A worker of this session started inside a tracked worktree writes only there
-		// (§chat.worktrees/workers): on, the parent's scope narrowed to it; off, write-only confinement.
-		if (!remote) {
-			event.workerFlagsIn = (root: string) => {
-				const r = canonicalize(root);
-				if (!on) return { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(writeOnlyScope(r)) };
-				const scope = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
-				return scope ? { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(narrowScope(scope, r)) } : undefined;
-			};
-		}
-		if (on) {
-			const scope = lastPolicy && active.enforcement !== "unavailable" ? parentScopeOf(lastPolicy) : undefined;
-			if (scope) event.workerFlags = { [FLAG]: "on", [PARENT_FLAG]: JSON.stringify(scope) };
-			const unavailable = `Sandbox unavailable in the parent: ${active.reasons?.join("; ") ?? "no policy loaded"}. A worker cannot start sandboxed.`;
-			// §chat.sandbox/fail-closed: an unattended worker (any backend) refuses to start under partial enforcement unless acceptPartial.
-			const partial =
-				lastPolicy && active.enforcement === "partial" && !lastPolicy.acceptPartial
-					? `Sandbox enforcement is partial (${active.reasons?.join("; ") ?? "unknown reason"}); set acceptPartial in the sandbox policy to start unattended workers.`
-					: undefined;
-			event.checkWorker = ({ cwd: workerCwd }) => (scope ? (partial ?? workerCwdRefusal(scope, workerCwd)) : unavailable);
-			// Claude workers get the CLI's own sandbox plus permission rules (PROBE.md): full, under dontAsk.
-			if (lastPolicy) event.claudeSettingsJson = claudeSettingsFor(lastPolicy);
-			event.claudePermissionMode = "dontAsk";
-			if (active.enforcement === "unavailable" || !lastPolicy) {
-				event.claudeRefusal = `Sandbox unavailable: ${active.reasons?.join("; ") ?? "no policy loaded"}. A Claude Code worker cannot start sandboxed.`;
-			} else if (partial) {
-				event.claudeRefusal = partial;
-			}
-		}
+		// Every worker start asks this (§chat.sandbox/workers, §chat.worktrees/workers); a remote session has none.
 		if (!remote) event.workerLaunch = (req) => workerLaunch(on, req);
 		pi.events?.emit(SANDBOX_STATE_EVENT, event);
 	}

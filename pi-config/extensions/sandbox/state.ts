@@ -74,35 +74,12 @@ export interface SandboxStateEvent {
 	/** Real path of the sandbox extension directory, for a worker's `-e` list. */
 	extensionPath: string;
 	enforcement: Enforcement;
-	/** Opaque `--settings` JSON for Claude Code workers, when the backend provides one. */
-	claudeSettingsJson?: string;
-	/** Set when a Claude Code worker must not start under this state; the spawner throws it as is. */
-	claudeRefusal?: string;
-	/** The Claude CLI permission mode a worker must run with while on: the rules in `claudeSettingsJson` bind only under it. */
-	claudePermissionMode?: "dontAsk";
 	/**
-	 * Extension flags a pi worker must be started with while on (`--sandbox on` and
-	 * `--sandbox-parent <json>`, the parent's writable roots). The spawner merges them as is.
-	 */
-	workerFlags?: Record<string, string>;
-	/**
-	 * A refusal for a worker about to start in `cwd` (absolute, or relative to the parent's cwd),
-	 * any backend: its cwd is outside the parent's writable roots, or the parent's sandbox is
-	 * unavailable. Undefined means it may start. Present while on.
-	 */
-	checkWorker?: (req: { cwd: string; backend: string }) => string | undefined;
-	/**
-	 * The flags for a pi worker started inside one of the session's tracked worktrees, `root` (its
-	 * top level), so it writes only there: on, the parent's scope narrowed to `root`; off, a
-	 * write-only scope (reads, network and environment untouched). Undefined when on but no scope is
-	 * available (the spawner refuses). Absent in a remote session.
-	 */
-	workerFlagsIn?: (root: string) => Record<string, string> | undefined;
-	/**
-	 * The one call every worker start goes through (it replaces `checkWorker`, `workerFlags`,
-	 * `workerFlagsIn` and the Claude fields): on, the parent's scope (narrowed to `root` when given)
-	 * or a refusal; off, a write-only scope for a worker in a tracked worktree, else `none`. Absent
-	 * in a remote session.
+	 * The one call every worker start goes through: on, the parent's scope (narrowed to a tracked
+	 * worktree's `root` when given) or a refusal (cwd outside the parent's writable roots, the
+	 * parent's sandbox unavailable, or partial without `acceptPartial`); off, a write-only scope for
+	 * a worker in a tracked worktree (reads, network and environment untouched), else `none`.
+	 * Absent in a remote session.
 	 */
 	workerLaunch?: (req: WorkerLaunchRequest) => WorkerLaunch;
 }

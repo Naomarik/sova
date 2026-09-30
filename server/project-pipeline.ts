@@ -306,6 +306,7 @@ export const LINES: Record<string, string> = {
   "baton/hide": "The gathering was hidden from the owner.",
   "baton/message": "A message was written in the gathering.",
   "baton/offer": "The gathering was offered to several people.",
+  "outreach/send": "A person was sent a WhatsApp message.",
   "baton/withdraw": "The offer was withdrawn.",
   "offer/reach": "The offer reached an invitee whose working hours began.",
   "baton/propose": "Someone new was proposed in the gathering.",

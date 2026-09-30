@@ -128,6 +128,55 @@ const stack = (bs: WBlock[], w: number, ctx: Ctx) =>
   bs.length ? bs.reduce((h, b) => h + block(b, w, ctx) + ((b.type === "badge" || b.type === "avatar") && goWidth(b, ctx) ? GAP + CHIP : 0), 0) + GAP * (bs.length - 1) : 0;
 
 const CHIP = 18;
+/** The gap between an item's blocks at its right, and between those of a row among them. */
+const TRAIL_GAP = 6;
+
+/** A block's own width on one line: a button or a badge its label's, a toggle its switch and label; a row the sum of its blocks. */
+function ownWidth(c: WBlock, ctx: Ctx): number {
+  const { m } = ctx;
+  const label = c.texts.join(" · ");
+  const go = goWidth(c, ctx);
+  switch (c.type) {
+    case "button":
+      return 31 + m.b(label || "Button", BODY_PX) + go;
+    case "badge":
+      return 16 + m.r(label, SMALL_PX) + go;
+    case "toggle":
+    case "checkbox":
+    case "radio":
+      return (c.type === "toggle" ? 30 : 14) + (label ? 8 + m.r(label, BODY_PX) : 0);
+    case "icon":
+      return 16 + go;
+    case "avatar":
+      return 32 + go;
+    case "link":
+      return m.r(label, BODY_PX) + go;
+    case "row":
+      return widthOf(c.children, TRAIL_GAP, ctx) + go;
+    default:
+      return 60;
+  }
+}
+
+const widthOf = (bs: WBlock[], gap: number, ctx: Ctx) => bs.reduce((a, c) => a + ownWidth(c, ctx), 0) + gap * Math.max(0, bs.length - 1);
+
+/** Blocks at their own widths, wrapping into lines `w` wide, 6px apart; a line is as tall as its tallest, a row wraps inside itself. */
+function packed(bs: WBlock[], w: number, ctx: Ctx): number {
+  const lines: number[] = [];
+  let x = Infinity;
+  for (const c of bs) {
+    const cw = Math.min(w, ownWidth(c, ctx));
+    const h = c.type === "row" ? packed(c.children, cw, ctx) : c.type === "button" ? button(c, cw, ctx, true) : block(c, cw, ctx);
+    if (x + TRAIL_GAP + cw > w) {
+      lines.push(h);
+      x = cw;
+    } else {
+      lines[lines.length - 1] = Math.max(lines[lines.length - 1]!, h);
+      x += TRAIL_GAP + cw;
+    }
+  }
+  return lines.reduce((a, h) => a + h, 0) + TRAIL_GAP * Math.max(0, lines.length - 1);
+}
 /** Where a block's chip goes on a line of its own under its content: the gap before it. */
 const CHIP_UNDER: Record<string, number> = { stat: 0, chart: 4, progress: 4, input: 3, select: 3, search: 3, empty: 4, loading: 6, list: 0, table: 3 };
 
@@ -174,9 +223,9 @@ function blockOwn(b: WBlock, w: number, ctx: Ctx): number {
     case "row": {
       if (!b.children.length) return 0;
       const per = Math.min(4, b.children.length);
-      // Beside other blocks a button takes its label's width (up to half the row); the rest share what's left.
+      // Beside other blocks a button or a badge takes its label's width (up to half the row); the rest share what's left.
       const mixed = b.children.some((c) => c.type !== "button");
-      const own = (c: WBlock) => (mixed && c.type === "button" ? Math.min(0.5 * w, 31 + m.b(c.texts.join(" · ") || "Button", BODY_PX)) : 0);
+      const own = (c: WBlock) => (mixed && (c.type === "button" || c.type === "badge") ? Math.min(0.5 * w, ownWidth(c, ctx)) : 0);
       let h = 0;
       for (let i = 0; i < b.children.length; i += per) {
         const line = b.children.slice(i, i + per);
@@ -216,15 +265,20 @@ function blockOwn(b: WBlock, w: number, ctx: Ctx): number {
     case "list":
       return 2 + (t[0] ? 22 : 0) + b.children.reduce((h, c) => h + (c.type === "item" ? block(c, w - 2, ctx) : 12 + block(c, w - 22, ctx)), 0) + Math.max(0, b.children.length - 1);
     case "item": {
+      // One line: the lead blocks (40px each with the gap), the text (12ch at least), the right text, then the
+      // other blocks, at their own widths. When they don't fit beside the text they take a line of their own under it.
       const lead = b.children.filter((c) => ["avatar", "icon", "image", "checkbox", "radio"].includes(c.type));
       const trail = b.children.filter((c) => !lead.includes(c));
+      const inner = w - 20;
       const endW = t[2] ? Math.min(0.4 * w, m.r(t.slice(2).join(" · "), SMALL_PX) + 8) : 0;
-      const sideW = lead.length * 40 + trail.reduce((a, c) => a + (c.type === "toggle" ? 38 : c.type === "button" ? 90 : 60), 0);
-      const mw = Math.max(40, w - 20 - endW - sideW);
+      const leadW = lead.length * 40;
+      const trailW = trail.length ? GAP + widthOf(trail, TRAIL_GAP, ctx) : 0;
+      const beside = leadW + m.r("0".repeat(12), BODY_PX) + endW + trailW <= inner;
+      const mw = Math.max(40, inner - leadW - endW - (beside ? trailW : 0));
       // The chip sits under the title and detail.
-      const text = body(t[0], mw) + (t[1] ? small(t[1], mw) : 0) + (goWidth(b, ctx) ? 2 + 18 : 0);
-      const around = Math.max(0, ...b.children.map((c) => block(c, 80, ctx)));
-      return Math.max(40, 12 + Math.max(text, around));
+      const text = Math.max(body(t[0], mw) + (t[1] ? small(t[1], mw) : 0) + (goWidth(b, ctx) ? 2 + 18 : 0), ...lead.map((c) => block(c, 40, ctx)));
+      if (!trail.length) return Math.max(40, 12 + text);
+      return Math.max(40, 12 + (beside ? Math.max(text, packed(trail, trailW - GAP, ctx)) : text + GAP + packed(trail, inner, ctx)));
     }
     case "table": {
       // Equal columns (table-layout: fixed); a row's own blocks and its chip wrap under its last cell's text.

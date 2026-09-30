@@ -40,7 +40,8 @@ every copy of it, anywhere) and `models.json`; Claude Code's `.credentials.json`
 `~/.ssh`, `~/.gnupg`, `~/.aws`; `.netrc` and `.pgpass`; the GitHub CLI's `hosts.yml`; `.env`/`.env.*`
 files (templates such as `.env.example` are fine); private keys (`id_*` but not `.pub`, `.pem`,
 `.key`, `.p12`, `.pfx`); `/proc`, `/sys` and `/dev/fd`; Sova's link stores `baton-links.json` and
-`person-links.json`; and a hard link to any of these. Nor any file in an organization's workspace
+`person-links.json`; the WhatsApp sender's directory (`sova/whatsapp`, and its auth directory
+wherever it is configured), `outreach.json` and `outreach-receipts.json`; and a hard link to any of these. Nor any file in an organization's workspace
 (its roster and history, its About text, its hand-off transcripts): read organizations with
 `sova_orgs`, `sova_org_project`, `sova_org_person` and `sova_read_session`. A direct read of one
 is refused, and searches and listings leave them out. Don't try to reach them another way.

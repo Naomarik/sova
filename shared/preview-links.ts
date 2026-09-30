@@ -37,6 +37,11 @@ export interface PreviewView {
   revokedAt?: string;
   /** `operator`, or `session:<id>`: the project overseer's conversation that made it. */
   createdBy: string;
+  /** A person's own link to preview `siblingOf`, sent to them on WhatsApp (§app.outreach/links). */
+  siblingOf?: string;
+  /** The roster person it was sent to, and their name as the list shows it ("sent to {name}"). */
+  sentTo?: string;
+  sentToName?: string;
   state: PreviewState;
   /** Something accepts connections on the port now (either loopback); for a folder, Sova serves it now. Only on active ones. */
   running?: boolean;
@@ -105,9 +110,9 @@ export interface PreviewError {
  * The one shape a preview leaves Sova's tools in (§app.project-overseer/previews): `sova_previews`
  * and `sova_preview` put it in their results' `details`. It never carries the link: a tool result is
  * part of the overseer's session file, which the org's workspace repo commits and may push. A tool
- * that sends a preview to a person (sova_send_to_person) takes its `id` and resolves the link on the
- * server. `linkKept` says whether there is a link to send (false for a preview made before links were
- * kept); `purpose`, `sessionId` and `branch` are null when unknown; `running` is null unless it is
+ * that sends a preview to a person (sova_send_to_person) takes its `id` and gives them their own link to
+ * it, made on the server. `linkKept` says whether the operator has its link (false for a preview made
+ * before links were kept, which can still be sent by its id); `purpose`, `sessionId` and `branch` are null when unknown; `running` is null unless it is
  * active. Fixed: fields are only ever added, under a new `v`.
  */
 export interface PreviewHandoff {

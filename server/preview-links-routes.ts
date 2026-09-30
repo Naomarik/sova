@@ -1,9 +1,10 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { PreviewError, PreviewList, PreviewMinted } from "../shared/preview-links";
+import type { PreviewError, PreviewList, PreviewMinted, PreviewView } from "../shared/preview-links";
 import { peerPort } from "./mesh/peers";
 import { PROXIED_HEADER } from "./mesh/proxy";
 import { OrgError } from "./org-error";
+import { readRoster } from "./orgs";
 import { extendPreview, PreviewRefused, PreviewUnavailable, viewOf } from "./preview-links";
 import { makePreview, previewViews, resolvePreview, staticPorts, turnOffPreview } from "./project-previews";
 import { readPublicLinks } from "./public-links";
@@ -16,8 +17,8 @@ import { previewAddress } from "./share/preview-address";
  * turn off and extend a project's previews. Main listener only: a request from the peer listener or through a proxy gets the plain 404.
  * A mint needs a preview address (§mesh.public/preview-address) and a port that is none of Sova's, or a
  * folder of one of the project's coding sessions' worktrees (§mesh.public/preview-serve). The list
- * carries each one's kept link: these routes and the project overseer's own tools are the only places
- * it goes (§app.project-overseer/previews).
+ * carries each one's kept link: these operator routes are the only place it goes; the project
+ * overseer names a preview by its id (§app.project-overseer/previews).
  */
 
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
@@ -66,12 +67,23 @@ async function mint(c: Context, body: Record<string, unknown>) {
   }
 }
 
+/** A person's sibling names them for the list ("sent to {name}", §app.outreach/links). */
+function withSentToName(v: PreviewView): PreviewView {
+  if (!v.sentTo) return v;
+  try {
+    const name = readRoster(v.orgId).find((p) => p.id === v.sentTo)?.name;
+    return name ? { ...v, sentToName: name } : v;
+  } catch {
+    return v;
+  }
+}
+
 export function mountPreviewLinks(app: Hono): void {
   app.get("/api/previews", async (c) => {
     if (!local(c)) return notFound(c);
     const orgId = c.req.query("orgId");
     const projectId = c.req.query("projectId");
-    const previews = await previewViews({ ...(orgId ? { orgId } : {}), ...(projectId ? { projectId } : {}) });
+    const previews = (await previewViews({ ...(orgId ? { orgId } : {}), ...(projectId ? { projectId } : {}) })).map(withSentToName);
     return c.json({ previews, address: previewAddress() } satisfies PreviewList, 200, NO_STORE);
   });
 

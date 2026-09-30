@@ -535,6 +535,15 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
 - **Height.** Reserved before it draws from wireframe.css' metrics (frame widths, nav row, row
   wrapping), within about 15% of the rendered height, so a drawing doesn't shift the thread.
 
+## §chat.markdown/vis-wireframe-items — `vis wireframe` items: text beside, blocks wrapping under
+
+An `item` is one line: its avatar, icon, image, checkbox or radio first; then its title over its
+detail, which keep at least about 12 characters' width; then its right text; then its other blocks,
+at its right. Blocks that don't fit beside the title go on a line of their own under the title and
+detail, wrapping, each at its own width, never overlapping one another or running out of the item.
+A `row` among them is laid out as part of that group. In a row beside other blocks, a badge takes
+its label's width, cut short with an ellipsis if it must, like a button.
+
 ## §chat.markdown/accessibility — Accessibility
 
 - **Headings.** They stay real headings, so heading navigation works inside long replies.

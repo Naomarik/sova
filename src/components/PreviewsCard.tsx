@@ -3,7 +3,7 @@ import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
 import { getPreviews, mintPreview, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
 import { previewRow } from "../lib/preview-rows";
-import { activePreviews, parsePort, PREVIEW_EXPIRY_CHOICES, previewWarning } from "../lib/previews";
+import { activePreviews, parsePort, PREVIEW_EXPIRY_CHOICES, previewWarning, sentToLine } from "../lib/previews";
 import { resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
 import { copyText, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
@@ -123,6 +123,7 @@ export function PreviewsCard(props: { orgId: string; projectId: string }) {
                         {row().state.text}
                       </span>
                       <Show when={row().maker}>{(m) => <SessionLink href={m().href}>{m().text}</SessionLink>}</Show>
+                      <Show when={sentToLine(v)}>{(sent) => <span>{sent()}</span>}</Show>
                       <span>{row().expires}</span>
                     </p>
                     <Show when={row().linkNote}>{(note) => <p class="list-meta">{note()}</p>}</Show>

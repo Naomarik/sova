@@ -3,7 +3,7 @@ import { connect, type Socket } from "node:net";
 import type { Duplex } from "node:stream";
 import { PREVIEW_LIMITS } from "../../shared/public-links";
 import { keptPreview } from "../preview-kept";
-import { findPreview, findPreviewByHash, onPreviewEnded, type PreviewRecord, previewState } from "../preview-links";
+import { findPreview, findPreviewByHash, listPreviews, onPreviewEnded, type PreviewRecord, previewState } from "../preview-links";
 import { staticServes } from "../preview-serve";
 import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
 
@@ -200,8 +200,21 @@ export class OpenConnections {
  * preview always.
  */
 export function previewDialable(record: PreviewRecord): boolean {
-  if (keptPreview(record.id)?.target.kind !== "static") return true;
-  return staticServes().some((s) => s.id === record.id && s.port === record.port);
+  // A person's sibling (§app.outreach/links) shows its original's app, on the same port: judged by it.
+  const root = previewRootId(record);
+  if (keptPreview(root)?.target.kind !== "static") return true;
+  return staticServes().some((s) => s.id === root && s.port === record.port);
+}
+
+/** The preview a sibling copies, following `siblingOf` (a sibling of a sibling included); itself otherwise. */
+export function previewRootId(record: Pick<PreviewRecord, "id" | "siblingOf">): string {
+  let id = record.id;
+  let of = record.siblingOf;
+  for (let i = 0; of && i < 8; i++) {
+    id = of;
+    of = listPreviews({}).find((v) => v.id === of)?.siblingOf;
+  }
+  return id;
 }
 
 // ---- the proxy -----------------------------------------------------------------------------------------

@@ -811,7 +811,7 @@ export function GroupView(props: {
             <div class="empty">
               <Icon name="folder" class="empty-mark" />
               <p class="empty-title">{quoted(props.group.name)} has no sessions yet.</p>
-              <p class="empty-body">Drag a session onto the group in the sidebar, or use Move into group in its details.</p>
+              <p class="empty-body">Drag a session from the sidebar onto this group, or use Move into group in its details.</p>
             </div>
           </div>
         }

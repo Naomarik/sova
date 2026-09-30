@@ -36,6 +36,7 @@
  */
 
 import type { BatonView, OfferReach } from "./baton";
+import type { PersonSendRow } from "./outreach";
 
 export type PersonStatus = "active" | "proposed" | "left";
 
@@ -517,6 +518,8 @@ export interface PersonPage {
   owner?: boolean;
   /** Their owner links on this host, newest first (no token, no hash). */
   ownerLinks?: { createdAt: string; expiresAt: string; revokedAt?: string; state: "live" | "expired" | "off"; visits: number; lastVisitAt?: string }[];
+  /** Their links sent outside Sova (§app.outreach/log), newest first; absent: an older server. */
+  sends?: PersonSendRow[];
 }
 
 export interface OrgsInfo {

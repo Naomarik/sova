@@ -672,6 +672,11 @@ function toolHost(rt: Rt): PoToolHost {
       return hostOf(orgId).configuration(sid) ?? [];
     },
     held: () => readMemo(paths).held,
+    // §app.outreach/send: the project chart's outreach/send in this turn's envelope (held when unattended).
+    async sendToPerson(input) {
+      const { sendAct } = await import("./outreach/core");
+      return sendAct({ orgId, projectId, personId: input.personId, ...(input.link ? { link: input.link } : {}), ...(input.note ? { note: input.note } : {}), sentBy: "project-overseer" }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()));
+    },
     async postOwnerUpdate(input) {
       // The project chart's owner-update/post: an owner, the text, the leak backstop, and (unattended) the 24 h and
       // milestone gates; held when unattended (q10). Its effect writes the update.

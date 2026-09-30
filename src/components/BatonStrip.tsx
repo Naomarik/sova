@@ -12,6 +12,7 @@ import { useMinuteNow } from "../lib/minute-clock";
 import { orgHref, rememberStartParent, startForHref } from "../lib/orgs-route";
 import { announce, toast } from "../lib/ui-state";
 import { LinksBanner } from "./LinksBanner";
+import { SendOnWhatsApp } from "./SendOnWhatsApp";
 import { createMemo, onCleanup } from "solid-js";
 import { getBatonTold, retryWrapup, setBatonAbilities, setBatonHiddenFromOwner } from "../lib/api";
 import { abilityToast } from "../lib/gathering-abilities";
@@ -227,6 +228,19 @@ export function BatonStrip(props: {
               </button>
             </Show>
           </div>
+          {/* Send on WhatsApp (§app.outreach/send-link): the holder, or each reached invitee of an open offer. */}
+          <Show when={open(i()) && (personHolds(i()) || liveOffer(i()))}>
+            <SendOnWhatsApp
+              sid={sid()}
+              version={key().v}
+              offer={!!liveOffer(i())}
+              onLink={(personId, name, r) => showLinks([{ personId, name, link: r.link, ...(r.at ? { at: r.at } : {}) }], r.n, r.linkWarning)}
+              onSent={() => {
+                void refetch();
+                requestListRefresh();
+              }}
+            />
+          </Show>
           {/* Why it was started, and its goal: folded on every open, no preview — someone may be
               looking at this screen with the operator. Neither leaves the operator app (§app.baton/goal-on-strip). */}
           <details class="disclosure baton-strip-goal">

@@ -1,0 +1,6 @@
+# Makes services/whatsapp its own pnpm root: its own lockfile, never Sova's workspace or pnpm-lock.yaml.
+# No install script needs to run: Baileys' preinstall only checks the Node version, protobufjs's
+# postinstall only warns about a version scheme, and sharp ships prebuilt binaries (@img/*).
+allowBuilds:
+  '@whiskeysockets/baileys': false
+  protobufjs: false

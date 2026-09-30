@@ -76,7 +76,7 @@ describe("holdMin: how long a held act waits (§app.project-overseer/holds)", ()
 
 describe("confirmKinds: the act kinds that wait for the overseer's confirmation (r8(4))", () => {
   test("every people- or code-facing kind is on by default, in display order", () => {
-    assert.deepEqual(CONFIRM_KINDS, ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "roster-approve", "roster-decline", "preview"]);
+    assert.deepEqual(CONFIRM_KINDS, ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "send", "roster-approve", "roster-decline", "preview"]);
     assert.deepEqual(DEFAULT_CONFIRM_KINDS, CONFIRM_KINDS);
     assert.deepEqual(parsePoSettings(undefined).confirmKinds, [...CONFIRM_KINDS]);
     assert.deepEqual(parsePoSettings({ autonomy: "L2" }).confirmKinds, [...CONFIRM_KINDS]);
@@ -101,7 +101,7 @@ describe("confirmKinds: the act kinds that wait for the overseer's confirmation 
     assert.deepEqual(readPoSettings(p).confirmKinds, ["gather", "build"]);
     assert.deepEqual(JSON.parse(readFileSync(p.settings, "utf8")).confirmKinds, ["gather", "build"]);
     for (const bad of [["gather", "gather"], ["nope"], "gather", [1]])
-      assert.throws(() => patchPoSettings(p, { confirmKinds: bad as never }), (e: unknown) => e instanceof OrgError && e.status === 400 && /^confirmKinds must list act kinds from: gather, offer, close, promote, build, prompt, owner-update, roster-approve, roster-decline, preview\.$/.test(e.message));
+      assert.throws(() => patchPoSettings(p, { confirmKinds: bad as never }), (e: unknown) => e instanceof OrgError && e.status === 400 && /^confirmKinds must list act kinds from: gather, offer, close, promote, build, prompt, owner-update, send, roster-approve, roster-decline, preview\.$/.test(e.message));
     assert.deepEqual(readPoSettings(p).confirmKinds, ["gather", "build"], "a refused patch writes nothing");
   });
 });

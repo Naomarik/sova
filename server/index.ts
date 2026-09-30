@@ -30,6 +30,9 @@ import { mountPreviewLinks } from "./preview-links-routes";
 import { startStaticPreviews } from "./project-previews";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
+import { startOutreach } from "./outreach/core";
+import { mountOutreachRelay } from "./outreach/relay";
+import { mountOutreach } from "./outreach/routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
 import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
@@ -71,7 +74,7 @@ import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults
 import { providerLimitsInfo, providerWaiting, saveProviderLimits } from "./provider-limits";
 import { modelDenial, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
-import { listPlaybooks } from "./playbooks";
+import { registerScheduleRoutes, startScheduleKeeper } from "./schedule-routes";
 import { readWebSettings, writeWebSettings } from "./web-settings";
 import { readSummarizerSettings, writeSummarizerSettings } from "./topic-outline-settings";
 import { claudeCliStatus } from "./claude-status";
@@ -674,7 +677,8 @@ app.get("/api/themes", (c) => c.json(listThemes()));
 // ~/.pi/agent/sova/playbooks/ and the session cwd's .sova/marketing/playbooks/, rescanned per
 // request. Read-only, and never fails: a cwd that can't be listed (none, remote, missing) is
 // `project.state`, an unreadable user folder is `error`, and everything else is still listed.
-app.get("/api/playbooks", async (c) => c.json(await listPlaybooks(c.req.query("cwd"))));
+// The playbooks catalog with each schedule's state, and the schedules' routes (server/schedule-routes.ts).
+registerScheduleRoutes(app);
 
 // Sova's own settings (server/web-settings.ts): today one experimental switch. GET reads the
 // stored value, PUT replaces it. The switch drives the `claude-code-provider` extension flag, so
@@ -1328,6 +1332,12 @@ onSessionArchived((id) => void meshLinks.endFor(id));
 // listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
 mountPublicLinks(app);
 mountShareGateway(app, meshApi);
+// Outreach (shared/outreach.ts, §app/outreach): Settings → Outreach and Send on WhatsApp under
+// /api/outreach and /api/baton/:sid/send-link (main listener only), and the relay for peers that
+// send through this host's sender under /api/peer/outreach/*.
+mountOutreach(app);
+mountOutreachRelay(app, meshApi);
+startOutreach();
 // Preview links (shared/preview-links.ts, §mesh.public/preview): a project's loopback apps behind
 // their own public hosts, under /api/previews (main listener only). A folder preview is served by
 // Sova itself (§mesh.public/preview-serve): rebound here on its recorded port, stopped when it ends.
@@ -1442,6 +1452,7 @@ startOverseerLoop();
 startProjectOverseerLoop();
 // The runs the last stop cut off get one "continue" each (§app.overseer/auto-resume).
 startAutoResume();
+startScheduleKeeper((path, init) => app.request(path, init));
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),

@@ -91,5 +91,5 @@
         ks  (into (set (keys now)) (keys fg/golden))
         bad (for [k (sort ks) :when (not= (get now k ::none) (get fg/golden k ::none))]
               [k :now (get now k ::none) :golden (get fg/golden k ::none)])]
-    (is (= 441 (count fg/golden)))
+    (is (= 442 (count fg/golden)))
     (is (empty? bad) (str (count bad) " differ: " (pr-str (take 20 bad))))))

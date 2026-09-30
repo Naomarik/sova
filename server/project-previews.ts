@@ -12,7 +12,7 @@ import { readSessionTitles } from "./session-titles";
 import { awaitShareLinks } from "./share/links-events";
 import { linkWarning } from "./share/listener";
 import { previewAddress, previewOrigin } from "./share/preview-address";
-import { dialLoopback, previewDialable } from "./share/preview-proxy";
+import { dialLoopback, previewDialable, previewRootId } from "./share/preview-proxy";
 
 /**
  * A project's previews (§mesh.public/preview, /preview-serve; §app.project-overseer/previews): what
@@ -273,7 +273,9 @@ export async function previewViews(filter: { orgId?: string; projectId?: string 
   const out: PreviewView[] = [];
   for (const base of listPreviews(filter, now)) {
     const record = { ...base, hash: "" } as PreviewRecord;
-    const kept = keptPreview(base.id);
+    // A person's sibling (§app.outreach/links) shows its original's app: its target, session and purpose, never its link.
+    const own = keptPreview(base.id);
+    const kept = own ?? (base.siblingOf ? keptPreview(previewRootId(base)) : null);
     const all = await trees(base.orgId, base.projectId);
     let tree = kept?.sessionId ? all.find((t) => t.sessionId === kept.sessionId) ?? null : null;
     let from: "recorded" | "worktree" | undefined = kept?.sessionId ? "recorded" : undefined;
@@ -291,7 +293,7 @@ export async function previewViews(filter: { orgId?: string; projectId?: string 
       ...base,
       ...(base.state === "active" ? { running: await isRunning(record, kept) } : {}),
       target,
-      url: kept?.url ?? null,
+      url: own?.url ?? null,
       purpose: kept?.purpose ?? null,
       sessionId: kept?.sessionId ?? tree?.sessionId ?? null,
       branch: kept?.branch ?? tree?.branch ?? null,

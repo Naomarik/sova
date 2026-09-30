@@ -388,3 +388,40 @@ function listDir(d: string) {
     return [];
   }
 }
+
+describe("outreach sends a folder preview by its id (§app.outreach/links, §mesh.public/preview-serve)", () => {
+  test("the resolver finds it, the person's sibling serves the folder, never another program on its port, and goes off with it", async () => {
+    const { RESOLVERS } = await import("./outreach/links");
+    const person = orgs.readRoster(org.id)[0]!;
+    const r = await app.request("/api/previews", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ orgId: org.id, projectId: project.id, sessionId: "c-shop", folder: "dist", purpose: "For Ana" }) });
+    assert.equal(r.status, 200, await r.clone().text());
+    const made = (await r.json()) as PreviewMinted;
+    const ref = { kind: "preview" as const, preview: made.preview.id };
+    const ctx = { orgId: org.id, projectId: project.id, personId: person.id };
+    const refused = RESOLVERS.preview.check(ctx, ref);
+    assert.ok(refused === null || !/No such preview|another project|turned off|expired/.test(refused), String(refused));
+    const sent = await RESOLVERS.preview.resolve({ ...ctx, key: "k1" }, ref);
+    const label = labelOf(sent.url);
+    assert.notEqual(label, labelOf(made.url), "the person's own link");
+    assert.deepEqual(await fetchVia(label, "/"), { status: 200, body: "<h1>Shop</h1>" });
+    assert.equal((await fetchVia(label, "/.git/config")).status, 404);
+    const sib = (await list()).find((v) => v.id === sent.log.previewId)!;
+    assert.deepEqual([sib.siblingOf, sib.target, sib.url, sib.sessionId, sib.purpose], [made.preview.id, { kind: "static", folder: "dist" }, null, "c-shop", "For Ana"], "its original's target and session, never a link");
+    // The folder's serve is gone and another program took its port: the sibling never shows it.
+    const port = made.preview.port;
+    await stopStaticServe(made.preview.id);
+    const intruder = createServer((_q, s) => s.end("intruder"));
+    await new Promise<void>((ok) => intruder.listen(port, "127.0.0.1", () => ok()));
+    try {
+      const seen = await fetchVia(label, "/");
+      assert.equal(seen.status, 502);
+      assert.ok(!seen.body.includes("intruder"));
+    } finally {
+      await new Promise<void>((ok) => intruder.close(() => ok()));
+    }
+    await previews.rebindStaticPreviews();
+    assert.equal((await fetchVia(label, "/")).status, 200);
+    await previews.turnOffPreview(made.preview.id);
+    assert.equal((await fetchVia(label, "/")).status, 410, "turned off with its original");
+  });
+});

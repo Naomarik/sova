@@ -170,11 +170,11 @@ export const holdProblem = (v: unknown): string | null =>
     (r8(4), q12): such an act, once held, waits past its hold until the overseer approves or cancels it.
     Each is an act's `:confirm-kind` in the charts. Display order. No "message" (r10: sova_send never reaches a
     gathering, so no act has that kind). */
-export const CONFIRM_KINDS = ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "roster-approve", "roster-decline", "preview"] as const;
+export const CONFIRM_KINDS = ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "send", "roster-approve", "roster-decline", "preview"] as const;
 export type ConfirmKind = (typeof CONFIRM_KINDS)[number];
 /** The kinds there were before `confirmKindsKnown` was written beside the list: a list saved without it
     had no chance to choose a later kind, so a later kind reads as on (§app.project-overseer/reviews). */
-export const CONFIRM_KINDS_BEFORE_KNOWN: readonly ConfirmKind[] = ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "roster-approve", "roster-decline"];
+export const CONFIRM_KINDS_BEFORE_KNOWN: readonly ConfirmKind[] = ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "send", "roster-approve", "roster-decline"];
 /** Every kind reaches a person or the client's code, so every one is on by default. */
 export const DEFAULT_CONFIRM_KINDS: readonly ConfirmKind[] = CONFIRM_KINDS;
 export const confirmKindsProblem = (v: unknown): string | null =>

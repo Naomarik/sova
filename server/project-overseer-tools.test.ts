@@ -172,6 +172,7 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
       calls.push(`preview-off:${id}`);
       return { ...PREVIEW, id, state: "off" as const, revokedAt: "2026-09-30T11:00:00.000Z", running: undefined };
     },
+    sendToPerson: async (input: { personId: string; note?: string }) => ({ outcome: "sent" as const, channel: "whatsapp" as const, name: input.personId }),
     postOwnerUpdate: async (input: { text: string; attended: boolean }) => {
       calls.push("owner-update");
       return { update: { id: "u_1", at: "", text: input.text, by: input.attended ? ("operator" as const) : ("overseer" as const) }, owner: "Alperen" };
@@ -663,8 +664,8 @@ describe("preview links (§app.project-overseer/previews)", () => {
     const t = out.content[0]!.text;
     const lines = t.split("\n");
     assert.ok(lines[lines.length - 1]!.includes("pv_CCCCCCCCCCCCCCCC · folder dist"), "active ones first, then the rest");
-    assert.match(t, new RegExp(`pv_AAAAAAAAAAAAAAAA · port 5173 · in-tree "Worktree" on sova/fix-abc123 · "The shop for Ana" · made by you · active, app is running · expires 2026-10-01T10:00:00.000Z · link kept \\(send it by id\\)$`, "m"));
-    assert.match(t, /pv_BBBBBBBBBBBBBBBB · port 8731 · in-tree "Worktree" on sova\/fix-abc123 \(matched by its worktree\) · made by the operator · active, nothing on port 8731 · .* · no link kept \(shown only when it was made\)/);
+    assert.match(t, new RegExp(`pv_AAAAAAAAAAAAAAAA · port 5173 · in-tree "Worktree" on sova/fix-abc123 · "The shop for Ana" · made by you · active, app is running · expires 2026-10-01T10:00:00.000Z · link kept for the operator · send it by its id$`, "m"));
+    assert.match(t, /pv_BBBBBBBBBBBBBBBB · port 8731 · in-tree "Worktree" on sova\/fix-abc123 \(matched by its worktree\) · made by the operator · active, nothing on port 8731 · .* · no link kept for the operator \(shown only when it was made\) · send it by its id/);
     assert.match(t, /turned off · off since 2026-09-30T11:00:00.000Z/);
     assert.equal(out.details.v, 1);
     assert.ok(!JSON.stringify(out).includes(PREVIEW_LABEL), "never the link, in content or details");

@@ -669,6 +669,28 @@ function LinksAndVisits(props: { data: PersonPageData; now: number; act: Act; on
           </For>
         </ul>
       </Show>
+      {/* Links sent outside Sova (§app.outreach/log): the latest event of each send. */}
+      <Show when={props.data.sends?.length}>
+        <h3 class="orgs-h3">Sent on WhatsApp</h3>
+        <ul class="list person-list">
+          <For each={props.data.sends}>
+            {(s) => (
+              <li class="person-row">
+                <div class="person-row-head">
+                  <span class="person-row-title">{s.what}</span>
+                  <Chip tone={s.event === "failed" || s.event === "refused" ? "warn" : s.event === "read" ? "success" : "info"}>
+                    {s.event === "sent" ? "Sent" : s.event === "delivered" ? "Delivered" : s.event === "read" ? "Read" : s.event === "failed" ? "Failed" : s.event === "unknown" ? "Unknown" : "Not sent"}
+                  </Chip>
+                </div>
+                <span class="list-meta person-row-meta">
+                  <time title={exact(s.at)}>{relativeTime(s.at, props.now)}</time>
+                  <Show when={s.code}>{(c) => ` · ${c()}`}</Show>
+                </span>
+              </li>
+            )}
+          </For>
+        </ul>
+      </Show>
       <h3 class="orgs-h3">Visits</h3>
       <Show when={props.data.visits.length} fallback={<p class="orgs-empty">{p().status === "left" ? `${p().name} opened no links before leaving.` : `Nothing yet: visits show here once ${p().name} opens a link.`}</p>}>
         <ul class="list person-list person-visits">

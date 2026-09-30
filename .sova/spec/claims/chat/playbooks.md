@@ -27,7 +27,8 @@ The dialog fetches once each time it opens.
 - **Frontmatter** is a leading `---` fence of `key: value` lines. Values are single-line scalars.
   Matching quotes around a value are removed, and lines that aren't `key: value` are ignored. It
   is **not YAML**. Sova reads `title`, `description` and the optional `promptHint`: what you may
-  want to say in the first turn.
+  want to say in the first turn. A project playbook may also carry a schedule, `when:` with
+  `profile:`, `tz:` and `task:` (§chat/schedules).
 - If `title` is missing, empty or whitespace-only, the id is used (`fields.title?.trim() || id`).
   If `description` is missing, it is empty (`?? ""`). An empty `description:` also stays empty. A file with no
   opening fence on line 1, or no closing fence, has no frontmatter: its whole text is the body,
@@ -136,7 +137,9 @@ modal**, and only one renders at a time: step 2 never stacks on step 1. The moda
 - **Each row is one whole-row target**: a `button.list-row` at the 44px row convention, with no
   nested controls. The title sits over the description. The description **truncates to one
   line**, and the full text is in the row's `title`. A playbook with no description shows only
-  its title. Activating a row goes to step 2.
+  its title. A playbook with a schedule has one more line under that, its schedule and state, and
+  its step 2 a schedule card above the text box (§chat.schedules/where-shown). Activating a row goes
+  to step 2.
 - **Keyboard** follows the flyout's roving-tabindex pattern (§chat/composer "Keyboard"): exactly one row is in
   the Tab order, `↑`/`↓` move across all groups and wrap, and `Home`/`End` jump to the ends. The
   modal takes focus on open, and when the catalog arrives focus moves to the **first row**. The

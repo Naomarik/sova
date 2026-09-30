@@ -130,8 +130,10 @@
 .vis-wf-row > * { flex: 1 1 0; min-width: 0; }
 .vis-wf-row > .vis-wf-wide { flex-grow: 2; }
 .vis-wf-row > .vis-wf-go { flex: none; align-self: center; }
-/* A button beside other blocks (a heading, a field) takes its label's width; a row of buttons shares it evenly. */
-.vis-wf-row:has(> :not(.vis-wf-button, .vis-wf-go, .vis-em-badge)):not(:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge)))) > .vis-wf-button { flex: 0 1 auto; }
+/* A button or a badge beside other blocks (a heading, a field) takes its label's width; a row of buttons shares it evenly. */
+.vis-wf-row:has(> :not(.vis-wf-button, .vis-wf-go, .vis-em-badge)):not(:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge)))) > :is(.vis-wf-button, .vis-wf-badge) { flex: 0 1 auto; }
+/* A badge takes half the row at most (layout.ts's cap), so the blocks beside it keep theirs. */
+.vis-wf-row > .vis-wf-badge { max-width: 50%; }
 /* Past 4 blocks side by side (its chip and mark badge aside), a row wraps into rows of 4. */
 .vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge))) { flex-wrap: wrap; }
 .vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge))) > :not(.vis-wf-go, .vis-em-badge) { flex: 0 0 calc(25% - 6px); }
@@ -146,16 +148,22 @@
 .vis-wf-sub { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .vis-wf-list { position: relative; display: flex; flex-direction: column; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
 .vis-wf-list-title { padding: 6px 10px 0; font-size: var(--fs-micro); line-height: 16px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
-.vis-wf-item { position: relative; display: flex; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; padding: 6px 10px; }
+/* One line: the lead blocks, the title over the detail (never under 12ch), the right text, then the other blocks
+   (.vis-wf-item-trail), which take a line of their own under the text when they don't fit beside it. */
+.vis-wf-item { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-height: 40px; box-sizing: border-box; padding: 6px 10px; }
 .vis-wf-list > .vis-wf-item + .vis-wf-item { border-top: var(--stroke-thin) solid var(--color-border); }
 .vis-wf-list > .vis-wf-item:first-child { border-top-left-radius: inherit; border-top-right-radius: inherit; }
 .vis-wf-list > .vis-wf-item:last-child { border-bottom-left-radius: inherit; border-bottom-right-radius: inherit; }
 .vis-wf-main > .vis-wf-item, .vis-wf-col > .vis-wf-item, .vis-wf-card > .vis-wf-item { padding-inline: 0; }
-.vis-wf-item-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
+.vis-wf-item-main { flex: 1 1 12ch; min-width: 0; display: flex; flex-direction: column; overflow-wrap: anywhere; }
 .vis-wf-item-main > .vis-wf-go { margin-top: 2px; }
 .vis-wf-item-end { flex: none; max-width: 40%; font-size: var(--fs-micro); color: var(--color-ink-muted); text-align: end; overflow-wrap: anywhere; }
 .vis-wf-item.vis-wf-on { background: var(--color-accent-tint); }
-.vis-wf-item > .vis-wf-toggle, .vis-wf-item > .vis-wf-button, .vis-wf-item > .vis-wf-badge { flex: none; }
+/* At the item's right, each block at its own width, wrapping, never wider than the item; a row among them is part of the group. */
+.vis-wf-item-trail { flex: 0 1 auto; max-width: 100%; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; margin-left: auto; }
+.vis-wf-item > .vis-wf-item-trail > .vis-wf-row { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+.vis-wf-item > .vis-wf-item-trail > *, .vis-wf-item > .vis-wf-item-trail > .vis-wf-row > :not(.vis-wf-go, .vis-em-badge) { flex: 0 1 auto; min-width: 0; max-width: 100%; align-self: center; }
+.vis-wf-item-trail .vis-wf-button > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vis-wf-table { position: relative; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-micro); line-height: 16px; }
 .vis-wf-table table { width: 100%; border-collapse: collapse; margin: 0; }
 .vis-wf-table th { height: 26px; box-sizing: border-box; padding: 5px 8px; overflow-wrap: break-word; text-align: left; font-weight: var(--fw-semibold); color: var(--color-ink-muted); background: var(--color-sunken); border: 0; }
@@ -198,7 +206,9 @@
 .vis-wf-icon { position: relative; display: inline-flex; align-items: center; gap: 4px; flex: none; color: var(--color-ink-2); }
 .vis-wf-dot { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: var(--r-full); background: var(--color-border-strong); }
 .vis-wf-icon > .vis-wf-dot { margin: 4px; }
-.vis-wf-badge { position: relative; align-self: flex-start; padding: 0 7px; border-radius: var(--r-full); border: var(--stroke-thin) solid var(--vis-stroke); background: var(--vis-fill); color: var(--vis-ink); font-size: var(--fs-micro); line-height: 16px; white-space: nowrap; }
+.vis-wf-badge { position: relative; display: inline-flex; min-width: 0; align-self: flex-start; padding: 0 7px; border-radius: var(--r-full); border: var(--stroke-thin) solid var(--vis-stroke); background: var(--vis-fill); color: var(--vis-ink); font-size: var(--fs-micro); line-height: 16px; white-space: nowrap; }
+/* Squeezed (in a row, at an item's right), a badge's label is cut short, never spilling into its neighbour; its mark number stays outside. */
+.vis-wf-badge-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .vis-wf-stat { position: relative; min-width: 0; padding: 6px 10px; border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-md); background: var(--color-surface); }
 .vis-wf-stat-label { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .vis-wf-stat-value { font-size: var(--fs-heading-m); line-height: 26px; font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
@@ -245,8 +255,8 @@
 .vis-wf-toggle .vis-wf-control::after { content: ""; position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: var(--r-full); background: var(--color-border-strong); }
 .vis-wf-toggle.vis-wf-on .vis-wf-control { box-shadow: none; }
 .vis-wf-toggle.vis-wf-on .vis-wf-control::after { left: 14px; background: var(--color-on-accent); }
-.vis-wf-item > .vis-wf-toggle { min-width: 0; flex: none; }
-.vis-wf-item > .vis-wf-toggle .vis-wf-check-label:empty { display: none; }
+.vis-wf-item > .vis-wf-item-trail > .vis-wf-toggle { min-width: 0; flex: none; }
+.vis-wf-item-trail > .vis-wf-toggle .vis-wf-check-label:empty { display: none; }
 
 /* ---- States ------------------------------------------------------------------------------ */
 .vis-wf-empty { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 16px 12px; border: 1.5px dashed var(--color-border-strong); border-radius: var(--r-lg); text-align: center; }

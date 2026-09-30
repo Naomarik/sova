@@ -78,6 +78,8 @@ export interface PublicLinksDraft {
   acceptFrom: "all" | string[];
   /** A routed host's ingress port, as typed. */
   ingressPort: string;
+  /** The gateway's preview address (§mesh.public/preview-address), as typed; "" for none. */
+  previewUrl: string;
 }
 
 const routeOf = (f: PublicLinksFile): RouteChoice => (typeof f.route === "string" ? f.route : "via");
@@ -90,6 +92,7 @@ export const publicLinksDraftOf = (f: PublicLinksFile): PublicLinksDraft => ({
   sharePort: String(f.gateway?.sharePort ?? SHARE_PORT_DEFAULT),
   acceptFrom: f.gateway?.acceptFrom === undefined || f.gateway.acceptFrom === "all" ? "all" : [...f.gateway.acceptFrom],
   ingressPort: String(f.ingressPort ?? SHARE_PORT_DEFAULT),
+  previewUrl: f.gateway?.previewUrl ?? "",
 });
 
 const sameAccept = (a: "all" | readonly string[], b: "all" | readonly string[]): boolean =>
@@ -122,8 +125,20 @@ export function urlIssue(s: string): string | null {
   return null;
 }
 
+/** A typed preview address as the setting stores it: trimmed, lowercase, no trailing slash. */
+export const normalizePreviewUrl = (s: string): string => s.trim().toLowerCase().replace(/\/+$/, "");
+
+/** Why the preview address can't be saved, or null (empty is none). */
+export function previewUrlIssue(s: string): string | null {
+  const u = normalizePreviewUrl(s);
+  if (!u) return null;
+  if (!/^https:\/\/\*\.((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?::\d{1,5})?$/.test(u))
+    return "Enter the preview address as https://*.example.com: one * label over your domain, no path.";
+  return null;
+}
+
 /** Why the draft can't be saved (the field's own words), or null. Only the gateway choice has fields. */
-export function draftIssue(d: PublicLinksDraft, pinned: readonly string[] = []): { field: "publicUrl" | "sharePort" | "via" | "ingressPort"; text: string } | null {
+export function draftIssue(d: PublicLinksDraft, pinned: readonly string[] = []): { field: "publicUrl" | "sharePort" | "via" | "ingressPort" | "previewUrl"; text: string } | null {
   if (d.route === "via" && !d.viaNodeId) return { field: "via", text: "Pick the gateway." };
   if (d.route === "via" && parsePort(d.ingressPort) === null)
     return { field: "ingressPort", text: "The ingress port is a whole number from 1 to 65535." };
@@ -134,6 +149,10 @@ export function draftIssue(d: PublicLinksDraft, pinned: readonly string[] = []):
   }
   if (!pinned.includes("SOVA_SHARE_PORT") && parsePort(d.sharePort) === null)
     return { field: "sharePort", text: "The local port is a whole number from 1 to 65535." };
+  if (!pinned.includes("SOVA_SHARE_PREVIEW_URL")) {
+    const p = previewUrlIssue(d.previewUrl ?? "");
+    if (p) return { field: "previewUrl", text: p };
+  }
   return null;
 }
 
@@ -155,8 +174,17 @@ export function publicLinksChanges(d: PublicLinksDraft, f: PublicLinksFile): Pub
       sharePort: parsePort(d.sharePort) ?? SHARE_PORT_DEFAULT,
       acceptFrom: d.acceptFrom === "all" ? "all" : [...d.acceptFrom],
     };
+    const preview = normalizePreviewUrl(d.previewUrl ?? "");
+    if (preview) gateway.previewUrl = preview;
     const g = f.gateway;
-    if (!g || g.publicUrl !== gateway.publicUrl || g.front !== gateway.front || g.sharePort !== gateway.sharePort || !sameAccept(g.acceptFrom, gateway.acceptFrom))
+    if (
+      !g ||
+      g.publicUrl !== gateway.publicUrl ||
+      g.front !== gateway.front ||
+      g.sharePort !== gateway.sharePort ||
+      !sameAccept(g.acceptFrom, gateway.acceptFrom) ||
+      (g.previewUrl ?? "") !== (gateway.previewUrl ?? "")
+    )
       out.gateway = gateway;
   }
   if (d.route === "via") {
@@ -248,4 +276,4 @@ export function meshChipText(i: PublicLinksInfo | null): string | null {
 export const FRONTS = Object.keys(FRONT_LABELS) as ShareFront[];
 
 /** The env variable pinning a field, when one does. */
-export const PIN_OF = { publicUrl: "SOVA_SHARE_PUBLIC_URL", sharePort: "SOVA_SHARE_PORT" } as const;
+export const PIN_OF = { publicUrl: "SOVA_SHARE_PUBLIC_URL", sharePort: "SOVA_SHARE_PORT", previewUrl: "SOVA_SHARE_PREVIEW_URL" } as const;

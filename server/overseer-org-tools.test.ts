@@ -334,7 +334,7 @@ describe("the organization tools (§app.overseer/org-tools)", async () => {
     const row = baton.batonById(id)!.row;
     assert.equal(baton.liveLinkCount(row), 0);
     assert.equal(row.startedVia, "overseer");
-    // Its chart records who started it, the Overseer's conversation and the why (§app.baton/goal-and-loadout).
+    // Its statechart records who started it, the Overseer's conversation and the why (§app.baton/goal-and-loadout).
     assert.deepEqual(hostOf(org.id).data(baton.batonSid(org.id, id))?.["started"], { by: "overseer", overseerId: OVERSEER_ID, why: "Nobody has said this yet." });
     assert.deepEqual(startedOf(row, batonData(row)), { who: "overseer", at: row.createdAt, why: "Nobody has said this yet.", overseer: { id: OVERSEER_ID, current: readOverseerState()?.current === OVERSEER_ID } });
     assert.deepEqual(row.abilities, { draw: true, readLinks: false }, "the project's set: Automatic (§app.baton/abilities)");
@@ -480,7 +480,7 @@ describe("archive a project (§app.organizations/archive)", async () => {
   mkdirSync(join(root, "proj2"));
   const project = await orgs.addProject(org.id, { name: "Old Site", root: join(root, "proj2") });
   const kim = await orgs.addPerson(org.id, { name: "Kim Park", role: "Ops" });
-  // As the tool sends it: in the turn a confirm card listing the project started (the chart checks the card first).
+  // As the tool sends it: in the turn a confirm card listing the project started (the statechart checks the card first).
   const archive = () =>
     overseer.requestAsOverseerForTest(`/api/orgs/${org.id}/projects/${project.id}/archive`, { method: "POST", headers: { [tools.OVERSEER_CARD_HEADER]: JSON.stringify({ projects: [project.id] }) } });
 

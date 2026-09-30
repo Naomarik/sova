@@ -157,7 +157,7 @@ type AppendEntry = (customType: string, data: unknown) => void;
 
 /**
  * While a tool of the session runs, the extension's own appendEntry writes its transcript entries
- * (the chart's `baton-entry` effects of that step run inside the call, before it returns).
+ * (the statechart's `baton-entry` effects of that step run inside the call, before it returns).
  */
 const toolAppend = new Map<string, AppendEntry>();
 async function inTool<T>(sessionId: string, append: AppendEntry, f: () => Promise<T>): Promise<T> {
@@ -169,7 +169,7 @@ async function inTool<T>(sessionId: string, append: AppendEntry, f: () => Promis
   }
 }
 
-/** A model's act on its session; a refusal is the tool's error, in the chart's words. */
+/** A model's act on its session; a refusal is the tool's error, in the statechart's words. */
 async function modelAct(sessionId: string, event: string, payload: Record<string, unknown>): Promise<void> {
   const hit = batonById(sessionId);
   if (!hit) throw new Error("This conversation is no longer registered.");
@@ -231,7 +231,7 @@ export function recordDecisionTool(sessionId: string, append: AppendEntry, roste
       const owner = pickOwnerArea(roster, params.ownerArea);
       if (!owner.ok) throw new Error(owner.error);
       const payload = { area, areaKey: areaKeyOf(area), ownerArea: owner.ownerArea, statement, quote, ownerAreas: ownerAreaChoices(roster) };
-      // The chart's checks first (the area, the words, the owner area), then the entry (its id is the
+      // The statechart's checks first (the area, the words, the owner area), then the entry (its id is the
       // decision's), then the act that records it.
       const host = hostOf(hit.row.orgId);
       const sid = batonSid(hit.row.orgId, sessionId);
@@ -278,7 +278,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
         const question = clip(params.question, QUESTION_MAX);
         const briefing = clip(params.briefing, BRIEFING_MAX);
         await inTool(sessionId, append, () => handTo(sessionId, String(params.person ?? ""), question, briefing, { chosen }));
-        // The move's transcript entry, numbered as the chart numbered it.
+        // The move's transcript entry, numbered as the statechart numbered it.
         const after = batonById(sessionId)!.row;
         const h = after.handoffs[after.handoffs.length - 1]!;
         append(BATON_HANDOFF_ENTRY, { v: 1, n: h.n, from: h.from, to: h.to, question: h.question, briefing: h.briefing } satisfies BatonHandoffData);
@@ -326,7 +326,7 @@ function conversationTools(sessionId: string, append: AppendEntry): ToolDefiniti
         const row = hit.row;
         const name = clip(params.name, 80);
         const roster = readRoster(row.orgId);
-        // The roster person of that name: one not gone first, else a former one (the chart's refusals read it).
+        // The roster person of that name: one not gone first, else a former one (the statechart's refusals read it).
         const named = (p: Person) => !!name && p.name.toLowerCase() === name.toLowerCase();
         const same = roster.find((p) => named(p) && p.status !== "left") ?? roster.find((p) => named(p) && p.status === "left");
         const personId = shortId("p_");
@@ -416,7 +416,7 @@ export function redactContext<M>(messages: M[], phrases: readonly string[]): M[]
   return changed ? out : messages;
 }
 
-// ---- the baton chart's effects, facts and wrap-up (registered on every org's engine) -----------------------
+// ---- the baton statechart's effects, facts and wrap-up (registered on every org's engine) -----------------------
 
 /** Transcript entries that met a run in flight (the transcript takes none mid-run): written when it settles. */
 const waitingEntries = new Map<string, { customType: string; data: Record<string, unknown> }[]>();
@@ -425,7 +425,7 @@ const waitingEntries = new Map<string, { customType: string; data: Record<string
 const hasEntry = (chat: ChatSession, key: string): boolean =>
   chat.session.sessionManager.getEntries().some((e: any) => e.type === "custom" && e.data?.key === key);
 
-/** Write a transcript entry the chart asked for: through the running tool, now, or once the run settles. */
+/** Write a transcript entry the statechart asked for: through the running tool, now, or once the run settles. */
 async function writeEntry(sessionId: string, customType: string, data: Record<string, unknown>): Promise<void> {
   const inTurn = toolAppend.get(sessionId);
   if (inTurn) return void inTurn(customType, data);
@@ -454,7 +454,7 @@ export async function flushEntries(path: string): Promise<void> {
   for (const e of waiting) if (typeof e.data.key !== "string" || !hasEntry(chat, e.data.key)) chat.appendSpecialEntry(e.customType, e.data);
 }
 
-/** The chart's `baton-entry` as the transcript's custom entry. */
+/** The statechart's `baton-entry` as the transcript's custom entry. */
 function entryOf(e: Effect): { customType: string; data: Record<string, unknown> } | null {
   const key = e.key;
   switch (e.type) {
@@ -509,7 +509,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     return { file: createSessionFile(orgId, sessionId, host.data(e.sessionId) ?? {}) };
   });
 
-  // A link per person the chart names (the first holder, a hand-off's, an offer's invitees). The tokens go
+  // A link per person the statechart names (the first holder, a hand-off's, an offer's invitees). The tokens go
   // to the caller that asked (baton.takeMinted), never into the result: that reaches the log.
   const mint = (e: Effect, people: string[], offerId?: string) => {
     const sessionId = sidOfEffect(e);
@@ -534,7 +534,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     const holder = typeof d.holder === "string" && d.holder !== OPERATOR && d.holder !== POOL ? [d.holder] : [];
     return mint(e, holder);
   });
-  // r12: only in an offer's own step (the chart emits none for an invitee reached later: nobody could take that token;
+  // r12: only in an offer's own step (the statechart emits none for an invitee reached later: nobody could take that token;
   // Needs you asks the operator to send it).
   host.effects.register("mint-link", async (e) => mint(e, typeof e.personId === "string" ? [e.personId] : [], typeof e.offerId === "string" && e.offerId ? e.offerId : undefined));
 
@@ -556,7 +556,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     if (!hit) return {};
     const chat = await acquireChat(sessionPathOf(hit.dir, hit.row));
     // The stopped run's own end is not the reply's end yet: the messages queued behind it are written
-    // first, then the chart hears it ended and makes the move it held (its entry comes after them).
+    // first, then the statechart hears it ended and makes the move it held (its entry comes after them).
     stopping.add(sessionId);
     try {
       await interruptReply(chat);
@@ -585,7 +585,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     stop() {},
   });
 
-  // After a restart no reply runs: every session whose chart still says one does hears it ended, cold ones
+  // After a restart no reply runs: every session whose statechart still says one does hears it ended, cold ones
   // included, on this very host (it may not be registered as open yet while its opened hooks run; a reply left
   // "starting" would stay so forever, its lease never lapsing: F-049/F-050).
   void (async () => {
@@ -598,7 +598,7 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
 }
 onOrgHostOpened(registerBatonEffects);
 
-/** A reply fact from the chat layer (reply/starting, reply/writing, reply/ended) to the session's chart. */
+/** A reply fact from the chat layer (reply/starting, reply/writing, reply/ended) to the session's statechart. */
 async function replyFact(sessionId: string, event: "reply/starting" | "reply/writing" | "reply/ended"): Promise<void> {
   const hit = batonById(sessionId);
   if (!hit) return;
@@ -721,7 +721,7 @@ registerSpecialLoadout({
         writing = false;
         // Entries that arrived mid-run (the transcript takes none then).
         setTimeout(() => void flushEntries(path).catch(() => {}), 0);
-        // The reply's end: the chart renews the lease, applies a move held for it, the budget stop, the wrap-up.
+        // The reply's end: the statechart renews the lease, applies a move held for it, the budget stop, the wrap-up.
         if (!wrapupActive(sessionId) && !stopping.has(sessionId)) void replyFact(sessionId, "reply/ended");
       }
     });
@@ -739,7 +739,7 @@ registerSpecialLoadout({
       if (err instanceof OrgError) throw new RefusedError(err.message);
       throw err;
     }
-    // Its reply started with the accepted message (the chart's reply region).
+    // Its reply started with the accepted message (the statechart's reply region).
     // The runtime refused the message after all: it neither counts nor clears Needs you.
     return {
       by: OPERATOR,

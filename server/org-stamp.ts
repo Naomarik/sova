@@ -3,17 +3,17 @@ import { atOnceCounts, buildEnvelope, type ActBy, type Envelope, type EnvelopeCa
 import type { OrgHostApi } from "./org-engine";
 
 /**
- * Stamping an envelope from the org's charts as they stand (engine API: the host asks `stamp(sid,
- * event, payload)` for a chart-driven act and for a held act at its release, and every route and
+ * Stamping an envelope from the org's statecharts as they stand (engine API: the host asks `stamp(sid,
+ * event, payload)` for a statechart-driven act and for a held act at its release, and every route and
  * tool stamps its own act the same way). It reads, in the same synchronous step: the project's
  * settings file, the project session (archived), its watch session (paused, the ledgers), the
  * people (anyone active) and the batons and builds (the at-once counts).
  */
 
-/** Session ids: `<chart>/<org>/<project>/…` for project-scoped charts (design §1.1). */
+/** Session ids: `<statechart>/<org>/<project>/…` for project-scoped statecharts (design §1.1). */
 const SCOPED = new Set(["project", "watch", "item", "decision", "conflict", "reconciler", "build", "baton"]);
 
-/** The project a session belongs to: its data's projectId, else the id's third segment for a project-scoped chart. */
+/** The project a session belongs to: its data's projectId, else the id's third segment for a project-scoped statechart. */
 export function projectOfSession(host: Pick<OrgHostApi, "data">, sid: string): string | null {
   const pid = host.data(sid)?.projectId;
   if (typeof pid === "string" && pid) return pid;

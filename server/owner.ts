@@ -5,7 +5,7 @@ import { readVisits } from "./visits";
 
 /**
  * The org's owner and their link (§app.owner-page/owner, /link), for the operator's routes and the
- * share routes. The owner itself is the org chart's (server/orgs.ts, `setOrgOwner`): a change, the
+ * share routes. The owner itself is the org statechart's (server/orgs.ts, `setOrgOwner`): a change, the
  * owner leaving and a detach turn the links off through its `revoke-owner-links` effect
  * (server/org-effects.ts); the links live in the host's person-links.json (server/person-links.ts).
  */
@@ -13,7 +13,7 @@ import { readVisits } from "./visits";
 /** When the owner link's remaining life counts as "send a new one" (Needs you). */
 export const OWNER_LINK_SOON_MS = 7 * 86_400_000;
 
-/** Set the owner (the operator's select). A change turns the previous owner's link off at once (the org chart's effect). */
+/** Set the owner (the operator's select). A change turns the previous owner's link off at once (the org statechart's effect). */
 export async function setOwner(orgId: string, personId: unknown, by?: OperatorBy): Promise<void> {
   await setOrgOwner(orgId, personId, by);
 }
@@ -26,7 +26,7 @@ export function mintOwnerLinkFor(orgId: string, now = Date.now()): PersonLinkRec
   return { ...record, token };
 }
 
-/** Turn Off Owner Link (and the org chart's `revoke-owner-links` effect). Returns how many were live. */
+/** Turn Off Owner Link (and the org statechart's `revoke-owner-links` effect). Returns how many were live. */
 export function revokeOwnerLinks(orgId: string, why: "off" | "detached" | "owner-changed" | "left" = "off"): number {
   return revokePersonLinks((l) => l.orgId === orgId, why);
 }

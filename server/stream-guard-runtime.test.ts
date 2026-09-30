@@ -183,12 +183,12 @@ describe("the stream guard against a runaway stream (real provider path, local s
           `${JSON.stringify({ type: "custom", id: "tm1", parentId: "tu1", timestamp: at, customType: BATON_SENT_ENTRY, data: { v: 1, targetId: "tu1", by: tony.id } })}\n`,
       );
       (await import("./write-guard")).markOwned(c.path);
-      baton.noteMessage(c.sessionId, tony.id); // the chart counts Tony's message: a person wrote, so it wraps up
+      baton.noteMessage(c.sessionId, tony.id); // the statechart counts Tony's message: a person wrote, so it wraps up
       await replyEnded(c.sessionId); // and the reply to it ended (as the runtime wrote it above)
       const chat = await acquireChat(c.path);
       await chat.setModelRef("stub/runaway");
     });
-    /** The chart's wrap-up row once its run ended. */
+    /** The statechart's wrap-up row once its run ended. */
     const settled = async () => {
       for (let i = 0; i < 800 && baton.batonById(c.sessionId)!.row.wrapup?.state !== "failed" && baton.batonById(c.sessionId)!.row.wrapup?.state !== "done"; i++) await new Promise((r) => setTimeout(r, 10));
       return baton.batonById(c.sessionId)!.row.wrapup;
@@ -196,7 +196,7 @@ describe("the stream guard against a runaway stream (real provider path, local s
 
     test("letters past 64 K in one tool call: the turn is stopped and the wrap-up is recorded failed, naming the stop", async () => {
       stub.reset({ payload: "letters", perDelta: 128 });
-      // goal_done: the chart starts the wrap-up (its :sova/wrapup run) once the reply is idle.
+      // goal_done: the statechart starts the wrap-up (its :sova/wrapup run) once the reply is idle.
       await baton.markDone(c.sessionId);
       const info = await settled();
       const chat = await acquireChat(c.path);

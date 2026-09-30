@@ -1460,7 +1460,7 @@ startResourceMonitor({
   held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
   titleOf: cachedTitleOf,
 });
-// Every attached org's workspace repo: its residence chart commits whatever changed at most hourly, then pushes.
+// Every attached org's workspace repo: its residence statechart commits whatever changed at most hourly, then pushes.
 // Messages a crash or kill lost stop counting against their session's limit.
 startBudgetRecount();
 // The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.

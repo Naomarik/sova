@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/org-host/privacy.test.ts. The contact marker test (design §5.5
-// Privacy), end to end on the shipped person chart: a contact value planted at start and changed by a
+// Privacy), end to end on the shipped person statechart: a contact value planted at start and changed by a
 // person/edit reaches no log segment, no log read and no journal's rows; the snapshot is the only
 // portable place that holds it. The same for what a log replay needs (r9): spawn data, a host start's
 // data, a set-state's patch and an invocation's report. Plus the scrub rules for nested paths and
@@ -109,7 +109,7 @@ test("what a log replay needs (r9) is redacted like the rest: spawn data, a star
     start: (_inv, report) => void setTimeout(() => report("finished", undefined, { text: M.reportText, contact: { phone: M.reportPhone } }), 5),
     stop: () => {},
   });
-  // spawn data: the shipped org chart spawns the person with its contact
+  // spawn data: the shipped org statechart spawns the person with its contact
   await host.start("org/o1", "org", { id: "o1", name: "Acme", slug: "acme", createdAt: 1 }, { by: "operator" });
   const added = await host.act("org/o1", "person/add", { personId: "p1", person: { name: "Ana Ruiz", contact: { email: M.spawnEmail, phone: M.spawnPhone } }, namesTaken: [] }, { by: "operator" });
   assert.equal(added.taken, true, added.refusal?.sentence);

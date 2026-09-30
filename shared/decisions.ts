@@ -4,8 +4,8 @@
  * imports nothing at runtime.
  *
  * Source of truth: the `sova-baton-decision` entries in the baton transcripts (shared/baton.ts).
- * The index below is derived from them and held by the org's charts (q1: no decisions.json or
- * conflicts.json): one `decision` chart per recorded decision, one `conflict` chart per conflict, their
+ * The index below is derived from them and held by the org's statecharts (q1: no decisions.json or
+ * conflicts.json): one `decision` statechart per recorded decision, one `conflict` statechart per conflict, their
  * snapshots in the org's workspace repo (`charts/`).
  *
  * Operator routes (main listener only; never on the share listener):

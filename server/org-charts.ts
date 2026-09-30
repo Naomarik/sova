@@ -5,11 +5,11 @@
 // The org host (server/org-host/) is its one user in the server; the spike replay uses it too.
 //
 // Marshalling rules (org-charts/src/sova/org_charts/api.cljs): object keys are camelCase here and
-// kebab keywords in the charts; values are untouched except keyword values, which arrive as
+// kebab keywords in the statecharts; values are untouched except keyword values, which arrive as
 // "ns/name" strings. Event names and state ids are strings ("gather/start", "needs-operator").
 // Every call takes an optional `now` (epoch ms): the engine clock for that call, so replays run on
 // virtual time. The engine stamps it on every event it delivers as `data.at` (overwriting any `at`
-// the caller put in the data) and into the charts' data model as `now`.
+// the caller put in the data) and into the statecharts' data model as `now`.
 //
 // Durability contract (host side): after each call, write `result.snapshots` together (one atomic
 // write, the host's journal): a cross-session send is only durable once its target's step is saved,
@@ -19,7 +19,7 @@
 // Full contract: org-charts/src/sova/org_charts/engine/API.md.
 //
 // Step limit: one event may take at most `maxMicrosteps` microsteps (default 200). An eventless cycle
-// in a chart then throws `OrgChartsStepLimitError` from start / send / trial / fireDue instead of
+// in a statechart then throws `OrgChartsStepLimitError` from start / send / trial / fireDue instead of
 // blocking the event loop, and the whole call is rolled back (sessions, generations, the queue): the
 // snapshots last written stay the truth. onSave and invocation callbacks already made for earlier
 // steps of that call are not taken back, which is why the host writes `result.snapshots`, not onSave's.
@@ -29,10 +29,10 @@ import * as vendored from "./vendor/org-charts.js";
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 export type JsonObject = { [key: string]: Json };
 
-/** A registered chart's name ("org", "person", "baton", "item", …: the refit's registry). */
+/** A registered statechart's name ("org", "person", "baton", "item", …: the refit's registry). */
 export type ChartName = string;
 
-/** An effect intent a chart appended to its outbox; the host runs it after the snapshot is saved. */
+/** An effect intent a statechart appended to its outbox; the host runs it after the snapshot is saved. */
 export interface Effect {
   kind: string;
   key?: string;
@@ -215,7 +215,7 @@ export interface SaveInfo {
 export interface Invocation {
   op: "start" | "stop";
   sessionId: string;
-  /** The chart's invoke id ("look"); report results with `runId`. */
+  /** The statechart's invoke id ("look"); report results with `runId`. */
   invokeId: string;
   runId: string | null;
   type: string;
@@ -232,7 +232,7 @@ export interface StampContext {
 export interface EngineOptions {
   /** A session not loaded: its snapshot text, or null when it exists nowhere (sync). May throw (a broken snapshot): the call rolls back with that error. */
   loadCold?: (sessionId: string) => string | null;
-  /** A fresh envelope for an act the engine delivers itself (a held act's release, a chart's drive). */
+  /** A fresh envelope for an act the engine delivers itself (a held act's release, a statechart's drive). */
   stamp?: (sessionId: string, event: string, payload: JsonObject, ctx: StampContext) => JsonObject;
   /** Called after every step with the session's full snapshot (EDN text: working memory + its queue). */
   onSave?: (sessionId: string, snapshot: string, info: SaveInfo) => void;
@@ -244,8 +244,8 @@ export interface EngineOptions {
   clock?: () => number;
   /** Microsteps one event may take before the call throws OrgChartsStepLimitError (default 200). */
   maxMicrosteps?: number;
-  /** More charts, written in JS (org-charts/src/sova/org_charts/engine/js_chart.cljs), by name. A
-      shipped chart's name is refused. The engine tests register their probe chart this way. */
+  /** More statecharts, written in JS (org-charts/src/sova/org_charts/engine/js_chart.cljs), by name. A
+      shipped statechart's name is refused. The engine tests register their probe statechart this way. */
   charts?: Record<string, { version: number; chart: unknown }>;
 }
 
@@ -273,9 +273,9 @@ export interface OrgCharts {
   data(sessionId: string): JsonObject | null;
   chartOf(sessionId: string): ChartName | null;
   enabledEvents(sessionId: string, envelope?: JsonObject, opts?: CallOptions): EnabledEvent[];
-  /** Sessions that may be unloaded at `now` (settled per their chart's `cold?`, idle `minAge` ms, nothing pending). */
+  /** Sessions that may be unloaded at `now` (settled per their statechart's `cold?`, idle `minAge` ms, nothing pending). */
   coldSessions(now: number, minAge?: number | null): string[];
-  /** A snapshot text read without loading it, against this engine's charts (runtime ones included). */
+  /** A snapshot text read without loading it, against this engine's statecharts (runtime ones included). */
   peek(text: string): SnapshotPeek;
   /** Every held act of every loaded session (or of one). */
   holds(sessionId?: string | null): Hold[];
@@ -295,7 +295,7 @@ export interface OrgCharts {
   generation(sessionId: string): number | null;
 }
 
-/** What a chart declares (engine chart-info): acts with metadata, states, transitions, invocations. */
+/** What a statechart declares (engine chart-info): acts with metadata, states, transitions, invocations. */
 export interface ChartInfo {
   name: ChartName;
   version: number;
@@ -320,7 +320,7 @@ interface Vendored {
   hoursInherited(person: WorkingHours, company: WorkingHours | null): boolean;
 }
 
-/** `org-charts rebuild --verify`: one session's log replayed on the current charts against its snapshot. */
+/** `org-charts rebuild --verify`: one session's log replayed on the current statecharts against its snapshot. */
 export interface SessionVerdict {
   session: string;
   chart: string | null;
@@ -366,7 +366,7 @@ export class OrgChartsError extends Error {
   }
 }
 
-/** One event took more microsteps than `maxMicrosteps`: an eventless cycle in a chart. */
+/** One event took more microsteps than `maxMicrosteps`: an eventless cycle in a statechart. */
 export class OrgChartsStepLimitError extends Error {
   readonly code = "sova/step-limit";
   constructor(
@@ -420,12 +420,12 @@ export function chartInfo(name: string): ChartInfo | null {
   return lib.chartInfo(name);
 }
 
-/** A snapshot's chart, configuration, data and running flag without loading it (throws when unreadable). */
+/** A snapshot's statechart, configuration, data and running flag without loading it (throws when unreadable). */
 export function peekSnapshot(text: string): SnapshotPeek {
   return lib.peekSnapshot(text);
 }
 
-/** A snapshot's text at its chart's current version (throws when it can't be migrated). */
+/** A snapshot's text at its statechart's current version (throws when it can't be migrated). */
 export function migrateSnapshot(text: string): string {
   return lib.migrateText(text);
 }

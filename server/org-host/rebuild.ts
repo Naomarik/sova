@@ -1,5 +1,5 @@
 // `org-charts rebuild --verify <org>` (operator ruling r9): every session's transition log replayed
-// from its start on the current charts, compared with its snapshot (states, running, links, watchers,
+// from its start on the current statecharts, compared with its snapshot (states, running, links, watchers,
 // its own timers, holds). A diagnostic: it reads the snapshot files and the log, opens no host,
 // restores nothing and writes nothing. The log is scrubbed (design §5.5), so a guard that read a
 // message, a contact value or About text may replay another way: that is listed, never repaired.
@@ -13,7 +13,7 @@ export interface VerifyOptions {
   orgId: string;
   workspaceDir: string;
   stateDir: string;
-  /** Runtime JS charts (tests), as `createOrgCharts`. */
+  /** Runtime JS statecharts (tests), as `createOrgCharts`. */
   charts?: EngineOptions["charts"];
 }
 
@@ -28,7 +28,7 @@ export interface VerifyReport {
   pendingJournal: boolean;
 }
 
-/** Only what a chart step wrote is replayed (a `logAct` row, marked `plain`, has no step). */
+/** Only what a statechart step wrote is replayed (a `logAct` row, marked `plain`, has no step). */
 function replayable(row: LogRow): boolean {
   return row.plain !== true && Array.isArray(row.after) && typeof row.session === "string";
 }

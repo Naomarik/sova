@@ -85,7 +85,7 @@ describe("org engines: one host per org", () => {
     assert.ok(isOrgHostOpen("org_j"));
   });
 
-  test("the host gets a stamp: a chart's own act (or a named actor's), unattended, from the project's settings file", async () => {
+  test("the host gets a stamp: a statechart's own act (or a named actor's), unattended, from the project's settings file", async () => {
     const f = fakeHost();
     let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer" }) => { by: string; attended: boolean; holdMs: number }) | null = null;
     setOrgHostOpener(async (o) => ((stamp = o.stamp as never), f.host));
@@ -140,7 +140,7 @@ describe("org engines: one host per org", () => {
 describe("refusals as the routes answer them", () => {
   beforeEach(() => resetOrgHostsForTest());
 
-  test("the chart's status and sentence (and code) pass through; no or odd status is 409", () => {
+  test("the statechart's status and sentence (and code) pass through; no or odd status is 409", () => {
     const e = refusalError({ sentence: "Someone else is answering right now.", status: 409, code: "taken" });
     assert.deepEqual([e.status, e.message, e.code], [409, "Someone else is answering right now.", "taken"]);
     assert.equal(refusalError({ sentence: "This link has expired.", status: 410 }).status, 410);

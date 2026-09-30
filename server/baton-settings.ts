@@ -6,7 +6,7 @@ import { stateRoot } from "./state-root";
 /**
  * The host's defaults for new baton sessions (§app.baton/goal-and-loadout), set in Settings →
  * Organizations: today the message limit. Host state, like the links (never the workspace repo):
- * a restored org keeps each session's own limit in its baton chart. Same file rules as
+ * a restored org keeps each session's own limit in its baton statechart. Same file rules as
  * web-settings.ts: tolerant read, re-read + merge on write, atomic tmp + rename.
  */
 const file = () => join(stateRoot(), "baton-settings.json");

@@ -561,7 +561,7 @@ const str = (description: string, extra: Record<string, unknown> = {}) => ({ typ
 const int = (description: string, extra: Record<string, unknown> = {}) => ({ type: "integer", description, ...extra });
 const bool = (description: string) => ({ type: "boolean", description });
 
-/** The confirm card whose click opened this turn, on every route call the tools make: the org charts
+/** The confirm card whose click opened this turn, on every route call the tools make: the org statecharts
     check that a people-facing act's targets are on it (§app.overseer/org-people-facing). Read by a
     route only next to the sender mark (org-routes operatorBy). */
 export const OVERSEER_CARD_HEADER = "x-sova-overseer-card";

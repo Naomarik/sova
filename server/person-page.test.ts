@@ -64,7 +64,7 @@ baton.noteMessage(s2.sessionId, bob.id);
 }
 append(s2.path, BATON_SENT_ENTRY, { targetId: "m3", by: bob.id });
 append(s2.path, BATON_LEASE_ENTRY, { n: 1, offerId: baton.batonById(s2.sessionId)!.row.offerId, event: "expired", by: bob.id });
-// Kim's own Payroll session: a decision is its holder's (the chart names who the model was talking to).
+// Kim's own Payroll session: a decision is its holder's (the statechart names who the model was talking to).
 const s2k = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: "Invoice days", goal: "g" });
 await recordDecision(s2k.path, { area: "Invoices", statement: "Invoices go out on Fridays.", quote: "Fridays" }, "2026-09-22T10:00:00.000Z");
 
@@ -96,7 +96,7 @@ describe("a person's sessions", () => {
       { kind: "passed-on", n: 2, to: [{ id: bob.id, name: "Bob" }] },
       { kind: "proposed", person: { id: pat.id, name: "Pat" } },
     ]);
-    // The conflict's own settle session asks her (the conflict chart started it).
+    // The conflict's own settle session asks her (the conflict statechart started it).
     assert.deepEqual(byTitle("Settle: hosting").relations, [{ kind: "started-with" }, { kind: "conflict", conflictId: "cf_aaaaaaaa", area: "hosting" }]);
     assert.equal(h.messages, 2);
     assert.equal(h.lastWroteAt, "2026-09-20T10:05:00.000Z");

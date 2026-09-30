@@ -1,7 +1,7 @@
 // Run: pnpm exec tsx --test server/build-merged.test.ts. Whether a project's coding session (a
 // build) is merged, as the session list says it (`org.finished`, §app.organizations/org-sessions):
 // git's answer, read in the background at most every 30 s per session; until git has answered, what
-// the build's chart recorded; a Merge Branch updates it at once.
+// the build's statechart recorded; a Merge Branch updates it at once.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildMerged, noteBuildMerged, resetBuildMerged, setBuildReader, BUILD_TTL_MS } from "./build-merged";

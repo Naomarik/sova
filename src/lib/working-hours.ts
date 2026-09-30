@@ -1,5 +1,5 @@
 // A person's working hours (r7, §app.organizations/working-hours): the words the profile, the form
-// and the off-hours note say. When their window opens is the server's (the charts' next-window
+// and the off-hours note say. When their window opens is the server's (the statecharts' next-window
 // rule, `hoursNow`); this file only says it. Pure, for tsx --test.
 
 import type { OfferReach } from "../../shared/baton";

@@ -10,10 +10,10 @@ import { projectOverseerPaths, readPoMarker, readPoState } from "./project-overs
 /**
  * Which sessions are ORGANIZATIONAL (§app.session-list/organizations), from the org's own records,
  * never from a folder:
- * - every file in an attached org's workspace `sessions/`: a registered baton session (its baton chart),
- *   a project overseer's conversation (its marker, for THAT org; current or cleared per its project chart),
+ * - every file in an attached org's workspace `sessions/`: a registered baton session (its baton statechart),
+ *   a project overseer's conversation (its marker, for THAT org; current or cleared per its project statechart),
  *   or an unregistered file ("other");
- * - every coding session a project's build chart records (`coding` from its overseer,
+ * - every coding session a project's build statechart records (`coding` from its overseer,
  *   `operator-coding` from Start coding session), by session id.
  * A fork or copy of any of these has its own id and lives in the pi sessions dir, so it is ordinary;
  * so is a session the operator opens by hand in a project root, and everything of an org that is

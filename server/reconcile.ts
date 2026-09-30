@@ -121,7 +121,7 @@ async function currentDeps(): Promise<ReconcileDeps> {
   return { ...baseDeps(), provider: () => live.provider, excluded: live.excluded, enabled: live.enabled };
 }
 
-// ---- the charts ------------------------------------------------------------------------------------------
+// ---- the statecharts ------------------------------------------------------------------------------------------
 
 /** Send an act; a refusal throws as the route answers it. */
 async function act(orgId: string, sid: string, event: string, payload: Record<string, unknown>, envelope: Envelope): Promise<ActResult> {
@@ -380,12 +380,12 @@ function specFactsOf(root: string, d: DecisionRow, byId: Map<string, DecisionRow
   };
 }
 
-/** GET …/decisions: the charts' rows; the spec's facts about the promoted ones are brought up to date after. */
+/** GET …/decisions: the statecharts' rows; the spec's facts about the promoted ones are brought up to date after. */
 export function listDecisions(orgId: string, projectId: string): DecisionsInfo {
   const project = projectOf(orgId, projectId);
   const store = readDecisionStore(orgId, projectId);
   const conflicts = readConflicts(orgId, projectId);
-  // What the spec and the roster say now, on this read (the charts hear it right after).
+  // What the spec and the roster say now, on this read (the statecharts hear it right after).
   const roster = readRoster(orgId);
   for (const d of store.decisions) d.authorOwnsArea = authorOwnsArea(orgId, roster, d, decidesTrusted, project.stakeholder);
   const byId = new Map(store.decisions.map((d) => [d.id, d]));
@@ -411,7 +411,7 @@ export function specStatusOf(orgId: string, projectId: string): SpecStatus {
   return specStatus(orgId, projectId, readDecisionStore(orgId, projectId));
 }
 
-/** PATCH …/spec {frozen}: the project chart's spec/freeze, with the spec's hash when it freezes (the frozen check). */
+/** PATCH …/spec {frozen}: the project statechart's spec/freeze, with the spec's hash when it freezes (the frozen check). */
 export async function setFrozen(orgId: string, projectId: string, frozen: boolean): Promise<SpecStatus> {
   const project = projectOf(orgId, projectId);
   await act(orgId, projectSid(orgId, projectId), "spec/freeze", { frozen, ...(frozen ? { specHash: specHash(project.root) } : {}) }, operatorEnvelope(orgId, projectId));
@@ -752,16 +752,16 @@ function recordingUsage(inner: DecisionProvider, orgId: string, projectId: strin
 /**
  * POST …/reconcile, and the project overseer's sova_reconcile: a request to the project's reconciler
  * (it runs one comparison at a time; one asked for meanwhile runs once more after), then its rows once
- * that run ended. With the switch off the chart refuses (an automatic request records why).
+ * that run ended. With the switch off the statechart refuses (an automatic request records why).
  */
 export async function reconcileProject(orgId: string, projectId: string, opts: ReconcileOptions = {}): Promise<DecisionsInfo> {
   projectOf(orgId, projectId);
   const by: Asker = opts.auto ? "sova" : typeof opts.owner === "object" && opts.owner.overseerOf === projectId ? "overseer" : "operator";
   const choice = opts.model || opts.thinking ? { ...(opts.model ? { model: opts.model } : {}), ...(opts.thinking ? { thinking: opts.thinking } : {}) } : null;
   if (choice) settleChoices.set(`${orgId}/${projectId}`, choice);
-  // Settings → Decisions as it is now (the chart refuses while the switch is off).
+  // Settings → Decisions as it is now (the statechart refuses while the switch is off).
   await syncReconcileSwitch(orgId);
-  // The chart's own refusal answers "That can't be done now." while off (inbox-charts/server3-p3-findings.md 1).
+  // The statechart's own refusal answers "That can't be done now." while off (inbox-charts/server3-p3-findings.md 1).
   if (by !== "sova" && hostOf(orgId).configuration(reconcilerSid(orgId, projectId))?.includes("off")) throw new OrgError(RECONCILE_OFF, 409);
   await act(orgId, reconcilerSid(orgId, projectId), "reconcile/request", { delayMs: 0, by: by === "sova" ? "sova" : by, ...(opts.owner ? { owner: opts.owner } : {}) }, opts.envelope ?? envelopeOf(orgId, projectId, by, opts.attended ?? true));
   await runEnded(orgId, projectId);
@@ -771,7 +771,7 @@ export async function reconcileProject(orgId: string, projectId: string, opts: R
 /** The settle sessions' model and thinking a caller asked for (the project overseer's gathering choice), for the next run. */
 const settleChoices = new Map<string, { model?: string; thinking?: string }>();
 
-/** What one run reports to the reconciler chart (`reconcile/finished`). */
+/** What one run reports to the reconciler statechart (`reconcile/finished`). */
 export interface RunResult {
   decisions: Record<string, unknown>[];
   conflicts: Record<string, unknown>[];
@@ -781,7 +781,7 @@ export interface RunResult {
   error?: string;
 }
 
-/** The fields a run may change on a decision (the chart's `reconcile/result`). */
+/** The fields a run may change on a decision (the statechart's `reconcile/result`). */
 const RESULT_KEYS = ["recordId", "supersededBy", "folded", "checkedWith", "authorOwnsArea", "areaKey", "resolves"] as const;
 const resultOf = (d: DecisionRow): Record<string, unknown> => ({
   id: d.id,
@@ -792,10 +792,10 @@ const resultOf = (d: DecisionRow): Record<string, unknown> => ({
 const changedSince = (before: Map<string, string>, d: DecisionRow) => before.get(d.id) !== JSON.stringify(resultOf(d));
 
 /**
- * One comparison (the reconciler chart's :sova/reconcile): settle the routed conflicts whose sessions
+ * One comparison (the reconciler statechart's :sova/reconcile): settle the routed conflicts whose sessions
  * recorded an answer, file new areas, compare every unchecked pair, route each new conflict (its
- * settle session is the conflict chart's), draft the clean decisions. Reads the charts; writes only the
- * project's draft; its results go back to the chart, which moves each decision and spawns the conflicts.
+ * settle session is the conflict statechart's), draft the clean decisions. Reads the statecharts; writes only the
+ * project's draft; its results go back to the statechart, which moves each decision and spawns the conflicts.
  */
 export async function runReconcile(orgId: string, projectId: string, params: { by: CostStarter; owner?: BatonOwner }): Promise<RunResult> {
   const d = await currentDeps();
@@ -937,7 +937,7 @@ export async function runReconcile(orgId: string, projectId: string, params: { b
     run.error = `${run.error ? `${run.error}; ` : ""}draft: ${err instanceof Error ? err.message : String(err)}`;
     return [] as string[];
   });
-  // Each new conflict's route and settle session (the conflict chart starts it).
+  // Each new conflict's route and settle session (the conflict statechart starts it).
   const choice = settleChoices.get(`${orgId}/${projectId}`) ?? settleChoice(orgId, projectId);
   settleChoices.delete(`${orgId}/${projectId}`);
   const byIdNow = new Map(store.decisions.map((x) => [x.id, x]));
@@ -1024,7 +1024,7 @@ async function draftEffect(orgId: string, projectId: string): Promise<{ drafted:
 
 // ---- conflicts by hand -----------------------------------------------------------------------------------
 
-/** A conflict's open chart, or the route's refusal. */
+/** A conflict's open statechart, or the route's refusal. */
 function openConflict(orgId: string, projectId: string, conflictId: string): Conflict {
   const c = readConflicts(orgId, projectId).find((x) => x.id === conflictId);
   if (!c) throw new OrgError("Unknown conflict", 404);
@@ -1032,7 +1032,7 @@ function openConflict(orgId: string, projectId: string, conflictId: string): Con
   return c;
 }
 
-/** The target of a route, as the chart checks it (an active person or the operator). */
+/** The target of a route, as the statechart checks it (an active person or the operator). */
 function routeTarget(orgId: string, to: string): Record<string, unknown> | null {
   if (to === OPERATOR) return null;
   const p = readRoster(orgId).find((x) => x.id === to);
@@ -1041,7 +1041,7 @@ function routeTarget(orgId: string, to: string): Record<string, unknown> | null 
 }
 
 /** POST …/conflicts/:cid/route {to?}: its settle session again, to `to` (else where it goes): the
-    conflict chart closes the earlier one first, so two people are never asked the same thing. */
+    conflict statechart closes the earlier one first, so two people are never asked the same thing. */
 export async function routeConflictNow(orgId: string, projectId: string, conflictId: string, to?: string, _owner?: BatonOwner, envelope?: Envelope): Promise<DecisionsInfo & { offHours?: string }> {
   projectOf(orgId, projectId);
   const c = openConflict(orgId, projectId, conflictId);
@@ -1058,7 +1058,7 @@ export async function routeConflictNow(orgId: string, projectId: string, conflic
 
 /**
  * PATCH …/decisions/:did {ownerArea}: the operator says who decides a decision
- * (§app.requirements/owner-area). The decision chart keeps it with who and when; its authority is
+ * (§app.requirements/owner-area). The decision statechart keeps it with who and when; its authority is
  * recomputed here, and an open conflict it is a side of is routed again (the reconciler's
  * `route-conflict-of`): to someone else, the session asking is closed and a new one starts.
  */
@@ -1101,7 +1101,7 @@ async function rerouteOf(orgId: string, projectId: string, decisionId: string): 
   return { rerouted: out.taken ? c.id : null };
 }
 
-/** POST …/conflicts/:cid/resolve: the operator keeps a side, both, or states the decision (the conflict chart's settle). */
+/** POST …/conflicts/:cid/resolve: the operator keeps a side, both, or states the decision (the conflict statechart's settle). */
 export async function resolveConflict(orgId: string, projectId: string, conflictId: string, input: ConflictResolveInput): Promise<DecisionsInfo> {
   projectOf(orgId, projectId);
   const c = readConflicts(orgId, projectId).find((x) => x.id === conflictId);
@@ -1207,7 +1207,7 @@ export async function promoteDecisions(orgId: string, projectId: string, ids: st
 }
 
 /** The effect `promote`: the checked ids written into the spec (their records, the ones they supersede,
-    the quotes folded in), committed, and each one's prose hash kept (the chart's promote/done). */
+    the quotes folded in), committed, and each one's prose hash kept (the statechart's promote/done). */
 async function promoteEffect(orgId: string, projectId: string, e: Effect): Promise<Record<string, unknown>> {
   const project = projectOf(orgId, projectId);
   const d = await currentDeps();
@@ -1284,7 +1284,7 @@ async function restoreEffect(orgId: string, projectId: string, e: Effect): Promi
   const out = await promoteEdit(project.root, edit, verification, d.now(), { proseOnly: true });
   const commit = out.promoted.length && snap ? await commitSpec(snap, promotionMessage([row])).catch(() => undefined) : undefined;
   void syncSpecFacts(orgId, projectId).catch(() => {});
-  // The words now in the spec (their words again): the promoted text the chart compares against from here on.
+  // The words now in the spec (their words again): the promoted text the statechart compares against from here on.
   const textHash = proseHash(currentBlock(project.root, row.recordId) ?? "");
   return { restored: out.promoted.length > 0, textHash, ...(commit && "sha" in commit ? { commit: commit.sha } : {}) };
 }

@@ -2,7 +2,7 @@
 // workspace and project root in the OS temp dir, deleted after; ~/.pi is never read or written.
 //
 // Which sessions are organizational (SessionSummary.org, server/org-sessions.ts): from the org's own
-// records — workspace files and the builds' charts — never from a folder.
+// records — workspace files and the builds' statecharts — never from a folder.
 import assert from "node:assert/strict";
 import { appendFileSync, copyFileSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";

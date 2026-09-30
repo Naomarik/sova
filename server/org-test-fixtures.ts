@@ -1,6 +1,6 @@
 /**
- * Test fixtures for the org charts (tests only; nothing in the server imports this): states the
- * charts reach through runs and acts, started directly so a test can begin from them.
+ * Test fixtures for the org statecharts (tests only; nothing in the server imports this): states the
+ * statecharts reach through runs and acts, started directly so a test can begin from them.
  */
 import { randomUUID } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
@@ -14,7 +14,7 @@ import { operatorName, readRoster } from "./orgs";
 
 /**
  * Conflicts as today's rows said them: open with a settle session (`batonSessionId`: its baton is
- * started, as the conflict chart does), open with none (unrouted: nobody is asked), or resolved.
+ * started, as the conflict statechart does), open with none (unrouted: nobody is asked), or resolved.
  */
 export async function seedConflicts(orgId: string, projectId: string, conflicts: Conflict[], opts: { owner?: "operator" | { overseerOf: string } } = {}): Promise<Record<string, string | undefined>> {
   const sessions: Record<string, string | undefined> = {};
@@ -23,7 +23,7 @@ export async function seedConflicts(orgId: string, projectId: string, conflicts:
   for (const c of conflicts) {
     const side = (id: string) => ({ id, by: "operator", name: operatorName(), statement: id, quote: id, at: Date.parse(c.createdAt) });
     const asked = c.state === "open" && !!c.batonSessionId;
-    // The conflict chart starts its own settle session: an id another session has already gets a fresh one.
+    // The conflict statechart starts its own settle session: an id another session has already gets a fresh one.
     const batonSessionId = asked ? (c.batonSessionId && !batonById(c.batonSessionId) ? c.batonSessionId : randomUUID()) : undefined;
     sessions[c.id] = batonSessionId;
     const r = await host.start(
@@ -170,7 +170,7 @@ export async function seedBuild(
 }
 
 /**
- * The project overseer's conversations as its project chart keeps them: `history` (oldest first here)
+ * The project overseer's conversations as its project statechart keeps them: `history` (oldest first here)
  * started one after another, then `current`; each a conversation id whose file the test writes itself.
  */
 export async function seedPoState(orgId: string, projectId: string, s: { current: string; history: string[] }): Promise<void> {
@@ -184,7 +184,7 @@ export async function seedPoState(orgId: string, projectId: string, s: { current
   }
 }
 
-/** A reason for the project's watch, as a chart sends it (`reason/noted {kind, params, key, by}`). */
+/** A reason for the project's watch, as a statechart sends it (`reason/noted {kind, params, key, by}`). */
 export async function noteWatchReason(orgId: string, projectId: string, reason: { kind: string; params?: Record<string, unknown>; key?: string; by?: string }): Promise<void> {
   const { by = "system", ...rest } = reason;
   // The reason's `by` is the envelope's (a payload may not shadow it).

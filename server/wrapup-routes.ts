@@ -6,7 +6,7 @@ import { batonInfo } from "./org-routes";
 
 /**
  * Retry Wrap-Up (§app.organizations/wrap-up): the operator runs a failed wrap-up again. The baton
- * chart's `baton/wrapup-retry` checks it (only a `failed` one, no wrap-up and no reply running, in
+ * statechart's `baton/wrapup-retry` checks it (only a `failed` one, no wrap-up and no reply running, in
  * today's words) and starts the wrap-up's run. It never retries on its own (a model that degenerated
  * once may do it again); this is the operator's call. Answers with the row as the run started.
  */

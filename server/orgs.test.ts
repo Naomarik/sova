@@ -194,9 +194,9 @@ describe("organizations", async () => {
     assert.equal((await orgs.addPerson(org.id, { name: "Twin" })).status, "active");
   });
 
-  test("q1: no state file is written in the workspace (only charts, the plain files and git)", () => {
+  test("q1: no state file is written in the workspace (only statecharts, the plain files and git)", () => {
     for (const f of ["org.json", "roster.json", "projects.json", "holder.json", "baton.json"]) assert.equal(existsSync(join(dir, f)), false, f);
-    assert.ok(existsSync(join(dir, "charts", "org")), "the org chart's snapshot");
+    assert.ok(existsSync(join(dir, "charts", "org")), "the org statechart's snapshot");
     assert.ok(existsSync(join(dir, "roster-history.jsonl")));
   });
 

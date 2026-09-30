@@ -113,7 +113,7 @@ describe("a lease never lapses while the reply to its holder is being written", 
   test("mid-reply a lapsed lease stays with its holder; the reply's end renews it; a lease entry waits for the reply", async () => {
     const maria = await person("Maria Lopez");
     const tony = await person("Tony Reyes");
-    // A one-second lease (hermetic tests only): the chart's own timer would lapse it mid-reply.
+    // A one-second lease (hermetic tests only): the statechart's own timer would lapse it mid-reply.
     process.env.SOVA_BATON_LEASE_MS = "1000";
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [maria.id, tony.id], publicTitle: "Invoices", goal: "g" }).finally(() => delete process.env.SOVA_BATON_LEASE_MS);
     const tonyTok = c.links!.find((l) => l.personId === tony.id)!.token;

@@ -65,7 +65,7 @@ test(`kill -9 at random moments, ${ROUNDS} times: every open loads everything, e
       const answered = rows.filter((r) => r.session === s.id && r.event === "effect/done").map((r) => (r.envelope as { key: string }).key);
       assert.equal(new Set(answered).size, answered.length, `${s.id}: no effect answered twice`);
       assert.deepEqual(new Set(answered), emitted, `${s.id}: every emitted effect answered`);
-      assert.equal(s.data["done"] ?? 0, emitted.size, `${s.id}: the chart counted each answer once`);
+      assert.equal(s.data["done"] ?? 0, emitted.size, `${s.id}: the statechart counted each answer once`);
       assert.deepEqual(s.data["sova/pending"], {});
     }
     assert.ok(existsSync(join(root, "effects.log")));

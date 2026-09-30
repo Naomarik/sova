@@ -231,7 +231,7 @@ describe("the operator's to-dos and ideas are their own list, never a reason to 
     assert.doesNotMatch(prompt, /approval threshold/, "the to-do's words stay out of the prompt");
     assert.match(prompt, /to-do items are their own list/);
     assert.match(prompt, /never because\s+a to-do or an idea exists/);
-    // A look's message (the watch chart's), as Run Now starts one.
+    // A look's message (the watch statechart's), as Run Now starts one.
     const { looks } = fakeLooks(org.id);
     await noteWatchReason(org.id, project.id, { kind: "baton/done", params: { title: "Menu" }, key: "baton/done:menu" });
     assert.equal((await po.lookNow(org.id, project.id)).started, true);
@@ -404,7 +404,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     } finally {
       po.setClockForTest(null);
     }
-    // The old ticker's "watching is off" was its own return value, never recorded or shown: the watch chart's switch is that rule now.
+    // The old ticker's "watching is off" was its own return value, never recorded or shown: the watch statechart's switch is that rule now.
     assert.ok(hostOf(org.id).configuration(`watch/${org.id}/${project.id}`)?.includes("watch-off"), "watching is off");
     assert.equal(looks.length, 0, "no look while watching is off");
     assert.deepEqual(store.readMemo(p).pending, before.pending);
@@ -615,7 +615,7 @@ describe("limits through PATCH, held items and their retry", async () => {
     assert.deepEqual(store.readMemo(p).pending, m.pending, "raising it releases nothing more");
   });
 
-  test("an old watch.json is never read: the watch chart's loop is the one shown", () => {
+  test("an old watch.json is never read: the watch statechart's loop is the one shown", () => {
     const old = join(stateRoot(), "project-overseers", `${org.id}-${project.id}`, "watch.json");
     mkdirSync(dirname(old), { recursive: true });
     const since = new Date().toISOString();
@@ -646,7 +646,7 @@ describe("limits through PATCH, held items and their retry", async () => {
     assert.equal(info.usage.allowance.today.gather.max, null, "Unlimited, as set above");
   });
 
-  test("the prompt says every start names its gap, what the charts do by themselves, the holds and the corrections", () => {
+  test("the prompt says every start names its gap, what the statecharts do by themselves, the holds and the corrections", () => {
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, po.toolsForTest(org.id, project.id));
     assert.match(prompt, /Every start names its gap \(`gap: "§gap\/<name>"`\), or\s+`gap: "none"`/);
     assert.match(prompt, /Don't do these again by hand: read the feed first\./);
@@ -687,7 +687,7 @@ describe("a project with no overseer conversation never looks", async () => {
   });
 });
 
-describe("the watch loop's decision, on its watch chart", async () => {
+describe("the watch loop's decision, on its watch statechart", async () => {
   const org = await orgs.createOrg({ name: "Loop", dir: join(root, "ws-loop") });
   mkdirSync(join(root, "proj-loop"));
   const project = await orgs.addProject(org.id, { name: "Loop", root: join(root, "proj-loop") });

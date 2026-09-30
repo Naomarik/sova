@@ -30,7 +30,7 @@ export interface LinkRecord {
   revokedAt?: string;
   /** Set when it was turned off because its offer went to someone else (the page may say so). */
   revokedWhy?: "withdrawn";
-  /** The baton chart's effect that minted it (its key): a re-run of that effect mints nothing twice. */
+  /** The baton statechart's effect that minted it (its key): a re-run of that effect mints nothing twice. */
   key?: string;
 }
 

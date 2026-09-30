@@ -40,7 +40,7 @@ test("the oracle is today's autonomyRefusal, with effectiveAutonomy's pause and 
   assert.match(oracle("sova_todo", undefined, env({ autonomy: "L3" }))!, /only in a turn the operator started/);
 });
 
-test("the facts projection: each fact set has the phases a chart may be in", () => {
+test("the facts projection: each fact set has the phases a statechart may be in", () => {
   const it = (o: Partial<Parameters<typeof expectedPhases>[0]>) => ({ status: "open", baton: null, decisions: [], build: null, ...o });
   const b = (state: string) => ({ id: "b1", state, own: true, wrote: false, settle: false });
   const d = (state: string, build: string | null = null) => ({ id: "d", state, authorOwnsArea: true, build });
@@ -68,16 +68,16 @@ test("the facts projection: each fact set has the phases a chart may be in", () 
   assert.equal(followUpPhase(it({ baton: b("open") })), "no-follow-up");
 });
 
-// The replay drives the refit's charts through a real host: every chart a lane touches must be in the bundle.
-test("the replay's charts are the refit's (org, project, watch, item, baton, decision, reconciler, build), never the spike's", () => {
+// The replay drives the refit's statecharts through a real host: every statechart a lane touches must be in the bundle.
+test("the replay's statecharts are the refit's (org, project, watch, item, baton, decision, reconciler, build), never the spike's", () => {
   const names = chartVersions().map((c) => c.name as string);
-  for (const c of ["org", "person", "project", "watch", "item", "baton", "decision", "reconciler", "build"]) assert.ok(names.includes(c), `charts: ${names.join(", ")}`);
+  for (const c of ["org", "person", "project", "watch", "item", "baton", "decision", "reconciler", "build"]) assert.ok(names.includes(c), `statecharts: ${names.join(", ")}`);
   const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "org-charts-replay.ts"), "utf8");
-  assert.doesNotMatch(src, /spike-project|work-item|createOrgCharts/, "no spike chart and no bare engine: the real host");
+  assert.doesNotMatch(src, /spike-project|work-item|createOrgCharts/, "no spike statechart and no bare engine: the real host");
 });
 
 // A replay takes well under a second. The limit catches a hang in anything asynchronous; a synchronous
-// eventless cycle in a chart cannot be interrupted by a timer, and the engine's step limit throws instead
+// eventless cycle in a statechart cannot be interrupted by a timer, and the engine's step limit throws instead
 // (an `engine:` divergence below).
 const REPLAY_TIMEOUT_MS = 60_000;
 /** The engine's per-event microstep limit (server/org-charts.ts), and how far under it the corpus must stay. */
@@ -90,12 +90,12 @@ for (const t of traces)
     reports.push(r);
     const unexplained = r.divergences.filter((d) => d.cls === null || d.cls === "chart-bug");
     assert.deepEqual(unexplained, [], `${t.id}: ${unexplained.length} unexplained divergences`);
-    // The charts were really asked: every real act trialled, every item position and every real look compared.
+    // The statecharts were really asked: every real act trialled, every item position and every real look compared.
     const tools = t.events.filter((e) => e.kind === "tool").length;
     const looks = t.events.filter((e) => e.kind === "turn" && e.by === "watch").length;
     const expects = t.events.filter((e) => e.kind === "expect").length;
-    // Every tool call that is a chart act now was trialled (a read, a note, a validation refusal is none).
-    if (r.coverage.routed) assert.ok(r.coverage.trials >= r.coverage.routed, `${t.id}: ${r.coverage.routed} tool calls are chart acts, ${r.coverage.trials} trialled`);
+    // Every tool call that is a statechart act now was trialled (a read, a note, a validation refusal is none).
+    if (r.coverage.routed) assert.ok(r.coverage.trials >= r.coverage.routed, `${t.id}: ${r.coverage.routed} tool calls are statechart acts, ${r.coverage.trials} trialled`);
     assert.ok(r.coverage.routed <= tools);
     if (t.events.some((e) => e.entity === "gap" || e.args?.id?.startsWith("§gap/"))) assert.ok(r.coverage.itemChecks > 0, `${t.id}: gaps, but no item position checked`);
     assert.equal(r.coverage.lookChecks, t.events.some((e) => e.entity === "overseer") || t.source === "synthetic" ? looks : r.coverage.lookChecks, `${t.id}: real looks not all compared`);
@@ -103,7 +103,7 @@ for (const t of traces)
     // An engine error (an action or guard that threw, a step limit) is never a divergence to explain away.
     assert.deepEqual(r.divergences.filter((d) => d.check.startsWith("engine:")), [], `${t.id}: the engine threw`);
     assert.ok(r.coverage.maxMicrosteps > 0 && r.coverage.maxMicrosteps <= MAX_MICROSTEPS / 10, `${t.id}: an event took ${r.coverage.maxMicrosteps} microsteps`);
-    // A class that says the chart is right, or cannot say it, shows the step it rests on.
+    // A class that says the statechart is right, or cannot say it, shows the step it rests on.
     for (const d of r.divergences.filter((x) => x.cls === "chart-better" || x.cls === "cannot-express" || x.cls === "drift"))
       assert.ok(d.evidence && Object.keys(d.evidence).length, `${t.id} @${d.dt} ${d.cls} ${d.check}: no evidence`);
   });
@@ -117,10 +117,10 @@ const git = (...args: string[]): string | null => {
   }
 };
 
-// Drift: the trace ran code without the commit that changed this behaviour, and the code the charts model has
+// Drift: the trace ran code without the commit that changed this behaviour, and the code the statecharts model has
 // it. A trace may have run a side branch, so "without" is not "an ancestor of"; but every trace's commit must be
 // in this clone's history (a fixture cites master's commit, not a local branch's), or "lacks" would pass untested.
-test("every drift names a commit the charts' code has and its trace's code lacks", (t) => {
+test("every drift names a commit the statecharts' code has and its trace's code lacks", (t) => {
   if (git("rev-parse", "--git-dir") === null) return t.skip("no git history in this copy");
   const drift = reports.flatMap((r) => r.divergences.filter((d) => d.cls === "drift").map((d) => ({ d, trace: traces.find((x) => x.id === r.trace)! })));
   assert.ok(drift.length > 0, "the corpus has drift to check");
@@ -132,7 +132,7 @@ test("every drift names a commit the charts' code has and its trace's code lacks
       commits.add(c);
       assert.ok(trace.sova.commit, `${trace.id}: drift in a trace with no commit`);
       assert.notEqual(git("rev-parse", "--verify", "--quiet", `${c}^{commit}`), null, `${trace.id} @${d.dt}: ${c} is no commit here`);
-      assert.notEqual(git("merge-base", "--is-ancestor", c, "HEAD"), null, `${trace.id} @${d.dt}: ${c} is not in the code the charts model`);
+      assert.notEqual(git("merge-base", "--is-ancestor", c, "HEAD"), null, `${trace.id} @${d.dt}: ${c} is not in the code the statecharts model`);
       assert.equal(git("merge-base", "--is-ancestor", c, trace.sova.commit!), null, `${trace.id} @${d.dt}: the trace's ${trace.sova.commit} already has ${c}`);
     }
   }

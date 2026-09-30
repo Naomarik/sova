@@ -1,15 +1,15 @@
 // Run: pnpm exec tsx --test server/org-charts.test.ts. Engine behaviour proven against the vendored
-// ESM bundle (server/vendor/org-charts.js) through the typed wrapper, on the "engine-probe" chart. The
+// ESM bundle (server/vendor/org-charts.js) through the typed wrapper, on the "engine-probe" statechart. The
 // probe is not in the shipped file: these tests register it at runtime (`charts`), as a JS copy
 // (fixtures/org-charts-engine/probe-chart.ts) of org-charts/src/sova/org_charts/engine/probe.cljs, which
-// the CLJS tests run; probe_shape.json holds both to one shape. The replay runs the shipped charts. Pure: no files, no clock but `now`.
+// the CLJS tests run; probe_shape.json holds both to one shape. The replay runs the shipped statecharts. Pure: no files, no clock but `now`.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import { chartVersions, createOrgCharts as createShipped, hoursInherited, nextWindow, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
 import { readFileSync } from "node:fs";
 import { PROBE_CHARTS, probeChart, probeShape } from "./fixtures/org-charts-engine/probe-chart";
 
-/** The shipped engine with the probe chart registered. */
+/** The shipped engine with the probe statechart registered. */
 const createOrgCharts = (opts: EngineOptions = {}): OrgCharts => createShipped({ ...opts, charts: PROBE_CHARTS });
 const PROBE = "engine-probe" as ChartName;
 
@@ -27,10 +27,10 @@ function has(e: OrgCharts, sid: string, ...ids: string[]): boolean {
 }
 
 describe("org-charts engine (vendored ESM)", () => {
-  test("the bundle lists its charts, each with a positive integer version", () => {
+  test("the bundle lists its statecharts, each with a positive integer version", () => {
     const names = chartVersions().map((c) => c.name);
-    assert.deepEqual(names.sort(), ["baton", "build", "conflict", "decision", "item", "org", "person", "project", "reconciler", "residence", "watch"], "the refit's eleven charts, nothing else");
-    assert.ok(!names.includes(PROBE), "the shipped module has no test chart");
+    assert.deepEqual(names.sort(), ["baton", "build", "conflict", "decision", "item", "org", "person", "project", "reconciler", "residence", "watch"], "the refit's eleven statecharts, nothing else");
+    assert.ok(!names.includes(PROBE), "the shipped module has no test statechart");
     assert.throws(() => createShipped().start("p", PROBE), /Unknown chart/, "the probe exists only where it is registered");
     assert.throws(() => createShipped({ charts: { project: PROBE_CHARTS["engine-probe"] } }), /Chart project is already registered/);
     for (const c of chartVersions()) {
@@ -229,7 +229,7 @@ describe("org-charts engine (vendored ESM)", () => {
     assert.ok(has(e2, "p", "c", "open"));
   });
 
-  test("a load cut off mid-look runs nothing until the resumed event, which the chart handles", () => {
+  test("a load cut off mid-look runs nothing until the resumed event, which the statechart handles", () => {
     const e = probe({}, { tickMs: 1 });
     e.send("p", "next", {}, { now: T0 });
     e.send("p", "next", {}, { now: T0 });
@@ -337,7 +337,7 @@ describe("org-charts engine (vendored ESM)", () => {
   });
 });
 
-describe("nextWindow (r7: the charts' rules.hours, exported)", () => {
+describe("nextWindow (r7: the statecharts' rules.hours, exported)", () => {
   const weekdays = { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" };
   test("before, inside and after a person's hours; the weekend; a zone with DST; no hours", () => {
     const mon = Date.UTC(2026, 8, 28); // Monday 2026-09-28 00:00 UTC

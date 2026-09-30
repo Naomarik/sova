@@ -570,7 +570,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
     "/api/orgs/:id/projects/:pid/pipeline/:itemId/timeline",
     handle((c) => c.json(itemTimeline(p(c, "id"), p(c, "pid"), p(c, "itemId"), { includeQuiet: c.req.query("quiet") === "1" }))),
   );
-  // The operator's Cancel on a held act (Needs you, the Pipeline): the chart's hold/cancel.
+  // The operator's Cancel on a held act (Needs you, the Pipeline): the statechart's hold/cancel.
   app.post(
     "/api/orgs/:id/held/:holdId/cancel",
     handle(async (c) => {
@@ -732,7 +732,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       return c.json({ ok: true });
     }),
   );
-  // The operator's moves (§app.baton/hand-off): the chart checks them, stops a reply in flight, moves.
+  // The operator's moves (§app.baton/hand-off): the statechart checks them, stops a reply in flight, moves.
   app.post(
     "/api/baton/:sid/take",
     handle(async (c) => {
@@ -743,7 +743,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
   app.post(
     "/api/baton/:sid/close",
     handle(async (c) => {
-      // Closing ends it as goal_done does: the chart runs the wrap-up (now, or when a running reply ends).
+      // Closing ends it as goal_done does: the statechart runs the wrap-up (now, or when a running reply ends).
       await closeBaton(p(c, "sid"), { by: operatorBy(c) });
       return c.json({ ok: true });
     }),
@@ -777,7 +777,7 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const to = typeof b.to === "string" ? b.to : "";
       const question = typeof b.question === "string" ? b.question.trim().slice(0, 1000) : "";
       const briefing = typeof b.briefing === "string" ? b.briefing.trim().slice(0, 4000) : "";
-      // The chart refuses who and what in today's words; the link is the move's own (shown once).
+      // The statechart refuses who and what in today's words; the link is the move's own (shown once).
       const { result, outcome } = await awaitShareLinks(async () => {
         const moved = await handoffTo(sid, to, question, briefing, operatorBy(c));
         return { ...(moved.token ? { token: moved.token } : rotateLink(sid)), offHours: moved.offHours };

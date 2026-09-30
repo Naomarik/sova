@@ -1,5 +1,5 @@
 // `pnpm org-charts rebuild --verify <org> [--workspace <dir>]`: replay every session's transition log
-// on the current charts and list each whose states, links, timers or holds differ from its snapshot
+// on the current statecharts and list each whose states, links, timers or holds differ from its snapshot
 // (server/org-host/rebuild.ts). Reads only; exit 1 when a session differs, 2 on a usage error.
 // There is no plain rebuild (operator ruling r9): the log never holds message text, contact values
 // or About text, so a session can't be restored from it.

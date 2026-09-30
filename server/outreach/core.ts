@@ -17,7 +17,7 @@ import { whatsapp } from "./whatsapp";
  * The outreach core (§app/outreach): send a roster person a link and/or a short note. The person's
  * address on the channel → pause and readiness → the link's resolver (a reference the server turns
  * into a URL in this step: server/outreach/links.ts) → the channel → the send log. Every trigger
- * goes through the project chart's `outreach/send` act (holds, confirm kinds, working hours, the
+ * goes through the project statechart's `outreach/send` act (holds, confirm kinds, working hours, the
  * confirm card), whose `outreach-send` effect runs `send`. Results name the outcome only: never a
  * token, a link, a number or the message.
  */
@@ -169,7 +169,7 @@ async function noteLeak(orgId: string, projectId: string, note: string): Promise
 }
 
 /**
- * The project chart's `outreach/send`, settled: the chart checks the person, the link (the host's
+ * The project statechart's `outreach/send`, settled: the statechart checks the person, the link (the host's
  * `invalid`), the note, the card and the level; an unattended overseer's send waits in the hold.
  * A refusal throws as the route answers it.
  */

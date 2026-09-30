@@ -74,7 +74,7 @@ export function mountOutreach(app: Hono): void {
     });
     return c.json({ people, operatorName: operatorName(), publicTitle: row.publicTitle } satisfies BatonOutreach, 200, NO_STORE);
   });
-  // Send on WhatsApp (§app.outreach/send-link): the chart's act, settled; the answer names the outcome only.
+  // Send on WhatsApp (§app.outreach/send-link): the statechart's act, settled; the answer names the outcome only.
   const fail = (c: Context, err: unknown) => {
     if (err instanceof OrgError) return c.json({ error: err.message, ...(err.code ? { code: err.code } : {}) }, err.status);
     throw err;

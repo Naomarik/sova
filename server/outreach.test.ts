@@ -1,6 +1,6 @@
 // Run: pnpm exec tsx --test server/outreach.test.ts. §app/outreach end to end against the fake
 // WhatsApp sender (scripts/fake-whatsapp-sender.mjs, the sender's real state machine over a fake
-// WhatsApp): Send on WhatsApp through the baton chart's act, the send log, receipts, the refusals,
+// WhatsApp): Send on WhatsApp through the baton statechart's act, the send log, receipts, the refusals,
 // a sender that is down, the relay's gate, and the secret coverage. A throwaway PI_CODING_AGENT_DIR.
 import assert from "node:assert/strict";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -251,7 +251,7 @@ describe("§app.outreach/send: a note, a preview link, the project overseer thro
     assert.doesNotMatch(JSON.stringify(out.content), /share\.example|5550000100/);
     assert.equal(count(), 0, "nothing sent while held");
     const hold = hostOf(org.id).holds().find((h) => h.event === "outreach/send")!;
-    assert.ok(hold, "held on the project chart");
+    assert.ok(hold, "held on the project statechart");
     await hostOf(org.id).act(`project/${org.id}/${project.id}`, "hold/approve", { id: hold.id, reason: "test: send it now" }, { by: "operator", attended: true });
     const end = Date.now() + 8000;
     while (count() === 0 && Date.now() < end) await new Promise((r) => setTimeout(r, 100));

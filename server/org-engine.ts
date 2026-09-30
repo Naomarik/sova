@@ -53,7 +53,7 @@ export interface OpenOptions {
 }
 
 /** The host's `stamp` option (engine API): a fresh envelope for an act the engine delivers itself
-    (a chart's drive, a held act at its release). `who` is the act's original actor (default "chart")
+    (a statechart's drive, a held act at its release). `who` is the act's original actor (default "chart")
     and project: an act on a person or the org (a held roster approve) is still its project's act, so
     its level, pause, archive, ledgers and hold come from that project, never from defaults. */
 export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: StampContext) => Envelope;
@@ -157,20 +157,20 @@ export const isOrgHostOpen = (orgId: string): boolean => hosts.has(orgId);
 
 const STATUSES = new Set([400, 404, 409, 410]);
 
-/** A chart refusal as the route answers it: its status (409 when the chart names none) and sentence; `code` passes through. */
+/** A statechart refusal as the route answers it: its status (409 when the statechart names none) and sentence; `code` passes through. */
 export function refusalError(r: Refusal): OrgError {
   const status = (STATUSES.has(r.status ?? 0) ? r.status : 409) as 400 | 404 | 409 | 410;
   return new OrgError(r.sentence, status, r.code ?? undefined, r.tail ?? undefined);
 }
 
-/** The envelope for an act of `who` on the org's project (null: an org-level act), from the charts as they stand now. */
+/** The envelope for an act of `who` on the org's project (null: an org-level act), from the statecharts as they stand now. */
 export function envelopeFor(orgId: string, projectId: string | null, who: StampWho): Envelope {
   const host = hostOf(orgId);
   const settings = settingsOf();
   return stampEnvelope(host, orgId, projectId, who, (pid) => settings.read(orgId, pid), settings.defaults());
 }
 
-/** A hold's id as the server names it (F19): the chart's hold id is unique only within its session
+/** A hold's id as the server names it (F19): the statechart's hold id is unique only within its session
     ("gather/start#0"), so every id the operator, the UI or an overseer sees is `${sessionId}:${holdId}`. */
 export const holdRef = (h: { sessionId: string; id: string }): string => `${h.sessionId}:${h.id}`;
 

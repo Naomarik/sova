@@ -140,7 +140,7 @@ const fake: DecisionProvider = {
 };
 reconcile.setReconcileDeps({ provider: () => fake, excluded: () => false });
 
-/** A decision as record_decision leaves it: the person's message, the tool call, then its chart's act. */
+/** A decision as record_decision leaves it: the person's message, the tool call, then its statechart's act. */
 let seq = 0;
 async function decided(file: string, by: string, area: string, statement: string): Promise<void> {
   const last = JSON.parse(readFileSync(file, "utf8").trim().split("\n").at(-1)!).id;
@@ -238,7 +238,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   test("the wrap-up of each of them: its turn never gets it", async () => {
     for (const h of handoffs) {
       const before = sent.get(h.path)?.length ?? 0;
-      // goal_done: the chart runs the wrap-up itself (a person wrote), once the reply is idle.
+      // goal_done: the statechart runs the wrap-up itself (a person wrote), once the reply is idle.
       await baton.markDone(h.sessionId);
       const state = () => baton.batonById(h.sessionId)!.row.wrapup?.state;
       for (let i = 0; i < 1000 && state() !== "done" && state() !== "failed"; i++) await new Promise((r) => setTimeout(r, 10));

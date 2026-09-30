@@ -6,7 +6,7 @@ import { readWorktree, type WorktreeRecord } from "./project-worktrees";
  * (§app.organizations/org-sessions): the project page's own answer — git's while the branch exists
  * and can be read, else the recorded merge or the branch's removal — read in the background at most
  * every BUILD_TTL_MS per session, so a listing never waits on git. Until git has answered once, the
- * list says what the build's chart recorded; a Merge Branch here updates it at once.
+ * list says what the build's statechart recorded; a Merge Branch here updates it at once.
  */
 export const BUILD_TTL_MS = 30_000;
 

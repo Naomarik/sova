@@ -1,17 +1,17 @@
 import { PER_DAY, PER_TURN, PO_LIMIT_KINDS, type Allowance, type Autonomy, type PoLimitKind, type ProjectOverseerSettings } from "../shared/project-overseer";
 
 /**
- * The envelope the host stamps on every act it sends into an org's charts (design §4.1): who acts,
- * whether the turn is the operator's, the level chosen, and the facts the charts' guards read that
- * no chart owns (the settings file, the ledgers' counts, the at-once counts). The engine stamps
+ * The envelope the host stamps on every act it sends into an org's statecharts (design §4.1): who acts,
+ * whether the turn is the operator's, the level chosen, and the facts the statecharts' guards read that
+ * no statechart owns (the settings file, the ledgers' counts, the at-once counts). The engine stamps
  * nothing about autonomy; this module is the one place that builds it, inside the org's serialized
  * step, so what a guard reads cannot change between check and act.
  *
  * Pure: the caller reads the project's settings (overseer.json, as read now), the watch session's
- * ledgers and the chart states it counts, and passes them in.
+ * ledgers and the statechart states it counts, and passes them in.
  */
 
-/** Who acts. `chart`: the charts on their own (a drive, a released hold); `wrapup`: a wrap-up turn's profile writes; `model`: a gathering model's tool call; `sova`: Sova on its own (a settle session's reconcile). */
+/** Who acts. `chart`: the statecharts on their own (a drive, a released hold); `wrapup`: a wrap-up turn's profile writes; `model`: a gathering model's tool call; `sova`: Sova on its own (a settle session's reconcile). */
 export type ActBy = "operator" | "overseer" | "chart" | "system" | "model" | "person" | "wrapup" | "sova";
 
 /** The confirm card a global Overseer act carries (§app.overseer/org-people-facing): every target it lists. */
@@ -27,7 +27,7 @@ export interface Envelope {
   overseerId?: string;
   /** The operator's turn (their message entered the run, or a confirm-card click started it). */
   attended: boolean;
-  /** The level chosen (overseer.json); the level in force is the charts' to derive from paused/rosterActive. */
+  /** The level chosen (overseer.json); the level in force is the statecharts' to derive from paused/rosterActive. */
   autonomy: Autonomy;
   /** The project's overseer is paused at L0 by an attach on this host. */
   paused: boolean;
@@ -49,7 +49,7 @@ export interface Envelope {
   /** The project the act belongs to (the facts above are its); absent for an org-level act. The
       engine keeps it with a held act, so the act is stamped for the same project at its release. */
   projectId?: string;
-  /** Per-act facts a route or tool adds (host lookups the charts can't make: `invalid`, `target`,
+  /** Per-act facts a route or tool adds (host lookups the statecharts can't make: `invalid`, `target`,
       `namesTaken`, `ownerAreas`, `chosen`, `live`, `leak`). */
   [extra: string]: unknown;
 }
@@ -108,7 +108,7 @@ export function buildEnvelope(i: EnvelopeInput): Envelope {
   };
 }
 
-/** A chart session as the host's read API gives it. */
+/** A statechart session as the host's read API gives it. */
 export interface SessionRead {
   id: string;
   chart: string;
@@ -117,7 +117,7 @@ export interface SessionRead {
 }
 
 /**
- * The at-once counts, from chart states (never a separately kept number): this project overseer's
+ * The at-once counts, from statechart states (never a separately kept number): this project overseer's
  * gathering sessions that are open (settle sessions it owns included, as today), and its own coding
  * sessions (kind `coding`, never the operator's) that run: their turn is working, or their turn
  * ended while their workers still run (`workers`, the build's exported count). Pure.

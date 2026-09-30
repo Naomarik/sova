@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/org-host/host.test.ts. The org host over the vendored engine, on
-// a runtime JS test chart (test-chart.ts), in temp dirs: snapshots, the redo journal and its replay,
+// a runtime JS test statechart (test-chart.ts), in temp dirs: snapshots, the redo journal and its replay,
 // the log and its privacy, effects (answered once, re-run at open), holds, invocations, timers,
 // workspace problems.
 import assert from "node:assert/strict";
@@ -174,7 +174,7 @@ describe("org host", () => {
     await host.close();
   });
 
-  test("an invocation runs with its run id and its report moves the chart", async () => {
+  test("an invocation runs with its run id and its report moves the statechart", async () => {
     const at = place();
     const host = await open(at);
     const runs: string[] = [];
@@ -284,7 +284,7 @@ describe("org host", () => {
     await again.close();
   });
 
-  test("markers in every private key (a chart's own included) reach no row: taken, refused and held acts", async () => {
+  test("markers in every private key (a statechart's own included) reach no row: taken, refused and held acts", async () => {
     const at = place();
     const host = await open(at);
     await host.start("p/1", "host-probe", {}, operator);
@@ -306,7 +306,7 @@ describe("org host", () => {
     for (const k of ["about", "message", "text", "quote"]) assert.deepEqual(Object.keys(env[k] as object).sort(), ["len", "sha"], `${k} is a digest`);
     assert.equal(env["email"], "[contact]");
     assert.equal(env["phone"], "[contact]");
-    assert.ok(!("token" in env) && !("secretish" in env), "dropped keys, the chart's own included");
+    assert.ok(!("token" in env) && !("secretish" in env), "dropped keys, the statechart's own included");
     await host.close();
   });
 

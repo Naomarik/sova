@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/baton-told.test.ts. Who started a gathering session, why, and what it is
-// told (§app.baton/told): the chart's `started` from each start (the operator's, a project overseer's, a gap's,
+// told (§app.baton/told): the statechart's `started` from each start (the operator's, a project overseer's, a gap's,
 // a plan's), the strip's `BatonInfo.started`, and `GET /api/baton/:sid/told` with the prompt replayed from the
 // session file's pi 0.86+ system entries by pi-ai's own replay. Throwaway workspace and PI_CODING_AGENT_DIR;
 // no model is called.
@@ -77,7 +77,7 @@ const decl = (name: string, description = `${name} does its thing.`) => ({ name,
 const system = (at: string, message: Record<string, unknown>) => ({ type: "message", timestamp: at, message: { role: "system", content: "", timestamp: Date.parse(at), ...message } });
 
 describe("who started it (§app.baton/told)", () => {
-  test("the chart's start data, else the owner and startedVia of a session from before it", () => {
+  test("the statechart's start data, else the owner and startedVia of a session from before it", () => {
     assert.deepEqual(told.starterOf({ started: { by: "project-overseer", overseerId: "c1", why: " W " } }), { who: "project-overseer", overseerId: "c1", why: "W" });
     assert.deepEqual(told.starterOf({ started: { by: "overseer", why: "" } }), { who: "overseer" });
     assert.deepEqual(told.starterOf({ started: { by: "operator" }, owner: { overseerOf: "p" } }), { who: "operator" }, "recorded wins over derived");
@@ -107,7 +107,7 @@ describe("who started it (§app.baton/told)", () => {
     assert.equal(t.projectName, "Portal");
   });
 
-  test("a project overseer's start: its conversation and its why, on the chart, the strip and the told document", async () => {
+  test("a project overseer's start: its conversation and its why, on the statechart, the strip and the told document", async () => {
     await assert.rejects(
       () => run("sova_start_gathering", { gap: "none", person: "Tony Reyes", public_title: "Hosting", goal: "Who hosts the portal", question: "Who hosts it?" }),
       /^Error: Say why you start it \(why\): one or two sentences for the operator, never shown to the person\.$/,
@@ -138,14 +138,14 @@ describe("who started it (§app.baton/told)", () => {
     await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1" });
     await new Promise((r) => setTimeout(r, 100));
     const planned = baton.allBatons().find((b) => b.publicTitle === "VAT rate");
-    assert.ok(planned, "the chart started the plan");
+    assert.ok(planned, "the statechart started the plan");
     assert.deepEqual(chartStarted(planned.sessionId), { by: "project-overseer", overseerId: overseerId(), why: "Planned: the VAT rate is open." });
   });
 
   test("a session from before `started`: the owner says who, the transition log's start row says which conversation", async () => {
     const { id } = detailsOf(await run("sova_start_gathering", { gap: "none", person: "Tony Reyes", why: WHY, public_title: "Old", goal: "g", question: "q?" }));
     const row = baton.batonById(id)!.row;
-    // Its chart data as a session started before `started` has it.
+    // Its statechart data as a session started before `started` has it.
     const { started: _started, ...old } = told.batonData(row)!;
     assert.deepEqual(told.startedOf(row, old), { who: "project-overseer", at: row.createdAt, overseer: { id: overseerId(), current: true } }, "no why: none was recorded, none is guessed");
   });

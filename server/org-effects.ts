@@ -11,12 +11,12 @@ import { changeSummary } from "./workspace-commits";
 import { changedPaths, commitAll, headCommitMs, retryPush } from "./workspace-git";
 
 /**
- * The server's side of the org charts' effects (design §2.6): each is an intent a chart step emitted,
+ * The server's side of the org statecharts' effects (design §2.6): each is an intent a statechart step emitted,
  * run after the step is durable, answered as `effect/done {result}` or `effect/failed {detail}`
  * (a throw). Every handler is idempotent by the effect's key: the host runs a pending one again
  * after a restart. Registered on every org's engine as it opens.
  *
- * Here: the org, residence and person charts' (P1). Baton, decision, build and watch effects are
+ * Here: the org, residence and person statecharts' (P1). Baton, decision, build and watch effects are
  * registered by their own modules.
  */
 

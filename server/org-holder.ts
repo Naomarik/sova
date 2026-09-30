@@ -1,9 +1,9 @@
 /**
- * Which host holds an organization (§app.organizations/holder). The record lives in the org chart's
- * portable snapshot (`<workspace>/charts/org/…`, r1): the org chart writes it when this host's
+ * Which host holds an organization (§app.organizations/holder). The record lives in the org statechart's
+ * portable snapshot (`<workspace>/charts/org/…`, r1): the org statechart writes it when this host's
  * residence claims or releases the org. A host's identity is its own, made once and kept host-local
  * (`<stateRoot>/host.json`). Attach reads the record in the clone and on its remote (the residence
- * chart's `read-holder` effect, server/org-effects.ts), so attaching an org another host still holds
+ * statechart's `read-holder` effect, server/org-effects.ts), so attaching an org another host still holds
  * warns first.
  */
 import { randomBytes } from "node:crypto";
@@ -20,7 +20,7 @@ export interface HostIdentity {
   name: string;
 }
 
-/** The org chart's holder record: this host holds it since `since` (ms), or it was released. */
+/** The org statechart's holder record: this host holds it since `since` (ms), or it was released. */
 export interface HolderRecord {
   hostId: string;
   hostName: string;
@@ -59,7 +59,7 @@ export function hostIdentity(): HostIdentity {
   return { id, name: hostname() || id };
 }
 
-/** A holder record from chart data (camelCase), or null. */
+/** A holder record from statechart data (camelCase), or null. */
 export function parseHolder(v: unknown): HolderRecord | null {
   if (!isObj(v) || typeof v.hostId !== "string" || !v.hostId) return null;
   return {

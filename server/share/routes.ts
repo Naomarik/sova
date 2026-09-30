@@ -157,7 +157,7 @@ export function createShareApp(): Hono {
     if (text.length > SHARE_TEXT_MAX) return c.json(refusal("too-long", `Messages are limited to ${SHARE_TEXT_MAX} characters.`), 413);
     if (text.startsWith("/")) return c.json(refusal("bad-request", "Messages can't start with /."), 400);
     const sessionId = access.row.sessionId;
-    // At the limit the baton goes to the operator and the session needs them (the chart's budget stop,
+    // At the limit the baton goes to the operator and the session needs them (the statechart's budget stop,
     // §app.baton/goal-and-loadout); the page says why.
     const limit = (message: string) => c.json(refusal("budget", message), 409);
     if (access.reason === "budget") return limit("This conversation has reached its message limit. The operator has been told.");
@@ -198,7 +198,7 @@ export function createShareApp(): Hono {
       undoNote(sessionId);
       return busy(err);
     }
-    // Its reply started with the accepted message (the chart's reply region); the chat layer tells it the rest.
+    // Its reply started with the accepted message (the statechart's reply region); the chat layer tells it the rest.
     refreshShare(sessionId);
     return c.json({ ok: true }, 202);
   });

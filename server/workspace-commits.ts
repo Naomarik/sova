@@ -2,7 +2,7 @@ import { changedPaths, commitAll, type CommitOutcome } from "./workspace-git";
 
 /**
  * The workspace repo's commit interval and message (§app.organizations/workspace-repo). The residence
- * chart decides when to commit (every minute it looks; an hour since HEAD's commit, counting Commit
+ * statechart decides when to commit (every minute it looks; an hour since HEAD's commit, counting Commit
  * Now, a restart and other hosts' commits); its `commit` effect (server/org-effects.ts) names the
  * changed paths. On a graceful shutdown every repo with changes is committed, due or not.
  */

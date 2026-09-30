@@ -1,7 +1,7 @@
 /**
  * Whether the server is shutting down (§app.organizations/wrap-up): a wrap-up turn that stops now was
  * cut off by the shutdown, not stopped for a reason of its own. A wrap-up left running by an earlier
- * process, or past its time, is the baton chart's to record failed (`sova/resumed` at open, its own
+ * process, or past its time, is the baton statechart's to record failed (`sova/resumed` at open, its own
  * overdue timer): no sweeper.
  */
 

@@ -1,13 +1,13 @@
-// The project page's Pipeline and the chart acts waiting in a hold: the wire contract between the
+// The project page's Pipeline and the statechart acts waiting in a hold: the wire contract between the
 // org routes and the page (§app.project-overseer/pipeline, §app.project-overseer/holds).
 //
 // GET  /api/orgs/:id/projects/:pid/pipeline                   -> PipelineInfo
-// POST /api/orgs/:id/projects/:pid/pipeline/:itemId/hold      {} -> PipelineInfo (operator only; 409 + the chart's sentence when refused)
+// POST /api/orgs/:id/projects/:pid/pipeline/:itemId/hold      {} -> PipelineInfo (operator only; 409 + the statechart's sentence when refused)
 // POST /api/orgs/:id/projects/:pid/pipeline/:itemId/resume    {} -> PipelineInfo (same)
 // GET  /api/orgs/:id/projects/:pid/pipeline/:itemId/timeline  -> PipelineTimeline
 // POST /api/orgs/:id/held/:holdId/cancel {reason?}           -> { ok: true } (404 unknown; 409 + sentence when it already went ahead)
 
-/** One gap's row (a `§gap/…` item of the project, its chart's lane state and links). */
+/** One gap's row (a `§gap/…` item of the project, its statechart's lane state and links). */
 export interface PipelineRow {
   /** The item's stable session id, `g_` + 8. */
   itemId: string;
@@ -15,7 +15,7 @@ export interface PipelineRow {
   gap: string;
   /** The idea's title. */
   title: string;
-  /** The item chart's lane state id, verbatim ("asking", "conflicted", "on-hold", "done", …). */
+  /** The item statechart's lane state id, verbatim ("asking", "conflicted", "on-hold", "done", …). */
   phase: string;
   /** ISO time it entered this phase. */
   since: string;
@@ -61,11 +61,11 @@ export interface PipelineBuild {
 }
 
 /**
- * An act a chart (or the overseer's unattended tool call) started that reaches a person or the
+ * An act a statechart (or the overseer's unattended tool call) started that reaches a person or the
  * client's code, waiting before it goes ahead.
  */
 export interface HeldAct {
-  /** `${sessionId}:${holdId}` (F19): the chart's hold id is unique only within its session. Opaque to the UI. */
+  /** `${sessionId}:${holdId}` (F19): the statechart's hold id is unique only within its session. Opaque to the UI. */
   id: string;
   orgId: string;
   projectId: string;

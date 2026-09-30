@@ -33,7 +33,7 @@ import { commitJournal, hostPaths, journalId, replayJournals, scanSnapshots, sna
 export type Envelope = Record<string, unknown>;
 
 export interface ActResult {
-  /** The chart took the act (or holds it: `held`). */
+  /** The statechart took the act (or holds it: `held`). */
   taken: boolean;
   refusal: Refusal | null;
   /** The act waits in a hold (q10); it goes ahead at `held.until` unless cancelled. */
@@ -115,16 +115,16 @@ export type Stamp = (sid: string, event: string, payload: Record<string, unknown
 export interface OrgHostOptions {
   orgId: string;
   workspaceDir: string;
-  /** Sova's state root: host-local charts live in `<stateDir>/org-charts/<orgId>/`. */
+  /** Sova's state root: host-local statecharts live in `<stateDir>/org-charts/<orgId>/`. */
   stateDir: string;
-  /** A fresh envelope for an act the engine delivers itself (a held act's release, a chart's drive). */
+  /** A fresh envelope for an act the engine delivers itself (a held act's release, a statechart's drive). */
   stamp?: Stamp;
   clock?: () => number;
   /** fsync journals and snapshots (default true; tests turn it off). */
   durable?: boolean;
   /** Sessions resumed per macrotask at open (default 50). */
   chunk?: number;
-  /** Tests: more charts (JS trees), passed to the engine. */
+  /** Tests: more statecharts (JS trees), passed to the engine. */
   charts?: EngineOptions["charts"];
   /** Tests (kill-9 fuzz): called between the journal write and applying it, and after applying it. */
   commitHooks?: { afterJournal?: () => void; afterApply?: () => void };
@@ -191,7 +191,7 @@ export class OrgHost {
   private readonly clock: () => number;
   private readonly storage = new Map<string, "portable" | "host-local">();
   private readonly redact = new Map<string, Record<string, RedactRule>>();
-  /** Every session file known (warm or cold): sid → {file, chart}. */
+  /** Every session file known (warm or cold): sid → {file, statechart}. */
   private readonly index = new Map<string, { file: string; chart: string }>();
   private readonly broken = new Map<string, HostProblem>();
   private journalProblem: JournalProblem | null = null;
@@ -609,11 +609,11 @@ export class OrgHost {
     });
   }
 
-  /** A log row for an act no chart takes (note, idea, to-do, confirm). */
+  /** A log row for an act no statechart takes (note, idea, to-do, confirm). */
   async logAct(row: Record<string, unknown>): Promise<void> {
     const at = this.uniqueAt(typeof row["at"] === "number" ? (row["at"] as number) : this.clock());
     const chart = typeof row["chart"] === "string" ? (row["chart"] as string) : null;
-    // `plain`: no chart step wrote it (a log replay skips it)
+    // `plain`: no statechart step wrote it (a log replay skips it)
     const full = { feed: "feed", ...(scrub(row, this.rulesOf(chart)) as Record<string, Json>), at, org: this.orgId, plain: true } as LogRow;
     const j: Journal = { id: journalId(this.clock()), at, snapshots: [], rows: [{ file: this.logFileFor(chart, at), row: full }] };
     commitJournal(this.paths.journal, j, this.durable);

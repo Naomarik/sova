@@ -4,7 +4,7 @@
 //   node scripts/build-org-charts.mjs          release build of HEAD's org-charts/, copied into server/vendor/
 //   node scripts/build-org-charts.mjs --check  release build of HEAD's org-charts/; exit 1 if it differs
 //                                              from the vendored file
-//   node scripts/build-org-charts.mjs --test   compile and run the CLJS tests under Node (engine + charts),
+//   node scripts/build-org-charts.mjs --test   compile and run the CLJS tests under Node (engine + statecharts),
 //                                              on the working tree: several processes, one after another
 //
 // The release build and --check never read the working tree: they `git archive HEAD org-charts/` into a
@@ -52,7 +52,7 @@ function shadow(...argv) {
   run("clojure", ["-Srepro", ...jvm, "-M:build", "-m", "shadow.cljs.devtools.cli", ...argv]);
 }
 
-// The chart matrices don't fit one Node heap together (4 GB, OOM after ~97 min), so --test runs every other
+// The statechart matrices don't fit one Node heap together (4 GB, OOM after ~97 min), so --test runs every other
 // test namespace in one process, then each matrix deftest in its own, one after another; the first failure
 // stops it. One piece by hand: node org-charts/out/test/node-tests.cjs --test=<ns>[/<deftest>],…
 if (args.has("--test")) {

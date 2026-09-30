@@ -1,7 +1,7 @@
 // Snapshots and the redo journal of one org (design §5.3).
 //
-// Snapshots: one EDN file per session, portable `<workspace>/charts/<chart>/<sid>.edn`, host-local
-// `<stateRoot>/org-charts/<org>/<chart>/<sid>.edn` (the session id URI-encoded).
+// Snapshots: one EDN file per session, portable `<workspace>/charts/<statechart>/<sid>.edn`, host-local
+// `<stateRoot>/org-charts/<org>/<statechart>/<sid>.edn` (the session id URI-encoded).
 // A call's snapshots span both places, so each commit is a redo journal
 // `<stateRoot>/org-charts/<org>/journal/<id>.json` ({snapshots, rows}): written and fsynced first,
 // then every snapshot is written in place (tmp + fsync + rename), the log rows appended, and the
@@ -38,7 +38,7 @@ export function snapshotFile(root: string, chart: string, sid: string): string {
   return join(root, chart, `${encodeURIComponent(sid)}.edn`);
 }
 
-/** Every snapshot file under `root`: `{sid, chart, file}`. */
+/** Every snapshot file under `root`: `{sid, statechart, file}`. */
 export function scanSnapshots(root: string): { sid: string; chart: string; file: string }[] {
   if (!existsSync(root)) return [];
   const out: { sid: string; chart: string; file: string }[] = [];

@@ -87,7 +87,7 @@ const fake: DecisionProvider = {
 let excluded = false;
 const ended: string[] = [];
 reconcile.setReconcileDeps({ provider: () => fake, excluded: () => excluded });
-// The settle sessions the conflicts close (the conflict chart closes them: their baton's close act).
+// The settle sessions the conflicts close (the conflict statechart closes them: their baton's close act).
 (await import("./org-engine")).onOrgChange((_orgId, change) => {
   for (const st of change.steps) if (st.sessionId.startsWith("baton/") && st.event === "baton/close" && !st.refused && !st.ignored) ended.push(st.sessionId.split("/").slice(2).join("/"));
 });
@@ -102,7 +102,7 @@ let seq = 0;
 const nid = () => (++seq).toString(16).padStart(8, "0");
 
 /** What record_decision leaves: the person's message, then the tool call, then the decision (its entry and
-    its chart, recorded for whoever holds the session). The owner area the model picks: the roster area
+    its statechart, recorded for whoever holds the session). The owner area the model picks: the roster area
     the topic names, else none (unless given). */
 async function say(file: string, by: string, text: string, decision?: { area: string; ownerArea?: string; statement: string; quote: string }): Promise<{ userId: string; markerId?: string }> {
   const userId = nid();
@@ -291,7 +291,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     host = `${s2.sessionId}:${(await say(f2, tony.id, "Run it on srv-01.", { area: "hosting", statement: "The portal runs on the office server srv-01.", quote: "Run it on srv-01." })).markerId}`;
   });
 
-  test("the index: one decision chart per record_decision, the quote's user message as provenance, pending; reading twice adds nothing", () => {
+  test("the index: one decision statechart per record_decision, the quote's user message as provenance, pending; reading twice adds nothing", () => {
     const rows = reconcile.listDecisions(org.id, project.id).decisions;
     assert.deepEqual(new Set(rows.map((d) => d.id)), new Set([d30, host]));
     const r = rows.find((d) => d.id === d30)!;
@@ -304,7 +304,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(reconcile.listDecisions(org.id, project.id).decisions.length, 2);
     assert.ok(reconcile.listDecisions(org.id, project.id).decisions.every((d) => d.state === "pending"), "alone in its area is still not reconciled");
     const dir = orgs.orgDir(org.id);
-    assert.ok(existsSync(join(dir, "charts", "decision", `${encodeURIComponent(`decision/${org.id}/${project.id}/${d30}`)}.edn`)), "each decision is a chart in the workspace repo");
+    assert.ok(existsSync(join(dir, "charts", "decision", `${encodeURIComponent(`decision/${org.id}/${project.id}/${d30}`)}.edn`)), "each decision is a statechart in the workspace repo");
     assert.ok(!existsSync(join(dir, "projects", project.id, "decisions.json")), "no decisions.json (q1)");
   });
 
@@ -415,7 +415,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const y = `${s2.sessionId}:${(await say(f2, tony.id, "Backups: 90 days.", { area: "hosting", statement: "Backups are kept 90 days.", quote: "90 days" })).markerId}`;
     let info = await reconcile.reconcileProject(org.id, project.id);
     const c = info.conflicts.find((k) => k.state === "open")!;
-    assert.ok(c && c.batonSessionId, "routed: its settle session asks (the conflict chart starts it)");
+    assert.ok(c && c.batonSessionId, "routed: its settle session asks (the conflict statechart starts it)");
     assert.equal(c.routedTo, tony.id, "Tony decides hosting; Tony wrote one side, nobody else owns it");
     info = await reconcile.resolveConflict(org.id, project.id, c.id, { keep: "b" });
     const byId = new Map(info.decisions.map((d) => [d.id, d]));
@@ -451,7 +451,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
   });
 
   test("a decision recorded in a conflict's session settles it without a Reconcile click", async () => {
-    // The settle session's decision asks its reconciler to run 2 s later (the chart, durable): no Reconcile click.
+    // The settle session's decision asks its reconciler to run 2 s later (the statechart, durable): no Reconcile click.
     const stop = () => {};
     try {
       const c = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.state === "open" && k.areaKey === "bank-access")!;
@@ -704,7 +704,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     const pos = await import("./project-overseer-store");
     const p = pos.projectOverseerPaths(org.id, project.id);
     pos.writePoSettings(p, { ...pos.readPoSettings(p), gatheringModel: "prov/gather", gatheringThinking: "low" });
-    // The settle session's decision asks its reconciler to run 2 s later (the chart, durable): no Reconcile click.
+    // The settle session's decision asks its reconciler to run 2 s later (the statechart, durable): no Reconcile click.
     const stop = () => {};
     try {
       const settle = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.batonSessionId)!;
@@ -739,7 +739,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.ok(added.length > 0 && added.every((r) => r.by === "overseer"), "the overseer's run is its own");
     const trigger = info.conflicts.find((k) => k.state === "open" && k.areaKey === "snow-clearing")!;
     assert.deepEqual(baton.batonById(trigger.batonSessionId!)!.row.owner, overseer, "the overseer's reconcile opened it");
-    // The settle session's decision asks its reconciler to run 2 s later (the chart, durable): no Reconcile click.
+    // The settle session's decision asks its reconciler to run 2 s later (the statechart, durable): no Reconcile click.
     const stop = () => {};
     try {
       await say(f1, maria.id, "g", { area: "gritting", statement: "Paths are gritted every 3 days.", quote: "3 days" });
@@ -792,7 +792,7 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.match(info.lastRun?.error ?? "", /excluded/);
   });
 
-  test("the workspace repo holds the decisions and conflicts (their charts), never tokens", () => {
+  test("the workspace repo holds the decisions and conflicts (their statecharts), never tokens", () => {
     const dir = join(orgs.orgDir(org.id), "charts");
     const files = ["decision", "conflict"].flatMap((c) => readdirSync(join(dir, c)).map((f) => join(dir, c, f)));
     assert.ok(files.length > 0);
@@ -866,7 +866,7 @@ describe("restatements, confirmations and resolutions that say something else", 
   });
 
   test("a second confirmation in a settled conflict's session joins the kept record, on its own", async () => {
-    // The settle session's decision asks its reconciler to run 2 s later (the chart, durable): no Reconcile click.
+    // The settle session's decision asks its reconciler to run 2 s later (the statechart, durable): no Reconcile click.
     const stop = () => {};
     try {
       const c = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.id === cid)!;

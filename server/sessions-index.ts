@@ -863,7 +863,9 @@ export async function listSessions(): Promise<SessionSummary[]> {
       const st2 = await stat(s.path).catch(() => null);
       if (st2 && (await isZeroInput(s.path, st2.size))) {
         // A husk waiting on a dialog (a command run in a new session) is waiting on the user: listed.
-        if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer) continue;
+        // So is one that carries a profile: a One at a time profile counts from its pick, so the
+        // session holding it must be somewhere the user can find it (§chat.profiles/singleton).
+        if (!hasDraft && pendingDialogCount(s.path) === 0 && !special.baton && !special.projectOverseer && !s.profile) continue;
         if (hasDraft) preview = draftPreview(draft.text, draft.attachments);
       }
     }

@@ -559,7 +559,9 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
   };
   // The person it reaches, as the chart reads them (status, and r7's zone and hours).
   const person = to && to !== OPERATOR ? roster.find((p) => p.id === to) : undefined;
-  const envelope = { ...(opts.envelope ?? operatorEnvelope(orgId, project.id, opts.by)), ...(invalid ? { invalid } : {}), ...(person ? { target: targetOfPerson(person) } : {}) };
+  // An offer's invitees as the chart reads them (r7: an offer waits until the earliest invitee's window).
+  const targetPeople = targets ? targets.map((id) => roster.find((p) => p.id === id)).filter((p): p is Person => !!p).map(targetOfPerson) : undefined;
+  const envelope = { ...(opts.envelope ?? operatorEnvelope(orgId, project.id, opts.by)), ...(invalid ? { invalid } : {}), ...(person ? { target: targetOfPerson(person) } : {}), ...(targetPeople ? { targetPeople } : {}) };
   const [sid, event] = opts.item ? [opts.item, opts.plan ? "gather/plan" : "gather/start"] : [`project/${orgId}/${project.id}`, "baton/start"];
   const out = await hostOf(orgId).act(sid, event, payload, envelope, { settle: true });
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });

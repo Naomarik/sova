@@ -134,6 +134,24 @@ describe("an act that reaches them outside their hours (r7)", () => {
     assert.ok(typeof row.offHours === "number" && row.offHours > Date.now(), "the operator's act went at once, noted off hours");
   });
 
+  test("an unattended offer waits for the earliest invitee's window; one invitee in hours and it goes now", async () => {
+    const ada = await orgs.addPerson(org.id, { name: "Ada Lind", role: "Billing" });
+    const setHours = (pid: string, from: number, to: number) => app.request(`/api/orgs/${org.id}/people/${pid}`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ tz: "UTC", hours: { days: ALL, from: hm(from), to: hm(to) } }) });
+    await setHours(sam.id, 3, 4);
+    await setHours(ada.id, 2, 3);
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
+    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_offer")!;
+    await tool.execute("t2", { gap: "none", people: ["Sam Okafor", "Ada Lind"], public_title: "Invoices", goal: "g", question: "Who sends invoices?" } as never, undefined, undefined, undefined as never);
+    const held = pipelineInfo(org.id, project.id).held.find((h) => h.what === "An offer to 2 people: Invoices")!;
+    assert.equal(held?.wait, "hours");
+    assert.equal(held.goesAt, orgs.findPerson(org.id, ada.id)!.hoursNow!.nextOpen, "the earliest invitee's window (Ada's)");
+    assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Invoices"), "nothing reached them");
+    // Ada in her hours: the next offer goes now.
+    await setHours(ada.id, -1, 1);
+    await tool.execute("t3", { gap: "none", people: ["Sam Okafor", "Ada Lind"], public_title: "Receipts", goal: "g", question: "Who files receipts?" } as never, undefined, undefined, undefined as never);
+    assert.ok(baton.allBatons().some((b) => b.publicTitle === "Receipts"), "an invitee in hours: it went at once");
+  });
+
   test("the operator's routes that reach them say so (offHours: when their window opens); the strip's people carry tz and hoursNow", async () => {
     await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
     const opens = orgs.findPerson(org.id, sam.id)!.hoursNow!.nextOpen!;

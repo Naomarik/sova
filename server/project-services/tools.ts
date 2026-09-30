@@ -186,15 +186,15 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
 }
 
 /** The project overseer's `sova_project_verbs`: its own project only, gated by its level. */
-export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; level: () => Autonomy }): Tool {
+export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; level: () => Autonomy; attended: () => boolean }): Tool {
   return projectVerbsTool({
     name: "sova_project_verbs",
     label: "Project verbs",
     description:
-      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, create/up/apply/conform at L3. Reset and teardown only of instances you created; stopping a shared service is the operator's (needs-confirm).",
+      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, create/up/apply/conform at L3 (in a run the operator started, at any level). Reset and teardown only of instances you created; stopping a shared service is the operator's (needs-confirm).",
     promptSnippet: "status, logs and lifecycle of the project's running instances (down from L0; create/up/apply/conform at L3)",
     engine,
     defaultProject: async () => (await projectRootOf(who.root())) ?? who.root(),
-    caller: async () => ({ kind: "project-overseer", id: who.id(), root: (await projectRootOf(who.root())) ?? who.root(), level: who.level() }),
+    caller: async () => ({ kind: "project-overseer", id: who.id(), root: (await projectRootOf(who.root())) ?? who.root(), level: who.level(), attended: who.attended() }),
   });
 }

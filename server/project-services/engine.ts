@@ -63,7 +63,8 @@ import { defHashOf, hostVars, isApproved } from "./trust";
 export type Caller =
   | { kind: "operator"; confirm?: boolean }
   | { kind: "overseer"; id: string }
-  | { kind: "project-overseer"; id: string; root: string; level: Autonomy }
+  /** `attended`: the operator's own run, which the level does not bind (§app.project-overseer/autonomy-levels). */
+  | { kind: "project-overseer"; id: string; root: string; level: Autonomy; attended?: boolean }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   | { kind: "conform"; id: string };
 
@@ -433,7 +434,8 @@ export class ProjectEngine {
     }
     if (caller.kind === "project-overseer") {
       const need: Autonomy = verb === "down" ? "L0" : "L3";
-      if (caller.level < need) throw new VerbFailure("forbidden", `${verb} needs level ${need}; the project overseer is at ${caller.level}`);
+      if (!caller.attended && caller.level < need)
+        throw new VerbFailure("forbidden", `${verb} needs level ${need} and you are at ${caller.level}: file the gap as an idea or raise a confirm card instead`);
       if ((verb === "reset" || verb === "teardown") && run.rec && !createdByCaller)
         throw new VerbFailure("needs-confirm", `${verb} of an instance you did not create (${run.rec.createdBy}'s) is the operator's: ask them to run it`);
       return;

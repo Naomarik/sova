@@ -1225,7 +1225,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       }),
     },
     // Project instances (§app.project-services/callers): this project only, gated by the level in force.
-    projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, level: () => host.effective().autonomy }),
+    projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, level: () => host.effective().autonomy, attended: () => host.attended() }),
   ];
 
   return tools.map((t) => previewLinkFree(redactingTool(t, redactor)));

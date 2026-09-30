@@ -186,7 +186,12 @@ test("who may call what", async () => {
   assert.equal((await engine.run("up", { project }, { kind: "session", id: "s1", root: project, own: [project] })).error?.code, "forbidden", "never the main checkout");
   assert.equal((await engine.run("status", { project }, { kind: "session", id: "s2", root: "/other", own: [] })).error?.code, "forbidden");
   const po = (level: "L0" | "L2" | "L3") => ({ kind: "project-overseer", id: "po", root: project, level }) as const;
-  assert.equal((await engine.run("apply", { instance: a.instance }, po("L2"))).error?.code, "forbidden");
+  const low = await engine.run("apply", { instance: a.instance }, po("L2"));
+  assert.equal(low.error?.code, "forbidden");
+  assert.match(low.error!.message, /file the gap as an idea or raise a confirm card/);
+  // The level binds only runs the operator did not start.
+  const theirs = await engine.run("apply", { instance: a.instance }, { ...po("L0"), attended: true });
+  assert.equal(theirs.ok, true, JSON.stringify(theirs.error));
   assert.equal((await engine.run("reset", { instance: a.instance }, po("L3"))).error?.code, "needs-confirm");
   assert.equal((await engine.run("teardown", { instance: a.instance }, { kind: "overseer", id: "o" })).error?.code, "needs-confirm");
   assert.equal((await engine.run("down", { instance: a.instance, services: ["bus"] }, op)).error?.code, "needs-confirm", "a shared service needs the operator's confirm");

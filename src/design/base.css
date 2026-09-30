@@ -1326,7 +1326,17 @@ button.list-row { width: 100%; border: 0; background: none; text-align: left; }
 .app {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  height: 100dvh;
+  /* 100%, not 100dvh: html, body and #root are 100% of the window (app.css), and one measure all
+     the way down means the document can never be taller than the window. A 100dvh shell grows
+     past a 100% root whenever the two disagree (an installed app's first layout after a launch),
+     and that extra range is what a restored scroll or a keyboard reveal then uses to push the
+     head off the top. */
+  height: 100%;
+  /* index.html's viewport-fit=cover lets the page reach under system bars. The bottom inset is
+     paid by what sits on the bottom edge (.composer, .sidebar-foot, .spine-foot) so their
+     surface runs under the gesture bar; top and sides are paid here (0 wherever the browser
+     keeps the status bar and cutouts outside the page, as Chrome on Android does). */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px);
   /* clip, not hidden: a hidden box still scrolls programmatically, so a scrollIntoView (a
      transcript jump) could shift the whole shell up, and nothing would scroll it back. */
   overflow: clip;

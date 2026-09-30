@@ -235,7 +235,11 @@
         "src/components/Groups.tsx",
         "src/components/Sidebar.tsx",
         "server/index.ts",
-        "server/session-groups-index.test.ts"
+        "server/session-groups-index.test.ts",
+        "src/lib/group-open.ts",
+        "src/lib/group-open.test.ts",
+        "src/lib/session-groups.ts",
+        "src/lib/session-groups.test.ts"
       ]
     },
     "§app.session-list/recent": {
@@ -295,7 +299,9 @@
         "server/sessions-index.ts",
         "server/index.ts",
         "server/overseer-tools.ts",
-        "shared/protocol.ts"
+        "shared/protocol.ts",
+        "src/lib/hold-select.ts",
+        "src/lib/hold-select.test.ts"
       ]
     },
     "§app.session-list/states": {
@@ -1520,7 +1526,10 @@
     "§workspace.groups/group-lifecycle": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/GroupView.tsx"
+      ]
     },
     "§workspace.groups/keyboard": {
       "kind": "behavior",
@@ -9805,6 +9814,27 @@
         "shared/schedules.ts",
         "server/schedule-routes.ts",
         ".sova/playbooks/merge-round/PLAYBOOK.md"
+      ]
+    },
+    "§app.session-list/drop-overlay": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/groups",
+        "§app.session-list/selecting-several-sessions",
+        "§app.session-list/regions-top-and-archive"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/drag-overlay.ts",
+        "src/lib/drag-overlay.test.ts",
+        "src/components/DropOverlay.tsx",
+        "src/components/Sidebar.tsx",
+        "src/lib/drag-archive.ts",
+        "src/lib/drag-archive.test.ts",
+        "src/lib/hold-select.ts",
+        "src/lib/hold-select.test.ts",
+        "src/design/base.css"
       ]
     }
   },

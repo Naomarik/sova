@@ -151,34 +151,6 @@ export function groupNameOf(groups: readonly SessionGroup[], groupId: string | u
 export const quoted = (name: string) => `“${name}”`;
 
 // ---------------------------------------------------------------------------
-// Dragging a row onto a group
-// ---------------------------------------------------------------------------
-
-/** The session path is carried under this type, so the composer's image drop (which reads files)
-    and this drag never mistake each other for one of their own. */
-export const GROUP_DRAG_TYPE = "application/x-sova-session";
-
-/** Marks a drag as "this row wants a group": the path under our type, a readable fallback
-    under text/plain (a drag out of the window, a drop on anything else). */
-export function setGroupDragData(e: DragEvent, path: string): void {
-  if (!e.dataTransfer) return;
-  e.dataTransfer.setData(GROUP_DRAG_TYPE, path);
-  e.dataTransfer.setData("text/plain", path);
-  e.dataTransfer.effectAllowed = "move";
-}
-
-/** The session path a drop carries, or null when the drag is something else (files, text). */
-export function groupDragPath(e: DragEvent): string | null {
-  const path = e.dataTransfer?.getData(GROUP_DRAG_TYPE);
-  return path ? path : null;
-}
-
-/** Whether this drag event carries one of our rows (a dragover can't read the data, only the types). */
-export function dragHasRow(e: DragEvent): boolean {
-  return !!e.dataTransfer && e.dataTransfer.types.includes(GROUP_DRAG_TYPE);
-}
-
-// ---------------------------------------------------------------------------
 // The tab's copy of the list
 // ---------------------------------------------------------------------------
 

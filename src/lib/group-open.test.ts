@@ -4,7 +4,7 @@ import { test } from "node:test";
 import { groupOpen, groupsRegionOpen } from "./group-open";
 
 const region = (o: Partial<Parameters<typeof groupsRegionOpen>[0]> = {}) =>
-  groupsRegionOpen({ searching: false, draggingGrouped: false, composing: false, ...o });
+  groupsRegionOpen({ searching: false, composing: false, ...o });
 
 test("a group section is collapsed until the user opens it on this page", () => {
   assert.equal(groupOpen(undefined), false); // fresh load, and every load after
@@ -18,12 +18,10 @@ test("the Groups region starts collapsed and follows the user's choice after tha
   assert.equal(region({ chosen: false }), false);
 });
 
-test("a search and a grouped drag force the region open without changing the choice", () => {
+test("a search forces the region open without changing the choice", () => {
   assert.equal(region({ searching: true }), true);
-  assert.equal(region({ draggingGrouped: true }), true);
-  // Forced open over an explicit "closed": the hits and the drop targets have to be reachable…
+  // Forced open over an explicit "closed": the hits have to be reachable…
   assert.equal(region({ chosen: false, searching: true }), true);
-  assert.equal(region({ chosen: false, draggingGrouped: true }), true);
   // …and when the force lifts, the choice the user made is still the one that answers.
   assert.equal(region({ chosen: false }), false);
 });

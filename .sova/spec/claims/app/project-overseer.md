@@ -20,7 +20,7 @@ which is also its live view: its tool calls render as tool cards as they happen.
 - Its file lives in the org's workspace repo (`sessions/`), carries an invisible
   `sova-project-overseer` marker `{v:1, orgId, projectId}`, and its cwd is the **project root**.
   It is that project's overseer only when the marker is present, the file is in THAT org's
-  workspace, and the project's chart knows its id; a copy or a fork is an ordinary session.
+  workspace, and the project's statechart knows its id; a copy or a fork is an ordinary session.
   The session list marks it (`projectOverseer`, and `org`, §app.organizations/org-sessions).
 - **Two writers, each by its own route.** Only two things write a message into it: the operator's
   own composer, and the global Overseer, through its one message route and only in a turn the
@@ -36,11 +36,11 @@ which is also its live view: its tool calls render as tool cards as they happen.
   (§app.organizations/workspace-repo). Its conversation and history, the sessions it started (and,
   as `operator-coding` sessions that no cap counts, the ones the operator started with Start Coding
   Session or New Coding Session, each with its worktree, §app.project-overseer/coding-worktrees),
-  its gaps and every act it made are the project's charts (§app.project-overseer/org-charts). Its
+  its gaps and every act it made are the project's statecharts (§app.project-overseer/statecharts). Its
   activity — every act, refused or not; an act that did only part of what was asked, a promotion
   with refusals, is `partial` with what was refused — is read from the transition log. Only the
   counters (each message's and each day's) and the watch loop's timing and held items are
-  host-local, in its watch chart.
+  host-local, in its watch statechart.
 - **Loadout.** No pi-config extension, skill or prompt template loads (no mode; a mode switch is
   refused); the project's own context files do, and only those inside the project root: never the
   agent dir's or a folder's above the root (the home folder's `AGENTS.md`). Its tools
@@ -185,13 +185,13 @@ user row.
   so does a message the global Overseer sends through its route in a turn the operator started
   (§app.overseer/org-project-overseers); every tool may run in it, under the caps. Changing or
   reading the operator's to-do list runs only in the operator's own turns.
-- Enforced by the charts' guards at every call, never by the prompt: each tool call is an event
-  of the chart it acts on, tried first; the level is checked first, then the call's own arguments,
-  then whether the chart can take it now, then the limits, each refusal with today's sentence. A
+- Enforced by the statecharts' guards at every call, never by the prompt: each tool call is an event
+  of the statechart it acts on, tried first; the level is checked first, then the call's own arguments,
+  then whether the statechart can take it now, then the limits, each refusal with today's sentence. A
   tool above the level refuses with a sentence telling the model to file the gap as an idea or
   raise a confirm card instead, the refusal is logged, and nothing starts. A level change applies
   from the next tool call; the level, the limits and the pause a guard reads can't change between
-  the check and the act (§app.project-overseer/org-charts). The same guards bind what the charts
+  the check and the act (§app.project-overseer/statecharts). The same guards bind what the statecharts
   start on their own (§app.project-overseer/drive).
 - **What waits for its approval.** Beside the level, the project page has the checklist of the
   kinds of held act that go ahead only once the overseer approves them
@@ -207,7 +207,7 @@ user row.
   sessions or offers started, 20 decisions promoted, 2 coding sessions started, 5 prompts to them
   (`gatherPerTurn`, `promotePerTurn`, `createPerTurn`, `promptsPerTurn`); an operator message
   (the global Overseer's message included, §app.overseer/org-project-overseers) and Clear reset it. *On its own, each day* covers every run the operator did not start (a watch-loop
-  look, Run Now) and every act the project's charts start on their own
+  look, Run Now) and every act the project's statecharts start on their own
   (§app.project-overseer/drive): 6 gathering sessions or offers, 60 promotions, 4 coding sessions, 12 prompts
   (`gatherPerDay`, `promotePerDay`, `createPerDay`, `promptsPerDay`), reset at local midnight on
   this host. An operator message never refills what a run on its own may do, and a run on its own
@@ -239,10 +239,10 @@ user row.
   1 hour} in Needs you, where you can cancel it." It is saved with the limits (`holdMin`,
   §app.project-overseer/holds); Reset Limits puts 10.
 - **Held, then retried.** A refusal for an allowance or the looks per day records a
-  *held* item in the project's host-local watch chart (one per limit, at most 10; the first
+  *held* item in the project's host-local watch statechart (one per limit, at most 10; the first
   refusal's time is kept) with a retry time: the next local midnight for a daily allowance or the
   looks; at once for the message allowance (a later look of its own may go on, at the normal pace,
-  within today's allowance). When its time comes (a chart timer; the message allowance's in the
+  within today's allowance). When its time comes (a statechart timer; the message allowance's in the
   refusal's own step), a held item becomes a reason to look ("Today's allowance is back: it may start gathering sessions again (refused {time})."),
   soon (unless Off) except the message allowance's, which waits for the normal pace. A PATCH that
   raises a limit or sets it Unlimited releases its held items at once ("You raised the limit on
@@ -283,7 +283,7 @@ user row.
 - Reads: `sova_project` (level, roster, gathering sessions, decisions by state and area, open
   conflicts, spec status, its builds, its limits), `sova_decisions` (with who, their exact words and each
   decision's owner area), `sova_list_sessions` / `sova_read_session` (the project's gathering sessions as their
-  participants see them; the project's coding sessions, every one its charts record, the
+  participants see them; the project's coding sessions, every one its statecharts record, the
   overseer's and the operator's, wherever its worktree is; and ordinary sessions whose folder is
   inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read; both it and `sova_project` name the main stakeholder, as the prompt
   does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
@@ -343,7 +343,7 @@ user row.
   "§gap/<name>" (sova_idea lists them) or "none".'; naming a gap the project doesn't have: 'No gap
   §gap/x in this project: file it first (sova_idea add §gap/<name>), or say gap "none".'. With
   `plan: true`, at any level from L0, the gathering is filed on the gap as a plan, which the gap's
-  chart starts once the level in force reaches L1 (§app.project-overseer/drive); a plan must name a
+  statechart starts once the level in force reaches L1 (§app.project-overseer/drive); a plan must name a
   gap ('A planned gathering belongs to a gap: name it (gap "§gap/<name>").'). `sova_create_session`
   takes `gap` too, with the same refusals, and optional
   `decisions`: the gap's promoted decisions it builds, all of them not built yet when omitted;
@@ -367,7 +367,7 @@ user row.
   decisions"), because the session's model may repeat it (the `goal` descriptions say so, and
   `goal_done`'s `summary` description asks for the session's own words and names only). Its `why`
   is for the operator: one or two sentences saying why it starts this session, recorded on the
-  session's chart (a plan keeps it until the chart starts it) and shown on the strip and in What
+  session's statechart (a plan keeps it until the statechart starts it) and shown on the strip and in What
   It's Told (§app.baton/told), never to the person and never to the session's model. Without it:
   "Say why you start it (why): one or two sentences for the operator, never shown to the person.".
   A `public_title`, `question`, `goal` or `why` that holds a kept preview link is refused
@@ -406,7 +406,7 @@ user row.
   it never reads the host's default mode (`mode.json`). `GET …/overseer` answers what a session
   started now would get (`codingModeNow`).
 - **Every coding session the project starts gets it**: the overseer's `sova_create_session`, the
-  operator's Start Coding Session and New Coding Session, and one a gap's chart starts by itself at
+  operator's Start Coding Session and New Coding Session, and one a gap's statechart starts by itself at
   L3 (§app.project-overseer/drive), which also gets the project's coding model, as Start Coding
   Session does, before its first prompt. The mode is applied, and written into the session file as
   its `mode` entry (§chat/mode-menu), before the first prompt, even when it equals the host's
@@ -455,7 +455,7 @@ user row.
 - **Names.** Branch `sova/<name>`, worktree `<parent of the repo's top level>/.worktrees/<repo
   folder name>-<name>`, outside the project root, as the `worktree` tool places its own
   (§chat.worktrees/tool). `<name>` is a slug of the session's title (the item's title, which names
-  the gap, for one a gap's chart starts by itself: `sova/build-gap-<name>-<6 hex>`; else the
+  the gap, for one a gap's statechart starts by itself: `sova/build-gap-<name>-<6 hex>`; else the
   call's `title`, else the first prompt's first words, else `coding` when there's neither: New
   Coding Session; lower case, letters, digits and hyphens, at
   most 40 characters) and 6 random hex digits (`sova/payroll-export-3f9a1c`), so two hosts sharing
@@ -468,8 +468,8 @@ user row.
   HEAD."), and so does each such session's row ("In the project root: …"). A worktree that
   can't be made in a Git project (git refuses) starts no session: "No session was started: its
   worktree could not be made ({git's first line}).".
-- **Recorded with the session.** The coding session's chart (kind `coding` or `operator-coding`,
-  §app.project-overseer/org-charts; its gap and the decisions it builds when it has them) carries `worktree: {branch, base, target, path}` (`base` the commit it was
+- **Recorded with the session.** The coding session's statechart (kind `coding` or `operator-coding`,
+  §app.project-overseer/statecharts; its gap and the decisions it builds when it has them) carries `worktree: {branch, base, target, path}` (`base` the commit it was
   cut from, `target` the branch it merges into) and its later `merged: {at, commit}` (the last
   Merge Branch: history, not the branch's state) or `removed: at`, or `inRoot` (the reason it runs
   in the root). A worktree folder deleted by hand shows as missing ("Worktree folder missing");
@@ -556,7 +556,7 @@ user row.
   Every preview rule holds (§mesh.public/preview): loopback only, never Sova's own ports, a
   preview address needed. The link is kept for the operator (§mesh.public/preview); the result
   names the preview by its id and never carries the link.
-- **Guarded as the people-facing act it is.** A start is the project chart's `preview/start`
+- **Guarded as the people-facing act it is.** A start is the project statechart's `preview/start`
   act: L1 (§app.project-overseer/autonomy-levels), confirm kind `preview`
   (§app.project-overseer/reviews), held (§app.project-overseer/holds). In a turn the operator
   started it goes ahead at once; in a run the operator did not start it needs L1 in force, then
@@ -599,7 +599,7 @@ user row.
 
 - A gathering session reaching its goal or closing, a referral, a coding session it started
   finishing a turn ('The coding session "{title}" finished its turn.', or "…stopped with an
-  error."), a coding session its gap's chart started that was never prompted because its mode could
+  error."), a coding session its gap's statechart started that was never prompted because its mode could
   not be set ('The coding session "{title}" started, but its mode could not be set, so its first
   prompt was not sent.'), a gathering session it started handing the baton to the operator (its
   model's `hand_to`, never the operator's own Take back or the message limit: 'The gathering session
@@ -609,11 +609,11 @@ user row.
   {target}.'), and the reconciler's conflicts, resolutions, drafts and promotions, and a gap waiting
   past its stall time in one phase (3 days; once per phase, §app.project-overseer/pipeline), are
   noted as reasons to look (its own acts, made by it while it runs, are not; the same event made by
-  anyone else while it runs is). News of its chart acting on its own is a reason only when it asks
-  something of the overseer: decisions drafted that the chart won't promote itself at the project's
+  anyone else while it runs is). News of its statechart acting on its own is a reason only when it asks
+  something of the overseer: decisions drafted that the statechart won't promote itself at the project's
   level, a conflict to route, a conflict resolved, a gathering someone wrote in closed; these wake
   it and count as any reason does, deduped the same way. News that asks nothing (a promotion the
-  chart made at L2, the chart moving or closing its own gathering nobody wrote in, any automatic act
+  statechart made at L2, the statechart moving or closing its own gathering nobody wrote in, any automatic act
   already finished) starts no look and uses none of the day's looks or the gap; the overseer sees it
   in its next look's feed. A held act that needs its confirmation still wakes it. A gap reopened by
   a newer decision, or a gathering that ended with no decision, is a feed entry, not a reason; a
@@ -659,7 +659,7 @@ user row.
   `§gap/<name>`, the tag `gap` (always added) and `area-<areaKey>` when known, and names in its text
   who should answer: the roster person whose decision areas cover it, else the project's main
   stakeholder, else the operator. At L1+ it may start a gathering session with that person.
-- **Each gap it files is a chart** (§app.project-overseer/org-charts), its item, with a stable id
+- **Each gap it files is a statechart** (§app.project-overseer/statecharts), its item, with a stable id
   of its own (`g_` + 8 characters) that survives the idea's rename or move. The item follows the
   gap through its phases — not asked yet, asking, deciding (its decisions compared, in conflict,
   ready to promote), promoted, building, done — from what its own gathering sessions, decisions and
@@ -687,7 +687,7 @@ user row.
   asks. It reads or acts on one of the operator's to-dos or ideas only when the operator asks it to
   in their own message. It never starts a coding session because an item exists: it starts one
   when the operator asks, or, at L3 on its own, to build on a gap's decisions promoted into the
-  spec (§app.project-overseer/tools), which its chart may also start on its own
+  spec (§app.project-overseer/tools), which its statechart may also start on its own
   (§app.project-overseer/drive). The
   gaps it files itself (`§gap/…`) stay its own working list for gathering
   (§app.project-overseer/gaps).
@@ -727,11 +727,11 @@ user row.
 - **Not a reason to look.** The overseer is not woken; it sees the session when it next looks,
   through `sova_list_sessions`, labelled "started by the operator".
 - **Never swept as an empty husk.** Clean Up's empty-husk sweep skips every session a project's
-  charts record, so an empty coding session and its row stay until the operator archives it.
+  statecharts record, so an empty coding session and its row stay until the operator archives it.
 
-## §app.project-overseer/org-charts — The org statecharts: where every lifecycle lives
+## §app.project-overseer/statecharts — The org statecharts: where every lifecycle lives
 
-- **The charts are the state.** Every lifecycle and every link of an organization's work is a
+- **The statecharts are the state.** Every lifecycle and every link of an organization's work is a
   statechart session, and nothing else stores it: the org (its owner), each person (proposed,
   active, left, and a referral), each project (archived, its overseer, its main stakeholder, its
   owner updates, and every WhatsApp send to its people, `outreach/send`, §app.outreach/send), each gathering session (holder, hand-offs, offers and leases, the message
@@ -739,7 +739,7 @@ user row.
   reconciler, each gap (§app.project-overseer/gaps), and each coding session with its worktree and
   branch; and, host-local, this host's hold on the org (attach and commits) and each project's
   watch loop (looks, allowances, held items, the pause). Routes, pages, the overseers' tools and
-  the owner page read the charts in memory and answer in the same shapes as before; no route
+  the owner page read the statecharts in memory and answer in the same shapes as before; no route
   reads a state file.
 - **Links are set when they are made, never inferred.** A gathering session knows its gap, its
   conflict, the session it came from and who started it (`started {by, overseerId?, why?}` in its
@@ -747,21 +747,21 @@ user row.
   coding session knows its gap and the decisions it builds. Nothing is matched from words.
 - **One engine per attached org, one queue.** Every event for an org (an operator's act, a tool
   call, a person's message, a timer, an effect's result) is taken one at a time, in order, so what
-  a guard reads can't change between the check and the act. A move that reaches other charts (a
+  a guard reads can't change between the check and the act. A move that reaches other statecharts (a
   person leaving clears the owner, the stakeholder, and moves every baton they hold) is one step:
-  all of it happens, or none of it. Timers are part of the charts (a lease, a stall, midnight, the
+  all of it happens, or none of it. Timers are part of the statecharts (a lease, a stall, midnight, the
   next look, a hold, the 24 hours between owner updates, the 2-second settle debounce, a wrap-up
   running too long), so a restart loses none of them; one that came due while the server was down
   fires when it starts, in the order they were due. A gathering or coding session whose turn was
   running when the server stopped reads as idle once it starts again, never as still working.
-- **In the workspace repo.** The portable charts' snapshots are files under `charts/` in the org's
-  workspace repo, and the transition log is `charts/log/<yyyy-mm>.jsonl` there, committed with the
-  workspace commits (§app.organizations/workspace-repo); the host-local charts live under
-  `<stateRoot>/org-charts/<org>/`. One step's snapshots and log rows are written together, through
+- **In the workspace repo.** The portable statecharts' snapshots are files under `statecharts/` in the org's
+  workspace repo, and the transition log is `statecharts/log/<yyyy-mm>.jsonl` there, committed with the
+  workspace commits (§app.organizations/workspace-repo); the host-local statecharts live under
+  `<stateRoot>/statecharts/<org>/`. One step's snapshots and log rows are written together, through
   a journal, so a crash never leaves half a step. Sova writes no `baton.json`, `decisions.json`,
   `conflicts.json`, `started.json`, `roster.json`, `projects.json`, `org.json`, overseer
   `state.json` or `holder.json`, and no pause list in the attach index.
-- **A chart file that doesn't load** (a hand edit, conflict markers after a pull, an unknown
+- **A statechart file that doesn't load** (a hand edit, conflict markers after a pull, an unknown
   version) is a workspace problem, shown as the others are (§app.organizations/org-page: the banner
   and the Workspace tab's dot) as "{file} can't be read: {why}"; so is a journal or a log file that
   doesn't parse; the rest of the org loads, nothing overwrites
@@ -778,20 +778,20 @@ user row.
   its own steps succeeds, or Reload gives them another go. A link notification to a session that exists
   nowhere (a host-local watch a clone doesn't carry, a deleted session) is dropped and that session
   is taken off the watchers, never failing the step; an explicit send to one is still refused.
-- **The transition log is the history.** One row per event a chart took or refused: when, which
+- **The transition log is the history.** One row per event a statechart took or refused: when, which
   session, the event, who (`operator`, `overseer`, `system`, `model`, `person`, and `via:
   "overseer"` for the global Overseer acting for the operator), the configuration before and after,
   what changed, and for a refusal its sentence. It never holds a link token or hash, a contact
   value (`[contact]`), the About text (its hash and length only) or anything a person wrote. The
   overseer's activity list, the Pipeline's timelines (§app.project-overseer/pipeline) and each
   "Last looked" line are read from it.
-- **Versions and recovery.** Each chart carries a version, and a snapshot saved by an older
-  version is migrated when it loads, through each version's migration in turn; a chart change never
+- **Versions and recovery.** Each statechart carries a version, and a snapshot saved by an older
+  version is migrated when it loads, through each version's migration in turn; a statechart change never
   starts sessions fresh. A lost or broken snapshot is recovered from the workspace repo's history,
   never rebuilt from the log (the log is redacted); checking the log against the snapshots is
   §app.project-overseer/log-verify's, and restores nothing.
-- **The engine.** `org-charts/` is a ClojureScript project on com.fulcrologic/statecharts: the
-  charts, and an engine around them (spawning a session from a step, link notifications to the
+- **The engine.** `statecharts/` is a ClojureScript project on com.fulcrologic/statecharts: the
+  statecharts, and an engine around them (spawning a session from a step, link notifications to the
   sessions that watch another, host invocations for a look, a reply, a wrap-up and a reconcile
   run, effects with results, each run at most once by its key, held effects
   (§app.project-overseer/holds), declared corrections and a free set-state
@@ -800,19 +800,19 @@ user row.
   most `maxMicrosteps` microsteps per event, else a typed step-limit error and the whole call
   rolled back). Every call is atomic: it changes nothing, or it commits. Before an outside event,
   every timer due at or before it fires first. Its contract is
-  `org-charts/src/sova/org_charts/engine/API.md`; the TS host that runs one engine per org is
+  `statecharts/src/sova/statecharts/engine/API.md`; the TS host that runs one engine per org is
   `server/org-host/`.
-- **The bundle.** `server/vendor/org-charts.js` is its one-file ESM release build, vendored. Only
-  `node scripts/build-org-charts.mjs` rebuilds it (a JVM and the Clojure CLI; it refuses
-  uncommitted chart sources, the build is byte-reproducible, `--check` compares a fresh build with
+- **The bundle.** `server/vendor/statecharts.js` is its one-file ESM release build, vendored. Only
+  `node scripts/build-statecharts.mjs` rebuilds it (a JVM and the Clojure CLI; it refuses
+  uncommitted statechart sources, the build is byte-reproducible, `--check` compares a fresh build with
   the vendored file, `--test` runs the CLJS tests). `pnpm build` and `pnpm test` never build it and
-  need no JVM. `server/org-charts.ts` types the bundle's API; a step limit surfaces as
-  `OrgChartsStepLimitError`.
-- **The replay.** `server/org-charts-replay.ts` replays traces (`server/fixtures/org-charts/`:
-  real ones from the lab, anonymized, and synthetic edge cases) through the shipped charts on a
+  need no JVM. `server/statecharts.ts` types the bundle's API; a step limit surfaces as
+  `StatechartsStepLimitError`.
+- **The replay.** `server/statecharts-replay.ts` replays traces (`server/fixtures/statecharts/`:
+  real ones from the lab, anonymized, and synthetic edge cases) through the shipped statecharts on a
   virtual clock, and its test requires zero unexplained divergences. The transition log is now the
   record a trace is taken from; the old miner is gone.
-- **Tested by enumeration.** Each chart's tests send every act event in every reachable
+- **Tested by enumeration.** Each statechart's tests send every act event in every reachable
   configuration under every kind of caller (the operator, an attended turn, L0–L3, paused, an empty
   roster, archived, each limit reached, the global Overseer with and without a confirm card), and
   check that an event is taken exactly when the trial says it would be, and that each refusal is
@@ -820,8 +820,8 @@ user row.
 
 ## §app.project-overseer/log-verify — Checking the log against the snapshots
 
-- **Checking the log against the snapshots.** `pnpm org-charts rebuild --verify <org>` replays
-  each session's transition log from its start on the current charts, in a scratch engine where
+- **Checking the log against the snapshots.** `pnpm statecharts rebuild --verify <org>` replays
+  each session's transition log from its start on the current statecharts, in a scratch engine where
   every other session only takes events. It lists each session whose replayed states, links (its
   links and watchers), timers or holds differ from its snapshot, with the first step where the
   replay went another way. A session whose log doesn't reach back to its start is listed too, as
@@ -833,10 +833,10 @@ user row.
   run a report answers, a set-state's patch, and the engine's own time when `at` was moved on to
   keep it unique.
 
-## §app.project-overseer/drive — What the charts start on their own
+## §app.project-overseer/drive — What the statecharts start on their own
 
-- **What can be decided from facts and timers, the chart does.** An act the chart can decide from
-  what its sessions record and from its timers is a transition of the chart, taken when its facts
+- **What can be decided from facts and timers, the statechart does.** An act the statechart can decide from
+  what its sessions record and from its timers is a transition of the statechart, taken when its facts
   hold, at the project's level in force (§app.project-overseer/autonomy-levels) and never above it,
   never while the project is archived or paused by an attach, and never for a gap on hold
   (§app.project-overseer/pipeline). The model's judgment is kept for what needs it: which gaps
@@ -848,15 +848,15 @@ user row.
     and no code, so it is not held.
   - **L1, a planned gathering**: at L0 the overseer may file a gathering on a gap as a plan (to
     whom, the public title, the question, the goal: `sova_start_gathering` or `sova_offer` with
-    `plan: true`), kept on the gap's item; the chart starts it once the level in force reaches L1. It is
+    `plan: true`), kept on the gap's item; the statechart starts it once the level in force reaches L1. It is
     never started again to the same people after an attempt that ended with no decisions.
   - **L1, closing a superseded gathering**: once a newer gathering session on the same gap to the
-    same person is open, the chart closes its own older one that nobody wrote in.
+    same person is open, the statechart closes its own older one that nobody wrote in.
   - **L2, promotion**: a gap's drafted decisions whose authors own their owner area are promoted
     (§app.requirements/promotion); one out of its author's area is never, and waits for the
     operator.
   - **L3, a build**: when every live decision of a gap is promoted, none is built, and no coding
-    session of the gap is working, starting or held, the chart starts one
+    session of the gap is working, starting or held, the statechart starts one
     (§app.project-overseer/coding-worktrees) with a first prompt composed without a model: the
     decisions' record ids and statements, and the commit paragraph.
 - **It also keeps doing what Sova did on its own before**, at any level: a person leaving and what
@@ -864,7 +864,7 @@ user row.
   handing a session to the operator, a wrap-up and its time limit, a settle session's decision
   reconciled after 2 seconds, re-routing closing the old settle session, held items released,
   stall reasons, looks, commits and pushes. These are never held.
-- **Counted like the overseer's own.** A chart-started act counts on the same day's allowance as
+- **Counted like the overseer's own.** A statechart-started act counts on the same day's allowance as
   the overseer's runs on its own and stops at the same at-once limits
   (§app.project-overseer/limits): refused, or held, the same way, and logged. A promotion counts
   promotions, a build a coding session started (and the coding sessions running), a planned
@@ -872,7 +872,7 @@ user row.
   closing a superseded gathering count nothing.
 - **Held first.** Of these, the acts that reach a person or the client's code (a gathering started
   or closed, a promotion, a build) wait in a hold first (§app.project-overseer/holds).
-- **Merge stays the operator's.** No chart and no model merges a branch or removes a worktree
+- **Merge stays the operator's.** No statechart and no model merges a branch or removes a worktree
   (§app.project-overseer/coding-worktrees).
 
 ## §app.project-overseer/holds — Acts that reach people or the code wait first
@@ -882,7 +882,7 @@ user row.
   a prompt, posting an owner update, messaging a person on WhatsApp (§app.outreach/send),
   approving or declining a referral, publishing a preview link (§app.project-overseer/previews) —
   waits in a **hold**
-  before it is done, when a chart starts it on its own (§app.project-overseer/drive) or the
+  before it is done, when a statechart starts it on its own (§app.project-overseer/drive) or the
   overseer's own tool call makes it in a run the operator did not start
   (§app.project-overseer/autonomy-levels). Never held: acts in a turn the operator started, the
   operator's own clicks, and what Sova did on its own before (a person leaving and what follows, a
@@ -890,7 +890,7 @@ user row.
   reconcile run reaches nobody and is not held, and neither is turning a preview link off, which
   only takes something away.
 - **Checked when held, and again when it goes.** An act is held only if it passes every guard then
-  (the level in force, archived, paused, whether the chart can take it, the at-once limits, the
+  (the level in force, archived, paused, whether the statechart can take it, the at-once limits, the
   allowance left); refused then, it is refused at once and nothing is held. When the hold ends it
   goes ahead unless it was cancelled, or, for a kind the overseer must confirm, keeps waiting
   until it does (§app.project-overseer/reviews); it goes through every guard again with what holds at that moment: one
@@ -904,13 +904,13 @@ user row.
   {holdMin}` refuses any other value whole, 400, "The hold must be a whole number of minutes from 0
   to 1440 (0: no hold)."; a hand-edited bad value reads as 10, one over 1440 as 1440. `GET` and
   `PATCH …/overseer` answer it in `settings.holdMin`. A change applies to acts held from then on;
-  an act already held keeps the time it was given. The hold is a chart timer: a restart neither
+  an act already held keeps the time it was given. The hold is a statechart timer: a restart neither
   loses nor extends it.
 - **Seen and cancelled by the operator.** Each held act is an act-tier item in Needs you
   (§app.overseer/attention-digest), kind `held-act`, with no phone notification: "{what} starts in
   {n} min unless you cancel it." (`what` names the act, whom it reaches and about what, never a gap's id: "A gathering with Sam
   Okafor: Pricing tier names", "A gathering with you: …", "An offer to 3 people: …", "A coding
-  session for {gap title}"; an act that reaches no one keeps the chart's own words). The Organizations region's Needs you lists them first, soonest
+  session for {gap title}"; an act that reaches no one keeps the statechart's own words). The Organizations region's Needs you lists them first, soonest
   on top, each a row naming the project, the sentence recounted as time passes and the org, opening
   the project page, with **Cancel** beside it; the project page's Pipeline card lists the
   project's held acts first, under "Waiting to start", soonest first, the go-ahead time as each
@@ -918,31 +918,31 @@ user row.
   gone, a held act's row reads "{what} is starting now." instead. Cancel (`POST /api/orgs/:id/held/:holdId/cancel`)
   drops it and it never runs; it says "Cancelled. {what} won't happen.", or the server's sentence
   when it can't (404 for an unknown hold; 409 once it already went ahead), and Needs you is read
-  again at once. A held act's id is its session's id and the chart's hold id (`<session>:<hold>`),
-  so two acts held with the same chart hold id in different sessions are told apart: the Pipeline
+  again at once. A held act's id is its session's id and the statechart's hold id (`<session>:<hold>`),
+  so two acts held with the same statechart hold id in different sessions are told apart: the Pipeline
   and Needs you list both, and Cancel cancels only the one it names. The overseer's `sova_hold`
-  takes that id; it also takes a bare chart hold id while that id names one held act of the
+  takes that id; it also takes a bare statechart hold id while that id names one held act of the
   project, and otherwise refuses (409, "Several held acts are {id}: name one by its id from
   sova_pipeline ({full ids})."; 404, "No held act {id} in this project: sova_pipeline lists
   them."). The item goes when the act goes ahead, is dropped or is cancelled. The org card's
   Needs-you line counts them ("{n} held act(s)"), and so does the org page's Projects tab dot.
 - **Seen and cancelled by the overseer.** Every look lists the acts held for its project, and a
-  tool reads them (§app.project-overseer/chart-tools). The overseer may cancel one with a reason (a
+  tool reads them (§app.project-overseer/statechart-tools). The overseer may cancel one with a reason (a
   declared correction, §app.project-overseer/corrections); the reason is logged and shown on the
   gap's timeline.
-- **Merging a branch** is never held and never started by a chart or a model: it stays the
+- **Merging a branch** is never held and never started by a statechart or a model: it stays the
   operator's (§app.project-overseer/coding-worktrees).
 
 ## §app.project-overseer/reviews — The overseer's feed, and the acts it must confirm
 
-- **The feed.** Every move of a chart session of the project (a gathering, a decision, a
+- **The feed.** Every move of a statechart session of the project (a gathering, a decision, a
   conflict, the reconciler, a gap, a coding session, the project itself) that changes where
   something stands or reaches a person or the code, and every refusal, correction and held act,
   reaches its overseer as a typed feed entry: when, which session, the event, who moved it, the states before and after, and
   the effects it asked for, redacted exactly as the transition log is (no contact value, no link,
-  no About text, nothing a person wrote; §app.project-overseer/org-charts). Its next look lists the
+  no About text, nothing a person wrote; §app.project-overseer/statecharts). Its next look lists the
   entries since the one before, as data, never instructions, after the project's held acts (those
-  waiting for its approval first), and `sova_pipeline` reads them. Every transition of every chart
+  waiting for its approval first), and `sova_pipeline` reads them. Every transition of every statechart
   declares whether it is fed or quiet; quiet ones (a timer re-armed, a lease renewed, a stall clock,
   the reconciler's own steps, the hourly commits and pushes, bookkeeping) are logged all the same,
   and `sova_pipeline` returns them too, marked quiet. A move alone never wakes the overseer.
@@ -972,7 +972,7 @@ user row.
 - **Waiting for it.** A held act (§app.project-overseer/holds) of a kind on the list raises a
   typed review reason in the watch loop, due inside the hold, naming the held act by its full id
   (`<session>:<hold>`), so the overseer looks
-  (§app.project-overseer/watch-loop). The look lists it with the chart's next automatic moves and
+  (§app.project-overseer/watch-loop). The look lists it with the statechart's next automatic moves and
   when they are due, and every held act of the project. The overseer approves it — a declared
   correction, with a reason, that releases it now through every guard, as if its time had come —
   or cancels it with a reason. Unanswered, it does not go ahead when its hold ends: it keeps
@@ -983,9 +983,9 @@ user row.
   with no review.
 - The declared corrections stay the overseer's at any time (§app.project-overseer/corrections).
 
-## §app.project-overseer/corrections — The overseer corrects a chart, within declared bounds
+## §app.project-overseer/corrections — The overseer corrects a statechart, within declared bounds
 
-- **Declared corrections.** Each chart declares the corrections it accepts, each with its own
+- **Declared corrections.** Each statechart declares the corrections it accepts, each with its own
   guard, the level it needs and a required reason. A held act is cancelled or approved (released
   now) with `sova_hold` (L0; §app.project-overseer/holds, /reviews); every other correction goes
   through `sova_correct {session, correction, reason, …}`, on this project's sessions only:
@@ -998,31 +998,31 @@ user row.
   A correction without a reason is refused with "A correction needs a reason: say why."; one its
   guard or the level refuses changes nothing and says why. Taken or refused, it is logged with its
   reason, and the gap's timeline shows it (§app.project-overseer/pipeline).
-- **Free corrections only in the operator's turn.** Setting a chart session to any configuration
+- **Free corrections only in the operator's turn.** Setting a statechart session to any configuration
   it has (its states and data, running what leaving and entering them runs) is `sova_set_state
   {session, states, reason}`, allowed only to the project overseer in a turn the operator started
   (§app.project-overseer/autonomy-levels), with a reason, logged; never to the global Overseer.
-  Anyone else is refused: "Setting a chart's state directly is allowed only to the project overseer
+  Anyone else is refused: "Setting a statechart's state directly is allowed only to the project overseer
   in a turn the operator started. Use one of its declared corrections." A run on its own may use only the declared corrections, and the operator's page
   has no such control.
 
-## §app.project-overseer/chart-tools — The overseer reads its project's charts
+## §app.project-overseer/statechart-tools — The overseer reads its project's statecharts
 
 - `sova_pipeline` (read) lists the project's gaps — each one's phase, time in that phase, whether
   it has stalled, and its gathering sessions, decisions and coding sessions — its held acts, and
   the project's feed (§app.project-overseer/reviews; the quiet moves too, on request); and, for one
-  chart session, its configuration, the events it would take now with, for each it wouldn't, the
+  statechart session, its configuration, the events it would take now with, for each it wouldn't, the
   sentence that would refuse it, and the corrections it declares. These
   tools read only; they never show a contact value, a link or
   the About text.
-- It may start a chart session its level allows (a gap's item, for a gap it files), and correct
+- It may start a statechart session its level allows (a gap's item, for a gap it files), and correct
   one (§app.project-overseer/corrections).
 
 ## §app.project-overseer/pipeline — The project page's Pipeline
 
 - **A card after the overseer.** The project page has a **Pipeline** card right after the
   overseer panel: one row for each gap the overseer filed (§app.project-overseer/gaps), from the
-  gaps' charts (`GET /api/orgs/:id/projects/:pid/pipeline`), re-read every 10 seconds while the tab
+  gaps' statecharts (`GET /api/orgs/:id/projects/:pid/pipeline`), re-read every 10 seconds while the tab
   shows and reconciled in place, so an open timeline and focus survive. The project's held acts
   come first, under "Waiting to start" (§app.project-overseer/holds). A line under the title counts
   the rows: "{n} gap(s) open · {n} stalled · {n} on hold · {n} done.", leaving out parts that are
@@ -1053,7 +1053,7 @@ user row.
   card's words) listing each statement with its state, a press bringing that decision's row on the
   Decisions card into view and focusing it.
 - **Hold Gap / Resume Gap** ("Hold {title}" / "Resume {title}"; the operator's, shown only when the
-  gap's chart would take it, `POST …/pipeline/:itemId/hold` or `…/resume`): on hold, nothing starts
+  gap's statechart would take it, `POST …/pipeline/:itemId/hold` or `…/resume`): on hold, nothing starts
   for the gap, on its own or by the overseer, until Resume puts it back in the state it was in.
   Done, it says "{title} is on hold. Nothing starts for it until you resume it." or "{title} is
   back where it was: {state}."; refused, the server's sentence (409) under the title: "{gap} is already on
@@ -1061,10 +1061,10 @@ user row.
   File a new idea instead."
 - **Timeline** (a toggle on each row, `GET …/pipeline/:itemId/timeline`, `?quiet=1` adding the quiet moves): every move of the gap
   and of its sessions that its overseer's feed carries (quiet ones are left out,
-  §app.project-overseer/reviews), from the transition log (§app.project-overseer/org-charts), newest
+  §app.project-overseer/reviews), from the transition log (§app.project-overseer/statecharts), newest
   first,
   each with its time ("14:06" today, "Mar 4 14:06" before, with the year when it isn't this year),
-  what happened as a sentence (each chart event has its own: "The overseer filed this gap.", "A held
+  what happened as a sentence (each statechart event has its own: "The overseer filed this gap.", "A held
   act waits for the overseer's review.", "A person was sent a WhatsApp message.", "The session was retired: the project keeps the 200
   sessions it started most recently, and this one was finished."; a move with no sentence is
   quiet, never a raw event name), who (You, You via the Overseer, Overseer, Sova, or a person's name), the

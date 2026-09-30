@@ -1209,7 +1209,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   `archived` record (§app.organizations/archive), a baton session it started (`startedVia`, and
   `started` with the Overseer's id and its why, §app.baton/goal-and-loadout), and a
   coding session it started (§app.overseer/org-project-overseers), each in its statechart and its
-  transition-log rows (§app.project-overseer/org-charts). A
+  transition-log rows (§app.project-overseer/statecharts). A
   request without the secret records no `via`, whatever its body says.
 - **Operator authority.** `via` changes nothing about what the write may do: field authority,
   refusals and routing read the kind, `operator` (§app.organizations/field-authority). A decision
@@ -1254,7 +1254,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
   "yes", a card that didn't list the target, a card already answered, superseded or dropped, a
   later turn, a card from before card ids) the op refuses without doing anything, before any other
   refusal it could get (an archive with no card gets this, not "Stop these first"). The statecharts check
-  it (§app.project-overseer/org-charts): the Overseer's calls to the routes carry its turn's card
+  it (§app.project-overseer/statecharts): the Overseer's calls to the routes carry its turn's card
   beside its sender mark:
   "This reaches people or ends something: ask with sova_card, listing {what} in its items, and
   act in the turn the user's click starts." `extend`, `decline`, `unarchive` and every other op

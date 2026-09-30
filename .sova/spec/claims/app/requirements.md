@@ -22,7 +22,7 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 - The source is the transcripts: every `sova-baton-decision` entry of the project's baton
   sessions (`{area, ownerArea, statement, quote, by}`; `ownerArea` is absent from entries recorded
   before owner areas), read with Sova's own line parser. Each decision is a statechart
-  (§app.project-overseer/org-charts), started when its entry is written, with its gathering
+  (§app.project-overseer/statecharts), started when its entry is written, with its gathering
   session and that session's gap and conflict as its links; each conflict is a statechart too. What the
   reconciler decided about a decision is its statechart's state, in the org's workspace repo with the
   other statecharts. An entry with no statechart (the server stopped between the two) gets one when the

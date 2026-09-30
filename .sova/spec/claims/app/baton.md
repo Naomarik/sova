@@ -45,7 +45,7 @@ once), **lease** (an offer's lock on its first taker).
   cwd is that repo, and whose file carries an invisible `sova-baton` marker `{v:1, orgId,
   projectId}`. Its standing — holder, hand-offs, offers and leases, budget, the reply running, the
   wrap-up, and what it was started for (a gap, a conflict, a parent session) — is its statechart
-  (§app.project-overseer/org-charts). A session the statechart spawned exists before its file does: if
+  (§app.project-overseer/statecharts). A session the statechart spawned exists before its file does: if
   the file can't be made, the statechart says so and nothing half-made is left. It is listed in the sidebar's Organizations region (§app.session-list/organizations), under its
   public title, with ` · <holder>` after the title. Open, a strip above its transcript shows org, project,
   holder, state and message count — and the public title, only when the session head above shows a
@@ -135,7 +135,7 @@ once), **lease** (an offer's lock on its first taker).
 - **Where it comes from.** Read from the statechart's `started` (§app.baton/goal-and-loadout). A session
   from before `started` reads its `owner` (`{overseerOf}`: the project's overseer) and `startedVia`
   (`"overseer"`: you, via the Overseer), else you; the Overseer's conversation, when the statechart lacks
-  it, from the session's start row in the transition log (§app.project-overseer/org-charts). Nothing
+  it, from the session's start row in the transition log (§app.project-overseer/statecharts). Nothing
   else is inferred: a part not recorded reads "Not recorded.".
 - **What It's Told**, a strip button at every width, opens the markdown viewer (§app/markdown-viewer) on one read-only
   document titled "What It's Told", with the public title under it, fetched when opened from
@@ -236,7 +236,7 @@ once), **lease** (an offer's lock on its first taker).
   start the wrap-up (§app.organizations/wrap-up), once.
 - What follows a move is the statechart's: a session's gap, its conflict and its owner's watch loop
   learn of each move (a hand-off, an offer, done, closed, the wrap-up, a decision, a referral) in
-  the same step, by link notification (§app.project-overseer/org-charts); there is no event bus to
+  the same step, by link notification (§app.project-overseer/statecharts); there is no event bus to
   miss one.
 
 ## §app.baton/links — One link per hand-off
@@ -397,7 +397,7 @@ once), **lease** (an offer's lock on its first taker).
   invitee is reached.
 - **The first accepted message claims it.** Opening the page claims nothing (link previews open
   links), and neither does a send the runtime refuses (503): no holder, no lease. The message is
-  one event in the org's queue (§app.project-overseer/org-charts), decided in one step: a lease
+  one event in the org's queue (§app.project-overseer/statecharts), decided in one step: a lease
   whose time has passed has already returned to the pool (a timer due at or before the message
   fires first), then an invitee's message on an open offer makes them the holder under a
   **lease**, then the holder rule applies as for any hand-off. Everything else is refused (409, code `taken`) — the

@@ -59,12 +59,12 @@ pairs or unlinks it.
 
 ## §app.outreach/send — One act for every send
 
-- `outreach/send {target, link?, note?}` on the project's chart sends a roster person a link, a
+- `outreach/send {target, link?, note?}` on the project's statechart sends a roster person a link, a
   note, or both: a link and a note may not both be missing ("Send a link, a note, or both."). Its
   triggers: the operator's **Send on WhatsApp** on a gathering (`POST /api/baton/:sid/send-link
   {person?, note?}`), any send by the operator's app (`POST /api/outreach/send {orgId, projectId,
   personId, link?, note?}`), the global Overseer's `sova_gather` `send_link`, and a project
-  overseer's `sova_send_to_person` (§app.outreach/decisions). The chart checks that the person is
+  overseer's `sova_send_to_person` (§app.outreach/decisions). The statechart checks that the person is
   active, the link (the host's check, below), the note, the level (L1) and, for the global
   Overseer, its confirm card (the person and the link's session).
 - **Held and in hours.** An operator's send, and one in a turn the operator started, goes at once,
@@ -87,7 +87,7 @@ pairs or unlinks it.
   person may have it) and is logged as `unknown`, code `unknown`. A result never carries a token, a
   link, a number or the message.
 - The routes answer `200 {outcome: "sent", channel, name}`, `200 {outcome: "failed" | "refused",
-  code, why, name}`, or the chart's refusal (409 with its sentence).
+  code, why, name}`, or the statechart's refusal (409 with its sentence).
 - After a server restart, a step run again sends nothing: its outcome is uncertain, so what it made
   stays and it is logged as `unknown`, code `unknown-after-restart` (`<stateRoot>/outreach-pending.json`
   remembers each step in flight).

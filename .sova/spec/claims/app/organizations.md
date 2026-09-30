@@ -23,7 +23,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   orgs **attached** to it; attached means resident here. It is never part of any workspace repo.
 - **Create** (`POST /api/orgs {name, dir?}`) makes the workspace repo (`git init`) at `dir`, or at
   `<stateRoot>/workspaces/<slug>` by default, starts the org's statechart with an empty roster
-  (§app.project-overseer/org-charts), and makes the first commit. **Attach** (`POST /api/orgs/attach {dir}`) adds an existing workspace repo (a
+  (§app.project-overseer/statecharts), and makes the first commit. **Attach** (`POST /api/orgs/attach {dir}`) adds an existing workspace repo (a
   restored clone) to this host's index (§app.organizations/portability); a dir with no org's statechart
   in it is refused (400, "No organization in that dir: not a workspace repo."). **Detach** removes it from
   the index and deletes nothing.
@@ -43,12 +43,12 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   (§app.organizations/org-page). Every org-level act on it (rename, About save and revert, owner,
   add project, add person, Commit Now), and an edit of a person whose own snapshot is broken, is
   refused (409) with the workspace sentence
-  (§app.project-overseer/org-charts) until it loads.
+  (§app.project-overseer/statecharts) until it loads.
 
 ## §app.organizations/holder — One holder at a time
 
 - **The holder record** is kept in the org's own statechart, whose snapshot is in the workspace repo's
-  `charts/` (§app.project-overseer/org-charts); there is no `holder.json`. It names the host that
+  `statecharts/` (§app.project-overseer/statecharts); there is no `holder.json`. It names the host that
   holds the org, `{host:{id, name}, since}`, or, once released, `{host:null, releasedBy:{id,
   name}, at}`. A host's `id` is its own, made once and kept host-local in `<stateRoot>/host.json`
   (`h_` + 8 characters); `name` is the machine's hostname, shown in the warning, followed by the
@@ -94,7 +94,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   (§app.organizations/stakeholder); and acts a project's statechart holds before they reach a person or
   the code (§app.project-overseer/holds).
 - **Last activity** is the newest of the org's creation and its newest transition-log row
-  (§app.project-overseer/org-charts): a roster change, a baton session's start, hand-off, offer or
+  (§app.project-overseer/statecharts): a roster change, a baton session's start, hand-off, offer or
   close, a person's message, anything any of its statecharts took.
 - **The server computes both** on `GET /api/orgs` only: each `OrgSummary` gains optional
   `needsYou: {replies, links, proposals, conflicts, stakeholders, held}` and `lastActivityAt` (ISO). Absent (an older server),
@@ -328,8 +328,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 ## §app.organizations/workspace-repo — What the workspace repo holds, and what it never holds
 
 - It is the org's **whole portable state** (§app.organizations/portability). Files:
-  - `charts/`: the snapshot of every portable statechart session of the org, and the transition log
-    `charts/log/<yyyy-mm>.jsonl` (§app.project-overseer/org-charts). They hold the org (id, name,
+  - `statecharts/`: the snapshot of every portable statechart session of the org, and the transition log
+    `statecharts/log/<yyyy-mm>.jsonl` (§app.project-overseer/statecharts). They hold the org (id, name,
     slug, its owner with its history, §app.owner-page/owner, and the holder record,
     §app.organizations/holder), every person and their profile, every project and its settings
     kept in the statechart (root, archived, main stakeholder, hidden from the owner, frozen), every
@@ -364,7 +364,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   settings (Settings → Decisions, new-session defaults, the model policy).
 - **Host-local, by design** — a restore starts these fresh or derives them again: this host's
   attach index `<stateRoot>/orgs.json` (where each repo lives here); the host-local statecharts under
-  `<stateRoot>/org-charts/<org>/` (§app.project-overseer/org-charts): this host's hold on the org
+  `<stateRoot>/statecharts/<org>/` (§app.project-overseer/statecharts): this host's hold on the org
   and its commits, and each project overseer's watch loop — the pause an attach set, its
   allowances used, reasons waiting, held items, last run and runs per day — which rate-limit what
   runs on this host; the share listener's rate limits and the live share pages (memory); and what the session list keeps about any session — listing title, web origin, seen
@@ -376,7 +376,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   since the repo's last commit (counted from HEAD, so Commit Now, a restart or a commit made on
   another host all count; `SOVA_WORKSPACE_COMMIT_MS` shortens the hour for tests only). Nothing
   changed: no commit. The message names what changed by top-level entry ("Workspace changes:
-  charts/ (3 files), sessions/ (2 files)"), never contents. Every commit Sova makes in the repo is
+  statecharts/ (3 files), sessions/ (2 files)"), never contents. Every commit Sova makes in the repo is
   authored and committed as `Sova <sova@localhost>`, whatever git identity the host has, so no
   operator's name or email travels with a backup. **Commit Now** (`POST /api/orgs/:id/commit`)
   commits at once. A graceful shutdown (SIGINT or SIGTERM) stops every running turn first, then
@@ -392,6 +392,27 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   remote.
 - **Restore** = clone the repo onto a host and attach it (§app.organizations/portability).
 
+## §app.organizations/statechart-migration — The one-time move to the statechart names
+
+- Before an org's engine opens and before its redo journal replays (at server start, and when a create
+  or an attach reads a dir), Sova moves the org's statechart data still under the old names to the
+  new ones:
+  - the workspace's `charts/` becomes `statecharts/`, committed in the workspace repo as one move
+    ("Statecharts: charts/ is statecharts/"), pushed with the repo's next push;
+  - the host-local `<stateRoot>/org-charts/<org>/` becomes `<stateRoot>/statecharts/<org>/`;
+  - in every transition log row, snapshot and pending journal under them, a row's `chart` field
+    becomes `statechart`, the actor `chart` becomes `statechart`, the names in the engine's old
+    namespaces (`:sova.org-charts.…`, `:sova.charts/…`) take the new ones (`:sova.statecharts.…`,
+    `:sova.statecharts/…`) as keys, keywords and a row's event names, and the key `:chart`
+    (`chart` in a row's data) becomes `:statechart`; a journal's file paths follow the moved folders.
+- After it, Sova reads and writes only the new names; nothing reads the old ones.
+- It is safe to repeat: with nothing under an old name it does nothing. A run cut short resumes on
+  the next open: each file is rewritten atomically and a rewritten file is left as it is, each folder
+  moves by one rename, and the move is committed while the repo still tracks `charts/`.
+- It never overwrites. When the old and the new name both exist (`charts/` and `statecharts/`, or both
+  host-local folders), it refuses: the log says which two paths, that org stays closed (an attach or a
+  create fails with the same sentence), and every other org opens.
+
 ## §app.organizations/portability — Clone and attach: the whole organization on another host
 
 - Cloning an org's workspace repo onto any Sova host and attaching it ("Attach a Restored Repo",
@@ -405,7 +426,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   link included (the owner itself travels, in the org's statechart). The attach form says so. A person's page lists no links until new ones are sent; their old visits still
   show, marked `link from another host`, and new visits append to the same log.
 - **Project overseers start paused at L0.** The attach pauses every project of the org in its
-  host-local watch statechart (§app.project-overseer/org-charts). While paused, the level in force is L0 ("Paused at L0: this organization
+  host-local watch statechart (§app.project-overseer/statecharts). While paused, the level in force is L0 ("Paused at L0: this organization
   was attached on this host. Set its level to resume."), the watch loop starts nothing for it (its
   reasons wait), its chat head shows the warn chip "L0 in force" and the reason with **Resume at
   {level}** (§app.project-overseer/page), and the project page shows a warn banner "Paused
@@ -443,7 +464,7 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
   The path decides (its parent is `<attached org dir>/sessions`); the gathering session's statechart and
   the project's statechart (its overseer's conversations) give the project, the kind and `finished`.
 - **Coding sessions the org's project started**: a session that is a coding session's statechart
-  (§app.project-overseer/org-charts) of some attached org's project, of kind `coding` (the project
+  (§app.project-overseer/statecharts) of some attached org's project, of kind `coding` (the project
   overseer's `sova_create_session`, or one its statechart started, §app.project-overseer/drive) or
   `operator-coding` (**Start Coding Session** or **New Coding Session** on the project page).
   The overseer's concurrency caps still count `coding` rows only.
@@ -464,7 +485,7 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
   previewer or a scanner) opened one of its links, from the visit log (§app.baton/visits); and
   `settle: { area }` for a **settle session**, one started to settle a conflict
   (§app.requirements/routing), with the conflict's area.
-- Names come from the org's and the project's charts.
+- Names come from the org's and the project's statecharts.
 
 **Not organizational**, and listed as today:
 - sessions the operator opens by hand in a project folder — a project root may be their everyday repo;
@@ -613,7 +634,7 @@ Organizations region's own Needs you, never the global one.
   `{at, personId, field, from, to, by:{kind, sessionId?, entryId?, quote?, via?, overseerId?},
   revertOf?}`, plus an internal `key` that makes the write happen once, never shown — in the same
   step as the person's statechart takes the change
-  (§app.project-overseer/org-charts). Creating a person is one line per set field,
+  (§app.project-overseer/statecharts). Creating a person is one line per set field,
   from `null`. `via: "overseer"` (with the Overseer's id) marks an operator change the global
   Overseer made for the operator (§app.overseer/org-attribution); a request without the server's
   sender secret never records it.
@@ -676,8 +697,8 @@ Organizations region's own Needs you, never the global one.
 - The org's name is never in the baton prompt; as a backstop the share page redacts it, as a
   whole word, from what the model wrote (a goal may carry it), unless the title or someone in the
   conversation used it.
-- **The transition log keeps no contact.** Every row of the org charts' transition log
-  (§app.project-overseer/org-charts), and the overseer's feed made from it, shows each contact field
+- **The transition log keeps no contact.** Every row of the org statecharts' transition log
+  (§app.project-overseer/statecharts), and the overseer's feed made from it, shows each contact field
   as `[contact]` wherever it sits (a `contact.email` change is a contact change), keeps only a
   digest of the About text and of anything a person wrote, and drops every token, hash and link;
   `roster-history.jsonl` and the person's own statechart are the only places a contact value lives in
@@ -764,7 +785,7 @@ Organizations region's own Needs you, never the global one.
 
 ## §app.organizations/projects — The org's projects
 
-- Each org has projects, each its own statechart (§app.project-overseer/org-charts): `{id, orgId, name,
+- Each org has projects, each its own statechart (§app.project-overseer/statecharts): `{id, orgId, name,
   root, createdAt, origin: "manual", archived?}` (`archived`: §app.organizations/archive). `root` is an absolute directory on the home host; it need not be a
   git repo. Added and renamed from the org page (`POST /api/orgs/:id/projects`,
   `PATCH /api/orgs/:id/projects/:pid`). A root (at its realpath) may not be an attached org's

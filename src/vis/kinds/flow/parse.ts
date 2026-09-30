@@ -254,6 +254,9 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
         }
         if (toks[k]?.t === "str") label = toks[k++]!.v;
       } else if (toks[k]?.t === "str") label = toks[k++]!.v;
+      // A target labelled already (earlier inline, or by its node line): a second string is the
+      // edge's too, its label's second line (`-> api "Notify completion" "POST /confirm"`).
+      if (label !== undefined && !named && (inlineStyle || hasNodeLine(dst)) && toks[k]?.t === "str" && toks[k + 1]?.t !== "str") label = `${label}\n${toks[k++]!.v}`;
       const strings = k;
       k = chainWords(toks, k, dst, to, line.n);
       const stray = toks[k];

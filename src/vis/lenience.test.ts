@@ -158,3 +158,9 @@ test("round 2 leniences keep their bounds: `node a` still declares, an indented 
   assert.deepEqual([node(plain, "b"), plain.edges[0]!.label], [["b", null, "decision", null], "go"]);
   assert.equal(parseVis("flow", "a -> b round square\n").ok, false);
 });
+
+test("replay: a labelled target's two strings (a Haiku eval reply, 'unexpected \"multipart stream\" after s3b') are its edge's two lines", () => {
+  const s = ok("flow", 'title: Image Upload Strategies\ncaption: API-mediated vs. direct-to-cloud with presigned URLs.\n\n== Upload via API ==\nclient "Client (browser)" -> api "API server" "POST /upload"\napi -> s3 "S3 bucket" "PutObject"\ns3 --> api "upload complete"\napi --> client "image URL"\ngroup "One round trip" client api s3\nmark api "all traffic passes through"\n\n== Presigned URL (direct upload) ==\nclient "Client" -> api2 "API server" "POST /presign"\napi2 -> s3b "S3 bucket" "GeneratePresignedURL"\ns3b --> api2 "signed URL"\napi2 --> client "URL + headers"\nclient -> s3b "PUT (signed)" "multipart stream"\ns3b --> client "201 Created"\ngroup "Separate flows" api2 s3b\nmark client "handles large files without tying up server"\nmark s3b "validates signature, not your auth"\n');
+  assert.deepEqual(edges(s).slice(-2), ["client@2>s3b:PUT (signed)\nmultipart stream", "s3b>client@2:201 Created"]);
+  assert.deepEqual(node(s, "s3b"), ["S3 bucket", null, "box", null]);
+});

@@ -167,7 +167,9 @@ test("flow inline style: the first string labels an unlabelled node, the next la
   // A target with a node line: its one string is the edge's, a second is an error.
   const lined = ok<FlowSpec>("flow", 'a "A" -> b\nnode b "B"\na -> b "go"');
   assert.deepEqual(edges(lined), ["a>b", "a>b:go"]);
-  assert.equal(err("flow", 'a "A" -> b\nnode b "B"\na -> b "go" "more"').message, 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
+  // A target with a node line: two strings are the edge's two lines (§chat.markdown/vis-lenience); a third is an error.
+  assert.equal(ok<FlowSpec>("flow", 'a "A" -> b\nnode b "B"\na -> b "go" "more"').edges[1]!.label, "go\nmore");
+  assert.equal(err("flow", 'a "A" -> b\nnode b "B"\na -> b "go" "more" "most"').message, 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"', "three strings: as before");
   assert.equal(err("flow", 'a "A" -> b "B" "e" "extra"').message, 'unexpected "extra" after b: one label and one edge label per target; for a second line use node b "B" "extra"');
 });
 
@@ -175,9 +177,11 @@ test("flow: a stray string after a target says what to write instead", () => {
   const msg = (body: string) => err("flow", body).message;
   // Labelled on this line: the third string reads as a second line, which only a node line has.
   assert.equal(msg('ai1 "AI" --> d1 "Decision" "yes" "own states"'), 'unexpected "own states" after d1: one label and one edge label per target; for a second line use node d1 "Decision" "own states"');
-  // Labelled earlier: the first string was the edge's, so the second reads as a two-line edge label.
+  // Labelled earlier: both strings are the edge's, its label on two lines; a third string is an error.
+  const two = ok<FlowSpec>("flow", 'api "API Server" -> db\nclient "Client" -> api "Notify completion" "POST /confirm-upload"');
+  assert.deepEqual([two.nodes.find((n) => n.id === "api")!.label, two.edges[1]!.label], ["API Server", "Notify completion\nPOST /confirm-upload"]);
   assert.equal(
-    msg('api "API Server" -> db\nclient "Client" -> api "Notify completion" "POST /confirm-upload"'),
+    msg('api "API Server" -> db\nclient "Client" -> api "Notify completion" "POST /confirm-upload" "x"'),
     'unexpected "POST /confirm-upload" after api: api is labelled "API Server" already, so "Notify completion" labels the edge; one string per edge label (\\n breaks a line): -> api "Notify completion\\nPOST /confirm-upload"',
   );
   // A string after a shape or tone word: the strings go first.

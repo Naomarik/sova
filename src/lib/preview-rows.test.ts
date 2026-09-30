@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { PREVIEW_NOT_KEPT, type PreviewView } from "../../shared/preview-links";
-import { makerLine, previewRow, previewTitle, stateLine } from "./preview-rows";
+import { makerLine, previewRow, previewTitle, senderLine, stateLine } from "./preview-rows";
 
 const NOW = Date.parse("2026-09-30T00:00:00.000Z");
 const view = (over: Partial<PreviewView>): PreviewView => ({
@@ -86,4 +86,16 @@ test("maker: you, the overseer's conversation, or unknown", () => {
 test("state follows running, for a port and a folder alike", () => {
   assert.deepEqual(stateLine(view({ running: true, target: { kind: "static", folder: "out" } })), { text: "Serving", tone: "ok" });
   assert.deepEqual(stateLine(view({ running: false, port: 8080 })), { text: "Nothing on port 8080", tone: "warn" });
+});
+
+test("a sibling's link went to its person: no copy and no 'not kept' line", () => {
+  const row = previewRow(view({ siblingOf: "pv_orig", sentTo: "p_t", sentToName: "Karim", url: null }), NOW);
+  assert.equal(row.url, null);
+  assert.equal(row.linkNote, null);
+});
+
+test("a recipient's sender: you, the overseer, or unknown", () => {
+  assert.equal(senderLine("operator"), "Sent by you");
+  assert.equal(senderLine("session:abc"), "Sent by the overseer");
+  assert.equal(senderLine("x"), null);
 });

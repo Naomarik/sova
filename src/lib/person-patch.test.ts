@@ -68,3 +68,14 @@ test("a referral compares by its two fields", () => {
     referral: { why: "Runs payroll", referredBy: "Maria" },
   });
 });
+
+test("working hours (r7): an untouched form with none sends none; a zone or hours change sends only that; turning hours off sends null", () => {
+  // The form sends tz "" and hours null for a person with neither: unchanged.
+  assert.deepEqual(changedFields(tony, { ...asForm(tony), tz: "", hours: null }), {});
+  const sam: Person = { ...tony, tz: "Europe/Istanbul", hours: { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" }, hoursNow: { open: true } };
+  const form = { ...asForm(sam), tz: "Europe/Istanbul", hours: { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" } };
+  assert.deepEqual(changedFields(sam, form), {}, "hoursNow is the server's, never compared");
+  assert.deepEqual(changedFields(sam, { ...form, tz: "America/Bogota" }), { tz: "America/Bogota" });
+  assert.deepEqual(changedFields(sam, { ...form, hours: { days: [1, 2, 3], from: "09:00", to: "17:00" } }), { hours: { days: [1, 2, 3], from: "09:00", to: "17:00" } });
+  assert.deepEqual(changedFields(sam, { ...form, hours: null }), { hours: null });
+});

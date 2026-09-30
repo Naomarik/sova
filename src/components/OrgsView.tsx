@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import { hoursLine, offHoursNote } from "../lib/working-hours";
 import { AUTOMATIC_ABILITIES, MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type GatheringAbilities, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
 import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
@@ -670,6 +671,10 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
                     : `Offered to ${to().length} people: the first to answer takes it, for as long as they keep answering.`}
                 {parent() ? " Started from the session you came from." : ""}
               </p>
+              {/* r7: yours goes at once; say so for each ticked person who is off hours now. */}
+              <For each={to().map((id) => props.org.roster.find((p) => p.id === id)).filter((p): p is Person => !!p)}>
+                {(p) => <Show when={offHoursNote(p, Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
+              </For>
             </fieldset>
             <label class="field">
               <span class="field-label">Public title</span>
@@ -846,6 +851,14 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; now: numb
           <Show when={contact()}>
             <dt>Contact</dt>
             <dd>{contact()}</dd>
+          </Show>
+          <Show when={hoursLine(p(), props.now)}>
+            {(line) => (
+              <>
+                <dt>Hours</dt>
+                <dd>{line()}</dd>
+              </>
+            )}
           </Show>
           <Show when={p().referral}>
             {(r) => (

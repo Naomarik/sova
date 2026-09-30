@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, on, Show } from "solid-js";
+import { offHoursNote } from "../lib/working-hours";
 import { TODO_TEXT_MAX, type IdeaRecord, type OverseerAction, type OverseerTodosInfo } from "../../shared/protocol";
 import {
   ALLOWANCE_MAX,
@@ -1289,6 +1290,10 @@ function ItemActions(props: ItemCallbacks & { item: Item }) {
               </For>
             </Show>
             <p class="field-hint">Pick 2 or more to offer it: the first to answer takes it.</p>
+            {/* r7: yours goes at once; say so for each ticked person who is off hours now. */}
+            <For each={active().filter((x) => to().includes(x.id))}>
+              {(x) => <Show when={offHoursNote(x, Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
+            </For>
           </fieldset>
           <label class="field">
             <span class="field-label">Public title</span>

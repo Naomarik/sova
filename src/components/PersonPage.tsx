@@ -1,4 +1,5 @@
 import { createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
+import { hoursLine } from "../lib/working-hours";
 import { Portal } from "solid-js/web";
 import { OPERATOR, type BatonView, type BatonViewItem } from "../../shared/baton";
 import type { Person, PersonInput, PersonPage as PersonPageData, PersonSessionRow, ProfileChange, VisitRow } from "../../shared/orgs";
@@ -164,7 +165,7 @@ export function PersonPage(props: { orgId: string; personId: string; titleRef(el
           <>
             <Show when={links()}>{(l) => <LinksBanner links={l()} warning={linkWarning()} onDismiss={() => setLinks(null)} />}</Show>
             <StatusBanner data={d()} now={now()} roster={roster()} />
-            <Head data={d()} act={act} editing={editing()} onEdit={() => setEditing(!editing())} roster={roster()} />
+            <Head data={d()} act={act} editing={editing()} onEdit={() => setEditing(!editing())} roster={roster()} now={now()} />
             <Show when={editing()}>
               <section class="card orgs-section" aria-label={`Edit ${name()}`}>
                 <PersonForm
@@ -258,7 +259,7 @@ function StatusBanner(props: { data: PersonPageData; now: number; roster: readon
   );
 }
 
-function Head(props: { data: PersonPageData; act: Act; editing: boolean; onEdit(): void; roster: readonly Person[] }) {
+function Head(props: { data: PersonPageData; act: Act; editing: boolean; onEdit(): void; roster: readonly Person[]; now: number }) {
   const p = () => props.data.person;
   const orgId = () => props.data.org.id;
   const contact = () =>
@@ -330,6 +331,14 @@ function Head(props: { data: PersonPageData; act: Act; editing: boolean; onEdit(
         <Show when={contact()}>
           <dt>Contact</dt>
           <dd>{contact()}</dd>
+        </Show>
+        <Show when={hoursLine(p(), props.now)}>
+          {(line) => (
+            <>
+              <dt>Hours</dt>
+              <dd>{line()}</dd>
+            </>
+          )}
         </Show>
         <Show when={p().referral}>
           {(r) => (

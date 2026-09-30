@@ -1,7 +1,8 @@
-import { createSignal, Show, type JSX } from "solid-js";
+import { createSignal, createUniqueId, For, Show, type JSX } from "solid-js";
 import { unwrap } from "solid-js/store";
 import type { Person, PersonInput } from "../../shared/orgs";
 import { changedFields } from "../lib/person-patch";
+import { DEFAULT_HOURS, knownZones, validZone, WEEK } from "../lib/working-hours";
 
 const list = (s: string) =>
   s
@@ -36,6 +37,16 @@ export function PersonForm(props: PersonFormProps) {
   const [whatsapp, setWhatsapp] = createSignal(p?.contact.whatsapp ?? "");
   const [why, setWhy] = createSignal(p?.referral?.why ?? "");
   const [by, setBy] = createSignal(p?.referral?.referredBy ?? "");
+  // Working hours (r7, §app.organizations/working-hours): a zone, and hours only once turned on.
+  const [tz, setTz] = createSignal(p?.tz ?? "");
+  const [hoursOn, setHoursOn] = createSignal(!!p?.hours);
+  const [days, setDays] = createSignal<number[]>(p?.hours?.days ?? DEFAULT_HOURS.days);
+  const [from, setFrom] = createSignal(p?.hours?.from ?? DEFAULT_HOURS.from);
+  const [to, setTo] = createSignal(p?.hours?.to ?? DEFAULT_HOURS.to);
+  const [hoursError, setHoursError] = createSignal<string | null>(null);
+  const zonesId = createUniqueId();
+  const zones = knownZones();
+  const toggleDay = (d: number, on: boolean) => setDays((xs) => (on ? [...new Set([...xs, d])] : xs.filter((x) => x !== d)).sort((a, b) => a - b));
   const text = (label: string, get: () => string, set: (v: string) => void, extra: JSX.InputHTMLAttributes<HTMLInputElement> = {}) => (
     <label class="field">
       <span class="field-label">{label}</span>
@@ -47,6 +58,16 @@ export function PersonForm(props: PersonFormProps) {
       class="orgs-form orgs-subform"
       onSubmit={(e) => {
         e.preventDefault();
+        const zone = tz().trim();
+        const problem = !validZone(zone)
+          ? `"${zone}" isn't a time zone this browser knows. Use an IANA name, like Europe/Istanbul.`
+          : hoursOn() && !days().length
+            ? "Pick at least one working day, or turn working hours off."
+            : hoursOn() && (!from() || !to())
+              ? "Working hours need a start and an end."
+              : null;
+        setHoursError(problem);
+        if (problem) return;
         const contact = { ...(email().trim() ? { email: email().trim() } : {}), ...(phone().trim() ? { phone: phone().trim() } : {}), ...(whatsapp().trim() ? { whatsapp: whatsapp().trim() } : {}) };
         const input: PersonInput = {
           name: name().trim(),
@@ -58,6 +79,9 @@ export function PersonForm(props: PersonFormProps) {
           voice: voice().trim(),
           contact,
           ...(status() === "proposed" || why().trim() || by().trim() ? { referral: { why: why().trim(), referredBy: by().trim() } } : {}),
+          // A new person without them sends neither; an edit sends "" / null to clear them.
+          ...(zone || p ? { tz: zone } : {}),
+          ...(hoursOn() ? { hours: { days: days(), from: from(), to: to() } } : p ? { hours: null } : {}),
         };
         if (!p) return (props.onSubmit as (input: PersonInput) => void)(input);
         const patch = changedFields(p, input);
@@ -88,6 +112,50 @@ export function PersonForm(props: PersonFormProps) {
         <textarea class="input textarea" rows={2} maxlength={300} value={voice()} onInput={(e) => setVoice(e.currentTarget.value)} />
         <span class="field-hint">How to talk to them. Never shown to them or anyone else outside this page.</span>
       </label>
+      <fieldset class="person-hours">
+        <legend class="field-label">Working hours</legend>
+        <p class="field-hint person-hours-hint">What Sova starts on its own, and what the overseer does unattended, waits for their hours. Yours go at once.</p>
+        <label class="field">
+          <span class="field-label">Time zone</span>
+          <input class="input" value={tz()} list={zonesId} placeholder="Europe/Istanbul" autocomplete="off" spellcheck={false} aria-invalid={!validZone(tz()) ? "true" : undefined} onInput={(e) => {
+              setTz(e.currentTarget.value);
+              setHoursError(null);
+            }} />
+          <datalist id={zonesId}>
+            <For each={zones}>{(z) => <option value={z} />}</For>
+          </datalist>
+        </label>
+        <label class="toggle person-hours-toggle">
+          <input type="checkbox" checked={hoursOn()} onChange={(e) => setHoursOn(e.currentTarget.checked)} />
+          <span class="toggle-box" />
+          <span>Set working hours</span>
+        </label>
+        <Show when={hoursOn()}>
+          <div class="person-hours-days" role="group" aria-label="Working days">
+            <For each={WEEK}>
+              {(w) => (
+                <label class="toggle person-hours-day" title={w.long}>
+                  <input type="checkbox" checked={days().includes(w.day)} aria-label={w.long} onChange={(e) => toggleDay(w.day, e.currentTarget.checked)} />
+                  <span class="toggle-box" />
+                  <span aria-hidden="true">{w.short}</span>
+                </label>
+              )}
+            </For>
+          </div>
+          <div class="orgs-fields person-hours-times">
+            <label class="field">
+              <span class="field-label">From</span>
+              <input class="input text-num" type="time" value={from()} onInput={(e) => setFrom(e.currentTarget.value)} />
+            </label>
+            <label class="field">
+              <span class="field-label">To</span>
+              <input class="input text-num" type="time" value={to()} onInput={(e) => setTo(e.currentTarget.value)} />
+            </label>
+          </div>
+          <p class="field-hint">In their time zone. An end before the start runs overnight.</p>
+        </Show>
+        <Show when={hoursError()}>{(e) => <p class="field-error">{e()}</p>}</Show>
+      </fieldset>
       <Show when={status() === "proposed"}>
         <div class="orgs-fields">
           {text("Why referred", why, setWhy, { maxlength: 300, required: true })}

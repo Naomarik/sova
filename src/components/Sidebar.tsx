@@ -83,6 +83,7 @@ import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
 import { CancelHeldButton } from "./HeldAct";
 import { heldWaitLine } from "../lib/pipeline-view";
+import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
@@ -1437,7 +1438,10 @@ export function Sidebar(props: {
   const orgWaitingCount = () => orgNeedsYou().length + orgItems().length;
   const orgNeedsYouDetail = (path: string) => {
     const r = orgNeedsYou().find((row) => row.session.path === path);
-    return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
+    // r12: an open offer's invitees not reached yet (their hours haven't come) are said after the row's own detail.
+    const waiting = waitingWords(props.attention?.items.find((it) => it.path === path && it.waiting?.length)?.waiting, props.now);
+    const text = [r?.detail, waiting].filter(Boolean).join(" · ");
+    return text ? { text, title: [...(r?.details ?? []), waiting ?? ""].filter(Boolean).join(" ") } : null;
   };
   const waitingTitle = (k: number) => (k === 1 ? "1 session waiting on you." : `${k} sessions waiting on you.`);
   const orgNeedsTitle = (k: number) =>

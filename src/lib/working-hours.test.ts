@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/working-hours.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { daysWords, hoursLine, hoursWords, offHoursNote, sentOffHours, theirClock, validZone } from "./working-hours";
+import { daysWords, hoursLine, hoursWords, offHoursNote, reachWords, sentOffHours, theirClock, validZone, waitingWords } from "./working-hours";
 
 const NOW = new Date(2026, 8, 30, 15, 0).getTime(); // a Wednesday, the operator's clock
 const tomorrow9 = new Date(2026, 9, 1, 9, 0).toISOString();
@@ -60,4 +60,25 @@ test("withOffHours: a done line gains the tail only when the answer says off hou
 test("sentOffHours: said after the operator's own act reached someone off hours", () => {
   assert.equal(sentOffHours("Sam Okafor", tomorrow9, NOW), "Sent. Sam Okafor's working hours start Thu 09:00 your time (in 18h).");
   assert.equal(sentOffHours("Sam Okafor", "nope", NOW), "Sent.");
+});
+
+test("r12: an offer's invitee is reached, waiting until their window (your time), waiting with no window, or paused by a lease", () => {
+  const at19 = new Date(2026, 8, 30, 19, 0).toISOString();
+  assert.equal(reachWords(undefined, undefined, NOW), "reached", "no reach (an offer from before r12): reached");
+  assert.equal(reachWords({ state: "reached", at: at19 }, undefined, NOW), "reached");
+  assert.equal(reachWords({ state: "waiting", until: at19 }, undefined, NOW), "waiting until 19:00 your time (in 4h)");
+  assert.equal(reachWords({ state: "waiting", until: tomorrow9 }, undefined, NOW), "waiting until Thu 09:00 your time (in 18h)");
+  assert.equal(reachWords({ state: "waiting", until: null }, undefined, NOW), "waiting for their working hours");
+  assert.equal(reachWords({ state: "waiting", until: "garbage" }, undefined, NOW), "waiting for their working hours");
+  assert.equal(reachWords({ state: "waiting", until: at19, paused: true }, "Ana", NOW), "waiting: nobody new is reached while Ana is answering");
+  assert.equal(reachWords({ state: "waiting", until: at19, paused: true }, undefined, NOW), "waiting: nobody new is reached while someone is answering");
+});
+
+test("r12: Needs you's note lists every invitee not reached yet, or nothing", () => {
+  assert.equal(waitingWords(undefined, NOW), null);
+  assert.equal(waitingWords([], NOW), null);
+  assert.equal(
+    waitingWords([{ name: "Bo", until: tomorrow9 }, { name: "Cy", until: null }], NOW),
+    "Bo waiting until Thu 09:00 your time (in 18h); Cy waiting for their working hours.",
+  );
 });

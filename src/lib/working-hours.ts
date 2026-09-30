@@ -2,6 +2,7 @@
 // and the off-hours note say. When their window opens is the server's (the charts' next-window
 // rule, `hoursNow`); this file only says it. Pure, for tsx --test.
 
+import type { OfferReach } from "../../shared/baton";
 import type { Person, PersonHours } from "../../shared/orgs";
 import { sendAt } from "./pipeline-view";
 import { duration } from "./format";
@@ -113,6 +114,25 @@ export const withOffHours = (done: string, name: string, offHours: string | unde
 
 /** "Sent." with the off-hours tail. */
 export const sentOffHours = (name: string, offHours: string, now: number): string => withOffHours("Sent.", name, offHours, now);
+
+/**
+ * An offer's invitee (r12): reached (their link made) or waiting for their own working hours. "reached",
+ * "waiting until 14:00 your time (in 5h)", "waiting for their working hours" (no window found), or, while
+ * the offer is leased, "waiting: nobody new is reached while Ana is answering". Absent reach: reached.
+ */
+export function reachWords(r: OfferReach | undefined, holder: string | undefined, now: number): string {
+  if (!r || r.state === "reached") return "reached";
+  if (r.paused) return `waiting: nobody new is reached while ${holder ?? "someone"} is answering`;
+  const opens = r.until ? opensWords(r.until, now) : "";
+  return opens ? `waiting until ${opens}` : "waiting for their working hours";
+}
+
+/** Needs you's note on an open offer's invitees not reached yet: "Bo waiting until 14:00 your time (in 5h); Cy
+    waiting for their working hours." Null when nobody waits. */
+export function waitingWords(waiting: readonly { name: string; until: string | null }[] | undefined, now: number): string | null {
+  if (!waiting?.length) return null;
+  return `${waiting.map((w) => `${w.name} ${reachWords({ state: "waiting", until: w.until }, undefined, now)}`).join("; ")}.`;
+}
 
 /** The zones the browser knows, for the form's suggestions; [] where it can't list them. */
 export function knownZones(): string[] {

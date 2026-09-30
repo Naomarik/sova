@@ -139,6 +139,8 @@
 
 /* The strip's second rows: invitees' links, a proposed person, a wrap-up line, the Hand On form. */
 .baton-strip-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* r12: an offer's invitees not reached yet, one line each (their name, then when their hours start). */
+.baton-strip-waiting { flex-basis: 100%; list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
 .baton-strip-card { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-surface); border: 1px solid var(--color-border); }
 .baton-strip-card-main { flex: 1; min-width: 12rem; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .baton-extend-input { width: 6rem; }

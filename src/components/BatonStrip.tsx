@@ -1,5 +1,5 @@
 import { createEffect, createResource, createSignal, For, on, Show } from "solid-js";
-import { offHoursNote, withOffHours } from "../lib/working-hours";
+import { offHoursNote, reachWords, withOffHours } from "../lib/working-hours";
 import { abilitiesOf, MESSAGES_CAP, OPERATOR, type BatonInfo, type OfferLink, type ProposedPerson } from "../../shared/baton";
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, approvePerson, batonLink, closeBaton, declinePerson, extendBaton, getBaton, handBaton, inviteeLink, offerBaton, revokeBatonLink, takeBaton, withdrawOffer } from "../lib/api";
@@ -221,10 +221,16 @@ export function BatonStrip(props: {
             </div>
           </Show>
           <Show when={liveOffer(i())}>
-            {(o) => (
+            {(o) => {
+              // r12: an invitee is reached (their link made) only in their own working hours; a waiting one has no link yet.
+              const reached = () => o().to.filter((p) => p.reach?.state !== "waiting");
+              const waiting = () => o().to.filter((p) => p.reach?.state === "waiting");
+              return (
+              <>
+              <Show when={reached().length > 0}>
               <div class="baton-strip-row baton-strip-invitees" role="group" aria-label="Invitees' links">
-                <span class="baton-strip-meta">New link for</span>
-                <For each={o().to}>
+                <span class="baton-strip-meta">{waiting().length ? "Reached · new link for" : "New link for"}</span>
+                <For each={reached()}>
                   {(p) => (
                     <button
                       type="button"
@@ -242,7 +248,21 @@ export function BatonStrip(props: {
                   )}
                 </For>
               </div>
-            )}
+              </Show>
+              <Show when={waiting().length > 0}>
+                <ul class="baton-strip-waiting" aria-label="Invitees not reached yet">
+                  <For each={waiting()}>
+                    {(p) => (
+                      <li class="baton-strip-meta">
+                        {p.name} · {reachWords(p.reach, o().holder?.name, now())}
+                      </li>
+                    )}
+                  </For>
+                </ul>
+              </Show>
+              </>
+              );
+            }}
           </Show>
           <Show when={handing()} keyed>
             {(pre) => (

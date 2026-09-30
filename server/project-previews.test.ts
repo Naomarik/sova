@@ -369,10 +369,11 @@ describe("an older preview is matched by its worktree when read, never written (
 });
 
 describe("confirm kinds: preview, and lists saved before it (§app.project-overseer/reviews)", () => {
-  test("a list saved without confirmKindsKnown gets preview on; one saved after keeps it off", () => {
-    const old = ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "roster-approve", "roster-decline"];
+  test("a list saved without confirmKindsKnown gets preview on (send as saved); one saved after keeps it off", () => {
+    // Every kind there was before confirmKindsKnown was written, send (outreach's) included.
+    const old = ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "send", "roster-approve", "roster-decline"];
     assert.ok(store.parsePoSettings({ confirmKinds: old }).confirmKinds.includes("preview"));
-    assert.deepEqual(store.parsePoSettings({ confirmKinds: ["gather"] }).confirmKinds, ["gather", "preview"]);
+    assert.deepEqual(store.parsePoSettings({ confirmKinds: ["gather"] }).confirmKinds, ["gather", "preview"], "send stays as saved: off");
     assert.deepEqual(store.parsePoSettings({ confirmKinds: ["gather"], confirmKindsKnown: [...old, "preview"] }).confirmKinds, ["gather"]);
     const p = store.projectOverseerPaths(org.id, project.id);
     store.patchPoSettings(p, { confirmKinds: ["build"] });

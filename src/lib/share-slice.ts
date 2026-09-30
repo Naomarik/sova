@@ -206,35 +206,24 @@ export const canFollowLive = (cur: Slice): boolean => cur.end === null;
 // ---- the recipient page -------------------------------------------------------------------------
 
 /**
- * Whether a newest page read or pushed now continues the view on screen: the same `earlier`, and at
- * least one item number in both with the same kind and text. A start that moved renumbers every
- * item, so the numbers they share no longer hold the same messages; with no number in common it
- * can't be told, and counts as a different slice.
- */
-export function sameSlice(cur: SessionShareView, next: SessionShareView): boolean {
-  if ((cur.earlier === true) !== (next.earlier === true)) return false;
-  const mine = new Map(cur.items.map((i) => [i.n, i]));
-  let shared = 0;
-  for (const i of next.items) {
-    const c = mine.get(i.n);
-    if (!c) continue;
-    if (c.kind !== i.kind || c.text !== i.text) return false;
-    shared++;
-  }
-  return shared > 0;
-}
-
-/**
- * A newest page, kept with the earlier pages the reader already opened while it continues the same
- * slice. `reset` (a push after the start moved), or a page that can't be the same slice, replaces
- * the view whole: nothing of the old slice stays.
+ * A newest page (read, re-read or pushed), kept with the earlier pages the reader already opened
+ * while it has the view's lineage: the same start on one path, so item numbers keep their meaning.
+ * Another lineage, or `reset`, replaces the view whole: nothing of the old view stays.
  */
 export function mergeNewest(cur: SessionShareView | null, next: SessionShareView, reset = false): SessionShareView {
   const first = next.items[0]?.n;
-  if (!cur || reset || first === undefined) return next;
+  if (!cur || reset || cur.lineage !== next.lineage || first === undefined) return next;
   const earlier = cur.items.filter((i) => i.n < first);
-  if (earlier.length === 0 || !sameSlice(cur, next)) return next;
+  if (earlier.length === 0) return next;
   return { ...next, items: [...earlier, ...next.items], before: cur.before };
+}
+
+/** An earlier page (Show Earlier) put above the view, or null when it is of another lineage: it is
+    dropped, and the page reads the newest page again. */
+export function mergeEarlier(cur: SessionShareView, page: SessionShareView): SessionShareView | null {
+  if (page.lineage !== cur.lineage) return null;
+  const first = cur.items[0]?.n ?? Infinity;
+  return { ...cur, items: [...page.items.filter((i) => i.n < first), ...cur.items], before: page.before };
 }
 
 /** The recipient's "Earlier messages aren't part of this share." line: only above the slice's first

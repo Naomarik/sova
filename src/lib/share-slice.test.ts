@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionShareView } from "../../shared/session-share";
-import { applyHint, bounds, canFollowLive, earlierLine, endsLine, hints, inSlice, mergeNewest, normalize, sameSlice, rangeLabel, shareHref, shareRouteFromHash, sliceOfShare, spanOf, tap, WHOLE, type Slice, type SliceRow } from "./share-slice";
+import { applyHint, bounds, canFollowLive, earlierLine, endsLine, hints, inSlice, mergeEarlier, mergeNewest, normalize, rangeLabel, shareHref, shareRouteFromHash, sliceOfShare, spanOf, tap, WHOLE, type Slice, type SliceRow } from "./share-slice";
 
 // u0 r1 r2 u3 r4 u5 r6 u7 — three turns with replies, the last question unanswered.
 const rows: SliceRow[] = ["u0", "r1", "r2", "u3", "r4", "u5", "r6", "u7"].map((id) => ({ id, kind: id.startsWith("u") ? "user" : "reply" }));
@@ -126,7 +126,6 @@ const view = (ns: number[], extra: Partial<SessionShareView> = {}): SessionShare
 test("a pushed newest page keeps earlier pages read; a reset replaces the view whole", () => {
   const read = view([0, 1, 2, 3]);
   const merged = mergeNewest(read, view([2, 3, 4], { before: 2 }));
-  assert.equal(sameSlice(read, view([2, 3, 4])), true);
   assert.deepEqual(merged.items.map((i) => i.n), [0, 1, 2, 3, 4]);
   assert.equal(merged.before, undefined);
   // the start moved: the new slice renumbers from 0, and none of the old one may stay on screen
@@ -159,14 +158,32 @@ test("the two ends in words", () => {
   assert.equal(endsLine(rows, { start: "u3", end: null }, true), "From message 4 · Follows live");
 });
 
-test("a re-read keeps earlier pages only while it is the same slice", () => {
-  const read = view([0, 1, 2, 3]);
-  // the start moved while away: item 2 is another message now, so nothing of the old view stays
-  const moved = view([2, 3, 4], { before: 2 });
-  moved.items[0] = { kind: "user", n: 2, text: "other" };
-  assert.deepEqual(mergeNewest(read, moved).items.map((i) => i.text), ["other", "m3", "m4"]);
-  // `earlier` differs: another slice
-  assert.equal(sameSlice(read, view([2, 3], { earlier: true })), false);
-  // no item number in common (it grew past a page while away): can't tell, so it replaces
-  assert.deepEqual(mergeNewest(read, view([300, 301], { before: 300 })).items.map((i) => i.n), [300, 301]);
+const many = (from: number, to: number, lineage: string, tag = "m", extra: Partial<SessionShareView> = {}): SessionShareView =>
+  view([], { lineage, ...extra, items: Array.from({ length: to - from }, (_, k) => ({ kind: "user" as const, n: from + k, text: `${tag}${from + k}` })) });
+
+test("a view of another lineage replaces the page whole, earlier pages included, even with no reset", () => {
+  // 450 items: the newest 200 read, then two Show Earlier pages
+  let cur = many(250, 450, "A", "m", { before: 250 });
+  cur = mergeEarlier(cur, many(50, 250, "A", "m", { before: 50 }))!;
+  cur = mergeEarlier(cur, many(0, 50, "A"))!;
+  assert.equal(cur.items.length, 450);
+  // the start moved: the same numbers now hold other messages, in lineage B
+  const next = many(100, 300, "B", "x", { before: 100, earlier: true });
+  const after = mergeNewest(cur, next);
+  assert.deepEqual(after, next);
+  assert.equal(after.items.some((i) => i.text.startsWith("m")), false);
+});
+
+test("the same lineage merges with the earlier pages already read", () => {
+  let cur = many(250, 450, "A", "m", { before: 250 });
+  cur = mergeEarlier(cur, many(50, 250, "A", "m", { before: 50 }))!;
+  const grown = mergeNewest(cur, many(260, 460, "A", "m", { before: 260 }));
+  assert.deepEqual(grown.items.map((i) => i.n), Array.from({ length: 410 }, (_, k) => 50 + k));
+  assert.equal(grown.before, 50);
+});
+
+test("a Show Earlier answer of another lineage is dropped", () => {
+  const cur = many(250, 450, "A", "m", { before: 250 });
+  assert.equal(mergeEarlier(cur, many(50, 250, "B", "x", { before: 50 })), null);
+  assert.equal(mergeEarlier(cur, many(50, 250, "A", "m", { before: 50 }))!.items.length, 400);
 });

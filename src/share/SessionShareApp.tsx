@@ -8,7 +8,7 @@ import {
   type SessionShareServerMessage,
   type SessionShareView,
 } from "../../shared/session-share";
-import { earlierLine, mergeNewest, sameSlice } from "../lib/share-slice";
+import { earlierLine, mergeEarlier, mergeNewest } from "../lib/share-slice";
 import { SESSION_VIS_KINDS } from "./markdown";
 import { LinkedText, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
@@ -165,15 +165,9 @@ export function SessionShareApp() {
 
   /** Near the bottom when a live push lands: stay there, so new messages come into view. */
   const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
-  /** Bumped when a newest page replaced the view: an earlier page read before it may belong to the
-      old slice, and is dropped. */
-  let generation = 0;
   const applyNewest = (v: SessionShareView, reset = false) => {
     const pin = view() !== null && atBottom();
-    setView((cur) => {
-      if (cur && (reset || !sameSlice(cur, v))) generation++;
-      return mergeNewest(cur, v, reset);
-    });
+    setView((cur) => mergeNewest(cur, v, reset));
     document.title = v.title;
     if (pin) queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight));
   };
@@ -205,7 +199,7 @@ export function SessionShareApp() {
   const load = async () => {
     if (!TOKEN) return;
     const v = await read();
-    // Again after a reconnect, it keeps the earlier pages read only while it is the same slice
+    // Again after a reconnect, it keeps the earlier pages read only in the same lineage
     // (mergeNewest): a start moved while the socket was down renumbers every item.
     if (v && v !== "failed") applyNewest(v);
   };
@@ -216,13 +210,15 @@ export function SessionShareApp() {
     setEarlier("busy");
     const doc = document.documentElement;
     const fromBottom = doc.scrollHeight - window.scrollY;
-    const gen = generation;
     const page = await read(v.before);
-    if (gen !== generation) return setEarlier(null);
     if (!page) return setEarlier(null);
     if (page === "failed") return setEarlier("Couldn't load earlier messages. Try again.");
     setEarlier(null);
-    setView((cur) => (cur ? { ...cur, items: [...page.items.filter((i) => i.n < (cur.items[0]?.n ?? Infinity)), ...cur.items], before: page.before } : cur));
+    const cur = view();
+    const merged = cur && mergeEarlier(cur, page);
+    // Another lineage: the share changed under the reader, so the newest page is read again.
+    if (!merged) return void load();
+    setView(merged);
     // Keep the reader's place: what they were reading stays under their eyes.
     queueMicrotask(() => window.scrollTo(0, doc.scrollHeight - fromBottom));
   };

@@ -473,13 +473,11 @@ export function parseWireframe(body: string): WireframeSpec {
   const flatOf = (bs: WBlock[]): WBlock[] => bs.flatMap((b) => [b, ...flatOf(b.children)]);
   const screenFlat = screens.map((s) => flatOf(s.blocks));
   const flat = screenFlat.flat();
-  const markLine = new Map<MarkTarget, number>(marks.flatMap((m) => m.targets.map((t) => [t, m.line] as const)));
   const find = (pool: WBlock[], t: MarkTarget, x: string) =>
     pool.find((b) => b.texts[0] === t.text) ?? pool.find((b) => b.texts.some((s) => norm(s) === x)) ?? pool.find((b) => b.items?.some((s) => norm(s) === x));
-  const resolve = (t: MarkTarget): string | null => {
+  const resolve = (t: MarkTarget, ln: number): string | null => {
     if (t.t !== "id" && t.t !== "label") return null;
     const x = norm(t.text);
-    const ln = markLine.get(t) ?? 0;
     const here = screens.reduce((acc, s, i) => (s.line < ln ? i : acc), -1);
     const byText = (here >= 0 ? find(screenFlat[here]!, t, x) : undefined) ?? find(flat, t, x);
     if (byText) return byText.key;

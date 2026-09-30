@@ -1,6 +1,6 @@
-// Blocks models really wrote that failed to draw (sessions of 2026-09-27 to 09-29), replayed as
-// written. The flow, tree and chart ones had one plausible reading and now draw it; the sequence one
-// fails with an error that quotes what to write instead.
+// Blocks models really wrote that failed to draw (sessions of 2026-09-27 to 09-30, and eval replies),
+// replayed as written. The flow, tree, chart and mark ones had one plausible reading and now draw it;
+// the sequence one fails with an error that quotes what to write instead.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FlowSpec } from "./kinds/flow/parse";
@@ -92,4 +92,28 @@ test("replay: chart parts over `of:` (09-29, twice) draw without of:, with a war
     const spec = r.spec as { of?: number; rows: unknown[]; emphasis?: unknown[] };
     assert.deepEqual([spec.of, spec.rows.length, spec.emphasis!.length], [undefined, 2, 1]);
   }
+});
+
+test("replay: a timeline mark on a date with a space (09-30, 'mark: unexpected 30') marks that row", () => {
+  const r = parseVis("timeline", "title: Active window per day (first \u2192 last commit)\ncaption: Code lands around the clock, every day \u2014 00:0x to 23:5x, not in human workday bursts.\nSep 19 | 08:27 \u2013 23:51 | 75 commits\nSep 20 | 00:20 \u2013 15:04 | 26 commits\nSep 21 | 01:52 \u2013 23:59 | 74 commits\nSep 22 | 00:00 \u2013 22:55 | 207 commits\nSep 23 | 05:02 \u2013 22:56 | 25 commits\nSep 24 | 00:26 \u2013 23:57 | 70 commits\nSep 25 | 00:28 \u2013 23:51 | 237 commits\nSep 26 | 00:22 \u2013 23:14 | 92 commits\nSep 27 | 01:08 \u2013 23:29 | 211 commits\nSep 28 | 00:33 \u2013 23:58 | 265 commits\nSep 29 | 00:03 \u2013 23:22 | 275 commits\nSep 30 | 00:09 \u2013 22:43 | 495 commits\nmark Sep 30 \"one commit every ~2.7 minutes, all day\"\n");
+  if (!r.ok) assert.fail(`line ${r.line}: ${r.message}`);
+  assert.deepEqual(r.warnings, []);
+  assert.deepEqual((r.spec as { emphasis?: unknown[] }).emphasis, [{ key: "11", tone: "accent", note: "one commit every ~2.7 minutes, all day", n: 1 }]);
+});
+
+test("replay: two ids as one mark (a Haiku eval reply, 'mark: unexpected s3') mark both, one note", () => {
+  const flow = ok("flow", "title: Image Upload Strategies  \ncaption: Server-mediated vs. direct-to-S3 with presigned URLs.\n\n== Through API Server ==\nbrowser \"Browser\" -> api \"API Server\" \"POST /upload\"\napi -> s3 \"S3\" \"PUT\"\ns3 --> api \"OK\"\napi --> browser \"Success\"\nmark api \"processes all image data\"\n\n== Direct to S3 ==\nbrowser \"Browser\" -> api \"API Server\" \"GET /presigned-url\"\napi --> browser \"Signed URL\"\nbrowser -> s3 \"S3\" \"PUT (signed)\"\ns3 --> browser \"Success\"\nmark browser s3 \"direct upload, no server proxy\"\n");
+  // Ids name the first panel that has them (§chat.markdown/vis-flow-sections), as a lone `mark browser` does.
+  assert.deepEqual(flow.emphasis!.map((e) => [e.key, e.n]), [["api", 1], ["browser", 2], ["s3", 2]]);
+});
+
+// The other shapes an earlier eval's report names (`mark Data tier`, `mark a -> b`), in blocks written around them.
+test("replay: a layer label with a space marks it; an unreadable mark is dropped", () => {
+  const layers = parseVis("layers", "Web tier | nginx\nData tier | Postgres, Redis\nmark Data tier warn \"one primary\"\n");
+  if (!layers.ok) assert.fail(layers.message);
+  assert.deepEqual([layers.warnings, (layers.spec as { emphasis?: unknown[] }).emphasis], [[], [{ key: "1", tone: "warn", note: "one primary", n: 1 }]]);
+  const arrow = parseVis("flow", 'a -> b\nmark a -> b "the hop"\nmark b\n');
+  if (!arrow.ok) assert.fail(arrow.message);
+  assert.deepEqual(arrow.warnings, [{ line: 2, message: 'mark: unexpected -> (after the target: a tone and/or a "note"); mark dropped' }]);
+  assert.deepEqual((arrow.spec as FlowSpec).emphasis!.map((e) => e.key), ["b"]);
 });

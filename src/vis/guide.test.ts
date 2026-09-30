@@ -129,6 +129,16 @@ test("the shared section exists (emphasis), and the free-form limits are in html
   assert.equal(MAX_TEXT, 200);
 });
 
+test("the guide quotes a mark target with spaces, and its timeline example marks one that way", () => {
+  assert.match(GUIDE, /Quote a target with spaces, even if its row isn't: `mark "Vue 2" "…"`/);
+  const body = /^```vis timeline\n([\s\S]*?)^```$/m.exec(GUIDE)![1]!;
+  assert.match(body, /^mark "Vue 2" /m);
+  const r = parseVis("timeline", body);
+  assert.ok(r.ok && r.warnings.length === 0);
+  const spec = r.spec as { items: { label?: string }[]; emphasis?: { key: string }[] };
+  assert.deepEqual(spec.emphasis!.map((e) => spec.items[Number(e.key)]!.label), ["Vue 2"], "the mark lands on the Vue 2 row");
+});
+
 test("the guide teaches several targets per mark and matrix cell tones, with examples that mean it", () => {
   assert.match(GUIDE, /`mark a, b, c "the scope set"`/);
   const matrix = [...GUIDE.matchAll(/^```vis matrix\n([\s\S]*?)^```$/gm)].map(([, body]) => parseVis("matrix", body!));

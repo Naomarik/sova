@@ -753,3 +753,24 @@
         (core/load! e2 "f" (get (:snapshots r) "f"))
         (is (empty? (:sova/pending (core/data e2 "f"))) "after a restart it is not pending again"))
       (is (empty? (:steps (core/send! eng "f" :effect/done {:key k} {:now (+ t0 2)}))) "a second answer is stale"))))
+
+;; ---- a watcher whose snapshot can't be read (server-7: one broken person flagged its org) -------------
+
+(deftest an-unreadable-watcher-misses-a-notification-and-renotify-catches-it-up
+  (let [eng0 (parent (new-eng))]
+    (core/send! eng0 "par" :kid/spawn (assoc overseer :name "ana") {:now t0})
+    (let [par-text (core/dump eng0 "par")
+          broken?  (atom true)
+          eng      (new-eng {:load-cold (fn [sid] (when (= sid "par") (if @broken? (throw (js/Error. "par.edn can't be read")) par-text)))})]
+      (core/load! eng "kid/ana" (core/dump eng0 "kid/ana"))
+      (let [r (core/send! eng "kid/ana" :kid/grow {} {:now (+ t0 1)})]
+        (is (= [:kid/grow] (map :event (:steps r))) "the kid's own step goes through")
+        (is (= [{:from "kid/ana" :watcher "par" :why "par.edn can't be read"}] (:unreadable r)) "the missed notification is reported")
+        (is (= ["par"] (:sova/watchers (core/data eng "kid/ana"))) "the watcher is kept (its file will be fixed)"))
+      (reset! broken? false)
+      (core/load! eng "par" par-text)
+      (let [n (count (:seen (core/data eng "par")))
+            r (core/renotify! eng ["par"] {:now (+ t0 2)})]
+        (is (= [:link/moved] (map :event (filter #(= "par" (:session-id %)) (:steps r)))))
+        (is (= (inc n) (count (:seen (core/data eng "par")))) "it sees the kid's current state")
+        (is (= [:kid :grown] (:states (last (:seen (core/data eng "par"))))))))))

@@ -171,6 +171,7 @@
                               (with-config sid (core/set-state! eng sid {:states states :patch patch :reason reason}
                                                  (->clj envelope) (call-opts opts))))))
          :resume        (guarded (fn [sids opts] (->js (core/resume! eng (vec sids) (call-opts opts)))))
+         :renotify      (guarded (fn [sids opts] (->js (core/renotify! eng (vec sids) (call-opts opts)))))
          :configuration (fn [sid] (->js (core/configuration eng sid)))
          :running       (fn [sid] (core/running? eng sid))
          :data          (fn [sid] (->js (core/data eng sid)))

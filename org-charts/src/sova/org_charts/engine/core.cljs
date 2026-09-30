@@ -761,14 +761,20 @@
                 link?  (= :link/moved (:name evt))
                 ok     (if link?
                          ;; a watcher that exists nowhere (a host-local session a clone doesn't carry,
-                         ;; a deleted one) is a dangling link, never a reason to fail the step
+                         ;; a deleted one) is a dangling link; one whose snapshot can't be read (a
+                         ;; workspace problem) misses this notification. Neither fails the step.
                          (try (ensure-loaded! eng target)
                               (catch :default e
-                                (if (= unknown-session-type (:type (ex-data e))) ::dangling (throw e))))
+                                (if (= unknown-session-type (:type (ex-data e)))
+                                  ::dangling
+                                  (do (cx! eng :unreadable {:from (::sc/source-session-id evt) :watcher target :why (ex-message e)})
+                                      ::unreadable))))
                          (ensure-loaded! eng target))]
             (cond
               (= ok ::dangling)
               (recur (into log (drop-dangling! eng (::sc/source-session-id evt) target)) undelivered (inc guard))
+              ;; the watcher stays: `renotify!` catches it up once its file is fixed
+              (= ok ::unreadable) (recur log undelivered (inc guard))
               ok (recur (into log (process-one eng target evt)) undelivered (inc guard))
               :else (recur log (conj undelivered target) (inc guard))))
           [log undelivered])))))
@@ -819,6 +825,7 @@
      :loaded      (vec (distinct (:loaded c)))
      :absorbed    (vec (distinct (:absorbed c)))
      :dangling    (vec (distinct (:dangling c)))
+     :unreadable  (vec (distinct (:unreadable c)))
      :stale       (vec (:stale c))
      :errors      @captured
      ;; One snapshot per session this call moved (a step, or a pending event added or removed):
@@ -901,6 +908,19 @@
       (if-let [ev (external-event eng sid event-name data invoke-id)]
         (process-one eng sid ev)
         []))))
+
+(defn renotify!
+  "A `link/moved` to each of `sids` from every loaded session it watches (the ones listing it in their
+   `:sova/watchers`): the host's reload of a session whose snapshot couldn't be read while it missed
+   notifications, so it sees their current state."
+  [eng sids {:keys [now]}]
+  (call eng now {:own-only true}
+    (fn []
+      (doseq [w sids
+              s (session-ids eng)
+              :when (some #{w} (:sova/watchers (data eng s)))]
+        (notify! eng s [w]))
+      [])))
 
 (defn next-due-at
   "Earliest delivery time of a pending event for a loaded session (not in `except`, not set aside), or nil."

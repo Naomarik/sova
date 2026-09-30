@@ -8822,7 +8822,8 @@
         "org-charts/test/sova/org_charts/charts/refit/feed_table.cljs",
         "org-charts/test/sova/org_charts/charts/refit/feed_golden.cljs",
         "org-charts/src/sova/org_charts/charts/base.cljc",
-        "org-charts/src/sova/org_charts/charts/reasons.cljc"
+        "org-charts/src/sova/org_charts/charts/reasons.cljc",
+        "server/project-previews.test.ts"
       ],
       "requires": [
         "§app.project-overseer/holds",
@@ -9191,7 +9192,10 @@
         "shared/public-links.ts",
         "server/index.ts",
         "server/preview-links.test.ts",
-        "server/share-preview-router.test.ts"
+        "server/share-preview-router.test.ts",
+        "server/preview-kept.ts",
+        "server/project-previews.ts",
+        "server/project-previews.test.ts"
       ]
     },
     "§mesh.public/preview-address": {
@@ -9233,7 +9237,10 @@
         "src/components/SharesPage.tsx",
         "src/lib/api.ts",
         "src/lib/previews.ts",
-        "src/lib/previews.test.ts"
+        "src/lib/previews.test.ts",
+        "src/shares.css",
+        "src/lib/preview-rows.ts",
+        "src/lib/preview-rows.test.ts"
       ]
     },
     "§mesh.public/preview-limits": {
@@ -9687,6 +9694,56 @@
         "§app.organizations/privacy",
         "§app.project-overseer/org-charts",
         "§app/markdown-viewer"
+      ]
+    },
+    "§app.project-overseer/previews": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.public/preview",
+        "§mesh.public/preview-serve",
+        "§app.project-overseer/tools",
+        "§app.project-overseer/autonomy-levels",
+        "§app.project-overseer/holds",
+        "§app.project-overseer/reviews",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "code": [
+        "server/project-overseer-tools.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-prompt.md",
+        "server/project-previews.ts",
+        "server/port-owner.ts",
+        "server/preview-kept.ts",
+        "server/sessions-index.ts",
+        "shared/preview-links.ts",
+        "server/project-previews.test.ts",
+        "server/project-overseer-tools.test.ts",
+        "org-charts/src/sova/org_charts/charts/proj.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/levels.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/org_project_test.cljc",
+        "org-charts/EVENTS.md",
+        "server/vendor/org-charts.js"
+      ]
+    },
+    "§mesh.public/preview-serve": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§mesh.public/preview",
+        "§mesh.public/preview-offline",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "code": [
+        "server/preview-serve.ts",
+        "server/preview-serve.test.ts",
+        "server/project-previews.ts",
+        "server/share/preview-proxy.ts",
+        "server/index.ts",
+        "server/preview-links-routes.ts",
+        "server/project-previews.test.ts"
       ]
     }
   },

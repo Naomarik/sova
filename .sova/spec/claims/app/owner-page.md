@@ -168,7 +168,9 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   or referral reason, or that contains any of their contact details; it says which kind of text
   (About and notes, or the rest), never the text. The text is at most 2,000
   characters, plain text; an `http://` or `https://` address in it becomes a link on the page (a
-  demo address goes there: Sova hosts no demo sites). Like everything the model wrote, it passes
+  demo address the operator gave goes there). A text that holds a preview link this host keeps
+  is refused: a preview link goes to people through the operator
+  (§app.project-overseer/previews). Like everything the model wrote, it passes
   the outsider redaction before it is shown.
 - **Logged on the project page.** Every post, taken down or not, is listed on the project page's
   Owner Page card with its text, when, and whether the overseer posted it on its own or because

@@ -18,7 +18,7 @@ import {
   type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerKey, buildDigest, laterFilter, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-pipeline";
 import { conflictAttention } from "./decisions";
@@ -340,9 +340,11 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     const rows: AttentionRow[] = sessions.map((s) => {
       const chat = heldChat(s.path);
       const live = byPath.get(s.path);
+      const pending = chat ? chat.pendingDialogs() : [];
       return {
         summary: s,
-        dialogs: chat ? chat.pendingDialogs().map((d) => d.title || d.method) : [],
+        dialogs: pending.map((d) => d.title || d.method),
+        dialogIds: pending.map((d) => d.id),
         queued: chat ? chat.queue.size : 0,
         failedWorkers: live?.failed ?? 0,
         workerErrorAt: live?.failed ? workerErrorTime(live.failed, live.errorTimes, noteFailedRise(s.path, live.failed, nowMs)) : undefined,
@@ -355,7 +357,8 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
     });
     // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
     // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)]);
+    // Items put away with Later (§app.overseer/attention-digest) leave the digest until their anchor moves.
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)], laterFilter());
   })();
   digestMemo = { at: now, value };
   value.catch(() => {

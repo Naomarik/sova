@@ -22,6 +22,7 @@ export function sessionAlignOf(docs: readonly AlignDocument[]): SessionAlign | u
   return {
     openDocs: open.length,
     openQuestions: asking.reduce((n, doc) => n + openQuestionsOf(doc).length, 0),
+    ...(asking.length ? { questionIds: asking.flatMap((doc) => openQuestionsOf(doc).map((q) => `${doc.id}/${q.id}`)) } : {}),
     questionDocs: asking.length,
     ...(lead ? { lead: { id: lead.id, title: lead.title } } : {}),
   };

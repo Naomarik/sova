@@ -2773,11 +2773,11 @@ export type AttentionKind =
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
   | "held-act"            // act tier, never pushed: a chart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
-  | "asks-you"        // decisions: the last reply of a turn with no open alignment question asks the user something
-  | "ready-to-merge"  // a worktree is ready and the last reply asks for the go-ahead (SessionSummary.readiness)
+  | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something
+  | "ready-to-merge"  // decide tier: a worktree is ready, or ready and waiting for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
   | "restart-pending" // merges changed the server since it started (one item, no session: `path` "")
-  | "team-stalled";   // decisions, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
+  | "team-stalled";   // decide tier, counted in code: the session waits on subagents that have all been quiet 15 min (§app.decisions/team-stall)
 
 export interface AttentionItem {
   /** Session id. */
@@ -2817,6 +2817,15 @@ export interface AttentionItem {
     /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
     reviewSince?: number;
   };
+  /** Act tier only: the key `POST /api/attention/later` takes to put this item away until its
+      anchor (what counts as new for it) changes (§app.overseer/attention-digest). Opaque. */
+  later?: string;
+}
+
+/** POST /api/attention/later and /api/attention/later/undo: the `later` keys of the items to put
+    away (or bring back). Answer: `{ ok: true }`. */
+export interface AttentionLaterRequest {
+  keys: string[];
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`
@@ -3590,6 +3599,8 @@ export interface SessionTags {
 export interface SessionAlign {
   openDocs: number;
   openQuestions: number;
+  /** The open questions, `{al_N}/{q id}`: Later's anchor for open questions. */
+  questionIds?: string[];
   questionDocs: number;
   lead?: { id: string; title: string };
 }

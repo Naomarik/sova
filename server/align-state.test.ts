@@ -94,8 +94,8 @@ describe("transcript: an align tool result is its own row", () => {
 describe("sessionAlignOf: the session list's counts", () => {
   test("open documents, their open questions, the documents that ask, and the last-touched of those", () => {
     const docs = [answered.doc!, second.doc!];
-    assert.deepEqual(sessionAlignOf(docs), { openDocs: 2, openQuestions: 2, questionDocs: 2, lead: { id: "al_2", title: "Pane" } });
-    assert.deepEqual(sessionAlignOf([answered.doc!, finished.doc!]), { openDocs: 1, openQuestions: 1, questionDocs: 1, lead: { id: "al_1", title: "Export" } });
+    assert.deepEqual(sessionAlignOf(docs), { openDocs: 2, openQuestions: 2, questionIds: ["al_1/q2", "al_2/q1"], questionDocs: 2, lead: { id: "al_2", title: "Pane" } });
+    assert.deepEqual(sessionAlignOf([answered.doc!, finished.doc!]), { openDocs: 1, openQuestions: 1, questionIds: ["al_1/q2"], questionDocs: 1, lead: { id: "al_1", title: "Export" } });
     assert.equal(sessionAlignOf([finished.doc!]), undefined, "nothing open: no field");
     const confirmed = calls([
       { ops: [{ op: "create", title: "C", summary: "s", questions: [Q("x")] }] },
@@ -129,11 +129,11 @@ describe("readAlignScan: the file's open alignments, cheaply", () => {
     const b = result(second, a.id);
     const path = session("rewind", [a, b]);
     let scan = await readAlignScan(path, readFileSync(path).length, null);
-    assert.deepEqual(scan.summary, { openDocs: 2, openQuestions: 3, questionDocs: 2, lead: { id: "al_2", title: "Pane" } });
+    assert.deepEqual(scan.summary, { openDocs: 2, openQuestions: 3, questionIds: ["al_1/q1", "al_1/q2", "al_2/q1"], questionDocs: 2, lead: { id: "al_2", title: "Pane" } });
     // Rewind to after `a`: a new leaf entry parented on it (what a sova-rewind marker does).
     appendFileSync(path, `${JSON.stringify({ type: "custom", id: "rw", parentId: a.id, customType: "sova-rewind", data: { targetId: a.id } })}\n`);
     scan = await readAlignScan(path, readFileSync(path).length, scan);
-    assert.deepEqual(scan.summary, { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_1", title: "Export" } });
+    assert.deepEqual(scan.summary, { openDocs: 1, openQuestions: 2, questionIds: ["al_1/q1", "al_1/q2"], questionDocs: 1, lead: { id: "al_1", title: "Export" } });
   });
 
   test("the marker search resumes where it stopped while the file grows; a shrunk file is searched from the start", async () => {
@@ -173,7 +173,7 @@ describe("readAlignScan: incremental while the file grows", () => {
     scan = await readAlignScan(path, readFileSync(path).length, scan);
     assert.equal(scan.entries, kept);
     assert.deepEqual(scan.summary, await fresh(path), "incremental equals a full fold");
-    assert.deepEqual(scan.summary, { openDocs: 2, openQuestions: 2, questionDocs: 2, lead: { id: "al_1", title: "Export" } });
+    assert.deepEqual(scan.summary, { openDocs: 2, openQuestions: 2, questionIds: ["al_2/q1", "al_1/q2"], questionDocs: 2, lead: { id: "al_1", title: "Export" } });
   });
 
   test("a rewrite that moves the line boundary is read again from the start", async () => {
@@ -216,7 +216,7 @@ describe("SessionSummary.align: only while the session waits on the user, with a
     }
     const path = session("far-above", [a, ...later]);
     assert.ok(readFileSync(path).length - readFileSync(path, "utf8").indexOf(`"id":"${a.id}"`) > 256 * 1024, "over 256 KB after it");
-    assert.deepEqual(await summaryOf(path), { openDocs: 1, openQuestions: 2, questionDocs: 1, lead: { id: "al_1", title: "Export" } });
+    assert.deepEqual(await summaryOf(path), { openDocs: 1, openQuestions: 2, questionIds: ["al_1/q1", "al_1/q2"], questionDocs: 1, lead: { id: "al_1", title: "Export" } });
     // Its done, far below it, ends the wait.
     const done = calls([
       { ops: [{ op: "create", title: "Export", summary: "Download a session.", questions: [Q("Format"), Q("Zip")] }] },
@@ -251,7 +251,7 @@ describe("SessionSummary.align", () => {
     const a = result(created, "u1");
     const b = result(answered, a.id);
     const path = session("summary", [a, b]);
-    assert.deepEqual((await getSessionSummary(path))?.align, { openDocs: 1, openQuestions: 1, questionDocs: 1, lead: { id: "al_1", title: "Export" } });
+    assert.deepEqual((await getSessionSummary(path))?.align, { openDocs: 1, openQuestions: 1, questionIds: ["al_1/q2"], questionDocs: 1, lead: { id: "al_1", title: "Export" } });
     const done = calls([
       { ops: [{ op: "create", title: "Export", summary: "Download a session.", questions: [Q("Format"), Q("Zip")] }] },
       { ops: [{ op: "accept_all" }, { op: "status", to: "done" }] },

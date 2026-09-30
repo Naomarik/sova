@@ -255,7 +255,8 @@ export interface Report {
   looks: { real: number; chart: number };
   items: Record<string, string[]>;
   /** What the chart was actually asked: trials of real acts, item positions checked, real looks compared. */
-  coverage: { trials: number; itemChecks: number; lookChecks: number; expects: number; restarts: number; maxMicrosteps: number };
+  /** `routed`: tool calls that are a chart act now (reads, notes, confirm cards and to-dos are none); each is trialled. */
+  coverage: { trials: number; routed: number; itemChecks: number; lookChecks: number; expects: number; restarts: number; maxMicrosteps: number };
   /** With a horizon: each item's phase at the trace's end and, the clock run on to the horizon, when it stalled. */
   stalls?: { item: string; endPhase: string[]; stalledAt: number | null; phaseAtHorizon: string[] }[];
 }
@@ -524,7 +525,7 @@ function capsOf(c: Record<string, number | null>): ProjectOverseerSettings["caps
 export async function replay(trace: Trace, opts: { horizon?: number } = {}): Promise<Report> {
   const T0 = Date.parse(trace.t0);
   let now = T0;
-  const rep: Report = { trace: trace.id, steps: trace.events.length, checks: 0, passes: 0, divergences: [], skipped: [], looks: { real: 0, chart: 0 }, items: {}, coverage: { trials: 0, itemChecks: 0, lookChecks: 0, expects: 0, restarts: 0, maxMicrosteps: 0 } };
+  const rep: Report = { trace: trace.id, steps: trace.events.length, checks: 0, passes: 0, divergences: [], skipped: [], looks: { real: 0, chart: 0 }, items: {}, coverage: { trials: 0, routed: 0, itemChecks: 0, lookChecks: 0, expects: 0, restarts: 0, maxMicrosteps: 0 } };
   const F = trace.sova.features;
   let curDt = 0;
   const diverge = (check: string, expected: unknown, got: unknown, cls: Cls | null, why: string, evidence?: Record<string, unknown>) => {
@@ -774,7 +775,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     const b = { id, state: s.state!, own: prev?.own ?? s.by === "overseer", wrote: prev?.wrote || !!s.wrote, settle: prev?.settle || !!s.settle };
     batons.set(id, b);
     const sid = S.baton(id);
-    if (!world.exists(sid)) await send("baton/start", S.project, "baton/start", batonStart(id, (s as { offer?: boolean }).offer === true), env(b.own ? "overseer" : "operator", true));
+    // The overseer's start is its turn's: an unattended look's draws on the day's ledger, not the operator's message's.
+    if (!world.exists(sid)) await send("baton/start", S.project, "baton/start", batonStart(id, (s as { offer?: boolean }).offer === true), env(b.own ? "overseer" : "operator", b.own ? !!turn?.attended : true));
     if (!world.exists(sid)) return;
     const d = world.data(sid);
     const holder = typeof d.holder === "string" ? d.holder : null;
@@ -1139,6 +1141,13 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       continue;
     }
     if (s.kind === "turn") {
+      // A raise the settings store kept only as its last value: a look that carries its reason comes after it, so the
+      // limits synced down from an earlier refusal go back to the stored ones before the look.
+      if (s.reasons?.some((r) => r.kind === "limit-raised") && syncedCaps.size) {
+        for (const key of syncedCaps) caps[key] = (trace.final.caps as Record<string, number | null> | undefined)?.[key] ?? null;
+        syncedCaps.clear();
+        await fact("limit-raised (from its reason)", S.watch, "settings/changed", { settings: { ...settings(), caps: capsOf(caps), holdMin: 0 } });
+      }
       const prev = turn as { look: boolean } | null;
       turn = { attended: !!s.attended, by: s.by!, used: zero(), look: s.by === "watch" || (!!s.joins && !!prev?.look) };
       if (!prev) realTurns.push({ from: now, to: null });
@@ -1267,6 +1276,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       if (s.levelAtCall && s.levelAtCall !== autonomy && s.levelWhy === "paused") paused = true;
       const invalid = s.refusal && HOST_CHECKS.has(s.refusal) && s.verdict !== "partial" ? `host:${s.refusal}` : undefined;
       const routes = await routeTool(s);
+      if (routes.length) rep.coverage.routed++;
       const vs = routes.map((r) => trialOn(r.sid, r.event, r.payload, toolEnvelope(s, invalid ? { invalid } : undefined), r.item)).filter((v): v is Verdict => !!v);
       checkTool(s, vs);
       const ran = s.verdict === "ok" || s.verdict === "partial";

@@ -85,11 +85,41 @@ const MAX_MICROSTEPS = 200;
 
 /** The replay was reworked onto the real host and the refit's charts: its divergences are being classified or
     fixed (chart findings with charts-2). Until then the lanes run and report, and do not fail the suite. */
-const REWORK = "reworked onto the real host: unexplained divergences being classified (server-2)";
+const REWORK = "reworked onto the real host: unexplained divergences being classified (server-5)";
+/** The lanes whose divergences are still being classified: every other lane must replay with none unexplained. */
+const PENDING = new Set([
+  "real-01",
+  "real-04",
+  "real-05",
+  "real-06",
+  "real-08",
+  "real-09",
+  "real-11",
+  "real-15",
+  "real-16",
+  "real-18",
+  "real-19",
+  "real-22",
+  "real-23",
+  "real-24",
+  "real-25",
+  "real-26",
+  "real-27",
+  "real-28",
+  "syn-archive-during-look",
+  "syn-build-failed-l3",
+  "syn-cap-at-midnight",
+  "syn-conflict-two-gaps",
+  "syn-gap-dropped-mid-build",
+  "syn-merge-refused",
+  "syn-reason-while-streaming",
+  "syn-soon-off",
+  "syn-spec-edited-keep",
+] as string[]);
 
 const reports: Report[] = [];
 for (const t of traces)
-  test(`replay ${t.id} (${t.source}, Sova ${t.sova.commit ?? "?"}): zero unexplained divergences`, { timeout: REPLAY_TIMEOUT_MS, todo: REWORK }, async () => {
+  test(`replay ${t.id} (${t.source}, Sova ${t.sova.commit ?? "?"}): zero unexplained divergences`, { timeout: REPLAY_TIMEOUT_MS, ...(PENDING.has(t.id) ? { todo: REWORK } : {}) }, async () => {
     const r = await replay(t);
     reports.push(r);
     const unexplained = r.divergences.filter((d) => d.cls === null || d.cls === "chart-bug");
@@ -98,7 +128,9 @@ for (const t of traces)
     const tools = t.events.filter((e) => e.kind === "tool").length;
     const looks = t.events.filter((e) => e.kind === "turn" && e.by === "watch").length;
     const expects = t.events.filter((e) => e.kind === "expect").length;
-    if (tools) assert.ok(r.coverage.trials > 0, `${t.id}: ${tools} tool calls, no chart trial`);
+    // Every tool call that is a chart act now was trialled (a read, a note, a validation refusal is none).
+    if (r.coverage.routed) assert.ok(r.coverage.trials >= r.coverage.routed, `${t.id}: ${r.coverage.routed} tool calls are chart acts, ${r.coverage.trials} trialled`);
+    assert.ok(r.coverage.routed <= tools);
     if (t.events.some((e) => e.entity === "gap" || e.args?.id?.startsWith("§gap/"))) assert.ok(r.coverage.itemChecks > 0, `${t.id}: gaps, but no item position checked`);
     assert.equal(r.coverage.lookChecks, t.events.some((e) => e.entity === "overseer") || t.source === "synthetic" ? looks : r.coverage.lookChecks, `${t.id}: real looks not all compared`);
     assert.equal(r.coverage.expects, expects, `${t.id}: expectations not all checked`);

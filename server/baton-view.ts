@@ -14,6 +14,7 @@ import {
   type BatonViewItem,
   type PersonRef,
 } from "../shared/baton";
+import { stripImageNotes } from "../shared/image-note";
 import { REDACTED } from "./overseer-redact";
 
 /**
@@ -169,7 +170,16 @@ export interface ViewInput {
   /** An invitee who has not held the offer: the view ends with offer card `untilOffer`, and the
       holder is not named. */
   untilOffer?: number;
+  /** Receives each photo the view shows, in view order (index = its `n`): the image route serves
+      bytes from exactly the view the viewer gets, cuts included. */
+  collect?: { data: string; mimeType: string }[];
 }
+
+/** A user message's image blocks (pi's `{type: "image", data, mimeType}`). */
+const imagesOf = (content: unknown): { data: string; mimeType: string }[] =>
+  Array.isArray(content)
+    ? content.filter((b) => b && typeof b === "object" && b.type === "image" && typeof b.data === "string" && typeof b.mimeType === "string").map((b) => ({ data: b.data as string, mimeType: b.mimeType as string }))
+    : [];
 
 /** At most `max` characters, never ending in half a surrogate pair. */
 function cutReply(text: string, max: number): string {
@@ -185,6 +195,7 @@ export function batonView(input: ViewInput): BatonView {
   const by = messageSenders(branch, input.row.holder);
 
   const items: BatonViewItem[] = [];
+  let photos = 0;
   for (const e of branch) {
     // The wrap-up is the operator's: nothing from its marker on is anyone else's to see.
     if (e.type === "custom" && e.customType === BATON_WRAPUP_ENTRY) break;
@@ -193,10 +204,17 @@ export function batonView(input: ViewInput): BatonView {
     if (e.type === "message") {
       const role = e.message?.role;
       if (role === "user") {
-        const text = textOf(e.message.content).trim();
-        if (!text) continue;
+        // Shown as typed: pi's resize notes are for the model (§chat.images/resize-notes).
+        const text = stripImageNotes(textOf(e.message.content), e.message.content).trim();
+        const blocks = imagesOf(e.message.content);
+        // A message of photos alone is still a row (§app.baton/images).
+        if (!text && !blocks.length) continue;
+        const images = blocks.map((b) => {
+          input.collect?.push(b);
+          return { n: photos++, mime: b.mimeType };
+        });
         const sender = by.get(id) ?? "";
-        items.push({ kind: "message", id, by: sender, name: sender ? name(sender) : "Someone", text: redact(text), ...(at ? { at } : {}) });
+        items.push({ kind: "message", id, by: sender, name: sender ? name(sender) : "Someone", text: redact(text), ...(at ? { at } : {}), ...(images.length ? { images } : {}) });
       } else if (role === "assistant") {
         const text = textOf(e.message.content).trim();
         if (!text) continue;

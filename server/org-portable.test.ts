@@ -43,14 +43,14 @@ after(async () => {
 
 const git = (dir: string, ...args: string[]) => execFileSync("git", ["-C", dir, ...args], { encoding: "utf8" }).trim();
 
-describe("the sessions it started are the charts' (q1: no started.json; C13: no legacy list)", async () => {
+describe("the sessions it started are the statecharts' (q1: no started.json; C13: no legacy list)", async () => {
   const org = await orgs.createOrg({ name: "Migrate", dir: join(root, "ws-m") });
   mkdirSync(join(root, "proj-m"));
   const project = await orgs.addProject(org.id, { name: "M", root: join(root, "proj-m") });
   const p = store.projectOverseerPaths(org.id, project.id);
   const started = join(p.dir, "started.json");
 
-  test("the paths: no turn counters (the watch chart's ledgers), no started.json, no watch memo", () => {
+  test("the paths: no turn counters (the watch statechart's ledgers), no started.json, no watch memo", () => {
     assert.equal("turn" in p, false);
     assert.equal("started" in p, false);
     assert.equal("memo" in p, false);
@@ -62,7 +62,7 @@ describe("the sessions it started are the charts' (q1: no started.json; C13: no 
     const legacy = [{ sessionId: "s-code", kind: "coding", createdAt: "2026-09-02T00:00:00.000Z", path: "/nowhere/s-code.jsonl" }];
     writeFileSync(memo, JSON.stringify({ version: 1, pending: ["a reason"], lastRunAt: null, lastRun: null, perDay: { "2026-09-01": 2 }, started: legacy }));
     assert.deepEqual(readBuilds(org.id, project.id), []);
-    assert.deepEqual(store.readMemo(p).pending, [], "nor its reasons: the watch chart's are the loop's");
+    assert.deepEqual(store.readMemo(p).pending, [], "nor its reasons: the watch statechart's are the loop's");
     assert.equal(existsSync(started), false, "nothing moved into the repo");
   });
 });
@@ -80,7 +80,7 @@ describe("clone + attach = the whole organization", async () => {
   // A build of the project, merged (its worktree's folder was this host's).
   await seedBuild(a.id, project.id, { sessionId: "code-moved", kind: "coding", title: "Moved build", worktree: { path: join(root, "wt-a"), branch: "sova/moved-abc123", base: "abc", target: "main" }, merged: { commit: "c0ffee" } });
   await po.patchProjectOverseer(a.id, project.id, { autonomy: "L2" });
-  // A conflict asking Tony in its settle session (the conflict chart starts it).
+  // A conflict asking Tony in its settle session (the conflict statechart starts it).
   const seeded = await seedConflicts(a.id, project.id, [{ id: "cf_moved", orgId: a.id, projectId: project.id, areaKey: "payroll", a: "x", b: "y", p: 0.9, state: "open", routedTo: tony.id, routeReason: "owner", batonSessionId: randomUUID(), createdAt: "2026-09-27T00:00:00.000Z" }]);
   await orgs.patchOrg(a.id, { about: "Northwind closes its books on the 5th." });
   const tokens = [c1.token!, again.token];
@@ -108,15 +108,15 @@ describe("clone + attach = the whole organization", async () => {
 
   test("the repo holds every file of the org's state", () => {
     const files = git(bDir, "ls-files").split("\n");
-    // The charts' snapshots and transition log hold the state (q1): no projection file is written.
+    // The statecharts' snapshots and transition log hold the state (q1): no projection file is written.
     const want = ["about.md", "org-history.jsonl", "roster-history.jsonl", "visits.jsonl", `sessions/${c1.path.split("/").pop()}`];
     for (const f of want) assert.ok(files.includes(f), f);
-    const snapshot = (chart: string, sid: string) => `charts/${chart}/${encodeURIComponent(sid)}.edn`;
+    const snapshot = (statechart: string, sid: string) => `statecharts/${statechart}/${encodeURIComponent(sid)}.edn`;
     for (const f of [snapshot("org", `org/${a.id}`), snapshot("person", `person/${a.id}/${tony.id}`), snapshot("project", `project/${a.id}/${project.id}`)]) assert.ok(files.includes(f), f);
-    assert.ok(files.some((f) => /^charts\/log\/\d{4}-\d{2}\.jsonl$/.test(f)), "the transition log");
+    assert.ok(files.some((f) => /^statecharts\/log\/\d{4}-\d{2}\.jsonl$/.test(f)), "the transition log");
     for (const f of ["org.json", "roster.json", "projects.json", "holder.json"]) assert.ok(!files.includes(f), `no ${f}`);
-    // Host-local charts (the residence, the watches) stay on the host.
-    assert.ok(!files.some((f) => f.startsWith("charts/residence/") || f.startsWith("charts/watch/")), "nothing host-local");
+    // Host-local statecharts (the residence, the watches) stay on the host.
+    assert.ok(!files.some((f) => f.startsWith("statecharts/residence/") || f.startsWith("statecharts/watch/")), "nothing host-local");
     assert.ok(files.includes(`projects/${project.id}/overseer/overseer.json`), "overseer.json");
     for (const f of ["started.json", "state.json"]) assert.ok(!files.includes(`projects/${project.id}/overseer/${f}`), `no ${f}`);
     assert.ok(files.includes(snapshot("build", `build/${a.id}/${project.id}/code-moved`)), "the build's snapshot");
@@ -217,7 +217,7 @@ describe("clone + attach = the whole organization", async () => {
     assert.equal(read.find((c) => c.id === "cf_moved")!.batonPath, here, "this host's file, not the old host's");
     assert.equal(reconcile.listDecisions(b.id, project.id).conflicts.find((c) => c.id === "cf_moved")!.batonPath, here);
     assert.equal(personPage(b.id, tony.id).conflicts.find((c) => c.id === "cf_moved")!.batonPath, here, "the person page too");
-    const snapshot = readFileSync(join(bDir, "charts", "conflict", `${encodeURIComponent(`conflict/${b.id}/${project.id}/cf_moved`)}.edn`), "utf8");
+    const snapshot = readFileSync(join(bDir, "statecharts", "conflict", `${encodeURIComponent(`conflict/${b.id}/${project.id}/cf_moved`)}.edn`), "utf8");
     assert.doesNotMatch(snapshot, /batonPath|batonpath|baton-path|ws-a|\.jsonl/, "the repo keeps its session's id, never a host path");
   });
 

@@ -43,7 +43,14 @@ export function BatonStrip(props: {
 }) {
   // Re-read whenever the list's baton field moves (a hand-off, a reply, a claim, done).
   const key = () => ({ path: props.path, v: JSON.stringify(props.summary()?.baton ?? null) });
-  const [info, { refetch, mutate }] = createResource(key, (k) => getBaton(k.path));
+  /** Only GET /api/baton says it (an action's answer doesn't), so it is kept apart from `info`. */
+  const [noPhotos, setNoPhotos] = createSignal(false);
+  const [info, { refetch, mutate }] = createResource(key, (k) =>
+    getBaton(k.path).then((i) => {
+      setNoPhotos(!!i.noPhotos);
+      return i;
+    }),
+  );
   const now = useMinuteNow();
   /** Links shown once, and the hand-off they belong to: they stay until dismissed or a later hand-off. */
   const [shown, setShown] = createSignal<{ links: OfferLink[]; at: number; warning?: string } | null>(null);
@@ -128,6 +135,10 @@ export function BatonStrip(props: {
                 )}
               </For>
             </div>
+            {/* Photos are on, but this model can't see them (§app.baton/images). */}
+            <Show when={noPhotos() && open(i())}>
+              <span class="baton-strip-meta">This model can't see photos: people won't get an attach button.</span>
+            </Show>
             {/* Who started it, and when (§app.baton/told): always shown; the overseer part links to it. */}
             <span class="baton-strip-meta baton-strip-started">
               Started by{" "}

@@ -14,6 +14,7 @@ const orgName = (orgId: string): string => {
 import { hashToken } from "../baton-links";
 import { serverRedactor } from "../overseer-redact";
 import { readActiveBranch } from "../transcript";
+import { photosFor } from "../baton-images";
 
 /**
  * The share page's live side (§app.baton/outsider-view): who is watching which baton session, and
@@ -39,8 +40,16 @@ const streamPhrases = new Map<string, string[]>();
 
 /** The filtered view of a baton session for `viewer` (a person id), or with no viewer (the project
     overseer's reads: every briefing). */
-export async function readView(row: BatonSession, dir: string, viewer?: PersonRef, untilOffer?: number): Promise<BatonView> {
+export async function readView(
+  row: BatonSession,
+  dir: string,
+  viewer?: PersonRef,
+  untilOffer?: number,
+  /** Receives the view's photos in order (the image route), and the branch it read. */
+  out?: { collect?: { data: string; mimeType: string }[]; branch?: Record<string, any>[] },
+): Promise<BatonView> {
   const branch = (await readActiveBranch(sessionPathOf(dir, row)).catch(() => [])) as Record<string, any>[];
+  if (out) out.branch = branch;
   const r = outsiderRedactor(row.orgId, [row.publicTitle, ...conversationVocabulary(branch)]);
   streamPhrases.set(row.sessionId, r.phrases);
   return batonView({
@@ -51,6 +60,7 @@ export async function readView(row: BatonSession, dir: string, viewer?: PersonRe
     ...(untilOffer !== undefined ? { untilOffer } : {}),
     redact: r.redact,
     said: r.said,
+    ...(out?.collect ? { collect: out.collect } : {}),
   });
 }
 
@@ -60,13 +70,31 @@ export async function readView(row: BatonSession, dir: string, viewer?: PersonRe
 export async function viewForToken(token: string): Promise<BatonView | { status: 404 | 410; why?: GoneWhy }> {
   const access = linkAccess(token);
   if (!access.ok) return { status: access.status, ...(access.why ? { why: access.why } : {}) };
-  const view = await readView(access.row, access.dir, access.link.personId, outsiderCut(access.row, access.link.personId));
+  const out: { branch?: Record<string, any>[] } = {};
+  const view = await readView(access.row, access.dir, access.link.personId, outsiderCut(access.row, access.link.personId), out);
   const names = namesOf(access.row.orgId);
+  // The paperclip only while this link writes, photos are on and the model sees images (§app.baton/images).
+  const photos = access.canWrite ? await photosFor(access.row, access.dir, undefined, out.branch).catch(() => null) : null;
   return {
     ...view,
     items: opaqueSenders(view.items, access.link.personId),
-    viewer: { name: names[access.link.personId] ?? "You", canWrite: access.canWrite, ...(access.reason ? { reason: access.reason } : {}) },
+    viewer: {
+      name: names[access.link.personId] ?? "You",
+      canWrite: access.canWrite,
+      ...(access.reason ? { reason: access.reason } : {}),
+      ...(photos ? { photos: { perMessage: photos.perMessage, maxBytes: photos.maxBytes } } : {}),
+    },
   };
+}
+
+/** The `n`-th photo of the view this token's person gets (the same cuts), or the dead link's
+    status, or null when the view has no such photo. */
+export async function imageForToken(token: string, n: number): Promise<{ data: string; mimeType: string } | null | { status: 404 | 410; why?: GoneWhy }> {
+  const access = linkAccess(token);
+  if (!access.ok) return { status: access.status, ...(access.why ? { why: access.why } : {}) };
+  const collect: { data: string; mimeType: string }[] = [];
+  await readView(access.row, access.dir, access.link.personId, outsiderCut(access.row, access.link.personId), { collect });
+  return collect[n] ?? null;
 }
 
 /**

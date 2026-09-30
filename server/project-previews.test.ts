@@ -109,7 +109,7 @@ const fetchVia = (label: string, path: string): Promise<{ status: number; body: 
   });
 
 describe("the overseer's guard: L1, the hold, the operator's turn (§app.project-overseer/previews)", () => {
-  test("below L1 in a run of its own: the chart's refusal; nothing is made or held", async () => {
+  test("below L1 in a run of its own: the statechart's refusal; nothing is made or held", async () => {
     await settings({ autonomy: "L0", holdMin: 10 });
     await assert.rejects(() => run("sova_preview", folderStart), /This run was not started by the operator, and your autonomy here is L0; sova_preview needs L1\./);
     assert.equal(holdsOf().length, 0);

@@ -25,8 +25,8 @@ function fakeHost(next: () => ActResult = () => ({ taken: true, refusal: null, r
     data: () => null,
     sessions: () => [],
     holds: () => [],
-    chartOf: () => null,
-    chartInfo: () => null,
+    statechartOf: () => null,
+    statechartInfo: () => null,
     problems: () => [],
     logAct: async () => {},
     onChange: (fn: (c: HostChange) => void) => void (changed = fn),
@@ -85,14 +85,14 @@ describe("org engines: one host per org", () => {
     assert.ok(isOrgHostOpen("org_j"));
   });
 
-  test("the host gets a stamp: a chart's own act (or a named actor's), unattended, from the project's settings file", async () => {
+  test("the host gets a stamp: a statechart's own act (or a named actor's), unattended, from the project's settings file", async () => {
     const f = fakeHost();
     let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer" }) => { by: string; attended: boolean; holdMs: number }) | null = null;
     setOrgHostOpener(async (o) => ((stamp = o.stamp as never), f.host));
     assert.equal(stamp, null);
     await openOrgHost({ orgId: "org_s", workspaceDir: "/nonexistent-ws", stateDir: "/state" });
     const e = stamp!("watch/org_s/prj_s", "gather/start", {});
-    assert.deepEqual([e.by, e.attended, e.holdMs], ["chart", false, 600_000]);
+    assert.deepEqual([e.by, e.attended, e.holdMs], ["statechart", false, 600_000]);
     assert.equal(stamp!("item/org_s/prj_s/g_1", "gather/start", {}, { by: "overseer" }).by, "overseer");
   });
 
@@ -103,7 +103,7 @@ describe("org engines: one host per org", () => {
     writeFileSync(join(ws, "projects", "prj_q", "overseer", "overseer.json"), JSON.stringify({ autonomy: "L2", holdMin: 3 }));
     const config: Record<string, string[]> = { "watch/org_q/prj_q": ["attach", "paused"], "person/org_q/p_1": ["proposed"] };
     const f = fakeHost();
-    const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (chart?: string) => (chart === "person" ? [{ id: "person/org_q/p_1", chart: "person", configuration: ["active"], data: {} }] : []) };
+    const host = { ...f.host, configuration: (sid: string) => config[sid] ?? null, sessions: (statechart?: string) => (statechart === "person" ? [{ id: "person/org_q/p_1", statechart: "person", configuration: ["active"], data: {} }] : []) };
     let stamp: ((sid: string, e: string, p: Record<string, unknown>, who?: { by?: "overseer"; projectId?: string }) => { autonomy: string; holdMs: number; paused: boolean; projectId?: string; by: string }) | null = null;
     setOrgHostOpener(async (o) => ((stamp = o.stamp as never), host as unknown as OrgHostApi));
     await openOrgHost({ orgId: "org_q", workspaceDir: ws, stateDir: "/state" });
@@ -140,7 +140,7 @@ describe("org engines: one host per org", () => {
 describe("refusals as the routes answer them", () => {
   beforeEach(() => resetOrgHostsForTest());
 
-  test("the chart's status and sentence (and code) pass through; no or odd status is 409", () => {
+  test("the statechart's status and sentence (and code) pass through; no or odd status is 409", () => {
     const e = refusalError({ sentence: "Someone else is answering right now.", status: 409, code: "taken" });
     assert.deepEqual([e.status, e.message, e.code], [409, "Someone else is answering right now.", "taken"]);
     assert.equal(refusalError({ sentence: "This link has expired.", status: 410 }).status, 410);

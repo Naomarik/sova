@@ -1,4 +1,4 @@
-import type { Hold, Refusal, StampContext } from "./org-charts";
+import type { Hold, Refusal, StampContext } from "./statecharts";
 import { OrgHost, type ActResult, type HostChange } from "./org-host";
 import { OrgError } from "./org-error";
 import type { ActBy, Envelope } from "./org-envelope";
@@ -15,14 +15,14 @@ import type { ProjectOverseerSettings } from "../shared/project-overseer";
  * own them (`onOrgHostOpened`), so this module imports none of them.
  */
 
-export type { Refusal } from "./org-charts";
+export type { Refusal } from "./statecharts";
 export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocation, InvocationReport, SessionInfo } from "./org-host";
 
 /** The OrgHost as the server calls it (server/org-host/, the engine member's): the host itself, so
     tests may hand in a fake with the same shape. */
 export type OrgHostApi = Pick<
   OrgHost,
-  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours"
+  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "statechartOf" | "statechartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours"
 >;
 
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
@@ -53,7 +53,7 @@ export interface OpenOptions {
 }
 
 /** The host's `stamp` option (engine API): a fresh envelope for an act the engine delivers itself
-    (a chart's drive, a held act at its release). `who` is the act's original actor (default "chart")
+    (a statechart's drive, a held act at its release). `who` is the act's original actor (default "statechart")
     and project: an act on a person or the org (a held roster approve) is still its project's act, so
     its level, pause, archive, ledgers and hold come from that project, never from defaults. */
 export type Stamp = (sid: string, event: string, payload: Record<string, unknown>, who?: StampContext) => Envelope;
@@ -109,7 +109,7 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
       if (!self) throw new Error("The org engine stamped before it opened.");
       const pid = stampProject(self, sid, payload, who);
       const settings = settingsOf();
-      const env = stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
+      const env = stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "statechart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
       return { ...env, ...(stampPeopleSource?.(opts.orgId, payload) ?? {}) } as Envelope;
     };
     const host = await opener({ ...opts, stamp, clock: () => (testClock ? testClock() : Date.now()) });
@@ -157,20 +157,20 @@ export const isOrgHostOpen = (orgId: string): boolean => hosts.has(orgId);
 
 const STATUSES = new Set([400, 404, 409, 410]);
 
-/** A chart refusal as the route answers it: its status (409 when the chart names none) and sentence; `code` passes through. */
+/** A statechart refusal as the route answers it: its status (409 when the statechart names none) and sentence; `code` passes through. */
 export function refusalError(r: Refusal): OrgError {
   const status = (STATUSES.has(r.status ?? 0) ? r.status : 409) as 400 | 404 | 409 | 410;
   return new OrgError(r.sentence, status, r.code ?? undefined, r.tail ?? undefined);
 }
 
-/** The envelope for an act of `who` on the org's project (null: an org-level act), from the charts as they stand now. */
+/** The envelope for an act of `who` on the org's project (null: an org-level act), from the statecharts as they stand now. */
 export function envelopeFor(orgId: string, projectId: string | null, who: StampWho): Envelope {
   const host = hostOf(orgId);
   const settings = settingsOf();
   return stampEnvelope(host, orgId, projectId, who, (pid) => settings.read(orgId, pid), settings.defaults());
 }
 
-/** A hold's id as the server names it (F19): the chart's hold id is unique only within its session
+/** A hold's id as the server names it (F19): the statechart's hold id is unique only within its session
     ("gather/start#0"), so every id the operator, the UI or an overseer sees is `${sessionId}:${holdId}`. */
 export const holdRef = (h: { sessionId: string; id: string }): string => `${h.sessionId}:${h.id}`;
 

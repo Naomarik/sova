@@ -4,6 +4,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import type { BatonSession, BatonStarted, BatonStartedFor, BatonStarter, BatonTold, BatonToldTool } from "../shared/baton";
 import { batonById, batonSid, sessionPathOf } from "./baton";
 import { activeBatonTools, batonTools, BATON_TOOLS, renderBatonPrompt } from "./baton-loadout";
+import { photosFor } from "./baton-images";
 import { READ_LINK_TOOL, readLinkTool } from "./baton-read-link";
 import { WRAPUP_TOOL } from "./baton-wrapup";
 import { hostOf, isOrgHostOpen } from "./org-engine";
@@ -18,7 +19,7 @@ import { readActiveBranch, type Entry } from "./transcript";
  * Who started a gathering session, and what it is told (§app.baton/told): the strip's Started by line
  * (`BatonInfo.started`) and What It's Told (`GET /api/baton/:sid/told`), both the operator's only.
  *
- * Who started it is the chart's `started` (§app.baton/goal-and-loadout); a session from before it reads
+ * Who started it is the statechart's `started` (§app.baton/goal-and-loadout); a session from before it reads
  * `owner` and `startedVia`, and the overseer's conversation from its start row in the transition log.
  * Nothing else is inferred. The prompt is replayed from the session file's own system entries with
  * pi-ai's replay, so it is what pi sent, not a render of today's roster and profiles; only a session that
@@ -29,7 +30,7 @@ const str = (v: unknown): string => (typeof v === "string" ? v : "");
 const isObj = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null && !Array.isArray(v);
 const isoOf = (ms: unknown): string => (typeof ms === "number" && Number.isFinite(ms) ? new Date(ms).toISOString() : "");
 
-/** Who started it, as its chart data records it; a session from before `started` by its owner and startedVia. Pure. */
+/** Who started it, as its statechart data records it; a session from before `started` by its owner and startedVia. Pure. */
 export function starterOf(data: Record<string, unknown>): { who: BatonStarter; overseerId?: string; why?: string } {
   const s = data["started"];
   if (isObj(s) && (s.by === "operator" || s.by === "overseer" || s.by === "project-overseer")) {
@@ -56,7 +57,7 @@ function overseerIdFromLog(orgId: string, projectId: string, sessionId: string, 
   }
 }
 
-/** The strip's Started by, from the row and its chart data. */
+/** The strip's Started by, from the row and its statechart data. */
 export function startedOf(row: BatonSession, data: Record<string, unknown> | null): BatonStarted {
   const d = data ?? {};
   const s = starterOf(d);
@@ -72,7 +73,7 @@ export function startedOf(row: BatonSession, data: Record<string, unknown> | nul
   return { who: s.who, at: row.createdAt, ...(s.why ? { why: s.why } : {}), ...(overseerId ? { overseer: { id: overseerId, current } } : {}) };
 }
 
-/** The chart data of a gathering session, or null when its org's engine isn't open here. */
+/** The statechart data of a gathering session, or null when its org's engine isn't open here. */
 export function batonData(row: Pick<BatonSession, "orgId" | "sessionId">): Record<string, unknown> | null {
   if (!isOrgHostOpen(row.orgId)) return null;
   return (hostOf(row.orgId).data(batonSid(row.orgId, row.sessionId)) as Record<string, unknown> | null) ?? null;
@@ -204,7 +205,7 @@ export async function toldOf(sessionId: string): Promise<BatonTold | null> {
   try {
     branch = await readActiveBranch(sessionPathOf(dir, row));
   } catch {
-    branch = []; // a session the chart spawned before its file exists
+    branch = []; // a session the statechart spawned before its file exists
   }
   const recorded = recordedPrompt(branch, await piReplay());
   let prompt: BatonTold["prompt"];
@@ -212,7 +213,7 @@ export async function toldOf(sessionId: string): Promise<BatonTold | null> {
   if (recorded.prompt) prompt = { kind: "recorded", ...recorded.prompt };
   else {
     // Never run: what the next reply would get, rendered now (the only render; labelled a preview).
-    prompt = { kind: "preview", text: renderBatonPrompt(sessionId) };
+    prompt = { kind: "preview", text: renderBatonPrompt(sessionId, undefined, !!(await photosFor(row, dir, undefined, branch).catch(() => null))) };
     const active = new Set(activeBatonTools(sessionId));
     tools = [...batonTools(sessionId, () => {}), readLinkTool(sessionId)].filter((t) => active.has(t.name)).map(toolOf);
   }

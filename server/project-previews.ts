@@ -22,7 +22,7 @@ import { dialLoopback, previewDialable, previewRootId } from "./share/preview-pr
  * included. Nothing here ever starts an app.
  *
  * `resolvePreview` checks a request and changes nothing (the overseer's call is checked with it before
- * its chart act, and again when a hold releases it); `makePreview` mints what it resolved.
+ * its statechart act, and again when a hold releases it); `makePreview` mints what it resolved.
  */
 
 /** A coding session of the project with its worktree on this host. */
@@ -36,7 +36,7 @@ export interface CodingTree {
   sessionPath: string | null;
 }
 
-/** Tests: stand-ins for the project's worktrees and the port's listener (the real ones read the charts and /proc). */
+/** Tests: stand-ins for the project's worktrees and the port's listener (the real ones read the statecharts and /proc). */
 let testDeps: { trees?: (orgId: string, projectId: string) => Promise<CodingTree[]>; owner?: (port: number) => PortOwner } = {};
 export function setPreviewDepsForTest(d: typeof testDeps | null): void {
   testDeps = d ?? {};
@@ -44,7 +44,7 @@ export function setPreviewDepsForTest(d: typeof testDeps | null): void {
 const ownerOf = (port: number): PortOwner => (testDeps.owner ?? portOwner)(port);
 const treesFor = (orgId: string, projectId: string): Promise<CodingTree[]> => (testDeps.trees ?? projectTrees)(orgId, projectId);
 
-/** The project's coding sessions with a worktree here, newest first (no git: the chart's records). */
+/** The project's coding sessions with a worktree here, newest first (no git: the statechart's records). */
 export async function projectTrees(orgId: string, projectId: string): Promise<CodingTree[]> {
   const root = projectOf(orgId, projectId).root;
   const titles = readSessionTitles();

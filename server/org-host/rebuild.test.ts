@@ -1,4 +1,4 @@
-// Run: pnpm exec tsx --test server/org-host/rebuild.test.ts. `org-charts rebuild --verify` (r9): an
+// Run: pnpm exec tsx --test server/org-host/rebuild.test.ts. `statecharts rebuild --verify` (r9): an
 // org's log, written by the host, replays to every snapshot; a hand-edited snapshot is reported;
 // nothing is written.
 import assert from "node:assert/strict";
@@ -7,13 +7,13 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
-import type { EngineOptions } from "../org-charts";
+import type { EngineOptions } from "../statecharts";
 import { OrgHost } from "./index";
 import { formatReport, verifyOrg } from "./rebuild";
 import { scanSnapshots } from "./store";
-import { HOST_CHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-statechart";
 
-const charts = HOST_CHARTS as unknown as EngineOptions["charts"];
+const statecharts = HOST_STATECHARTS as unknown as EngineOptions["statecharts"];
 const dirs: string[] = [];
 afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true });
@@ -32,7 +32,7 @@ const operator = { by: "operator" };
     reported, a timer, a held act released, a plain row, a restart that cuts a look off, a set-state with a patch. */
 async function lived(at: { workspaceDir: string; stateDir: string }) {
   const open = () =>
-    OrgHost.open({ orgId: "o1", ...at, durable: false, charts, stamp: () => ({ by: "overseer", attended: false }) });
+    OrgHost.open({ orgId: "o1", ...at, durable: false, statecharts, stamp: () => ({ by: "overseer", attended: false }) });
   const host = await open();
   host.effects.register("write", async () => ({ result: { ok: true } }));
   let looks = 0; // the first look reports; the second is still running at the restart (cut off)
@@ -58,15 +58,15 @@ async function lived(at: { workspaceDir: string; stateDir: string }) {
   await again.close();
 }
 
-describe("org-charts rebuild --verify", () => {
+describe("statecharts rebuild --verify", () => {
   test("a log the host wrote replays to every snapshot, and the check writes nothing", async () => {
     const at = place();
     await lived(at);
-    const files = [...scanSnapshots(join(at.workspaceDir, "charts")), ...scanSnapshots(join(at.stateDir, "org-charts", "o1"))];
+    const files = [...scanSnapshots(join(at.workspaceDir, "statecharts")), ...scanSnapshots(join(at.stateDir, "statecharts", "o1"))];
     const before = files.map((f) => [f.file, statSync(f.file).mtimeMs, readFileSync(f.file, "utf8")]);
-    const logDir = join(at.workspaceDir, "charts", "log");
+    const logDir = join(at.workspaceDir, "statecharts", "log");
     const logBefore = readdirSync(logDir).map((f) => readFileSync(join(logDir, f), "utf8"));
-    const r = verifyOrg({ orgId: "o1", ...at, charts });
+    const r = verifyOrg({ orgId: "o1", ...at, statecharts });
     assert.deepEqual(r.differing, [], formatReport(r));
     assert.equal(r.sessions, 2);
     assert.deepEqual(r.problems, []);
@@ -79,7 +79,7 @@ describe("org-charts rebuild --verify", () => {
   test("the rows a replay needs are logged: a host start's data, the run a report answers, a set-state's patch; a plain row is marked", async () => {
     const at = place();
     await lived(at);
-    const logDir = join(at.workspaceDir, "charts", "log");
+    const logDir = join(at.workspaceDir, "statecharts", "log");
     const rows = readdirSync(logDir).flatMap((f) => readFileSync(join(logDir, f), "utf8").trim().split("\n").map((l) => JSON.parse(l)));
     const p1 = rows.filter((x) => x.session === "p/1");
     assert.deepEqual(p1[0].start, { label: "first" });
@@ -96,24 +96,24 @@ describe("org-charts rebuild --verify", () => {
   test("a hand-edited snapshot is reported with what differs; a session without its start rows too", async () => {
     const at = place();
     await lived(at);
-    const p1 = scanSnapshots(join(at.workspaceDir, "charts")).find((s) => s.sid === "p/1")!;
+    const p1 = scanSnapshots(join(at.workspaceDir, "statecharts")).find((s) => s.sid === "p/1")!;
     writeFileSync(p1.file, readFileSync(p1.file, "utf8").replaceAll(":gathering", ":busy"));
-    const r = verifyOrg({ orgId: "o1", ...at, charts });
+    const r = verifyOrg({ orgId: "o1", ...at, statecharts });
     assert.deepEqual(r.differing.map((v) => [v.session, v.differences.map((d) => d.what)]), [["p/1", ["configuration"]]]);
     assert.deepEqual(r.differing[0]!.differences[0]!.snapshot, ["busy", "top"]);
     assert.deepEqual(r.differing[0]!.differences[0]!.replayed, ["gathering", "top"]);
     assert.match(formatReport(r), /- p\/1 \(host-probe\).*\n {4}configuration: replayed \["gathering","top"\], snapshot \["busy","top"\]/);
     // a snapshot with no rows at all
-    const l1 = scanSnapshots(join(at.stateDir, "org-charts", "o1")).find((s) => s.sid === "l/1")!;
+    const l1 = scanSnapshots(join(at.stateDir, "statecharts", "o1")).find((s) => s.sid === "l/1")!;
     writeFileSync(join(l1.file, "..", `${encodeURIComponent("l/2")}.edn`), readFileSync(l1.file, "utf8"));
     assert.deepEqual(
-      verifyOrg({ orgId: "o1", ...at, charts }).differing.map((v) => [v.session, v.differences.map((d) => d.what)]),
+      verifyOrg({ orgId: "o1", ...at, statecharts }).differing.map((v) => [v.session, v.differences.map((d) => d.what)]),
       [["l/2", ["log"]], ["p/1", ["configuration"]]],
     );
   });
 
   test("the command: only --verify exists, a usage error is exit 2", () => {
-    const run = (...args: string[]) => spawnSync(process.execPath, ["--import", "tsx", "scripts/org-charts.ts", ...args], { encoding: "utf8" });
+    const run = (...args: string[]) => spawnSync(process.execPath, ["--import", "tsx", "scripts/statecharts.ts", ...args], { encoding: "utf8" });
     const plain = run("rebuild", "o1");
     assert.equal(plain.status, 2);
     assert.match(plain.stderr, /Only `rebuild --verify` exists/);

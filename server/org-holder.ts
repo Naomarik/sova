@@ -1,16 +1,16 @@
 /**
- * Which host holds an organization (§app.organizations/holder). The record lives in the org chart's
- * portable snapshot (`<workspace>/charts/org/…`, r1): the org chart writes it when this host's
+ * Which host holds an organization (§app.organizations/holder). The record lives in the org statechart's
+ * portable snapshot (`<workspace>/statecharts/org/…`, r1): the org statechart writes it when this host's
  * residence claims or releases the org. A host's identity is its own, made once and kept host-local
  * (`<stateRoot>/host.json`). Attach reads the record in the clone and on its remote (the residence
- * chart's `read-holder` effect, server/org-effects.ts), so attaching an org another host still holds
+ * statechart's `read-holder` effect, server/org-effects.ts), so attaching an org another host still holds
  * warns first.
  */
 import { randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { hostname } from "node:os";
 import { dirname, join } from "node:path";
-import { createOrgCharts } from "./org-charts";
+import { createStatecharts } from "./statecharts";
 import { snapshotFile } from "./org-host/store";
 import { stateRoot } from "./state-root";
 import { remoteFileText } from "./workspace-git";
@@ -20,7 +20,7 @@ export interface HostIdentity {
   name: string;
 }
 
-/** The org chart's holder record: this host holds it since `since` (ms), or it was released. */
+/** The org statechart's holder record: this host holds it since `since` (ms), or it was released. */
 export interface HolderRecord {
   hostId: string;
   hostName: string;
@@ -59,7 +59,7 @@ export function hostIdentity(): HostIdentity {
   return { id, name: hostname() || id };
 }
 
-/** A holder record from chart data (camelCase), or null. */
+/** A holder record from statechart data (camelCase), or null. */
 export function parseHolder(v: unknown): HolderRecord | null {
   if (!isObj(v) || typeof v.hostId !== "string" || !v.hostId) return null;
   return {
@@ -75,7 +75,7 @@ export function parseHolder(v: unknown): HolderRecord | null {
 export function holderOfSnapshot(sid: string, text: string | null): HolderRecord | null {
   if (!text) return null;
   try {
-    const engine = createOrgCharts();
+    const engine = createStatecharts();
     engine.load(sid, text);
     return parseHolder(engine.data(sid)?.holder);
   } catch {
@@ -89,7 +89,7 @@ export function named(h: HolderRecord | null, me: HostIdentity = hostIdentity())
 }
 
 /** The org snapshot's path inside the workspace repo (as origin has it too). */
-export const orgSnapshotPath = (orgId: string): string => snapshotFile("charts", "org", `org/${orgId}`);
+export const orgSnapshotPath = (orgId: string): string => snapshotFile("statecharts", "org", `org/${orgId}`);
 
 /**
  * The holder record on the clone's origin (fetched, at most REMOTE_CHECK_MS), or null: no remote,

@@ -38,11 +38,11 @@ import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
 
 /**
- * Baton sessions (§app/baton): one baton chart per gathering session (`baton/<org>/<sessionId>`,
- * portable: its snapshot is in the org's workspace repo). The chart owns every rule: moves, offers
+ * Baton sessions (§app/baton): one baton statechart per gathering session (`baton/<org>/<sessionId>`,
+ * portable: its snapshot is in the org's workspace repo). The statechart owns every rule: moves, offers
  * and leases, the message lock and budget, the reply in flight, the wrap-up. This module answers
- * today's shapes from the chart's data (q1: no baton.json) and turns every change into an act the
- * chart takes or refuses with today's sentence. The runtime half (loadout, tools, the chart's
+ * today's shapes from the statechart's data (q1: no baton.json) and turns every change into an act the
+ * statechart takes or refuses with today's sentence. The runtime half (loadout, tools, the statechart's
  * effects and facts) is server/baton-loadout.ts; the outsider view server/baton-view.ts; the share
  * routes server/share/. Nothing here writes a token into the repo: links are server/baton-links.ts.
  *
@@ -86,7 +86,7 @@ export function batonFileOf(dir: string, sessionId: string): string {
   return rel;
 }
 
-// ---- the rows, from the charts -----------------------------------------------------------------------------
+// ---- the rows, from the statecharts -----------------------------------------------------------------------------
 
 function handoffOf(h: Record<string, unknown>): Handoff {
   return {
@@ -117,7 +117,7 @@ function offerOf(o: Record<string, unknown>): Offer {
   };
 }
 
-/** r12: the chart's per-invitee reach (`{pid {state at? next?}}`, ms) as the reads show it; waiting ones of a held
+/** r12: the statechart's per-invitee reach (`{pid {state at? next?}}`, ms) as the reads show it; waiting ones of a held
     offer are paused (rule 12: nobody new is reached while it is leased). */
 function reachOf(r: Record<string, unknown>, held: boolean): Record<string, OfferReach> {
   const out: Record<string, OfferReach> = {};
@@ -151,7 +151,7 @@ function stateOf(configuration: readonly string[], d: Record<string, unknown>): 
   return d.needsYou === true ? "needs-you" : "open";
 }
 
-/** The row today's routes and pages read, from a baton session of the chart. */
+/** The row today's routes and pages read, from a baton session of the statechart. */
 export function rowOf(dir: string, s: Pick<SessionInfo, "configuration" | "data">): BatonSession {
   const d = s.data;
   const sessionId = str(d.sessionId);
@@ -191,7 +191,7 @@ function rowsOf(orgId: string, dir: string): BatonSession[] {
   if (!isOrgHostOpen(orgId)) return [];
   return hostOf(orgId)
     .sessions("baton")
-    // r11: retired past its project's 200-row cap (its chart's final state): no longer the org's
+    // r11: retired past its project's 200-row cap (its statechart's final state): no longer the org's
     .filter((s) => s.running)
     .map((s) => rowOf(dir, s))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -246,7 +246,7 @@ export function batonById(sessionId: string): { row: BatonSession; dir: string }
     const sid = batonSid(o.id, sessionId);
     const data = host.data(sid);
     const configuration = host.configuration(sid) ?? [];
-    // r11: retired (its chart's final state, an empty configuration): no longer the org's
+    // r11: retired (its statechart's final state, an empty configuration): no longer the org's
     if (data && configuration.length) return { row: rowOf(o.dir, { configuration, data }), dir: o.dir };
   }
   return null;
@@ -271,7 +271,7 @@ export const sessionPathOf = (dir: string, row: BatonSession): string => canonic
 
 /**
  * An attach (a restored clone): what this host keeps about each baton session outside the repo is
- * derived again from the charts: its listing title (the public title; a title the operator already
+ * derived again from the statecharts: its listing title (the public title; a title the operator already
  * gave it here stays), its web origin, and the write guard's stat, so the operator's composer isn't
  * refused as "recently written by someone else" for the files the clone just wrote. Links are not
  * derived: they are minted again when the operator asks.
@@ -305,7 +305,7 @@ export function namesOf(orgId: string): Record<string, string> {
 
 /** A roster person as an act's envelope names a target (`target {id name status referral?}`). */
 export const targetOfPerson = (p: Pick<Person, "id" | "name" | "status" | "referral" | "tz" | "hours"> & { orgId?: string }) => {
-  // r7: the act waits for their working hours (the chart's act meta `:hours` reads these); r13: the effective ones
+  // r7: the act waits for their working hours (the statechart's act meta `:hours` reads these); r13: the effective ones
   // (their own, else the company's).
   const eff = p.orgId ? effectiveHoursOf(p.orgId, p.id) : { tz: p.tz, hours: p.hours ?? undefined };
   return {
@@ -364,7 +364,7 @@ export function resolveTarget(
   return { ok: true, ref: p.id };
 }
 
-/** A hand_to target as the chart reads it: `target` for a resolved one, `invalid` (the sentence) otherwise. */
+/** A hand_to target as the statechart reads it: `target` for a resolved one, `invalid` (the sentence) otherwise. */
 export function handToTarget(orgId: string, raw: string): { target?: { id: string; name: string; status: string }; invalid?: string } {
   const roster = readRoster(orgId);
   const t = resolveTarget(roster, raw, operatorName());
@@ -401,7 +401,7 @@ export interface Created {
   links?: { personId: string; token: string }[];
   /** Held (q10): an unattended overseer's start waits in a hold; nothing exists yet. */
   held?: { id: string; until: number };
-  /** Filed as its gap's planned gathering (gather/plan): nothing exists yet; the chart starts it at L1. */
+  /** Filed as its gap's planned gathering (gather/plan): nothing exists yet; the statechart starts it at L1. */
   planned?: true;
   /** r7: the operator's own act went at once although the person is off hours: when their window opens (ISO). */
   offHours?: string;
@@ -461,13 +461,13 @@ export function leaseMs(env: NodeJS.ProcessEnv = process.env): number {
   return Number.isFinite(v) && v >= 1000 ? Math.floor(v) : LEASE_IDLE_MS;
 }
 
-/** Tokens the chart's link effects minted, by `<sessionId>#<n>#<personId>`: handed to the caller that
+/** Tokens the statechart's link effects minted, by `<sessionId>#<n>#<personId>`: handed to the caller that
     asked (a route shows a link once), never into the effect's result (that reaches the log). */
 const minted = new Map<string, string>();
 const mintKey = (sessionId: string, n: number, personId: string) => `${sessionId}#${n}#${personId}`;
 const mintWaiters = new Map<string, (token: string) => void>();
 
-/** Mint a link for the chart's `mint-link`/`mint-links` effect (server/baton-loadout.ts). */
+/** Mint a link for the statechart's `mint-link`/`mint-links` effect (server/baton-loadout.ts). */
 export function mintForEffect(input: { orgId: string; sessionId: string; n: number; personId: string; offerId?: string; key: string }): void {
   const token = mintLink(input);
   const k = mintKey(input.sessionId, input.n, input.personId);
@@ -532,14 +532,14 @@ export interface CreateOptions {
   why?: string;
   /** Sova's own item for it (the operator's to-do it came from). */
   opItem?: string;
-  /** A gap's item chart (`item/…`): it starts the gathering (gather/start) and links it, instead of the project. */
+  /** A gap's item statechart (`item/…`): it starts the gathering (gather/start) and links it, instead of the project. */
   item?: string;
-  /** With `item`: file it as the gap's planned gathering (gather/plan), started by the chart itself at L1 (r3). */
+  /** With `item`: file it as the gap's planned gathering (gather/plan), started by the statechart itself at L1 (r3). */
   plan?: boolean;
 }
 
 /**
- * Who starts it, as its chart records it (§app.baton/goal-and-loadout): the project overseer comes with its
+ * Who starts it, as its statechart records it (§app.baton/goal-and-loadout): the project overseer comes with its
  * turn's envelope, the global Overseer as the operator via the Overseer; anyone else is the operator.
  */
 function startedRecord(opts: CreateOptions): { by: "operator" | "overseer" | "project-overseer"; overseerId?: string; why?: string } {
@@ -551,11 +551,11 @@ function startedRecord(opts: CreateOptions): { by: "operator" | "overseer" | "pr
 }
 
 /**
- * Start a baton session: the project chart's `baton/start` spawns its baton chart, which makes the
+ * Start a baton session: the project statechart's `baton/start` spawns its baton statechart, which makes the
  * session file in the org's workspace `sessions/` (cwd = the workspace repo) with the `sova-baton`
  * marker and the first hand-off (or offer), and mints the first holder's link (or one per invitee).
  * The request's own problems (a text field, the targets, the limit, the abilities) are the host's
- * `invalid`, refused by the chart after the project's archive check, as today's order.
+ * `invalid`, refused by the statechart after the project's archive check, as today's order.
  */
 export async function createBaton(input: BatonStartInput, opts: CreateOptions = {}): Promise<Created> {
   const orgId = String(input.orgId ?? "");
@@ -609,9 +609,9 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
     leaseMs: leaseMs(),
     operatorName: operatorName(),
   };
-  // The person it reaches, as the chart reads them (status, and r7's zone and hours).
+  // The person it reaches, as the statechart reads them (status, and r7's zone and hours).
   const person = to && to !== OPERATOR ? roster.find((p) => p.id === to) : undefined;
-  // An offer's invitees as the chart reads them (r7: an offer waits until the earliest invitee's window).
+  // An offer's invitees as the statechart reads them (r7: an offer waits until the earliest invitee's window).
   const targetPeople = targets ? targets.map((id) => roster.find((p) => p.id === id)).filter((p): p is Person => !!p).map(targetOfPerson) : undefined;
   const envelope = { ...(opts.envelope ?? operatorEnvelope(orgId, project.id, opts.by)), ...(invalid ? { invalid } : {}), ...(person ? { target: targetOfPerson(person) } : {}), ...(targetPeople ? { targetPeople } : {}) };
   const [sid, event] = opts.item ? [opts.item, opts.plan ? "gather/plan" : "gather/start"] : [`project/${orgId}/${project.id}`, "baton/start"];
@@ -640,8 +640,8 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
 
 /**
  * hand_to: the model hands the conversation to `person` (a roster name or id, or "operator"). `chosen`: the
- * person talking chose who answers next (else the chart refuses, unless the operator's goal named them).
- * The chart refuses in today's words; returns the new hand-off's number and who it came from.
+ * person talking chose who answers next (else the statechart refuses, unless the operator's goal named them).
+ * The statechart refuses in today's words; returns the new hand-off's number and who it came from.
  */
 export async function handTo(sessionId: string, person: string, question: string, briefing: string, opts: { chosen?: boolean } = {}): Promise<{ n: number; from: PersonRef }> {
   const { orgId } = orgOfBaton(sessionId);
@@ -689,7 +689,7 @@ export async function closeBaton(sessionId: string, opts: { by?: OperatorBy; env
   return batonAct(sessionId, "baton/close", { ...(opts.reason !== undefined ? { reason: opts.reason } : {}), ...(opts.ownerProject ? { ownerProject: opts.ownerProject } : {}) }, opts.envelope ?? operatorOn(opts.by), { settle: true });
 }
 
-/** Take the baton back (the operator; a reply in flight is stopped first, by the chart). */
+/** Take the baton back (the operator; a reply in flight is stopped first, by the statechart). */
 export async function takeBack(sessionId: string, by?: OperatorBy): Promise<ActResult> {
   return batonAct(sessionId, "baton/take-back", {}, operatorOn(by), { settle: true });
 }
@@ -699,7 +699,7 @@ export async function withdrawOffer(sessionId: string, by?: OperatorBy): Promise
   return batonAct(sessionId, "baton/withdraw", {}, operatorOn(by), { settle: true });
 }
 
-/** Wait until the chart's data says `done`, or `ms` passed (a move held for a reply's end). */
+/** Wait until the statechart's data says `done`, or `ms` passed (a move held for a reply's end). */
 async function until(sessionId: string, done: (row: BatonSession) => boolean, ms: number): Promise<BatonSession | null> {
   const end = Date.now() + ms;
   for (;;) {
@@ -711,7 +711,7 @@ async function until(sessionId: string, done: (row: BatonSession) => boolean, ms
 }
 
 /**
- * Hand the baton to a roster person (the operator's hand-off, §app.baton/hand-off): the chart checks
+ * Hand the baton to a roster person (the operator's hand-off, §app.baton/hand-off): the statechart checks
  * who and what, stops a reply in flight and moves once it ended, and mints their link, returned once.
  */
 export async function handoffTo(sessionId: string, personId: string, question: string, briefing: string, by?: OperatorBy, opts: { mintLink?: boolean } = {}): Promise<{ n: number; token?: string; offHours?: string }> {
@@ -726,7 +726,7 @@ export async function handoffTo(sessionId: string, personId: string, question: s
 }
 
 /**
- * Offer the baton to several people at once (§app.baton/offers-and-leases): the chart withdraws a
+ * Offer the baton to several people at once (§app.baton/offers-and-leases): the statechart withdraws a
  * current offer, stops a reply in flight, and mints one link per invitee (unless `mintLink` false).
  */
 export async function offerTo(sessionId: string, to: readonly unknown[], question: string, briefing: string, opts: { by?: OperatorBy; envelope?: Envelope; mintLink?: boolean } = {}): Promise<{ n: number; offer?: Offer; links: { personId: string; token: string }[] }> {
@@ -777,10 +777,10 @@ export interface Noted {
 
 /**
  * A message entered the session (from the share page or the operator's composer). The lock of
- * §app.baton/offers-and-leases is the chart's `baton/message`, stepped synchronously here: an
+ * §app.baton/offers-and-leases is the statechart's `baton/message`, stepped synchronously here: an
  * invitee's message on an open offer CLAIMS it (the first accepted message wins), the holder rule
  * applies as for any hand-off, the holder's message renews the lease, the budget counts it, the
- * operator answering clears Needs you. A refusal throws OrgError with the chart's sentence and code
+ * operator answering clears Needs you. A refusal throws OrgError with the statechart's sentence and code
  * (`taken`, `budget`, `gone`). The caller hands the message to the runtime in the same synchronous
  * stretch, and calls undoNote if the runtime refuses it after all.
  */
@@ -805,7 +805,7 @@ export function undoNote(sessionId: string): void {
 /**
  * Lower a session's message count to `used` (server/baton-recount.ts: messages a kill lost), only
  * while it still reads `expected`: a message counted since the caller looked stays counted. The
- * chart never raises a count. Returns whether it changed.
+ * statechart never raises a count. Returns whether it changed.
  */
 export function setBudgetUsed(sessionId: string, used: number, expected: number): boolean {
   const { orgId, row } = orgOfBaton(sessionId);
@@ -834,7 +834,7 @@ export function linkAccess(token: string, now = Date.now()): LinkAccess {
 /** What a link may do on its session's row, with no token: 410 when it is turned off, expired or
     the session is closed (with `why` only for an expired link or a withdrawn offer's); else whether
     it writes now, and why not. linkAccess, and the person page's link states. A lapsed lease is the
-    chart's timer (never mid-reply): until it fires, the lease holds. */
+    statechart's timer (never mid-reply): until it fires, the lease holds. */
 export function accessOf(link: LinkRecord, row: BatonSession, now = Date.now()): { ok: true; canWrite: boolean; reason?: ViewerReason } | { ok: false; status: 410; why?: GoneWhy } {
   if (linkDead(link, now)) {
     const why = deadWhy(link, now);

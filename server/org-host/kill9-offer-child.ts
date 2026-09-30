@@ -1,5 +1,5 @@
 // The kill-9 fuzz's offer child (kill9.test.ts, r12): a durable host on the shipped org, person and baton
-// charts, on a virtual clock kept in a file (so time survives kills). It offers batons to three people in
+// statecharts, on a virtual clock kept in a file (so time survives kills). It offers batons to three people in
 // three zones (Ana 22:00–23:30 UTC, Bo 03:00–11:00, Cy no hours), moves the clock on by up to ~2 h a step
 // and fires what is due, recording every per-invitee mint-link the host runs. Prints "ready <problems>"
 // once open and "acted" after 5 steps (the parent kills only after that line).
@@ -28,7 +28,7 @@ const operator = { by: "operator" };
 
 const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root!, "ws"), stateDir: join(root!, "state"), clock: () => now });
 host.effects.register("mint-link", async (e) => {
-  appendFileSync(join(root!, "mints.log"), `${JSON.stringify({ key: e.key, chartKey: e["chartKey"], personId: e["personId"], at: now })}\n`);
+  appendFileSync(join(root!, "mints.log"), `${JSON.stringify({ key: e.key, statechartKey: e["statechartKey"], personId: e["personId"], at: now })}\n`);
   return { minted: 1 };
 });
 process.stdout.write(`ready ${JSON.stringify(host.problems())}\n`);

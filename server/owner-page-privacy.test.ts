@@ -164,7 +164,7 @@ await baton.setHiddenFromOwner(s3.sessionId, true);
 // On a switched-off project.
 const s4 = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: M.offTitle, goal: "g" });
 await orgs.patchProject(org.id, pb.id, { ownerHidden: true });
-// Started by the global Overseer, with its conversation and its why on the chart; shown to the owner.
+// Started by the global Overseer, with its conversation and its why on the statechart; shown to the owner.
 const s5 = await baton.createBaton(
   { orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours again", goal: "g" },
   { by: { kind: "operator", via: "overseer", overseerId: M.overseerId, card: { people: [kim.id], projects: [pa.id], sessions: [] } }, mintLink: false, startedVia: "overseer", why: M.why },

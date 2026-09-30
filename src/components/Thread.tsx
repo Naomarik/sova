@@ -1188,7 +1188,15 @@ export function ThreadScroller(props: {
   // The view itself changing height (the composer's status row appearing, a keyboard) never moves
   // a scroll under way, so while following it always goes back to the end. A scroll event can read
   // the new, shorter view before this runs, so it can't wait for `lastGap`.
-  const viewResized = typeof ResizeObserver === "function" ? new ResizeObserver(() => follow && !toggled && toBottom()) : null;
+  // Its visible height is published as --transcript-view, for what caps itself to one screen of
+  // the transcript (a merge card's changes viewer, ChangesViewer.css).
+  const viewResized =
+    typeof ResizeObserver === "function"
+      ? new ResizeObserver(() => {
+          el.style.setProperty("--transcript-view", `${el.clientHeight}px`);
+          if (follow && !toggled) toBottom();
+        })
+      : null;
   onCleanup(() => viewResized?.disconnect());
   // The characters a message line holds, for the rows' estimates (lib/tail-render `lineCols`), from
   // a probe as wide as a message: set only when it changes, since every row reads it. A new

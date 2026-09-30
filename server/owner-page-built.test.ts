@@ -1,7 +1,7 @@
 // Run: pnpm exec tsx --test server/owner-page-built.test.ts. The owner page's "What's been built"
 // (§app.owner-page/content) reads a build's merged state from git, as the project page does: a
 // branch merged once and given new commits since is in progress, not finished, whatever
-// the build's chart recorded. A throwaway PI_CODING_AGENT_DIR, workspace and git repo in the OS temp
+// the build's statechart recorded. A throwaway PI_CODING_AGENT_DIR, workspace and git repo in the OS temp
 // dir, deleted after; no model is called.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";

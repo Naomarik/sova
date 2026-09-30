@@ -77,7 +77,7 @@ describe("a project's coding sessions", async () => {
 
   let started: { path: string; sessionId: string } | null = null;
 
-  test("Start coding session: its own worktree cut from HEAD, on its chart at once, mode set and pinned before the prompt", async () => {
+  test("Start coding session: its own worktree cut from HEAD, on its statechart at once, mode set and pinned before the prompt", async () => {
     // The default equals what the project asks for: the extension alone would write no entry.
     writeDefault("normal", ["spec"]);
     const p = store.projectOverseerPaths(org.id, project.id);
@@ -343,7 +343,7 @@ describe("a project's coding sessions", async () => {
     assert.deepEqual([...extensionFlagsFor(plainRoot, false, false, true).keys()], ["claude-code-provider", "sova-link"], "an ordinary session keeps them");
   });
 
-  test("F20 (r3): at L3 the item chart's own build of a gap's promoted decisions gets the project's mode, then its first prompt", async () => {
+  test("F20 (r3): at L3 the item statechart's own build of a gap's promoted decisions gets the project's mode, then its first prompt", async () => {
     writeDefault("delegate", ["align"]);
     // Automatic (no coding mode set): normal · spec, for a project with a spec.
     await po.patchProjectOverseer(org.id, project.id, { autonomy: "L3", holdMin: 0, codingMode: null });
@@ -352,12 +352,12 @@ describe("a project's coding sessions", async () => {
     const envelope = envelopeFor(org.id, project.id, { by: "overseer", attended: true });
     assert.equal((await hostOf(org.id).act(projectSid, "gap/file", { gapId: "g_build1", ideaId: "§gap/login" }, envelope, { settle: true })).taken, true);
     const before = readBuilds(org.id, project.id).length;
-    // A promoted decision of the gap, as its decision session reports it: the chart builds it itself.
+    // A promoted decision of the gap, as its decision session reports it: the statechart builds it itself.
     await hostOf(org.id).act(
       itemSid,
       "link/moved",
-      { from: `decision/${org.id}/${project.id}/d_login1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "The login page asks for email and password.", record: "§req/login" } },
-      envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+      { from: `decision/${org.id}/${project.id}/d_login1`, statechart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "The login page asks for email and password.", record: "§req/login" } },
+      envelopeFor(org.id, project.id, { by: "statechart", attended: false }),
       { settle: true },
     );
     let row: ReturnType<typeof readBuilds>[number] | undefined;
@@ -366,14 +366,14 @@ describe("a project's coding sessions", async () => {
       await new Promise((r) => setTimeout(r, 50));
       row = readBuilds(org.id, project.id).slice(before).find((r) => r.title === "Build §gap/login");
     }
-    assert.ok(row?.path, `the chart started a build: ${JSON.stringify(readBuilds(org.id, project.id).slice(before))}`);
+    assert.ok(row?.path, `the statechart started a build: ${JSON.stringify(readBuilds(org.id, project.id).slice(before))}`);
     const sid = sidOf(row);
     const d = hostOf(org.id).data(sid) ?? {};
     assert.ok(hostOf(org.id).configuration(sid)?.includes("ready"), "its setup ended");
     assert.equal(d["modeNotSet"], undefined, "its mode was set");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] }, "the project's mode, never the default's");
     assert.match((await buildsOf(org.id, project.id, client)).find((r) => r.sessionId === row!.sessionId)?.worktree?.branch ?? "", /^sova\/build-gap-login-[0-9a-f]{6}$/, "its branch is named after its title");
-    // No auth here: the runtime takes the prompt and its turn fails, so the file may never show it; the chart's
+    // No auth here: the runtime takes the prompt and its turn fails, so the file may never show it; the statechart's
     // log shows the first prompt sent and answered.
     const rows = hostOf(org.id).log.rows({ sessions: [sid] });
     const setup = rows.map((r) => r.after.find((x) => ["making-worktree", "setting-mode", "prompting", "ready", "not-started"].includes(x)));
@@ -382,7 +382,7 @@ describe("a project's coding sessions", async () => {
     assert.equal(d["promptError"], undefined);
   });
 
-  test("F20: the chart's own build whose mode can't be set is not prompted, and its Pipeline row says so", async () => {
+  test("F20: the statechart's own build whose mode can't be set is not prompted, and its Pipeline row says so", async () => {
     const settingsFile = join(agentDir, "settings.json");
     const had = readFileSync(settingsFile, "utf8");
     writeFileSync(settingsFile, JSON.stringify({ extensions: [] }));
@@ -394,8 +394,8 @@ describe("a project's coding sessions", async () => {
       await hostOf(org.id).act(
         `item/${org.id}/${project.id}/g_build2`,
         "link/moved",
-        { from: `decision/${org.id}/${project.id}/d_logout1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Logout clears the session.", record: "§req/logout" } },
-        envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+        { from: `decision/${org.id}/${project.id}/d_logout1`, statechart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Logout clears the session.", record: "§req/logout" } },
+        envelopeFor(org.id, project.id, { by: "statechart", attended: false }),
         { settle: true },
       );
       let row: ReturnType<typeof readBuilds>[number] | undefined;
@@ -412,7 +412,7 @@ describe("a project's coding sessions", async () => {
     }
   });
 
-  test("F21: a build's turn start reaches its chart: the Pipeline reads it working, and the at-once cap counts it", async () => {
+  test("F21: a build's turn start reaches its statechart: the Pipeline reads it working, and the at-once cap counts it", async () => {
     const p = store.projectOverseerPaths(org.id, project.id);
     store.patchPoSettings(p, { autonomy: "L3", holdMin: 0, caps: { codingRunning: 1, createPerTurn: null, createPerDay: null } });
     const asked = po.toolsForTest(org.id, project.id, { attended: true }).find((t) => t.name === "sova_create_session")!;
@@ -423,7 +423,7 @@ describe("a project's coding sessions", async () => {
     const row = readBuilds(org.id, project.id).slice(before).find((r) => r.title === "Cap test")!;
     assert.ok(row?.path);
     const sid = `build/${org.id}/${project.id}/${row.sessionId}`;
-    // The runtime's own agent_start (its session's event; no model runs here) reaches the chart.
+    // The runtime's own agent_start (its session's event; no model runs here) reaches the statechart.
     const seen: string[] = [];
     const off = onAgentStarted((path) => seen.push(path));
     const chat = await acquireChat(row.path!);
@@ -431,7 +431,7 @@ describe("a project's coding sessions", async () => {
     off();
     assert.ok(seen.includes(row.path!), "agent_start reached the listener");
     for (let i = 0; i < 100 && hostOf(org.id).data(sid)?.turn !== "working"; i++) await new Promise((r) => setTimeout(r, 20));
-    assert.ok(hostOf(org.id).log.rows({ sessions: [sid] }).some((r) => r.event === "turn/started"), "its chart heard the turn start");
+    assert.ok(hostOf(org.id).log.rows({ sessions: [sid] }).some((r) => r.event === "turn/started"), "its statechart heard the turn start");
     // Mid-turn (as agent_start leaves it): the Pipeline's turn is working, and a second build is over the cap.
     assert.equal(readBuild(org.id, project.id, row.sessionId)?.turn, "working");
     await assert.rejects(
@@ -456,8 +456,8 @@ describe("a project's coding sessions", async () => {
     await hostOf(org.id).act(
       itemSid,
       "link/moved",
-      { from: `decision/${org.id}/${project.id}/d_export1`, chart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Export writes CSV.", record: "§req/export" } },
-      envelopeFor(org.id, project.id, { by: "chart", attended: false }),
+      { from: `decision/${org.id}/${project.id}/d_export1`, statechart: "decision", states: ["promoted"], running: true, exported: { state: "promoted", statement: "Export writes CSV.", record: "§req/export" } },
+      envelopeFor(org.id, project.id, { by: "statechart", attended: false }),
       { settle: true },
     );
     const onGap = await po.codeItem(org.id, project.id, { ideaId: "§gap/export" }).catch((e: Error) => assert.fail(e.message));

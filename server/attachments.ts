@@ -52,7 +52,7 @@ const EXT_BY_MIME: Record<string, string> = {
 };
 
 /** Magic bytes: the body must really be the image it claims to be. */
-function sniffImageMime(b: Uint8Array): string | null {
+export function sniffImageMime(b: Uint8Array): string | null {
   const eq = (offset: number, ...bytes: number[]) => bytes.every((x, i) => b[offset + i] === x);
   if (b.length >= 8 && eq(0, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a)) return "image/png";
   if (b.length >= 3 && eq(0, 0xff, 0xd8, 0xff)) return "image/jpeg";

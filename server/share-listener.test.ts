@@ -132,7 +132,7 @@ describe("the share server", async () => {
     assert.equal((await post(closed.token!, JSON.stringify({ text: "hi" }))).status, 410);
     assert.equal((await post(mariaToken, JSON.stringify({ text: "/compact" }))).status, 400);
     assert.equal((await post(mariaToken, JSON.stringify({ text: "hi", by: "operator" }))).status, 400, "no sender field");
-    assert.equal((await post(mariaToken, JSON.stringify({ text: "hi", images: [] }))).status, 400, "no images");
+    assert.equal((await post(mariaToken, JSON.stringify({ text: "hi", images: [{ data: "iVBORw0KGgo=", mimeType: "image/png" }] }))).status, 400, "photo ids only, never bytes");
     assert.equal((await post(mariaToken, JSON.stringify({ text: "x".repeat(4001) }))).status, 413);
     assert.equal((await post(mariaToken, JSON.stringify({ text: "x".repeat(20_000) }))).status, 413, "body cap before JSON");
     assert.equal((await post(mariaToken, "not json")).status, 400);

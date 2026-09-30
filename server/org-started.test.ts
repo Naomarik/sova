@@ -1,6 +1,6 @@
 // Run: pnpm exec tsx --test server/org-started.test.ts. r11 (§app.organizations/org-sessions): a gathering or coding
 // session its project retired past the 200-row cap (only once settled) is no longer the org's: it leaves the org's
-// rows and the session list's Organizations region. The cap itself is the project chart's (rules/started, its tests).
+// rows and the session list's Organizations region. The cap itself is the project statechart's (rules/started, its tests).
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -31,7 +31,7 @@ test("a retired gathering and a retired coding session are no longer the org's; 
   const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
   const made = await baton.createBaton({ orgId: org.id, projectId: project.id, to: OPERATOR, publicTitle: "Old", goal: "g" });
   const retire = (sid: string) => hostOf(org.id).act(sid, "session/retire", {}, { by: "system" }, { settle: true });
-  // Live: the chart refuses to retire it.
+  // Live: the statechart refuses to retire it.
   await retire(`baton/${org.id}/${made.sessionId}`);
   assert.ok(baton.batonById(made.sessionId), "an open gathering is never retired");
   await baton.closeBaton(made.sessionId);
@@ -43,7 +43,7 @@ test("a retired gathering and a retired coding session are no longer the org's; 
 
   await seedBuild(org.id, project.id, { sessionId: "c-old", kind: "coding", worktree: { branch: "sova/old", base: "main", target: "main" } });
   assert.ok(orgCodingIds().has("c-old"));
-  // Unmerged, the chart refuses: a live build is never retired.
+  // Unmerged, the statechart refuses: a live build is never retired.
   assert.equal((await retire(`build/${org.id}/${project.id}/c-old`)).taken, false);
   await hostOf(org.id).act(`build/${org.id}/${project.id}/c-old`, "git/probe", { branch: "merged" }, { by: "system" }, { settle: true });
   assert.equal((await retire(`build/${org.id}/${project.id}/c-old`)).taken, true);

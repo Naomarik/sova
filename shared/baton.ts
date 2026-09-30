@@ -17,7 +17,10 @@
  * GET  /h/<token>                    the share page
  * GET  /h/assets/*                   its build (dist-share/)
  * GET  /api/h/<token>                -> BatonView
- * POST /api/h/<token>/message        body { text } -> 202 { ok: true } | 4xx { error, code }
+ * POST /api/h/<token>/message        body { text, images?: string[] } -> 202 { ok: true } | 4xx { error, code }
+ *                                    (images: ids of this link's staged photos, §app.baton/images)
+ * POST /api/h/<token>/image          raw body (image/jpeg|png|webp|gif) -> 201 BatonPhotoUpload | 4xx/507 { error, code }
+ * GET  /api/h/<token>/img/<n>        the n-th photo of this link's view (BatonViewImage.n), its bytes
  * WS   /ws/h?token=<token>           ShareServerMessage stream (hello, view, streaming)
  */
 
@@ -327,6 +330,40 @@ export interface BatonStartInput {
 /** GET/PUT /api/baton/settings — the host's defaults for new baton sessions. */
 export interface BatonSettings {
   messagesMax: number;
+  /** Photos in gathering chats (§app.baton/images); every session on this host, from its next message. */
+  photos: BatonPhotoSettings;
+}
+
+export interface BatonPhotoSettings {
+  enabled: boolean;
+  /** Photos in one message (PHOTOS_PER_MESSAGE bounds). */
+  perMessage: number;
+  /** The largest photo, in bytes (a whole number of MB within PHOTO_MB bounds). */
+  maxBytes: number;
+  /** Photos in one conversation (PHOTOS_PER_CONVERSATION bounds). */
+  perConversation: number;
+}
+
+export const PHOTOS_PER_MESSAGE = { min: 1, max: 8, default: 4 } as const;
+export const PHOTO_MB = { min: 1, max: 10, default: 5 } as const;
+export const PHOTOS_PER_CONVERSATION = { min: 1, max: 200, default: 40 } as const;
+export const MB = 1024 * 1024;
+export const PHOTO_DEFAULTS: BatonPhotoSettings = {
+  enabled: true,
+  perMessage: PHOTOS_PER_MESSAGE.default,
+  maxBytes: PHOTO_MB.default * MB,
+  perConversation: PHOTOS_PER_CONVERSATION.default,
+};
+/** The types a person's photo may have, on the wire and in the transcript. */
+export const PHOTO_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"] as const;
+/** The longest edge a photo is scaled to on the device (pi's own resize ceiling, so pi adds no note). */
+export const PHOTO_EDGE_MAX = 2000;
+
+/** POST /api/h/<token>/image's answer: the staged photo's id, for the message that sends it. */
+export interface BatonPhotoUpload {
+  id: string;
+  size: number;
+  mime: string;
 }
 
 export interface OfferLink {
@@ -413,6 +450,9 @@ export interface BatonInfo {
   owner?: { name: string } | null;
   /** Who started it, when, and why (§app.baton/told). */
   started: BatonStarted;
+  /** GET /api/baton only: photos are on, but the session's model can't see images, so people get no
+      attach button (§app.baton/images). */
+  noPhotos?: true;
 }
 
 export interface BatonSummaryField {
@@ -446,7 +486,7 @@ export interface BatonSummaryField {
 export type BatonViewItem =
   /** `by`: the sender's person id in the operator's and the overseer's views; on a share page never
       an id — "you" (the viewer), "operator", or "person-<n>" numbered within that view. */
-  | { kind: "message"; id: string; by: PersonRef; name: string; text: string; at?: string }
+  | { kind: "message"; id: string; by: PersonRef; name: string; text: string; at?: string; images?: BatonViewImage[] }
   /** `cutOff`: the reply stopped before it finished (the stream guard, a shutdown, Take back, Stop);
       its text is at most CUT_REPLY_MAX characters. */
   | { kind: "reply"; id: string; text: string; at?: string; cutOff?: true }
@@ -461,6 +501,13 @@ export type BatonViewItem =
 /** Why a link can't write now. "taken": another invitee of the same offer holds its lease (the page
     names nobody); "withdrawn": the offer is over; "newer-link": the viewer holds the baton, through a
     newer link of theirs. */
+/** A photo in a message: `n` numbers the photos of THIS view in order (the share page fetches
+    `/api/h/<token>/img/<n>`); the bytes never ride the view. */
+export interface BatonViewImage {
+  n: number;
+  mime: string;
+}
+
 export type ViewerReason = "moved-on" | "done" | "needs-operator" | "budget" | "taken" | "withdrawn" | "newer-link";
 
 /** Why a link answers 410, when the page may say it: it expired, or its offer went to someone else.
@@ -474,7 +521,14 @@ export interface BatonView {
   /** The holder's name, null when done/closed. */
   holder: string | null;
   /** Share page only: the viewer's own name, and whether their link may write now. */
-  viewer?: { name: string; canWrite: boolean; reason?: ViewerReason };
+  viewer?: {
+    name: string;
+    canWrite: boolean;
+    reason?: ViewerReason;
+    /** Present only while this link writes, photos are on and the session's model sees images:
+        the page shows its paperclip (§app.baton/images). */
+    photos?: { perMessage: number; maxBytes: number };
+  };
   items: BatonViewItem[];
 }
 

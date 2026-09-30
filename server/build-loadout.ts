@@ -22,8 +22,8 @@ import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
 
 /**
- * A project's coding sessions (builds) on the build chart (`build/<org>/<p>/<sid>`, design §3.8;
- * §app.project-overseer/coding-worktrees, /new-coding-session): the chart owns each one's setup, turn,
+ * A project's coding sessions (builds) on the build statechart (`build/<org>/<p>/<sid>`, design §3.8;
+ * §app.project-overseer/coding-worktrees, /new-coding-session): the statechart owns each one's setup, turn,
  * worktree, branch and merge; this module runs its effects (the worktree and session file, the mode,
  * the first prompt, a prompt, Merge Branch, Remove Worktree), gives it the runtime's and git's facts,
  * and reads its rows back in the shape the pages and routes use. Nothing here is written to a file
@@ -34,7 +34,7 @@ export const buildSid = (orgId: string, projectId: string, sessionId: string): s
 
 export type BuildKind = "coding" | "operator-coding";
 
-/** A build as the pages read it: the chart's data, with this host's session file. */
+/** A build as the pages read it: the statechart's data, with this host's session file. */
 export interface BuildRow {
   sessionId: string;
   kind: BuildKind;
@@ -58,7 +58,7 @@ export interface BuildRow {
   gap?: string;
   item?: string;
   decisions?: string[];
-  /** The runtime's facts as the chart last heard them. */
+  /** The runtime's facts as the statechart last heard them. */
   turn: "idle" | "working" | "failed";
   workers: number;
   /** Setup: not started (the sentence), its mode not set, its first prompt refused. */
@@ -161,7 +161,7 @@ export async function withWorktreePath(row: BuildRow, root: string): Promise<(Bu
 
 // ---- starting one ------------------------------------------------------------------------------------
 
-/** A fresh session id for a build the host starts (the chart's own drive names its own). */
+/** A fresh session id for a build the host starts (the statechart's own drive names its own). */
 export const newBuildSessionId = (): string => randomUUID();
 
 const waiters = new Set<{ orgId: string; sid: string; done: () => void }>();
@@ -230,7 +230,7 @@ async function createBuildSession(cwd: string, sessionId: string, d: Record<stri
   const path = await sessionMaker(cwd, sessionId);
   fresh.set(sessionId, path);
   let choice = { model: typeof d.model === "string" && d.model ? d.model : null, thinking: typeof d.thinking === "string" && d.thinking ? d.thinking : null };
-  // A build the item chart started itself (L3) names no model: the project's coding model, as Start coding gives it.
+  // A build the item statechart started itself (L3) names no model: the project's coding model, as Start coding gives it.
   if (!choice.model) {
     const def = await (await import("./project-overseer")).buildDefaults(str(d.orgId), str(d.projectId));
     choice = { model: def.model, thinking: choice.thinking ?? def.thinking };
@@ -247,7 +247,7 @@ async function createBuildSession(cwd: string, sessionId: string, d: Record<stri
   return path;
 }
 
-// ---- the chart's effects -----------------------------------------------------------------------------
+// ---- the statechart's effects -----------------------------------------------------------------------------
 
 /** `customType` of the note a coding session started with no prompt gets: its worktree paragraph. */
 export const CODING_WORKTREE_NOTE = "sova-coding-worktree";
@@ -280,7 +280,7 @@ function pathOrThrow(sessionId: string): string {
 
 /** The worktree's slug: its given title, else the prompt's first words (as the session starts). */
 /** The branch's name: a title given, else the prompt's first 8 words (as master). A build's own title that is not just its
-    prompt's first line was given too (the item chart's "Build §gap/…"). */
+    prompt's first line was given too (the item statechart's "Build §gap/…"). */
 const slugTitle = (sessionId: string, d: Record<string, unknown>): string => {
   const prompt = str(d.prompt);
   const given = str(d.title) && str(d.title) !== cleanSessionTitle((prompt.split("\n")[0] ?? "").slice(0, 80)) ? str(d.title) : "";
@@ -314,7 +314,7 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
     const { orgId: oid, projectId, sessionId } = sessionOf(host, e);
     if (seeded.has(sessionId)) return {};
     try {
-      // F20: a build the item chart started itself (L3) names no mode: the project's, as Start coding gives it.
+      // F20: a build the item statechart started itself (L3) names no mode: the project's, as Start coding gives it.
       const mode = (e.mode as ProjectCodingMode | null | undefined) ?? (await (await import("./project-overseer")).buildDefaults(oid, projectId)).mode;
       await applyCodingMode(pathOrThrow(sessionId), mode);
     } catch (err) {
@@ -342,7 +342,7 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
   });
 
   // sova_send: its mode first when asked (mid-turn, after the running turn), then the text. A build's own
-  // session, or (`session`, the project chart's act) a coding session in the project root that is no build.
+  // session, or (`session`, the project statechart's act) a coding session in the project root that is no build.
   host.effects.register("prompt", async (e) => {
     const overseer = await import("./overseer");
     const path = typeof e.session === "string" ? await overseer.pathOfId(e.session) : pathOrThrow(sessionOf(host, e).sessionId);
@@ -381,7 +381,7 @@ export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
     return { branchDeleted: out.branchDeleted };
   });
 
-  // After a restart no turn runs: every build whose chart still says one hears it ended, cold ones included (a
+  // After a restart no turn runs: every build whose statechart still says one hears it ended, cold ones included (a
   // build not resumed yet would keep "working" forever: F-049/F-050's twin for coding sessions).
   void (async () => {
     for (const s of host.sessions("build")) {
@@ -395,7 +395,7 @@ const SYSTEM = { by: "system" } as unknown as Envelope;
 
 // ---- facts ---------------------------------------------------------------------------------------------
 
-/** The build a session file is, on any attached org: its org and chart id. */
+/** The build a session file is, on any attached org: its org and statechart id. */
 export function buildOfSession(sessionId: string): { orgId: string; projectId: string; sid: string } | null {
   for (const { id: orgId } of readIndex().orgs) {
     if (!isOrgHostOpen(orgId)) continue;
@@ -406,7 +406,7 @@ export function buildOfSession(sessionId: string): { orgId: string; projectId: s
   return null;
 }
 
-/** The runtime's facts now (working, its workers) to the build's chart, before an act that checks them. */
+/** The runtime's facts now (working, its workers) to the build's statechart, before an act that checks them. */
 export async function syncBuildTurn(orgId: string, sid: string, path: string | null): Promise<void> {
   const host = hostOf(orgId);
   const d = host.data(sid);
@@ -425,7 +425,7 @@ function buildOfPath(path: string): { orgId: string; projectId: string; sid: str
   return null;
 }
 
-/** A build's turn started (agent_start, F21): its chart says working from now, so the Pipeline shows it and the
+/** A build's turn started (agent_start, F21): its statechart says working from now, so the Pipeline shows it and the
     at-once cap counts it while the turn runs. */
 export async function noteBuildStarted(path: string): Promise<void> {
   const hit = buildOfPath(path);
@@ -434,7 +434,7 @@ export async function noteBuildStarted(path: string): Promise<void> {
   if (host.data(hit.sid)?.turn !== "working") await host.act(hit.sid, "turn/started", {}, SYSTEM);
 }
 
-/** Every build of the project on this host: its runtime's facts now (working, workers) to its chart, before an act
+/** Every build of the project on this host: its runtime's facts now (working, workers) to its statechart, before an act
     that counts them (the at-once coding cap, F21). */
 export async function syncProjectBuilds(orgId: string, projectId: string): Promise<void> {
   if (!isOrgHostOpen(orgId)) return;
@@ -444,7 +444,7 @@ export async function syncProjectBuilds(orgId: string, projectId: string): Promi
   }
 }
 
-/** A build's turn ended (agent_settled): the chart hears the turn (and its end), so the overseer is told of its own. */
+/** A build's turn ended (agent_settled): the statechart hears the turn (and its end), so the overseer is told of its own. */
 export async function noteBuildSettled(path: string, failed: boolean): Promise<void> {
   const want = canonicalPath(path);
   for (const [id, p] of [...fresh, ...indexedSessionPaths()]) {
@@ -458,7 +458,7 @@ export async function noteBuildSettled(path: string, failed: boolean): Promise<v
   }
 }
 
-/** Git's facts about a build's worktree and branch (the page's read) to its chart. */
+/** Git's facts about a build's worktree and branch (the page's read) to its statechart. */
 export async function probeBuild(orgId: string, sid: string, row: BuildRow, w: WorktreeReading): Promise<void> {
   const tree = row.removed ? "removed" : w.state === "missing" ? "missing" : "open";
   const branch = !w.branch ? undefined : w.merged ? "merged" : row.merged && w.unmerged > 0 ? "new-since-merge" : w.ahead > 0 ? "unmerged" : "no-commits";

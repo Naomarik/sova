@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import { Hono } from "hono";
 import WebSocket from "ws";
-import { BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY, MESSAGES_CAP, MESSAGES_DEFAULT, OPERATOR, type BatonViewItem } from "../shared/baton";
+import { BATON_HANDOFF_ENTRY, BATON_SENT_ENTRY, MESSAGES_CAP, MESSAGES_DEFAULT, OPERATOR, PHOTO_DEFAULTS, type BatonViewItem } from "../shared/baton";
 
 const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-share-msg-")));
 // A hosted runtime can still write here after after() ran (pi's catalogs, usage cache): exit is last.
@@ -156,15 +156,15 @@ describe("the share message route", () => {
     const c = await start(OPERATOR, { messagesMax: 1 });
     const chat = await acquireChat(c.path);
     fakeSdk(chat);
-    chat.specialEntry!.clientSend!(c.path, { images: 0 });
+    chat.specialEntry!.clientSend!(c.path, { images: 0, text: "" });
     await assert.rejects(baton.handTo(c.sessionId, tony.id, "q", ""), /message limit/);
     await assert.rejects(baton.offerTo(c.sessionId, [tony.id, maria.id], "q", ""), /message limit/);
-    assert.throws(() => chat.specialEntry!.clientSend!(c.path, { images: 0 }), /Extend it to write/);
+    assert.throws(() => chat.specialEntry!.clientSend!(c.path, { images: 0, text: "" }), /Extend it to write/);
     await assert.rejects(baton.extendBudget(c.sessionId, 0), /from 1 to/);
     await assert.rejects(baton.extendBudget(c.sessionId, 2.5), /whole number/);
     await assert.rejects(baton.extendBudget(c.sessionId, MESSAGES_CAP), (e: { status?: number; message: string }) => /at most/.test(e.message) && e.status === 400);
     assert.equal((await baton.extendBudget(c.sessionId, 5)).budget.messagesMax, 6);
-    assert.equal(chat.specialEntry!.clientSend!(c.path, { images: 0 }).by, OPERATOR);
+    assert.equal(chat.specialEntry!.clientSend!(c.path, { images: 0, text: "" }).by, OPERATOR);
     await baton.closeBaton(c.sessionId);
     await assert.rejects(baton.extendBudget(c.sessionId, 5), /closed/);
   });
@@ -191,16 +191,11 @@ describe("the share message route", () => {
 });
 
 describe("the operator's composer in a baton session", () => {
-  test("images are refused, and a refused send neither counts nor clears Needs you", async () => {
+  test("a refused send neither counts nor clears Needs you", async () => {
     const c = await start(OPERATOR);
     const chat = await acquireChat(c.path);
     const got = fakeSdk(chat);
-    const sent: { type: string; code?: string; message?: string }[] = [];
-    const client = { send: (m: never) => sent.push(m) } as never;
-    chat.handle(client, { type: "prompt", text: "see this", images: [{ data: "iVBORw0KGgo=", mimeType: "image/png" }], clientId: "i1" } as never);
-    await new Promise((r) => setTimeout(r, 30));
-    assert.equal(sent.find((m) => m.type === "error")?.code, "refused");
-    assert.match(sent.find((m) => m.type === "error")?.message ?? "", /text only/);
+    const client = { send: () => {} } as never;
     const guard = chat.assertNoForeignWrites.bind(chat);
     chat.assertNoForeignWrites = () => {
       throw new BusyError("Someone else wrote this session.", "recent");
@@ -218,7 +213,7 @@ describe("the operator's composer in a baton session", () => {
 describe("the message limit is settable", () => {
   test("the default comes from Settings; a start may set its own; both are bounded", async () => {
     assert.equal(rowOf((await start(OPERATOR)).sessionId).budget.messagesMax, MESSAGES_DEFAULT);
-    assert.deepEqual(settings.writeBatonSettings({ messagesMax: 7 }), { messagesMax: 7 });
+    assert.deepEqual(settings.writeBatonSettings({ messagesMax: 7 }), { messagesMax: 7, photos: PHOTO_DEFAULTS });
     assert.equal(rowOf((await start(OPERATOR)).sessionId).budget.messagesMax, 7);
     assert.equal(rowOf((await start(OPERATOR, { messagesMax: 3 })).sessionId).budget.messagesMax, 3);
     for (const bad of [0, -1, 2.5, MESSAGES_CAP + 1, "10"]) {
@@ -237,8 +232,8 @@ describe("the message limit is settable", () => {
     registerOrgRoutes(app);
     const json = (method: string, body?: unknown) => ({ method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
     assert.equal((await app.request("/api/baton/settings", json("PUT", { messagesMax: 0 }))).status, 400);
-    assert.deepEqual(await (await app.request("/api/baton/settings", json("PUT", { messagesMax: 40 }))).json(), { messagesMax: 40 });
-    assert.deepEqual(await (await app.request("/api/baton/settings")).json(), { messagesMax: 40 });
+    assert.deepEqual(await (await app.request("/api/baton/settings", json("PUT", { messagesMax: 40 }))).json(), { messagesMax: 40, photos: PHOTO_DEFAULTS });
+    assert.deepEqual(await (await app.request("/api/baton/settings")).json(), { messagesMax: 40, photos: PHOTO_DEFAULTS });
     const res = await app.request("/api/baton", json("POST", { orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "T", goal: "g", messagesMax: 12 }));
     assert.equal(res.status, 201);
     const created = (await res.json()) as { sessionId: string; link: string; linkWarning?: string };

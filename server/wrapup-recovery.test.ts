@@ -18,14 +18,14 @@ const { replyEnded } = await import("./org-test-fixtures");
 
 after(() => rmSync(root, { recursive: true, force: true }));
 
-/** The wrap-up runs in the baton chart (its :sova/wrapup run): left running by a process that stopped, or past
-    its time, the chart records it failed itself. No sweeper. */
+/** The wrap-up runs in the baton statechart (its :sova/wrapup run): left running by a process that stopped, or past
+    its time, the statechart records it failed itself. No sweeper. */
 describe("a wrap-up that never ended", async () => {
   const org = await orgs.createOrg({ name: "Rec", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
   const project = await orgs.addProject(org.id, { name: "P", root: join(root, "proj") });
   const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
-  /** Runs that never answer: the wrap-up stays running until the chart ends it. */
+  /** Runs that never answer: the wrap-up stays running until the statechart ends it. */
   const hang = () => hostOf(org.id).invocations.register("sova/wrapup", { start() {}, stop() {} });
   /** A session Tony wrote in, done: its wrap-up starts at once. */
   const running = async () => {
@@ -53,7 +53,7 @@ describe("a wrap-up that never ended", async () => {
     assert.equal(wrapup(silent.sessionId)?.state, "skipped");
   });
 
-  test("past its time (10 minutes): failed by the chart's own timer; one still in time is left alone", async () => {
+  test("past its time (10 minutes): failed by the statechart's own timer; one still in time is left alone", async () => {
     hang();
     const late = await running();
     const t0 = Date.now();

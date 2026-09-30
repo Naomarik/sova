@@ -3,10 +3,11 @@ import { extname, join, resolve } from "node:path";
 import { Hono } from "hono";
 import { SHARE_TEXT_MAX, type GoneWhy } from "../../shared/baton";
 import { linkAccess, noteMessage, sessionPathOf, undoNote } from "../baton";
-import { findLink, tokenTag } from "../baton-links";
+import { findLink, hashToken, tokenTag } from "../baton-links";
 import { acquireChat } from "../chat-manager";
 import { OrgError } from "../orgs";
-import { refreshShare, viewForToken } from "./hub";
+import { imageForToken, refreshShare, viewForToken } from "./hub";
+import { assertBudget, countUpload, dropStaged, ensureSweep, isPhotoType, photoCount, PhotoRefusal, photosFor, stagePhoto, takeStaged, type SdkImage } from "../baton-images";
 import { ownerAccess } from "../owner";
 import { ownerView } from "../owner-page";
 import { mountSessionShareRoutes } from "./session-routes";
@@ -55,6 +56,23 @@ export function tokenLimited(token: string, now = Date.now()): boolean {
 /** How many tokens the per-token window holds (tests). */
 export const tokenWindowSize = (): number => perToken.size;
 
+/** Photo reads per token per minute (§app.baton/images): a thread full of photos, re-read on a reload. */
+export const IMAGE_GETS_PER_MINUTE = 240;
+const imageGets = new Map<string, number[]>();
+
+/** Sliding one-minute window of photo reads per token; true when this one is over the limit. */
+export function imageTokenLimited(token: string, now = Date.now()): boolean {
+  for (const [k, v] of imageGets) if (k !== token && !v.some((t) => now - t < 60_000)) imageGets.delete(k);
+  const recent = (imageGets.get(token) ?? []).filter((t) => now - t < 60_000);
+  const over = recent.length >= IMAGE_GETS_PER_MINUTE;
+  if (!over) recent.push(now);
+  imageGets.set(token, recent);
+  return over;
+}
+
+/** A photo's own CSP: nothing runs, even if a browser were talked into rendering it as a page. */
+const IMAGE_CSP = "default-src 'none'; sandbox";
+
 /** Owner page reads per token per minute (a page re-reads every 60 s; this is the ceiling). */
 export const OWNER_GETS_PER_MINUTE = 120;
 const ownerGets = new Map<string, number[]>();
@@ -94,6 +112,8 @@ const deadLink = (status: 404 | 410, why?: GoneWhy) => (status === 410 ? refusal
 
 export function createShareApp(): Hono {
   const app = new Hono();
+  // Staged photos of closed sessions and old ones go even when nobody uploads again.
+  ensureSweep();
   app.use("*", async (c, next) => {
     await next();
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) c.header(k, v);
@@ -149,21 +169,28 @@ export function createShareApp(): Hono {
     } catch {
       return c.json(refusal("bad-request", "Expected JSON { text }."), 400);
     }
-    // Only { text }: no sender, no images, nothing else. The sender IS the token's person.
-    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => k !== "text"))
-      return c.json(refusal("bad-request", "Only { text } is accepted."), 400);
+    // Only { text, images? }: no sender, nothing else. The sender IS the token's person; images
+    // are ids of photos this link staged (§app.baton/images), never bytes.
+    if (typeof body !== "object" || body === null || Array.isArray(body) || Object.keys(body).some((k) => k !== "text" && k !== "images"))
+      return c.json(refusal("bad-request", "Only { text, images } is accepted."), 400);
+    const ids = (body as { images?: unknown }).images;
+    if (ids !== undefined && (!Array.isArray(ids) || ids.some((x) => typeof x !== "string"))) return c.json(refusal("bad-request", "images is a list of photo ids."), 400);
+    const photoIds = (ids ?? []) as string[];
     const text = typeof (body as { text?: unknown }).text === "string" ? (body as { text: string }).text.trim() : "";
-    if (!text) return c.json(refusal("bad-request", "Write something first."), 400);
+    if (!text && !photoIds.length) return c.json(refusal("bad-request", "Write something first."), 400);
     if (text.length > SHARE_TEXT_MAX) return c.json(refusal("too-long", `Messages are limited to ${SHARE_TEXT_MAX} characters.`), 413);
     if (text.startsWith("/")) return c.json(refusal("bad-request", "Messages can't start with /."), 400);
     const sessionId = access.row.sessionId;
-    // At the limit the baton goes to the operator and the session needs them (the chart's budget stop,
+    // At the limit the baton goes to the operator and the session needs them (the statechart's budget stop,
     // §app.baton/goal-and-loadout); the page says why.
     const limit = (message: string) => c.json(refusal("budget", message), 409);
     if (access.reason === "budget") return limit("This conversation has reached its message limit. The operator has been told.");
     if (!access.canWrite) return c.json(refusal(access.reason ?? "not-holder", "It's not your turn in this conversation right now."), 409);
     if (tokenLimited(token)) return c.json(refusal("rate-limited", "Too many messages. Wait a minute."), 429);
     const by = access.link.personId;
+    const photos = photoIds.length ? await photosFor(access.row, access.dir).catch(() => null) : null;
+    if (photoIds.length && !photos) return c.json(refusal("no-photos", "This conversation can't take photos right now."), 409);
+    if (photos && photoIds.length > photos.perMessage) return c.json(refusal("too-many", `Up to ${photos.perMessage} photos per message.`), 400);
     const busy = (err: unknown) => {
       console.warn(`[share] message on ${tokenTag(token)} refused: ${err instanceof Error ? err.message : String(err)}`);
       return c.json(refusal("busy", "The conversation can't take a message right now. Try again in a moment."), 503);
@@ -175,6 +202,18 @@ export function createShareApp(): Hono {
       chat.assertModelAllowed();
     } catch (err) {
       return busy(err);
+    }
+    // The photos, read before anything is counted: an expired one sends the page back to upload it.
+    let images: SdkImage[] | undefined;
+    if (photos && photoIds.length) {
+      if (photoCount(chat.session.sessionManager.getBranch() as Record<string, any>[]) + photoIds.length > photos.perConversation)
+        return c.json(refusal("photo-limit", "This conversation has reached its photo limit."), 409);
+      try {
+        images = takeStaged(sessionId, by, photoIds);
+      } catch (err) {
+        if (err instanceof PhotoRefusal) return c.json(refusal(err.code, err.message), err.status);
+        throw err;
+      }
     }
     // From here to the hand-over, one synchronous stretch: nothing interleaves. The lock
     // (§app.baton/offers-and-leases): noteMessage decides whether this message may enter — and on
@@ -192,15 +231,56 @@ export function createShareApp(): Hono {
       return busy(err);
     }
     try {
-      const r = chat.acceptPrompt(text, undefined, "server", undefined, { sentByBaton: { by } });
+      const r = chat.acceptPrompt(text, images, "server", undefined, { sentByBaton: { by } });
       void r.turn.catch((err) => chat.reportTurnFailure(err));
     } catch (err) {
+      // Refused: its staged photos stay for the retry.
       undoNote(sessionId);
       return busy(err);
     }
-    // Its reply started with the accepted message (the chart's reply region); the chat layer tells it the rest.
+    // In the transcript now, inline: the staged copies go.
+    if (images) dropStaged(sessionId, photoIds);
+    // Its reply started with the accepted message (the statechart's reply region); the chat layer tells it the rest.
     refreshShare(sessionId);
     return c.json({ ok: true }, 202);
+  });
+
+  // ---- photos (§app.baton/images) ---------------------------------------------------------------
+
+  app.post("/api/h/:token/image", async (c) => {
+    const token = c.req.param("token");
+    const access = linkAccess(token);
+    if (!access.ok) return c.json(deadLink(access.status, access.why), access.status);
+    if (access.reason === "budget") return c.json(refusal("budget", "This conversation has reached its message limit. The operator has been told."), 409);
+    if (!access.canWrite) return c.json(refusal(access.reason ?? "not-holder", "It's not your turn in this conversation right now."), 409);
+    const photos = await photosFor(access.row, access.dir).catch(() => null);
+    if (!photos) return c.json(refusal("no-photos", "This conversation can't take photos right now."), 409);
+    const mime = (c.req.header("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+    if (!isPhotoType(mime)) return c.json(refusal("bad-type", "This photo's format can't be sent."), 400);
+    const declared = Number(c.req.header("content-length"));
+    if (!Number.isFinite(declared) || declared > photos.maxBytes) return c.json(refusal("too-large", `Over ${Math.round(photos.maxBytes / (1024 * 1024))} MB.`), 413);
+    try {
+      countUpload(hashToken(token), photos.perConversation);
+      assertBudget(declared);
+      const staged = await stagePhoto({ sessionId: access.row.sessionId, personId: access.link.personId, mime, body: c.req.raw.body as AsyncIterable<Uint8Array> | null, maxBytes: photos.maxBytes });
+      return c.json(staged, 201);
+    } catch (err) {
+      if (err instanceof PhotoRefusal) {
+        console.warn(`[share] photo on ${tokenTag(token)} refused: ${err.code}`);
+        return c.json(refusal(err.code, err.message), err.status);
+      }
+      throw err;
+    }
+  });
+
+  app.get("/api/h/:token/img/:n", async (c) => {
+    const token = c.req.param("token");
+    if (imageTokenLimited(token)) return c.json(refusal("rate-limited", "Too many requests. Wait a minute."), 429);
+    const n = Number(c.req.param("n"));
+    const got = await imageForToken(token, n);
+    if (got && "status" in got) return c.json(deadLink(got.status, got.why), got.status);
+    if (!got || !isPhotoType(got.mimeType)) return c.json(refusal("not-found", "No such photo."), 404);
+    return c.body(new Uint8Array(Buffer.from(got.data, "base64")), 200, { "Content-Type": got.mimeType, "Content-Security-Policy": IMAGE_CSP, "Content-Disposition": "inline" });
   });
 
   // ---- the Owner page (§app.owner-page): read-only ------------------------------------------------

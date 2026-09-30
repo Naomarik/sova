@@ -168,7 +168,7 @@ export const holdProblem = (v: unknown): string | null =>
 
 /** The act kinds an unattended act of the project's may be marked with "needs overseer confirmation"
     (r8(4), q12): such an act, once held, waits past its hold until the overseer approves or cancels it.
-    Each is an act's `:confirm-kind` in the charts. Display order. No "message" (r10: sova_send never reaches a
+    Each is an act's `:confirm-kind` in the statecharts. Display order. No "message" (r10: sova_send never reaches a
     gathering, so no act has that kind). */
 export const CONFIRM_KINDS = ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "send", "roster-approve", "roster-decline", "preview"] as const;
 export type ConfirmKind = (typeof CONFIRM_KINDS)[number];

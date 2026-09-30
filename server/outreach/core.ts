@@ -18,7 +18,7 @@ import { whatsapp } from "./whatsapp";
  * The outreach core (§app/outreach): send a roster person a link and/or a short note. The person's
  * address on the channel → pause and readiness → the link's resolver (a reference the server turns
  * into a URL in this step: server/outreach/links.ts) → the channel → the send log. Every trigger
- * goes through the project chart's `outreach/send` act (holds, confirm kinds, working hours, the
+ * goes through the project statechart's `outreach/send` act (holds, confirm kinds, working hours, the
  * confirm card), whose `outreach-send` effect runs `send`. Results name the outcome only: never a
  * token, a link, a number or the message.
  */
@@ -172,7 +172,7 @@ async function noteLeak(orgId: string, projectId: string, note: string): Promise
 }
 
 /**
- * The project chart's `outreach/send`, settled: the chart checks the person, the link (the host's
+ * The project statechart's `outreach/send`, settled: the statechart checks the person, the link (the host's
  * `invalid`), the note, the card and the level; an unattended overseer's send waits in the hold.
  * A refusal throws as the route answers it.
  */
@@ -221,7 +221,7 @@ export async function sendHandoffLink(sessionId: string, personId: string | unde
 // ---- the effect --------------------------------------------------------------------------------------
 
 /** Who a link a send makes records as its maker (§app.outreach/links): the operator, else the overseer that sent it —
-    the project's overseer conversation (the project chart's own), or the current global Overseer. */
+    the project's overseer conversation (the project statechart's own), or the current global Overseer. */
 function makerOf(host: OrgHostApi, sessionId: string, by: OutreachLogLine["by"]): string {
   const id = by === "project-overseer" ? (host.data(sessionId)?.overseer as { id?: unknown } | undefined)?.id : by === "operator-via-overseer" ? readOverseerState()?.current : null;
   return typeof id === "string" && id ? `session:${id}` : "operator";
@@ -235,7 +235,7 @@ async function feedNotSent(host: OrgHostApi, orgId: string, sessionId: string, p
   const name = readRoster(orgId).find((x) => x.id === personId)?.name ?? "They";
   await host.logAct({
     session: sessionId,
-    chart: host.chartOf(sessionId) ?? null,
+    statechart: host.statechartOf(sessionId) ?? null,
     event: "outreach/not-sent",
     by: "overseer",
     project: projectId,
@@ -254,7 +254,7 @@ function registerOutreachEffects(host: OrgHostApi, orgId: string): void {
     const projectId = sessionId.split("/").slice(2).join("/");
     const link = parseLinkRef(e.link) ?? undefined;
     const by = e.by === "operator-via-overseer" || e.by === "project-overseer" ? e.by : "operator";
-    const key = typeof e.chartKey === "string" && e.chartKey ? e.chartKey : String(e.key);
+    const key = typeof e.statechartKey === "string" && e.statechartKey ? e.statechartKey : String(e.key);
     const personId = String(e.personId);
     const r = await send({ orgId, projectId, personId, ...(link ? { link } : {}), ...(typeof e.note === "string" ? { note: e.note } : {}), by, createdBy: makerOf(host, sessionId, by), key });
     if (r.outcome !== "sent" && by === "project-overseer") await feedNotSent(host, orgId, sessionId, projectId, personId, r).catch((err) => console.warn(`[outreach] could not log a send that did not go: ${err instanceof Error ? err.name : "error"}`));

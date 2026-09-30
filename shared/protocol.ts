@@ -133,7 +133,7 @@ export interface SessionSummary {
   /** An ORGANIZATIONAL session (§app.session-list/organizations): the org's own records make it one —
       every file in an attached org's workspace `sessions/` (baton sessions, offers, the project
       overseer's current and cleared conversations, any unregistered file there), and every coding
-      session a project's build charts record (the overseer's `coding`, Start coding session's
+      session a project's build statecharts record (the overseer's `coding`, Start coding session's
       `operator-coding`), until its project retires it (r11). Never inferred from the folder: a session the operator opens by hand in a
       project root, a fork or copy of an org session, and anything on a host where the org is not
       attached are ordinary. The sidebar lists these only in its Organizations region. Safe by absence. */
@@ -2568,7 +2568,7 @@ export type AttentionKind =
   | "baton-needs-you" // a baton session: the baton is with the operator, or a person needs their link
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
-  | "held-act"            // act tier, never pushed: a chart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "held-act"            // act tier, never pushed: a statechart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
   | "outreach-not-sent"   // act tier, never pushed: a project overseer's WhatsApp send was refused or failed (no session: `path` "", `href` the person's page)
   | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
   | "asks-you"        // decide tier: decisions' guess that the last reply of a turn with no open alignment question asks the user something

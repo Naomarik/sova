@@ -1,5 +1,5 @@
-import { createEffect, For, Match, onCleanup, Show, Switch } from "solid-js";
-import type { BatonViewItem } from "../../shared/baton";
+import { createEffect, createSignal, For, Match, onCleanup, Show, Switch } from "solid-js";
+import type { BatonViewImage, BatonViewItem } from "../../shared/baton";
 import { linkSegments } from "../lib/share-linkify";
 import "./thread.css";
 import { createMarkdownPatcher } from "../vis/hydrate";
@@ -47,17 +47,99 @@ export function LinkedText(props: { text: string }) {
   );
 }
 
+export const photoCount = (n: number) => (n === 1 ? "1 photo" : `${n} photos`);
+
+/**
+ * A message's photos (§app.baton/images): one fitted in 320 × 240, more as 96 px tiles, and a
+ * lightbox (a native <dialog>) that steps through this message's photos only. `src` is each
+ * photo's address; `from` names the sender for the alt text ("you" for the viewer's own).
+ */
+export function MessagePhotos(props: { srcs: string[]; from: string }) {
+  let dialog!: HTMLDialogElement;
+  let opener: HTMLElement | null = null;
+  const [at, setAt] = createSignal(0);
+  const n = () => props.srcs.length;
+  const alt = (i: number) => (n() === 1 ? `Photo from ${props.from}` : `Photo ${i + 1} of ${n()} from ${props.from}`);
+  const open = (i: number, e: MouseEvent) => {
+    opener = e.currentTarget as HTMLElement;
+    setAt(i);
+    dialog.showModal();
+  };
+  const step = (d: number) => setAt((i) => (i + d + n()) % n());
+  return (
+    <>
+      <ul class="share-photos" classList={{ "share-photos-single": n() === 1 }} aria-label={photoCount(n())}>
+        <For each={props.srcs}>
+          {(src, i) => (
+            <li>
+              <button class="share-thumb" type="button" aria-haspopup="dialog" onClick={(e) => open(i(), e)}>
+                <img src={src} alt={alt(i())} loading="lazy" decoding="async" />
+              </button>
+            </li>
+          )}
+        </For>
+      </ul>
+      <dialog
+        ref={dialog}
+        class="share-lightbox"
+        aria-label={alt(at())}
+        onClose={() => opener?.focus()}
+        onClick={(e) => {
+          if (e.target === dialog || (e.target as HTMLElement).classList.contains("share-lightbox-stage")) dialog.close();
+        }}
+        onKeyDown={(e) => {
+          if (n() < 2) return;
+          if (e.key === "ArrowLeft") step(-1);
+          else if (e.key === "ArrowRight") step(1);
+        }}
+      >
+        <div class="share-lightbox-bar">
+          <p class="share-lightbox-caption">{alt(at())}</p>
+          <Show when={n() > 1}>
+            <span class="share-lightbox-count" aria-hidden="true">
+              {at() + 1} / {n()}
+            </span>
+          </Show>
+          <button class="button button-icon button-ghost" type="button" aria-label="Close Photo" autofocus onClick={() => dialog.close()}>
+            <span class="icon share-icon-close" aria-hidden="true" />
+          </button>
+        </div>
+        <div class="share-lightbox-stage">
+          <img class="share-lightbox-img" src={props.srcs[at()]} alt={alt(at())} />
+          <Show when={n() > 1}>
+            <button class="button button-icon share-lightbox-prev" type="button" aria-label="Previous Photo" onClick={() => step(-1)}>
+              <span class="icon share-icon-prev" aria-hidden="true" />
+            </button>
+            <button class="button button-icon share-lightbox-next" type="button" aria-label="Next Photo" onClick={() => step(1)}>
+              <span class="icon share-icon-next" aria-hidden="true" />
+            </button>
+          </Show>
+        </div>
+      </dialog>
+    </>
+  );
+}
+
 /** `reader`: whoever reads without holding a turn (the owner page) sees an offer as the count it
-    went to, not as an invitation to them. */
-export function Item(props: { item: BatonViewItem; reader?: boolean }) {
+    went to, not as an invitation to them. `photo`: where a message's photo `n` is served (the
+    share page); without it a message's photos show as their count (the owner page). */
+export function Item(props: { item: BatonViewItem; reader?: boolean; photo?: (n: number) => string }) {
   const it = props.item;
+  const photos = (m: { images?: BatonViewImage[] }) => m.images ?? [];
   return (
     <Switch>
       <Match when={it.kind === "message" && it}>
         {(m) => (
           <article class="share-msg" classList={{ "share-msg-own": m().by === "you" }} aria-label={`${m().by === "you" ? "You" : m().name}`}>
             <span class="share-who">{m().by === "you" ? "You" : m().name}</span>
-            <LinkedText text={m().text} />
+            <Show when={photos(m()).length}>
+              <Show when={props.photo} fallback={<p class="share-photo-count">{photoCount(photos(m()).length)}</p>}>
+                {(url) => <MessagePhotos srcs={photos(m()).map((p) => url()(p.n))} from={m().by === "you" ? "you" : m().name} />}
+              </Show>
+            </Show>
+            <Show when={m().text}>
+              <LinkedText text={m().text} />
+            </Show>
           </article>
         )}
       </Match>

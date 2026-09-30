@@ -114,7 +114,7 @@ test("byWord: you, you via the Overseer, the overseer, Sova, a person by name", 
   assert.equal(byWord("operator"), "You");
   assert.equal(byWord("operator", "overseer"), "You via the Overseer");
   assert.equal(byWord("overseer"), "Overseer");
-  assert.equal(byWord("chart"), "Sova");
+  assert.equal(byWord("statechart"), "Sova");
   assert.equal(byWord("Sam Okafor"), "Sam Okafor");
 });
 
@@ -126,12 +126,12 @@ test("moveLine: the lane states in words, nothing when it didn't move", () => {
 
 test("timelineOrder: newest first; one time keeps the later log row first", () => {
   const rows = [
-    { at: ago(3 * H), by: "chart", line: "a" },
-    { at: ago(H), by: "chart", line: "b" },
-    { at: ago(H), by: "chart", line: "c" },
+    { at: ago(3 * H), by: "statechart", line: "a" },
+    { at: ago(H), by: "statechart", line: "b" },
+    { at: ago(H), by: "statechart", line: "c" },
   ];
   assert.deepEqual(timelineOrder(rows).map((r) => r.line), ["c", "b", "a"]);
-  assert.deepEqual(timelineOrder([...rows, { at: ago(0), by: "chart", line: "lease renewed", quiet: true }]).map((r) => r.line), ["c", "b", "a"], "a quiet row is left out (r8a)");
+  assert.deepEqual(timelineOrder([...rows, { at: ago(0), by: "statechart", line: "lease renewed", quiet: true }]).map((r) => r.line), ["c", "b", "a"], "a quiet row is left out (r8a)");
 });
 
 test("logStamp: 24-hour clock today, date and clock before, year when not this year", () => {

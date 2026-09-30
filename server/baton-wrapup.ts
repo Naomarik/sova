@@ -286,10 +286,10 @@ export const wantsWrapup = (row: BatonSession): boolean =>
   (row.state === "done" || row.state === "closed") && !row.wrapup && row.participants.some((p) => p !== OPERATOR);
 
 /**
- * The wrap-up's turn (the baton chart's `:sova/wrapup` invocation, server/baton-loadout.ts): the
+ * The wrap-up's turn (the baton statechart's `:sova/wrapup` invocation, server/baton-loadout.ts): the
  * `sova-baton-wrapup` start entry, one unattended turn with only its tool, the languages inferred,
- * the end entry. Returns what it wrote and why it stopped, for the chart (`wrapup/finished` or
- * `wrapup/stopped`). The chart decides when it runs and whether it is skipped (nobody wrote).
+ * the end entry. Returns what it wrote and why it stopped, for the statechart (`wrapup/finished` or
+ * `wrapup/stopped`). The statechart decides when it runs and whether it is skipped (nobody wrote).
  */
 export async function runWrapup(sessionId: string, normalTools: readonly string[]): Promise<{ applied: number; refused: WrapupRefusal[]; error?: string }> {
   const hit = batonById(sessionId);

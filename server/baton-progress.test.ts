@@ -84,7 +84,7 @@ describe("settle", () => {
   test("a session started for a conflict carries its area; an ordinary one carries none", async () => {
     const plain = await start(sara.id);
     assert.equal(field(plain.path).settle, undefined);
-    // The conflict chart starts its settle session.
+    // The conflict statechart starts its settle session.
     const sessions = await seedConflicts(org.id, project.id, [{ id: "cf_12345678", orgId: org.id, projectId: project.id, areaKey: "invoicing", a: "d1", b: "d2", p: 0.9, routedTo: ali.id, routeReason: "Ali decides invoicing.", batonSessionId: randomUUID(), state: "open", createdAt: new Date().toISOString() }]);
     const s = baton.batonById(sessions.cf_12345678!)!;
     assert.deepEqual(s.row.conflict, { id: "cf_12345678", area: "invoicing" });
@@ -92,7 +92,7 @@ describe("settle", () => {
   });
 });
 
-describe("the marks are chart data from the start (C18: no backfill)", () => {
+describe("the marks are statechart data from the start (C18: no backfill)", () => {
   test("wroteAt: the first message by someone it was sent to, never the operator's", async () => {
     const byPerson = await start(sara.id);
     const byOperator = await start(ali.id);

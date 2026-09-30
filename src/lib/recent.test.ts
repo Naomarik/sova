@@ -151,3 +151,15 @@ test("newest org session is not Recent's first row, in any state", () => {
   assert.deepEqual(ids(rows), ["plain"]);
   assert.equal(recentEligible(orgRow), false);
 });
+
+test("a profile session is never in Recent, live or a custom pick: Profiles lists it", () => {
+  const named = { id: "reviewer", label: "Reviewer", icon: "eye", source: "user" } as SessionSummary["profile"];
+  const custom = { id: "custom", label: "My pick", icon: "sparkles" } as SessionSummary["profile"];
+  const live = { ...session({ id: "p-live", lastActiveAt: "2026-01-09T00:00:00Z" }), profile: named, origin: "web", live: { pid: 1, status: "idle" } } as SessionSummary;
+  const pick = { ...session({ id: "p-custom", lastActiveAt: "2026-01-08T00:00:00Z" }), profile: custom } as SessionSummary;
+  const plain = session({ id: "plain", lastActiveAt: "2026-01-02T00:00:00Z" });
+  assert.equal(recentEligible(live), false);
+  assert.equal(recentEligible(pick), false);
+  assert.equal(recentEligible(plain), true);
+  assert.deepEqual(ids(recentSessions([live, pick, plain], 5)), ["plain"]);
+});

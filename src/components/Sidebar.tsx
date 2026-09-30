@@ -1992,15 +1992,7 @@ export function Sidebar(props: {
             </div>
           </Show>
 
-          {/* Profiles, above everything (§app.session-list/profile-shelf): a shortcut, grouped by profile. */}
-          <ProfileShelf
-            sessions={all()}
-            cwd={props.sessions?.find((x) => x.path === props.selected)?.cwd ?? null}
-            searching={!!query().trim()}
-            row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
-          />
-
-          {/* Needs you, above everything: the sessions blocked on you, from the attention digest.
+          {/* Needs you, first in the list: the sessions blocked on you, from the attention digest.
               A shortcut like Recent below it — every row is still where it lives — and flat for the
               same reason. Open by default; a collapse holds for the tab (lib/needs-you). */}
           <Show when={showNeedsYou()}>
@@ -2103,6 +2095,14 @@ export function Sidebar(props: {
               </For>
             </details>
           </Show>
+
+          {/* Profiles, under Groups and above Live & web (§app.session-list/profile-shelf): a shortcut, grouped by profile. Never in Recent (lib/recent). */}
+          <ProfileShelf
+            sessions={all()}
+            cwd={props.sessions?.find((x) => x.path === props.selected)?.cwd ?? null}
+            searching={!!query().trim()}
+            row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
+          />
 
           {/* Hidden when a search empties it            </details>
           </Show>

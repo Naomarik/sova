@@ -41,7 +41,7 @@ import { stateRoot } from "./state-root";
  * The project overseer's files (§app.project-overseer/identity): per project, in the org's
  * workspace repo, under `projects/<projectId>/overseer/`, so they move with the org and are
  * committed with it — settings, state, notes, actions, ideas and to-dos (the sessions it started are
- * the build and baton charts', server/build-loadout.ts). What the project's sessions cost is in `projects/<projectId>/costs.json` and
+ * the build and baton statecharts', server/build-loadout.ts). What the project's sessions cost is in `projects/<projectId>/costs.json` and
  * `usage.jsonl` (server/project-costs.ts, §app.project-costs/ledger).
  * Only the counters (each message's and each day's) and the watch loop's timing (pending reasons,
  * last run, runs per day, held items) are host-local: a restore starts them fresh. The stores are the Overseer's own
@@ -303,7 +303,7 @@ export const levelAtLeast = (have: Autonomy, need: Autonomy): boolean => AUTONOM
 
 // ---- state: current conversation + history ------------------------------------------------------
 
-/** Its conversations, current and at most 20 earlier ones, newest first: the project chart's overseer
+/** Its conversations, current and at most 20 earlier ones, newest first: the project statechart's overseer
     region (q1: no state.json). Null while it has none (or its org's engine is not open here). */
 export function readPoState(p: Pick<ProjectOverseerPaths, "orgId" | "projectId">): OverseerState | null {
   if (!isOrgHostOpen(p.orgId)) return null;
@@ -315,9 +315,9 @@ export const isPoId = (p: ProjectOverseerPaths, id: string | undefined, state = 
   !!id && !!state && (state.current === id || state.history.includes(id));
 export { HISTORY_MAX };
 
-// ---- the watch loop, as the pages read it (host-local: its watch chart) ------------------------------
+// ---- the watch loop, as the pages read it (host-local: its watch statechart) ------------------------------
 
-/** The watch chart's loop as the pages and tools read it (design §3.5; q1: no watch.json). */
+/** The watch statechart's loop as the pages and tools read it (design §3.5; q1: no watch.json). */
 export interface WatchMemo {
   version: 1;
   /** Reasons noted since the last look. */

@@ -6,7 +6,7 @@ export class OrgError extends Error {
     readonly status: 400 | 404 | 409 | 410 = 400,
     /** A refusal the client acts on by name (`held`: attach an org another host holds). */
     readonly code?: string,
-    /** What the overseer's model reads after the sentence (a chart refusal's `tail`); never shown on the page. */
+    /** What the overseer's model reads after the sentence (a statechart refusal's `tail`); never shown on the page. */
     readonly tail?: string,
   ) {
     super(message);

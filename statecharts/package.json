@@ -1,0 +1,13 @@
+{
+  "name": "sova-statecharts",
+  "private": true,
+  "type": "module",
+  "description": "Sova's organization statecharts (CLJS, fulcrologic/statecharts), compiled to ../server/vendor/statecharts.js. Self-contained: nothing here imports Sova.",
+  "scripts": {
+    "build": "node ../scripts/build-statecharts.mjs",
+    "test": "node ../scripts/build-statecharts.mjs --test"
+  },
+  "devDependencies": {
+    "shadow-cljs": "3.3.6"
+  }
+}

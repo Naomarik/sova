@@ -174,7 +174,7 @@ describe("a story that needs 4 gathering sessions goes on by itself", async () =
     assert.deepEqual(store.readMemo(s.p).pending, [], "nothing waits but the held item");
     // The next day: the watch's midnight turns it into a reason to look soon, and the day's allowance is fresh.
     po.setClockForTest(() => midnight.getTime() + 3_600_000);
-    // The charts' midnight (the watch's day ledger) is a host timer: fired now that the clock has passed it.
+    // The statecharts' midnight (the watch's day ledger) is a host timer: fired now that the clock has passed it.
     hostOf(org.id).fireDue();
     try {
       stub.reset({ payload: "letters", perDelta: 16, tool: "sova_start_gathering", args: gather });

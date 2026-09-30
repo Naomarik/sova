@@ -83,7 +83,7 @@ export interface Person {
   /** r7: when they work, in `tz`: days 0 = Sunday … 6 = Saturday, "HH:MM" from–to (`to` ≤ `from`: overnight).
       Absent or null: no hours (acts reach them at once, as before). Not private: roster history like contact. */
   hours?: PersonHours | null;
-  /** Computed on every read from the charts' next-window rule, never stored: inside their hours now, else
+  /** Computed on every read from the statecharts' next-window rule, never stored: inside their hours now, else
       when the next window opens (ISO). Absent: no hours set. The page's off-hours note on the operator's own acts. */
   hoursNow?: { open: boolean; nextOpen?: string };
   /** r13: whose hours `hoursNow` reads: their own, else the company's; absent: neither (always in hours).

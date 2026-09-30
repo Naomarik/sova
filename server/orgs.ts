@@ -1,4 +1,4 @@
-import { nextWindow } from "./org-charts";
+import { nextWindow } from "./statecharts";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -32,6 +32,7 @@ import { hostIdentity } from "./org-holder";
 import { OrgHost, OrgWorkspaceError } from "./org-host";
 import { setExtraSessionRoots } from "./paths";
 import { stateRoot } from "./state-root";
+import { migrateHostLocal, migrateOrg, migrateWorkspace, StatechartMigrationError } from "./statechart-migration";
 import { commitEveryMs } from "./workspace-commits";
 import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-git";
 
@@ -40,15 +41,15 @@ import { gitStatus, initRepo, isIgnoredBy, isInGitWorkTree } from "./workspace-g
  *
  * - This host's index, `<stateRoot>/orgs.json`: which orgs are ATTACHED here (resident) and where
  *   their workspace repos are, plus the operator's display name. Host state, never committed.
- * - Each org's workspace repo: its charts (`charts/`: every lifecycle — the org, its people and
+ * - Each org's workspace repo: its statecharts (`statecharts/`: every lifecycle — the org, its people and
  *   projects, gatherings, decisions, builds — and the transition log; server/org-engine.ts opens one
  *   engine per attached org), `about.md` and `org-history.jsonl` (the org's About text and its
- *   history), `roster-history.jsonl` (profile values, written by the person chart's effect),
+ *   history), `roster-history.jsonl` (profile values, written by the person statechart's effect),
  *   `sessions/` (baton and project-overseer transcripts) and `projects/<pid>/` (the project
- *   overseer's plain files). Committed hourly by the residence chart; nothing secret is ever there.
+ *   overseer's plain files). Committed hourly by the residence statechart; nothing secret is ever there.
  *
- * Reads answer today's shapes from the charts in memory (q1: no state file is written). Writes are
- * acts the charts take or refuse with today's sentences.
+ * Reads answer today's shapes from the statecharts in memory (q1: no state file is written). Writes are
+ * acts the statecharts take or refuse with today's sentences.
  */
 
 import { OrgError } from "./org-error";
@@ -217,11 +218,11 @@ export const personSid = (orgId: string, pid: string) => `person/${orgId}/${pid}
 export const projectSid = (orgId: string, pid: string) => `project/${orgId}/${pid}`;
 export const watchSid = (orgId: string, pid: string) => `watch/${orgId}/${pid}`;
 
-/** The org id a workspace's org snapshot names (`charts/org/<org%2F<id>>.edn`), or null: not a workspace repo. */
+/** The org id a workspace's org snapshot names (`statecharts/org/<org%2F<id>>.edn`), or null: not a workspace repo. */
 export function orgIdIn(dir: string): string | null {
   let files: string[];
   try {
-    files = readdirSync(join(dir, "charts", "org"));
+    files = readdirSync(join(dir, "statecharts", "org"));
   } catch {
     return null;
   }
@@ -233,24 +234,46 @@ export function orgIdIn(dir: string): string | null {
   return null;
 }
 
-/** Open an org's engine; the org charts' effect handlers (history lines, links, commits) are registered
-    on it first (loaded here, not imported above: that module imports this one). */
+/** Open an org's engine; the org statecharts' effect handlers (history lines, links, commits) are registered
+    on it first (loaded here, not imported above: that module imports this one). Its data still under the
+    old names moves first (§app.organizations/statechart-migration). */
 async function openHost(orgId: string, dir: string): Promise<OrgHostApi> {
+  await migrated(() => migrateOrg(orgId, dir, stateRoot()));
   await import("./org-effects");
-  await import("./baton-loadout"); // the baton charts' effects (the session file, links, entries) and its reply runner
-  await import("./build-loadout"); // the build charts' effects (worktree, session file, mode, prompts, merge)
+  await import("./baton-loadout"); // the baton statecharts' effects (the session file, links, entries) and its reply runner
+  await import("./build-loadout"); // the build statecharts' effects (worktree, session file, mode, prompts, merge)
   await import("./project-overseer-store"); // the settings every act is stamped with
   return openOrgHost({ orgId, workspaceDir: dir, stateDir: stateRoot() });
 }
 
-/** Open every attached org's engine (server start). One that fails is logged; its pages say why. */
+/** A migration step; its refusal as the OrgError callers show. */
+async function migrated<T>(step: () => T | Promise<T>): Promise<T> {
+  try {
+    return await step();
+  } catch (err) {
+    if (err instanceof StatechartMigrationError) throw new OrgError(err.message, 409);
+    throw err;
+  }
+}
+
+/** Open every attached org's engine (server start): every org's data moves to the new names first
+    (§app.organizations/statechart-migration), then the orgs open. One that fails is logged; its pages say why. */
 export async function openAttachedOrgs(): Promise<void> {
+  const failed = new Set<string>();
   for (const o of readIndex().orgs)
     try {
-      await openHost(o.id, o.dir);
+      await migrateOrg(o.id, o.dir, stateRoot());
     } catch (err) {
-      console.warn(`[orgs] ${o.id}: ${err instanceof Error ? err.message : String(err)}`);
+      failed.add(o.id);
+      console.error(`[orgs] ${o.id}: not opened: ${err instanceof Error ? err.message : String(err)}`);
     }
+  for (const o of readIndex().orgs)
+    if (!failed.has(o.id))
+      try {
+        await openHost(o.id, o.dir);
+      } catch (err) {
+        console.warn(`[orgs] ${o.id}: ${err instanceof Error ? err.message : String(err)}`);
+      }
 }
 
 /** Every attached org's workspace repo (the shutdown commit). */
@@ -261,7 +284,7 @@ export const attachedWorkspaces = (): { id: string; dir: string }[] => readIndex
 export type OperatorBy = { kind: "operator"; via?: ChangeVia; overseerId?: string; card?: EnvelopeCard };
 const OPERATOR_BY: OperatorBy = { kind: "operator" };
 
-/** The envelope of the operator's act (never level-checked: the charts pass the operator's acts). */
+/** The envelope of the operator's act (never level-checked: the statecharts pass the operator's acts). */
 export function operatorEnvelope(orgId: string, projectId: string | null, by: OperatorBy = OPERATOR_BY, extra: Record<string, unknown> = {}): Envelope {
   return { ...envelopeFor(orgId, projectId, { by: "operator", attended: true, ...(by.via ? { via: by.via } : {}), ...(by.overseerId ? { overseerId: by.overseerId } : {}), ...(by.card ? { card: by.card } : {}) }), ...extra };
 }
@@ -275,7 +298,7 @@ export function onOrgAttached(fn: (orgId: string, dir: string) => void): void {
 }
 
 /** Someone's status became `left` (an edit, a revert, a decline): the host's own part of the cascade
-    (a running reply stopped) for the modules that register. The charts do theirs in the same step. */
+    (a running reply stopped) for the modules that register. The statecharts do theirs in the same step. */
 const leftHooks: ((orgId: string, personId: string) => void)[] = [];
 export function onPersonLeft(fn: (orgId: string, personId: string) => void): void {
   leftHooks.push(fn);
@@ -307,6 +330,7 @@ export async function createOrg(input: { name: unknown; dir?: unknown }): Promis
   if (!(typeof input.dir === "string" && input.dir.trim()) && existsSync(dir)) dir = join(defaultWorkspacesDir(), `${slug}-${id.slice(4)}`);
   const problem = await workspaceDirProblem(dir);
   if (problem) throw new OrgError(problem);
+  if (existsSync(dir)) await migrated(() => migrateWorkspace(dir));
   if (orgIdIn(dir)) throw new OrgError("That dir already holds an organization: attach it instead.", 409);
   mkdirSync(join(dir, "sessions"), { recursive: true });
   // Its own repo, even when the dir sits inside another one (the hermetic .agent/ is inside Sova's).
@@ -338,9 +362,11 @@ export async function attachOrg(input: { dir: unknown; confirm?: unknown }): Pro
   if (!dir) throw new OrgError("dir is required");
   const problem = await workspaceDirProblem(dir);
   if (problem) throw new OrgError(problem);
+  await migrated(() => migrateWorkspace(dir));
   const id = orgIdIn(dir);
   if (!id) throw new OrgError("No organization in that dir: not a workspace repo.");
   if (readIndex().orgs.some((o) => o.id === id)) throw new OrgError("That organization is already attached here.", 409);
+  await migrated(() => migrateHostLocal(id, dir, stateRoot()));
   mkdirSync(join(dir, "sessions"), { recursive: true });
   OrgHost.forgetLocal(id, stateRoot());
   const host = await openHost(id, dir);
@@ -401,7 +427,7 @@ function orgHost(orgId: string): OrgHostApi {
   return hostOf(orgId);
 }
 
-// ---- reads (the charts, as the wire shapes them) -------------------------------------------------------
+// ---- reads (the statecharts, as the wire shapes them) -------------------------------------------------------
 
 function orgOfData(orgId: string, d: Record<string, unknown>): Org {
   const cleared = d.ownerCleared as Record<string, unknown> | undefined;
@@ -421,7 +447,7 @@ function orgOfData(orgId: string, d: Record<string, unknown>): Org {
   };
 }
 
-/** A working-hours record as a chart keeps it, or undefined. */
+/** A working-hours record as a statechart keeps it, or undefined. */
 function hoursRecord(v: unknown): PersonHours | undefined {
   return isObj(v) && Array.isArray(v.days) && typeof v.from === "string" && typeof v.to === "string" ? { days: (v.days as unknown[]).map(Number), from: v.from, to: v.to } : undefined;
 }
@@ -466,14 +492,14 @@ function personOf(orgId: string, s: { configuration: string[]; data: Record<stri
   };
 }
 
-/** The hours a person is reached in (r13): the person chart's `effectiveHours` (their own, else the company's; null:
+/** The hours a person is reached in (r13): the person statechart's `effectiveHours` (their own, else the company's; null:
     neither, always in hours) and whether those are the company's. A snapshot from before r13 has only their own. */
 function effectiveOfData(d: Record<string, unknown>): { tz: string; hours: PersonHours; inherited: boolean } | null {
   if ("effectiveHours" in d) {
     const e = d.effectiveHours;
     const tz = isObj(e) && typeof e.tz === "string" && e.tz ? e.tz : undefined;
     const h = isObj(e) ? hoursRecord(e.hours) : undefined;
-    // The chart says whose they are (hours-from: own · company · none); a snapshot before it, hoursInherited.
+    // The statechart says whose they are (hours-from: own · company · none); a snapshot before it, hoursInherited.
     return tz && h && d.hoursFrom !== "none" ? { tz, hours: h, inherited: d.hoursFrom === "company" || (d.hoursFrom === undefined && d.hoursInherited === true) } : null;
   }
   const tz = typeof d.tz === "string" && d.tz ? d.tz : undefined;
@@ -481,7 +507,7 @@ function effectiveOfData(d: Record<string, unknown>): { tz: string; hours: Perso
   return tz && h ? { tz, hours: h, inherited: false } : null;
 }
 
-/** A person's own tz and hours as their chart keeps them, and whether they are inside their effective hours now
+/** A person's own tz and hours as their statechart keeps them, and whether they are inside their effective hours now
     (r7, r13: their own, else the company's) and whose those are. */
 function hoursOf(d: Record<string, unknown>, now = Date.now()): Pick<Person, "tz" | "hours" | "hoursNow" | "hoursFrom"> {
   const tz = typeof d.tz === "string" && d.tz ? d.tz : undefined;
@@ -553,7 +579,7 @@ export function readProjects(orgId: string): OrgProject[] {
 // ---- the org's About text (§app.organizations/about) ------------------------------------------------
 //
 // The operator's context for the org's project overseers, and for nothing else. Plain data, never in
-// a chart: its own file, so nothing that reads the org carries it; readOrgAbout is its one reader,
+// a statechart: its own file, so nothing that reads the org carries it; readOrgAbout is its one reader,
 // called only by orgDetail (the operator's page) and the project overseer's prompt
 // (server/org-about-privacy.test.ts fails on any other).
 
@@ -644,8 +670,8 @@ export async function patchOrg(orgId: string, patch: { name?: unknown; about?: u
 
 // ---- company working hours (r13) --------------------------------------------------------------------------
 //
-// The org chart keeps the company's tz and hours (`org/hours`, operator only; it checks them as a person's);
-// each person chart combines them with their own into `effectiveHours`. Their history is org-history.jsonl's,
+// The org statechart keeps the company's tz and hours (`org/hours`, operator only; it checks them as a person's);
+// each person statechart combines them with their own into `effectiveHours`. Their history is org-history.jsonl's,
 // like About's: this module writes a line per changed field once the act is taken.
 
 function readOrgHoursHistoryFile(dir: string): OrgHoursChange[] {
@@ -698,7 +724,7 @@ function writeOrgHoursLines(dir: string, before: Org, after: Org, by: OperatorBy
 }
 
 /**
- * Set or clear the company's tz and hours (the operator's; either key, null or "" clears it). The org chart refuses
+ * Set or clear the company's tz and hours (the operator's; either key, null or "" clears it). The org statechart refuses
  * anyone else and checks them as a person's; every pending hours wait then moves to the new effective window.
  */
 export async function setOrgHours(orgId: string, patch: { tz?: unknown; hours?: unknown }, by: OperatorBy = OPERATOR_BY, revertOf?: string): Promise<Org> {
@@ -783,8 +809,8 @@ setStampPeopleSource(stampPeople);
 
 // ---- profile history (§app.organizations/history-and-revert) --------------------------------------------
 //
-// `roster-history.jsonl`: plain data with today's rules, append-only, the one place (with the charts'
-// person data) that holds profile values. The person chart's `roster-history` effect writes it
+// `roster-history.jsonl`: plain data with today's rules, append-only, the one place (with the statecharts'
+// person data) that holds profile values. The person statechart's `roster-history` effect writes it
 // (server/org-effects.ts, appendHistory); nothing else does.
 
 const historyFile = (dir: string) => join(dir, "roster-history.jsonl");
@@ -838,7 +864,7 @@ export function readHistory(orgId: string, personId?: string): ProfileChange[] {
 }
 
 /**
- * Append one change's lines (the person chart's `roster-history` effect): each `at` unique per org
+ * Append one change's lines (the person statechart's `roster-history` effect): each `at` unique per org
  * (bumped 1 ms on a clash, as today), in the order given. Idempotent by the effect's key: a key
  * already written (an effect run again after a restart) appends nothing.
  */
@@ -887,7 +913,7 @@ export function namesTaken(orgId: string, except?: string): string[] {
 /** Roster writes answer once their effects ran (the history line is written, links are off). */
 const SETTLE = { settle: true } as const;
 
-/** Who writes, as the person chart reads it: the writer kind and its provenance. */
+/** Who writes, as the person statechart reads it: the writer kind and its provenance. */
 function writerPayload(by: ProfileChange["by"]): Record<string, unknown> {
   return {
     byKind: by.kind,
@@ -912,7 +938,7 @@ export async function addPerson(orgId: string, input: PersonInput, by: ProfileCh
 
 /**
  * Change a person as `by` (the operator's PATCH, a wrap-up's profile update, a project overseer's
- * steering fields): the person chart checks field authority and every cap, and routes a status in
+ * steering fields): the person statechart checks field authority and every cap, and routes a status in
  * the patch to its one transition (C10). Returns the person as stored.
  */
 export async function applyChange(orgId: string, personId: string, patch: Record<string, unknown>, by: ProfileChange["by"]): Promise<Person> {
@@ -932,7 +958,7 @@ export async function applyChange(orgId: string, personId: string, patch: Record
 export async function decidePerson(orgId: string, personId: string, approve: boolean, by: ProfileChange["by"] = { kind: "operator" }, envelope?: Envelope): Promise<Person> {
   return (await decidePersonAct(orgId, personId, approve, by, envelope)).person;
 }
-/** decidePerson, and the hold when the chart holds it (the overseer's unattended approve or decline, q10/r6). */
+/** decidePerson, and the hold when the statechart holds it (the overseer's unattended approve or decline, q10/r6). */
 export async function decidePersonAct(orgId: string, personId: string, approve: boolean, by: ProfileChange["by"], envelope?: Envelope): Promise<{ person: Person; held?: { id: string; until: number } }> {
   if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
   const out = await actOrThrow(orgId, personSid(orgId, personId), approve ? "person/approve" : "person/decline", { namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, envelope ?? writerEnvelope(orgId, by), SETTLE);
@@ -958,7 +984,7 @@ export async function revertChange(orgId: string, personId: string, at: string, 
   return findPerson(orgId, personId)!;
 }
 
-// The referral tool's own "what is still missing" answer (server/baton-loadout.ts); the person chart
+// The referral tool's own "what is still missing" answer (server/baton-loadout.ts); the person statechart
 // makes the same checks when the person is written.
 const CONTACT_KEYS = ["email", "phone", "whatsapp", "other"] as const;
 
@@ -988,7 +1014,7 @@ export function proposedGaps(p: Pick<Person, "name" | "contact" | "role" | "refe
   return gaps;
 }
 
-/** A person as an act's `target` stamp (the charts can't read another session's status). */
+/** A person as an act's `target` stamp (the statecharts can't read another session's status). */
 export function targetOf(orgId: string, personId: unknown): { id: string; name: string; status: PersonStatus; referral?: unknown } | null {
   const p = typeof personId === "string" ? findPerson(orgId, personId) : undefined;
   return p ? { id: p.id, name: p.name, status: p.status, ...(p.referral ? { referral: p.referral } : {}), ...(p.tz ? { tz: p.tz } : {}), ...(p.hours ? { hours: p.hours } : {}) } : null;
@@ -1084,7 +1110,7 @@ export function publicTerms(roster: readonly Person[]): string[] {
 
 // ---- projects (§app.organizations/projects, /archive, /stakeholder) ------------------------------------------
 
-/** Why a project root can't be used, or null (the act's `invalid` stamp: the charts can't read the disk). */
+/** Why a project root can't be used, or null (the act's `invalid` stamp: the statecharts can't read the disk). */
 export function rootProblem(v: unknown): string | null {
   const root = typeof v === "string" ? v.trim() : "";
   if (!root || !isAbsolute(root)) return "root must be an absolute path";
@@ -1169,7 +1195,7 @@ export interface ArchiveBlockers {
 }
 
 /**
- * Archive or unarchive a project (§app.organizations/archive). The project chart refuses an archive
+ * Archive or unarchive a project (§app.organizations/archive). The project statechart refuses an archive
  * while anything is open ("Stop these first: …", from `blockers`, which the caller reads: the
  * sessions' titles and runtimes are host facts); the same state again writes nothing.
  */

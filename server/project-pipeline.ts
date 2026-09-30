@@ -3,7 +3,7 @@ import type { HeldAct, PipelineBuild, PipelineDecision, PipelineGathering, Pipel
 import { OPERATOR } from "../shared/baton";
 import { batonById, namesOf, sessionPathOf } from "./baton";
 import { buildSessionPath, readBuild } from "./build-loadout";
-import type { Hold } from "./org-charts";
+import type { Hold } from "./statecharts";
 import { actOrThrow, holdByRef, holdRef, hostOf, isOrgHostOpen } from "./org-engine";
 import { OrgError } from "./org-error";
 import type { LogRow } from "./org-host/log";
@@ -15,15 +15,15 @@ import { listDecisions } from "./reconcile";
 
 /**
  * A project's Pipeline and the acts waiting in a hold (§app.project-overseer/pipeline, /holds), read from
- * the engine host: one row per gap (its item chart's lane state, time in it, stalled, its gatherings,
+ * the engine host: one row per gap (its item statechart's lane state, time in it, stalled, its gatherings,
  * decisions and builds), the holds of the project's sessions, an item's timeline from the transition log,
- * and the operator's Hold / Resume / Cancel as chart acts. Plain reads; nothing is written here.
+ * and the operator's Hold / Resume / Cancel as statechart acts. Plain reads; nothing is written here.
  */
 
-/** The item chart's lane states, in lane order (the Pipeline's phase ids). */
+/** The item statechart's lane states, in lane order (the Pipeline's phase ids). */
 const LANE = ["open", "gather-starting", "asking", "needs-operator", "unreconciled", "conflicted", "drafted", "spec-edited", "awaiting-build", "build-starting", "working", "idle", "failed", "merged", "done", "on-hold", "dropped"];
 const FOLLOW_UP = ["follow-up-asking", "follow-up-needs-operator"];
-/** A waiting phase is stalled after this long, unless the item's start data says otherwise (the chart's default). */
+/** A waiting phase is stalled after this long, unless the item's start data says otherwise (the statechart's default). */
 const DEFAULT_STALL_MS = 3 * 24 * 3_600_000;
 
 const itemSid = (orgId: string, projectId: string, itemId: string) => `item/${orgId}/${projectId}/${itemId}`;
@@ -64,7 +64,7 @@ function gapTitle(orgId: string, projectId: string, ideaId: string): string {
 
 /**
  * What a held act is, as the operator reads it (Needs you, the Pipeline): who it reaches and about what,
- * never a gap's id (the row already opens the project). The chart's own `what` (kept for the overseer) when
+ * never a gap's id (the row already opens the project). The statechart's own `what` (kept for the overseer) when
  * the act reaches no one.
  */
 export function heldWhat(orgId: string, h: Hold): string {
@@ -101,7 +101,7 @@ function heldActOf(orgId: string, h: Hold): HeldAct {
     kind: h.kind,
     goesAt: iso(h.until),
     since: iso(h.since),
-    ...(h.by === "overseer" || h.by === "chart" ? { by: h.by } : {}),
+    ...(h.by === "overseer" || h.by === "statechart" ? { by: h.by } : {}),
     ...(h.wait === "hours" ? { wait: "hours" as const, ...(person ? { person } : {}) } : {}),
     ...(h.waiting ? { reviewSince: iso(h.until) } : {}),
   };
@@ -164,7 +164,7 @@ export function heldAttention(): AttentionItem[] {
   return out;
 }
 
-/** The operator's Cancel: `hold/cancel` on the hold's session (a declared correction). 404 unknown; the chart's
+/** The operator's Cancel: `hold/cancel` on the hold's session (a declared correction). 404 unknown; the statechart's
     sentence when it already went ahead. */
 export async function cancelHeld(orgId: string, holdId: string, reason: string | undefined, by?: OperatorBy): Promise<void> {
   const h = isOrgHostOpen(orgId) ? holdByRef(orgId, holdId) : undefined;
@@ -211,7 +211,7 @@ export function pipelineInfo(orgId: string, projectId: string): PipelineInfo {
     try {
       decisionRows = listDecisions(orgId, projectId).decisions;
     } catch {
-      // an index that can't be read: the rows show the chart's states only
+      // an index that can't be read: the rows show the statechart's states only
     }
     for (const s of host.sessions("item")) {
       const d = s.data;
@@ -257,7 +257,7 @@ function heldFrom(orgId: string, sid: string): string {
   return r ? laneOf(r.before) : "";
 }
 
-/** The operator's Hold or Resume on a gap (the item chart's item/hold, item/resume). */
+/** The operator's Hold or Resume on a gap (the item statechart's item/hold, item/resume). */
 export async function holdItem(orgId: string, projectId: string, itemId: string, resume: boolean, by?: OperatorBy): Promise<PipelineInfo> {
   knownProject(orgId, projectId);
   const sid = itemSid(orgId, projectId, itemId);
@@ -268,8 +268,8 @@ export async function holdItem(orgId: string, projectId: string, itemId: string,
 
 // ---- an item's timeline -------------------------------------------------------------------------------------
 
-/** What happened, in a sentence (the log keeps event names; the page reads this). A chart's own sentence
-    (`<chart>:<event>`) comes before the event's. */
+/** What happened, in a sentence (the log keeps event names; the page reads this). A statechart's own sentence
+    (`<statechart>:<event>`) comes before the event's. */
 export const LINES: Record<string, string> = {
   "item:sova/started": "The overseer filed this gap.",
   "baton:sova/started": "The gathering session opened.",
@@ -333,11 +333,11 @@ export const LINES: Record<string, string> = {
   "decision:effect/failed": "A decision's step failed.",
 };
 
-/** A row's sentence: a refusal, a hold, the chart's or event's own, else the lane move; null for bookkeeping. */
+/** A row's sentence: a refusal, a hold, the statechart's or event's own, else the lane move; null for bookkeeping. */
 function lineOf(r: LogRow, from?: string, to?: string, held?: string): string | null {
   if (r.refused) return `Refused: ${r.refused}`;
   if (r.held) return `${held || r.held.what || "An act"} was held.`;
-  return LINES[`${r.chart ?? ""}:${r.event}`] ?? LINES[r.event] ?? (from && to ? `It moved from ${from} to ${to}.` : null);
+  return LINES[`${r.statechart ?? ""}:${r.event}`] ?? LINES[r.event] ?? (from && to ? `It moved from ${from} to ${to}.` : null);
 }
 
 /** An item's rows from the org's transition log, oldest first: its own and its sessions'. */
@@ -363,7 +363,7 @@ export function itemTimeline(orgId: string, projectId: string, itemId: string, o
     // Bookkeeping with no sentence (a fact mirror, a flush, an effect's answer) is quiet, never a raw event name.
     .filter(({ r, line }) => opts.includeQuiet || (line !== null && (r.feed !== "quiet" || r.session === sid)))
     .map(({ r, from, to, moved, line }) => {
-      const by = r.by === "operator" || r.by === "overseer" || r.by === "chart" || !r.by ? (r.by ?? "chart") : (names[r.by] ?? r.by);
+      const by = r.by === "operator" || r.by === "overseer" || r.by === "statechart" || !r.by ? (r.by ?? "statechart") : (names[r.by] ?? r.by);
       return {
         at: iso(r.at),
         event: r.event,

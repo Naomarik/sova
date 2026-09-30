@@ -328,7 +328,7 @@ async function walkProject(orgId: string, projectId: string): Promise<{ sources:
   }
 
   // What the ledger has and this host doesn't (another host's sessions, deleted transcripts, rows
-  // the charts no longer keep): its last count.
+  // the statecharts no longer keep): its last count.
   for (const [key, snap] of Object.entries(w.ledger.sources)) {
     if (w.sources.some((s) => s.key === key)) continue;
     w.sources.push({ key, sessionId: snap.sessionId, title: snap.title, kind: snap.kind, by: snap.by, path: null, buckets: snap.buckets, live: false, countedAt: snap.countedAt });

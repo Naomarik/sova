@@ -1,0 +1,13 @@
+{"v":1,"id":"syn-reason-while-streaming","source":"synthetic","note":"Synthetic: the operator reconciles on the page while the overseer answers the operator; today's memo drops the reason (R3), the statechart keeps it","t0":"2026-09-28T10:00:00Z","hosts":1,"sova":{"commit":null,"how":"synthetic","features":{"askedOperatorReason":true,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":true,"mergeReasonAndTodosOperatorOnly":true,"noTokenBudget":true}},
+"events": [
+{"dt":0,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":500,"kind":"fact","entity":"baton","id":"b0","state":"open","by":"operator"},
+{"dt":1000,"kind":"fact","entity":"decision","id":"d1","baton":"b0","state":"pending","ownerArea":true},
+{"dt":2000,"kind":"fact","entity":"baton","id":"b0","state":"done","wrote":true},
+{"dt":60000,"kind":"turn","by":"operator","attended":true,"level":"L3","reasons":[]},
+{"dt":70000,"kind":"fact","entity":"decision","id":"d1","baton":"b0","state":"drafted","by":"operator"},
+{"dt":90000,"kind":"turn-end","stop":"stop"},
+{"dt":91000,"kind":"expect","session":"project","reasonKinds":["reconcile/drafted"]}
+],
+"final": {"autonomy":"L3","watch":true,"caps":{"gatherPerTurn":3,"promotePerTurn":20,"createPerTurn":2,"promptsPerTurn":5,"gatherPerDay":4,"promotePerDay":60,"createPerDay":4,"promptsPerDay":12,"unattendedPerDay":12,"gatheringsOpen":5,"codingRunning":2},"watchGapMin":10,"soonLookSec":60,"archived":false,"rosterActive":1,"gaps":[],"batons":[],"decisions":[],"builds":[],"hosts":[]}
+}

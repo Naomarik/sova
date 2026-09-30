@@ -1,20 +1,20 @@
 // The org's transition log (design §5.5): one append-only JSONL segment per month,
-// `<workspace>/charts/log/<yyyy-mm>.jsonl` for portable sessions and
-// `<stateRoot>/org-charts/<org>/log/<yyyy-mm>.jsonl` for host-local ones.
+// `<workspace>/statecharts/log/<yyyy-mm>.jsonl` for portable sessions and
+// `<stateRoot>/statecharts/<org>/log/<yyyy-mm>.jsonl` for host-local ones.
 //
 // Privacy: a row never holds link tokens or hashes, never message text, never About text or contact
-// values. `scrub` applies the chart's `:redact` rules over the defaults, by key name, anywhere in the
+// values. `scrub` applies the statechart's `:redact` rules over the defaults, by key name, anywhere in the
 // envelope and in `changed` (a dotted path matches when ANY of its segments has a rule, outermost first:
 // `contact.email` is contact), and to a field-change record's from/to (`{field: "contact", from, to}`): "drop" removes the key, "contact" writes "[contact]", "digest" writes
 // `{sha, len}` (sha-256 of the text, hex). A refusal's model tail is never logged.
 import { createHash } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Json, Step } from "../org-charts";
+import type { Json, Step } from "../statecharts";
 
 export type RedactRule = "drop" | "contact" | "digest";
 
-/** Keys scrubbed in every chart's rows. */
+/** Keys scrubbed in every statechart's rows. */
 export const DEFAULT_REDACT: Record<string, RedactRule> = {
   token: "drop",
   tokens: "drop",
@@ -43,7 +43,7 @@ export interface LogRow {
   at: number;
   org: string;
   session: string | null;
-  chart: string | null;
+  statechart: string | null;
   event: string;
   by: string | null;
   via?: string;
@@ -70,7 +70,7 @@ export interface LogRow {
   start?: Json;
   /** The run a report answers. */
   invokeId?: string;
-  /** No chart step wrote it (`logAct`: a note, an idea, a confirm). */
+  /** No statechart step wrote it (`logAct`: a note, an idea, a confirm). */
   plain?: boolean;
   [extra: string]: Json | undefined;
 }
@@ -133,7 +133,7 @@ export function rowOfStep(org: string, step: Step, rules: Record<string, RedactR
     at: step.at,
     org,
     session: step.sessionId,
-    chart: step.chart ?? null,
+    statechart: step.statechart ?? null,
     event: step.event,
     by: step.by ?? null,
     envelope: scrub(step.data ?? {}, rules),

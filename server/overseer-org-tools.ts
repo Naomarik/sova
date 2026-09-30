@@ -136,7 +136,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
       throw refuse(confirmRefusal(all.join(", ")));
     }
   }
-  /** The operator's act made through the Overseer, in the turn its confirm card started (the charts check the card). */
+  /** The operator's act made through the Overseer, in the turn its confirm card started (the statecharts check the card). */
   const goBy = (): OperatorBy => {
     const items = d.confirmed();
     const overseerId = d.overseerId?.() ?? "";

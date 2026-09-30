@@ -3990,10 +3990,10 @@
         "src/components/Thread.tsx",
         "src/components/ChatView.tsx",
         "server/baton-handoff.test.ts",
-        "org-charts/src/sova/org_charts/charts/baton.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/hours.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/reach_test.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/reach.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/src/sova/statecharts/rules/hours.cljc",
+        "statecharts/test/sova/statecharts/refit/reach_test.cljc",
+        "statecharts/src/sova/statecharts/rules/reach.cljc",
         "src/components/Sidebar.tsx",
         "src/lib/working-hours.ts",
         "src/lib/working-hours.test.ts",
@@ -4004,10 +4004,10 @@
         "server/person-page.ts",
         "server/project-overseer.ts",
         "shared/protocol.ts",
-        "org-charts/src/sova/org_charts/charts/rules/baton.cljc",
-        "org-charts/src/sova/org_charts/charts/item.cljc",
-        "org-charts/src/sova/org_charts/charts/proj.cljc",
-        "org-charts/src/sova/org_charts/charts/base.cljc",
+        "statecharts/src/sova/statecharts/rules/baton.cljc",
+        "statecharts/src/sova/statecharts/item.cljc",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "statecharts/src/sova/statecharts/base.cljc",
         "server/org-host/kill9-offer-child.ts",
         "server/org-host/offer-reach.test.ts"
       ],
@@ -4094,8 +4094,8 @@
         "server/orgs.test.ts",
         "server/baton-offers.test.ts",
         "server/org-routes.ts",
-        "org-charts/src/sova/org_charts/charts/rules/person.cljc",
-        "org-charts/src/sova/org_charts/charts/person.cljc"
+        "statecharts/src/sova/statecharts/rules/person.cljc",
+        "statecharts/src/sova/statecharts/person.cljc"
       ],
       "requires": [
         "§app.organizations/roster"
@@ -4115,7 +4115,7 @@
         "src/lib/profile-changes.test.ts",
         "src/components/PersonPage.tsx",
         "server/person-page.ts",
-        "org-charts/src/sova/org_charts/charts/person.cljc",
+        "statecharts/src/sova/statecharts/person.cljc",
         "server/org-effects.ts"
       ]
     },
@@ -4257,7 +4257,7 @@
         "src/components/OrgsView.tsx",
         "server/baton-offers.test.ts",
         "server/baton-handoff.test.ts",
-        "org-charts/src/sova/org_charts/charts/person.cljc"
+        "statecharts/src/sova/statecharts/person.cljc"
       ],
       "requires": [
         "§app.organizations/roster",
@@ -4274,7 +4274,7 @@
         "server/workspace-git.ts",
         "server/orgs.test.ts",
         "server/org-holder.ts",
-        "org-charts/src/sova/org_charts/charts/org.cljc",
+        "statecharts/src/sova/statecharts/org.cljc",
         "server/org-reload.test.ts",
         "server/owner.ts",
         "server/org-routes.test.ts"
@@ -4293,8 +4293,8 @@
         "server/baton-loadout.ts",
         "server/baton-handoff.test.ts",
         "server/owner.ts",
-        "org-charts/src/sova/org_charts/charts/rules/person.cljc",
-        "org-charts/src/sova/org_charts/charts/person.cljc"
+        "statecharts/src/sova/statecharts/rules/person.cljc",
+        "statecharts/src/sova/statecharts/person.cljc"
       ]
     },
     "§app.organizations/workspace-repo": {
@@ -4381,7 +4381,7 @@
         "src/components/ProjectOverseerHead.tsx",
         "server/org-portable.test.ts",
         "server/org-envelope.ts",
-        "org-charts/src/sova/org_charts/charts/rules/levels.cljc",
+        "statecharts/src/sova/statecharts/rules/levels.cljc",
         "server/org-envelope.test.ts",
         "server/org-stamp.ts",
         "server/org-stamp.test.ts"
@@ -4400,9 +4400,9 @@
         "shared/project-overseer.ts",
         "server/project-overseer-tools.test.ts",
         "server/project-overseer.ts",
-        "org-charts/src/sova/org_charts/charts/item.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/item_test.cljc",
-        "server/project-overseer-tools-charts.test.ts"
+        "statecharts/src/sova/statecharts/item.cljc",
+        "statecharts/test/sova/statecharts/refit/item_test.cljc",
+        "server/project-overseer-tools-statecharts.test.ts"
       ]
     },
     "§app.project-overseer/ideas-and-todos": {
@@ -4470,7 +4470,7 @@
         "server/baton-loadout.ts",
         "server/chat-manager.ts",
         "server/project-coding-runtime.test.ts",
-        "server/project-overseer-tools-charts.test.ts",
+        "server/project-overseer-tools-statecharts.test.ts",
         "server/outreach/log.ts",
         "server/outreach.test.ts"
       ],
@@ -4500,14 +4500,14 @@
         "shared/project-overseer.ts",
         "server/baton-loadout.ts",
         "server/project-coding-runtime.test.ts",
-        "org-charts/src/sova/org_charts/charts/base.cljc",
-        "org-charts/src/sova/org_charts/charts/watch.cljc",
-        "org-charts/src/sova/org_charts/charts/item.cljc",
-        "org-charts/src/sova/org_charts/charts/build.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/asks_table.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/asks_golden.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/asks_rules_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/asks_test.cljs"
+        "statecharts/src/sova/statecharts/base.cljc",
+        "statecharts/src/sova/statecharts/watch.cljc",
+        "statecharts/src/sova/statecharts/item.cljc",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/test/sova/statecharts/refit/asks_table.cljs",
+        "statecharts/test/sova/statecharts/refit/asks_golden.cljs",
+        "statecharts/test/sova/statecharts/refit/asks_rules_test.cljc",
+        "statecharts/test/sova/statecharts/refit/asks_test.cljs"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels"
@@ -4617,8 +4617,8 @@
         "shared/baton.ts",
         "server/decisions.ts",
         "src/components/ProjectPage.tsx",
-        "org-charts/src/sova/org_charts/charts/conflict.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/pins_test.cljc"
+        "statecharts/src/sova/statecharts/conflict.cljc",
+        "statecharts/test/sova/statecharts/refit/pins_test.cljc"
       ],
       "requires": [
         "§app/baton",
@@ -5185,11 +5185,11 @@
         "src/lib/api.ts",
         "src/projects.css",
         "server/build-loadout.ts",
-        "org-charts/src/sova/org_charts/charts/proj.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/started.cljc",
-        "org-charts/src/sova/org_charts/charts/baton.cljc",
-        "org-charts/src/sova/org_charts/charts/build.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/started_test.cljc",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "statecharts/src/sova/statecharts/rules/started.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/test/sova/statecharts/refit/started_test.cljc",
         "server/org-started.test.ts"
       ]
     },
@@ -5620,7 +5620,7 @@
         "server/org-about-privacy.test.ts",
         "src/lib/org-about.test.ts",
         "server/overseer-org-view.ts",
-        "org-charts/src/sova/org_charts/charts/org.cljc"
+        "statecharts/src/sova/statecharts/org.cljc"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -5750,7 +5750,7 @@
         "src/components/OwnerCard.tsx",
         "src/lib/owner-card.ts",
         "server/owner-page.test.ts",
-        "org-charts/src/sova/org_charts/charts/org.cljc"
+        "statecharts/src/sova/statecharts/org.cljc"
       ]
     },
     "§app.owner-page/page": {
@@ -5834,7 +5834,7 @@
         "server/workspace-git.ts",
         "src/lib/api.ts",
         "src/components/OrgsView.tsx",
-        "org-charts/src/sova/org_charts/charts/org.cljc",
+        "statecharts/src/sova/statecharts/org.cljc",
         "server/org-effects.ts"
       ]
     },
@@ -6886,6 +6886,7 @@
         "src/components/WatchView.tsx",
         "src/components/ChangesViewer.tsx",
         "src/components/ChangesViewer.css",
+        "src/components/Thread.tsx",
         "src/app.css"
       ]
     },
@@ -7864,154 +7865,6 @@
         "src/components/OrgsView.tsx"
       ]
     },
-    "§app.project-overseer/org-charts": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "org-charts/.gitignore",
-        "org-charts/CHARTS.md",
-        "org-charts/EVENTS.md",
-        "org-charts/SPIKE.md",
-        "org-charts/bench/bench.mjs",
-        "org-charts/deps.edn",
-        "org-charts/package.json",
-        "org-charts/shadow-cljs.edn",
-        "org-charts/src/sova/org_charts/api.cljs",
-        "org-charts/src/sova/org_charts/charts/reasons.cljc",
-        "org-charts/src/sova/org_charts/engine/bounded.cljs",
-        "org-charts/src/sova/org_charts/engine/build_hooks.clj",
-        "org-charts/src/sova/org_charts/engine/core.cljs",
-        "org-charts/src/sova/org_charts/engine/core_test.cljs",
-        "org-charts/src/sova/org_charts/engine/js_chart.cljs",
-        "org-charts/src/sova/org_charts/engine/no_spec.cljc",
-        "org-charts/src/sova/org_charts/engine/probe.cljs",
-        "org-charts/src/sova/org_charts/engine/queue.cljs",
-        "org-charts/src/sova/org_charts/engine/timbre_shim.cljc",
-        "scripts/build-org-charts.mjs",
-        "server/fixtures/org-charts-engine/probe-chart.ts",
-        "server/fixtures/org-charts/real-01.json",
-        "server/fixtures/org-charts/real-02.json",
-        "server/fixtures/org-charts/real-03.json",
-        "server/fixtures/org-charts/real-04.json",
-        "server/fixtures/org-charts/real-05.json",
-        "server/fixtures/org-charts/real-06.json",
-        "server/fixtures/org-charts/real-07.json",
-        "server/fixtures/org-charts/real-08.json",
-        "server/fixtures/org-charts/real-09.json",
-        "server/fixtures/org-charts/real-10.json",
-        "server/fixtures/org-charts/real-11.json",
-        "server/fixtures/org-charts/real-12.json",
-        "server/fixtures/org-charts/real-13.json",
-        "server/fixtures/org-charts/real-14.json",
-        "server/fixtures/org-charts/real-15.json",
-        "server/fixtures/org-charts/real-16.json",
-        "server/fixtures/org-charts/real-17.json",
-        "server/fixtures/org-charts/real-18.json",
-        "server/fixtures/org-charts/real-19.json",
-        "server/fixtures/org-charts/real-20.json",
-        "server/fixtures/org-charts/real-21.json",
-        "server/fixtures/org-charts/real-22.json",
-        "server/fixtures/org-charts/real-23.json",
-        "server/fixtures/org-charts/real-24.json",
-        "server/fixtures/org-charts/real-25.json",
-        "server/fixtures/org-charts/real-26.json",
-        "server/fixtures/org-charts/real-27.json",
-        "server/fixtures/org-charts/real-28.json",
-        "server/fixtures/org-charts/syn-archive-during-look.json",
-        "server/fixtures/org-charts/syn-baton-done-then-closed.json",
-        "server/fixtures/org-charts/syn-build-failed-l3.json",
-        "server/fixtures/org-charts/syn-cap-at-midnight.json",
-        "server/fixtures/org-charts/syn-conflict-two-gaps.json",
-        "server/fixtures/org-charts/syn-empty-roster.json",
-        "server/fixtures/org-charts/syn-gap-dropped-mid-build.json",
-        "server/fixtures/org-charts/syn-hold-resume.json",
-        "server/fixtures/org-charts/syn-limit-raised.json",
-        "server/fixtures/org-charts/syn-merge-refused.json",
-        "server/fixtures/org-charts/syn-new-commits-after-merge.json",
-        "server/fixtures/org-charts/syn-own-reason-while-streaming.json",
-        "server/fixtures/org-charts/syn-pause-by-attach.json",
-        "server/fixtures/org-charts/syn-promote-two-gaps.json",
-        "server/fixtures/org-charts/syn-reason-while-streaming.json",
-        "server/fixtures/org-charts/syn-restart-mid-look.json",
-        "server/fixtures/org-charts/syn-soon-off.json",
-        "server/fixtures/org-charts/syn-spec-edited-keep.json",
-        "server/fixtures/org-charts/syn-stall-after-days.json",
-        "server/fixtures/org-charts/syn-two-hosts.json",
-        "server/fixtures/org-charts/syn-watch-off-run-now.json",
-        "server/org-charts-replay.test.ts",
-        "server/org-charts-replay.ts",
-        "server/org-charts.test.ts",
-        "server/org-charts.ts",
-        "server/vendor/org-charts.d.ts",
-        "server/vendor/org-charts.js",
-        "org-charts/src/sova/org_charts/engine/API.md",
-        "org-charts/src/sova/org_charts/charts/rules/person.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/refusal.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/levels.cljc",
-        "org-charts/src/sova/org_charts/charts/base.cljc",
-        "org-charts/src/sova/org_charts/engine/dsl.cljc",
-        "org-charts/src/sova/org_charts/charts/registry.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/host.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/person_test.cljc",
-        "server/org-engine.ts",
-        "server/org-engine.test.ts",
-        "org-charts/src/sova/org_charts/charts/org.cljc",
-        "org-charts/src/sova/org_charts/engine/hold_policy.cljc",
-        "org-charts/src/sova/org_charts/charts/baton.cljc",
-        "org-charts/src/sova/org_charts/charts/build.cljc",
-        "org-charts/src/sova/org_charts/charts/conflict.cljc",
-        "org-charts/src/sova/org_charts/charts/decision.cljc",
-        "org-charts/src/sova/org_charts/charts/item.cljc",
-        "org-charts/src/sova/org_charts/charts/proj.cljc",
-        "org-charts/src/sova/org_charts/charts/reconciler.cljc",
-        "org-charts/src/sova/org_charts/charts/residence.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/baton.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/item.cljc",
-        "org-charts/src/sova/org_charts/charts/watch.cljc",
-        "org-charts/src/sova/org_charts/engine/matrix.cljs",
-        "org-charts/src/sova/org_charts/engine/matrix_test.cljs",
-        "org-charts/src/sova/org_charts/engine/refit_probe.cljs",
-        "org-charts/src/sova/org_charts/engine/refit_test.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/baton_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/item_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/matrix_test.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/org_project_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/watch_decisions_build_test.cljc",
-        "server/org-host/host.test.ts",
-        "server/org-host/index.ts",
-        "server/org-host/kill9-child.ts",
-        "server/org-host/kill9.test.ts",
-        "server/org-host/log.ts",
-        "server/org-host/privacy.test.ts",
-        "server/org-host/store.ts",
-        "server/org-host/test-chart.ts",
-        "org-charts/test/sova/org_charts/charts/refit/holds_test.cljs",
-        "server/org-error.ts",
-        "server/org-host/bench.test.ts",
-        "org-charts/test/sova/org_charts/charts/refit/registry_test.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/world_test.cljs",
-        "org-charts/src/sova/org_charts/charts/rules/hours.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/acts_golden.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/acts_table.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/decision_results_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/feed_golden.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/feed_table.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/feed_test.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/hours_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/server4_findings_test.cljc",
-        "server/org-test-fixtures.ts",
-        "server/org-reload.test.ts",
-        "server/org-routes.ts",
-        "server/orgs.ts",
-        "org-charts/test/sova/org_charts/charts/refit/pins_test.cljc",
-        "server/build-restart.test.ts"
-      ],
-      "requires": [
-        "§app.project-overseer/autonomy-levels",
-        "§app.project-overseer/watch-loop"
-      ]
-    },
     "§chat.markdown/vis-flow-groups": {
       "kind": "behavior",
       "requires": [
@@ -8633,7 +8486,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "org-charts/src/sova/org_charts/engine/hold_policy.cljc",
+        "statecharts/src/sova/statecharts/engine/hold_policy.cljc",
         "shared/pipeline.ts",
         "shared/protocol.ts",
         "src/components/PipelineCard.tsx",
@@ -8643,8 +8496,8 @@
         "server/org-hours.test.ts",
         "src/lib/working-hours.ts",
         "src/lib/working-hours.test.ts",
-        "org-charts/src/sova/org_charts/charts/rules/hours.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/hours_test.cljc",
+        "statecharts/src/sova/statecharts/rules/hours.cljc",
+        "statecharts/test/sova/statecharts/refit/hours_test.cljc",
         "src/components/PersonForm.tsx",
         "src/components/PersonPage.tsx",
         "src/components/OrgsView.tsx",
@@ -8664,40 +8517,28 @@
         "src/lib/api.ts",
         "src/components/BatonStrip.tsx",
         "src/components/ProjectPage.tsx",
-        "org-charts/src/sova/org_charts/charts/base.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/holds_test.cljs",
+        "statecharts/src/sova/statecharts/base.cljc",
+        "statecharts/test/sova/statecharts/refit/holds_test.cljs",
         "server/org-host/index.ts",
-        "org-charts/src/sova/org_charts/engine/core.cljs",
+        "statecharts/src/sova/statecharts/engine/core.cljs",
         "src/components/CompanyHoursCard.tsx",
         "src/components/HoursFields.tsx",
         "src/lib/person-page.ts",
         "src/lib/person-page.test.ts",
-        "org-charts/test/sova/org_charts/charts/refit/company_hours_test.cljc",
+        "statecharts/test/sova/statecharts/refit/company_hours_test.cljc",
         "server/orgs.ts",
         "server/org-engine.ts",
         "server/person-page.ts",
-        "org-charts/src/sova/org_charts/charts/org.cljc",
-        "org-charts/src/sova/org_charts/charts/person.cljc",
-        "org-charts/src/sova/org_charts/charts/baton.cljc",
-        "server/org-charts.ts",
-        "server/org-charts.test.ts",
-        "org-charts/src/sova/org_charts/api.cljs"
+        "statecharts/src/sova/statecharts/org.cljc",
+        "statecharts/src/sova/statecharts/person.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "server/statecharts.ts",
+        "server/statecharts.test.ts",
+        "statecharts/src/sova/statecharts/api.cljs"
       ],
       "requires": [
         "§app.organizations/roster",
         "§app.project-overseer/holds"
-      ]
-    },
-    "§app.project-overseer/chart-tools": {
-      "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "verified",
-      "code": [
-        "server/project-overseer-tools-charts.test.ts"
-      ],
-      "requires": [
-        "§app.project-overseer/org-charts",
-        "§app.project-overseer/tools"
       ]
     },
     "§app.project-overseer/corrections": {
@@ -8706,17 +8547,17 @@
       "evidence": "verified",
       "code": [
         "server/project-overseer-tools.ts",
-        "server/project-overseer-tools-charts.test.ts",
+        "server/project-overseer-tools-statecharts.test.ts",
         "server/project-overseer-prompt.md",
-        "org-charts/src/sova/org_charts/charts/item.cljc",
-        "org-charts/src/sova/org_charts/charts/build.cljc",
-        "org-charts/src/sova/org_charts/charts/reconciler.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/item_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/acts_table.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/pins_test.cljc"
+        "statecharts/src/sova/statecharts/item.cljc",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/reconciler.cljc",
+        "statecharts/test/sova/statecharts/refit/item_test.cljc",
+        "statecharts/test/sova/statecharts/refit/acts_table.cljs",
+        "statecharts/test/sova/statecharts/refit/pins_test.cljc"
       ],
       "requires": [
-        "§app.project-overseer/org-charts",
+        "§app.project-overseer/statecharts",
         "§app.project-overseer/autonomy-levels"
       ]
     },
@@ -8725,19 +8566,19 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "org-charts/src/sova/org_charts/charts/item.cljc",
-        "org-charts/src/sova/org_charts/charts/reconciler.cljc",
-        "org-charts/src/sova/org_charts/charts/build.cljc",
-        "org-charts/src/sova/org_charts/charts/base.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/item.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/levels.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/item_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/watch_decisions_build_test.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/holds_test.cljs",
+        "statecharts/src/sova/statecharts/item.cljc",
+        "statecharts/src/sova/statecharts/reconciler.cljc",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/base.cljc",
+        "statecharts/src/sova/statecharts/rules/item.cljc",
+        "statecharts/src/sova/statecharts/rules/levels.cljc",
+        "statecharts/test/sova/statecharts/refit/item_test.cljc",
+        "statecharts/test/sova/statecharts/refit/watch_decisions_build_test.cljc",
+        "statecharts/test/sova/statecharts/refit/holds_test.cljs",
         "server/org-engine.ts"
       ],
       "requires": [
-        "§app.project-overseer/org-charts",
+        "§app.project-overseer/statecharts",
         "§app.project-overseer/autonomy-levels",
         "§app.project-overseer/limits",
         "§app.project-overseer/holds"
@@ -8757,20 +8598,20 @@
         "src/components/ProjectOverseerPanel.tsx",
         "src/lib/project-overseer-view.ts",
         "src/lib/project-overseer-view.test.ts",
-        "org-charts/src/sova/org_charts/engine/hold_policy.cljc",
+        "statecharts/src/sova/statecharts/engine/hold_policy.cljc",
         "server/org-stamp.ts",
-        "org-charts/test/sova/org_charts/charts/refit/holds_test.cljs",
+        "statecharts/test/sova/statecharts/refit/holds_test.cljs",
         "server/project-pipeline.ts",
         "server/org-engine.ts",
         "server/project-overseer.ts",
         "server/project-overseer-tools.ts",
-        "server/project-overseer-tools-charts.test.ts",
+        "server/project-overseer-tools-statecharts.test.ts",
         "server/baton.ts",
         "server/orgs.ts",
         "server/reconcile.ts"
       ],
       "requires": [
-        "§app.project-overseer/org-charts",
+        "§app.project-overseer/statecharts",
         "§app.project-overseer/corrections"
       ]
     },
@@ -8779,19 +8620,19 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "org-charts/src/sova/org_charts/engine/rebuild.cljs",
-        "org-charts/src/sova/org_charts/engine/core.cljs",
-        "org-charts/src/sova/org_charts/api.cljs",
+        "statecharts/src/sova/statecharts/engine/rebuild.cljs",
+        "statecharts/src/sova/statecharts/engine/core.cljs",
+        "statecharts/src/sova/statecharts/api.cljs",
         "server/org-host/rebuild.ts",
         "server/org-host/log.ts",
         "server/org-host/index.ts",
-        "scripts/org-charts.ts",
+        "scripts/statecharts.ts",
         "server/org-host/rebuild.test.ts",
-        "org-charts/src/sova/org_charts/engine/rebuild_test.cljs",
+        "statecharts/src/sova/statecharts/engine/rebuild_test.cljs",
         "package.json"
       ],
       "requires": [
-        "§app.project-overseer/org-charts"
+        "§app.project-overseer/statecharts"
       ]
     },
     "§app.project-overseer/pipeline": {
@@ -8805,12 +8646,12 @@
         "src/lib/pipeline-view.test.ts",
         "src/projects.css",
         "server/project-pipeline.ts",
-        "org-charts/src/sova/org_charts/charts/rules/item.cljc",
-        "org-charts/src/sova/org_charts/charts/item.cljc",
+        "statecharts/src/sova/statecharts/rules/item.cljc",
+        "statecharts/src/sova/statecharts/item.cljc",
         "server/project-coding-runtime.test.ts"
       ],
       "requires": [
-        "§app.project-overseer/org-charts",
+        "§app.project-overseer/statecharts",
         "§app.project-overseer/gaps"
       ]
     },
@@ -8819,7 +8660,7 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "org-charts/src/sova/org_charts/engine/hold_policy.cljc",
+        "statecharts/src/sova/statecharts/engine/hold_policy.cljc",
         "shared/pipeline.ts",
         "src/components/PipelineCard.tsx",
         "src/lib/pipeline-view.ts",
@@ -8835,18 +8676,18 @@
         "server/org-envelope.ts",
         "server/project-overseer-settings.test.ts",
         "server/org-envelope.test.ts",
-        "org-charts/test/sova/org_charts/charts/refit/feed_test.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/feed_table.cljs",
-        "org-charts/test/sova/org_charts/charts/refit/feed_golden.cljs",
-        "org-charts/src/sova/org_charts/charts/base.cljc",
-        "org-charts/src/sova/org_charts/charts/reasons.cljc",
+        "statecharts/test/sova/statecharts/refit/feed_test.cljs",
+        "statecharts/test/sova/statecharts/refit/feed_table.cljs",
+        "statecharts/test/sova/statecharts/refit/feed_golden.cljs",
+        "statecharts/src/sova/statecharts/base.cljc",
+        "statecharts/src/sova/statecharts/reasons.cljc",
         "server/project-previews.test.ts"
       ],
       "requires": [
         "§app.project-overseer/holds",
         "§app.project-overseer/watch-loop",
         "§app.project-overseer/corrections",
-        "§app.project-overseer/chart-tools"
+        "§app.project-overseer/statechart-tools"
       ]
     },
     "§app.provider-limits/file": {
@@ -9348,7 +9189,8 @@
       "requires": [
         "§chat.profiles/model",
         "§chat.profiles/singleton",
-        "§app.session-list/needs-you"
+        "§app.session-list/needs-you",
+        "§app.session-list/groups"
       ]
     },
     "§app.settings-dialog/profiles": {
@@ -9715,7 +9557,7 @@
         "§app.owner-page/never",
         "§app.baton/abilities",
         "§app.organizations/privacy",
-        "§app.project-overseer/org-charts",
+        "§app.project-overseer/statecharts",
         "§app/markdown-viewer"
       ]
     },
@@ -9985,8 +9827,8 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        "org-charts/src/sova/org_charts/charts/proj.cljc",
-        "server/org-charts-replay.ts",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/statecharts-replay.ts",
         "server/outreach.test.ts",
         "server/outreach/core.ts",
         "server/outreach/ipc-client.ts",
@@ -9994,7 +9836,7 @@
         "server/outreach/whatsapp.ts",
         "server/project-overseer-settings.test.ts",
         "server/project-pipeline.ts",
-        "server/vendor/org-charts.js",
+        "server/vendor/statecharts.js",
         "shared/project-overseer.ts",
         "src/components/BatonStrip.tsx",
         "src/components/SendOnWhatsApp.tsx",
@@ -10109,11 +9951,11 @@
         "shared/preview-links.ts",
         "server/project-previews.test.ts",
         "server/project-overseer-tools.test.ts",
-        "org-charts/src/sova/org_charts/charts/proj.cljc",
-        "org-charts/src/sova/org_charts/charts/rules/levels.cljc",
-        "org-charts/test/sova/org_charts/charts/refit/org_project_test.cljc",
-        "org-charts/EVENTS.md",
-        "server/vendor/org-charts.js"
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "statecharts/src/sova/statecharts/rules/levels.cljc",
+        "statecharts/test/sova/statecharts/refit/org_project_test.cljc",
+        "statecharts/EVENTS.md",
+        "server/vendor/statecharts.js"
       ]
     },
     "§mesh.public/preview-serve": {
@@ -10146,6 +9988,253 @@
       "requires": [
         "§app.overseer/confirm",
         "§app/project-overseer"
+      ]
+    },
+    "§app.organizations/statechart-migration": {
+      "kind": "behavior",
+      "requires": [
+        "§app.organizations/workspace-repo",
+        "§app.organizations/registry"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/statechart-migration.ts",
+        "server/statechart-migration.test.ts",
+        "server/orgs.ts",
+        "server/workspace-git.ts",
+        "server/fixtures/statechart-migration/state/host.json",
+        "server/fixtures/statechart-migration/state/org-charts/org_fv6duzwx/journal/001790796500000-1-000001.json",
+        "server/fixtures/statechart-migration/state/org-charts/org_fv6duzwx/log/2026-09.jsonl",
+        "server/fixtures/statechart-migration/state/org-charts/org_fv6duzwx/residence/residence%2Forg_fv6duzwx.edn",
+        "server/fixtures/statechart-migration/state/org-charts/org_fv6duzwx/watch/watch%2Forg_fv6duzwx%2Fprj_vf7kedf7.edn",
+        "server/fixtures/statechart-migration/ws/charts/log/2026-09.jsonl",
+        "server/fixtures/statechart-migration/ws/charts/org/org%2Forg_fv6duzwx.edn",
+        "server/fixtures/statechart-migration/ws/charts/person/person%2Forg_fv6duzwx%2Fp_gbz8wawg.edn",
+        "server/fixtures/statechart-migration/ws/charts/project/project%2Forg_fv6duzwx%2Fprj_vf7kedf7.edn",
+        "server/fixtures/statechart-migration/ws/charts/reconciler/reconciler%2Forg_fv6duzwx%2Fprj_vf7kedf7.edn",
+        "server/fixtures/statechart-migration/ws/roster-history.jsonl"
+      ]
+    },
+    "§app.project-overseer/statechart-tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-tools-statecharts.test.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/statecharts",
+        "§app.project-overseer/tools"
+      ]
+    },
+    "§app.project-overseer/statecharts": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "statecharts/.gitignore",
+        "statecharts/STATECHARTS.md",
+        "statecharts/EVENTS.md",
+        "statecharts/SPIKE.md",
+        "statecharts/bench/bench.mjs",
+        "statecharts/deps.edn",
+        "statecharts/package.json",
+        "statecharts/shadow-cljs.edn",
+        "statecharts/src/sova/statecharts/api.cljs",
+        "statecharts/src/sova/statecharts/reasons.cljc",
+        "statecharts/src/sova/statecharts/engine/bounded.cljs",
+        "statecharts/src/sova/statecharts/engine/build_hooks.clj",
+        "statecharts/src/sova/statecharts/engine/core.cljs",
+        "statecharts/src/sova/statecharts/engine/core_test.cljs",
+        "statecharts/src/sova/statecharts/engine/js_statechart.cljs",
+        "statecharts/src/sova/statecharts/engine/no_spec.cljc",
+        "statecharts/src/sova/statecharts/engine/probe.cljs",
+        "statecharts/src/sova/statecharts/engine/queue.cljs",
+        "statecharts/src/sova/statecharts/engine/timbre_shim.cljc",
+        "scripts/build-statecharts.mjs",
+        "server/fixtures/statecharts-engine/probe-statechart.ts",
+        "server/fixtures/statecharts/real-01.json",
+        "server/fixtures/statecharts/real-02.json",
+        "server/fixtures/statecharts/real-03.json",
+        "server/fixtures/statecharts/real-04.json",
+        "server/fixtures/statecharts/real-05.json",
+        "server/fixtures/statecharts/real-06.json",
+        "server/fixtures/statecharts/real-07.json",
+        "server/fixtures/statecharts/real-08.json",
+        "server/fixtures/statecharts/real-09.json",
+        "server/fixtures/statecharts/real-10.json",
+        "server/fixtures/statecharts/real-11.json",
+        "server/fixtures/statecharts/real-12.json",
+        "server/fixtures/statecharts/real-13.json",
+        "server/fixtures/statecharts/real-14.json",
+        "server/fixtures/statecharts/real-15.json",
+        "server/fixtures/statecharts/real-16.json",
+        "server/fixtures/statecharts/real-17.json",
+        "server/fixtures/statecharts/real-18.json",
+        "server/fixtures/statecharts/real-19.json",
+        "server/fixtures/statecharts/real-20.json",
+        "server/fixtures/statecharts/real-21.json",
+        "server/fixtures/statecharts/real-22.json",
+        "server/fixtures/statecharts/real-23.json",
+        "server/fixtures/statecharts/real-24.json",
+        "server/fixtures/statecharts/real-25.json",
+        "server/fixtures/statecharts/real-26.json",
+        "server/fixtures/statecharts/real-27.json",
+        "server/fixtures/statecharts/real-28.json",
+        "server/fixtures/statecharts/syn-archive-during-look.json",
+        "server/fixtures/statecharts/syn-baton-done-then-closed.json",
+        "server/fixtures/statecharts/syn-build-failed-l3.json",
+        "server/fixtures/statecharts/syn-cap-at-midnight.json",
+        "server/fixtures/statecharts/syn-conflict-two-gaps.json",
+        "server/fixtures/statecharts/syn-empty-roster.json",
+        "server/fixtures/statecharts/syn-gap-dropped-mid-build.json",
+        "server/fixtures/statecharts/syn-hold-resume.json",
+        "server/fixtures/statecharts/syn-limit-raised.json",
+        "server/fixtures/statecharts/syn-merge-refused.json",
+        "server/fixtures/statecharts/syn-new-commits-after-merge.json",
+        "server/fixtures/statecharts/syn-own-reason-while-streaming.json",
+        "server/fixtures/statecharts/syn-pause-by-attach.json",
+        "server/fixtures/statecharts/syn-promote-two-gaps.json",
+        "server/fixtures/statecharts/syn-reason-while-streaming.json",
+        "server/fixtures/statecharts/syn-restart-mid-look.json",
+        "server/fixtures/statecharts/syn-soon-off.json",
+        "server/fixtures/statecharts/syn-spec-edited-keep.json",
+        "server/fixtures/statecharts/syn-stall-after-days.json",
+        "server/fixtures/statecharts/syn-two-hosts.json",
+        "server/fixtures/statecharts/syn-watch-off-run-now.json",
+        "server/statecharts-replay.test.ts",
+        "server/statecharts-replay.ts",
+        "server/statecharts.test.ts",
+        "server/statecharts.ts",
+        "server/vendor/statecharts.d.ts",
+        "server/vendor/statecharts.js",
+        "statecharts/src/sova/statecharts/engine/API.md",
+        "statecharts/src/sova/statecharts/rules/person.cljc",
+        "statecharts/src/sova/statecharts/rules/refusal.cljc",
+        "statecharts/src/sova/statecharts/rules/levels.cljc",
+        "statecharts/src/sova/statecharts/base.cljc",
+        "statecharts/src/sova/statecharts/engine/dsl.cljc",
+        "statecharts/src/sova/statecharts/registry.cljc",
+        "statecharts/test/sova/statecharts/refit/host.cljc",
+        "statecharts/test/sova/statecharts/refit/person_test.cljc",
+        "server/org-engine.ts",
+        "server/org-engine.test.ts",
+        "statecharts/src/sova/statecharts/org.cljc",
+        "statecharts/src/sova/statecharts/engine/hold_policy.cljc",
+        "statecharts/src/sova/statecharts/baton.cljc",
+        "statecharts/src/sova/statecharts/build.cljc",
+        "statecharts/src/sova/statecharts/conflict.cljc",
+        "statecharts/src/sova/statecharts/decision.cljc",
+        "statecharts/src/sova/statecharts/item.cljc",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "statecharts/src/sova/statecharts/reconciler.cljc",
+        "statecharts/src/sova/statecharts/residence.cljc",
+        "statecharts/src/sova/statecharts/rules/baton.cljc",
+        "statecharts/src/sova/statecharts/rules/item.cljc",
+        "statecharts/src/sova/statecharts/watch.cljc",
+        "statecharts/src/sova/statecharts/engine/matrix.cljs",
+        "statecharts/src/sova/statecharts/engine/matrix_test.cljs",
+        "statecharts/src/sova/statecharts/engine/refit_probe.cljs",
+        "statecharts/src/sova/statecharts/engine/refit_test.cljs",
+        "statecharts/test/sova/statecharts/refit/baton_test.cljc",
+        "statecharts/test/sova/statecharts/refit/item_test.cljc",
+        "statecharts/test/sova/statecharts/refit/matrix_test.cljs",
+        "statecharts/test/sova/statecharts/refit/org_project_test.cljc",
+        "statecharts/test/sova/statecharts/refit/watch_decisions_build_test.cljc",
+        "server/org-host/host.test.ts",
+        "server/org-host/index.ts",
+        "server/org-host/kill9-child.ts",
+        "server/org-host/kill9.test.ts",
+        "server/org-host/log.ts",
+        "server/org-host/privacy.test.ts",
+        "server/org-host/store.ts",
+        "server/org-host/test-statechart.ts",
+        "statecharts/test/sova/statecharts/refit/holds_test.cljs",
+        "server/org-error.ts",
+        "server/org-host/bench.test.ts",
+        "statecharts/test/sova/statecharts/refit/registry_test.cljs",
+        "statecharts/test/sova/statecharts/refit/world_test.cljs",
+        "statecharts/src/sova/statecharts/rules/hours.cljc",
+        "statecharts/test/sova/statecharts/refit/acts_golden.cljs",
+        "statecharts/test/sova/statecharts/refit/acts_table.cljs",
+        "statecharts/test/sova/statecharts/refit/decision_results_test.cljc",
+        "statecharts/test/sova/statecharts/refit/feed_golden.cljs",
+        "statecharts/test/sova/statecharts/refit/feed_table.cljs",
+        "statecharts/test/sova/statecharts/refit/feed_test.cljs",
+        "statecharts/test/sova/statecharts/refit/hours_test.cljc",
+        "statecharts/test/sova/statecharts/refit/server4_findings_test.cljc",
+        "server/org-test-fixtures.ts",
+        "server/org-reload.test.ts",
+        "server/org-routes.ts",
+        "server/orgs.ts",
+        "statecharts/test/sova/statecharts/refit/pins_test.cljc",
+        "server/build-restart.test.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/autonomy-levels",
+        "§app.project-overseer/watch-loop"
+      ]
+    },
+    "§app.baton/images": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.baton/outsider-view",
+        "§app.baton/share-listener",
+        "§app.baton/links",
+        "§app.baton/attribution",
+        "§app.settings-dialog/organizations",
+        "§chat.images/thread-thumbnails"
+      ],
+      "code": [
+        "server/baton-images.ts",
+        "server/baton-images.test.ts",
+        "shared/baton.ts",
+        "server/share/routes.ts",
+        "server/share/edge.ts",
+        "server/share/hub.ts",
+        "server/share/router.ts",
+        "server/baton-view.ts",
+        "server/baton-loadout.ts",
+        "server/baton-prompt.md",
+        "server/baton-settings.ts",
+        "server/baton-told.ts",
+        "server/chat-manager.ts",
+        "server/org-routes.ts",
+        "server/project-overseer-tools.ts",
+        "server/attachments.ts",
+        "src/share/ShareApp.tsx",
+        "src/share/photos.ts",
+        "src/share/thread.tsx",
+        "src/share/thread.css",
+        "src/share/share.css",
+        "src/components/BatonStrip.tsx",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/PersonPage.tsx",
+        "server/share-router.test.ts",
+        "server/share-message.test.ts",
+        "server/share-listener.test.ts"
+      ]
+    },
+    "§design.copy-deck/gathering-images": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "verified"
+    },
+    "§chat.markdown/vis-wireframe-chips": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/vis-wireframe"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/wireframe/View.tsx",
+        "src/vis/kinds/wireframe/wireframe.css",
+        "src/vis/kinds/wireframe/layout.ts",
+        "src/vis/kinds/wireframe/layout.test.ts"
       ]
     }
   },

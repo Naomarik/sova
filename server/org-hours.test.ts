@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/org-hours.test.ts. r7 working hours (§app.organizations/working-hours): a
-// person's zone and hours on the person routes, `hoursNow` from the charts' next-window rule, and an act that
+// person's zone and hours on the person routes, `hoursNow` from the statecharts' next-window rule, and an act that
 // reaches them outside their hours waiting for their window (automatic and unattended ones; the operator's own
 // goes at once). Throwaway workspace; no model is called.
 import assert from "node:assert/strict";
@@ -65,7 +65,7 @@ describe("a person's zone and hours (the person routes)", () => {
     assert.deepEqual(page.roster.find((x) => x.id === sam.id)?.hoursNow, { open: true }, "the org page's roster carries it too");
   });
 
-  test("a bad zone or window is refused with the person chart's sentence; nothing changes", async () => {
+  test("a bad zone or window is refused with the person statechart's sentence; nothing changes", async () => {
     const before = orgs.findPerson(org.id, sam.id)!;
     for (const [body, why] of [
       [{ tz: "Mars/Olympus" }, "tz must be an IANA time zone, like Europe/Istanbul"],
@@ -218,7 +218,7 @@ describe("company working hours, the default (r13)", () => {
     assert.equal(orgs.findPerson(org.id, cy.id)!.hoursNow, undefined);
   });
 
-  test("the chart's checks answer with its sentences; nothing is written", async () => {
+  test("the statechart's checks answer with its sentences; nothing is written", async () => {
     const before = (await (await app.request(`/api/orgs/${org.id}`)).json()) as Detail;
     const r = await put({ tz: "Mars/Olympus" });
     assert.equal(r.status, 400);
@@ -294,7 +294,7 @@ describe("an offer reaches each invitee in their own hours (r12)", () => {
     assert.equal(page.sessions.find((s) => s.sessionId === row().sessionId)?.offer?.reach?.state, "waiting");
     // The look names her and when.
     assert.match(po.lookAppendix(org.id, project.id), new RegExp(`Offers still reaching people[^]*- Offer 1 in "Quotes" · reaches Fay Roth at ${fayOpens.replace(/[.]/g, "\\.")} \\(their working hours\\)`));
-    // Her window opens: the chart's timer reaches her; no link is made by itself (nobody could take its token), so
+    // Her window opens: the statechart's timer reaches her; no link is made by itself (nobody could take its token), so
     // Needs you now asks for hers too, and the operator's send makes it, once.
     setOrgClockForTest(() => Date.parse(fayOpens) + 60_000);
     try {

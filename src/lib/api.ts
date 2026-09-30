@@ -948,7 +948,7 @@ export const revertOrgHours = (id: string, at: string) => request<OrgDetail>(`/a
 /** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
 export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
-/** Reload the org's charts from its workspace (a fixed journal, restored snapshots): `problems` is what is still wrong. */
+/** Reload the org's statecharts from its workspace (a fixed journal, restored snapshots): `problems` is what is still wrong. */
 export const reloadOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/reload`, jsonInit("POST"));
 export const commitOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/commit`, jsonInit("POST"));
 export const setOrgRemote = (id: string, url: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/remote`, jsonInit("PUT", { url }));
@@ -1002,7 +1002,7 @@ export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${
 /** What It's Told (§app.baton/told): fetched when opened, the operator's only. */
 export const getBatonTold = (sid: string) => request<BatonTold>(`/api/baton/${encodeURIComponent(sid)}/told`);
 export const batonLink = (sid: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link`);
-/** Send on WhatsApp (§app.outreach/send-link): the chart's act; the answer is the outcome only. */
+/** Send on WhatsApp (§app.outreach/send-link): the statechart's act; the answer is the outcome only. */
 export const sendBatonLink = (sid: string, person?: string) => request<SendLinkAnswer>(`/api/baton/${encodeURIComponent(sid)}/send-link`, jsonInit("POST", person ? { person } : {}));
 /** Who Send on WhatsApp may go to now, each ready or why not. */
 export const batonOutreach = (sid: string) => request<BatonOutreach>(`/api/baton/${encodeURIComponent(sid)}/outreach`);

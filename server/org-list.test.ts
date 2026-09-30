@@ -81,7 +81,7 @@ describe("GET /api/orgs: needsYou and lastActivityAt", async () => {
 
   test("GET /api/orgs/:id: needsYou, each baton's waiting, projectConflicts", async () => {
     const d = (await (await app.request(`/api/orgs/${busy.id}`)).json()) as OrgDetail;
-    // cf_3's settle session asks the operator (the conflict chart started it): a reply waits on them.
+    // cf_3's settle session asks the operator (the conflict statechart started it): a reply waits on them.
     assert.deepEqual(d.needsYou, { replies: 1, links: 1, proposals: 1, conflicts: 1, stakeholders: 0, ownerLink: 0, held: 0 });
     const by = Object.fromEntries(d.batons.map((r) => [r.publicTitle, r.waiting]));
     assert.deepEqual(by, { "No link": "link", Linked: undefined, Mine: undefined, "Settle: invoicing": "reply" });

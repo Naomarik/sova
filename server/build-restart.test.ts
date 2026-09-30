@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/build-restart.test.ts. A coding session's turn cut off by a crash (F-049/F-050's twin):
-// after the org opens again, its build chart hears the turn ended, so it is idle (never "working" forever). Throwaway
+// after the org opens again, its build statechart hears the turn ended, so it is idle (never "working" forever). Throwaway
 // workspace; no model is called.
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs";

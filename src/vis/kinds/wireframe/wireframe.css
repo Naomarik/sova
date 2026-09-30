@@ -129,22 +129,34 @@
 .vis-wf-row { position: relative; display: flex; gap: 8px; align-items: stretch; min-width: 0; }
 .vis-wf-row > * { flex: 1 1 0; min-width: 0; }
 .vis-wf-row > .vis-wf-wide { flex-grow: 2; }
-.vis-wf-row > .vis-wf-go { flex: none; align-self: center; }
+/* A row's chip, beside its blocks while each of up to 4 keeps about 12ch (95px) with the chip at its widest (120px),
+   else on a line of its own under them: under 103px a block and 120px (layout.ts's rowGoUnder). Only a row as wide
+   as its parent is a container; one sized by its content (at an item's right, in a footer) keeps its chip beside. */
+.vis-wf-row:has(> .vis-wf-row-go) { flex-wrap: wrap; }
+:is(.vis-wf-main, .vis-wf-col, .vis-wf-card, .vis-wf-modal, .vis-wf-sheet, .vis-wf-sidebar, .vis-wf-heading, .vis-wf-box, .vis-wf-row, .vis-wf-grid) > .vis-wf-row:has(> .vis-wf-row-go) { container: wf-row / inline-size; }
+.vis-wf-row > .vis-wf-row-go { flex: none; display: flex; min-width: 0; max-width: 100%; align-self: center; }
+.vis-wf-row-go > .vis-wf-go { min-width: 0; max-width: min(120px, 100%); }
+@container wf-row (width < 223px) { .vis-wf-row > .vis-wf-row-go { flex-basis: 100%; } }
+@container wf-row (width < 326px) { .vis-wf-row:has(> :nth-child(2 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
+@container wf-row (width < 429px) { .vis-wf-row:has(> :nth-child(3 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
+@container wf-row (width < 532px) { .vis-wf-row:has(> :nth-child(4 of :not(.vis-wf-row-go, .vis-em-badge))) > .vis-wf-row-go { flex-basis: 100%; } }
 /* A button or a badge beside other blocks (a heading, a field) takes its label's width; a row of buttons shares it evenly. */
-.vis-wf-row:has(> :not(.vis-wf-button, .vis-wf-go, .vis-em-badge)):not(:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge)))) > :is(.vis-wf-button, .vis-wf-badge) { flex: 0 1 auto; }
+.vis-wf-row:has(> :not(.vis-wf-button, .vis-wf-row-go, .vis-em-badge)):not(:has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge)))) > :is(.vis-wf-button, .vis-wf-badge) { flex: 0 1 auto; }
 /* A badge takes half the row at most (layout.ts's cap), so the blocks beside it keep theirs. */
 .vis-wf-row > .vis-wf-badge { max-width: 50%; }
 /* Past 4 blocks side by side (its chip and mark badge aside), a row wraps into rows of 4. */
-.vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge))) { flex-wrap: wrap; }
-.vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-go, .vis-em-badge))) > :not(.vis-wf-go, .vis-em-badge) { flex: 0 0 calc(25% - 6px); }
+.vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge))) { flex-wrap: wrap; }
+.vis-wf-row:has(> :nth-child(5 of :not(.vis-wf-row-go, .vis-em-badge))) > :not(.vis-wf-row-go, .vis-em-badge) { flex: 0 0 calc(25% - 6px); }
 .vis-wf-grid { position: relative; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .vis-wf-desktop .vis-wf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .vis-wf-grid > .vis-wf-wide { grid-column: span 2; }
 .vis-wf-card { padding: 8px 10px; border: var(--stroke-thin) solid var(--vis-stroke); border-radius: var(--r-md); background: var(--color-surface); }
 .vis-wf-card.vis-tone-none, .vis-wf-stat.vis-tone-none { --vis-stroke: var(--color-border); }
 .vis-wf-card > .vis-wf-sub { margin-top: -6px; }
-.vis-wf-title { display: flex; align-items: center; gap: 6px; font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
-.vis-wf-title > :first-child { flex: 1; min-width: 0; }
+/* A title and its chip: on one line while the title keeps 12ch, else the chip on a line of its own under it (2px apart). */
+.vis-wf-title { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+.vis-wf-title > :first-child:not(.vis-wf-go) { flex: 1 1 12ch; min-width: 0; }
+:is(.vis-wf-title, .vis-wf-heading-text) > .vis-wf-go { flex: 0 1 auto; min-width: 0; max-width: min(120px, 100%); }
 .vis-wf-sub { font-size: var(--fs-micro); line-height: 16px; color: var(--color-ink-muted); overflow-wrap: anywhere; }
 .vis-wf-list { position: relative; display: flex; flex-direction: column; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); }
 .vis-wf-list-title { padding: 6px 10px 0; font-size: var(--fs-micro); line-height: 16px; letter-spacing: var(--ls-eyebrow); text-transform: uppercase; color: var(--color-ink-muted); }
@@ -162,7 +174,7 @@
 /* At the item's right, each block at its own width, wrapping, never wider than the item; a row among them is part of the group. */
 .vis-wf-item-trail { flex: 0 1 auto; max-width: 100%; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; margin-left: auto; }
 .vis-wf-item > .vis-wf-item-trail > .vis-wf-row { flex: 0 1 auto; max-width: 100%; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
-.vis-wf-item > .vis-wf-item-trail > *, .vis-wf-item > .vis-wf-item-trail > .vis-wf-row > :not(.vis-wf-go, .vis-em-badge) { flex: 0 1 auto; min-width: 0; max-width: 100%; align-self: center; }
+.vis-wf-item > .vis-wf-item-trail > *, .vis-wf-item > .vis-wf-item-trail > .vis-wf-row > :not(.vis-wf-row-go, .vis-em-badge) { flex: 0 1 auto; min-width: 0; max-width: 100%; align-self: center; }
 .vis-wf-item-trail .vis-wf-button > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vis-wf-table { position: relative; min-width: 0; border: var(--stroke-thin) solid var(--color-border); border-radius: var(--r-md); overflow: hidden; font-size: var(--fs-micro); line-height: 16px; }
 .vis-wf-table table { width: 100%; border-collapse: collapse; margin: 0; }
@@ -188,8 +200,9 @@
 .vis-wf-heading { position: relative; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .vis-wf-heading-end { display: flex; align-items: center; gap: 6px; margin-left: auto; font-size: var(--fs-caption); line-height: 18px; font-weight: var(--fw-regular); }
 .vis-wf-heading-end .vis-wf-button { min-height: 28px; padding: 0 10px; }
-.vis-wf-heading-text > :first-child { min-width: 0; }
-.vis-wf-heading-text { display: flex; align-items: center; gap: 6px; font-size: var(--fs-body); line-height: 22px; font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
+/* Like a title: its chip and its controls stay beside it while it keeps 12ch, else they wrap under it. */
+.vis-wf-heading-text > :first-child:not(.vis-wf-go, .vis-wf-heading-end) { flex: 1 1 12ch; min-width: 0; }
+.vis-wf-heading-text { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; font-size: var(--fs-body); line-height: 22px; font-weight: var(--fw-semibold); overflow-wrap: anywhere; }
 .vis-wf-text { position: relative; color: var(--color-ink-2); overflow-wrap: anywhere; }
 .vis-wf-text.vis-tone-muted { color: var(--color-ink-muted); }
 .vis-wf-ph { display: flex; flex-direction: column; gap: 5px; padding: 3px 0; }

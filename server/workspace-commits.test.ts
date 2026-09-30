@@ -1,6 +1,6 @@
 // Run: pnpm exec tsx --test server/workspace-commits.test.ts. Plain git repos in the OS temp dir
 // (one bare repo as the remote) and a throwaway PI_CODING_AGENT_DIR, deleted after; nothing else is
-// read or written. When to commit is the residence chart's (its CLJS tests: an hour since HEAD, a
+// read or written. When to commit is the residence statechart's (its CLJS tests: an hour since HEAD, a
 // write during a commit, Commit Now); here, what its `commit` and `push` effects do in the repo.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -34,7 +34,7 @@ async function repo(name: string): Promise<string> {
 /** The residence's effects on `dir`'s repo, as the org's engine runs them (an org not in the index: its workspace is the host's). */
 function effects(dir: string): Record<string, (e: Record<string, unknown>) => Promise<Record<string, unknown>>> {
   const handlers: Record<string, (e: Record<string, unknown>) => Promise<Record<string, unknown>>> = {};
-  const host = { paths: { portable: join(dir, "charts") }, effects: { register: (kind: string, fn: never) => (handlers[kind] = fn) }, data: () => null, sessions: () => [] };
+  const host = { paths: { portable: join(dir, "statecharts") }, effects: { register: (kind: string, fn: never) => (handlers[kind] = fn) }, data: () => null, sessions: () => [] };
   registerOrgEffects(host as unknown as OrgHostApi, "org_commits");
   return handlers;
 }
@@ -50,7 +50,7 @@ describe("the workspace commit (the residence's effects)", () => {
     for (const bad of ["0", "-5", "1.5", "soon", ""]) assert.equal(commitEveryMs({ SOVA_WORKSPACE_COMMIT_MS: bad }), 3_600_000, bad);
   });
 
-  test("nothing changed: no commit (with no remote, nothing to push); HEAD's time goes back to the chart", async () => {
+  test("nothing changed: no commit (with no remote, nothing to push); HEAD's time goes back to the statechart", async () => {
     const dir = await repo("clean");
     const before = count(dir);
     const out = await commit(dir);
@@ -75,14 +75,14 @@ describe("the workspace commit (the residence's effects)", () => {
     assert.equal(out.headAt, headMs(dir));
   });
 
-  test("a commit the chart names (Commit Now, create, attach, release) carries its own message", async () => {
+  test("a commit the statechart names (Commit Now, create, attach, release) carries its own message", async () => {
     const dir = await repo("manual");
     writeFileSync(join(dir, "x.json"), "1\n");
     assert.equal((await commit(dir, "Commit now (Acme)")).committed, true);
     assert.equal(git(dir, "log", "-1", "--format=%s"), "Commit now (Acme)");
   });
 
-  test("with a remote, a commit is pushed; a failed push is the chart's pushFailed, and the push effect retries it", async () => {
+  test("with a remote, a commit is pushed; a failed push is the statechart's pushFailed, and the push effect retries it", async () => {
     const bare = join(root, "remote.git");
     execFileSync("git", ["init", "-q", "--bare", "-b", "main", bare]);
     const dir = await repo("pushed");

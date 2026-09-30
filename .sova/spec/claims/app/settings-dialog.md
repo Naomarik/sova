@@ -613,7 +613,7 @@ Discard button of its own: saving is the dialog's.
 ## §app.settings-dialog/organizations — Organizations
 
 The tab after Summaries: **Hand-off sessions**, the defaults for new baton sessions
-(§app.baton/goal-and-loadout). Today one field, **Message limit** — how many messages a hand-off
+(§app.baton/goal-and-loadout). First **Message limit** — how many messages a hand-off
 session takes in, from everyone, before it comes back to the operator; a whole number from 1 to
 1000, default 60. The hint says it applies to new sessions only ("New sessions only; sessions
 already started keep theirs."), and while the field holds anything else it says "A whole number
@@ -621,9 +621,16 @@ from 1 to 1,000." Save-gated: the dialog's footer saves it (§app.settings-dialo
 while the field is invalid Save Changes is disabled and the status line says "Organizations needs
 a message limit from 1 to 1,000." A failed save shows "Couldn't save the message limit." at the
 form's end, with the reason and "Your saved limit is unchanged."
+Below it, **Photos in gathering chats** (§app.baton/images): **People can send photos** (on by
+default), **Per message** 1–8 (default 4), **Largest photo, MB** 1–10 (default 5) and **Per
+conversation** 1–200 (default 40), with the hint "Applies to every gathering session on this
+host, from its next message." Save-gated like the limit: while a number is outside its range
+Save Changes is disabled and the status line says "Organizations needs photo limits within their
+ranges."
 Host state, not the workspace repo: `<stateRoot>/baton-settings.json`, read and written through
-`GET`/`PUT /api/baton/settings {messagesMax}` (400 outside the bounds; a missing or corrupt file
-reads as 60).
+`GET`/`PUT /api/baton/settings {messagesMax, photos?: {enabled, perMessage, maxBytes,
+perConversation}}` (400 outside the bounds; a missing or corrupt file reads as 60 and the photo
+defaults, each photo field on its own).
 
 ## §app.settings-dialog/toggle-target — A left-aligned toggle's target
 

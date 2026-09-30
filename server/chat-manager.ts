@@ -515,8 +515,9 @@ export interface SpecialLoadout {
   watchSession?(session: AgentSession, path: string): void;
   /** A message from this server's own composer (/ws/chat prompt or steer): who sent it, or throw a
       refusal the client is told. Absent: sent as usual, unattributed. `undo` puts back what the
-      kind recorded for it when the runtime then refuses the message. */
-  clientSend?(path: string, msg: { images: number }): { by: string; undo?(): void };
+      kind recorded for it when the runtime then refuses the message. `text` and `images`, when
+      given, are what is sent instead (a baton session's attached images, inline). */
+  clientSend?(path: string, msg: { images: number; text: string }): { by: string; undo?(): void; text?: string; images?: SdkImage[] };
   /** A client gesture this kind refuses (a message for the client), or null. */
   refuses?(gesture: "rewind" | "regenerate" | "mode"): string | null;
   /** Its composer takes nothing right now (a message for the client), or null: an archived
@@ -2394,10 +2395,12 @@ class ChatSession {
           // a refusal from acceptPrompt itself is handed back through `undo`.
           if (this.specialEntry?.clientSend) {
             this.assertModelAllowed();
-            const sent = this.specialEntry.clientSend(this.path, { images: msg.images?.length ?? 0 });
+            const sent = this.specialEntry.clientSend(this.path, { images: msg.images?.length ?? 0, text: String(msg.text ?? "") });
+            const own = parseImages(msg.images);
+            const images = sent.images?.length ? [...(own ?? []), ...sent.images] : own;
             let accepted: ReturnType<ChatSession["acceptPrompt"]>;
             try {
-              accepted = this.acceptPrompt(String(msg.text ?? ""), parseImages(msg.images), "client", clientId, {
+              accepted = this.acceptPrompt(sent.text ?? String(msg.text ?? ""), images, "client", clientId, {
                 sentByBaton: { by: sent.by },
                 ...(msg.type === "steer" ? { delivery: "steer" as const } : {}),
               });

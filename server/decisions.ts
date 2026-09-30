@@ -7,9 +7,9 @@ import { hostOf, isOrgHostOpen, type SessionInfo } from "./org-engine";
 import { isoOf, operatorName, orgDir, OrgError, readIndex, readOrg, readProjects, readRoster } from "./orgs";
 
 /**
- * The decision index (§app.requirements/decisions), read from the charts (q1: no decisions.json, no
- * conflicts.json): each recorded decision is a `decision` chart (born by its gathering session's
- * record_decision, or a conflict settled by hand), each conflict a `conflict` chart, the last run the
+ * The decision index (§app.requirements/decisions), read from the statecharts (q1: no decisions.json, no
+ * conflicts.json): each recorded decision is a `decision` statechart (born by its gathering session's
+ * record_decision, or a conflict settled by hand), each conflict a `conflict` statechart, the last run the
  * project's `reconciler`. The rows below are projections of their data in today's wire shapes.
  */
 
@@ -28,7 +28,7 @@ export function projectOf(orgId: string, projectId: string) {
   return p;
 }
 
-// ---- the charts, as rows ------------------------------------------------------------------------------
+// ---- the statecharts, as rows ------------------------------------------------------------------------------
 
 export interface DecisionStore {
   decisions: DecisionRow[];
@@ -39,7 +39,7 @@ export interface DecisionStore {
 
 const isoOr = (v: unknown, fallback = new Date(0).toISOString()): string => (typeof v === "number" ? isoOf(v) : typeof v === "string" ? v : fallback);
 
-/** A decision chart as today's DecisionRow. A promoted one whose record went missing or differs is
+/** A decision statechart as today's DecisionRow. A promoted one whose record went missing or differs is
     promotable again: it reads `drafted`, as before. */
 export function decisionRowOf(orgId: string, s: Pick<SessionInfo, "configuration" | "data">, paths: ReadonlyMap<string, string>): DecisionRow {
   const d = s.data;
@@ -84,8 +84,8 @@ export function decisionRowOf(orgId: string, s: Pick<SessionInfo, "configuration
   };
 }
 
-/** A conflict chart as today's Conflict (its settle session's path is this host's, derived on each read). An open
-    conflict no session asks about any more (its settle session closed without a re-route: the chart's `unrouted`)
+/** A conflict statechart as today's Conflict (its settle session's path is this host's, derived on each read). An open
+    conflict no session asks about any more (its settle session closed without a re-route: the statechart's `unrouted`)
     names none, so the project page offers the route form again (C17). */
 export function conflictOf(orgId: string, s: Pick<SessionInfo, "data" | "configuration">, paths: ReadonlyMap<string, string>): Conflict {
   const d = s.data;
@@ -124,7 +124,7 @@ function sessionPaths(orgId: string): Map<string, string> {
 
 const ofProject = (projectId: string) => (s: SessionInfo) => s.data.projectId === projectId;
 
-/** The project's decisions, from their charts (none while the org's engine is closed). */
+/** The project's decisions, from their statecharts (none while the org's engine is closed). */
 export function readDecisionStore(orgId: string, projectId: string): DecisionStore {
   if (!isOrgHostOpen(orgId)) return { decisions: [], lastRun: null };
   const host = hostOf(orgId);
@@ -149,7 +149,7 @@ function latestHash(rec: Record<string, unknown>, spec: unknown): string | undef
   return p ? str(p.specHash) : undefined;
 }
 
-/** The project's conflicts, from their charts (a settle session's path is this host's, never stored). */
+/** The project's conflicts, from their statecharts (a settle session's path is this host's, never stored). */
 export function readConflicts(orgId: string, projectId: string): Conflict[] {
   if (!isOrgHostOpen(orgId)) return [];
   const paths = sessionPaths(orgId);

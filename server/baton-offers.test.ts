@@ -36,13 +36,13 @@ const project = await orgs.addProject(org.id, { name: "Portal", root: join(root,
 const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
 const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
 const carlos = await orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
-/** Every act a baton chart took, in order (its moves as the log records them). */
+/** Every act a baton statechart took, in order (its moves as the log records them). */
 const events: { type: string; sessionId: string }[] = [];
 onOrgChange((_orgId, change) => {
   for (const st of change.steps)
     if (st.refused || st.held || st.ignored) continue;
     else if (st.sessionId.startsWith("baton/")) events.push({ type: st.event, sessionId: st.sessionId.split("/").slice(2).join("/") });
-    // The start is the project chart's act: it names the baton it spawns.
+    // The start is the project statechart's act: it names the baton it spawns.
     else if (st.event === "baton/start") events.push({ type: st.event, sessionId: String(st.data?.sessionId ?? st.data?.["session-id"] ?? "") });
 });
 
@@ -146,7 +146,7 @@ describe("offers and leases", async () => {
   });
 
   test("each message and each reply renew the lease; it never lapses mid-reply; idle past it, the pool takes it back and anyone may claim", async () => {
-    // A one-second lease (SOVA_BATON_LEASE_MS, hermetic tests only): the chart's own timer lapses it.
+    // A one-second lease (SOVA_BATON_LEASE_MS, hermetic tests only): the statechart's own timer lapses it.
     process.env.SOVA_BATON_LEASE_MS = "1000";
     let l;
     try {
@@ -518,7 +518,7 @@ describe("routes: spawn-for-person, owner, handoff", () => {
     await baton.handTo(c.sessionId, OPERATOR, "q", "");
     await baton.markDone(c.sessionId);
     await baton.closeBaton(c.sessionId);
-    // The start is the project chart's act (baton/start); the rest are the baton's own moves.
+    // The start is the project statechart's act (baton/start); the rest are the baton's own moves.
     const moves = new Set(["baton/start", "baton/offer", "baton/hand-to", "baton/goal-done", "baton/close"]);
     assert.deepEqual(
       events.filter((e) => e.sessionId === c.sessionId && moves.has(e.type)).map((e) => e.type),
@@ -639,7 +639,7 @@ describe("regressions from the slice-2 verification", async () => {
   });
 
   test("the share WebSocket writes nothing while taken; after the lease lapses a view that may write is pushed", async () => {
-    // A one-second lease (hermetic tests only): the chart's own timer lapses it.
+    // A one-second lease (hermetic tests only): the statechart's own timer lapses it.
     process.env.SOVA_BATON_LEASE_MS = "1000";
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "WS", goal: "g" }).finally(() => delete process.env.SOVA_BATON_LEASE_MS);
     const mariaTok = c.links!.find((l) => l.personId === maria.id)!.token;

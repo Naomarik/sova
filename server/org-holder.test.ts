@@ -1,6 +1,6 @@
 // Run: pnpm exec tsx --test server/org-holder.test.ts. §app.organizations/holder: one host holds an
 // org at a time; attaching an org another host holds warns and asks to confirm. The record lives in
-// the org chart's portable snapshot (r1). Real git: a bare remote and clones in the OS temp dir
+// the org statechart's portable snapshot (r1). Real git: a bare remote and clones in the OS temp dir
 // (deleted after); "laptop" is another host, its repo made by an engine of its own. A throwaway
 // PI_CODING_AGENT_DIR; no model, no network.
 import assert from "node:assert/strict";

@@ -1,5 +1,5 @@
 // Run: pnpm exec tsx --test server/org-host/privacy.test.ts. The contact marker test (design §5.5
-// Privacy), end to end on the shipped person chart: a contact value planted at start and changed by a
+// Privacy), end to end on the shipped person statechart: a contact value planted at start and changed by a
 // person/edit reaches no log segment, no log read and no journal's rows; the snapshot is the only
 // portable place that holds it. The same for what a log replay needs (r9): spawn data, a host start's
 // data, a set-state's patch and an invocation's report. Plus the scrub rules for nested paths and
@@ -9,10 +9,10 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, test } from "node:test";
-import type { EngineOptions } from "../org-charts";
+import type { EngineOptions } from "../statecharts";
 import { OrgHost } from "./index";
 import { DEFAULT_REDACT, scrub, scrubChanged } from "./log";
-import { HOST_CHARTS } from "./test-chart";
+import { HOST_STATECHARTS } from "./test-statechart";
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -83,7 +83,7 @@ test("the contact marker: planted and changed through person/edit, it is in the 
   // in the repo, only the snapshot holds the value
   const repoFiles = filesUnder(workspaceDir);
   const holding = repoFiles.filter((f) => markers.some((m) => readFileSync(f, "utf8").includes(m)));
-  assert.deepEqual(holding.map((f) => f.slice(workspaceDir.length + 1)), ["charts/person/person%2Fo1%2Fp1.edn"]);
+  assert.deepEqual(holding.map((f) => f.slice(workspaceDir.length + 1)), ["statecharts/person/person%2Fo1%2Fp1.edn"]);
 });
 
 test("what a log replay needs (r9) is redacted like the rest: spawn data, a start's data and envelope, a set-state patch (contact included), a report, a plain row", async () => {
@@ -104,12 +104,12 @@ test("what a log replay needs (r9) is redacted like the rest: spawn data, a star
     plainText: "PLAIN-TEXT-MARKER a note's words",
     plainEmail: "plain.marker@example.org",
   };
-  const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, charts: HOST_CHARTS as unknown as EngineOptions["charts"] });
+  const host = await OrgHost.open({ orgId: "o1", workspaceDir: join(root, "ws"), stateDir: join(root, "state"), durable: false, statecharts: HOST_STATECHARTS as unknown as EngineOptions["statecharts"] });
   host.invocations.register("sova/look", {
     start: (_inv, report) => void setTimeout(() => report("finished", undefined, { text: M.reportText, contact: { phone: M.reportPhone } }), 5),
     stop: () => {},
   });
-  // spawn data: the shipped org chart spawns the person with its contact
+  // spawn data: the shipped org statechart spawns the person with its contact
   await host.start("org/o1", "org", { id: "o1", name: "Acme", slug: "acme", createdAt: 1 }, { by: "operator" });
   const added = await host.act("org/o1", "person/add", { personId: "p1", person: { name: "Ana Ruiz", contact: { email: M.spawnEmail, phone: M.spawnPhone } }, namesTaken: [] }, { by: "operator" });
   assert.equal(added.taken, true, added.refusal?.sentence);

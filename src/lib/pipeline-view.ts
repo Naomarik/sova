@@ -1,6 +1,6 @@
 // The project page's Pipeline (one row per gap: where it is, since when, whether it stalled, what it
 // links to, Hold/Resume), each gap's timeline from the transition log, and a held act's words (the
-// chart's acts that wait before they reach a person or the client's code, with Cancel).
+// statechart's acts that wait before they reach a person or the client's code, with Cancel).
 //
 // Pure on purpose, like `decisions-view`: the words and the order run under tsx --test, and the
 // components only draw them.
@@ -17,7 +17,7 @@ export interface PhaseChip {
 
 /**
  * The phases a row names (§app.project-overseer/pipeline): open, gathering, deciding, promoted, done,
- * on hold. The chart's lane state under each is the row's detail word.
+ * on hold. The statechart's lane state under each is the row's detail word.
  */
 export type Stage = "open" | "gathering" | "deciding" | "promoted" | "done" | "on-hold" | "dropped";
 
@@ -235,7 +235,7 @@ export const cancelledLine = (what: string): string => `Cancelled. ${stripStop(w
 export interface TimelineRowLike {
   at: string;
   by: string;
-  /** How the operator's act reached the chart: "overseer" when they asked the global Overseer. */
+  /** How the operator's act reached the statechart: "overseer" when they asked the global Overseer. */
   via?: string | null;
   line: string;
   refused?: string | null;
@@ -244,11 +244,11 @@ export interface TimelineRowLike {
   quiet?: boolean;
 }
 
-/** Who did it, in words: the operator is "You" ("You via the Overseer"), the chart itself "Sova", a person their name. */
+/** Who did it, in words: the operator is "You" ("You via the Overseer"), the statechart itself "Sova", a person their name. */
 export function byWord(by: string, via?: string | null): string {
   if (by === "operator") return via === "overseer" ? "You via the Overseer" : "You";
   if (by === "overseer") return "Overseer";
-  if (by === "chart" || by === "timer" || by === "sova" || by === "system") return "Sova";
+  if (by === "statechart" || by === "timer" || by === "sova" || by === "system") return "Sova";
   return by;
 }
 

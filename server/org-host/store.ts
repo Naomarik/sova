@@ -1,9 +1,9 @@
 // Snapshots and the redo journal of one org (design §5.3).
 //
-// Snapshots: one EDN file per session, portable `<workspace>/charts/<chart>/<sid>.edn`, host-local
-// `<stateRoot>/org-charts/<org>/<chart>/<sid>.edn` (the session id URI-encoded).
+// Snapshots: one EDN file per session, portable `<workspace>/statecharts/<statechart>/<sid>.edn`, host-local
+// `<stateRoot>/statecharts/<org>/<statechart>/<sid>.edn` (the session id URI-encoded).
 // A call's snapshots span both places, so each commit is a redo journal
-// `<stateRoot>/org-charts/<org>/journal/<id>.json` ({snapshots, rows}): written and fsynced first,
+// `<stateRoot>/statecharts/<org>/journal/<id>.json` ({snapshots, rows}): written and fsynced first,
 // then every snapshot is written in place (tmp + fsync + rename), the log rows appended, and the
 // journal deleted. At open, every journal left is applied again (idempotent: a snapshot is a whole
 // file; a row is appended only when its segment has no row of that journal yet).
@@ -22,31 +22,31 @@ export interface HostPaths {
 }
 
 export function hostPaths(orgId: string, workspaceDir: string, stateDir: string): HostPaths {
-  const local = join(stateDir, "org-charts", orgId);
+  const local = join(stateDir, "statecharts", orgId);
   return {
-    portable: join(workspaceDir, "charts"),
-    portableLog: join(workspaceDir, "charts", "log"),
+    portable: join(workspaceDir, "statecharts"),
+    portableLog: join(workspaceDir, "statecharts", "log"),
     local,
     localLog: join(local, "log"),
     journal: join(local, "journal"),
   };
 }
 
-const NOT_CHARTS = new Set(["log", "journal"]);
+const NOT_STATECHARTS = new Set(["log", "journal"]);
 
-export function snapshotFile(root: string, chart: string, sid: string): string {
-  return join(root, chart, `${encodeURIComponent(sid)}.edn`);
+export function snapshotFile(root: string, statechart: string, sid: string): string {
+  return join(root, statechart, `${encodeURIComponent(sid)}.edn`);
 }
 
-/** Every snapshot file under `root`: `{sid, chart, file}`. */
-export function scanSnapshots(root: string): { sid: string; chart: string; file: string }[] {
+/** Every snapshot file under `root`: `{sid, statechart, file}`. */
+export function scanSnapshots(root: string): { sid: string; statechart: string; file: string }[] {
   if (!existsSync(root)) return [];
-  const out: { sid: string; chart: string; file: string }[] = [];
-  for (const chart of readdirSync(root, { withFileTypes: true })) {
-    if (!chart.isDirectory() || NOT_CHARTS.has(chart.name)) continue;
-    for (const f of readdirSync(join(root, chart.name))) {
+  const out: { sid: string; statechart: string; file: string }[] = [];
+  for (const statechart of readdirSync(root, { withFileTypes: true })) {
+    if (!statechart.isDirectory() || NOT_STATECHARTS.has(statechart.name)) continue;
+    for (const f of readdirSync(join(root, statechart.name))) {
       if (!f.endsWith(".edn")) continue;
-      out.push({ sid: decodeURIComponent(f.slice(0, -4)), chart: chart.name, file: join(root, chart.name, f) });
+      out.push({ sid: decodeURIComponent(f.slice(0, -4)), statechart: statechart.name, file: join(root, statechart.name, f) });
     }
   }
   return out.sort((a, b) => a.sid.localeCompare(b.sid));

@@ -109,13 +109,14 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Strip `aria-label` | Actions for your message · Actions for this reply · Actions for your queued message |
-| Button `aria-label` (also the `title` when enabled) | `Copy message` · `Fork the session from here` · `Rewind to before this message` · `Regenerate this reply` · `Remove this queued message` |
+| Button `aria-label` (also the `title` when enabled) | `Copy message` · `Fork the session from here` · `Share from here` · `Rewind to before this message` · `Regenerate this reply` · `Remove this queued message` |
 | Copy landed | icon flips to the check for 1.5s · toast "Copied message." · clipboard failure keeps the existing "Couldn't reach the clipboard. Nothing was copied." |
 | Rewind armed | note "This message and every reply after it leave the branch. The session file keeps them." · buttons `Rewind Here` · `Cancel` |
 | Regenerate armed | note "The message that started this reply, and everything after it, leave the branch. The session file keeps them." — "this REPLY", never "this turn": the server rewinds to the nearest user message, and a MID-TURN STEER is one, and the leaf moves to that message's PARENT: in `u1 → a1 → tool → s1 → a2`, regenerating a2 drops s1 and a2 while u1/a1/the tool call stay, and regenerating a1 drops a1, the tool call, s1 and a2 · buttons `Regenerate Here` · `Cancel` |
 | Regenerate landed | SR "Regenerating from your message." (the rewound message's own copy stays §chat/timeline's) |
 | Blocked, mutating actions (`title`) | Stop the current turn first. · Wait for the compaction to finish. · This session is open in a terminal, so Sova won't write to it. · Only a chat open in Sova can rewind. / …can regenerate. · A rewind is already in progress. / A regenerate is already in progress. · a message still on its way out (server refusal `queued`, which happens with isStreaming FALSE — the client cannot pre-check it): the server's own sentence, "A message is still on its way out. Wait for it to send, or press Stop, then rewind." / "…then regenerate." · a reply to a wake nudge: "That reply answered a scheduled wake-up, not a message you sent, so there's nothing to send again." (permanent — it outranks every state that clears on its own, and the server refuses it too with `regenerate_refused` reason "wake") · the composer's own reason while the chat can't write (Switching model…, Reconnecting. Your draft is kept., This session is archived. Unarchive it to send.) |
 | Blocked Fork (`title`) | This session is open in a terminal, so Sova won't read it out from under that process. · This session is mid-turn. Forking reads the file, and we don't read it while it's being written. This enables itself when the turn finishes. · Wait for the compaction to finish, then fork. · A fork is already being made. |
+| Blocked Share (`title`) | Sova is still reading this session's details. Share enables itself once they load. |
 | Fork landed | toast + SR, counting what actually reached the new composer: "Forked. Your message is in the new session's composer." · "…, with its image." / "…, with its {n} images." · "…, but its image couldn't come along." (plural: "…, but its {n} images couldn't come along.") · "…, with {k} of {n} images. The other {m} couldn't come along." — never a CAUSE: `available:false` covers a deleted file, a path this server won't read and an upload over the 20MB cap alike, so the copy says only that it didn't come · without a staged message "Forked into a new session." + " Nothing was sent." (a message in a composer says that itself; a fork with nothing staged has to say it in words), with the same image clauses |
 | Fork refused | Another program wrote to this session a moment ago. Forking waits until it stops. · This session is in an older session format. Open it for chat once to update it, then fork. · That message isn't on the current branch anymore. Reload the transcript and fork from a message you can see. · This session's working directory is gone, so it cannot be opened. · unknown code: "Couldn't fork this session. {server message}" |
 | Queued message head | `Sending…` (nothing holds it yet) · `Queued` (the server says it does), each a dot AND the word · the author is `You`, `Overseer` (eye icon) for a message the Overseer sent (`sova_send`), or `Sent by Sova` for a message the session queued for itself (a group send, a remote status probe) |
@@ -1029,6 +1030,7 @@ host, person or recipient.
 | Unknown | **This link doesn't open a shared session.** Check that you copied the whole link, or ask the person who sent it for a new one. |
 | Busy (429 on the first read) | **This link is being read a lot right now.** Nothing is wrong with it. Try again in a minute. |
 | Offline | "Offline. We'll keep trying, and the page stays as it is." |
+| A slice that starts partway | "Earlier messages aren't part of this share." (no count) |
 
 **Share sheet**
 
@@ -1044,6 +1046,7 @@ host, person or recipient.
 | What goes out | "{n} messages will be shared, up to {date time}." (Follow live: ", and every one after."; "{n}+" when earlier pages exist; "1 message"; none: "No messages yet.") · `Preview Again` (title "Read the conversation again, as it is now.") · reading: "Reading the conversation…" |
 | Images | eyebrow "{n} images" ("1 image") · "Images are shared as they are: nothing in them is hidden." · "Loading images · {n} of {total}" · "{n} of {total} images didn't load, so nothing can be shared until they do." ("…until it does.") · `Retry Images` |
 | Blocked Create (its title) | "Give the share a title." · "Add a person, or turn on Anyone with the link." · "At most 20 links per share." · "Reading the conversation first." · "The conversation couldn't be read, so nothing can be shared yet." · "Loading the images first: every image is shown before anything is shared." · "An image didn't load. Retry it first: every image is shown before anything is shared." |
+| Slice | the slice line "Messages {a}–{b} of {total}" · "Message {a} of {total}" · "From message {a} · follows live" · unsliced, in Manage: "The whole session." · `Change Slice` · a start no longer on the branch (Update to now): "The start of this share is no longer in the session." · an end on a live share (server refusal): "A share that follows live has no end. Turn Follow live off to end it." · a change raced by another: "This share changed meanwhile. Try again." |
 | Stale preview (warn banner) | **The session changed. Preview it again.** Nothing was shared. We read it again: check it, then create the links. · confirming an update: **The session changed. Preview it again.** Nothing changed for them. We read it again: check it, then confirm. |
 | Update and stop following | titles "Update to Now" · "Stop Following Live" · "Their pages will show the conversation as it is here, images included." · "Follow live stops here: their pages keep the conversation as it is here, images included." · `Back to Share` · `Update to This` / `Stop Following Here` (`Saving…`) · failed: **Couldn't read the conversation.** Nothing changed. {reason} `Try Again` |
 | Foot | `Cancel` · `Preview` · `Create Link` / `Create Links` (`Creating…`) · Preview: `Back to Sharing` / `Back to Share` · managing: `Stop Sharing` (armed `Stop Every Link?`), `Preview`, `Done` |
@@ -1052,6 +1055,21 @@ host, person or recipient.
 | Stopped / gone | **Stopped {time}.** Every link is off. The session itself didn't change. · **The session file is gone.** Every link answers that it's no longer active. |
 | Errors | **Couldn't read the conversation to preview it.** Nothing was shared. {reason} `Try Again` · **Couldn't create the links.** Nothing was shared. {reason} · **That didn't go through.** Nothing changed. {reason} · "Couldn't read the preview. {reason}" |
 
+**Share page (`#/share/<session>`, the operator's)**
+
+| Where | Copy |
+|---|---|
+| Page | title "Share Session" / changing a share "Change Slice" · `Back to Session` · failed read: "Couldn't read the conversation." `Read Messages Again` · a share not on this session: "This share isn't on this session anymore." |
+| List | "Tap where the share starts, then where it ends." · rows `You` / `Reply`, chips `Start` / `End` / `Start and end`, "Image only.", `aria-label` "1 image" / "{n} images" · none: **No messages yet.** There's nothing to share until the session has a message. |
+| Bar | the range: "Messages {a}–{b} of {total}" · "Message {a} of {total}" · "All {total} messages" · "No messages yet" · "From message {a} · follows live" · "All messages · follows live"; the ends: "From the first message · To the latest" / "From message {a} · To message {b}" · `Back` · `Preview` · `Next` · changing a share: `Save Slice` (`Saving…`) |
+| Hints | "Starts with a reply." `Include the question?` · "Ends with your question." `Include the reply?` · picking an end turns Follow live off: "Follow live is off: a share with an end stays as it is at that message." |
+| Review | "{range}. People you send a link to can read these messages and the replies, with their drawings and images. Never tool steps, thinking, paths or costs." · changing a share: "{range}. Open pages start over with the new slice." · Follow live off: "Off: they see these messages as they are now. You can update it to now later." · Save blocked: "The conversation couldn't be read, so nothing can be saved yet." · `Create Link` / `Create Links` (`Creating…`) · `Done` |
+| Stale and errors | **The session changed. Preview it again.** Nothing was shared. / Nothing changed. We read it again: check the slice, then go on. · **Couldn't create the links.** / **Couldn't save the slice.** Nothing was shared. / Nothing changed. {reason} |
+| Changed meanwhile (Save Slice, 409 `share-changed`) | **This share changed meanwhile.** Nothing was changed. We read it again: save again to apply this slice. |
+| Done | "{range}. The link shows only once, here." / "Each link shows only once, here." · toast "Slice saved." |
+| Old host | **This host needs an update to share part of a session.** Nothing was shared. Once it runs the current Sova, open this page again. |
+| Head | Session head's icon link `aria-label` "Share session" |
+
 **Recipient rows (sheet, Sharing section, Shares page)**
 
 | Where | Copy |
@@ -1059,15 +1077,16 @@ host, person or recipient.
 | Presence chips | `Viewing now` (success) · `Open in a tab` (neutral) · `Expired` (warn) · `Turned off` (neutral) |
 | Opened line | "Opened {n}× · last {time}" · "Not opened yet" · "Expires in {n} days" / "Expires tomorrow" / "Expires in {n} hours" / "Expires within the hour" / "Expired" |
 | Visits | disclosure "Visits · {n}" · "Opened · {device} · {time} · {n} min" · "Link preview · {device} · {time}" · "Refused · {device} · {time}" · "More opens that day, not listed" · a bot "(automated)" |
-| Mode line | "Snapshot up to {date time}" · "Follows live" · "Stopped {time}" |
+| Mode line | "Snapshot up to {date time}" · "Follows live" · "Stopped {time}"; a sliced share shows its slice line instead of the first two |
 
 **Session detail · Sharing, and #/shares**
 
 | Where | Copy |
 |---|---|
+| Tab | "Sharing" · a count chip while someone is viewing; accessible name "Sharing, {n} viewing now" |
 | Section | eyebrow "Sharing" · `All Shares` · none: "Not shared with anyone." · `Share Session` · `Manage` · an older host: "This host can't share sessions yet. It needs an update." · failed: "Couldn't read this session's shares. {reason}" |
 | Sidebar foot | row "Shares" · spine "Shares" |
 | Page | title "Shares" · meta "{n} session shares · {n} organization links" (+ " · {n} viewing now") · `Refresh Shares` |
 | Cards | "Session shares" (row meta adds "session “{session title}”" when it differs) · "No session share has a live link." · disclosure "Ended · {n}" · "Organization links" (row "{hand-off title} · hand-off {n}" or "Owner page" · "{org} · {state} · Expires in {n} days") |
 | Actions | `Manage` · `Stop Sharing` (armed `Stop Every Link?`) · `Turn Off Link` (armed "Turn Off {person}'s Link?") |
-| Empty and hosts | **No public links are open.** Share a session from its Session tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |
+| Empty and hosts | **No public links are open.** Share a session from its Sharing tab: Session details, then Sharing. · "{host} can't be reached, so its links aren't listed." · failed action: **That didn't go through.** Nothing was changed. {reason} |

@@ -16,6 +16,7 @@
       </p>
     </div>
     <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- live only; static, no pulse -->
+    <a class="button button-icon button-ghost session-share-open" href="#/share/…" aria-label="Share session">…share…</a>
     <button class="button button-icon button-ghost session-details-open" aria-label="Session details">…info…</button>
   </header>
 
@@ -36,7 +37,8 @@
   `h1` is sized as a heading-s on purpose: the page is dense and the title is chrome, not a
   display headline.
 - **What the head holds.** Back, the title block, the context readout (§chat/context-window), the remote
-  chips, the `TUI` chip and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
+  chips, the `TUI` chip, a 44px **Share session** icon link (`.session-share-open`, icon `share`, to
+  the share page `#/share/<id>`, §app.session-share/share-page) and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
   own facts moved into the composer (§chat/composer, §chat/images), which is where the session is acted on.
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
@@ -349,8 +351,12 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   SHOWN text row; an entry with nothing shown has no strip, and the hidden-rows disclosure never
   draws one (it renders without the actions provider). Decided in `src/lib/message-actions.ts`,
   which is the only place that answers "where does a strip go".
-- **What each role offers.** Your message: `Copy` · `Fork` · `Rewind`. A reply: `Copy` · `Fork` ·
-  `Regenerate`. The safe actions come first and the one that changes the branch is last. Copy is
+- **What each role offers.** Your message: `Copy` · `Fork` · `Share` · `Rewind`. A reply: `Copy` ·
+  `Fork` · `Share` · `Regenerate`. The safe actions come first and the one that changes the branch is
+  last. **Share** (icon `share`, "Share from here") opens the share page with this message as the
+  start (`#/share/<id>?from=<entryId>`, §app.session-share/share-page), in chat and watch sessions
+  alike; sharing only reads, so it is never refused, except off while the view doesn't know the
+  session's id yet. Copy is
   absent — not disabled — when there is no text to copy (an images-only message): a Copy that
   copies nothing would claim to have copied the message.
 - **Quiet until the message is asked about, and every input can ask.** The strip is hidden with

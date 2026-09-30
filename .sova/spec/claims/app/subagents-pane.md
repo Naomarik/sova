@@ -182,7 +182,7 @@ the Usage tab stays one tap away in the strip.
 
 The pane is Session detail: a head, the remote controls row (§app.shell/remote-session-chips), a
 tab strip, and one tab's panel, which scrolls on its own. The tabs, in this order: **Session ·
-Timeline · Agents · Usage · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
+Timeline · Agents · Usage · Sharing · Skills · Explain** (`.tabs.session-tabs`, `role="tablist"`, one
 `role="tabpanel"`; roving `tabindex`, Left/Right wrapping, Home/End). Every tab is always in the
 strip, empty or not: a tab that came and went would move the strip under the reader.
 
@@ -192,14 +192,13 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   §chat.timeline/opening-it; the head's token chip: Usage). The pane keeps the chosen tab per
   session path, in memory only. With none kept, it opens on Agents when a worker is working at
   open, else on Session, settled once at open so the tab never moves when the last worker
-  finishes. Usage is never the default.
+  finishes. Usage and Sharing are never the default.
 - **The strip never wraps.** In a narrow pane the tabs tighten, then the strip scrolls sideways,
   and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
   the tab changes, so a tab a door opened is never off-screen at 375px.
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
   Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity (with Move into group,
-  Group with parent and, for web sessions, Archive), Sharing (§app.session-share/sheet),
-  Compactions, Changes. Repository and Worktrees
+  Group with parent and, for web sessions, Archive), Compactions, Changes. Repository and Worktrees
   load after Identity, which sits below them, so both hold a placeholder while they load, sized
   to the common case: Repository's is a clean repository's layout (its root, three facts, a
   two-line last commit and the Read line), and Worktrees' is as tall as its empty line. Then
@@ -216,6 +215,12 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   Where on its first line, each count labelled under it. Before anything is spent the tab says
   "Nothing spent in this session yet." (the worker count still shows when there are workers);
   while the first load is out it shows a placeholder, never that line.
+- **Sharing** holds the Sharing section (§app.session-share/sheet). The pane reads the session's
+  shares once for it and for the tab's badge (`GET /api/session-shares?session=<id>`): at open, when
+  the session changes, after the Share sheet changes something, and every 5 seconds while a share
+  is live and the page is visible. While a recipient of a live share is viewing now (a background
+  tab, "Open in a tab", never counts), the tab carries a count chip, and its accessible name is
+  "Sharing, {n} viewing now"; at zero there is no chip and the name is "Sharing".
 - **Timeline** is §chat/timeline, **Agents** the list and transcript below; **Skills** says which
   skills loaded and when, and **Explain** lists the session's /explain pages.
 

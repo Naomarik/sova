@@ -1133,7 +1133,11 @@
         "src/lib/message-reveal.ts",
         "src/components/Thread.tsx",
         "src/design/base.css",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/message-actions.ts",
+        "src/lib/message-actions.test.ts",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx"
       ]
     },
     "§chat.transcript/open-questions": {
@@ -1409,7 +1413,8 @@
         "public/icons/mic.svg",
         "src/components/ui.tsx",
         "src/vis/icons.ts",
-        "src/vis/kinds/wireframe/icons.ts"
+        "src/vis/kinds/wireframe/icons.ts",
+        "public/icons/share.svg"
       ]
     },
     "§design.ground-rules/motion": {
@@ -4976,7 +4981,8 @@
         "src/lib/spend.ts",
         "src/lib/spend.test.ts",
         "src/components/AgentsView.tsx",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/lib/session-shares.ts"
       ]
     },
     "§app.settings-dialog/claude-long-context-offered": {
@@ -8988,6 +8994,44 @@
         "pi-config/extensions/provider-limits/stream.ts",
         "pi-config/extensions/provider-limits/README.md",
         "pi-config/README.md"
+      ]
+    },
+    "§app.session-share/share-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/slice",
+        "§app.session-share/sheet"
+      ],
+      "code": [
+        "src/components/SharePage.tsx",
+        "src/lib/share-slice.ts",
+        "src/lib/share-slice.test.ts",
+        "src/App.tsx",
+        "src/share-page.css"
+      ]
+    },
+    "§app.session-share/slice": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.session-share/link",
+        "§app.session-share/snapshot",
+        "§app.session-share/never"
+      ],
+      "code": [
+        "shared/session-share.ts",
+        "server/session-share-view.ts",
+        "server/session-shares.ts",
+        "server/session-shares-routes.ts",
+        "server/share/session-routes.ts",
+        "server/share/session-live.ts",
+        "server/session-share-view.test.ts",
+        "server/session-share-privacy.test.ts",
+        "server/session-shares.test.ts",
+        "src/share/SessionShareApp.tsx"
       ]
     }
   },

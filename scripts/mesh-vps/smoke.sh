@@ -2,7 +2,7 @@
 # Smoke test on the VPS, run from the laptop after deploy.sh (no sudo, no unit needed):
 #   scripts/mesh-vps/smoke.sh [--keep-peers]
 # 1. snapshot the production state; refuse if anything already listens on the Sova ports
-# 2. start Sova by hand (setsid nohup run-sova.sh, as deploy); wait for 127.0.0.1:4800/api/health
+# 2. start Sova by hand (setsid nohup run-sova.sh, as the VPS user); wait for 127.0.0.1:4800/api/health
 # 3. mesh OFF (no peers.json): nothing on the peer port
 # 4. PUT /api/mesh/peers (the laptop's team server) + /api/mesh/settings (label, serveUrl): the peer listener binds $VPS_TAILNET_IP:4801 ONLY
 # 5. exposure probe from the laptop while it runs: public 4800/4801/4890/2089/8443/10443 time out

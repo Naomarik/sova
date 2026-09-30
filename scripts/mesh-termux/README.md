@@ -21,7 +21,7 @@ commit's install.sh with it (`--source-url file://…`; the target defaults to P
 host menu's resync (`§mesh.peers/resync`) runs it for a phone that is behind, with a recipe in the laptop's
 `~/.pi/agent/sova/mesh-resync.json`:
 
-    {"hosts": {"fold8": {"kind": "termux", "ssh": "u0_a123@100.64.0.3", "sshPort": 8022}}}
+    {"hosts": {"phone": {"kind": "termux", "ssh": "u0_a123@100.64.0.3", "sshPort": 8022}}}
 
 (`"args"` adds installer options; `--source-url` and `--ref` are refused). A phone install takes minutes; the phone must be
 awake and on the tailnet.

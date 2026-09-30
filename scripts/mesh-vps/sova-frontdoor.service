@@ -1,4 +1,5 @@
-# systemd USER unit for the Caddy front door on the VPS (deploy). Install like sova-mesh.service:
+# systemd USER unit for the Caddy front door on the VPS (the VPS user; optional: a share-only gateway needs none).
+# Install like sova-mesh.service:
 #   cp ~/sova-mesh/app/scripts/mesh-vps/sova-frontdoor.service ~/.config/systemd/user/
 #   ~/sova-mesh/app/scripts/mesh-vps/frontdoor-config.sh     (writes ~/sova-mesh/Caddyfile; needs Sova running)
 #   systemctl --user daemon-reload && systemctl --user enable --now sova-frontdoor.service

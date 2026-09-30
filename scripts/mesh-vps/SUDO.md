@@ -1,59 +1,129 @@
-# Root steps on the VPS: the PARENT runs these (members never use sudo there)
+# Root steps on the VPS (run once as an admin)
 
-Everything else runs as `deploy` without sudo (`deploy.sh`, `smoke.sh`, the user units). Run in this order, on
-the VPS (ssh $VPS_SSH over the tailnet, then sudo), after `scripts/mesh-vps/deploy.sh --rev <M5 sha>` succeeded.
+Everything else runs as the VPS user, the one `VPS_SSH` logs in as (`<user>` below), with no sudo: `deploy.sh`,
+`smoke.sh` and the user units. These steps need an account on the VPS that can use sudo (root over ssh, or another
+admin account); `<user>` itself needs none. Run them after `scripts/mesh-vps/deploy.sh` succeeded once.
+
+Which sections you need:
+
+| You want | Sections |
+|---|---|
+| Public share links only (a share-only gateway, mesh off) | 1, then 4 |
+| This VPS as a mesh host | 1, 2, and 3 if you want the tailnet front door |
+| Both | all |
+
+## 1. Let `<user>`'s services run without a login session (always)
 
 ```sh
-# 1. let deploy's user units run without a login session (sova-mesh.service, sova-frontdoor.service)
-sudo loginctl enable-linger deploy
+sudo loginctl enable-linger <user>
+```
 
-# 2. the peer listener (<vps-tailnet-ip>:4801) reachable over the tailnet only; the public interface stays default-deny
+Then, as `<user>` (no sudo):
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp ~/sova-mesh/app/scripts/mesh-vps/sova-mesh.service ~/.config/systemd/user/
+systemctl --user daemon-reload && systemctl --user enable --now sova-mesh.service
+```
+
+Check: `loginctl show-user <user> -p Linger` says `Linger=yes`, and `systemctl --user is-active sova-mesh` says
+`active`. Undo: `sudo loginctl disable-linger <user>`.
+
+## 2. The peer port, tailnet only (mesh hosts)
+
+The peer listener binds `<vps-tailnet-ip>:4801` only, and only while `peers.json` lists a peer. Your firewall must let
+it in on the tailnet interface and nowhere else. With ufw:
+
+```sh
 sudo ufw allow in on tailscale0 to any port 4801 proto tcp
+```
 
-# 3. tailnet HTTPS (tailscale serve, NEVER funnel):
-#    front door  https://<vps>.<tailnet>.ts.net:8443/  -> Caddy 127.0.0.1:4890
-#    this host   https://<vps>.<tailnet>.ts.net:10443/ -> Sova  127.0.0.1:4800
+With firewalld, add `tailscale0` to a zone that allows 4801/tcp (for example
+`sudo firewall-cmd --permanent --zone=trusted --add-interface=tailscale0 && sudo firewall-cmd --reload`, which trusts
+the whole tailnet). With nftables, accept `iifname "tailscale0" tcp dport 4801` in your input chain. Undo with the
+matching delete (`sudo ufw delete allow in on tailscale0 to any port 4801 proto tcp`).
+
+## 3. Tailnet HTTPS (optional: the front door and this host's page)
+
+A share-only gateway doesn't need this. It gives the mesh's front door and this host's own page a tailnet HTTPS
+address. Use `tailscale serve`, never Funnel, for both:
+
+```sh
+# front door  https://<vps>.<tailnet>.ts.net:8443/  -> Caddy 127.0.0.1:4890
+# this host   https://<vps>.<tailnet>.ts.net:10443/ -> Sova  127.0.0.1:4800
 sudo tailscale serve --bg --https=8443 http://127.0.0.1:4890
 sudo tailscale serve --bg --https=10443 http://127.0.0.1:4800
 ```
 
-Check afterwards (no sudo needed): `tailscale serve status` (two https handlers, no Funnel),
-`loginctl show-user deploy -p Linger` (yes), and from the laptop `scripts/mesh-vps/exposure.sh probe` (PASS).
+Serve needs HTTPS certificates turned on for the tailnet (admin console → DNS → HTTPS Certificates). Then, as `<user>`:
 
-Notes for the parent:
-- Serve needs HTTPS certificates enabled for the tailnet (admin console → DNS → HTTPS Certificates).
-- Undo: `sudo tailscale serve --https=8443 off; sudo tailscale serve --https=10443 off`,
-  `sudo ufw delete allow in on tailscale0 to any port 4801 proto tcp`, `sudo loginctl disable-linger deploy`.
-
-Then, as deploy (no sudo):
 ```sh
-mkdir -p ~/.config/systemd/user
-cp ~/sova-mesh/app/scripts/mesh-vps/sova-mesh.service ~/sova-mesh/app/scripts/mesh-vps/sova-frontdoor.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now sova-mesh.service
+cp ~/sova-mesh/app/scripts/mesh-vps/sova-frontdoor.service ~/.config/systemd/user/
 ~/sova-mesh/app/scripts/mesh-vps/frontdoor-config.sh      # Caddyfile from Sova's GET /api/mesh/front-door
-systemctl --user enable --now sova-frontdoor.service
+systemctl --user daemon-reload && systemctl --user enable --now sova-frontdoor.service
 ```
 
-## Optional: the public share front (only if this VPS is the share-link gateway)
+Check: `tailscale serve status` lists two https handlers and no Funnel. Undo:
+`sudo tailscale serve --https=8443 off; sudo tailscale serve --https=10443 off`.
 
-Sova shows the exact step for the chosen front (Settings → Public links); these are the root parts, run once.
-The front is the only public way in: it serves https://share.example.com on 443 and forwards to Sova's share port
-127.0.0.1:4802. Nothing else becomes public; 8443 and 10443 stay `tailscale serve`, NEVER funnel.
+## 4. The public share front (only if this VPS is the share-link gateway)
+
+Set the gateway first (Settings → Public links → "This host is the gateway", or over ssh without a page, see
+[Set up a gateway with no page](../../docs/public-links.md#set-up-a-gateway-with-no-page)). Sova then shows the exact
+steps for the front you chose; these are their root parts. The front is the only public way in: it serves
+`https://share.example.com` and forwards to Sova's share port `127.0.0.1:4802`. Nothing else becomes public; 8443
+and 10443 stay `tailscale serve`, never Funnel.
+
+First, a DNS record: `share.example.com` → this VPS's public IP (`A`, and `AAAA` if it has IPv6). Behind a CDN, make
+it a proxied record at the CDN instead. Cloudflare Tunnel and Funnel make their own names and need none.
+
+Your firewall must allow in exactly what the front needs and nothing of Sova's:
+
+| Port | Public? |
+|---|---|
+| 80, 443 (Caddy, or your web server) | open |
+| 4800 (Sova), 4802 (share port), 4890 and 2089 (front door and its admin) | closed: they bind 127.0.0.1 anyway |
+| 4801 (peer port) | tailnet interface only (section 2) |
+
+**Caddy on this host.** The kit's pinned Caddy runs as `<user>`; let it bind 80 and 443, and open them:
 
 ```sh
-# Caddy on this host (the pinned ~/sova-mesh/bin/caddy, run as deploy): allow it to bind 80 and 443, and open them
-sudo setcap cap_net_bind_service=+ep ~deploy/sova-mesh/bin/caddy   # again after each Caddy upgrade
-sudo ufw allow 80/tcp && sudo ufw allow 443/tcp
-
-# or Tailscale Funnel: let deploy run it, then as deploy (no sudo) funnel ONLY the share port on 443
-sudo tailscale set --operator=deploy
-#   tailscale funnel --bg --https=443 http://127.0.0.1:4802
-
-# or the host's existing web server: add the server block Sova shows, then reload it (e.g. sudo systemctl reload nginx)
-# or cloudflared: no root step (it dials out; nothing opens)
+sudo setcap cap_net_bind_service=+ep ~<user>/sova-mesh/bin/caddy   # again after each Caddy upgrade
+sudo ufw allow 80/tcp && sudo ufw allow 443/tcp                     # or your firewall's equivalent
 ```
 
-Check afterwards: set SHARE_FRONT in local.env, then from the laptop `scripts/mesh-vps/exposure.sh probe` (PASS: 443
-open, every Sova port including 4802 times out), and Verify in Sova. `tailscale funnel status` lists 443 only.
-Undo: `sudo setcap -r ~deploy/sova-mesh/bin/caddy`, `sudo ufw delete allow 80/tcp; sudo ufw delete allow 443/tcp`,
+**Tailscale Funnel.** Let `<user>` run it; then as `<user>` (no sudo) funnel only the share port on 443:
+
+```sh
+sudo tailscale set --operator=<user>
+#   tailscale funnel --bg --https=443 http://127.0.0.1:4802
+```
+
+The tailnet policy must allow Funnel for this node: a `nodeAttrs` entry with `"attr": ["funnel"]` whose `target`
+covers it.
+
+**Your existing web server (for example nginx).** Get a certificate first (unless a CDN terminates TLS for you), then
+add the server block Sova shows in a file of its own, with the certificate's paths, test, and reload:
+
+```sh
+sudo certbot certonly --nginx -d share.example.com   # writes /etc/letsencrypt/live/share.example.com/{fullchain,privkey}.pem
+sudoedit /etc/nginx/conf.d/zz-sova-share.conf       # the block from Settings → Public links, plus
+                                                     #   ssl_certificate     /etc/letsencrypt/live/share.example.com/fullchain.pem;
+                                                     #   ssl_certificate_key /etc/letsencrypt/live/share.example.com/privkey.pem;
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Name the file so it sorts after your existing default site (the `zz-` prefix), or mark that site `default_server`:
+nginx answers an unknown hostname with the first server block for the port, and that should never be Sova's. Behind a
+CDN such as Cloudflare's proxy, use the block in
+[Behind a CDN](../../docs/public-links.md#behind-a-cdn) instead: it listens on 80, restores the visitor's address
+from the CDN's published ranges, and needs a refresh when those ranges change. Undo: remove the file, then
+`sudo nginx -t && sudo systemctl reload nginx`.
+
+**Cloudflare Tunnel.** No root step: it dials out, and nothing opens.
+
+Check afterwards: set `SHARE_FRONT` in `local.env`, then from your own machine run
+`scripts/mesh-vps/exposure.sh probe` (PASS: 443 open for Caddy, a web server or Funnel, and every Sova port including
+4802 times out), and press Verify Address in Sova. `tailscale funnel status` lists 443 only.
+Undo: `sudo setcap -r ~<user>/sova-mesh/bin/caddy`, `sudo ufw delete allow 80/tcp; sudo ufw delete allow 443/tcp`,
 `tailscale funnel --https=443 off`.

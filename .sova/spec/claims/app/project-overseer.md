@@ -172,7 +172,8 @@ user row.
 
 - Four levels, set per project (`PATCH …/overseer {autonomy}`), default **L1**:
   **L0 propose** (read, keep notes, file ideas, ask with a confirm card), **L1 gather** (+ start
-  gathering sessions and offers, run the reconciler), **L2 reconcile** (+ promote drafted
+  gathering sessions and offers, run the reconciler, publish preview links of its coding
+  sessions' apps, §app.project-overseer/previews), **L2 reconcile** (+ promote drafted
   decisions, approve or decline referrals), **L3 build** (+ start and prompt coding sessions in the
   project, within its limits).
 - The level in force is **L0 while the overseer is paused by an attach on this host**
@@ -285,7 +286,9 @@ user row.
   participants see them; the project's coding sessions, every one its charts record, the
   overseer's and the operator's, wherever its worktree is; and ordinary sessions whose folder is
   inside the project root; never another project's, an overseer's or a subagent's own), `sova_roster` (read; both it and `sova_project` name the main stakeholder, as the prompt
-  does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos).
+  does), `sova_todos` (operator turns only, §app.project-overseer/ideas-and-todos),
+  `sova_previews` (the project's preview links, §app.project-overseer/previews; `sova_project`
+  lists its active ones too, under "Previews").
 - **Builds.** `sova_list_sessions` lists each coding session the project started with who started
   it ("started by you" for its own, "started by the operator" for the operator's), working or idle,
   its branch, and whether that branch is merged, as the project page reads it from git
@@ -314,7 +317,9 @@ user row.
   `sova_send_to_person` (L1: a WhatsApp message to a roster person — their gathering link, a preview
   link, a note, or a link with a note; §app.outreach/decisions),
   `sova_close_gathering`; `sova_start_gathering` and `sova_offer` take an optional `abilities`
-  within the project's ceiling (§app.baton/abilities) and a required `why`. L2: `sova_promote`,
+  within the project's ceiling (§app.baton/abilities) and a required `why`; `sova_preview` start
+  (a preview link of a coding session's app; its `off` runs at any level,
+  §app.project-overseer/previews). L2: `sova_promote`,
   `sova_roster` approve/decline (history records the overseer as the writer). L3:
   `sova_create_session` (the root or a folder inside it, with a first prompt, an optional `mode` and
   `minor_modes`; in its own worktree, §app.project-overseer/coding-worktrees), `sova_send` (its
@@ -355,6 +360,8 @@ user row.
   session's chart (a plan keeps it until the chart starts it) and shown on the strip and in What
   It's Told (§app.baton/told), never to the person and never to the session's model. Without it:
   "Say why you start it (why): one or two sentences for the operator, never shown to the person.".
+  A `public_title`, `question`, `goal` or `why` that holds a kept preview link is refused
+  (§app.project-overseer/previews).
 - **Closing its own.** `sova_close_gathering` (a session and a required `reason`) closes a
   gathering session or offer it started that nobody it went to has written in yet (`wroteAt`
   unset), the same way the operator's Close does (the wrap-up is scheduled, the share page
@@ -508,6 +515,74 @@ user row.
   "Its worktree was removed, so it has no folder to work in." Nothing is removed on its own, a
   merged worktree included: the session's cwd is inside it.
 - A session started before this change keeps running where it was; nothing is moved.
+
+## §app.project-overseer/previews — Showing a coding session's app to a stakeholder
+
+- **What they are for.** A preview link (§mesh.public/preview) shows one of the project's coding
+  sessions' running apps to a stakeholder, the whole site at its own public address, until it is
+  turned off or expires. The prompt has a **Previews** section, and the two tools' descriptions
+  say the same: what previews are for, that a link reaches anyone who has it, to make one only
+  for a stakeholder who should see the app now, to check it answers, that the overseer never sees
+  a link, that a preview reaches a person with `sova_send_to_person` and its `preview` id (they get
+  their own link to it, §app.outreach/links) or through the operator, who has the link on the
+  project page, and to turn it off once it has served its purpose (every link sent from it goes
+  off with it). If the app went down, whoever runs it (the coding session, prompted with
+  `sova_send`) starts it again: Sova never starts an app for a preview.
+- **See.** `sova_previews` (read, any level) lists the project's previews, active ones first:
+  each one's id, whether the operator has its link ("link kept for the operator", or "no link
+  kept for the operator (shown only when it was made)", then "send it by its id"), what it serves ("port {n}", or "folder {path}" relative to its
+  worktree), its coding session and branch, its purpose, who made it (you or the operator), its
+  expiry and its state ("active, app is running", "active, nothing on port {n}", "active, not
+  serving the folder", "turned off", "expired"). `sova_project` lists the active ones under
+  "Previews" the same way.
+- **Make.** `sova_preview {op: "start", session, port | folder, purpose, days?}`. `session` is one
+  of the project's coding sessions with a worktree on this host (addressed as the other tools
+  address one). `folder` is a folder inside that worktree (relative to it, or absolute), served by
+  Sova (§mesh.public/preview-serve). `port` is one the session already serves: the process
+  listening on it must run from inside that session's worktree (its working folder, read from
+  the system); nothing listening, a process elsewhere, or a host where Sova can't tell which
+  process listens is refused, naming why, and so is a port of Sova's own. `purpose` (required, one
+  line, at most 200 characters) says what it shows and to whom. `days` is 1 to 30, default 1.
+  Every preview rule holds (§mesh.public/preview): loopback only, never Sova's own ports, a
+  preview address needed. The link is kept for the operator (§mesh.public/preview); the result
+  names the preview by its id and never carries the link.
+- **Guarded as the people-facing act it is.** A start is the project chart's `preview/start`
+  act: L1 (§app.project-overseer/autonomy-levels), confirm kind `preview`
+  (§app.project-overseer/reviews), held (§app.project-overseer/holds). In a turn the operator
+  started it goes ahead at once; in a run the operator did not start it needs L1 in force, then
+  waits in the hold ("A preview link: {purpose}"), cancellable from Needs you and the Pipeline, and,
+  while `preview` is a confirm kind, until the overseer approves it. The session, target and port
+  rules are checked at the call (a refusal is logged and holds nothing) and again when it goes
+  ahead: a listener that moved or a folder that went away drops it with the reason. It counts
+  against no allowance. The act's payload and its effect's result carry no link, so the
+  transition log never does.
+- **Turn off.** `sova_preview {op: "off", id}` turns off one of this project's previews at once, at
+  any level and in any run, never held and never waiting for a review: it only takes something
+  away. It is the card's Turn Off (`POST /api/previews/<id>/off`), and it is logged in the
+  overseer's activity.
+- **One shape for what comes next.** Both tools put each preview in their result's `details` in one
+  fixed shape, `PreviewHandoff` (`shared/preview-links.ts`): `{v: 1, id, linkKept, purpose,
+  expiresAt, orgId, projectId, sessionId, branch, target, state, running, createdBy}`, never the
+  link: `linkKept` says whether the operator has it (any active preview can still be sent by its
+  id); `purpose`, `sessionId` and `branch` null
+  when unknown, `target` `{kind: "port", port}` or `{kind: "static", folder}`, `running` null
+  unless it is active; `sova_previews` as `{v: 1, previews}`, a start as `{v: 1, preview}`, a held
+  start as `{v: 1, held}`. `sova_send_to_person` takes that `id` as its `preview` and gives the
+  person their own link to it, made on the server (§app.outreach/links).
+- **Matched by its worktree.** A preview with no recorded coding session (one made before this,
+  or the operator's by port) is matched whenever it is read: the process listening on its port,
+  when its working folder is inside one of the project's coding sessions' worktrees, names that
+  session and its branch. Nothing is written: its records stay as they are.
+- **The link is a secret, and the overseer never sees it.** A kept link is only in the operator's
+  `/api/previews` answers (main listener only) and on the project page. It is never in any of the
+  overseer's tool results or errors (they are part of its session file, which the org's workspace
+  repo commits): every one of its tools passes its result through a filter that shows "[preview
+  link]" in place of a kept link, whatever text held it. Nor is it in the session list
+  (`SessionSummary`: a title or summary line that holds one shows "[preview link]" in its place),
+  the org's gathering rows, the owner page, the share payloads (`/h/`, `/i/`, `/s/`), the
+  transition log, the overseer's activity log or the server's own logs. An owner update, or a
+  gathering's `public_title`, `question`, `goal` or `why`, that holds a kept link is refused: "A
+  preview link goes to people through the operator, never in {what}."
 
 ## §app.project-overseer/watch-loop — Looking when something changes
 
@@ -794,13 +869,15 @@ user row.
 - **What is held.** An act that reaches a person or the client's code — starting a gathering
   session or an offer, closing one, promoting decisions, starting a coding session or sending one
   a prompt, posting an owner update, messaging a person on WhatsApp (§app.outreach/send),
-  approving or declining a referral — waits in a **hold**
+  approving or declining a referral, publishing a preview link (§app.project-overseer/previews) —
+  waits in a **hold**
   before it is done, when a chart starts it on its own (§app.project-overseer/drive) or the
   overseer's own tool call makes it in a run the operator did not start
   (§app.project-overseer/autonomy-levels). Never held: acts in a turn the operator started, the
   operator's own clicks, and what Sova did on its own before (a person leaving and what follows, a
   lease lapsing, the message limit, a re-route closing the old settle session, a wrap-up). A
-  reconcile run reaches nobody and is not held.
+  reconcile run reaches nobody and is not held, and neither is turning a preview link off, which
+  only takes something away.
 - **Checked when held, and again when it goes.** An act is held only if it passes every guard then
   (the level in force, archived, paused, whether the chart can take it, the at-once limits, the
   allowance left); refused then, it is refused at once and nothing is held. When the hold ends it
@@ -860,18 +937,23 @@ user row.
   carry a checklist of the kinds of act that need the overseer's confirmation (`confirmKinds` in
   `overseer.json`): starting, offering or closing a gathering session,
   promoting, starting or prompting a coding session, an owner update, messaging a person on
-  WhatsApp, approving or declining a referral (`gather`, `offer`, `close`, `promote`, `build`,
-  `prompt`, `owner-update`, `send`, `roster-approve`, `roster-decline`, in that order). Every kind is on by default. `PATCH
-  …/overseer {confirmKinds}` refuses anything but a list of those kinds (400, "confirmKinds must
-  list act kinds from: gather, offer, …"); a hand-edited value that can't be read reads as the
-  default, and an unknown kind in it is dropped. The list is stamped on every act of the
-  project, as read at that moment.
+  WhatsApp, approving or declining a referral, publishing a preview link (`gather`, `offer`,
+  `close`, `promote`, `build`, `prompt`, `owner-update`, `send`, `roster-approve`,
+  `roster-decline`, `preview`, in that order). Every kind is on by default. `PATCH …/overseer
+  {confirmKinds}` refuses anything but a list of those kinds (400, "confirmKinds must list act
+  kinds from: gather, offer, …"); a hand-edited value that can't be read reads as the default, and
+  an unknown kind in it is dropped. The file also records the kinds that existed when the list was
+  saved (`confirmKindsKnown`); a kind added since is on, as every kind is by default, so a list
+  saved earlier never leaves a new kind unconfirmed: a list with no `confirmKindsKnown` could
+  choose every kind but `preview`, so `preview` is on for it and the rest (`send` included) read as
+  saved. Nothing is rewritten to do this: the file keeps what was saved until the next save. The
+  list is stamped on every act of the project, as read at that moment.
   On the page, right after the level picker, it is "Waits for the overseer's approval", with the
   hint "When one of these is held, it goes ahead only once the overseer approves it; you can cancel
   it in Needs you. The rest go ahead when their hold ends." and one toggle per kind, in the
   server's order: Starting a gathering, Offering a gathering, Closing a
   gathering, Promoting decisions, Starting a coding session, Prompting a coding session, Owner
-  updates, Approving a proposed person, Declining a proposed person. Each tick saves at once
+  updates, Approving a proposed person, Declining a proposed person, Publishing a preview link. Each tick saves at once
   (`PATCH …/overseer {confirmKinds}`) and says "{label}: waits for the overseer's approval once its
   hold ends." or "{label}: goes ahead when its hold ends."; a refusal shows the server's sentence.
 - **Waiting for it.** A held act (§app.project-overseer/holds) of a kind on the list raises a

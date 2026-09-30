@@ -3,6 +3,7 @@ import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PlaybookCatalog, PlaybookInfo } from "../shared/protocol";
 import { defaultRemoteOf, type RemoteCwd } from "./files";
+import { projectOf } from "./project-root";
 import { stateRoot } from "./state-root";
 
 /**
@@ -13,7 +14,9 @@ import { stateRoot } from "./state-root";
  *   - shipped:  playbooks/ at the repo root (source "sova")
  *   - user:     ~/.pi/agent/sova/playbooks/ (source "user"; an id that matches a shipped one
  *               REPLACES it, marked `replacesSova`, like a user theme replaces a built-in)
- *   - project:  <cwd>/.sova/marketing/playbooks/ (source "project")
+ *   - project:  <project root>/.sova/playbooks/, then <project root>/.sova/marketing/playbooks/
+ *               (source "project"; the root is the cwd's project, server/project-root.ts, so a
+ *               worktree or subfolder session reads its main checkout's)
  *
  * No watch and no cache, like server/themes.ts: the dialog fetches once per opening, and three
  * small folders are cheaper to rescan than a watch is to keep honest.
@@ -26,8 +29,8 @@ import { stateRoot } from "./state-root";
 const SHIPPED_DIR = fileURLToPath(new URL("../playbooks/", import.meta.url));
 /** Read per call, like every other agent-dir path: PI_CODING_AGENT_DIR is what the tests move. */
 export const userPlaybooksDir = () => join(stateRoot(), "playbooks");
-/** Where a project keeps its own playbooks, relative to its cwd. */
-export const PROJECT_PLAYBOOKS = join(".sova", "marketing", "playbooks");
+/** Where a project keeps its own playbooks, relative to its root: its own, then the marketing output. */
+export const PROJECT_PLAYBOOK_DIRS = [join(".sova", "playbooks"), join(".sova", "marketing", "playbooks")] as const;
 
 /** A directory name we'll treat as a playbook id. Lowercase, digits and hyphens, not leading with
     a hyphen: no dot entries, no separators, nothing that could walk out of its folder. */
@@ -138,8 +141,16 @@ async function projectPlaybooks(
     const message = code === "ENOENT" || code === "ENOTDIR" ? `${path} doesn't exist` : `Sova can't read ${path} (${code ?? "unknown error"})`;
     return { state: { state: "missing", message }, entries: [] };
   }
-  const { entries, error } = await scan(join(path, PROJECT_PLAYBOOKS), "project");
-  if (error) return { state: { state: "missing", message: `Sova couldn't read ${join(path, PROJECT_PLAYBOOKS)}: ${error}` }, entries: [] };
+  const project = await projectOf(path, deps);
+  const root = project.state === "ok" ? project.root : path;
+  const entries: PlaybookInfo[] = [];
+  for (const rel of PROJECT_PLAYBOOK_DIRS) {
+    const dir = join(root, rel);
+    const found = await scan(dir, "project");
+    if (found.error) return { state: { state: "missing", message: `Sova couldn't read ${dir}: ${found.error}` }, entries: [] };
+    // An id in both folders is listed once, from the first.
+    for (const p of found.entries) if (!entries.some((e) => e.id === p.id)) entries.push(p);
+  }
   return { state: { state: "ok" }, entries: entries.sort(byTitle) };
 }
 

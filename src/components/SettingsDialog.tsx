@@ -105,7 +105,7 @@ type TabId = (typeof TABS)[number]["id"];
  * policy file every session reads — this browser, the TUI, and every subagent — so a switch here
  * is a rule, not a filter. Themes picks what this browser wears; that one is localStorage only.
  */
-export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTab }) {
+export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTab; /** The open session's folder: Profiles lists its project's. */ cwd?: string | null }) {
   // The tab it opens at (General unless a caller — the mode menu's "Configure Delegate" — asks for
   // another) is also the one `onMount` focuses: the two have to agree, or the dialog opens with
   // focus on a tab that isn't the selected one.
@@ -254,7 +254,7 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           </Show>
           <Show when={tab() === "profiles"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-profiles" aria-labelledby="settings-tab-profiles">
-              <ProfilesSettingsSection />
+              <ProfilesSettingsSection cwd={props.cwd ?? null} />
             </div>
           </Show>
           <Show when={tab() === "overseer"}>

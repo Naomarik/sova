@@ -203,6 +203,8 @@ export function Composer(props: {
   onAbort(): void;
   /** Queued text a Stop handed back; each new object goes ahead of the draft (TUI Esc order). */
   restored?: { text: string } | null;
+  /** Each new object: the draft's text was sent by something else (Run Playbook, §chat.profiles/playbook), so it empties. */
+  taken?: { at: number } | null;
   /** Answers picked on an alignment card (§chat.alignment/card), staged for the next send:
       the row names them, and `compose` puts their line ahead of the typed text in one message. */
   picks?: { label: string; compose(text: string): string; clear(): void } | null;
@@ -702,6 +704,18 @@ export function Composer(props: {
     on(
       () => props.restored,
       (r) => r?.text && setDraft([r.text, text()].filter((t) => t.trim()).join("\n\n")),
+      { defer: true },
+    ),
+  );
+  createEffect(
+    on(
+      () => props.taken,
+      (t) => {
+        if (!t) return;
+        touched = true;
+        setText("");
+        setDraftText(props.path, "");
+      },
       { defer: true },
     ),
   );

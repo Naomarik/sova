@@ -3,21 +3,25 @@ import {
   CAPABILITY_LABEL,
   DEFAULT_PROFILE_ID,
   GRANTABLE,
+  keyOf,
   lockedReason,
   normalizeCaps,
+  powersText,
   REMOVABLE,
   singletonRunningText,
+  sourceOf,
   titleCase,
   type Grantable,
-  type Profile,
+  type ListedProfile,
   type Removable,
 } from "../../shared/profiles";
-import type { ChatProfileInfo } from "../../shared/protocol";
-import { fetchProfiles, pickProfile, saveNewProfile } from "../lib/api";
-import { changeRows, defaultTools, guardrailNote, pickerProfiles, profileIconName } from "../lib/profiles";
+import type { ChatProfileInfo, PlaybookInfo } from "../../shared/protocol";
+import { approveProfile, fetchProfiles, pickProfile, type ProfilePickRef } from "../lib/api";
+import { allProfiles, changeRows, defaultTools, guardrailNote, pickerProfiles, pickRef, profileIconName } from "../lib/profiles";
 import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
-import { Banner, Icon, trapFocus } from "./ui";
+import { ProfilePlaybookCard } from "./ProfilePlaybookCard";
+import { Banner, Icon } from "./ui";
 
 /** Sessions whose Custom board is open, by path (module state: see `board`). */
 const boardsOpen = new Set<string>();
@@ -29,20 +33,25 @@ const boardsOpen = new Set<string>();
  */
 export function ProfilePicker(props: {
   path: string;
+  /** The session's folder: its project's profiles are listed (§chat.profiles/projects). */
+  cwd: string | null;
   info: ChatProfileInfo;
-  /** The mode and model the session is on (Save as Profile starts with them). */
-  mode?: string;
-  model?: string | null;
   /** A One at a time race at Send: the session that has it. */
   race?: { label: string; running: { id: string; path: string; title: string } } | null;
   /** Put a profile's first message in an empty composer. */
   onFirstMessage?: (text: string) => void;
+  /** Why sending isn't possible now, for Run Playbook (the composer's own reason), or null. */
+  blocked?: string | null;
+  /** Run Playbook (§chat.profiles/playbook): send the linked playbook's turn; false = refused. */
+  onRunPlaybook?: (playbook: PlaybookInfo) => boolean;
 }) {
-  const [listing, { refetch }] = createResource(() => fetchProfiles().catch(() => undefined));
+  const [listing, { refetch, mutate }] = createResource(() => fetchProfiles(props.cwd).catch(() => undefined));
   const [open, setOpen] = createSignal(false);
   const [query, setQuery] = createSignal("");
   const [pending, setPending] = createSignal<string | null>(null);
   const [alert, setAlert] = createSignal<{ label: string; running: { id: string; path: string; title: string } } | null>(null);
+  /** An unapproved project profile that was picked: nothing changed yet (§chat.profiles/trust). */
+  const [asking, setAsking] = createSignal<ListedProfile | null>(null);
   // Each flip reopens the runtime and remounts this picker: the board stays open across that.
   const [board, setBoardOpen] = createSignal(boardsOpen.has(props.path));
   const setBoard = (on: boolean) => {
@@ -50,23 +59,27 @@ export function ProfilePicker(props: {
     else boardsOpen.delete(props.path);
     setBoardOpen(on);
   };
-  const [saving, setSaving] = createSignal(false);
   const [showAll, setShowAll] = createSignal(false);
 
   const current = () => props.info.profile;
   const label = () => current()?.label ?? "Default";
   const lists = createMemo(() => pickerProfiles(listing()));
-  const matches = (p: Profile) => !query().trim() || p.label.toLowerCase().includes(query().trim().toLowerCase());
-  const runningElsewhere = (p: Profile) => {
-    const r = listing()?.running[p.id];
+  const matches = (p: ListedProfile) => !query().trim() || p.label.toLowerCase().includes(query().trim().toLowerCase());
+  const runningElsewhere = (p: ListedProfile) => {
+    const r = listing()?.running[p.key];
     return r && r.path !== props.path ? r : null;
   };
+  const currentKey = () => {
+    const c = current();
+    return c && !c.custom ? keyOf(c) : c?.custom ? null : `sova:${DEFAULT_PROFILE_ID}`;
+  };
+  const problems = () => listing()?.problems.length ?? 0;
   const base = createMemo(() => defaultTools(props.info));
   const rows = createMemo(() => (current() ? changeRows(current()!, base()) : []));
   const same = createMemo(() => base().filter((t) => !props.info.removed.includes(t)));
   const note = createMemo(() => guardrailNote(current()?.remove ?? []));
 
-  async function apply(choice: string | { remove: string[]; grant: string[]; from?: string } | null, what: string, profile?: Profile) {
+  async function apply(choice: ProfilePickRef | { remove: string[]; grant: string[]; from?: ProfilePickRef } | null, what: string, profile?: ListedProfile) {
     setAlert(null);
     setPending(what);
     try {
@@ -80,24 +93,46 @@ export function ProfilePicker(props: {
       setPending(null);
     }
   }
-  const choose = (p: Profile) => {
+  const choose = (p: ListedProfile) => {
     setOpen(false);
     setQuery("");
+    setAsking(null);
     const r = runningElsewhere(p);
     if (p.singleton && r) {
       setAlert({ label: p.label, running: r });
       return;
     }
+    if (p.approval === "needed") {
+      setAlert(null);
+      setAsking(p);
+      return;
+    }
     setBoard(false);
-    void apply(p.id === DEFAULT_PROFILE_ID ? null : p.id, p.label, p);
+    void apply(p.source === "sova" && p.id === DEFAULT_PROFILE_ID ? null : pickRef(p), p.label, p);
+  };
+  const approveAndPick = async (p: ListedProfile) => {
+    if (!props.cwd) return;
+    try {
+      mutate(await approveProfile(props.cwd, p));
+    } catch (err) {
+      toast(`Couldn't approve ${p.label}. ${err instanceof Error ? err.message : String(err)}`);
+      void refetch();
+      return;
+    }
+    setAsking(null);
+    setBoard(false);
+    void apply(pickRef(p), p.label, p);
   };
 
   // The board: kept capabilities and grants, starting from the current pick.
   const [edited, setEdited] = createSignal<{ remove: Removable[]; grant: Grantable[] } | null>(null);
   const caps = () => edited() ?? { remove: current()?.remove ?? [], grant: current()?.grant ?? [] };
   const origin = createMemo(() => {
-    const id = current()?.custom ? (listing()?.builtins ?? []).concat(listing()?.profiles ?? []).find((p) => current()!.label.startsWith(p.label))?.id : current()?.id;
-    return (listing()?.builtins ?? []).concat(listing()?.profiles ?? []).find((p) => p.id === (id ?? DEFAULT_PROFILE_ID));
+    const all = allProfiles(listing());
+    const c = current();
+    if (c?.custom) return all.find((p) => c.label === `${p.label}, edited`) ?? all.find((p) => p.source === "sova" && p.id === DEFAULT_PROFILE_ID);
+    const key = c ? keyOf(c) : `sova:${DEFAULT_PROFILE_ID}`;
+    return all.find((p) => p.key === key);
   });
   const changed = () => {
     const o = origin();
@@ -118,7 +153,8 @@ export function ProfilePicker(props: {
     }
     const next = normalizeCaps(remove, grant);
     setEdited(next);
-    void apply({ ...next, ...(origin()?.id && origin()!.id !== DEFAULT_PROFILE_ID ? { from: origin()!.id } : {}) }, "your changes");
+    const o = origin();
+    void apply({ ...next, ...(o && !(o.source === "sova" && o.id === DEFAULT_PROFILE_ID) ? { from: pickRef(o) } : {}) }, "your changes");
   };
 
   return (
@@ -152,12 +188,21 @@ export function ProfilePicker(props: {
                 ref={(el) => queueMicrotask(() => el.focus())}
               />
               <ul class="profile-options" role="listbox" aria-label="Profiles">
-                <For each={lists().builtins.filter(matches)}>{(p) => <Option p={p} yours={false} running={!!runningElsewhere(p)} selected={(current()?.id ?? DEFAULT_PROFILE_ID) === p.id} onPick={() => choose(p)} />}</For>
+                <li class="profile-options-group" role="presentation">
+                  Built in
+                </li>
+                <For each={lists().builtins.filter(matches)}>{(p) => <Option p={p} running={!!runningElsewhere(p)} selected={currentKey() === p.key} onPick={() => choose(p)} />}</For>
+                <Show when={lists().project.filter(matches).length}>
+                  <li class="profile-options-group" role="presentation">
+                    This project ({lists().projectName})
+                  </li>
+                  <For each={lists().project.filter(matches)}>{(p) => <Option p={p} running={!!runningElsewhere(p)} selected={currentKey() === p.key} onPick={() => choose(p)} />}</For>
+                </Show>
                 <Show when={lists().yours.filter(matches).length}>
                   <li class="profile-options-group" role="presentation">
                     Yours
                   </li>
-                  <For each={lists().yours.filter(matches)}>{(p) => <Option p={p} yours running={!!runningElsewhere(p)} selected={current()?.id === p.id} onPick={() => choose(p)} />}</For>
+                  <For each={lists().yours.filter(matches)}>{(p) => <Option p={p} running={!!runningElsewhere(p)} selected={currentKey() === p.key} onPick={() => choose(p)} />}</For>
                 </Show>
                 <li role="option" aria-selected={!!current()?.custom} class="profile-option" tabIndex={0} onClick={() => (setOpen(false), setBoard(true))} onKeyDown={(e) => (e.key === "Enter" || e.key === " ") && (e.preventDefault(), setOpen(false), setBoard(true))}>
                   <Icon name="wrench" small />
@@ -165,6 +210,11 @@ export function ProfilePicker(props: {
                   <span class="profile-option-meta">Adjust this one</span>
                 </li>
               </ul>
+              <Show when={problems()}>
+                <p class="profile-muted">
+                  {problems()} profile file{problems() === 1 ? " has" : "s have"} mistakes. See Manage Profiles.
+                </p>
+              </Show>
               <button type="button" class="button button-sm button-ghost" onClick={() => (setOpen(false), openSettings("profiles"))}>
                 Manage Profiles
               </button>
@@ -189,6 +239,25 @@ export function ProfilePicker(props: {
                   Open the Running {titleCase(a().label)}
                 </a>
                 <button type="button" class="button button-sm" onClick={() => (setAlert(null), setOpen(true))}>
+                  Pick Another Profile
+                </button>
+              </div>
+            }
+          />
+        )}
+      </Show>
+
+      <Show when={asking()}>
+        {(p) => (
+          <Banner
+            tone="warn"
+            title={`${p().label} comes from ${p().projectName ?? "this project"}'s files and can ${powersText(p())}. Approve it to use it.`}
+            action={
+              <div class="profile-alert-actions">
+                <button type="button" class="button button-sm button-primary" onClick={() => void approveAndPick(p())}>
+                  Approve
+                </button>
+                <button type="button" class="button button-sm" onClick={() => (setAsking(null), setOpen(true))}>
                   Pick Another Profile
                 </button>
               </div>
@@ -245,6 +314,17 @@ export function ProfilePicker(props: {
               </Show>
             </div>
             <Show when={note()}>{(n) => <Banner tone="info" title={n()} />}</Show>
+            <Show when={p().playbook}>
+              {(id) => (
+                <ProfilePlaybookCard
+                  cwd={props.cwd}
+                  playbook={id()}
+                  source={p().custom ? undefined : sourceOf(p())}
+                  blocked={props.blocked ?? null}
+                  onRun={(pb) => props.onRunPlaybook?.(pb) ?? false}
+                />
+              )}
+            </Show>
           </>
         )}
       </Show>
@@ -254,16 +334,13 @@ export function ProfilePicker(props: {
           <p class="profile-board-head">
             <span>{changed() ? `${origin()?.label ?? "Default"}, edited` : (origin()?.label ?? "Default")}</span>
             <Show when={changed()}>
-              <button type="button" class="button button-sm button-primary" onClick={() => setSaving(true)}>
-                Save as Profile
-              </button>
               <button
                 type="button"
                 class="button button-sm"
                 onClick={() => {
                   setEdited(null);
                   const o = origin();
-                  void apply(o && o.id !== DEFAULT_PROFILE_ID ? o.id : null, o?.label ?? "Default", o);
+                  void apply(o && !(o.source === "sova" && o.id === DEFAULT_PROFILE_ID) ? pickRef(o) : null, o?.label ?? "Default", o);
                 }}
               >
                 Reset
@@ -298,26 +375,13 @@ export function ProfilePicker(props: {
 
       <p class="profile-muted">Fixed once you send your first message.</p>
 
-      <Show when={saving()}>
-        <SaveProfileSheet
-          caps={caps()}
-          mode={props.mode}
-          model={props.model ?? undefined}
-          onCancel={() => setSaving(false)}
-          onSaved={(p) => {
-            setSaving(false);
-            setBoard(false);
-            setEdited(null);
-            toast(`Saved ${p.label}. New sessions can use it.`);
-            void apply(p.id, p.label, p);
-          }}
-        />
-      </Show>
     </section>
   );
 }
 
-function Option(props: { p: Profile; yours: boolean; running: boolean; selected: boolean; onPick: () => void }) {
+const SOURCE_META = { sova: "Built in", project: "This project", user: "Yours" } as const;
+
+function Option(props: { p: ListedProfile; running: boolean; selected: boolean; onPick: () => void }) {
   return (
     <li
       role="option"
@@ -335,86 +399,16 @@ function Option(props: { p: Profile; yours: boolean; running: boolean; selected:
       <Icon name={profileIconName(props.p.icon)} small />
       <span class="profile-option-name">{props.p.label}</span>
       <span class="profile-option-meta">
-        {props.yours ? "Yours" : "Built in"}
+        {SOURCE_META[props.p.source]}
         {props.p.singleton ? " · One at a time" : ""}
+        {props.p.playbook ? " · Runs a playbook" : ""}
       </span>
       <Show when={props.running}>
         <span class="chip">Running</span>
       </Show>
+      <Show when={props.p.approval === "needed"}>
+        <span class="chip chip-warn">Needs approval</span>
+      </Show>
     </li>
-  );
-}
-
-/** Save as Profile (§chat.profiles/picker): name, description, One at a time. */
-export function SaveProfileSheet(props: {
-  caps: { remove: string[]; grant: string[] };
-  mode?: string;
-  model?: string;
-  onCancel: () => void;
-  onSaved: (p: Profile) => void;
-}) {
-  const [name, setName] = createSignal("");
-  const [description, setDescription] = createSignal("");
-  const [single, setSingle] = createSignal(false);
-  const [busy, setBusy] = createSignal(false);
-  const [error, setError] = createSignal<string | null>(null);
-  const submit = async (e: Event) => {
-    e.preventDefault();
-    if (!name().trim()) return setError("Give it a name.");
-    setBusy(true);
-    try {
-      const mode = props.mode === "normal" || props.mode === "delegate" ? props.mode : undefined;
-      const p = await saveNewProfile({
-        label: name().trim(),
-        description: description().trim(),
-        icon: "wrench",
-        remove: props.caps.remove as Removable[],
-        grant: props.caps.grant as Grantable[],
-        singleton: single(),
-        ...(mode ? { mode } : {}),
-        ...(props.model ? { model: props.model } : {}),
-      });
-      props.onSaved(p);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
-    }
-  };
-  return (
-    <>
-      <div class="scrim" onClick={() => !busy() && props.onCancel()} />
-      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="sp-title" ref={(el) => trapFocus(el)} onKeyDown={(e) => e.key === "Escape" && !busy() && props.onCancel()}>
-        <div class="modal-head">
-          <h2 class="modal-title" id="sp-title">
-            Save as profile
-          </h2>
-        </div>
-        <form class="modal-body" id="sp-form" onSubmit={submit}>
-          <label class="field">
-            <span class="field-label">Name</span>
-            <input class="input" value={name()} maxLength={60} onInput={(e) => (setName(e.currentTarget.value), setError(null))} ref={(el) => queueMicrotask(() => el.focus())} />
-          </label>
-          <label class="field">
-            <span class="field-label">Description</span>
-            <input class="input" value={description()} maxLength={200} placeholder="One line, shown under the name" onInput={(e) => setDescription(e.currentTarget.value)} />
-          </label>
-          <label class="toggle toggle-switch">
-            <span>One at a time</span>
-            <input type="checkbox" checked={single()} onChange={(e) => setSingle(e.currentTarget.checked)} />
-            <span class="toggle-box" />
-          </label>
-          <p class="profile-muted">Starts with this session's mode and model.</p>
-          <Show when={error()}>{(m) => <p class="field-error" role="alert">{m()}</p>}</Show>
-        </form>
-        <div class="modal-foot">
-          <button type="button" class="button button-ghost" disabled={busy()} onClick={() => props.onCancel()}>
-            Cancel
-          </button>
-          <button type="submit" form="sp-form" class="button button-primary" disabled={busy()}>
-            Save Profile
-          </button>
-        </div>
-      </div>
-    </>
   );
 }

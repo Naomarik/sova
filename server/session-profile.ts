@@ -1,19 +1,26 @@
 import type { SessionProfileField, SessionSummary } from "../shared/protocol";
 import {
-  builtinProfile,
   DEFAULT_LIMITS,
+  DEFAULT_PROFILE,
   DEFAULT_PROFILE_ID,
+  keyOf,
   normalizeCaps,
   PROFILE_ENTRY,
   singletonRunningText,
+  sourceOf,
+  type ListedProfile,
   type Profile,
   type ProfileEntryData,
+  type ProfileSource,
+  type SnapshotProfile,
 } from "../shared/profiles";
-import { findProfile } from "./profiles-store";
+import { findProfile, type ProfilePick } from "./profile-sources";
+import { approvalRefusal } from "./profile-trust";
 
 /**
  * A session's profile (§chat.profiles/model, /applying, /singleton): the `sova-profile` entry's fold,
- * resolving a pick into the snapshot the entry keeps, and the One at a time check. The route and the
+ * resolving a pick against the session's project into the snapshot the entry keeps (§chat.profiles/projects,
+ * /trust), and the One at a time check by profile identity. The route and the
  * create paths that write it are in server/session-profile-routes.ts, which may import chat-manager;
  * this module must not (chat-manager imports it).
  */
@@ -40,27 +47,46 @@ export function profileField(d: ProfileEntryData | null | undefined): SessionPro
     label: p.label,
     icon: p.icon,
     ...(p.singleton ? { singleton: true as const } : {}),
-    ...(p.builtin ? { builtin: true as const } : {}),
+    ...(p.custom ? {} : { source: sourceOf(p) }),
+    ...(p.project ? { project: p.project } : {}),
+    ...(p.projectName ? { projectName: p.projectName } : {}),
     ...(p.custom ? { custom: true as const } : {}),
     ...(d?.by ? { by: d.by } : {}),
   };
 }
 
-/** A pick as the route receives it: an id, a custom board `{remove, grant, from?}`, or null. */
-export type ProfileChoice = string | { remove: string[]; grant: string[]; from?: string } | null;
+/** A pick as the route receives it: an id or `{source, id}`, a custom board `{remove, grant, from?}`, or null. */
+export type ProfileChoice = ProfilePick | { remove: string[]; grant: string[]; from?: ProfilePick } | null;
 
-/** The snapshot a pick writes, or an error sentence. */
-export function resolveChoice(choice: ProfileChoice): { ok: true; profile: ProfileEntryData["profile"] } | { ok: false; error: string } {
+const isPick = (v: unknown): v is ProfilePick =>
+  typeof v === "string" ||
+  (!!v && typeof v === "object" && typeof (v as { id?: unknown }).id === "string" && ["sova", "user", "project"].includes((v as { source?: unknown }).source as string));
+
+/** The snapshot a listed profile writes: the profile's fields and where it came from. */
+export function snapshotOf(p: ListedProfile): SnapshotProfile {
+  const { key: _k, file: _f, approval: _a, ...rest } = p;
+  return { ...rest, ...normalizeCaps(p.remove, p.grant) };
+}
+
+export type Resolved = { ok: true; profile: SnapshotProfile | null; listed?: ListedProfile } | { ok: false; error: string; approval?: true };
+
+/** The snapshot a pick writes for a session in `cwd`, or an error sentence. An unapproved project profile is refused. */
+export async function resolveChoice(choice: ProfileChoice, cwd?: string | null): Promise<Resolved> {
   if (choice === null || choice === DEFAULT_PROFILE_ID) return { ok: true, profile: null };
-  if (typeof choice === "string") {
-    const p = findProfile(choice);
-    if (!p) return { ok: false, error: `No profile "${choice}". It may have been deleted.` };
-    return { ok: true, profile: { ...p, ...normalizeCaps(p.remove, p.grant) } };
+  if (isPick(choice)) {
+    const id = typeof choice === "string" ? choice : choice.id;
+    if (id === DEFAULT_PROFILE_ID && (typeof choice === "string" || choice.source === "sova")) return { ok: true, profile: null };
+    const p = await findProfile(choice, cwd);
+    if (!p) return { ok: false, error: `No profile "${id}" for this folder. It may have been deleted, or it belongs to another project.` };
+    if (p.approval === "needed") return { ok: false, error: approvalRefusal(p), approval: true };
+    return { ok: true, profile: snapshotOf(p), listed: p };
   }
-  if (typeof choice !== "object" || !Array.isArray(choice.remove) || !Array.isArray(choice.grant)) return { ok: false, error: "profile must be an id, null, or {remove, grant}." };
-  const caps = normalizeCaps(choice.remove, choice.grant);
+  if (typeof choice !== "object" || !Array.isArray((choice as { remove?: unknown }).remove) || !Array.isArray((choice as { grant?: unknown }).grant))
+    return { ok: false, error: "profile must be an id, {source, id}, null, or {remove, grant}." };
+  const board = choice as { remove: string[]; grant: string[]; from?: ProfilePick };
+  const caps = normalizeCaps(board.remove, board.grant);
   if (!caps.remove.length && !caps.grant.length) return { ok: true, profile: null };
-  const from = typeof choice.from === "string" ? (findProfile(choice.from) ?? builtinProfile(DEFAULT_PROFILE_ID)!) : builtinProfile(DEFAULT_PROFILE_ID)!;
+  const from: Profile = (isPick(board.from) ? await findProfile(board.from, cwd) : null) ?? DEFAULT_PROFILE;
   const label = from.id === DEFAULT_PROFILE_ID ? "Custom" : `${from.label}, edited`;
   const custom: Profile & { custom: true } = {
     id: "custom",
@@ -76,10 +102,16 @@ export function resolveChoice(choice: ProfileChoice): { ok: true; profile: Profi
   return { ok: true, profile: custom };
 }
 
-/** The live (non-archived) session other than `except` that holds this One at a time profile, or null. */
-export function singletonHolder(profileId: string, sessions: readonly SessionSummary[], except?: string): SessionSummary | null {
-  return sessions.find((s) => s.profile?.id === profileId && s.profile.singleton && !s.archived && s.path !== except) ?? null;
+/**
+ * The live (non-archived) session other than `except` that holds the One at a time profile with
+ * identity `key` (§chat.profiles/singleton): the one check every path uses.
+ */
+export function singletonHolder(key: string, sessions: readonly SessionSummary[], except?: string): SessionSummary | null {
+  return sessions.find((s) => !!s.profile && !s.profile.custom && s.profile.singleton && keyOf(s.profile) === key && !s.archived && s.path !== except) ?? null;
 }
+
+/** The identity of a snapshot, for the One at a time check. */
+export const snapshotKey = (p: { id: string; source?: ProfileSource; builtin?: boolean; project?: string }) => keyOf(p);
 
 export class SingletonRefusal extends Error {
   constructor(

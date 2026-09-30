@@ -1,4 +1,4 @@
-import { NewSessionProfileMenu, ProfileShelf } from "./ProfileShelf";
+import { ProfileShelf } from "./ProfileShelf";
 import { profileIconName } from "../lib/profiles";
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
@@ -2024,13 +2024,10 @@ export function Sidebar(props: {
             </button>
           </Show>
           <span class="sidebar-spacer" />
-          <span class="new-session-split">
-            <button type="button" class="button" onClick={() => props.onNew()}>
-              <Icon name="plus" />
-              New Session
-            </button>
-            <NewSessionProfileMenu cwd={props.sessions?.find((x) => x.path === props.selected)?.cwd} />
-          </span>
+          <button type="button" class="button" onClick={() => props.onNew()}>
+            <Icon name="plus" />
+            New Session
+          </button>
           <Show when={props.unfolded}>
             <button
               ref={collapseToggle}
@@ -2166,6 +2163,7 @@ export function Sidebar(props: {
           {/* Profiles, above everything (§app.session-list/profile-shelf): a shortcut, grouped by profile. */}
           <ProfileShelf
             sessions={all()}
+            cwd={props.sessions?.find((x) => x.path === props.selected)?.cwd ?? null}
             searching={!!query().trim()}
             row={(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={targets()} />}
           />

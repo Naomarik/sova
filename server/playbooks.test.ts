@@ -11,7 +11,8 @@ import { after, test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-playbooks-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
-const { isPlaybookId, listPlaybooks, parseFrontmatter, PROJECT_PLAYBOOKS, userPlaybooksDir } = await import("./playbooks");
+const { isPlaybookId, listPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, userPlaybooksDir } = await import("./playbooks");
+const PROJECT_PLAYBOOKS = PROJECT_PLAYBOOK_DIRS[1];
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
 

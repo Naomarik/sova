@@ -1,19 +1,35 @@
-import { createSignal } from "solid-js";
-import type { Profile } from "../../shared/profiles";
+import { singletonRunningText, titleCase, type ProfileSource } from "../../shared/profiles";
 import type { SessionSummary } from "../../shared/protocol";
+import { startProfileSession } from "./api";
+import { toast } from "./ui-state";
 
 /**
- * The start sheet (§app.session-list/profile-shelf): which profile it starts, app-wide, so the
- * shelf's Run and Start, New Session's menu and the head chip's Run Again all open the same one.
+ * Run / Start / Run Again (§app.session-list/profile-shelf): a new session in `cwd` with the profile
+ * picked, opened on its empty screen, where the picker (and a linked playbook's card) show it.
+ * Nothing is sent. The shelf and the head chip share this one path.
  */
-const [sheet, setSheet] = createSignal<{ profile: Profile; cwd?: string } | null>(null);
-export const profileStartSheet = sheet;
-export const openProfileStart = (profile: Profile, cwd?: string): void => void setSheet({ profile, ...(cwd ? { cwd } : {}) });
-export const closeProfileStart = (): void => void setSheet(null);
 
-/** What opens a session the sheet made (App's adopt: route, list refresh, composer focus). */
+/** What opens a session made here (App's adopt: route, list refresh, composer focus). */
 let adopt: ((s: SessionSummary) => void) | null = null;
 export function setProfileStartAdopt(fn: (s: SessionSummary) => void): void {
   adopt = fn;
 }
-export const adoptStarted = (s: SessionSummary): void => adopt?.(s);
+
+export async function runProfile(p: { source: ProfileSource; id: string; label: string }, cwd: string | null | undefined): Promise<void> {
+  if (!cwd) {
+    toast(`No folder to start ${p.label} in. Open a session in the folder you want, then try again.`);
+    return;
+  }
+  try {
+    const s = await startProfileSession(cwd, { source: p.source, id: p.id });
+    adopt?.(s);
+  } catch (err) {
+    const body = (err as { body?: { running?: { id: string; title: string } } }).body;
+    const running = body?.running;
+    if (running)
+      toast(singletonRunningText(p.label), {
+        action: { label: `Open the Running ${titleCase(p.label)}`, run: () => void (location.hash = `#/sid/${encodeURIComponent(running.id)}`) },
+      });
+    else toast(`Couldn't start ${p.label}. ${err instanceof Error ? err.message : String(err)}`);
+  }
+}

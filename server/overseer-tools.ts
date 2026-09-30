@@ -37,8 +37,12 @@ import { resolveOrg, resolvePerson, resolveProject } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { cut, Refusal, renderTranscript, sessionRef, text, writableRefusal } from "./session-guards";
-import { findProfile } from "./profiles-store";
-import { singletonRunningText, titleCase } from "../shared/profiles";
+import { findProfile } from "./profile-sources";
+import { approvalRefusal } from "./profile-trust";
+import { singletonHolder } from "./session-profile";
+import { listPlaybooks } from "./playbooks";
+import { keyOf, singletonRunningText, titleCase } from "../shared/profiles";
+import { linkedPlaybook, missingPlaybookText, playbookTurnText } from "../shared/playbooks";
 
 export { renderTranscript, sessionRef };
 
@@ -790,7 +794,7 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       if (info && (info.status === "offline" || info.status === "error"))
         notes.push(`Target ${p.target} is ${info.status}${info.error ? ` (${info.error})` : ""}; its first prompt may fail.`);
     } else body = { cwd: p.cwd ?? "" };
-    if (typeof p.profile === "string" && p.profile) body.profile = p.profile;
+    if ((typeof p.profile === "string" && p.profile) || (p.profile && typeof p.profile === "object")) body.profile = p.profile;
     const created = await call("POST", "/api/sessions", body);
     if (created.status !== 201) throw failed(created, "Creating the session");
     const s = created.json as SessionSummary;
@@ -1099,11 +1103,11 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         minor_modes: { type: "array", items: { type: "string" }, description: 'Minor modes to have on from the first turn, e.g. ["spec"]; [] turns them all off. Omitted: the default.' },
         title: str("A title for the list, up to 80 characters."),
         group: str("Group id to add it to."),
-        profile: str('A saved or built-in profile id (§ profiles: what the session can do), this host only. Only profiles marked "The Overseer may start it". Its mode and model apply unless you give your own.'),
+        profile: str('A profile id (§ profiles: what the session can do), this host only, looked up in the new session\'s project, then the user\'s, then built in. Only profiles marked "The Overseer may start it", and a project\'s profile only once the user approved it. Its mode and model apply unless you give your own. A profile that runs a playbook sends that playbook as the first message, with prompt as its text.'),
       }),
       execute: act("sova_create_session", async (p) => {
         const caps = host.caps();
-        const hasPrompt = typeof p.prompt === "string" && p.prompt.trim().length > 0;
+        let hasPrompt = typeof p.prompt === "string" && p.prompt.trim().length > 0;
         // Mode names are checked by the mode route's own parser before anything is created, so an
         // unknown one creates no session and takes no cap.
         if (p.mode || p.minor_modes !== undefined) {
@@ -1116,12 +1120,25 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         // a time one only while it isn't live; each refuses before anything is created or capped.
         if (typeof p.profile === "string" && p.profile) {
           if (onPeer) throw new Refusal("A profile can't be given with host: profiles belong to this host. No session was created.");
-          const prof = findProfile(p.profile);
-          if (!prof) throw new Refusal(`No profile "${p.profile}". No session was created.`);
+          // Resolved in the new session's own project (§chat.profiles/projects); a target's cwd has none.
+          const where = typeof p.cwd === "string" && p.cwd ? p.cwd : null;
+          const prof = await findProfile(p.profile, where);
+          if (!prof) throw new Refusal(`No profile "${p.profile}" for that folder. No session was created.`);
           if (!prof.overseerMayStart)
-            throw new Refusal(`The ${prof.label} profile isn't marked "The Overseer may start it" (Settings → Profiles), so you can't start it. No session was created; ask the user to start it or to allow it.`);
+            throw new Refusal(`The ${prof.label} profile isn't marked "The Overseer may start it" (in its file), so you can't start it. No session was created; ask the user to start it or to allow it.`);
+          if (prof.approval === "needed") throw new Refusal(`${approvalRefusal(prof)} No session was created.`);
+          // A profile that runs a playbook (§chat.profiles/playbook): its turn is the first message,
+          // with the prompt as its text, so it counts as a prompt below.
+          if (prof.playbook) {
+            const catalog = await listPlaybooks(where ?? undefined);
+            const pb = linkedPlaybook(catalog.playbooks, prof.playbook, prof.source);
+            if (!pb) throw new Refusal(`${missingPlaybookText(prof.playbook)} No session was created.`);
+            p = { ...p, prompt: playbookTurnText(pb, typeof p.prompt === "string" ? p.prompt : "") };
+            hasPrompt = true;
+          }
+          p = { ...p, profile: { source: prof.source, id: prof.id } };
           if (prof.singleton) {
-            const holder = (await host.sessions()).find((x) => x.profile?.id === prof.id && !x.archived);
+            const holder = singletonHolder(keyOf(prof), await host.sessions());
             if (holder)
               return {
                 content: text(`${singletonRunningText(prof.label)} Nothing was created. It runs in ${link(holder)}; send to it with sova_send instead.`),

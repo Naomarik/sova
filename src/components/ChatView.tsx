@@ -1676,7 +1676,7 @@ export function ChatView(props: {
           {(list) => (
             <OverseerThreadContext.Provider
               value={
-                props.overseer
+                props.overseer || props.projectOverseer
                   ? {
                       answer: (text, card, sent) => {
                         const ok = send(text, false, [], card);
@@ -1684,7 +1684,8 @@ export function ChatView(props: {
                         return ok;
                       },
                       sent: (card) => cardSent()[card],
-                      permits: () => autonomy()?.permits ?? [],
+                      // Approvals are the global Overseer's alone; a project overseer's card carries none.
+                      permits: () => (props.overseer ? autonomy()?.permits ?? [] : []),
                     }
                   : null
               }

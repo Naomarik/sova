@@ -13,7 +13,7 @@ import { MODE_DISCOVER_EVENT, MODE_STATE_EVENT } from "../mode/state.ts";
 import { SPEC_HOOK_SCRIPT } from "../claude-code/spec-hooks.ts";
 import { LEDGER_ENV } from "../mode/spec-guard.ts";
 import { workerSpecBrief } from "./spec-brief.ts";
-import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent } from "../sandbox/state.ts";
+import { SANDBOX_DISCOVER_EVENT, SANDBOX_STATE_EVENT, type SandboxStateEvent, type WorkerLaunch } from "../sandbox/state.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "../mode/events.ts";
 import workerMarkExtension from "./worker-mark.ts";
 import { CLAUDE_CODE_PROVIDER_FLAG, SubagentRunner } from "./runner.ts";
@@ -2518,10 +2518,14 @@ test("a pi worker on a claude-code-cli model gets the claude-code extension and 
 const SANDBOX_DIR = fs.realpathSync(path.resolve(fileURLToPath(new URL("../sandbox", import.meta.url))));
 const SANDBOX_OFF: SandboxStateEvent = { version: 1, on: false, extensionPath: SANDBOX_DIR, enforcement: "none" };
 const WORKER_FLAGS = { sandbox: "on", "sandbox-parent": '{"version":1}' };
-const SANDBOX_ON: SandboxStateEvent = {
-	version: 1, on: true, extensionPath: SANDBOX_DIR, enforcement: "full", workerFlags: WORKER_FLAGS, checkWorker: () => undefined,
-	claudeSettingsJson: '{"sandbox":{"enabled":true}}', claudePermissionMode: "dontAsk",
-};
+/** The sandbox's launch module as workerLaunch names it (the fake backend never loads it). */
+const LAUNCH_MODULE = path.join(SANDBOX_DIR, "launch.ts");
+/** The one call, faked: pi gets flags (narrowed ones for a root), any other backend a confinement named by its owner and root. */
+const workerLaunchOf = (flagsIn: (root: string) => Record<string, string> = (root) => ({ sandbox: "on", "sandbox-parent": root }), top = WORKER_FLAGS) =>
+	(req: { cwd: string; root?: string; backend: string; owner: string }): WorkerLaunch => req.backend === "pi"
+		? { kind: "pi", extensionPath: SANDBOX_DIR, flags: req.root ? flagsIn(req.root) : top }
+		: { kind: "confine", scope: JSON.stringify({ owner: req.owner, root: req.root ?? null }), module: LAUNCH_MODULE };
+const SANDBOX_ON: SandboxStateEvent = { version: 1, on: true, extensionPath: SANDBOX_DIR, enforcement: "full", workerLaunch: workerLaunchOf() };
 /** A worker's launch options without the per-worker identity or the fake worker's own closures. */
 const launchShape = ({ id, groupId, name, ...rest }: any) => Object.fromEntries(Object.entries(rest).filter(([, v]) => typeof v !== "function"));
 
@@ -2579,24 +2583,32 @@ test("sandbox off: workers launch exactly as without the sandbox extension; on: 
 	} finally { await h.close(); }
 });
 
-test("sandbox on: claude workers get the extension's settings and permission mode, never bypassPermissions or a host prompt; a refusal or another backend fails the spawn", async () => {
+test("sandbox on: a claude worker is confined by the sandbox under its own session-qualified owner, with no settings of the sandbox's and the spec's permission mode; a refusal or another backend fails the spawn", async () => {
 	const h = harness();
 	const created: any[] = [];
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fakeBackend(created), id: "other" });
+	const asked: any[] = [];
 	try {
-		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: (req: any) => (asked.push(req), workerLaunchOf()(req)) });
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code", backendOptions: { permissionMode: "bypassPermissions" } });
 		const claude = created[0];
-		assert.equal(claude.settingsJson, SANDBOX_ON.claudeSettingsJson, "passed through as is");
-		assert.equal(claude.permissionMode, "dontAsk", "forced over the spec's bypassPermissions");
-		assert.ok("onPermission" in claude && claude.onPermission === undefined, "no host prompt can approve past the rules");
+		const key = `unsaved-${process.pid}-`;
+		assert.equal(asked.length, 2, "asked once to validate the batch, once under the worker's own id");
+		assert.equal(asked[1].backend, "claude-code");
+		assert.ok(asked[1].owner.startsWith(key) && asked[1].owner.endsWith("-ag_01"), asked[1].owner);
+		assert.deepEqual(claude.confine, { scope: JSON.stringify({ owner: asked[1].owner, root: null }), module: LAUNCH_MODULE, key: asked[1].owner, agentDir: NO_AGENT_DIR, writable: [] });
+		assert.ok(!("settingsJson" in claude), "the sandbox gives no Claude settings; the runner turns Claude's own sandbox off");
+		assert.equal(claude.permissionMode, undefined, "no forced mode: the runner's default bypassPermissions, or the spec's own");
+		assert.deepEqual(claude.backendOptions, { permissionMode: "bypassPermissions" });
 		assert.deepEqual(claude.extensions, []);
 
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, enforcement: "partial", claudeRefusal: "Sandbox enforcement is partial (x); set acceptPartial." });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, enforcement: "partial", workerLaunch: () => ({ kind: "refused", reason: "Sandbox enforcement is partial (x); set acceptPartial." }) });
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), { message: "Sandbox enforcement is partial (x); set acceptPartial." });
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, claudeSettingsJson: undefined });
-		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no Claude Code settings/);
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: undefined });
+		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no worker launch/);
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "pi", extensionPath: SANDBOX_DIR, flags: {} }) });
+		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave the claude-code worker no confinement/);
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
 		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "other" }), /cannot run workers while this session's sandbox is on/);
 		// A mixed batch fails as a whole: the pi worker never starts either.
@@ -2604,6 +2616,50 @@ test("sandbox on: claude workers get the extension's settings and permission mod
 		assert.equal(created.length, 1);
 		assert.equal(h.workers.length, 0);
 	} finally { await h.close(); }
+});
+
+test("confined claude: a team member's mailbox is writable; a hosted worker gets the host's own tmp; session_start sweeps the private dirs of workers no longer recorded, never a recorded one", async () => {
+	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-confined-")));
+	const agentDir = path.join(root, "agent");
+	const sessionFile = path.join(agentDir, "sessions", "--cwd--", "2026-09-30T00-00-00-000Z_sess-1.jsonl");
+	fs.mkdirSync(path.dirname(sessionFile), { recursive: true });
+	fs.writeFileSync(sessionFile, "");
+	const mailboxRoot = path.join(root, "mailbox");
+	const h = harness(eventBus(), { agentDir, mailboxRoot, mailboxPollMs: 10, hosting: { root: path.join(root, "workers"), enabled: true } });
+	h.ctx.sessionManager.getSessionId = () => "sess-1";
+	h.ctx.sessionManager.getSessionFile = () => sessionFile;
+	const created: any[] = [];
+	const fake = fakeBackend(created);
+	// Hosted workers are bound to their registry entry until they close.
+	h.bus.emit(BACKEND_REGISTER_EVENT, { ...fake, create: (o: any, handlers: any) => Object.assign(fake.create(o, handlers), { whenClosed: new Promise(() => {}) }) });
+	h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
+	try {
+		await h.start();
+		await h.call("team_create", { name: "T", objective: "o", members: [{ role: "lead", prompt: "t", orchestrator: true, backend: "claude-code" }] });
+		const member = created[0];
+		assert.equal(member.confine.key, "sess-1-ag_01");
+		assert.equal(member.confine.writable.length, 1);
+		assert.ok(member.confine.writable[0].endsWith(path.join("team_01", "ag_01")) && fs.statSync(member.confine.writable[0]).isDirectory(), "its own mailbox");
+		assert.equal(decodeMemberContext(member.mcpServers.team.env[MEMBER_ENV])!.dir, member.confine.writable[0]);
+		assert.equal(member.confine.hostedTmpDir, path.join(member.tmpDir, "tmp"), "hosted: the host's own tmp, inside its worker dir");
+		assert.ok(fs.statSync(member.confine.hostedTmpDir).isDirectory());
+
+		// The sweep: an old dir of a recorded worker stays, one of an unrecorded worker goes.
+		const old = (Date.now() - 2 * 24 * 3600_000) / 1000;
+		const dirOf = (key: string) => path.join(agentDir, "sova", "sandbox", "claude", key);
+		for (const key of ["sess-1-ag_01", "sess-1-ag_07", "gone-session-ag_01"]) {
+			fs.mkdirSync(dirOf(key), { recursive: true });
+			fs.utimesSync(dirOf(key), old, old);
+		}
+		h.ctx.sessionManager.getEntries = () => h.appended.map((e: any) => ({ type: "custom", ...e }));
+		await h.start();
+		assert.ok(fs.existsSync(dirOf("sess-1-ag_01")), "a recorded worker keeps its state for a resume");
+		assert.ok(!fs.existsSync(dirOf("sess-1-ag_07")), "no record of it left");
+		assert.ok(!fs.existsSync(dirOf("gone-session-ag_01")), "its owner session's file is gone");
+	} finally {
+		await h.close();
+		fs.rmSync(root, { recursive: true, force: true });
+	}
 });
 
 test("sandbox: the state is asked for at load, malformed announcements are ignored, and a remote session's workers never load the extension", async () => {
@@ -2617,7 +2673,7 @@ test("sandbox: the state is asked for at load, malformed announcements are ignor
 		assert.deepEqual(h.workers[0].flags, WORKER_FLAGS, "a sandbox loaded first is learned by discovery");
 		bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, version: 2 });
 		bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, extensionPath: "relative/sandbox" });
-		bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerFlags: { sandbox: true } });
+		bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: "not a function" });
 		await h.call("agent_spawn", { prompt: "pi task" });
 		assert.deepEqual(h.workers[1].flags, WORKER_FLAGS, "the last valid state stands");
 	} finally { await h.close(); }
@@ -2644,30 +2700,32 @@ test("sandbox on: every worker is checked by the extension first, and its refusa
 	h.bus.emit(BACKEND_REGISTER_EVENT, fakeBackend(created));
 	const outside = fs.mkdtempSync(path.join(os.tmpdir(), "pi-subagents-sandbox-outside-"));
 	const asked: { cwd: string; backend: string }[] = [];
-	const checkWorker = (req: { cwd: string; backend: string }) => {
-		asked.push(req);
-		return req.cwd === outside ? `Sandbox: worker cwd ${outside} is outside the parent's sandbox` : undefined;
+	const workerLaunch = (req: { cwd: string; root?: string; backend: string; owner: string }): WorkerLaunch => {
+		asked.push({ cwd: req.cwd, backend: req.backend });
+		return req.cwd === outside ? { kind: "refused", reason: `Sandbox: worker cwd ${outside} is outside the parent's sandbox` } : workerLaunchOf()(req);
 	};
 	try {
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, checkWorker });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch });
 		await h.call("agent_spawn", { prompt: "p", cwd: "extensions" });
 		await h.call("agent_spawn", { prompt: "c", backend: "claude-code" });
-		assert.deepEqual(asked, [{ cwd: path.join(h.ctx.cwd, "extensions"), backend: "pi" }, { cwd: h.ctx.cwd, backend: "claude-code" }], "the resolved cwd and the backend");
+		assert.deepEqual(asked, [{ cwd: path.join(h.ctx.cwd, "extensions"), backend: "pi" }, { cwd: h.ctx.cwd, backend: "claude-code" }, { cwd: h.ctx.cwd, backend: "claude-code" }], "the resolved cwd and the backend (a claude worker is asked again under its own id)");
 		for (const backend of [undefined, "claude-code"]) {
 			await assert.rejects(h.call("agent_spawn", { agents: [{ prompt: "fine" }, { prompt: "p", cwd: outside, backend }] }), { message: `Sandbox: worker cwd ${outside} is outside the parent's sandbox` });
 		}
 		assert.equal(h.workers.length + created.length, 2, "nothing of a refused batch started");
 
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, checkWorker: undefined });
-		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker check/);
-		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no worker check/);
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerFlags: undefined });
-		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker flags/);
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: undefined });
+		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker launch/);
+		await assert.rejects(h.call("agent_spawn", { prompt: "c", backend: "claude-code" }), /gave no worker launch/);
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "none" }) });
+		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave no worker launch/);
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch: () => ({ kind: "confine", scope: "s", module: LAUNCH_MODULE }) });
+		await assert.rejects(h.call("agent_spawn", { prompt: "p" }), /gave a pi worker no extension flags/);
 		assert.equal(h.workers.length + created.length, 2);
 
 		// Off: the sandbox checks nothing (the worktrees gate still refuses a cwd outside the session's).
 		asked.length = 0;
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, checkWorker });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch });
 		await h.call("agent_spawn", { prompt: "p", cwd: "extensions" });
 		await assert.rejects(h.call("agent_spawn", { prompt: "p", cwd: outside }), /outside this session's cwd and its worktrees/);
 		assert.equal(asked.length, 0);
@@ -3620,9 +3678,9 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 	let branch: unknown[] = [];
 	h.ctx.sessionManager.getBranch = () => branch;
 	const flagsFor: string[] = [];
-	const workerFlagsIn = (r: string) => (flagsFor.push(r), { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [r] }) });
+	const workerLaunch = workerLaunchOf((r: string) => (flagsFor.push(r), { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [r] }) }));
 	try {
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerFlagsIn });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch });
 		// Nothing tracked: only the session cwd (and below it).
 		await h.call("agent_spawn", { prompt: "here", cwd: "extensions" });
 		assert.deepEqual(h.workers[0].extensions, [MARKER_EXTENSION], "no confinement in the session cwd");
@@ -3636,22 +3694,27 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 		assert.deepEqual(flagsFor, [wt], "confined to the worktree's top level, not its subdir");
 		assert.deepEqual(pi.extensions, [MARKER_EXTENSION, SANDBOX_DIR]);
 		assert.deepEqual(pi.flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
-		// Claude Code: the spawn check only.
+		// Claude Code: confined to the worktree too (write-only while off), under its own id.
 		await h.call("agent_spawn", { prompt: "claude in tree", cwd: wt, backend: "claude-code" });
 		assert.equal(created.length, 1);
 		assert.equal(flagsFor.length, 1);
+		assert.deepEqual(JSON.parse(created[0].confine.scope), { owner: created[0].confine.key, root: wt }, "the worktree's top level is its root");
+		assert.equal(created[0].cwd, wt);
 		// A dropped worktree admits nothing; the refusal names the active set.
 		await assert.rejects(h.call("agent_spawn", { prompt: "d", cwd: dropped }), new RegExp(`outside this session's cwd and its worktrees \\(${wt}\\)`));
 		await assert.rejects(h.call("team_add", { team: "team_01", members: [{ role: "x", prompt: "p", cwd: dropped }] }), /outside this session's cwd|No such team/);
 		// On: the sandbox's narrowed scope replaces its session-wide worker flags.
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerFlagsIn });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch });
 		await h.call("agent_spawn", { prompt: "on", cwd: wt });
 		assert.deepEqual(h.workers.at(-1).flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
 		await h.call("agent_spawn", { prompt: "on, session cwd" });
 		assert.deepEqual(h.workers.at(-1).flags, WORKER_FLAGS);
-		// Fail closed: a worktree worker the sandbox cannot scope does not start.
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerFlagsIn: () => undefined });
-		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: wt }), /Cannot confine a worker to the worktree/);
+		// Fail closed: a worktree worker the sandbox cannot scope does not start, of either backend.
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: () => ({ kind: "none" }) });
+		await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: wt }), /Cannot confine a worker to the worktree .*: this session's sandbox gave no scope for it/);
+		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
+		for (const backend of [undefined, "claude-code"])
+			await assert.rejects(h.call("agent_spawn", { prompt: "x", cwd: wt, backend }), /Cannot confine a worker to the worktree .*: this session's sandbox gave no scope for it/);
 		// A worker cannot load the worktrees extension (any copy), so it never has the tool.
 		await assert.rejects(h.call("agent_spawn", { prompt: "x", extensions: [path.resolve(fileURLToPath(new URL("../worktrees", import.meta.url)))] }), /Refusing to load the worktrees extension/);
 		const copy = path.join(root, "copy", "subagents");
@@ -3679,7 +3742,7 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 	const h = harness();
 	h.ctx.sessionManager.getBranch = () => worktreesBranch([{ path: wt }, { path: path.join(root, "plain") }]);
 	try {
-		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerFlagsIn: (r: string) => ({ sandbox: "on", "sandbox-parent": r }) });
+		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_OFF, workerLaunch: workerLaunchOf() });
 		// The parent's worker modes are on: the tree's own mode extension gives this worker spec instead.
 		h.bus.emit(MODE_WORKER_EVENT, SPEC_ON);
 		await h.call("agent_spawn", { prompt: "trial", cwd: wt, useWorktreeConfig: true, systemPrompt: "BRIEF" });
@@ -3708,7 +3771,7 @@ test("worktrees: useWorktreeConfig runs a pi worker on <worktree>/.agent with it
 const STATE_SPEC_ON = { version: 1, mode: "normal", strict: false, minorModes: ["spec"] };
 const STATE_SPEC_OFF = { version: 1, mode: "normal", strict: false, minorModes: [] };
 
-test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, merged over the sandbox's settings", async () => {
+test("spec on: every code-writing worker (pi, claude-code, team member) gets the worker spec brief; claude-code also the spec hooks, a confined one on its own state dir and ledger file", async () => {
 	const bus = eventBus();
 	let asked = 0;
 	bus.on(MODE_DISCOVER_EVENT, (data: any) => { if (data?.version === 1) asked++; });
@@ -3752,9 +3815,17 @@ test("spec on: every code-writing worker (pi, claude-code, team member) gets the
 
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_ON);
 		await h.call("agent_spawn", { prompt: "claude task", backend: "claude-code" });
-		const merged = JSON.parse(created[3].settingsJson);
-		assert.deepEqual(merged.sandbox, { enabled: true }, "the sandbox's settings stay");
-		assert.ok(merged.hooks.Stop, "and the hooks join them");
+		const confined = created[3];
+		const merged = JSON.parse(confined.settingsJson);
+		assert.equal(merged.sandbox, undefined, "no Claude sandbox settings from the sandbox (the runner turns it off)");
+		const stop = merged.hooks.Stop[0].hooks[0].command as string;
+		const ownState = path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers", confined.confine.key);
+		const ownLedger = path.join(NO_AGENT_DIR, "sova", "spec-ledger", `${path.basename(ledger!, ".jsonl")}.workers`, `${confined.confine.key}.jsonl`);
+		assert.ok(stop.includes(` --state ${ownState}`) && stop.includes(` --ledger ${ownLedger}`), stop);
+		assert.deepEqual(confined.confine.writable, [ownState, ownLedger], "both writable inside, nothing else of the agent dir");
+		assert.ok(fs.statSync(ownState).isDirectory() && fs.statSync(ownLedger).isFile(), "made before the launch");
+		fs.rmSync(path.join(NO_AGENT_DIR, SPEC_HOOK_STATE, "workers"), { recursive: true, force: true });
+		fs.rmSync(path.dirname(ownLedger), { recursive: true, force: true });
 		h.bus.emit(SANDBOX_STATE_EVENT, SANDBOX_OFF);
 
 		await h.call("team_create", { name: "T", objective: "o", members: [

@@ -1026,6 +1026,9 @@ export class ClaudeRunner implements Worker {
 		else if (this.initialOwed) {
 			this.initialOwed = false; this.taskOutcome = this.stopping && this.status !== "error" ? "aborted" : "error";
 			}
+		// A confined worker's default sandbox tmp goes with it (a hosted one's is the host's).
+		const confine = this.options.confine;
+		if (confine && !confine.hostedTmpDir) void launchModule(confine.module).then((m) => m.releaseWorkerTmp?.(confine.scope)).catch(() => undefined);
 		this.endedAt = Date.now(); this.notifySettled(); this.touch(); this.handlers.onExit(this);
 		this.closedState.resolve();
 	}

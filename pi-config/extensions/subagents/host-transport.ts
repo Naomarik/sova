@@ -28,7 +28,7 @@ import type { HostConfine, HostSpawnSpec } from "./host.ts";
 import { files, readStatus, type WorkerStatus } from "./workers-dir.ts";
 
 export const HOST_SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), "host.ts");
-type SpawnImpl = (command: string, args: string[], options: { cwd?: string; stdio: any[]; env?: NodeJS.ProcessEnv }) => ChildProcess;
+type SpawnImpl = (command: string, args: string[], options: { cwd?: string; stdio: any[]; env?: NodeJS.ProcessEnv; hosted?: unknown }) => ChildProcess;
 
 export interface HostHello { hostPid: number; hostStartTime?: number; workerPid?: number; workerStartTime?: number }
 

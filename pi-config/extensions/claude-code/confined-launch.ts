@@ -133,6 +133,7 @@ export function confinedSourceEnv(env: NodeJS.ProcessEnv): Record<string, string
 export interface LaunchModule {
 	confineLaunch(scope: string, needs: LaunchNeeds, launch: LaunchCommand): Promise<ConfineLaunchResult>;
 	workerTmpDir(scope: string, needs?: Pick<LaunchNeeds, "tmpDir">): { host: string; inside: string };
+	releaseWorkerTmp?(scope: string): void;
 }
 const loaded = new Map<string, Promise<LaunchModule>>();
 /** The sandbox's launch module, by the path workerLaunch named (loaded once per path). */
@@ -144,4 +145,61 @@ export function launchModule(file: string): Promise<LaunchModule> {
 		module.catch(() => loaded.delete(file));
 	}
 	return module;
+}
+
+/** A private config dir untouched this long may be swept (a running worker's CLI writes there all the time). */
+export const PRIVATE_DIR_IDLE_MS = 24 * 60 * 60_000;
+/**
+ * Delete the private config dirs whose worker is gone for good (§chat.sandbox/claude-state): the
+ * owner session's file no longer exists under any of `sessionDirs` (an unsaved session: its process
+ * is dead), or the owner is the current session (`current`) and no record of the worker is left in
+ * it (`recorded`). Never a dir `keep` claims (a worker running here, or a hosted one whose host
+ * lives), nor one touched in the last PRIVATE_DIR_IDLE_MS. Returns the keys removed. Never throws.
+ */
+export function sweepPrivateConfigDirs(o: {
+	agentDir: string;
+	sessionDirs: string[];
+	current?: { key: string; recorded: (workerId: string) => boolean };
+	keep: (key: string) => boolean;
+	now?: number;
+	alive?: (pid: number) => boolean;
+}): string[] {
+	const root = path.join(o.agentDir, "sova", "sandbox", "claude");
+	let names: string[];
+	try { names = fs.readdirSync(root); } catch { return []; }
+	const now = o.now ?? Date.now();
+	let sessionFiles: Set<string> | undefined;
+	const sessionExists = (id: string): boolean => {
+		if (!sessionFiles) {
+			sessionFiles = new Set();
+			for (const dir of o.sessionDirs) {
+				let entries: fs.Dirent[] = [];
+				try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+				for (const entry of entries) {
+					const names = entry.isDirectory() ? (() => { try { return fs.readdirSync(path.join(dir, entry.name)); } catch { return []; } })() : [entry.name];
+					for (const name of names) { const m = /_([^_/]+)\.jsonl$/.exec(name); if (m) sessionFiles.add(m[1]!); }
+				}
+			}
+		}
+		return sessionFiles.has(id);
+	};
+	const alive = o.alive ?? ((pid: number) => { try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; } });
+	const removed: string[] = [];
+	for (const key of names) {
+		const m = /^(.+)-(ag_\d+)$/.exec(key);
+		if (!m || o.keep(key)) continue;
+		const dir = path.join(root, key);
+		let touched = 0;
+		for (const p of [dir, path.join(dir, ".claude.json"), path.join(dir, "sessions")]) {
+			try { touched = Math.max(touched, fs.statSync(p).mtimeMs); } catch { /* absent */ }
+		}
+		if (now - touched < PRIVATE_DIR_IDLE_MS) continue;
+		const [, owner, workerId] = m;
+		const unsaved = /^unsaved-(\d+)-/.exec(owner!);
+		const gone = owner === o.current?.key ? !o.current.recorded(workerId!)
+			: unsaved ? !alive(Number(unsaved[1])) : !sessionExists(owner!);
+		if (!gone) continue;
+		try { fs.rmSync(dir, { recursive: true, force: true }); removed.push(key); } catch { /* next time */ }
+	}
+	return removed;
 }

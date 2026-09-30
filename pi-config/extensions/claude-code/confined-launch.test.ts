@@ -14,7 +14,7 @@ import { test } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { ClaudeRunner, type ClaudeSpawnOptions } from "./runner.ts";
 import { ClaudeLogins, loginDir, loginUsers, markLeaving, writeAccounts } from "./accounts.ts";
-import { CLAUDE_API_HOSTS, TOKEN_FD, TOKEN_FD_ENV, claudeNeeds, privateConfigDir, releasePrivateConfigDir } from "./confined-launch.ts";
+import { CLAUDE_API_HOSTS, TOKEN_FD, TOKEN_FD_ENV, claudeNeeds, privateConfigDir, releasePrivateConfigDir, sweepPrivateConfigDirs } from "./confined-launch.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 async function until(check: () => boolean, ms = 3000): Promise<void> {
@@ -78,7 +78,7 @@ function credentials(dir: string, token: string, expiresAt = FAR): void {
 	fs.writeFileSync(path.join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: "REFRESH-never", expiresAt } }));
 }
 
-function setup(t: { after: (fn: () => void) => void }, o: { pool?: boolean; refuse?: string; hosted?: boolean; noToken?: boolean; systemPrompt?: string; settingsJson?: string } = {}) {
+function setup(t: { after: (fn: () => void) => void }, o: { pool?: boolean; refuse?: string; hosted?: boolean; noToken?: boolean; systemPrompt?: string; settingsJson?: string; resume?: string } = {}) {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "claude-confined-")));
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 	const agentDir = path.join(root, "agent");
@@ -129,6 +129,7 @@ function setup(t: { after: (fn: () => void) => void }, o: { pool?: boolean; refu
 		env: { MCP_TOOL_TIMEOUT: "1000", ...login.env }, login, logins, refreshImpl,
 		...(o.systemPrompt ? { systemPrompt: o.systemPrompt } : {}),
 		...(o.settingsJson ? { settingsJson: o.settingsJson } : {}),
+		...(o.resume ? { resume: { sessionId: o.resume } } : {}),
 		confine: { scope: "SCOPE", module: module.file, key: "sess-w1", agentDir, writable: [path.join(root, "mailbox")], ...(o.hosted ? { hostedTmpDir: path.join(root, "hosted-tmp") } : {}) },
 		spawnImpl: spawn, respawnImpl: spawn,
 		signalGroupImpl: (pid) => { children.find((c) => c.pid === pid)?.kill(); },
@@ -291,3 +292,49 @@ test("claudeNeeds: an over-long transcript folder name is refused; the private d
 
 function fileURLToPathOf(rel: string): string { return new URL(rel, import.meta.url).pathname; }
 void tick;
+
+test("sweepPrivateConfigDirs: removes a worker's dir once its owner session file is gone (or its record, for this session); never a kept, fresh or still-owned one", (t) => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), "claude-sweep-"));
+	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+	const sessions = path.join(root, "sessions");
+	fs.mkdirSync(path.join(sessions, "--cwd--"), { recursive: true });
+	fs.writeFileSync(path.join(sessions, "--cwd--", "2026-09-30T00-00-00-000Z_live-session.jsonl"), "");
+	const now = Date.now();
+	const old = (now - 2 * 24 * 3600_000) / 1000;
+	const make = (key: string, fresh = false) => {
+		const dir = privateConfigDir(root, key);
+		fs.mkdirSync(dir, { recursive: true });
+		fs.writeFileSync(path.join(dir, ".claude.json"), "{}");
+		if (!fresh) { fs.utimesSync(path.join(dir, ".claude.json"), old, old); fs.utimesSync(dir, old, old); }
+		return dir;
+	};
+	make("live-session-ag_01");
+	make("deleted-session-ag_01");
+	make("deleted-session-ag_02", true);
+	make("deleted-session-ag_03");
+	make("this-session-ag_01");
+	make("this-session-ag_02");
+	make("unsaved-999999999-x-ag_01");
+	make("not-a-worker");
+	const removed = sweepPrivateConfigDirs({
+		agentDir: root, sessionDirs: [sessions], now,
+		current: { key: "this-session", recorded: (id) => id === "ag_01" },
+		keep: (key) => key === "deleted-session-ag_03",
+		alive: () => false,
+	}).sort();
+	assert.deepEqual(removed, ["deleted-session-ag_01", "this-session-ag_02", "unsaved-999999999-x-ag_01"]);
+	for (const kept of ["live-session-ag_01", "deleted-session-ag_02", "deleted-session-ag_03", "this-session-ag_01", "not-a-worker"]) {
+		assert.ok(fs.existsSync(privateConfigDir(root, kept)), kept);
+	}
+});
+
+test("a resume after the private config dir was swept starts on a fresh one, resuming the same Claude session (its transcript is in Claude Code's own projects/)", { timeout: 8000 }, async (t) => {
+	const s = setup(t, { resume: SESSION });
+	await until(() => s.children.length === 1);
+	const child = s.children[0]!;
+	assert.equal(child.argv[child.argv.indexOf("--resume") + 1], SESSION);
+	const home = privateConfigDir(s.agentDir, "sess-w1");
+	const slug = s.cwd.replace(/[^a-zA-Z0-9]/g, "-");
+	assert.ok(fs.statSync(home).isDirectory(), "made again");
+	assert.equal(fs.realpathSync(path.join(home, "projects", slug)), path.join(s.claudeDir, "projects", slug), "the record it resumes is reachable");
+});

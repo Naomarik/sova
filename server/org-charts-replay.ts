@@ -1011,10 +1011,21 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       // A promote: every id it refused was promoted by the chart's own act. A build: the item's own build was started by the chart.
       const refusedIds = [...(v.refusal ?? "").matchAll(/(\S+) \(([^)]*)\)/g)].map((m) => ({ id: m[1]!.replace(/^[:;]\s*/, ""), why: m[2]! }));
       const drivenIds = new Set(world.driven.filter((d) => d.event === "decision/promote").flatMap((d) => d.ids));
+      // A partial call (per-id refusals) ran only for the ids the stores show promoted next; the rest were refused
+      // there too.
+      const at = trace.events.indexOf(s);
+      const ranIds =
+        s.verdict === "partial"
+          ? refusedIds.filter((r) => {
+              const next = trace.events.slice(at + 1).find((e) => e.kind === "fact" && e.entity === "decision" && e.id === r.id);
+              const end = trace.events.slice(at + 1).find((e) => e.kind === "turn-end");
+              return next?.state === "promoted" && next.by === "overseer" && (!end || next.dt <= end.dt);
+            })
+          : refusedIds;
       const done =
         v.event === "decision/promote"
-          ? refusedIds.length > 0 && refusedIds.every((r) => r.why.startsWith("it is promoted") && drivenIds.has(r.id))
-            ? world.driven.filter((d) => d.event === "decision/promote" && d.ids.some((id) => refusedIds.some((r) => r.id === id)))
+          ? ranIds.length > 0 && ranIds.every((r) => r.why.startsWith("it is promoted") && drivenIds.has(r.id))
+            ? world.driven.filter((d) => d.event === "decision/promote" && d.ids.some((id) => ranIds.some((r) => r.id === id)))
             : []
           : world.driven.filter((d) => d.event === v.event && d.sessionId === v.sid);
       if (done.length) return diverge("chart-vs-real", "taken", got, "ruling", "r3 (q2 drive): the chart made this move itself before the overseer's call", { ruling: "r3", driven: done.map((d) => ({ at: d.at - T0, session: d.sessionId, event: d.event })) });
@@ -1069,8 +1080,17 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       const at = trace.events.indexOf(s);
       for (const id of s.args?.ids ?? []) {
         const conf = world.configuration(S.decision(id));
-        if (!conf.includes("pending")) continue;
         const next = trace.events.slice(at + 1).find((e) => e.kind === "fact" && e.entity === "decision" && e.id === id);
+        // The overseer's own promotion (not the operator's by id) is only of an in-area decision (master's rule too):
+        // one the stores show it promoted was in its author's area then; decisions.json keeps only the last value.
+        const turnEnd = trace.events.slice(at + 1).find((e) => e.kind === "turn-end");
+        if (next?.state === "promoted" && next.by === "overseer" && (!turnEnd || next.dt <= turnEnd.dt) && decisions.get(id) && !decisions.get(id)!.authorOwnsArea && world.exists(S.decision(id))) {
+          diverge("decision-area", true, false, "mining", `decisions.json keeps only a decision's last owner-area verdict: ${id} was promoted by the overseer's own call, which only an in-area decision may be; synced`);
+          decisions.get(id)!.authorOwnsArea = true;
+          await fact("sync in-area", S.decision(id), "reconcile/result", { state: "drafted", authorOwnsArea: true });
+          continue;
+        }
+        if (!conf.includes("pending")) continue;
         if (next?.state !== "promoted") continue;
         diverge("decision-state", "drafted", "pending", "mining", `decisions.json keeps only a decision's last state: ${id} went from pending to promoted with no drafted state dated between, so it was reconciled before this promote; synced`);
         await fact("sync drafted", S.decision(id), "reconcile/result", { state: "drafted", authorOwnsArea: decisions.get(id)?.authorOwnsArea ?? false });
@@ -1100,6 +1120,10 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   };
 
   // ---- looks ---------------------------------------------------------------------------------------------------
+  /** A reason the chart noted for its own act (r3 drive): noted by the chart, or for a driven act that instant. */
+  const drivenNews = (r: { kind: string; at: number; by: string | null }) => r.by === "chart" || (!!DRIVEN_NEWS[r.kind] && world.driven.some((d) => d.event === DRIVEN_NEWS[r.kind] && d.at === r.at));
+  /** The watch's pending reason kinds (noted since its current look started). */
+  const pendingNow = () => ((world.data(S.watch).reasons as { kind?: string }[] | undefined) ?? []).map((r) => String(r.kind));
   /** When the chart looked for its own driven acts alone (r3). */
   const drivenLookAts: number[] = [];
   /** The reasons of the last look, when it was cut off (C1), until the next look. */
@@ -1158,12 +1182,23 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       if (match.kinds.includes(k)) pass();
       else if (k.startsWith("drift:")) diverge("look-reasons", k, match.kinds, "drift", "a reason only older commits emit", driftEvidence([k]));
       else if (k === "baton/proposal") diverge("look-reasons", k, match.kinds, "store-shape", `no store dates a referral, so the replay cannot send it. ${PROPOSE.dated}`);
+      else if (match.rows.length && match.rows.every(drivenNews) && pendingNow().includes(k))
+        diverge("look-reasons", k, match.kinds, "ruling", "r3 (q2 drive): the chart was already looking for its own act's news when this came; it waits for the chart's next look", { ruling: "r3", lookAt: match.at - T0, looksFor: match.rows.map((r) => ({ ...r, at: r.at - T0 })) });
       else diverge("look-reasons", k, match.kinds, null, "the real look carried a reason the chart's look lacks");
     }
     for (const k of new Set(match.kinds)) {
       if (realKinds.includes(k)) continue;
       if (cut?.kinds.has(k) && !k.startsWith("item/")) {
         diverge("look-reasons", `no ${k}`, k, "chart-better", "C1: the look before was cut off (it did not finish); the chart puts its reasons back in front, today lost them", { cutLookAt: cut.at - T0, requeued: [...cut.kinds] });
+        continue;
+      }
+      const rowsK = match.rows.filter((r) => r.kind === k);
+      if (rowsK.length && rowsK.every(drivenNews)) {
+        diverge("look-reasons", `no ${k}`, k, "ruling", "r3 (q2 drive): news of the chart's own act; today that act waited for the overseer", { ruling: "r3", reasons: rowsK.map((r) => ({ ...r, at: r.at - T0 })) });
+        continue;
+      }
+      if (k === "baton/asked-operator" && F.askedOperatorReason === false) {
+        diverge("look-reasons", `no ${k}`, k, "drift", "a gathering handing a question to the operator became a reason to look in 8b7f6751; this trace's code has no such reason", { commits: ["8b7f6751"] });
         continue;
       }
       if (k === "coding/settled" && F.codingSettledReason === false) {
@@ -1193,9 +1228,11 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       l.matched = true;
       if (trace.source !== "synthetic") {
         if (l.kinds.some((k) => k.startsWith("item/"))) diverge("chart-look-extra", "no look", l.kinds, "chart-better", "the chart looked for an item's own reason (stall, reopen, answered-nothing, built) today has no reason for", { lookAt: l.at - T0 });
+        else if (F.askedOperatorReason === false && l.kinds.length && l.kinds.every((k) => k === "baton/asked-operator"))
+          diverge("chart-look-extra", "no look", l.kinds, "drift", "a look for a gathering that handed a question to the operator: that reason came in 8b7f6751, which this trace's code lacks", { commits: ["8b7f6751"], lookAt: l.at - T0 });
         else if (F.codingSettledReason === false && l.kinds.length && l.kinds.every((k) => k === "coding/settled"))
           diverge("chart-look-extra", "no look", l.kinds, "drift", "a look for a coding session's settled turn: that reason came in 239852ee, which this trace's code lacks", { commits: ["239852ee"], lookAt: l.at - T0 });
-        else if (l.rows.length && l.rows.every((r) => DRIVEN_NEWS[r.kind] && world.driven.some((d) => d.event === DRIVEN_NEWS[r.kind] && d.at === r.at)))
+        else if (l.rows.length && l.rows.every(drivenNews))
           drivenLookAts.push(l.at),
           diverge("chart-look-extra", "no look", l.kinds, "ruling", "r3 (q2 drive): the look is for the chart's own act (news the overseer is told of); today that act never happened", { ruling: "r3", lookAt: l.at - T0, driven: l.rows.map((r) => ({ kind: r.kind, at: r.at - T0 })) });
         else diverge("chart-look-extra", "no look", l.kinds, null, "the chart started a look where none really started", { lookAt: l.at - T0, rows: l.rows.map((r) => ({ ...r, at: r.at - T0 })) });

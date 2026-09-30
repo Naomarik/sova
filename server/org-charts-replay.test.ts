@@ -88,14 +88,8 @@ const MAX_MICROSTEPS = 200;
 const REWORK = "reworked onto the real host: unexplained divergences being classified (server-5)";
 /** The lanes whose divergences are still being classified: every other lane must replay with none unexplained. */
 const PENDING = new Set([
-  "real-06",
   "real-08",
-  "real-15",
-  "real-16",
-  "real-18",
-  "real-19",
   "real-22",
-  "real-23",
   "real-26",
   "real-28",
 ] as string[]);

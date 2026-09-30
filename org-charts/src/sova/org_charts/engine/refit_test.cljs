@@ -722,7 +722,8 @@
       (let [id (:id (hold))]
         (reset! fresh (+ t0 8000000))
         (let [r (core/send! eng "par" :sova/rewindow {:id id :until nil} {:now (+ t0 4000001)})]
-          (is (= "hours" (:wait (:held (first (:steps r))))) "re-checked: still off hours by the fresh facts")
+          (is (= [:sova/rewindow :message/send] (take 2 (map :event (:steps r)))) "its own row, then the release")
+          (is (= "hours" (:wait (:held (second (:steps r))))) "re-checked: still off hours by the fresh facts")
           (is (= [(+ t0 8000000)] (map :until (core/holds eng)))))))
     (testing "an unknown hold, or one that isn't an hours wait, is ignored"
       (let [r (core/send! eng "par" :sova/rewindow {:id "nope#9" :until (+ t0 1)} {:now (+ t0 4000002)})]

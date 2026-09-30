@@ -653,7 +653,13 @@
         c    (configuration eng sid)]
     (cond
       (not (and hold (= "hours" (:wait hold)))) [(assoc (refused-step eng sid event nil) :refused nil :ignored true)]
-      (or (nil? until) (<= until now)) (release-now! eng sid id)
+      (or (nil? until) (<= until now))
+      ;; its own row first (the log replays the release from it), then the release
+      (into [(assoc (base-step eng sid event)
+               :before c :after c :changed {(str "sova/holds." id ".until") [(:until hold) nil]}
+               :effects [] :outbox [] :holds [] :holds-ended [] :running (running? eng sid)
+               :microsteps 0 :saved true :feed :quiet)]
+        (release-now! eng sid id))
       (= until (:until hold)) [(assoc (refused-step eng sid event nil) :refused nil :ignored true)]
       :else
       (let [wm' (assoc-in wm [data-key :sova/holds id :until] until)]

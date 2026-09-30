@@ -423,6 +423,12 @@ export function readOrg(orgId: string): Org {
   return orgOfData(orgId, d);
 }
 
+/** For reads: an org whose own snapshot doesn't load reads as its id (the page opens with its problem and Reload),
+    as today's unreadable org.json did. Acts still refuse. */
+export function readOrgOrPlaceholder(orgId: string): Org {
+  return unreadable(orgId, orgSid(orgId)) ? { id: orgId, name: orgId, slug: orgId, createdAt: "" } : readOrg(orgId);
+}
+
 const STATUSES: readonly PersonStatus[] = ["proposed", "active", "left"];
 const statusOf = (configuration: readonly string[], data: Record<string, unknown>): PersonStatus =>
   STATUSES.find((s) => configuration.includes(s)) ?? (STATUSES.includes(data.status as PersonStatus) ? (data.status as PersonStatus) : "active");
@@ -587,7 +593,8 @@ export function revertOrgChange(orgId: string, at: string, by: OperatorBy = OPER
 
 export async function patchOrg(orgId: string, patch: { name?: unknown; about?: unknown }, by: OperatorBy = OPERATOR_BY): Promise<Org> {
   const dir = orgDir(orgId);
-  readOrg(orgId);
+  // Unreadable: the act below answers "Fix or restore it, then reload."
+  if (!unreadable(orgId, orgSid(orgId))) readOrg(orgId);
   const about = patch.about === undefined ? undefined : cleanAbout(patch.about);
   if (patch.name !== undefined) await actOrThrow(orgId, orgSid(orgId), "org/rename", { name: patch.name }, operatorEnvelope(orgId, null, by));
   if (about !== undefined) writeAbout(dir, about, undefined, by);
@@ -819,7 +826,7 @@ export function stakeholderAttention(): AttentionItem[] {
     let orgName = "";
     try {
       projects = readProjects(o.id);
-      orgName = readOrg(o.id).name;
+      orgName = readOrgOrPlaceholder(o.id).name;
     } catch {
       continue;
     }
@@ -1064,7 +1071,7 @@ export function orgSummaries(): OrgSummary[] {
     let projects: OrgProject[];
     let people: number;
     try {
-      org = readOrg(e.id);
+      org = readOrgOrPlaceholder(e.id);
       projects = readProjects(e.id);
       people = orgHost(e.id).sessions("person").length;
     } catch {
@@ -1093,7 +1100,9 @@ function problemsOf(orgId: string, dir: string): string[] {
 
 export async function orgDetail(orgId: string): Promise<OrgDetail> {
   const dir = orgDir(orgId);
-  const org = readOrg(orgId);
+  // An org whose own snapshot doesn't load still opens (as today's unreadable org.json did): its id for a name,
+  // `problems` saying why, and the Workspace tab's Reload; every act on it is refused until then.
+  const org = readOrgOrPlaceholder(orgId);
   const roster = readRoster(orgId);
   const projectList = readProjects(orgId);
   const about = readOrgAbout(orgId);

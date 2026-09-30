@@ -26,6 +26,7 @@ import {
   patchProject,
   readHistory,
   readOrg,
+  readOrgOrPlaceholder,
   readProjects,
   readRoster,
   recentChanges,
@@ -95,7 +96,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
     : null;
   return {
     session: row,
-    orgName: readOrg(row.orgId).name,
+    orgName: readOrgOrPlaceholder(row.orgId).name,
     projectName: readProjects(row.orgId).find((p) => p.id === row.projectId)?.name ?? "",
     names: namesOf(row.orgId),
     active: roster.filter((p) => p.status === "active").map((p) => ({ id: p.id, name: p.name, role: p.role, ...(p.tz ? { tz: p.tz } : {}), ...(p.hoursNow ? { hoursNow: p.hoursNow } : {}) })),
@@ -124,7 +125,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
 
 /** The org's owner's name for the strip's Hide From {first}, or null. */
 function ownerName(orgId: string, roster: ReturnType<typeof readRoster>): { name: string } | null {
-  const id = readOrg(orgId).owner;
+  const id = readOrgOrPlaceholder(orgId).owner;
   const p = id ? roster.find((x) => x.id === id && x.status === "active") : undefined;
   return p ? { name: p.name } : null;
 }

@@ -56,3 +56,29 @@ test("a broken snapshot is refused until it is restored and reloaded; Reload ans
   assert.equal(orgs.findPerson(org.id, sam.id)!.role, "Prices");
   assert.equal((await call("POST", "/api/orgs/org_nope0000/reload")).status, 404);
 });
+
+test("a broken org snapshot: the page still opens (id, problems, Reload), every act is refused, and Reload restores it", async () => {
+  const org = await orgs.createOrg({ name: "Broken", dir: join(root, "ws-org") });
+  await orgs.addPerson(org.id, { name: "Lina Haddad", role: "Ops" });
+  const sid = `org/${org.id}`;
+  await closeOrgHost(org.id);
+  const file = scanSnapshots(join(orgs.orgDir(org.id), "charts")).find((s) => s.sid === sid)!.file;
+  const good = readFileSync(file, "utf8");
+  writeFileSync(file, "<<<<<<< HEAD\n{:broken");
+  await orgs.openAttachedOrgs();
+  const r = await call("GET", `/api/orgs/${org.id}`);
+  assert.equal(r.status, 200, await r.clone().text());
+  const page = (await r.json()) as OrgDetail;
+  assert.equal(page.id, org.id);
+  assert.equal(page.problems.length, 1);
+  assert.match(page.problems[0]!, /can't be read/);
+  assert.equal(page.roster.length, 1, "what still loads is shown");
+  assert.ok((await call("GET", "/api/orgs")).status === 200, "the list still opens");
+  const refused = await call("PATCH", `/api/orgs/${org.id}`, { name: "Renamed" });
+  assert.equal(refused.status, 409);
+  assert.match(((await refused.json()) as { error: string }).error, /Fix or restore it, then reload\.$/);
+  writeFileSync(file, good);
+  const back = (await (await call("POST", `/api/orgs/${org.id}/reload`)).json()) as OrgDetail;
+  assert.deepEqual([back.name, back.problems], ["Broken", []]);
+  assert.equal((await call("PATCH", `/api/orgs/${org.id}`, { name: "Renamed" })).status, 200);
+});

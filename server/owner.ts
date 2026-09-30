@@ -1,5 +1,5 @@
 import type { OwnerPageInfo } from "../shared/orgs";
-import { type OperatorBy, OrgError, ownerOf, readIndex, readOrg, readRoster, setOrgOwner } from "./orgs";
+import { type OperatorBy, OrgError, ownerOf, readIndex, readOrgOrPlaceholder, readRoster, setOrgOwner } from "./orgs";
 import { findPersonLink, mintOwnerLink, ownerLinksOf, personLinkDead, personLinkState, revokePersonLinks, type PersonLinkRecord } from "./person-links";
 import { readVisits } from "./visits";
 
@@ -59,7 +59,7 @@ const ownerVisits = (orgId: string, personId: string) => readVisits(orgId, perso
 
 /** The owner card (OrgDetail.ownerPage). */
 export function ownerPageInfo(orgId: string, now = Date.now()): OwnerPageInfo {
-  const org = readOrg(orgId);
+  const org = readOrgOrPlaceholder(orgId);
   const person = org.owner ? readRoster(orgId).find((p) => p.id === org.owner && p.status === "active") : undefined;
   if (!person) return { person: null, link: null, opened: 0 };
   const newest = ownerLinksOf(orgId)

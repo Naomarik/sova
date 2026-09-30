@@ -1149,6 +1149,27 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     news: news.map((n) => ({ kind: n.kind, at: n.at - T0, asks: n.asks })),
     drives: world.driven.filter((d) => news.some((n) => d.at <= n.at && DRIVE_OF[n.kind]?.includes(d.event))).slice(-3).map((d) => ({ event: d.event, at: d.at - T0 })),
   });
+  /** A real look the chart hasn't matched because its previous look was an asks look (r3+r14) and master's gap applies
+      after it: every reason the real look carried waits in the chart, and its next look is due by the soon time or the
+      gap's end (on a tick), never dropped. The evidence, else null. */
+  const delayedByAsksLook = (d: Record<string, unknown>, realKinds: string[], pendingKinds: string[]) => {
+    const prev = world.looks.find((x) => x.at === d.lastRunAt);
+    if (!prev || !asksLook(prev) || typeof d.lastRunAt !== "number") return null;
+    const kinds = realKinds.filter((k) => k !== "run-now" && !k.startsWith("drift:"));
+    if (!kinds.length || !kinds.every((k) => pendingKinds.includes(k))) return null;
+    const gapMin = (d.settings as { watchGapMin?: number } | undefined)?.watchGapMin ?? 10;
+    const gapEnd = d.lastRunAt + gapMin * 60_000;
+    const soonAt = typeof d.soonAt === "number" ? d.soonAt : Infinity;
+    const due = world.nextDueAt();
+    if (due === null || due > Math.min(soonAt, gapEnd) + TICK_MS) return null;
+    return {
+      ruling: "r3+r14",
+      asksLook: { at: prev.at - T0, reasons: prev.rows.map((r) => ({ kind: r.kind, at: r.at - T0, by: r.by })) },
+      gapEnd: gapEnd - T0,
+      ...(Number.isFinite(soonAt) ? { soonAt: soonAt - T0 } : {}),
+      nextLookDue: due - T0,
+    };
+  };
   /** The chart's look at `at` when it carried only reasons this trace's code lacks (drift), else undefined. */
   const driftLook = (at: unknown) =>
     world.looks.find(
@@ -1190,6 +1211,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       // verifier-3 R2: only traces older than 239852ee (no coding/settled reason) lack the look's record of a Run Now.
       else if (F.codingSettledReason === false && explained.length === realKinds.length && pendingKinds.length && !conf.includes("running"))
         diverge("look-started", "a chart look", { at: leaves(conf), reasons: pendingKinds }, "store-shape", `a look before any rule allows one, carrying reasons the chart holds: a Run Now with reasons pending (no store records the click, in a trace older than 239852ee); resynced as one. ${PROPOSE.dated}`);
+      else if (delayedByAsksLook(d, realKinds, pendingKinds))
+        diverge("look-started", "a chart look", { at: leaves(conf), reasons: pendingKinds }, "ruling", "r3+r14: the chart's previous look was for its own reconcile's news that asks the overseer; master's gap after any look applies, so this reason waits for the chart's next look (its soon time or the gap's end), which is due", delayedByAsksLook(d, realKinds, pendingKinds)!);
       else if (driftLook(d.lastRunAt))
         diverge("look-started", "a chart look", { at: leaves(conf), reasons: pendingKinds }, "drift", "the chart's last look was for a reason this trace's code lacks; it restarted the chart's gap, so the chart's next look waits past this one", { chartLook: { at: driftLook(d.lastRunAt)!.at - T0, kinds: driftLook(d.lastRunAt)!.kinds }, commits: driftLook(d.lastRunAt)!.kinds.includes("coding/settled") ? ["239852ee"] : ["8b7f6751"] });
       else if (conf.includes("running") && realKinds.every((k) => k === "run-now"))

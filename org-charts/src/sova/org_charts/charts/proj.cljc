@@ -25,6 +25,7 @@
     [sova.org-charts.charts.base :as b]
     [sova.org-charts.charts.rules.levels :as lv]
     [sova.org-charts.charts.rules.refusal :as r]
+    [sova.org-charts.charts.rules.started :as st]
     [sova.org-charts.engine.dsl :as dsl]))
 
 (def version 1)
@@ -168,11 +169,41 @@
       (lv/blank? (:text ev)) (r/refuse 400 "text must not be blank."))))
 
 
+;; ---- the sessions it started (r11: one list, 200, the oldest settled retired) ---------------------------
+
+(defn started-ops
+  "Note a row (`:row`, and `:watch` it when an item started it) or mark one settled from its link
+   (`:mark [sid settled?]`), then trim past the cap: the oldest settled rows leave, each sent
+   `session/retire` and unwatched."
+  [d {:keys [row watch mark]}]
+  (let [rows (cond-> (vec (:started d)) row (st/note row) mark (st/mark (first mark) (second mark)))
+        {:keys [rows retire]} (st/trim rows)
+        dirs (concat (when watch [{:op :watch :target watch}]) (for [s retire] {:op :unwatch :target s}))]
+    (cond-> [(ops/assign :started rows)]
+      (seq dirs)   (conj (ops/assign :sova/directives (into (vec (:sova/directives d)) dirs)))
+      (seq retire) (into (b/queue-sends d (for [s retire] {:target s :event :session/retire :data {}}))))))
+
+(defn started-content [f]
+  [(script {:expr (fn [_ d] (started-ops d (f d)))})
+   (raise {:event :sova.charts/flush})])
+
+(defn- started-row [d kind sid] {:sid sid :kind kind :at (b/now-ms d)})
+
+(defn baton-kind [d] (if (>= (count (:targets (b/evt d))) 2) "offer" "gathering"))
+
+(defn- from-started? [_ d] (let [m (b/moved d)] (some #(= (:from m) (:sid %)) (:started d))))
+
 (def chart
   (statechart {:initial :project}
     (state {:id :project :initial :regions}
       (dsl/hold-cancel-correction)
       (b/hold-review)
+      (b/flush-transition)
+      ;; r11: an item's start joins the list (and the project watches it); a link says when one settled
+      (apply transition {:sova/feed :quiet :event :started/noted}
+        (started-content (fn [d] (let [e (b/evt d)] {:row (started-row d (:kind e) (:sid e)) :watch (:sid e)}))))
+      (apply transition {:sova/feed :quiet :event :link/moved :cond from-started?}
+        (started-content (fn [d] (let [m (b/moved d)] {:mark [(:from m) (st/settled? (:chart m) (:states m))]}))))
       (on-entry {}
         ;; project-scoped data names its project as every other chart does: the watch's ledger and
         ;; reasons (b/ledger, b/tell-watch) and the engine's drive stamp read :project-id
@@ -206,11 +237,13 @@
       ;; Item-less starts (the gap-less ones): a gathering…
       (dsl/act {:sova/feed :feed :event :baton/start :checks [not-archived invalid gather-cap]}
         (dsl/spawn {:chart "baton" :link :project :id (fn [d] (b/baton-sid (:org-id d) (:session-id (b/evt d)))) :data baton-data})
-        (b/ledger :ledger/take "gather" (constantly 1)))
+        (b/ledger :ledger/take "gather" (constantly 1))
+        (started-content (fn [d] {:row (started-row d (baton-kind d) (b/baton-sid (:org-id d) (:session-id (b/evt d))))})))
       ;; …and a coding session.
       (dsl/act {:sova/feed :feed :event :build/start :checks [not-archived invalid gap-none-build-check create-cap]}
         (dsl/spawn {:chart "build" :link :project :id (fn [d] (b/build-sid (:org-id d) (:id d) (:session-id (b/evt d)))) :data build-data})
-        (b/ledger :ledger/take "create" (constantly 1)))
+        (b/ledger :ledger/take "create" (constantly 1))
+        (started-content (fn [d] {:row (started-row d (:kind (build-data d)) (b/build-sid (:org-id d) (:id d) (:session-id (b/evt d))))})))
       ;; sova_send to a coding session under the project root that is not a build (a build's prompt
       ;; is its own chart's build/prompt): L3, a prompt, held when unattended; the host's `invalid`
       ;; carries the session's checks (archived, a terminal holds it, delivery)
@@ -322,6 +355,6 @@
    :version  version
    :migrate  {}
    :storage  :portable
-   :exported [:name :root :archived :stakeholder :stakeholder-cleared :owner-hidden :overseer :spec :last-post-at]
+   :exported [:name :root :archived :stakeholder :stakeholder-cleared :owner-hidden :overseer :spec :last-post-at :started]
    :acts     acts
    :not-here not-here})

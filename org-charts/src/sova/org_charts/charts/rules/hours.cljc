@@ -100,6 +100,11 @@
         (when-not (some (fn [[s e]] (and (<= s now) (< now e))) ws)
           (some (fn [[s _]] (when (> s now) s)) (sort-by first ws)))))))
 
+(defn reach-times
+  "Each person's own reach time: `{id → nil (now) | ms}` (r7, per-invitee delivery of an offer)."
+  [people now]
+  (into {} (map (fn [p] [(:id p) (next-window p now)])) people))
+
 (defn reach-window
   "An act that reaches `people` (person records with :tz/:hours): nil when any of them is in hours
    (or has none: always open, as today), else the earliest of their next windows."

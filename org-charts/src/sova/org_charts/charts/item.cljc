@@ -38,21 +38,29 @@
 
 (defn- fact-of [d] (let [m (b/moved d)] {:states (set (:states m)) :exported (:exported m) :running (:running m)}))
 
+(defn- watch-decisions
+  "Decisions the item doesn't know yet: pending until their own facts come, watched from now on."
+  [d ids]
+  (let [new (distinct (remove (set (keys (:decisions d))) (map str ids)))]
+    (concat
+      (for [id new] (ops/assign [:decisions id] {:states #{} :exported {:state "pending"}}))
+      (when (seq new)
+        [(ops/assign :sova/directives (into (vec (:sova/directives d))
+                                        (for [id new] {:op :watch :target (b/decision-sid (:org-id d) (:project-id d) id)})))]))))
+
 (defn moved-ops
-  "Keep the moved session's facts; a gathering's new decisions are watched from now on."
+  "Keep the moved session's facts; a gathering's new decisions, and the winner a watched decision is
+   superseded by, are watched from now on (the item follows the winner, as today's phase does)."
   [d]
   (let [m (b/moved d) sid (:from m) f (fact-of d)]
     (case (:chart m)
-      "baton"    (let [known (set (keys (:decisions d)))
-                       new   (remove known (map str (get-in m [:exported :decisions])))]
-                   (into [(ops/assign [:batons sid] (merge (get-in d [:batons sid]) f))
-                          (ops/assign :starting-gather (when-not (= sid (:starting-gather d)) (:starting-gather d)))]
-                     (concat
-                       (for [id new] (ops/assign [:decisions id] {:states #{} :exported {:state "pending"}}))
-                       (when (seq new)
-                         [(ops/assign :sova/directives (into (vec (:sova/directives d))
-                                                         (for [id new] {:op :watch :target (b/decision-sid (:org-id d) (:project-id d) id)})))]))))
-      "decision" [(ops/assign [:decisions (b/last-part sid)] f)]
+      "baton"    (into [(ops/assign [:batons sid] (merge (get-in d [:batons sid]) f))
+                        (ops/assign :starting-gather (when-not (= sid (:starting-gather d)) (:starting-gather d)))]
+                   (watch-decisions d (get-in m [:exported :decisions])))
+      "decision" (into [(ops/assign [:decisions (b/last-part sid)] f)]
+                   (let [winner (get-in m [:exported :superseded-by])]
+                     (when (and (string? winner) (not (str/blank? winner)))
+                       (watch-decisions d [winner]))))
       "build"    [(ops/assign [:builds sid] f) (ops/assign :starting-build nil)]
       "watch"    [(ops/assign :watch f)]
       [])))
@@ -132,13 +140,20 @@
        :mint-link (b/operator-act? d)
        :created-at (b/now-ms d)})))
 
+(defn- started-noted
+  "r11: the project keeps one list of every session it and its items started."
+  [sid-fn kind-fn]
+  (Send {:event :started/noted :targetexpr (fn [_ d] (b/project-sid (:org-id d) (:project-id d)))
+         :content (fn [_ d] {:sid (sid-fn d) :kind (kind-fn d)})}))
+
 (defn- gather-content []
   [(script {:expr (fn [_ d] (let [sid (b/baton-sid (:org-id d) (:session-id (e d)))
                                   follow? (contains? #{"deciding" "promoted"} (:lane-group d))]
                               [(ops/assign [:batons sid] {:states #{} :exported {} :follow-up follow?})
                                (ops/assign :starting-gather (when-not follow? sid))]))})
    (dsl/spawn {:chart "baton" :link :item :id (fn [d] (b/baton-sid (:org-id d) (:session-id (e d)))) :data baton-start-data})
-   (b/ledger :ledger/take "gather" (constantly 1))])
+   (b/ledger :ledger/take "gather" (constantly 1))
+   (started-noted (fn [d] (b/baton-sid (:org-id d) (:session-id (e d)))) (fn [d] (if (>= (count (:targets (e d))) 2) "offer" "gathering")))])
 
 (defn- build-content []
   [(script {:expr (fn [_ d] [(ops/assign :starting-build true) (ops/assign :reopened nil)])})
@@ -151,7 +166,8 @@
                                   :gap (:idea-id d) :item (:id d) :decisions (build-decisions d)
                                   :prompt (or (:prompt ev) (ri/build-prompt d (build-decisions d)))
                                   :created-at (b/now-ms d)})))})
-   (b/ledger :ledger/take "create" (constantly 1))])
+   (b/ledger :ledger/take "create" (constantly 1))
+   (started-noted (fn [d] (b/build-sid (:org-id d) (:project-id d) (:session-id (e d)))) (fn [d] (if (b/operator-act? d) "operator-coding" "coding")))])
 
 ;; ---- drive (r3): the acts the chart starts itself, at the level in force -------------------------------
 

@@ -115,6 +115,13 @@ Start: `{orgId, id, name, root, createdAt, origin}`; spawns `reconciler/<org>/<p
 
 Owner-update withdraw (`updates.jsonl`) is plain data: its route, no chart event.
 
+r11 started list: data/exported `started [{sid, kind gathering|offer|coding|operator-coding, at, settled}]`,
+oldest first: its own `baton/start`/`build/start` and its items' (`started/noted {sid, kind}`, from the item;
+the project then watches it). Settled (from the session's link): a gathering done/closed whose wrap-up is
+done or skipped; a build merged or tree removed with no turn running. Past 200 the oldest settled rows get
+`session/retire` (the baton/build goes to its final `retired` state only if settled; the host archives a
+final session); never a live one: the list exceeds 200 only while more are live.
+
 ## watch (`watch/<org>/<p>`, host-local)
 
 Start: `{orgId, projectId, paused?, settings?, tickOrigin?, tickMs?}` (the host starts it paused at attach).

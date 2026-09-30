@@ -51,10 +51,11 @@
 
 (defn hours-window
   "Act meta `:hours` (r7) for an act that reaches people: the envelope's person records (`target`,
-   `targets`, stamped by the host with tz/hours) → when their next window opens, or nil (go now)."
+   one person; `target-people`, an offer's invitees — `targets` holds their ids), stamped by the host
+   with tz/hours → when their next window opens, or nil (go now)."
   [data]
   (let [e (evt data)]
-    (hours/reach-window (filter map? (cons (:target e) (:targets e))) (now-ms data))))
+    (hours/reach-window (filter map? (concat [(:target e)] (:targets e) (:target-people e))) (now-ms data))))
 
 (defn- sid-of
   "A session id from its parts; a blank part is a chart bug (a send to `watch/o1/` would reach no

@@ -28,7 +28,7 @@
   (:require
     [clojure.string :as str]
     [com.fulcrologic.statecharts.chart :refer [statechart]]
-    [com.fulcrologic.statecharts.elements :refer [state parallel transition on-entry on-exit script Send cancel raise invoke]]
+    [com.fulcrologic.statecharts.elements :refer [final state parallel transition on-entry on-exit script Send cancel raise invoke]]
     [com.fulcrologic.statecharts.data-model.operations :as ops]
     [sova.org-charts.charts.base :as b]
     [sova.org-charts.charts.rules.baton :as rb]
@@ -356,7 +356,10 @@
 
 (def chart
   (statechart {:initial :baton}
+    ;; r11: retired by its project past the 200-row cap, only once settled (never while live): final
+    (final {:id :retired})
     (state {:id :baton :initial :regions}
+      (transition {:sova/feed :feed :event :session/retire :cond (fn [env _] (and (or (b/in? env :done) (b/in? env :closed)) (or (b/in? env :wrapup-done) (b/in? env :wrapup-skipped)))) :target :retired})
       (on-entry {}
         (script {:expr (fn [_ d] (start-ops d))})
         (watch-all (fn [d] (concat (when (:to d) [(:to d)]) (:targets d))))

@@ -52,6 +52,18 @@
               (testing "a newer decision reopens it"
                 (is (h/in? (decision m "d2" "pending") sid :unreconciled))))))))))
 
+(deftest follows-a-superseding-winner
+  ;; server-6's syn-conflict-two-gaps: a settle answers with another gap's decision; this item follows it
+  (let [y (-> (start) (watch-at "L0") (baton 1 [:done] :decisions ["d1"]) (decision "d1" "conflict"))
+        s (decision y "d1" "superseded" :ex {:superseded-by "d2"})]
+    (is (h/in? y sid :conflicted))
+    (is (some #(= {:op :watch :target "decision/o1/pr1/d2"} %) (h/directives s sid)) "the winner is watched")
+    (is (h/in? s sid :unreconciled) "pending until the winner's own facts come")
+    (is (h/in? (decision s "d2" "drafted") sid :drafted))
+    (is (h/in? (-> s (decision "d2" "drafted") (decision "d2" "promoted")) sid :awaiting-build))
+    (is (= 1 (count (filter #(= "decision/o1/pr1/d2" (:target %)) (h/directives (decision s "d1" "superseded" :ex {:superseded-by "d2"}) sid))))
+        "watched once")))
+
 (deftest follow-ups
   (let [p (-> (start) (watch-at "L0") (baton 1 [:done] :decisions ["d1"]) (decision "d1" "promoted"))
         y (h/send! p sid :gather/start (assoc op :session-id "b9" :to "p1" :public-title "More" :goal "g" :question "q"))]

@@ -5,7 +5,7 @@
 //   node scripts/build-org-charts.mjs --check  release build of HEAD's org-charts/; exit 1 if it differs
 //                                              from the vendored file
 //   node scripts/build-org-charts.mjs --test   compile and run the CLJS tests under Node (engine + charts),
-//                                              on the working tree
+//                                              on the working tree: several processes, one after another
 //
 // The release build and --check never read the working tree: they `git archive HEAD org-charts/` into a
 // temp dir and build there. Several people edit org-charts/ at once (some of them mutation-testing), so a
@@ -14,7 +14,7 @@
 // Needs a JVM and the Clojure CLI (deps from ~/.m2 or Maven). `pnpm build` never runs this: Sova's own
 // build and tests use the committed bundle. `-Srepro` keeps a user-level `:build`/`:shadow` alias out.
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -52,9 +52,21 @@ function shadow(...argv) {
   run("clojure", ["-Srepro", ...jvm, "-M:build", "-m", "shadow.cljs.devtools.cli", ...argv]);
 }
 
+// The chart matrices don't fit one Node heap together (4 GB, OOM after ~97 min), so --test runs every other
+// test namespace in one process, then each matrix deftest in its own, one after another; the first failure
+// stops it. One piece by hand: node org-charts/out/test/node-tests.cjs --test=<ns>[/<deftest>],…
 if (args.has("--test")) {
   shadow("compile", "test");
-  run("node", [join(project, "out", "test", "node-tests.cjs")]);
+  const matrix = "sova.org-charts.charts.refit.matrix-test";
+  const nsOf = (file) => file.replace(/\.clj[sc]$/, "").split("/").join(".").replace(/_/g, "-");
+  const files = ["src", "test"].flatMap((dir) => readdirSync(join(project, dir), { recursive: true })).filter((f) => /\.clj[sc]$/.test(f));
+  const others = files.map(nsOf).filter((ns) => ns.endsWith("-test") && ns !== matrix).sort();
+  const cells = [...readFileSync(join(project, "test", "sova", "org_charts", "charts", "refit", "matrix_test.cljs"), "utf8")
+    .matchAll(/^\(deftest\s+(\S+)/gm)].map((m) => `${matrix}/${m[1]}`);
+  for (const pick of [others.join(","), ...cells]) {
+    console.log(`\n== node-tests --test=${pick.length > 120 ? `${others.length} namespaces` : pick}`);
+    run("node", [join(project, "out", "test", "node-tests.cjs"), `--test=${pick}`]);
+  }
   process.exit(0);
 }
 

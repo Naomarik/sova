@@ -5,6 +5,11 @@
 
 (def golden
   {
+   ["baton" ":baton" [":session/retire"] "[:retired]" 0] :feed
+   ["build" ":build" [":session/retire"] "[:retired]" 0] :feed
+   ["project" ":project" [":link/moved"] "[]" 0] :quiet
+   ["project" ":project" [":sova.charts/flush"] "[]" 0] :quiet
+   ["project" ":project" [":started/noted"] "[]" 0] :quiet
    ["project" ":project" [":session/prompt"] "[]" 0] :feed
    ["decision" ":edited-in-spec" [":effect/done"] "[:as-promoted]" 0] :feed
    ["baton" ":baton" [":hold/approve"] "[]" 0] :correction

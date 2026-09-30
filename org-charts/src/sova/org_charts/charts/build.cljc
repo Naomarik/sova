@@ -21,7 +21,7 @@
   (:require
     [clojure.string :as str]
     [com.fulcrologic.statecharts.chart :refer [statechart]]
-    [com.fulcrologic.statecharts.elements :refer [state parallel transition on-entry script raise]]
+    [com.fulcrologic.statecharts.elements :refer [final state parallel transition on-entry script raise]]
     [com.fulcrologic.statecharts.data-model.operations :as ops]
     [sova.org-charts.charts.base :as b]
     [sova.org-charts.charts.rules.levels :as lv]
@@ -104,7 +104,10 @@
 
 (def chart
   (statechart {:initial :build}
+    ;; r11: retired by its project past the 200-row cap, only once settled (never while live): final
+    (final {:id :retired})
     (state {:id :build :initial :regions}
+      (transition {:sova/feed :feed :event :session/retire :cond (fn [env _] (and (or (b/in? env :merged) (b/in? env :tree-removed)) (not (b/in? env :working)))) :target :retired})
       (on-entry {} (script {:expr (fn [_ d] [(ops/assign :turn "idle") (ops/assign :workers 0) (ops/assign :tree "open")])}))
       (dsl/hold-cancel-correction)
       (b/hold-review)

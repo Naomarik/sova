@@ -44,9 +44,11 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
   `gather/start` · `build/start`, build `build/prompt`; `:what` gives the Needs-you words. F2: caps are
   checked at hold time and again at release; the ledger counts only the taken transition.
 - **r7 working hours**: person `tz`/`hours` (operator's fields, history lines, exported);
-  `rules/hours` `next-window` (pure; DST both ways, overnight; JVM + Intl) and `reach-window`; `:hours
-  b/hours-window` on baton `hand-to` `handoff` `offer`, conflict `reroute`, project `baton/start`, item
-  `gather/start` (the host stamps tz/hours on `target(s)`). Tests: `hours_test`, `holds_test` r7.
+  `rules/hours` `next-window` (pure; DST both ways, overnight; JVM + Intl), `reach-window` and
+  `reach-times` (each invitee's own reach time, for per-invitee delivery); `:hours b/hours-window` on
+  baton `hand-to` `handoff` `offer`, conflict `reroute`, project `baton/start`, item `gather/start` (the
+  host stamps tz/hours on `target`/`targets`, an offer's invitees on `target-people`). An offer opens at
+  its earliest invitee's window, (A), pending q15. Tests: `hours_test`, `holds_test` r7.
 - **r8 / q12 review**: `:confirm-kind` on every held act (F12; `base/start-kind`: "offer" for ≥2
   targets); `b/hold-review` on each chart with held acts: `hold/approve` (approve early, L0, reason) and,
   on `hold/waiting`, a soon `hold/review` reason to the project's watch. Tests: `registry_test`,
@@ -65,9 +67,19 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
 Tests: `test/sova/org_charts/charts/refit/` — `host.cljc` (a deterministic JVM/Node host: the real
 processor, a virtual clock, the engine's level and `:pre` checks; hosts are values) and one test
 namespace per chart group. Run on the JVM:
-`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test 'sova.org-charts.charts.refit.hours-test 'sova.org-charts.charts.refit.decision-results-test 'sova.org-charts.charts.refit.server4-findings-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
+`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test 'sova.org-charts.charts.refit.hours-test 'sova.org-charts.charts.refit.decision-results-test 'sova.org-charts.charts.refit.server4-findings-test 'sova.org-charts.charts.refit.started-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
 The engine-level tests (`*_test.cljs`: matrix per chart and per baton start kind, registry, feed, holds,
-world) run in the shadow `:test` build.
+world) run in the shadow `:test` build. The whole CLJS suite (engine + charts, JVM-free under Node):
+`node scripts/build-org-charts.mjs --test` (from the repo root; `pnpm --dir org-charts test` is the same).
+It compiles once, then runs one process per piece, one after another, stopping at the first failure: every
+test namespace except the matrices, then each `matrix-test` deftest alone (`person-matrix` `org-matrix`
+`residence-matrix` `project-matrix` `watch-matrix`, baton per start: `baton-matrix-to-a-person`
+`-to-the-operator` `-an-offer` `-no-link` `-a-settle-session`, `decision-matrix` `reconciler-matrix`
+`conflict-matrix` `item-matrix` `build-matrix`, `every-chart-has-its-own-world`); all of them in one
+process run out of a 4 GB heap. One piece by hand, after a compile
+(`clojure -Srepro -M:build -m shadow.cljs.devtools.cli compile test` in org-charts/):
+`node out/test/node-tests.cjs --test=sova.org-charts.charts.refit.matrix-test/item-matrix` (or
+`--test=<ns>,<ns>/<deftest>,…`).
 
 ## Inventory map (every F-id → its element)
 
@@ -151,7 +163,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-087 | Area filing | host | inside `:sova/reconcile` |
 | F-088 | Contradiction check | host | inside `:sova/reconcile` |
 | F-089 | Restatements are folded | chart | `reconcile/result {state superseded, supersededBy, folded}` to decisions |
-| F-090 | Settling by resolution | chart | `reconcile/finished` resolved → `conflict/resolved` → `conflict.settled` |
+| F-090 | Settling by resolution | chart | `reconcile/finished` resolved → `conflict/resolved` → `conflict.settled`; an item whose decision is superseded watches the `superseded-by` winner and follows its phase (item `moved-ops`; `item_test` follows-a-superseding-winner) |
 | F-091 | Settling by hand | chart | `conflict/settle` (`settle-check`; closes the asking session; effect `settle`) |
 | F-092 | Conflict routing | host | route computed by the host (routeConflict) at the run and re-route; chart keeps `routed-to`, `route-reason` |
 | F-093 | Operator-set say (self-assertion guard) | host | decidesTrusted inside the route; `self-asserted` kept |
@@ -202,7 +214,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-143 | Merged is read from git | chart | `build.branch` from `git/probe`; recorded `merged` when git can't say; `correct/merged` (L2) |
 | F-144 | Remove Worktree | chart | `build/remove-worktree` → effect; `tree-removed` |
 | F-145 | The project page | proj | project page from chart data |
-| F-146 | Coding rows in `started.json` | proj | coding rows = build sessions (200-row cap host) |
+| F-146 | Coding rows in `started.json` | chart (changed on purpose, r11) | project `:started` (exported): one ordered list of every baton and build it or its items started (`started/noted` from the item), cap 200 (`rules/started`); past it the oldest SETTLED one gets `session/retire` (baton/build final `retired`, guarded: never while live); tests `started_test` |
 | F-148 | Idea and to-do store rules (the project's ideas and to-dos use the Overseer's stores) | data | ideas store rules; `gap/drop` agrees both ways (`idea-status` effect / `fromIdea`) |
 | F-147 | Org statecharts (existing, shadow-only) | chart | the refit engine + these charts replace the spike |
 | F-150 | Org owner | chart | `org.owner` ‹owner-none·owner-set·owner-cleared› |

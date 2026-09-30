@@ -71,4 +71,7 @@
     (is (nil? (hours/reach-window [] now)))
     (is (nil? (hours/reach-window [ist open] now)) "one of them is in hours: it goes")
     (is (nil? (hours/reach-window [ist {:name "no hours"}] now)) "someone without hours is always open")
-    (is (= (at "2026-03-02T06:00:00Z") (hours/reach-window [ist late] now)) "else the earliest window")))
+    (is (= (at "2026-03-02T06:00:00Z") (hours/reach-window [ist late] now)) "else the earliest window")
+    (is (= {"a" nil "b" (at "2026-03-02T07:00:00Z") "c" nil}
+           (hours/reach-times [(assoc open :id "a") (assoc late :id "b") {:id "c"}] now))
+        "each invitee's own reach time (per-invitee delivery)")))

@@ -121,3 +121,18 @@
           (is (some #(= :hold/released (:event %)) (:steps r)))
           (is (empty? (core/holds eng)))
           (is (contains? (:batons (core/data eng sid)) "baton/o1/b1"))))))
+
+(deftest r7-an-offer-waits-for-its-invitees-hours
+  ;; server-5: an offer's invitees come as `target-people` records (`targets` holds their ids)
+  (let [ist    (fn [id from] {:id id :name id :status "active" :tz "Europe/Istanbul" :hours {:days [0 1 2 3 4 5 6] :from from :to "17:00"}})
+        night  (.getTime (js/Date. "2026-03-05T00:16:00Z"))
+        env    (assoc (unattended {:used 0 :max 6} {}) :hold-ms 0)
+        offer  (fn [people now]
+                 (let [eng (item-engine)]
+                   (core/send! eng sid :gather/start (merge {:session-id "b1" :targets ["p1" "p2"] :public-title "T" :goal "G" :question "Q"}
+                                                            env {:target-people people}) {:now now})
+                   (first (core/holds eng))))]
+    (is (= {:wait "hours" :until (.getTime (js/Date. "2026-03-05T06:00:00Z"))}
+           (select-keys (offer [(ist "p1" "10:00") (ist "p2" "09:00")] night) [:wait :until]))
+        "both off hours: it waits for the earliest window")
+    (is (nil? (offer [(ist "p1" "09:00") {:id "p2" :name "p2" :status "active"}] night)) "one has no hours: always open, it goes")))

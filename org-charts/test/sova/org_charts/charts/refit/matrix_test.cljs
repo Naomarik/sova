@@ -115,7 +115,7 @@
    "decision"   #{"project/o1/pr1" "reconciler/o1/pr1"}
    "reconciler" #{"watch/o1/pr1"}
    "conflict"   #{"baton/o1/s9" "person/o1/p1" "watch/o1/pr1"}
-   "item"       #{"baton/o1/b1" "decision/o1/pr1/d1" "item/o1/pr1/g_2" "person/o1/p1" "watch/o1/pr1"}
+   "item"       #{"baton/o1/b1" "decision/o1/pr1/d1" "item/o1/pr1/g_2" "person/o1/p1" "project/o1/pr1" "watch/o1/pr1"}
    "build"      #{"project/o1/pr1" "watch/o1/pr1"}})
 
 (defn run [chart sid spec]

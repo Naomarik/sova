@@ -18,7 +18,7 @@ Rules for every kind:
 - Ids are letters, digits, `_ . -`, starting with a letter. Labels with spaces go in "double quotes" (`\n` breaks a line); any text is at most 200 characters.
 - Tones (optional, never the only signal): `accent ok warn error info muted`.
 - The parser is strict: anything it doesn't understand shows the block as plain source with the error. Use only the syntax below.
-- Don't nest a vis fence in another fence; don't use Mermaid, PlantUML or ASCII art instead.
+- Don't nest a vis fence in another fence. Not vis (Mermaid, PlantUML, ASCII art): `A->>B: msg` is `a -> b "msg"`; `A[Label] --> B` is `a "Label" --> b`.
 
 ## Shared: emphasis
 <!-- owner: foundation. core/emphasis.ts implements this; every kind calls it. -->
@@ -26,24 +26,27 @@ To point at what matters, add a `mark` line (at the start of a line, after the s
 - Targets: flow and state, a node's id or label; sequence, an actor, a message's "label" or its number (1 = the first message; notes and dividers don't count); code, a line or a range `20-23` as displayed; matrix, a row's criterion or a column's name; wireframe, see its section; any other kind, a row's (layer's, item's) label.
 
 ## flow
-<!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). Labels: kinds/flow/parse.ts decides the style per fence (a string after a chain's first id = inline style). -->
-Boxes and arrows: architecture, pipelines, request paths, decisions. Laid out automatically. A page or screen layout is a wireframe, not a flow. Label nodes inline, where you first use them:
+<!-- owner: process member. Emphasis target: node id or label. A too-wide drawing re-lays out for a phone by itself (dir: right turns down, then compact). Labels: kinds/flow/parse.ts decides the style per fence (a string after a chain's first id = inline style); guide.test.ts pins each bullet's meaning. -->
+Boxes and arrows: architecture, pipelines, request paths, decisions; laid out automatically. A screen layout is a wireframe, not a flow.
 ```vis flow
 title: How a prompt reaches the model
 caption: The server owns the session; the browser only streams.
-web "Browser tab" -> srv "Sova server" "WS /ws/chat" -> sdk "pi session" store
+web "Browser tab" "Solid app" -> srv "Sova server" "WS /ws/chat" -> sdk "pi session" store
 sdk --> srv "events"
 srv -> done "Reply streamed?" decision
 done -> web "yes"
 group "One process" srv sdk
 mark sdk "one writer per session file"
 ```
-- Inline: once any line has a string right after its first id, the first string after a node that has no label yet is its label; the next string is the edge's (`srv "Sova server" "WS /ws/chat"`). After a node already labelled, a string is the edge's label (`sdk --> srv "events"`). A shape and a tone may follow: `done "Reply streamed?" decision`.
-- `node <id> "Label" ["second line"] [shape] [tone]` for a second line; shapes: `box` (default) `round` `store` `decision` `circle`. After a target with a `node` line, a string is the edge's label.
-- With no string after any line's first id, a string after a target is always the edge's label (§ state).
-- Edges: `a -> b`, dashed `a --> b`, both ways `a <-> b`; chains `a -> b -> c`. `dir: right` (drawn down on a phone). Under 12 nodes, short labels.
-- `group "Label" id id …` frames nodes that belong together (a process, a machine, a scope); edges cross the frame. A node is in one group at most.
-- Two separate small flows side by side (before/after): `== Label ==` lines start panels, each laid out alone, with its own ids.
+- `web "Browser tab" "Solid app" ->`: label a node where it first appears; a second string before the first arrow is its smaller second line.
+- `srv "Sova server" "WS /ws/chat"`: after a target, the first string labels it and the second labels the edge, never a second line.
+- `sdk --> srv "events"`: a node already labelled takes one string, the edge's.
+- `done "Reply streamed?" decision`: a shape (`box round store decision circle`) and a tone may follow a label.
+- `node db "Orders" "Postgres" store` declares a node on its own line; then a string after db as a target is the edge's.
+- If no line has a string right after its first id, every string after a target is an edge label (as in state).
+- Edges `->`, dashed `-->`, both ways `<->`; chains `a -> b -> c`. `dir: right`. Under 12 nodes, short labels.
+- `group "Label" id id …` frames nodes that belong together; a node is in one group at most.
+- `== Label ==` lines start side-by-side panels (before/after), each with its own ids:
 ```vis flow
 == Before ==
 app "App" -> db "Database"
@@ -99,7 +102,7 @@ src/
   main.tsx
 mark markdown.ts "the vis hook lives here"
 ```
-- Quote a name that has spaces or quotes: `"My Docs" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest.
+- Quote a name that has spaces or quotes, a folder's `/` inside: `"My Docs/" "shared"`. At most 80 lines: show the branch that matters and one `…` item for the rest.
 
 ## chart
 <!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->

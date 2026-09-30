@@ -64,6 +64,14 @@ export function parseSequence(body: string): SequenceSpec {
     const from = id(first, line.n, "a message (a -> b \"label\"), actor, note or == divider ==");
     const arrow = toks[1];
     if (arrow?.t !== "arrow" || arrow.v === "<->" || arrow.v === "<-->") fail(line.n, "a message is a -> b or a --> b (reply)");
+    // Mermaid's `a ->> b: msg` reads here as the target ">b:" and loose words: quote the vis message.
+    const lone = toks[2]?.t === "word" && toks[2].v === ">" && toks[3]?.t === "word";
+    const target = lone ? `>${toks[3]!.v}` : toks[2]?.t === "word" ? toks[2].v : "";
+    if (/^>?[A-Za-z_][A-Za-z0-9_.-]*:?$/.test(target) && (target.startsWith(">") || target.endsWith(":"))) {
+      const words = toks.slice(lone ? 4 : 3).map((t) => t.v).join(" ");
+      const a = (arrow as { v: Arrow }).v;
+      fail(line.n, `write ${from} ${a} ${target.replace(/^>|:$/g, "")}${words ? ` "${words}"` : ""} (not Mermaid a ${target.startsWith(">") ? `${a}>` : a} b: msg)`);
+    }
     const to = id(toks[2], line.n, "a target actor");
     let label: string | undefined;
     if (toks[3]?.t === "str") label = toks[3].v;

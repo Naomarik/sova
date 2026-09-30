@@ -45,7 +45,15 @@ test("the guide's flow and state examples mean what the text says", () => {
   assert.deepEqual(labels(main), { web: "Browser tab", srv: "Sova server", sdk: "pi session", done: "Reply streamed?" });
   assert.deepEqual(main.edges.map((e) => [e.from, e.to, e.label ?? null]), [["web", "srv", "WS /ws/chat"], ["srv", "sdk", null], ["sdk", "srv", "events"], ["srv", "done", null], ["done", "web", "yes"]]);
   assert.deepEqual(main.nodes.map((n) => n.shape), ["box", "box", "store", "decision"]);
-  for (const quoted of ['srv "Sova server" "WS /ws/chat"', 'sdk --> srv "events"', 'done "Reply streamed?" decision']) assert.ok(GUIDE.includes(`\`${quoted}\``), `the bullets quote the example: ${quoted}`);
+  // A second string before the first arrow is the source's second line; after a target it is the edge's.
+  assert.deepEqual(main.nodes.map((n) => n.note ?? null), ["Solid app", null, null, null]);
+  for (const quoted of ['web "Browser tab" "Solid app" ->', 'srv "Sova server" "WS /ws/chat"', 'sdk --> srv "events"', 'done "Reply streamed?" decision']) assert.ok(GUIDE.includes(`\`${quoted}\``), `the bullets quote the example: ${quoted}`);
+  assert.ok(GUIDE.includes("after a target, the first string labels it and the second labels the edge, never a second line"));
+  // The node-line bullet: its line declares db, and a string after db as a target is then the edge's.
+  const declared = parseVis("flow", 'node db "Orders" "Postgres" store\napi "API" -> db "SQL"');
+  assert.ok(GUIDE.includes('`node db "Orders" "Postgres" store`') && declared.ok);
+  const db = (declared.spec as FlowSpec).nodes.find((n) => n.id === "db")!;
+  assert.deepEqual([db.label, db.note, db.shape, (declared.spec as FlowSpec).edges[0]!.label], ["Orders", "Postgres", "store", "SQL"]);
   // Groups: the main example frames the server and the session it holds.
   assert.deepEqual(main.groups, [{ label: "One process", nodes: ["srv", "sdk"] }]);
   // Panels: the same ids in both panels are two nodes each.
@@ -53,6 +61,24 @@ test("the guide's flow and state examples mean what the text says", () => {
   // State: no inline label anywhere, so each string after a target is its edge's event.
   assert.deepEqual(state.edges.map((e) => e.label ?? null), [null, "prompt", "settled", "error"]);
   assert.ok(state.nodes.every((n) => n.label === n.id));
+});
+
+// The rules' "Not vis" pairs: the Mermaid side fails with a hint, the vis side draws what it says.
+test("the guide's Not vis pairs: the wrong side is refused with a hint, the right side means it", () => {
+  assert.match(GUIDE, /`A->>B: msg` is `a -> b "msg"`; `A\[Label\] --> B` is `a "Label" --> b`/);
+  const seq = parseVis("sequence", 'A->>B: msg');
+  assert.ok(!seq.ok && seq.message === 'write A -> B "msg" (not Mermaid a ->> b: msg)');
+  const msg = parseVis("sequence", 'a -> b "msg"');
+  assert.ok(msg.ok);
+  assert.deepEqual((msg.spec as { steps: unknown[] }).steps, [{ type: "msg", from: "a", to: "b", label: "msg", dashed: false }]);
+  assert.ok(!parseVis("flow", "A[Label] --> B").ok);
+  const flow = parseVis("flow", 'a "Label" --> b');
+  assert.ok(flow.ok);
+  assert.deepEqual([(flow.spec as FlowSpec).nodes[0]!.label, (flow.spec as FlowSpec).edges[0]!.dashed], ["Label", true]);
+  // Tree: the folder's slash inside the quotes.
+  assert.match(GUIDE, /`"My Docs\/" "shared"`/);
+  const tree = parseVis("tree", '"My Docs/" "shared"');
+  assert.ok(tree.ok && (tree.spec as { roots: { name: string; note?: string }[] }).roots[0]!.name === "My Docs/");
 });
 
 test("each kind section names registered kinds, and every registered kind has a section", () => {

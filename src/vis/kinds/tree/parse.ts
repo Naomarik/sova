@@ -75,6 +75,7 @@ function treeNode(s: string, n: number): TreeNode {
     if (end < 0) fail(n, "unclosed quote");
     name = s.slice(1, end);
     restText = s.slice(end + 1).trim();
+    if (restText.startsWith("/")) fail(n, `put the / inside the quotes: "${name}/"${restText.slice(1)}`);
   } else {
     const q = s.indexOf('"');
     name = (q < 0 ? s : s.slice(0, q)).trim();

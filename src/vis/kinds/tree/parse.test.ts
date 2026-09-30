@@ -44,3 +44,11 @@ test("tree: mark an item by name (first match, depth first) or quoted name", () 
   // An indented "mark …" line is an item, not a mark.
   assert.equal(ok<TreeSpec>("tree", "a\n  mark b").roots[0]!.children[0]!.name, "mark b");
 });
+
+test("tree: a / after a quoted name says to put it inside the quotes", () => {
+  const e = err("tree", '"q12 · Empty screen: pick one"/\n  "a · Preset cards"');
+  assert.deepEqual([e.line, e.message], [1, 'put the / inside the quotes: "q12 · Empty screen: pick one/"']);
+  assert.equal(err("tree", '"Docs"/ "shared" ok').message, 'put the / inside the quotes: "Docs/" "shared" ok');
+  // Inside the quotes it is a folder name, as before.
+  assert.equal(ok<TreeSpec>("tree", '"My Docs/" "shared"\n  a').roots[0]!.name, "My Docs/");
+});

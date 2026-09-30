@@ -490,13 +490,13 @@ export function orgTools(d: OrgToolDeps): Tool[] {
     name: "sova_gather",
     label: "Gathering sessions",
     description:
-      "Gathering sessions (hand-offs) with the people of an organization, for the user. start {org, project, to, public_title, question, goal, why, briefing?, model?, thinking?, messages_max?, abilities?}: to is a person, operator (the user), or a list of two or more people for an offer. offer {session, to, question?, briefing?}, handoff {session, to, question, briefing?}, take {session} (Take Back), close {session}, extend {session, by} (more messages), revoke_link {session, person?}. " +
-      "start, offer, handoff, take, close and revoke_link run only in the turn a confirm card's click opened, listing every person, project and session the call acts on; extend needs none. No link is ever made for you: the user sends each person their link from Needs you. " +
+      "Gathering sessions (hand-offs) with the people of an organization, for the user. start {org, project, to, public_title, question, goal, why, briefing?, model?, thinking?, messages_max?, abilities?}: to is a person, operator (the user), or a list of two or more people for an offer. offer {session, to, question?, briefing?}, handoff {session, to, question, briefing?}, take {session} (Take Back), close {session}, extend {session, by} (more messages), revoke_link {session, person?}, send_link {session, person?} (sends the person their link on WhatsApp; you never see the link). " +
+      "start, offer, handoff, take, close, revoke_link and send_link run only in the turn a confirm card's click opened, listing every person, project and session the call acts on; extend needs none. No link is ever shown to you: send_link hands it straight to the person, else the user sends it from Needs you. " +
       "public_title and question are shown to the person as written: plain, specific words for them, never an internal label, an id, a cost, the About text or a note about anyone; goal is what the session must find out, for its model only; why is for the user only.",
     promptSnippet: "start, offer, hand off, take back, close, extend or revoke a gathering session (people-facing: confirm first)",
     parameters: obj(
       {
-        op: str("start | offer | handoff | take | close | extend | revoke_link", { enum: ["start", "offer", "handoff", "take", "close", "extend", "revoke_link"] }),
+        op: str("start | offer | handoff | take | close | extend | revoke_link | send_link", { enum: ["start", "offer", "handoff", "take", "close", "extend", "revoke_link", "send_link"] }),
         org: str("start: organization id or exact name."),
         project: str("start: project id or exact name."),
         session: str("All but start: the gathering session's id."),
@@ -511,7 +511,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
         messages_max: int("start: the session's message limit.", { minimum: 1 }),
         abilities: { ...ABILITIES_PARAM, description: `start: ${ABILITIES_PARAM.description}` },
         by: int("extend: how many more messages.", { minimum: 1 }),
-        person: str("revoke_link: only this person's link (id or exact name); omit for the current hand-off's links."),
+        person: str("revoke_link: only this person's link (id or exact name); omit for the current hand-off's links. send_link: the person (id or exact name); omit for the holder; an open offer needs one invitee."),
       },
       ["op"],
     ),
@@ -587,6 +587,17 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             await counted("org", async () => ok(await d.call("POST", `/api/baton/${enc(s.id)}/extend`, { by: p.by }), "Extending"));
             return { content: text(`[${cut(s.row.publicTitle, 80)}](sova://s/${s.id}) may take ${p.by} more messages.`), details: { session: s.id } };
           }
+          case "send_link": {
+            // §app.outreach/decisions: behind the card; the result names the outcome, never the link or the number.
+            const s = batonSession(p.session);
+            const person = p.person ? resolvePerson(s.orgId, p.person) : null;
+            const who = person ?? (s.row.holder && s.row.holder !== OPERATOR ? resolvePerson(s.orgId, s.row.holder) : null);
+            requireConfirm({ sessions: [s.id], ...(who ? { people: [personOf(s.orgId, who)] } : {}) });
+            const r = await counted("org", async () => ok(await d.call("POST", `/api/baton/${enc(s.id)}/send-link`, who ? { person: who.id } : {}), "Sending the link"));
+            const name = typeof r?.name === "string" ? r.name : (who?.name ?? "They");
+            if (r?.outcome === "sent") return { content: text(`Sent ${name} their link on WhatsApp.`), details: { session: s.id, ...(who ? { person: who.id } : {}) } };
+            throw refuse(`Not sent: ${typeof r?.why === "string" ? r.why : "the send failed."} Needs you still asks the user to send ${name} their link.`);
+          }
           case "revoke_link": {
             const s = batonSession(p.session);
             const person = p.person ? resolvePerson(s.orgId, p.person) : null;
@@ -604,7 +615,7 @@ export function orgTools(d: OrgToolDeps): Tool[] {
             return { content: text(`Turned off ${person.name}'s ${live.length === 1 ? "link" : `${live.length} links`} to [${cut(s.row.publicTitle, 80)}](sova://s/${s.id}).`), details: { session: s.id, person: person.id } };
           }
           default:
-            throw refuse("op must be start, offer, handoff, take, close, extend or revoke_link.");
+            throw refuse("op must be start, offer, handoff, take, close, extend, revoke_link or send_link.");
         }
       }),
     ),

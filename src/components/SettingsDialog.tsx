@@ -66,6 +66,7 @@ import { AccountsSettingsSection } from "./AccountsSettings";
 import { SpecSettingsSection } from "./SpecSettings";
 import { OverseerSettingsSection } from "./OverseerSettings";
 import { PublicLinksSettingsSection } from "./PublicLinksSettings";
+import { OutreachSettingsSection } from "./OutreachSettings";
 import { PushSettingsSection } from "./PushSettings";
 import { SessionTitleSettingsSection } from "./SessionTitleSettings";
 import { SummarizerSettingsSection } from "./SummarizerSettings";
@@ -77,7 +78,7 @@ import { VoiceSettingsSection } from "./VoiceSetup";
 import { Banner, Icon, trapFocus } from "./ui";
 import { sentence } from "./WorkerSlotRow";
 
-/** The tab rail. Fifteen screens; the rail is the structure further settings slot into. General is
+/** The tab rail. Sixteen screens; the rail is the structure further settings slot into. General is
     first because it is the one screen about this browser's own behaviour rather than a subsystem.
     Same ids, same order as `SETTINGS_TABS` (lib/settings-nav.ts), which is what opens it. */
 const TABS = [
@@ -95,6 +96,7 @@ const TABS = [
   { id: "themes", label: "Themes", icon: "image" as const },
   { id: "mesh", label: "Mesh", icon: "branch" as const },
   { id: "public-links", label: "Public links", icon: "external" as const },
+  { id: "outreach", label: "Outreach", icon: "chat" as const },
   { id: "voice", label: "Voice", icon: "mic" as const },
   { id: "experimental", label: "Experimental", icon: "terminal" as const },
 ] as const satisfies readonly { id: SettingsTab; label: string; icon: string }[];
@@ -304,6 +306,11 @@ export function SettingsDialog(props: { onClose(): void; initialTab?: SettingsTa
           <Show when={tab() === "public-links"}>
             <div class="settings-panel" role="tabpanel" id="settings-panel-public-links" aria-labelledby="settings-tab-public-links">
               <PublicLinksSettingsSection />
+            </div>
+          </Show>
+          <Show when={tab() === "outreach"}>
+            <div class="settings-panel" role="tabpanel" id="settings-panel-outreach" aria-labelledby="settings-tab-outreach">
+              <OutreachSettingsSection />
             </div>
           </Show>
           {/* Mounted only while its tab is: the voice status polls while it's open (every second

@@ -21,6 +21,7 @@ import {
 } from "../shared/baton";
 import { actorOn, batonById, batonFileOf, batonOfPath, batonSid, BRIEFING_MAX, handTo, handToTarget, heldOffer, markDone, mintForEffect, nameOf, namesOf, noteMessage, QUESTION_MAX, sessionPathOf, undoNote } from "./baton";
 import { linksOfKey, revokeLinks } from "./baton-links";
+import { sendLink } from "./outreach/core";
 import { READ_LINK_TOOL, readLinkTool, READS_MAX } from "./baton-read-link";
 import { GATHERING_VIS_GUIDE } from "./baton-vis-guide";
 import { areaKeyOf, ownerAreaChoices, pickOwnerArea } from "./decisions";
@@ -537,6 +538,24 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
   // r12: only in an offer's own step (the chart emits none for an invitee reached later: nobody could take that token;
   // Needs you asks the operator to send it).
   host.effects.register("mint-link", async (e) => mint(e, typeof e.personId === "string" ? [e.personId] : [], typeof e.offerId === "string" && e.offerId ? e.offerId : undefined));
+
+  // §app.outreach/send-link: mint and hand the link to the channel in one step (no token outlives it);
+  // the result is the outcome only.
+  host.effects.register("send-link", async (e) => {
+    const sessionId = sidOfEffect(e);
+    const key = typeof e.chartKey === "string" && e.chartKey ? e.chartKey : e.key;
+    const r = await sendLink({
+      orgId,
+      sessionId,
+      n: Number(e.n),
+      personId: String(e.personId),
+      ...(typeof e.offerId === "string" && e.offerId ? { offerId: e.offerId } : {}),
+      by: e.by === "operator-via-overseer" ? "operator-via-overseer" : "operator",
+      key,
+    });
+    refreshShare(sessionId);
+    return r;
+  });
 
   host.effects.register("revoke-links", async (e) => {
     const sessionId = sidOfEffect(e);

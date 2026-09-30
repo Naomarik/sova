@@ -40,6 +40,34 @@ export interface SandboxActive {
 	reasons?: string[];
 }
 
+/** Who asks `workerLaunch`: the worker about to start. */
+export interface WorkerLaunchRequest {
+	/** The worker's cwd: absolute, or relative to the parent's cwd. */
+	cwd: string;
+	/** The top level of the tracked worktree the worker starts in, if any: it then writes only there. */
+	root?: string;
+	/** The worker backend id (`pi`, …). `pi` gets extension flags; every other backend a confinement. */
+	backend: string;
+	/** A stable id of the worker (its registry id): names its sandbox tmp and proxy. Plain `[A-Za-z0-9._-]`. */
+	owner: string;
+}
+
+/**
+ * How a worker must start, from the one sandbox call both kinds of worker go through.
+ * - `pi`: load `extensionPath` with `flags` (`--sandbox on`, `--sandbox-parent <scope>`); the worker's
+ *   own extension confines its tools.
+ * - `confine`: run the worker's process inside the sandbox. `scope` is opaque, serializable data (it
+ *   may cross into a hosting process); pass it to `confineLaunch(scope, needs, launch)` exported by
+ *   `module` (the sandbox's `launch.ts`, pi-runtime-free) at every launch of that process.
+ * - `refused`: the worker must not start; the spawner throws `reason` as is.
+ * - `none`: nothing to apply (the sandbox is off and the worker is not in a tracked worktree).
+ */
+export type WorkerLaunch =
+	| { kind: "pi"; extensionPath: string; flags: Record<string, string> }
+	| { kind: "confine"; scope: string; module: string }
+	| { kind: "refused"; reason: string }
+	| { kind: "none" };
+
 export interface SandboxStateEvent {
 	version: 1;
 	on: boolean;
@@ -70,6 +98,13 @@ export interface SandboxStateEvent {
 	 * available (the spawner refuses). Absent in a remote session.
 	 */
 	workerFlagsIn?: (root: string) => Record<string, string> | undefined;
+	/**
+	 * The one call every worker start goes through (it replaces `checkWorker`, `workerFlags`,
+	 * `workerFlagsIn` and the Claude fields): on, the parent's scope (narrowed to `root` when given)
+	 * or a refusal; off, a write-only scope for a worker in a tracked worktree, else `none`. Absent
+	 * in a remote session.
+	 */
+	workerLaunch?: (req: WorkerLaunchRequest) => WorkerLaunch;
 }
 
 export function isLevel(value: unknown): value is SandboxLevel {

@@ -28,8 +28,10 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
 - `lastKnownUrl` (the via gateway's address as last learnt) and `verifiedAt` (the last Verify that
   passed) are written only by the server. A saved change of the gateway's address, or any route
   but `self`, drops `verifiedAt`: a Verify vouches for one address.
-- Main listener only (a request from the peer listener, or carrying `X-Forwarded-Host`, gets the
-  plain 404): `GET /api/public-links` → `{file, share, pinnedByEnv, front?, routed?, gateways}`;
+- Main listener only (a request from the peer listener, or carrying `X-Sova-Relayed`, which
+  another host's `/peer/<id>/` proxy sets on everything it relays, gets the plain 404; a generic
+  reverse proxy in front of the main listener, such as `tailscale serve`, Caddy or nginx, is
+  served even though it sets `X-Forwarded-Host`): `GET /api/public-links` → `{file, share, pinnedByEnv, front?, routed?, gateways}`;
   `PUT /api/public-links` with any of `route`, `gateway`, `ingressPort` (16 KB at most; a gateway
   may leave out `sharePort` and `acceptFrom` for their defaults, and its URL may carry one trailing
   slash) → the same answer, or 400 `{error}` naming the problem, with nothing written; `POST

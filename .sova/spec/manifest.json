@@ -7837,7 +7837,8 @@
         "server/share/gateway-client.ts",
         "shared/public-links.ts",
         "server/public-links.test.ts",
-        "server/share-edge.test.ts"
+        "server/share-edge.test.ts",
+        "server/mesh/proxy-local.test.ts"
       ]
     },
     "§mesh/public": {

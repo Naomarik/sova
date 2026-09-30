@@ -20,6 +20,7 @@ import {
   createShare,
   daysWord,
   imagesBlocked,
+  isShareChanged,
   isStalePreview,
   listSessionShares,
   patchShare,
@@ -141,6 +142,19 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
       setPreviewError(errText(x));
     }
   };
+  /** Another write changed the share's mode, end or start while Save Slice ran: nothing was
+      written. The share is read again, so the next Save Slice is built on it; the picks stay. */
+  const [changedMeanwhile, setChangedMeanwhile] = createSignal(false);
+  const onShareChanged = async () => {
+    try {
+      const s = (await listSessionShares(host, sid)).find((x) => x.id === props.route.share);
+      if (!s) return setError("This share isn't on this session anymore.");
+      setShare(s);
+      setChangedMeanwhile(true);
+    } catch (x) {
+      setError(errText(x));
+    }
+  };
   /** A start or cut no longer on the branch: nothing went out; the list is read again to pick again. */
   const onStale = () => {
     readFor = null;
@@ -186,6 +200,7 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
     if (busy() || blocked() || !p) return;
     setBusy(true);
     setError(null);
+    setChangedMeanwhile(false);
     try {
       const cur = share();
       if (cur) {
@@ -216,6 +231,7 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
       }
     } catch (x) {
       if (isStalePreview(x)) onStale();
+      else if (isShareChanged(x)) void onShareChanged();
       else setError(errText(x));
     } finally {
       setBusy(false);
@@ -327,6 +343,9 @@ export function SharePage(props: { route: ShareRoute; titleRef(el: HTMLHeadingEl
                   </Show>
                 </Show>
               )}
+            </Show>
+            <Show when={changedMeanwhile()}>
+              <Banner tone="warn" title="This share changed meanwhile." body="Nothing was changed. We read it again: save again to apply this slice." />
             </Show>
             <Show when={error()}>
               {(msg) => (

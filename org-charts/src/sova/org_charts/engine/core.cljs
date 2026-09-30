@@ -469,6 +469,14 @@
           :release-hold (release-now! eng sid (:id d))
           :watch (watch! eng sid (:target d) true)
           :unwatch (watch! eng sid (:target d) false)
+          ;; (re-)arm this session's timer `id`: cancel it, then `event` at the instant `at` (nil: only cancel)
+          :timer (let [{:keys [queue env clock]} (engine eng)
+                       {:keys [id event at]} d]
+                   (sp/cancel! queue env sid id)
+                   (when (some? at)
+                     (sp/send! queue env {:event event :data (or (:data d) {}) :target sid :source-session-id sid
+                                          :send-id id :delay (max 0 (- at (clock)))}))
+                   [])
           (throw (ex-info (str "Unknown directive " op) {:directive d}))))
       dirs)))
 

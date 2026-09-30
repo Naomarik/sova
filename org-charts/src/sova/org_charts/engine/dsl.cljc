@@ -236,4 +236,17 @@
                                               (:project-id d) (assoc :project-id (:project-id d))))
                                      :data (if-let [f (:data opts)] (f d) {})}))}))
 
+(defn timer-at-ops
+  "[ops] (re-)arming this session's timer `id`: after the step it is cancelled, then `event` (with
+   `payload`) is due at the instant `at` (ms; one already past is due at once); `at` nil only
+   cancels it. One id, one pending timer, however often it is re-armed (a per-invitee reach, r12)."
+  ([data id event at] (timer-at-ops data id event at nil))
+  ([data id event at payload]
+   (directive-ops data (cond-> {:op :timer :id id :event event :at at} payload (assoc :data payload)))))
+
+(defn timer-at
+  "Executable content: `timer-at-ops` with `(at-fn data)` (nil: cancel)."
+  [id event at-fn]
+  (script {:expr (fn [_ d] (timer-at-ops d id event (at-fn d)))}))
+
 (defn linked "The session this one links as `link` (from its spawn)." [data link] (get (:sova/links data) link))

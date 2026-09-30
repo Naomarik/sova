@@ -663,3 +663,33 @@
       (is (in? eng "bad" :armed))
       (core/set-aside! eng [])
       (is (= (+ t0 10) (core/next-due-at eng)) "taken off, it is due again"))))
+
+;; ---- dsl/timer-at: one re-armed timer per id (r12's per-invitee reach) -------------------------------
+
+(def timer-chart
+  (chart/statechart {:initial :s}
+    (elements/state {:id :s}
+      (elements/transition {:event :arm} (dsl/timer-at "reach" :ding #(:when (dsl/evt %))))
+      (elements/transition {:event :ding}
+        (elements/script {:expr (fn [_ d] [(com.fulcrologic.statecharts.data-model.operations/assign :dings (inc (:dings d 0)))])})))))
+
+(deftest timer-at-re-arms-one-timer-per-id
+  (let [mk  #(core/new-engine {"timer" {:chart timer-chart :version 1}} {})
+        eng (mk)]
+    (core/start! eng "t" "timer" {} t0)
+    (core/send! eng "t" :arm {:when (+ t0 100)} {:now t0})
+    (is (= (+ t0 100) (core/next-due-at eng)))
+    (core/send! eng "t" :arm {:when (+ t0 50)} {:now (+ t0 1)})
+    (is (= (+ t0 50) (core/next-due-at eng)) "re-armed earlier")
+    (core/send! eng "t" :arm {:when (+ t0 500)} {:now (+ t0 2)})
+    (is (= (+ t0 500) (core/next-due-at eng)) "and later: the earlier one is gone")
+    (testing "it survives dump and load (the snapshot's queue)"
+      (let [e2 (mk)]
+        (core/load! e2 "t" (core/dump eng "t"))
+        (is (= (+ t0 500) (core/next-due-at e2)))
+        (is (= [:ding] (map :event (:steps (core/fire-due! e2 (+ t0 1000))))) "exactly one fires")
+        (is (= 1 (:dings (core/data e2 "t"))))))
+    (core/send! eng "t" :arm {:when nil} {:now (+ t0 3)})
+    (is (nil? (core/next-due-at eng)) "nil only cancels")
+    (let [r (core/send! eng "t" :arm {:when (- t0 10)} {:now (+ t0 4)})]
+      (is (= [:arm :ding] (map :event (:steps r))) "an instant already past is due at once, in the same call"))))

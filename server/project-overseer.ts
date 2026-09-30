@@ -1156,15 +1156,20 @@ export async function sendItem(orgId: string, projectId: string, body: ItemSendI
   const publicTitle = typeof body.publicTitle === "string" ? body.publicTitle.trim() : "";
   const question = typeof body.question === "string" ? body.question.trim() : "";
   if (!publicTitle || !question) throw new OrgError("publicTitle and question are required: both are shown to the person as written.");
-  const made = await createBaton({
-    orgId,
-    projectId,
-    to: body.to,
-    publicTitle,
-    goal: body.goal?.trim() || clip(item.text, 2000),
-    question,
-    ...(await gatheringChoice(orgId, projectId, { ...(typeof body.model === "string" ? { model: body.model } : {}), ...(typeof body.thinking === "string" ? { thinking: body.thinking } : {}) })),
-  });
+  // A §gap/… idea is its item chart's: the gathering starts on the item (its lane), as the overseer's would.
+  const gapItem = item.kind === "idea" ? itemOfGap(orgId, projectId, item.id) : null;
+  const made = await createBaton(
+    {
+      orgId,
+      projectId,
+      to: body.to,
+      publicTitle,
+      goal: body.goal?.trim() || clip(item.text, 2000),
+      question,
+      ...(await gatheringChoice(orgId, projectId, { ...(typeof body.model === "string" ? { model: body.model } : {}), ...(typeof body.thinking === "string" ? { thinking: body.thinking } : {}) })),
+    },
+    gapItem ? { item: gapItem } : {},
+  );
   linkItem(p, item, made.sessionId);
   const links = made.links ?? (made.token && typeof body.to === "string" && body.to !== OPERATOR ? [{ personId: body.to, token: made.token }] : []);
   return { path: made.path, sessionId: made.sessionId, links: links.map((l) => ({ personId: l.personId, name: nameOf(orgId, l.personId), link: linkUrl(l.token) })), ...(made.offHours ? { offHours: made.offHours } : {}) };

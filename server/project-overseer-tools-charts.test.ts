@@ -354,6 +354,16 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
 });
 
 describe("every start names its gap (§app.project-overseer/gaps, q7)", () => {
+  test("Send to person… on a §gap idea starts the gathering on its item (its lane), as the overseer's start does", async () => {
+    await clearHolds();
+    await settings({ autonomy: "L1", holdMin: 0, caps: { gatherPerDay: null, gatheringsOpen: 20 } });
+    await run("sova_idea", { op: "add", id: "§gap/invoices", title: "Nobody decided invoice numbering" });
+    const made = await po.sendItem(org.id, project.id, { ideaId: "§gap/invoices", to: tony.id, publicTitle: "Invoice numbers", question: "How are invoices numbered?" }, (t) => `/h/${t}`);
+    assert.ok(made.sessionId && made.links.length === 1);
+    const row = pipelineInfoOf().rows.find((r) => r.gap === "§gap/invoices")!;
+    assert.deepEqual([row.gatherings.map((g) => g.title), row.phase], [["Invoice numbers"], "asking"]);
+  });
+
   test("sova_idea add §gap/… files the gap's item; a start on it is the item's, linked in the Pipeline", async () => {
     await clearHolds();
     await settings({ autonomy: "L1", holdMin: 0, caps: { gatherPerDay: null, gatheringsOpen: 20 } });

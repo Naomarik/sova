@@ -88,7 +88,6 @@ const MAX_MICROSTEPS = 200;
 const REWORK = "reworked onto the real host: unexplained divergences being classified (server-5)";
 /** The lanes whose divergences are still being classified: every other lane must replay with none unexplained. */
 const PENDING = new Set([
-  "real-01",
   "real-04",
   "real-05",
   "real-06",
@@ -104,17 +103,8 @@ const PENDING = new Set([
   "real-24",
   "real-25",
   "real-26",
-  "real-27",
   "real-28",
-  "syn-archive-during-look",
-  "syn-build-failed-l3",
-  "syn-cap-at-midnight",
   "syn-conflict-two-gaps",
-  "syn-gap-dropped-mid-build",
-  "syn-merge-refused",
-  "syn-reason-while-streaming",
-  "syn-soon-off",
-  "syn-spec-edited-keep",
 ] as string[]);
 
 const reports: Report[] = [];

@@ -84,11 +84,14 @@ export function decisionRowOf(orgId: string, s: Pick<SessionInfo, "configuration
   };
 }
 
-/** A conflict chart as today's Conflict (its settle session's path is this host's, derived on each read). */
-export function conflictOf(orgId: string, s: Pick<SessionInfo, "data">, paths: ReadonlyMap<string, string>): Conflict {
+/** A conflict chart as today's Conflict (its settle session's path is this host's, derived on each read). An open
+    conflict no session asks about any more (its settle session closed without a re-route: the chart's `unrouted`)
+    names none, so the project page offers the route form again (C17). */
+export function conflictOf(orgId: string, s: Pick<SessionInfo, "data" | "configuration">, paths: ReadonlyMap<string, string>): Conflict {
   const d = s.data;
   const side = (v: unknown) => (isObj(v) ? (str(v.id) ?? "") : (str(v) ?? ""));
-  const batonSessionId = str(d.batonSessionId);
+  const asking = !(d.state !== "resolved" && s.configuration.includes("unrouted"));
+  const batonSessionId = asking ? str(d.batonSessionId) : undefined;
   const path = batonSessionId ? paths.get(batonSessionId) : undefined;
   const outcome = str(d.outcome);
   return {

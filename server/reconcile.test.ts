@@ -519,13 +519,17 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.equal(mine.routedTo, OPERATOR);
     assert.ok(!conflictAttention().some((i) => i.id === `conflict-to-operator:${c.id}`), "a session asks the operator: that session's reply, not a second item");
     await baton.closeBaton(mine.batonSessionId!);
+    // No session asks about it any more: the conflict names none, so the page offers the route form again.
+    const closed = reconcile.listDecisions(org.id, project.id).conflicts.find((k) => k.id === c.id)!;
+    assert.deepEqual([closed.state, closed.batonSessionId, closed.batonPath], ["open", undefined, undefined]);
     const items = conflictAttention().filter((i) => i.org?.projectId === project.id);
     assert.equal(items.length, unroutedConflicts(org.id, project.id), "Needs you and the org card count the same conflicts");
     const it = items.find((i) => i.id === `conflict-to-operator:${c.id}`)!;
     assert.deepEqual([it.kind, it.tier, it.path, it.href], ["conflict-to-operator", "decide", "", `#/orgs/${org.id}/projects/${project.id}`]);
     assert.equal(it.detail, `Settle a conflict in ${project.name}: Maria Lopez and Tony Reyes disagree about payroll export.`);
     // Routed again to someone: no longer the operator's.
-    await reconcile.routeConflictNow(org.id, project.id, c.id, carlos.id);
+    const routed = (await reconcile.routeConflictNow(org.id, project.id, c.id, carlos.id)).conflicts.find((k) => k.id === c.id)!;
+    assert.ok(routed.batonSessionId && routed.batonSessionId !== mine.batonSessionId, "the new session asks");
     assert.ok(!conflictAttention().some((i) => i.id === `conflict-to-operator:${c.id}`));
   });
 

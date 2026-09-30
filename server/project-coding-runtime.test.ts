@@ -369,6 +369,7 @@ describe("a project's coding sessions", async () => {
     assert.ok(hostOf(org.id).configuration(sid)?.includes("ready"), "its setup ended");
     assert.equal(d["modeNotSet"], undefined, "its mode was set");
     assert.deepEqual(modeEntries(row.path).at(-1)?.data.active, { version: 1, mode: "normal", strict: false, minorModes: ["spec"] }, "the project's mode, never the default's");
+    assert.match((await buildsOf(org.id, project.id, client)).find((r) => r.sessionId === row!.sessionId)?.worktree?.branch ?? "", /^sova\/build-gap-login-[0-9a-f]{6}$/, "its branch is named after its title");
     // No auth here: the runtime takes the prompt and its turn fails, so the file may never show it; the chart's
     // log shows the first prompt sent and answered.
     const rows = hostOf(org.id).log.rows({ sessions: [sid] });

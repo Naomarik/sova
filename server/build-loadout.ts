@@ -15,7 +15,7 @@ import { projectOf } from "./project-overseer-store";
 import type { ProjectCodingMode } from "../shared/project-overseer";
 import { cutWorktree, gitRootOf, mergeBack, readWorktree, removeWorktree, worktreePathOf, type GitRoot, type WorktreeReading, type WorktreeRecord } from "./project-worktrees";
 import { markSeen } from "./seen";
-import { readSessionTitles } from "./session-titles";
+import { cleanSessionTitle, readSessionTitles } from "./session-titles";
 import { getSessionSummary, indexedSessionPaths } from "./sessions-index";
 import { validateNewSessionCwd } from "./targets";
 import { addWebSession } from "./web-sessions";
@@ -279,7 +279,13 @@ function pathOrThrow(sessionId: string): string {
 }
 
 /** The worktree's slug: its given title, else the prompt's first words (as the session starts). */
-const slugTitle = (sessionId: string, d: Record<string, unknown>): string => readSessionTitles()[sessionId] || str(d.prompt).split(/\s+/).slice(0, 8).join(" ") || str(d.title);
+/** The branch's name: a title given, else the prompt's first 8 words (as master). A build's own title that is not just its
+    prompt's first line was given too (the item chart's "Build §gap/…"). */
+const slugTitle = (sessionId: string, d: Record<string, unknown>): string => {
+  const prompt = str(d.prompt);
+  const given = str(d.title) && str(d.title) !== cleanSessionTitle((prompt.split("\n")[0] ?? "").slice(0, 80)) ? str(d.title) : "";
+  return readSessionTitles()[sessionId] || given || prompt.split(/\s+/).slice(0, 8).join(" ") || str(d.title);
+};
 
 export function registerBuildEffects(host: OrgHostApi, orgId: string): void {
   host.effects.register("make-worktree", async (e) => {

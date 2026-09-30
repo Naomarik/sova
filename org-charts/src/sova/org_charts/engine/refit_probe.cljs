@@ -69,6 +69,8 @@
       (transition {:event :hold/dropped} (note :dropped))
       (transition {:event :hold/cancelled} (note :cancelled))
       (transition {:event :hold/lapsed} (note :lapsed))
+      (transition {:event :hold/held :sova/feed :quiet} (note :held))
+      (transition {:event :hold/waiting :sova/feed :feed} (note :waiting))
       (transition {:event :kid/watch} (dsl/watch #(:target (dsl/evt %))))
       (transition {:event :kid/unwatch} (dsl/unwatch #(:target (dsl/evt %))))
       (state {:id :idle}

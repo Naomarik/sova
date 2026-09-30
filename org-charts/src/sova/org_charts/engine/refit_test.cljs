@@ -238,7 +238,7 @@
         eng  (parent (new-eng {:stamp (fn [_ _ _ ctx] (swap! ctxs conj ctx) (assoc unattended :hold-ms 5000))}))
         r    (core/send! eng "par" :drive/go {:by "system" :project-id "p1"} {:now t0})]
     (is (= {:by "chart" :project-id "p1"} (first @ctxs)) "the driving session's project is passed on")
-    (is (= [:drive/go :gather/start] (map :event (:steps r))))
+    (is (= [:drive/go :gather/start :hold/held] (map :event (:steps r))))
     (is (= "chart" (:by (second (:steps r)))))
     (is (some? (:held (second (:steps r)))) "a chart-started act is held")
     (core/fire-due! eng (+ t0 5000))
@@ -469,10 +469,17 @@
 (deftest a-confirm-required-hold-waits-past-its-end-until-approved
   (let [eng (parent (new-eng))
         env (assoc unattended :hold-ms 1000 :confirm-kinds ["gather"])]
-    (let [h (:held (first (:steps (core/send! eng "par" :gather/start (assoc env :to "a") {:now t0}))))]
-      (is (true? (:confirm h))))
+    (let [r (core/send! eng "par" :gather/start (assoc env :to "a") {:now t0})
+          h (:held (first (:steps r)))]
+      (is (true? (:confirm h)))
+      (is (= [:gather/start :hold/held] (map :event (:steps r))) "r8: the session hears it was held, in the same call")
+      (is (= [{:id "gather/start#0" :event :gather/start :kind "gather/start" :what "Gathering with a" :until (+ t0 1000)
+               :project-id "p1" :confirm true :by "system"}]
+            (map #(dissoc % :at) (:held (core/data eng "par"))))))
     (let [r (core/fire-due! eng (+ t0 1000))]
       (is (= [:hold/waiting] (map :event (:steps r))) "at its end it waits")
+      (is (= [{:id "gather/start#0" :event :gather/start :kind "gather/start" :what "Gathering with a" :project-id "p1" :by "system"}]
+            (map #(dissoc % :at) (:waiting (core/data eng "par")))) "with the hold's project (an org-level chart routes its review by it)")
       (is (in? eng "par" :idle))
       (is (= [true] (map :waiting (core/holds eng))) "still listed, waiting (stall clock from :until)"))
     (is (empty? (:steps (core/fire-due! eng (+ t0 99999)))) "nothing more happens by itself")
@@ -515,7 +522,7 @@
   (let [eng    (parent (new-eng {:stamp (fn [_ _ _ _] {:level "L3" :project-id "p1"})}))
         window (+ t0 3600000)
         r      (core/send! eng "par" :drive/message {:by "system" :window window} {:now t0})]
-    (is (= [:drive/message :message/send] (map :event (:steps r))))
+    (is (= [:drive/message :message/send :hold/held] (map :event (:steps r))))
     (is (= {:wait "hours" :until window :by "chart"} (select-keys (:held (second (:steps r))) [:wait :until :by]))
       "R04: by chart, off hours: an hours wait")
     (is (empty? (:messages (core/data eng "par"))))

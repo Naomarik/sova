@@ -530,8 +530,10 @@
         []
         (do (swap! (sessions* eng) assoc-in [sid data-key :sova/holds id] (assoc hold :waiting true))
             (let [steps (run-step! eng sid (evts/new-event {:name :hold/waiting
-                                                            :data {:id id :event (:event hold) :kind (:kind hold)
-                                                                   :what (:what hold) :at ((:clock (engine eng))) :by "system"}}))]
+                                                            :data (cond-> {:id id :event (:event hold) :kind (:kind hold)
+                                                                           :what (:what hold) :at ((:clock (engine eng))) :by "system"}
+                                                                    ;; an org-level chart (the person's) routes its review by it
+                                                                    (:project-id hold) (assoc :project-id (:project-id hold)))}))]
               (if (some :saved steps)
                 steps
                 (do (save! eng sid (wmem-of eng sid))
@@ -618,9 +620,17 @@
         [wm2 info] (settle eng sid wm0 wm1 [])
         c      (configuration eng sid)]
     (save! eng sid wm2)
-    [(assoc (base-step eng sid event)
-       :before c :after c :changed (:changed info) :effects [] :outbox [] :holds (:holds info)
-       :holds-ended [] :held hold :running (running? eng sid) :microsteps 0 :saved true :feed :feed)]))
+    (into
+      [(assoc (base-step eng sid event)
+         :before c :after c :changed (:changed info) :effects [] :outbox [] :holds (:holds info)
+         :holds-ended [] :held hold :running (running? eng sid) :microsteps 0 :saved true :feed :feed)]
+      ;; r8: the session hears it was held, in the same call, so a review look can come inside the
+      ;; window (a chart that doesn't listen adds no step)
+      (remove :ignored
+        (run-step! eng sid (evts/new-event {:name :hold/held
+                                            :data (cond-> (select-keys hold [:id :event :kind :what :until :project-id])
+                                                    true (assoc :confirm (boolean (:confirm hold)) :by "system")
+                                                    (:wait hold) (assoc :wait (:wait hold)))}))))))
 
 (defn- process-one
   "Deliver `event` (an event map) to `sid`: the steps it produced. An act is gated first (final,

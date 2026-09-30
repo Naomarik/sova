@@ -32,7 +32,7 @@ export function createHoursDraft(init: { tz?: string; hours?: PersonHours | null
 export type HoursDraft = ReturnType<typeof createHoursDraft>;
 
 /** The zone, the Set Working Hours toggle, the days and the times, with the draft's problem under them. */
-export function HoursFieldset(props: { draft: HoursDraft; hint: string; toggle?: string; timesHint?: string }) {
+export function HoursFieldset(props: { draft: HoursDraft; hint: string; toggle?: string; timesHint?: string; noZone?: string }) {
   const d = props.draft;
   const zonesId = createUniqueId();
   const zones = knownZones();
@@ -88,6 +88,10 @@ export function HoursFieldset(props: { draft: HoursDraft; hint: string; toggle?:
           </label>
         </div>
         <p class="field-hint">{props.timesHint ?? "In their time zone. An end before the start runs overnight."}</p>
+        {/* r13: hours count only with a zone; without one, the caller says what applies instead. */}
+        <Show when={props.noZone && !d.zone()}>
+          <p class="field-hint person-off-hours">{props.noZone}</p>
+        </Show>
       </Show>
       <Show when={d.error()}>{(e) => <p class="field-error">{e()}</p>}</Show>
     </fieldset>

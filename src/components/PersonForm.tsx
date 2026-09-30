@@ -104,6 +104,11 @@ export function PersonForm(props: PersonFormProps) {
         hint={`What Sova starts on its own, and what the overseer does unattended, waits for their hours. Yours go at once.${
           props.company?.hours && companyLine ? ` Leave them off to use the company's hours (${companyLine}).` : ""
         }`}
+        noZone={
+          props.company?.hours && props.company.tz?.trim()
+            ? `Without a time zone these don't count: the company's hours apply (${companyLine}).`
+            : "Without a time zone these don't count: they are always in hours."
+        }
       />
       <Show when={status() === "proposed"}>
         <div class="orgs-fields">

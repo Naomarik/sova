@@ -31,6 +31,10 @@ import { Banner, CopyButton, Icon } from "./ui";
 import { sessionHref } from "./Sidebar";
 import { GroupWithParent, MoveToGroupMenu } from "./Groups";
 import { ChangesDialog } from "./ChangesViewer";
+import { RecipientChip, ShareSheet } from "./ShareSheet";
+import type { SessionShare } from "../../shared/session-share";
+import { hostOf } from "../lib/mesh";
+import { listSessionShares, modeLine, openedLine, ShareApiError, SHARES_HREF, shareLive } from "../lib/session-shares";
 
 /** Long machine facts wrap instead of widening the sheet. */
 const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
@@ -218,7 +222,11 @@ export function SessionDetails(props: {
         )}
       </Show>
 
-      {/* 6 · Compactions. Where the transcript was summarized, on demand. */}
+      {/* 6 · Sharing. This session's share links (§app.session-share/sheet), read from the host
+          that holds the session. */}
+      <Show when={summary()}>{(s) => <SharingSection session={s()} now={now()} labelId={id("sharing")} />}</Show>
+
+      {/* 7 · Compactions. Where the transcript was summarized, on demand. */}
       <Show when={compactions().length > 0}>
         <details class="disclosure">
           <summary class="disclosure-summary">
@@ -235,7 +243,7 @@ export function SessionDetails(props: {
         </details>
       </Show>
 
-      {/* 7 · Changes. Model, thinking and mode changes, in the order they happened. The pane's
+      {/* 8 · Changes. Model, thinking and mode changes, in the order they happened. The pane's
           Timeline tab is the session's whole axis; this stays the settings history. */}
       <Show when={timeline().length > 0}>
         <details class="disclosure">
@@ -271,6 +279,124 @@ export function SessionDetails(props: {
         </details>
       </Show>
     </>
+  );
+}
+
+/** A live share's presence is read again this often while the page is visible. */
+const SHARING_REFRESH_MS = 5_000;
+
+/**
+ * The session's share links (§app.session-share/sheet): each share's title, mode and recipients
+ * with presence and opens, Manage for each, and Share Session. Read on open, after the sheet
+ * changes something, and every SHARING_REFRESH_MS while a share is live and the page is visible.
+ */
+function SharingSection(props: { session: SessionSummary; now: number; labelId: string }) {
+  const host = () => hostOf(props.session.path);
+  const [shares, setShares] = createSignal<SessionShare[] | null>(null);
+  const [error, setError] = createSignal<string | null>(null);
+  const [sheet, setSheet] = createSignal<{ share: SessionShare | null } | null>(null);
+  let run = 0;
+  const load = async () => {
+    const mine = ++run;
+    try {
+      const next = await listSessionShares(host(), props.session.id);
+      if (mine !== run) return;
+      setShares(next);
+      setError(null);
+    } catch (x) {
+      if (mine !== run) return;
+      // An older host has no share routes: said once, never a retry loop of errors.
+      setError(x instanceof ShareApiError && x.status === 404 && !x.code ? "This host can't share sessions yet. It needs an update." : `Couldn't read this session's shares. ${(x as Error).message}`);
+    }
+  };
+  const id = createMemo(() => props.session.id);
+  createEffect(
+    on(id, () => {
+      setShares(null);
+      void load();
+    }),
+  );
+  const tick = setInterval(() => {
+    if (document.visibilityState === "visible" && (shares() ?? []).some(shareLive)) void load();
+  }, SHARING_REFRESH_MS);
+  onCleanup(() => {
+    run++;
+    clearInterval(tick);
+  });
+  const abs = (iso: string) => absoluteTime(iso, props.now);
+
+  return (
+    <section class="stack-2" aria-labelledby={props.labelId}>
+      <div class="spread">
+        <h3 class="text-eyebrow" id={props.labelId}>
+          Sharing
+        </h3>
+        <a class="button button-sm button-ghost" href={SHARES_HREF}>
+          All Shares
+        </a>
+      </div>
+      <Switch>
+        <Match when={error()}>{(msg) => <p class="usage-note">{msg()}</p>}</Match>
+        <Match when={shares() === null}>
+          <p class="usage-note text-skeleton" aria-hidden="true">
+            <Bone width="40%" />
+          </p>
+        </Match>
+        <Match when={shares()!.length === 0}>
+          <p class="usage-note">Not shared with anyone.</p>
+        </Match>
+        <Match when={shares()!.length > 0}>
+          <ul class="list sharing-list">
+            <For each={shares()}>
+              {(sh) => (
+                <li class="list-row sharing-row">
+                  <div class="list-main">
+                    <p class="list-title">{sh.title}</p>
+                    <p class="list-meta">{sh.stoppedAt ? `Stopped ${relativeTime(sh.stoppedAt, props.now)}` : modeLine(sh, abs)}</p>
+                    <ul class="shares-recipients">
+                      <For each={sh.recipients}>
+                        {(r) => (
+                          <li class="shares-recipient">
+                            <span class="shares-recipient-name">{r.label}</span>
+                            <RecipientChip state={r.state} presence={r.presence} />
+                            <span class="text-caption text-muted">{openedLine(r.opened, r.lastAt, (iso) => relativeTime(iso, props.now))}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </div>
+                  <button type="button" class="button button-sm" aria-label={`Manage ${sh.title}`} onClick={() => setSheet({ share: sh })}>
+                    Manage
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Match>
+      </Switch>
+      <Show when={!error()}>
+        <div class="cluster">
+          <button type="button" class="button" onClick={() => setSheet({ share: null })}>
+            Share Session
+          </button>
+        </div>
+      </Show>
+      <Show when={sheet()}>
+        {(open) => (
+          <ShareSheet
+            host={host()}
+            sessionId={props.session.id}
+            sessionTitle={props.session.title}
+            share={open().share}
+            onChanged={() => void load()}
+            onClose={() => {
+              setSheet(null);
+              void load();
+            }}
+          />
+        )}
+      </Show>
+    </section>
   );
 }
 

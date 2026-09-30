@@ -8,9 +8,9 @@ import { after, before, test } from "node:test";
 import { exitOf, isVerbResult, type VerbResult } from "../../shared/project-contract";
 import { staticServes, stopStaticServe } from "../preview-serve";
 import { conformer } from "./conform";
-import { DetachedDriver } from "./drivers";
+import { DetachedDriver, SystemdDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
-import { readRegistry } from "./store";
+import { readRegistry, sharedIdOf } from "./store";
 import { approve, defHashOf } from "./trust";
 import { parseDefinition } from "../../shared/project-contract";
 
@@ -65,9 +65,11 @@ before(() => {
 after(async () => {
   // Nothing may outlive the tests: every instance torn down, the shared bus stopped.
   for (const i of readRegistry().instances) if (i.slot !== 0) await engine.run("teardown", { instance: i.id }, op);
-  const main = readRegistry().instances.find((i) => i.slot === 0);
-  if (main) await engine.run("down", { instance: main.id, services: ["web", "site", "bus"], confirm: true }, op);
+  for (const main of readRegistry().instances.filter((i) => i.slot === 0))
+    await engine.run("down", main.project === project ? { instance: main.id, services: ["web", "site", "bus"], confirm: true } : { instance: main.id }, op);
   for (const s of staticServes()) await stopStaticServe(s.id);
+  // Whatever failed above: the project's shared bus is stopped by its unit.
+  await engine.driver.stop(engine.unitOf(sharedIdOf(project), "bus"));
   rmSync(parent, { recursive: true, force: true });
   rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
 });
@@ -202,6 +204,32 @@ test("who may call what", async () => {
   assert.equal((await engine.run("up", { instance: a.instance }, op)).ok, true);
 });
 
+test("with no supervisor reachable, process verbs are unsupported and change nothing; static folders still serve", async () => {
+  const bare = new ProjectEngine({ driver: new SystemdDriver(async () => ({ code: 1, stdout: "", stderr: "Failed to connect to bus" })), pollMs: 100 });
+  const before = readRegistry().instances.length;
+  const r = shaped(await bare.run("up", { project, branch: "sova/nobus" }, op));
+  assert.equal(r.error?.code, "unsupported");
+  assert.match(r.error!.message, /no systemd user manager reachable/);
+  assert.equal(exitOf(r), 2);
+  assert.equal(readRegistry().instances.length, before, "nothing was made");
+  assert.ok(!existsSync(join(parent, ".worktrees", "demo-nobus")));
+  // A static-only project needs no supervisor.
+  const site = join(parent, "site");
+  mkdirSync(join(site, ".sova"), { recursive: true });
+  writeFileSync(join(site, "index.html"), "static");
+  const def = { version: 1, services: { site: { static: ".", ports: { http: { base: PORTS.site + 10 } } } } };
+  writeFileSync(join(site, ".sova", "project.json"), JSON.stringify(def));
+  git(["init", "-q", "-b", "main"], site);
+  git(["add", "-A"], site);
+  git(["commit", "-q", "-m", "site"], site);
+  const h = defHashOf(parseDefinition(JSON.stringify(def)));
+  approve(site, h, h);
+  const up = shaped(await bare.run("up", { project: site }, op));
+  assert.equal(up.ok, true, JSON.stringify(up.error));
+  assert.equal(await (await fetch(`http://127.0.0.1:${PORTS.site + 10}/`)).text(), "static");
+  assert.equal(shaped(await bare.run("down", { instance: up.instance }, op)).state, "stopped");
+});
+
 test("reserved and malformed requests", async () => {
   for (const v of ["share", "revoke", "deploy", "deploy.run"]) {
     const r = shaped(await engine.run(v, { project }, op));
@@ -253,7 +281,7 @@ test("reset gives fresh data; down keeps it; teardown deletes it and keeps the b
   assert.equal(again.changed, false);
   assert.equal(again.state, "absent");
   assert.equal(shaped(await engine.run("teardown", { instance: a.instance }, op)).state, "absent", "absent without the project too");
-  const main = readRegistry().instances.find((i) => i.slot === 0);
+  const main = readRegistry().instances.find((i) => i.project === project && i.slot === 0);
   assert.equal(main, undefined);
   const m = shaped(await engine.run("create", { project }, op));
   assert.equal(m.slot, 0);

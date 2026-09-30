@@ -225,6 +225,9 @@ interface Scope {
   data: Record<string, string>;
 }
 
+/** Whether a definition runs any process (a cmd service, a setup step, a data or probe hook), rather than only static folders. */
+const runsProcesses = (def: ProjectDef) => def.services.some((s) => s.static === undefined) || def.setup.length > 0 || def.data.some((d) => d.kind === "hook") || !!def.hooks.probe;
+
 const scopeOf = (rec: InstanceRecord): Scope => ({ id: rec.id, project: rec.project, checkout: rec.checkout, branch: rec.branch, slot: rec.slot, ports: rec.ports, data: rec.data });
 
 export class ProjectEngine {
@@ -397,6 +400,13 @@ export class ProjectEngine {
     run.def = parseDefinition(text);
     run.defHash = defHashOf(run.def);
     run.approved = isApproved(run.project!, run.defHash);
+  }
+
+  /** No supervisor, no process verbs (§app.project-services/supervisor): refused before anything changes. */
+  private async supervised(def: ProjectDef | null): Promise<void> {
+    if (!def || !runsProcesses(def)) return;
+    const d = await this.driver.available();
+    if (!d.ok) throw new VerbFailure("unsupported", `${d.detail}: this host can't run a project's processes (a host without systemd starts Sova with SOVA_PROJECT_DRIVER=detached)`);
   }
 
   /** The definition, valid and approved, or the refusal. */
@@ -600,6 +610,7 @@ export class ProjectEngine {
     const project = run.project!;
     if (run.rec) {
       const def = this.need(run);
+      await this.supervised(def);
       await this.provision(run, def, run.rec, false);
       return run.rec;
     }
@@ -619,6 +630,7 @@ export class ProjectEngine {
       }
     }
     const def = this.need(run);
+    await this.supervised(def);
     const main = target.checkout === project;
     if (!main && run.req.slot === 0) throw new VerbFailure("refused-slot0", "slot 0 is the main checkout's");
     if (main && run.req.slot !== undefined && run.req.slot !== 0) throw new VerbFailure("invalid-request", "the main checkout is slot 0");
@@ -913,6 +925,7 @@ export class ProjectEngine {
     const rec = run.rec ?? (await this.create(run));
     run.rec = rec;
     const def = this.need(run);
+    await this.supervised(def);
     const names = run.req.services?.length ? run.req.services : def.services.filter((s) => s.scope === "checkout").map((s) => s.name);
     for (const n of names) if (!def.services.some((s) => s.name === n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
     const wanted = closureOf(def, names);
@@ -947,6 +960,7 @@ export class ProjectEngine {
   private async down(run: Run): Promise<void> {
     const rec = run.rec!;
     const def = run.def;
+    await this.supervised(def);
     const known = def ? serviceOrder(def) : Object.keys(rec.desired).map((name) => ({ name, scope: "checkout" }) as ServiceDecl);
     const names = run.req.services?.length ? run.req.services : known.filter((s) => s.scope === "checkout").map((s) => s.name);
     for (const n of names) if (!known.some((s) => s.name === n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
@@ -969,6 +983,7 @@ export class ProjectEngine {
   private async apply(run: Run): Promise<void> {
     const rec = run.rec!;
     const def = this.need(run);
+    await this.supervised(def);
     const scope = scopeOf(rec);
     const names = run.req.services?.length ? run.req.services : def.services.filter((s) => s.scope === "checkout").map((s) => s.name);
     for (const n of names) if (!def.services.some((s) => s.name === n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
@@ -1019,6 +1034,7 @@ export class ProjectEngine {
   private async reset(run: Run): Promise<void> {
     const rec = run.rec!;
     const def = this.need(run);
+    await this.supervised(def);
     const only = run.req.resources;
     for (const n of only ?? []) if (!def.data.some((d) => d.name === n)) throw new VerbFailure("invalid-request", `no data resource "${n}"`);
     if (!def.data.length) {
@@ -1108,7 +1124,7 @@ export class ProjectEngine {
     const add = (id: string, ok: boolean, detail: string) => checks.push({ id, ok, detail });
     add("definition", !run.defError && !!run.def, run.defError ? run.defError.message : run.def ? `valid (${run.defHash})` : `no ${CONTRACT_FILE}`);
     add("approved", run.approved, run.approved ? "approved on this host" : `not approved: ${run.defHash ?? "no definition"}`);
-    const needsProcess = !!run.def && (run.def.services.some((s) => s.static === undefined) || run.def.setup.length > 0 || run.def.data.some((d) => d.kind === "hook"));
+    const needsProcess = !!run.def && runsProcesses(run.def);
     const drv = await this.driver.available();
     add("supervisor", drv.ok || !needsProcess, `${this.driver.id}: ${drv.detail}`);
     if (run.def) {

@@ -93,12 +93,12 @@ describe("an act that reaches them outside their hours (r7)", () => {
     const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
     const out = await tool.execute("t1", { gap: "none", person: "Sam Okafor", public_title: "Prices", goal: "Which prices apply", question: "Which prices apply?" } as never, undefined, undefined, undefined as never);
     assert.match((out.content[0] as { text: string }).text, /^Held: starting "Prices" with Sam Okafor waits until /);
-    const held = pipelineInfo(org.id, project.id).held.find((h) => h.what === 'A gathering session "Prices"')!;
+    const held = pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Sam Okafor: Prices")!;
     assert.deepEqual([held.wait, held.person], ["hours", "Sam Okafor"]);
     assert.equal(held.goesAt, orgs.findPerson(org.id, sam.id)!.hoursNow!.nextOpen);
     const item = heldAttention().find((i) => i.held?.id === held.id)!;
     assert.equal(item.held?.wait, "hours");
-    assert.match(item.detail!, /^A gathering session "Prices" waits for Sam Okafor's working hours: it starts in 1[12]\d min unless you cancel it\.$/);
+    assert.match(item.detail!, /^A gathering with Sam Okafor: Prices waits for Sam Okafor's working hours: it starts in 1[12]\d min unless you cancel it\.$/);
     assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Prices"), "nothing reached them");
     // The org's card and page count it once, as Needs you lists it.
     const card = ((await (await app.request("/api/orgs")).json()) as { orgs: { id: string; needsYou?: { held?: number } }[] }).orgs.find((o) => o.id === org.id)!;

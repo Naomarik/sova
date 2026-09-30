@@ -52,6 +52,39 @@ function personOf(orgId: string, h: Hold): string | undefined {
   return name || undefined;
 }
 
+/** A gap's title (its idea's), else its id. */
+function gapTitle(orgId: string, projectId: string, ideaId: string): string {
+  try {
+    return readManifest(projectOverseerPaths(orgId, projectId).ideas).ideas[ideaId]?.title || ideaId;
+  } catch {
+    return ideaId;
+  }
+}
+
+/**
+ * What a held act is, as the operator reads it (Needs you, the Pipeline): who it reaches and about what,
+ * never a gap's id (the row already opens the project). The chart's own `what` (kept for the overseer) when
+ * the act reaches no one.
+ */
+export function heldWhat(orgId: string, h: Hold): string {
+  const d = obj(h.data);
+  const str = (v: unknown) => (typeof v === "string" ? v.trim() : "");
+  const projectId = projectOfHold(h);
+  const ideaId = h.sessionId.startsWith("item/") && isOrgHostOpen(orgId) ? str(hostOf(orgId).data(h.sessionId)?.["ideaId"]) : "";
+  const about = str(d["publicTitle"]) || (ideaId ? gapTitle(orgId, projectId, ideaId) : "");
+  const tail = about ? `: ${about}` : "";
+  if (h.event === "gather/start" || h.event === "baton/start") {
+    const targets = Array.isArray(d["targets"]) ? d["targets"] : [];
+    if (targets.length >= 2) return `An offer to ${targets.length} people${tail}`;
+    const to = str(d["to"]) || str(obj(d["target"])["id"]);
+    if (to === OPERATOR) return `A gathering with you${tail}`;
+    const who = personOf(orgId, h);
+    return who ? `A gathering with ${who}${tail}` : `A gathering${tail}`;
+  }
+  if (h.event === "build/start" && ideaId) return `A coding session for ${gapTitle(orgId, projectId, ideaId)}`;
+  return h.what || "An act";
+}
+
 function heldActOf(orgId: string, h: Hold): HeldAct {
   const projectId = projectOfHold(h);
   const itemId = h.sessionId.startsWith("item/") ? last(h.sessionId) : undefined;
@@ -63,7 +96,7 @@ function heldActOf(orgId: string, h: Hold): HeldAct {
     projectId,
     ...(itemId ? { itemId } : {}),
     ...(typeof ideaId === "string" ? { gap: ideaId } : {}),
-    what: h.what || "An act",
+    what: heldWhat(orgId, h),
     kind: h.kind,
     goesAt: iso(h.until),
     since: iso(h.since),
@@ -233,8 +266,13 @@ export async function holdItem(orgId: string, projectId: string, itemId: string,
 
 // ---- an item's timeline -------------------------------------------------------------------------------------
 
-/** What happened, in a sentence (the log keeps event names; the page reads this). */
-const LINES: Record<string, string> = {
+/** What happened, in a sentence (the log keeps event names; the page reads this). A chart's own sentence
+    (`<chart>:<event>`) comes before the event's. */
+export const LINES: Record<string, string> = {
+  "item:sova/started": "The overseer filed this gap.",
+  "baton:sova/started": "The gathering session opened.",
+  "build:sova/started": "The coding session opened.",
+  "decision:sova/started": "A decision was recorded.",
   "gap/file": "The gap was filed.",
   "gap/drop": "The gap was dropped.",
   "gather/start": "A gathering started.",
@@ -247,18 +285,54 @@ const LINES: Record<string, string> = {
   "hold/cancel": "A held act was cancelled.",
   "hold/approve": "A held act was approved early.",
   "hold/released": "A held act went ahead.",
+  "hold/waiting": "A held act waits for the overseer's review.",
   "correct/reopen": "It was reopened.",
   "correct/skip-stall": "A stalled step was skipped.",
   "correct/relink": "A session was moved to another gap.",
+  "correct/merged": "Its branch was marked merged by hand.",
   "sova/set-state": "Its state was set by hand.",
   "reconcile/request": "The decisions were reconciled.",
   "decision/promote": "Decisions were promoted.",
+  // a gathering
+  "baton/abilities": "The gathering's abilities were changed.",
+  "baton/close": "The gathering was closed.",
+  "baton/extend": "The gathering's message limit was raised.",
+  "baton/goal-done": "The gathering's goal was met.",
+  "baton/hand-to": "The gathering was handed on.",
+  "baton/handoff": "The gathering was handed on.",
+  "baton/hide": "The gathering was hidden from the owner.",
+  "baton/message": "A message was written in the gathering.",
+  "baton/offer": "The gathering was offered to several people.",
+  "baton/withdraw": "The offer was withdrawn.",
+  "baton/propose": "Someone new was proposed in the gathering.",
+  "baton/record-decision": "A decision was recorded in the gathering.",
+  "baton/take-back": "The operator took the gathering back.",
+  "baton/wrapup-retry": "The gathering's wrap-up was retried.",
+  "lease/lapse": "The holder's turn in the gathering lapsed.",
+  "person/left": "The gathering's holder left the organization.",
+  "wrapup/finished": "The gathering's wrap-up finished.",
+  "wrapup/overdue": "The gathering's wrap-up is overdue.",
+  "wrapup/stopped": "The gathering's wrap-up stopped.",
+  // a coding session
+  "build/merge": "Merge Branch was pressed.",
+  "build/prompt": "The coding session was sent a prompt.",
+  "build/remove-worktree": "The coding session's worktree is being removed.",
+  "tree/removed": "The coding session's worktree was removed.",
+  "git/probe": "Git was checked for the branch.",
+  "build:effect/failed": "Something the coding session tried failed.",
+  // a decision
+  "decision/owner-area": "A decision's owner area was changed.",
+  "decision/settle-text": "A decision edited in the spec was settled.",
+  "reconcile/result": "A decision was reconciled.",
+  "promote/done": "A decision was promoted.",
+  "decision:effect/failed": "A decision's step failed.",
 };
 
-function lineOf(r: LogRow, from?: string, to?: string): string {
+/** A row's sentence: a refusal, a hold, the chart's or event's own, else the lane move; null for bookkeeping. */
+function lineOf(r: LogRow, from?: string, to?: string, held?: string): string | null {
   if (r.refused) return `Refused: ${r.refused}`;
-  if (r.held) return `${r.held.what || "An act"} was held.`;
-  return LINES[r.event] ?? (from && to ? `It moved from ${from} to ${to}.` : `${r.event}.`);
+  if (r.held) return `${held || r.held.what || "An act"} was held.`;
+  return LINES[`${r.chart ?? ""}:${r.event}`] ?? LINES[r.event] ?? (from && to ? `It moved from ${from} to ${to}.` : null);
 }
 
 /** An item's rows from the org's transition log, oldest first: its own and its sessions'. */
@@ -271,13 +345,19 @@ export function itemTimeline(orgId: string, projectId: string, itemId: string, o
   if (!d) throw new OrgError("Unknown item", 404);
   const sessions = [sid, ...Object.keys(obj(d["batons"])), ...Object.keys(obj(d["builds"])), ...Object.keys(obj(d["decisions"])).map((id) => `decision/${orgId}/${projectId}/${id}`)];
   const names = namesOf(orgId);
+  const holds = new Map(host.holds().map((h) => [h.id, h]));
   const rows: TimelineRow[] = host.log
     .rows({ sessions })
-    .filter((r) => opts.includeQuiet || r.feed !== "quiet" || r.session === sid)
     .map((r) => {
       const from = r.session === sid ? laneOf(r.before) : "";
       const to = r.session === sid ? laneOf(r.after) : "";
-      const moved = from && to && from !== to;
+      const moved = !!(from && to && from !== to);
+      const h = r.held ? holds.get(r.held.id) : undefined;
+      return { r, from, to, moved, line: lineOf(r, moved ? from : undefined, moved ? to : undefined, h ? heldWhat(orgId, h) : undefined) };
+    })
+    // Bookkeeping with no sentence (a fact mirror, a flush, an effect's answer) is quiet, never a raw event name.
+    .filter(({ r, line }) => opts.includeQuiet || (line !== null && (r.feed !== "quiet" || r.session === sid)))
+    .map(({ r, from, to, moved, line }) => {
       const by = r.by === "operator" || r.by === "overseer" || r.by === "chart" || !r.by ? (r.by ?? "chart") : (names[r.by] ?? r.by);
       return {
         at: iso(r.at),
@@ -285,10 +365,10 @@ export function itemTimeline(orgId: string, projectId: string, itemId: string, o
         by,
         ...(r.via ? { via: r.via } : {}),
         ...(moved ? { from, to } : {}),
-        line: lineOf(r, moved ? from : undefined, moved ? to : undefined),
+        line: line ?? "Sova kept its records up to date.",
         ...(r.reason ? { reason: r.reason } : {}),
         ...(r.refused ? { refused: r.refused } : {}),
-        ...(r.feed === "quiet" ? { quiet: true } : {}),
+        ...(r.feed === "quiet" || line === null ? { quiet: true } : {}),
       };
     });
   return { itemId, rows };

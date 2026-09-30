@@ -23,6 +23,7 @@ process.env.PI_CODING_AGENT_DIR = join(root, "agent");
 mkdirSync(join(root, "agent", "sessions"), { recursive: true });
 
 const orgs = await import("./orgs");
+const { seedBuild } = await import("./org-test-fixtures");
 const baton = await import("./baton");
 const links = await import("./baton-links");
 const plinks = await import("./person-links");
@@ -31,7 +32,7 @@ const store = await import("./project-overseer-store");
 const { addIdea } = await import("./overseer-ideas");
 const { addTodo } = await import("./overseer-todos");
 const { logAction, writeNotes } = await import("./overseer-store");
-const { writeConflicts } = await import("./decisions");
+const { recordDecision, seedConflicts } = await import("./org-test-fixtures");
 const { listDecisions } = await import("./reconcile");
 const { appendUpdate } = await import("./project-updates");
 const { registerOrgRoutes } = await import("./org-routes");
@@ -89,15 +90,15 @@ const M = {
 const org = await orgs.createOrg({ name: "Gate Archery", dir: join(root, "ws") });
 const ws = orgs.orgDir(org.id);
 for (const d of ["a", "b"]) mkdirSync(join(root, d));
-const pa = orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
-const pb = orgs.addProject(org.id, { name: M.offProject, root: join(root, "b") });
-const alp = orgs.addPerson(org.id, {
+const pa = await orgs.addProject(org.id, { name: "Booking site", root: join(root, "a") });
+const pb = await orgs.addProject(org.id, { name: M.offProject, root: join(root, "b") });
+const alp = await orgs.addPerson(org.id, {
   name: "Alperen Kaya",
   role: M.ownerRole,
   contact: { email: M.ownerEmail },
   voice: "Formal, short sentences, owner voice",
 });
-const kim = orgs.addPerson(org.id, {
+const kim = await orgs.addPerson(org.id, {
   name: "Kim Lee",
   role: M.role,
   decides: [M.decides],
@@ -106,15 +107,14 @@ const kim = orgs.addPerson(org.id, {
   language: M.language,
   contact: { email: M.email, phone: M.phone, whatsapp: M.whatsapp, other: M.other },
 });
-orgs.applyChange(org.id, kim.id, { competence: { [M.competence]: { level: 4, n: 2 } } }, { kind: "operator" });
-const pat = orgs.applyChange(
+await orgs.applyChange(org.id, kim.id, { competence: { [M.competence]: { level: 4, n: 2 } } }, { kind: "operator" });
+const pat = await orgs.addPerson(
   org.id,
-  null,
   { name: M.proposed, role: "Finance", status: "proposed", contact: { email: "pat@example.test" }, referral: { why: M.referralWhy, referredBy: kim.id, quote: M.referralQuote } },
   { kind: "referral" },
 );
-orgs.patchOrg(org.id, { about: `${M.about}. They pay late.` });
-orgs.setOrgOwner(org.id, alp.id);
+await orgs.patchOrg(org.id, { about: `${M.about}. They pay late.` });
+await orgs.setOrgOwner(org.id, alp.id);
 
 let seq = 0;
 const line = (path: string, entry: Record<string, unknown>) => {
@@ -132,35 +132,35 @@ const reply = (path: string, content: unknown[]) => line(path, { type: "message"
 // A shown conversation with Kim: her words, the model's reply echoing her profile, thinking, a
 // tool call, a decision whose statement echoes her skill, a hand-off to Bob-less Alperen with a
 // briefing to someone else first, and a wrap-up.
-const s1 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Opening hours", goal: M.goal, briefing: M.briefingOther, model: M.model });
+const s1 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Opening hours", goal: M.goal, briefing: M.briefingOther, model: M.model });
 said(s1.path, kim.id, "We open at nine.");
 reply(s1.path, [
   { type: "thinking", thinking: M.thinking },
   { type: "text", text: `Thanks. Noted: ${M.voice}. Also ${M.skill}.` },
   { type: "toolCall", id: "t1", name: "record_decision", arguments: { area: "Hours", statement: M.toolArg, quote: "We open at nine." } },
 ]);
-line(s1.path, { type: "custom", customType: BATON_DECISION_ENTRY, data: { v: 1, area: "Hours", statement: `The range opens at 9 (${M.skill}).`, quote: "We open at nine.", by: kim.id } });
-line(s1.path, { type: "custom", customType: BATON_DECISION_ENTRY, data: { v: 1, area: "Hours", statement: "Closed Mondays.", quote: "Mondays off", by: kim.id } });
-baton.markDone(s1.sessionId);
+await recordDecision(s1.path, { area: "Hours", statement: `The range opens at 9 (${M.skill}).`, quote: "We open at nine." });
+await recordDecision(s1.path, { area: "Hours", statement: "Closed Mondays.", quote: "Mondays off" });
+await baton.markDone(s1.sessionId);
 line(s1.path, { type: "custom", customType: BATON_WRAPUP_ENTRY, data: { v: 1, phase: "start" } });
 reply(s1.path, [{ type: "text", text: M.wrapup }]);
 // A conversation waiting on Alperen, handed on from Kim with a briefing addressed to Kim only.
-const s2 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Budget", goal: M.goal, briefing: M.briefingOther });
+const s2 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Budget", goal: M.goal, briefing: M.briefingOther });
 const kimToken = baton.rotateLink(s2.sessionId).token;
-baton.handTo(s2.sessionId, alp.id, "What is the budget?", "For Alperen: the budget question.");
+await baton.handTo(s2.sessionId, alp.id, "What is the budget?", "For Alperen: the budget question.");
 // As hand_to leaves it in the transcript: the first hand-off's briefing is Kim's, the second Alperen's.
 line(s2.path, { type: "custom", customType: BATON_HANDOFF_ENTRY, data: { v: 1, n: 1, from: "operator", to: kim.id, question: "Budget?", briefing: M.briefingOther } });
 line(s2.path, { type: "custom", customType: BATON_HANDOFF_ENTRY, data: { v: 1, n: 2, from: kim.id, to: alp.id, question: "What is the budget?", briefing: "For Alperen: the budget question." } });
 // Hidden from the owner.
-const s3 = baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: M.hiddenTitle, goal: "g" });
+const s3 = await baton.createBaton({ orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: M.hiddenTitle, goal: "g" });
 said(s3.path, kim.id, M.hiddenText);
-baton.setHiddenFromOwner(s3.sessionId, true);
+await baton.setHiddenFromOwner(s3.sessionId, true);
 // On a switched-off project.
-const s4 = baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: M.offTitle, goal: "g" });
-orgs.patchProject(org.id, pb.id, { ownerHidden: true });
+const s4 = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: M.offTitle, goal: "g" });
+await orgs.patchProject(org.id, pb.id, { ownerHidden: true });
 // A conflict with a candid routing reason.
 const ds = listDecisions(org.id, pa.id).decisions;
-writeConflicts(org.id, pa.id, [
+await seedConflicts(org.id, pa.id, [
   { id: "cf_mkmkmkmk", orgId: org.id, projectId: pa.id, areaKey: "hours", a: ds[0]!.id, b: ds[1]!.id, p: 0.9, routedTo: "operator", routeReason: M.routeReason, selfAsserted: true, state: "open", createdAt: new Date().toISOString() },
 ]);
 // The project overseer's files.
@@ -172,15 +172,8 @@ addTodo({ text: M.todo }, paths.todos, paths.ideas);
 logAction({ at: new Date().toISOString(), overseerId: "po", toolCallId: "t", tool: "sova_note", args: { text: M.action }, outcome: "ok" }, paths.actions);
 writeFileSync(paths.settings, JSON.stringify({ version: 1, extraSystemPrompt: M.extra }));
 writeFileSync(join(ws, "sessions", "2026-09-27T00-00-00-000Z_po-mk.jsonl"), `${JSON.stringify({ type: "session", id: "po-mk", cwd: "/", timestamp: "" })}\n${JSON.stringify({ type: "message", id: "a", message: { role: "assistant", content: [{ type: "text", text: M.overseerChat }] } })}\n`);
-writeFileSync(
-  paths.started,
-  JSON.stringify({
-    version: 1,
-    sessions: [
-      { sessionId: "code-mk-1", kind: "coding", createdAt: new Date().toISOString(), path: `${M.worktree}/s.jsonl`, tokens: Number(M.tokens), worktree: { path: M.worktree, branch: M.branch, base: M.commit, target: "main" }, merged: { at: new Date().toISOString(), commit: M.commit } },
-    ],
-  }),
-);
+// A build in its worktree, merged (the legacy token count is gone with started.json: nothing carries M.tokens).
+await seedBuild(org.id, pa.id, { sessionId: "code-mk-1", kind: "coding", path: `${M.worktree}/s.jsonl`, worktree: { path: M.worktree, branch: M.branch, base: M.commit, target: "main" }, merged: { commit: M.commit } });
 // A milestone update whose text (as a model might) echoes a profile phrase: the page's filter blanks it.
 appendUpdate(org.id, pa.id, { text: `Opening hours are agreed. ${M.voice}.`, run: "auto" });
 // Kim opened her own link: her visit is hers alone.
@@ -251,7 +244,11 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
 
   test("positive control: every marker is really in the org's records, and the pages did answer", async () => {
     const all = everyFile() + JSON.stringify(await (await app.request(`/api/orgs/${org.id}`)).json());
-    for (const [field, mark] of Object.entries(M)) assert.ok(all.includes(mark), `${field} was planted`);
+    // Recorded nowhere any more (q1): a build's worktree folder is this host's, found by its branch; the
+    // legacy token count went with started.json. Both stay in the leak checks below.
+    const unrecorded = new Set(["worktree", "tokens"]);
+    for (const [field, mark] of Object.entries(M)) if (!unrecorded.has(field)) assert.ok(all.includes(mark), `${field} was planted`);
+    for (const field of unrecorded) assert.ok(!all.includes(M[field as keyof typeof M]), `${field} is recorded nowhere (q1: no started.json)`);
     const ok = answers.filter(([label]) => label.startsWith("200"));
     assert.ok(ok.some(([l]) => l.includes("/p/")) && ok.some(([l]) => l.includes("/c/")) && ok.some(([l]) => l.includes("preview")), answers.map(([l]) => l).join("\n"));
     const home = JSON.parse(answers.find(([l]) => l === `200 GET /api/i/${token}`)![1]) as OwnerHome;

@@ -1,7 +1,9 @@
 {"v":1,"id":"syn-reason-while-streaming","source":"synthetic","note":"Synthetic: the operator reconciles on the page while the overseer answers the operator; today's memo drops the reason (R3), the chart keeps it","t0":"2026-09-28T10:00:00Z","hosts":1,"sova":{"commit":null,"how":"synthetic","features":{"askedOperatorReason":true,"codingSettledReason":true,"noDecisionRecordedReason":true,"allowanceHeld":true,"mergeReasonAndTodosOperatorOnly":true,"noTokenBudget":true}},
 "events": [
 {"dt":0,"kind":"fact","entity":"person","id":"p1","status":"active"},
+{"dt":500,"kind":"fact","entity":"baton","id":"b0","state":"open","by":"operator"},
 {"dt":1000,"kind":"fact","entity":"decision","id":"d1","baton":"b0","state":"pending","ownerArea":true},
+{"dt":2000,"kind":"fact","entity":"baton","id":"b0","state":"done","wrote":true},
 {"dt":60000,"kind":"turn","by":"operator","attended":true,"level":"L3","reasons":[]},
 {"dt":70000,"kind":"fact","entity":"decision","id":"d1","baton":"b0","state":"drafted","by":"operator"},
 {"dt":90000,"kind":"turn-end","stop":"stop"},

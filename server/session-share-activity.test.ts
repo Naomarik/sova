@@ -159,12 +159,12 @@ describe("the Shares page's org links (§app.session-share/shares-page)", async 
   const { orgLinkRows, sharesOverview } = await import("./shares-overview");
   const org = await orgs.createOrg({ name: "Gate Archery", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Booking site", root: join(root, "proj") });
-  const kim = orgs.addPerson(org.id, { name: "Kim Lee", contact: { email: "kim@example.test" } });
-  const alp = orgs.addPerson(org.id, { name: "Alperen Kaya", contact: { email: "alp@example.test" } });
-  const s = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Opening hours", goal: "g" });
+  const project = await orgs.addProject(org.id, { name: "Booking site", root: join(root, "proj") });
+  const kim = await orgs.addPerson(org.id, { name: "Kim Lee", contact: { email: "kim@example.test" } });
+  const alp = await orgs.addPerson(org.id, { name: "Alperen Kaya", contact: { email: "alp@example.test" } });
+  const s = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Opening hours", goal: "g" });
   const kimToken = baton.rotateLink(s.sessionId).token;
-  orgs.setOrgOwner(org.id, alp.id);
+  await orgs.setOrgOwner(org.id, alp.id);
   const owner = plinks.mintOwnerLink(org.id, alp.id);
   const t = Date.now();
   visits.recordOpen(links.findLink(kimToken)!, { userAgent: IPHONE, now: t - 60_000 });

@@ -139,6 +139,8 @@
 
 /* The strip's second rows: invitees' links, a proposed person, a wrap-up line, the Hand On form. */
 .baton-strip-row { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+/* r12: an offer's invitees not reached yet, one line each (their name, then when their hours start). */
+.baton-strip-waiting { flex-basis: 100%; list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
 .baton-strip-card { padding: var(--space-2) var(--space-3); border-radius: var(--r-md); background: var(--color-surface); border: 1px solid var(--color-border); }
 .baton-strip-card-main { flex: 1; min-width: 12rem; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .baton-extend-input { width: 6rem; }
@@ -363,3 +365,16 @@
 /* An archived project (§app.organizations/archive): its row, then Unarchive beside it. */
 .orgs-archived-row { display: flex; align-items: center; gap: var(--space-2); }
 .orgs-archived-row > .list-row { flex: 1; min-width: 0; }
+
+/* A person's working hours (r7) in their profile form: the zone, the toggle, then day chips and times. */
+.person-hours { margin: 0; padding: var(--space-3) 0 0; border: 0; border-top: 1px solid var(--color-border); display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
+.person-hours > legend { float: left; width: 100%; padding: 0; }
+.person-hours-hint { margin: 0; }
+.person-hours-toggle { justify-content: flex-start; min-height: var(--tap-min); }
+.person-hours-days { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-3); }
+.person-hours-day { justify-content: flex-start; min-height: var(--tap-min); min-width: var(--tap-min); }
+.person-hours-times { max-width: 28rem; }
+.person-off-hours { margin: 0; color: var(--status-warn); }
+
+/* A workspace problem names a file path with no spaces: let it break anywhere, so it never runs under Reload or widens the page. */
+.org-problem .banner-body { overflow-wrap: anywhere; }

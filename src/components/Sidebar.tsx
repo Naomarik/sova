@@ -78,10 +78,15 @@ import {
 import { folderActive, folderOpen, folderOpenKey, readFolderOpenRaw, storedFolderOpen, writeFolderOpenRaw } from "../lib/folder-open";
 import { groupOpen as groupOpenRule, groupsRegionOpen as groupsRegionOpenRule } from "../lib/group-open";
 import { activeAgentCounts, activeTeamCount, sessionWorking } from "../lib/workers";
+import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
+import { waitingSentence } from "../../shared/provider-limits";
 import { ActionMenu } from "./ActionMenu";
 import { ArchiveCleanup } from "./ArchiveCleanup";
 import { SelectionToolbar } from "./SelectionToolbar";
 import { ContextRing } from "./ContextRing";
+import { CancelHeldButton } from "./HeldAct";
+import { heldWaitLine } from "../lib/pipeline-view";
+import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { RemoteGroupDot } from "./RemoteStatus";
@@ -286,6 +291,12 @@ function SessionRow(props: {
     return m ? remoteMarkTitle(m, props.targets.find((t) => t.name === m.place.target)?.host) : "";
   };
   const isBusy = () => sessionBusy(s());
+  /** While its turn's model request waits on the provider's limit, the busy mark says so (§app.provider-limits/waiting-shown). */
+  watchProviderWaits(isBusy);
+  const busyWords = () => {
+    const w = providerWait(s().id);
+    return w ? waitingSentence(w) : "pi is replying in this session";
+  };
   /** Line 1's "needs you" mark (src/lib/signals.ts): the server's kinds, never on the open or a running session. */
   const needsYou = createMemo(() => rowNeedsYou(s(), { selected: props.selected, busy: isBusy() }));
   /** Line 1's leading state mark (src/lib/signals.ts): the turn-error mark, else the unread dot. */
@@ -442,9 +453,9 @@ function SessionRow(props: {
               type="button"
               tabindex="-1"
               class="session-rail-item session-rail-state chip chip-info chip-live"
-              aria-label="pi is replying in this session"
-              title="pi is replying in this session"
-              onClick={() => toast("pi is replying in this session")}
+              aria-label={busyWords()}
+              title={busyWords()}
+              onClick={() => toast(busyWords())}
             >
               <span class="session-rail-dot" />
             </button>
@@ -638,7 +649,7 @@ function SessionRow(props: {
           <span class="visually-hidden">{TUI_CLAUSE}</span>
         </Show>
         <Show when={isBusy()}>
-          <span class="visually-hidden">{BUSY_CLAUSE}</span>
+          <span class="visually-hidden">{providerWait(s().id) ? `, ${busyWords()}` : BUSY_CLAUSE}</span>
         </Show>
         <Show when={working()}>{(n) => <span class="visually-hidden">, {workingNow(n())}</span>}</Show>
         {/* Remote-ness is a fact a row is picked by, so it rides the link's name — the same deal the
@@ -1442,7 +1453,10 @@ export function Sidebar(props: {
   const orgWaitingCount = () => orgNeedsYou().length + orgItems().length;
   const orgNeedsYouDetail = (path: string) => {
     const r = orgNeedsYou().find((row) => row.session.path === path);
-    return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
+    // r12: an open offer's invitees not reached yet (their hours haven't come) are said after the row's own detail.
+    const waiting = waitingWords(props.attention?.items.find((it) => it.path === path && it.waiting?.length)?.waiting ?? r?.session.baton?.waiting, props.now);
+    const text = [r?.detail, waiting].filter(Boolean).join(" · ");
+    return text ? { text, title: [...(r?.details ?? []), waiting ?? ""].filter(Boolean).join(" ") } : null;
   };
   const waitingTitle = (k: number) => (k === 1 ? "1 session waiting on you." : `${k} sessions waiting on you.`);
   const orgNeedsTitle = (k: number) =>
@@ -1454,7 +1468,7 @@ export function Sidebar(props: {
   const waitingIn = (rows: readonly SessionSummary[]) => rows.filter((r) => orgWaiting().has(r.path)).length;
   /** ONE rule for the region and its spine door: any org row among the hits (an archived project's
       counts only while it waits on you, in the region's own Needs you). */
-  const showOrgs = () => !!props.sessions && (orgs().length > 0 || orgNeedsYou().length > 0);
+  const showOrgs = () => !!props.sessions && (orgs().length > 0 || orgNeedsYou().length > 0 || orgItems().length > 0);
   const [orgsStored, setOrgsStored] = createSignal(storedOrgsOpen(readKey(sessionStorage, ORGS_KEY)));
   const orgsOpen = () =>
     orgsRegionOpenRule({
@@ -2213,19 +2227,27 @@ export function Sidebar(props: {
                         />
                       )}
                     </For>
-                    {/* A project to pick a main stakeholder for: no session, the row opens the project page. */}
+                    {/* A project's own item (a held act, a conflict to settle, a stakeholder to pick): no
+                        session, the row opens the project page. A held act recounts its minutes and has Cancel. */}
                     <For each={orgItems()}>
-                      {(it) => (
-                        <li>
-                          <a class="list-row list-row-interactive org-needs-item" href={it.href} title={it.detail}>
-                            <span class="list-main">
-                              <span class="list-title">{it.title}</span>
-                              <span class="list-meta org-needs-item-detail">{it.detail}</span>
-                              <span class="list-meta">{it.where}</span>
-                            </span>
-                          </a>
-                        </li>
-                      )}
+                      {(it) => {
+                        // Recounted on the list's clock, read at the real time: the clock lags up to a tick, and a count must never run high.
+                        const detail = () => (it.held ? heldWaitLine(it.held, Math.max(props.now, Date.now())) : it.detail);
+                        return (
+                          <li classList={{ "org-needs-held": !!it.held }}>
+                            <a class="list-row list-row-interactive org-needs-item" href={it.href} title={detail()}>
+                              <span class="list-main">
+                                <span class="list-title">{it.title}</span>
+                                <span class="list-meta org-needs-item-detail">{detail()}</span>
+                                <span class="list-meta">{it.where}</span>
+                              </span>
+                            </a>
+                            <Show when={it.held && it.org ? { held: it.held, orgId: it.org.orgId } : null}>
+                              {(h) => <CancelHeldButton orgId={h().orgId} holdId={h().held.id} what={h().held.what} class="org-needs-cancel" />}
+                            </Show>
+                          </li>
+                        );
+                      }}
                     </For>
                   </ul>
                 </section>

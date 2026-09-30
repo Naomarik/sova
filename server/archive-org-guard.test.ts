@@ -27,11 +27,11 @@ after(async () => {
 
 const org = await orgs.createOrg({ name: "Guarded", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
 
 test("archiving an org's empty baton keeps its file; an ordinary empty husk is still deleted", async () => {
-  const fresh = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Fresh", goal: "g", mintLink: false });
+  const fresh = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Fresh", goal: "g" }, { mintLink: false });
   const r = await archiveSession(fresh.path, true);
   assert.ok(r.ok, r.ok ? "" : r.error);
   assert.equal(r.ok && "deleted" in r.summary, false, "an org husk is archived, not reported deleted");

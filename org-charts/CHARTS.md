@@ -1,362 +1,280 @@
-# Org charts: the charts, and every source rule they stand for
+# Org charts: the refit's eleven charts, and every inventory item they stand for
 
-Two charts in the fulcrologic/statecharts CLJC DSL (`com.fulcrologic/statecharts 1.4.0-RC18`),
-under `src/sova/org_charts/charts/`, compiled into the vendored ESM by the engine. They **observe**
-in this spike (authority = shadow): they take the same events today's code reacts to, and their
-acts only append effect intents to an outbox the host may ignore. Nothing here is wired into the
-live overseer.
+Eleven charts in the fulcrologic/statecharts CLJC DSL (`com.fulcrologic/statecharts 1.4.0-RC18`) under
+`src/sova/org_charts/charts/`, registered in `registry.cljc` for the engine (`engine/API.md`). Every
+lifecycle state and every link of the organization layer lives here (q1: no state projection files;
+routes read the engine). The event vocabulary is `EVENTS.md`.
 
-| file | what |
-|---|---|
-| `project.cljc` | the project chart (one session per org project with an overseer conversation) |
-| `work_item.cljc` | the work-item chart (one session per `§gap/<name>`) |
-| `guards.cljc` | L0–L3 and the caps as guards: TOOL_NEEDS, autonomyRefusal, effectiveAutonomy, overRefusal, the at-once refusals, and `explain` (the engine's trial) |
-| `reasons.cljc` | one reason kind per `noteReason` call site, rendering today's sentence, `soon`, `own` |
-| `facts.cljc` | what an item reads from the stores: the decision phase, landed, all built, coverage |
-| `common.cljc` | envelope, time (local midnight, day key, clock time as Sova formats them), outbox, stall clocks |
-| `events.cljc` | malli schemas of every event of both charts (test/doc only: the bundle leaves malli out) |
-| `../EVENTS.md` | the event vocabulary: names, payloads, envelope, facts contract, reason kinds |
+| chart | file | storage | session id | what |
+|---|---|---|---|---|
+| org | `org.cljc` | portable | `org/<org>` | identity, owner ‹none·set·cleared›, holder record (r1), births of people and projects |
+| residence | `residence.cljc` | host-local | `residence/<org>` | tenure ‹checking·held-elsewhere·held-here·detached› × commits ‹clean·dirty·committing› |
+| person | `person.cljc` | portable | `person/<org>/<pid>` | ‹born·proposed·active·left›; field authority; one transition per status pair per event; left cascade |
+| project | `proj.cljc` | portable | `project/<org>/<p>` | shelf, overseer, stakeholder, milestone × cooldown; gap filing; gap-less starts |
+| watch | `watch.cljc` | host-local | `watch/<org>/<p>` | attach, shelf fact, exists, switch, turn, loop (+ `:sova/look`), clock; ledgers and held items |
+| baton | `baton.cljc` | portable | `baton/<org>/<sid>` | course × reply × budget × wrapup (+ `:sova/wrapup`) |
+| decision | `decision.cljc` | portable | `decision/<org>/<p>/<did>` | ‹pending·conflicted·drafted·promoted{currency·text·built}·superseded› |
+| conflict | `conflict.cljc` | portable | `conflict/<org>/<p>/<cid>` | ‹unrouted·routed-to-person·routed-to-operator·settled›; spawns settle batons |
+| reconciler | `reconciler.cljc` | portable | `reconciler/<org>/<p>` | ‹off·idle·debouncing·running·failed› (+ `:sova/reconcile`); decision index; promotion |
+| item | `item.cljc` | portable | `item/<org>/<p>/<g_id>` | lane × follow-up × attention × drive; sets of gatherings and builds; owned links |
+| build | `build.cljc` | portable | `build/<org>/<p>/<sid>` | setup × turn × tree × branch × merge |
 
-Tests (`test/sova/org_charts/charts/`, CLJC: they run on the JVM and under shadow `:node-test`):
-`work_item_matrix_test` (every lane state × every follow-up state it can have × every event under
-10 envelopes, each act SENT and its result held against `explain`: a refusal sentence for every act
-the chart does not take, none for every act it takes; every state × 16 fact changes, and again from
-each live follow-up state), `work_item_rules_test`, `project_test`.
-The harness (`harness.cljc`) runs the real v20150901 processor with a virtual-clock queue and turns
-any error the engine logs into a thrown one (an expression that throws is otherwise silent). Under
-Node the processor carries the engine's step limit (`engine/bounded.cljs`), so an eventless cycle
-fails its test instead of hanging the suite; the JVM run has no such bound.
+Shared: `base.cljc` (event, time, ids, reasons and ledger sends, `relink`, `send-if`/`flush-transition`),
+`reasons.cljc` (typed reasons and today's sentences), `rules/*.cljc` (pure rules: `refusal`, `levels`
+(L0–L3, attended, forced L0, caps, the GO card), `person`, `baton`, `item`). Every rule is a pure
+function over (data, event) returning nil or `{sentence status code? tail?}` with today's sentence.
 
-Run: `node scripts/build-org-charts.mjs --test` (worktree root), or on the JVM:
-`cd org-charts && clojure -M -e "(require 'clojure.test 'sova.org-charts.charts.work-item-matrix-test 'sova.org-charts.charts.work-item-rules-test 'sova.org-charts.charts.project-test) (clojure.test/run-all-tests #\"sova.org-charts.charts.*\")"`.
+## How the rulings land
 
----
+- **q2 / r3 drive**: `item` region `drive` (eventless, each once per key, at the level in force read
+  from the watched `watch` session): L2 `decision/promote` of in-area drafted decisions; L3
+  `build/start` with `rules/item build-prompt` once every live decision is promoted, none built, no
+  build; L1 a planned gathering (`gather/plan`, filed at L0) once, never after an attempt that
+  answered nothing; L1 `baton/close` of an own unwritten gathering once a newer one to the same
+  person is open. The L1 `reconcile/request` when a gathering ended with pending decisions is the
+  baton's own drive (`baton` `reconcile-when-ended`, F8a), not the item's. All go through `dsl/drive`
+  (by chart) and so through every guard and the hold.
+- **q7**: `project` `build/start` (gap none) refuses an unattended overseer (`gap-none-build-check`);
+  `item` `build/start` needs promoted, not-built decisions (`decisions-check`; narrowing only).
+- **q9 / r5 corrections**: `hold/cancel` (L0, every chart), item `correct/reopen`, `correct/skip-stall`,
+  `correct/relink` (L1), reconciler `correct/clear-failed` (L1), build `correct/merged` (L2); each a
+  `dsl/correction` (reason required unless the operator's). Free set-state is the engine's.
+- **q10 / r4 / r6 hold**: acts with `:hold true` in the registry: person approve/decline, project
+  `baton/start` · `build/start` · `session/prompt` · `owner-update/post`, baton `close`, reconciler `decision/promote`, item
+  `gather/start` · `build/start`, build `build/prompt`; `:what` gives the Needs-you words. F2: caps are
+  checked at hold time and again at release; the ledger counts only the taken transition.
+- **r7 working hours**: person `tz`/`hours` (operator's fields, history lines, exported);
+  `rules/hours` `next-window` (pure; DST both ways, overnight; JVM + Intl), `reach-window` and
+  `reach-times` (each invitee's own reach time, for per-invitee delivery); `:hours b/hours-window` on
+  baton `hand-to` `handoff` `offer`, conflict `reroute`, project `baton/start`, item `gather/start` (the
+  host stamps tz/hours on `target`/`targets`, an offer's invitees on `target-people`). Tests: `hours_test`,
+  `holds_test` r7.
+- **r12 offers (q15 = C)**: the offer opens at its first invitee's window (the act's `:hours` wait, as
+  above); then `rules/reach` `step` reaches each invitee only in their own hours (no hours set: always).
+  The offer's `:reach {pid {:state waiting|reached :at :next}}`, the invitees' `:people-hours` (from the
+  envelope's records and their `link/moved`), ONE re-armed timer `offer-reach` (`dsl/timer-at`) at the
+  next waiting window; entering `pool` reaches (a new offer, a lapse), `offer/reach` fires it, an
+  invitee's hours edit re-reckons; a `mint-link {offer-id person-id n key}`
+  per invitee reached in the offer's own step, keyed `reach/<offer>/<pid>` (a later reach only marks
+  them reached: coordinator-50) (no `mint-links` for an offer; an offer the operator makes, or one in a turn they started, reaches everyone at once: `:at-once`). Only the reached may claim ("This offer has not
+  reached you yet."). Rule 12: `leased` pauses it (timer stopped, nobody reached); a lapse resumes it;
+  the offer ending (`offered` exit) stops it for good. Tests: `reach_test` (scope tests 1–8, 12),
+  `baton-matrix-an-offer-in-hours`.
+- **r14 (narrows R3; q12)**: every transition that sends the watch a reason declares
+  `:sova/asks-overseer` (true · false · `:unwritten-false` · `:unless-auto-promoted` · a map kind → rule);
+  the reason carries the resolved `:asks`; the watch (`own-act?`) looks for chart news only when it asks.
+  True: a conflict to route, a resolved conflict, drafted decisions the chart won't promote itself, a
+  gathering someone wrote in closed, a review, a stall, sessions' news; false: the chart's own
+  promotion, its close of its own unwritten gathering. (The operator's merge keeps master's reason.) Tests: `asks_test` (none undeclared; golden
+  `asks_golden`), `asks_rules_test` (both branches of each rule, the watch waking or not).
+- **r13 company hours (q16)**: org `org/hours {tz hours}` (operator only, a person's validation;
+  exported); each person watches its org and exports `effective-hours` (`rules/hours effective`: own,
+  else the company's, else nil = always in hours; zone and hours as a pair), `hours-inherited` and
+  `hours-from` (own · company · none) (one quiet eventless transition
+  keeps them current); a baton re-reckons an open offer's reach from an invitee's `effective-hours`, so
+  a company edit re-arms reach timers; hours waits are re-armed by the host (`sova/rewindow`, engine).
+  Looks and held acts that reach nobody read no hours. Tests: `company_hours_test`.
+- **r8 / q12 review**: `:confirm-kind` on every held act (F12; `base/start-kind`: "offer" for ≥2
+  targets); `b/hold-review` on each chart with held acts: `hold/approve` (approve early, L0, reason) and,
+  on `hold/waiting`, a soon `hold/review` reason to the project's watch, naming the hold as
+  `<session-id>:<hold-id>` (F19: hold ids are per session; `params.hold`). Tests: `registry_test`,
+  `holds_test` F12 + r8.
+- **r8a feed classes**: every transition declares `:sova/feed` (rule in EVENTS.md); `registry_test`
+  (none unclassified), `feed_test` (a pin per class per chart, and the golden table `feed_golden` of
+  every authored transition).
+- **r10**: no act sends text into a gathering (F-128): `baton/send` deleted, no act of kind "message".
+- **Root prompt** (coordinator-25): project `session/prompt` (L3 `sova_send`, a prompt, held, kind
+  "prompt") for a coding session under the root that is not a build.
+- **C-rows**: C1 C2 C3 C12 in `watch`; C4 `reconciler.debouncing`; C5 item stall clocks; C6
+  `person/revert`; C7 `gap` or `"none"`; C8 C14 baton lease timer; C10 person status in the edit's
+  patch; C11 item `…-starting` flags; C13 C18 (deleted/unneeded); C16 decision; C17 conflict `unrouted`;
+  C20 q7 above.
 
-## 1. The charts
+Tests: `test/sova/org_charts/charts/refit/` — `host.cljc` (a deterministic JVM/Node host: the real
+processor, a virtual clock, the engine's level and `:pre` checks; hosts are values) and one test
+namespace per chart group. Run on the JVM:
+`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test 'sova.org-charts.charts.refit.hours-test 'sova.org-charts.charts.refit.decision-results-test 'sova.org-charts.charts.refit.server4-findings-test 'sova.org-charts.charts.refit.started-test 'sova.org-charts.charts.refit.pins-test 'sova.org-charts.charts.refit.reach-test 'sova.org-charts.charts.refit.company-hours-test 'sova.org-charts.charts.refit.asks-rules-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
+`pins_test` holds the pins for chart mutants that survived verifier-2's run2 (each assertion names its mutant id).
+The engine-level tests (`*_test.cljs`: matrix per chart and per baton start kind, registry, feed, holds,
+world) run in the shadow `:test` build. The whole CLJS suite (engine + charts, JVM-free under Node):
+`node scripts/build-org-charts.mjs --test` (from the repo root; `pnpm --dir org-charts test` is the same).
+It compiles once, then runs one process per piece, one after another, stopping at the first failure: every
+test namespace except the matrices, then each `matrix-test` deftest alone (`person-matrix` `org-matrix`
+`residence-matrix` `project-matrix` `watch-matrix`, baton per start: `baton-matrix-to-a-person`
+`-to-the-operator` `-an-offer` `-no-link` `-a-settle-session`, `decision-matrix` `reconciler-matrix`
+`conflict-matrix` `item-matrix` `build-matrix`, `every-chart-has-its-own-world`); all of them in one
+process run out of a 4 GB heap. One piece by hand, after a compile
+(`clojure -Srepro -M:build -m shadow.cljs.devtools.cli compile test` in org-charts/):
+`node out/test/node-tests.cjs --test=sova.org-charts.charts.refit.matrix-test/item-matrix` (or
+`--test=<ns>,<ns>/<deftest>,…`).
 
-### 1.1 Project chart (`project.cljc`, `version` 1)
+## Inventory map (every F-id → its element)
 
-```
-project ‹parallel›
-├─ attach   ‹live | paused›          fact :paused (attach on this host; any level-set clears it)
-├─ archive  ‹active | archived›      fact :archived
-├─ switch   ‹watch-on | watch-off›   fact settings.watch
-├─ watch    ‹quiet → waiting → due → running | held›
-│     quiet    ─reason/noted→ waiting
-│     waiting  arms watch/due at the first tick ≥ min(soonAt, lastRunAt + gap, retryAt)
-│              ─reason/noted | settings/changed→ waiting (re-armed)   ─watch/due→ due
-│     due      eventless: live ∧ active ∧ watch-on ∧ idle ∧ looks left → running
-│              eventless: live ∧ active ∧ watch-on ∧ idle ∧ looks used → held
-│     held     records skipped + held "looks"; ─reason/noted ∧ looks left→ due
-│     running  invoke :sova/look; ─look/finished→ quiet | waiting; ─look/stopped | sova/resumed | look/not-started→ waiting (reasons re-queued)
-│     (on watch) reason/noted adds; operator/run-now → running, or a skipped run with why
-└─ clock    ‹day›  day/rollover at local midnight: looks per day reset, held items due released
-(on project) overseer/busy|idle, facts/changed, operator/level-set, project/(un)archived,
-             org/attached-here, settings/changed, limit/refused, overseer/act
-```
+Kind: **chart** (a state, transition, guard, check, timer or effect named), **proj** (read from chart
+data by a route), **host** (host code kept: prompts, loadouts, share listener, text checks stamped into
+the envelope), **data** (plain data, unchanged rules), **del** (deleted, per coverage.md).
 
-Pause and archive are **separate regions** because they are separate facts in the source
-(`pausedOverseers` in the host index, `project.archived`): the design doc's single
-`live | paused | archived` region would lose a pause across an archive and unarchive.
-
-### 1.2 Work-item chart (`work_item.cljc`, `version` 3)
-
-```
-item
-├─ live ‹parallel›      facts/changed (targetless); gap/status dropped → dropped, any other status only recorded
-│  ├─ lane
-│  │  ├─ pipeline  (deep history pipeline-h; item/hold → on-hold; decision/reconcile, decision/promote)
-│  │  │  ├─ open                     facts: baton open → asking, needs-you → needs-operator, decisions → deciding
-│  │  │  ├─ gathering ‹gather-starting | asking | needs-operator›
-│  │  │  │     baton ended ∧ decisions → deciding;  ended ∧ none → open (+1 attempt, "answered nothing")
-│  │  │  ├─ deciding ‹unreconciled | conflicted | drafted | spec-edited›   routed by the decision phase
-│  │  │  │     phase promoted → promoted
-│  │  │  └─ promoted ‹awaiting-build | building ‹build-starting | working | idle | failed› | merged | done›
-│  │  │        phase pending|conflict|drafted|edited → deciding ("reopened")
-│  │  ├─ on-hold      item/resume → pipeline-h (where it was, re-derived from facts)
-│  ├─ follow-up ‹no-follow-up | follow-up-starting | follow-up-asking | follow-up-needs-operator›
-│  │     gather/start once the lane is deciding or promoted; the baton's state moves it; its
-│  │     decisions reach the lane only through the facts (reopen, promote); gather/close on its
-│  │     session (not while the item is on hold); its effects are the lane's (no follow-up flag)
-│  └─ attention ‹calm | stalled›   item/stalled (a stall clock per waiting phase) → stalled; item/moved → calm
-└─ dropped ‹final, nested: the session keeps running so it can be shown›
-```
-
-16 atomic lane states + dropped; 13 of them carry a stall clock (every waiting phase; not
-working, done or on hold), and so do the two live follow-up states. The item ends only at `done`
-(built) or `dropped`.
-
-The item's position is **derived from facts**: every forward move is an eventless transition on
-the item's linked baton, decisions and build. An act (the LLM's event tool, the operator's click)
-appends an effect intent and, for gather/start and build/start, moves to a `…-starting` state
-that ignores the previous baton's or build's facts until the new one shows (`baton-before`,
-`build-before`). So a restart, a hold or a missed event re-derives where the item is (R9).
-
----
-
-## 2. Source rule → chart element
-
-References are to the source at `7e5f184d`. "host" means the part the shadow host does (stamping
-the envelope, projecting facts, sending the event); "tool" means it stays in the tool's code and
-reaches the chart as the envelope's `invalid` sentence.
-
-### 2.1 Autonomy (shared/project-overseer.ts, server/project-overseer-store.ts, server/project-overseer-tools.ts)
-
-| source rule | chart element | test |
-|---|---|---|
-| `Autonomy` L0–L3, `levelAtLeast` (indexOf) | `guards/level-at-least?` (an unknown level ranks −1: refused, as TS) | rules: the-level-in-force |
-| `effectiveAutonomy`: paused → L0 + PAUSED_REASON; no active roster → L0 + EMPTY_ROSTER_REASON; paused wins | `guards/effective-autonomy`, from the envelope's `autonomy`, `paused`, `roster-active`; project chart: `effective` for the look's `autonomy` | rules: the-level-in-force; matrix envelopes `:l3-paused`, `:l3-no-roster` |
-| `TOOL_NEEDS` table | `guards/tool-needs` (verbatim) → per act `level-check` in `work-item/checks`; item-less tools via `overseer/act` | matrix `level-of`, project: item-less-tool-calls |
-| `sova_roster` approve/decline needs L2 (per op) | `guards/tool-refusal` with `op` | project: item-less-tool-calls |
-| `autonomyRefusal`: attended or "read" → allowed | `autonomy-refusal` (attended passes every level, never the caps); read tools never refused | matrix `:attended`, `:attended-capped`; rules: attended-passes-every-level-never-the-caps |
-| `autonomyRefusal`: "operator" need (sova_todos / sova_todo sentences) | `guards/autonomy-refusal` verbatim | project: item-less-tool-calls |
-| `autonomyRefusal`: the L-level sentence ("This run was not started by the operator, and your autonomy here is …; X needs Ln. Do not retry it. …") | verbatim, with the in-force reason in parentheses | matrix: l0-refusals-are-todays-sentences |
-| a level change applies from the next tool call | guards read the envelope of each act | — |
-| an operator's own click (page routes) is not under `act()` | `operator-act?` skips the level and the caps | matrix `:operator` with spent caps |
-| attach pauses (`attachOrg` → `pausedOverseers`) | `org/attached-here` → fact → `attach` region `paused` | project: the-gates-hold-a-due-look |
-| PATCH with `autonomy` (any, same too) resumes (`resumeOverseer`) | `operator/level-set` clears `:paused` | same |
-
-### 2.2 Limits (PoLimits, overRefusal, gather(), sova_create_session)
-
-| source rule | chart element | test |
-|---|---|---|
-| attended turns draw on the per-message ledger, others on the per-day ledger | the host stamps `allowance` for the ledger the turn draws on; `over-allowance` names the ledger from `attended` | rules: caps-refuse-with-todays-sentences |
-| `take(kind, n)`: used + n > max refuses; max null = Unlimited | `over-allowance` (n = ids for promote) | same; matrix `:l3-capped` |
-| `overRefusal` said + tail (day / message) | `over-refusal` verbatim; the model's text is `said + " " + tail` | same |
-| at-once `gatheringsOpen` (its own batons not done/closed) and `codingRunning`, in every turn, checked before the allowance | `at-once-refusal`, first in `cap-refusal` | same; matrix `:attended-capped` |
-| promote: the whole request against what is left before promoting; only what was promoted counts (`giveBack`) | the guard checks n ≤ left before; what is counted after is PoLimits' (tool) | rules: promote-verdicts |
-| a refusal holds an item (`host.hold`): day → retry next midnight; message → retry now; one per key, first `since` kept, ≤ 10 | `limit/refused` → `hold-item` / `refused-item` | project: held-allowances |
-| `releaseHeld` (tick): looks / day:k / message:k sentences, soon except message | `release-due-ops` + `released-reason` at `day/rollover`, at `limit/refused` (message: due at once) | project: held-allowances, the-daily-looks-hold-until-midnight |
-| tick skips paused and archived projects, so held items wait | release only while `open?`; leaving a pause or archive releases what came due | project: held-items-wait-out-a-pause |
-| `releaseRaised`: a PATCH raising a limit (or Unlimited) releases its held keys, "You raised the limit on {what}." soon | `settings-ops` + `raised-keys` (per-day, per-turn, looks) | project: held-allowances |
-| `capProblem`, `gapProblem`, `soonProblem` (PATCH validation) | not in the chart: the PATCH refuses before any event | — |
-
-### 2.3 The watch loop (server/project-overseer.ts)
-
-| source rule | chart element | test |
-|---|---|---|
-| `noteReason` is a no-op before the overseer's conversation exists | the project session starts with the conversation | — |
-| `noteReason(own)`: dropped while `session.isStreaming` | `dropped-own?` on `:streaming` (kept when the reason names a non-overseer `by`: D2) | project: own-acts-are-dropped-while-busy, streaming-and-queued-are-two-facts |
-| `withReason`: dedupe by exact text; the first soon reason since the last look sets `soonAt = now + soonLookSec` (null = Off: none) | `with-reason` (key = `:key` or the text), `soon-at` | project: reasons-are-deduped-by-text, a-soon-reason-looks-after-the-soon-delay, soon-off-waits-for-the-gap |
-| memo pending trimmed to the last 50; the look lists the last 20 | `pending-max` 50; `watch-text` `take-last 20` | project: watch-text-is-todays |
-| every `noteReason` call site (baton done/closed/proposal/asked-operator, reconciler conflict/resolved/promoted/drafted, coding settled, merge ok/refused, held releases, raised limits) | one `reason/noted` kind each (`reasons.cljc`, EVENTS.md table); the host decides *whether* (e.g. asked-operator only for its own baton's model hand-off, coding only for rows kind "coding", merge refusals not starting "The project root", reconcile events only with ids) | project: reason-sentences-are-todays, soon-and-own-follow-todays-arguments |
-| `watchDecision`: exists, idle (`!streaming && queue.size === 0`), watch on, pending, soon or gap, looks per day | `due` eventless `may-look`: `In :live`, `In :active`, `In :watch-on`, `idle?` (streaming, queued), `looks-left?`; `waiting` only with reasons; the gap/soon in `due-at` | project: a-reason-starts-a-look-after-the-gap, the-gates-hold-a-due-look |
-| the 20 s ticker: a look starts on a tick | `on-tick` rounds the due time up to the first tick (`tickOrigin`, `tickMs`) | project: looks-start-on-the-watch-tick |
-| tick skips paused, archived | `due` waits on `In :live`, `In :active` | project: the-gates-hold-a-due-look |
-| `lookNow`: archived → not started ("the project is archived") | Run Now: `run-now-refusal` first case | project: run-now |
-| `lookNow`: daily limit with pending (or forced) → lastRun skipped + held "looks" until midnight ("Today's N looks on its own are used.") | `due` → `held` (on entry: `skip-ops`); Run Now refused daily: `skip-ops` holds too | project: the-daily-looks-hold-until-midnight, run-now |
-| other refusals (busy, too soon, watch off, nothing new) are not recorded | `due`/`waiting` wait silently | — |
-| Run Now (`force`): skips watch, pending and gap; not archived, busy, daily; runs while paused (at L0) | `operator/run-now` on `watch`: guard `run-now-refusal`, else a skipped run with why | project: run-now |
-| look starts: pending cleared, soonAt cleared, lastRunAt = start, perDay++, lastRun started | `running` on-entry `start-run-ops` | project: a-reason-starts-a-look-after-the-gap |
-| `watchText(reasons, effective autonomy)` | `watch-text` verbatim; passed as the invocation's `text` | project: watch-text-is-todays |
-| `acceptPrompt` queued behind a start/compaction: ends at the next settle | host: `look/finished` when it settles | — |
-| `acquireChat`/`acceptPrompt` throw → lastRun skipped with the error, nothing counted | `look/not-started` → `not-started-ops` (counters restored, retried at the next tick) | project: a-look-that-never-started-is-skipped-and-retried |
-| `runEnd`: finished / stopped (stream trip, "Stopped.", model error, error message, "The run ended without an answer.") / cut-off (shutdown) | `look/finished`, `look/stopped {detail}` (the host words the detail), `sova/resumed` → cut-off, "The server restarted during the run." | project: a-stopped-or-cut-off-run-keeps-its-reasons |
-| `recordRunEnd` only if lastRun is still that started run | end events are handled only in `running` | — |
-| `sweepCutOffRuns` at start | engine sends `sova/resumed` after load | same |
-| looks per day keyed by the local day | `looks-today`, reset by `day/rollover` at local midnight (`next-midnight` as `nextMidnight`) | project: the-daily-looks-hold-until-midnight |
-| operator's Watch switch | `switch` region from `settings.watch` | project: the-gates-hold-a-due-look |
-
-### 2.4 Gathering / baton (shared/baton.ts, server/baton.ts, server/baton-guards.ts, server/baton-events.ts)
-
-The baton stays its own machine (decision al_1: batons exist without gaps; the item reads its
-state as a fact).
-
-| source rule | chart element |
-|---|---|
-| baton states open / needs-you / done / closed | item fact `:baton :state`; `open` → asking, `needs-you` → needs-operator, done/closed → deciding or open |
-| `createBaton` to the operator starts in needs-you | `gather-starting` → `needs-operator` on a new baton in needs-you (the design doc lacked it) |
-| a gathering linked by any path (Send to person… / the tool) | `open` moves on a live linked baton |
-| decisions recorded while the baton is open are not a reason; its end is | the item stays in gathering until the baton ends |
-| done with no decision (and goal_done's event before its decision entry) | → `open`, +1 `attempts`, `item/answered-nothing`; a late decision moves `open` → deciding (verifier #9) |
-| closed with decisions (operator Close after answers) | → deciding (decisions come from the transcript whatever the baton's state) |
-| `sova_close_gathering`: reason required; own (`overseerOf`) only; never a settle session; not done/closed; nobody wrote | `gather/close` `close-check`, same sentences in the same order; the operator's Close: anything not closed |
-| baton events done / closed / proposal / asked-operator → reasons; decision / handoff / offer / wrapup are not | host → `reason/noted` kinds `baton/*` |
-| `handoffChosen` (hand_to: the holder chose the person) | baton machine: not charted |
-| `aboutSomeoneElse`, `detectLanguage` (wrap-up profile guards) | wrap-up: not charted |
-| `moveRefusal`, `offerRefusal`, `budgetSpent`, `BudgetSpent`, lease lapse, `noteMessage` refusals, `extendBudget`, `setAbilities`, links | baton machine: not charted |
-| gather(): missing fields, offer < 2, "operator" in an offer, not on the roster / not active, abilities | tool → `invalid` |
-
-### 2.5 Decisions (shared/decisions.ts, server/reconcile.ts)
-
-| source rule | chart element | test |
-|---|---|---|
-| DecisionState pending / drafted / conflict / promoted / superseded; `settleStates` precedence | host projects rows; `facts/dphase` aggregates live rows: conflict > pending > drafted > edited > promoted, none | matrix facts columns |
-| promoted but spec not up to date ⇒ drafted (settleStates) | phase drafted from a promoted item → reopen → deciding | matrix `:done` × drafted |
-| `editedInSpec` on a promoted row; Keep Spec's Words / Promote Theirs Again | phase `edited` → `spec-edited`; `decision/settle-text` (operator only) | matrix |
-| `build` built / not-built (spec record `code` + evidence) | `all-built?` → merged → done | matrix facts `merged-built` |
-| `promoteDecisions`: unknown decision; "it is X; only a reconciled (drafted) decision can be promoted"; out of area unless operator-explicit ("outside N's decision area: promote it explicitly by id"); the overseer is always `by: overseer`, attended too | `promote-verdicts`, `promote-check` ("Promoted 0, refused N: id (reason); …."), effect `promote {ids, by}` with only the promotable ids | rules: promote-verdicts |
-| `sova_reconcile` (L1), Reconcile off → 409 relayed | `decision/reconcile` anywhere in the pipeline; a 409 → `invalid` | matrix |
-| conflicts routed to a settle session (a baton) and resolved there or by the operator | item waits in `conflicted`; the winner reaches the item's decisions through `supersededBy` (host) | — |
-| `watchResolutions`: settle-session decision → reconcile after a 2 s in-memory debounce | not charted (the reconciler's own; R8 stays) | — |
-
-### 2.6 Ideas (server/overseer-ideas.ts)
-
-| source rule | chart element |
-|---|---|
-| statuses open / exploring / started / done / dropped | `gap/status` (L0, `sova_idea status` / the page) |
-| dropped is final ("This idea was dropped; dropped is final. File a new idea instead.") | nested final `:dropped`; `explain` → that sentence |
-| done means answered: a gap is "a decision the project needs that nobody has made" (`§app.project-overseer/gaps`), and builds rest on promoted decisions, not on the gap; done can be reopened | recorded only (`:idea-status`, effect `idea-status`); the item keeps its lane (version 2: the `closed` state is gone) |
-| `autoStatus`: a linked session sets started, an explorer exploring | recorded (`:idea-status`); not the item's position (R4: status conflated gathering with building) |
-| `sova_idea` errors (unknown id, renamed, too long, 100 ideas…) | tool → `invalid` |
-| the operator's own ideas and to-dos are not work items (`§app.project-overseer/ideas-and-todos`) | items only for `§gap/…` ids |
-
-### 2.7 Coding sessions and branches (CodingWorktree, mergeCodingWorktree, noteCodingSettled)
-
-| source rule | chart element |
-|---|---|
-| running / idle / last turn failed | `working` / `idle` / `failed` from `running`, `last-failed` |
-| merged (by Merge Branch or by hand), newSinceMerge (then merged is false), root | `landed?` = merged, or root and not running → `merged`; not landed → back to idle/failed |
-| `sova_create_session` L3, mode / folder / blank prompt, at-once coding, allowance create | `build/start` checks: level, `invalid`, blank prompt, `cap-check "create"` |
-| `sova_send` L3: mode; a gathering session; unknown; open in a terminal; worktree removed; blank text; allowance prompt | `build/prompt`: level, `invalid`, `prompt-check` (live, removed, blank), `cap-check "prompt"` |
-| Merge Branch: runs in the root; on another host; the session is working; its workers are running | `build/merge` operator only, `merge-check` (+ `invalid` for "On another host") |
-| coding settled → reason only for its own (`kind: "coding"`) sessions | host → `reason/noted coding/settled` |
-
-### 2.8 The prompt (server/project-overseer-prompt.md)
-
-| rule | chart element |
-|---|---|
-| steps 1–3: watch decisions, infer gaps, act within autonomy (gather, reconcile, promote, build on promoted decisions) | the item pipeline: `open → gathering → deciding → promoted → building → merged → done` |
-| "Do not retry a refused tool; file a gap or raise a sova_confirm" | `explain` returns the same sentence for the same state and envelope |
-| never promise a look "next time" | not chart |
-
----
-
-## 3. What the charts change, or add (divergences on purpose)
-
-Numbered so the replay and the verifier can cite them.
-
-- **D1 (R2).** A stopped, cut-off or never-started look re-queues its reasons in front of the ones
-  noted since. Today the pending list is cleared when the look starts, and those reasons are lost.
-- **D2 (R3).** An own-act reason (reconciler conflict/resolved/drafted, the overseer's promotion)
-  is dropped while the session streams only when it does not name a non-overseer `by`. Without `by`
-  the rule is today's (dropped while streaming, whoever acted).
-- **D3 (R5).** A reason may carry a typed `key`, which then replaces the exact-text dedupe. Without
-  a key it dedupes by text, as today.
-- **D4 (R4, R6).** Stall clocks. Every waiting phase arms a durable `item/stalled` (3 days by
-  default, `stallAfterMs` per phase), which reaches the project as a reason `item/stalled`. This is
-  new: today nothing notices a gap never gathered, a drafted decision waiting at L1, or a promoted
-  decision never built.
-- **D5.** New item reasons: `item/answered-nothing`, `item/reopened`, `item/built`. The items never
-  re-send reasons today's code already notes (no double reasons).
-- **D6.** `item/hold` and `item/resume`, operator only, with deep history. New.
-- **D7 (withdrawn: it was a chart bug).** Version 1 closed the item when its idea was marked
-  done, and then refused the promote and build that follow. Today's meaning is the right one: a
-  gap marked done has been answered, and its decisions still get promoted and built (real-26).
-  The status is now only recorded. `droppedFrom` records the phase a dropped gap was in.
-- **D8 (R4).** Build coverage. With `build.decisionIds` (the decisions → coding edge), a decision
-  promoted after the build ran sends the item to `awaiting-build`, not `merged`.
-- **D9.** A held message allowance is released at the refusal. Today it is released at the next
-  tick (≤ 20 s). The reason is the same, and so is its look (tick-aligned).
-- **D10.** The day's looks reset and held day items are released at local midnight, by a durable
-  delayed send. Today this happens at the first tick after midnight (≤ 20 s later). A look still
-  starts on a tick.
-- **D11.** gather/start from open or gathering moves the lane (the first gathering, or one
-  replacing a live one). Once the gap is deciding or promoted it is a follow-up, tracked in its own
-  region beside the lane, one at a time, and replaceable while live. Today `sova_start_gathering` has
-  no gap and nothing tracks a follow-up.
-- **Fixed (was a chart bug): a follow-up gathering beside a build.** In version 2 a follow-up moved
-  the single lane into gathering. The lane then showed `needs-operator` while the branch merged
-  (real-26 @2067817, 2094370), and under Guard it would have refused Merge Branch and prompts. In
-  version 3 a follow-up runs in the `follow-up` region, and the lane keeps following decisions and
-  the build.
-- **D12.** build/start is taken only once the item's decisions are promoted (awaiting-build) or
-  after a merge. Today `sova_create_session` has no gap and may build on nothing promoted. This is
-  the R4 edge made explicit.
-- **D13.** Pause and archive are separate regions (a fix of the design doc, not of Sova).
-- **D14.** Stale facts are ignored after an act (`baton-before`, `build-before`), so an old closed
-  baton does not bounce a new gathering back to open.
-- **Fixed (was a chart bug): promote during a follow-up gathering.** Version 2 as first committed
-  took `decision/promote` only in `deciding`. A drafted decision could then not be promoted while
-  the gap's follow-up gathering was in flight (real-26 @2065652, refused in `needs-operator`), but
-  today it can. Reconcile and promote now sit on `pipeline`, and promote's own check (≥ 1 asked id
-  is a drafted decision of this item) decides. The lane still follows the gathering until it ends.
-
-## 4. What the charts do not express, and why
-
-- **Argument validation** (fields, roster, abilities, mode, folder, owner-update rules, sova_idea
-  errors, the reconciler's 409): this stays in the tools. The chart receives the tool's sentence as
-  `invalid` and refuses with it where the tool checks it (after the level, before the caps), so the
-  answers agree. Duplicating these checks in CLJS would fork them.
-- **What an allowance counts after the act** (`giveBack` of refused promote ids): PoLimits owns the
-  counters, and the host stamps what is left on each act.
-- **The baton, decision and reconciler machines' internals** (hand-off guards, leases, budgets,
-  wrap-up guards, conflict routing, settleStates, the 2 s debounce): by decision al_1 they stay
-  their own machines, and the item reads their states as facts.
-- **The LLM's judgement** (which gap, whom to ask, what to build): this is the prompt's job. The
-  chart only bounds the moves.
-- **Several hosts on one project (R7)** are not solved by a chart. That needs a single writer
-  (holder + generation), which is the engine and storage decision.
-- **R1** (the lost update in lookNow) disappears only with the engine's single queue per project.
-  The chart has no memo to race on.
-- **Gap links** (gap → baton, decision → gap, coding → decisions) are not in the stores today.
-  The shadow host (the scenarios miner) infers them. Without them an item stays in `open`.
-
-## 4b. The store shapes the pipeline needs (operator ruling: no real org exists, so no compatibility)
-
-The charts read facts the stores do not record today. The shadow host infers them. The clean shape is:
-
-- **gap → gathering.** Put `gap` on `sova_start_gathering`/`sova_offer` and on the baton row
-  (`baton.json`). The item's `baton` fact is then the latest row with its gap.
-- **decision → gap.** A decision inherits its baton's `gap`. A settle session's decision or the
-  operator's resolution inherits the gap of the decisions it supersedes, so an item never loses its
-  decisions to a conflict (today the host must follow `supersededBy`).
-- **decisions → coding.** Put `decisions: [ids]` on `sova_create_session` and Start coding session,
-  recorded on the `started.json` row. `build.decisionIds` is then always present. The "absent =
-  covers all" reading in `facts/covers?` exists only for the inferred corpus, and should be dropped
-  once the edge is recorded.
-- **idea status.** It should not carry pipeline meaning: `started` on a session link conflates
-  gathering with building (R4). The item's lane is the position, and idea status stays the list's
-  own open/done/dropped.
-
-## 4c. Mutation checks
-
-The verifier's full mutant set (M01–M38, F1–F6, N01–N12, R1–R2) and mutants of the step limit and
-the follow-up region are killed by a failing test, each run against this suite and the replay from a
-scratch copy of the tree (never the worktree). Mutants whose code is gone are re-anchored: M08, M09 and
-M11 as M08b, M09b, M11b and M11c; M28 (the removed dead guards) as M28b; N08 as N08b (the close's
-on-hold guard); N11 (the removed `:follow-up` flag) as N11b and N11c (the follow-up's effect differs
-from the lane's). The CLJS suite alone kills the follow-up mutants the replay used to be the only
-oracle for (N02, F1), and M34 fails on the step limit instead of hanging.
-
-`~/.cache/org-charts/charts-mutants.py` mutates a scratch copy (never the worktree) and runs this
-suite. Every mutant the verifier found surviving (M02, M03, M06, M07, M08, M09, M12, M19, M21,
-M22) is now killed, and so is "attended no longer passes the level" (M28: the dead guards `may`,
-`may-level?`, `left?`, `at-once?`, `operator?` were removed; the conditions are the checks).
-Results: `~/.cache/org-charts/charts-mutants-result.json`.
-
-## 5. SCXML points this code relies on (and the tests pin)
-
-- **Eventless transitions run before raised internal events.** A reason raised at midnight would
-  otherwise arrive after the look started. So `held` leaves on the releasing `reason/noted`, not
-  eventlessly (project: the-daily-looks-hold-until-midnight).
-- **Transition content runs after the exit set.** `In(phase)` is already false inside the content,
-  so each lane state notes `:phase` on entry, and `droppedFrom` reads it.
-- **Every element id is chart-global.** This includes `Send` ids, which are also send ids. So the
-  timers are `:due-timer`, `:rollover-timer` and `:stall-<phase>`.
-- **Delayed sends are not cancelled by exit.** Every stall clock cancels its own on exit.
-- **A top-level final ends the interpreter** and the configuration becomes empty. So `:dropped` is
-  a final nested in `:item`.
-- **The deepest matching transition wins per atomic state**, and a targetless one on a parallel
-  root is selected once. That is where the facts handlers live, and they conflict with nothing.
-- **An expression that throws is only logged** (as `:error.execution`). The harness fails the test
-  on any logged error or warning.
-- **An eventless cycle loops for minutes.** The library logs only after 1,000 eventless iterations,
-  and repeats that up to 1,000 times. The engine bounds each event at 200 microsteps and throws
-  `:sova/step-limit` (the replay's longest real event takes 5).
-
-## 6. Contract with the engine
-
-- It registers `project/chart` and `work-item/chart` under `"project"`/`"work-item"`, and snapshots
-  carry `version`.
-- It uses the flat working-memory data model and the lambda execution model. Charts read the event
-  as `(:_event data)`.
-- It converts JSON camelCase keys ↔ kebab keywords at the boundary. Values stay strings. Event
-  names become keywords.
-- It stamps `at` on every delivered event and keeps `now` in the data.
-- It drains `:outbox` after each step.
-- `guards/explain [chart event data envelope]` answers trial, with `data` carrying
-  `:sova/configuration` and `:sova/running?`.
-- The `:sova/look` invocation reports back `look/finished`, `look/stopped`, `look/not-started`, and
-  `sova/resumed` after a load.
-- malli (`events.cljc`) is for tests and docs only. The bundle aliases guardrails' malli away.
+| F | inventory item | kind | element |
+|---|---|---|---|
+| F-001 | Create organization | chart | `org` start (holder claimed) + `residence` mode create → `held-here` (effect commit "Create organization {name}", no pause); name/dir rules: host `invalid` |
+| F-002 | Attach a restored repo | chart | `residence` mode attach: `checking` → `held-here`, effects `commit` "Attached on {host}", `pause-overseers`; `watch` `org/attached-here` → `attach.paused` |
+| F-003 | Holder check and warning | chart | `residence.held-elsewhere` (`elsewhere` over clone + origin holder of the org snapshot, r1), `held-sentence` verbatim, `attach/confirm` |
+| F-004 | Workspace dir guard | host | dir rules checked by the route, stamped as `invalid` |
+| F-005 | Detach | chart | `residence` `org/detach` → `detached` (final): effects `revoke-owner-links {why: detached}`, `holder/release` to `org`, `commit` "Released by {host}" |
+| F-006 | Operator display name | data | host-local `orgs.json`; the name reaches charts as `operatorName` |
+| F-007 | What the workspace repo holds | data | repo layout: `charts/` snapshots + log (q1: no state projection files) |
+| F-008 | Legacy `started` migration | del | C13: deleted (no legacy started list) |
+| F-009 | Attach re-derives host state | host | attach hooks (titles, web marks, stat); `wroteAt`/`conflict` are baton data from birth (C18) |
+| F-010 | Working dirs come from this host | host | host rule |
+| F-011 | Links must be re-issued after a move | host | host link stores are never portable |
+| F-012 | Commits: the hourly committer | chart | `residence.commits`: `dirty` arms `commit/look` every 1 min; `commit-every` since `head-at` → `committing` |
+| F-013 | Commit Now | chart | `residence` `commit/now` (any state) → `committing`; answer sentences from the effect result |
+| F-014 | Push and remote | chart | `residence` `push-pending` retried at a due look from `clean`; remote route plain data |
+| F-015 | Graceful-shutdown commit | host | shutdown sequence; the commit result lands as `effect/done commit` |
+| F-016 | Workspace tab and git status | proj | residence exported `last-git-error`, `push-pending`, `head-at` + git status |
+| F-017 | Workspace file problems | host | C15/C19 per q1: snapshot/journal problems (engine `loadCold` errors); plain-data rules unchanged |
+| F-020 | Org list `#/orgs` | proj | org list from `org`, `project.shelf`, `baton.course` exports |
+| F-021 | Org Needs-you count | proj | Needs-you set over `baton` (`needs-you`, links), `person.proposed`, `conflict.routed-to-operator`/`unrouted`, `project.stakeholder-cleared` (C17) |
+| F-022 | Last activity | proj | newest log row per org |
+| F-023 | Org page with four tabs | proj | routes → events; reads from chart data |
+| F-024 | Sessions tab: the start form | chart | `project` `baton/start` (archived check `not-archived`) |
+| F-025 | Landing-page Organizations card | proj | totals from `org` / `project` exports |
+| F-026 | Host-offline banner | host | mesh UI |
+| F-027 | Peer org pages | host | peers forward to the holder's engine |
+| F-030 | Person record and caps | chart | `rules/person clean-field` caps and sentences (400) |
+| F-031 | Add or edit a person (the operator) | chart | `org` `person/add` (apply-change, duplicate name 409) and `person/edit` (C10: status in the patch is the lifecycle move) |
+| F-032 | Field authority by writer | chart | `rules/person authority-refusal` + `field-authority`; approve/decline: `person` `decider-check` |
+| F-033 | Profile history and revert | chart | `person/revert` (row from roster-history; creation refused; C6 stale row refused 409); `roster-history` effect lines |
+| F-034 | Referral (`propose_roster_edit`) | chart | `baton` `baton/propose` (`rules/person referral-refusal`, apply-change as referral) → spawn `person` proposed; `baton-entry proposal`; reason `baton/proposal` |
+| F-035 | Approve or decline a proposed person | chart | `person` `person/approve`/`person/decline` (op; overseer L2 `sova_roster`, held unattended r4/r6); `not-waiting` sentences |
+| F-036 | Someone leaves (status →left by edit, revert or decline) | chart | `person` entry of `left`: `revoke-person-links`; watchers: `org` (owner cleared), `project` (stakeholder cleared), `baton` (holder → operator "(left the organization)", pool withdrawn "({name} left…; offer withdrawn)", mid-reply stop first) |
+| F-037 | Privacy of profiles | host | projections/prompts; `:redact {:contact}` in person's registry entry |
+| F-038 | Person page `#/orgs/<id>/people/<pid>` | proj | person page from person/baton/decision/conflict data + host links |
+| F-039 | Wrap-up: profiles learn from each session | chart | `baton.wrapup`: `wrapup-none` → `due` (a person wrote) | `skipped`; `running` invokes `:sova/wrapup`; 11-min `wrapup/overdue`; `sova/resumed` → failed; `baton/wrapup-retry` (`retry-refusal` order); profile writes = `person/edit {by: wrapup}` |
+| F-040 | Start a baton session | chart | `baton` birth (`start-ops`: to person/operator/offer), effects `create-session`, `mint-links` unless `mintLink:false`; spawners check archived (`project` / `item` / `conflict`) |
+| F-041 | Baton strip (operator) | proj | strip from baton exports; actions = baton acts |
+| F-042 | Loadout | host | loadout |
+| F-043 | Baton system prompt | host | prompt (reads person states) |
+| F-044 | `hand_to({person, question, briefing})` | chart | `baton/hand-to` (`rules/baton hand-to-refusal`: ended, target `invalid`, holder-chose, question, move-refusal), no link |
+| F-045 | `goal_done({summary})` | chart | `baton/goal-done` → `done` (`goal-done-refusal`), reason `baton/done`, milestone |
+| F-046 | `record_decision({area, ownerArea, statement, quote})` | chart | `baton/record-decision` (`record-decision-refusal`, `spelled-owner-area`) → spawn `decision`; settle session: `reconcile/request {delayMs 2000}` |
+| F-047 | Message budget | chart | `baton.budget` ‹under·at-limit›; eventless budget stop in `open` after the reply (`limit-question`); `message-verdict` budget refusals; `budget/recount` never raises |
+| F-048 | Extend | chart | `baton/extend` (`extend-refusal`) |
+| F-049 | Operator moves and "nothing sent is dropped" | chart | `baton` operator moves (take-back, handoff, offer, withdraw): checks first, then `stop-reply` + `pending-move`, re-delivered at `reply/ended` and re-checked; close never interrupts |
+| F-050 | Offers and leases | chart | `baton.course.open.offered` ‹pool·leased›: claim in `baton/message` (`message-verdict`), durable `lease/lapse` (`lease-ms`), re-armed on `reply/ended`, never lapses mid-reply; withdraw on moves; C8/C14 |
+| F-051 | Hand-off links | host | link store; mint/revoke effects from the baton (`mint-link(s)`, `revoke-links`) |
+| F-052 | Link warnings | host | link warnings |
+| F-053 | Attribution | host | attribution; composer refusals = `message-verdict` operator sentences |
+| F-054 | Outsider view (share page) | host | outsider view |
+| F-055 | Share listener | host | share listener; message route → `baton/message`, `message/refused` |
+| F-056 | Visits log | data | visits log |
+| F-057 | Share-page live transport | host | share transport; lapse pushed from the lapse's own step |
+| F-058 | Needs you from batons | proj | Needs-you over baton `needs-you` / holder link + `person.proposed`; an item's `needs-operator` / `follow-up-needs-operator` means the same: a gathering with the operator whose `needs-you` is true (`rules/item baton-needs-operator?`); once the operator replies it is `asking` (coordinator-38; `item_test` lane, follow-ups) |
+| F-059 | Hide from or show to the owner | chart | `baton/hide` |
+| F-060 | Baton events bus | del | replaced by sends and link notifications |
+| F-061 | Settle-session marker on the baton row | chart | baton data `conflict {id area}` (from the conflict's spawn), kept |
+| F-062 | Baton session in the session list | proj | session list from baton exports |
+| F-063 | Abilities: Draw and Read links | chart | baton `abilities` data; `baton/abilities` (refused once ended); ceiling = host `invalid` |
+| F-064 | `read_link {url}` | host | read_link tool (inactive unless abilities.readLinks) |
+| F-070 | Project registry | chart | `org` `project/add` (name check, root `invalid`) → spawn `project`; `project/edit` |
+| F-071 | Archive and unarchive a project | chart | `project.shelf`: `project/archive` (`blockers-sentence` "Stop these first: …"), `project/unarchive`; archived → `not-archived` on starts; watch `archived-fact` |
+| F-072 | About this organization | data | About: plain data and its route (never a chart event) |
+| F-073 | Project main stakeholder | chart | `project.stake` ‹no-stakeholder·stakeholder-set·stakeholder-cleared›: `stakeholder/set` (active only, 400), history ≤50, cleared on the watched person's `:left` |
+| F-080 | Decision index | chart | decisions are born by `baton/record-decision` (spawn); the host's resume sync spawns any entry without a session |
+| F-081 | Decision states | chart | `decision` ‹pending·conflicted·drafted·promoted{currency·text·built}·superseded›; C16 |
+| F-082 | Field ownership in the project spec | host | promotion effect's spec writer |
+| F-083 | Owner area | chart | `decision/owner-area` (`rules/baton owner-area-refusal`, superseded 409, history) → `decision/owner-area-changed` → reconciler `route-conflict-of` → `conflict/reroute {keepIfSame}` |
+| F-084 | Reconciler switch | chart | `reconciler.off`: only `reconcile/request` refused (`reconcile-off`); automatic ones record the error |
+| F-085 | When the reconciler runs | chart | `reconciler` `reconcile/request` (op, `sova_reconcile` L1, GO, sova 2 s `debouncing` durable C4; the L1 drive when a gathering ends with pending decisions is the baton's `reconcile-when-ended`, not the item's) |
+| F-086 | What the reconciler sends | host | decide seam in `:sova/reconcile` |
+| F-087 | Area filing | host | inside `:sova/reconcile` |
+| F-088 | Contradiction check | host | inside `:sova/reconcile` |
+| F-089 | Restatements are folded | chart | `reconcile/result {state superseded, supersededBy, folded}` to decisions |
+| F-090 | Settling by resolution | chart | `reconcile/finished` resolved → `conflict/resolved` → `conflict.settled`; an item whose decision is superseded watches the `superseded-by` winner and follows its phase (item `moved-ops`; `item_test` follows-a-superseding-winner) |
+| F-091 | Settling by hand | chart | `conflict/settle` (`settle-check`; closes the asking session; effect `settle`) |
+| F-092 | Conflict routing | host | route computed by the host (routeConflict) at the run and re-route; chart keeps `routed-to`, `route-reason` |
+| F-093 | Operator-set say (self-assertion guard) | host | decidesTrusted inside the route; `self-asserted` kept |
+| F-094 | Settle session | chart | `conflict` birth spawns the settle `baton` (`settle-baton-data`: goal, question, `mintLink:false`, `conflict {id area}`, owner) |
+| F-095 | Re-route | chart | `conflict/reroute`: new session spawned on entry, the old one closed (`close-asking`) |
+| F-096 | Drafts with provenance | host | draft writer (`draft` effect, `draft/rewrite`) |
+| F-097 | Promotion | chart | `reconciler` `decision/promote` (`verdicts`, `promote-check`, cap on ids) → effect `promote` → `promote/done` fan-out; ledger counts only promoted |
+| F-098 | Promotion commit | host | promotion commit inside the effect |
+| F-099 | Edited in spec | chart | `decision.promoted.text` ‹as-promoted·edited-in-spec›; `decision/settle-text` keep/restore |
+| F-100 | Built or not built yet | chart | `decision.promoted.built` from `spec/facts` |
+| F-101 | Frozen spec | chart | `project` `spec/freeze`; hash fact host |
+| F-102 | Decide seam (the provider under the reconciler) | host | decide seam |
+| F-103 | Reconciler usage log | data | usage log |
+| F-104 | Reconciler events | del | replaced by typed reasons to the watch (C2, C3) |
+| F-110 | Identity and creation | chart | `project.overseer` ‹no-overseer·has-overseer› `overseer/start` |
+| F-111 | Clear and History | chart | `overseer/clear` (≤20 history) + `ledger/reset-message` |
+| F-112 | Two writers only | host | routes; archived from `project.shelf` |
+| F-113 | Loadout and confinement | host | loadout, confinement |
+| F-114 | Prompt | host | prompt (level in force from `rules/levels`) |
+| F-115 | Extra instructions | data | settings |
+| F-116 | Models and thinking | data | settings |
+| F-117 | Chat page head and status strip | proj | head and strip from watch exports |
+| F-118 | Autonomy levels | chart | `rules/levels` `effective-autonomy`, `level-check` (engine option), `tool-needs` |
+| F-119 | Attended vs unattended runs | chart | envelope `attended`; `watch.turn` ‹idle·look-turn·run-turn·operator-turn› (W20) |
+| F-120 | Tool wrapper and audit | chart | engine explain/trial with the registry's acts; refused steps = the log's refused rows |
+| F-121 | Read tools | proj | reads + `sova_pipeline` from item exports |
+| F-122 | L0 tools: note, confirm, idea | chart | `project` `gap/file` (L0) spawns `item`; note/confirm/idea plain data |
+| F-123 | L1 `sova_start_gathering` and `sova_offer` | chart | `item` `gather/start` (L1, cap, held) / `gather/plan` (L0); `project` `baton/start` with `gap: "none"` (C7) |
+| F-124 | L1 `sova_close_gathering {session, reason}` | chart | `baton/close` overseer path (`close-refusal` order), held unattended (r6) |
+| F-125 | L1 `sova_reconcile` | chart | `reconciler` `reconcile/request {by overseer}` |
+| F-126 | Send to person… (an operator gesture on an item) | chart | `project` `baton/start` by the operator with `opItem` |
+| F-127 | L2 `sova_promote {ids}` | chart | `reconciler` `decision/promote` by overseer (L2, held) |
+| F-128 | L3 `sova_create_session` and `sova_send` | chart | `item` `build/start` (L3, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (L3 `sova_send`) to a build; `session/prompt` (L3 `sova_send`, held) to a root coding session that is not a build; a gathering session is refused by the tool (r10: no chart act) |
+| F-129 | Limits: allowances, at-once, looks | chart | `rules/levels` `cap-check` (at once, then allowance), watch ledgers (`ledger/take`), settings data |
+| F-130 | Held items and release | chart | `watch` `limit/refused` → `held` (≤10), releases at midnight / raised limit / message at once (C12) |
+| F-131 | Watch-loop reasons (events → English) | chart | typed `reason/noted` from charts; `watch` `own-act?` (C2; R3: news of the chart's own act, `by` chart from `b/tell-watch`, is never a reason: no look, no look used, it rides the next look's feed), key dedupe (C3), ≤50 pending, 20 in the text; R4: item reopened / answered-nothing are feed entries, not reasons (item/stalled stays, C5); tests `watch_decisions_build_test` R3, `item_test` R4 |
+| F-132 | Tick and unattended look | chart | `watch.loop` quiet → waiting (`due-in` on the 20 s tick) → due → running (`:sova/look`, `watch-text`) |
+| F-133 | Soon looks | chart | `with-reason` soon → `soon-at` |
+| F-134 | Run Now | chart | `watch` `operator/run-now` (`run-now-refusal`); refused → `look/skipped` recorded |
+| F-135 | Last-run record and cut-off sweep | chart | `watch` `last-run` outcomes; `sova/resumed` = cut-off; re-queue (C1) |
+| F-136 | Gaps | chart | `item` per gap, born by `gap/file` |
+| F-137 | Ideas and to-dos (the operator's list) | data | ideas and to-dos stay plain data |
+| F-138 | Start coding session from an item | chart | `project` `build/start` (operator-coding, `opItem`) |
+| F-139 | New Coding Session | chart | `project` `build/start` without prompt (build `setting-mode` → `ready`) |
+| F-140 | Coding mode | chart | `build.setup.setting-mode` (`mode-not-set`); ceiling = host `invalid` |
+| F-141 | Coding worktrees | chart | `build.setup.making-worktree` (branch/base/target or `in-root`; not-started sentence) |
+| F-142 | Merge Branch | chart | `build/merge` (`root-check`, `busy-check`) → effect `merge`; reasons `build/merged` / `build/merge-refused` (not for root-checkout) |
+| F-143 | Merged is read from git | chart | `build.branch` from `git/probe`; recorded `merged` when git can't say; `correct/merged` (L2) |
+| F-144 | Remove Worktree | chart | `build/remove-worktree` → effect; `tree-removed` |
+| F-145 | The project page | proj | project page from chart data |
+| F-146 | Coding rows in `started.json` | chart (changed on purpose, r11) | project `:started` (exported): one ordered list of every baton and build it or its items started (`started/noted` from the item), cap 200 (`rules/started`); past it the oldest SETTLED one gets `session/retire` (baton/build final `retired`, guarded: never while live); tests `started_test` |
+| F-148 | Idea and to-do store rules (the project's ideas and to-dos use the Overseer's stores) | data | ideas store rules; `gap/drop` agrees both ways (`idea-status` effect / `fromIdea`) |
+| F-147 | Org statecharts (existing, shadow-only) | chart | the refit engine + these charts replace the spike |
+| F-150 | Org owner | chart | `org.owner` ‹owner-none·owner-set·owner-cleared› |
+| F-151 | Owner leaves | chart | watched owner `:left` → `owner-cleared`, `revoke-owner-links` |
+| F-152 | Owner link | host | owner link store; mint needs `org` owner |
+| F-153 | Owner link: off and dead checks | host | validity check reads org owner + person status |
+| F-154 | Owner page content | proj | owner page from chart data |
+| F-155 | Which conversations the owner reads | chart | baton `hidden-from-owner`; project `owner-hidden` |
+| F-156 | What the page never shows | host | owner page projection |
+| F-157 | Page mechanics | host | page mechanics |
+| F-158 | Operator controls | proj | operator controls |
+| F-159 | `sova_owner_update({text})` (PO, L1) | chart | `project` `owner-update/post` (L1, `update-check` order, `milestone` ‹no-milestone·since-post›, `cooldown` ‹ready·cooling› 24 h timer), held unattended |
+| F-160 | Take Down an update | data | withdraw: updates.jsonl route |
+| F-170 | Cost scope | data | costs |
+| F-171 | Pricing and the price table | data | costs |
+| F-172 | Ledger | data | costs |
+| F-173 | Cost card and org rollup | data | costs |
+| F-174 | Cost privacy | data | costs |
+| F-180 | Scope | host | GO layer |
+| F-181 | Reads | proj | GO reads |
+| F-182 | Projection and redaction | host | GO redaction |
+| F-183 | Writes | chart | GO writes = operator events with `via: overseer` |
+| F-184 | Attribution "you, via the Overseer" | chart | `via` in envelope → history rows (`owner-history`, `stakeholder-history`, `archived.via`, `roster-history by.via`) |
+| F-185 | People-facing acts ask first (`sova_gather`) | chart | acts' `:people-facing` + `:card` (registry) — the card check (`rules/levels card-check`); `start`: project `baton/start` and item `gather/start` list the project and every person (`base/start-card`, never the operator) |
+| F-186 | Running project overseers (`sova_project_overseer`) | chart | operator events via GO |
+| F-187 | GO prompt rules (E) | host | GO prompt |
+| F-190 | Which sessions are organizational | proj | org sessions = baton/build sessions |
+| F-191 | Sidebar Organizations region | proj | sidebar |
+| F-192 | Guards | host | guards |
+| F-193 | Special-session guards in the chat runtime | host | chat guards |
+| F-200 | Public-links setting | host | mesh |
+| F-201 | Gateway registry | host | mesh |
+| F-202 | Routing by token hash | host | mesh |
+| F-203 | Offline host | host | mesh |
+| F-204 | Mesh never syncs orgs | host | mesh |
+| F-205 | Mesh link messages refuse org sessions | host | mesh |

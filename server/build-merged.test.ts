@@ -1,14 +1,14 @@
 // Run: pnpm exec tsx --test server/build-merged.test.ts. Whether a project's coding session (a
 // build) is merged, as the session list says it (`org.finished`, §app.organizations/org-sessions):
 // git's answer, read in the background at most every 30 s per session; until git has answered, what
-// started.json recorded; a Merge Branch updates it at once.
+// the build's chart recorded; a Merge Branch updates it at once.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildMerged, noteBuildMerged, resetBuildMerged, setBuildReader, BUILD_TTL_MS } from "./build-merged";
-import type { StartedRow } from "./project-overseer-store";
+import type { BuildRow } from "./build-loadout";
 
 const tree = { path: "/w/proj-x", branch: "sova/x", base: "abc", target: "main" };
-const row = (extra: Partial<StartedRow> = {}): StartedRow => ({ sessionId: "s1", kind: "coding", createdAt: "2026-09-01T00:00:00Z", worktree: tree, ...extra });
+const row = (extra: Partial<BuildRow> = {}): BuildRow => ({ sessionId: "s1", kind: "coding", createdAt: "2026-09-01T00:00:00Z", worktree: tree, turn: "idle", workers: 0, configuration: [], ...extra });
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 test("git decides once it has answered; until then the recorded merge; at most one read per TTL", async () => {

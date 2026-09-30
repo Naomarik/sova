@@ -301,6 +301,7 @@ list/detail. From 1280 the column is 40vw and asks its own box, so it's side by 
   | `error` | `.chip.chip-error` Failed | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | `killed` | `.chip` + dot, Stopped | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | `restored` | `.chip` + dot, Restored | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
+  | `running`, its model request waiting on its provider's limit (§app.provider-limits/waiting-shown) | `.chip` + dot, Queued, the waiting text in `title` | `{provider}` · `{model}` · `{tokens}` |
   | `restored`, mid-task at the restart (`interruptedAt`) | `.chip.chip-warn` Interrupted | `{provider}` · `{model}` · `{tokens}` · as of `{HH:MM}` |
   | a team member whose `ejectedAt` is set (§app.teams/seats) | `.chip` + dot, Ejected, **before** the status chip, which stays | unchanged |
 

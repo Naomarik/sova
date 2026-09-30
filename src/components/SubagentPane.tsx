@@ -19,6 +19,8 @@ import type { PaneInsight } from "./SessionPane";
 import { LinkedAgentMeta, LinkedAgentRow, LinkStateChip, LinkThreadView } from "./LinkedAgents";
 import { HistoryItems, TranscriptSkeleton } from "./Thread";
 import { Banner, Chip, Icon } from "./ui";
+import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
+import { waitingSentence } from "../../shared/provider-limits";
 
 /** Within this distance of the end, the transcript follows new content. */
 const FOLLOW_PX = 80;
@@ -686,13 +688,24 @@ function RestoredBar(props: { worker: WorkerInfo }) {
   );
 }
 
-/** A worker's status chip, worded as on the Agents page; only a live-sourced working one pulses. */
+/** A worker's status chip, worded as on the Agents page; only a live-sourced working one pulses.
+    A running worker whose model request waits on its provider's limit reads Queued, plain and
+    still, the waiting sentence in its title (§app.provider-limits/waiting-shown). */
 function StatusChip(props: { worker: WorkerInfo; liveSource: boolean }) {
   const status = () => memberStatus({ worker: props.worker } as TeamMember, props.liveSource);
+  watchProviderWaits(() => props.worker.status === "running");
+  const wait = () => (props.worker.status === "running" ? providerWait(props.worker.sessionId) : undefined);
   return (
-    <Chip tone={status().tone} live={status().live}>
-      {status().text}
-    </Chip>
+    <Show
+      when={wait()}
+      fallback={
+        <Chip tone={status().tone} live={status().live}>
+          {status().text}
+        </Chip>
+      }
+    >
+      {(w) => <Chip title={waitingSentence(w())}>Queued</Chip>}
+    </Show>
   );
 }
 

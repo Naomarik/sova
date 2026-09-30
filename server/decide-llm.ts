@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+// The provider-limits gate (node builtins only, see CLAUDE.md): a one-shot waits for a slot of its
+// provider as background work (§app.provider-limits/queue), within its own timeout.
+import { acquireSlot, defaultAgentDir, whileHolding, type Slot } from "../pi-config/extensions/provider-limits/gate.ts";
 import type { ModelPolicy, WorkerChoice } from "../shared/protocol";
 import {
   DecisionError,
@@ -100,7 +103,12 @@ export interface LlmProviderDeps {
   env?: () => Record<string, string>;
   /** Sees each pi request's provider payload as it leaves (a testing aid; never changes it). */
   onPayload?: (payload: unknown) => void;
+  /** The agent dir whose provider limits apply (default: pi's, from the environment). */
+  agentDir?: () => string;
 }
+
+/** The Claude Code limit's key (provider-limits.json): one slot per `claude` one-shot. */
+export const CLAUDE_LIMIT_KEY = "claude-code";
 
 const providerIdOf = (choice: WorkerChoice): DecisionProviderId => (choice.backend === "pi" ? "pi" : "claude-code");
 
@@ -185,8 +193,12 @@ export async function piText(choice: WorkerChoice, call: TextCall, deps: LlmProv
   const onAbort = () => controller.abort();
   call.signal?.addEventListener("abort", onAbort, { once: true });
   const reasoning = choice.effort && choice.effort !== "off" && (model as { reasoning?: boolean }).reasoning ? choice.effort : undefined;
+  let slot: Slot | null = null;
   try {
-    const response = await runtime.completeSimple(
+    // Waits while the provider is at its limit; the wait counts toward the timeout.
+    slot = await acquireSlot(providerId, { agentDir: deps.agentDir?.() ?? defaultAgentDir(), kind: "background", signal: controller.signal });
+    // Holding the slot: a gated stream this reaches (the extension, in a hosted session's shared runtime) claims no second one.
+    const response = await whileHolding(providerId, () => runtime.completeSimple(
       model as never,
       { systemPrompt: call.systemPrompt, messages: [{ role: "user", content: [{ type: "text", text: call.prompt }], timestamp: Date.now() }] },
       {
@@ -198,7 +210,7 @@ export async function piText(choice: WorkerChoice, call: TextCall, deps: LlmProv
         ...(reasoning ? { reasoning } : {}),
         ...(deps.onPayload ? { onPayload: (payload: unknown) => void deps.onPayload!(payload) } : {}),
       },
-    );
+    ));
     const text = response.content.filter((b) => b.type === "text" && typeof b.text === "string").map((b) => b.text).join("\n");
     if (response.stopReason === "aborted" || controller.signal.aborted) throw fail("timeout", `${choice.model} did not answer within ${timeoutMs} ms`);
     if (response.stopReason === "error" && !text.trim()) {
@@ -225,6 +237,7 @@ export async function piText(choice: WorkerChoice, call: TextCall, deps: LlmProv
     const why = failureMessage(err);
     throw fail(textFailure(why), why);
   } finally {
+    slot?.release();
     clearTimeout(timer);
     call.signal?.removeEventListener("abort", onAbort);
   }
@@ -331,7 +344,31 @@ function runClaude(choice: WorkerChoice, prompt: string, req: DecisionRequest, d
  * JSON envelope, which a failed run prints too), or a DecisionError. Shared by decisions and the
  * session namer (server/session-autotitle.ts).
  */
-export function claudeRun(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal?: AbortSignal): Promise<string> {
+export async function claudeRun(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal?: AbortSignal): Promise<string> {
+  // One slot of the `claude-code` limit for the whole run, when one is set; the wait counts toward the timeout.
+  const started = Date.now();
+  const waited = new AbortController();
+  const timer = setTimeout(() => waited.abort(), timeoutMs);
+  timer.unref?.();
+  const onAbort = () => waited.abort();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  let slot: Slot | null;
+  try {
+    slot = await acquireSlot(CLAUDE_LIMIT_KEY, { agentDir: deps.agentDir?.() ?? defaultAgentDir(), kind: "background", signal: waited.signal });
+  } catch {
+    throw fail("timeout", signal?.aborted ? "aborted" : `claude did not start within ${timeoutMs} ms (waiting for a Claude Code slot)`);
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
+  try {
+    return await claudeSpawn(argv, input, deps, Math.max(1, timeoutMs - (Date.now() - started)), fail, signal);
+  } finally {
+    slot?.release();
+  }
+}
+
+function claudeSpawn(argv: string[], input: string, deps: LlmProviderDeps, timeoutMs: number, fail: Fail, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     let cwd: string;
     try {

@@ -30,6 +30,9 @@ export interface CaptureEvents {
 
 type Ctor = typeof AudioContext;
 
+/** How long stop keeps recording. */
+const POST_ROLL_MS = 350;
+
 export function captureSupported(): { secure: boolean; getUserMedia: boolean; audioContext: boolean } {
   const w = window as unknown as { AudioContext?: Ctor; webkitAudioContext?: Ctor };
   return {
@@ -51,8 +54,10 @@ export function startCapture(ev: CaptureEvents): Promise<Recorder> {
 }
 
 async function begin(ctx: AudioContext, ev: CaptureEvents): Promise<Recorder> {
+  // Raw: the browser's noise suppression and gain control smear consonants and, on top of a
+  // system noise gate, cut words; the speech models are trained on unprocessed audio.
   const stream = await navigator.mediaDevices.getUserMedia({
-    audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   });
   const stopTracks = () => stream.getTracks().forEach((t) => t.stop());
   try {
@@ -140,6 +145,8 @@ async function begin(ctx: AudioContext, ev: CaptureEvents): Promise<Recorder> {
       },
       async stop() {
         detach();
+        // Post-roll: a stop tapped on the last syllable would cut it.
+        await new Promise((r) => setTimeout(r, POST_ROLL_MS));
         await flush();
         stopTracks();
         void ctx.close().catch(() => {});

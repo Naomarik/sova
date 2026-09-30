@@ -4,7 +4,6 @@
 // dir, deleted after; ~/.pi is never touched. Every model is a stub that records what it was sent.
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -33,10 +32,11 @@ const { acquireChat, disposeAllChats, disposeHeldChat } = await import("./chat-m
 const { readView, viewForToken } = await import("./share/hub");
 const { createShareServer } = await import("./share/listener");
 const { listSessions } = await import("./sessions-index");
-const { WorkspaceCommitter } = await import("./workspace-commits");
+const { hostOf } = await import("./org-engine");
 const { settled } = await import("./workspace-git");
 const { addTodo, readTodos } = await import("./overseer-todos");
 const store = await import("./project-overseer-store");
+const { recordDecision } = await import("./org-test-fixtures");
 const { canonicalPath } = await import("./paths");
 const { markOwned } = await import("./write-guard");
 
@@ -93,7 +93,7 @@ function systemOf(request: string): string {
 async function turn(path: string, text: string, by?: { sessionId: string; personId: string }): Promise<string[]> {
   const chat = await stubbedChat(path);
   const before = sent.get(path)?.length ?? 0;
-  if (by) loadout.recordNoted(chat, by.personId, baton.noteMessage(by.sessionId, by.personId));
+  if (by) baton.noteMessage(by.sessionId, by.personId);
   const { turn: t } = chat.acceptPrompt(text, undefined, "server", undefined, by ? { sentByBaton: { by: by.personId } } : undefined);
   await t;
   await chat.session.waitForIdle();
@@ -138,14 +138,14 @@ const fake: DecisionProvider = {
     return { answers, provider: "jev", model: "fake", latencyMs: 1 };
   },
 };
-reconcile.setReconcileDeps({ provider: () => fake, excluded: () => false, endBaton: async (sid) => void baton.closeBaton(sid) });
+reconcile.setReconcileDeps({ provider: () => fake, excluded: () => false });
 
-/** A decision as record_decision leaves it in a transcript nobody holds open. */
+/** A decision as record_decision leaves it: the person's message, the tool call, then its chart's act. */
 let seq = 0;
-function decided(file: string, by: string, area: string, statement: string): void {
+async function decided(file: string, by: string, area: string, statement: string): Promise<void> {
   const last = JSON.parse(readFileSync(file, "utf8").trim().split("\n").at(-1)!).id;
   const id = () => `ab${(++seq).toString(16).padStart(6, "0")}`;
-  const [u, s, a, d] = [id(), id(), id(), id()];
+  const [u, s, a] = [id(), id(), id()];
   const ts = new Date().toISOString();
   const decision = { area, statement, quote: statement };
   appendFileSync(
@@ -154,21 +154,25 @@ function decided(file: string, by: string, area: string, statement: string): voi
       { type: "message", id: u, parentId: last, timestamp: ts, message: { role: "user", content: [{ type: "text", text: statement }] } },
       { type: "custom", customType: BATON_SENT_ENTRY, data: { v: 1, targetId: u, by }, id: s, parentId: u, timestamp: ts },
       { type: "message", id: a, parentId: s, timestamp: ts, message: { role: "assistant", content: [{ type: "toolCall", name: "record_decision", arguments: decision }] } },
-      { type: "custom", customType: BATON_DECISION_ENTRY, data: { v: 1, ...decision, by }, id: d, parentId: a, timestamp: ts },
     ]
       .map((l) => `${JSON.stringify(l)}\n`)
       .join(""),
   );
+  // The owner area the model picks: the roster area it is about (Maria decides invoicing).
+  await recordDecision(file, { ...decision, ownerArea: area });
 }
 
 describe("the About text reaches the project overseer's prompt and nothing else", async () => {
   const org = await orgs.createOrg({ name: "Qorvex Holdings", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
-  const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
-  const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
-  const ana = orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
-  orgs.patchOrg(org.id, { about: ABOUT });
+  const project = await orgs.addProject(org.id, { name: "Ledger", root: join(root, "proj") });
+  // Its unattended acts go at once (no hold, q10): this test is about what each model sees.
+  const sp = store.projectOverseerPaths(org.id, project.id);
+  store.writePoSettings(sp, { ...store.readPoSettings(sp), holdMin: 0 });
+  const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll", decides: ["invoicing"] });
+  const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+  const ana = await orgs.addPerson(org.id, { name: "Ana Ruiz", role: "Sales" });
+  await orgs.patchOrg(org.id, { about: ABOUT });
   await po.ensureProjectOverseer(org.id, project.id);
   await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
   const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
@@ -185,7 +189,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
 
   test("a gathering session the overseer starts: its model never gets it", async () => {
     const tool = po.toolsForTest(org.id, project.id).find((t) => t.name === "sova_start_gathering")!;
-    const out = await tool.execute("t1", { person: "Tony Reyes", public_title: "Servers", goal: "Find where the ledger runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
+    const out = await tool.execute("t1", { gap: "none", person: "Tony Reyes", public_title: "Servers", goal: "Find where the ledger runs", question: "Where does it run?" }, undefined, undefined, undefined as never);
     const id = (out.details as { id: string }).id;
     const hit = baton.batonById(id)!;
     const path = baton.sessionPathOf(hit.dir, hit.row);
@@ -196,7 +200,7 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   });
 
   test("an offer: its model never gets it", async () => {
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: [maria.id, ana.id], publicTitle: "Pricing", goal: "Who sets the prices" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [maria.id, ana.id], publicTitle: "Pricing", goal: "Who sets the prices" });
     const token = c.links!.find((l) => l.personId === ana.id)!.token;
     handoffs.push({ label: "offer", sessionId: c.sessionId, path: c.path, token, person: ana.id });
     for (const got of await turn(c.path, "I set the prices.", { sessionId: c.sessionId, personId: ana.id })) assert.ok(!leaks(got), "offer: a model request");
@@ -213,10 +217,10 @@ describe("the About text reaches the project overseer's prompt and nothing else"
   });
 
   test("the reconciler: its decide calls never get it; the settle session it starts never does either", async () => {
-    const s1 = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Terms A", goal: "g", mintLink: false });
-    const s2 = baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Terms B", goal: "g", mintLink: false });
-    decided(s1.path, tony.id, "invoicing", "Invoices are due 30 days after issue.");
-    decided(s2.path, ana.id, "invoicing", "Invoices are due 60 days after issue.");
+    const s1 = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Terms A", goal: "g" }, { mintLink: false });
+    const s2 = await baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Terms B", goal: "g" }, { mintLink: false });
+    await decided(s1.path, tony.id, "invoicing", "Invoices are due 30 days after issue.");
+    await decided(s2.path, ana.id, "invoicing", "Invoices are due 60 days after issue.");
     const info = await reconcile.reconcileProject(org.id, project.id);
     assert.ok(requests.length > 0, "the decide seam was called");
     for (const r of requests) assert.ok(!leaks(JSON.stringify(r)), "a decide request");
@@ -233,9 +237,11 @@ describe("the About text reaches the project overseer's prompt and nothing else"
 
   test("the wrap-up of each of them: its turn never gets it", async () => {
     for (const h of handoffs) {
-      baton.markDone(h.sessionId, new Date());
       const before = sent.get(h.path)?.length ?? 0;
-      await wrap.runWrapup(h.sessionId, [...loadout.BATON_TOOLS]);
+      // goal_done: the chart runs the wrap-up itself (a person wrote), once the reply is idle.
+      await baton.markDone(h.sessionId);
+      const state = () => baton.batonById(h.sessionId)!.row.wrapup?.state;
+      for (let i = 0; i < 1000 && state() !== "done" && state() !== "failed"; i++) await new Promise((r) => setTimeout(r, 10));
       const got = (sent.get(h.path) ?? []).slice(before);
       assert.ok(got.some((c) => c.includes("[Wrap-up")), `${h.label}: the wrap-up turn ran`);
       for (const c of got) assert.ok(!leaks(c), `${h.label}: a wrap-up request`);
@@ -268,23 +274,20 @@ describe("the About text reaches the project overseer's prompt and nothing else"
     for (const got of await turn(path, "What needs me?")) assert.ok(!leaks(got), "an Overseer request");
   });
 
-  test("a coding session started from an item never gets it", async () => {
-    // The route starting one calls, as the server wires it: a new session file (its first prompt is sent in-process).
-    overseer.setOverseerDispatch(async (route, init) => {
-      const body = JSON.parse(String(init?.body));
-      if (route === "/api/sessions") {
-        const id = randomUUID();
-        const dir = join(agentDir, "sessions", "--coding--");
-        mkdirSync(dir, { recursive: true });
-        const file = join(dir, `2026-09-27T00-00-00-000Z_${id}.jsonl`);
-        writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: new Date().toISOString(), cwd: body.cwd })}\n`);
-        markOwned(canonicalPath(file));
-        // Opened here, on the stub, before Sova's own open and first prompt (promptSession) reach it.
-        await stubbedChat(canonicalPath(file));
-        return Response.json({ id, path: canonicalPath(file) }, { status: 201 });
-      }
-      return Response.json({ error: "not wired in this test" }, { status: 404 });
+  test("a coding session started from an item never gets it", async (t) => {
+    // Its session file, as the build's setup makes one (its first prompt is sent in-process), on the stub.
+    const { setBuildSessionMakerForTest } = await import("./build-loadout");
+    setBuildSessionMakerForTest(async (cwd, id) => {
+      const dir = join(agentDir, "sessions", "--coding--");
+      mkdirSync(dir, { recursive: true });
+      const file = join(dir, `2026-09-27T00-00-00-000Z_${id}.jsonl`);
+      writeFileSync(file, `${JSON.stringify({ type: "session", version: 3, id, timestamp: new Date().toISOString(), cwd })}\n`);
+      markOwned(canonicalPath(file));
+      // Opened here, on the stub, before Sova's own open and first prompt (promptSession) reach it.
+      await stubbedChat(canonicalPath(file));
+      return canonicalPath(file);
     });
+    t.after(() => setBuildSessionMakerForTest(null));
     const p = store.projectOverseerPaths(org.id, project.id);
     addTodo({ text: "Add a CSV export" }, p.todos, p.ideas);
     const todo = readTodos(p.todos).todos.at(-1)!;
@@ -301,10 +304,11 @@ describe("the About text reaches the project overseer's prompt and nothing else"
 
   test("a workspace commit's message names about.md by path only", async () => {
     const dir = orgs.orgDir(org.id);
-    orgs.patchOrg(org.id, { about: `${ABOUT} Again.` });
+    await orgs.patchOrg(org.id, { about: `${ABOUT} Again.` });
     await settled(dir);
-    const outcome = await new WorkspaceCommitter(() => [{ id: org.id, dir }], { everyMs: 0 }).tick();
-    assert.ok(outcome.some((o) => o && !("error" in o && o.error)), JSON.stringify(outcome));
+    // The residence's commit with no message of its own: the hourly one, naming what changed.
+    const out = await hostOf(org.id).act(orgs.residenceSid(org.id), "commit/now", {}, { by: "operator" }, { settle: true });
+    assert.ok(out.taken && (out.effects ?? []).some((e) => e.kind === "commit" && !e.error), JSON.stringify(out.effects));
     const messages = execFileSync("git", ["-C", dir, "log", "--format=%B"], { encoding: "utf8" });
     assert.match(messages, /about\.md/);
     assert.ok(!leaks(messages), "no commit message carries it");

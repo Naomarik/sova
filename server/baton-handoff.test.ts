@@ -21,6 +21,7 @@ const { offerOutsider, viewForToken } = await import("./share/hub");
 const { registerOrgRoutes } = await import("./org-routes");
 const { createShareApp } = await import("./share/routes");
 const { stateRoot } = await import("./state-root");
+const { hostOf } = await import("./org-engine");
 
 after(async () => {
   await disposeAllChats();
@@ -31,8 +32,8 @@ process.on("exit", () => rmSync(root, { recursive: true, force: true }));
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const person = (name: string) => orgs.addPerson(org.id, { name, role: "Staff" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const person = async (name: string) => await orgs.addPerson(org.id, { name, role: "Staff" });
 const app = new Hono();
 registerOrgRoutes(app);
 const post = (path: string, body?: unknown) => app.request(path, { method: "POST", headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
@@ -102,43 +103,45 @@ async function heldChat(path: string, opts: { holdStart?: boolean; seen?: unknow
   return { chat, release, start };
 }
 
-/** Someone's message enters as the share route does it: the lock, then the prompt. */
-function says(chat: Awaited<ReturnType<typeof heldChat>>["chat"], sessionId: string, by: string, text: string, now = Date.now()) {
-  const noted = baton.noteMessage(sessionId, by, now);
-  loadout.recordNoted(chat, by, noted);
+/** Someone's message enters as the share route does it: the lock (its reply starts with it), then the prompt. */
+function says(chat: Awaited<ReturnType<typeof heldChat>>["chat"], sessionId: string, by: string, text: string) {
+  baton.noteMessage(sessionId, by);
   void chat.acceptPrompt(text, undefined, "server", undefined, { sentByBaton: { by } }).turn.catch(() => {});
 }
 
 describe("a lease never lapses while the reply to its holder is being written", () => {
   test("mid-reply a lapsed lease stays with its holder; the reply's end renews it; a lease entry waits for the reply", async () => {
-    const maria = person("Maria Lopez");
-    const tony = person("Tony Reyes");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: [maria.id, tony.id], publicTitle: "Invoices", goal: "g" });
+    const maria = await person("Maria Lopez");
+    const tony = await person("Tony Reyes");
+    // A one-second lease (hermetic tests only): the chart's own timer would lapse it mid-reply.
+    process.env.SOVA_BATON_LEASE_MS = "1000";
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [maria.id, tony.id], publicTitle: "Invoices", goal: "g" }).finally(() => delete process.env.SOVA_BATON_LEASE_MS);
     const tonyTok = c.links!.find((l) => l.personId === tony.id)!.token;
     const { chat, release } = await heldChat(c.path);
-    // Maria claimed long enough ago that her lease is already past its end, and the model is still answering her.
-    says(chat, c.sessionId, maria.id, "two decisions, then a question", Date.now() - LEASE_IDLE_MS - 1000);
+    says(chat, c.sessionId, maria.id, "two decisions, then a question");
     await until(() => chat.session.isStreaming);
+    // Her lease's time passes while the model is still answering her.
+    await new Promise((r) => setTimeout(r, 1300));
+    assert.equal(baton.batonById(c.sessionId)!.row.holder, maria.id, "mid-reply a lapsed lease stays with its holder");
     assert.throws(() => baton.noteMessage(c.sessionId, tony.id), /Someone else is answering/, "Tony can't take over mid-reply");
     assert.equal((baton.linkAccess(tonyTok) as { reason?: string }).reason, "taken");
-    assert.deepEqual(baton.lapsedLeases(), [], "the ticker sees no lapse either");
-    // An entry that meets the reply is written after it, not lost.
-    loadout.recordLease(chat, { n: 1, offerId: baton.batonById(c.sessionId)!.row.offerId!, event: "claimed", by: maria.id });
     const before = Date.now();
+    assert.equal(hostOf(org.id).data(`baton/${org.id}/${c.sessionId}`)?.["reply"], "writing", "the runtime took the turn: the reply is being written");
     release();
     await until(() => !chat.session.isStreaming);
-    await until(() => entriesOf(c.path).filter((e) => e.customType === BATON_LEASE_ENTRY).length === 2);
+    // The claim's entry, which met the reply, is written after it, not lost.
+    await until(() => entriesOf(c.path).some((e) => e.customType === BATON_LEASE_ENTRY && e.data.event === "claimed"));
     const o = baton.currentOffer(baton.batonById(c.sessionId)!.row)!;
     assert.equal(o.holder, maria.id);
-    assert.ok(Date.parse(o.leaseUntil!) >= before + LEASE_IDLE_MS, "the reply's end restarted the lease");
+    assert.ok(Date.parse(o.leaseUntil!) >= before + 1000, "the reply's end restarted the lease");
     assert.throws(() => baton.noteMessage(c.sessionId, tony.id), /Someone else is answering/);
   });
 });
 
 describe("the operator's moves stop a reply in flight", () => {
   test("Take back mid-reply: the reply is aborted, the baton moves, the hand-off is recorded", async () => {
-    const bob = person("Bob Chen");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Reminders", goal: "g" });
+    const bob = await person("Bob Chen");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Reminders", goal: "g" });
     const { chat } = await heldChat(c.path);
     says(chat, c.sessionId, bob.id, "here is a long answer");
     await until(() => chat.session.isStreaming);
@@ -155,10 +158,10 @@ describe("the operator's moves stop a reply in flight", () => {
   });
 
   test("offering it on mid-reply works the same way", async () => {
-    const a = person("Ana Ruiz");
-    const b = person("Ben Ode");
-    const c2 = person("Cy Park");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: a.id, publicTitle: "Offer on", goal: "g" });
+    const a = await person("Ana Ruiz");
+    const b = await person("Ben Ode");
+    const c2 = await person("Cy Park");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: a.id, publicTitle: "Offer on", goal: "g" });
     const { chat } = await heldChat(c.path);
     says(chat, c.sessionId, a.id, "answering");
     await until(() => chat.session.isStreaming);
@@ -170,12 +173,12 @@ describe("the operator's moves stop a reply in flight", () => {
 
 describe("someone marked left", () => {
   test("a holder who leaves: the baton goes to the operator (Needs you), mid-reply too, and every link of theirs stops", async () => {
-    const bob = person("Bo Left");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Held", goal: "g" });
+    const bob = await person("Bo Left");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: bob.id, publicTitle: "Held", goal: "g" });
     const { chat } = await heldChat(c.path);
     says(chat, c.sessionId, bob.id, "still typing");
     await until(() => chat.session.isStreaming);
-    orgs.applyChange(org.id, bob.id, { status: "left" }, { kind: "operator" });
+    await orgs.applyChange(org.id, bob.id, { status: "left" }, { kind: "operator" });
     assert.throws(() => baton.noteMessage(c.sessionId, bob.id), /no longer taking part/, "refused at once, before the move lands");
     await until(() => baton.batonById(c.sessionId)!.row.holder === OPERATOR);
     assert.deepEqual(baton.linkAccess(c.token!), { ok: false, status: 410 });
@@ -185,30 +188,30 @@ describe("someone marked left", () => {
   });
 
   test("an invitee of an open offer who leaves: the offer goes to the operator; one someone else holds carries on", async () => {
-    const a = person("Al Open");
-    const b = person("Bea Open");
-    const open = baton.createBaton({ orgId: org.id, projectId: project.id, to: [a.id, b.id], publicTitle: "Pool", goal: "g" });
-    const c = person("Cal Held");
-    const d = person("Dee Held");
-    const held = baton.createBaton({ orgId: org.id, projectId: project.id, to: [c.id, d.id], publicTitle: "Held offer", goal: "g" });
+    const a = await person("Al Open");
+    const b = await person("Bea Open");
+    const open = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [a.id, b.id], publicTitle: "Pool", goal: "g" });
+    const c = await person("Cal Held");
+    const d = await person("Dee Held");
+    const held = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [c.id, d.id], publicTitle: "Held offer", goal: "g" });
     baton.noteMessage(held.sessionId, c.id);
-    orgs.applyChange(org.id, b.id, { status: "left" }, { kind: "operator" });
-    orgs.applyChange(org.id, d.id, { status: "left" }, { kind: "operator" });
+    await orgs.applyChange(org.id, b.id, { status: "left" }, { kind: "operator" });
+    await orgs.applyChange(org.id, d.id, { status: "left" }, { kind: "operator" });
     await until(() => baton.batonById(open.sessionId)!.row.holder === OPERATOR);
     assert.equal(baton.batonSummaryField(open.path)!.needsYou!.question, "(Bea Open left the organization; offer withdrawn)");
     assert.equal(baton.batonById(held.sessionId)!.row.holder, c.id, "Cal keeps answering");
     const dTok = held.links!.find((l) => l.personId === d.id)!.token;
     assert.deepEqual(baton.linkAccess(dTok), { ok: false, status: 410 });
     // After Cal's lease lapses, Dee still can't claim it.
-    assert.throws(() => baton.noteMessage(held.sessionId, d.id, Date.now() + LEASE_IDLE_MS + 1), /no longer taking part/);
+    assert.throws(() => baton.noteMessage(held.sessionId, d.id), /no longer taking part/);
     assert.throws(() => baton.rotateLink(held.sessionId, d.id), /not active/);
   });
 
   test("the model knows who left: the prompt says so, and proposing them as someone new is refused", async () => {
-    const gone = person("Gus Gone");
-    const asker = person("Ivy Asks");
-    orgs.applyChange(org.id, gone.id, { status: "left" }, { kind: "operator" });
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: asker.id, publicTitle: "Who now", goal: "g" });
+    const gone = await person("Gus Gone");
+    const asker = await person("Ivy Asks");
+    await orgs.applyChange(org.id, gone.id, { status: "left" }, { kind: "operator" });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: asker.id, publicTitle: "Who now", goal: "g" });
     const prompt = loadout.renderBatonPrompt(c.sessionId);
     const block = prompt.slice(prompt.indexOf("# People who have left"));
     assert.ok(prompt.includes("# People who have left the organization"), prompt);
@@ -225,8 +228,8 @@ describe("someone marked left", () => {
 
 describe("record_decision's owner areas follow the roster (§app.requirements/owner-area)", () => {
   test("an area added mid-session is offered at the next run; the conversation's tools stay exactly its own", async () => {
-    const ana = orgs.addPerson(org.id, { name: "Ana Owner", role: "Lead", decides: ["website"] });
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Areas", goal: "g" });
+    const ana = await orgs.addPerson(org.id, { name: "Ana Owner", role: "Lead", decides: ["website"] });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: ana.id, publicTitle: "Areas", goal: "g" });
     const calls: unknown[][] = [];
     const { chat, release } = await heldChat(c.path, { tools: calls });
     release();
@@ -235,7 +238,7 @@ describe("record_decision's owner areas follow the roster (§app.requirements/ow
     await until(() => calls.length === 1 && !chat.session.isStreaming);
     assert.ok(enumOf(calls[0]!).includes("website"));
     assert.ok(!enumOf(calls[0]!).includes("hosting"));
-    orgs.applyChange(org.id, ana.id, { decides: ["website", "hosting"] }, { kind: "operator" });
+    await orgs.applyChange(org.id, ana.id, { decides: ["website", "hosting"] }, { kind: "operator" });
     says(chat, c.sessionId, ana.id, "second");
     await until(() => calls.length === 2 && !chat.session.isStreaming);
     assert.ok(enumOf(calls[1]!).includes("hosting"), JSON.stringify(enumOf(calls[1]!)));
@@ -243,8 +246,8 @@ describe("record_decision's owner areas follow the roster (§app.requirements/ow
   });
 
   test("through pi's own tool call: an unknown owner area is refused naming the choices; a case variant is stored as the roster spells it", async () => {
-    const kim = orgs.addPerson(org.id, { name: "Kim Picks", role: "Lead", decides: ["finance"] });
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Picks", goal: "g" });
+    const kim = await orgs.addPerson(org.id, { name: "Kim Picks", role: "Lead", decides: ["finance"] });
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Picks", goal: "g" });
     const call = (id: string, ownerArea: string) => ({ type: "toolCall", id, name: "record_decision", arguments: { area: "payroll dates", ownerArea, statement: "Pay on the 1st.", quote: "the 1st" } });
     const { chat, release } = await heldChat(c.path, { script: [[call("t1", "payroll"), call("t2", "Finance")]] });
     release();
@@ -261,13 +264,13 @@ describe("record_decision's owner areas follow the roster (§app.requirements/ow
 
 describe("an earlier holder invited to a new offer", () => {
   test("is a never-holder of that offer: no holder's name, nothing past the card, no stream, 410 once withdrawn", async () => {
-    const tony = person("To Earlier");
-    const maria = person("Ma Claims");
-    const carl = person("Ca Never");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Two stretches", goal: "g" });
+    const tony = await person("To Earlier");
+    const maria = await person("Ma Claims");
+    const carl = await person("Ca Never");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Two stretches", goal: "g" });
     baton.noteMessage(c.sessionId, tony.id);
-    await loadout.moveBaton(c.sessionId, OPERATOR, "(taken back)");
-    const out = await loadout.offerBaton(c.sessionId, [tony.id, maria.id, carl.id], "Next?");
+    await baton.takeBack(c.sessionId);
+    const out = await baton.offerTo(c.sessionId, [tony.id, maria.id, carl.id], "Next?", "");
     const tonyOffer = out.links.find((l) => l.personId === tony.id)!.token;
     baton.noteMessage(c.sessionId, maria.id);
     assert.equal(offerOutsider(tonyOffer), true, "gets no streaming text");
@@ -277,19 +280,19 @@ describe("an earlier holder invited to a new offer", () => {
     assert.equal(view.items.at(-1)!.kind, "offer", "sees up to the card");
     assert.equal(view.viewer!.reason, "taken");
     // Maria held it, Tony did not: withdrawn, his offer link is dead; his first hand-off's still reads.
-    await loadout.moveBaton(c.sessionId, OPERATOR, "(offer withdrawn)");
+    await baton.withdrawOffer(c.sessionId);
     assert.deepEqual(baton.linkAccess(tonyOffer), { ok: false, status: 410, why: "withdrawn" });
     assert.equal(baton.linkAccess(c.token!).ok, true);
     assert.equal(baton.linkAccess(out.links.find((l) => l.personId === maria.id)!.token).ok, true);
   });
 
   test("his older link, from an earlier hand-off, is cut at the offer the same way until the baton comes to him directly", async () => {
-    const tony = person("To Old Link");
-    const maria = person("Ma Holds");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Old link", goal: "g" });
+    const tony = await person("To Old Link");
+    const maria = await person("Ma Holds");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Old link", goal: "g" });
     baton.noteMessage(c.sessionId, tony.id);
-    await loadout.moveBaton(c.sessionId, OPERATOR, "(taken back)");
-    await loadout.offerBaton(c.sessionId, [tony.id, maria.id], "Next?");
+    await baton.takeBack(c.sessionId);
+    await baton.offerTo(c.sessionId, [tony.id, maria.id], "Next?", "");
     baton.noteMessage(c.sessionId, maria.id);
     assert.equal(offerOutsider(c.token!), true, "his first hand-off's link gets no streaming text");
     const view = await viewForToken(c.token!);
@@ -297,7 +300,7 @@ describe("an earlier holder invited to a new offer", () => {
     assert.equal(view.holder, null, "not told who holds it");
     assert.equal(view.items.at(-1)!.kind, "offer", "sees up to the card");
     // Handed to him directly after the offer: that old link reads the whole conversation again.
-    await loadout.moveBaton(c.sessionId, tony.id, "Your turn again?");
+    await baton.handoffTo(c.sessionId, tony.id, "Your turn again?", "");
     assert.equal(offerOutsider(c.token!), false);
     const again = await viewForToken(c.token!);
     assert.ok(!("status" in again));
@@ -307,9 +310,9 @@ describe("an earlier holder invited to a new offer", () => {
   });
 
   test("the holder's older link, while a newer one of theirs holds the baton, says to use the newer one", async () => {
-    const tony = person("To Newer");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Newer link", goal: "g" });
-    await loadout.moveBaton(c.sessionId, OPERATOR, "(taken back)");
+    const tony = await person("To Newer");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Newer link", goal: "g" });
+    await baton.takeBack(c.sessionId);
     const res = await post(`/api/baton/${c.sessionId}/handoff`, { to: tony.id, question: "Back to you" });
     assert.equal(res.status, 200);
     assert.equal(baton.batonById(c.sessionId)!.row.holder, tony.id);
@@ -326,8 +329,8 @@ describe("moves, the starting turn and the message limit together", () => {
   const tick = (ms = 30) => new Promise((r) => setTimeout(r, ms));
 
   test("Take back while a message's turn is starting: its run is stopped when it begins, and the hand-off comes after it", async () => {
-    const kim = person("Kim Start");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Starting", goal: "g" });
+    const kim = await person("Kim Start");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Starting", goal: "g" });
     const { chat, start } = await heldChat(c.path, { holdStart: true });
     says(chat, c.sessionId, kim.id, "first words");
     await tick();
@@ -349,15 +352,14 @@ describe("moves, the starting turn and the message limit together", () => {
   });
 
   test("the budget stop waits for the reply to the last allowed message, even while its turn is starting, then moves", async () => {
-    const lee = person("Lee Limit");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: lee.id, publicTitle: "Limit", goal: "g", messagesMax: 1 });
+    const lee = await person("Lee Limit");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: lee.id, publicTitle: "Limit", goal: "g", messagesMax: 1 });
     const { chat, start, release } = await heldChat(c.path, { holdStart: true });
     says(chat, c.sessionId, lee.id, "the last one");
-    await loadout.budgetStop(c.sessionId);
+    await tick();
     assert.equal(holderOf(c.sessionId), lee.id, "not while the turn is starting");
     start();
     await until(() => chat.session.isStreaming);
-    await loadout.budgetStop(c.sessionId);
     assert.equal(holderOf(c.sessionId), lee.id, "nor mid-reply");
     release();
     await until(() => holderOf(c.sessionId) === OPERATOR);
@@ -367,10 +369,10 @@ describe("moves, the starting turn and the message limit together", () => {
   });
 
   test("a hand-off or an offer the limit refuses leaves the reply in flight alone", async () => {
-    const amy = person("Amy Cap");
-    const bo = person("Bo Cap");
-    const di = person("Di Cap");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: amy.id, publicTitle: "Capped", goal: "g", messagesMax: 1 });
+    const amy = await person("Amy Cap");
+    const bo = await person("Bo Cap");
+    const di = await person("Di Cap");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: amy.id, publicTitle: "Capped", goal: "g", messagesMax: 1 });
     const { chat, release } = await heldChat(c.path);
     says(chat, c.sessionId, amy.id, "last");
     await until(() => chat.session.isStreaming);
@@ -403,13 +405,13 @@ describe("a move that stops a reply drops nothing queued behind it", () => {
   for (const [how, move] of [
     ["Take back", async (sid: string) => assert.equal((await post(`/api/baton/${sid}/take`)).status, 200)],
     ["someone leaving", async (sid: string, by: string) => {
-      orgs.applyChange(org.id, by, { status: "left" }, { kind: "operator" });
+      await orgs.applyChange(org.id, by, { status: "left" }, { kind: "operator" });
       await until(() => baton.batonById(sid)!.row.holder === OPERATOR);
     }],
   ] as const) {
     test(`${how} mid-reply: every message queued behind the reply enters as its sender's, before the hand-off, with no reply`, async () => {
-      const kay = person(`Kay Queue ${how}`);
-      const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kay.id, publicTitle: "Queued", goal: "g" });
+      const kay = await person(`Kay Queue ${how}`);
+      const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kay.id, publicTitle: "Queued", goal: "g" });
       const { chat } = await heldChat(c.path);
       says(chat, c.sessionId, kay.id, "first");
       await until(() => chat.session.isStreaming);
@@ -430,8 +432,8 @@ describe("a move that stops a reply drops nothing queued behind it", () => {
 
 describe("a clean close keeps what is queued", () => {
   test("archiving a baton session mid-reply writes each queued message into the transcript as its sender's", async () => {
-    const may = person("May Close");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: may.id, publicTitle: "Closing", goal: "g" });
+    const may = await person("May Close");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: may.id, publicTitle: "Closing", goal: "g" });
     const { chat } = await heldChat(c.path);
     says(chat, c.sessionId, may.id, "CLOSE-FIRST");
     await until(() => chat.session.isStreaming);
@@ -457,9 +459,9 @@ describe("a clean close keeps what is queued", () => {
 
 describe("the model reads who wrote each message", () => {
   test("after Take back with queued messages, each message in the model's context carries its own author, and the move is a line of its own", async () => {
-    const kim = person("Kim Author");
-    const lee = person("Lee Author");
-    const c = baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Authors", goal: "g" });
+    const kim = await person("Kim Author");
+    const lee = await person("Lee Author");
+    const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: kim.id, publicTitle: "Authors", goal: "g" });
     const seen: unknown[][] = [];
     const { chat, release } = await heldChat(c.path, { seen });
     says(chat, c.sessionId, kim.id, "KIM-FIRST");
@@ -502,8 +504,8 @@ describe("a dead link says why only when it expired or its question went to some
   };
 
   test("expired: why \"expired\"; withdrawn: why \"withdrawn\"; turned off, closed or its person left: no reason", async () => {
-    const ex = person("Ex Pired");
-    const e = baton.createBaton({ orgId: org.id, projectId: project.id, to: ex.id, publicTitle: "Expired", goal: "g" });
+    const ex = await person("Ex Pired");
+    const e = await baton.createBaton({ orgId: org.id, projectId: project.id, to: ex.id, publicTitle: "Expired", goal: "g" });
     const file = join(stateRoot(), "baton-links.json");
     const raw = JSON.parse(readFileSync(file, "utf8")) as { links: { sessionId: string; expiresAt: string }[] };
     for (const l of raw.links) if (l.sessionId === e.sessionId) l.expiresAt = new Date(Date.now() - 1000).toISOString();
@@ -511,27 +513,27 @@ describe("a dead link says why only when it expired or its question went to some
     assert.deepEqual(baton.linkAccess(e.token!), { ok: false, status: 410, why: "expired" });
     assert.deepEqual(await gone(e.token!), { status: 410, body: { error: "This link is no longer active.", code: "gone", why: "expired" } });
 
-    const a = person("Wi Holder");
-    const b = person("Wi Never");
-    const w = baton.createBaton({ orgId: org.id, projectId: project.id, to: [a.id, b.id], publicTitle: "Withdrawn", goal: "g" });
+    const a = await person("Wi Holder");
+    const b = await person("Wi Never");
+    const w = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [a.id, b.id], publicTitle: "Withdrawn", goal: "g" });
     const never = w.links!.find((l) => l.personId === b.id)!.token;
     baton.noteMessage(w.sessionId, a.id);
-    await loadout.moveBaton(w.sessionId, OPERATOR, "(offer withdrawn)");
+    await baton.withdrawOffer(w.sessionId);
     assert.equal((await gone(never)).body.why, "withdrawn");
 
-    const off = person("Tu Rnedoff");
-    const t = baton.createBaton({ orgId: org.id, projectId: project.id, to: off.id, publicTitle: "Off", goal: "g" });
+    const off = await person("Tu Rnedoff");
+    const t = await baton.createBaton({ orgId: org.id, projectId: project.id, to: off.id, publicTitle: "Off", goal: "g" });
     baton.revokeCurrent(t.sessionId);
     assert.deepEqual(await gone(t.token!), { status: 410, body: { error: "This link is no longer active.", code: "gone" } });
 
-    const cl = person("Cl Osed");
-    const k = baton.createBaton({ orgId: org.id, projectId: project.id, to: cl.id, publicTitle: "Closed", goal: "g" });
-    baton.closeBaton(k.sessionId);
+    const cl = await person("Cl Osed");
+    const k = await baton.createBaton({ orgId: org.id, projectId: project.id, to: cl.id, publicTitle: "Closed", goal: "g" });
+    await baton.closeBaton(k.sessionId);
     assert.equal((await gone(k.token!)).body.why, undefined);
 
-    const lf = person("Le Ft");
-    const l = baton.createBaton({ orgId: org.id, projectId: project.id, to: lf.id, publicTitle: "Left", goal: "g" });
-    orgs.applyChange(org.id, lf.id, { status: "left" }, { kind: "operator" });
+    const lf = await person("Le Ft");
+    const l = await baton.createBaton({ orgId: org.id, projectId: project.id, to: lf.id, publicTitle: "Left", goal: "g" });
+    await orgs.applyChange(org.id, lf.id, { status: "left" }, { kind: "operator" });
     await until(() => !baton.linkAccess(l.token!).ok);
     assert.deepEqual(await gone(l.token!), { status: 410, body: { error: "This link is no longer active.", code: "gone" } });
   });

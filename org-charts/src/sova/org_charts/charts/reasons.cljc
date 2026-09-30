@@ -4,7 +4,7 @@
    renders today's English sentence, and says whether it is a reason to look soon and whether it is
    one of the overseer's own acts (today's `soon` and `own` arguments)."
   (:require
-    [sova.org-charts.charts.common :as c]))
+    [sova.org-charts.charts.base :as b]))
 
 (defn- plural [n one many] (if (= n 1) one many))
 
@@ -33,21 +33,23 @@
                                  (str n " decision" (plural n " was" "s were") " promoted into the spec."))
           "reconcile/drafted" (str n " decision" (plural n " is" "s are") " drafted and promotable.")
           "coding/settled" (str "The coding session \"" title "\" " (if failed "stopped with an error" "finished its turn") ".")
+          "build/not-prompted" (str "The coding session \"" title "\" started, but its mode could not be set, so its first prompt was not sent.")
           "build/merged" (str "The operator merged \"" title "\" (" branch ") into " target ".")
           "build/merge-refused" (str "Merge Branch for \"" title "\" was refused: " reason)
-          "held/looks" (str "Today's looks are back (refused " (c/clock-time at) ").")
-          "held/day" (str "Today's allowance is back: it may " (do-what (:kind params)) " again (refused " (c/clock-time at) ").")
+          "held/looks" (str "Today's looks are back (refused " (b/clock-time at) ").")
+          "held/day" (str "Today's allowance is back: it may " (do-what (:kind params)) " again (refused " (b/clock-time at) ").")
           "held/message" (str "The operator's last message reached its limit on " what "; it may go on within today's allowance.")
           "held/raised" (str "You raised the limit on " what ".")
-          "item/stalled" (str "The gap " item " has waited in " phase " since " (c/clock-time since) ".")
+          "item/stalled" (str "The gap " item " has waited in " phase " since " (b/clock-time since) ".")
           "item/answered-nothing" (str "The gathering session for " item " ended with no decision.")
           "item/reopened" (str "A newer decision reopened " item ".")
           "item/built" (str item " is built: merged, and every decision it rests on is built per the spec.")
+          "hold/review" (str what " waits for your review (hold " (or (:hold params) (:id params)) "): approve it, or cancel it with a reason. It does not go ahead until you do.")
           (str kind)))))
 
 (def soon-kinds
-  #{"baton/done" "baton/asked-operator" "coding/settled" "build/merged" "build/merge-refused"
-    "held/looks" "held/day" "held/raised" "item/stalled"})
+  #{"baton/done" "baton/asked-operator" "coding/settled" "build/not-prompted" "build/merged" "build/merge-refused"
+    "held/looks" "held/day" "held/raised" "item/stalled" "hold/review"})
 
 (defn soon?
   "A reason to look soon (today's `soon` argument)."

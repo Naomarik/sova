@@ -69,9 +69,10 @@ import type {
 } from "../../shared/protocol";
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
-import type { NamedChange, OrgDetail, OrgsInfo, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
+import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
 import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
+import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
 import type { CodingStartInput, CodingStartResult, ItemCodeInput, ItemCodeResult, ItemSendInput, ItemSendResult, ProjectOverseerInfo, ProjectOverseerPatch } from "../../shared/project-overseer";
 import type { HostBrowserAccessChange, HostBrowserAccessResult, HostRename, HostRenameResult, MeshDetails } from "../../shared/mesh-details";
@@ -92,6 +93,7 @@ import type {
   SummarizerSettingsInfo,
 } from "../../shared/protocol";
 import type { TeamDefaults, TeamDefaultsInfo, TeamDefaultsSaveResult } from "../../shared/team-defaults";
+import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../shared/provider-limits";
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
@@ -193,6 +195,12 @@ export const getModelPolicy = (host?: string | null) => request<ModelPolicy>(hos
     the server refuses a model it forbids, so this is a rule, not a filter. */
 export const putModelPolicy = (policy: ModelPolicy) =>
   request<ModelPolicy>("/api/settings/models", { method: "PUT", body: JSON.stringify(policy) });
+/** How many of each provider's requests may run at once on this device (§app.provider-limits/setting). */
+export const getProviderLimits = () => request<ProviderLimitsInfo>("/api/settings/provider-limits");
+export const putProviderLimits = (limits: ProviderLimits) =>
+  request<ProviderLimitsInfo>("/api/settings/provider-limits", { method: "PUT", body: JSON.stringify({ limits }) });
+/** Who waits on a provider's limit now, by session id (§app.provider-limits/waiting-shown). */
+export const getProviderWaiting = () => request<ProviderWaiting>("/api/provider-limits/waiting");
 
 /** Delegate mode's routing (Settings → Modes → Delegate): which worker each kind of work goes to. */
 export const getDelegateSettings = () => request<DelegateSettingsInfo>("/api/settings/delegate");
@@ -994,9 +1002,15 @@ export const attachOrg = (dir: string, confirm = false) => request<OrgDetail>("/
 export const setOperatorName = (name: string) => request<OrgsInfo>("/api/orgs/operator", jsonInit("PUT", { name }));
 export const getOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`);
 export const patchOrg = (id: string, patch: { name?: string; about?: string }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("PATCH", patch));
+/** r13: the company's zone and working hours, the default for anyone without their own ("" / null clear them). */
+export const putOrgHours = (id: string, body: { tz: string; hours: PersonHours | null }) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/hours`, jsonInit("PUT", body));
+/** r13: the company's zone or hours back to history line `at`'s `from`; refused when that field changed since. */
+export const revertOrgHours = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/hours/revert`, jsonInit("POST", { at }));
 /** The org's About text back to history line `at`'s `from` (§app.organizations/about). */
 export const revertOrgAbout = (id: string, at: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/about/revert`, jsonInit("POST", { at }));
 export const detachOrg = (id: string) => request<{ ok: true }>(`/api/orgs/${encodeURIComponent(id)}`, jsonInit("DELETE"));
+/** Reload the org's charts from its workspace (a fixed journal, restored snapshots): `problems` is what is still wrong. */
+export const reloadOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/reload`, jsonInit("POST"));
 export const commitOrg = (id: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/commit`, jsonInit("POST"));
 export const setOrgRemote = (id: string, url: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/remote`, jsonInit("PUT", { url }));
 export const addPerson = (id: string, person: PersonInput) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people`, jsonInit("POST", person));
@@ -1064,7 +1078,7 @@ export const withdrawOffer = (sid: string) => request<BatonInfo>(`/api/baton/${e
 export const inviteeLink = (sid: string, personId: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link?person=${encodeURIComponent(personId)}`);
 /** The operator hands the session to a person ("Hand this session to Bob"). */
 export const handBaton = (sid: string, to: string, question: string, briefing?: string) =>
-  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
+  request<{ info?: BatonInfo; link?: string; at?: string; linkWarning?: string; offHours?: string }>(`/api/baton/${encodeURIComponent(sid)}/handoff`, jsonInit("POST", { to, question, ...(briefing ? { briefing } : {}) }));
 export const approvePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/approve`, jsonInit("POST"));
 export const declinePerson = (id: string, pid: string) => request<OrgDetail>(`/api/orgs/${encodeURIComponent(id)}/people/${encodeURIComponent(pid)}/decline`, jsonInit("POST"));
 export const orgChanges = (id: string, limit = 50) => request<NamedChange[]>(`/api/orgs/${encodeURIComponent(id)}/changes?limit=${limit}`);
@@ -1087,11 +1101,25 @@ export const setOwnerArea = (orgId: string, projectId: string, did: string, owne
 export const settleSpecText = (orgId: string, projectId: string, did: string, action: "keep" | "restore") =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/decisions/${encodeURIComponent(did)}/text`, jsonInit("POST", { action }));
 export const routeConflict = (orgId: string, projectId: string, cid: string, to?: string) =>
-  request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
+  request<DecisionsInfo & { offHours?: string }>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/route`, jsonInit("POST", to ? { to } : {}));
 export const resolveConflict = (orgId: string, projectId: string, cid: string, input: ConflictResolveInput) =>
   request<DecisionsInfo>(`${projectBase(orgId, projectId)}/conflicts/${encodeURIComponent(cid)}/resolve`, jsonInit("POST", input));
 export const setSpecFrozen = (orgId: string, projectId: string, frozen: boolean) =>
   request<SpecStatus>(`${projectBase(orgId, projectId)}/spec`, jsonInit("PATCH", { frozen }));
+
+// ---- a project's Pipeline and the acts waiting in a hold (§app.project-overseer/pipeline, /holds) -----
+
+const pipelineBase = (orgId: string, projectId: string) => `${projectBase(orgId, projectId)}/pipeline`;
+export const getPipeline = (orgId: string, projectId: string) => request<PipelineInfo>(pipelineBase(orgId, projectId));
+export const holdGap = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineInfo>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/hold`, jsonInit("POST", {}));
+export const resumeGap = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineInfo>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/resume`, jsonInit("POST", {}));
+export const getGapTimeline = (orgId: string, projectId: string, itemId: string) =>
+  request<PipelineTimeline>(`${pipelineBase(orgId, projectId)}/${encodeURIComponent(itemId)}/timeline`);
+/** Stop a held act before it goes ahead (the operator's Cancel). */
+export const cancelHeldAct = (orgId: string, holdId: string, reason?: string) =>
+  request<{ ok: true }>(`/api/orgs/${encodeURIComponent(orgId)}/held/${encodeURIComponent(holdId)}/cancel`, jsonInit("POST", reason ? { reason } : {}));
 
 // ---- a project's cost at API prices (§app/project-costs) ---------------------------------------------
 

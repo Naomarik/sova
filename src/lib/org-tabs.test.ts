@@ -59,3 +59,10 @@ test("a project whose main stakeholder left waits in Projects until one is picke
   assert.equal(stakeholderToPick({ stakeholder: "p_a", stakeholderCleared: cleared }), false);
   assert.equal(stakeholderToPick({}), false);
 });
+
+test("held acts wait in Projects (§app.project-overseer/holds)", () => {
+  const tabs = orgTabsOf({ batons: [], roster: [], projectList: [], problems: [], git, needsYou: { replies: 0, links: 0, proposals: 0, conflicts: 0, held: 1 } });
+  const projects = tabs.find((t) => t.id === "projects")!;
+  assert.equal(projects.waiting, 1);
+  assert.equal(projects.waitingText, "1 held act");
+});

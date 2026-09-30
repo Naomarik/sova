@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, createUniqueId, For, type JSX, on, onCleanup, Show } from "solid-js";
+import { withOffHours } from "../lib/working-hours";
 import { OWNER_AREA_NONE, type Conflict, type DecisionRow, type DecisionsInfo, type PromoteResult } from "../../shared/decisions";
 import type { OrgDetail, OrgProject } from "../../shared/orgs";
 import {
@@ -26,6 +27,7 @@ import { stakeholderView } from "../lib/stakeholder";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { OwnerProjectCard } from "./OwnerProjectCard";
+import { PipelineCard } from "./PipelineCard";
 import { ProjectCostCard } from "./ProjectCostCard";
 import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
 import { Banner, Chip } from "./ui";
@@ -198,6 +200,9 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
         )}
       </Show>
       <Show when={org()}>{(o) => <ProjectOverseerPanel org={o()} projectId={props.projectId} onBusy={setOverseerBusy} archived={!!archived()} />}</Show>
+      <Show when={`${props.orgId}/${props.projectId}`} keyed>
+        <PipelineCard orgId={props.orgId} projectId={props.projectId} />
+      </Show>
       <Show when={`${props.orgId}/${props.projectId}`} keyed>
         <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
       </Show>
@@ -547,7 +552,21 @@ function ConflictItem(props: CardProps & { org: OrgDetail | undefined; conflict:
             class="orgs-inline"
             onSubmit={(e) => {
               e.preventDefault();
-              void props.act("route", () => routeConflict(props.orgId, props.projectId, c().id, to() || undefined), "Sent. A hand-off session asks them to settle it.");
+              // r7: routed to someone off hours, it still went at once; the done line says when their hours start.
+              let offHours: string | undefined;
+              const who = refName(props.info.names, to() || c().routedTo);
+              void props
+                .act("route", async () => {
+                  const r = await routeConflict(props.orgId, props.projectId, c().id, to() || undefined);
+                  offHours = r.offHours;
+                  return r;
+                })
+                .then((ok) => {
+                  if (!ok) return;
+                  const done = withOffHours("Sent. A hand-off session asks them to settle it.", who, offHours, Date.now());
+                  toast(done);
+                  announce(done);
+                });
             }}
           >
             <label class="field orgs-grow">
@@ -758,7 +777,7 @@ function DecisionsCard(props: CardProps) {
               <ul class="project-decisions">
                 <For each={g.decisions}>
                   {(d) => (
-                    <li class="project-decision" classList={{ "project-decision-old": d.state === "superseded" }}>
+                    <li class="project-decision" id={`decision-${d.id}`} tabIndex={-1} classList={{ "project-decision-old": d.state === "superseded" }}>
                       <Show when={promotable(d)} fallback={<span class="project-check-space" aria-hidden="true" />}>
                         <label class="toggle project-check" title="Select to promote">
                           <input

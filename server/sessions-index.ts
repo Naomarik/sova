@@ -1117,7 +1117,7 @@ export async function cleanupSessions(req: CleanupRequest): Promise<CleanupResul
     const matches = req.mode === "age" ? st.mtimeMs < cutoff : req.mode === "husks" ? await isZeroInput(path, st.size) : true;
     if (!matches) continue;
     // A project's coding session is empty until the operator's first message (New Coding Session):
-    // its started.json row names it, so it is never swept as a husk.
+    // its build chart names it, so it is never swept as a husk.
     if (req.mode === "husks" && (codingIds ??= orgCodingIds()).has(idOf(path))) continue;
     // Overseer files (current and history) are never swept by age or as husks: a fresh Overseer
     // is a husk by definition, and its history is pruned by /clear itself (paths mode).

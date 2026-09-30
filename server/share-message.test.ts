@@ -33,6 +33,7 @@ const { registerOrgRoutes } = await import("./org-routes");
 const { LINK_WARNINGS } = await import("../shared/public-links");
 const publicLinks = await import("./public-links");
 const linksEvents = await import("./share/links-events");
+const { replyEnded } = await import("./org-test-fixtures");
 
 after(async () => {
   await disposeAllChats();
@@ -41,11 +42,10 @@ after(async () => {
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
-const maria = orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
-const start = (to: string | string[], extra: Record<string, unknown> = {}) =>
-  baton.createBaton({ orgId: org.id, projectId: project.id, to, publicTitle: "Hosting", goal: "Find the server", ...extra });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+const maria = await orgs.addPerson(org.id, { name: "Maria Lopez", role: "Payroll" });
+const start = (to: string | string[], extra: Record<string, unknown> = {}) => baton.createBaton({ orgId: org.id, projectId: project.id, to, publicTitle: "Hosting", goal: "Find the server", ...extra });
 const rowOf = (sid: string) => baton.batonById(sid)!.row;
 
 const share = createShareApp();
@@ -79,7 +79,7 @@ function fakeSdk(chat: Awaited<ReturnType<typeof acquireChat>>): string[] {
 
 describe("the share message route", () => {
   test("several messages at once to a chat whose run hasn't started: every accepted one enters, and only those count", async () => {
-    const c = start(tony.id);
+    const c = await start(tony.id);
     const got = fakeSdk(await acquireChat(c.path));
     const res = await Promise.all(["COLD_A", "COLD_B", "COLD_C"].map((t) => post(c.token!, t)));
     assert.deepEqual(
@@ -92,7 +92,7 @@ describe("the share message route", () => {
   });
 
   test("a model the runtime refuses: 503, nothing counted, the offer not claimed", async () => {
-    const c = start([tony.id, maria.id]);
+    const c = await start([tony.id, maria.id]);
     const chat = await acquireChat(c.path);
     fakeSdk(chat);
     const tok = (id: string) => c.links!.find((l) => l.personId === id)!.token;
@@ -112,7 +112,7 @@ describe("the share message route", () => {
   });
 
   test("a runtime refusal at the hand-over (a foreign write): 503, and the count and the claim are undone", async () => {
-    const c = start([tony.id, maria.id]);
+    const c = await start([tony.id, maria.id]);
     const chat = await acquireChat(c.path);
     fakeSdk(chat);
     const before = rowOf(c.sessionId);
@@ -127,11 +127,13 @@ describe("the share message route", () => {
   });
 
   test("at the limit the baton goes to the operator and the session needs them", async () => {
-    const c = start(tony.id, { messagesMax: 1 });
+    const c = await start(tony.id, { messagesMax: 1 });
     const chat = await acquireChat(c.path);
     const got = fakeSdk(chat);
     assert.equal((await post(c.token!, "one")).status, 202);
     await until(() => got.length === 1 && !chat.session.isStreaming);
+    // The reply to the last allowed message ends (this fake SDK emits no run events): the stop moves then.
+    await replyEnded(c.sessionId);
     const res = await post(c.token!, "two");
     assert.equal(res.status, 409);
     assert.equal(((await res.json()) as { code: string }).code, "budget");
@@ -151,24 +153,24 @@ describe("the share message route", () => {
   });
 
   test("at the limit nobody but the operator can be handed it; the operator is told to extend; Extend lets them write", async () => {
-    const c = start(OPERATOR, { messagesMax: 1 });
+    const c = await start(OPERATOR, { messagesMax: 1 });
     const chat = await acquireChat(c.path);
     fakeSdk(chat);
     chat.specialEntry!.clientSend!(c.path, { images: 0 });
-    assert.throws(() => baton.handTo(c.sessionId, tony.id, "q", ""), /message limit/);
-    assert.throws(() => baton.startOffer(c.sessionId, [tony.id, maria.id], "q"), /message limit/);
+    await assert.rejects(baton.handTo(c.sessionId, tony.id, "q", ""), /message limit/);
+    await assert.rejects(baton.offerTo(c.sessionId, [tony.id, maria.id], "q", ""), /message limit/);
     assert.throws(() => chat.specialEntry!.clientSend!(c.path, { images: 0 }), /Extend it to write/);
-    assert.throws(() => baton.extendBudget(c.sessionId, 0), /from 1 to/);
-    assert.throws(() => baton.extendBudget(c.sessionId, 2.5), /whole number/);
-    assert.throws(() => baton.extendBudget(c.sessionId, MESSAGES_CAP), (e: { status?: number; message: string }) => /at most/.test(e.message) && e.status === 400);
-    assert.equal(baton.extendBudget(c.sessionId, 5).budget.messagesMax, 6);
+    await assert.rejects(baton.extendBudget(c.sessionId, 0), /from 1 to/);
+    await assert.rejects(baton.extendBudget(c.sessionId, 2.5), /whole number/);
+    await assert.rejects(baton.extendBudget(c.sessionId, MESSAGES_CAP), (e: { status?: number; message: string }) => /at most/.test(e.message) && e.status === 400);
+    assert.equal((await baton.extendBudget(c.sessionId, 5)).budget.messagesMax, 6);
     assert.equal(chat.specialEntry!.clientSend!(c.path, { images: 0 }).by, OPERATOR);
-    baton.closeBaton(c.sessionId);
-    assert.throws(() => baton.extendBudget(c.sessionId, 5), /closed/);
+    await baton.closeBaton(c.sessionId);
+    await assert.rejects(baton.extendBudget(c.sessionId, 5), /closed/);
   });
 
   test("Extend past the cap is a 400 on the route, like any bad `by`", async () => {
-    const c = start(tony.id, { messagesMax: 1 });
+    const c = await start(tony.id, { messagesMax: 1 });
     const app = new Hono();
     registerOrgRoutes(app);
     const extend = (by: number) => app.request(`/api/baton/${c.sessionId}/extend`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ by }) });
@@ -177,7 +179,7 @@ describe("the share message route", () => {
     const over = await extend(1);
     assert.equal(over.status, 400);
     assert.match(((await over.json()) as { error: string }).error, /at most/);
-    baton.closeBaton(c.sessionId);
+    await baton.closeBaton(c.sessionId);
   });
 
   test("the per-token window forgets tokens with nothing recent", () => {
@@ -190,7 +192,7 @@ describe("the share message route", () => {
 
 describe("the operator's composer in a baton session", () => {
   test("images are refused, and a refused send neither counts nor clears Needs you", async () => {
-    const c = start(OPERATOR);
+    const c = await start(OPERATOR);
     const chat = await acquireChat(c.path);
     const got = fakeSdk(chat);
     const sent: { type: string; code?: string; message?: string }[] = [];
@@ -214,13 +216,13 @@ describe("the operator's composer in a baton session", () => {
 });
 
 describe("the message limit is settable", () => {
-  test("the default comes from Settings; a start may set its own; both are bounded", () => {
-    assert.equal(rowOf(start(OPERATOR).sessionId).budget.messagesMax, MESSAGES_DEFAULT);
+  test("the default comes from Settings; a start may set its own; both are bounded", async () => {
+    assert.equal(rowOf((await start(OPERATOR)).sessionId).budget.messagesMax, MESSAGES_DEFAULT);
     assert.deepEqual(settings.writeBatonSettings({ messagesMax: 7 }), { messagesMax: 7 });
-    assert.equal(rowOf(start(OPERATOR).sessionId).budget.messagesMax, 7);
-    assert.equal(rowOf(start(OPERATOR, { messagesMax: 3 }).sessionId).budget.messagesMax, 3);
+    assert.equal(rowOf((await start(OPERATOR)).sessionId).budget.messagesMax, 7);
+    assert.equal(rowOf((await start(OPERATOR, { messagesMax: 3 })).sessionId).budget.messagesMax, 3);
     for (const bad of [0, -1, 2.5, MESSAGES_CAP + 1, "10"]) {
-      assert.throws(() => start(OPERATOR, { messagesMax: bad }), /messagesMax must be/, String(bad));
+      await assert.rejects(start(OPERATOR, { messagesMax: bad }), /messagesMax must be/, String(bad));
       assert.ok("error" in settings.writeBatonSettings({ messagesMax: bad }), String(bad));
     }
     assert.equal(settings.readBatonSettings().messagesMax, 7, "a refused write keeps the saved value");
@@ -288,7 +290,7 @@ describe("the share listener", async () => {
     const onUncaught = (err: unknown) => caught.push(err);
     process.on("uncaughtException", onUncaught);
     try {
-      const { ws, closed } = await open(start(tony.id).token!);
+      const { ws, closed } = await open((await start(tony.id)).token!);
       ws.send("x".repeat(5000));
       assert.equal(await closed, 1009);
       await new Promise((r) => setTimeout(r, 50));
@@ -299,7 +301,7 @@ describe("the share listener", async () => {
   });
 
   test("a body that never arrives is answered 408 at the request timeout, not five minutes later", async () => {
-    const token = start(tony.id).token!; // a real link: the route waits for the body
+    const token = (await start(tony.id)).token!; // a real link: the route waits for the body
     const t0 = Date.now();
     const reply = await new Promise<string>((resolve, reject) => {
       const sock = connect(port, "127.0.0.1", () => {
@@ -316,7 +318,7 @@ describe("the share listener", async () => {
   });
 
   test("an open socket on a link that stops reading is closed by the sweep, without waiting for a change", async () => {
-    const c = start(tony.id);
+    const c = await start(tony.id);
     const { closed } = await open(c.token!);
     assert.equal(sweepWatchers(), 0, "a live link stays");
     links.revokeLinks((l) => l.sessionId === c.sessionId);
@@ -325,10 +327,10 @@ describe("the share listener", async () => {
   });
 
   test("a share view carries no roster id: `by` is you, operator, or a label", async () => {
-    const c = start(tony.id);
+    const c = await start(tony.id);
     const lines = readFileSync(c.path, "utf8").trim().split("\n");
     let parent = JSON.parse(lines.at(-1)!).id as string;
-    const add = (id: string, by: string, text: string) => {
+    const add = async (id: string, by: string, text: string) => {
       const at = new Date().toISOString();
       appendFileSync(c.path, `${JSON.stringify({ type: "message", id, parentId: parent, timestamp: at, message: { role: "user", content: [{ type: "text", text }] } })}\n`);
       appendFileSync(c.path, `${JSON.stringify({ type: "custom", id: `${id}s`, parentId: id, timestamp: at, customType: BATON_SENT_ENTRY, data: { v: 1, targetId: id, by } })}\n`);

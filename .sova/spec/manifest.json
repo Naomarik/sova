@@ -3908,7 +3908,6 @@
         "server/baton.ts",
         "server/org-routes.ts",
         "server/baton.test.ts",
-        "server/baton-events.ts",
         "server/baton-offers.test.ts",
         "server/baton-handoff.test.ts",
         "server/baton-guards.ts",
@@ -4004,7 +4003,27 @@
         "server/share-message.test.ts",
         "src/components/Thread.tsx",
         "src/components/ChatView.tsx",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "org-charts/src/sova/org_charts/charts/baton.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/hours.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/reach_test.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/reach.cljc",
+        "src/components/Sidebar.tsx",
+        "src/lib/working-hours.ts",
+        "src/lib/working-hours.test.ts",
+        "src/orgs.css",
+        "src/components/PersonPage.tsx",
+        "src/lib/person-page.ts",
+        "server/attention.ts",
+        "server/person-page.ts",
+        "server/project-overseer.ts",
+        "shared/protocol.ts",
+        "org-charts/src/sova/org_charts/charts/rules/baton.cljc",
+        "org-charts/src/sova/org_charts/charts/item.cljc",
+        "org-charts/src/sova/org_charts/charts/proj.cljc",
+        "org-charts/src/sova/org_charts/charts/base.cljc",
+        "server/org-host/kill9-offer-child.ts",
+        "server/org-host/offer-reach.test.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -4088,7 +4107,9 @@
         "server/orgs.ts",
         "server/orgs.test.ts",
         "server/baton-offers.test.ts",
-        "server/org-routes.ts"
+        "server/org-routes.ts",
+        "org-charts/src/sova/org_charts/charts/rules/person.cljc",
+        "org-charts/src/sova/org_charts/charts/person.cljc"
       ],
       "requires": [
         "§app.organizations/roster"
@@ -4107,7 +4128,9 @@
         "src/lib/profile-changes.ts",
         "src/lib/profile-changes.test.ts",
         "src/components/PersonPage.tsx",
-        "server/person-page.ts"
+        "server/person-page.ts",
+        "org-charts/src/sova/org_charts/charts/person.cljc",
+        "server/org-effects.ts"
       ]
     },
     "§app.organizations/org-cards": {
@@ -4159,7 +4182,11 @@
         "src/lib/person-patch.test.ts",
         "src/components/OwnerCard.tsx",
         "src/lib/commit-now.ts",
-        "src/lib/commit-now.test.ts"
+        "src/lib/commit-now.test.ts",
+        "src/lib/api.ts",
+        "server/org-reload.test.ts",
+        "server/orgs.ts",
+        "server/org-routes.test.ts"
       ],
       "requires": [
         "§app.organizations/org-cards",
@@ -4213,7 +4240,9 @@
         "server/baton-guards.test.ts",
         "src/components/PersonPage.tsx",
         "server/person-page.ts",
-        "server/owner-page.ts"
+        "server/owner-page.ts",
+        "server/org-host/log.ts",
+        "server/org-host/privacy.test.ts"
       ]
     },
     "§app.organizations/projects": {
@@ -4241,7 +4270,8 @@
         "src/components/BatonStrip.tsx",
         "src/components/OrgsView.tsx",
         "server/baton-offers.test.ts",
-        "server/baton-handoff.test.ts"
+        "server/baton-handoff.test.ts",
+        "org-charts/src/sova/org_charts/charts/person.cljc"
       ],
       "requires": [
         "§app.organizations/roster",
@@ -4257,7 +4287,11 @@
         "server/org-routes.ts",
         "server/workspace-git.ts",
         "server/orgs.test.ts",
-        "server/org-holder.ts"
+        "server/org-holder.ts",
+        "org-charts/src/sova/org_charts/charts/org.cljc",
+        "server/org-reload.test.ts",
+        "server/owner.ts",
+        "server/org-routes.test.ts"
       ]
     },
     "§app.organizations/roster": {
@@ -4272,13 +4306,15 @@
         "server/baton.ts",
         "server/baton-loadout.ts",
         "server/baton-handoff.test.ts",
-        "server/owner.ts"
+        "server/owner.ts",
+        "org-charts/src/sova/org_charts/charts/rules/person.cljc",
+        "org-charts/src/sova/org_charts/charts/person.cljc"
       ]
     },
     "§app.organizations/workspace-repo": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/workspace-git.ts",
         "server/orgs.ts",
@@ -4304,9 +4340,9 @@
         "server/project-updates.ts",
         "server/person-links.ts",
         "server/org-holder.ts",
-        "server/baton-marks.ts",
         "server/baton-progress.test.ts",
-        "shared/baton.ts"
+        "shared/baton.ts",
+        "server/org-effects.ts"
       ]
     },
     "§app.organizations/wrap-up": {
@@ -4357,7 +4393,12 @@
         "server/project-overseer.ts",
         "src/components/ProjectOverseerPanel.tsx",
         "src/components/ProjectOverseerHead.tsx",
-        "server/org-portable.test.ts"
+        "server/org-portable.test.ts",
+        "server/org-envelope.ts",
+        "org-charts/src/sova/org_charts/charts/rules/levels.cljc",
+        "server/org-envelope.test.ts",
+        "server/org-stamp.ts",
+        "server/org-stamp.test.ts"
       ],
       "requires": [
         "§app.project-overseer/tools"
@@ -4372,7 +4413,10 @@
         "server/project-overseer-prompt.md",
         "shared/project-overseer.ts",
         "server/project-overseer-tools.test.ts",
-        "server/project-overseer.ts"
+        "server/project-overseer.ts",
+        "org-charts/src/sova/org_charts/charts/item.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/item_test.cljc",
+        "server/project-overseer-tools-charts.test.ts"
       ]
     },
     "§app.project-overseer/ideas-and-todos": {
@@ -4439,7 +4483,8 @@
         "server/project-overseer-prompt.md",
         "server/baton-loadout.ts",
         "server/chat-manager.ts",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "server/project-overseer-tools-charts.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -4453,7 +4498,6 @@
       "code": [
         "server/project-overseer.ts",
         "server/project-overseer-routes.ts",
-        "server/baton-events.ts",
         "server/reconcile.ts",
         "server/project-overseer.test.ts",
         "server/orgs.ts",
@@ -4467,7 +4511,15 @@
         "server/index.ts",
         "shared/project-overseer.ts",
         "server/baton-loadout.ts",
-        "server/project-coding-runtime.test.ts"
+        "server/project-coding-runtime.test.ts",
+        "org-charts/src/sova/org_charts/charts/base.cljc",
+        "org-charts/src/sova/org_charts/charts/watch.cljc",
+        "org-charts/src/sova/org_charts/charts/item.cljc",
+        "org-charts/src/sova/org_charts/charts/build.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/asks_table.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/asks_golden.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/asks_rules_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/asks_test.cljs"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels"
@@ -4574,7 +4626,11 @@
         "shared/decisions.ts",
         "server/project-overseer.ts",
         "server/baton.ts",
-        "shared/baton.ts"
+        "shared/baton.ts",
+        "server/decisions.ts",
+        "src/components/ProjectPage.tsx",
+        "org-charts/src/sova/org_charts/charts/conflict.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/pins_test.cljc"
       ],
       "requires": [
         "§app/baton",
@@ -4990,7 +5046,7 @@
     "§app.organizations/person-page": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.organizations/org-page",
         "§app.organizations/roster",
@@ -5111,7 +5167,8 @@
         "src/components/ProjectOverseerPanel.tsx",
         "src/lib/coding-worktrees.ts",
         "src/lib/coding-worktrees.test.ts",
-        "src/lib/api.ts"
+        "src/lib/api.ts",
+        "server/build-loadout.ts"
       ]
     },
     "§app.project-overseer/coding-worktrees": {
@@ -5136,7 +5193,14 @@
         "src/lib/coding-worktrees.ts",
         "src/lib/coding-worktrees.test.ts",
         "src/lib/api.ts",
-        "src/projects.css"
+        "src/projects.css",
+        "server/build-loadout.ts",
+        "org-charts/src/sova/org_charts/charts/proj.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/started.cljc",
+        "org-charts/src/sova/org_charts/charts/baton.cljc",
+        "org-charts/src/sova/org_charts/charts/build.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/started_test.cljc",
+        "server/org-started.test.ts"
       ]
     },
     "§app.requirements/promotion-commit": {
@@ -5563,7 +5627,8 @@
         "server/org-portable.test.ts",
         "server/org-about-privacy.test.ts",
         "src/lib/org-about.test.ts",
-        "server/overseer-org-view.ts"
+        "server/overseer-org-view.ts",
+        "org-charts/src/sova/org_charts/charts/org.cljc"
       ],
       "requires": [
         "§app.organizations/workspace-repo",
@@ -5692,7 +5757,8 @@
         "shared/orgs.ts",
         "src/components/OwnerCard.tsx",
         "src/lib/owner-card.ts",
-        "server/owner-page.test.ts"
+        "server/owner-page.test.ts",
+        "org-charts/src/sova/org_charts/charts/org.cljc"
       ]
     },
     "§app.owner-page/page": {
@@ -5775,7 +5841,9 @@
         "server/org-routes.ts",
         "server/workspace-git.ts",
         "src/lib/api.ts",
-        "src/components/OrgsView.tsx"
+        "src/components/OrgsView.tsx",
+        "org-charts/src/sova/org_charts/charts/org.cljc",
+        "server/org-effects.ts"
       ]
     },
     "§mesh.remote-sessions/org-pages": {
@@ -5843,7 +5911,8 @@
         "server/project-overseer.test.ts",
         "server/project-overseer-watch-run.test.ts",
         "server/stream-stub.ts",
-        "src/lib/project-overseer-view.test.ts"
+        "src/lib/project-overseer-view.test.ts",
+        "server/org-envelope.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels",
@@ -6106,7 +6175,7 @@
         "pi-config/extensions/subagents/adapters/pi.ts",
         "pi-config/extensions/claude-code/transcript-adapter.ts"
       ],
-      "evidence": "reviewed"
+      "evidence": "verified"
     },
     "§app/project-costs": {
       "kind": "surface",
@@ -6307,7 +6376,7 @@
     "§app.requirements/owner-area": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "requires": [
         "§app.requirements/routing",
         "§app.requirements/promotion",
@@ -6573,7 +6642,9 @@
         "shared/protocol.ts",
         "src/components/OverseerCards.tsx",
         "src/components/ChatView.tsx",
-        "src/components/Thread.tsx"
+        "src/components/Thread.tsx",
+        "server/org-routes.ts",
+        "server/orgs.ts"
       ],
       "requires": [
         "§app.overseer/confirm",
@@ -7496,7 +7567,7 @@
     "§chat.voice/capture": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "reviewed",
       "code": [
         "src/lib/voice/capture.ts",
         "src/lib/voice/wav.ts",
@@ -7813,13 +7884,7 @@
         "org-charts/package.json",
         "org-charts/shadow-cljs.edn",
         "org-charts/src/sova/org_charts/api.cljs",
-        "org-charts/src/sova/org_charts/charts/common.cljc",
-        "org-charts/src/sova/org_charts/charts/events.cljc",
-        "org-charts/src/sova/org_charts/charts/facts.cljc",
-        "org-charts/src/sova/org_charts/charts/guards.cljc",
-        "org-charts/src/sova/org_charts/charts/project.cljc",
         "org-charts/src/sova/org_charts/charts/reasons.cljc",
-        "org-charts/src/sova/org_charts/charts/work_item.cljc",
         "org-charts/src/sova/org_charts/engine/bounded.cljs",
         "org-charts/src/sova/org_charts/engine/build_hooks.clj",
         "org-charts/src/sova/org_charts/engine/core.cljs",
@@ -7829,12 +7894,7 @@
         "org-charts/src/sova/org_charts/engine/probe.cljs",
         "org-charts/src/sova/org_charts/engine/queue.cljs",
         "org-charts/src/sova/org_charts/engine/timbre_shim.cljc",
-        "org-charts/test/sova/org_charts/charts/harness.cljc",
-        "org-charts/test/sova/org_charts/charts/project_test.cljc",
-        "org-charts/test/sova/org_charts/charts/work_item_matrix_test.cljc",
-        "org-charts/test/sova/org_charts/charts/work_item_rules_test.cljc",
         "scripts/build-org-charts.mjs",
-        "scripts/org-charts-mine.mjs",
         "server/fixtures/org-charts-engine/probe-chart.ts",
         "server/fixtures/org-charts/real-01.json",
         "server/fixtures/org-charts/real-02.json",
@@ -7890,7 +7950,68 @@
         "server/org-charts.test.ts",
         "server/org-charts.ts",
         "server/vendor/org-charts.d.ts",
-        "server/vendor/org-charts.js"
+        "server/vendor/org-charts.js",
+        "org-charts/src/sova/org_charts/engine/API.md",
+        "org-charts/src/sova/org_charts/charts/rules/person.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/refusal.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/levels.cljc",
+        "org-charts/src/sova/org_charts/charts/base.cljc",
+        "org-charts/src/sova/org_charts/engine/dsl.cljc",
+        "org-charts/src/sova/org_charts/charts/registry.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/host.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/person_test.cljc",
+        "server/org-engine.ts",
+        "server/org-engine.test.ts",
+        "org-charts/src/sova/org_charts/charts/org.cljc",
+        "org-charts/src/sova/org_charts/engine/hold_policy.cljc",
+        "org-charts/src/sova/org_charts/charts/baton.cljc",
+        "org-charts/src/sova/org_charts/charts/build.cljc",
+        "org-charts/src/sova/org_charts/charts/conflict.cljc",
+        "org-charts/src/sova/org_charts/charts/decision.cljc",
+        "org-charts/src/sova/org_charts/charts/item.cljc",
+        "org-charts/src/sova/org_charts/charts/proj.cljc",
+        "org-charts/src/sova/org_charts/charts/reconciler.cljc",
+        "org-charts/src/sova/org_charts/charts/residence.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/baton.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/item.cljc",
+        "org-charts/src/sova/org_charts/charts/watch.cljc",
+        "org-charts/src/sova/org_charts/engine/matrix.cljs",
+        "org-charts/src/sova/org_charts/engine/matrix_test.cljs",
+        "org-charts/src/sova/org_charts/engine/refit_probe.cljs",
+        "org-charts/src/sova/org_charts/engine/refit_test.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/baton_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/item_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/matrix_test.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/org_project_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/watch_decisions_build_test.cljc",
+        "server/org-host/host.test.ts",
+        "server/org-host/index.ts",
+        "server/org-host/kill9-child.ts",
+        "server/org-host/kill9.test.ts",
+        "server/org-host/log.ts",
+        "server/org-host/privacy.test.ts",
+        "server/org-host/store.ts",
+        "server/org-host/test-chart.ts",
+        "org-charts/test/sova/org_charts/charts/refit/holds_test.cljs",
+        "server/org-error.ts",
+        "server/org-host/bench.test.ts",
+        "org-charts/test/sova/org_charts/charts/refit/registry_test.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/world_test.cljs",
+        "org-charts/src/sova/org_charts/charts/rules/hours.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/acts_golden.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/acts_table.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/decision_results_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/feed_golden.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/feed_table.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/feed_test.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/hours_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/server4_findings_test.cljc",
+        "server/org-test-fixtures.ts",
+        "server/org-reload.test.ts",
+        "server/org-routes.ts",
+        "server/orgs.ts",
+        "org-charts/test/sova/org_charts/charts/refit/pins_test.cljc",
+        "server/build-restart.test.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels",
@@ -8484,6 +8605,389 @@
         "pi-config/extensions/sandbox/launch.ts",
         "pi-config/extensions/claude-code/confined-launch.test.ts",
         "pi-config/extensions/claude-code/accounts.test.ts"
+      ]
+    },
+    "§app.settings-dialog/voice-clip-check": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/wav.ts",
+        "server/voice/wav.test.ts",
+        "server/voice/calibration.ts",
+        "src/components/VoiceCalibration.tsx"
+      ],
+      "requires": [
+        "§app.settings-dialog/voice-calibration"
+      ]
+    },
+    "§chat.voice/jargon-fixes": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/voice/wav.ts",
+        "server/voice/wav.test.ts"
+      ],
+      "requires": [
+        "§chat.voice/transcribe"
+      ]
+    },
+    "§app.organizations/working-hours": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "org-charts/src/sova/org_charts/engine/hold_policy.cljc",
+        "shared/pipeline.ts",
+        "shared/protocol.ts",
+        "src/components/PipelineCard.tsx",
+        "src/components/Sidebar.tsx",
+        "src/lib/pipeline-view.ts",
+        "src/lib/pipeline-view.test.ts",
+        "server/org-hours.test.ts",
+        "src/lib/working-hours.ts",
+        "src/lib/working-hours.test.ts",
+        "org-charts/src/sova/org_charts/charts/rules/hours.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/hours_test.cljc",
+        "src/components/PersonForm.tsx",
+        "src/components/PersonPage.tsx",
+        "src/components/OrgsView.tsx",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/orgs.css",
+        "src/lib/person-patch.test.ts",
+        "src/lib/profile-changes.test.ts",
+        "src/lib/profile-changes.ts",
+        "server/reconcile.ts",
+        "server/baton.ts",
+        "server/org-routes.ts",
+        "server/project-overseer.ts",
+        "shared/baton.ts",
+        "shared/decisions.ts",
+        "shared/project-overseer.ts",
+        "server/reconcile.test.ts",
+        "src/lib/api.ts",
+        "src/components/BatonStrip.tsx",
+        "src/components/ProjectPage.tsx",
+        "org-charts/src/sova/org_charts/charts/base.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/holds_test.cljs",
+        "server/org-host/index.ts",
+        "org-charts/src/sova/org_charts/engine/core.cljs",
+        "src/components/CompanyHoursCard.tsx",
+        "src/components/HoursFields.tsx",
+        "src/lib/person-page.ts",
+        "src/lib/person-page.test.ts",
+        "org-charts/test/sova/org_charts/charts/refit/company_hours_test.cljc",
+        "server/orgs.ts",
+        "server/org-engine.ts",
+        "server/person-page.ts",
+        "org-charts/src/sova/org_charts/charts/org.cljc",
+        "org-charts/src/sova/org_charts/charts/person.cljc",
+        "org-charts/src/sova/org_charts/charts/baton.cljc",
+        "server/org-charts.ts",
+        "server/org-charts.test.ts",
+        "org-charts/src/sova/org_charts/api.cljs"
+      ],
+      "requires": [
+        "§app.organizations/roster",
+        "§app.project-overseer/holds"
+      ]
+    },
+    "§app.project-overseer/chart-tools": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-tools-charts.test.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/org-charts",
+        "§app.project-overseer/tools"
+      ]
+    },
+    "§app.project-overseer/corrections": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-tools-charts.test.ts",
+        "server/project-overseer-prompt.md",
+        "org-charts/src/sova/org_charts/charts/item.cljc",
+        "org-charts/src/sova/org_charts/charts/build.cljc",
+        "org-charts/src/sova/org_charts/charts/reconciler.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/item_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/acts_table.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/pins_test.cljc"
+      ],
+      "requires": [
+        "§app.project-overseer/org-charts",
+        "§app.project-overseer/autonomy-levels"
+      ]
+    },
+    "§app.project-overseer/drive": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "org-charts/src/sova/org_charts/charts/item.cljc",
+        "org-charts/src/sova/org_charts/charts/reconciler.cljc",
+        "org-charts/src/sova/org_charts/charts/build.cljc",
+        "org-charts/src/sova/org_charts/charts/base.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/item.cljc",
+        "org-charts/src/sova/org_charts/charts/rules/levels.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/item_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/watch_decisions_build_test.cljc",
+        "org-charts/test/sova/org_charts/charts/refit/holds_test.cljs",
+        "server/org-engine.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/org-charts",
+        "§app.project-overseer/autonomy-levels",
+        "§app.project-overseer/limits",
+        "§app.project-overseer/holds"
+      ]
+    },
+    "§app.project-overseer/holds": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/project-overseer-settings.test.ts",
+        "shared/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "src/components/HeldAct.tsx",
+        "src/lib/pipeline-view.ts",
+        "shared/pipeline.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "org-charts/src/sova/org_charts/engine/hold_policy.cljc",
+        "server/org-stamp.ts",
+        "org-charts/test/sova/org_charts/charts/refit/holds_test.cljs",
+        "server/project-pipeline.ts",
+        "server/org-engine.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "server/project-overseer-tools-charts.test.ts",
+        "server/baton.ts",
+        "server/orgs.ts",
+        "server/reconcile.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/org-charts",
+        "§app.project-overseer/corrections"
+      ]
+    },
+    "§app.project-overseer/log-verify": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "org-charts/src/sova/org_charts/engine/rebuild.cljs",
+        "org-charts/src/sova/org_charts/engine/core.cljs",
+        "org-charts/src/sova/org_charts/api.cljs",
+        "server/org-host/rebuild.ts",
+        "server/org-host/log.ts",
+        "server/org-host/index.ts",
+        "scripts/org-charts.ts",
+        "server/org-host/rebuild.test.ts",
+        "org-charts/src/sova/org_charts/engine/rebuild_test.cljs",
+        "package.json"
+      ],
+      "requires": [
+        "§app.project-overseer/org-charts"
+      ]
+    },
+    "§app.project-overseer/pipeline": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/lib/pipeline-view.ts",
+        "shared/pipeline.ts",
+        "src/components/PipelineCard.tsx",
+        "src/lib/pipeline-view.test.ts",
+        "src/projects.css",
+        "server/project-pipeline.ts",
+        "org-charts/src/sova/org_charts/charts/rules/item.cljc",
+        "org-charts/src/sova/org_charts/charts/item.cljc",
+        "server/project-coding-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.project-overseer/org-charts",
+        "§app.project-overseer/gaps"
+      ]
+    },
+    "§app.project-overseer/reviews": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "org-charts/src/sova/org_charts/engine/hold_policy.cljc",
+        "shared/pipeline.ts",
+        "src/components/PipelineCard.tsx",
+        "src/lib/pipeline-view.ts",
+        "src/lib/pipeline-view.test.ts",
+        "src/components/Sidebar.tsx",
+        "server/org-host/index.ts",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-overseer-view.ts",
+        "src/lib/project-overseer-view.test.ts",
+        "src/projects.css",
+        "shared/project-overseer.ts",
+        "server/project-overseer-store.ts",
+        "server/org-envelope.ts",
+        "server/project-overseer-settings.test.ts",
+        "server/org-envelope.test.ts",
+        "org-charts/test/sova/org_charts/charts/refit/feed_test.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/feed_table.cljs",
+        "org-charts/test/sova/org_charts/charts/refit/feed_golden.cljs",
+        "org-charts/src/sova/org_charts/charts/base.cljc",
+        "org-charts/src/sova/org_charts/charts/reasons.cljc"
+      ],
+      "requires": [
+        "§app.project-overseer/holds",
+        "§app.project-overseer/watch-loop",
+        "§app.project-overseer/corrections",
+        "§app.project-overseer/chart-tools"
+      ]
+    },
+    "§app.provider-limits/file": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/gate.ts",
+        "pi-config/extensions/provider-limits/gate.test.ts",
+        "server/provider-limits.ts",
+        "server/provider-limits.test.ts",
+        "shared/provider-limits.ts",
+        "server/index.ts"
+      ],
+      "requires": []
+    },
+    "§app.provider-limits/in-flight": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/stream.ts",
+        "pi-config/extensions/provider-limits/index.ts",
+        "pi-config/extensions/provider-limits/stream.test.ts",
+        "pi-config/extensions/provider-limits/index.test.ts",
+        "pi-config/extensions/provider-limits/tests/multiprocess.mjs",
+        "pi-config/extensions/provider-limits/tests/pi-e2e.mjs",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/subagents/index.test.ts",
+        "server/decide-llm.ts",
+        "server/decide-llm.test.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/file"
+      ]
+    },
+    "§app.provider-limits/per-device": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/sync/docs.ts",
+        "server/sync/docs.test.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/file"
+      ]
+    },
+    "§app.provider-limits/queue": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/gate.ts",
+        "pi-config/extensions/provider-limits/gate.test.ts",
+        "pi-config/extensions/provider-limits/index.ts",
+        "server/overseer.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/in-flight"
+      ]
+    },
+    "§app.provider-limits/rate-limit": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/stream.ts",
+        "pi-config/extensions/provider-limits/stream.test.ts",
+        "pi-config/extensions/provider-limits/gate.ts",
+        "src/components/SettingsDialog.tsx"
+      ],
+      "requires": [
+        "§app.provider-limits/queue"
+      ]
+    },
+    "§app.provider-limits/setting": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/SettingsDialog.tsx",
+        "src/lib/provider-limits.ts",
+        "src/lib/provider-limits.test.ts",
+        "src/lib/provider-limits-draft.ts",
+        "src/lib/api.ts",
+        "src/design/base.css",
+        "server/index.ts",
+        "src/lib/provider-groups.ts"
+      ],
+      "requires": [
+        "§app.provider-limits/file",
+        "§app.settings-dialog/models"
+      ]
+    },
+    "§app.provider-limits/stale": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/gate.ts",
+        "pi-config/extensions/provider-limits/gate.test.ts",
+        "pi-config/extensions/provider-limits/tests/multiprocess.mjs"
+      ],
+      "requires": [
+        "§app.provider-limits/in-flight"
+      ]
+    },
+    "§app.provider-limits/waiting-shown": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/provider-limits/index.ts",
+        "server/provider-limits.ts",
+        "shared/provider-limits.ts",
+        "src/lib/provider-waiting.ts",
+        "src/lib/api.ts",
+        "src/components/ChatView.tsx",
+        "src/components/Sidebar.tsx",
+        "src/components/SubagentPane.tsx"
+      ],
+      "requires": [
+        "§app.provider-limits/queue",
+        "§app.subagents-pane/worker-rows"
+      ]
+    },
+    "§app/provider-limits": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/provider-limits/index.ts",
+        "pi-config/extensions/provider-limits/gate.ts",
+        "pi-config/extensions/provider-limits/stream.ts",
+        "pi-config/extensions/provider-limits/README.md",
+        "pi-config/README.md"
       ]
     }
   },

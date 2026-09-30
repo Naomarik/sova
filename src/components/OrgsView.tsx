@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
+import { hoursLine, offHoursNote, offHoursTail, withCompanyHours } from "../lib/working-hours";
 import { AUTOMATIC_ABILITIES, MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type GatheringAbilities, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
 import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
@@ -10,6 +11,7 @@ import {
   declinePerson,
   attachOrg,
   commitOrg,
+  reloadOrg,
   createOrg,
   getOrg,
   getOrgs,
@@ -25,7 +27,7 @@ import {
   getBatonSettings,
   getProjectOverseer,
 } from "../lib/api";
-import { commitNowWords } from "../lib/commit-now";
+import { commitNowWords, reloadWords } from "../lib/commit-now";
 import { usd } from "../lib/costs";
 import { duration, relativeTime, stampTime } from "../lib/format";
 import { needsYouCount, needsYouLabel, orgCountsLine } from "../lib/org-cards";
@@ -37,12 +39,13 @@ import { createOrgSource } from "../lib/org-source";
 import { useMinuteNow } from "../lib/minute-clock";
 import { orgHref, orgSessionHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
-import { toast } from "../lib/ui-state";
+import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { meshPeers, orgHostOf } from "../lib/mesh";
 import { orgHostOffline } from "../lib/org-host-offline";
 import { LinksBanner } from "./LinksBanner";
 import { OwnerCard } from "./OwnerCard";
+import { CompanyHoursCard } from "./CompanyHoursCard";
 import { PersonForm } from "./PersonForm";
 import { PersonPage } from "./PersonPage";
 import { ProjectPage } from "./ProjectPage";
@@ -356,7 +359,25 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
       <Show when={org.data()}>
         {(o) => (
           <>
-            <For each={o().problems}>{(p) => <Banner tone="warn" title="The workspace repo has a problem." body={p} />}</For>
+            {/* A problem stays until the file is fixed or restored and the org reloaded: Reload rides on the last one. */}
+            <For each={o().problems}>
+              {(p, i) => (
+                <div class="org-problem">
+                <Banner
+                  tone="warn"
+                  title="The workspace repo has a problem."
+                  body={p}
+                  action={
+                    i() === o().problems.length - 1 ? (
+                      <button type="button" class="button button-sm" onClick={() => void act(() => reloadOrg(props.id), (r) => reloadWords((r as OrgDetail | undefined)?.problems.length ?? 0))}>
+                        Reload
+                      </button>
+                    ) : undefined
+                  }
+                />
+                </div>
+              )}
+            </For>
             <Show when={links()}>{(l) => <LinksBanner links={l()} warning={linkWarning()} onDismiss={() => setLinks(null)} />}</Show>
             <OrgTabs org={o()} tab={tab()} />
             <div class="org-tabpanel" role="tabpanel" id="org-tabpanel" aria-labelledby={`org-tab-${tab()}`}>
@@ -379,6 +400,7 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
                 </Match>
                 <Match when={tab() === "projects"}>
                   <AboutCard org={o()} act={act} />
+                  <CompanyHoursCard org={o()} act={act} />
                   <ProjectsSection org={o()} act={act} />
                 </Match>
                 <Match when={tab() === "workspace"}>
@@ -580,6 +602,14 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
     }, Array.isArray(who) ? `Offered to ${who.length} people.` : "Hand-off session started.");
     if (!ok || !started) return;
     const s = started as BatonStartResult;
+    // r7: it went at once; say when their hours start (the done toast already said it started).
+    if (s.offHours && typeof who === "string") {
+      const tail = offHoursTail(nameOf(who), s.offHours, Date.now());
+      if (tail) {
+        toast(tail);
+        announce(tail);
+      }
+    }
     if (s.links?.length) props.onLinks(s.links, s.linkWarning);
     else if (s.link && typeof who === "string") props.onLinks([{ personId: who, name: nameOf(who), link: s.link }], s.linkWarning);
     setTitle("");
@@ -670,6 +700,10 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
                     : `Offered to ${to().length} people: the first to answer takes it, for as long as they keep answering.`}
                 {parent() ? " Started from the session you came from." : ""}
               </p>
+              {/* r7: yours goes at once; say so for each ticked person who is off hours now. */}
+              <For each={to().map((id) => props.org.roster.find((p) => p.id === id)).filter((p): p is Person => !!p)}>
+                {(p) => <Show when={offHoursNote(withCompanyHours(p, props.org), Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
+              </For>
             </fieldset>
             <label class="field">
               <span class="field-label">Public title</span>
@@ -753,6 +787,7 @@ function PeopleSection(props: { org: OrgDetail; act: Act }) {
       </div>
       <Show when={adding()}>
         <PersonForm
+          company={props.org}
           submitLabel="Add Person"
           onCancel={() => setAdding(false)}
           onSubmit={async (input) => {
@@ -847,6 +882,14 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; now: numb
             <dt>Contact</dt>
             <dd>{contact()}</dd>
           </Show>
+          <Show when={hoursLine(withCompanyHours(p(), props.org), props.now)}>
+            {(line) => (
+              <>
+                <dt>Hours</dt>
+                <dd>{line()}</dd>
+              </>
+            )}
+          </Show>
           <Show when={p().referral}>
             {(r) => (
               <>
@@ -863,6 +906,7 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; now: numb
       <Show when={editing()}>
         <PersonForm
           person={p()}
+          company={props.org}
           submitLabel="Save Changes"
           onCancel={() => setEditing(false)}
           onSubmit={async (input: Partial<PersonInput>) => {

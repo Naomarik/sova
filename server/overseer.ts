@@ -20,6 +20,8 @@ import {
 import { setArchived } from "./archived-sessions";
 import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
+import { heldAttention } from "./project-pipeline";
+import { conflictAttention } from "./decisions";
 import { restartItems } from "./merge-readiness";
 import {
   acquireChat,
@@ -35,6 +37,7 @@ import {
 import { activityOf, failedWorkersOf, readLiveRecords, workerErrorTimesOf, workingSubagents } from "./live";
 import { listModels, contextWindow } from "./models";
 import { modelDenial, readModelPolicy } from "./model-policy";
+import { markBackground } from "../pi-config/extensions/provider-limits/gate.ts";
 import { mergeMode } from "./mode-state";
 import {
   DEFAULT_CAPS,
@@ -350,9 +353,9 @@ export function attentionDigest(): Promise<ReturnType<typeof buildDigest>> {
         ...(stallsOn ? teamStallField(s.id) : {}),
       };
     });
-    // Items of no session: an org project's missing stakeholder, and the one restart item of the
-    // whole server (§chat.worktrees/readiness), never one per session.
-    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...restartItems(sessions)]);
+    // Items of no session: an org project's missing stakeholder, its held acts and conflicts routed to the operator
+    // (the refit), and the one restart item of the whole server (§chat.worktrees/readiness), never one per session.
+    return buildDigest(rows, Date.now(), homedir(), [...stakeholderAttention(), ...heldAttention(), ...conflictAttention(), ...restartItems(sessions)]);
   })();
   digestMemo = { at: now, value };
   value.catch(() => {
@@ -802,6 +805,8 @@ setOverseerRuntime({
   // a brief, a wake-up or an extension's message never goes through it: read-only, on the same budget.
   watchSession(session) {
     overseerSession = session;
+    // Its model requests are background work under a provider's request limit (§app.provider-limits/queue).
+    markBackground(session.sessionManager.getSessionId());
     turns.watch(session.agent);
     const prompt = livePrompt;
     session.subscribe((event) => {

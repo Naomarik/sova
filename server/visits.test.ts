@@ -34,9 +34,9 @@ const tab = (c: string) => c.repeat(22);
 
 const org = await orgs.createOrg({ name: "Gate", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony", role: "IT" });
-const maria = orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony", role: "IT" });
+const maria = await orgs.addPerson(org.id, { name: "Maria", role: "Payroll" });
 const file = join(orgs.orgDir(org.id), visits.VISITS_FILE);
 const lines = (): Record<string, unknown>[] => {
   try {
@@ -45,8 +45,8 @@ const lines = (): Record<string, unknown>[] => {
     return [];
   }
 };
-const startBaton = (title: string, to = tony.id) => {
-  const c = baton.createBaton({ orgId: org.id, projectId: project.id, to, publicTitle: title, goal: "g" });
+const startBaton = async (title: string, to = tony.id) => {
+  const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to, publicTitle: title, goal: "g" });
   return { ...c, link: links.findLink(c.token!)! };
 };
 
@@ -71,8 +71,8 @@ test("classify: a coarse family, previewers and scanners apart, never the raw st
   assert.equal(visits.classify("Mozilla/5.0 (Linux; Android 13; CUBOT X30) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36").kind, "person");
 });
 
-describe("the continuation rule", () => {
-  const { link } = startBaton("Continuation");
+describe("the continuation rule", async () => {
+  const { link } = await startBaton("Continuation");
   const t0 = Date.UTC(2026, 8, 27, 9, 0);
   const min = 60_000;
   let first = "";
@@ -142,8 +142,8 @@ describe("the continuation rule", () => {
 });
 
 describe("previews, refusals and the cap", () => {
-  test("a known previewer's shell fetch is a preview line (once per window), never a visit", () => {
-    const { link } = startBaton("Previewed");
+  test("a known previewer's shell fetch is a preview line (once per window), never a visit", async () => {
+    const { link } = await startBaton("Previewed");
     const t = Date.UTC(2026, 8, 27, 10, 0);
     assert.equal(visits.recordShellFetch(link, SLACK, t), true);
     assert.equal(visits.recordShellFetch(link, IPHONE, t), false, "a browser's shell fetch records nothing");
@@ -156,16 +156,16 @@ describe("previews, refusals and the cap", () => {
     );
   });
 
-  test("a refusal is recorded once per window", () => {
-    const { link } = startBaton("Refused");
+  test("a refusal is recorded once per window", async () => {
+    const { link } = await startBaton("Refused");
     const t = Date.UTC(2026, 8, 27, 11, 0);
     assert.equal(visits.recordRefused(link, IPHONE, t), true);
     assert.equal(visits.recordRefused(link, IPHONE, t + 60_000), false);
     assert.equal(visits.recordRefused(link, IPHONE, t + 11 * 60_000), true);
   });
 
-  test("20 new visits, previews or refusals per link per day, then one capped line; a continued visit is never capped", () => {
-    const { link } = startBaton("Capped");
+  test("20 new visits, previews or refusals per link per day, then one capped line; a continued visit is never capped", async () => {
+    const { link } = await startBaton("Capped");
     const t0 = Date.UTC(2026, 8, 28, 0, 0);
     const step = 11 * 60_000;
     let last = "";
@@ -184,9 +184,9 @@ describe("previews, refusals and the cap", () => {
 });
 
 describe("through the share listener", async () => {
-  const c = startBaton("Live", maria.id);
-  const closed = startBaton("Closed", maria.id);
-  baton.closeBaton(closed.sessionId);
+  const c = await startBaton("Live", maria.id);
+  const closed = await startBaton("Closed", maria.id);
+  await baton.closeBaton(closed.sessionId);
   const server = createShareServer();
   let base = "";
   let wsBase = "";
@@ -207,7 +207,7 @@ describe("through the share listener", async () => {
     const h = { "User-Agent": IPHONE, "X-Forwarded-For": XFF };
     assert.equal((await fetch(`${base}/api/h/${c.token}?v=${v}`, { headers: h })).status, 200);
     assert.equal((await fetch(`${base}/api/h/${c.token}?v=${v}`, { headers: h })).status, 200, "a reload");
-    await new Promise<void>((resolve, reject) => {
+    await new Promise<void>(async (resolve, reject) => {
       const ws = new WebSocket(`${wsBase}/ws/h?token=${c.token}&v=${v}`, { headers: h });
       ws.on("message", () => ws.close());
       ws.on("close", () => resolve());

@@ -144,8 +144,8 @@ export interface SessionSummary {
   /** An ORGANIZATIONAL session (§app.session-list/organizations): the org's own records make it one —
       every file in an attached org's workspace `sessions/` (baton sessions, offers, the project
       overseer's current and cleared conversations, any unregistered file there), and every coding
-      session a project's `started.json` records (the overseer's `coding`, Start coding session's
-      `operator-coding`). Never inferred from the folder: a session the operator opens by hand in a
+      session a project's build charts record (the overseer's `coding`, Start coding session's
+      `operator-coding`), until its project retires it (r11). Never inferred from the folder: a session the operator opens by hand in a
       project root, a fork or copy of an org session, and anything on a host where the org is not
       attached are ordinary. The sidebar lists these only in its Organizations region. Safe by absence. */
   org?: SessionOrg;
@@ -2766,6 +2766,8 @@ export type AttentionKind =
   | "baton-needs-you" // a baton session: the baton is with the operator, or a person needs their link
   | "roster-proposal"  // a baton session proposed a new roster person (referral): approve or decline
   | "project-stakeholder" // an org project's main stakeholder left: pick a new one (no session: `path` "", `href` the project page)
+  | "held-act"            // act tier, never pushed: a chart act waits in a hold before it reaches a person or the code; Cancel stops it (no session: `path` "", `href` the project page, `held` set)
+  | "conflict-to-operator" // decide tier, never pushed: an open conflict routed to the operator (or unrouted) with no settle session (no session: `path` "", `href` the project page)
   | "asks-you"        // decisions: the last reply of a turn with no open alignment question asks the user something
   | "ready-to-merge"  // a worktree is ready and the last reply asks for the go-ahead (SessionSummary.readiness)
   | "merged-open-work" // a merge whose reply names significant open work (§app.decisions/merge-followup)
@@ -2793,6 +2795,23 @@ export interface AttentionItem {
       in the Organizations region's own Needs you, never in the global one. The Overseer's badge,
       briefs and sova_attention still count it. */
   org?: SessionOrgRef;
+  /** r12: an offer's invitees not reached yet (their working hours haven't come), by display name; `until`: their
+      next window (ISO), null when none is found. Only on a gathering session's item whose offer is open. */
+  waiting?: { name: string; until: string | null }[];
+  /** kind `held-act` only: the hold's id (for `POST /api/orgs/:id/held/:holdId/cancel`), when it goes
+      ahead (ms epoch), and its noun phrase, so the row recounts "{what} starts in {n} min unless you
+      cancel it." as the minutes pass. */
+  held?: {
+    id: string;
+    goesAt: number;
+    what: string;
+    /** "hours": it waits for a person's working hours (r7), `goesAt` is when their window opens; absent: the hold (r2). */
+    wait?: "hold" | "hours";
+    /** An hours wait's person, by display name. */
+    person?: string;
+    /** ms epoch: the hold ended and it waits for the overseer to approve it (r8: an act on the project's confirm list); the row's stall clock runs from here. */
+    reviewSince?: number;
+  };
 }
 
 /** Which org (and project) an organizational session belongs to; names as they read now. `projectId`

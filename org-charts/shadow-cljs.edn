@@ -5,7 +5,13 @@
                  :output-dir       "out/lib"
                  :runtime          :node
                  :modules          {:org-charts {:exports {createEngine sova.org-charts.api/create-engine
-                                                           charts       sova.org-charts.api/chart-list}}}
+                                                           charts       sova.org-charts.api/chart-list
+                                                           chartInfo    sova.org-charts.api/chart-info
+                                                           migrateText  sova.org-charts.api/migrate-text
+                                                           peekSnapshot sova.org-charts.api/peek-snapshot
+                                                           verifySession sova.org-charts.api/verify-session
+                                                           nextWindow   sova.org-charts.api/next-window
+                                                           hoursInherited sova.org-charts.api/hours-inherited}}}
                  ;; reproducible output: a fixed gensym counter and a sequential compile
                  :build-hooks      [(sova.org-charts.engine.build-hooks/fixed-gensym-counter)]
                  :compiler-options {:optimizations :advanced

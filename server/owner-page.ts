@@ -26,7 +26,7 @@ import { readConflicts, readDecisionStore } from "./decisions";
 import { operatorName, orgDir, OrgError, ownerOf, readOrg, readProjects, readRoster } from "./orgs";
 import { handleOf } from "./person-links";
 import { transcriptFacts } from "./person-page";
-import { projectOverseerPaths, readStarted } from "./project-overseer-store";
+import { readBuilds, withWorktreePath } from "./build-loadout";
 import { publishedUpdates } from "./project-updates";
 import { readWorktree, type WorktreeReading } from "./project-worktrees";
 import { listDecisions } from "./reconcile";
@@ -167,18 +167,12 @@ async function builtCounts(ctx: Ctx, project: OrgProject): Promise<{ finished: n
   let finished = 0;
   let inProgress = 0;
   const times: string[] = [];
-  let started;
-  try {
-    started = readStarted(projectOverseerPaths(ctx.orgId, project.id, ctx.dir));
-  } catch {
-    return { finished, inProgress, lastAt: "" };
-  }
-  for (const r of started) {
-    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
-    times.push(r.createdAt, r.merged?.at ?? "");
-    if (!r.worktree) {
+  for (const b of readBuilds(ctx.orgId, project.id)) {
+    times.push(b.createdAt, b.merged?.at ?? "");
+    const r = await withWorktreePath(b, project.root);
+    if (!r) {
       // Runs in the project root: its work lands there; building while it runs.
-      if (r.path && isSessionBusy(r.path)) inProgress++;
+      if (b.path && isSessionBusy(b.path)) inProgress++;
       else finished++;
       continue;
     }

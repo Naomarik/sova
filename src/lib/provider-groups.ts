@@ -56,11 +56,12 @@ export function providerGrouper(lead: ProviderGroup) {
     return [lead, ...rows];
   };
 
-  /** `base` plus a row for each provider the policy names that has no group of its own. */
-  const withPolicy = (base: ProviderGroup[], policy: PolicyProviders | null): ProviderGroup[] => {
+  /** `base` plus a row for each provider the policy names — or `also` names (the request limits
+      file's providers) — that has no group of its own. */
+  const withPolicy = (base: ProviderGroup[], policy: PolicyProviders | null, also: readonly string[] = []): ProviderGroup[] => {
     if (!policy) return base;
     const named = new Set(
-      [...policy.disabledProviders, ...policy.subagentDisabledProviders].map((x) => x.toLowerCase()),
+      [...policy.disabledProviders, ...policy.subagentDisabledProviders, ...also].map((x) => x.toLowerCase()),
     );
     const next = new Map<string, ProviderGroup>();
     const rows = [...base];

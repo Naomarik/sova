@@ -194,6 +194,7 @@ describe("sova_send into running sessions", () => {
         return Response.json(reply);
       },
       overseerId: () => "ov",
+      confirmed: () => null, // no confirm card opened this turn
       caps: () => ({ ...DEFAULT_CAPS, concurrentSessions }),
       session: async (ref: string) => (["a", "b", "c"].includes(ref) ? summary(ref) : null),
       started: (p: string, prompted?: boolean) => {
@@ -385,5 +386,19 @@ describe("sova_confirm items", async () => {
     assert.ok(out.includes("- [Fix the parser](sova://s/s1) (s1) — Parser fix. Merged."), out);
     assert.ok(out.includes("- §sova/x — X — Done by the sweep."), out);
     assert.ok(out.includes("- td_aaaaaaaa · Do it — Covered."), out);
+  });
+});
+
+describe("the confirm card on the Overseer's route calls (§app.overseer/org-people-facing)", () => {
+  test("its items' ids by kind; ideas and to-dos are no target of a people-facing act", async () => {
+    const { cardHeader, OVERSEER_CARD_HEADER } = await import("./overseer-tools");
+    assert.equal(OVERSEER_CARD_HEADER, "x-sova-overseer-card");
+    const header = cardHeader([
+      { kind: "person", id: "p_1", orgId: "o", name: "Ana", orgName: "O", status: "active" },
+      { kind: "project", id: "prj_1", orgId: "o", name: "P", orgName: "O" },
+      { kind: "session", id: "s1", title: "S" },
+      { kind: "idea", id: "§i", title: "I" },
+    ]);
+    assert.deepEqual(JSON.parse(header), { people: ["p_1"], projects: ["prj_1"], sessions: ["s1"] });
   });
 });

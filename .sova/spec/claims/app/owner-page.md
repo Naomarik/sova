@@ -18,8 +18,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 
 ## §app.owner-page/owner — One owner per organization, picked by the operator
 
-- **Stored on the org**, in the workspace repo, so it travels (§app.organizations/portability):
-  `org.json` `owner` (a person id, or absent or `null`: none), `ownerHistory` (`{at, from, to,
+- **Stored on the org**, in its chart in the workspace repo, so it travels
+  (§app.organizations/portability): `owner` (a person id, or absent or `null`: none), `ownerHistory` (`{at, from, to,
   why, via?}`, oldest first, the last 50; `why` is `operator`, or `left` when Sova cleared it because the
   person left; `via: "overseer"` when the global Overseer set it for the operator) and, after a clearing, `ownerCleared` (`{personId, name, at}`) until the operator
   saves the select again.
@@ -126,13 +126,13 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 - **Client conversations, all of them, by default**: every gathering, offer and settle session of
   a shown project, other people's messages included. Staff are not told the owner reads them.
 - **Hide from the owner**, per conversation: the baton strip's `Hide From {first name}` sets
-  `hiddenFromOwner: true` on its `baton.json` row (`POST /api/baton/:sid/owner {hidden}`), and
+  `hiddenFromOwner: true` on its chart (`POST /api/baton/:sid/owner {hidden}`), and
   `Show To {first name}` clears it. A hidden conversation disappears everywhere on the page: its
   row, its decisions, its conflicts, its share of "Who we've talked to", every count and the
   project's status. Its handle answers 404, the same as a handle that never existed. No count of
   hidden things is ever shown.
 - **Switch a project off**: the project page's `Show this project on {first name}'s page`
-  (`projects.json` `ownerHidden`, shown by default; `PATCH /api/orgs/:id/projects/:pid
+  (the project chart's `ownerHidden`, shown by default; `PATCH /api/orgs/:id/projects/:pid
   {ownerHidden}`). A project switched off disappears from the page with everything in it, and its
   handle answers 404.
 - **Never shown**: the project overseer's conversations (current and history), coding sessions
@@ -148,7 +148,9 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
 - **Posted by the project overseer, on its own.** A tool, `sova_owner_update({text})`, at level
   L1 (§app.project-overseer/autonomy-levels), appends a post to `projects/<pid>/updates.jsonl` in
   the workspace repo: `{kind: "post", id: "u_…", at, by: {kind: "overseer", run: "auto" |
-  "operator"}, text}`. Nothing waits for approval. With no owner set it refuses: there is no page
+  "operator"}, text}`. Nothing waits for approval; a post made in a run the operator did not start
+  waits in a hold first, which the operator or the overseer may cancel
+  (§app.project-overseer/holds). With no owner set it refuses: there is no page
   to post to. The operator can also ask it in chat to post something; a post made in the
   operator's own turn is marked `run: "operator"`.
 - **Only at real milestones, at most one a day.** In a run the operator did not start, the tool
@@ -170,7 +172,8 @@ copy is §design.copy-deck/owner-page, and its list of words never used there is
   the outsider redaction before it is shown.
 - **Logged on the project page.** Every post, taken down or not, is listed on the project page's
   Owner Page card with its text, when, and whether the overseer posted it on its own or because
-  the operator asked (`run`); every tool call, refused or not, is also in the overseer's `actions.jsonl`.
+  the operator asked (`run`); every tool call, refused or not, is also in the overseer's activity,
+  from the transition log (§app.project-overseer/org-charts).
 - **Taking one down.** The operator's `Take Down` (`POST /api/orgs/:id/projects/:pid/updates/:uid/
   withdraw`) appends `{kind: "withdraw", id, at}`: the post disappears from the owner page at its
   next read and stays in the file and on the project page's list, marked as taken down. The

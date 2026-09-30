@@ -21,10 +21,12 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 
 - The source is the transcripts: every `sova-baton-decision` entry of the project's baton
   sessions (`{area, ownerArea, statement, quote, by}`; `ownerArea` is absent from entries recorded
-  before owner areas), read with Sova's own line parser. The index adds only
-  what the reconciler decided about each one and lives in the org's workspace repo at
-  `projects/<projectId>/decisions.json` (conflicts beside it in `conflicts.json`), committed with the
-  org's workspace commits. Listing the decisions syncs the index first; syncing never drops a row.
+  before owner areas), read with Sova's own line parser. Each decision is a chart
+  (§app.project-overseer/org-charts), started when its entry is written, with its gathering
+  session and that session's gap and conflict as its links; each conflict is a chart too. What the
+  reconciler decided about a decision is its chart's state, in the org's workspace repo with the
+  other charts. An entry with no chart (the server stopped between the two) gets one when the
+  server starts and before the decisions are listed; none is ever dropped.
 - A decision's id is `<sessionId>:<entry id of the decision>`, so two decisions stated in one
   message stay two. Its provenance is **who** (person id or `operator`, and their name when
   recorded), **session**, **entry** (the user message holding the quote: the nearest one up the
@@ -32,7 +34,10 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 - States: `pending` (not compared yet, or the comparison failed), `drafted` (compared with every
   other live decision of its area, no open conflict, written to the project draft: promotable),
   `conflict`, `promoted`, `superseded` (a later decision replaced it; `supersededBy` names it).
-  A state is recomputed from those facts on every read, never stored as a separate truth.
+  What the reconciler decided (pending, drafted, in a conflict, superseded, folded, and by what) and
+  the promotion are the chart's state. What the project's spec says is read from the spec, on every
+  read and after every promotion, never stored: whether a promoted decision is still current
+  there, edited there, or built (below).
 - **Who owns which field.** Of a record in the project's spec, the decisions layer owns its prose
   (the statement, each quote with who said it and when, the supersede line) and the manifest
   fields `decision`, `provenance` and `supersededBy`. It writes `kind: note` and `authority:
@@ -45,12 +50,12 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   yet). A builder adding `evidence` or `code`, or relabelling the record, leaves it `promoted`. A
   decision already `drafted` again for that reason reads `promoted` again with nothing migrated,
   and the stale project draft goes at the next Reconcile, promotion or Rewrite Draft.
-- **Edited in the spec.** A promotion keeps, on each promoted decision's row, a hash of its
+- **Edited in the spec.** A promotion keeps, on each promoted decision's chart, a hash of its
   record's prose as written (`promotedText`) and the promotion's commit (`promotedCommit`, when it
   made one). When the current prose differs from it (for a decision promoted before that was kept:
   from what the reconciler would write), the decision stays `promoted` and is marked `editedInSpec`;
   its row in the Decisions list says "Edited in the spec since it was promoted." with **Keep Spec's
-  Words** (the row takes the current prose's hash, and records `{at, by, name}` as `textKept`) and
+  Words** (the chart takes the current prose's hash, and records `{at, by, name}` as `textKept`) and
   **Restore Their Words** (the person's words are promoted again, prose only: the record's other
   fields stay, and it is committed like any promotion). Both are `POST …/decisions/:did/text
   {action: "keep" | "restore"}`, for a promoted decision marked edited only, else 409. The project
@@ -89,11 +94,14 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   `RECONCILE_DEFAULT`). It can be turned off there. While off, Reconcile and a project overseer's reconcile tool are refused
   with "Turn on Reconcile decisions in Settings → Decisions." (409), and the automatic run below is
   skipped with that reason as the run's error. Drafting, promoting, routing and settling by hand
-  send nothing and work either way.
-- **When.** Only when asked: **Reconcile** on the project page (or `POST …/reconcile`), a project
-  overseer's reconcile tool, or on its own right after a decision is recorded in a routed
-  conflict's own baton session, open or already settled (a 2-second debounce). Nothing runs on a
-  timer.
+  send nothing and work either way: while it is off, only a reconcile run is refused.
+- **When.** **Reconcile** on the project page (or `POST …/reconcile`), a project overseer's
+  reconcile tool, the project's chart when a gathering session of it ends with decisions recorded
+  (at L1 and above, §app.project-overseer/drive), or on its own 2 seconds after a decision is
+  recorded in a routed conflict's own baton session, open or already settled (a chart timer, so a
+  restart doesn't lose it). Nothing runs on a schedule. At most one run of a project runs at a
+  time: a request while one runs makes it run once more after, and a run the server starts takes
+  the owner of the settle session whose decision started it.
 - **What is sent.** Decision text only: statements, quotes, the authors' names, dates and area
   names, through the same redacting provider as every decision (§app.decisions/privacy); never a
   transcript, a goal, a briefing, ids, paths or any profile field. A project whose root is in the
@@ -158,7 +166,7 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   marked so, and a person cannot talk themselves into deciding. It never falls to the main
   stakeholder instead: an area someone claims to own is not an area no one owns.
 - Routing starts a **settle session**, a baton session (§app/baton) marked with its conflict (its id and area,
-  kept on the registry row even after a re-route closes it), to that person, owned by the operator or the project
+  kept on the settle session's chart even after a re-route closes it), to that person, owned by the operator or the project
   overseer (the run the server starts by itself takes the owner of the settle session whose decision
   started it, so in a project the overseer runs it stays the overseer's), on the project's gathering model and thinking (`gatheringModel`/`gatheringThinking`,
   else the overseer's own setting, else the new-session default; the overseer's own reconcile
@@ -172,7 +180,15 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   start (nobody could be shown it) and Needs-you asks the operator to send one. A fresh baton is
   listed and in Needs-you before anyone has written in it.
 - The operator can re-route an open conflict to anyone active (or themselves); the earlier session
-  is closed, so two people are never asked the same thing.
+  is closed, so two people are never asked the same thing. Without a reason of its own, the
+  re-route's reason reads "{name} chosen by {operator's name}.". When a settle session closes with its
+  conflict still open and no re-route, the conflict names no settle session any more, so the
+  project page's Conflicts card offers "Ask someone to settle it" again.
+- **One the operator must settle, with no session asking.** An open conflict routed to the
+  operator, or one whose routing failed, that no open settle session asks about is a decide-tier
+  Needs-you item (`conflict-to-operator`, §app.overseer/attention-digest), never a phone
+  notification: "Settle a conflict in {project}: {nameA} and {nameB} disagree about {area}.",
+  opening the project page. So the org card, its tab and Needs you count the same conflicts.
 
 ## §app.requirements/owner-area — Who decides a decision: its owner area
 
@@ -207,7 +223,7 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   **Owner area** select: the roster's decision areas and **None**, and **Not set** for a decision
   recorded before owner areas, until someone picks one. A change sends `PATCH
   …/decisions/:did {ownerArea}` (a roster decision area or `none`, else 400 naming the choices; a
-  superseded decision is refused, 409). The index row keeps the new `ownerArea` and appends
+  superseded decision is refused, 409). The decision's chart keeps the new `ownerArea` and appends
   `{at, by, name, from, to}` to `ownerAreaHistory` (`by` is `operator`; `from` is null for a
   decision that had none), and under the select the page says "Changed by {name} {time}.". The
   decision's `authorOwnsArea` and state are recomputed at once. When it is a side of an open
@@ -223,7 +239,7 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 ## §app.requirements/frozen-spec — Frozen
 
 - A project can be marked **frozen** (`PATCH …/spec {frozen}`, stored on the project in
-  `projects.json`): its documentation is written only by the reconciler's promotion.
+  the project's chart): its documentation is written only by the reconciler's promotion.
 - Sova cannot stop a coding session's own file tools from editing `claims/`; instead, a frozen
   project records a hash of its current spec after every promotion and reports `editedOutside`
   when the spec no longer matches it. The hash covers the whole spec, so a builder recording
@@ -231,8 +247,9 @@ listener. Every write runs in the project's one-job-at-a-time queue.
 
 ## §app.requirements/promotion — Piecemeal, explicit promotion
 
-- The operator selects drafted decisions (or a project overseer allowed to promote does);
-  anything else is refused with its reason.
+- The operator selects drafted decisions (or a project overseer allowed to promote does, or its
+  project's chart on its own at L2, after a hold: §app.project-overseer/drive, /holds); anything
+  else is refused with its reason.
 - **Out of area.** A decision whose author may not decide it (`authorOwnsArea` false: not
   the operator, not an owner of its owner area, or of its topic area for a decision recorded before
   owner areas, as §app.requirements/routing defines one, with an operator-set say, and not the
@@ -254,7 +271,7 @@ listener. Every write runs in the project's one-job-at-a-time queue.
   nothing is removed.
 - Sova commits a promotion, and nothing else, in the client repo (§app.requirements/promotion-commit).
 - A refusal of the spec tools (a conflicting hand edit, a pending transaction) is reported per
-  decision and changes nothing; the index keeps them `drafted`.
+  decision and changes nothing; their charts keep them `drafted`.
 
 ## §app.requirements/promotion-commit — A promotion is committed
 

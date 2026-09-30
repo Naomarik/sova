@@ -22,7 +22,9 @@ const stub = await startStreamStub({ payload: "letters", perDelta: 16, limit: 64
 writeFileSync(join(agentDir, "models.json"), JSON.stringify(stubModelsJson(stub.port)));
 
 const orgs = await import("./orgs");
+const { closeOrgHost, hostOf } = await import("./org-engine");
 const po = await import("./project-overseer");
+const { allBatons } = await import("./baton");
 const store = await import("./project-overseer-store");
 const { acquireChat, disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
@@ -42,7 +44,7 @@ type LastRun = NonNullable<ReturnType<typeof store.readMemo>["lastRun"]>;
 describe("the overseer's last run says how it ended", async () => {
   const org = await orgs.createOrg({ name: "Runs", dir: join(root, "ws") });
   mkdirSync(join(root, "proj"));
-  const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+  const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
   const p = store.projectOverseerPaths(org.id, project.id);
   let path = "";
 
@@ -78,32 +80,28 @@ describe("the overseer's last run says how it ended", async () => {
     assert.equal(run.detail, chat.lastStreamTrip!.detail);
   });
 
-  test("a run the server's shutdown aborts is recorded cut off by a restart", async () => {
+  test("a run the server's shutdown aborts is recorded cut off by the next start, the same run", async () => {
     stub.reset({ payload: "letters", perDelta: 1 });
     const r = await po.lookNow(org.id, project.id, true);
     assert.equal(r.started, true, r.why);
+    const at = store.readMemo(p).lastRun!.at;
     const chat = await acquireChat(path);
     for (let i = 0; i < 200 && stub.stats.startedAt === null; i++) await new Promise((res) => setTimeout(res, 10));
     recovery.markShutdown();
     try {
       await chat.session.abort();
-      for (let i = 0; i < 200 && store.readMemo(p).lastRun?.outcome === "started"; i++) await new Promise((res) => setTimeout(res, 25));
+      await new Promise((res) => setTimeout(res, 50));
+      assert.equal(store.readMemo(p).lastRun?.outcome, "started", "nothing recorded while the process goes down");
+      // The next process: its org engine resumes the watch, whose look was running (`sova/resumed`).
+      await closeOrgHost(org.id);
+      await orgs.openAttachedOrgs();
       const run = store.readMemo(p).lastRun!;
       assert.equal(run.outcome, "cut-off");
       assert.equal(run.detail, "The server restarted during the run.");
+      assert.equal(run.at, at, "the same run, not a new one");
     } finally {
       recovery.clearShutdownForTest();
     }
-  });
-
-  test("a run left running by an earlier process becomes cut off when the loop starts", () => {
-    const at = new Date(recovery.PROCESS_START - 60_000).toISOString();
-    store.writeMemo(p, { ...store.readMemo(p), lastRun: { at, reasons: ["The operator asked."], outcome: "started" } });
-    po.startProjectOverseerLoop();
-    const run = store.readMemo(p).lastRun!;
-    assert.equal(run.outcome, "cut-off");
-    assert.equal(run.detail, "The server restarted during the run.");
-    assert.equal(run.at, at, "the same run, not a new one");
   });
 });
 
@@ -115,17 +113,19 @@ describe("the overseer's last run says how it ended", async () => {
  */
 describe("a story that needs 4 gathering sessions goes on by itself", async () => {
   const org = await orgs.createOrg({ name: "Story", dir: join(root, "ws2") });
-  orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["menu", "hours"] });
-  const gather = JSON.stringify({ person: "Alperen", public_title: "Opening hours", goal: "Settle the opening hours.", question: "When should the shop open?" });
+  await orgs.addPerson(org.id, { name: "Alperen", role: "Owner", decides: ["menu", "hours"] });
+  const gather = JSON.stringify({ gap: "none", person: "Alperen", public_title: "Opening hours", goal: "Settle the opening hours.", question: "When should the shop open?" });
 
   async function setUp(name: string) {
     mkdirSync(join(root, name));
-    const project = orgs.addProject(org.id, { name, root: join(root, name) });
+    const project = await orgs.addProject(org.id, { name, root: join(root, name) });
     const p = store.projectOverseerPaths(org.id, project.id);
+    // No hold (q10): its unattended starts go at once; these tests are about the allowances.
+    store.patchPoSettings(p, { holdMin: 0 });
     const { path } = await po.ensureProjectOverseer(org.id, project.id);
     const chat = await acquireChat(path);
     await chat.setModelRef("stub/runaway");
-    const started = () => store.readStarted(p).filter((r) => r.kind === "gathering").length;
+    const started = () => allBatons().filter((b) => b.projectId === project.id && typeof b.owner === "object" && b.owner.overseerOf === project.id).length;
     const settle = async () => {
       for (let i = 0; i < 400 && store.readMemo(p).lastRun?.outcome === "started"; i++) await new Promise((res) => setTimeout(res, 25));
     };
@@ -172,11 +172,16 @@ describe("a story that needs 4 gathering sessions goes on by itself", async () =
     const midnight = store.nextMidnight(new Date());
     assert.deepEqual(held.map((h) => [h.key, h.retryAt]), [["day:gather", midnight.toISOString()]]);
     assert.deepEqual(store.readMemo(s.p).pending, [], "nothing waits but the held item");
-    // The next day: the tick turns it into a reason and looks (past the gap), and the day's allowance is fresh.
+    // The next day: the watch's midnight turns it into a reason to look soon, and the day's allowance is fresh.
     po.setClockForTest(() => midnight.getTime() + 3_600_000);
+    // The charts' midnight (the watch's day ledger) is a host timer: fired now that the clock has passed it.
+    hostOf(org.id).fireDue();
     try {
       stub.reset({ payload: "letters", perDelta: 16, tool: "sova_start_gathering", args: gather });
-      await po.tickForTest();
+      assert.deepEqual(store.readMemo(s.p).held, [], "released at midnight");
+      // The soon look (a minute on, on the watch's 20 s tick).
+      po.setClockForTest(() => midnight.getTime() + 3_600_000 + 2 * 60_000);
+      hostOf(org.id).fireDue();
       const run = store.readMemo(s.p).lastRun!;
       assert.deepEqual(run.reasons, [`Today's allowance is back: it may start gathering sessions again (refused ${clockTime(held[0]!.since)}).`]);
       await s.settle();

@@ -41,14 +41,14 @@ function file(dir: string, id: string, cwd: string, days: number, text?: string)
 
 const org = await orgs.createOrg({ name: "Guarded", dir: join(root, "ws") });
 mkdirSync(join(root, "proj"));
-const project = orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
-const tony = orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
+const project = await orgs.addProject(org.id, { name: "Portal", root: join(root, "proj") });
+const tony = await orgs.addPerson(org.id, { name: "Tony Reyes", role: "IT" });
 const wsDir = orgs.orgDir(org.id);
 const wsSessions = join(wsDir, "sessions");
 
 test("age, husks and paths never delete an org workspace session; ordinary sessions still go", async () => {
   // A baton waiting on its first link: no user message yet, so a husk too, and 40 days idle.
-  const idle = baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Idle", goal: "g", mintLink: false });
+  const idle = await baton.createBaton({ orgId: org.id, projectId: project.id, to: tony.id, publicTitle: "Idle", goal: "g" }, { mintLink: false });
   age(idle.path, 40);
   // Any other conversation in the workspace (a project overseer's, say), with a user message.
   const talk = file(wsSessions, "01234567-89ab-7cde-8f01-00000000000a", wsDir, 40, "overseer chat");

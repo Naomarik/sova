@@ -37,7 +37,7 @@ const probe = (): Probe => ({
 
 /** A 16 kHz mono clip of n × 0.1 s. */
 function clip(n: number): Uint8Array<ArrayBuffer> {
-  const samples = n * 1600;
+  const samples = (n + 1) * 1600;
   const b = Buffer.alloc(44 + samples * 2);
   b.write("RIFF", 0, "ascii");
   b.writeUInt32LE(36 + samples * 2, 4);
@@ -52,6 +52,8 @@ function clip(n: number): Uint8Array<ArrayBuffer> {
   b.writeUInt16LE(16, 34);
   b.write("data", 36, "ascii");
   b.writeUInt32LE(samples * 2, 40);
+  // Tone, then 0.1 s of near silence: a calibration clip must pass the clip check.
+  for (let i = 0; i < samples; i++) b.writeInt16LE(i < samples - 1600 ? Math.round(3000 * Math.sin(i / 3)) : i % 2 ? 1 : -1, 44 + 2 * i);
   return new Uint8Array(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
 }
 
@@ -187,7 +189,7 @@ describe("dictation per device", () => {
 });
 
 describe("calibration through the routes", () => {
-  it("records, sweeps 24 settings, applies the best to that device only, and its dictation sends it", async () => {
+  it("records, sweeps 12 settings, applies the best to that device only, and its dictation sends it", async () => {
     const { a, requests } = host({ env: ONE_WINNER });
     await record(a, A, [1, 2, 3, 4]);
     const st = await status(a, A);
@@ -202,7 +204,7 @@ describe("calibration through the routes", () => {
     const r = done.calibration!.run!;
     assert.equal(r.phase, "done");
     assert.equal(r.grid, "full");
-    assert.equal(r.rows.length, 24);
+    assert.equal(r.rows.length, 12);
     assert.equal(r.rows.find((x) => x.current)!.key, "p=list b=1 t=0.2 v=0");
     assert.ok(r.rows.every((x) => x.scored === 4));
     assert.equal(r.best, WINNER);
@@ -303,12 +305,12 @@ describe("models through the routes", () => {
     assert.equal(service.models.job!.outcome, "ok", service.models.job!.error);
     let s = await status(a, A);
     assert.equal(s.activeModel, PARAKEET);
-    assert.equal(s.models.find((m) => m.id === PARAKEET)!.selftestText, "Open sofa and run the type check in the work tree.");
+    assert.equal(s.models.find((m) => m.id === PARAKEET)!.selftestText, "Open sofa and run the type check in the worktree.");
     // A's whisper settings don't apply to Parakeet: nothing is tunable, so its dictation carries no fields.
     const n = requests().length;
     const out = await dictate(a, A);
     assert.equal(out.status, 200);
-    assert.equal(out.body.text, "Open sofa and run the type check in the work tree.");
+    assert.equal(out.body.text, "Open sofa and run the type check in the worktree.");
     const q = requests()[n]!;
     assert.deepEqual([q.contentType, q.fields], ["audio/wav", {}]);
     res = await a.request(`/api/voice/models/${DEFAULT_MODEL.id}/use`, { method: "POST" });

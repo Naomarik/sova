@@ -1471,7 +1471,10 @@ class ChatSession {
           this.queue.onSdkEvent();
           this.releaseLinks(false);
         });
-      if (event.type === "agent_start") this.releaseLinks(true);
+      if (event.type === "agent_start") {
+        this.releaseLinks(true);
+        startedTurn(this.path);
+      }
       if (event.type === "message_start" && this.linkInSdk.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
         const content = (event as { message: { content?: unknown } }).message.content;
         const i = this.linkInSdk.indexOf(typeof content === "string" ? content : textBlocks(content));
@@ -2723,6 +2726,22 @@ export function notifyLinksChanged(sessionIds: readonly string[]): void {
   for (const chat of heldChats()) {
     if (!chat.clients.size) continue;
     if (chat.overseer || ids.has(chat.session.sessionId)) pushLinks(chat);
+  }
+}
+
+/** A hosted session started a turn (agent_start): a project's build hears it as `turn/started` (F21). */
+const startedListeners = new Set<(path: string) => void>();
+export function onAgentStarted(fn: (path: string) => void): () => void {
+  startedListeners.add(fn);
+  return () => startedListeners.delete(fn);
+}
+function startedTurn(path: string): void {
+  for (const fn of startedListeners) {
+    try {
+      fn(path);
+    } catch (err) {
+      console.error("[chat] agent_start listener failed", err);
+    }
   }
 }
 

@@ -63,6 +63,8 @@ import {
 import { remotePlaceOf } from "../lib/remote-session";
 import { createReconnectingSocket } from "../lib/socket";
 import { usageTotal, type UsageTotalView, workingSplit } from "../lib/workers";
+import { providerWait, watchProviderWaits } from "../lib/provider-waiting";
+import { waitingSentence } from "../../shared/provider-limits";
 import type { UploadResult } from "../../shared/protocol";
 import {
   copyText,
@@ -377,6 +379,13 @@ export function ChatView(props: {
   /** The same message's list, so the status row can split the count against this session's teams. */
   const [workerList, setWorkerList] = createSignal<WorkerInfo[]>([]);
   const workersSplit = () => workingSplit(workersWorking(), workerList(), props.teams);
+  /** While a turn runs and its model request waits on its provider's limit, the status says so
+      in place of Working (§app.provider-limits/waiting-shown). */
+  watchProviderWaits(() => live.running);
+  const waitWords = () => {
+    const w = live.running ? providerWait(props.summary?.()?.id) : undefined;
+    return w ? waitingSentence(w) : null;
+  };
   /** A "workers" message has arrived since the last hello: from then on the workers are the
       socket's to say. The hello clears the list, but its runtime's first "workers" can come a
       while after it (none at all while the runtime has no live record yet). */
@@ -1701,7 +1710,7 @@ export function ChatView(props: {
         running={live.running}
         compacting={compacting()}
         stopping={live.stopping}
-        activity={live.activity}
+        activity={live.activity ?? waitWords()}
         detail={runDetail(live)}
         workersWorking={workersWorking()}
         workersTotal={workersTotal()}

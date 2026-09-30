@@ -442,6 +442,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .org-needs-item { align-items: flex-start; }
 .org-needs-item .list-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .org-needs-item .list-meta { white-space: normal; overflow-wrap: anywhere; }
+/* A held act: the row opens the project page, Cancel sits beside it (not inside the link). */
+.org-needs-held { display: flex; align-items: center; gap: var(--space-2); }
+.org-needs-held .org-needs-item { flex: 1; min-width: 0; border-bottom: 0; }
+.org-needs-held { border-bottom: var(--stroke-thin) solid var(--color-border); }
+.org-needs-cancel { flex: none; min-height: var(--tap-min); margin-right: var(--space-2); }
 .org-section + .org-section { border-top: var(--stroke-thin) solid var(--color-border); }
 /* The org head's count stays, open or shut (unlike a user's group, whose rows say it). */
 .org-section[open] > .group-label > .text-num { display: inline; }

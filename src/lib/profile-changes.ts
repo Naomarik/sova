@@ -2,7 +2,8 @@
 // grouped so one act (adding a person, one wrap-up, one referral) reads as one row, each value in
 // words. Pure, for tsx --test.
 
-import type { NamedChange, PersonStatus, ProfileChange } from "../../shared/orgs";
+import { hoursWords } from "./working-hours";
+import type { NamedChange, OrgHoursChange, PersonStatus, ProfileChange } from "../../shared/orgs";
 
 /** Who wrote a profile change, in words, by kind. */
 export const WRITER: Record<ProfileChange["by"]["kind"], string> = { operator: "you", wrapup: "wrap-up", referral: "referral", overseer: "overseer" };
@@ -26,6 +27,9 @@ export function valueText(field: ProfileChange["field"], v: unknown): string {
   if (typeof v === "object") {
     const o = v as Record<string, unknown>;
     if (field === "referral") return typeof o.why === "string" ? o.why : "—";
+    // Working hours (r7): the same words as the Hours row, "Mon–Fri 09:00–17:00".
+    if (field === "hours" && Array.isArray(o.days) && typeof o.from === "string" && typeof o.to === "string")
+      return hoursWords({ days: o.days as number[], from: o.from, to: o.to });
     if (field === "competence")
       return Object.entries(o)
         .map(([skill, c]) => `${skill} ${(c as { level?: number })?.level ?? "?"}/5`)
@@ -34,6 +38,32 @@ export function valueText(field: ProfileChange["field"], v: unknown): string {
     return parts.length ? parts.map(([k, x]) => `${k} ${x}`).join(", ") : "—";
   }
   return String(v);
+}
+
+/** r13: a company-hours history line: "Time zone: — → Europe/Istanbul", "Hours: Mon–Fri 09:00–17:00 → —". */
+export const orgHoursChangeLine = (c: Pick<OrgHoursChange, "field" | "from" | "to" | "revertOf">): string =>
+  `${c.revertOf ? "Reverted. " : ""}${c.field === "tz" ? "Time zone" : "Hours"}: ${valueText(c.field, c.from)} → ${valueText(c.field, c.to)}`;
+
+/**
+ * Whether a company-hours line can be reverted, and why not (the button's title): C6, a line whose field
+ * changed since is refused (the newer change first); a value already back is nothing to do. `history` is newest first.
+ */
+export function orgHoursRevert(
+  c: Pick<OrgHoursChange, "at" | "field" | "from">,
+  history: readonly Pick<OrgHoursChange, "at" | "field">[],
+  now: { tz?: string; hours?: unknown },
+): { ok: boolean; why?: string } {
+  const i = history.findIndex((h) => h.at === c.at);
+  // The server's own refusal sentence (409), said before the click.
+  if (history.slice(0, Math.max(0, i)).some((h) => h.field === c.field))
+    return {
+      ok: false,
+      why: `The company's ${c.field === "tz" ? "time zone has" : "working hours have"} changed since then, so reverting this would undo a later change. Revert the latest change instead.`,
+    };
+  const current = c.field === "tz" ? (now.tz ?? "") : (now.hours ?? null);
+  const back = c.field === "tz" ? (c.from ?? "") : (c.from ?? null);
+  if (JSON.stringify(current) === JSON.stringify(back)) return { ok: false, why: c.field === "tz" ? "The time zone is already this." : "The hours are already these." };
+  return { ok: true };
 }
 
 export interface ChangeGroup {

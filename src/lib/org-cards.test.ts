@@ -27,3 +27,10 @@ test("a project to pick a main stakeholder for counts and says so", () => {
   assert.equal(needsYouCount(n), 3);
   assert.equal(needsYouLabel(n), "1 conflict to settle · 2 stakeholders to pick");
 });
+
+test("held acts count and say so (§app.project-overseer/holds)", () => {
+  const n = { replies: 0, links: 0, proposals: 0, conflicts: 0, held: 2 };
+  assert.equal(needsYouCount(n), 2);
+  assert.equal(needsYouLabel(n), "2 held acts");
+  assert.equal(needsYouLabel({ ...n, held: 1, replies: 1 }), "1 reply · 1 held act");
+});

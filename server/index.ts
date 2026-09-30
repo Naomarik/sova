@@ -13,14 +13,14 @@ import { isDirectLocal } from "./compression";
 import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./transcript-rows";
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
-import { markShutdown, startWrapupRecovery } from "./wrapup-recovery";
-import { startBatonMarksBackfill } from "./baton-marks";
+import { markShutdown } from "./wrapup-recovery";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
 import { startProjectOverseerLoop } from "./project-overseer";
-import { attachedWorkspaces } from "./orgs";
-import { WorkspaceCommitter } from "./workspace-commits";
+import { attachedWorkspaces, openAttachedOrgs } from "./orgs";
+import { closeAllOrgHosts } from "./org-engine";
+import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
@@ -62,6 +62,7 @@ import { configureSession } from "./sessions-configure";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
 import { saveTeamDefaults, teamDefaultsInfo, teamOptions } from "./team-defaults";
+import { providerLimitsInfo, providerWaiting, saveProviderLimits } from "./provider-limits";
 import { modelDenial, readModelPolicy, writeModelPolicy } from "./model-policy";
 import { listThemes } from "./themes";
 import { listPlaybooks } from "./playbooks";
@@ -620,6 +621,23 @@ app.put("/api/settings/models", async (c) => {
   const result = writeModelPolicy(body);
   return "error" in result ? c.json({ error: result.error }, 400) : c.json(result);
 });
+
+// Settings → Models' "At once" field: how many of each provider's model requests may run at once on
+// this device (server/provider-limits.ts). GET reads the file (missing → the defaults), PUT replaces
+// it; one that can't be read is never overwritten (409). Every pi process's gate reads it per request.
+app.get("/api/settings/provider-limits", (c) => c.json(providerLimitsInfo()));
+app.put("/api/settings/provider-limits", async (c) => {
+  let body: unknown;
+  try {
+    body = await c.req.json();
+  } catch {
+    return c.json({ error: "Expected a JSON body { limits }" }, 400);
+  }
+  const result = saveProviderLimits(body);
+  return c.json(result.body, result.status);
+});
+// Who waits on a provider's limit now, by session id (the queue files; the web polls it while anything runs).
+app.get("/api/provider-limits/waiting", (c) => c.json(providerWaiting()));
 
 // Every theme we can find: the 18 shipped ones plus whatever is in
 // ~/.pi/agent/sova/themes/, rescanned per request. Read-only — the choice is the browser's, kept
@@ -1349,6 +1367,9 @@ const linkOrigin = (port: number) => `http://${HOST === "0.0.0.0" || HOST === ":
 // Known before listen when the port is fixed, so no runtime opened meanwhile misses the flag.
 if (PORT) setLinkOrigin(linkOrigin(PORT));
 
+// Every attached org's engine opens before the first request (its pages and share links read it).
+await openAttachedOrgs();
+
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
@@ -1376,14 +1397,9 @@ startResourceMonitor({
   held: () => heldChats().map((c) => ({ path: c.path, sessionId: c.session.sessionId, cwd: c.session.sessionManager.getCwd() })),
   titleOf: cachedTitleOf,
 });
-// Every attached org's workspace repo: committed at most hourly when anything changed, then pushed.
-const workspaceCommits = new WorkspaceCommitter(attachedWorkspaces);
-workspaceCommits.start();
-// A wrap-up row left "running" by an earlier process, or older than any run can be, is recorded failed.
-startWrapupRecovery();
+// Every attached org's workspace repo: its residence chart commits whatever changed at most hourly, then pushes.
 // Messages a crash or kill lost stop counting against their session's limit.
 startBudgetRecount();
-startBatonMarksBackfill();
 // The automatic session namer's sweep (off until Settings turns it on), nudged by summary lines.
 autoTitleSweep.start();
 onSummaryLineChanged(() => autoTitleSweep.nudge());
@@ -1480,8 +1496,8 @@ async function shutdown() {
     console.warn(`[server] visit flush failed: ${err instanceof Error ? err.message : String(err)}`);
   }
   // After the runtimes' last writes: whatever changed in a workspace repo since its last commit.
-  workspaceCommits.stop();
-  await Promise.race([workspaceCommits.flush("shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);
+  await closeAllOrgHosts().catch(() => {});
+  await Promise.race([flushWorkspaces(attachedWorkspaces(), "shutdown").catch(() => []), new Promise((r) => setTimeout(r, 10_000))]);
   process.exit(0);
 }
 process.on("SIGINT", shutdown);

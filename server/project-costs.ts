@@ -12,7 +12,8 @@ import { allBatons, sessionPathOf, workspaceHasFile } from "./baton";
 import { modelName, pricesInfo, priceUsage } from "./model-prices";
 import { orgDir, readProjects } from "./orgs";
 import { type CostBucket, type CostLedger, type CostSnapshot, type EstimateFlag, ledgerPaths, readCostLedger, readUsageLedger, writeCostLedger, type UsageRow } from "./project-costs-ledger";
-import { projectOf, projectOverseerPaths, readPoMarker, readStarted, sessionIdOfFile } from "./project-overseer-store";
+import { readBuilds } from "./build-loadout";
+import { projectOf, projectOverseerPaths, readPoMarker, sessionIdOfFile } from "./project-overseer-store";
 import { getSessionSummary, indexedSessionPaths } from "./sessions-index";
 import { parseLines } from "./transcript";
 import { defaultAdapters } from "./worker-adapters";
@@ -52,7 +53,6 @@ export function setCostDeps(d: Partial<CostDeps> | null): void {
 // ---- buckets -----------------------------------------------------------------------------------------
 
 const NO_MODEL_WHY = "A tool's own model calls, with no model recorded.";
-const LEGACY_WHY = "Counted before costs, no model recorded.";
 
 function refOf(model: string): { provider: string; model: string } {
   const i = model.indexOf("/");
@@ -289,13 +289,10 @@ async function addSession(w: Walk, s: Omit<Source, "buckets" | "live" | "path">,
 }
 
 /** Every source of the project on this host, plus the ledger's for what isn't here. */
-async function walkProject(orgId: string, projectId: string): Promise<{ sources: Source[]; legacy: number; reconcile: UsageRow[]; ledger: CostLedger }> {
+async function walkProject(orgId: string, projectId: string): Promise<{ sources: Source[]; reconcile: UsageRow[]; ledger: CostLedger }> {
   const dir = orgDir(orgId);
   const lp = ledgerPaths(orgId, projectId, dir);
   const w: Walk = { sources: [], seen: new Set(), ledger: readCostLedger(lp) };
-  const pp = projectOverseerPaths(orgId, projectId, dir);
-  const started = readStarted(pp);
-  const startedByOverseer = new Set(started.filter((r) => r.kind === "gathering" || r.kind === "offer").map((r) => r.sessionId));
 
   // Batons (gathering, offers, settling), each with its wrap-up apart.
   const batons: BatonSession[] = allBatons().filter((b) => b.orgId === orgId && b.projectId === projectId);
@@ -303,7 +300,7 @@ async function walkProject(orgId: string, projectId: string): Promise<{ sources:
   for (const b of batons) {
     const path = workspaceHasFile(dir, b) ? sessionPathOf(dir, b) : null;
     if (path) batonFiles.add(path);
-    const by: CostStarter = (typeof b.owner === "object" && b.owner.overseerOf === projectId) || startedByOverseer.has(b.sessionId) ? "overseer" : "operator";
+    const by: CostStarter = typeof b.owner === "object" && b.owner.overseerOf === projectId ? "overseer" : "operator";
     await addSession(w, { key: b.sessionId, sessionId: b.sessionId, title: b.publicTitle || "Gathering session", kind: b.conflict ? "settle" : "gathering", by }, path, true);
   }
 
@@ -324,24 +321,19 @@ async function walkProject(orgId: string, projectId: string): Promise<{ sources:
   }
 
   // Coding sessions of both kinds, and their workers.
-  const known = indexedSessionPaths();
-  let legacy = 0;
-  for (const r of started) {
-    if (r.kind !== "coding" && r.kind !== "operator-coding") continue;
-    const path = known.get(r.sessionId) ?? (r.path && existsSync(r.path) ? r.path : null);
+  for (const r of readBuilds(orgId, projectId)) {
     const kind: CostKind = r.kind === "coding" ? "coding-overseer" : "coding-operator";
     const by: CostStarter = r.kind === "coding" ? "overseer" : "operator";
-    if (path) await addSession(w, { key: r.sessionId, sessionId: r.sessionId, title: await titleOf(path, r.title ?? "Coding session"), kind, by }, path);
-    else if (!w.ledger.sources[r.sessionId] && r.tokens) legacy += r.tokens;
+    if (r.path) await addSession(w, { key: r.sessionId, sessionId: r.sessionId, title: await titleOf(r.path, r.title ?? "Coding session"), kind, by }, r.path);
   }
 
   // What the ledger has and this host doesn't (another host's sessions, deleted transcripts, rows
-  // started.json no longer keeps): its last count.
+  // the charts no longer keep): its last count.
   for (const [key, snap] of Object.entries(w.ledger.sources)) {
     if (w.sources.some((s) => s.key === key)) continue;
     w.sources.push({ key, sessionId: snap.sessionId, title: snap.title, kind: snap.kind, by: snap.by, path: null, buckets: snap.buckets, live: false, countedAt: snap.countedAt });
   }
-  return { sources: w.sources, legacy, reconcile: readUsageLedger(lp), ledger: w.ledger };
+  return { sources: w.sources, reconcile: readUsageLedger(lp), ledger: w.ledger };
 }
 
 // ---- pricing and the answer -----------------------------------------------------------------------------
@@ -437,7 +429,7 @@ function keepSnapshots(orgId: string, projectId: string, ledger: CostLedger, sou
 async function computeProjectCost(orgId: string, projectId: string): Promise<ProjectCost> {
   projectOf(orgId, projectId);
   const now = deps.now();
-  const { sources: fileSources, legacy, reconcile, ledger } = await walkProject(orgId, projectId);
+  const { sources: fileSources, reconcile, ledger } = await walkProject(orgId, projectId);
   keepSnapshots(orgId, projectId, ledger, fileSources, now);
   const sources = [...fileSources, ...reconcileSources(reconcile)];
 
@@ -490,7 +482,6 @@ async function computeProjectCost(orgId: string, projectId: string): Promise<Pro
     }
     top.push({ sessionId: s.sessionId, title: s.title, kind: s.kind, by: s.by, path: s.path, ...(s.countedAt && !s.live ? { countedAt: s.countedAt } : {}), ...row });
   }
-  if (legacy > 0) unpriced.set("unknown", { model: "unknown", tokens: legacy, why: LEGACY_WHY });
 
   const spent = (r: CostRow) => r.usd > 0 || r.tokens.input + r.tokens.output + r.tokens.cacheRead + r.tokens.cacheWrite > 0;
   const allTokens = (r: CostRow) => r.tokens.input + r.tokens.output + r.tokens.cacheRead + r.tokens.cacheWrite;

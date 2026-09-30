@@ -14,7 +14,7 @@ export interface OrgTabInfo {
   waitingText: string;
 }
 
-type TabSource = Pick<OrgDetail, "batons" | "roster" | "projectList" | "problems" | "git" | "projectConflicts">;
+type TabSource = Pick<OrgDetail, "batons" | "roster" | "projectList" | "problems" | "git" | "projectConflicts"> & Partial<Pick<OrgDetail, "needsYou">>;
 
 /** A project whose main stakeholder left the org and has none now: the operator picks a new one. */
 export const stakeholderToPick = (p: Pick<OrgProject, "stakeholder" | "stakeholderCleared">): boolean => !!p.stakeholderCleared && !p.stakeholder;
@@ -27,6 +27,8 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
   const proposed = o.roster.filter((p) => p.status === "proposed").length;
   const conflicts = Object.values(o.projectConflicts ?? {}).reduce((a, n) => a + n, 0);
   const stakeholders = o.projectList.filter(stakeholderToPick).length;
+  // Acts waiting in a hold before they reach a person or the code (§app.project-overseer/holds).
+  const held = o.needsYou?.held ?? 0;
   const repo = o.problems.length + (o.git.lastError ? 1 : 0);
   const words = (parts: string[]) => parts.filter(Boolean).join(" · ");
   return [
@@ -43,8 +45,12 @@ export function orgTabsOf(o: TabSource): OrgTabInfo[] {
       label: "Projects",
       // Archived projects are not counted (§app.organizations/archive).
       count: o.projectList.filter((p) => !p.archived).length,
-      waiting: conflicts + stakeholders,
-      waitingText: words([conflicts ? `${plural(conflicts, "conflict")} to settle` : "", stakeholders ? `${plural(stakeholders, "stakeholder")} to pick` : ""]),
+      waiting: conflicts + stakeholders + held,
+      waitingText: words([
+        conflicts ? `${plural(conflicts, "conflict")} to settle` : "",
+        stakeholders ? `${plural(stakeholders, "stakeholder")} to pick` : "",
+        held ? plural(held, "held act") : "",
+      ]),
     },
     {
       id: "workspace",

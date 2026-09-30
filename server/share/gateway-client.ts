@@ -270,9 +270,9 @@ export interface GatewayTarget {
 }
 
 // The link kinds a gateway said it routes, bound to the exact target (generation and entry) whose
-// own info said so: a new generation, a changed entry, an unreachable or restarted gateway, or a
-// snapshot it refused all drop it, and until the current target states `s` again it gets no `s`
-// row (§mesh.public/registry).
+// own info said so: a new generation, a changed entry, an unanswered info, or a snapshot it
+// refused all drop it, and until the current target states `s` again it gets no `s` row. The
+// gateway coming back up drops nothing: its next info replaces it (§mesh.public/registry).
 let kindsEvidence: { generation: number; key: string; kinds: RegistryLinkKind[] } | null = null;
 
 /** The kinds `target` itself stated since it became the target; null when it hasn't. */
@@ -287,7 +287,7 @@ export const routesSessions = (target: GatewayTarget | null): boolean => targetK
 /** Whether `target` stated that it routes links of `kind` (h and i: always). */
 export const routesKind = (target: GatewayTarget | null, kind: RegistryLinkKind): boolean => kind === "h" || kind === "i" || (targetKinds(target)?.includes(kind) ?? false);
 
-/** Forget what any gateway said about its kinds (a refusal, a restart, the gateway unreachable). */
+/** Forget what any gateway said about its kinds (a refusal, the gateway unreachable or no gateway). */
 export function forgetKinds(): void {
   kindsEvidence = null;
 }

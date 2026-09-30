@@ -29,6 +29,8 @@ const personLinks = await import("./person-links");
 const { REFUSED_HEADER } = await import("./mesh/hello");
 const { addressIdentity } = await import("./mesh/address-identity");
 const { peerUrl } = await import("./mesh/peers");
+const { meshApi } = await import("./mesh/index");
+const { previewAddress } = await import("./share/preview-address");
 const { LINK_WARNINGS, MINT_ACK_TIMEOUT_MS, SHARE_PORT_DEFAULT } = await import("../shared/public-links");
 type PublicLinksFile = import("../shared/public-links").PublicLinksFile;
 type RegistrySnapshot = import("../shared/public-links").RegistrySnapshot;
@@ -1581,4 +1583,94 @@ test("M1-B6 control: a clean two-recipient mint confirms, and Extend (no new lin
   for (const t of r.result.tokens) assert.ok(sent.has(batonLinks.hashToken(t.token)));
   const x = await events.awaitShareLinks(() => sessionShares.extendShare(r.result.share.id, 7), WAIT);
   assert.equal(x.outcome.warning, null, JSON.stringify(x.outcome));
+});
+
+// ---- the preview address through a gateway comeback ---------------------------------------------
+
+
+const PREVIEW_URL = "https://*.pv.example.com";
+const ALL_KINDS = ["h", "i", "s", "x", "p"];
+const infoWithPreview = (node: string, kinds: string[]): Reply => ({ status: 200, body: { publicUrl: urlOf(node), accepting: true, seq: null, kinds, previewUrl: PREVIEW_URL } });
+const addressNow = () => previewAddress({}, VIA);
+const pause = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Routed through a gateway that stated `p` and its preview address. */
+async function previewGateway() {
+  clearStores();
+  infoReply = async (n) => infoWithPreview(n, ALL_KINDS);
+  push.startRegistryPush();
+  await gw.refreshGateway();
+  await push.pushNow();
+  assert.equal(addressNow().url, PREVIEW_URL, "premise: the gateway's address is in effect");
+}
+
+/** The mesh sees the gateway go and come back; its info reply is held until `answer()`. */
+function comeback(reply: (node: string) => Reply) {
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  let asked = 0;
+  infoReply = async (n) => {
+    asked++;
+    await held;
+    return reply(n);
+  };
+  meshApi.sawPeer(GATEWAY.id, false);
+  meshApi.sawPeer(GATEWAY.id, true);
+  return {
+    asked: () => asked,
+    answer: async () => {
+      release();
+      await pause(20); // the refresh settles, then the push the comeback owes
+      await push.pushNow();
+    },
+  };
+}
+
+test("through a gateway comeback the preview address never reads unset, and the same answer keeps it", async () => {
+  await previewGateway();
+  const seen: Array<string | null> = [];
+  const watch = setInterval(() => seen.push(addressNow().url), 1);
+  try {
+    const c = comeback((n) => infoWithPreview(n, ALL_KINDS));
+    seen.push(addressNow().url); // right after the comeback, before anything answered
+    for (let i = 0; i < 50 && !c.asked(); i++) await pause(2);
+    assert.ok(c.asked() > 0, "the comeback asks the gateway again");
+    await pause(20); // the gateway takes its time
+    seen.push(addressNow().url);
+    await c.answer();
+    await pause(10);
+    seen.push(addressNow().url);
+  } finally {
+    clearInterval(watch);
+  }
+  assert.ok(seen.length > 5, `premise: sampled (${seen.length})`);
+  assert.deepEqual([...new Set(seen)], [PREVIEW_URL], "the address read unset during the comeback");
+  assert.ok(pushed.at(-1), "the push still follows the comeback");
+});
+
+test("a gateway that comes back without the preview kind clears the address (gateway-old)", async () => {
+  await previewGateway();
+  const c = comeback((n) => infoWithKinds(n, ["h", "i", "s", "x"]));
+  assert.equal(addressNow().url, PREVIEW_URL, "kept until it answers");
+  await c.answer();
+  for (let i = 0; i < 50 && addressNow().url; i++) await pause(2);
+  const a = addressNow();
+  assert.deepEqual([a.url, a.reason], [null, "gateway-old"]);
+  assert.ok(!pushed.at(-1)!.links.some((l) => l.kind === "p"), "no p row to a gateway that no longer lists it");
+});
+
+test("a gateway whose info goes unanswered still loses its statement: the address is unset (no-address)", async () => {
+  await previewGateway();
+  const c = comeback(() => null);
+  await c.answer();
+  for (let i = 0; i < 50 && addressNow().url; i++) await pause(2);
+  const a = addressNow();
+  assert.deepEqual([a.url, a.reason], [null, "no-address"]);
+  // and without any comeback: the 60 s refresh finding it unreachable clears it the same way
+  infoReply = async (n) => infoWithPreview(n, ALL_KINDS);
+  await gw.refreshGateway();
+  assert.equal(addressNow().url, PREVIEW_URL);
+  infoReply = async () => null;
+  await gw.refreshGateway();
+  assert.equal(addressNow().url, null);
 });

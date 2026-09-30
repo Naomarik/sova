@@ -745,6 +745,25 @@ describe("mesh ON", () => {
     fakeSessions = [];
   });
 
+  test("a skewed peer polled like the web does (status, then sessions) comes up once, never again per poll", async () => {
+    fakeHello = "other";
+    fakeSessions = [];
+    const ups = () => hookLog.filter((h) => h === "up:b").length;
+    clearProbes();
+    await getJson<MeshInfo>("/api/mesh"); // settle: whatever it was, it has answered now
+    await getJson<MeshSessions>("/api/mesh/sessions");
+    const before = ups();
+    for (let i = 0; i < 3; i++) {
+      clearProbes();
+      const [, info] = await getJson<MeshInfo>("/api/mesh");
+      assert.equal(info.peers.find((p) => p.id === "b")!.state, "skewed", "premise: the hello says skewed");
+      const [, sessions] = await getJson<MeshSessions>("/api/mesh/sessions");
+      assert.equal(sessions.peers.find((p) => p.id === "b")!.state, "up", "premise: its session list answers");
+    }
+    assert.equal(ups(), before, "each poll read it as gone and back");
+    fakeHello = "same";
+  });
+
   test("candidates: tailnet nodes, probed; peerId for known ones", async () => {
     tailnetPeers = [
       { nodeId: "nB", name: "127.0.0.1", online: true },

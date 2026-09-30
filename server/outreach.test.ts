@@ -373,6 +373,28 @@ describe("§app.outreach/links, /log, /send: a preview send's address, its codes
     assert.equal(sib.siblingOf, record.id);
     assert.equal(sib.createdBy, `session:${overseerId}`);
   });
+
+  test("the overseer sees its sends' delivery: sova_send_status on the real log and hold; a look notes each that did not go, once", async () => {
+    const { markSendsNoted, sendsToNote } = await import("./outreach/log");
+    // One more in the hold, so the status lists it as held.
+    await run("sova_send_to_person", { person: "Ann", note: "One more thing soon." });
+    const id = holdOf();
+    const end = Date.now() + 8000;
+    while (!logOf().some((l) => l.by === "project-overseer" && l.previewId && (l.event === "delivered" || l.event === "read")) && Date.now() < end) await new Promise((r) => setTimeout(r, 100));
+    const status = JSON.stringify((await run("sova_send_status", { person: "Ann", limit: 50 })).content);
+    assert.match(status, new RegExp(`${id.replace(/[/#]/g, (c) => `\\${c}`)} · Ann · a note · by you · held · goes at `));
+    assert.match(status, /Ann · a preview link with a note · by you · refused \(preview-off: the preview was turned off\)/);
+    assert.match(status, /Ann · a preview link · by you · (delivered|read) · at /, "the approved one arrived");
+    assert.match(status, /Ann · a note · by the operator · (sent|delivered|read)/);
+    assert.doesNotMatch(status, /5550000100|example\.com|https?:|One more thing|new build/, "never a number, a link or a note");
+    // A look names each of its own sends that did not go, with the reason, and the next look doesn't repeat them.
+    const look = po.lookAppendix(org.id, project.id);
+    assert.match(look, /Your WhatsApp message to Ann did not go: the preview was turned off \(preview-off\)\./);
+    assert.match(look, /Your WhatsApp message to Ann did not go: no preview address was available \(Settings → Public links\) \(preview-address\)\./);
+    markSendsNoted(org.id, project.id, sendsToNote(org.id, project.id)); // what runLook does as it sends the look
+    assert.doesNotMatch(po.lookAppendix(org.id, project.id), /did not go/);
+    await run("sova_hold", { op: "cancel", id, reason: "test: done" });
+  });
 });
 
 describe("§app.outreach/sender-route", () => {

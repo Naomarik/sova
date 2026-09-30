@@ -99,6 +99,83 @@ export function notSentAttention(now = Date.now()): AttentionItem[] {
   return out;
 }
 
+/** One send of a project as its overseer reads it (sova_send_status): never a number, a link or the note. */
+export interface ProjectSend {
+  id: string;
+  personId: string;
+  link?: OutreachLogLine["link"];
+  note: boolean;
+  by: OutreachLogLine["by"];
+  /** The latest event (a receipt moves a send on, never back), its code and when it was logged. */
+  event: OutreachLogLine["event"];
+  code?: string;
+  at: string;
+  /** When the send was first logged. */
+  sentAt: string;
+}
+
+/** A project's sends, newest first by their latest event. */
+export function projectSends(orgId: string, projectId: string): ProjectSend[] {
+  const byId = new Map<string, ProjectSend>();
+  for (const l of readSendLog(orgId)) {
+    if (l.projectId !== projectId) continue;
+    const had = byId.get(l.id);
+    if (had && (RANK[l.event] ?? 0) < (RANK[had.event] ?? 0)) continue;
+    byId.set(l.id, {
+      id: l.id,
+      personId: l.personId,
+      ...(l.link ?? had?.link ? { link: l.link ?? had?.link } : {}),
+      note: !!(l.note ?? had?.note),
+      by: had?.by ?? l.by,
+      event: l.event,
+      ...(l.code ? { code: l.code } : {}),
+      at: l.at,
+      sentAt: had?.sentAt ?? l.at,
+    });
+  }
+  return [...byId.values()].sort((a, b) => b.at.localeCompare(a.at) || b.id.localeCompare(a.id));
+}
+
+// ---- what a look has noted -----------------------------------------------------------------------
+
+/** Host-local: per project, the latest time of a send that did not go that a look already noted. */
+const notedFile = (): string => join(stateRoot(), "outreach-noted.json");
+
+function readNoted(): Record<string, string> {
+  try {
+    const raw = JSON.parse(readFileSync(notedFile(), "utf8"));
+    return raw && typeof raw === "object" && raw.projects && typeof raw.projects === "object" ? raw.projects : {};
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * The project overseer's own sends that ended refused, failed or unknown and no look has noted yet
+ * (§app.project-overseer/tools), oldest first; none older than 7 days.
+ */
+export function sendsToNote(orgId: string, projectId: string, now = Date.now()): ProjectSend[] {
+  const since = readNoted()[`${orgId}/${projectId}`] ?? "";
+  const floor = new Date(now - NOT_SENT_DAYS * 86_400_000).toISOString();
+  return projectSends(orgId, projectId)
+    .filter((s) => s.by === "project-overseer" && RANK[s.event] === 0 && s.at > since && s.at > floor)
+    .reverse();
+}
+
+/** A look noted these: later looks don't repeat them. */
+export function markSendsNoted(orgId: string, projectId: string, sends: ProjectSend[]): void {
+  if (!sends.length) return;
+  const all = readNoted();
+  const k = `${orgId}/${projectId}`;
+  const latest = sends.reduce((m, s) => (s.at > m ? s.at : m), all[k] ?? "");
+  all[k] = latest;
+  const path = notedFile();
+  mkdirSync(dirname(path), { recursive: true });
+  const tmp = `${path}.${process.pid}.tmp`;
+  writeFileSync(tmp, `${JSON.stringify({ version: 1, projects: all })}\n`, { mode: 0o600 });
+  renameSync(tmp, path);
+}
+
 /** A person's sends, newest first: the latest event of each (a receipt moves a send on, never back). */
 export function personSends(orgId: string, personId: string, titleOf: (sessionId: string) => string | undefined): PersonSendRow[] {
   const rank = RANK;

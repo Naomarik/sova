@@ -444,6 +444,20 @@ write, quoting the corrected line. Every line that parsed before keeps its meani
 - **`mark:` as a setting.** In every kind that reads `key: value` settings (all but wireframe, whose
   settings never fail), a `mark:` line is the `mark` line without its colon: `mark: 3 error "…"` in
   a `vis code` fence marks line 3.
+- **Commas inside parentheses.** A comma list (a matrix's `columns:`, a chart's `series:`, a
+  layer's items, a wireframe `tabs`, `tabbar` or `table` list, a table row's comma-split cells)
+  doesn't split at a comma inside balanced parentheses: `columns: Critic (Astra), Advocate (K3, your
+  side), Coordinator (Opus, partial)` is three columns, the second "Advocate (K3, your side)". A
+  list whose parentheses don't balance (`Happy :), Sad :(`) splits at every comma, as before, and a
+  quoted item (`"Rebase, then merge"`) is one item, as before.
+- **Columns the rows agree on.** When every row of a matrix has the same number of cells and
+  `columns:` reads as another number, the columns are read another way if exactly one gives the
+  rows' number: splitting inside parentheses too (the reading before the rule above), or keeping a
+  quoted stretch inside a name whole (`columns: The "fast, cheap" plan, Other` over rows of two
+  cells is two columns). A chart's `series:` does the same with its rows' value counts, and a
+  wireframe table row's comma-split cells with the table's columns. Otherwise the error stands:
+  names are never grouped any other way (`columns: A, B, C, D` over rows of three cells is still
+  "3 cells; expected 4").
 - **The guide** teaches flow example-first, one bullet per shape, each quoting its example (a
   node labelled where it first appears, two lines in a box by `\n` in its label, the edge label
   after a target, shape and tone, a `node` line declaring a node); says that after a target the
@@ -451,12 +465,14 @@ write, quoting the corrected line. Every line that parsed before keeps its meani
   wrong→right pairs for Mermaid habits (`A->>B: msg`, `A[Label] --> B`) in its shared rules; and
   asks for a tree folder's `/` inside the quotes, a mark target as its item's exact label, quoted when it
   has spaces (even when its row isn't quoted: `mark "Vue 2" "…"`, and the timeline example marks one
-  that way), a steps mark on a row, not a step, and no
-  `of:` when a chart's parts exceed it. It shows no node with two strings (a source's second line,
+  that way), a steps mark on a row, not a step, no
+  `of:` when a chart's parts exceed it, and a matrix column name that has a comma quoted, in one
+  line under matrix with its example (`columns: Merge, "Rebase, then merge"`). It shows no node with two strings (a source's second line,
   a declaration without `node`): in an offline eval of weak models at low effort, showing one led
   a model to write `-> b "B" "role"` on targets, drawing the role on the arrow; the parser reads
   those forms when a model writes them anyway. The text sent to the model stays within the size it
-  had before mark targets with spaces (12,397 bytes), and so does the file (15,251).
+  had before mark targets with spaces (12,397 bytes) plus that matrix line: 12,473 bytes, and the
+  file within 15,327.
 
 ## §chat.markdown/vis-matrix-tones — `vis matrix` cell tones
 

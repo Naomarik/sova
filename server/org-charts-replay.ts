@@ -538,7 +538,18 @@ function capsOf(c: Record<string, number | null>): ProjectOverseerSettings["caps
 // ---- the replay ------------------------------------------------------------------------------------------
 
 export async function replay(trace: Trace, opts: { horizon?: number } = {}): Promise<Report> {
-  const T0 = Date.parse(trace.t0);
+  const BASE = Date.parse(trace.t0);
+  /** The chart's looks start on its own 20 s ticks (epoch phase 0); today's ticker ran on its server's start phase,
+      one per run of the server (a restart moves it). The replay's clock is shifted so each run's recorded looks fall
+      on the chart's ticks: the chart's timing is compared on the same phase. The shift only ever moves forward. */
+  const phaseShift = (from: number): number | null => {
+    for (const e of trace.events.slice(from)) {
+      if (e.kind === "restart") return null;
+      if (e.kind === "turn" && e.by === "watch") return (TICK_MS - ((BASE + e.dt) % TICK_MS)) % TICK_MS;
+    }
+    return null;
+  };
+  let T0 = BASE + (phaseShift(0) ?? 0);
   let now = T0;
   const rep: Report = { trace: trace.id, steps: trace.events.length, checks: 0, passes: 0, divergences: [], skipped: [], looks: { real: 0, chart: 0 }, items: {}, coverage: { trials: 0, routed: 0, itemChecks: 0, lookChecks: 0, expects: 0, restarts: 0, maxMicrosteps: 0 } };
   const F = trace.sova.features;
@@ -1136,12 +1147,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   const drivenNews = (r: { kind: string; at: number; by: string | null }) => r.by === "chart" || (!!DRIVEN_NEWS[r.kind] && world.driven.some((d) => d.event === DRIVEN_NEWS[r.kind] && d.at === r.at));
   /** The watch's pending reason kinds (noted since its current look started). */
   const pendingNow = () => ((world.data(S.watch).reasons as { kind?: string }[] | undefined) ?? []).map((r) => String(r.kind));
-  /** Reason kinds the chart told the overseer of for its own acts (r3), and real reasons waiting for its next look. */
+  /** Reason kinds the chart told the overseer of for its own acts (r3). */
   const drivenKinds = new Set<string>();
-  const deferred = new Set<string>();
-  const deferredLookAts: number[] = [];
-  /** The last matched look: when the chart's began, when today's did, and today's kinds. */
-  let prevLook: { at: number; realAt: number; realKinds: string[] } | null = null;
   /** When the chart looked for its own driven acts alone (r3). */
   const drivenLookAts: number[] = [];
   /** The reasons of the last look, when it was cut off (C1), until the next look. */
@@ -1149,7 +1156,6 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
   const realLook = async (s: Step) => {
     const cut = requeued;
     requeued = null;
-    const wasDeferred = new Set(deferred);
     rep.coverage.lookChecks++;
     const realKinds = (s.reasons ?? []).map((r) => REASON_KIND[r.kind] ?? r.kind);
     // A Run Now look: the operator's click is its own step when the trace has one (the look then already runs).
@@ -1186,11 +1192,8 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
         const v = trialOn(S.watch, "operator/run-now", {}, env("operator"), null);
         const day = new Date(now).toDateString();
         const mine = drivenLookAts.filter((at) => new Date(at).toDateString() === day);
-        const split = deferredLookAts.filter((at) => new Date(at).toDateString() === day);
         if (v && !v.taken && v.refusal?.includes("daily limit") && mine.length)
           diverge("look-started", "a chart look", v.refusal, "ruling", "r3 (q2 drive): the chart's looks for its own acts count on the day's looks, and used the last one", { ruling: "r3", drivenLooks: mine.map((at) => at - T0) });
-        else if (v && !v.taken && v.refusal?.includes("daily limit") && split.length)
-          diverge("look-started", "a chart look", v.refusal, "mining", "the chart's second look for reasons today's one look carried (a tick-phase split, see its chart-look-extra) counts on the day's looks, and used the last one", { splitLooks: split.map((at) => at - T0) });
         else await send("resync look", S.watch, "operator/run-now", {}, env("operator"));
       }
       const l = world.looks.at(-1);
@@ -1199,17 +1202,12 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
     }
     match.matched = true;
     pass();
-    const lastLook = prevLook;
-    prevLook = { at: match.at, realAt: now, realKinds };
     for (const k of new Set(realKinds)) {
       if (k === "run-now") continue;
       if (match.kinds.includes(k)) pass();
       else if (k.startsWith("drift:")) diverge("look-reasons", k, match.kinds, "drift", "a reason only older commits emit", driftEvidence([k]));
       else if (k === "baton/proposal") diverge("look-reasons", k, match.kinds, "store-shape", `no store dates a referral, so the replay cannot send it. ${PROPOSE.dated}`);
-      else if (pendingNow().includes(k) && !match.rows.some((r) => r.kind === k)) {
-        deferred.add(k);
-        diverge("look-reasons", k, match.kinds, "mining", "the chart's look began before this reason came (its 20 s ticks run on their own phase; the replay matches looks within a window): the reason waits for the chart's next look", { lookAt: match.at - T0, realAt: now - T0 });
-      } else if (match.rows.length && match.rows.every(drivenNews) && pendingNow().includes(k))
+      else if (match.rows.length && match.rows.every(drivenNews) && pendingNow().includes(k))
         diverge("look-reasons", k, match.kinds, "ruling", "r3 (q2 drive): the chart was already looking for its own act's news when this came; it waits for the chart's next look", { ruling: "r3", lookAt: match.at - T0, looksFor: match.rows.map((r) => ({ ...r, at: r.at - T0 })) });
       else diverge("look-reasons", k, match.kinds, null, "the real look carried a reason the chart's look lacks");
     }
@@ -1217,16 +1215,6 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       if (realKinds.includes(k)) continue;
       if (cut?.kinds.has(k) && !k.startsWith("item/")) {
         diverge("look-reasons", `no ${k}`, k, "chart-better", "C1: the look before was cut off (it did not finish); the chart puts its reasons back in front, today lost them", { cutLookAt: cut.at - T0, requeued: [...cut.kinds] });
-        continue;
-      }
-      const late = match.rows.filter((r) => r.kind === k);
-      if (lastLook && lastLook.realKinds.includes(k) && late.length && late.every((r) => r.at > lastLook.at && r.at <= lastLook.realAt)) {
-        diverge("look-reasons", `no ${k}`, k, "mining", "today's previous look carried this kind (reasons deduped by text, C3), noted again after the chart's previous look began: the chart's next look carries that one", { prevChartLookAt: lastLook.at - T0, prevRealLookAt: lastLook.realAt - T0, rows: late.map((r) => ({ ...r, at: r.at - T0 })) });
-        continue;
-      }
-      if (wasDeferred.has(k)) {
-        deferred.delete(k);
-        diverge("look-reasons", `no ${k}`, k, "mining", "a reason today's previous look carried, which came just after the chart's previous look began (see its look-reasons): the chart's next look carries it", { lookAt: match.at - T0 });
         continue;
       }
       const rowsK = match.rows.filter((r) => r.kind === k);
@@ -1270,11 +1258,7 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       l.matched = true;
       if (trace.source !== "synthetic") {
         if (l.kinds.some((k) => k.startsWith("item/"))) diverge("chart-look-extra", "no look", l.kinds, "chart-better", "the chart looked for an item's own reason (stall, reopen, answered-nothing, built) today has no reason for", { lookAt: l.at - T0 });
-        else if (l.kinds.length && l.kinds.every((k) => deferred.has(k))) {
-          for (const k of l.kinds) deferred.delete(k);
-          deferredLookAts.push(l.at);
-          diverge("chart-look-extra", "no look", l.kinds, "mining", "the look for reasons that came just after the chart's previous look began (see its look-reasons): today's one look carried them", { lookAt: l.at - T0 });
-        } else if (F.askedOperatorReason === false && l.kinds.length && l.kinds.every((k) => k === "baton/asked-operator"))
+        else if (F.askedOperatorReason === false && l.kinds.length && l.kinds.every((k) => k === "baton/asked-operator"))
           diverge("chart-look-extra", "no look", l.kinds, "drift", "a look for a gathering that handed a question to the operator: that reason came in 8b7f6751, which this trace's code lacks", { commits: ["8b7f6751"], lookAt: l.at - T0 });
         else if (F.codingSettledReason === false && l.kinds.length && l.kinds.every((k) => k === "coding/settled"))
           diverge("chart-look-extra", "no look", l.kinds, "drift", "a look for a coding session's settled turn: that reason came in 239852ee, which this trace's code lacks", { commits: ["239852ee"], lookAt: l.at - T0 });
@@ -1389,6 +1373,13 @@ export async function replay(trace: Trace, opts: { horizon?: number } = {}): Pro
       const after = world.host.sessions().map((x) => x.id).sort();
       before.every((sid) => after.includes(sid)) ? pass() : diverge("restart", before, after, null, "a session did not come back from its snapshot");
       turn = null;
+      // A new run of the server: its ticker's phase is new.
+      const shift = phaseShift(trace.events.indexOf(s) + 1);
+      if (shift !== null) {
+        let next = BASE + shift;
+        while (next < T0) next += TICK_MS;
+        T0 = next;
+      }
       continue;
     }
     if (s.kind === "operator") {

@@ -46,8 +46,12 @@ export const SPEC_HOOK_SCRIPT = fileURLToPath(import.meta.url);
 const HOOK_TIMEOUT_S = 60;
 /** How many times a merge/promote turn's reply is sent back before it is let through: the pi check's own count. */
 export const MERGE_BLOCKS = LANDING_REPROMPTS;
-/** Tools that never write: no git status for them. */
-const READ_ONLY = new Set(["Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "TodoWrite", "BashOutput"]);
+/** Tools that never write the repository, by exact name: no git status, no census for them. */
+export const READ_ONLY: ReadonlySet<string> = new Set([
+	"Read", "Glob", "Grep", "LS", "WebFetch", "WebSearch", "TodoWrite", "BashOutput",
+	// The team MCP tools write only the team's mailboxes, never the repo; a new team tool is not skipped until listed here.
+	"mcp__team__team_inbox", "mcp__team__team_msg", "mcp__team__team_ask", "mcp__team__team_roster", "mcp__team__team_report", "mcp__team__wake_nudge",
+]);
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
 type Settings = Record<string, unknown>;

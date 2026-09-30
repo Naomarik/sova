@@ -334,7 +334,10 @@ plain-JSON state per Claude session:
 - `UserPromptSubmit`: the turn's baseline (`git status`, HEAD, the HEAD of every worktree of the
   repository, and the default branch's tip: the task's own claims are absent there and at the fork point).
 - `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta; its
-  `[spec census]` digest comes back as `additionalContext`. Every tree a Bash command works in (its
+  `[spec census]` digest comes back as `additionalContext`. The read-only tools (`READ_ONLY`, exact
+  names: Read, Glob, Grep, LS, the web tools, TodoWrite, BashOutput and the team MCP tools
+  `mcp__team__team_inbox`, `…team_msg`, `…team_ask`, `…team_roster`, `…team_report`, `…wake_nudge`)
+  are skipped whole: no git status, no census, so the next writing call sees every change. Every tree a Bash command works in (its
   cwd, each `cd <dir>`, `git -C <dir>`, a promote's `--root`) is looked at: the HEAD reflog entries
   since the last look are its git operations, each HEAD before → after (never `HEAD^1`), so a merge
   into master in the root from a worktree, fast-forward or not, and several merges in one command

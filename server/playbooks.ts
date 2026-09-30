@@ -1,7 +1,8 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PlaybookCatalog, PlaybookInfo } from "../shared/protocol";
+import type { PlaybookCatalog, PlaybookInfo, PlaybookSchedule } from "../shared/protocol";
+import { scheduleOf, scheduleText } from "../shared/schedules";
 import { defaultRemoteOf, type RemoteCwd } from "./files";
 import { projectOf } from "./project-root";
 import { stateRoot } from "./state-root";
@@ -75,6 +76,23 @@ export function parseFrontmatter(text: string): { fields: Record<string, string>
 
 type Source = PlaybookInfo["source"];
 
+/** Where schedules run (§chat.schedules/header): shown on a Sova or Yours playbook that has `when:`. */
+export const NOT_PROJECT_SCHEDULE = "Schedules run only from a project's playbooks.";
+
+/**
+ * A playbook's schedule as its header declares it (§chat.schedules/header), before Sova's own
+ * state is added (server/schedules.ts): invalid with its error, only-in-projects, or valid and not
+ * yet approved.
+ */
+export function headerSchedule(fields: Record<string, string>, source: Source): PlaybookSchedule | undefined {
+  const h = scheduleOf(fields);
+  if (!h) return undefined;
+  const base = { when: h.when, ...(h.profile ? { profile: h.profile } : {}), ...(h.tz ? { tz: h.tz } : {}) };
+  if (source !== "project") return { ...base, state: "not-project", reason: NOT_PROJECT_SCHEDULE };
+  if (h.error || !h.triggers) return { ...base, state: "invalid", reason: h.error };
+  return { ...base, text: scheduleText(h.triggers), state: "needs-approval" };
+}
+
 async function readOne(dir: string, id: string, source: Source): Promise<PlaybookInfo> {
   const text = await readFile(join(dir, "PLAYBOOK.md"), "utf8");
   const { fields, body } = parseFrontmatter(text);
@@ -87,7 +105,39 @@ async function readOne(dir: string, id: string, source: Source): Promise<Playboo
     body,
   };
   if (fields.promptHint) info.promptHint = fields.promptHint;
+  const schedule = headerSchedule(fields, source);
+  if (schedule) info.schedule = schedule;
   return info;
+}
+
+/**
+ * One project playbook by its project root and id, read now (the keeper re-reads the header at
+ * every fire): the first of the project's folders that has it, as the catalog lists it, with its raw
+ * frontmatter. Null when none has it.
+ */
+export async function readProjectPlaybook(root: string, id: string): Promise<{ info: PlaybookInfo; fields: Record<string, string> } | null> {
+  if (!isPlaybookId(id)) return null;
+  for (const rel of PROJECT_PLAYBOOK_DIRS) {
+    const dir = join(root, rel, id);
+    try {
+      if (!(await stat(dir)).isDirectory()) continue;
+      const text = await readFile(join(dir, "PLAYBOOK.md"), "utf8");
+      return { info: await readOne(dir, id, "project"), fields: parseFrontmatter(text).fields };
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+/** Every playbook in a project's folders, an id in both listed once (the keeper's discovery). */
+export async function listProjectPlaybooks(root: string): Promise<PlaybookInfo[]> {
+  const out: PlaybookInfo[] = [];
+  for (const rel of PROJECT_PLAYBOOK_DIRS) {
+    const found = await scan(join(root, rel), "project");
+    for (const p of found.entries) if (!out.some((e) => e.id === p.id)) out.push(p);
+  }
+  return out;
 }
 
 /** Every playbook in one folder. A missing folder is empty; any other failure to list it is the

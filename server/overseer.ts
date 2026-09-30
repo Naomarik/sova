@@ -67,6 +67,7 @@ import { CARDS_NOTE_MESSAGE, cardsNote, clickItems, foldCards, matchCardClick } 
 import { actsText, carriedRules, clickWrote, coveringPermit, foldPermits, type Permit, permitFromClick, REVOKE_ENTRY, RULE_ENTRY, type RuleEntry, sessionsText, USE_ENTRY } from "../shared/overseer-grants";
 import { readAliases, sessionName, setAlias } from "./session-names";
 import { RESUME_DELAY_MS, resumeInterrupted, runLedger } from "./auto-resume";
+import { schedulesForWire } from "./schedules";
 import { overseerFileTools } from "./overseer-file-tools";
 import { OverseerGuard } from "./overseer-deny";
 import { projectOverseerOfPath } from "./project-overseer-store";
@@ -731,7 +732,8 @@ export async function overseerAutonomy(): Promise<OverseerAutonomy> {
   const cap = readOverseerSettings().caps.concurrentSessions;
   const count = countRunning(started, running, promptedAt);
   const e = await overseerEntries();
-  return { running: count, cap, permits: e ? foldPermits(e.branch, e.all, Date.now()) : [] };
+  const schedules = await schedulesForWire().catch(() => []);
+  return { running: count, cap, permits: e ? foldPermits(e.branch, e.all, Date.now()) : [], ...(schedules.length ? { schedules } : {}) };
 }
 
 /** POST /api/overseer/autonomy/revoke: append the revoke through the Overseer's own runtime. */
@@ -1078,6 +1080,13 @@ async function sendBrief(body: string): Promise<void> {
   void turn.catch((err) => overseer.reportTurnFailure(err));
   lastBriefAt = Date.now();
 }
+
+/** Free slots of the running-at-once cap, for a schedule's fire as for a resume (§chat.schedules/fire). */
+export const freeRunSlots = (): number => readOverseerSettings().caps.concurrentSessions - countRunning(started, running, promptedAt);
+/** A session a schedule started or woke counts toward that cap, as a resumed one does. */
+export const countStarted = (path: string): void => host.started(path, true);
+/** One brief to the Overseer under Brief Me, nothing otherwise (a schedule found, §chat.schedules/where-shown). */
+export const briefOverseer = (body: string): Promise<void> => sendBrief(body);
 
 /**
  * Resume the runs the last stop cut off (§app.overseer/auto-resume), once, a few seconds after

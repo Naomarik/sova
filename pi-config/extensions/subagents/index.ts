@@ -1109,7 +1109,7 @@ export function registerSubagents(
 		const { specs } = request;
 		const parentId = ctx.sessionManager.getSessionId?.() || unsavedSessionKey;
 		/** A worker's session-qualified id: the sandbox's owner of its scope and the name of its Claude state dir. */
-		const workerKey = (id: string) => `${sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey)}-${id}`;
+		const workerKey = (id: string) => `${sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112)}-${id}`;
 		/**
 		 * A confined Claude worker's confinement (claude-code/confined-launch.ts): the sandbox's scope for
 		 * it, and what its own state needs writable — its team mailbox, and with spec on its own hook state
@@ -3545,7 +3545,7 @@ export function registerSubagents(
 		// Confined Claude workers' own state dirs (§chat.sandbox/claude-state): kept across resumes, removed
 		// once the worker's record is gone with its owner session. Never one a live worker of this process uses.
 		try {
-			const key = sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey);
+			const key = sessionDirKey(ctx.sessionManager.getSessionId?.(), unsavedSessionKey).slice(0, 112);
 			const file = ctx.sessionManager.getSessionFile?.();
 			const { manifests } = readWorkerManifests(ctx.sessionManager.getEntries());
 			const live = new Set(agents.filter((a) => !a.isFinished()).map((a) => `${key}-${a.id}`));

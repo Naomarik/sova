@@ -642,6 +642,17 @@ describe("limits through PATCH, held items and their retry", async () => {
     assert.equal(info.usage.allowance.today.gather.max, null, "Unlimited, as set above");
   });
 
+  test("the prompt says every start names its gap, what the charts do by themselves, the holds and the corrections", () => {
+    const prompt = po.renderProjectOverseerPrompt(org.id, project.id, po.toolsForTest(org.id, project.id));
+    assert.match(prompt, /Every start names its gap \(`gap: "§gap\/<name>"`\), or\s+`gap: "none"`/);
+    assert.match(prompt, /Don't do these again by hand: read the feed first\./);
+    assert.match(prompt, /wait past the hold for your review: approve\s+them early or cancel them with `sova_hold` \(a reason is required\)/);
+    assert.match(prompt, /`gap: "none"` builds only in a\s+turn the operator started\./);
+    assert.match(prompt, /`sova_correct` and a reason/);
+    assert.match(prompt, /\(`sova_set_state`\) is only for a turn the operator started/);
+    for (const t of ["sova_pipeline", "sova_hold", "sova_correct", "sova_set_state"]) assert.match(prompt, new RegExp(t), t);
+  });
+
   test("the prompt lists every limit, Unlimited ones as no limit, and forbids promising a look nobody scheduled", async () => {
     await po.patchProjectOverseer(org.id, project.id, { caps: { gatherPerDay: null } });
     const prompt = po.renderProjectOverseerPrompt(org.id, project.id, []);

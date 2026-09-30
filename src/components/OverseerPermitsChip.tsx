@@ -1,12 +1,24 @@
 import { createSignal, For, onCleanup, Show } from "solid-js";
 import { actsText, livePermits, type Permit, permitsChipText } from "../../shared/overseer-grants";
+import type { ScheduleFire, ScheduleInfo } from "../../shared/protocol";
 import { agoTime, stampTime } from "../lib/format";
 import { overseerHistoryHref } from "../lib/overseer";
+import { canApprove, canRevoke, runsAsText, scheduleStateText } from "../lib/schedules";
+import { ScheduleStateChip } from "./ScheduleCard";
 import { Icon } from "./ui";
 
 /** The gap the panel keeps from every viewport edge, and the one it keeps from its trigger. */
 const EDGE_GAP = 8;
 const TRIGGER_GAP = 4;
+
+/** "1 approval · 2 schedules": the permits' own words, then every schedule Sova knows of. */
+export function permitsAndSchedulesText(permits: readonly Permit[], schedules: readonly ScheduleInfo[]): string {
+  const parts = [permitsChipText(permits)].filter(Boolean);
+  if (schedules.length) parts.push(`${schedules.length} schedule${schedules.length === 1 ? "" : "s"}`);
+  return parts.join(" · ");
+}
+
+const FIRE_WORDS: Record<ScheduleFire["kind"], string> = { new: "Started a session", wake: "Woke its session", reset: "Continued after a limit reset" };
 
 /** "Until 6:00 PM" / "Until revoked". */
 export const permitExpiry = (p: Permit): string => (p.kind === "grant" && p.until ? `Until ${stampTime(p.until)}` : "Until revoked");
@@ -20,7 +32,11 @@ export const permitExpiry = (p: Permit): string => (p.kind === "grant" && p.unti
  */
 export function OverseerPermitsChip(props: {
   permits: Permit[];
+  /** Every playbook schedule Sova knows of (§chat.schedules/where-shown). */
+  schedules?: ScheduleInfo[];
   onRevoke(id: string): Promise<string | null>;
+  onApproveSchedule?(s: ScheduleInfo): Promise<string | null>;
+  onRevokeSchedule?(id: string): Promise<string | null>;
   onJumpCard(card: string): void;
   onJumpUse(toolCallId: string): void;
 }) {
@@ -44,10 +60,12 @@ export function OverseerPermitsChip(props: {
   addEventListener("resize", place);
   onCleanup(() => removeEventListener("resize", place));
 
-  const revoke = async (id: string) => {
+  const schedules = () => props.schedules ?? [];
+  const chipText = () => permitsAndSchedulesText(props.permits, schedules());
+  const revoke = async (id: string, fn: (id: string) => Promise<string | null> = props.onRevoke) => {
     setBusy(id);
     setError(null);
-    const failed = await props.onRevoke(id);
+    const failed = await fn(id);
     setBusy(null);
     if (failed) setError(failed);
     queueMicrotask(place);
@@ -65,8 +83,8 @@ export function OverseerPermitsChip(props: {
         class="run-status-link run-status-align run-status-permits"
         aria-haspopup="dialog"
         aria-expanded={open() ? "true" : "false"}
-        aria-label={`${permitsChipText(props.permits)}: what the Overseer may do without you`}
-        title="What the Overseer may do without you"
+        aria-label={`${chipText()}: what runs without you`}
+        title="What the Overseer and your schedules may do without you"
         onClick={() => {
           if (open()) return menu.hidePopover();
           setError(null);
@@ -75,7 +93,7 @@ export function OverseerPermitsChip(props: {
         }}
       >
         <Icon name="shield" small />
-        <span class="text-num">{permitsChipText(props.permits)}</span>
+        <span class="text-num">{chipText()}</span>
         <Icon name="chevron-down" small />
       </button>
       <div
@@ -86,7 +104,9 @@ export function OverseerPermitsChip(props: {
         aria-label="Approvals and rules"
         onToggle={(e) => setOpen((e as ToggleEvent).newState === "open")}
       >
-        <p class="permits-lede">The Overseer may do these without you. Revoking one applies before its next run.</p>
+        <Show when={rows().length}>
+          <p class="permits-lede">The Overseer may do these without you. Revoking one applies before its next run.</p>
+        </Show>
         <For each={rows()}>
           {(p) => (
             <section class="permit-row" aria-label={`${p.id}: ${p.kind === "grant" ? "approval for later" : "standing rule"}`}>
@@ -155,6 +175,59 @@ export function OverseerPermitsChip(props: {
             </section>
           )}
         </For>
+        <Show when={schedules().length}>
+          <p class="permits-lede">Playbooks that run on a schedule, once you approve them. Revoking one stops its next fire.</p>
+          <For each={schedules()}>
+            {(sch) => (
+              <section class="permit-row" aria-label={`${sch.id}: schedule of ${sch.title}`}>
+                <div class="permit-head">
+                  <span class="text-mono permit-id">{sch.id}</span>
+                  <span class="permit-kind">
+                    {sch.title} · {sch.projectName}
+                  </span>
+                  <ScheduleStateChip schedule={sch} />
+                </div>
+                <p class="permit-text">{sch.text ?? `when: ${sch.when}`}</p>
+                <p class="permit-allows">
+                  {runsAsText(sch)} · {scheduleStateText(sch)}
+                </p>
+                <p class="permit-meta">{sch.fires.length ? `Last fired ${agoTime(sch.fires.at(-1)!.at)}` : "Not fired yet"}</p>
+                <Show when={sch.fires.length}>
+                  <ul class="permit-uses">
+                    <For each={[...sch.fires].reverse()}>
+                      {(f) => (
+                        <li>
+                          <Show when={f.sessionId} fallback={FIRE_WORDS[f.kind]}>
+                            {(id) => (
+                              <a class="permit-link" href={`#/sid/${encodeURIComponent(id())}`} onClick={() => menu.hidePopover()}>
+                                {FIRE_WORDS[f.kind]}
+                              </a>
+                            )}
+                          </Show>{" "}
+                          · <span class="text-mono">{f.trigger}</span> · {agoTime(f.at)}
+                        </li>
+                      )}
+                    </For>
+                  </ul>
+                </Show>
+                <Show when={canApprove(sch) || canRevoke(sch)}>
+                  <div class="permit-actions">
+                    <Show when={canApprove(sch) && props.onApproveSchedule}>
+                      <button type="button" class="button button-sm button-primary" disabled={busy() === sch.id} onClick={() => void revoke(sch.id, () => props.onApproveSchedule!(sch))}>
+                        Approve Schedule
+                      </button>
+                    </Show>
+                    <Show when={canRevoke(sch) && props.onRevokeSchedule}>
+                      <button type="button" class="button button-sm button-destructive" disabled={busy() === sch.id} onClick={() => void revoke(sch.id, (id) => props.onRevokeSchedule!(id))}>
+                        Revoke Schedule
+                      </button>
+                    </Show>
+                  </div>
+                </Show>
+              </section>
+            )}
+          </For>
+        </Show>
         <Show when={error()}>{(e) => <p class="permits-error" role="alert">{e()}</p>}</Show>
       </div>
     </>

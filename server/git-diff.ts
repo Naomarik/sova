@@ -11,12 +11,17 @@
 //    <sha>"; after a fast-forward the tracked base commit, when it is an ancestor);
 //  - commit: one commit (hex sha, resolved to a commit) against its first parent, a root commit
 //    against the empty tree;
+//  - merge: what a merge card's merge brought in. The folder and full sha must be a merge card
+//    this session recorded. A merge commit against its first parent, labelled "<target> before
+//    <sha>"; a fast-forward (its sha is the branch tip) against the tracked worktree's base when
+//    that is an ancestor of the tip and not the tip (mergedReviewBase's fallback), labelled
+//    "<base> (created from)", else against its first parent;
 //  - dirty: the working tree (index included) against HEAD, untracked files as added.
 //
 // Which folders. Every folder must be one the named session already knows: its header cwd, the
 // cwds of its workers, every worktree its `worktrees` entries ever tracked and every merge card's
 // path. A folder inside one of those passes; the diff then runs at its repository's top level.
-// Anything else is a DiffError(400), before any git runs in it. A commit scope whose folder is
+// Anything else is a DiffError(400), before any git runs in it. A commit or merge scope whose folder is
 // gone (a merged worktree, removed) reads from the first existing known folder whose repository
 // has that commit, the session's own folder first.
 //
@@ -43,7 +48,7 @@ import { lstat, open, readFile, readlink, stat } from "node:fs/promises";
 import { isAbsolute, join, normalize } from "node:path";
 import type { DiffFilePatch, DiffFileStatus, DiffFileSummary, DiffScope, DiffSide, DiffSummary } from "../shared/protocol";
 import { mergedReviewBase } from "../pi-config/extensions/worktrees/git.ts";
-import { canonical, isWithin, normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE } from "../pi-config/extensions/worktrees/state.ts";
+import { canonical, isWithin, normalizeMergeDetails, restoreActive, type TrackedWorktree, type WorktreeMergeDetails, WORKTREE_MERGE_MESSAGE } from "../pi-config/extensions/worktrees/state.ts";
 import { resolveSessionPath } from "./paths";
 import { parseTargetCwd } from "./targets";
 import { candidatesOf, pickBase } from "./worktrees";
@@ -161,12 +166,12 @@ export function scopeFromQuery(q: (name: string) => string | undefined): DiffSco
   if (!path) throw new DiffError("Missing ?path=");
   if (kind === "worktree") return { kind, sessionPath, worktreePath: path };
   if (kind === "dirty") return { kind, sessionPath, cwd: path };
-  if (kind === "commit") {
+  if (kind === "commit" || kind === "merge") {
     const sha = q("sha");
     if (!sha || !HEX.test(sha) || sha.length < 4 || sha.length > 64) throw new DiffError("Invalid ?sha= (hex, 4 to 64 characters)");
     return { kind, sessionPath, repoPath: path, sha: sha.toLowerCase() };
   }
-  throw new DiffError("Invalid ?kind= (worktree, commit or dirty)");
+  throw new DiffError("Invalid ?kind= (worktree, commit, merge or dirty)");
 }
 
 /** A resolved comparison: where to run git and the two sides. `base` is always a tree-ish oid. */
@@ -178,10 +183,12 @@ interface Resolved {
   head: DiffSide & { treeish: string | null };
 }
 
-/** What a session file names: folders it knows and its tracked worktrees (for baseBranch). */
+/** What a session file names: folders it knows, its tracked worktrees (for baseBranch) and its
+    merge cards (the only merges a merge scope may name). */
 interface Known {
   roots: string[];
   trees: TrackedWorktree[];
+  merges: WorktreeMergeDetails[];
 }
 
 /** The folders a session's file names. Lines are pre-filtered by substring; only the header and
@@ -190,6 +197,7 @@ export function knownFoldersOf(text: string): Known {
   const { cwd, workerCwds } = candidatesOf(text);
   const roots: string[] = [];
   const trees: TrackedWorktree[] = [];
+  const merges: WorktreeMergeDetails[] = [];
   const add = (p: unknown) => {
     if (typeof p === "string" && isAbsolute(p) && !parseTargetCwd(p)) roots.push(normalize(p).replace(/\/+$/, "") || "/");
   };
@@ -211,10 +219,12 @@ export function knownFoldersOf(text: string): Known {
         add(t.path);
       }
     } else if (e.type === "custom_message" && e.customType === WORKTREE_MERGE_MESSAGE) {
-      add(normalizeMergeDetails(e.details)?.path);
+      const m = normalizeMergeDetails(e.details);
+      if (m) merges.push(m);
+      add(m?.path);
     }
   }
-  return { roots: [...new Set(roots)], trees };
+  return { roots: [...new Set(roots)], trees, merges };
 }
 
 export interface DiffDeps {
@@ -281,26 +291,38 @@ export class GitDiffs {
   }
 
   /** The repository top level of a client-named folder the session knows, or a DiffError. */
-  private async trustedTop(scope: DiffScope): Promise<{ top: string; known: Known }> {
+  private async trustedTop(scope: DiffScope): Promise<{ top: string; known: Known; card?: WorktreeMergeDetails }> {
     const known = await this.sessionKnownFn(scope.sessionPath);
     if (!known) throw new DiffError("Unknown session");
-    const raw = scope.kind === "worktree" ? scope.worktreePath : scope.kind === "commit" ? scope.repoPath : scope.cwd;
+    const raw = scope.kind === "worktree" ? scope.worktreePath : scope.kind === "commit" || scope.kind === "merge" ? scope.repoPath : scope.cwd;
     if (typeof raw !== "string" || !isAbsolute(raw) || raw.includes("\0")) throw new DiffError("Invalid ?path= (an absolute folder)");
     const dir = canonical(raw);
     if (!known.roots.some((r) => isWithin(dir, canonical(r)))) throw new DiffError("That folder is not one this session knows");
+    let card: WorktreeMergeDetails | undefined;
+    if (scope.kind === "merge") {
+      const sha = scope.sha.toLowerCase();
+      card = known.merges.filter((m) => m.sha.toLowerCase() === sha && canonical(m.path) === dir).at(-1);
+      if (!card) throw new DiffError("That commit is not a merge this session recorded");
+    }
     if (!(await isDir(dir))) {
       // A merged worktree is often removed after the merge, but its commit lives on in the
       // repository: read it from another folder the session knows that has it.
-      if (scope.kind === "commit") {
+      if (scope.kind === "commit" || scope.kind === "merge") {
         const top = await this.topHolding(known, scope.sha);
-        if (top) return { top, known };
+        if (top) return { top, known, card };
       }
       throw new DiffError("That folder does not exist", 404);
     }
     const top = await this.topOf(dir);
     if (!top) throw new DiffError("That folder is not in a git work tree");
-    return { top, known };
+    return { top, known, card };
   }
+
+  /** git as pi-config/extensions/worktrees/git.ts's `Git` runner, for mergedReviewBase. */
+  private readonly gitLines = async (args: string[], cwd: string) => {
+    const r = await this.git(cwd, args);
+    return { code: r.code ?? 1, stdout: r.stdout.toString("utf8"), stderr: r.stderr };
+  };
 
   private async topOf(dir: string): Promise<string | null> {
     const r = await this.git(dir, ["rev-parse", "--show-toplevel"]);
@@ -338,7 +360,7 @@ export class GitDiffs {
 
   /** Resolve every ref of the scope, server-side. */
   async resolve(scope: DiffScope): Promise<Resolved> {
-    const { top, known } = await this.trustedTop(scope);
+    const { top, known, card } = await this.trustedTop(scope);
     if (scope.kind === "dirty") {
       const head = await this.headOid(top);
       return {
@@ -360,6 +382,32 @@ export class GitDiffs {
         top,
         base: p.code === 0 && isOid(parent) ? { label: `${short}^1`, oid: parent, treeish: parent } : { label: "Empty tree", treeish: await this.emptyTree(top) },
         head: { label: short, oid, treeish: oid },
+      };
+    }
+    if (scope.kind === "merge" && card) {
+      const r = await this.git(top, ["rev-parse", "--verify", "-q", `${card.sha}^{commit}`]);
+      const oid = r.stdout.toString("utf8").trim();
+      if (r.code !== 0 || !isOid(oid)) throw new DiffError("No such commit in that repository", 404);
+      const short = oid.slice(0, 7);
+      const head = { label: card.branch, oid, treeish: oid };
+      if (card.fastForward) {
+        // The card's sha is the branch tip. With the tip as its own target and merge-base there is
+        // no landing commit to find, so only mergedReviewBase's tracked-base rule applies: the
+        // tracked base when it is an ancestor of the tip and not the tip itself.
+        const tracked = known.trees.filter((t) => canonical(t.path) === canonical(card.path)).at(-1);
+        const from = await mergedReviewBase(this.gitLines, top, oid, oid, oid, tracked?.base);
+        if (from && isOid(from.base)) return { scope, top, base: { label: `${from.base.slice(0, 7)} (created from)`, oid: from.base, treeish: from.base }, head };
+      }
+      const p = await this.git(top, ["rev-parse", "--verify", "-q", `${oid}^1`]);
+      const parent = p.stdout.toString("utf8").trim();
+      return {
+        scope,
+        top,
+        base:
+          p.code === 0 && isOid(parent)
+            ? { label: card.fastForward ? `${short}^1` : `${card.target} before ${short}`, oid: parent, treeish: parent }
+            : { label: "Empty tree", treeish: await this.emptyTree(top) },
+        head,
       };
     }
     const head = await this.headOid(top);
@@ -385,17 +433,7 @@ export class GitDiffs {
     const mbOid = mb.stdout.toString("utf8").trim();
     if (mb.code !== 0 || !isOid(mbOid)) throw new DiffError(mb.code === 1 ? "No common history with the base branch" : gitError("merge-base", mb), mb.code === 1 ? 404 : 500);
     // Already merged: what the merge brought in, not the empty HEAD..HEAD.
-    const merged = await mergedReviewBase(
-      async (args, cwd) => {
-        const r = await this.git(cwd, args);
-        return { code: r.code ?? 1, stdout: r.stdout.toString("utf8"), stderr: r.stderr };
-      },
-      top,
-      head,
-      base.oid,
-      mbOid,
-      tracked?.base,
-    );
+    const merged = await mergedReviewBase(this.gitLines, top, head, base.oid, mbOid, tracked?.base);
     const baseSide =
       merged && isOid(merged.base)
         ? { label: merged.landing ? `${base.name} before ${merged.landing.slice(0, 7)}` : `${merged.base.slice(0, 7)} (created from)`, oid: merged.base }

@@ -611,6 +611,9 @@ html, body { overflow: clip; overscroll-behavior: none; }
   gap: var(--space-1) var(--space-2);
 }
 .worktree-merge-title { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); }
+/* Review Changes ends the head, and wraps below it when the column is narrow. Its negative block
+   margins keep the head as tall as its text. */
+.worktree-merge-review { margin: calc(var(--space-1) * -1) 0 calc(var(--space-1) * -1) auto; }
 .worktree-merge-numbers,
 .worktree-merge-path { margin: 0; overflow-wrap: anywhere; }
 

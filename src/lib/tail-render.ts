@@ -164,7 +164,7 @@ export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }
   else if (item.kind === "info") est = `-4px + ${wrapped(textShape(text, true), 1)}`;
   else if (item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "wake") est = "46px";
   else if (item.kind === "thinking" || item.kind === "report") est = "36px";
-  else if (item.kind === "worktree-merge") est = "93px + var(--entry-narrow, 0) * 39px";
+  else if (item.kind === "worktree-merge") est = "98px + var(--entry-narrow, 0) * 66px";
   else est = "70px";
   const [wide, narrow] = imagesEstimate(images, at);
   if (wide === 0) return `calc(${est})`;

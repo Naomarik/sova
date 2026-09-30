@@ -5,7 +5,7 @@
 
 (def golden
   {
-   ["project" ":project" [":project/prompt"] "[]" 0] :feed
+   ["project" ":project" [":session/prompt"] "[]" 0] :feed
    ["decision" ":edited-in-spec" [":effect/done"] "[:as-promoted]" 0] :feed
    ["baton" ":baton" [":hold/approve"] "[]" 0] :correction
    ["baton" ":baton" [":hold/waiting"] "[]" 0] :feed

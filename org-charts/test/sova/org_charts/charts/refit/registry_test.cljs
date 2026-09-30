@@ -37,7 +37,7 @@
 (deftest the-kind-of-each-act
   (is (= {["baton" :baton/offer] #{"offer"} ["baton" :baton/close] #{"close"}
           ["project" :baton/start] #{"gather" "offer"} ["item" :gather/start] #{"gather" "offer"}
-          ["project" :build/start] #{"build"} ["item" :build/start] #{"build"} ["build" :build/prompt] #{"prompt"} ["project" :project/prompt] #{"prompt"}
+          ["project" :build/start] #{"build"} ["item" :build/start] #{"build"} ["build" :build/prompt] #{"prompt"} ["project" :session/prompt] #{"prompt"}
           ["reconciler" :decision/promote] #{"promote"} ["project" :owner-update/post] #{"owner-update"}
           ["person" :person/approve] #{"roster-approve"} ["person" :person/decline] #{"roster-decline"}}
          (into {} (for [[chart ev m] (acts) :when (:confirm-kind m)] [[chart ev] (kinds m)])))))

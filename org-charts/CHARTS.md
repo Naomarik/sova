@@ -40,7 +40,7 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
   `correct/relink` (L1), reconciler `correct/clear-failed` (L1), build `correct/merged` (L2); each a
   `dsl/correction` (reason required unless the operator's). Free set-state is the engine's.
 - **q10 / r4 / r6 hold**: acts with `:hold true` in the registry: person approve/decline, project
-  `baton/start` · `build/start` · `project/prompt` · `owner-update/post`, baton `close`, reconciler `decision/promote`, item
+  `baton/start` · `build/start` · `session/prompt` · `owner-update/post`, baton `close`, reconciler `decision/promote`, item
   `gather/start` · `build/start`, build `build/prompt`; `:what` gives the Needs-you words. F2: caps are
   checked at hold time and again at release; the ledger counts only the taken transition.
 - **r7 working hours**: person `tz`/`hours` (operator's fields, history lines, exported);
@@ -55,7 +55,7 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
   (none unclassified), `feed_test` (a pin per class per chart, and the golden table `feed_golden` of
   every authored transition).
 - **r10**: no act sends text into a gathering (F-128): `baton/send` deleted, no act of kind "message".
-- **Root prompt** (coordinator-25): project `project/prompt` (L3 `sova_send`, a prompt, held, kind
+- **Root prompt** (coordinator-25): project `session/prompt` (L3 `sova_send`, a prompt, held, kind
   "prompt") for a coding session under the root that is not a build.
 - **C-rows**: C1 C2 C3 C12 in `watch`; C4 `reconciler.debouncing`; C5 item stall clocks; C6
   `person/revert`; C7 `gap` or `"none"`; C8 C14 baton lease timer; C10 person status in the edit's
@@ -184,7 +184,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-125 | L1 `sova_reconcile` | chart | `reconciler` `reconcile/request {by overseer}` |
 | F-126 | Send to person… (an operator gesture on an item) | chart | `project` `baton/start` by the operator with `opItem` |
 | F-127 | L2 `sova_promote {ids}` | chart | `reconciler` `decision/promote` by overseer (L2, held) |
-| F-128 | L3 `sova_create_session` and `sova_send` | chart | `item` `build/start` (L3, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (L3 `sova_send`) to a build; `project/prompt` (L3 `sova_send`, held) to a root coding session that is not a build; a gathering session is refused by the tool (r10: no chart act) |
+| F-128 | L3 `sova_create_session` and `sova_send` | chart | `item` `build/start` (L3, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (L3 `sova_send`) to a build; `session/prompt` (L3 `sova_send`, held) to a root coding session that is not a build; a gathering session is refused by the tool (r10: no chart act) |
 | F-129 | Limits: allowances, at-once, looks | chart | `rules/levels` `cap-check` (at once, then allowance), watch ledgers (`ledger/take`), settings data |
 | F-130 | Held items and release | chart | `watch` `limit/refused` → `held` (≤10), releases at midnight / raised limit / message at once (C12) |
 | F-131 | Watch-loop reasons (events → English) | chart | typed `reason/noted` from charts; `watch` `own-act?` (C2), key dedupe (C3), ≤50 pending, 20 in the text |

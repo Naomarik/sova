@@ -182,14 +182,15 @@
            (select-keys (:data (last (h/directives y psid))) [:lease-ms :operator-name :offer-id])))))
 
 (deftest a-prompt-to-a-root-coding-session
-  ;; coordinator-25: sova_send reaches any coding session under the root, not only builds
+  ;; coordinator-25 / r10: sova_send reaches any coding session under the root, not only builds
   (let [x   (project)
         att {:by "overseer" :attended true :autonomy "L3" :roster-active true}
-        y   (h/send! x psid :project/prompt (assoc att :session-id "c9" :text "Run the tests" :delivery "followUp"))]
-    (is (= {:kind "prompt" :session-id "c9" :text "Run the tests" :delivery "followUp"}
-           (select-keys (last (filter #(= "prompt" (name (:kind %))) (h/outbox y psid))) [:kind :session-id :text :delivery])))
+        y   (h/send! x psid :session/prompt (assoc att :session-id "c9" :title "Pay page" :text "Run the tests" :mode "normal"))]
+    (is (= {:kind "prompt" :session "c9" :text "Run the tests" :mode "normal"}
+           (select-keys (last (filter #(= "prompt" (name (:kind %))) (h/outbox y psid))) [:kind :session :text :mode])))
     (is (= [["watch/o1/pr1" "prompt"]] (map (juxt :target (comp :kind :data)) (filter #(= :ledger/take (:event %)) (h/elsewhere y)))))
-    (is (= "text must not be blank." (h/refusal x psid :project/prompt (assoc att :session-id "c9" :text " "))))
-    (is (= "\"Pay page\" is open in a terminal, so it is read-only." (h/refusal x psid :project/prompt (assoc att :session-id "c9" :text "t" :invalid "\"Pay page\" is open in a terminal, so it is read-only."))) "the session's own checks, from the host")
-    (is (re-find #"sova_send needs L3" (h/refusal x psid :project/prompt {:by "overseer" :autonomy "L2" :roster-active true :session-id "c9" :text "t"})))
-    (is (re-find #"^Today's allowance is used: 12 of 12" (h/refusal x psid :project/prompt (assoc att :attended false :session-id "c9" :text "t" :ledger "day" :allowance {:prompt {:used 12 :max 12}}))))))
+    (is (= "text must not be blank." (h/refusal x psid :session/prompt (assoc att :session-id "c9" :title "Pay page" :text " "))))
+    (is (= "\"Pay page\" is open in a terminal, so it is read-only." (h/refusal x psid :session/prompt (assoc att :session-id "c9" :title "Pay page" :text "t" :live true))))
+    (is (= "Unknown mode" (h/refusal x psid :session/prompt (assoc att :session-id "c9" :text "t" :invalid "Unknown mode"))) "the host's mode refusal")
+    (is (re-find #"sova_send needs L3" (h/refusal x psid :session/prompt {:by "overseer" :autonomy "L2" :roster-active true :session-id "c9" :text "t"})))
+    (is (re-find #"^Today's allowance is used: 12 of 12" (h/refusal x psid :session/prompt (assoc att :attended false :session-id "c9" :text "t" :ledger "day" :allowance {:prompt {:used 12 :max 12}}))))))

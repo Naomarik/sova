@@ -181,7 +181,7 @@
               [:gap/file {:gap-id "g_1" :idea-id "§gap/x"}]
               [:baton/start {:session-id "s1" :to "p1" :public-title "T" :goal "G"}]
               [:build/start {:session-id "c1" :title "T" :prompt "P"}] [:spec/freeze {:frozen true}]
-              [:project/prompt {:session-id "c9" :text "go"}] [:project/prompt {:session-id "c9" :text " "}]]})))
+              [:session/prompt {:session-id "c9" :title "T" :text "go"}] [:session/prompt {:session-id "c9" :title "T" :text " "}] [:session/prompt {:session-id "c9" :title "T" :text "go" :live true}]]})))
 
 (deftest watch-matrix
   (clean! "watch"

@@ -111,7 +111,7 @@ Start: `{orgId, id, name, root, createdAt, origin}`; spawns `reconciler/<org>/<p
 | `milestone/noted` | baton · decision · build | `{kind, shown}` | |
 | `baton/start` | op · overseer (L1, `gap: "none"`, held) · GO (card: the project and every person) | BatonStartInput + `sessionId` | "{project} is archived. Unarchive it first." (409); caps; spawns a baton |
 | `build/start` | op · overseer (L3, `gap: "none"`, attended only: q7) · GO | `{sessionId, title?, prompt?, model?, thinking?, mode?, opItem?, folder?}` | q7: "Without a gap, a coding session starts only in a turn the operator started: …"; spawns a build |
-| `project/prompt` | overseer (L3 `sova_send`, held; confirm kind `prompt`) · op | `{sessionId, text, delivery?, title?}` + `invalid` (the session: archived, a terminal holds it, delivery) | "text must not be blank."; caps (a prompt); effect `prompt {sessionId, text, delivery}`. A coding session under the root that is NOT a build (a build's is `build/prompt`); never a gathering (F-128, r10) |
+| `session/prompt` | overseer (L3 `sova_send`, held; confirm kind `prompt`) · op | `{sessionId, title, text, mode?}` + `live` (a terminal holds it), `invalid` (the mode check) | "\"{title}\" is open in a terminal, so it is read-only.", "text must not be blank."; caps (a prompt); effect `prompt {session, text, mode?}` (`session`: an effect's own sessionId is the chart's). A coding session under the root that is NOT a build (a build's is `build/prompt`); never a gathering (F-128, r10) |
 
 Owner-update withdraw (`updates.jsonl`) is plain data: its route, no chart event.
 

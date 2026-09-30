@@ -694,6 +694,12 @@ registerSpecialLoadout({
     session.subscribe((event) => {
       const e = event as { type: string; message?: { role?: string } };
       // The wrap-up's words are nobody's business on a share page, and its turn is no reply.
+      // The runtime took the turn (its first event, before any text: a model may think or call tools first): the reply
+      // is being written, so its end renews the lease and applies what waited for it.
+      if (e.type === "agent_start" && !wrapupActive(sessionId) && !writing) {
+        writing = true;
+        void replyFact(sessionId, "reply/writing");
+      }
       if (e.type === "message_update" && e.message?.role === "assistant") {
         if (!wrapupActive(sessionId)) {
           streamShare(sessionId, streamingText(e.message));

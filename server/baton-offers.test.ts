@@ -172,6 +172,7 @@ describe("offers and leases", async () => {
       // The reply to Tony runs past the lease: it stays his.
       at(100);
       await fact("reply/starting");
+      await fact("reply/writing");
       at(1300);
       assert.equal(row().holder, tony.id, "mid-reply a lapsed lease stays with its holder");
       await fact("reply/ended");
@@ -180,7 +181,9 @@ describe("offers and leases", async () => {
       assert.equal(row().holder, tony.id, "not before the lease ends");
       at(2301);
       assert.equal(row().holder, null, "idle past it, the pool takes it back");
+      await waitFor(() => lapses() === 1); // the lapse's transcript entry is its effect's
       at(5000);
+      await new Promise((r) => setTimeout(r, 50));
       assert.equal(lapses(), 1, "it lapses once");
     } finally {
       setOrgClockForTest(null);
@@ -564,6 +567,7 @@ describe("regressions from the slice-2 verification", async () => {
     const c = await baton.createBaton({ orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "WS", goal: "g" }).finally(() => delete process.env.SOVA_BATON_LEASE_MS);
     const mariaTok = c.links!.find((l) => l.personId === maria.id)!.token;
     baton.noteMessage(c.sessionId, tony.id); // Tony holds a live lease
+    await replyEnded(c.sessionId); // the reply to him ended: a lease lapses only between replies
     const views: { canWrite: boolean; reason?: string }[] = [];
     const ws = new WebSocket(`${base.replace("http", "ws")}/ws/h?token=${mariaTok}`);
     ws.on("message", (d) => {

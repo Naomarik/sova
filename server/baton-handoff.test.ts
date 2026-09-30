@@ -21,6 +21,7 @@ const { offerOutsider, viewForToken } = await import("./share/hub");
 const { registerOrgRoutes } = await import("./org-routes");
 const { createShareApp } = await import("./share/routes");
 const { stateRoot } = await import("./state-root");
+const { hostOf } = await import("./org-engine");
 
 after(async () => {
   await disposeAllChats();
@@ -125,6 +126,7 @@ describe("a lease never lapses while the reply to its holder is being written", 
     assert.throws(() => baton.noteMessage(c.sessionId, tony.id), /Someone else is answering/, "Tony can't take over mid-reply");
     assert.equal((baton.linkAccess(tonyTok) as { reason?: string }).reason, "taken");
     const before = Date.now();
+    assert.equal(hostOf(org.id).data(`baton/${org.id}/${c.sessionId}`)?.["reply"], "writing", "the runtime took the turn: the reply is being written");
     release();
     await until(() => !chat.session.isStreaming);
     // The claim's entry, which met the reply, is written after it, not lost.

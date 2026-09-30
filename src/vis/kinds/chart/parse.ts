@@ -71,9 +71,10 @@ type RowRead = { label: string; vals: (number | null)[]; tone?: Tone; units: (st
 /**
  * A row today's reading refuses, read from its end (§chat.markdown/vis-lenience-content): a tone,
  * then `width` values, each with an optional unit word after it; the rest is the label. Null when
- * that doesn't read, or when every extra word could be a value (a missing `series:` reads the same).
+ * that doesn't read, or when every extra word could be a value (a missing `series:` reads the same)
+ * and no row read as written settles the width (`widthSettled`).
  */
-function readRowFromEnd(toks: Token[], width: number): RowRead | null {
+function readRowFromEnd(toks: Token[], width: number, widthSettled: boolean): RowRead | null {
   const head = toks[0];
   if (!head || head.t === "arrow") return null;
   let i = toks.length - 1;
@@ -106,7 +107,7 @@ function readRowFromEnd(toks: Token[], width: number): RowRead | null {
   if (labelToks.length > 1) {
     if (head.t === "str") return null;
     const seen = new Set(units.filter(Boolean));
-    if (labelToks.slice(1).every((t) => t.t === "word" && (readValue(t.v) !== null || seen.has(t.v)))) return null;
+    if (!widthSettled && labelToks.slice(1).every((t) => t.t === "word" && (readValue(t.v) !== null || seen.has(t.v)))) return null;
   }
   return { label: labelToks.map((t) => t.v).join(" "), vals, units, ...(tone ? { tone } : {}) };
 }
@@ -190,6 +191,18 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
     if (vals.length !== width) fail(line.n, `${vals.length} values; expected ${width}${spec.type === "scatter" ? " (x y)" : spec.series.length ? ` (series: ${spec.series.join(", ")})` : " (add series: a, b for more than one)"}${quote}`);
     return { label, vals, units: [], ...(tone ? { tone } : {}) };
   };
+  // A row that reads as written with exactly `width` values settles the width: then a label may end
+  // in a number (`iPhone 16 799 22` in a scatter), as a missing `series:` can't be what's meant.
+  const widthSettled = rest.some((line) => {
+    try {
+      strict(line, tokenize(line));
+      return true;
+    } catch {
+      return false;
+    }
+  });
+  // A tone on a row of several series: that row marked in that tone, after the fence's own marks.
+  const toned: { key: string; tone: Tone }[] = [];
   for (const line of rest) {
     const all = tokenize(line);
     let row: RowRead;
@@ -197,16 +210,20 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
       row = strict(line, all);
     } catch (e) {
       // Today's reading refuses the row: the one other reading, or today's error.
-      const lenient = e instanceof VisError ? readRowFromEnd(all.filter((t) => !(t.t === "word" && t.v === "|")), width) : null;
+      const lenient = e instanceof VisError ? readRowFromEnd(all.filter((t) => !(t.t === "word" && t.v === "|")), width, widthSettled) : null;
       if (!lenient) throw e;
       row = lenient;
     }
-    const { label, vals, tone } = row;
+    const { label, vals } = row;
+    let tone = row.tone;
     for (const unit of row.units) if (unit) rowUnits.push({ unit, n: line.n });
     if (spec.type === "scatter" && vals.includes(null)) fail(line.n, "a scatter point needs both x and y");
     if (spec.type === "parts" && vals.includes(null)) fail(line.n, "a part needs a number: leave out a part that has none");
     if (spec.type === "parts" && vals[0]! < 0) fail(line.n, "a part can't be negative");
-    if (tone && width > 1 && spec.type !== "scatter") fail(line.n, "a tone colours a single-series bar; with several series each series has its own colour");
+    if (tone && width > 1 && spec.type !== "scatter") {
+      toned.push({ key: String(spec.rows.length), tone });
+      tone = undefined;
+    }
     if (spec.scale === "log" && vals.some((v) => v !== null && v <= 0)) fail(line.n, "scale: log needs values above 0");
     spec.rows.push({ label: text(label, line.n), values: vals, ...(tone ? { tone } : {}) });
   }
@@ -233,6 +250,9 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
   if (spec.type === "stacked" && spec.scale === "log") fail(values.get("scale")!.n, "stacked bars can't use scale: log (the segments' lengths would lie); use grouped bars");
   if (spec.type === "stacked" && spec.rows.some((r) => r.values.some((v) => v !== null && v < 0))) fail(0, "stacked bars need values of 0 or more");
   applyMarks(spec, marks, byIdOrLabel(spec.rows.map((r, i) => ({ key: String(i), label: r.label }))), "row");
+  const marked = new Set((spec.emphasis ?? []).map((e) => e.key));
+  const extra = toned.filter((t) => !marked.has(t.key));
+  if (extra.length) spec.emphasis = [...(spec.emphasis ?? []), ...extra];
   return spec;
 }
 

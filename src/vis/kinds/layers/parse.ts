@@ -1,7 +1,7 @@
 /** `vis layers`: layers top to bottom, `label | item, item | note | tone`. */
 
-import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaList, fail, hasBar, lines, notATone, popTone, swapToneNote, tableRow, takeSettings, text, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { applyMarks, byIdOrLabel, takeMarks, type MarkTarget } from "../../core/emphasis";
+import { bars, commaList, fail, hasBar, lines, notATone, popTone, swapToneNote, tableRow, takeSettings, text, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export interface Layer {
   label: string;
@@ -18,22 +18,7 @@ const MAX_LAYERS = 10;
 const MAX_ITEMS = 12;
 
 /** The `|` fields as written (trimmed, `\|` kept as `|`), quotes and all. */
-function rawFields(line: Line): string[] {
-  const parts: string[] = [];
-  let cur = "";
-  const s = line.text;
-  for (let i = 0; i < s.length; i++) {
-    if (s[i] === "\\" && s[i + 1] === "|") {
-      cur += "|";
-      i++;
-    } else if (s[i] === "|") {
-      parts.push(cur);
-      cur = "";
-    } else cur += s[i];
-  }
-  parts.push(cur);
-  return parts.map((p) => text(p.trim(), line.n));
-}
+const rawFields = (line: Line): string[] => bars(line.text).map((p) => text(p.trim(), line.n));
 
 /** A label or note loses its quotes only when it is one whole quoted string. */
 const whole = (t: string, n: number) => text(/^"(?:[^"\\]|\\.)*"$/.test(t) ? unquote(t.slice(1, -1)) : t, n);
@@ -65,6 +50,16 @@ export function parseLayers(body: string): LayersSpec {
   }
   if (spec.layers.length === 0) fail(0, "nothing to draw: add layers like Server | Hono, ws");
   if (spec.layers.length > MAX_LAYERS) fail(0, `${spec.layers.length} layers; at most ${MAX_LAYERS}`);
-  applyMarks(spec, marks, byIdOrLabel(spec.layers.map((l, i) => ({ key: String(i), label: l.label }))), "layer");
+  const byLayer = byIdOrLabel(spec.layers.map((l, i) => ({ key: String(i), label: l.label })));
+  // A target that names no layer: the one layer holding it as an item, or, for a number, the one
+  // whose label starts with it (`mark 4` over `4 Transport`) (§chat.markdown/vis-lenience-content).
+  const one = (at: number[]) => (at.length === 1 ? String(at[0]) : null);
+  const byPart = (t: MarkTarget): string | null =>
+    t.t === "number"
+      ? one(spec.layers.flatMap((l, i) => (new RegExp(`^${t.value}[.:)]?(\\s|$)`).test(l.label) ? [i] : [])))
+      : t.t === "range"
+        ? null
+        : one(spec.layers.flatMap((l, i) => (l.items.includes(t.text) ? [i] : [])));
+  applyMarks(spec, marks, (t) => byLayer(t) ?? byPart(t), "layer");
   return spec;
 }

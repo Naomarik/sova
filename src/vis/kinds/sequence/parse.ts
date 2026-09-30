@@ -1,7 +1,7 @@
 /** `vis sequence`: actors, messages, notes, dividers. */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { divider, fail, ID, id, lines, modifiers, slug, takeSettings, text, tokenize, unquote, VisError, type Arrow, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
+import { divider, fail, ID, id, isTone, lines, modifiers, slug, takeSettings, text, tokenize, unquote, VisError, type Arrow, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
 
 export interface Actor {
   id: string;
@@ -139,6 +139,13 @@ export function parseSequence(body: string): SequenceSpec {
       return true;
     }
     const toks = tokenize({ ...line, text: t }, { wide: true });
+    // `u "User"` [tone]: an actor declared without the word.
+    if (toks[0]?.t === "word" && ID.test(toks[0].v) && toks[1]?.t === "str" && toks.length <= 3 && (toks.length === 2 || (toks[2]!.t === "word" && isTone(toks[2]!.v)))) {
+      const had = actors.get(toks[0].v);
+      if (had && had.label !== had.id) return false;
+      actors.set(toks[0].v, { id: toks[0].v, label: toks[1].v, ...(toks[2] ? { tone: toks[2].v as Tone } : {}) });
+      return true;
+    }
     const arrow = toks[1];
     if (arrow?.t !== "arrow" || arrow.v === "<->" || arrow.v === "<-->") return false;
     const from = actorOf(toks[0]);
@@ -161,9 +168,10 @@ export function parseSequence(body: string): SequenceSpec {
     }
     if (after.some((x) => x.t === "arrow")) return false;
     const words = after.map((x) => x.v).filter((v) => v !== "");
-    // After a colon, the rest of the line; else one "label" or bare words.
-    if (!colon && after.some((x) => x.t === "str") && after.length > 1) return false;
-    const label = words.join(" ").trim();
+    // After a colon, the rest of the line; else one "label", two (its two lines, as a flow edge's) or bare words.
+    const two = !colon && after.length === 2 && after.every((x) => x.t === "str");
+    if (!colon && !two && after.some((x) => x.t === "str") && after.length > 1) return false;
+    const label = words.join(two ? "\n" : " ").trim();
     use(from);
     use(to);
     spec.steps.push({ type: "msg", from, to, ...(label ? { label: text(label, line.n) } : {}), dashed: arrow.v === "-->" });

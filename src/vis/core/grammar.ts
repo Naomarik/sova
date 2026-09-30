@@ -283,12 +283,23 @@ export function divider(line: Line): string | null {
   return m ? text(m[1]!, line.n) : null;
 }
 
-/** Split on unescaped `|`, trim each field; a field that is ONE quoted string loses its quotes. */
-export function fields(line: Line): string[] {
+/**
+ * A row's `|` fields as written, untrimmed, `\|` read as `|`. A field that is one whole quoted string
+ * keeps a `|` inside it (`2023 | "Quality | Speed"`: §chat.markdown/vis-lenience-content).
+ */
+export function bars(s: string): string[] {
   const parts: string[] = [];
   let cur = "";
-  const s = line.text;
+  const whole = /\s*"(?:[^"\\]|\\.)*"\s*(?=\||$)/y;
   for (let i = 0; i < s.length; i++) {
+    if (cur.trim() === "" && s[i] === '"') {
+      whole.lastIndex = i;
+      if (whole.exec(s) && s.slice(i, whole.lastIndex).includes("|")) {
+        cur += s.slice(i, whole.lastIndex).replace(/\\\|/g, "|");
+        i = whole.lastIndex - 1;
+        continue;
+      }
+    }
     if (s[i] === "\\" && s[i + 1] === "|") {
       cur += "|";
       i++;
@@ -298,7 +309,12 @@ export function fields(line: Line): string[] {
     } else cur += s[i];
   }
   parts.push(cur);
-  return parts.map((p) => {
+  return parts;
+}
+
+/** Split on unescaped `|` (bars), trim each field; a field that is ONE quoted string loses its quotes. */
+export function fields(line: Line): string[] {
+  return bars(line.text).map((p) => {
     const t = p.trim();
     const q = /^"((?:[^"\\]|\\.)*)"$/.exec(t);
     return text(q ? unquote(q[1]!) : t, line.n);

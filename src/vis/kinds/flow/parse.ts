@@ -82,7 +82,7 @@ const dotted = (t: Token[]): Token[] =>
 /** Words for a shape (§chat.markdown/vis-lenience-content), read where a shape word goes. */
 const SHAPE_WORDS: Readonly<Record<string, Shape>> = {
   diamond: "decision", rhombus: "decision", condition: "decision", choice: "decision",
-  cylinder: "store", database: "store", db: "store",
+  cylinder: "store", database: "store", db: "store", cache: "store",
   rounded: "round", pill: "round", stadium: "round", oval: "round",
   rect: "box", rectangle: "box", square: "box",
 };
@@ -303,6 +303,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   const chainTone = new Map<string, { tone: Tone; n: number }>();
   // Shapes written in a chain (gate "Approve" decision, delivered -> done end).
   const chainShape = new Map<string, { shape: Shape; n: number }>();
+  const branches: { key: string; label: string; edge: number; n: number; nodeLine: boolean }[] = [];
   const shapedByLine = new Set<string>();
   /** Tone and shape words after an id in a chain; returns the next index. */
   const chainWords = (toks: Token[], k: number, nid: string, key: string, n: number): number => {
@@ -310,9 +311,10 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     let shape = false;
     for (let w = toks[k]; w?.t === "word"; w = toks[++k]) {
       if (isTone(w.v) && !tone) {
+        // A second, different tone keeps the first (§chat.markdown/vis-lenience-content).
         const prev = chainTone.get(key);
-        if (prev && prev.tone !== w.v) fail(n, `node ${nid} is toned ${prev.tone} and ${w.v}: give it one tone`);
-        chainTone.set(key, { tone: w.v, n });
+        if (prev && prev.tone !== w.v) warn(n, `node ${nid} is toned ${prev.tone} and ${w.v}: kept ${prev.tone}`);
+        else chainTone.set(key, { tone: w.v, n });
         tone = true;
       } else if ((SHAPES as readonly string[]).includes(w.v) && !shape) {
         const sh = w.v as Shape;
@@ -368,7 +370,12 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     let from = key(src, line.n);
     used.push(from);
     let k = 1;
-    if (toks[k]?.t === "str") {
+    // A string after a source labelled otherwise already, when it may be a decision's branch
+    // (`days "yes" -> damaged`): settled once shapes are known, below.
+    let branch: string | undefined;
+    const labelOf = (key: string) => inline.get(key) ?? declared.get(key)?.label;
+    if (toks[k]?.t === "str" && !isNL(toks[k]) && toks[k + 1]?.t !== "str" && labelOf(from) !== undefined && labelOf(from) !== toks[k]!.v && (!hasNodeLine(src) || declared.get(from)?.shape === "decision")) branch = (toks[k++] as { v: string }).v;
+    else if (toks[k]?.t === "str") {
       if (hasNodeLine(src)) fail(line.n, `${src} has a node line: its label goes there, not after the id`);
       const tok = toks[k++]!;
       const label = isNL(tok) ? nlText(tok) : tok.v;
@@ -388,6 +395,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     }
     k = chainWords(toks, k, src, from, line.n);
     if (toks[k]?.t !== "arrow") fail(line.n, toks.length === 1 ? `a lone id: declare it with node ${src} "Label"` : `expected an arrow (-> --> <->) after ${src}`);
+    if (branch !== undefined) branches.push({ key: from, label: branch, edge: spec.edges.length, n: line.n, nodeLine: hasNodeLine(src) });
     while (k < toks.length) {
       const arrow = toks[k];
       if (arrow?.t !== "arrow") fail(line.n, `expected an arrow (-> --> <->), found ${arrow?.v}`);
@@ -439,6 +447,12 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
         label = toks[k++]!.v;
         k = chainWords(toks, k, dst, to, line.n);
       }
+      // `dashed` or `dotted` after the target's strings and words: the edge is dashed (§chat.markdown/vis-lenience-content).
+      let dashedWord = false;
+      while (toks[k]?.t === "word" && /^(dashed|dotted)$/.test((toks[k] as { v: string }).v)) {
+        dashedWord = true;
+        k = chainWords(toks, k + 1, dst, to, line.n);
+      }
       const stray = toks[k];
       if (stray?.t === "str") {
         // Say what to write instead, quoting the target as it should read.
@@ -456,14 +470,14 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       }
       if (stray && stray.t !== "arrow") fail(line.n, `unexpected ${stray.v} after ${dst}`);
       const a = (arrow as { v: Arrow }).v;
-      spec.edges.push({ from, to, ...(label ? { label } : {}), dashed: a === "-->" || a === "<-->", both: a.startsWith("<") });
+      spec.edges.push({ from, to, ...(label ? { label } : {}), dashed: dashedWord || a === "-->" || a === "<-->", both: a.startsWith("<") });
       edgeHome.push(sections.length - 1);
       from = to;
     }
   }
   for (const [k, { tone, n }] of chainTone) {
     const node = declared.get(k);
-    if (node?.tone && node.tone !== tone) fail(n, `node ${written.get(k)} is toned ${node.tone} on its node line and ${tone} in an edge chain: give it one tone`);
+    if (node?.tone && node.tone !== tone) warn(n, `node ${written.get(k)} is toned ${node.tone} and ${tone}: kept ${node.tone}`);
   }
   for (const [k, { shape, n }] of chainShape) {
     const node = declared.get(k);
@@ -482,6 +496,14 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     spec.nodes.push(node);
   }
   for (const node of spec.nodes) if (!node.tone && chainTone.has(node.id)) node.tone = chainTone.get(node.id)!.tone;
+  // A decision's branch string labels the line's first edge when that has no label; otherwise it is
+  // a second label for the node, dropped as ever (§chat.markdown/vis-lenience-content).
+  for (const b of branches) {
+    const edge = spec.edges[b.edge]!;
+    if (declared.get(b.key)?.shape === "decision" && edge.label === undefined) edge.label = b.label;
+    else if (b.nodeLine) fail(b.n, `${written.get(b.key)} has a node line: its label goes there, not after the id`);
+    else warn(b.n, `node ${written.get(b.key)} is labelled "${inline.get(b.key)}" and "${b.label}": kept "${inline.get(b.key)}"`);
+  }
   // A start or end dot with a label of its own (`node pending start "Pending payment"`): the state
   // it names, round, with its own unlabelled dot and an edge between them.
   for (const node of [...spec.nodes]) {

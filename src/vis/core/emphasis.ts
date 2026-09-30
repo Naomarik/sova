@@ -166,10 +166,14 @@ export function takeMarks(ls: Line[], opts: { indented?: boolean } = {}): { rest
  * `line`) names, or null when it names nothing. A mark that names nothing (`what`, e.g. "node", goes
  * in the warning) is dropped; an item already marked keeps its first mark. Both warn. A run of words
  * is its joined phrase as a label, else each word as its own target when every one names something.
+ * A range's line highlighted without its note is taken by a later mark with a note that names it
+ * alone (§chat.markdown/vis-lenience-content).
  */
 export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget, line: number) => string | string[] | null, what: string): Emphasis[] {
   const out: Emphasis[] = [];
   const seen = new Set<string>();
+  // Lines a range highlighted without its note: a later mark with a note on one of them alone takes it.
+  const rangeOnly = new Set<string>();
   let n = 0;
   for (let m of marks) {
     const names = (t: MarkTarget) => {
@@ -178,7 +182,7 @@ export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget, lin
     };
     if (m.alt && !m.targets.some((t) => (t.t === "run" ? names({ t: "label", text: t.text }) || t.words.every(names) : names(t)))) m = m.alt;
     // Each target resolves on its own; one that names nothing is dropped (the others kept).
-    const perTarget: string[][] = [];
+    const perTarget: { keys: string[]; range: boolean }[] = [];
     const named: string[] = [];
     const keysOf = (t: MarkTarget): string[] => {
       const got = resolve(t, m.line);
@@ -198,20 +202,28 @@ export function resolveMarks(marks: RawMark[], resolve: (target: MarkTarget, lin
       for (const keys of groups) {
         const fresh = keys.filter((key) => !named.includes(key));
         named.push(...fresh);
-        if (fresh.length) perTarget.push(fresh);
+        if (fresh.length) perTarget.push({ keys: fresh, range: t.t === "range" });
       }
     }
     const target = m.targets.map((t) => (t.t === "label" ? `"${t.text}"` : t.text)).join(", ");
     if (named.length === 0) continue;
+    if (m.note !== undefined) {
+      for (const { keys, range } of perTarget) {
+        if (range || keys.length !== 1 || !rangeOnly.delete(keys[0]!)) continue;
+        seen.delete(keys[0]!);
+        out.splice(out.findIndex((e) => e.key === keys[0]), 1);
+      }
+    }
     const keys = named.filter((key) => !seen.has(key));
     if (keys.length < named.length) warn(m.line, keys.length ? `mark ${target}: part of it is already marked, the rest kept` : `mark ${target}: already marked, dropped`);
     if (keys.length === 0) continue;
     const number = m.note !== undefined ? ++n : undefined;
-    for (const group of perTarget) {
+    for (const { keys: group, range } of perTarget) {
       // A target's note and number sit on its first unmarked item (a range's other lines are
       // highlighted only); every target of one mark line carries the same number.
       group.filter((key) => !seen.has(key)).forEach((key, i) => {
         seen.add(key);
+        if (range && !(i === 0 && m.note !== undefined)) rangeOnly.add(key);
         out.push({ key, tone: m.tone ?? "accent", ...(i === 0 && m.note !== undefined ? { note: m.note, n: number } : {}) });
       });
     }

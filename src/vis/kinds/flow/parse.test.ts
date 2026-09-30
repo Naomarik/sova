@@ -94,11 +94,15 @@ test("flow: a tone after an edge's target colours that node", () => {
   assert.equal(tone(s, "newhead"), undefined);
   assert.deepEqual(s.edges.map((e) => e.label), ["<mode> head rewritten", "cache prefix dead", "re-send"]);
   assert.equal(s.nodes.find((n) => n.id === "miss")!.label, "miss");
-  // Agrees with the node line: fine, in either order. Disagrees: an error naming both.
+  // Agrees with the node line: fine, in either order. Disagrees: the node line's tone, else the
+  // first chain's, with a warning naming both (§chat.markdown/vis-lenience-content).
   assert.equal(tone(ok<FlowSpec>("flow", 'node b "B" error\na -> b error'), "b"), "error");
-  assert.match(err("flow", 'node b "B" ok\na -> b error').message, /node b is toned ok on its node line and error/);
-  assert.match(err("flow", 'a -> b error\nnode b "B" ok').message, /node b is toned ok on its node line and error/);
-  assert.match(err("flow", "a -> b error\nc -> b ok").message, /node b is toned error and ok/);
+  for (const body of ['node b "B" ok\na -> b error', 'a -> b error\nnode b "B" ok']) {
+    assert.equal(warning("flow", body).message, "node b is toned ok and error: kept ok");
+    assert.equal(tone(ok<FlowSpec>("flow", body), "b"), "ok");
+  }
+  assert.equal(warning("flow", "a -> b error\nc -> b ok").message, "node b is toned error and ok: kept error");
+  assert.equal(tone(ok<FlowSpec>("flow", "a -> b error\nc -> b ok"), "b"), "error");
   assert.match(err("flow", 'a -> b "x" loud').message, /unexpected loud after b/);
   assert.match(err("flow", "a -> b error extra").message, /unexpected extra after b/);
   const sec = ok<FlowSpec>("flow", "== A ==\na -> b warn\n== B ==\nc -> d");

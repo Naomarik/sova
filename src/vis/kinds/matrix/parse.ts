@@ -5,7 +5,7 @@
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaListFor, fail, fields, hasBar, isTone, lines, tableRow, takeSettings, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { bars, commaListFor, fail, fields, hasBar, isTone, lines, tableRow, takeSettings, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export type CellMark = "yes" | "no" | "partial";
 export interface MatrixCell {
@@ -33,7 +33,7 @@ export function parseMatrix(body: string): MatrixSpec {
   const { rest: marked, marks } = takeMarks(settled, { indented: true });
   // Markdown table rows (`| SSO | no | yes |`) lose their outer bars; the `|---|` rule is skipped.
   let rest = marked.flatMap((l) => tableRow(l) ?? []);
-  const cellCount = (line: Line) => line.text.split(/(?<!\\)\|/).length - 1;
+  const cellCount = (line: Line) => bars(line.text).length - 1;
   let cols = values.get("columns");
   // No `columns:`: the first row is the header, its first cell (the corner) dropped.
   if (!cols && rest.length > 1 && hasBar(rest[0]!.text)) {
@@ -54,7 +54,7 @@ export function parseMatrix(body: string): MatrixSpec {
   for (const line of rest) {
     const fs = fields(line);
     // Which cells were one quoted string (fields() unquotes them): those stay text, tone word or not.
-    const quoted = line.text.split(/(?<!\\)\|/).map((p) => /^"(?:[^"\\]|\\.)*"$/.test(p.trim()));
+    const quoted = bars(line.text).map((p) => /^"(?:[^"\\]|\\.)*"$/.test(p.trim()));
     if (fs.length !== spec.columns.length + 1) fail(line.n, `${fs.length - 1} cells; expected ${spec.columns.length} (label | ${spec.columns.join(" | ")})`);
     const [label, ...cells] = fs as [string, ...string[]];
     if (!label) fail(line.n, "empty row label");

@@ -4,7 +4,7 @@
  * layout: each row is its label and its steps as chips joined by arrows.
  */
 
-import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
+import { applyMarks, byIdOrLabel, takeMarks, type MarkTarget } from "../../core/emphasis";
 import { divider, fail, isTone, lines, takeSettings, text, tokenize, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export interface StepsRow {
@@ -64,28 +64,38 @@ function head(line: Line): { label: string; tone?: Tone } {
 /** The head as written (it ends at the row's |), less its trailing tone word. */
 const literal = (line: Line, tone: Tone | undefined): string => (tone ? line.text.slice(0, -tone.length).trimEnd() : line.text);
 
-/** `a -> "b c" -> d e`: steps between `->`s, each a quoted label or bare words. */
-function chain(line: Line): string[] {
+/**
+ * `a -> "b c" -> d e`: steps between `->`s, each a quoted label or bare words; one of each is kept as
+ * written, as a head is (`error "invalid audience"`). With no tone yet (`toned` false), a tone word
+ * after the last step's quoted label is the row's (§chat.markdown/vis-lenience-content).
+ */
+function chain(line: Line, toned: boolean): { steps: string[]; tone?: Tone } {
   // `→`, `=>` and the like join steps as `->` does (§chat.markdown/vis-lenience-content).
   const toks = tokenize(line, { wide: true });
   if (toks.length === 0) fail(line.n, `${SHAPE} (no steps after the |)`);
   const steps: string[] = [];
+  let tone: Tone | undefined;
   let cur: typeof toks = [];
-  const end = () => {
+  const end = (last: boolean) => {
     if (cur.length === 0) fail(line.n, "an empty step: write step -> step, with something on both sides of every ->");
-    if (cur.length > 1 && cur.some((t) => t.t === "str")) fail(line.n, `a step is one "quoted label" or bare words, not both: ${cur.map((t) => (t.t === "str" ? `"${t.v}"` : t.v)).join(" ")}`);
-    steps.push(text(cur.map((t) => t.v).join(" "), line.n));
+    const written = cur.map((t) => (t.t === "str" ? `"${t.v}"` : t.v)).join(" ");
+    if (cur.filter((t) => t.t === "str").length > 1) fail(line.n, `a step is one "quoted label" or bare words, not two labels: ${written} (join steps with ->)`);
+    const [a, b] = cur;
+    if (last && !toned && cur.length === 2 && a!.t === "str" && b!.t === "word" && isTone(b!.v)) {
+      tone = b!.v;
+      steps.push(text(a!.v, line.n));
+    } else steps.push(text(cur.length > 1 && cur.some((t) => t.t === "str") ? written : cur.map((t) => t.v).join(" "), line.n));
     cur = [];
   };
   for (const t of toks) {
     if (t.t === "arrow") {
       if (t.v !== "->") fail(line.n, `steps join with ->, not ${t.v}`);
-      end();
+      end(false);
     } else cur.push(t);
   }
-  end();
+  end(true);
   if (steps.length > MAX_STEPS) fail(line.n, `${steps.length} steps; at most ${MAX_STEPS}: summarise, or split the row`);
-  return steps;
+  return { steps, ...(tone ? { tone } : {}) };
 }
 
 export function parseSteps(body: string): StepsSpec {
@@ -109,8 +119,8 @@ export function parseSteps(body: string): StepsSpec {
     const hd = head(h);
     // A status written last, as layers and timeline rows end (`… -> done | ok`), when the label has none.
     const tail = hd.tone ? null : splitBar(c, true);
-    if (tail && isTone(tail[1].text)) spec.items.push({ type: "row", ...hd, tone: tail[1].text, steps: chain(tail[0]) });
-    else spec.items.push({ type: "row", ...hd, steps: chain(c) });
+    if (tail && isTone(tail[1].text)) spec.items.push({ type: "row", ...hd, tone: tail[1].text, steps: chain(tail[0], true).steps });
+    else spec.items.push({ type: "row", ...hd, ...chain(c, !!hd.tone) });
   }
   const last = spec.items[spec.items.length - 1];
   if (last?.type === "lane") fail(lanes[lanes.length - 1]!.n, `lane "${last.label}" is empty: give it rows, or drop the line`);
@@ -118,6 +128,12 @@ export function parseSteps(body: string): StepsSpec {
   if (rows === 0) fail(0, 'nothing to draw: add rows like "Simple question" ok | You -> "Maria answers"');
   if (rows > MAX_ROWS) fail(0, `${rows} rows; at most ${MAX_ROWS}`);
   if (lanes.length > MAX_LANES) fail(lanes[MAX_LANES]!.n, `${lanes.length} lanes; at most ${MAX_LANES}`);
-  applyMarks(spec, marks, byIdOrLabel(spec.items.flatMap((it, i) => (it.type === "row" ? [{ key: String(i), label: it.label }] : []))), "row");
+  const byRow = byIdOrLabel(spec.items.flatMap((it, i) => (it.type === "row" ? [{ key: String(i), label: it.label }] : [])));
+  // A target that names no row but a step of exactly one row marks that row (§chat.markdown/vis-lenience-content).
+  const byStep = (t: MarkTarget): string | null => {
+    const at = spec.items.flatMap((it, i) => (it.type === "row" && it.steps.includes(t.text) ? [String(i)] : []));
+    return at.length === 1 ? at[0]! : null;
+  };
+  applyMarks(spec, marks, (t) => byRow(t) ?? (t.t === "id" || t.t === "label" ? byStep(t) : null), "row");
   return spec;
 }

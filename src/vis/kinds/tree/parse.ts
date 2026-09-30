@@ -25,7 +25,9 @@ export function parseTree(body: string): TreeSpec {
   const ls = lines(body);
   const spec: TreeSpec = { kind: "tree", roots: [] };
   const { rest: settled } = takeSettings(ls, [], spec);
-  const { rest, marks } = takeMarks(settled);
+  // `mark "Photos"/`: the folder's slash inside the quotes, as on an item line (§chat.markdown/vis-lenience-content).
+  const slashIn = (t: string) => t.replace(/("(?:[^"\\]|\\.)*)"\/(?=[\s,]|$)/g, '$1/"');
+  const { rest, marks } = takeMarks(settled.map((l) => (/^mark\s/.test(l.raw) ? { ...l, raw: slashIn(l.raw), text: slashIn(l.text) } : l)));
   if (rest.length === 0) fail(0, "nothing to draw");
   if (rest.length > MAX_ROWS) fail(0, `${rest.length} rows; at most ${MAX_ROWS}`);
   const art = rest.some((l) => TREE_ART.test(l.raw));
@@ -88,7 +90,15 @@ export function parseTree(body: string): TreeSpec {
     walk(n.children, `${n.key}.`);
   });
   walk(spec.roots, "");
-  applyMarks(spec, marks, (t) => (t.t === "id" || t.t === "label" ? (flatTree(spec.roots).find((n) => n.name === t.text)?.key ?? null) : null), "item");
+  // A name as written, else the one item it names with a trailing `/` added or removed (`mark src` for `src/`).
+  const all = flatTree(spec.roots);
+  applyMarks(spec, marks, (t) => {
+    if (t.t === "range") return null;
+    const exact = all.find((n) => n.name === t.text);
+    if (exact) return exact.key;
+    const other = all.filter((n) => n.name === `${t.text}/` || `${n.name}/` === t.text);
+    return other.length === 1 ? other[0]!.key : null;
+  }, "item");
   return spec;
 }
 

@@ -1,5 +1,5 @@
 // §chat.markdown/vis-lenience-content: `vis` content as models write it. One test per rule; each
-// shape here failed before, except the three changes of meaning, which say what they drew before.
+// shape here failed before, except the changes of meaning, which say what they drew before.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { ChartSpec } from "./kinds/chart/parse";
@@ -207,4 +207,89 @@ test("steps: the three changes of meaning (a trailing | tone, wide arrows)", () 
   const s = ok<StepsSpec>("steps", '"Guest" | cart -> pay -> done | ok\n"Pro" warn | a -> b | ok\n"Apple Pay" | cart → sheet ⟶ fails');
   const rows = s.items.map((i) => (i.type === "row" ? [i.label, i.tone ?? null, i.steps] : null));
   assert.deepEqual(rows, [["Guest", "ok", ["cart", "pay", "done"]], ["Pro", "warn", ["a", "b | ok"]], ["Apple Pay", null, ["cart", "sheet", "fails"]]]);
+});
+
+// Round 1: the lines weak models wrote in the eval, verbatim where they are quoted.
+const drawn = (kind: string, body: string) => {
+  const r = parseVis(kind, body);
+  if (!r.ok) assert.fail(`${kind}: line ${r.line}: ${r.message}\n${body}`);
+  return r;
+};
+
+test("a | inside a quoted field: timeline, layers, matrix", () => {
+  const t = ok<TimelineSpec>("timeline", '2021 | "Ship it, then fix it"\n2023 | "Quality | Speed" | the honest trade-off | info');
+  assert.deepEqual(t.items[1], { type: "event", when: "2023", label: "Quality | Speed", note: "the honest trade-off", tone: "info" });
+  assert.deepEqual(ok<LayersSpec>("layers", '"A | B" | x, y | "note | two"').layers[0], { label: "A | B", items: ["x", "y"], note: "note | two" });
+  const m = ok<MatrixSpec>("matrix", 'columns: A, B\n"x | y" | yes | "t | u"');
+  assert.deepEqual([m.rows[0]!.label, m.rows[0]!.cells], ["x | y", [{ mark: "yes" }, { text: "t | u" }]]);
+  // A quoted stretch that isn't the whole field splits as before.
+  assert.deepEqual(ok<TimelineSpec>("timeline", '2023 | say "a | b" now').items[0], { type: "event", when: "2023", label: 'say "a', note: 'b" now' });
+});
+
+test("steps: words beside a quoted step are kept as written; a tone after the last is the row's", () => {
+  const s = ok<StepsSpec>("steps", '"SAML" error | "Enter domain" -> "Redirect to IdP" -> error "invalid audience"\n"Expired" | "Email" -> "Click after 15 min" -> "Show expiry" error\n"Request link" ok | "Email" -> "Show expiry" error');
+  const rows = s.items.map((i) => (i.type === "row" ? [i.label, i.tone ?? null, i.steps] : null));
+  assert.deepEqual(rows, [
+    ["SAML", "error", ["Enter domain", "Redirect to IdP", 'error "invalid audience"']],
+    ["Expired", "error", ["Email", "Click after 15 min", "Show expiry"]],
+    ["Request link", "ok", ["Email", '"Show expiry" error']],
+  ]);
+  assert.match(err("steps", '"A" | "a" "b" -> c').message, /not two labels: "a" "b" \(join steps with ->\)/);
+});
+
+test("flow: cache, dashed, a second tone, a decision's branches", () => {
+  const f = ok<FlowSpec>("flow", 'web "Client" -> lb "Load balancer" -> api "API server" -> redis "Redis" cache\nl7a "L7 LB 1" -> a2 "app-2" "failover" dashed\nl7a -> a1 "app-1" dotted ok');
+  assert.equal(shapes(f).redis, "store");
+  assert.deepEqual(edges(f).slice(3), [["l7a", "a2", "failover", true], ["l7a", "a1", null, true]]);
+  assert.equal(f.nodes.find((n) => n.id === "a1")!.tone, "ok");
+  const r = drawn("flow", 'api "API" ok -> cache "Cache"\ncache --> api "miss" warn');
+  assert.deepEqual(r.warnings, [{ line: 2, message: "node api is toned ok and warn: kept ok" }]);
+  assert.equal((r.spec as FlowSpec).nodes.find((n) => n.id === "api")!.tone, "ok");
+  const d = ok<FlowSpec>("flow", 'req "Request received" -> days "Within 30 days?" decision\ndays "yes" -> damaged "Item damaged?" decision\ndays "no" -> reject "Reject" error\ndamaged "yes" -> refund "Full refund" accent');
+  assert.deepEqual(edges(d), [["req", "days", null, false], ["days", "damaged", "yes", false], ["days", "reject", "no", false], ["damaged", "refund", "yes", false]]);
+  assert.equal(labels(d).days, "Within 30 days?");
+  assert.deepEqual(edges(ok<FlowSpec>("state", 'node v "Valid?" decision\nv "yes" -> rec "Save"')), [["v", "rec", "yes", false]]);
+  // Not a decision, or the edge labelled already: the second label is dropped with a warning, as before.
+  assert.equal(drawn("flow", 'eng "Engineering team" -> a\neng "Engineering" -> close').warnings[0]!.message, 'node eng is labelled "Engineering team" and "Engineering": kept "Engineering team"');
+  assert.equal(drawn("flow", 'v "Valid?" decision -> a\nv "yes" -> b "B" "edge"').warnings[0]!.message, 'node v is labelled "Valid?" and "yes": kept "Valid?"');
+});
+
+test("sequence: an actor without the word; a message's two strings", () => {
+  const s = ok<SequenceSpec>("sequence", 'u "User"\nr "React" info\nu -> r "click"');
+  assert.deepEqual(s.actors, [{ id: "u", label: "User" }, { id: "r", label: "React", tone: "info" }]);
+  const m = ok<SequenceSpec>("sequence", 'actor cdn "CDN"\nactor org "Origin"\ncdn -> org "GET /api/items?page=2&sort=-date" "cache miss, forward"');
+  assert.deepEqual(m.steps[0], { type: "msg", from: "cdn", to: "org", label: "GET /api/items?page=2&sort=-date\ncache miss, forward", dashed: false });
+  assert.match(err("sequence", 'a -> b "x" "y" "z"').message, /one message per line/);
+});
+
+test("chart: a label ending in a number, when a row settles the width; a tone on a row of several series", () => {
+  const s = ok<ChartSpec>("chart", 'type: scatter\niPhone 16 799 22\n"Pixel 9" 799 24');
+  assert.deepEqual(rows(s), [["iPhone 16", 799, 22], ["Pixel 9", 799, 24]]);
+  assert.match(err("chart", "type: scatter\niPhone 16 799 22\nPixel 9 799 24").message, /3 values; expected 2/);
+  assert.match(err("chart", "type: stacked\nv1.0 5 20 8\nv1.1 2 9 4").message, /3 values; expected 1/);
+  const t = ok<ChartSpec>("chart", 'series: p50, p99\n"/checkout" 80 2400 warn\n"/cart" 20 300 ok\nmark "/cart" "fast"');
+  assert.deepEqual([t.rows.map((r) => r.tone ?? null), t.emphasis], [[null, null], [{ key: "1", tone: "accent", note: "fast", n: 1 }, { key: "0", tone: "warn" }]]);
+});
+
+test("marks naming part of an item: a step, a layer's item or number, a folder without its slash", () => {
+  const st = ok<StepsSpec>("steps", '"Sign up" | Email -> "Verify email" -> Done\n"Invite" | "Invite team" -> Done\nmark "Verify email" "x"');
+  assert.deepEqual(st.emphasis, [{ key: "0", tone: "accent", note: "x", n: 1 }]);
+  assert.equal(drawn("steps", '"A" | x -> Done\n"B" | y -> Done\nmark Done').warnings[0]!.message, "mark: no row Done, dropped");
+  const l = ok<LayersSpec>("layers", '7 Application | HTTP, DNS\n6 Presentation | "TLS 1.3", JPEG\n4 Transport | TCP, UDP\nmark 4 "where TCP lives"\nmark TLS 1.3 "tls"');
+  assert.deepEqual(l.emphasis, [{ key: "2", tone: "accent", note: "where TCP lives", n: 1 }, { key: "1", tone: "accent", note: "tls", n: 2 }]);
+  const tree = '"Tax Returns/"\n  2023/\n  a.pdf\n"Photos/"\npackages/\n  ui/\n';
+  const keys = (body: string) => ok<TreeSpec>("tree", tree + body).emphasis?.map((e) => e.key);
+  assert.deepEqual(keys('mark "Tax Returns", Photos "folders"'), ["0", "1"]);
+  assert.deepEqual(keys('mark "Tax Returns"/, "Photos"/ "folders"'), ["0", "1"]);
+  assert.deepEqual(keys("mark 2023"), ["0.0"]);
+  assert.deepEqual(keys("mark ui"), ["2.0"]);
+});
+
+test("code: a later mark with a note on a line a range only highlighted takes it", () => {
+  const code = "\n---\nfunc fetch(url string) ([]byte, error) {\n\tvar body []byte\n\tfor attempt := 0; attempt < 3; attempt++ {\n\t\tbody, _ = get(url)\n\t}\n\treturn body, nil\n}";
+  const c = ok<CodeSpec>("code", 'lang: go\nmark 3-5 "three-line retry loop"\nmark 4 error "_ discards the error"' + code);
+  assert.deepEqual(c.emphasis, [{ key: "3", tone: "accent", note: "three-line retry loop", n: 1 }, { key: "5", tone: "accent" }, { key: "4", tone: "error", note: "_ discards the error", n: 2 }]);
+  // The range's own first line, or a mark with no note: already marked, as before.
+  assert.equal(drawn("code", 'mark 3-5 "loop"\nmark 3 error "bug"' + code).warnings[0]!.message, "mark 3: already marked, dropped");
+  assert.equal(drawn("code", 'mark 3-5 "loop"\nmark 4 error' + code).warnings[0]!.message, "mark 4: already marked, dropped");
 });

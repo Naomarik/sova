@@ -25,6 +25,9 @@ you, an overseer (see below) ──▶ Sova: the project's send act ──▶ th
   message is the note if there is one, else a fixed line with your name (and the gathering's public
   title), then the link. A note is at most 500 characters, and one that repeats private text or a
   roster contact is refused. No model ever sees the link, a token or a number.
+- **A preview link** sent to someone is their own copy of the preview: same port, expiring when the
+  original does (never later), turned off with it, and listed with the previews as "sent to {name}"
+  so you can turn off just theirs. The log keeps its `pv_` id, never its URL.
 - **The sender** (`services/whatsapp`) is a separate, small program that holds the one WhatsApp
   connection of one number, as a linked device of your phone. It runs on one always-on host; every
   other Sova host sends through that host's Sova. Sova never starts, pairs or unlinks it.
@@ -35,8 +38,8 @@ you, an overseer (see below) ──▶ Sova: the project's send act ──▶ th
   link"). It goes at once.
 - **The global Overseer**, only in the turn your click on its confirm card opened, for the people
   and sessions that card lists. It goes at once.
-- **A project overseer** at level L1 or above. When it acts on its own, each message waits in the
-  project's hold, where you can cancel it; with "Messaging a person on WhatsApp" among the kinds it
+- **A project overseer** at level L1 or above. In a turn you started, it goes at once. In its own
+  runs (the watch, Look Now), each message waits in the project's hold, where you can cancel it; with "Messaging a person on WhatsApp" among the kinds it
   must confirm (on by default) it waits for that review too, and it goes only in the person's
   working hours.
 - A gathering's own model never sends.
@@ -47,9 +50,11 @@ Replies are not read: the sender drops incoming messages unread, and people answ
 ## What is kept, and where
 
 - **In the organization's workspace**, `outreach.jsonl`: one line per send and receipt (when, who,
-  which project, gathering or preview, who sent it, sent / delivered / read / failed / refused). Never
-  a number, a link, a token, a message id, the message or the note. A person's page lists these under
-  **Sent on WhatsApp**.
+  which project, gathering or preview, who sent it, sent / delivered / read / failed / refused /
+  unknown). Never a number, a link, a token, a message id, the message or the note. `unknown` means
+  the message left and no answer came back (a timeout, a dropped connection, a Sova restart mid-send):
+  it may have arrived, so the link it carried is kept, and it is never sent again on its own. A
+  person's page lists these under **Sent on WhatsApp**.
 - **On the host that sent**, a short-lived map from WhatsApp's message reference to that line, so
   receipts find their send.
 - **In the sender's directory**, its credentials (the linked device: keep it secret, see

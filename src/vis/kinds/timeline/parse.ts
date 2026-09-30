@@ -1,7 +1,7 @@
 /** `vis timeline`: `when | label | note | tone` rows and `== section ==` lines. */
 
 import { applyMarks, takeMarks } from "../../core/emphasis";
-import { divider, fail, fields, hasBar, lines, notATone, popTone, swapToneNote, tableRow, takeSettings, text, type Tone, type VisBase } from "../../core/grammar";
+import { bars, divider, fail, fields, hasBar, isTone, lines, notATone, popTone, swapToneNote, tableRow, takeSettings, text, unquote, type Tone, type VisBase } from "../../core/grammar";
 
 export type TimelineItem = { type: "event"; when: string; label: string; note?: string; tone?: Tone } | { type: "section"; label: string };
 export interface TimelineSpec extends VisBase {
@@ -21,6 +21,25 @@ function noBar(t: string, n: number): string[] {
   const parts = t.split(/\s[—–-]\s/);
   return [parts[0]!, parts[1]!, ...(parts.length > 2 ? [parts.slice(2).join(" — ")] : [])].map((f) => text(f.trim(), n));
 }
+
+/**
+ * A label field carrying the row's tone or note (§chat.markdown/vis-lenience-content): bare words
+ * then a tone, with no tone field (`Beta warn`); bare words then one "string" and an optional tone,
+ * with no note field (`Beta "was June 30" warn`). Otherwise the fields as written.
+ */
+function labelParts(label: string, note: string | undefined, tone: Tone | undefined): { label: string; note?: string; tone?: Tone } {
+  const asNote = note === undefined ? /^([^"]*?\S)\s+"((?:[^"\\]|\\.)*)"(?:\s+(\S+))?$/.exec(label) : null;
+  if (asNote && (asNote[3] === undefined || (!tone && isTone(asNote[3])))) {
+    const t = (asNote[3] as Tone | undefined) ?? tone;
+    return { label: asNote[1]!, note: unquote(asNote[2]!), ...(t ? { tone: t } : {}) };
+  }
+  const toned = tone ? null : /^([^"]*?\S)\s+(\S+)$/.exec(label);
+  if (toned && isTone(toned[2]!)) return { label: toned[1]!, ...(note ? { note } : {}), tone: toned[2] };
+  return { label, ...(note ? { note } : {}), ...(tone ? { tone } : {}) };
+}
+
+/** A label without its trailing `(…)`: `CommonJS (Node.js)` is marked as CommonJS. */
+const bare = (label: string) => label.replace(/\s*\([^()]*\)$/, "");
 
 export function parseTimeline(body: string): TimelineSpec {
   const ls = lines(body);
@@ -42,9 +61,12 @@ export function parseTimeline(body: string): TimelineSpec {
     const tone = popTone(fs);
     const shape = "a row is: when | label | note (optional) | tone (optional)";
     if (fs.length < 2 || fs.length > 3) fail(line.n, notATone(fs, 4, shape) ?? shape);
-    const [when, label, note] = fs as [string, string, string | undefined];
-    if (!when || !label) fail(line.n, "when and label can't be empty");
-    spec.items.push({ type: "event", when, label, ...(note ? { note } : {}), ...(tone ? { tone } : {}) });
+    const [when, labelField, noteField] = fs as [string, string, string | undefined];
+    if (!when || !labelField) fail(line.n, "when and label can't be empty");
+    // A whole-quoted label is kept as written (`"Launch ok"`).
+    const quoted = hasBar(line.text) && /^"(?:[^"\\]|\\.)*"$/.test(bars(line.text)[1]?.trim() ?? "");
+    const { label, note, tone: labelTone } = quoted ? { label: labelField, note: noteField, tone } : labelParts(labelField, noteField, tone);
+    spec.items.push({ type: "event", when, label, ...(note ? { note } : {}), ...(labelTone ? { tone: labelTone } : {}) });
   }
   const events = spec.items.filter((i) => i.type === "event").length;
   if (events === 0) fail(0, "nothing to draw: add rows like 2015 | React 0.14 | note");
@@ -52,7 +74,10 @@ export function parseTimeline(body: string): TimelineSpec {
   applyMarks(spec, marks, (t) => {
     if (t.t !== "id" && t.t !== "label" && t.t !== "number") return null;
     const i = spec.items.findIndex((it) => it.type === "event" && (it.when === t.text || it.label === t.text));
-    return i < 0 ? null : String(i);
+    if (i >= 0 || t.t === "number") return i < 0 ? null : String(i);
+    // A label named without its trailing `(…)`, when only one row's reads so.
+    const js = spec.items.flatMap((it, j) => (it.type === "event" && bare(it.label) !== it.label && bare(it.label) === t.text ? [j] : []));
+    return js.length === 1 ? String(js[0]) : null;
   }, "row");
   return spec;
 }

@@ -69,7 +69,7 @@ test("flow errors point at the line and say what to write", () => {
   assert.match(err("flow", "node a sparkly").message, /unknown word "sparkly"/);
   assert.match(err("flow", "orientation: down\na -> b").message, /unknown setting "orientation:"/);
   assert.match(err("flow", "dir: up\na -> b").message, /down or right/);
-  assert.match(err("flow", "node a\nnode a").message, /declared twice/);
+  assert.match(err("flow", "node a\nnode a \"A\"").message, /declared twice/);
   assert.match(err("flow", 'node a "unclosed').message, /unclosed quote/);
   assert.match(err("flow", "a -> ").message, /target id/);
   assert.match(err("flow", "").message, /nothing to draw/);

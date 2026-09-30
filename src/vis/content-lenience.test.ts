@@ -11,6 +11,7 @@ import type { SequenceSpec } from "./kinds/sequence/parse";
 import type { StepsSpec } from "./kinds/steps/parse";
 import type { TimelineSpec } from "./kinds/timeline/parse";
 import type { TreeSpec } from "./kinds/tree/parse";
+import type { WBlock, WireframeSpec } from "./kinds/wireframe/parse";
 import { parseVis, visKindWord } from "./parse";
 import { canonicalKind } from "./registry";
 
@@ -42,8 +43,9 @@ test("chart values: magnitudes, currency, thousands, units, gaps", () => {
   assert.deepEqual(rows(ok<ChartSpec>("chart", '"core" 91%\n"cli" n/a\n"web" —\n"docs" ?')), [["core", 91], ["cli", null], ["web", null], ["docs", null]]);
   assert.equal(ok<ChartSpec>("chart", '"core" 91%').unit, undefined, "12% sets no unit");
   assert.equal(ok<ChartSpec>("chart", "type: parts\nof: 200k\na 9000").of, 200000);
-  assert.match(err("chart", '"Node" 180ms\n"Java" 2.1s').message, /mixed units ms and s: write every value in one unit/);
-  assert.match(err("chart", 'unit: s\n"a" 120ms').message, /mixed units s and ms/);
+  assert.match(err("chart", '"Node" 180ms\n"Java" 2.1s\n"Go" 90').message, /mixed units ms and s: write every value in one unit/, "a bare value beside two durations");
+  assert.match(err("chart", '"a" 3ms\n"b" 2GB').message, /mixed units ms and GB/);
+  assert.match(err("chart", 'unit: USD\n"a" 3ms').message, /mixed units USD and ms/);
   assert.match(err("chart", '"a" 1,5').message, /not a number/);
 });
 
@@ -292,4 +294,60 @@ test("code: a later mark with a note on a line a range only highlighted takes it
   // The range's own first line, or a mark with no note: already marked, as before.
   assert.equal(drawn("code", 'mark 3-5 "loop"\nmark 3 error "bug"' + code).warnings[0]!.message, "mark 3: already marked, dropped");
   assert.equal(drawn("code", 'mark 3-5 "loop"\nmark 4 error' + code).warnings[0]!.message, "mark 4: already marked, dropped");
+});
+
+test("chart sizes and durations: one unit, each value converted", () => {
+  const bytes = ok<ChartSpec>("chart", 'scale: log\nunit: bytes\nTweet 280\nJPEG photo 3.5MB\nFeature film 4GB\n"Wikipedia dump" 22GB');
+  assert.deepEqual([bytes.unit, rows(bytes)], ["bytes", [["Tweet", 280], ["JPEG photo", 3.5e6], ["Feature film", 4e9], ["Wikipedia dump", 22e9]]]);
+  // `G` is GB beside a size; `M` stays a magnitude.
+  assert.deepEqual(rows(ok<ChartSpec>("chart", 'unit: bytes\n"JPEG" 3.5M\n"Film" 4.3G')), [["JPEG", 3.5e6], ["Film", 4.3e9]]);
+  assert.deepEqual(rows(ok<ChartSpec>("chart", '"a" 1GiB\n"b" 512MiB')), [["a", 1024], ["b", 512]]);
+  const ms = ok<ChartSpec>("chart", '"Node" 180ms\n"Java" 2.1s\n"Batch" 1.5 min');
+  assert.deepEqual([ms.unit, rows(ms)], ["ms", [["Node", 180], ["Java", 2100], ["Batch", 90000]]]);
+  const s = ok<ChartSpec>("chart", 'unit: s\n"a" 120ms\n"b" 3');
+  assert.deepEqual([s.unit, rows(s)], ["s", [["a", 0.12], ["b", 3]]]);
+  // One unit, or another family, or a scatter: as before.
+  assert.equal(ok<ChartSpec>("chart", '"a" 4G\n"b" 5G').unit, "G");
+  assert.match(err("chart", '"a" 4G\n"b" 5ms').message, /mixed units G and ms/);
+  assert.match(err("chart", 'type: scatter\n"a" 1ms 2s').message, /mixed units ms and s/);
+});
+
+test("flow and state: the same node line written twice is one node", () => {
+  const s = ok<FlowSpec>("state", "node s0 start\nnode done end\ns0 -> idle\nnode done end\nidle -> done");
+  assert.deepEqual(shapes(s), { s0: "start", done: "end", idle: "round" });
+  assert.match(err("state", "node done end\nnode done end warn").message, /node done is declared twice/);
+  assert.match(err("flow", 'node a "A"\nnode a "B"').message, /node a is declared twice/);
+});
+
+test("timeline: a label's own tone or note; a mark without the row's (…)", () => {
+  const t = ok<TimelineSpec>("timeline", '2024-03-01 | Alpha\n2024-06-30 | Beta warn\n2024-07-14 | GA "was 2024-06-30" ok\nmark "Beta" "slipped"');
+  assert.deepEqual(t.items, [
+    { type: "event", when: "2024-03-01", label: "Alpha" },
+    { type: "event", when: "2024-06-30", label: "Beta", tone: "warn" },
+    { type: "event", when: "2024-07-14", label: "GA", note: "was 2024-06-30", tone: "ok" },
+  ]);
+  assert.deepEqual(t.emphasis, [{ key: "1", tone: "accent", note: "slipped", n: 1 }]);
+  // A quoted label, a tone field already there, or a note field already there: as written.
+  const kept = ok<TimelineSpec>("timeline", '2024 | "Launch ok"\n2025 | Beta warn | late | error\n2026 | Beta "x" | note');
+  assert.deepEqual(kept.items.map((i) => (i.type === "event" ? [i.label, i.note ?? null, i.tone ?? null] : null)), [["Launch ok", null, null], ["Beta warn", "late", "error"], ['Beta "x"', "note", null]]);
+  const js = ok<TimelineSpec>("timeline", '2009 | CommonJS (Node.js)\n2015 | ES6 Modules (ECMAScript)\nmark CommonJS ok\nmark "ES6 Modules"');
+  assert.deepEqual(js.emphasis?.map((e) => e.key), ["0", "1"]);
+  assert.equal(drawn("timeline", "2009 | A (x)\n2015 | A (y)\nmark A").warnings[0]!.message, "mark: no row A, dropped");
+});
+
+test("wireframe: a leaf block written after a line's texts is another block", () => {
+  const tree = (b: WBlock): unknown => [b.type, ...b.texts, ...(b.tone ? [b.tone] : []), ...(b.to !== undefined ? [`->${b.to}`] : []), ...(b.children.length ? [b.children.map(tree)] : [])];
+  const w = ok<WireframeSpec>("wireframe", 'screen "Orders"\nlist\n  item "#1042" "2 items" badge "Delivered" ok -> "Detail"\n    button "Track"\ntext "Have an account?" link "Sign in" -> "Detail"\nbutton "Refund" | button "Resend"\nchart "Costs" parts\nscreen "Detail"\nheader "Order"');
+  assert.deepEqual(w.screens[0]!.blocks.map(tree), [
+    ["list", [["item", "#1042", "2 items", "->1", [["badge", "Delivered", "ok"], ["button", "Track"]]]]],
+    ["text", "Have an account?"],
+    ["link", "Sign in", "->1"],
+    ["button", "Refund"],
+    ["button", "Resend"],
+    ["chart", "Costs"],
+  ]);
+  assert.equal(w.screens[0]!.blocks[5]!.chart, "pie");
+  // A block word with no text of its own, or on a tabs line: as before.
+  assert.equal(drawn("wireframe", 'button "Terms" link').warnings[0]!.message, 'ignored "link" (after the texts: a tone, on, wide)');
+  assert.deepEqual(ok<WireframeSpec>("wireframe", 'tabs "A, B" button "C"').screens[0]!.blocks[0]!.items, ["A", "B", "button", "C"]);
 });

@@ -350,7 +350,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     if (idAt >= 0) {
       const nid = id(toks[idAt], line.n, "a node id after node");
       const k0 = key(nid, line.n);
-      if (declared.has(k0)) fail(line.n, `node ${nid} is declared twice`);
+      const again = declared.get(k0);
       let label = nid;
       let note: string | undefined;
       // Strings (the label, then a second line) and words (shape, tone), strings first or after the words.
@@ -360,6 +360,12 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       if (strs[0]) label = isNL(strs[0]) ? nlText(strs[0]) : strs[0].v;
       if (strs[1]) note = strs[1].v;
       const mods = modifiers(words, line.n, SHAPES);
+      if (again) {
+        // The same `node` line written again is that node (§chat.markdown/vis-lenience-content).
+        const same = again.label === label && again.note === note && again.shape === (mods.word ?? defaultShape) && again.tone === mods.tone && shapedByLine.has(k0) === !!mods.word;
+        if (!same) fail(line.n, `node ${nid} is declared twice`);
+        continue;
+      }
       if (mods.word) shapedByLine.add(k0);
       declared.set(k0, { id: k0, label, ...(note ? { note } : {}), shape: mods.word ?? defaultShape, ...(mods.tone ? { tone: mods.tone } : {}) });
       continue;

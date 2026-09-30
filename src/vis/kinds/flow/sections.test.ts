@@ -65,8 +65,8 @@ test("flow sections: ids are local to their panel; the same id in two panels is 
   assert.deepEqual(again.sections!.map((p) => p.nodes.map((n) => `${n.id}=${n.label}`)), [["a=a", "b=b"], ["a@2=Again", "b@2=b"], ["a@3=a", "c=c"]]);
   assert.deepEqual(again.sections![1]!.edges.map((e) => `${e.from}>${e.to}`), ["b@2>a@2"]);
   // A flow without sections is one scope, as before.
-  assert.match(err("node a\nnode a").message, /declared twice/);
-  assert.match(err("== A ==\nnode a\nnode a").message, /declared twice/);
+  assert.match(err("node a\nnode a round").message, /declared twice/);
+  assert.match(err("== A ==\nnode a\nnode a warn").message, /declared twice/);
 });
 
 test("flow sections: misuse is an error", () => {

@@ -68,6 +68,41 @@ export function readValue(w: string): { v: number | null; unit?: string } | null
 
 type RowRead = { label: string; vals: (number | null)[]; tone?: Tone; units: (string | undefined)[] };
 
+/** Sizes and durations (§chat.markdown/vis-lenience-content): units one chart may mix, each value converted. */
+const SIZES: Readonly<Record<string, number>> = { B: 1, KB: 1e3, kB: 1e3, MB: 1e6, GB: 1e9, TB: 1e12, PB: 1e15, KiB: 1024, MiB: 1024 ** 2, GiB: 1024 ** 3, TiB: 1024 ** 4 };
+/** `4.3G`: a size only beside another size. */
+const SIZE_LETTERS: Readonly<Record<string, number>> = { G: 1e9, T: 1e12 };
+const DURATIONS: Readonly<Record<string, number>> = {
+  ns: 1e-9, "µs": 1e-6, "μs": 1e-6, us: 1e-6, ms: 1e-3,
+  s: 1, sec: 1, secs: 1, second: 1, seconds: 1, min: 60, mins: 60, minute: 60, minutes: 60,
+  h: 3600, hr: 3600, hrs: 3600, hour: 3600, hours: 3600, d: 86400, day: 86400, days: 86400,
+};
+const sizeOf = (u: string): number | undefined => (/^bytes?$/i.test(u) ? 1 : Object.hasOwn(SIZES, u) ? SIZES[u] : undefined);
+const durationOf = (u: string): number | undefined => (Object.hasOwn(DURATIONS, u.toLowerCase()) ? DURATIONS[u.toLowerCase()] : undefined);
+/** The words of a `unit:` setting, as the unit check splits them. */
+const unitWords = (unit: string) => unit.split(/[^\p{L}\p{N}%$€£¥µμ]+/u).filter(Boolean);
+
+/**
+ * Rows in several sizes or several durations, and the `unit:` words: each unit's factor and the
+ * one to draw in (`unit:`'s, else the smallest), or null when they aren't all one family.
+ */
+function unitFamily(units: string[], setting: string | undefined): { factor: (u: string) => number; target: number; unit?: string } | null {
+  const words = setting === undefined ? [] : unitWords(setting);
+  for (const of of [sizeOf, durationOf]) {
+    const named = [...units, ...words].some((u) => of(u) !== undefined);
+    const factor = (u: string) => of(u) ?? (of === sizeOf && named ? SIZE_LETTERS[u] : undefined);
+    if (!units.every((u) => factor(u) !== undefined)) continue;
+    if (setting !== undefined) {
+      const w = words.find((x) => of(x) !== undefined);
+      if (w === undefined) continue;
+      return { factor: (u) => factor(u)!, target: of(w)! };
+    }
+    const smallest = units.reduce((a, u) => (factor(u)! < factor(a)! ? u : a));
+    return { factor: (u) => factor(u)!, target: factor(smallest)!, unit: smallest };
+  }
+  return null;
+}
+
 /**
  * A row today's reading refuses, read from its end (§chat.markdown/vis-lenience-content): a tone,
  * then `width` values, each with an optional unit word after it; the rest is the label. Null when
@@ -203,6 +238,8 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
   });
   // A tone on a row of several series: that row marked in that tone, after the fence's own marks.
   const toned: { key: string; tone: Tone }[] = [];
+  // Each row's values' units, by row index.
+  const valueUnits: (string | undefined)[][] = [];
   for (const line of rest) {
     const all = tokenize(line);
     let row: RowRead;
@@ -226,14 +263,29 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
     }
     if (spec.scale === "log" && vals.some((v) => v !== null && v <= 0)) fail(line.n, "scale: log needs values above 0");
     spec.rows.push({ label: text(label, line.n), values: vals, ...(tone ? { tone } : {}) });
+    valueUnits.push(row.units);
   }
   // The rows' units agree: one unit, the chart's (a currency is always fine beside `unit:`).
   const distinct = [...new Set(rowUnits.map((u) => u.unit))];
-  if (distinct.length > 1) fail(rowUnits.find((u) => u.unit === distinct[1])!.n, `mixed units ${distinct[0]} and ${distinct[1]}: write every value in one unit`);
-  if (distinct.length === 1) {
+  const mixed = (a: string, b: string, n: number): void => {
+    // Sizes or durations draw in one of them, converted (§chat.markdown/vis-lenience-content); a
+    // value with no unit then must be in `unit:`'s, so with no `unit:` every value needs one.
+    const fam = spec.type === "scatter" ? null : unitFamily(distinct, spec.unit);
+    const bare = spec.rows.some((r, i) => r.values.some((v, j) => v !== null && valueUnits[i]![j] === undefined));
+    if (!fam || (spec.unit === undefined && bare)) fail(n, `mixed units ${a} and ${b}: write every value in one unit`);
+    spec.rows.forEach((r, i) => {
+      r.values = r.values.map((v, j) => {
+        const u = valueUnits[i]![j];
+        return v === null || u === undefined ? v : Number(((v * fam!.factor(u)) / fam!.target).toPrecision(12));
+      });
+    });
+    spec.unit ??= fam!.unit;
+  };
+  if (distinct.length > 1) mixed(distinct[0]!, distinct[1]!, rowUnits.find((u) => u.unit === distinct[1])!.n);
+  else if (distinct.length === 1) {
     const u = distinct[0]!;
     if (spec.unit === undefined) spec.unit = u;
-    else if (!/^[$€£¥]$/.test(u) && !spec.unit.toLowerCase().split(/[^\p{L}\p{N}%$€£¥µμ]+/u).includes(u.toLowerCase())) fail(rowUnits[0]!.n, `mixed units ${spec.unit} and ${u}: write every value in one unit`);
+    else if (!/^[$€£¥]$/.test(u) && !unitWords(spec.unit.toLowerCase()).includes(u.toLowerCase())) mixed(spec.unit, u, rowUnits[0]!.n);
   }
   if (spec.rows.length === 0) fail(0, spec.type === "parts" ? 'nothing to draw: add parts like "System prompt" 9000' : 'nothing to draw: add rows like "Quicksort" 120');
   if (spec.type === "parts") {

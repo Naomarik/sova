@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch, type JSX } from "solid-js";
-import { hoursLine, offHoursNote, offHoursTail } from "../lib/working-hours";
+import { hoursLine, offHoursNote, offHoursTail, withCompanyHours } from "../lib/working-hours";
 import { AUTOMATIC_ABILITIES, MESSAGES_CAP, MESSAGES_DEFAULT, MESSAGES_MIN, OPERATOR, type BatonStartResult, type GatheringAbilities, type BatonView, type BatonViewItem, type OfferLink } from "../../shared/baton";
 import { ORG_ABOUT_MAX, type NamedChange, type OrgChange, type OrgDetail, type Person, type PersonInput, type ProfileChange } from "../../shared/orgs";
 import {
@@ -45,6 +45,7 @@ import { meshPeers, orgHostOf } from "../lib/mesh";
 import { orgHostOffline } from "../lib/org-host-offline";
 import { LinksBanner } from "./LinksBanner";
 import { OwnerCard } from "./OwnerCard";
+import { CompanyHoursCard } from "./CompanyHoursCard";
 import { PersonForm } from "./PersonForm";
 import { PersonPage } from "./PersonPage";
 import { ProjectPage } from "./ProjectPage";
@@ -399,6 +400,7 @@ function OrgPage(props: { id: string; start?: string; tab?: OrgTab; titleRef(el:
                 </Match>
                 <Match when={tab() === "projects"}>
                   <AboutCard org={o()} act={act} />
+                  <CompanyHoursCard org={o()} act={act} />
                   <ProjectsSection org={o()} act={act} />
                 </Match>
                 <Match when={tab() === "workspace"}>
@@ -700,7 +702,7 @@ function BatonSection(props: { org: OrgDetail; start?: string; act: Act; onLinks
               </p>
               {/* r7: yours goes at once; say so for each ticked person who is off hours now. */}
               <For each={to().map((id) => props.org.roster.find((p) => p.id === id)).filter((p): p is Person => !!p)}>
-                {(p) => <Show when={offHoursNote(p, Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
+                {(p) => <Show when={offHoursNote(withCompanyHours(p, props.org), Date.now())}>{(note) => <p class="field-hint person-off-hours">{note()}</p>}</Show>}
               </For>
             </fieldset>
             <label class="field">
@@ -785,6 +787,7 @@ function PeopleSection(props: { org: OrgDetail; act: Act }) {
       </div>
       <Show when={adding()}>
         <PersonForm
+          company={props.org}
           submitLabel="Add Person"
           onCancel={() => setAdding(false)}
           onSubmit={async (input) => {
@@ -879,7 +882,7 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; now: numb
             <dt>Contact</dt>
             <dd>{contact()}</dd>
           </Show>
-          <Show when={hoursLine(p(), props.now)}>
+          <Show when={hoursLine(withCompanyHours(p(), props.org), props.now)}>
             {(line) => (
               <>
                 <dt>Hours</dt>
@@ -903,6 +906,7 @@ function PersonCard(props: { org: OrgDetail; person: Person; act: Act; now: numb
       <Show when={editing()}>
         <PersonForm
           person={p()}
+          company={props.org}
           submitLabel="Save Changes"
           onCancel={() => setEditing(false)}
           onSubmit={async (input: Partial<PersonInput>) => {

@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/working-hours.test.ts
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { daysWords, hoursLine, hoursWords, offHoursNote, reachWords, sentOffHours, theirClock, validZone, waitingWords } from "./working-hours";
+import { companyHoursLine, daysWords, hoursLine, hoursWords, offHoursNote, reachWords, sentOffHours, theirClock, validZone, waitingWords, withCompanyHours } from "./working-hours";
 
 const NOW = new Date(2026, 8, 30, 15, 0).getTime(); // a Wednesday, the operator's clock
 const tomorrow9 = new Date(2026, 9, 1, 9, 0).toISOString();
@@ -81,4 +81,23 @@ test("r12: Needs you's note lists every invitee not reached yet, or nothing", ()
     waitingWords([{ name: "Bo", until: tomorrow9 }, { name: "Cy", until: null }], NOW),
     "Bo waiting until Thu 09:00 your time (in 18h); Cy waiting for their working hours.",
   );
+});
+
+test("r13: company hours are the default: the Hours row says (company hours) and reads the company's zone; their own win; neither, nothing", () => {
+  const company = { tz: "Europe/Istanbul", hours: { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" } };
+  const inherits = { name: "Bo", tz: "", hours: null, hoursFrom: "company" as const, hoursNow: { open: true } };
+  const w = withCompanyHours(inherits, company);
+  assert.equal(hoursLine(w, NOW), "Mon–Fri 09:00–17:00 (company hours) · Europe/Istanbul · open now");
+  assert.equal(offHoursNote(withCompanyHours({ ...inherits, hoursNow: { open: false, nextOpen: tomorrow9 } }, company), NOW)?.startsWith("Outside Bo's working hours ("), true, "their clock from the company's zone");
+  const own = { name: "Ana", tz: "Asia/Dubai", hours: { days: [0], from: "10:00", to: "12:00" }, hoursFrom: "own" as const };
+  assert.equal(hoursLine(withCompanyHours(own, company), NOW), "Sun 10:00–12:00 · Asia/Dubai");
+  assert.equal(hoursLine(withCompanyHours({ tz: "", hours: null }, company), NOW), null, "neither: no Hours row");
+  assert.equal(hoursLine(withCompanyHours(inherits, { tz: "Europe/Istanbul", hours: null }), NOW), null, "the company's gone: nothing to borrow");
+});
+
+test("r13: the org page's company hours line", () => {
+  assert.equal(companyHoursLine({ tz: "Europe/Istanbul", hours: { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" } }), "Mon–Fri 09:00–17:00 · Europe/Istanbul");
+  assert.equal(companyHoursLine({ tz: "Europe/Istanbul" }), "Europe/Istanbul · no hours set");
+  assert.equal(companyHoursLine({ hours: { days: [6], from: "22:00", to: "06:00" } }), "Sat 22:00–06:00 (overnight) · time zone not set");
+  assert.equal(companyHoursLine({}), null);
 });

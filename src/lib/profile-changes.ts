@@ -3,7 +3,7 @@
 // words. Pure, for tsx --test.
 
 import { hoursWords } from "./working-hours";
-import type { NamedChange, PersonStatus, ProfileChange } from "../../shared/orgs";
+import type { NamedChange, OrgHoursChange, PersonStatus, ProfileChange } from "../../shared/orgs";
 
 /** Who wrote a profile change, in words, by kind. */
 export const WRITER: Record<ProfileChange["by"]["kind"], string> = { operator: "you", wrapup: "wrap-up", referral: "referral", overseer: "overseer" };
@@ -39,6 +39,10 @@ export function valueText(field: ProfileChange["field"], v: unknown): string {
   }
   return String(v);
 }
+
+/** r13: a company-hours history line: "Time zone: — → Europe/Istanbul", "Hours: Mon–Fri 09:00–17:00 → —". */
+export const orgHoursChangeLine = (c: Pick<OrgHoursChange, "field" | "from" | "to">): string =>
+  `${c.field === "tz" ? "Time zone" : "Hours"}: ${valueText(c.field, c.from)} → ${valueText(c.field, c.to)}`;
 
 export interface ChangeGroup {
   /** The first change's `at`: a stable key. */

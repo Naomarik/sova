@@ -4,6 +4,7 @@
 
 import type { LinkState, NamedRef, PersonRelation, PersonSessionRow, ProfileChange, VisitRow } from "../../shared/orgs";
 import { agoTime, relativeTime } from "./format";
+import { reachWords } from "./working-hours";
 
 const OPERATOR = "operator";
 /** A person's name, or "you" for the operator. */
@@ -42,10 +43,14 @@ export function relationWords(r: PersonRelation): string {
 }
 
 /** Who has the session now, from the person's side; null once it is done or closed. */
-export function holdLine(row: Pick<PersonSessionRow, "holdsNow" | "holder" | "state" | "offer">): string | null {
+export function holdLine(row: Pick<PersonSessionRow, "holdsNow" | "holder" | "state" | "offer">, now = Date.now()): string | null {
   if (row.state === "done" || row.state === "closed") return null;
   if (row.holdsNow) return "Holds it now";
-  if (row.offer?.state === "open" && row.offer.includesThem) return row.offer.invited > 1 ? `Open to them and ${others(row.offer.invited - 1)}` : "Open to them";
+  // r12: an invitee not reached yet has no link; say when their hours start (or that a lease pauses reaching).
+  const o = row.offer;
+  const waiting = o?.includesThem && o.reach?.state === "waiting" ? ` · not reached yet, ${reachWords(o.reach, o.holder ? nameOf(o.holder) : undefined, now)}` : "";
+  if (o?.state === "open" && o.includesThem) return `${o.invited > 1 ? `Open to them and ${others(o.invited - 1)}` : "Open to them"}${waiting}`;
+  if (waiting && row.holder) return `With ${nameOf(row.holder)}${waiting}`;
   if (row.holder) return `With ${nameOf(row.holder)}`;
   if (row.offer?.state === "open") return `Open to ${row.offer.invited} people`;
   return null;

@@ -51,6 +51,21 @@ test("who has it now, from their side", () => {
   assert.equal(holdLine({ ...base, state: "closed" }), null);
 });
 
+test("r12: an invitee not reached yet: when their hours start, or that a lease pauses reaching", () => {
+  const base = { holder: null, holdsNow: false, state: "open" as const };
+  const now = new Date(2026, 8, 30, 15, 0).getTime();
+  const until = new Date(2026, 8, 30, 19, 0).toISOString();
+  assert.equal(
+    holdLine({ ...base, offer: { state: "open", invited: 3, includesThem: true, reach: { state: "waiting", until } } }, now),
+    "Open to them and 2 others · not reached yet, waiting until 19:00 your time (in 4h)",
+  );
+  assert.equal(holdLine({ ...base, offer: { state: "open", invited: 3, includesThem: true, reach: { state: "reached" } } }, now), "Open to them and 2 others");
+  assert.equal(
+    holdLine({ ...base, holder: ana, offer: { state: "held", invited: 3, includesThem: true, holder: ana, reach: { state: "waiting", until, paused: true } } }, now),
+    "With Ana · not reached yet, waiting: nobody new is reached while Ana is answering",
+  );
+});
+
 test("messages line", () => {
   assert.equal(messagesLine({ messages: 0 }), "0 messages");
   assert.equal(messagesLine({ messages: 1 }), "1 message");

@@ -77,14 +77,33 @@ function opensWords(iso: string, now: number): string {
  * The profile's Hours line: "Mon–Fri 09:00–17:00 · Europe/Istanbul · open now", or "… · opens Tue 09:00
  * (in 18h)"; with a zone and no hours, "Europe/Istanbul · no hours set"; with neither, null.
  */
-export function hoursLine(p: Pick<Person, "tz" | "hours" | "hoursNow">, now: number): string | null {
+export function hoursLine(p: Pick<Person, "tz" | "hours" | "hoursNow"> & { company?: boolean }, now: number): string | null {
   const zone = p.tz?.trim() || "";
   if (!p.hours) return zone ? `${zone} · no hours set` : null;
-  const parts = [hoursWords(p.hours), zone || "time zone not set"];
+  const parts = [`${hoursWords(p.hours)}${p.company ? " (company hours)" : ""}`, zone || "time zone not set"];
   const hn = p.hoursNow;
   if (hn?.open) parts.push("open now");
   else if (hn?.nextOpen) parts.push(`opens ${opensWords(hn.nextOpen, now)}`);
   return parts.join(" · ");
+}
+
+/**
+ * r13: a person with no hours of their own works the company's (`hoursFrom` "company"): the Hours row and
+ * the off-hours note read the company's zone and hours then, marked `company`. Their own win; with
+ * neither, they're as they are (no hours: always in hours).
+ */
+export function withCompanyHours<P extends Pick<Person, "tz" | "hours" | "hoursFrom">>(
+  p: P,
+  org: { tz?: string; hours?: PersonHours | null } | undefined,
+): P & { company?: boolean } {
+  return p.hoursFrom === "company" && org?.hours ? { ...p, tz: org.tz ?? "", hours: org.hours, company: true } : p;
+}
+
+/** The company hours line on the org page: "Mon–Fri 09:00–17:00 · Europe/Istanbul", a zone alone, or null. */
+export function companyHoursLine(org: { tz?: string; hours?: PersonHours | null }): string | null {
+  const zone = org.tz?.trim() || "";
+  if (!org.hours) return zone ? `${zone} · no hours set` : null;
+  return `${hoursWords(org.hours)} · ${zone || "time zone not set"}`;
 }
 
 /**

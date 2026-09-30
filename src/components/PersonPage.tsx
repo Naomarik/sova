@@ -1,5 +1,5 @@
 import { createMemo, createResource, createSignal, For, onMount, Show } from "solid-js";
-import { hoursLine } from "../lib/working-hours";
+import { hoursLine, withCompanyHours } from "../lib/working-hours";
 import { Portal } from "solid-js/web";
 import { OPERATOR, type BatonView, type BatonViewItem } from "../../shared/baton";
 import type { Person, PersonInput, PersonPage as PersonPageData, PersonSessionRow, ProfileChange, VisitRow } from "../../shared/orgs";
@@ -170,6 +170,7 @@ export function PersonPage(props: { orgId: string; personId: string; titleRef(el
               <section class="card orgs-section" aria-label={`Edit ${name()}`}>
                 <PersonForm
                   person={d().person}
+                  company={d().org}
                   submitLabel="Save Changes"
                   onCancel={() => setEditing(false)}
                   onSubmit={async (input: Partial<PersonInput>) => {
@@ -332,7 +333,7 @@ function Head(props: { data: PersonPageData; act: Act; editing: boolean; onEdit(
           <dt>Contact</dt>
           <dd>{contact()}</dd>
         </Show>
-        <Show when={hoursLine(p(), props.now)}>
+        <Show when={hoursLine(withCompanyHours(p(), props.data.org), props.now)}>
           {(line) => (
             <>
               <dt>Hours</dt>
@@ -400,7 +401,7 @@ function Sessions(props: { data: PersonPageData; now: number; onPreview(row: Per
                   <a class="orgs-meta-link" href={projectHref(props.data.org.id, s.projectId)}>
                     {s.projectName}
                   </a>
-                  <Show when={holdLine(s)}>{(h) => <> · {h()}</>}</Show> · {messagesLine(s, props.now)}
+                  <Show when={holdLine(s, props.now)}>{(h) => <> · {h()}</>}</Show> · {messagesLine(s, props.now)}
                   <Show when={s.lastWroteAt}>{(at) => <time class="visually-hidden">{stampTime(at())}</time>}</Show>
                 </span>
                 <Show when={s.relations.length}>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { NamedChange } from "../../shared/orgs";
-import { groupChanges, revertible, valueText, writerWord } from "./profile-changes";
+import { groupChanges, orgHoursChangeLine, revertible, valueText, writerWord } from "./profile-changes";
 
 const ch = (at: string, personId: string, field: NamedChange["field"], to: unknown, kind: NamedChange["by"]["kind"] = "operator", extra: Partial<NamedChange> = {}): NamedChange => ({
   at,
@@ -70,4 +70,9 @@ test("valueText: working hours read as the Hours row does; a zone as itself; cle
   assert.equal(valueText("hours", null), "—");
   assert.equal(valueText("tz", "Europe/Istanbul"), "Europe/Istanbul");
   assert.equal(valueText("tz", ""), "—");
+});
+
+test("r13: a company-hours history line says the field and both values in words", () => {
+  assert.equal(orgHoursChangeLine({ field: "tz", from: "", to: "Europe/Istanbul" }), "Time zone: — → Europe/Istanbul");
+  assert.equal(orgHoursChangeLine({ field: "hours", from: { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" }, to: null }), "Hours: Mon–Fri 09:00–17:00 → —");
 });

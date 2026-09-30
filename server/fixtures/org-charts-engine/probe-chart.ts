@@ -1,7 +1,7 @@
 // Test-only: the "engine-probe" chart as a JS tree, registered at runtime on the shipped bundle
 // (`createEngine({charts: PROBE_CHARTS})`, org-charts/src/sova/org_charts/engine/js_chart.cljs) for the
 // engine's TS tests and bench. A transcription of org-charts/src/sova/org_charts/engine/probe.cljs,
-// which the CLJS tests run: keep the two in step, node for node. Each function gets the data model as
+// which the CLJS tests run: keep the two in step, node for node (probe_shape.json, checked on both sides). Each function gets the data model as
 // JS (camelCase keys) and returns JSON; a script returns data-model operations.
 
 type Data = { [key: string]: any };
@@ -119,3 +119,41 @@ export const PROBE_VERSION = 2;
 
 /** For `createEngine({charts})`. */
 export const PROBE_CHARTS = { "engine-probe": { version: PROBE_VERSION, chart: probeChart } };
+
+// The probe's shape, one line per node that matters to parity: states, transitions (events, targets,
+// whether guarded), history defaults, timers (delayed sends and their cancels), raises, sends and
+// invocations, in document order. org-charts/src/sova/org_charts/engine/probe_shape.json is the shape both
+// copies must have: org-charts.test.ts checks this tree against it, probe_parity_test.cljs checks probe.cljs.
+
+const list = (v: unknown): string => (v == null ? "-" : Array.isArray(v) ? v.join(",") : String(v));
+
+/** The shape lines of a JS chart tree (probe-chart.ts's form). */
+export function probeShape(root: Node): string[] {
+  const out: string[] = [];
+  const walk = (n: Node, state: string) => {
+    const [tag, attrs, ...kids] = n;
+    const a = attrs as Record<string, any>;
+    let here = state;
+    switch (tag) {
+      case "state": case "parallel": case "final":
+        out.push(`${tag} ${a.id} in ${state}`);
+        here = a.id;
+        break;
+      case "history":
+        out.push(`history ${a.id} ${a.type ?? "shallow"} in ${state} default ${list(kids[0])}`);
+        return;
+      case "transition":
+        out.push(`transition in ${state} on ${list(a.event)} to ${list(a.target)}${a.cond ? " guarded" : ""}`);
+        break;
+      case "send":
+        out.push(`send in ${state} ${a.event} id ${a.id ?? "-"} delay ${a.delay ?? (a.delayexpr ? "expr" : "-")}${a.targetexpr ? " targeted" : ""}`);
+        break;
+      case "cancel": out.push(`cancel in ${state} ${a.sendid}`); break;
+      case "raise": out.push(`raise in ${state} ${a.event}`); break;
+      case "invoke": out.push(`invoke in ${state} ${a.type} id ${a.id}`); break;
+    }
+    for (const k of kids) if (typeof k !== "string") walk(k, here);
+  };
+  walk(root, "ROOT");
+  return out;
+}

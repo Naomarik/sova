@@ -32,6 +32,8 @@ export const DEFAULT_REDACT: Record<string, RedactRule> = {
   text: "digest",
   message: "digest",
   quote: "digest",
+  // free text the operator or an overseer wrote (a build's start prompt)
+  prompt: "digest",
 };
 
 /** The value keys of a field-change record (`{field: "contact", from, to}`): scrubbed by the field's rule. */

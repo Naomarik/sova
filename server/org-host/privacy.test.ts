@@ -43,6 +43,8 @@ test("scrub: a redacted key anywhere in a path, and a field-change record's valu
     changed: [{ field: "contact", from: "[contact]", to: "[contact]" }],
   });
   assert.deepEqual(scrub({ person: { name: "Ana", contact: { phone: PHONE } } }, rules), { person: { name: "Ana", contact: "[contact]" } });
+  // a build's start prompt (free text the operator or an overseer wrote) is a digest in the log
+  assert.deepEqual(scrub({ prompt: "a" }, DEFAULT_REDACT), { prompt: { sha: "ca978112ca1bbdcafac231b39a23dc4da786eff8147c4e72b9807785afee48bb", len: 1 } });
 });
 
 test("the contact marker: planted and changed through person/edit, it is in the snapshot and nowhere in the log", async () => {

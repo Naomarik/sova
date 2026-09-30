@@ -22,9 +22,10 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   `<stateRoot>/orgs.json` (`{version:1, operator:{name}, orgs:[{id, dir, attachedAt}]}`), of the
   orgs **attached** to it; attached means resident here. It is never part of any workspace repo.
 - **Create** (`POST /api/orgs {name, dir?}`) makes the workspace repo (`git init`) at `dir`, or at
-  `<stateRoot>/workspaces/<slug>` by default, writes `org.json` and an empty roster, and makes the
-  first commit. **Attach** (`POST /api/orgs/attach {dir}`) adds an existing workspace repo (a
-  restored clone) to this host's index (§app.organizations/portability). **Detach** removes it from
+  `<stateRoot>/workspaces/<slug>` by default, starts the org's chart with an empty roster
+  (§app.project-overseer/org-charts), and makes the first commit. **Attach** (`POST /api/orgs/attach {dir}`) adds an existing workspace repo (a
+  restored clone) to this host's index (§app.organizations/portability); a dir with no org's chart
+  in it is refused (400, "No organization in that dir: not a workspace repo."). **Detach** removes it from
   the index and deletes nothing.
 - A workspace dir must be absolute and must not lie inside Sova's own checkout unless that
   checkout git-ignores it (Sova's repo is public; the hermetic `.agent/` is ignored). An install
@@ -36,19 +37,26 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 - Moving an org is detach here, clone and attach there. One host holds an org at a time: the repo
   records which (§app.organizations/holder), and attaching an org another host holds warns and
   asks to confirm.
+- **A broken org stays listed.** An attached org whose own chart snapshot can't be read is still
+  in the org list and still opens (`GET /api/orgs/:id`): named by its id, with whatever else of it
+  loads and its workspace problem, so the operator reaches the problem banner and its **Reload**
+  (§app.organizations/org-page). Every org-level act on it (rename, About save and revert, owner,
+  add project, add person, Commit Now), and an edit of a person whose own snapshot is broken, is
+  refused (409) with the workspace sentence
+  (§app.project-overseer/org-charts) until it loads.
 
 ## §app.organizations/holder — One holder at a time
 
-- **The holder record.** `holder.json` in the workspace repo names the host that holds the org:
-  `{version:1, host:{id, name}, since}`, or, once released, `{version:1, host:null, releasedBy:{id,
+- **The holder record** is kept in the org's own chart, whose snapshot is in the workspace repo's
+  `charts/` (§app.project-overseer/org-charts); there is no `holder.json`. It names the host that
+  holds the org, `{host:{id, name}, since}`, or, once released, `{host:null, releasedBy:{id,
   name}, at}`. A host's `id` is its own, made once and kept host-local in `<stateRoot>/host.json`
   (`h_` + 8 characters); `name` is the machine's hostname, shown in the warning, followed by the
   id in parentheses when it is this host's own name too (two installs on one machine).
 - **Written by the holder.** Creating an org and attaching one write this host as the holder and
   commit at once (then push, when a remote is set), so a clone made after that names it.
   **Detach** writes the release, commits and pushes it (best effort: a failure is logged and the
-  detach still happens), so moving an org (detach here, clone and attach there) never warns. A
-  repo with no `holder.json` (made before it existed) is held by nobody until its next attach.
+  detach still happens), so moving an org (detach here, clone and attach there) never warns.
 - **Held elsewhere.** Attach reads the record twice: in the clone, and on the clone's `origin`
   when it has one (`git fetch`, at most 15 seconds; the remote's copy of the checked-out branch).
   The org is held elsewhere when either names a host other than this one and not released; when
@@ -76,19 +84,20 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 - **Needs you.** When anything in the org waits on the operator the card carries a warn chip,
   `Needs you · {n}` (dot and word, never hue alone), a warn border, and a line naming each kind
   that waits: `{n} reply/replies · {n} link(s) to send · {n} person/people to approve · {n}
-  stakeholder(s) to pick`, zero kinds left out. It counts the same items the attention list raises (§app.baton/needs-you): baton
+  stakeholder(s) to pick · {n} held act(s)`, zero kinds left out. It counts the same items the attention list raises (§app.baton/needs-you): baton
   sessions the operator holds and hasn't answered (state `needs-you`); open baton sessions whose
   holder, or an open offer's invitee, has no live link (the operator must send one); and roster
   people with status `proposed`, waiting for Approve or Decline — every proposed person, whether or
   not a session proposed them; and open decision conflicts the reconciler routed to the operator
   that no baton session asks about yet (`{n} conflict(s) to settle`; one with a session is already
   counted once, as that session's reply); and projects whose main stakeholder left
-  (§app.organizations/stakeholder).
-- **Last activity** is the newest of: the org's creation, its newest roster change, each baton
-  row's creation, last hand-off, close and offer activity, and the last write of each open baton
-  session's file.
+  (§app.organizations/stakeholder); and acts a project's chart holds before they reach a person or
+  the code (§app.project-overseer/holds).
+- **Last activity** is the newest of the org's creation and its newest transition-log row
+  (§app.project-overseer/org-charts): a roster change, a baton session's start, hand-off, offer or
+  close, a person's message, anything any of its charts took.
 - **The server computes both** on `GET /api/orgs` only: each `OrgSummary` gains optional
-  `needsYou: {replies, links, proposals, conflicts, stakeholders}` and `lastActivityAt` (ISO). Absent (an older server),
+  `needsYou: {replies, links, proposals, conflicts, stakeholders, held}` and `lastActivityAt` (ISO). Absent (an older server),
   the card shows no Needs-you highlight and no activity line. `shared/protocol.ts` is unchanged.
 - **Zero orgs:** in place of the grid, one card: "Create your first organization", the line
   "Each organization keeps its roster, projects and hand-off sessions in its own git repo.", and a
@@ -98,7 +107,13 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 
 - Under the title, in this order: the workspace-problem banners and the new-links banner (they
   stay above the tabs whichever tab is open), then a tab strip (`.tabs`, `role="tablist"`), then
-  the open tab's panel (`role="tabpanel"`). The tabs:
+  the open tab's panel (`role="tabpanel"`). Each workspace problem is its own banner, "The
+  workspace repo has a problem." with the problem as its body (its file path breaks anywhere, so it
+  never widens the page); the last one carries a **Reload** button, which retries what didn't load
+  (`POST /api/orgs/:id/reload`) and shows the page it answers: with no problem left the banners go
+  and the toast says "Reloaded. Everything in the workspace loads now.", otherwise the rest stay
+  and it says "Reloaded. {1 problem remains|n problems remain}: fix or restore it, then reload
+  again."; a failed Reload shows in the page's error banner. The tabs:
   - **Sessions**: the hand-off sessions list, and the start form behind a `Start a Hand-off
     Session` button (closed by default; `Cancel` closes it; a started session closes it). Its
     project select leaves archived projects out. With no project yet (none that isn't archived) it
@@ -109,7 +124,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     actions (Approve and Decline for a proposed person, Start a Session for an active one, Edit),
     each named with the person ("Approve Sam Okafor"); the actions wrap under the name as one
     group when the card is narrow, and a name never breaks to fit them. The name is a link to the
-    person's page (§app.organizations/person-page). A proposed person's
+    person's page (§app.organizations/person-page). A person with a time zone or working hours
+    has an "Hours" row among the card's facts (§app.organizations/working-hours). A proposed person's
     "Decides: … — approving {name} approves …" line shows only when they have decision areas.
     Under the role · language line, one line says when they last opened a link (§app.baton/visits): `Last opened
     {relative time}`, the exact stamp as its title, from their newest visit (link previews,
@@ -144,7 +160,7 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   (§app.organizations/org-cards): Sessions — sessions the operator holds unanswered (`{n} to
   answer`) and sessions with a link to send (`{n} link(s) to send`); People — proposed people
   (`{n} to approve`); Projects — open conflicts routed to the operator with no session
-  (`{n} conflict(s) to settle`); Workspace — file problems in the repo and a failed last commit
+  (`{n} conflict(s) to settle`) and held acts (`{n} held act(s)`); Workspace — file problems in the repo and a failed last commit
   or push. A session row with a link to send shows a `Link to send` warn chip in place of `Open`.
 - **In the URL.** `#/orgs/<id>/sessions`, `/people`, `/projects`, `/workspace`; the bare
   `#/orgs/<id>` is Sessions. `#/orgs/<id>/start/<person>` opens Sessions with the start form open
@@ -202,7 +218,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     approving {name} approves …" line.
 - **Profile.** In that first card, the People card's facts: Decides (then, when they are one, "Main
   stakeholder of {project}, {project}", each a link to its project page), Skills, Competence (per skill, `level {n} of 5 · {n}
-  sessions`), Voice, Contact, Referred. Contact shows here and on the card, nowhere else
+  sessions`), Voice, Hours (their time zone and working hours, and whether they are in hours now:
+  §app.organizations/working-hours), Contact, Referred. Contact shows here and on the card, nowhere else
   (§app.organizations/privacy).
 - **Sessions** (`Sessions · {n}`; card headings are Title Case, like the org page's `Recent
   Profile Changes`), newest activity first: every baton session of the org, in any
@@ -307,29 +324,27 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
 ## §app.organizations/workspace-repo — What the workspace repo holds, and what it never holds
 
 - It is the org's **whole portable state** (§app.organizations/portability). Files:
-  - `org.json` (id, name, slug, and the org's owner with its history, §app.owner-page/owner), `roster.json`, `roster-history.jsonl`, `projects.json`;
-  - `holder.json`, the host that holds the org, or its release (§app.organizations/holder);
+  - `charts/`: the snapshot of every portable chart session of the org, and the transition log
+    `charts/log/<yyyy-mm>.jsonl` (§app.project-overseer/org-charts). They hold the org (id, name,
+    slug, its owner with its history, §app.owner-page/owner, and the holder record,
+    §app.organizations/holder), every person and their profile, every project and its settings
+    kept in the chart (root, archived, main stakeholder, hidden from the owner, frozen), every
+    gathering session (holder, participants, hand-offs, offers and their leases, message budget,
+    model, wrap-up state, abilities, whether it is hidden from the org's owner,
+    §app.owner-page/conversations, when someone it was sent to first wrote, and for a settle session
+    the conflict it settles), every decision and conflict with what the reconciler decided, each
+    project's last reconcile run and last promotion, each gap's item, and every coding session the
+    project started with its worktree's branch — never a link;
+  - `roster-history.jsonl`: the roster's per-field history (§app.organizations/history-and-revert);
   - `about.md` and `org-history.jsonl`: the org's About text and its history (§app.organizations/about);
-  - `baton.json`, the baton registry: each session's holder, participants, hand-offs, offers and
-    their leases, message budget, model and wrap-up state, whether each is hidden from the
-    org's owner (§app.owner-page/conversations), when someone it was sent to first wrote
-    (`wroteAt`), and for a settle session the conflict it settles (`conflict: {id, area}`) — never a
-    link. Rows from before `wroteAt` and `conflict` existed get them at startup and at each attach:
-    `wroteAt` from the transcript's first message by someone it was sent to, `conflict` from the
-    conflict that names the session;
   - `sessions/*.jsonl`: every baton session transcript and every project overseer conversation
     (current and history), written there directly by pi (`SessionManager.create(cwd, sessionDir)`);
-  - per project, `projects/<projectId>/`: `decisions.json` (the decision index, its last reconcile
-    run and last promotion), `conflicts.json`, `updates.jsonl` (the updates the overseer posted to
+  - per project, `projects/<projectId>/`: `updates.jsonl` (the updates the overseer posted to
     the owner page, and the ones taken down, §app.owner-page/updates), `costs.json` (each session's
     title and token counts as last counted, by model, time and token kind, §app.project-costs/ledger),
     `usage.jsonl` (the reconciler's decide calls' usage, §app.project-costs/recording), and the
-    overseer's `overseer/` — `overseer.json`
-    (autonomy, models, the coding sessions' mode, caps, watch, extra instructions), `state.json` (current
-    conversation and history), `notes.md`, `actions.jsonl`, `ideas/`, `todos.json` and
-    `started.json` (the sessions it started, and the coding sessions the operator started with Start Coding Session or New Coding Session, as
-    `operator-coding` rows; each coding row names its title, its worktree's branch and this host's
-    path to it, which is host-local, like the row's session path);
+    overseer's `overseer/` — `overseer.json` (autonomy, models, the coding sessions' mode, caps,
+    watch, extra instructions), `notes.md`, `ideas/` and `todos.json`;
   - `visits.jsonl`, the visit log: each time a roster person opened one of their links, and each
     link preview and turned-off-link attempt (§app.baton/visits) — never a token, a token's hash,
     an IP address or a raw user agent.
@@ -342,23 +357,20 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   and, for owner links, `<stateRoot>/person-links.json`, both mode 0600; links are minted again after a restore), credentials and auth, and Sova's own
   settings (Settings → Decisions, new-session defaults, the model policy).
 - **Host-local, by design** — a restore starts these fresh or derives them again: this host's
-  attach index `<stateRoot>/orgs.json` (where each repo lives here, which overseers an attach
-  paused); the project overseer's per-turn counters and its watch loop's timing (reasons waiting,
-  last run, runs per day; `<stateRoot>/project-overseers/<org>-<project>/`), which rate-limit what
-  runs on this host; the share listener's rate limits, the lease ticker and the live share pages
-  (memory); and what the session list keeps about any session — listing title, web origin, seen
+  attach index `<stateRoot>/orgs.json` (where each repo lives here); the host-local charts under
+  `<stateRoot>/org-charts/<org>/` (§app.project-overseer/org-charts): this host's hold on the org
+  and its commits, and each project overseer's watch loop — the pause an attach set, its
+  allowances used, reasons waiting, held items, last run and runs per day — which rate-limit what
+  runs on this host; the share listener's rate limits and the live share pages (memory); and what the session list keeps about any session — listing title, web origin, seen
   marks, archive and tags, the write guard's stats — which an attach derives again for the org's
   sessions. A project's own spec (`.sova/spec` under the project root, drafts local) is the
   project repo's, not the workspace's.
-- **The old location.** An overseer's `started` list used to live in its host-local watch memo:
-  while `started.json` is absent it is read from there, and the first write of either file moves it
-  into `started.json` and drops it from the memo.
 - **Commits.** Creating an org makes the first commit. After that a committer looks at every
   attached org's repo each minute and commits whatever changed once at least an hour has passed
   since the repo's last commit (counted from HEAD, so Commit Now, a restart or a commit made on
   another host all count; `SOVA_WORKSPACE_COMMIT_MS` shortens the hour for tests only). Nothing
   changed: no commit. The message names what changed by top-level entry ("Workspace changes:
-  baton.json, sessions/ (2 files)"), never contents. Every commit Sova makes in the repo is
+  charts/ (3 files), sessions/ (2 files)"), never contents. Every commit Sova makes in the repo is
   authored and committed as `Sova <sova@localhost>`, whatever git identity the host has, so no
   operator's name or email travels with a backup. **Commit Now** (`POST /api/orgs/:id/commit`)
   commits at once. A graceful shutdown (SIGINT or SIGTERM) stops every running turn first, then
@@ -384,10 +396,10 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   sessions it started. Nothing is read from the old host.
 - **Links must be re-issued.** No link is in the repo, so every old link answers 404 on the new
   host; the operator sends new ones (Get Link, or Needs you's "Send <name> their link"), the owner
-  link included (the owner itself travels, in `org.json`). The attach form says so. A person's page lists no links until new ones are sent; their old visits still
+  link included (the owner itself travels, in the org's chart). The attach form says so. A person's page lists no links until new ones are sent; their old visits still
   show, marked `link from another host`, and new visits append to the same log.
-- **Project overseers start paused at L0.** The attach records every project of the org as paused
-  in this host's index. While paused, the level in force is L0 ("Paused at L0: this organization
+- **Project overseers start paused at L0.** The attach pauses every project of the org in its
+  host-local watch chart (§app.project-overseer/org-charts). While paused, the level in force is L0 ("Paused at L0: this organization
   was attached on this host. Set its level to resume."), the watch loop starts nothing for it (its
   reasons wait), its chat head shows the warn chip "L0 in force" and the reason with **Resume at
   {level}** (§app.project-overseer/page), and the project page shows a warn banner "Paused
@@ -402,12 +414,12 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   written by someone else right after the clone wrote them.
 - **Working directories come from this host.** A session file's header keeps the cwd of the host
   that created it; the header is never rewritten. A baton session opens in the org's workspace dir
-  here, and a project overseer in its project's root as `projects.json` says now (after a move, the
-  operator edits the project's folder).
+  here, and a project overseer in its project's root as the project's chart says now (after a move,
+  the operator edits the project's folder).
 - The coding sessions an overseer started are ordinary sessions on the host that ran them: on
   another host they are listed "(not on this host)", and the project's cost counts what they had
   spent when last counted (§app.project-costs/ledger).
-- A conflict's settle session is found by its id on this host; `conflicts.json` stores no path
+- A conflict's settle session is found by its id on this host; the conflict's chart stores no path
   for it, so its card opens the session here after a move.
 - Attaching an org another host holds warns and asks to confirm first (§app.organizations/holder).
 
@@ -422,31 +434,31 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
 
 - **Every file in an attached org's workspace `sessions/`** — a hand-off or gathering session, an
   offer, the project overseer's current and cleared conversations, and any unregistered file there.
-  The path decides (its parent is `<attached org dir>/sessions`); the baton registry and the project
-  overseer's `state.json` give the project, the kind and `finished`.
-- **Coding sessions the org's project started**: a session whose id is a row of some attached org's
-  `projects/<pid>/overseer/started.json` with kind `coding` (the project overseer's `sova_create_session`)
-  or `operator-coding` (**Start Coding Session** or **New Coding Session** on the project page, which record their session there).
+  The path decides (its parent is `<attached org dir>/sessions`); the gathering session's chart and
+  the project's chart (its overseer's conversations) give the project, the kind and `finished`.
+- **Coding sessions the org's project started**: a session that is a coding session's chart
+  (§app.project-overseer/org-charts) of some attached org's project, of kind `coding` (the project
+  overseer's `sova_create_session`, or one its chart started, §app.project-overseer/drive) or
+  `operator-coding` (**Start Coding Session** or **New Coding Session** on the project page).
   The overseer's concurrency caps still count `coding` rows only.
-- **`kind`**: a baton whose row has offers is an `offer`, any other baton a `gathering`; a file with
-  THAT org's project-overseer marker is an `overseer` conversation, even one `state.json` no longer
-  lists (pushed past the history cap); anything else in the workspace is `other`, with no project.
+- **`kind`**: a baton that has had an offer is an `offer`, any other baton a `gathering`; a file with
+  THAT org's project-overseer marker is an `overseer` conversation, even one the project's chart no
+  longer lists (pushed past the history cap); anything else in the workspace is `other`, with no project.
 - **`finished`**: a hand-off `done` or `closed`; an overseer conversation that isn't the current one
   (the sidebar lists such a conversation nowhere: its overseer's History opens it,
   §app.project-overseer/page); or a coding session whose worktree branch is **merged** into its
   target per git (the same answer as the project page's, §app.project-overseer/coding-worktrees:
   git's while the branch exists and can be read, else the recorded merge or the branch's removal).
   The listing reads git for it at most every 30 s per session, in the background: until git has
-  answered once it says what `started.json` recorded, and a Merge Branch updates it at once.
+  answered once it says what the coding session's chart recorded, and a Merge Branch updates it at
+  once.
 - **What the list says of a baton session**, beside its holder and state (`SessionSummary.baton`,
   shared/baton.ts): `written` once someone it was sent to has sent a message (the operator, for one
-  sent to the operator), from the registry row's `wroteAt`; `opened` once a person (not a link
+  sent to the operator), from the chart's `wroteAt`; `opened` once a person (not a link
   previewer or a scanner) opened one of its links, from the visit log (§app.baton/visits); and
   `settle: { area }` for a **settle session**, one started to settle a conflict
   (§app.requirements/routing), with the conflict's area.
-- A project removed from `projects.json` keeps its `started.json`, so its coding sessions stay
-  organizational, with no `projectName`.
-- Names come from `org.json` and `projects.json`; a project no longer listed leaves `projectName` unset.
+- Names come from the org's and the project's charts.
 
 **Not organizational**, and listed as today:
 - sessions the operator opens by hand in a project folder — a project root may be their everyday repo;
@@ -457,8 +469,8 @@ apply the same rule, as the Overseer's flag does (§app.overseer/identity-and-cl
 - forks and copies of an org session, which live in the sessions dir (a copy or a fork is an ordinary
   session, §app.project-overseer/identity);
 - coding sessions **Start coding session** made before `operator-coding` rows existed (no backfill: an
-  item can link any session, so a link doesn't prove the org started it), and any whose row fell off
-  `started.json`'s 200-row cap;
+  item can link any session, so a link doesn't prove the org started it), and any a project retired
+  from its list of sessions it started once it passed 200 (§app.project-overseer/coding-worktrees);
 - every session of an org that isn't attached on this host (detached or moved).
 
 **The digest keeps them.** The attention digest (§app.overseer/attention-digest) still lists an org
@@ -474,8 +486,11 @@ Organizations region's own Needs you, never the global one.
 - A person has `id` (`p_` + 8 characters), `name`, `status` (`active`, `proposed` or `left`),
   `contact` (`email`, `phone`, `whatsapp`, `other`; any subset), `role`, `decides` (decision areas),
   `skills`, `competence` (per skill: level 1–5 and the number of sessions observed), `language`
-  (BCP-47) and `voice` (how to talk to them). The active people's `decides` entries are the owner
+  (BCP-47), `voice` (how to talk to them), and, optionally, `tz` (an IANA time zone) and `hours`
+  (the days and the from–to window they work, in that zone; §app.organizations/working-hours). The active people's `decides` entries are the owner
   areas a recorded decision picks from (§app.requirements/owner-area).
+- The Edit form (on the People card and the person's page) has a "Working hours" group for the time
+  zone and hours (§app.organizations/working-hours).
 - Caps: `name` ≤ 80, `role` and `voice` ≤ 300 characters; `decides` and `skills` ≤ 12 items of
   ≤ 40 characters each. Over a cap is refused (400), never cut. A `decides` entry with no letter
   (`*`, `-`, `2024`: area keys keep letters only) names no area and is refused: "“{entry}” names no decision area: use words, like
@@ -499,16 +514,111 @@ Organizations region's own Needs you, never the global one.
   are the org's owner, the owner is cleared and their owner link stops working
   (§app.owner-page/owner).
 
+## §app.organizations/working-hours — Nothing reaches a person outside their hours on its own
+
+- **Their hours.** A roster person may have a time zone (`tz`, an IANA name like
+  `Asia/Dubai`) and working hours (`hours`: the days of the week and a from–to time in that zone; a
+  window may run past midnight). They are set on the person's Edit form, like any profile field,
+  and each change is a roster history line, revertible (§app.organizations/history-and-revert),
+  where an hours change reads as the Hours row does ("Mon–Fri 09:00–17:00", overnight noted, "—"
+  when cleared) and a zone change as the zone;
+  they are not private: they are no contact detail. Only the operator writes them. The person's
+  page and the org's reads say whether they are in hours now and, if not, when their next window
+  opens (`hoursNow`, worked out on each read, never stored). With no hours set, the person is always in
+  hours, as before.
+- **Company hours, the default.** The org may have a time zone and working hours of its own, in
+  the same shape; they are not private. A person with no hours of their own uses the company's;
+  their own win when set; with neither, they are always in hours. Only the operator sets them, on
+  the org page's Projects tab in a "Company hours" card below About, with the hint "The default
+  for anyone without working hours of their own; theirs win when set. What Sova starts on its own,
+  and what the overseer does unattended, waits for them. Yours go at once." The card shows them as
+  the Hours row does ("Mon–Fri 09:00–17:00 · Europe/Istanbul", "{zone} · no hours set"), or "None
+  set: anyone without hours of their own is always in hours."; Edit opens Time zone, a "Set
+  company hours" toggle, the days and From/To ("In the company's time zone. An end before the
+  start runs overnight."; "Turn them off to clear them."), Cancel and Save, which says "Saved.
+  Anyone without hours of their own works these." or "Saved. Nobody works company hours now."; a
+  bad zone is refused with the person form's sentence (`PUT /api/orgs/:id/hours {tz?, hours?}`;
+  null or "" clears; anyone but the operator is refused, 403, "Only the operator sets the company's
+  working hours."). Each change is logged in the org's history
+  as About changes are (§app.organizations/about), shown read-only under History ({n}) ("Time zone:
+  — → Europe/Istanbul · 40m ago · by you", "· by you, via the Overseer"; "Hours: {from} →
+  {to}"), each with **Revert**, which sets that field back as a new change, as a person's revert
+  does (§app.organizations/history-and-revert; `POST /api/orgs/:id/hours/revert {at}`): one whose
+  field has changed since is refused and changes nothing ("The company's time zone has changed
+  since then, so reverting this would undo a later change. Revert the latest change instead.",
+  "working hours have" for hours), and a revert moves the waits on the hours like any hours edit. The button is
+  disabled, its reason as its title, when the field changed since (the server's refusal sentence
+  above) or already holds that value ("The time zone is already this." / "The
+  hours are already these."); pressing it says "Reverted." or the server's refusal, and the
+  revert's own line reads "Reverted. Time zone: {from} → {to}". A person working company hours has "(company hours)" after the hours on
+  their Hours row ("Mon–Fri 09:00–17:00 (company hours) · Europe/Istanbul · open now") on the
+  People card and their page, and their off-hours note uses the company's zone for their clock;
+  the person form's hours hint adds "Leave them off to use the company's hours ({line})." when
+  the company has hours. A person's own hours count only with both a valid zone and valid hours;
+  with Set working hours on and no time zone, the form says "Without a time zone these don't
+  count: the company's hours apply ({company line})." or, when the company has no zone and hours,
+  "Without a time zone these don't count: they are always in hours." Everything below reads these
+  effective hours. They limit only what reaches a person: the overseer's looks and held acts that
+  reach nobody are not held to them, and the operator's own clicks go at once, with the off-hours
+  note. A change to someone's working hours (their own, the company's, or a revert of either) moves
+  every act waiting for their hours (a held act waiting for them, an offer waiting to reach them)
+  to their new window, or at once when they are in hours now; the act is checked against the
+  hours in force when it goes.
+- **The next window** is worked out by the person's chart from their effective zone and hours,
+  whatever the host's own zone, across daylight-saving changes (a skipped or repeated hour
+  included).
+- **What waits.** An act that reaches the person — a message to them, an offer to them (for
+  several invitees, see below), a new gathering session with them, a hand-off to them, a conflict re-routed to them —
+  checks their hours first. Outside them, an act that a chart starts on its own or the overseer
+  makes in a run the operator did not start waits on a chart timer until their next window opens:
+  an act-tier Needs-you item (`held-act`, no phone notification; the digest's text "{what} waits
+  for {person}'s working hours: it starts in {n} min unless you cancel it."), which the
+  Organizations region and the Pipeline show as "{what} waits for {person}'s working hours: it
+  starts at {send time} your time ({in how long}) unless you cancel it." ("their working hours"
+  when {what} already names the person; the send time on the operator's clock: "18:30" today, "Thu 09:00" within six days, else "Oct 12 09:00"),
+  listed in the overseer's looks, and cancellable like a hold (§app.project-overseer/holds); the
+  same guards are checked again when it goes. Such an offer to several people opens when the
+  first invitee's window opens, and reaches each invitee only inside their own window
+  (§app.baton/offers-and-leases); someone without hours is always in hours.
+- **On the Edit form**, a group "Working hours" with the hint "What Sova starts on its own, and what
+  the overseer does unattended, waits for their hours. Yours go at once.": "Time zone" (suggestions
+  from the browser's zone list), a toggle "Set working hours", then the days Mon…Sun (Mon–Fri by
+  default) and "From"/"To" (09:00–17:00 by default), "In their time zone. An end before the start
+  runs overnight." It refuses, before sending: "\"{zone}\" isn't a time zone this browser knows. Use
+  an IANA name, like Europe/Istanbul.", "Pick at least one working day, or turn working hours off.",
+  "Working hours need a start and an end." It sends only a changed zone or hours; turning hours off
+  clears them.
+- **Shown** on the People card and the person's page as an "Hours" fact: "{days} {from}–{to}
+  (overnight when it is) · {zone} · open now", or "· opens {when} your time (in {how long})"; a zone
+  with no hours reads "{zone} · no hours set"; with neither, no row. Days read "Mon–Fri", "Mon, Wed,
+  Fri", "Fri–Mon", "Every day".
+- **The operator's own click sends at once**, and so does the overseer's act in a turn the operator
+  started. Starting a hand-off session, Send to person… and the baton strip's Hand On say so first,
+  in warn, under whom they go to, once per person outside their hours: "Outside {name}'s working hours ({their time} for
+  them). It goes now; their hours start {when} your time (in {how long})." (with no zone known,
+  without the clock). Once it has gone, its done line adds "{name}'s working hours start {when}
+  your time (in {how long})." (after "Handed to {name}.", "Hand-off session started." — a second
+  toast when a hand-off session starts — or "Sent. A hand-off session asks them to settle it." for
+  a routed conflict).
+
 ## §app.organizations/history-and-revert — Per-field history
 
 - Every profile write appends one line per changed field to `roster-history.jsonl` —
   `{at, personId, field, from, to, by:{kind, sessionId?, entryId?, quote?, via?, overseerId?},
-  revertOf?}` — and only then rewrites `roster.json`. Creating a person is one line per set field,
+  revertOf?}`, plus an internal `key` that makes the write happen once, never shown — in the same
+  step as the person's chart takes the change
+  (§app.project-overseer/org-charts). Creating a person is one line per set field,
   from `null`. `via: "overseer"` (with the Overseer's id) marks an operator change the global
   Overseer made for the operator (§app.overseer/org-attribution); a request without the server's
   sender secret never records it.
 - **Revert** (`POST /api/orgs/:id/people/:pid/revert {at}`) writes a new change that sets the field
   back to that line's `from`, with `revertOf` naming the reverted line. History is never edited.
+  It undoes that change only: when the field no longer holds that line's `to` (it was changed again
+  since), the revert is refused (409, "{name}'s {field} has changed since then, so reverting this
+  would undo a later change. Revert the latest change instead.") and changes nothing. About's
+  revert keeps its own rules (§app.organizations/about). A status
+  revert is the same move as a status edit, with everything that follows it (a revert that sets
+  `left` runs the whole leaving, §app.organizations/roster).
 - A person's page (§app.organizations/person-page) shows their history, newest first — field,
   old → new value, who changed it (`you, via the Overseer` for a `via` line; and the quote when
   there is one), when — with a Revert button. Recent Profile Changes names the writer the same way.
@@ -560,6 +670,12 @@ Organizations region's own Needs you, never the global one.
 - The org's name is never in the baton prompt; as a backstop the share page redacts it, as a
   whole word, from what the model wrote (a goal may carry it), unless the title or someone in the
   conversation used it.
+- **The transition log keeps no contact.** Every row of the org charts' transition log
+  (§app.project-overseer/org-charts), and the overseer's feed made from it, shows each contact field
+  as `[contact]` wherever it sits (a `contact.email` change is a contact change), keeps only a
+  digest of the About text and of anything a person wrote, and drops every token, hash and link;
+  `roster-history.jsonl` and the person's own chart are the only places a contact value lives in
+  the workspace repo.
 - Profiles appear only on the org's own pages (the org page and a person's page), never in a baton
   session pane. The owner page shows people by name only (§app.owner-page/never).
 
@@ -588,8 +704,8 @@ Organizations region's own Needs you, never the global one.
 - When a baton session is done (`goal_done`) or closed, and a roster person wrote in it, Sova runs
   **one unattended turn** in that session's own runtime — its own model and thinking level — once
   (again only when the operator retries one that stopped, below). When
-  no roster person wrote anything, no turn runs: the row records `wrapup: {state: "skipped"}`, and
-  it is never tried again.
+  no roster person wrote anything, no turn runs: the session's chart records the wrap-up
+  `skipped`, and it is never tried again. A session done and then closed runs its wrap-up once.
   Its prompt lists the participants' current language, voice, skills and competence; its only
   active tool is `write_profile_updates([{personId, field, to, quote}])`, which ends the turn.
 - Each update is applied by the roster's one writer as `by.kind: "wrapup"`, so only `skills`
@@ -615,8 +731,8 @@ Organizations region's own Needs you, never the global one.
   session, the quoted message's entry id and the quote. Refusals are logged.
 - The turn is marked by `sova-baton-wrapup` entries (`{phase: "start"}` before its prompt,
   `{phase: "end", applied, refused, error?}` after): nothing from the start marker on reaches a
-  share page (view or stream), and its prompt is not a message against the budget. The row records
-  `wrapup: {state, at, applied, refused, error?}` for the operator's strip; its changes are
+  share page (view or stream), and its prompt is not a message against the budget. The session's
+  chart records `wrapup: {state, at, applied, refused, error?}` for the operator's strip; its changes are
   committed with the org's next workspace commit. No approval: history, the Recent profile changes feed
   and Revert are the control (§app.organizations/decisions).
 - **A turn that stops is a failed wrap-up.** A wrap-up turn that errors, or is stopped (by the
@@ -626,22 +742,23 @@ Organizations region's own Needs you, never the global one.
   the model's error, else "The wrap-up turn ended without an answer." Only the wrap-up turn's own
   answer counts: a stop that leaves it none is failed, never read as the session's earlier turn. The strip says "Wrap-up stopped: {reason} Profiles it didn't reach are
   unchanged." Updates it applied before stopping stay applied.
-- **A row can't stay running.** A row whose wrap-up says `running` while no process runs it — left
-  by a server that stopped mid-run, or older than any run can be (the guard's 10-minute limit plus a
-  minute) — is recorded `failed` ("The server shut down during the wrap-up." / "It ran past 10 minutes
-  without finishing."), at startup and at most a minute later while the server runs.
+- **A wrap-up can't stay running.** A wrap-up still running when the server stops is recorded
+  `failed` when the server next starts ("The server shut down during the wrap-up."), and one still
+  running 11 minutes after it started (the guard's 10-minute limit plus a minute; a chart timer) is
+  recorded `failed` then ("It ran past 10 minutes without finishing.").
 - **Retry Wrap-Up.** A failed wrap-up never runs again on its own (a model that degenerated once may
   do it again). The strip shows **Retry Wrap-Up** beside it; it clears the failure and runs the
   wrap-up again (`POST /api/baton/:sid/wrapup/retry`, answered with the strip's info once the new run
   shows), only while no wrap-up and no reply runs in the session — otherwise it is refused (409) and
-  says why ("The wrap-up is already running." while one runs, a retry's included), and a wrap-up in
-  any other state is never retried. While a wrap-up runs, the strip
+  says why, checked in this order: "The wrap-up is already running." while one runs, a retry's
+  included; "Only a wrap-up that stopped can be retried." for a wrap-up in any other state, which is
+  never retried; "A reply is running in this session. Retry when it finishes." while a reply runs. While a wrap-up runs, the strip
   re-reads itself until it ends.
 
 ## §app.organizations/projects — The org's projects
 
-- Each org has projects in its workspace repo's `projects.json`: `{id, orgId, name, root,
-  createdAt, origin: "manual", archived?}` (`archived`: §app.organizations/archive). `root` is an absolute directory on the home host; it need not be a
+- Each org has projects, each its own chart (§app.project-overseer/org-charts): `{id, orgId, name,
+  root, createdAt, origin: "manual", archived?}` (`archived`: §app.organizations/archive). `root` is an absolute directory on the home host; it need not be a
   git repo. Added and renamed from the org page (`POST /api/orgs/:id/projects`,
   `PATCH /api/orgs/:id/projects/:pid`). A root (at its realpath) may not be an attached org's
   workspace, sit inside one or hold one, nor sit inside Sova's state folder (400): the project
@@ -658,14 +775,14 @@ Organizations region's own Needs you, never the global one.
 - **What it does.** Archiving puts a project away without deleting anything: its files, sessions,
   decisions, costs and overseer state stay in the workspace repo as they are, and **Unarchive**
   brings it back as it was. `POST /api/orgs/:id/projects/:pid/archive` and `…/unarchive` (main
-  listener only) write the project's `archived: {at, via?}` in `projects.json` (`via: "overseer"`
+  listener only) set the project's `archived: {at, via?}` in its chart (`via: "overseer"`
   when the global Overseer did it for the operator, §app.overseer/org-attribution) and remove it;
   archiving an archived project, or unarchiving one that isn't, changes nothing. It travels with the
   repo (§app.organizations/portability).
 - **Refused while anything is open** (409), naming each thing, so the operator stops them first:
   "Stop these first: {list}." with, only those that apply, "{n} gathering session(s) open
   ({titles})" (a baton session or offer of the project not done or closed), "{n} coding session(s)
-  running ({titles})" (a coding row of its `started.json` whose session is mid-turn or has workers
+  running ({titles})" (a coding session of the project that is mid-turn or has workers
   running) and "its overseer is working" (a turn of its overseer is running). Nothing is written.
 - **While archived:**
   - its overseer is paused: the watch loop starts nothing for it and its reasons wait
@@ -703,8 +820,7 @@ Organizations region's own Needs you, never the global one.
   no active roster person decides by name, and every decision whose owner area is `none`
   (§app.requirements/routing, /owner-area): promotion (their decisions
   there are in their area, §app.requirements/promotion) and conflicts there go to them. An area
-  someone decides by name stays theirs. It is stored on the project (`projects.json`
-  `stakeholder`), so a person can be the main stakeholder of one project and not another, and it
+  someone decides by name stays theirs. It is stored on the project's chart (`stakeholder`), so a person can be the main stakeholder of one project and not another, and it
   travels with the workspace repo.
 - **Setting it.** The project page's **Main stakeholder** select (None, then the org's active
   people by name) sends `PATCH /api/orgs/:id/projects/:pid {stakeholder}` (a person id, or `null`).
@@ -717,7 +833,7 @@ Organizations region's own Needs you, never the global one.
   project page says why, and the attention digest has a decide-tier item for the project
   (`project-stakeholder`, listed in the Organizations region's Needs you): "Pick a main
   stakeholder for {project}: {name} left the organization." A save of the select clears it.
-- **History.** Each change is kept on the project in `projects.json`, `stakeholderHistory`
+- **History.** Each change is kept on the project's chart, `stakeholderHistory`
   (`{at, from, to, why, via?}`, oldest first, the last 50; `why` `operator`, or `left` when Sova
   cleared it because the person left; `via: "overseer"` when the global Overseer set it for the
   operator, §app.overseer/org-attribution), and a clearing also leaves `stakeholderCleared`
@@ -739,9 +855,9 @@ Organizations region's own Needs you, never the global one.
   work, what to be careful with), at most **4,000 characters**. Every project overseer of the org
   reads it, and the global Overseer when it asks for it (below); nothing else does.
 - **Where it lives.** `about.md` in the workspace repo, plain UTF-8 text, saved trimmed; absent or
-  blank means none. It is its own file, never a field of `org.json`, so nothing that reads the org
-  (its summary, the share hub's name lookup) carries it. `org.json`'s old `notes` field is gone: it
-  is ignored when read and dropped at the org's next write, and a PATCH ignores it.
+  blank means none. It is its own file, never in the org's chart, so nothing that reads the org
+  (its summary, the share hub's name lookup) carries it, and the transition log records only its
+  hash and length. A PATCH ignores a `notes` field.
 - **Editing.** On the org page's Projects tab, a card **About this organization**, above the
   projects (§app.organizations/org-page): the hint "Every project overseer in this organization
   reads this at its next run, and the Overseer when it looks it up for you. Nothing else does: not

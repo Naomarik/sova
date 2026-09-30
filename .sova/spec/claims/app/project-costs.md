@@ -19,14 +19,15 @@ the org page's Projects tab. The owner page and the project overseer never do.
   - **Settling**: baton sessions that settle a conflict.
   - **Wrap-ups**: each baton's wrap-up turn (the entries after its wrap-up start marker), counted
     apart from the conversation it wraps up.
-  - **Coding sessions**: every `started.json` row of kind `coding` or `operator-coding`.
+  - **Coding sessions**: every coding session of the project, kind `coding` or `operator-coding`
+    (§app.project-overseer/coding-worktrees).
   - **Their workers**: every worker and team member a coding session started, at any depth, pi or
     Claude Code (found through the session's worker manifests; a worker's own workers through its
     file's).
   - **Reconciler**: every decide call the reconciler made for the project, from its usage log
     (§app.project-costs/recording).
-- **Who started it**, one of three: *the overseer* (a baton or coding session with a row the
-  overseer wrote in `started.json`; its own conversations), *you* (the operator: a baton you started,
+- **Who started it**, one of three: *the overseer* (a baton or coding session the overseer, or its
+  project's charts on their own, started: §app.project-overseer/drive; its own conversations), *you* (the operator: a baton you started,
   Start Coding Session, New Coding Session, Reconcile Now) or *Sova on its own* (the reconciler's automatic runs). A
   wrap-up follows its baton, and a worker follows the coding session that started it.
 - **Counted once.** Per file, a message is counted once (pi by entry id, Claude Code by
@@ -58,8 +59,7 @@ the org page's Projects tab. The owner page and the project overseer never do.
   written `≈$4.10` and a note says why; table cells and the org page's totals carry no mark.
 - **Unpriced.** A model with no price (no alias, no models.dev row, or a row without rates) is
   **unpriced**: its tokens are counted and listed with the reason, and it adds nothing to the total.
-  It is never priced like a sibling model. A legacy `started.json` count with no model or token split
-  is unpriced too ("counted before costs, no model recorded").
+  It is never priced like a sibling model.
 - A local model (`ollama/…`, your own hardware) costs $0 and is shown as local, not unpriced; a
   Claude Code `<synthetic>` message costs $0.
 
@@ -116,7 +116,8 @@ the org page's Projects tab. The owner page and the project overseer never do.
   another host, a Claude Code transcript deleted by its own cleanup) uses its last counted buckets,
   and the card says "as last counted". Dollars are always recomputed from the buckets with the
   current price table, so a corrected price corrects history.
-- A running cost never shrinks because `started.json` dropped an old row: the ledger has no row cap.
+- A running cost never shrinks because a project retired an old session from its list of 200: the
+  ledger has no row cap.
 
 ## §app.project-costs/card — The Cost card on the project page
 

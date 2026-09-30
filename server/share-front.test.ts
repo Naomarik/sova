@@ -32,9 +32,10 @@ test("guides: every front forwards to the share port, root steps marked", () => 
   for (const part of ["share.example.com", "the port the CDN connects to", "real_ip_header CF-Connecting-IP", "published ranges", "never forward"])
     assert.ok(cdn[0]!.includes(part), `the CDN note says ${JSON.stringify(part)}: ${cdn[0]}`);
   assert.ok(
-    vhost.notes?.some((n) => n.includes("sudo certbot --nginx -d share.example.com")),
-    "the vhost guide says where the certificate comes from",
+    vhost.notes?.some((n) => n.includes("before adding the block") && n.includes("sudo certbot certonly --nginx -d share.example.com")),
+    "the vhost guide says to get the certificate first",
   );
+  assert.match(vhost.steps[0]!.text, /ssl_certificate \/etc\/letsencrypt\/live\/share\.example\.com\/fullchain\.pem;\n {4}ssl_certificate_key \/etc\/letsencrypt\/live\/share\.example\.com\/privkey\.pem;/);
 
   const caddy = frontGuide({ ...setting("caddy"), sharePort: 4999 });
   assert.deepEqual(

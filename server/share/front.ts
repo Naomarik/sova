@@ -28,7 +28,8 @@ export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
               "    listen 443 ssl;",
               "    listen [::]:443 ssl;",
               `    server_name ${host};`,
-              "    # ssl_certificate / ssl_certificate_key: this host's certificate for the name above",
+              `    ssl_certificate /etc/letsencrypt/live/${host}/fullchain.pem;`,
+              `    ssl_certificate_key /etc/letsencrypt/live/${host}/privkey.pem;`,
               "    location / {",
               `        proxy_pass http://${upstream};`,
               "        proxy_http_version 1.1;",
@@ -44,7 +45,7 @@ export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
           },
         ],
         notes: [
-          `No certificate for ${host} yet? certbot can get one and add it to this block: sudo certbot --nginx -d ${host}`,
+          `Get the certificate for ${host} before adding the block (nginx won't load a server block whose certificate is missing): sudo certbot certonly --nginx -d ${host}. With a certificate from elsewhere, put its paths in the two ssl_ lines instead.`,
           `Another web server works the same way: terminate TLS for ${host}, forward everything to http://${upstream}, pass WebSocket upgrades, and set X-Forwarded-For to the client address (replace it, never append).`,
           `Behind a CDN that terminates TLS for ${host} (such as Cloudflare's proxy): listen on the port the CDN connects to instead of 443, and restore the visitor's address first, or X-Forwarded-For carries the CDN's. In the server block, add set_real_ip_from for each of the CDN's published ranges, and real_ip_header with its client header (real_ip_header CF-Connecting-IP for Cloudflare). Trust that header only this way, and never forward it as it is: anyone who reaches this server directly can set it.`,
         ],

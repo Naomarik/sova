@@ -398,6 +398,15 @@ it does to which items, never just its label. These too are the prompt's and the
   gathering sessions, §app/project-overseer), its own ideas and its own todos; it takes no people,
   projects or org links.
 
+## §app.overseer/project-card-clicks — Cards in a project overseer's chat
+
+- In a project overseer's current conversation its open cards take clicks as the global
+  Overseer's do: an option's click sends "c_4 b: <its reply, else its label>" as the operator's next
+  message, the card shows "Sent: b" while that turn runs and its buttons come back when the turn
+  ends, and "Or type your answer." follows the buttons. The click is only that message: it approves
+  nothing and shows no approval state, since the project overseer's cards carry no `at` or `rule`.
+- An earlier project overseer conversation stays read only: its cards show no live buttons.
+
 ## §app.overseer/caps — Limits and the audit log
 
 - **Per user turn:** at most 5 sessions created, 10 prompts sent to other sessions, 50 archive

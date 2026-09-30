@@ -10120,6 +10120,19 @@
         "server/preview-links-routes.ts",
         "server/project-previews.test.ts"
       ]
+    },
+    "§app.overseer/project-card-clicks": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/OverseerCards.tsx"
+      ],
+      "requires": [
+        "§app.overseer/confirm",
+        "§app/project-overseer"
+      ]
     }
   },
   "boundary": {

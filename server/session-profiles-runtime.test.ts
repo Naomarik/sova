@@ -216,6 +216,7 @@ describe("One at a time (§chat.profiles/singleton)", () => {
     await disposeAllChats();
     assert.equal((await archiveSession(a, true)).ok, true);
     assert.deepEqual(await applyProfile(b, "merge-captain"), { ok: true });
+    await archiveSession(b, true);
   });
 
   test("race at Send: the first message is refused, nothing written, naming the session that has it", async () => {

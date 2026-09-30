@@ -25,7 +25,7 @@ const { promptSession } = await import("./overseer");
 const { canonicalPath } = await import("./paths");
 const { settled } = await import("./workspace-git");
 const baton = await import("./baton");
-const { envelopeFor, hostOf } = await import("./org-engine");
+const { envelopeFor, holdByRef, hostOf } = await import("./org-engine");
 const { readView } = await import("./share/hub");
 const { fakeLooks, noteWatchReason, seedBuild } = await import("./org-test-fixtures");
 const { stateRoot } = await import("./state-root");
@@ -262,7 +262,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     assert.match((held.content as { text: string }[])[0]!.text, /^Held: starting "Payment terms" with Tony waits until .+ so the operator can cancel it/);
     assert.ok((held.details as { held?: string }).held);
     assert.equal(baton.allBatons().filter((b) => b.publicTitle === "Payment terms").length, 0, "held: no session yet");
-    const h = hostOf(org.id).holds().find((x) => x.id === (held.details as { held: string }).held)!;
+    const h = holdByRef(org.id, (held.details as { held: string }).held)!;
     assert.equal((await hostOf(org.id).act(h.sessionId, "hold/cancel", { id: h.id }, envelopeFor(org.id, project.id, { by: "operator", attended: true }), { settle: true })).taken, true);
     // With none it starts at once.
     store.writePoSettings(sp, { ...was, holdMin: 0 });

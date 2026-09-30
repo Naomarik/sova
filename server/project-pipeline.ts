@@ -4,7 +4,7 @@ import { OPERATOR } from "../shared/baton";
 import { batonById, namesOf, sessionPathOf } from "./baton";
 import { buildSessionPath, readBuild } from "./build-loadout";
 import type { Hold } from "./org-charts";
-import { actOrThrow, hostOf, isOrgHostOpen } from "./org-engine";
+import { actOrThrow, holdByRef, holdRef, hostOf, isOrgHostOpen } from "./org-engine";
 import { OrgError } from "./org-error";
 import type { LogRow } from "./org-host/log";
 import { operatorEnvelope, readIndex, readOrg, readProjects, type OperatorBy } from "./orgs";
@@ -91,7 +91,7 @@ function heldActOf(orgId: string, h: Hold): HeldAct {
   const ideaId = itemId && isOrgHostOpen(orgId) ? hostOf(orgId).data(h.sessionId)?.["ideaId"] : undefined;
   const person = h.wait === "hours" ? personOf(orgId, h) : undefined;
   return {
-    id: h.id,
+    id: holdRef(h),
     orgId,
     projectId,
     ...(itemId ? { itemId } : {}),
@@ -166,9 +166,9 @@ export function heldAttention(): AttentionItem[] {
 /** The operator's Cancel: `hold/cancel` on the hold's session (a declared correction). 404 unknown; the chart's
     sentence when it already went ahead. */
 export async function cancelHeld(orgId: string, holdId: string, reason: string | undefined, by?: OperatorBy): Promise<void> {
-  const h = isOrgHostOpen(orgId) ? hostOf(orgId).holds().find((x) => x.id === holdId) : undefined;
+  const h = isOrgHostOpen(orgId) ? holdByRef(orgId, holdId) : undefined;
   if (!h) throw new OrgError("That act is no longer held: it went ahead or was cancelled.", 404);
-  await actOrThrow(orgId, h.sessionId, "hold/cancel", { id: holdId, ...(reason ? { reason } : {}) }, operatorEnvelope(orgId, projectOfHold(h) || null, by), { settle: true });
+  await actOrThrow(orgId, h.sessionId, "hold/cancel", { id: h.id, ...(reason ? { reason } : {}) }, operatorEnvelope(orgId, projectOfHold(h) || null, by), { settle: true });
 }
 
 // ---- the Pipeline ---------------------------------------------------------------------------------------
@@ -346,14 +346,14 @@ export function itemTimeline(orgId: string, projectId: string, itemId: string, o
   if (!d) throw new OrgError("Unknown item", 404);
   const sessions = [sid, ...Object.keys(obj(d["batons"])), ...Object.keys(obj(d["builds"])), ...Object.keys(obj(d["decisions"])).map((id) => `decision/${orgId}/${projectId}/${id}`)];
   const names = namesOf(orgId);
-  const holds = new Map(host.holds().map((h) => [h.id, h]));
+  const holds = new Map(host.holds().map((h) => [holdRef(h), h]));
   const rows: TimelineRow[] = host.log
     .rows({ sessions })
     .map((r) => {
       const from = r.session === sid ? laneOf(r.before) : "";
       const to = r.session === sid ? laneOf(r.after) : "";
       const moved = !!(from && to && from !== to);
-      const h = r.held ? holds.get(r.held.id) : undefined;
+      const h = r.held && r.session ? holds.get(holdRef({ sessionId: r.session, id: r.held.id })) : undefined;
       return { r, from, to, moved, line: lineOf(r, moved ? from : undefined, moved ? to : undefined, h ? heldWhat(orgId, h) : undefined) };
     })
     // Bookkeeping with no sentence (a fact mirror, a flush, an effect's answer) is quiet, never a raw event name.

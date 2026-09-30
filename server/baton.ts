@@ -25,7 +25,7 @@ import type { Person } from "../shared/orgs";
 import { deadWhy, liveLinks, mintLink, revokeLinks, type LinkRecord, linkDead, findLink } from "./baton-links";
 import { openedSessions } from "./visits";
 import { readBatonSettings } from "./baton-settings";
-import { hostOf, isOrgHostOpen, refusalError, type ActResult, type OrgHostApi, type SessionInfo } from "./org-engine";
+import { heldAt, hostOf, isOrgHostOpen, refusalError, type ActResult, type OrgHostApi, type SessionInfo } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
 import { isoOf, onOrgAttached, operatorEnvelope, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readProjects, readRoster, setOpenBatonCounter, shortId, type OperatorBy } from "./orgs";
@@ -576,7 +576,7 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
   const [sid, event] = opts.item ? [opts.item, opts.plan ? "gather/plan" : "gather/start"] : [`project/${orgId}/${project.id}`, "baton/start"];
   const out = await hostOf(orgId).act(sid, event, payload, envelope, { settle: true });
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
-  if (out.held) return { path: "", sessionId, held: { id: out.held.id, until: out.held.until } };
+  if (out.held) return { path: "", sessionId, held: heldAt(sid, out.held) };
   if (opts.plan) return { path: "", sessionId: "", planned: true };
   for (const e of out.effects ?? []) if (e.kind === "create-session" && e.error) throw new Error(e.error);
   const dir = orgDir(orgId);

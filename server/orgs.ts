@@ -23,7 +23,7 @@ import {
   type ProfileChange,
   type StakeholderChange,
 } from "../shared/orgs";
-import { actOrThrow, closeOrgHost, envelopeFor, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, refusalError, type OrgHostApi } from "./org-engine";
+import { actOrThrow, closeOrgHost, envelopeFor, heldAt, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, refusalError, type OrgHostApi } from "./org-engine";
 import type { Envelope, EnvelopeCard } from "./org-envelope";
 import { hostIdentity } from "./org-holder";
 import { OrgHost, OrgWorkspaceError } from "./org-host";
@@ -759,7 +759,7 @@ export async function decidePerson(orgId: string, personId: string, approve: boo
 export async function decidePersonAct(orgId: string, personId: string, approve: boolean, by: ProfileChange["by"], envelope?: Envelope): Promise<{ person: Person; held?: { id: string; until: number } }> {
   if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
   const out = await actOrThrow(orgId, personSid(orgId, personId), approve ? "person/approve" : "person/decline", { namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, envelope ?? writerEnvelope(orgId, by), SETTLE);
-  return { person: findPerson(orgId, personId)!, ...(out.held ? { held: { id: out.held.id, until: out.held.until } } : {}) };
+  return { person: findPerson(orgId, personId)!, ...(out.held ? { held: heldAt(personSid(orgId, personId), out.held) } : {}) };
 }
 export const approvePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, true, by);
 export const declinePerson = (orgId: string, personId: string, by?: ProfileChange["by"]) => decidePerson(orgId, personId, false, by);

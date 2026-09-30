@@ -24,7 +24,7 @@ const store = await import("./project-overseer-store");
 const { registerOrgRoutes } = await import("./org-routes");
 const { disposeAllChats } = await import("./chat-manager");
 const { settled } = await import("./workspace-git");
-const { envelopeFor, hostOf, setOrgClockForTest } = await import("./org-engine");
+const { envelopeFor, holdRef, hostOf, setOrgClockForTest } = await import("./org-engine");
 const { heldAttention, pipelineInfo, LINES } = await import("./project-pipeline");
 const { chartInfo } = await import("./org-charts");
 const pipelineInfoOf = () => pipelineInfo(org.id, project.id);
@@ -59,7 +59,8 @@ const actions = () =>
     : [];
 const gather = (title: string, person = "Tony Reyes") => ({ gap: "none", person, public_title: title, goal: "Who hosts the portal", question: "Who hosts the portal?" });
 const settings = (patch: Parameters<typeof po.patchProjectOverseer>[2]) => po.patchProjectOverseer(org.id, project.id, patch);
-const holdsOf = () => hostOf(org.id).holds().filter((h) => (h.projectId ?? h.sessionId.split("/")[2]) === project.id);
+/** The project's holds, each under the id the server names it by (F19: `${sessionId}:${holdId}`). */
+const holdsOf = () => hostOf(org.id).holds().filter((h) => (h.projectId ?? h.sessionId.split("/")[2]) === project.id).map((h) => ({ ...h, id: holdRef(h) }));
 /** Cancel every held act of the project (a test's leftovers), as the operator. */
 const clearHolds = async () => {
   for (const h of holdsOf()) {
@@ -301,6 +302,32 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
     assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Cancel me"), "cancelled: it never started");
     const rows = hostOf(org.id).log.rows({ newestFirst: true }).filter((r) => r.event === "hold/cancel" || r.event === "hold/approve");
     assert.deepEqual(rows.slice(0, 2).map((r) => [r.event, r.reason]), [["hold/cancel", "covered by Review me"], ["hold/approve", "Tony is waiting for it"]]);
+  });
+
+  test("F19: two held acts with the same hold id in different sessions stay apart: distinct ids, and cancelling one leaves the other", async () => {
+    await clearHolds();
+    await settings({ autonomy: "L1", holdMin: 10 });
+    await run("sova_idea", { op: "add", id: "§gap/rent", title: "Nobody decided who pays the rent" });
+    await run("sova_idea", { op: "add", id: "§gap/lease", title: "Nobody decided the lease" });
+    await run("sova_start_gathering", { ...gather("Lease"), gap: "§gap/lease" });
+    await run("sova_start_gathering", { ...gather("Rent"), gap: "§gap/rent" });
+    const raw = hostOf(org.id).holds().filter((h) => h.sessionId.startsWith(`item/${org.id}/${project.id}/`));
+    assert.equal(raw.length, 2);
+    assert.equal(raw[0]!.id, raw[1]!.id, "the chart's hold ids repeat across sessions");
+    const held = (await pipeline()).held;
+    assert.equal(new Set(held.map((h) => h.id)).size, 2, "the Pipeline's ids are distinct");
+    assert.equal(new Set(heldAttention().map((i) => i.id)).size, 2, "so are the Needs-you ids");
+    const rent = held.find((h) => h.what === "A gathering with Tony Reyes: Rent")!;
+    const lease = held.find((h) => h.what === "A gathering with Tony Reyes: Lease")!;
+    // The overseer's bare hold id (a chart's hold/review sentence names it) is refused while it names both.
+    await assert.rejects(() => run("sova_hold", { op: "cancel", id: raw[0]!.id, reason: "x" }), /Several held acts are gather\/start#0: name one by its id/);
+    assert.equal((await app.request(`/api/orgs/${org.id}/held/${encodeURIComponent(raw[0]!.id)}/cancel`, { method: "POST" })).status, 404, "the route takes only the full id");
+    const r = await app.request(`/api/orgs/${org.id}/held/${encodeURIComponent(rent.id)}/cancel`, { method: "POST" });
+    assert.equal(r.status, 200, await r.text());
+    assert.deepEqual((await pipeline()).held.map((h) => h.id), [lease.id], "the other act is still held");
+    await run("sova_hold", { op: "approve", id: raw[0]!.id, reason: "Tony is ready" });
+    assert.ok(baton.allBatons().some((b) => b.publicTitle === "Lease"), "approved by the bare id, now the only one: it went ahead");
+    assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Rent"), "cancelled: it never started");
   });
 
   test("r8: an act on the confirm list waits past its hold for the overseer's review, shown with its stall clock, until approved", async () => {

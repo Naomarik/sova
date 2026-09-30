@@ -40,7 +40,7 @@ import {
   reconcilerSid,
   type DecisionStore,
 } from "./decisions";
-import { hostOf, isOrgHostOpen, onOrgHostOpened, refusalError, type ActResult, type Effect, type OrgHostApi } from "./org-engine";
+import { heldAt, hostOf, isOrgHostOpen, onOrgHostOpened, refusalError, type ActResult, type Effect, type OrgHostApi } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
 import { operatorEnvelope, operatorName, OrgError, projectSid, readHistory, readProjects, readRoster, shortId } from "./orgs";
@@ -1199,7 +1199,7 @@ export async function promoteDecisions(orgId: string, projectId: string, ids: st
   const envelope = opts.envelope ?? (opts.by === "overseer" ? envelopeOf(orgId, projectId, "overseer") : operatorEnvelope(orgId, projectId));
   const out = await hostOf(orgId).act(reconcilerSid(orgId, projectId), "decision/promote", { ids: [...new Set(ids)], ...(opts.by === "bulk" ? { bulk: true } : {}) }, envelope, { settle: true });
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });
-  if (out.held) return { info: listDecisions(orgId, projectId), promoted: [], refused, held: { id: out.held.id, until: out.held.until } } as PromoteResult;
+  if (out.held) return { info: listDecisions(orgId, projectId), promoted: [], refused, held: heldAt(reconcilerSid(orgId, projectId), out.held) } as PromoteResult;
   const res = (out.effects ?? []).find((x) => x.kind === "promote");
   if (res?.error) return { info: listDecisions(orgId, projectId), promoted: [], refused: [...new Set(ids)].map((id) => ({ id, reason: res.error! })) };
   const r = (res?.result ?? {}) as { promoted?: string[]; refused?: PromoteResult["refused"]; draft?: string; commit?: PromoteResult["commit"] };

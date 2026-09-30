@@ -82,7 +82,7 @@ import { cleanSessionTitle, readSessionTitles, setSessionTitle } from "./session
 import { getSessionSummary, indexedSessionPaths, listSessions } from "./sessions-index";
 import { setArchived } from "./archived-sessions";
 import { readView } from "./share/hub";
-import { actOrThrow, envelopeFor, refusalError } from "./org-engine";
+import { actOrThrow, envelopeFor, heldAt, holdByRef, holdRef, refusalError } from "./org-engine";
 import { heldActs, pipelineInfo } from "./project-pipeline";
 import type { ActResult } from "./org-host";
 import type { Envelope, LedgerCounts } from "./org-envelope";
@@ -601,10 +601,11 @@ function toolHost(rt: Rt): PoToolHost {
       const envelope = overseerEnvelope(orgId, projectId, paths, rt.turns.attended());
       const build = readBuild(orgId, projectId, sessionId);
       const title = readSessionTitles()[sessionId] || build?.title || listed?.title || sessionId;
+      const target = build ? buildSid(orgId, projectId, sessionId) : `project/${orgId}/${projectId}`;
       const out = build
-        ? await actOrThrow(orgId, buildSid(orgId, projectId, sessionId), "build/prompt", { text, ...(mode ? { mode } : {}), live }, envelope, { settle: true })
-        : await actOrThrow(orgId, `project/${orgId}/${projectId}`, "session/prompt", { sessionId, title, text, ...(mode ? { mode } : {}), live }, envelope, { settle: true });
-      if (out.held) return { held: { id: out.held.id, until: out.held.until } };
+        ? await actOrThrow(orgId, target, "build/prompt", { text, ...(mode ? { mode } : {}), live }, envelope, { settle: true })
+        : await actOrThrow(orgId, target, "session/prompt", { sessionId, title, text, ...(mode ? { mode } : {}), live }, envelope, { settle: true });
+      if (out.held) return { held: heldAt(target, out.held) };
       const fx = out.effects?.find((e) => e.kind === "prompt");
       if (fx?.error) throw new Error(fx.error);
       const r = (fx?.result ?? {}) as { queued?: boolean; modeApplies?: "now" | "after-turn" };
@@ -634,23 +635,28 @@ function toolHost(rt: Rt): PoToolHost {
           configuration: host.configuration(sid) ?? [],
           enabled: host.enabledEvents(sid, envelope),
           corrections: host.chartInfo(chart)?.corrections ?? [],
-          holds: heldActs(orgId, projectId).filter((h) => host.holds().some((x) => x.id === h.id && x.sessionId === sid)),
+          holds: heldActs(orgId, projectId).filter((h) => holdByRef(orgId, h.id)?.sessionId === sid),
         };
       }
       const info = pipelineInfo(orgId, projectId);
       return { kind: "project", rows: info.rows, held: info.held, feed: host.feed(projectId, { includeQuiet: q.includeQuiet, limit: q.limit, newestFirst: true }) };
     },
     async decideHold(id, approve, reason) {
-      const h = hostOf(orgId).holds().find((x) => x.id === id && (x.projectId ?? x.sessionId.split("/")[2]) === projectId);
-      if (!h) throw new OrgError(`No held act ${id} in this project: sova_pipeline lists them.`, 404);
-      await actOrThrow(orgId, h.sessionId, approve ? "hold/approve" : "hold/cancel", { id, reason }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), { settle: true });
+      // F19: the id sova_pipeline prints is `${sessionId}:${holdId}`; a chart's own sentence (hold/review) names the
+      // bare hold id, taken while it names only one of the project's holds.
+      const inProject = (x: { projectId?: string; sessionId: string }) => (x.projectId ?? x.sessionId.split("/")[2]) === projectId;
+      const bare = hostOf(orgId).holds().filter((x) => x.id === id && inProject(x));
+      if (bare.length > 1) throw new OrgError(`Several held acts are ${id}: name one by its id from sova_pipeline (${bare.map(holdRef).join(", ")}).`, 409);
+      const h = bare[0] ?? holdByRef(orgId, id);
+      if (!h || !inProject(h)) throw new OrgError(`No held act ${id} in this project: sova_pipeline lists them.`, 404);
+      await actOrThrow(orgId, h.sessionId, approve ? "hold/approve" : "hold/cancel", { id: h.id, reason }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), { settle: true });
     },
     async correct(session, event, payload, reason) {
       const sid = projectSessionOrThrow(orgId, projectId, session);
       const chart = hostOf(orgId).chartOf(sid) ?? "";
       if (!(hostOf(orgId).chartInfo(chart)?.corrections ?? []).includes(event)) throw new OrgError(`${sid} declares no ${event}: sova_pipeline with this session lists its corrections.`, 409);
       const out = await actOrThrow(orgId, sid, event, { ...payload, reason }, overseerEnvelope(orgId, projectId, paths, rt.turns.attended()), { settle: true });
-      return out.held ? { held: { id: out.held.id, until: out.held.until } } : {};
+      return out.held ? { held: heldAt(sid, out.held) } : {};
     },
     async setState(session, states, reason, patch) {
       const sid = projectSessionOrThrow(orgId, projectId, session);
@@ -674,7 +680,7 @@ function toolHost(rt: Rt): PoToolHost {
         overseerEnvelope(orgId, projectId, paths, rt.turns.attended()),
         { settle: true },
       );
-      if (out.held) return { held: { id: out.held.id, until: out.held.until }, owner: owner?.name ?? "" };
+      if (out.held) return { held: heldAt(`project/${orgId}/${projectId}`, out.held), owner: owner?.name ?? "" };
       const fx = out.effects?.find((e) => e.kind === "owner-update");
       if (fx?.error) throw new Error(fx.error);
       return { update: fx?.result as ProjectUpdate, owner: owner?.name ?? "" };
@@ -842,7 +848,7 @@ async function startCodingSession(
   }
   if (out.held) {
     if (title) setSessionTitle(sessionId, null);
-    return { sessionId, path: "", cwd: "", mode, held: out.held };
+    return { sessionId, path: "", cwd: "", mode, held: { ...out.held, ...heldAt(input.item ?? `project/${orgId}/${projectId}`, out.held) } };
   }
   const sid = buildSid(orgId, projectId, sessionId);
   await buildSetupEnded(orgId, sid);

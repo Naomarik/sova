@@ -1,4 +1,4 @@
-import type { Refusal, StampContext } from "./org-charts";
+import type { Hold, Refusal, StampContext } from "./org-charts";
 import { OrgHost, type ActResult, type HostChange } from "./org-host";
 import { OrgError } from "./org-error";
 import type { ActBy, Envelope } from "./org-envelope";
@@ -159,6 +159,23 @@ export function envelopeFor(orgId: string, projectId: string | null, who: StampW
   const host = hostOf(orgId);
   const settings = settingsOf();
   return stampEnvelope(host, orgId, projectId, who, (pid) => settings.read(orgId, pid), settings.defaults());
+}
+
+/** A hold's id as the server names it (F19): the chart's hold id is unique only within its session
+    ("gather/start#0"), so every id the operator, the UI or an overseer sees is `${sessionId}:${holdId}`. */
+export const holdRef = (h: { sessionId: string; id: string }): string => `${h.sessionId}:${h.id}`;
+
+/** An act's hold as its caller reports it: `{ id: holdRef, until }`. `sid` is the session the act was sent to (the
+    hold's own; the act result's `held` does not carry it). */
+export const heldAt = (sid: string, held: { id: string; until: number }): { id: string; until: number } => ({ id: holdRef({ sessionId: sid, id: held.id }), until: held.until });
+
+/** The org's hold a `holdRef` names (a hold id never contains ':', so it splits at the last one); none: undefined. */
+export function holdByRef(orgId: string, ref: string): Hold | undefined {
+  const at = ref.lastIndexOf(":");
+  if (at <= 0) return undefined;
+  const sid = ref.slice(0, at);
+  const id = ref.slice(at + 1);
+  return hostOf(orgId).holds().find((h) => h.sessionId === sid && h.id === id);
 }
 
 /** Send an act; a refusal throws as the route answers it. Returns the host's result. */

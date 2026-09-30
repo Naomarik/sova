@@ -63,6 +63,7 @@ export interface PipelineBuild {
  * client's code, waiting before it goes ahead.
  */
 export interface HeldAct {
+  /** `${sessionId}:${holdId}` (F19): the chart's hold id is unique only within its session. Opaque to the UI. */
   id: string;
   orgId: string;
   projectId: string;

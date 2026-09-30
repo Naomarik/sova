@@ -4,7 +4,7 @@ import { OPERATOR } from "../../shared/baton";
 import { waDigits, type BatonOutreach, type OutreachInfo, type OutreachPatch } from "../../shared/outreach";
 import { attentionChanged } from "../attention-memo";
 import { meshPeers } from "../mesh";
-import { PROXIED_HEADER } from "../mesh/proxy";
+import { localRequest } from "../mesh/proxy";
 import { operatorBy } from "../org-routes";
 import { batonById, currentOffer, reachedBy } from "../baton";
 import { operatorEnvelope, operatorName, OrgError, readRoster } from "../orgs";
@@ -20,7 +20,7 @@ import { resetLocalClient, whatsapp } from "./whatsapp";
  * request that carries a peer or came through the mesh proxy gets 404, like Public links'.
  */
 
-const local = (c: Context) => !(c.env as { meshPeer?: unknown } | undefined)?.meshPeer && !c.req.header(PROXIED_HEADER);
+const local = localRequest;
 const small = bodyLimit({ maxSize: 16 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const NO_STORE = { "Cache-Control": "no-store" };
 

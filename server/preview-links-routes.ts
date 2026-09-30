@@ -2,7 +2,7 @@ import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { PreviewError, PreviewList, PreviewMinted, PreviewView } from "../shared/preview-links";
 import { peerPort } from "./mesh/peers";
-import { PROXIED_HEADER } from "./mesh/proxy";
+import { localRequest } from "./mesh/proxy";
 import { OrgError } from "./org-error";
 import { readRoster } from "./orgs";
 import { extendPreview, PreviewRefused, PreviewUnavailable, viewOf } from "./preview-links";
@@ -14,7 +14,7 @@ import { previewAddress } from "./share/preview-address";
 
 /**
  * Preview links, the operator's side (§mesh.public/preview, shared/preview-links.ts): list, mint,
- * turn off and extend a project's previews. Main listener only: a request from the peer listener or through a proxy gets the plain 404.
+ * turn off and extend a project's previews. Main listener only: a request from the peer listener or relayed by a peer's proxy gets the plain 404.
  * A mint needs a preview address (§mesh.public/preview-address) and a port that is none of Sova's, or a
  * folder of one of the project's coding sessions' worktrees (§mesh.public/preview-serve). The list
  * carries each one's kept link: these operator routes are the only place it goes; the project
@@ -22,7 +22,7 @@ import { previewAddress } from "./share/preview-address";
  */
 
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
-const local = (c: Context) => !(c.env as { meshPeer?: unknown } | undefined)?.meshPeer && !c.req.header(PROXIED_HEADER);
+const local = localRequest;
 const small = bodyLimit({ maxSize: 4 * 1024, onError: (c) => c.json({ error: "Too large" }, 413) });
 const NO_STORE = { "Cache-Control": "no-store" };
 

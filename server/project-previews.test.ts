@@ -280,8 +280,11 @@ describe("the kept link is a secret (§mesh.public/preview, §app.project-overse
     for (const l of (JSON.parse(linksText) as { links: Record<string, unknown>[] }).links) assert.deepEqual(Object.keys(l).filter((k) => !["id", "hash", "orgId", "projectId", "port", "createdAt", "expiresAt", "revokedAt", "createdBy"].includes(k)), []);
     assert.ok(links.validatePreviewFile(JSON.parse(linksText)) && !("why" in links.validatePreviewFile(JSON.parse(linksText))), "an older Sova still reads it");
     assert.equal((await list()).find((v) => v.id === made.preview.id)?.url, made.url, "the operator's list carries it");
-    // Never through the peer listener or a proxy.
-    assert.equal((await app.request(`/api/previews?orgId=${org.id}&projectId=${project.id}`, { headers: { "x-forwarded-host": "x" } })).status, 404);
+    // Never through the peer listener or a peer's relay; a reverse proxy in front of this host is served.
+    const listPath = `/api/previews?orgId=${org.id}&projectId=${project.id}`;
+    assert.equal((await app.request(listPath, { headers: { "x-sova-relayed": "1", "x-forwarded-host": "x" } })).status, 404);
+    assert.equal((await app.request(listPath, {}, { meshPeer: { id: "p" } })).status, 404);
+    assert.equal((await app.request(listPath, { headers: { "x-forwarded-host": "host.example.ts.net:8443" } })).status, 200);
   });
 
   test("never in an owner update or a gathering's texts; the session list shows [preview link] in its place", async () => {

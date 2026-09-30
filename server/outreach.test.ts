@@ -96,6 +96,14 @@ async function gathering(to: string): Promise<string> {
 const sendLink = (sid: string, person?: string) => json("POST", `/api/baton/${sid}/send-link`, person ? { person } : {});
 const logOf = () => readSendLog(org.id);
 
+test("the operator's browser behind a reverse proxy (X-Forwarded-Host) is served; the peer listener and a peer's relay get 404", async () => {
+  assert.equal((await app.request("/api/outreach", { headers: { "X-Forwarded-Host": "host.example.ts.net:8443" } })).status, 200);
+  assert.equal((await app.request("/api/outreach", { headers: { "X-Sova-Relayed": "1" } })).status, 404);
+  assert.equal((await app.request("/api/outreach", {}, { meshPeer: { id: "p" } })).status, 404);
+  const put = { method: "PUT", headers: { "Content-Type": "application/json", "X-Sova-Relayed": "1" }, body: JSON.stringify({ paused: true }) };
+  assert.equal((await app.request("/api/outreach", put)).status, 404);
+});
+
 describe("§app.outreach/send-link", () => {
   before(async () => {
     await startFake();

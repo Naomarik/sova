@@ -107,6 +107,8 @@ provider names and full refs, and opens what it found: answering a query with a 
 answering a different question. Every row is at least 44px and every switch carries its own
 accessible name (`Enable openai/gpt-5.2`, `Allow subagents to use openai/gpt-5.2`), because the
 column header is a word in a grid and not a label a screen reader can reach from the control.
+A provider group head also carries the **At once** field after its switches, how many of that
+provider's requests may run at once on this device (§app.provider-limits/setting); model rows have none.
 
 A provider is a group head: its switches cover every model under it, and the model rows' own
 switches grey out while it is off — the provider already answered. Turning a provider off removes

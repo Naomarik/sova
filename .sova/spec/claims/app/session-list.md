@@ -245,6 +245,8 @@ label a person reads says "sessions pane".
       <button class="button button-icon spine-item" type="button" aria-label="Resource monitor" title="Resource monitor">…activity…</button>
       <a class="button button-icon spine-item" href="#/agents"
          aria-label="{the agents sentence, else Agents}" title="{the same}">…worker…</a>
+      <!-- §app.session-share/shares-page -->
+      <a class="button button-icon spine-item" href="#/shares" aria-label="Shares" title="Shares">…external…</a>
       <button class="button button-icon spine-item" type="button" aria-label="Settings" title="Settings">…settings…</button>
     </div>
   </div>

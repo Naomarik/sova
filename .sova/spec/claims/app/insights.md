@@ -66,7 +66,9 @@ working worker is never the one it leaves out.
 ```
 
 The foot holds **two stacked 44px rows, and both are always present**, so the layout never
-jumps. Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
+jumps. A third always-present row, **Shares**, sits under them: the whole-row link to `#/shares`
+(§app.session-share/shares-page, `external` icon, text "Shares"), with no button beside it; the
+spine's foot has its Shares icon button after Agents. Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
 right end — the **Resource monitor** button on the Usage row (§app.resource-monitor/entry-button),
 the Settings gear on the Agents row (§app/settings-dialog) — with one class between them, so the
 two buttons stack in one column. The link's own bottom border divides the rows, and the row draws

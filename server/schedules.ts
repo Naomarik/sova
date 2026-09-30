@@ -418,7 +418,15 @@ export class ScheduleKeeper {
     const out: { id: string; name: string; since: number; at: number }[] = [];
     const real = this.deps.realNow();
     const seen = new Set<string>();
-    for (const l of this.deps.logins()) {
+    let logins: LoginNow[];
+    try {
+      logins = this.deps.logins();
+    } catch (err) {
+      // An unreadable standing skips the reset check this tick, never the time fires.
+      console.warn("[schedules] logins not read:", err instanceof Error ? err.message : String(err));
+      return out;
+    }
+    for (const l of logins) {
       seen.add(l.id);
       const prev = store.logins[l.id];
       if (prev?.state === "limited" && l.state === "ready") out.push({ id: l.id, name: l.name, since: prev.since ?? 0, at: prev.until && prev.until <= real ? prev.until : real });

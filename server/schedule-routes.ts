@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 // The claude-code extension's login standing (node built-ins only). See CLAUDE.md.
-import { loginDir, readAccountsState, readiness } from "../pi-config/extensions/claude-code/accounts.ts";
+import { defaultClaudeDir, loginDir, readAccountsState, readiness } from "../pi-config/extensions/claude-code/accounts.ts";
 import { heldChat } from "./chat-manager";
 import { chatClaudeLogin, loginName } from "./claude-login-state";
 import { briefOverseer, countStarted, freeRunSlots, OVERSEER_SENDER_HEADER, overseerSender, promptSession } from "./overseer";
@@ -32,7 +32,8 @@ function loginsNow(): LoginNow[] {
   const state = readAccountsState(agentDir);
   const out: LoginNow[] = [];
   for (const [id, standing] of Object.entries(state.logins)) {
-    const r = readiness(standing, loginDir(agentDir, id));
+    // `default` is Claude Code's own login: its directory is not under the logins folder.
+    const r = readiness(standing, id === "default" ? defaultClaudeDir(process.env, agentDir) : loginDir(agentDir, id));
     out.push({
       id,
       name: loginName(id),

@@ -429,3 +429,13 @@ test("a profile that needs its own approval refuses the schedule's approve; a mi
   assert.equal(s.state, "invalid");
   assert.match(s.reason!, /No profile "nobody"/);
 });
+
+test("an unreadable login standing skips the reset check, never the time fires", async () => {
+  const h = harness();
+  await approve(h);
+  (h.keeper.deps as { logins: () => LoginNow[] }).logins = () => {
+    throw new Error("Not a login id: default");
+  };
+  await tickAt(h, "2026-10-05T09:00:00Z");
+  assert.equal(h.created.length, 1);
+});

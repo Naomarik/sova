@@ -18,6 +18,7 @@ import {
   orgRows,
   orgCount,
   orgNeedsYouRows,
+  batonWaitDetail,
   orgProjectItems,
   orgPlaceLabel,
   orgSearchText,
@@ -256,6 +257,22 @@ test("the region's Needs you and Later: a digest row carries its keys and goes a
   assert.deepEqual(Object.fromEntries(rows.map((r) => [r.session.id, r.later])), { err: ["k-err"], both: ["k-both"] });
   const after = orgNeedsYouRows(d, sessions, new Set(["k-err", "k-both"]));
   assert.deepEqual(after.map((r) => [r.session.id, r.later, r.detail]), [["both", [], "Sara → you: Which logo?"]], "the baton wait stays, keyless, until it is answered");
+});
+
+test("Later on a baton wait: its key rides the row, and a wait put away gives way to the next or goes", () => {
+  const baton = {
+    holder: null,
+    state: "open",
+    needsYou: { from: "Sara", question: "Which logo?", since: 7, later: "k-hand" },
+    proposals: [{ personId: "p1", name: "Ali", role: "designer", by: "Sara", since: 3, later: "k-p1" }],
+  } as SessionSummary["baton"];
+  const s = session("asks", { org: org(), baton });
+  const [row] = orgNeedsYouRows({ items: [] }, [s]);
+  assert.deepEqual([row?.detail, row?.later], ["Sara → you: Which logo?", ["k-hand"]]);
+  const [next] = orgNeedsYouRows({ items: [] }, [s], new Set(["k-hand"]));
+  assert.deepEqual([next?.detail, next?.later], ["Approve Ali (designer) proposed by Sara?", ["k-p1"]], "the proposal is still waiting");
+  assert.deepEqual(orgNeedsYouRows({ items: [] }, [s], new Set(["k-hand", "k-p1"])), [], "every wait put away: the row goes");
+  assert.deepEqual(batonWaitDetail({ baton: { holder: "Ali", state: "open", sendLink: { to: "Ali", question: "Hours?", since: 2 } } as SessionSummary["baton"] })?.later, [], "an older server sends no key");
 });
 
 test("labels, titles and search text", () => {

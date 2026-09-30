@@ -254,16 +254,16 @@ describe("what the Overseer stores and is prompted with", () => {
     noLeak(readFileSync(overseerActionsFile(), "utf8"), "action log");
   });
 
-  test("sova_confirm's card: title, detail and options", async () => {
-    const out = await tool("sova_confirm").execute(
+  test("sova_card's card: title, detail and options", async () => {
+    const out = await tool("sova_card").execute(
       "c1",
-      { title: `Rotate ${V.agentKey}?`, detail: `It is ${V.modelsHeader}.`, options: [{ label: "Yes", reply: `yes ${V.ccAccess}` }, { label: `No ${V.modelsKey}` }] } as never,
+      { ops: [{ op: "create", title: `Rotate ${V.agentKey}?`, detail: `It is ${V.modelsHeader}.`, options: [{ label: "Yes", reply: `yes ${V.ccAccess}` }, { label: `No ${V.modelsKey}` }] }] } as never,
       undefined,
       undefined,
       undefined as never,
     );
     noLeak(JSON.stringify(out), "the card");
-    assert.equal((out.details as { title: string }).title, `Rotate ${REDACTED}?`);
+    assert.equal((out.details as { card: { title: string } }).card.title, `Rotate ${REDACTED}?`);
     noLeak(readFileSync(overseerActionsFile(), "utf8"), "action log");
   });
 

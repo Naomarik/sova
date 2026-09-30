@@ -178,7 +178,7 @@
 
 (deftest global-overseer-card
   (let [x (start to-ana)]
-    (is (= "This reaches people or ends something: ask with sova_confirm, listing the session s1 in its items, and act in the turn the user's click starts."
+    (is (= "This reaches people or ends something: ask with sova_card, listing the session s1 in its items, and act in the turn the user's click starts."
            (h/refusal x sid :baton/take-back {:by "operator" :via "overseer"})))
     (is (nil? (h/refusal x sid :baton/take-back {:by "operator" :via "overseer" :card {:sessions ["s1"]}})))
     (is (nil? (h/refusal x sid :baton/take-back op)) "the operator's own click needs no card")))

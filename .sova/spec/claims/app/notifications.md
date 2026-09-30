@@ -61,11 +61,12 @@ tier and comes back is new again.
   queue: nothing arrives in a burst when they end.
 - **One send per 30 seconds.** Blockers that arrive within 30 seconds of the last send wait and go
   out together with the next; one that clears while waiting is never sent.
-- **One notification per send.** Blockers of one session: its title is "{Kind} · {session title}"
+- **One notification per send.** Blockers of one session: its title is "{Kind} · {session name}"
   (the most urgent kind, in the digest's order) and its body the detail sentence(s) the digest
   gives; its tag is `sova:{sessionId}`, so a newer one for the same session replaces the older
   on the device instead of stacking. Blockers of several sessions: "{n} sessions need you", the
-  body one line per session ("{session title} — {Kind}"), tag `sova:several`. Kind words:
+  body one line per session ("{session name} — {Kind}"), tag `sova:several`. A session's name is
+  summary-first (§app.overseer/session-names). Kind words:
   Needs input, Open questions, Error, Baton, Subagent error. While nothing could be sent
   (sending off, no contact, no device) the loop doesn't read the digest for this at all, and its
   first reading once something could be sent is a new baseline — the same outcome as dropping.
@@ -86,10 +87,10 @@ tier and comes back is new again.
 - **No silent pushes.** The service worker shows a notification for every push it receives,
   whatever the payload — with a generic "Sova" title when it can't read one.
 
-## §app.notifications/settings — Settings → Overseer → Phone notifications
+## §app.notifications/settings — Settings → Notifications
 
-A **Phone Notifications** section at the end of Settings → Overseer, after the Overseer form's
-"Stored in" line. Two kinds of control: the settings (saved with the dialog's **Save Changes**,
+A **Phone Notifications** section, alone on its own Settings tab, **Notifications** (icon `bell`),
+the one after Overseer (§app/settings-dialog). Two kinds of control: the settings (saved with the dialog's **Save Changes**,
 as the form "Phone Notifications", §app.settings-dialog/save-bar), and actions on this device and
 the device list, which run at once.
 

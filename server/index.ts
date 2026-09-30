@@ -14,6 +14,7 @@ import { asksForRows, type RowsQuery, transcriptLight, transcriptRows } from "./
 import { registerOrgRoutes } from "./org-routes";
 import { registerWrapupRoutes } from "./wrapup-routes";
 import { markShutdown } from "./wrapup-recovery";
+import { runLedger } from "./auto-resume";
 import { startBudgetRecount } from "./baton-recount";
 import { registerProjectOverseerRoutes } from "./project-overseer-routes";
 import { registerProjectCostRoutes } from "./project-costs-routes";
@@ -52,9 +53,7 @@ import { getSessionSetup } from "./session-setup";
 import { isOrgSession, ORG_NOT_GROUPED } from "./org-sessions";
 import { assignSession, cleanGroupLabel, createGroup, deleteGroup, GROUP_LABEL_MAX, readGroups, updateGroup } from "./session-groups";
 import { promptGroup } from "./group-prompt";
-import { runFanout } from "./fanout";
-import { runFork } from "./fork";
-import { AUTO_TITLE_MAX_PATHS, type AttentionLaterRequest, type FanoutRequest, type ForkRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
+import { AUTO_TITLE_MAX_PATHS, type AttentionLaterRequest, type SessionsDirInfo, type SessionTitleSource, type WorkerChoice, type WorkerResumeResult } from "../shared/protocol";
 import { findTarget, isTargetName, listRemoteFolders, listTargets, normalizeRemotePath, targetDir, targetsFile, validateNewSessionCwd } from "./targets";
 import { isExplanationId, listExplanations, readExplanationPage } from "./explanations";
 import { switchMode } from "./mode";
@@ -101,6 +100,9 @@ import {
   OVERSEER_SENDER_HEADER,
   saveOverseerSettings,
   setOverseerDispatch,
+  overseerAutonomy,
+  revokePermit,
+  startAutoResume,
   startOverseerLoop,
 } from "./overseer";
 import { readNotes, writeNotes, NOTES_MAX } from "./overseer-store";
@@ -203,7 +205,6 @@ app.post("/api/sessions", async (c) => {
     return createWebSession(c, dir);
   }
   const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
-  // The one rule, shared with fanout's fresh mode (spec 14b: fresh IS this path N times).
   const cwdError = await validateNewSessionCwd(cwd);
   if (cwdError) return c.json({ error: cwdError }, 400);
   return createWebSession(c, cwd);
@@ -292,8 +293,7 @@ app.post("/api/session-groups/assign", async (c) => {
     if (body.path !== undefined) return c.json({ error: "send either path or id, not both" }, 400);
     if (body.label !== undefined || body.index !== undefined) return c.json({ error: "label and index belong to an assignment, not a removal" }, 400);
     const out = assignSession(body.id, null);
-    // dissolved is set only when this write emptied a fanout group, which the server then deleted.
-    return out.ok ? c.json({ ok: true, ...(out.dissolved ? { dissolved: true } : {}) }) : c.json({ error: out.error }, out.status);
+    return out.ok ? c.json({ ok: true }) : c.json({ error: out.error }, out.status);
   }
   // Omitted keeps the label the session already had (a move between groups carries it).
   const label = body.label === undefined ? { ok: true as const, label: undefined } : cleanGroupLabel(body.label);
@@ -308,8 +308,7 @@ app.post("/api/session-groups/assign", async (c) => {
   // an assignment made before that rule).
   if (body.groupId !== null && isOrgSession(path, idOf(path))) return c.json({ error: ORG_NOT_GROUPED }, 400);
   const r = assignSession(idOf(path), body.groupId, label.label, body.index as number | undefined);
-  // dissolved is set only when this write emptied a fanout group, which the server then deleted.
-  return r.ok ? c.json({ ok: true, ...(r.dissolved ? { dissolved: true } : {}) }) : c.json({ error: r.error }, r.status);
+  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
 });
 
 // The group workspace's shared follow-up: one request, N sessions, all-or-nothing.
@@ -327,37 +326,6 @@ app.post("/api/session-groups/:id/prompt", async (c) => {
   const r = await promptGroup(c.req.param("id"), body.text, body.members as string[] | undefined);
   if (r.ok) return c.json(r.result);
   return r.status === 409 ? c.json({ refused: r.refused }, 409) : c.json({ error: r.error }, r.status);
-});
-
-// N sessions from one starting point, as one group. Fork mode branches every
-// member from one entry of one source; fresh mode makes N independent sessions in a folder.
-app.post("/api/session-groups/fanout", async (c) => {
-  let body: FanoutRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { name, members, source | cwd }" }, 400);
-  }
-  const r = await runFanout(body);
-  if (r.ok) return c.json(r.result, 201);
-  if (r.status === 409) return c.json({ refused: r.refused }, 409);
-  // One 400 carries a code (seed-conflict), so the client renders its own sentence for it.
-  return c.json({ error: r.error, ...(r.code ? { code: r.code } : {}) }, r.status);
-});
-
-// One new session branched off one entry of another: the per-message Fork action (server/fork.ts).
-// Not a one-member fanout — no group, no seed, no member marker — and nothing is ever sent.
-app.post("/api/sessions/fork", async (c) => {
-  let body: ForkRequest;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json({ error: "Expected JSON body { path, entryId, position }" }, 400);
-  }
-  const r = await runFork(body);
-  if (r.ok) return c.json(r.result, 201);
-  if (r.status === 409) return c.json({ refused: r.refused }, 409);
-  return c.json({ error: r.error }, r.status);
 });
 
 // Moves a web-spawned session between the sidebar regions. Changes Sova's own id list only, except
@@ -445,8 +413,6 @@ const titleDeps = (): NameDeps => ({
 const autoTitleSweep = new AutoTitleSweep({
   settings: () => readSessionTitleSettings(),
   list: listSessions,
-  // Groups Sova fanned out: those it made (autoDissolve) or seeded (a pre-flag fanout group).
-  fanoutGroups: () => new Set(readGroups().filter((g) => g.autoDissolve === true || (g.autoDissolve === undefined && g.seed)).map((g) => g.id)),
   name: (s) => nameSession(s.path, "sweep", titleDeps()),
   log: (line) => console.log(line),
 });
@@ -1047,6 +1013,15 @@ for (const [route, apply] of [["/api/attention/later", putAway], ["/api/attentio
     return c.json({ ok: true });
   });
 }
+// Approvals for later, standing rules and the running count (§app.overseer/approvals, §app.overseer/caps).
+// There is no route that makes one: only a card click does, in the Overseer's own runtime.
+app.get("/api/overseer/autonomy", async (c) => c.json(await overseerAutonomy(), 200, { "Cache-Control": "no-store" }));
+app.post("/api/overseer/autonomy/revoke", async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { id?: unknown } | null;
+  if (typeof body?.id !== "string" || !/^[gr]_[1-9]\d*$/.test(body.id)) return c.json({ error: "id must be a g_N or r_N" }, 400);
+  const r = await revokePermit(body.id);
+  return r.ok ? c.json({ ok: true }) : c.json({ error: r.error }, r.status);
+});
 app.get("/api/overseer/notes", (c) => c.json({ text: readNotes() }, 200, { "Cache-Control": "no-store" }));
 // `base` (optional): the notes the editor started from. When the file no longer holds them (the
 // Overseer's sova_note wrote meanwhile) the save is refused with 409 and the current text, so a
@@ -1403,6 +1378,8 @@ attachWebSockets(server);
 setOverseerDispatch((path, init) => app.request(path, init));
 startOverseerLoop();
 startProjectOverseerLoop();
+// The runs the last stop cut off get one "continue" each (§app.overseer/auto-resume).
+startAutoResume();
 // Samples CPU and memory in the background from startup, open modal or not (§app.resource-monitor/sampling-and-history).
 startResourceMonitor({
   logDir: join(stateRoot(), "monitor"),
@@ -1492,6 +1469,8 @@ async function shutdown() {
   // Stop every turn first: a turn still streaming keeps the CPU busy through every await below.
   // Marked first, so a run that records how it ended says the shutdown cut it off.
   markShutdown();
+  // The aborts below settle every run: the ledger keeps them as cut off (§app.overseer/auto-resume).
+  runLedger.freeze();
   for (const chat of heldChats()) if (chat.session.isStreaming) chat.session.abort().catch(() => {});
   usagePoller.stop();
   priceRefresh.stop();

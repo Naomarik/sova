@@ -82,7 +82,7 @@ interface Row {
 /**
  * The composer's flyout: one native popover anchored ABOVE whatever opened
  * it, in the model menu's visual family, with three panels. The ghost `plus` button opens the
- * **menu** panel (Attach images, Commands, in chats Playbooks, Hide tool calls, Hide thinking, Fan Out…, and in
+ * **menu** panel (Attach images, Commands, in chats Playbooks, Hide tool calls, Hide thinking, and in
  * chats Undo last turn); the
  * composer's model indicator opens the **model** panel (the Model row and this model's
  * Thinking ladder); the Model row opens the model menu's **picker**, which comes back to the model panel.
@@ -101,14 +101,9 @@ export function ComposerMenu(props: {
   model?: ModelControl | null;
   /** Chat sessions only: this session's thinking ladder. */
   thinking?: ThinkingControl | null;
-  /** Chat sessions only: opens the Playbooks dialog, which sends a playbook as a turn. Absent,
-      like `onFanOut`, where nothing can be sent — a watch view holds no runtime. */
+  /** Chat sessions only: opens the Playbooks dialog, which sends a playbook as a turn. Absent
+      where nothing can be sent — a watch view holds no runtime. */
   onPlaybooks?: () => void;
-  /** Chat sessions with a reply: "Fan Out…". Absent otherwise — a watch view holds no
-      runtime, a TUI-live session is never touched, and a session with no reply has nothing to
-      fork; the copy deck is explicit that the row is absent rather than disabled, because an absence needs
-      no explanation and a disabled row invites a question with no answer. */
-  onFanOut?: () => void;
   /** Chat sessions only: "Undo last turn", a two-step row (the first click arms it). */
   undo?: UndoControl | null;
   /** Chat sessions whose runtime has the sandbox extension: the Sandbox row. */
@@ -214,21 +209,6 @@ export function ComposerMenu(props: {
         describe: props.disabled,
         title: props.disabled ? undefined : sandboxRowTitle(sbx), // disabled: the composer's reason line says why
         run: () => sandbox.set(!sbx.on), // stays open: the check (and the shield) is the feedback
-      });
-    if (props.onFanOut)
-      out.push({
-        id: "fanout",
-        role: "menuitem",
-        // branch, not worker: every fanout surface marks a fork with the branch icon (the fanout spec's fork
-        // marker, `Align to Fork`), and worker.svg already means Agents (the transcript spec's working count).
-        icon: "branch",
-        label: "Fan Out…",
-        title: "Fork this session N ways and compare the answers",
-        disabled: false,
-        run: () => {
-          close(true);
-          props.onFanOut?.();
-        },
       });
     // Last, after its own separator: the only row here that changes the session.
     const undo = props.undo;
@@ -512,10 +492,10 @@ export function ComposerMenu(props: {
             <div class="model-menu-list composer-flyout-list" role="menu" aria-label="More actions" onKeyDown={onListKeyDown}>
               <Index each={pick((r) => r.id === "attach" || r.id === "commands" || r.id === "playbooks")}>{(x) => <Item r={x().r} index={x().index} />}</Index>
               {/* The rows are picked by id, so a row that matches no section is built and never
-                  rendered: "Fan Out…" belongs to this one, after Sandbox. */}
-              <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox" || r.id === "fanout").length > 0}>
+                  rendered. */}
+              <Show when={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox").length > 0}>
                 <div class="composer-flyout-sep" role="separator" />
-                <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox" || r.id === "fanout")}>
+                <Index each={pick((r) => r.id.startsWith("hide-") || r.id === "sandbox")}>
                   {(x) => <Item r={x().r} index={x().index} />}
                 </Index>
               </Show>

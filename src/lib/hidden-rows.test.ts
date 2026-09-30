@@ -114,7 +114,7 @@ test("visibleCount: hidden rows don't count, each kind on its own", () => {
   assert.equal(visibleCount(items, BOTH), 2);
 });
 
-test("Hide tool calls never folds an Overseer card: confirm and link calls stay, with their results", () => {
+test("Hide tool calls never folds an Overseer card: card, legacy confirm and link calls stay, with their results", () => {
   const card = (id: string, name: string, callId: string) => row(id, "tool-call", { text: name, toolCallId: callId });
   const items = [
     row("u1", "user"),
@@ -125,12 +125,15 @@ test("Hide tool calls never folds an Overseer card: confirm and link calls stay,
     card("c3", "sova_link", "c"),
     result("r3", "c"),
     card("c4", "sova_unlink", "d"),
+    card("c5", "sova_card", "e"),
+    result("r5", "e"),
   ];
   const s = splitHidden(items, TOOLS);
-  assert.deepEqual(s.shown.map((it) => it.id), ["u1", "c2", "r2", "c3", "r3", "c4"]);
+  assert.deepEqual(s.shown.map((it) => it.id), ["u1", "c2", "r2", "c3", "r3", "c4", "c5", "r5"]);
   assert.deepEqual(s.hidden.map((it) => it.id), ["c1", "r1"]);
   assert.equal(s.calls, 1);
-  assert.equal(visibleCount(items, TOOLS), 6);
+  assert.equal(visibleCount(items, TOOLS), 8);
   assert.equal(isHiddenBlock({ type: "toolCall", id: "b", name: "sova_confirm", argsText: "" }, TOOLS), false);
+  assert.equal(isHiddenBlock({ type: "toolCall", id: "e", name: "sova_card", argsText: "" }, TOOLS), false);
   assert.equal(isHiddenBlock({ type: "toolCall", id: "a", name: "sova_navigate", argsText: "" }, TOOLS), true);
 });

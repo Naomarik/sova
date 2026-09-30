@@ -153,9 +153,8 @@ describe("eligibility", () => {
     assert.equal(at.buttonSkip(base), null);
   });
 
-  test("the sweep: unnamed, summarized, quiet, not archived, not a worker, fanout member or Overseer file", () => {
-    const fan = new Set(["fan"]);
-    const ok = (s: Partial<SessionSummary>, quiet = 5 * 60_000) => at.sweepEligible({ ...base, ...s }, now, quiet, fan);
+  test("the sweep: unnamed, summarized, quiet, not archived, not a worker or Overseer file; any group member", () => {
+    const ok = (s: Partial<SessionSummary>, quiet = 5 * 60_000) => at.sweepEligible({ ...base, ...s }, now, quiet);
     assert.equal(ok({}), true);
     assert.equal(ok({ titleBy: "auto" }), false); // named once
     assert.equal(ok({ titleBy: "user" }), false);
@@ -165,8 +164,7 @@ describe("eligibility", () => {
     assert.equal(ok({ workerSession: true }), false);
     assert.equal(ok({ overseer: true }), false);
     assert.equal(ok({ projectOverseer: { orgId: "o", projectId: "p" } }), false);
-    assert.equal(ok({ groupId: "fan" }), false);
-    assert.equal(ok({ groupId: "mine" }), true);
+    assert.equal(ok({ groupId: "mine" }), true); // an old group's member included (§workspace.groups/legacy-groups)
     assert.equal(ok({}, 11 * 60_000), false); // not quiet long enough
   });
 });
@@ -325,7 +323,6 @@ describe("the sweep", () => {
     const sweep = new at.AutoTitleSweep({
       settings: () => settings(),
       list: async () => rows.map((r) => (named.has(r.id) ? { ...r, titleBy: "auto" as const, originalTitle: "t" } : r)),
-      fanoutGroups: () => new Set(),
       now: () => now,
       name: async (s) => {
         asked.push(s.id);
@@ -346,6 +343,23 @@ describe("the sweep", () => {
     sweep.stop();
   });
 
+  test("a member of a group an older build made is named like any session", async () => {
+    // The sweep is given no groups at all: nothing it reads can single out an old group's members.
+    const asked: string[] = [];
+    const sweep = new at.AutoTitleSweep({
+      settings: () => settings(),
+      list: async () => [row(1, { groupId: "old-fanout" }), row(2, { groupId: "hand-made" })],
+      now: () => now,
+      name: async (s) => {
+        asked.push(s.id);
+        return { outcome: "named", title: "A title" };
+      },
+    });
+    assert.equal(await sweep.run(), 2);
+    assert.deepEqual(asked.sort(), ["s1", "s2"]);
+    sweep.stop();
+  });
+
   test("off: nothing is listed or named; quota failures stop the run and pause the sweep", async () => {
     let enabled = false;
     let clock = now;
@@ -357,7 +371,6 @@ describe("the sweep", () => {
         listed++;
         return [row(1), row(2), row(3), row(4)];
       },
-      fanoutGroups: () => new Set(),
       now: () => clock,
       name: async (s) => {
         asked.push(s.id);

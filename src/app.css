@@ -198,9 +198,11 @@ html, body { overflow: clip; overscroll-behavior: none; }
   white-space: nowrap;
 }
 .workspace-meta { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-/* Tabs: a pressed-state ghost button, so the layout in force is readable at rest. */
+/* Tabs and Send to All: pressed-state ghost buttons, so the mode in force is readable at rest. */
 .workspace-modes { flex: none; }
-.workspace-modes .button[aria-pressed="true"] {
+.workspace-send-all { flex: none; }
+.workspace-modes .button[aria-pressed="true"],
+.workspace-send-all[aria-pressed="true"] {
   background: var(--color-sunken);
   border-color: var(--color-border-strong);
   color: var(--color-ink);
@@ -305,11 +307,6 @@ html, body { overflow: clip; overscroll-behavior: none; }
    (ring and "222k", no window) at every width, as under 720px in base.css. */
 .workspace-pane-head .context-of { display: none; }
 
-/* The Promoted chip: an undo for the gesture, sitting in the head beside the
-   layout toggle until it is used or the tab forgets it. */
-.workspace-promoted { flex: none; gap: var(--space-2); max-width: 340px; overflow: hidden; }
-.workspace-promoted > .button { flex: none; }
-
 /* The group composer: the workspace's
    one primary, full width of the main column, under the pane row. */
 .group-composer { flex: none; }
@@ -325,85 +322,38 @@ html, body { overflow: clip; overscroll-behavior: none; }
   color: var(--color-ink);
 }
 
-/* A collapsed pane composer (the workspace spec "Pane composers while the group composer is in
-   use"): the row keeps its full height and every control keeps its tap target —
-   what goes is the foot, which is reference rather than action. The reason stays
-   in the accessibility tree, because a disabled composer that collapses must not
-   become a Send button with no explanation. */
-/* The model indicator and the mode trigger are display:none — out of the flow AND out of the
-   accessibility tree, because an invisible control that still takes focus is worse than a hidden
-   one. The foot itself is only taken out of the flow (so it contributes no height and no flex
-   gap), which keeps the reason inside it readable to AT: `aria-describedby` still resolves. */
-.composer[data-collapsed="true"] .composer-foot > *:not(.composer-reason, .composer-accessory) { display: none; }
-.composer[data-collapsed="true"] .composer-foot:not(:has(> .composer-accessory)) {
-  position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: 0;
-  overflow: hidden;
-  white-space: nowrap;
+/* Send to All (the workspace spec's send-all-mode): the group composer takes the pane composers'
+   place. They are hidden, never unmounted, so a pane's draft is there again when the mode goes
+   off; display:none also takes them out of the tab order. Off, the group composer is the one
+   hidden, with its draft and its partial-send report kept. */
+.workspace[data-send-all="true"] .workspace-pane .composer { display: none; }
+.group-composer[hidden] { display: none; }
+/* The row's lead: the way back, then who the box writes to. The chip never shrinks into an
+   ellipsis — a count cut in half says a different number. */
+.group-composer-all { flex: none; align-self: center; white-space: nowrap; }
+/* Empty, the box shows a one-line placeholder that is cut, never scrolled: a placeholder wider
+   than the box must not grow scrollbars in a box with nothing in it. */
+.group-composer .composer-input:placeholder-shown { overflow: hidden; }
+/* Under 480px of composer the chip goes the way of Send's word: visually hidden, still read, so the
+   box keeps room to type. The placeholder and the foot still say how many members. This rule
+   CONTRACTS, so it gets the same @media floor as base.css's narrow composer. */
+@container composer (max-width: 479px) {
+  .group-composer-all {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
 }
-/* The one exception: the Overseer's Quick Actions is an action, not reference,
-   so its foot stays in flow holding only that button (its rows carry the
-   disabled reason). The reason itself goes visually hidden, still read by AT. */
-.composer[data-collapsed="true"] .composer-foot > .composer-reason:has(~ .composer-accessory) {
-  position: absolute;
-  width: 1px; height: 1px;
-  padding: 0; margin: -1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-/* A hidden shield must not keep the button off the right edge. */
-.composer[data-collapsed="true"] .composer-foot > .composer-accessory { margin-left: auto; }
-.composer[data-collapsed="true"] .attachments { display: none; }
-/* The textarea is pinned to one line while collapsed, and released the moment it
-   takes focus — which expands the composer in the same frame. Typing is never
-   done in a box that is deciding whether to grow. */
-.composer[data-collapsed="true"] .composer-input { field-sizing: none; height: var(--control-md); }
-.composer { transition: height var(--dur-fast) var(--ease-standard); }
-@media (prefers-reduced-motion: reduce) {
-  .composer { transition: none; }
+@media (max-width: 479px) {
+  .group-composer-all {
+    position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+  }
 }
 /* Dissolve, asked in place in the head (as the sidebar asks in its tool row). */
 .workspace-dissolve { display: inline-flex; align-items: center; gap: var(--space-2); flex: none; }
 .workspace-dissolve-question { font-size: var(--fs-caption); color: var(--color-ink-2); }
-/* A menu row's second line: the group a session would LEAVE, or a disabled row's reason. */
+/* A menu row's second line: a disabled row's reason, or its description. */
 .mode-option-note { display: block; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-
-/* ---- FANOUT. The dialog's rows and preview, the fork marker a member
-   draws in its transcript, and the partial-creation banner's lines. Token
-   values only; the modal, field and picker families are base.css's. -------- */
-
-.fanout-source { display: flex; flex-direction: column; gap: var(--space-2); }
-.fanout-source label { display: flex; align-items: center; gap: var(--space-2); }
-.fanout-source-note { margin: var(--space-2) 0 0; }
-
-.fanout-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
-.fanout-row {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-height: var(--control-md);
-  padding: 0 var(--space-2);
-  border: var(--stroke-thin) solid var(--color-border);
-  border-radius: var(--r-md);
-}
-.fanout-row-model { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* The fill takes the context window spec's steps, class for class, so 80% looks the same here as in the head. */
-.fanout-row-fill { display: inline; font-family: var(--font-mono); font-variant-numeric: tabular-nums; flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); white-space: nowrap; }
-.fanout-count { flex: none; display: flex; align-items: center; gap: var(--space-2); }
-.fanout-add { align-self: flex-start; margin-top: var(--space-2); }
-
-.fanout-preview { display: flex; flex-direction: column; gap: var(--space-1); }
-.fanout-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-/* The reason Create is off, under the foot where the press happens. */
-.fanout-blocked { margin: 0 var(--space-4) var(--space-3); text-align: right; }
-/* One line per failure in the partial-creation banner, like the refusal banner's. */
-.fanout-fail-line { display: block; }
-
-/* The fork point: one drawn row in a member's transcript, never an entry. */
-.fork-marker { display: flex; align-items: center; gap: var(--space-2); }
-.workspace-align { flex: none; }
 
 /* The Groups and Needs you region heads: a <details> like the Archive, but
    its <summary> wraps the region's own <h2> so the heading and `aria-labelledby` survive the

@@ -127,7 +127,7 @@ test("a label wins over both, and a member with no model keeps its title", () =>
   );
 });
 
-test("pane names carry the repeat suffix — the canonical opus ×3 fanout is three names, not one", () => {
+test("pane names carry the repeat suffix — three opus members are three names, not one", () => {
   // The defect this pins: the pane head, aria-label and announcements all read this string, and
   // three byte-identical names made three panes indistinguishable to AT and to the reader.
   assert.deepEqual(

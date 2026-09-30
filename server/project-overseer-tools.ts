@@ -7,7 +7,8 @@ import type { OrgProject, Person } from "../shared/orgs";
 import type { ProjectUpdate } from "../shared/owner";
 import { GAP_TAG, LIMIT_WHAT, PER_DAY, PER_TURN, PO_LIMIT_KINDS, type AllowanceUse, type Autonomy, type CodingWorktree, type HeldItem, type PoLimitKind, type ProjectCodingMode, type ProjectOverseerSettings } from "../shared/project-overseer";
 import type { IdeaStatus, SessionSummary, TranscriptItem } from "../shared/protocol";
-import { confirmTool } from "./overseer-confirm";
+import { cardTool } from "./overseer-card-tool";
+import { safeHttpsUrl } from "../shared/overseer-card";
 import { addIdea, IdeaError, readManifest, readProse, resolveIdeaId, updateIdea } from "./overseer-ideas";
 import { type Redactor, redactingTool, serverRedactor } from "./overseer-redact";
 import { logAction, NOTES_MAX, readNotes, writeNotes } from "./overseer-store";
@@ -132,7 +133,7 @@ const PLAIN_NEEDS: Record<string, Need> = {
   sova_roster: "read", // approve/decline: the person chart's person/approve (L2)
   sova_todos: "operator",
   sova_note: "L0",
-  sova_confirm: "L0",
+  sova_card: "L0",
   sova_todo: "operator",
   sova_pipeline: "read",
   sova_hold: "L0", // hold/cancel, hold/approve: L0 corrections on every chart that holds
@@ -165,7 +166,7 @@ export function operatorOnlyRefusal(name: string, attended: boolean): string | n
   if (attended || (name !== "sova_todos" && name !== "sova_todo")) return null;
   return name === "sova_todos"
     ? "The to-do list is the operator's own: you read it only when the operator asks, in a turn they started. Don't act on their to-dos or ideas on your own."
-    : `${name} changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_confirm card with what you would change.`;
+    : `${name} changes the operator's own to-do list, so it runs only in a turn the operator started. Raise a sova_card card with what you would change.`;
 }
 
 /** The allowance a tool's act draws on: the `counts` of the chart acts that name it as their `tool` (they must agree). */
@@ -332,6 +333,17 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
 
   /** This project overseer's own conversation: by id, or by its marker for this project. */
   const isOwn = (s: SessionSummary) => s.id === host.overseerId() || (s.projectOverseer?.projectId === host.project().id && s.projectOverseer?.orgId === host.project().orgId);
+  /** A session a card may list or link: the project's coding and gathering sessions (its own
+      conversation is found too, only so a refusal can say why). */
+  const cardSession = async (id: string): Promise<SessionSummary | null> => {
+    const own = (await host.sessions()).find((x) => x.id === id && isOwn(x));
+    if (own) return own;
+    const { coding, batons } = await scoped();
+    const s = coding.find((x) => x.id === id);
+    if (s) return s;
+    if (!batons.some((b) => b.sessionId === id)) return null;
+    return (await host.sessions()).find((x) => x.id === id) ?? null;
+  };
 
   const names = () => {
     const out: Record<string, string> = {};
@@ -594,20 +606,13 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         return { content: text(`Notes saved (${saved.length} characters).`), details: { length: saved.length } };
       }),
     },
-    confirmTool({
+    cardTool({
       audience: "operator",
       lookup: {
         // The sessions it may read: the project's coding sessions and its gathering sessions.
         session: async (ref) => {
           const id = sessionRef(ref);
-          // Its own conversation is out of scope; found here only so the refusal can say why.
-          const own = (await host.sessions()).find((x) => x.id === id && isOwn(x));
-          if (own) return own;
-          const { coding, batons } = await scoped();
-          const s = coding.find((x) => x.id === id);
-          if (s) return s;
-          if (!batons.some((b) => b.sessionId === id)) return null;
-          return (await host.sessions()).find((x) => x.id === id) ?? null;
+          return id ? cardSession(id) : null;
         },
         isSelf: isOwn,
         idea: (ref) => {
@@ -617,7 +622,19 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         },
         todo: (ref) => readTodos(p.todos).todos.find((t) => t.id === ref) ?? null,
       },
-      wrap: (run) => act("sova_confirm", run),
+      // A session it may read, or an outside https URL; never an org page (§app.overseer/confirm).
+      link: async (t) => {
+        if (t.url !== undefined) {
+          const url = typeof t.url === "string" ? safeHttpsUrl(t.url) : null;
+          if (!url) throw new Refusal("url must be an https URL without credentials.");
+          return url;
+        }
+        const id = typeof t.session === "string" ? sessionRef(t.session) : null;
+        const s = id && Object.keys(t).length === 1 ? await cardSession(id) : null;
+        if (!s || isOwn(s)) throw new Refusal("A link here opens one of the project's sessions ({session}) or an https URL ({url}).");
+        return `#/s/${encodeURIComponent(s.path)}`;
+      },
+      wrap: (run) => act("sova_card", run),
       refusal: (m) => new Refusal(m),
     }),
     {

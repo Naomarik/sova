@@ -242,9 +242,9 @@ carries as image content, it appends a note for the model to that message's stor
 blank line, one per resized image:
 `[Image: original 2560x1600, displayed at 2000x1250. Multiply coordinates by 1.28 to map to original image.]`.
 Wherever Sova shows that message's text, it shows the text as typed, without those notes: the
-user row, live or reloaded and in watch mode; the session's title; the text rewind puts back in the
-composer; and the text a fork puts in the new session's composer. A message that was only images
-shows as an image-only row, and rewind and fork put back no text. The note is display-only to hide:
+user row, live or reloaded and in watch mode; the session's title; and the text rewind puts back in the
+composer. A message that was only images
+shows as an image-only row, and rewind puts back no text. The note is display-only to hide:
 the session file, and what the model is sent (a regenerate replays the stored text, note and all),
 are unchanged.
 

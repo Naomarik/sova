@@ -177,3 +177,22 @@ export function writeMode(id: string, mode: GroupLayoutMode): void {
     // The choice still holds for this page; remembering it is a convenience.
   }
 }
+
+const SEND_ALL_KEY = (id: string) => `sova:group-send-all-${id}`;
+
+/** Whether this group's workspace is in Send to All: "1" on; anything else, or no store, is off. */
+export function readSendAll(id: string): boolean {
+  try {
+    return readKey(sessionStorage, SEND_ALL_KEY(id)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeSendAll(id: string, on: boolean): void {
+  try {
+    writeKey(sessionStorage, SEND_ALL_KEY(id), on ? "1" : "0");
+  } catch {
+    // The choice still holds for this page; remembering it is a convenience.
+  }
+}

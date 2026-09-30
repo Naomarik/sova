@@ -26,7 +26,6 @@ after(() => rmSync(agentDir, { recursive: true, force: true }));
 const ID_A = "01234567-89ab-7cde-8f01-234567890abc";
 const ID_B = "01234567-89ab-7cde-8f01-234567890abd";
 const ID_C = "01234567-89ab-7cde-8f01-234567890abe";
-const ID_OLD = "01234567-89ab-7cde-8f01-234567890abf";
 
 const header = (id: string) =>
   JSON.stringify({ type: "session", version: 3, id, timestamp: "2026-09-21T00:00:00.000Z", cwd: "/tmp" });
@@ -86,17 +85,6 @@ test("a listing carries groupId only for grouped rows, and KEEPS the assignment 
   const cleared = (await listSessions()).find((s) => s.id === ID_A)!;
   assert.ok(!("groupId" in cleared));
   assert.equal((await getSessionSummary(a))!.groupId, undefined);
-});
-
-test("a summary flags an older session format (legacyFormat) and never a current one", async () => {
-  // The fanout dialog pre-disables Create for an old-format source; the server computes the
-  // flag so the client never compares version numbers itself. Absent = current, unreadable
-  // head, or an older server — only `true` ever blocks a fork.
-  const old = join(sessionsDir, `2026-09-21T00-00-00-000Z_${ID_OLD}.jsonl`);
-  writeFileSync(old, `${[JSON.stringify({ type: "session", version: 2, id: ID_OLD, timestamp: "2026-09-21T00:00:00.000Z", cwd: "/tmp" }), userMessage("old format")].join("\n")}\n`);
-  assert.equal((await getSessionSummary(canonicalPath(old)))?.legacyFormat, true);
-  const current = await getSessionSummary(session(ID_A, "current format"));
-  assert.ok(current && !("legacyFormat" in current), "absent when current — the same absence an older server sends");
 });
 
 test("cleanup prunes the ids it deleted, and a dry run changes nothing", async () => {

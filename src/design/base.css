@@ -5669,6 +5669,90 @@ a.subagent-row { text-decoration: none; }
 }
 .overseer-confirm-more { margin-inline-start: calc(-1 * var(--space-3)); gap: var(--space-1); }
 
+/* sova_card: the Overseer's card with an id (c_4 as its eyebrow), numbered items and
+   lettered options. The letter and number use the align card's mono weight; per-item
+   choices are a small segmented radio row under each item; link options are ghost
+   buttons with an arrow, live in every state. */
+.overseer-card-head { align-items: baseline; }
+.overseer-card-id { flex: none; font-size: var(--fs-mono); color: var(--color-ink-muted); }
+.overseer-card-change { flex: none; margin-left: auto; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.overseer-card-n { flex: none; font-size: var(--fs-mono); color: var(--color-ink-2); }
+.overseer-card-letter { font-weight: var(--fw-semibold); color: var(--color-ink-2); margin-right: var(--space-1); }
+.button-destructive .overseer-card-letter { color: inherit; }
+.overseer-card-foot { flex-direction: column; align-items: flex-start; gap: var(--space-2); }
+.overseer-card-buttons { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
+.overseer-card-link { gap: var(--space-1); }
+.overseer-card-rec { margin: 0; color: var(--color-ink); }
+/* What an option's click approves, and what it wrote (§app.overseer/approvals). */
+.overseer-card-grant { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+.overseer-card-permit { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); }
+
+/* The composer's "3 of 10 running" (§app.overseer/caps; a button to Settings → Overseer → Limits)
+   and the approvals chip's panel (§app.overseer/approvals): the shared popover, one section per
+   live approval or rule. */
+.run-status > .run-status-running { margin-left: auto; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.run-status > .run-status-running:hover,
+.run-status > .run-status-running:active { color: var(--color-ink); }
+.run-status-running + .run-status-link { margin-left: 0; }
+@media (min-width: 768px) {
+  .model-menu.action-menu.permits-panel { width: 380px; max-width: calc(100vw - var(--space-6)); }
+}
+.permits-panel { padding: var(--space-2) 0; }
+.permits-lede { margin: 0; padding: var(--space-1) var(--space-3) var(--space-2); font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-muted); }
+.permit-row { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) var(--space-3); border-top: var(--stroke-thin) solid var(--color-border); }
+.permit-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+.permit-id { flex: none; color: var(--color-ink-muted); }
+.permit-kind { flex: 1; min-width: 0; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.permit-expiry { flex: none; font-size: var(--fs-caption); color: var(--color-ink-2); }
+.permit-text,
+.permit-allows,
+.permit-meta { margin: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); color: var(--color-ink-2); overflow-wrap: anywhere; }
+.permit-text { color: var(--color-ink); font-size: var(--fs-body); line-height: var(--lh-body); }
+.permit-link { padding: 0; border: 0; background: none; color: var(--color-accent); text-decoration: underline; cursor: pointer; font: inherit; }
+.permit-uses { margin: 0; padding-left: var(--space-4); font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.permit-actions { display: flex; justify-content: flex-end; padding-top: var(--space-1); }
+.permits-error { margin: 0; padding: var(--space-2) var(--space-3); font-size: var(--fs-caption); color: var(--status-error); }
+.overseer-card-decided { display: inline-flex; align-items: center; gap: var(--space-1); color: var(--color-ink-2); font-size: var(--fs-caption); }
+.overseer-card-decided .icon { color: var(--status-success); }
+.overseer-card-jump {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent);
+  text-decoration: underline;
+  cursor: pointer;
+  font: inherit;
+}
+.overseer-card-seg {
+  display: inline-flex;
+  flex-wrap: wrap;
+  margin-top: var(--space-1);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-sm);
+  overflow: hidden;
+  align-self: flex-start;
+}
+.overseer-card-seg-opt {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-3);
+  cursor: pointer;
+  font-size: var(--fs-caption);
+  color: var(--color-ink-2);
+}
+.overseer-card-seg-opt + .overseer-card-seg-opt { border-left: var(--stroke-thin) solid var(--color-border); }
+.overseer-card-seg-opt > input { position: absolute; opacity: 0; pointer-events: none; }
+.overseer-card-seg-opt:hover { background: var(--color-sunken); }
+.overseer-card-seg-opt:has(> input:checked) { background: color-mix(in srgb, var(--color-accent-tint) 60%, transparent); color: var(--color-accent); }
+.overseer-card-seg-opt:has(> input:focus-visible) { outline: var(--focus-ring); outline-offset: calc(var(--focus-width) * -1); }
+.overseer-card-seg-opt:has(> input:disabled) { cursor: default; }
+.overseer-card-seg-opt:has(> input:disabled:not(:checked)):hover { background: none; }
+.overseer-card-rev .info-row-text { gap: var(--space-2); }
+.overseer-card-rev-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* sova_link / sova_unlink's card: the link's id, then one line per member, host first. */
 .overseer-link { max-width: var(--measure); }
 .overseer-link .card-head .icon { flex: none; color: var(--color-ink-muted); }
@@ -5681,20 +5765,61 @@ a.subagent-row { text-decoration: none; }
 /* A navigate result's Go, on the tool card's line. */
 .toolcard-summary .overseer-go { flex: none; min-height: 28px; gap: var(--space-1); }
 
-/* Settings → Overseer. */
+/* Settings → Overseer: one page of groups; the ones used less fold. */
 .overseer-radios { display: flex; flex-direction: column; gap: var(--space-1); }
 .overseer-radios .toggle { justify-content: flex-start; align-self: flex-start; width: fit-content; }
-.overseer-actions-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-3); }
+/* A folded group: a native <details> whose whole 44px head is the toggle — the chevron, the
+   group's name, then in caption ink what is inside ("2 changed from default"). */
+.overseer-fold { min-width: 0; }
+.overseer-fold-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--control-md);
+  padding: 0 var(--space-2);
+  margin: 0 calc(var(--space-2) * -1);
+  border-radius: var(--r-md);
+  cursor: pointer;
+  list-style: none;
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.overseer-fold-summary::-webkit-details-marker { display: none; }
+.overseer-fold-summary:hover { background: var(--color-sunken); }
+.overseer-fold-summary:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.overseer-fold-summary .icon-twist { flex: none; color: var(--color-ink-muted); transition: transform var(--dur-fast) var(--ease-standard); }
+.overseer-fold[open] > .overseer-fold-summary .icon-twist { transform: rotate(90deg); }
+.overseer-fold-label { flex: none; font-weight: var(--fw-semibold); color: var(--color-ink); }
+.overseer-fold-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.overseer-fold > .overseer-caps { margin-top: var(--space-2); }
+/* Advanced stands with the groups: the same rule above it as a fieldset's. */
+.overseer-advanced { padding-top: var(--space-2); border-top: var(--stroke-thin) solid var(--color-border); }
+.overseer-fold-body { display: flex; flex-direction: column; gap: var(--space-4); padding-top: var(--space-2); }
+/* Running at once leads Limits alone: a short number field with its live count beside it, then
+   its hint at full width. */
+.overseer-cap-row { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
+.overseer-cap-row > .input { flex: 1; min-width: 0; }
+.overseer-cap-wide .overseer-cap-row > .input { flex: 0 1 10rem; }
+.overseer-cap-now { font-size: var(--fs-caption); color: var(--color-ink-2); }
+/* A group's Reset to Defaults sits at the end of its head row, beside the legend. */
+.overseer-group { position: relative; }
+.overseer-group > .overseer-reset { position: absolute; top: var(--space-2); right: 0; }
+/* Quick actions: one line each, its label then its description, and Edit, which opens that row alone. */
+.overseer-actions-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .overseer-action-row {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding-bottom: var(--space-3);
   border-bottom: var(--stroke-thin) solid var(--color-border);
 }
+.overseer-action-row-open { padding-bottom: var(--space-3); }
+.overseer-action-line { display: flex; align-items: center; gap: var(--space-3); min-height: var(--control-md); min-width: 0; }
+.overseer-action-text { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: var(--space-2); overflow: hidden; }
+.overseer-action-label { flex: none; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: var(--fw-medium); }
+.overseer-action-desc { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.overseer-action-line > .button { flex: none; }
+.overseer-action-edit { display: flex; flex-direction: column; gap: var(--space-2); }
 .overseer-action-tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .overseer-caps { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-3); }
-.overseer-caps-reset { align-self: flex-start; }
 /* A quick action's label is short and its description is a line: give the line the room. */
 .overseer-action-row .settings-delegate-fields { grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); }
 /* The model row: the model takes the width, thinking a short column. */
@@ -5772,9 +5897,8 @@ a.subagent-row { text-decoration: none; }
 .decisions-backfill { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .decisions-backfill-progress { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); font-variant-numeric: tabular-nums; }
 
-/* Settings → Overseer → Phone Notifications. This device: a chip (dot and word) and the fact,
+/* Settings → Notifications → Phone Notifications. This device: a chip (dot and word) and the fact,
    then its one action. Devices: one row each, the label over its facts, Remove at the end. */
-.push-settings { margin-top: var(--space-5); }
 .push-this-device { display: flex; align-items: center; gap: var(--space-3); flex-wrap: wrap; }
 .push-status { margin: 0; display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-caption); color: var(--color-ink-2); }
 .push-devices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }

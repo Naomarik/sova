@@ -2217,9 +2217,7 @@ export function Sidebar(props: {
                   {/* Making a group is the region's one action, a `+` at the head's right end.
                       Not while searching: the field it opens is hidden then, and a fruitless search
                       hides the whole region. Its click and keydown stop here, as the group head's
-                      `⋯` does, so a press is never read as a press on the summary. Fanout is NOT
-                      here — it is a creation gesture, not a curation one, and its front door is the
-                      overview beside New Session. */}
+                      `⋯` does, so a press is never read as a press on the summary. */}
                   <Show when={!searching()}>
                     <button
                       ref={newGroupToggle}

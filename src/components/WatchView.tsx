@@ -1,6 +1,6 @@
 import { batch, createEffect, createSignal, on, onCleanup, Show, type JSX } from "solid-js";
 import type { SessionSummary, TranscriptItem, WatchContext, WatchServerMessage } from "../../shared/protocol";
-import { createFork, fetchTranscriptRows, wsUrl } from "../lib/api";
+import { fetchTranscriptRows, wsUrl } from "../lib/api";
 import { contextFromItems, contextStateFor } from "../lib/context";
 import { createReconnectingSocket } from "../lib/socket";
 import { landExplainJump } from "../lib/jump";
@@ -9,7 +9,6 @@ import { createOlderRows } from "../lib/older-rows-view";
 import { hostOf, sessionViewKey } from "../lib/mesh";
 import { cachedTranscript, cacheItems, cacheSpot, transcripts } from "../lib/transcript-cache";
 import { copyText, hideThinking, hideTools, setSessionContext, toast } from "../lib/ui-state";
-import { openCreated, stageFork } from "../lib/fork-stage";
 import { usePaneAnnounce } from "../lib/pane-scope";
 import { visibleCount } from "../lib/hidden-rows";
 import type { WorkingSplit } from "../lib/workers";
@@ -17,17 +16,14 @@ import { Composer, type ComposerReason } from "./Composer";
 import { FlyoutSession } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { ChangesSession } from "./ChangesViewer";
-import { type ForkMarker, HistoryItems, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton } from "./Thread";
+import { HistoryItems, type MessageActionsProvider, ThreadScroller, TranscriptSkeleton } from "./Thread";
 import type { MessageActionItem } from "./MessageActions";
 import {
   actionReason,
   actionsFor,
   COPIED,
   copyable,
-  forkRefusalText,
-  forkSentence,
   type ActionState,
-  type MessageStrip,
   SHARE_WAIT_REASON,
 } from "../lib/message-actions";
 import { shareHref } from "../lib/share-slice";
@@ -61,10 +57,6 @@ export function WatchView(props: {
   /** Makes that row a button that toggles the subagents pane. */
   onShowWorkers?(): void;
   workersOpen?: boolean;
-  /** Where this member was forked from, when it is one. */
-  fork?: ForkMarker;
-  /** A session this view just created (a Fork): the app adopts and opens it (see ChatView). */
-  onCreated?(session: SessionSummary): void;
 }) {
   const announce = usePaneAnnounce();
   // Rows kept from the last visit paint at once; the snapshot reconciles them (lib/transcript-cache).
@@ -131,47 +123,20 @@ export function WatchView(props: {
   // ---- Per-message actions, read-only ------------------------------------------------------
   /**
    * Watching is reading, so Copy works exactly as it does in a chat — the text is on the screen
-   * and nothing owns the clipboard. Fork works too: it READS this session into a new one, and the
-   * only thing that stops it is another process writing the file. Rewind and Regenerate would
-   * write here, so they carry their reason rather than disappearing — a control that vanishes in
-   * one view and exists in another teaches nothing about why.
+   * and nothing owns the clipboard. Rewind and Regenerate would write here, so they carry their
+   * reason rather than disappearing — a control that vanishes in one view and exists in another
+   * teaches nothing about why.
    */
-  const [actionNote, setActionNote] = createSignal<{ entryId: string; text: string } | null>(null);
-  const [forking, setForking] = createSignal(false);
   const watchState = (wake = false, link = false): ActionState => ({
     chat: false,
     live: props.streaming,
     streaming: false,
     compacting: false,
-    pending: forking(),
+    pending: false,
     paused: null,
     wake,
     link,
   });
-
-  const forkFrom = async (strip: MessageStrip) => {
-    if (forking()) return;
-    setActionNote(null);
-    setForking(true);
-    try {
-      const out = await createFork({ path: props.path, entryId: strip.entryId, position: strip.role === "user" ? "before" : "at" });
-      if (!out.ok) {
-        const text = forkRefusalText(out.code, out.message);
-        setActionNote({ entryId: strip.entryId, text });
-        announce(text);
-        return;
-      }
-      const target = out.session.path;
-      // What actually landed in the new composer decides what we say landed there.
-      const sentence = forkSentence(await stageFork(target, out.editor));
-      setActionNote(null);
-      toast(sentence);
-      announce(sentence);
-      openCreated(out.session, props.onCreated);
-    } finally {
-      setForking(false);
-    }
-  };
 
   const watchActions: MessageActionsProvider = {
     items(strip) {
@@ -179,8 +144,6 @@ export function WatchView(props: {
         switch (kind) {
           case "copy":
             return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
-          case "fork":
-            return { kind, reason: actionReason("fork", watchState()), run: () => forkFrom(strip) };
           case "share": {
             const id = props.sessionId;
             return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
@@ -190,7 +153,6 @@ export function WatchView(props: {
         }
       });
     },
-    note: (entryId) => (actionNote()?.entryId === entryId ? actionNote()!.text : null),
   };
 
   const socket = createReconnectingSocket<WatchServerMessage>(newestOnly(wsUrl("/ws/watch", props.path)), {
@@ -277,7 +239,6 @@ export function WatchView(props: {
                 streaming={props.streaming}
                 hideTools={hideTools(props.path)}
                 hideThinking={hideThinking(props.path)}
-                fork={props.fork}
                 actions={watchActions}
                 older={olderRows.api}
               />

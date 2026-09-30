@@ -4,6 +4,7 @@ import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type {
   ChatClaudeLogin,
+  ClaudeAccountsInfo,
   ChatServerMessage,
   OverseerQuickAction,
   SandboxInfo,
@@ -22,8 +23,9 @@ import { cardFold, openCards } from "../lib/overseer";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { getOverseerAutonomy, revokeOverseerPermit, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import { getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
 import type { OverseerAutonomy } from "../../shared/protocol";
+import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
   addPendingPrompt,
@@ -111,7 +113,7 @@ import { inputTotal, lastInput as lastInputOf, newestOnly, newRows } from "../li
 import { createOlderRows } from "../lib/older-rows-view";
 import { alignRowFromDetails, foldAlignRows, recommendedOption, type AlignEntry } from "../lib/align";
 import { Composer, type ComposerReason } from "./Composer";
-import { FlyoutSession, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
+import { FlyoutSession, type LoginControl, type SandboxControl, type ThinkingControl, type UndoControl } from "./ComposerMenu";
 import { ConnectionBanner } from "./ConnectionBanner";
 import { SessionSetupCard } from "./SessionSetup";
 import { PlaybooksDialog } from "./PlaybooksDialog";
@@ -363,6 +365,11 @@ export function ChatView(props: {
   /** Level asked for, until the echo. A refusal ends it and leaves the level as it was. */
   const [pendingThinking, setPendingThinking] = createSignal<string | null>(null);
   const [thinkingError, setThinkingError] = createSignal<{ target: string; from: string | null; body: string } | null>(null);
+  /** A refused or failed switch of Claude login (§app.claude-logins/switch-login): the server's reason. */
+  const [loginError, setLoginError] = createSignal<string | null>(null);
+  /** The login panel's reading of this host's logins, at each opening. */
+  const [loginInfo, setLoginInfo] = createSignal<ClaudeAccountsInfo | null>(null);
+  const [loginInfoError, setLoginInfoError] = createSignal<string | null>(null);
   const [showPlaybooks, setShowPlaybooks] = createSignal(false);
 
   /** This session's slash commands (sent after hello, and again after a runtime reload). */
@@ -864,6 +871,12 @@ export function ChatView(props: {
               return;
             default: {
               if (modelError() || thinkingError()) break; // shown as the switch's banner
+              // A refused switch of Claude login is its own banner, never a turn failure.
+              if (msg.message.startsWith(LOGIN_UNCHANGED)) {
+                setLoginError(msg.message.slice(LOGIN_UNCHANGED.length).trim());
+                announce(msg.message);
+                break;
+              }
               // The front door may have moved this tab to a host that doesn't hold this session:
               // the reconnect's "not found" is no turn error then. Ask for the host check now and
               // keep "Reconnecting"; the view is replaced when the change is confirmed.
@@ -1314,6 +1327,28 @@ export function ChatView(props: {
     },
     choose: chooseModel,
   };
+  /** The login label's panel (§app.claude-logins/switch-login): the server keeps the waiting pick. */
+  let loginRead = 0;
+  const loginControl: LoginControl = {
+    login: claudeLogin,
+    info: loginInfo,
+    error: loginInfoError,
+    refresh: () => {
+      const seq = ++loginRead;
+      setLoginInfoError(null);
+      getChatClaudeAccounts(props.path)
+        .then((info) => seq === loginRead && setLoginInfo(info))
+        .catch((err) => seq === loginRead && setLoginInfoError(`Couldn't read this device's logins: ${err instanceof Error ? err.message : String(err)}`));
+    },
+    running: () => live.running,
+    context: () => sessionContext()[props.path],
+    choose: (id) => {
+      if (socket.send({ type: "set_claude_login", login: id })) setLoginError(null);
+    },
+    cancel: () => {
+      socket.send({ type: "set_claude_login", login: null });
+    },
+  };
   /** The composer foot's mode switch: this chat's WS "mode" state and its session file. */
   const modeControl: ModeControl = { state: modeState, path: props.path };
   /** The flyout's Sandbox row: the extension answers with a toast and a "sandbox" message. */
@@ -1574,6 +1609,26 @@ export function ChatView(props: {
                 />
               )}
             </Show>
+            {/* A refused switch of Claude login (§app.claude-logins/switch-login). */}
+            <Show when={loginError()}>
+              {(why) => (
+                <Banner
+                  tone="error"
+                  title="Couldn't switch the Claude login."
+                  body={
+                    <>
+                      {why()}
+                      <Show when={claudeLogin()}>{(l) => <> You're still on {l().email ?? l().name}.</>}</Show>
+                    </>
+                  }
+                  action={
+                    <button type="button" class="button button-sm button-ghost" onClick={() => setLoginError(null)}>
+                      Dismiss
+                    </button>
+                  }
+                />
+              )}
+            </Show>
             {/* A refused thinking change reads like a refused model switch. */}
             <Show when={thinkingError()}>
               {(err) => (
@@ -1773,6 +1828,7 @@ export function ChatView(props: {
         autofocus={props.autofocus}
         model={modelControl}
         claudeLogin={claudeLogin}
+        login={loginControl}
         thinking={thinkingControl}
         mode={props.overseer || props.summary?.()?.baton || props.summary?.()?.projectOverseer ? null : modeControl}
         sandbox={sandboxControl}

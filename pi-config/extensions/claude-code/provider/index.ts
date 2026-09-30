@@ -20,6 +20,7 @@ import { discoverClaudeModels } from "../models.ts";
 import { CLAUDE_LOGIN_ENTRY, hostLogins, recordedLogin } from "../accounts.ts";
 import type { BackendModel } from "../../subagents/contracts.ts";
 import { registerAutoCompact } from "./auto-compact.ts";
+import { CLAUDE_LOGIN_COMMAND, pickChatLogin } from "./login-command.ts";
 import { getSessionBridge } from "./session-bridge.ts";
 import { createClaudeStreamSimple } from "./stream.ts";
 import type { ClaudeSessionBridge } from "./types.ts";
@@ -142,7 +143,8 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 			try { branch = ctx?.sessionManager?.getBranch?.() ?? []; } catch { /* no branch yet */ }
 			bridge.setSessionLogin?.(sessionId, recordedLogin(branch), (entry) => {
 				try { pi.appendEntry(CLAUDE_LOGIN_ENTRY, entry); } catch { /* plumbing: the next spawn still selects */ }
-				if (entry.text) { try { ctx?.ui?.notify?.(entry.text, "warning"); } catch { /* no UI */ } }
+				// A failover warns; the user's own pick is its note row only.
+				if (entry.text && entry.reason !== "manual") { try { ctx?.ui?.notify?.(entry.text, "warning"); } catch { /* no UI */ } }
 			});
 		}
 		if (alreadyRegistered()) return;
@@ -155,6 +157,18 @@ export function registerProviderIfEnabled(pi: ExtensionAPI, bridge: ClaudeSessio
 			refreshModels: (context) => refreshClaudeModels(context),
 			streamSimple: createClaudeStreamSimple(bridge),
 		});
+	});
+	// Move this chat to another Claude login (§app.claude-logins/switch-login). Sova's composer calls
+	// the handler directly; its argument is a login id. A host with no commands (a test double)
+	// gets the provider alone.
+	if (typeof pi.registerCommand === "function") pi.registerCommand(CLAUDE_LOGIN_COMMAND, {
+		description: "Move this chat to another Claude login: /claude-login <login id>",
+		handler: async (args, ctx) => {
+			if (pi.getFlag(CLAUDE_PROVIDER_FLAG) !== true) throw new Error("Claude Code models are off (Settings → Experimental).");
+			let branch: readonly unknown[] = [];
+			try { branch = ctx.sessionManager.getBranch(); } catch { /* no branch yet */ }
+			await pickChatLogin(args, { id: ctx.sessionManager.getSessionId(), branch }, { bridge, logins: hostLogins() });
+		},
 	});
 	// The provider stays registered, but this session's CLI child must not.
 	pi.on("session_shutdown", (_event, ctx) => {

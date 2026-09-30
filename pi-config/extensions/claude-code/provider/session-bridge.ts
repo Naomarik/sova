@@ -32,7 +32,7 @@ import {
 	type ClaudeTransportLimits, type ClaudeTransportTimings, type SpawnImpl,
 } from "../transport.ts";
 import {
-	loginEntryFor, switchText,
+	loginEntryFor, manualSwitchText, switchText,
 	type ClaudeAccountFailure, type ClaudeLoginChoice, type ClaudeLoginEntry, type ClaudeLoginSwitch, type LoginUser,
 } from "../accounts.ts";
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
@@ -1387,7 +1387,28 @@ class CliSession {
 	private announce(to: ClaudeLoginChoice, change?: ClaudeLoginSwitch): void {
 		if (!change && to.id === this.recordedLogin) return;
 		this.recordedLogin = to.id;
-		try { this.loginHooks()?.onChange?.(loginEntryFor(to, change)); } catch { /* the record is plumbing */ }
+		const hooks = this.loginHooks();
+		// A child built later for this session (after an idle reap) starts from what was recorded last.
+		if (hooks) hooks.recorded = to.id;
+		try { hooks?.onChange?.(loginEntryFor(to, change)); } catch { /* the record is plumbing */ }
+	}
+
+	/**
+	 * The user's pick (§app.claude-logins/switch-login): the session moves to `to` now. Refused while
+	 * a turn or its held tool calls are open. The pick is recorded (the note row), and an idle child
+	 * stops, so the next turn starts on `to` with the history folded, as after a model change.
+	 * `from` names the session's login when this child has not chosen one yet.
+	 */
+	pickLogin(to: ClaudeLoginChoice, from: ClaudeLoginChoice): "switched" | "same" | "busy" {
+		if (this.isBusy()) return "busy";
+		if (!this.recordedRead) { this.recordedLogin = this.loginHooks()?.recorded; this.recordedRead = true; }
+		const was = this.login ?? from;
+		if (was.id === to.id) return "same";
+		this.login = to;
+		this.announce(to, { from: was, to, text: manualSwitchText(was, to) });
+		debugLog({ event: "login-switch", session: this.piSessionId, from: was.id, to: to.id, kind: "manual" });
+		if (this.started) void this.teardown(`Claude login switched to ${to.label} (chosen by you)`);
+		return "switched";
 	}
 
 	/**
@@ -1744,6 +1765,23 @@ export class SessionBridge implements ClaudeSessionBridge {
 	setSessionLogin(sessionId: string, recorded: string | undefined, onChange: (entry: ClaudeLoginEntry) => void): void {
 		if (!sessionId) return;
 		this.logins.set(sessionId, { recorded, onChange });
+	}
+
+	/**
+	 * Move a pi session to the login the user picked (§app.claude-logins/switch-login). With a child,
+	 * see CliSession.pickLogin; without one, only the pick is recorded and the first child starts
+	 * there. `from` is the session's login as recorded (or the one it would start on). "unknown": the
+	 * session never announced itself (the provider is off for it).
+	 */
+	switchSessionLogin(sessionId: string, to: ClaudeLoginChoice, from: ClaudeLoginChoice): "switched" | "same" | "busy" | "unknown" {
+		const session = this.sessions.get(sessionId);
+		if (session) return session.pickLogin(to, from);
+		const hooks = this.logins.get(sessionId);
+		if (!hooks) return "unknown";
+		if (from.id === to.id) return "same";
+		hooks.recorded = to.id;
+		try { hooks.onChange?.(loginEntryFor(to, { from, to, text: manualSwitchText(from, to) })); } catch { /* the record is plumbing */ }
+		return "switched";
 	}
 
 	/** The cwd a session's child should run in, best known to worst. */

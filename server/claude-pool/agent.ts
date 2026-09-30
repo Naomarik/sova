@@ -540,9 +540,13 @@ export class PoolAgent {
     if (!wants.length) return;
     for (const { file, want } of wants) {
       if (!this.alive(want.pid)) { rmSync(file, { force: true }); continue; }
-      if (this.heldUsable(want.excludeAccounts, want.excludeLogins)) { rmSync(file, { force: true }); continue; }
+      // A pick in the composer names one login: answered once that one is here, never by another.
+      const satisfied = want.only
+        ? readAccounts(this.o.agentDir).value.logins.some((l) => l.id === want.only && l.device === this.self)
+        : this.heldUsable(want.excludeAccounts, want.excludeLogins);
+      if (satisfied) { rmSync(file, { force: true }); continue; }
       if (this.borrowing) return;
-      const got = await this.borrow({ requestId: randomBytes(8).toString("hex"), ...(want.excludeAccounts ? { excludeAccounts: want.excludeAccounts } : {}), ...(want.excludeLogins ? { excludeLogins: want.excludeLogins } : {}) });
+      const got = await this.borrow({ requestId: randomBytes(8).toString("hex"), ...(want.excludeAccounts ? { excludeAccounts: want.excludeAccounts } : {}), ...(want.excludeLogins ? { excludeLogins: want.excludeLogins } : {}), ...(want.only ? { only: want.only } : {}) });
       if (!got) this.log(`borrow for pid ${want.pid}: nothing to borrow`);
       rmSync(file, { force: true });
     }

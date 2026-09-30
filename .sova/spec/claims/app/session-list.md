@@ -1129,9 +1129,9 @@ Overseer set while the call was out wins, and the model's answer is dropped.
   switch on starts a run at once.
 - **Which.** A session with no stored title at all, with a summary line, quiet for the *quiet
   period* (default 5 minutes, by its file's modification time), and none of: archived by hand, an
-  empty husk, a subagent's or team member's own session, a member of a group an older build made
-  in one gesture (§workspace.groups/legacy-groups), an
-  Overseer or project overseer file. Most recently active first.
+  empty husk, a subagent's or team member's own session, an Overseer or project overseer file. A
+  group member is swept like any session, in a group an older build made included
+  (§workspace.groups/legacy-groups). Most recently active first.
 - **How much.** At most 10 sessions per run, 2 at a time. Existing unnamed sessions are backfilled
   the same way, 10 per run, until none is left.
 - **Once.** A session the sweep named has a stored title, so no later run looks at it again, and a

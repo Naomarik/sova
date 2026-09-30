@@ -685,11 +685,9 @@ but never writes:
   workspace, with no fork-point row in its transcripts and nothing to align to.
 - **`SessionGroup.autoDissolve`** is kept the same way, a non-boolean read as absent, and it no
   longer deletes anything: such a group stands when its last member leaves, like any other
-  (§workspace.groups/group-lifecycle), and it keeps the flag on disk. A rename that changes the
-  name still clears it. The one thing it still decides is the auto-title sweep: a group with the
-  flag `true`, or with no flag and a `seed` (written before the flag existed), is an older build's
-  one-gesture group, and its members are left out of the sweep, as before
-  (§app.session-list/auto-titles).
+  (§workspace.groups/group-lifecycle), and it keeps the flag on disk, a rename included. Nothing
+  else reads it: such a group's members are auto-titled like any session
+  (§app.session-list/auto-titles). Past the two stored fields, such a group is a plain group.
 - **The member marker** (`sova-fanout-member` custom entry) still turns the topic outline off for
   the session that carries it. Nothing writes a new one.
 

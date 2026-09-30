@@ -3,6 +3,7 @@ import { Portal } from "solid-js/web";
 import { pauseCountdown, remaining, resumeCountdown, startCountdown, type Toast } from "../lib/toast";
 import { announcement, dismissToast, toasts } from "../lib/ui-state";
 import { Lightbox } from "./Lightbox";
+import { MarkdownViewer } from "./MarkdownViewer";
 
 export type IconName =
   | "alert-circle" | "archive" | "arrow-right" | "attach" | "branch" | "command" | "image" | "attention" | "chat" | "check" | "chevron-down" | "chevron-left"
@@ -206,6 +207,7 @@ export function GlobalRegions() {
         {announcement()}
       </div>
     </Portal>
+    <MarkdownViewer />
     <Lightbox />
     </>
   );

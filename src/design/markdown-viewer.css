@@ -1,0 +1,119 @@
+/* ---- MARKDOWN VIEWER (§app/markdown-viewer). One whole markdown document in a native <dialog>
+   opened with showModal() (top layer, over any open dialog; recorded deviation, like the
+   lightbox). Desktop: inset --space-6 on every side with a centred 72ch column that scrolls.
+   Folded: a tall sheet with a --space-5 gap above it and the skill's grip. */
+
+.md-viewer {
+  position: fixed;
+  inset: var(--space-6);
+  width: auto;
+  height: auto;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-xl);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+.md-viewer[open] {
+  display: flex;
+  flex-direction: column;
+  animation: enter-fade var(--dur-base) var(--ease-standard);
+}
+.md-viewer::backdrop { background: var(--scrim); }
+
+/* Fills the dialog, so a click on the dialog box itself is only ever the backdrop. */
+.md-viewer-frame {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.md-viewer-head {
+  flex: none;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-4);
+  border-bottom: var(--stroke-thin) solid var(--color-border);
+}
+.sheet-grip + .md-viewer-head { padding-top: var(--space-2); }
+.md-viewer-titles {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  /* Centre one title line on the 44px controls. */
+  padding-top: calc((var(--control-md) - var(--fs-heading-m) * var(--lh-heading-m)) / 2);
+}
+.md-viewer-title {
+  margin: 0;
+  font-size: var(--fs-heading-m);
+  line-height: var(--lh-heading-m);
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+.md-viewer-subtitle {
+  margin: 0;
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  color: var(--color-ink-muted);
+  overflow-wrap: anywhere;
+}
+.md-viewer-actions {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.md-viewer-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--space-5) var(--space-4) calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
+}
+.md-viewer-scroll:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.md-viewer-doc {
+  max-width: 72ch;
+  margin: 0 auto;
+}
+/* The renderer is the chat's, bubble and all: here the document is the page, not a message. */
+.md-viewer-doc .message-body {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+/* The raw text is the document here, not a block inside one: no pre panel, and no ligatures
+   (JetBrains Mono draws `->` as an arrow), so every character shows as typed. */
+.md-viewer-source {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0, "calt" 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  line-height: var(--lh-mono);
+  color: var(--color-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  tab-size: 4;
+}
+
+@media (max-width: 767px) {
+  .md-viewer {
+    inset: var(--space-5) 0 0 0;
+    border-radius: var(--r-xl) var(--r-xl) 0 0;
+    border-bottom: 0;
+  }
+}

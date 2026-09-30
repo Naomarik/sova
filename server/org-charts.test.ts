@@ -5,7 +5,7 @@
 // the CLJS tests run. The replay runs the shipped charts. Pure: no files, no clock but `now`.
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
-import { chartVersions, createOrgCharts as createShipped, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
+import { chartVersions, createOrgCharts as createShipped, nextWindow, OrgChartsStepLimitError, type ChartName, type EngineOptions, type Invocation, type OrgCharts } from "./org-charts";
 import { PROBE_CHARTS } from "./fixtures/org-charts-engine/probe-chart";
 
 /** The shipped engine with the probe chart registered. */
@@ -328,5 +328,20 @@ describe("org-charts engine (vendored ESM)", () => {
     const r = e.send("p", "probe/stop", {}, { now: T0 });
     assert.deepEqual(e.configuration("p"), ["probe", "stopped"]);
     assert.equal(r.steps[0]?.running, true);
+  });
+});
+
+describe("nextWindow (r7: the charts' rules.hours, exported)", () => {
+  const weekdays = { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" };
+  test("before, inside and after a person's hours; the weekend; a zone with DST; no hours", () => {
+    const mon = Date.UTC(2026, 8, 28); // Monday 2026-09-28 00:00 UTC
+    const h = 3600_000;
+    assert.equal(nextWindow({ tz: "UTC", hours: weekdays }, mon + 8 * h), mon + 9 * h, "before: today's window");
+    assert.equal(nextWindow({ tz: "UTC", hours: weekdays }, mon + 10 * h), null, "inside: now");
+    assert.equal(nextWindow({ tz: "UTC", hours: weekdays }, mon + 5 * 24 * h + 12 * h), mon + 7 * 24 * h + 9 * h, "Saturday: Monday 09:00");
+    // New York is UTC-4 in September: 09:00 local is 13:00 UTC
+    assert.equal(nextWindow({ tz: "America/New_York", hours: weekdays }, mon + 12 * h), mon + 13 * h);
+    assert.equal(nextWindow({}, mon), null, "no zone or hours: always open");
+    assert.equal(nextWindow({ tz: "Not/AZone", hours: weekdays }, mon), null);
   });
 });

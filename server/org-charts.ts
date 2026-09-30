@@ -312,6 +312,7 @@ interface Vendored {
   migrateText(text: string): string;
   peekSnapshot(text: string): SnapshotPeek;
   verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts?: Pick<EngineOptions, "charts">): SessionVerdict;
+  nextWindow(person: WorkingHours, nowMs: number): number | null;
 }
 
 /** `org-charts rebuild --verify`: one session's log replayed on the current charts against its snapshot. */
@@ -426,4 +427,16 @@ export function migrateSnapshot(text: string): string {
 /** Replay a session's log rows (oldest first) on a scratch engine and compare with its snapshot text. Writes nothing. */
 export function verifySession(sessionId: string, rows: JsonObject[], snapshotText: string | null, opts: Pick<EngineOptions, "charts"> = {}): SessionVerdict {
   return typed(lib.verifySession)(sessionId, rows, snapshotText, opts);
+}
+
+/** A person's working hours (r7): an IANA zone and a weekly window (days 0 = Sunday; `to` ≤ `from` ends the next day). */
+export interface WorkingHours {
+  tz?: string | null;
+  hours?: { days: number[]; from: string; to: string } | null;
+}
+
+/** When an act that reaches `person` may go: null when `nowMs` is inside their hours or they have none,
+    else the instant their next window opens (the charts' own rules.hours/next-window). */
+export function nextWindow(person: WorkingHours, nowMs: number): number | null {
+  return lib.nextWindow(person, nowMs) ?? null;
 }

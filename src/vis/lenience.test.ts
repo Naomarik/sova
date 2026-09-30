@@ -1,6 +1,6 @@
 // Blocks models really wrote that failed to draw (sessions of 2026-09-27 to 09-29), replayed as
-// written. The flow ones had one plausible reading and now draw it; the rest fail with an error that
-// quotes what to write instead.
+// written. The flow, tree and chart ones had one plausible reading and now draw it; the sequence one
+// fails with an error that quotes what to write instead.
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FlowSpec } from "./kinds/flow/parse";
@@ -61,12 +61,19 @@ test("replay: two strings after a chain's source, and a target's second string (
   assert.deepEqual(edges(s).slice(0, 5), ["g1>n1", "n1>ai1", "ai1>d1:own states", "d1>n2", "n2>ai1"]);
 });
 
-test("replay: a tree folder's slash outside the quotes (09-29) says to move it inside", () => {
-  const e = err(
+test("replay: a tree folder's slash outside the quotes (09-29) draws the folders", () => {
+  const r = parseVis(
     "tree",
     "title: What competes and what adds on\ncaption: Pick one per decision; add-ons go with any pick.\n\"q12 · Empty screen: pick one\"/\n  \"a · Preset cards + summary (prototype)\"\n  \"b · Select + what changes\" accent\n  \"c · Loadout sentence\"\n  \"d · Composer pill\"\n  \"Add-on: Capability board = what Custom… opens\" ok\n\"q13 · Home for saved profiles: pick one\"/\n  \"Settings → Profiles tab\" accent\n  \"Workflow launcher page\"\n  \"Add-on: Save as Profile from Custom\" ok\n  \"Add-on: Overseer proposal / started cards\" ok\n\"q14 · Session list top group: pick one\"/\n  \"a · Profile shelf\" accent\n  \"b · Stations strip\"\n  \"c · Quiet place\"\n  \"d · Traffic first\"\n  \"Add-on: New Session ▾ menu of profiles\" ok\n  \"Add-on: sender line on received messages\" ok\n  \"Add-on: Activity tab (later)\" ok\n",
   );
-  assert.deepEqual([e.line, e.message], [3, 'put the / inside the quotes: "q12 · Empty screen: pick one/"']);
+  if (!r.ok) assert.fail(`line ${r.line}: ${r.message}`);
+  assert.deepEqual(r.warnings, []);
+  const roots = (r.spec as { roots: { name: string; children: unknown[] }[] }).roots;
+  assert.deepEqual(roots.map((x) => [x.name, x.children.length]), [
+    ["q12 · Empty screen: pick one/", 5],
+    ["q13 · Home for saved profiles: pick one/", 4],
+    ["q14 · Session list top group: pick one/", 7],
+  ]);
 });
 
 test("replay: a Mermaid sequence message (09-27) quotes the vis message", () => {
@@ -74,12 +81,15 @@ test("replay: a Mermaid sequence message (09-27) quotes the vis message", () => 
   assert.deepEqual([e.line, e.message], [3, 'write Client -> Server "SYN" (not Mermaid a -> b: msg)']);
 });
 
-test("replay: chart parts over `of:` (09-29, twice) keep their precise error", () => {
+test("replay: chart parts over `of:` (09-29, twice) draw without of:, with a warning", () => {
   for (const body of [
     "type: parts\nunit: MB\nof: 4.19\n\"21 earlier screenshots (read tool)\" 4.18 warn\n\"Text + your new image + JSON\" 0.23\nmark \"21 earlier screenshots (read tool)\" \"the part that grows\"\n",
     "type: parts\nunit: MB\nof: 4.19\n\"21 earlier screenshots\" 4.18 error\n\"Text + JSON framing\" 0.23\nmark \"21 earlier screenshots\" \"total 4.41 MB, over the line\"\n",
   ]) {
-    const e = err("chart", body);
-    assert.deepEqual([e.line, e.message], [3, "the parts add up to 4.41, more than of: 4.19"]);
+    const r = parseVis("chart", body);
+    if (!r.ok) assert.fail(`line ${r.line}: ${r.message}`);
+    assert.deepEqual(r.warnings, [{ line: 3, message: "the parts add up to 4.41, more than of: 4.19: drawn without of:" }]);
+    const spec = r.spec as { of?: number; rows: unknown[]; emphasis?: unknown[] };
+    assert.deepEqual([spec.of, spec.rows.length, spec.emphasis!.length], [undefined, 2, 1]);
   }
 });

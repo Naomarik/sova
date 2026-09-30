@@ -98,8 +98,10 @@ test("the guide's Not vis pairs: the wrong side is refused with a hint, the righ
   assert.match(GUIDE, /`"My Docs\/" "shared"`/);
   const tree = parseVis("tree", '"My Docs/" "shared"');
   assert.ok(tree.ok && (tree.spec as { roots: { name: string; note?: string }[] }).roots[0]!.name === "My Docs/");
-  const outside = parseVis("tree", '"My Docs"/');
-  assert.ok(!outside.ok && outside.message === 'put the / inside the quotes: "My Docs/"');
+  // The guide's "never" form still draws the same folder (the parser reads its one meaning).
+  const outside = parseVis("tree", '"My Docs"/ "shared"');
+  assert.ok(outside.ok);
+  assert.deepEqual(outside.spec, tree.spec);
 });
 
 test("each kind section names registered kinds, and every registered kind has a section", () => {

@@ -45,10 +45,14 @@ test("tree: mark an item by name (first match, depth first) or quoted name", () 
   assert.equal(ok<TreeSpec>("tree", "a\n  mark b").roots[0]!.children[0]!.name, "mark b");
 });
 
-test("tree: a / after a quoted name says to put it inside the quotes", () => {
-  const e = err("tree", '"q12 · Empty screen: pick one"/\n  "a · Preset cards"');
-  assert.deepEqual([e.line, e.message], [1, 'put the / inside the quotes: "q12 · Empty screen: pick one/"']);
-  assert.equal(err("tree", '"Docs"/ "shared" ok').message, 'put the / inside the quotes: "Docs/" "shared" ok');
-  // Inside the quotes it is a folder name, as before.
-  assert.equal(ok<TreeSpec>("tree", '"My Docs/" "shared"\n  a').roots[0]!.name, "My Docs/");
+test("tree: a lone / right after a quoted name is the folder's slash, the same as inside the quotes", () => {
+  const inside = ok<TreeSpec>("tree", '"My Docs/" "shared" ok\n  a');
+  // Outside the quotes (then the end of the line, or a space): the same spec as inside.
+  assert.deepEqual(ok<TreeSpec>("tree", '"My Docs"/ "shared" ok\n  a'), inside);
+  assert.deepEqual(ok<TreeSpec>("tree", '"q12 · Empty screen: pick one"/\n  "a · Preset cards"').roots.map((r) => [r.name, r.children.map((c) => c.name)]), [["q12 · Empty screen: pick one/", ["a · Preset cards"]]]);
+  // A name already ending in / takes no second one.
+  assert.equal(ok<TreeSpec>("tree", '"Docs/"/').roots[0]!.name, "Docs/");
+  // A slash joined to more text has no single reading: the did-you-mean stays.
+  assert.equal(err("tree", '"Docs"/x').message, 'put the / inside the quotes: "Docs/"x');
+  assert.equal(err("tree", '"Docs"/"shared"').message, 'put the / inside the quotes: "Docs/""shared"');
 });

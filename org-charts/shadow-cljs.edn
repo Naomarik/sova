@@ -9,7 +9,8 @@
                                                            chartInfo    sova.org-charts.api/chart-info
                                                            migrateText  sova.org-charts.api/migrate-text
                                                            peekSnapshot sova.org-charts.api/peek-snapshot
-                                                           verifySession sova.org-charts.api/verify-session}}}
+                                                           verifySession sova.org-charts.api/verify-session
+                                                           nextWindow   sova.org-charts.api/next-window}}}
                  ;; reproducible output: a fixed gensym counter and a sequential compile
                  :build-hooks      [(sova.org-charts.engine.build-hooks/fixed-gensym-counter)]
                  :compiler-options {:optimizations :advanced

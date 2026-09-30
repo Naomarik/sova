@@ -6,6 +6,7 @@
   (:require
     [clojure.string :as str]
     [sova.org-charts.charts.registry :as registry]
+    [sova.org-charts.charts.rules.hours :as hours]
     [sova.org-charts.engine.bounded :as bounded]
     [sova.org-charts.engine.core :as core]
     [sova.org-charts.engine.js-chart :as js-chart]
@@ -208,6 +209,13 @@
   "A snapshot's EDN text at its chart's current version (throws when it can't be migrated)."
   [text]
   (core/migrate-text charts text))
+
+(defn next-window
+  "r7: when an act that reaches `person` ({tz, hours: {days, from, to}}) may go: null when now (`now-ms`)
+   is inside their hours or they have none, else the instant (ms) their next window opens. The charts'
+   own fn (rules.hours), so the server never re-implements zones and DST."
+  [person now-ms]
+  (hours/next-window (->clj person) now-ms))
 
 (defn verify-session
   "`org-charts rebuild --verify`: replay session `sid`'s log `rows` (as the host's log reader gives

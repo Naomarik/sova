@@ -88,7 +88,7 @@ test("r13: a company-hours line reverts unless its field changed since (C6) or t
   const now = { tz: "Europe/Istanbul", hours: h10 };
   assert.deepEqual(orgHoursRevert(history[0]!, history, now), { ok: true });
   assert.deepEqual(orgHoursRevert(history[1]!, history, now), { ok: true }, "a newer hours line doesn't block a zone line");
-  assert.deepEqual(orgHoursRevert(history[2]!, history, now), { ok: false, why: "Changed since. Revert the newer change first." });
+  assert.deepEqual(orgHoursRevert(history[2]!, history, now), { ok: false, why: "The company's working hours have changed since then, so reverting this would undo a later change. Revert the latest change instead." });
   assert.deepEqual(orgHoursRevert(history[0]!, history, { tz: "Europe/Istanbul", hours: h9 }), { ok: false, why: "The hours are already these." });
   assert.deepEqual(orgHoursRevert(history[1]!, history, { hours: h10 }), { ok: false, why: "The time zone is already this." });
   assert.equal(orgHoursChangeLine({ field: "tz", from: "Europe/Istanbul", to: "", revertOf: "t2" }), "Reverted. Time zone: Europe/Istanbul → —");

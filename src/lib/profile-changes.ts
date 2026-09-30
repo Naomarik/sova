@@ -54,7 +54,12 @@ export function orgHoursRevert(
   now: { tz?: string; hours?: unknown },
 ): { ok: boolean; why?: string } {
   const i = history.findIndex((h) => h.at === c.at);
-  if (history.slice(0, Math.max(0, i)).some((h) => h.field === c.field)) return { ok: false, why: "Changed since. Revert the newer change first." };
+  // The server's own refusal sentence (409), said before the click.
+  if (history.slice(0, Math.max(0, i)).some((h) => h.field === c.field))
+    return {
+      ok: false,
+      why: `The company's ${c.field === "tz" ? "time zone has" : "working hours have"} changed since then, so reverting this would undo a later change. Revert the latest change instead.`,
+    };
   const current = c.field === "tz" ? (now.tz ?? "") : (now.hours ?? null);
   const back = c.field === "tz" ? (c.from ?? "") : (c.from ?? null);
   if (JSON.stringify(current) === JSON.stringify(back)) return { ok: false, why: c.field === "tz" ? "The time zone is already this." : "The hours are already these." };

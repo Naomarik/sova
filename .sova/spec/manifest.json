@@ -6886,6 +6886,7 @@
         "src/components/WatchView.tsx",
         "src/components/ChangesViewer.tsx",
         "src/components/ChangesViewer.css",
+        "src/components/Thread.tsx",
         "src/app.css"
       ]
     },
@@ -9348,7 +9349,8 @@
       "requires": [
         "§chat.profiles/model",
         "§chat.profiles/singleton",
-        "§app.session-list/needs-you"
+        "§app.session-list/needs-you",
+        "§app.session-list/groups"
       ]
     },
     "§app.settings-dialog/profiles": {

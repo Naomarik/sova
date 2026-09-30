@@ -80,11 +80,14 @@ export const recentCountValid = (raw: unknown): boolean => {
  * only in the Organizations region, as the Overseer's file lives only behind its door. The rule is
  * here, not in the sidebar, so the spine's tiles and the overview's "Last active" get it too.
  *
+ * A profile session (`profile` set, custom picks included) never is either: the Profiles region
+ * lists exactly those (components/ProfileShelf), so Recent would only repeat it.
+ *
  * A server that predates `archived`, `workerSession` or `org` sends none, which counts as not
  * archived and an ordinary main thread (protocol.ts).
  */
-export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org">): boolean =>
-  s.archived !== true && isOrdinarySession(s);
+export const recentEligible = (s: Pick<SessionSummary, "archived" | "workerSession" | "overseer" | "org" | "profile">): boolean =>
+  s.archived !== true && isOrdinarySession(s) && !s.profile;
 
 /**
  * Recent's order: most recently ACTIVE first.

@@ -59,10 +59,10 @@
     </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
-    <!-- First region: Profiles (§app.session-list/profile-shelf), only while a session runs with a
-         profile. Then Needs you (§app.session-list/needs-you), only while a session is blocked on
-         you. Then Recent (§app.session-list/recent), then the user's own groups (§app.session-list/groups).
-         All three omitted here for length. Live & web comes next (below); then Organizations
+    <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
+         you. Then Recent (§app.session-list/recent), then the user's own groups (§app.session-list/groups),
+         then Profiles (§app.session-list/profile-shelf), only while a session runs with a profile.
+         All four omitted here for length. Live & web comes next (below); then Organizations
          (§app.session-list/organizations), then the Archive (§app.session-list/regions-top-and-archive). -->
     <details class="session-group" aria-labelledby="g-1" open>
       <summary class="session-group-head">
@@ -666,9 +666,10 @@ label a person reads says "sessions pane".
 
 ## §app.session-list/profile-shelf — Profiles
 
-The first region of the list, above Needs you: the sessions that run with a profile
+Under Groups (§app.session-list/groups), above Live & web: the sessions that run with a profile
 (§chat/profiles), grouped by profile. It is a **shortcut, not a place**: every row also keeps its
-place in Live & web (and Groups).
+place in Live & web (and Groups), but a profile session is never a Recent row
+(§app.session-list/recent).
 
 ```html
 <details class="sidebar-region sidebar-profiles" open>
@@ -708,7 +709,7 @@ place in Live & web (and Groups).
 
 ## §app.session-list/needs-you — Needs you
 
-The top of the list, under Profiles (§app.session-list/profile-shelf) when it shows and above Recent: the sessions blocked on you right now — a dialog open, an
+The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
 (§chat.alignment/session-mark), and a baton hand-off (the baton is with you, or a person needs
 their link, §app.baton/needs-you); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
@@ -730,7 +731,7 @@ and the region has **no actions of its own** beyond its twist: nothing puts a ro
 thing it waits on being done.
 
 ```html
-<!-- First in .sidebar-list after the Profiles region, above Recent. Only while it has rows and proactivity is not Off. -->
+<!-- First in .sidebar-list, above Recent. Only while it has rows and proactivity is not Off. -->
 <details class="sidebar-region sidebar-needs-you" aria-labelledby="r-needs-you" open>
   <!-- The Groups head's pattern: the <summary> toggles, the <h2> is what the outline reads. -->
   <summary class="sidebar-needs-you-summary">
@@ -812,7 +813,8 @@ mark, menu and accessible name.
 that saves four.
 - **Who is eligible.** An ordinary session (§app.session-list/ordinary-surfaces: never an Overseer file
 or an organization session, in any state — live, busy, unread or just replied), not archived
-(`archived !== true`) — and deliberately **not** the pane rule
+(`archived !== true`), and not a profile session (`SessionSummary.profile` set): Profiles lists those
+(§app.session-list/profile-shelf) — and deliberately **not** the pane rule
 `isTopSession`. A session you ran in a TUI last week and closed is exactly what this region is
 for, and the pane rule files that under the Archive. Archiving is the user saying "done with
 this", so an archived session never reappears here; that is the one gesture Recent has to honour,
@@ -1471,7 +1473,7 @@ forced open (case 1 below).
   close under the user while they're on that session.
 
 **Ordering.** The top region comes first and the Archive last, with Organizations between them;
-above them all sit the shortcut regions, Profiles first (§app.session-list/profile-shelf). Inside each region, groups and
+above them all sit the shortcut regions, Needs you first; Profiles, under Groups (§app.session-list/profile-shelf). Inside each region, groups and
 rows are ordered by the rules above. A session moves between regions in place on refresh, for
 example when its TUI closes and `live` becomes null. If it's the selected row, it keeps
 `aria-current`, and case 2 keeps the archive open.
@@ -1535,6 +1537,8 @@ for the same reason: something other than the operator runs them.
 - the global **Needs you** region (§app.session-list/needs-you) and its spine door;
 - **Recent** (§app.session-list/recent), the spine's tiles, and the overview's `Last active` / `Resume`
   (§chat.transcript/landing-page) — enforced in Recent's own eligibility rule, so every caller gets it;
+  these also leave out profile sessions (`SessionSummary.profile` set), which Profiles lists
+  (§app.session-list/profile-shelf);
 - **Live & web** and the **Archive** with its date sections, their counts and their spine doors
   (§app.session-list/regions-top-and-archive), and the overview's `{live} live` count;
 - the **Archive cleanup**: its counts, its sweeps and its one-session list (§app.session-list/archive-cleanup;

@@ -91,7 +91,7 @@
   (dsl/effect :revoke-owner-links (fn [_] {:why why})))
 
 (defn- owner-set-act [target-state]
-  (dsl/act {:event :owner/set :target target-state
+  (dsl/act {:sova/feed :feed :event :owner/set :target target-state
             :checks [invalid owner-target-check]
             :cond (fn [env d] (and (not (same-owner? env d))
                                    (= (some? (:person-id (b/evt d))) (= target-state :owner-set))))}
@@ -102,7 +102,7 @@
 
 (defn- owner-transitions []
   [;; the same person again writes nothing (and is no refusal)
-   (dsl/act {:event :owner/set :checks [invalid owner-target-check] :cond same-owner?})
+   (dsl/act {:sova/feed :feed :event :owner/set :checks [invalid owner-target-check] :cond same-owner?})
    (owner-set-act :owner-set)
    (owner-set-act :owner-none)])
 
@@ -118,38 +118,38 @@
     (state {:id :org :initial :owner-none}
       (dsl/hold-cancel-correction)
 
-      (dsl/act {:event :org/rename :checks [name-check]}
+      (dsl/act {:sova/feed :feed :event :org/rename :checks [name-check]}
         (script {:expr (fn [_ d] [(ops/assign :name (str/trim (:name (b/evt d))))])}))
 
       ;; A project: the host checked its root (not a workspace, not inside one, not holding one,
       ;; not in Sova's state; realpath) and stamps the refusal as `invalid`.
-      (dsl/act {:event :project/add :checks [name-check invalid]}
+      (dsl/act {:sova/feed :feed :event :project/add :checks [name-check invalid]}
         (dsl/spawn {:chart "project" :link :org :id (fn [d] (b/project-sid (:id d) (:project-id (b/evt d)))) :data project-data}))
 
       ;; A person, added by the operator (or the global Overseer for them): active from the start.
-      (dsl/act {:event :person/add :checks [invalid person-add-check]}
+      (dsl/act {:sova/feed :feed :event :person/add :checks [invalid person-add-check]}
         (dsl/spawn {:chart "person" :link :org :watch? false
                     :id   (fn [d] (b/person-sid (:id d) (:person-id (b/evt d))))
                     :data (fn [d] (let [{:keys [person changed]} (person-add-change d)]
                                     {:org-id (:id d) :id (:person-id (b/evt d)) :person person :changed changed :by (by-of d)}))}))
 
       ;; The holder record (r1): written by this host's residence at create, attach and detach.
-      (transition {:event :holder/claim}
+      (transition {:sova/feed :quiet :event :holder/claim}
         (script {:expr (fn [_ d] [(ops/assign :holder (select-keys (b/evt d) [:host-id :host-name :since]))])}))
-      (transition {:event :holder/release}
+      (transition {:sova/feed :quiet :event :holder/release}
         (script {:expr (fn [_ d] [(ops/assign :holder (merge (:holder d) {:released-by (:host-id (b/evt d)) :released-at (b/now-ms d)}))])}))
 
       (state {:id :owner-none}
-        (transition {:cond (fn [_ d] (some? (:owner d))) :target :owner-set})
+        (transition {:sova/feed :feed :cond (fn [_ d] (some? (:owner d))) :target :owner-set})
         (owner-transitions))
       (state {:id :owner-set}
-        (transition {:event :link/moved :cond owner-left? :target :owner-cleared}
+        (transition {:sova/feed :feed :event :link/moved :cond owner-left? :target :owner-cleared}
           (revoke-owner-links "left")
           (script {:expr (fn [_ d] (clear-owner-ops d))}))
         (owner-transitions))
       ;; The People tab's Owner card says so until the operator picks someone or None.
       (state {:id :owner-cleared}
-        (dsl/act {:event :owner/set :target :owner-none :checks [invalid owner-target-check]
+        (dsl/act {:sova/feed :feed :event :owner/set :target :owner-none :checks [invalid owner-target-check]
                   :cond (fn [_ d] (nil? (:person-id (b/evt d))))}
           (script {:expr (fn [_ d] (set-owner-ops d))}))
         (owner-transitions)))))

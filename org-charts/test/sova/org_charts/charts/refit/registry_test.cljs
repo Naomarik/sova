@@ -46,3 +46,9 @@
     (is (= "gather" (k one-person)))
     (is (= "gather" (k {:_event {:data {:to "operator"}}})))
     (is (= "offer" (k two-people)))))
+
+;; ---- r8a: every transition declares its feed class --------------------------------------------------
+
+(deftest every-transition-has-a-feed-class
+  (is (empty? (core/unclassified registry/charts))
+    "each transition declares :sova/feed :feed (moves an item, reaches a person or code) or :quiet (bookkeeping)"))

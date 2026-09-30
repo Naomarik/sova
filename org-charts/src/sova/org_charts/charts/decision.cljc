@@ -51,11 +51,11 @@
    and found in conflict, superseded or restated included)."
   [here & [keep-on]]
   (for [[s target] result-states :when (and (not= target here) (not (contains? keep-on s)))]
-    (transition {:event :reconcile/result :cond (result-to? s) :target target}
+    (transition {:sova/feed :feed :event :reconcile/result :cond (result-to? s) :target target}
       (script {:expr (fn [_ d] (take-result-ops d))}))))
 
 (defn- same-result [here-state]
-  (transition {:event :reconcile/result :cond (result-to? here-state)}
+  (transition {:sova/feed :quiet :event :reconcile/result :cond (result-to? here-state)}
     (script {:expr (fn [_ d] (take-result-ops d))})))
 
 ;; ---- owner area --------------------------------------------------------------------------------------
@@ -101,10 +101,10 @@
                :content (fn [_ d] {:id (:id d) :sid (b/decision-sid (:org-id d) (:project-id d) (:id d))})}))
       (dsl/hold-cancel-correction)
 
-      (transition {:event :spec/facts} (script {:expr (fn [_ d] (facts-ops d))}))
+      (transition {:sova/feed :quiet :event :spec/facts} (script {:expr (fn [_ d] (facts-ops d))}))
       ;; the same area again: nothing changes, nothing is logged
-      (dsl/act {:event :decision/owner-area :checks [owner-area-check] :cond (fn [e d] (not (owner-area-changes? e d)))})
-      (dsl/act {:event :decision/owner-area :checks [owner-area-check] :cond owner-area-changes?}
+      (dsl/act {:sova/feed :feed :event :decision/owner-area :checks [owner-area-check] :cond (fn [e d] (not (owner-area-changes? e d)))})
+      (dsl/act {:sova/feed :feed :event :decision/owner-area :checks [owner-area-check] :cond owner-area-changes?}
         (script {:expr (fn [_ d] (owner-area-ops d))})
         ;; a side of an open conflict: its conflict is routed again (a new session only when the target changes)
         (Send {:event :decision/owner-area-changed :targetexpr (fn [_ d] (b/reconciler-sid (:org-id d) (:project-id d)))
@@ -113,7 +113,7 @@
       (state {:id :pending} (state-name "pending") (result-transitions :pending) (same-result "pending"))
       (state {:id :conflicted} (state-name "conflict") (result-transitions :conflicted) (same-result "conflict"))
       (state {:id :drafted} (state-name "drafted") (result-transitions :drafted) (same-result "drafted")
-        (transition {:event :promote/done :target :promoted}
+        (transition {:sova/feed :feed :event :promote/done :target :promoted}
           (script {:expr (fn [_ d] (let [ev (b/evt d)]
                                      [(ops/assign :promoted-at (b/now-ms d)) (ops/assign :promoted-text (:text-hash ev))
                                       (ops/assign :promoted-commit (:commit ev)) (ops/assign :record-present true)
@@ -126,34 +126,34 @@
         ;; a promoted one's fields come as "drafted": it stays promoted and takes them; it leaves
         ;; only for conflict or superseded (and goes stale through the facts)
         (result-transitions :promoted #{"drafted"})
-        (transition {:event :reconcile/result :cond (result-to? "drafted")}
+        (transition {:sova/feed :quiet :event :reconcile/result :cond (result-to? "drafted")}
           (script {:expr (fn [_ d] (take-result-ops d))}))
         (parallel {:id :promoted-regions}
           (state {:id :currency :initial :current}
-            (state {:id :current} (transition {:cond (fn [_ d] (stale? d)) :target :stale}))
+            (state {:id :current} (transition {:sova/feed :feed :cond (fn [_ d] (stale? d)) :target :stale}))
             ;; promotable again: a promotion of it re-promotes
             (state {:id :stale}
-              (transition {:cond (fn [_ d] (not (stale? d))) :target :current})
-              (transition {:event :promote/done :target :current}
+              (transition {:sova/feed :feed :cond (fn [_ d] (not (stale? d))) :target :current})
+              (transition {:sova/feed :feed :event :promote/done :target :current}
                 (script {:expr (fn [_ d] (let [ev (b/evt d)]
                                            [(ops/assign :promoted-at (b/now-ms d)) (ops/assign :promoted-text (:text-hash ev))
                                             (ops/assign :promoted-commit (:commit ev)) (ops/assign :record-present true) (ops/assign :fields-match true)]))}))))
           (state {:id :text :initial :as-promoted}
-            (state {:id :as-promoted} (transition {:cond (fn [_ d] (edited? d)) :target :edited-in-spec}))
+            (state {:id :as-promoted} (transition {:sova/feed :feed :cond (fn [_ d] (edited? d)) :target :edited-in-spec}))
             (state {:id :edited-in-spec}
-              (transition {:cond (fn [_ d] (not (edited? d))) :target :as-promoted})
+              (transition {:sova/feed :feed :cond (fn [_ d] (not (edited? d))) :target :as-promoted})
               ;; Keep Spec's Words: the spec's prose becomes the promoted text
-              (dsl/act {:event :decision/settle-text :target :as-promoted :checks [text-check]
+              (dsl/act {:sova/feed :feed :event :decision/settle-text :target :as-promoted :checks [text-check]
                         :cond (fn [_ d] (= "keep" (:action (b/evt d))))}
                 (script {:expr (fn [_ d] (let [ev (b/evt d)]
                                            [(ops/assign :text-kept {:at (b/now-ms d) :by "operator" :name (:operator-name ev)})
                                             (ops/assign :promoted-text (:text-hash ev)) (ops/assign :edited-in-spec false)]))}))
               ;; Restore Their Words: the prose re-promoted (committed)
-              (dsl/act {:event :decision/settle-text :checks [text-check] :cond (fn [_ d] (= "restore" (:action (b/evt d))))}
+              (dsl/act {:sova/feed :feed :event :decision/settle-text :checks [text-check] :cond (fn [_ d] (= "restore" (:action (b/evt d))))}
                 (dsl/effect :restore-text (fn [d] {:id (:id d) :record-id (:record-id d)})))))
           (state {:id :built :initial :not-built}
-            (state {:id :not-built} (transition {:cond (fn [_ d] (built? d)) :target :built-done}))
-            (state {:id :built-done} (transition {:cond (fn [_ d] (not (built? d))) :target :not-built})))))
+            (state {:id :not-built} (transition {:sova/feed :feed :cond (fn [_ d] (built? d)) :target :built-done}))
+            (state {:id :built-done} (transition {:sova/feed :feed :cond (fn [_ d] (not (built? d))) :target :not-built})))))
 
       (state {:id :superseded} (state-name "superseded")
         (result-transitions :superseded)

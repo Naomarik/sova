@@ -77,11 +77,11 @@
 
 (defn- tree-transitions [here]
   (for [[s target] [["open" :tree-open] ["missing" :tree-missing] ["removed" :tree-removed] ["root" :tree-root]] :when (not= target here)]
-    (transition {:event :git/probe :cond (fn [_ d] (= s (probe-state d :tree))) :target target})))
+    (transition {:sova/feed :feed :event :git/probe :cond (fn [_ d] (= s (probe-state d :tree))) :target target})))
 
 (defn- branch-transitions [here]
   (for [[s target] [["no-commits" :no-commits] ["unmerged" :unmerged] ["merged" :merged] ["new-since-merge" :new-since-merge]] :when (not= target here)]
-    (transition {:event :git/probe :cond (fn [_ d] (= s (probe-state d :branch))) :target target})))
+    (transition {:sova/feed :feed :event :git/probe :cond (fn [_ d] (= s (probe-state d :branch))) :target target})))
 
 (defn coding? [d] (= "coding" (:kind d)))
 
@@ -102,19 +102,19 @@
       (on-entry {} (script {:expr (fn [_ d] [(ops/assign :turn "idle") (ops/assign :workers 0) (ops/assign :tree "open")])}))
       (dsl/hold-cancel-correction)
       (b/flush-transition)
-      (transition {:event :git/probe} (script {:expr (fn [_ d] (probe-ops d))}))
-      (transition {:event :workers/changed}
+      (transition {:sova/feed :quiet :event :git/probe} (script {:expr (fn [_ d] (probe-ops d))}))
+      (transition {:sova/feed :quiet :event :workers/changed}
         (script {:expr (fn [_ d] (let [n (or (:n (e d)) 0)]
                                    [(ops/assign :workers n) (ops/assign :running (or (= "working" (:turn d)) (pos? n)))]))}))
-      (transition {:event :effect/done :cond (done-kind? "remove-worktree")}
+      (transition {:sova/feed :quiet :event :effect/done :cond (done-kind? "remove-worktree")}
         (script {:expr (fn [_ d] [(ops/assign :removed-at (b/now-ms d)) (ops/assign :remove-refused nil)
                                   (ops/assign :branch-deleted (true? (:branch-deleted (result d))))])})
         (raise {:event :tree/removed}))
-      (transition {:event :effect/failed :cond (done-kind? "remove-worktree")}
+      (transition {:sova/feed :quiet :event :effect/failed :cond (done-kind? "remove-worktree")}
         (script {:expr (fn [_ d] [(ops/assign :remove-refused (:detail (e d)))])}))
 
       ;; sova_send (L3, held when unattended; counts a prompt)
-      (dsl/act {:event :build/prompt :checks [invalid prompt-check prompt-cap]}
+      (dsl/act {:sova/feed :feed :event :build/prompt :checks [invalid prompt-check prompt-cap]}
         (dsl/effect :prompt (fn [d] (select-keys (e d) [:text :mode])))
         (b/ledger :ledger/take "prompt" (constantly 1)))
 
@@ -126,52 +126,52 @@
         (state {:id :setup :initial :making-worktree}
           (state {:id :making-worktree}
             (on-entry {} (dsl/effect :make-worktree (fn [d] (select-keys d [:session-id :title :folder]))))
-            (transition {:event :effect/done :cond (done-kind? "make-worktree") :target :setting-mode}
+            (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "make-worktree") :target :setting-mode}
               (script {:expr (fn [_ d] (let [res (result d)]
                                          (if (:in-root res)
                                            [(ops/assign :in-root (:in-root res)) (ops/assign :tree "root")]
                                            [(ops/assign :branch (:branch res)) (ops/assign :base (:base res)) (ops/assign :target (:target res))])))}))
-            (transition {:event :effect/failed :cond (done-kind? "make-worktree") :target :not-started}
+            (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "make-worktree") :target :not-started}
               (script {:expr (fn [_ d] [(ops/assign :not-started (str "No session was started: its worktree could not be made (" (:detail (e d)) ")."))])})))
           (state {:id :setting-mode}
             (on-entry {} (dsl/effect :set-mode (fn [d] {:mode (:mode d)})))
-            (transition {:event :effect/done :cond (fn [_ d] (and ((done-kind? "set-mode") nil d) (not (lv/blank? (:prompt d))))) :target :prompting})
+            (transition {:sova/feed :feed :event :effect/done :cond (fn [_ d] (and ((done-kind? "set-mode") nil d) (not (lv/blank? (:prompt d))))) :target :prompting})
             ;; New Coding Session: no prompt; its worktree's note is the first entry
-            (transition {:event :effect/done :cond (done-kind? "set-mode") :target :ready}
+            (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "set-mode") :target :ready}
               (script {:expr (fn [_ d] (when (:branch d)
                                          (dsl/effect-ops d (dsl/effect-map :worktree-note (fn [_] {:text (commit-paragraph d)}) d))))}))
             ;; its mode could not be set: started, not prompted
-            (transition {:event :effect/failed :cond (done-kind? "set-mode") :target :ready}
+            (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "set-mode") :target :ready}
               (script {:expr (fn [_ d] [(ops/assign :mode-not-set (or (:detail (e d)) true))])})))
           (state {:id :prompting}
             (on-entry {} (dsl/effect :first-prompt (fn [d] {:prompt (first-prompt d)})))
-            (transition {:event :effect/done :cond (done-kind? "first-prompt") :target :ready})
-            (transition {:event :effect/failed :cond (done-kind? "first-prompt") :target :ready}
+            (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "first-prompt") :target :ready})
+            (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "first-prompt") :target :ready}
               (script {:expr (fn [_ d] [(ops/assign :prompt-error (:detail (e d)))])})))
           (state {:id :ready})
           (state {:id :not-started}))
 
         (state {:id :turn :initial :turn-idle}
           (state {:id :turn-idle} (region :turn "idle")
-            (transition {:event :turn/started :target :working}))
+            (transition {:sova/feed :quiet :event :turn/started :target :working}))
           (state {:id :working} (region :turn "working")
-            (transition {:event :turn/ended :cond (fn [_ d] (true? (:failed (e d)))) :target :turn-failed}
+            (transition {:sova/feed :quiet :event :turn/ended :cond (fn [_ d] (true? (:failed (e d)))) :target :turn-failed}
               (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
               (b/send-if :reason/noted (fn [d] (when (coding? d) (b/watch-sid (:org-id d) (:project-id d))))
                 (fn [d] {:kind "coding/settled" :params {:title (:title d) :failed true :session-id (:session-id d)} :by "system"
                          :key (str "coding/settled:" (:session-id d) "@" (b/now-ms d))})))
-            (transition {:event :turn/ended :target :turn-idle}
+            (transition {:sova/feed :quiet :event :turn/ended :target :turn-idle}
               (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
               (b/send-if :reason/noted (fn [d] (when (coding? d) (b/watch-sid (:org-id d) (:project-id d))))
                 (fn [d] {:kind "coding/settled" :params {:title (:title d) :failed false :session-id (:session-id d)} :by "system"
                          :key (str "coding/settled:" (:session-id d) "@" (b/now-ms d))}))))
           (state {:id :turn-failed} (region :turn "failed")
-            (transition {:event :turn/started :target :working})))
+            (transition {:sova/feed :quiet :event :turn/started :target :working})))
 
         (state {:id :tree :initial :tree-open}
-          (transition {:event :tree/removed :type :internal :target :tree-removed})
+          (transition {:sova/feed :feed :event :tree/removed :type :internal :target :tree-removed})
           (state {:id :tree-open} (region :tree "open") (tree-transitions :tree-open)
-            (transition {:cond (fn [_ d] (some? (:in-root d))) :target :tree-root}))
+            (transition {:sova/feed :feed :cond (fn [_ d] (some? (:in-root d))) :target :tree-root}))
           (state {:id :tree-missing} (region :tree "missing") (tree-transitions :tree-missing))
           (state {:id :tree-removed} (region :tree "removed"))
           (state {:id :tree-root} (region :tree "root")))
@@ -185,14 +185,14 @@
         (state {:id :merge :initial :merge-idle}
           (state {:id :merge-idle}
             ;; Merge Branch: the operator's gesture only; git's own refusals come back from the effect
-            (dsl/act {:event :build/merge :target :merging :checks [root-check busy-check]}
+            (dsl/act {:sova/feed :feed :event :build/merge :target :merging :checks [root-check busy-check]}
               (dsl/effect :merge (fn [d] {:branch (:branch d) :target (:target d) :title (:title d)})))
             ;; Remove Worktree: refused while it works; the branch goes too only when merged
-            (dsl/act {:event :build/remove-worktree :checks [(fn [d] (when (= "removed" (:tree d)) (r/refuse 409 "Its worktree was already removed.")))
+            (dsl/act {:sova/feed :feed :event :build/remove-worktree :checks [(fn [d] (when (= "removed" (:tree d)) (r/refuse 409 "Its worktree was already removed.")))
                                                             root-check busy-check]}
               (dsl/effect :remove-worktree (fn [d] {:branch (:branch d) :merged (= "merged" (:branch-state d))}))))
           (state {:id :merging}
-            (transition {:event :effect/done :cond (done-kind? "merge") :target :merge-idle}
+            (transition {:sova/feed :feed :event :effect/done :cond (done-kind? "merge") :target :merge-idle}
               (script {:expr (fn [_ d] [(ops/assign :merged {:at (b/now-ms d) :commit (:commit (result d))})
                                         (ops/assign :merge-refused nil)])})
               (b/send-if :reason/noted (fn [d] (b/watch-sid (:org-id d) (:project-id d)))
@@ -201,7 +201,7 @@
               (b/send-if :milestone/noted (fn [d] (b/project-sid (:org-id d) (:project-id d))) (fn [_] {:kind "build-merged"})))
             ;; git refused (the reason in today's words): the overseer is told unless it is about the
             ;; root's own checkout (the operator's to fix)
-            (transition {:event :effect/failed :cond (done-kind? "merge") :target :merge-idle}
+            (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "merge") :target :merge-idle}
               (script {:expr (fn [_ d] [(ops/assign :merge-refused (:detail (e d)))])})
               (b/send-if :reason/noted (fn [d] (when-not (str/starts-with? (str (:detail (e d))) "The project root") (b/watch-sid (:org-id d) (:project-id d))))
                 (fn [d] {:kind "build/merge-refused" :params {:title (:title d) :reason (:detail (e d))} :by "operator"

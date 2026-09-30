@@ -138,7 +138,7 @@
 (defn- hold-move
   "The move passed its checks while a reply runs: stop the reply, keep the move for its end."
   [event checks]
-  (dsl/act {:event event :checks checks :cond busy?}
+  (dsl/act {:sova/feed :feed :event event :checks checks :cond busy?}
     (script {:expr (fn [_ d] [(ops/assign :pending-move {:event event :data (dissoc (e d) :at)})])})
     (dsl/effect :stop-reply (fn [_] {}))
     (raise {:event :reply/stop})))
@@ -163,7 +163,7 @@
 
 (defn- to-operator-move [event checks question-fn]
   [(hold-move event checks)
-   (dsl/act {:event event :target :with-operator :checks checks :cond idle?}
+   (dsl/act {:sova/feed :feed :event event :target :with-operator :checks checks :cond idle?}
      (revoke-withdrawn)
      (script {:expr (fn [_ d] (move-ops d operator (question-fn d) ""))})
      (handoff-entry))])
@@ -175,7 +175,7 @@
     (to-operator-move :baton/take-back take-back-checks (constantly "(taken back)"))
     (to-operator-move :baton/withdraw withdraw-checks (constantly "(offer withdrawn)"))
     [(hold-move :baton/handoff handoff-checks)
-     (dsl/act {:event :baton/handoff :target :with-person :checks handoff-checks :cond idle?}
+     (dsl/act {:sova/feed :feed :event :baton/handoff :target :with-person :checks handoff-checks :cond idle?}
        (revoke-withdrawn)
        (script {:expr (fn [_ d] (let [ev (e d)] (move-ops d (get-in ev [:target :id]) (str/trim (:question ev)) (:briefing ev))))})
        (watch-person #(get-in (e %) [:target :id]))
@@ -185,7 +185,7 @@
        (script {:expr (fn [_ d] (when-not (false? (:mint-link (e d)))
                                   (dsl/effect-ops d (dsl/effect-map :mint-link (fn [_] {:n (count (:handoffs d)) :person-id (get-in (e d) [:target :id])}) d))))}))
      (hold-move :baton/offer offer-checks)
-     (dsl/act {:event :baton/offer :target :pool :checks offer-checks :cond idle?}
+     (dsl/act {:sova/feed :feed :event :baton/offer :target :pool :checks offer-checks :cond idle?}
        (revoke-withdrawn)
        (script {:expr (fn [_ d] (let [ev (e d)] (offer-ops d (map :id (:targets ev)) (:question ev) (:briefing ev))))})
        (watch-all #(map :id (:targets (e %))))
@@ -215,18 +215,18 @@
     (str "(" (rb/name-of d pid) " left the organization; offer withdrawn)")))
 
 (defn- person-left-transitions []
-  [(transition {:event :link/moved :cond (fn [_ d] (and (left-pid d) (left-effect d (left-pid d))))}
+  [(transition {:sova/feed :quiet :event :link/moved :cond (fn [_ d] (and (left-pid d) (left-effect d (left-pid d))))}
      (raise {:event :person/left :data (fn [_ d] {:person-id (left-pid d)})}))
-   (transition {:event :link/moved :cond (fn [_ d] (= "person" (:chart (b/moved d))))}
+   (transition {:sova/feed :quiet :event :link/moved :cond (fn [_ d] (= "person" (:chart (b/moved d))))}
      (script {:expr (fn [_ d] (when-let [n (get-in (b/moved d) [:exported :name])]
                                 [(ops/assign [:names (b/last-part (:from (b/moved d)))] n)]))}))])
 
 (defn- cascade-move []
-  [(dsl/act {:event :person/left :cond (fn [env d] (and (busy? env d) (left-effect d (:person-id (e d)))))}
+  [(dsl/act {:sova/feed :feed :event :person/left :cond (fn [env d] (and (busy? env d) (left-effect d (:person-id (e d)))))}
      (script {:expr (fn [_ d] [(ops/assign :pending-move {:event :person/left :data (dissoc (e d) :at)})])})
      (dsl/effect :stop-reply (fn [_] {}))
      (raise {:event :reply/stop}))
-   (dsl/act {:event :person/left :target :with-operator :cond (fn [env d] (and (idle? env d) (left-effect d (:person-id (e d)))))}
+   (dsl/act {:sova/feed :feed :event :person/left :target :with-operator :cond (fn [env d] (and (idle? env d) (left-effect d (:person-id (e d)))))}
      (revoke-withdrawn)
      (script {:expr (fn [_ d] (move-ops d operator (left-question d (:person-id (e d))) ""))})
      (handoff-entry))])
@@ -360,13 +360,13 @@
       ;; ── acts that don't move the course ──────────────────────────────────────────────────
       ;; record_decision: the transcript entry is written first (its id is the decision's); a
       ;; settle session's decision is reconciled on its own after 2 s (durable, C4).
-      (apply dsl/act {:event :baton/record-decision :checks record-checks :cond (fn [_ d] (some? (:conflict d)))}
+      (apply dsl/act {:sova/feed :feed :event :baton/record-decision :checks record-checks :cond (fn [_ d] (some? (:conflict d)))}
         (conj (record-content)
           (Send {:event :reconcile/request :targetexpr (fn [_ d] (b/reconciler-sid (:org-id d) (:project-id d)))
                  :content (fn [_ d] {:delay-ms 2000 :by "sova" :owner (:owner d) :settle (:session-id d)})})))
-      (apply dsl/act {:event :baton/record-decision :checks record-checks} (record-content))
+      (apply dsl/act {:sova/feed :feed :event :baton/record-decision :checks record-checks} (record-content))
 
-      (dsl/act {:event :baton/propose :checks [(fn [d] (when (rb/ended? d) (r/refuse 409 (str "This conversation is " (:course d) "."))))
+      (dsl/act {:sova/feed :feed :event :baton/propose :checks [(fn [d] (when (rb/ended? d) (r/refuse 409 (str "This conversation is " (:course d) "."))))
                                               (fn [d] (rp/referral-refusal (e d) (:same (e d)) (rb/name-of d (or (:holder d) operator))))
                                               (fn [d] (let [c (rp/apply-change nil (merge (select-keys (e d) [:name :role :contact :decides])
                                                                                          {:status "proposed" :referral {:why (:why (e d)) :referred-by (or (:holder d) operator)
@@ -388,24 +388,24 @@
       ;; sova_send into this gathering session (the overseer's or a chart's text to its agent, which
       ;; reaches the person): L3, held when unattended, counts a prompt; the host's `invalid` carries
       ;; its session checks (archived, delivery)
-      (dsl/act {:event :baton/send :checks [(lv/invalid-check b/evt)
+      (dsl/act {:sova/feed :feed :event :baton/send :checks [(lv/invalid-check b/evt)
                                             (fn [d] (when (lv/blank? (:text (e d))) (r/refuse 400 "text must not be blank.")))
                                             (lv/cap-check "prompt" (constantly 1) b/evt)]}
         (dsl/effect :send-prompt (fn [d] (select-keys (e d) [:text :delivery])))
         (b/ledger :ledger/take "prompt" (constantly 1)))
-      (dsl/act {:event :baton/hide :checks [(lv/invalid-check b/evt)]}
+      (dsl/act {:sova/feed :feed :event :baton/hide :checks [(lv/invalid-check b/evt)]}
         (script {:expr (fn [_ d] [(ops/assign :hidden-from-owner (true? (:hidden (e d))))])}))
-      (dsl/act {:event :baton/abilities :checks [(mk rb/abilities-refusal)]}
+      (dsl/act {:sova/feed :feed :event :baton/abilities :checks [(mk rb/abilities-refusal)]}
         (script {:expr (fn [_ d] [(ops/assign :abilities (:abilities (e d)))])}))
-      (dsl/act {:event :baton/extend :checks [(mk rb/extend-refusal)]}
+      (dsl/act {:sova/feed :feed :event :baton/extend :checks [(mk rb/extend-refusal)]}
         (script {:expr (fn [_ d] [(ops/assign [:budget :messages-max] (+ (get-in d [:budget :messages-max]) (:more (e d))))])}))
       ;; W3: the host counts the transcript at resume and attach; never raises a count
-      (transition {:event :budget/recount}
+      (transition {:sova/feed :quiet :event :budget/recount}
         (script {:expr (fn [_ d] (let [n (:n (e d))]
                                    (when (and (number? n) (< n (get-in d [:budget :messages-used] 0)))
                                      [(ops/assign [:budget :messages-used] n)])))}))
       ;; the runtime refused a message it had let in: as if it never came
-      (transition {:event :message/refused} (script {:expr (fn [_ d] (undo-ops d))}))
+      (transition {:sova/feed :quiet :event :message/refused} (script {:expr (fn [_ d] (undo-ops d))}))
 
       (person-left-transitions)
 
@@ -413,46 +413,46 @@
         ;; ── course ──────────────────────────────────────────────────────────────────────────────
         (state {:id :course :initial :course-born}
           (state {:id :course-born}
-            (transition {:cond (fn [_ d] (some? (:offer-id d))) :target :pool})
-            (transition {:cond (fn [_ d] (= operator (:holder d))) :target :with-operator})
-            (transition {:target :with-person}))
+            (transition {:sova/feed :feed :cond (fn [_ d] (some? (:offer-id d))) :target :pool})
+            (transition {:sova/feed :feed :cond (fn [_ d] (= operator (:holder d))) :target :with-operator})
+            (transition {:sova/feed :feed :target :with-person}))
 
           (state {:id :open :initial :with-person}
             (set-course "open")
             (move-transitions)
             (cascade-move)
             ;; goal_done: the model's own, inside its turn
-            (dsl/act {:event :baton/goal-done :target :done :checks [(mk rb/goal-done-refusal)]}
+            (dsl/act {:sova/feed :feed :event :baton/goal-done :target :done :checks [(mk rb/goal-done-refusal)]}
               (revoke-withdrawn)
               (script {:expr (fn [_ d] (ended-ops d))})
               (entry-effect "done" (fn [d] {:summary (str/trim (:summary (e d)))}))
               (reason "baton/done" (fn [d] (when-not (:hidden-from-owner d) {})))
               (Send {:event :milestone/noted :targetexpr (fn [_ d] (b/project-sid (:org-id d) (:project-id d)))
                      :content (fn [_ d] {:kind "baton-done" :shown (not (:hidden-from-owner d))})}))
-            (dsl/act {:event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
+            (dsl/act {:sova/feed :feed :event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
               (script {:expr (fn [_ d] (ended-ops d))})
               (dsl/effect :revoke-links (fn [_] {:all true :why "closed"}))
               (reason "baton/closed" (fn [_] {})))
             ;; hand_to: the model's own, inside its turn (no link is minted)
-            (dsl/act {:event :baton/hand-to :target :with-operator :checks [(mk rb/hand-to-refusal)]
+            (dsl/act {:sova/feed :feed :event :baton/hand-to :target :with-operator :checks [(mk rb/hand-to-refusal)]
                       :cond (fn [_ d] (= operator (get-in (e d) [:target :id])))}
               (revoke-withdrawn)
               (script {:expr (fn [_ d] (move-ops d operator (str/trim (:question (e d))) (:briefing (e d))))})
               (reason "baton/asked-operator" (fn [d] (when (owned-by-overseer? d) {:question (:question (e d)) :key (count (:handoffs d))}))))
-            (dsl/act {:event :baton/hand-to :target :with-person :checks [(mk rb/hand-to-refusal)]}
+            (dsl/act {:sova/feed :feed :event :baton/hand-to :target :with-person :checks [(mk rb/hand-to-refusal)]}
               (revoke-withdrawn)
               (script {:expr (fn [_ d] (move-ops d (get-in (e d) [:target :id]) (str/trim (:question (e d))) (:briefing (e d))))})
               (watch-person #(get-in (e %) [:target :id])))
 
             ;; A message (a person's through the share page, or the operator's composer).
-            (dsl/act {:event :baton/message :checks [msg-check] :cond (fn [_ d] (claim? d)) :target :leased}
+            (dsl/act {:sova/feed :feed :event :baton/message :checks [msg-check] :cond (fn [_ d] (claim? d)) :target :leased}
               (script {:expr (fn [_ d] (note-ops d))})
               (lease-entry "claimed"))
-            (dsl/act {:event :baton/message :checks [msg-check]}
+            (dsl/act {:sova/feed :feed :event :baton/message :checks [msg-check]}
               (script {:expr (fn [_ d] (note-ops d))}))
 
             ;; The budget stop: after the reply to the last allowed message, the operator holds it.
-            (transition {:cond (fn [_ d] (and (rb/budget-spent? d) (reply-idle? d) (not= operator (:holder d)))) :target :with-operator}
+            (transition {:sova/feed :feed :cond (fn [_ d] (and (rb/budget-spent? d) (reply-idle? d) (not= operator (:holder d)))) :target :with-operator}
               (revoke-withdrawn)
               (script {:expr (fn [_ d] (move-ops d operator rb/limit-question ""))})
               (handoff-entry))
@@ -465,17 +465,17 @@
                 ;; 15 min idle from the later of the holder's message and the reply; never mid-reply
                 (on-entry {} (Send {:id :lease-timer :event :lease/lapse :delayexpr (fn [_ d] (lease-ms d))}))
                 (on-exit {} (cancel {:sendid :lease-timer}))
-                (transition {:event :lease/renew :target :leased})
-                (transition {:event :baton/message :cond (fn [_ d] (and (nil? (msg-check d)) (= (:from (e d)) (:holder d)))) :target :leased}
+                (transition {:sova/feed :quiet :event :lease/renew :target :leased})
+                (transition {:sova/feed :feed :event :baton/message :cond (fn [_ d] (and (nil? (msg-check d)) (= (:from (e d)) (:holder d)))) :target :leased}
                   (script {:expr (fn [_ d] (note-ops d))}))
-                (transition {:event :lease/lapse :cond (fn [_ d] (reply-idle? d)) :target :pool}
+                (transition {:sova/feed :feed :event :lease/lapse :cond (fn [_ d] (reply-idle? d)) :target :pool}
                   (script {:expr (fn [_ d] (lapse-ops d))})
                   (lease-entry "expired")))))
 
           (state {:id :done}
             (set-course "done")
             (reconcile-when-ended)
-            (dsl/act {:event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
+            (dsl/act {:sova/feed :feed :event :baton/close :target :closed :checks [(mk rb/close-refusal)]}
               (script {:expr (fn [_ d] (ended-ops d))})
               (dsl/effect :revoke-links (fn [_] {:all true :why "closed"}))
               (reason "baton/closed" (fn [_] {}))))
@@ -489,28 +489,28 @@
             (on-entry {} (set-reply "idle"))
             ;; an accepted message starts its reply in the same step (the host's reply/starting then
             ;; finds it starting), so the budget stop and a lease lapse wait for that reply
-            (transition {:event :baton/message :cond (fn [_ d] (nil? (msg-check d))) :target :reply-starting})
-            (transition {:event :reply/starting :target :reply-starting})
-            (transition {:event :reply/writing :target :reply-writing}))
+            (transition {:sova/feed :feed :event :baton/message :cond (fn [_ d] (nil? (msg-check d))) :target :reply-starting})
+            (transition {:sova/feed :quiet :event :reply/starting :target :reply-starting})
+            (transition {:sova/feed :quiet :event :reply/writing :target :reply-writing}))
           (state {:id :reply-starting}
             (on-entry {} (set-reply "starting"))
-            (transition {:event :reply/starting})
+            (transition {:sova/feed :quiet :event :reply/starting})
             ;; the runtime refused the message after all: no reply comes (the note is undone above)
-            (transition {:event :message/refused :target :reply-idle})
-            (transition {:event :reply/writing :target :reply-writing})
-            (transition {:event :reply/stop :target :reply-stopping})
-            (transition {:event :reply/ended :target :reply-idle}))
+            (transition {:sova/feed :quiet :event :message/refused :target :reply-idle})
+            (transition {:sova/feed :quiet :event :reply/writing :target :reply-writing})
+            (transition {:sova/feed :quiet :event :reply/stop :target :reply-stopping})
+            (transition {:sova/feed :quiet :event :reply/ended :target :reply-idle}))
           (state {:id :reply-writing}
             (on-entry {} (set-reply "writing"))
-            (transition {:event :reply/stop :target :reply-stopping})
-            (transition {:event :reply/ended :target :reply-idle}
+            (transition {:sova/feed :quiet :event :reply/stop :target :reply-stopping})
+            (transition {:sova/feed :quiet :event :reply/ended :target :reply-idle}
               ;; the reply's end renews the lease
               (raise {:event :lease/renew})))
           (state {:id :reply-stopping}
             (on-entry {} (set-reply "stopping"))
             ;; The held move, delivered again now: its own transitions check it again, and a move
             ;; that now fails is a refused step (logged with its sentence); the stop stands.
-            (transition {:event :reply/ended :target :reply-idle}
+            (transition {:sova/feed :quiet :event :reply/ended :target :reply-idle}
               (raise {:event :lease/renew})
               (Send {:eventexpr (fn [_ d] (get-in d [:pending-move :event]))
                      :content (fn [_ d] (assoc (get-in d [:pending-move :data]) :sova/pending true))})
@@ -518,33 +518,33 @@
 
         ;; ── budget ─────────────────────────────────────────────────────────────────────────────
         (state {:id :budget :initial :under}
-          (state {:id :under} (transition {:cond (fn [_ d] (rb/budget-spent? d)) :target :at-limit}))
-          (state {:id :at-limit} (transition {:cond (fn [_ d] (not (rb/budget-spent? d))) :target :under})))
+          (state {:id :under} (transition {:sova/feed :quiet :cond (fn [_ d] (rb/budget-spent? d)) :target :at-limit}))
+          (state {:id :at-limit} (transition {:sova/feed :quiet :cond (fn [_ d] (not (rb/budget-spent? d))) :target :under})))
 
         ;; ── wrap-up ────────────────────────────────────────────────────────────────────────────
         (state {:id :wrapup :initial :wrapup-none}
           (state {:id :wrapup-none}
-            (transition {:cond (fn [_ d] (and (rb/ended? d) (wants-wrapup? d) (person-wrote? d))) :target :wrapup-due})
-            (transition {:cond (fn [_ d] (and (rb/ended? d) (not (and (wants-wrapup? d) (person-wrote? d))))) :target :wrapup-skipped}))
+            (transition {:sova/feed :feed :cond (fn [_ d] (and (rb/ended? d) (wants-wrapup? d) (person-wrote? d))) :target :wrapup-due})
+            (transition {:sova/feed :feed :cond (fn [_ d] (and (rb/ended? d) (not (and (wants-wrapup? d) (person-wrote? d))))) :target :wrapup-skipped}))
           (state {:id :wrapup-due}
-            (transition {:cond (fn [_ d] (reply-idle? d)) :target :wrapup-running}))
+            (transition {:sova/feed :feed :cond (fn [_ d] (reply-idle? d)) :target :wrapup-running}))
           (state {:id :wrapup-running}
             (on-entry {} (script {:expr (fn [_ d] [(ops/assign :wrapup {:state "running" :at (b/now-ms d)})])})
               (Send {:id :wrapup-timer :event :wrapup/overdue :delay wrapup-overdue-ms}))
             (on-exit {} (cancel {:sendid :wrapup-timer}))
             (invoke {:id :wrapup-run :type :sova/wrapup :params (fn [_ d] {:session-id (:session-id d)})})
-            (transition {:event :wrapup/finished :target :wrapup-done}
+            (transition {:sova/feed :feed :event :wrapup/finished :target :wrapup-done}
               (script {:expr (fn [_ d] [(ops/assign :wrapup {:state "done" :at (b/now-ms d) :applied (or (:applied (e d)) 0) :refused (vec (:refused (e d)))})])}))
-            (transition {:event :wrapup/stopped :target :wrapup-failed}
+            (transition {:sova/feed :feed :event :wrapup/stopped :target :wrapup-failed}
               (script {:expr (fn [_ d] [(ops/assign :wrapup (merge (:wrapup d) {:state "failed" :at (b/now-ms d) :error (or (:detail (e d)) "The wrap-up turn ended without an answer.")
                                                                                  :applied (or (:applied (e d)) 0) :refused (vec (:refused (e d)))}))])}))
-            (transition {:event :sova/resumed :target :wrapup-failed}
+            (transition {:sova/feed :feed :event :sova/resumed :target :wrapup-failed}
               (script {:expr (fn [_ d] [(ops/assign :wrapup (merge (:wrapup d) {:state "failed" :error rb/wrapup-shut-down}))])}))
-            (transition {:event :wrapup/overdue :target :wrapup-failed}
+            (transition {:sova/feed :feed :event :wrapup/overdue :target :wrapup-failed}
               (script {:expr (fn [_ d] [(ops/assign :wrapup (merge (:wrapup d) {:state "failed" :error rb/wrapup-overdue}))])})))
           (state {:id :wrapup-done})
           (state {:id :wrapup-failed}
-            (dsl/act {:event :baton/wrapup-retry :target :wrapup-running
+            (dsl/act {:sova/feed :feed :event :baton/wrapup-retry :target :wrapup-running
                       :checks [(fn [d] (rb/retry-refusal "failed" (reply-idle? d)))]}))
           (state {:id :wrapup-skipped}
             (on-entry {} (script {:expr (fn [_ d] (when (rb/ended? d) [(ops/assign :wrapup {:state "skipped" :at (b/now-ms d) :applied 0 :refused []})]))}))))))))

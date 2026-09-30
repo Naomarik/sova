@@ -191,7 +191,7 @@
   "The top state's transition delivering queued sends, one per microstep."
   []
   (com.fulcrologic.statecharts.elements/transition
-    {:event :sova.charts/flush :cond (fn [_ d] (seq (:sova.charts/sends d)))}
+    {:sova/feed :quiet :event :sova.charts/flush :cond (fn [_ d] (seq (:sova.charts/sends d)))}
     (Send {:eventexpr (fn [_ d] (:event (first (:sova.charts/sends d))))
            :targetexpr (fn [_ d] (:target (first (:sova.charts/sends d))))
            :content (fn [_ d] (:data (first (:sova.charts/sends d))))})

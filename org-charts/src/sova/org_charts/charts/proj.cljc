@@ -87,7 +87,7 @@
      (ops/assign :stakeholder-cleared {:person-id pid :name (get-in (b/moved data) [:exported :name]) :at (b/now-ms data)})]))
 
 (defn- stake-act [target cnd]
-  (dsl/act {:event :stakeholder/set :target target :checks [invalid stakeholder-check] :cond cnd}
+  (dsl/act {:sova/feed :feed :event :stakeholder/set :target target :checks [invalid stakeholder-check] :cond cnd}
     (b/relink (fn [d] (some->> (:stakeholder d) (b/person-sid (:org-id d))))
               (fn [d] (some->> (:person-id (b/evt d)) (b/person-sid (:org-id d)))))
     (script {:expr (fn [_ d] (set-stakeholder-ops d))})))
@@ -173,64 +173,64 @@
                     :id (fn [d] (b/watch-sid (:org-id d) (:id d)))
                     :data (fn [d] {:org-id (:org-id d) :project-id (:id d)})}))
 
-      (dsl/act {:event :project/edit :checks [invalid]}
+      (dsl/act {:sova/feed :feed :event :project/edit :checks [invalid]}
         (script {:expr (fn [_ d] (let [e (b/evt d)]
                                    (cond-> []
                                      (:name e) (conj (ops/assign :name (str/trim (:name e))))
                                      (:root e) (conj (ops/assign :root (:root e)))
                                      (contains? e :owner-hidden) (conj (ops/assign :owner-hidden (true? (:owner-hidden e)))))))}))
-      (dsl/act {:event :spec/freeze :checks [invalid]}
+      (dsl/act {:sova/feed :feed :event :spec/freeze :checks [invalid]}
         (script {:expr (fn [_ d] [(ops/assign :spec {:frozen (true? (:frozen (b/evt d)))})])}))
 
       ;; A gap the overseer files (`sova_idea add §gap/…`, L0) is an item; the operator's ideas never are.
-      (dsl/act {:event :gap/file :checks [invalid]}
+      (dsl/act {:sova/feed :feed :event :gap/file :checks [invalid]}
         (dsl/spawn {:chart "item" :link :project :watch? false
                     :id (fn [d] (b/item-sid (:org-id d) (:id d) (:gap-id (b/evt d))))
                     :data (fn [d] {:org-id (:org-id d) :project-id (:id d) :id (:gap-id (b/evt d)) :idea-id (:idea-id (b/evt d))})}))
 
       ;; Item-less starts (the gap-less ones): a gathering…
-      (dsl/act {:event :baton/start :checks [not-archived invalid gather-cap]}
+      (dsl/act {:sova/feed :feed :event :baton/start :checks [not-archived invalid gather-cap]}
         (dsl/spawn {:chart "baton" :link :project :id (fn [d] (b/baton-sid (:org-id d) (:session-id (b/evt d)))) :data baton-data})
         (b/ledger :ledger/take "gather" (constantly 1)))
       ;; …and a coding session.
-      (dsl/act {:event :build/start :checks [not-archived invalid gap-none-build-check create-cap]}
+      (dsl/act {:sova/feed :feed :event :build/start :checks [not-archived invalid gap-none-build-check create-cap]}
         (dsl/spawn {:chart "build" :link :project :id (fn [d] (b/build-sid (:org-id d) (:id d) (:session-id (b/evt d)))) :data build-data})
         (b/ledger :ledger/take "create" (constantly 1)))
 
       (parallel {:id :regions}
         (state {:id :shelf :initial :active}
           (state {:id :active}
-            (transition {:cond (fn [_ d] (some? (:archived d))) :target :archived})
-            (dsl/act {:event :project/archive :target :archived :checks [archive-check]}
+            (transition {:sova/feed :feed :cond (fn [_ d] (some? (:archived d))) :target :archived})
+            (dsl/act {:sova/feed :feed :event :project/archive :target :archived :checks [archive-check]}
               (script {:expr (fn [_ d] [(ops/assign :archived (cond-> {:at (b/now-ms d)} (via d) (assoc :via "overseer")))])}))
             ;; unarchiving an active project writes nothing
-            (dsl/act {:event :project/unarchive}))
+            (dsl/act {:sova/feed :feed :event :project/unarchive}))
           (state {:id :archived}
-            (dsl/act {:event :project/archive})
-            (dsl/act {:event :project/unarchive :target :active}
+            (dsl/act {:sova/feed :feed :event :project/archive})
+            (dsl/act {:sova/feed :feed :event :project/unarchive :target :active}
               (script {:expr (fn [_ d] [(ops/delete :archived)])}))))
 
         (state {:id :overseer :initial :no-overseer}
           (state {:id :no-overseer}
-            (transition {:cond (fn [_ d] (some? (:overseer d))) :target :has-overseer})
-            (dsl/act {:event :overseer/start :target :has-overseer :checks [invalid]}
+            (transition {:sova/feed :feed :cond (fn [_ d] (some? (:overseer d))) :target :has-overseer})
+            (dsl/act {:sova/feed :feed :event :overseer/start :target :has-overseer :checks [invalid]}
               (script {:expr (fn [_ d] [(ops/assign :overseer {:id (:conversation-id (b/evt d)) :history []})])})))
           (state {:id :has-overseer}
             ;; Clear never refuses; it resets the per-message allowance.
-            (dsl/act {:event :overseer/clear :checks [invalid]}
+            (dsl/act {:sova/feed :feed :event :overseer/clear :checks [invalid]}
               (script {:expr (fn [_ d] (let [o (:overseer d)]
                                          [(ops/assign :overseer {:id (:conversation-id (b/evt d))
                                                                  :history (vec (take conversations-max (cons (:id o) (:history o))))})]))})
               (Send {:event :ledger/reset-message :targetexpr (fn [_ d] (b/watch-sid (:org-id d) (:id d))) :content (fn [_ _] {})}))
-            (dsl/act {:event :overseer/start})))
+            (dsl/act {:sova/feed :feed :event :overseer/start})))
 
         (state {:id :stake :initial :no-stakeholder}
           (state {:id :no-stakeholder}
-            (transition {:cond (fn [_ d] (some? (:stakeholder d))) :target :stakeholder-set})
+            (transition {:sova/feed :feed :cond (fn [_ d] (some? (:stakeholder d))) :target :stakeholder-set})
             (stake-act :stakeholder-set to-someone?)
             (stake-act :no-stakeholder (fn [e d] (not (to-someone? e d)))))
           (state {:id :stakeholder-set}
-            (transition {:event :link/moved :cond stakeholder-left? :target :stakeholder-cleared}
+            (transition {:sova/feed :feed :event :link/moved :cond stakeholder-left? :target :stakeholder-cleared}
               (script {:expr (fn [_ d] (clear-stakeholder-ops d))}))
             (stake-act :stakeholder-set to-someone?)
             (stake-act :no-stakeholder (fn [e d] (not (to-someone? e d)))))
@@ -243,27 +243,27 @@
         ;; the 24 h since it (the checks read the same data).
         (state {:id :milestone :initial :no-milestone}
           (state {:id :no-milestone}
-            (transition {:cond (fn [_ d] (true? (:milestone d))) :target :since-post}))
+            (transition {:sova/feed :quiet :cond (fn [_ d] (true? (:milestone d))) :target :since-post}))
           (state {:id :since-post}
-            (transition {:cond (fn [_ d] (not (:milestone d))) :target :no-milestone})))
+            (transition {:sova/feed :quiet :cond (fn [_ d] (not (:milestone d))) :target :no-milestone})))
 
         (state {:id :cooldown :initial :ready}
           (state {:id :ready}
-            (transition {:cond cooling? :target :cooling}))
+            (transition {:sova/feed :quiet :cond cooling? :target :cooling}))
           (state {:id :cooling}
             (on-entry {} (Send {:id :cooldown-timer :event :cooldown/over
                                 :delayexpr (fn [_ d] (max 0 (- (+ (or (:last-post-at d) 0) update-every-ms) (b/now-ms d))))}))
             (on-exit {} (cancel {:sendid :cooldown-timer}))
-            (transition {:event :cooldown/over :cond (fn [e d] (not (cooling? e d))) :target :ready})
+            (transition {:sova/feed :quiet :event :cooldown/over :cond (fn [e d] (not (cooling? e d))) :target :ready})
             ;; an attended post while cooling restarts the 24 h
-            (transition {:event :cooldown/restart :target :cooling}))))
+            (transition {:sova/feed :quiet :event :cooldown/restart :target :cooling}))))
 
       ;; A shown conversation done, a decision promoted, a build merged (their charts send it).
-      (transition {:event :milestone/noted :cond (fn [_ d] (not (false? (:shown (b/evt d)))))}
+      (transition {:sova/feed :quiet :event :milestone/noted :cond (fn [_ d] (not (false? (:shown (b/evt d)))))}
         (script {:expr (fn [_ d] [(ops/assign :milestone true)])}))
 
       ;; The post, held when unattended (r4). The 24 h and milestone gates bind unattended runs only.
-      (dsl/act {:event :owner-update/post :checks [update-check]}
+      (dsl/act {:sova/feed :feed :event :owner-update/post :checks [update-check]}
         (dsl/effect :owner-update (fn [d] {:text (str/trim (:text (b/evt d)))
                                            :run (if (true? (:attended (b/evt d))) "operator" "auto")}))
         (script {:expr (fn [_ d] [(ops/assign :last-post-at (b/now-ms d)) (ops/assign :milestone false)])})

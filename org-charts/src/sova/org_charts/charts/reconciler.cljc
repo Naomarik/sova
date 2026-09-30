@@ -153,18 +153,18 @@
       (dsl/hold-cancel-correction)
 
       ;; the index of the project's decisions
-      (transition {:event :decision/recorded}
+      (transition {:sova/feed :quiet :event :decision/recorded}
         (script {:expr (fn [_ d] [(ops/assign [:index (:id (e d))] (merge (get-in d [:index (:id (e d))]) {:sid (:sid (e d)) :state "pending"}))])})
         (dsl/watch (fn [d] (:sid (e d)))))
-      (transition {:event :link/moved :cond (fn [_ d] (= "decision" (:chart (b/moved d))))}
+      (transition {:sova/feed :quiet :event :link/moved :cond (fn [_ d] (= "decision" (:chart (b/moved d))))}
         (script {:expr (fn [_ d] (conj (index-ops d)
                                    (ops/assign [:index (b/last-part (:from (b/moved d))) :stale]
                                      (and (b/moved-in? d :stale) true))))}))
-      (transition {:event :settings/reconcile}
+      (transition {:sova/feed :quiet :event :settings/reconcile}
         (script {:expr (fn [_ d] [(ops/assign :enabled (true? (:on (e d))))])}))
 
       (b/flush-transition)
-      (transition {:event :spawn/next :cond (fn [_ d] (seq (:spawning d)))}
+      (transition {:sova/feed :quiet :event :spawn/next :cond (fn [_ d] (seq (:spawning d)))}
         (dsl/spawn {:chart "conflict" :link :reconciler
                     :id (fn [d] (b/conflict-sid (:org-id d) (:project-id d) (:id (first (:spawning d)))))
                     :data (fn [d] (merge (first (:spawning d)) {:org-id (:org-id d) :project-id (:project-id d)
@@ -173,70 +173,70 @@
         (raise {:event :spawn/next}))
 
       ;; ── what works in every state, the switch aside ────────────────────────────────────────
-      (dsl/act {:event :decision/promote :checks [promote-check promote-cap]}
+      (dsl/act {:sova/feed :feed :event :decision/promote :checks [promote-check promote-cap]}
         (promote-effect))
-      (transition {:event :effect/done :cond (fn [_ d] (= "promote" (:kind (e d))))}
+      (transition {:sova/feed :quiet :event :effect/done :cond (fn [_ d] (= "promote" (:kind (e d))))}
         (promote-done))
-      (transition {:event :settle/results}
+      (transition {:sova/feed :quiet :event :settle/results}
         (b/send-all (fn [d] (for [row (:decisions (e d))]
                               {:target (or (get-in d [:index (:id row) :sid]) (b/decision-sid (:org-id d) (:project-id d) (:id row)))
                                :event :reconcile/result :data (dissoc row :id)}))))
       ;; a decision's owner area changed: re-route the open conflict it is a side of (the host
       ;; computes the route; `conflict/reroute` closes the old session only when the target changes)
-      (transition {:event :decision/owner-area-changed}
+      (transition {:sova/feed :quiet :event :decision/owner-area-changed}
         (dsl/effect :route-conflict-of (fn [d] {:decision-id (:id (e d))})))
-      (dsl/act {:event :draft/rewrite}
+      (dsl/act {:sova/feed :feed :event :draft/rewrite}
         (dsl/effect :draft (fn [_] {})))
 
       (state {:id :born}
-        (transition {:cond (fn [_ d] (not (enabled? d))) :target :off})
-        (transition {:target :idle}))
+        (transition {:sova/feed :quiet :cond (fn [_ d] (not (enabled? d))) :target :off})
+        (transition {:sova/feed :quiet :target :idle}))
 
       (state {:id :off}
-        (transition {:cond (fn [_ d] (enabled? d)) :target :idle})
+        (transition {:sova/feed :quiet :cond (fn [_ d] (enabled? d)) :target :idle})
         ;; an automatic request (a settle session's decision, the chart's own at L1) is recorded
-        (transition {:event :reconcile/request :cond (fn [_ d] (contains? #{"sova" "chart"} (some-> (:by (e d)) name)))}
+        (transition {:sova/feed :quiet :event :reconcile/request :cond (fn [_ d] (contains? #{"sova" "chart"} (some-> (:by (e d)) name)))}
           (script {:expr (fn [_ d] [(ops/assign :last-run {:at (b/now-ms d) :compared 0 :found 0 :error reconcile-off})])}))
-        (dsl/act {:event :reconcile/request :checks [(fn [_] (r/refuse 409 reconcile-off))]}))
+        (dsl/act {:sova/feed :feed :event :reconcile/request :checks [(fn [_] (r/refuse 409 reconcile-off))]}))
 
       (state {:id :idle}
-        (transition {:cond (fn [_ d] (not (enabled? d))) :target :off})
-        (dsl/act {:event :reconcile/request :cond (fn [_ d] (pos? (or (:delay-ms (e d)) 0))) :target :debouncing}
+        (transition {:sova/feed :quiet :cond (fn [_ d] (not (enabled? d))) :target :off})
+        (dsl/act {:sova/feed :feed :event :reconcile/request :cond (fn [_ d] (pos? (or (:delay-ms (e d)) 0))) :target :debouncing}
           (script {:expr (fn [_ d] (conj (request-ops d) (ops/assign :delay-ms (:delay-ms (e d)))))}))
-        (dsl/act {:event :reconcile/request :target :running}
+        (dsl/act {:sova/feed :feed :event :reconcile/request :target :running}
           (script {:expr (fn [_ d] (request-ops d))})))
 
       (state {:id :failed}
-        (transition {:cond (fn [_ d] (not (enabled? d))) :target :off})
-        (dsl/act {:event :reconcile/request :cond (fn [_ d] (pos? (or (:delay-ms (e d)) 0))) :target :debouncing}
+        (transition {:sova/feed :quiet :cond (fn [_ d] (not (enabled? d))) :target :off})
+        (dsl/act {:sova/feed :feed :event :reconcile/request :cond (fn [_ d] (pos? (or (:delay-ms (e d)) 0))) :target :debouncing}
           (script {:expr (fn [_ d] (conj (request-ops d) (ops/assign :delay-ms (:delay-ms (e d)))))}))
-        (dsl/act {:event :reconcile/request :target :running}
+        (dsl/act {:sova/feed :feed :event :reconcile/request :target :running}
           (script {:expr (fn [_ d] (request-ops d))}))
         (dsl/correction {:event :correct/clear-failed :target :idle}))
 
       (state {:id :debouncing}
         (on-entry {} (Send {:id :debounce :event :debounce/over :delayexpr (fn [_ d] (or (:delay-ms d) 2000))}))
         (on-exit {} (cancel {:sendid :debounce}))
-        (transition {:event :debounce/over :target :running})
+        (transition {:sova/feed :quiet :event :debounce/over :target :running})
         ;; a request now runs now; another delayed one waits for the same timer
-        (dsl/act {:event :reconcile/request :cond (fn [_ d] (zero? (or (:delay-ms (e d)) 0))) :target :running}
+        (dsl/act {:sova/feed :feed :event :reconcile/request :cond (fn [_ d] (zero? (or (:delay-ms (e d)) 0))) :target :running}
           (script {:expr (fn [_ d] (request-ops d))}))
-        (dsl/act {:event :reconcile/request}))
+        (dsl/act {:sova/feed :feed :event :reconcile/request}))
 
       (state {:id :running}
         (on-entry {} (script {:expr (fn [_ d] [(ops/assign :again false)])}))
         (invoke {:id :run :type :sova/reconcile :params (fn [_ d] {:by (:by d) :owner (:owner d) :project-id (:project-id d)})})
-        (dsl/act {:event :reconcile/request}
+        (dsl/act {:sova/feed :feed :event :reconcile/request}
           (script {:expr (fn [_ d] [(ops/assign :again true)])}))
-        (transition {:event :reconcile/finished :cond (fn [_ d] (and (nil? (:error (e d))) (:again d))) :target :running}
+        (transition {:sova/feed :quiet :event :reconcile/finished :cond (fn [_ d] (and (nil? (:error (e d))) (:again d))) :target :running}
           (finished-content))
-        (transition {:event :reconcile/finished :cond (fn [_ d] (nil? (:error (e d)))) :target :idle}
+        (transition {:sova/feed :quiet :event :reconcile/finished :cond (fn [_ d] (nil? (:error (e d)))) :target :idle}
           (finished-content))
-        (transition {:event :reconcile/finished :target :failed}
+        (transition {:sova/feed :quiet :event :reconcile/finished :target :failed}
           (finished-content))
-        (transition {:event :reconcile/stopped :target :failed}
+        (transition {:sova/feed :quiet :event :reconcile/stopped :target :failed}
           (script {:expr (fn [_ d] [(ops/assign :last-run {:at (b/now-ms d) :compared 0 :found 0 :error (or (:detail (e d)) "The run stopped.")})])}))
-        (transition {:event :sova/resumed :target :failed}
+        (transition {:sova/feed :quiet :event :sova/resumed :target :failed}
           (script {:expr (fn [_ d] [(ops/assign :last-run {:at (b/now-ms d) :compared 0 :found 0 :error "The server restarted during the run."})])}))))))
 
 (def acts

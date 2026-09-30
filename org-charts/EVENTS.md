@@ -13,6 +13,14 @@ payload: the charts are deterministic.
 
 A refusal is `{sentence, status (400·404·409·410), code?, tail?}`; `tail` reaches the model only.
 
+Feed classes (r8a): every transition declares `:sova/feed`. `:feed`: every act (taken, refused or
+held), every move of where an item stands (a state change of the course, lane, decision, conflict,
+tenure, build setup/merge/tree), anything that reaches a person or code. `:quiet`: timer re-arms,
+lease renewals, reply/turn bookkeeping, fact mirrors (link/moved, facts/changed, settings), the budget
+region, the owner-update gates, the whole watch loop but Run Now, the residence's commit/push loop,
+every reconciler step but its acts, queued-send flushes. registry-test enumerates them; feed-test pins
+one of each per chart.
+
 ## The envelope (every act)
 
 Stamped by the host (`server/org-envelope.ts`) inside the org's serialized step:

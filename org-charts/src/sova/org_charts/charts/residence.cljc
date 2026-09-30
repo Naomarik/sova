@@ -76,17 +76,17 @@
               (script {:expr (fn [_ d] (when (= "create" (:mode d)) [(ops/assign :created true)]))})
               (dsl/effect :read-holder (fn [_] {:fetch-ms 15000})))
             ;; A create holds it at once (nothing to read).
-            (transition {:cond (fn [_ d] (true? (:created d))) :target :held-here})
-            (transition {:event :effect/done :cond (fn [env d] (and (holder-read? env d) (some? (elsewhere d (read-result d)))))
+            (transition {:sova/feed :feed :cond (fn [_ d] (true? (:created d))) :target :held-here})
+            (transition {:sova/feed :feed :event :effect/done :cond (fn [env d] (and (holder-read? env d) (some? (elsewhere d (read-result d)))))
                          :target :held-elsewhere}
               (script {:expr (fn [_ d] (let [h (elsewhere d (read-result d))]
                                          [(ops/assign :held-by h) (ops/assign :held-sentence (held-sentence h))]))}))
-            (transition {:event :effect/done :cond holder-read? :target :held-here})
+            (transition {:sova/feed :feed :event :effect/done :cond holder-read? :target :held-here})
             ;; A fetch that fails is an unreachable remote: the clone's record alone was read.
-            (transition {:event :effect/failed :cond holder-read? :target :held-here}))
+            (transition {:sova/feed :feed :event :effect/failed :cond holder-read? :target :held-here}))
 
           (state {:id :held-elsewhere}
-            (dsl/act {:event :attach/confirm :target :held-here}))
+            (dsl/act {:sova/feed :feed :event :attach/confirm :target :held-here}))
 
           (state {:id :held-here}
             (on-entry {}
@@ -95,7 +95,7 @@
               (commit-effect (fn [d] (if (:created d) (str "Create organization " (:org-name d)) (str "Attached on " (:host-name d)))))
               ;; An attach pauses every project of the repo on this host (a create pauses nothing).
               (script {:expr (fn [_ d] (when-not (:created d) (dsl/effect-ops d (dsl/effect-map :pause-overseers nil d))))}))
-            (dsl/act {:event :org/detach :target :detached}
+            (dsl/act {:sova/feed :feed :event :org/detach :target :detached}
               (dsl/effect :revoke-owner-links (fn [_] {:why "detached"}))
               (Send {:event :holder/release :targetexpr (fn [_ d] (b/org-sid (:org-id d)))
                      :content (fn [_ d] {:host-id (:host-id d)})})
@@ -110,31 +110,31 @@
         ;; it commits is in the next commit.
         (state {:id :commits :initial :clean}
           ;; internal: an external one leaves the :regions parallel, re-entering :tenure (read-holder, claims)
-          (dsl/act {:event :commit/now :type :internal :target :committing})
-          (transition {:event :effect/done :cond (fn [_ d] (#{"commit" "push"} (:kind (b/evt d))))}
+          (dsl/act {:sova/feed :feed :event :commit/now :type :internal :target :committing})
+          (transition {:sova/feed :quiet :event :effect/done :cond (fn [_ d] (#{"commit" "push"} (:kind (b/evt d))))}
             (script {:expr (fn [_ d] (commit-result-ops d))}))
           (state {:id :clean}
             (on-entry {} (Send {:id :look-clean :event :commit/look :delay look-ms}))
             (on-exit {} (cancel {:sendid :look-clean}))
-            (transition {:event :store/written :target :dirty})
-            (transition {:event :commit/look :cond due? :target :committing})
-            (transition {:event :commit/look :target :clean}))
+            (transition {:sova/feed :quiet :event :store/written :target :dirty})
+            (transition {:sova/feed :quiet :event :commit/look :cond due? :target :committing})
+            (transition {:sova/feed :quiet :event :commit/look :target :clean}))
           (state {:id :dirty}
             (on-entry {} (Send {:id :look-dirty :event :commit/look :delay look-ms}))
             (on-exit {} (cancel {:sendid :look-dirty}))
-            (transition {:event :commit/look :cond due? :target :committing})
-            (transition {:event :commit/look :target :dirty}))
+            (transition {:sova/feed :quiet :event :commit/look :cond due? :target :committing})
+            (transition {:sova/feed :quiet :event :commit/look :target :dirty}))
           (state {:id :committing}
             (on-entry {}
               (script {:expr (fn [_ d] [(ops/assign :written-since false)])})
               (commit-effect (fn [_] nil)))
-            (transition {:event :store/written}
+            (transition {:sova/feed :quiet :event :store/written}
               (script {:expr (fn [_ d] [(ops/assign :written-since true)])}))
-            (transition {:event :effect/done :cond (fn [_ d] (and (= "commit" (:kind (b/evt d))) (:written-since d))) :target :dirty}
+            (transition {:sova/feed :quiet :event :effect/done :cond (fn [_ d] (and (= "commit" (:kind (b/evt d))) (:written-since d))) :target :dirty}
               (script {:expr (fn [_ d] (commit-result-ops d))}))
-            (transition {:event :effect/done :cond (fn [_ d] (= "commit" (:kind (b/evt d)))) :target :clean}
+            (transition {:sova/feed :quiet :event :effect/done :cond (fn [_ d] (= "commit" (:kind (b/evt d)))) :target :clean}
               (script {:expr (fn [_ d] (commit-result-ops d))}))
-            (transition {:event :effect/failed :cond (fn [_ d] (= "commit" (:kind (b/evt d)))) :target :dirty}
+            (transition {:sova/feed :quiet :event :effect/failed :cond (fn [_ d] (= "commit" (:kind (b/evt d)))) :target :dirty}
               (script {:expr (fn [_ d] [(ops/assign :last-git-error (:detail (b/evt d)))])}))))))))
 
 (def acts

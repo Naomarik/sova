@@ -276,93 +276,93 @@
       ;; link/moved at once, so the facts are right from the start.
       (on-entry {} (dsl/watch (fn [d] (b/project-sid (:org-id d) (:project-id d)))))
       ;; Facts from the host (the roster's active people, the settings file as read) and the project.
-      (transition {:event :facts/changed}
+      (transition {:sova/feed :quiet :event :facts/changed}
         (script {:expr (fn [_ d] (let [e (b/evt d)]
                                    (cond-> []
                                      (contains? e :roster-active) (conj (ops/assign :roster-active (:roster-active e))))))}))
-      (transition {:event :link/moved :cond project-moved?}
+      (transition {:sova/feed :quiet :event :link/moved :cond project-moved?}
         (script {:expr (fn [_ d] (let [m (b/moved d)]
                                    [(ops/assign :archived (b/moved-in? d :archived))
                                     (ops/assign :has-overseer (b/moved-in? d :has-overseer))
                                     (ops/assign :project-name (get-in m [:exported :name]))]))}))
-      (transition {:event :org/attached-here} (script {:expr (fn [_ _] [(ops/assign :paused true)])}))
-      (transition {:event :operator/level-set}
+      (transition {:sova/feed :quiet :event :org/attached-here} (script {:expr (fn [_ _] [(ops/assign :paused true)])}))
+      (transition {:sova/feed :quiet :event :operator/level-set}
         (script {:expr (fn [_ d] [(ops/assign :paused false)
                                   ;; `resume-at`, never `autonomy`: the envelope's autonomy is the level in force (paused: L0)
                                   (ops/assign :settings (assoc (:settings d) :autonomy (or (:resume-at (b/evt d)) (:autonomy (settings d)))))])}))
-      (transition {:event :settings/changed}
+      (transition {:sova/feed :quiet :event :settings/changed}
         (script {:expr (fn [_ d] (settings-ops d))})
         (raise-released))
-      (transition {:event :ledger/take} (script {:expr (fn [_ d] (ledger-ops d))}))
-      (transition {:event :ledger/reset-message} (script {:expr (fn [_ _] [(ops/assign [:ledgers :message] {})])}))
-      (transition {:event :limit/refused}
+      (transition {:sova/feed :quiet :event :ledger/take} (script {:expr (fn [_ d] (ledger-ops d))}))
+      (transition {:sova/feed :quiet :event :ledger/reset-message} (script {:expr (fn [_ _] [(ops/assign [:ledgers :message] {})])}))
+      (transition {:sova/feed :quiet :event :limit/refused}
         (script {:expr (fn [_ d] [(ops/assign :held (hold-item (:held d) (refused-item (b/evt d) (b/now-ms d))))])})
         (script {:expr (fn [env d] (release-due-ops d (b/now-ms d) (open? env)))})
         (raise-released))
 
       (parallel {:id :regions}
         (state {:id :attach :initial :live}
-          (state {:id :live} (transition {:cond (fn [_ d] (true? (:paused d))) :target :paused}))
+          (state {:id :live} (transition {:sova/feed :quiet :cond (fn [_ d] (true? (:paused d))) :target :paused}))
           (state {:id :paused}
-            (transition {:cond (fn [_ d] (not (:paused d))) :target :live}
+            (transition {:sova/feed :quiet :cond (fn [_ d] (not (:paused d))) :target :live}
               (script {:expr (fn [env d] (release-due-ops d (b/now-ms d) (b/in? env :on-shelf)))})
               (raise-released))))
 
         (state {:id :shelf :initial :on-shelf}
-          (state {:id :on-shelf} (transition {:cond (fn [_ d] (true? (:archived d))) :target :archived-fact}))
+          (state {:id :on-shelf} (transition {:sova/feed :quiet :cond (fn [_ d] (true? (:archived d))) :target :archived-fact}))
           (state {:id :archived-fact}
-            (transition {:cond (fn [_ d] (not (:archived d))) :target :on-shelf}
+            (transition {:sova/feed :quiet :cond (fn [_ d] (not (:archived d))) :target :on-shelf}
               (script {:expr (fn [env d] (release-due-ops d (b/now-ms d) (b/in? env :live)))})
               (raise-released))))
 
         ;; Reasons are noted only while the overseer exists.
         (state {:id :exists :initial :no-overseer}
-          (state {:id :no-overseer} (transition {:cond (fn [_ d] (true? (:has-overseer d))) :target :has-overseer}))
-          (state {:id :has-overseer} (transition {:cond (fn [_ d] (not (:has-overseer d))) :target :no-overseer})))
+          (state {:id :no-overseer} (transition {:sova/feed :quiet :cond (fn [_ d] (true? (:has-overseer d))) :target :has-overseer}))
+          (state {:id :has-overseer} (transition {:sova/feed :quiet :cond (fn [_ d] (not (:has-overseer d))) :target :no-overseer})))
 
         (state {:id :switch :initial :watch-on}
-          (state {:id :watch-on} (transition {:cond (fn [_ d] (false? (:watch (settings d)))) :target :watch-off}))
-          (state {:id :watch-off} (transition {:cond (fn [_ d] (not (false? (:watch (settings d))))) :target :watch-on})))
+          (state {:id :watch-on} (transition {:sova/feed :quiet :cond (fn [_ d] (false? (:watch (settings d)))) :target :watch-off}))
+          (state {:id :watch-off} (transition {:sova/feed :quiet :cond (fn [_ d] (not (false? (:watch (settings d))))) :target :watch-on})))
 
         ;; The overseer conversation's runtime (W20). A look's run is the look-turn; another run
         ;; that is not the operator's (a queued follow-up, Run Now's own) is a run-turn; the
         ;; operator's message entering its context makes it the operator's until the run ends.
         (state {:id :turn :initial :idle}
           ;; internal (all three): an external one leaves the parallel and re-enters every region
-          (transition {:event :turn/user-entered :type :internal :target :operator-turn}
+          (transition {:sova/feed :quiet :event :turn/user-entered :type :internal :target :operator-turn}
             (script {:expr (fn [_ _] [(ops/assign [:ledgers :message] {})])}))
-          (transition {:event :turn/ended :type :internal :target :idle})
+          (transition {:sova/feed :quiet :event :turn/ended :type :internal :target :idle})
           (state {:id :idle}
             (on-entry {} (script {:expr (fn [_ _] [(ops/assign :turn-state "idle")])}))
-            (transition {:event :turn/started :cond (fn [_ d] (true? (:look (b/evt d)))) :target :look-turn})
-            (transition {:event :turn/started :target :run-turn}))
+            (transition {:sova/feed :quiet :event :turn/started :cond (fn [_ d] (true? (:look (b/evt d)))) :target :look-turn})
+            (transition {:sova/feed :quiet :event :turn/started :target :run-turn}))
           (state {:id :look-turn} (on-entry {} (script {:expr (fn [_ _] [(ops/assign :turn-state "look")])})))
           (state {:id :run-turn} (on-entry {} (script {:expr (fn [_ _] [(ops/assign :turn-state "run")])})))
           (state {:id :operator-turn} (on-entry {} (script {:expr (fn [_ _] [(ops/assign :turn-state "operator")])}))))
 
         (state {:id :loop :initial :quiet}
-          (transition {:event :reason/noted :cond keep-reason?} (add-reasons))
+          (transition {:sova/feed :quiet :event :reason/noted :cond keep-reason?} (add-reasons))
           ;; Run Now skips the reasons, the gap and the Watch switch, never the looks per day, a busy
           ;; overseer or an archived project. A refused one is recorded as a skipped run by the host's
           ;; `look/skipped {detail}` (a refusal takes nothing).
-          (dsl/act {:event :operator/run-now :type :internal :target :running :checks [run-now-refusal]})
-          (transition {:event :look/skipped}
+          (dsl/act {:sova/feed :feed :event :operator/run-now :type :internal :target :running :checks [run-now-refusal]})
+          (transition {:sova/feed :quiet :event :look/skipped}
             (script {:expr (fn [_ d] (skip-ops d (:detail (b/evt d))))}))
 
           (state {:id :quiet}
-            (transition {:event :reason/noted :cond keep-reason? :target :waiting} (add-reasons)))
+            (transition {:sova/feed :quiet :event :reason/noted :cond keep-reason? :target :waiting} (add-reasons)))
           (state {:id :waiting}
             (on-entry {} (Send {:id :due-timer :event :watch/due :delayexpr due-in}))
             (on-exit {} (cancel {:sendid :due-timer}))
-            (transition {:event :reason/noted :cond keep-reason? :target :waiting} (add-reasons))
-            (transition {:event :settings/changed :target :waiting})
-            (transition {:event :watch/due :target :due}))
+            (transition {:sova/feed :quiet :event :reason/noted :cond keep-reason? :target :waiting} (add-reasons))
+            (transition {:sova/feed :quiet :event :settings/changed :target :waiting})
+            (transition {:sova/feed :quiet :event :watch/due :target :due}))
           (state {:id :due}
-            (transition {:cond may-look :target :running})
-            (transition {:cond looks-used :target :held}))
+            (transition {:sova/feed :quiet :cond may-look :target :running})
+            (transition {:sova/feed :quiet :cond looks-used :target :held}))
           (state {:id :held}
             (on-entry {} (script {:expr (fn [_ d] (skip-ops d (daily-why d)))}))
-            (transition {:event :reason/noted :cond (fn [env d] (and (keep-reason? env d) (looks-left? env d))) :target :due} (add-reasons)))
+            (transition {:sova/feed :quiet :event :reason/noted :cond (fn [env d] (and (keep-reason? env d) (looks-left? env d))) :target :due} (add-reasons)))
           (state {:id :running}
             (on-entry {} (script {:expr (fn [_ d] (conj (start-run-ops d) (ops/assign :loop-running true)))}))
             (on-exit {} (script {:expr (fn [_ _] [(ops/assign :loop-running false)])}))
@@ -371,22 +371,22 @@
                                          {:reasons (texts (:run-reasons d)) :autonomy (:autonomy eff)
                                           :text (watch-text (texts (:run-reasons d)) (:autonomy eff))
                                           :project-id (:project-id d)}))})
-            (transition {:event :look/finished :cond (fn [_ d] (empty? (:reasons d))) :target :quiet}
+            (transition {:sova/feed :quiet :event :look/finished :cond (fn [_ d] (empty? (:reasons d))) :target :quiet}
               (script {:expr (fn [_ d] (end-run-ops d "finished" nil))}))
-            (transition {:event :look/finished :target :waiting}
+            (transition {:sova/feed :quiet :event :look/finished :target :waiting}
               (script {:expr (fn [_ d] (end-run-ops d "finished" nil))}))
-            (transition {:event :look/stopped :target :waiting}
+            (transition {:sova/feed :quiet :event :look/stopped :target :waiting}
               (script {:expr (fn [_ d] (end-run-ops d "stopped" (:detail (b/evt d))))}))
-            (transition {:event :sova/resumed :target :waiting}
+            (transition {:sova/feed :quiet :event :sova/resumed :target :waiting}
               (script {:expr (fn [_ d] (end-run-ops d "cut-off" cut-off-detail))}))
-            (transition {:event :look/not-started :target :waiting}
+            (transition {:sova/feed :quiet :event :look/not-started :target :waiting}
               (script {:expr (fn [_ d] (not-started-ops d))}))))
 
         (state {:id :clock :initial :day}
           (state {:id :day}
             (on-entry {} (Send {:id :rollover-timer :event :day/rollover :delayexpr ms-to-midnight}))
             (on-exit {} (cancel {:sendid :rollover-timer}))
-            (transition {:event :day/rollover :target :day}
+            (transition {:sova/feed :quiet :event :day/rollover :target :day}
               (script {:expr (fn [env d] (let [now (b/now-ms d)]
                                            (into [(ops/assign :looks-today 0) (ops/assign [:ledgers :day] {}) (ops/assign :day (b/day-key now))]
                                              (release-due-ops d now (open? env)))))})

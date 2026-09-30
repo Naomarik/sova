@@ -90,7 +90,7 @@
 
 (defn- reroute-transitions []
   (for [[target to-op?] [[:routed-to-operator true] [:routed-to-person false]]]
-    (dsl/act {:event :conflict/reroute :target target :checks [reroute-check]
+    (dsl/act {:sova/feed :feed :event :conflict/reroute :target target :checks [reroute-check]
               :cond (fn [env d] (and (not (same-target? env d)) (= to-op? (= "operator" (:to (e d))))))}
       (script {:expr (fn [_ d] [(ops/assign :asking (:baton-session-id d))])})
       (script {:expr (fn [_ d] (reroute-ops d))}))))
@@ -111,13 +111,13 @@
     (reroute-transitions)
     ;; the same target again (an owner-area change that routes where it already goes): no new
     ;; session, only the owner area changes
-    [(dsl/act {:event :conflict/reroute :checks [reroute-check] :cond same-target?}
+    [(dsl/act {:sova/feed :feed :event :conflict/reroute :checks [reroute-check] :cond same-target?}
        (script {:expr (fn [_ d] (when (contains? (e d) :owner-area) [(ops/assign :owner-area (:owner-area (e d)))]))}))
      ;; settled by the reconciler's run (the first decision in its settle session)
-     (transition {:event :conflict/resolved :target :settled}
+     (transition {:sova/feed :feed :event :conflict/resolved :target :settled}
        (script {:expr (fn [_ d] ((settle-ops (:outcome (e d)) (:resolved-by (e d))) d))}))
      ;; settled by hand: the session still asking is over
-     (dsl/act {:event :conflict/settle :target :settled :checks [settle-check]}
+     (dsl/act {:sova/feed :feed :event :conflict/settle :target :settled :checks [settle-check]}
        (script {:expr (fn [_ d] ((settle-ops (if (:statement (e d)) "neither" (:keep (e d))) (:decision-id (e d))) d))})
        (script {:expr (fn [_ d] [(ops/assign :asking (:baton-session-id d))])})
        (script {:expr (fn [_ d] [(ops/assign :baton-session-id nil)])})
@@ -132,14 +132,14 @@
       (b/flush-transition)
       ;; the settle's results (the host wrote the operator's decision, superseded the losers) go to
       ;; the decisions through the reconciler
-      (transition {:event :effect/done :cond (fn [_ d] (= "settle" (:kind (e d))))}
+      (transition {:sova/feed :quiet :event :effect/done :cond (fn [_ d] (= "settle" (:kind (e d))))}
         (Send {:event :settle/results :targetexpr (fn [_ d] (b/reconciler-sid (:org-id d) (:project-id d)))
                :content (fn [_ d] {:decisions (get-in (e d) [:result :decisions])})}))
 
       (state {:id :conflict-born}
-        (transition {:cond (fn [_ d] (or (some? (:route-error d)) (nil? (:routed-to d)))) :target :unrouted})
-        (transition {:cond (fn [_ d] (= "operator" (:routed-to d))) :target :routed-to-operator})
-        (transition {:target :routed-to-person}))
+        (transition {:sova/feed :feed :cond (fn [_ d] (or (some? (:route-error d)) (nil? (:routed-to d)))) :target :unrouted})
+        (transition {:sova/feed :feed :cond (fn [_ d] (= "operator" (:routed-to d))) :target :routed-to-operator})
+        (transition {:sova/feed :feed :target :routed-to-person}))
 
       (state {:id :unrouted}
         (on-entry {} (script {:expr (fn [_ d] [(ops/assign :state "open")])}))
@@ -151,7 +151,7 @@
           (close-asking "re-routed")
           (spawn-settle))
         ;; its settle session closed without a re-route: nobody is asked (C17)
-        (transition {:event :link/moved :cond (fn [_ d] (and (= "baton" (:chart (b/moved d))) (= (:baton-session-id d) (b/last-part (:from (b/moved d)))) (b/moved-in? d :closed)))
+        (transition {:sova/feed :feed :event :link/moved :cond (fn [_ d] (and (= "baton" (:chart (b/moved d))) (= (:baton-session-id d) (b/last-part (:from (b/moved d)))) (b/moved-in? d :closed)))
                      :target :unrouted})
         (open-transitions))
 
@@ -160,7 +160,7 @@
           (script {:expr (fn [_ d] [(ops/assign :state "open")])})
           (close-asking "re-routed")
           (spawn-settle))
-        (transition {:event :link/moved :cond (fn [_ d] (and (= "baton" (:chart (b/moved d))) (= (:baton-session-id d) (b/last-part (:from (b/moved d)))) (b/moved-in? d :closed)))
+        (transition {:sova/feed :feed :event :link/moved :cond (fn [_ d] (and (= "baton" (:chart (b/moved d))) (= (:baton-session-id d) (b/last-part (:from (b/moved d)))) (b/moved-in? d :closed)))
                      :target :unrouted})
         (open-transitions))
 

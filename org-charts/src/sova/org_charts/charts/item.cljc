@@ -97,7 +97,7 @@
 
 (defn- to-phase [here targets phase-fn]
   (for [t targets :when (not= t here)]
-    (transition {:cond (fn [_ d] (= t (phase-fn d))) :target t})))
+    (transition {:sova/feed :feed :cond (fn [_ d] (= t (phase-fn d))) :target t})))
 
 (def build-states [:awaiting-build :build-starting :working :idle :failed :merged :done])
 
@@ -185,13 +185,13 @@
 (defn- drive-transitions []
   [
    ;; L2: promote the gap's drafted decisions whose author owns the area (never out of area)
-   (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L2") (seq (ri/in-area-drafted-ids d))
+   (transition {:sova/feed :quiet :cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L2") (seq (ri/in-area-drafted-ids d))
                                        (not (drove? d (promote-key d)))))}
      (note-drove promote-key)
      (dsl/drive {:event :decision/promote :target (fn [d] (b/reconciler-sid (:org-id d) (:project-id d)))
                  :data (fn [d] {:ids (ri/in-area-drafted-ids d) :gap (:idea-id d)})}))
    ;; L3: build once every live decision is promoted, none built, no build working or held
-   (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L3") (b/in? env :awaiting-build)
+   (transition {:sova/feed :quiet :cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L3") (b/in? env :awaiting-build)
                                        (= "promoted" (ri/dphase d)) (ri/none-built? d) (seq (ri/not-built-ids d))
                                        (empty? (ri/live-builds d)) (not (held-act? d :build/start))
                                        (not (drove? d (build-key d)))))}
@@ -203,7 +203,7 @@
                                 :prompt (ri/build-prompt d (ri/not-built-ids d))})}))
    ;; L1: a planned gathering (filed at L0), each once, while the lane has no live gathering; never
    ;; one to a person whose attempt on this gap ended with no decision (F8b: per target)
-   (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1")
+   (transition {:sova/feed :quiet :cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1")
                                        (not (#{:asking :needs-operator} (lane-gathering d)))
                                        (not (b/in? env :gather-starting))
                                        (some? (next-plan d)) (not (held-act? d :gather/start)) (not (:plan-pending d))
@@ -215,7 +215,7 @@
                  :data (fn [d] (let [i (last (:plans-started d)) p (nth (:plans d) i)]
                                  (assoc p :session-id (str (:id d) "-g" (inc i)))))}))
    ;; L1: close an own gathering nobody wrote in once a newer one to the same person is open
-   (transition {:cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1") (ri/same-target-older d)
+   (transition {:sova/feed :quiet :cond (fn [env d] (and (drive-open? env d) (ri/at-least? d "L1") (ri/same-target-older d)
                                        (not (drove? d (move-key d)))))}
      (note-drove move-key)
      (dsl/drive {:event :baton/close :target (fn [d] (first (ri/same-target-older d)))
@@ -244,16 +244,16 @@
       (b/flush-transition)
 
       (parallel {:id :live}
-        (transition {:event :link/moved} (script {:expr (fn [_ d] (conj (moved-ops d) (ops/assign :plan-pending false)))}))
-        (transition {:event :hold/dropped} (script {:expr (fn [_ _] [(ops/assign :plan-pending false)])}))
-        (transition {:event :hold/cancelled} (script {:expr (fn [_ _] [(ops/assign :plan-pending false)])}))
+        (transition {:sova/feed :quiet :event :link/moved} (script {:expr (fn [_ d] (conj (moved-ops d) (ops/assign :plan-pending false)))}))
+        (transition {:sova/feed :quiet :event :hold/dropped} (script {:expr (fn [_ _] [(ops/assign :plan-pending false)])}))
+        (transition {:sova/feed :quiet :event :hold/cancelled} (script {:expr (fn [_ _] [(ops/assign :plan-pending false)])}))
         ;; drop agrees with the idea both ways (sova_idea status dropped at L0, the panel, the operator)
-        (dsl/act {:event :gap/drop :target :dropped :checks [invalid]}
+        (dsl/act {:sova/feed :feed :event :gap/drop :target :dropped :checks [invalid]}
           (script {:expr (fn [_ d] [(ops/assign :dropped-from (:phase d))])})
           (script {:expr (fn [_ d] (when-not (true? (:from-idea (e d)))
                                      (dsl/effect-ops d (dsl/effect-map :idea-status (fn [_] {:idea-id (:idea-id d) :status "dropped"}) d))))}))
         ;; a planned gathering, filed at L0: the chart starts it once the level reaches L1
-        (dsl/act {:event :gather/plan :checks [invalid]}
+        (dsl/act {:sova/feed :feed :event :gather/plan :checks [invalid]}
           (script {:expr (fn [_ d] [(ops/assign :plans (conj (vec (:plans d)) (dissoc (e d) :at :by :attended :autonomy :paused :roster-active
                                                                                      :archived :allowance :ledger :looks :at-once :card :hold-ms :invalid)))])}))
         ;; q9 corrections
@@ -265,48 +265,48 @@
           (script {:expr (fn [_ d] [(ops/assign :batons (dissoc (:batons d) (:session (e d))))
                                     (ops/assign :builds (dissoc (:builds d) (:session (e d))))])})
           (b/send-if :item/adopt (fn [d] (:to-item (e d))) (fn [d] {:session (:session (e d))})))
-        (transition {:event :item/adopt}
+        (transition {:sova/feed :quiet :event :item/adopt}
           (dsl/watch (fn [d] (:session (e d)))))
 
         ;; ── the lane ──────────────────────────────────────────────────────────────────────────
         (state {:id :lane :initial :pipeline}
           (state {:id :pipeline :initial :open}
             (history {:id :pipeline-h :type :deep} :open)
-            (dsl/act {:event :item/hold :target :on-hold :checks [(operator-only "holds or resumes a gap")]})
+            (dsl/act {:sova/feed :feed :event :item/hold :target :on-hold :checks [(operator-only "holds or resumes a gap")]})
 
             ;; a gathering: the first attempt(s) move the lane; later ones are follow-ups
-            (dsl/act {:event :gather/start :checks [invalid archived-check gather-cap]} (gather-content))
+            (dsl/act {:sova/feed :feed :event :gather/start :checks [invalid archived-check gather-cap]} (gather-content))
 
             (state {:id :open} (mark :open) (group "open") (stall-clock :open)
-              (transition {:cond (fn [_ d] (:starting-gather d)) :target :gather-starting})
-              (transition {:cond (fn [_ d] (= :needs-operator (lane-gathering d))) :target :needs-operator})
-              (transition {:cond (fn [_ d] (= :asking (lane-gathering d))) :target :asking})
-              (transition {:cond (fn [_ d] (and (not (#{:asking :needs-operator} (lane-gathering d))) (not= "none" (ri/dphase d)))) :target :deciding}))
+              (transition {:sova/feed :feed :cond (fn [_ d] (:starting-gather d)) :target :gather-starting})
+              (transition {:sova/feed :feed :cond (fn [_ d] (= :needs-operator (lane-gathering d))) :target :needs-operator})
+              (transition {:sova/feed :feed :cond (fn [_ d] (= :asking (lane-gathering d))) :target :asking})
+              (transition {:sova/feed :feed :cond (fn [_ d] (and (not (#{:asking :needs-operator} (lane-gathering d))) (not= "none" (ri/dphase d)))) :target :deciding}))
 
             (state {:id :gathering :initial :gather-starting}
               (group "gathering")
               (state {:id :gather-starting} (mark :gather-starting) (stall-clock :gather-starting)
-                (transition {:cond (fn [_ d] (and (nil? (:starting-gather d)) (= :needs-operator (lane-gathering d)))) :target :needs-operator})
-                (transition {:cond (fn [_ d] (and (nil? (:starting-gather d)) (= :asking (lane-gathering d)))) :target :asking})
-                (transition {:cond (fn [_ d] (and (nil? (:starting-gather d)) (= :ended (lane-gathering d)))) :target :asking})
+                (transition {:sova/feed :feed :cond (fn [_ d] (and (nil? (:starting-gather d)) (= :needs-operator (lane-gathering d)))) :target :needs-operator})
+                (transition {:sova/feed :feed :cond (fn [_ d] (and (nil? (:starting-gather d)) (= :asking (lane-gathering d)))) :target :asking})
+                (transition {:sova/feed :feed :cond (fn [_ d] (and (nil? (:starting-gather d)) (= :ended (lane-gathering d)))) :target :asking})
                 (dsl/correction {:event :correct/skip-stall :target :open}
                   (script {:expr (fn [_ d] [(ops/assign :starting-gather nil)])})))
               (state {:id :asking} (mark :asking) (stall-clock :asking)
-                (transition {:cond (fn [_ d] (= :needs-operator (lane-gathering d))) :target :needs-operator})
-                (transition {:cond (fn [_ d] (and (= :ended (lane-gathering d)) (not= "none" (ri/dphase d)))) :target :deciding})
-                (transition {:cond (fn [_ d] (and (= :ended (lane-gathering d)) (= "none" (ri/dphase d)))) :target :open}
+                (transition {:sova/feed :feed :cond (fn [_ d] (= :needs-operator (lane-gathering d))) :target :needs-operator})
+                (transition {:sova/feed :feed :cond (fn [_ d] (and (= :ended (lane-gathering d)) (not= "none" (ri/dphase d)))) :target :deciding})
+                (transition {:sova/feed :feed :cond (fn [_ d] (and (= :ended (lane-gathering d)) (= "none" (ri/dphase d)))) :target :open}
                   (answered-nothing)
                   (reason "item/answered-nothing" (fn [_] {}))))
               (state {:id :needs-operator} (mark :needs-operator) (stall-clock :needs-operator)
-                (transition {:cond (fn [_ d] (= :asking (lane-gathering d))) :target :asking})
-                (transition {:cond (fn [_ d] (and (= :ended (lane-gathering d)) (not= "none" (ri/dphase d)))) :target :deciding})
-                (transition {:cond (fn [_ d] (and (= :ended (lane-gathering d)) (= "none" (ri/dphase d)))) :target :open}
+                (transition {:sova/feed :feed :cond (fn [_ d] (= :asking (lane-gathering d))) :target :asking})
+                (transition {:sova/feed :feed :cond (fn [_ d] (and (= :ended (lane-gathering d)) (not= "none" (ri/dphase d)))) :target :deciding})
+                (transition {:sova/feed :feed :cond (fn [_ d] (and (= :ended (lane-gathering d)) (= "none" (ri/dphase d)))) :target :open}
                   (answered-nothing)
                   (reason "item/answered-nothing" (fn [_] {})))))
 
             (state {:id :deciding :initial :unreconciled}
               (group "deciding")
-              (transition {:cond (fn [_ d] (= "promoted" (ri/dphase d))) :target :promoted})
+              (transition {:sova/feed :feed :cond (fn [_ d] (= "promoted" (ri/dphase d))) :target :promoted})
               (state {:id :unreconciled} (mark :unreconciled) (stall-clock :unreconciled) (to-phase :unreconciled (vals deciding-phases) #(deciding-phases (ri/dphase %))))
               (state {:id :conflicted} (mark :conflicted) (stall-clock :conflicted) (to-phase :conflicted (vals deciding-phases) #(deciding-phases (ri/dphase %))))
               (state {:id :drafted} (mark :drafted) (stall-clock :drafted) (to-phase :drafted (vals deciding-phases) #(deciding-phases (ri/dphase %))))
@@ -315,11 +315,11 @@
             (state {:id :promoted :initial :awaiting-build}
               (group "promoted")
               ;; a newer, superseding or edited decision reopens it
-              (transition {:cond (fn [_ d] (contains? #{"pending" "conflict" "drafted" "edited"} (ri/dphase d))) :target :deciding}
+              (transition {:sova/feed :feed :cond (fn [_ d] (contains? #{"pending" "conflict" "drafted" "edited"} (ri/dphase d))) :target :deciding}
                 (reason "item/reopened" (fn [d] {:dphase (ri/dphase d)})))
               (state {:id :awaiting-build} (mark :awaiting-build) (stall-clock :awaiting-build)
                 (to-phase :awaiting-build build-states build-phase)
-                (dsl/act {:event :build/start :target :build-starting :checks [invalid archived-check decisions-check create-cap]} (build-content)))
+                (dsl/act {:sova/feed :feed :event :build/start :target :build-starting :checks [invalid archived-check decisions-check create-cap]} (build-content)))
               (state {:id :build-starting} (mark :build-starting) (stall-clock :build-starting)
                 (to-phase :build-starting build-states build-phase)
                 (dsl/correction {:event :correct/skip-stall :target :awaiting-build}
@@ -328,7 +328,7 @@
               (state {:id :idle} (mark :idle) (stall-clock :idle) (to-phase :idle build-states build-phase))
               (state {:id :failed} (mark :failed) (stall-clock :failed) (to-phase :failed build-states build-phase))
               (state {:id :merged} (mark :merged) (stall-clock :merged) (to-phase :merged build-states build-phase)
-                (dsl/act {:event :build/start :target :build-starting :checks [invalid archived-check decisions-check create-cap]} (build-content)))
+                (dsl/act {:sova/feed :feed :event :build/start :target :build-starting :checks [invalid archived-check decisions-check create-cap]} (build-content)))
               (state {:id :done} (mark :done)
                 (on-entry {} (reason "item/built" (fn [_] {})))
                 (to-phase :done build-states build-phase)
@@ -336,31 +336,31 @@
                   (script {:expr (fn [_ d] [(ops/assign :reopened true)])})))))
 
           (state {:id :on-hold} (mark :on-hold)
-            (dsl/act {:event :item/resume :target :pipeline-h :checks [(operator-only "holds or resumes a gap")]})))
+            (dsl/act {:sova/feed :feed :event :item/resume :target :pipeline-h :checks [(operator-only "holds or resumes a gap")]})))
 
         ;; ── follow-up gatherings ─────────────────────────────────────────────────────────────────
         (state {:id :follow-up :initial :no-follow-up}
           (state {:id :no-follow-up}
-            (transition {:cond (fn [_ d] (= :asking (follow-gathering d))) :target :follow-up-asking})
-            (transition {:cond (fn [_ d] (= :needs-operator (follow-gathering d))) :target :follow-up-needs-operator}))
+            (transition {:sova/feed :feed :cond (fn [_ d] (= :asking (follow-gathering d))) :target :follow-up-asking})
+            (transition {:sova/feed :feed :cond (fn [_ d] (= :needs-operator (follow-gathering d))) :target :follow-up-needs-operator}))
           (state {:id :follow-up-asking} (stall-clock :follow-up-asking)
-            (transition {:cond (fn [_ d] (= :needs-operator (follow-gathering d))) :target :follow-up-needs-operator})
-            (transition {:cond (fn [_ d] (not (#{:asking :needs-operator} (follow-gathering d)))) :target :no-follow-up}))
+            (transition {:sova/feed :feed :cond (fn [_ d] (= :needs-operator (follow-gathering d))) :target :follow-up-needs-operator})
+            (transition {:sova/feed :feed :cond (fn [_ d] (not (#{:asking :needs-operator} (follow-gathering d)))) :target :no-follow-up}))
           (state {:id :follow-up-needs-operator} (stall-clock :follow-up-needs-operator)
-            (transition {:cond (fn [_ d] (= :asking (follow-gathering d))) :target :follow-up-asking})
-            (transition {:cond (fn [_ d] (not (#{:asking :needs-operator} (follow-gathering d)))) :target :no-follow-up})))
+            (transition {:sova/feed :feed :cond (fn [_ d] (= :asking (follow-gathering d))) :target :follow-up-asking})
+            (transition {:sova/feed :feed :cond (fn [_ d] (not (#{:asking :needs-operator} (follow-gathering d)))) :target :no-follow-up})))
 
         ;; ── attention ─────────────────────────────────────────────────────────────────────────────
         (state {:id :attention :initial :calm}
           (state {:id :calm}
-            (transition {:event :item/stalled
+            (transition {:sova/feed :feed :event :item/stalled
                          :cond (fn [env d] (let [p (:phase (e d))]
                                              (or (= p (:phase d))
                                                  (and (str/starts-with? (str p) "follow-up") (b/in? env (keyword p))))))
                          :target :stalled}
               (reason "item/stalled" (fn [d] {:phase (:phase (e d)) :since (:since (e d))}))))
           (state {:id :stalled}
-            (transition {:event :item/moved :target :calm})))
+            (transition {:sova/feed :feed :event :item/moved :target :calm})))
 
         ;; ── drive ─────────────────────────────────────────────────────────────────────────────────
         (state {:id :drive :initial :driving}

@@ -138,7 +138,7 @@
 (defn- person-act
   "One transition of `event` from here: to `status`'s state, or staying (`nil`)."
   [event status extra-checks]
-  (dsl/act (cond-> {:event event
+  (dsl/act (cond-> {:sova/feed :feed :event event
                     :checks (into (vec extra-checks) [change-check])
                     :cond (if status (moves-to? status) stays?)}
              status (assoc :target (status-states status)))
@@ -167,25 +167,25 @@
           (script {:expr (fn [_ d] (into [(ops/assign :status (get-in d [:person :status] "active"))]
                                      (for [f fields :when (contains? (:person d) f)] (ops/assign f (get-in d [:person f])))))})
           (dsl/effect :roster-history (fn [d] {:person-id (:id d) :lines (:changed d) :by (:by d)})))
-        (transition {:cond (fn [_ d] (= "proposed" (:status d))) :target :proposed})
-        (transition {:cond (fn [_ d] (= "left" (:status d))) :target :left})
-        (transition {:target :active}))
+        (transition {:sova/feed :feed :cond (fn [_ d] (= "proposed" (:status d))) :target :proposed})
+        (transition {:sova/feed :feed :cond (fn [_ d] (= "left" (:status d))) :target :left})
+        (transition {:sova/feed :feed :target :active}))
 
       (state {:id :proposed}
         (entered "proposed")
-        (dsl/act {:event :person/approve :target :active :checks [decider-check not-waiting change-check]}
+        (dsl/act {:sova/feed :feed :event :person/approve :target :active :checks [decider-check not-waiting change-check]}
           (history-effect) (write))
-        (dsl/act {:event :person/decline :target :left :checks [decider-check not-waiting change-check]}
+        (dsl/act {:sova/feed :feed :event :person/decline :target :left :checks [decider-check not-waiting change-check]}
           (history-effect) (write))
-        (dsl/act {:event :person/leave :target :left :checks [change-check]}
+        (dsl/act {:sova/feed :feed :event :person/leave :target :left :checks [change-check]}
           (history-effect) (write))
         (status-transitions "proposed"))
 
       (state {:id :active}
         (entered "active")
-        (dsl/act {:event :person/approve :checks [decider-check not-waiting]})
-        (dsl/act {:event :person/decline :checks [decider-check not-waiting]})
-        (dsl/act {:event :person/leave :target :left :checks [change-check]}
+        (dsl/act {:sova/feed :feed :event :person/approve :checks [decider-check not-waiting]})
+        (dsl/act {:sova/feed :feed :event :person/decline :checks [decider-check not-waiting]})
+        (dsl/act {:sova/feed :feed :event :person/leave :target :left :checks [change-check]}
           (history-effect) (write))
         (status-transitions "active"))
 
@@ -193,8 +193,8 @@
         (entered "left")
         ;; The cascade's own part: every hand-off and owner link of theirs answers 410 at once.
         (on-entry {} (dsl/effect :revoke-person-links (fn [d] {:person-id (:id d)})))
-        (dsl/act {:event :person/approve :checks [decider-check not-waiting]})
-        (dsl/act {:event :person/decline :checks [decider-check not-waiting]})
+        (dsl/act {:sova/feed :feed :event :person/approve :checks [decider-check not-waiting]})
+        (dsl/act {:sova/feed :feed :event :person/decline :checks [decider-check not-waiting]})
         (status-transitions "left")))))
 
 ;; ---- the registry entry (engine/API.md §1) --------------------------------------------------------

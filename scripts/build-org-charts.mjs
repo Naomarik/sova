@@ -65,7 +65,7 @@ if (args.has("--test")) {
     .matchAll(/^\(deftest\s+(\S+)/gm)].map((m) => `${matrix}/${m[1]}`);
   for (const pick of [others.join(","), ...cells]) {
     console.log(`\n== node-tests --test=${pick.length > 120 ? `${others.length} namespaces` : pick}`);
-    run("node", [join(project, "out", "test", "node-tests.cjs"), `--test=${pick}`]);
+    run("node", ["--max-old-space-size=4096", join(project, "out", "test", "node-tests.cjs"), `--test=${pick}`]);
   }
   process.exit(0);
 }

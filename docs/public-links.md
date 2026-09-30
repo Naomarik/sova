@@ -126,9 +126,9 @@ For a machine that already runs nginx (or Apache, or another server) on 80 and 4
 
 1. Add the DNS record, as in step 1 above.
 2. Get a certificate first, so the block's `listen 443 ssl` has one:
-   `sudo certbot certonly --nginx -d share.example.com`. Add its two lines to the block:
-   `ssl_certificate /etc/letsencrypt/live/share.example.com/fullchain.pem;` and
-   `ssl_certificate_key /etc/letsencrypt/live/share.example.com/privkey.pem;`.
+   `sudo certbot certonly --nginx -d share.example.com`. The block's `ssl_certificate` and
+   `ssl_certificate_key` lines already point at certbot's files for your address; replace them only
+   for a certificate from elsewhere.
 3. Put the block in a file of its own, such as `/etc/nginx/conf.d/zz-sova-share.conf`. Name it so
    it sorts after your existing default site, or mark that site `default_server`: nginx answers an
    unknown hostname with the first server block for the port, and that should never be Sova's.

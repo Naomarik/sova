@@ -103,13 +103,12 @@ The tailnet policy must allow Funnel for this node: a `nodeAttrs` entry with `"a
 covers it.
 
 **Your existing web server (for example nginx).** Get a certificate first (unless a CDN terminates TLS for you), then
-add the server block Sova shows in a file of its own, with the certificate's paths, test, and reload:
+add the server block Sova shows in a file of its own, test, and reload. The block already points at certbot's files;
+change its two `ssl_` lines only for a certificate from elsewhere:
 
 ```sh
 sudo certbot certonly --nginx -d share.example.com   # writes /etc/letsencrypt/live/share.example.com/{fullchain,privkey}.pem
-sudoedit /etc/nginx/conf.d/zz-sova-share.conf       # the block from Settings → Public links, plus
-                                                     #   ssl_certificate     /etc/letsencrypt/live/share.example.com/fullchain.pem;
-                                                     #   ssl_certificate_key /etc/letsencrypt/live/share.example.com/privkey.pem;
+sudoedit /etc/nginx/conf.d/zz-sova-share.conf       # the block from Settings → Public links
 sudo nginx -t && sudo systemctl reload nginx
 ```
 

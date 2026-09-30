@@ -1,7 +1,7 @@
 /** `vis layers`: layers top to bottom, `label | item, item | note | tone`. */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaList, fail, lines, popTone, takeSettings, text, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { commaList, fail, lines, popTone, swapToneNote, takeSettings, text, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export interface Layer {
   label: string;
@@ -45,6 +45,7 @@ export function parseLayers(body: string): LayersSpec {
   const { rest, marks } = takeMarks(settled);
   for (const line of rest) {
     const fs = rawFields(line);
+    swapToneNote(fs, 4);
     const tone = popTone(fs);
     if (fs.length < 2 || fs.length > 3) fail(line.n, "a layer is: label | item, item, … | note (optional) | tone (optional)");
     const [rawLabel, items, rawNote] = fs as [string, string, string | undefined];

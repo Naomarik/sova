@@ -2651,7 +2651,8 @@
         "server/align-state.ts",
         "server/server-stop.ts",
         "server/server-stop.test.ts",
-        "server/index.ts"
+        "server/index.ts",
+        "server/outreach/log.ts"
       ],
       "requires": [
         "§app.overseer/seen"
@@ -4469,7 +4470,9 @@
         "server/baton-loadout.ts",
         "server/chat-manager.ts",
         "server/project-coding-runtime.test.ts",
-        "server/project-overseer-tools-charts.test.ts"
+        "server/project-overseer-tools-charts.test.ts",
+        "server/outreach/log.ts",
+        "server/outreach.test.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -6883,6 +6886,7 @@
         "src/components/WatchView.tsx",
         "src/components/ChangesViewer.tsx",
         "src/components/ChangesViewer.css",
+        "src/components/Thread.tsx",
         "src/app.css"
       ]
     },
@@ -9321,6 +9325,12 @@
         "src/vis/kinds/chart/parse.ts",
         "src/vis/kinds/chart/parts.test.ts",
         "src/vis/lenience.test.ts",
+        "src/vis/core/emphasis.ts",
+        "src/vis/core/emphasis.test.ts",
+        "src/vis/multimark.test.ts",
+        "src/vis/core/grammar.ts",
+        "src/vis/kinds/layers/parse.ts",
+        "src/vis/kinds/timeline/parse.ts",
         "pi-config/extensions/mode/vis-mode.md",
         "src/vis/guide.test.ts"
       ]
@@ -9339,7 +9349,8 @@
       "requires": [
         "§chat.profiles/model",
         "§chat.profiles/singleton",
-        "§app.session-list/needs-you"
+        "§app.session-list/needs-you",
+        "§app.session-list/groups"
       ]
     },
     "§app.settings-dialog/profiles": {
@@ -9990,7 +10001,11 @@
         "src/components/BatonStrip.tsx",
         "src/components/SendOnWhatsApp.tsx",
         "src/lib/api.ts",
-        "src/lib/project-overseer-view.ts"
+        "src/lib/project-overseer-view.ts",
+        "server/outreach/log.ts",
+        "server/project-overseer.ts",
+        "server/project-overseer-tools.ts",
+        "shared/outreach.ts"
       ],
       "requires": [
         "§app.baton/links",
@@ -10181,6 +10196,20 @@
       "kind": "note",
       "authority": "accepted",
       "evidence": "verified"
+    },
+    "§chat.markdown/vis-wireframe-chips": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/vis-wireframe"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/kinds/wireframe/View.tsx",
+        "src/vis/kinds/wireframe/wireframe.css",
+        "src/vis/kinds/wireframe/layout.ts",
+        "src/vis/kinds/wireframe/layout.test.ts"
+      ]
     }
   },
   "boundary": {

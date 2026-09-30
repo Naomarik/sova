@@ -83,8 +83,10 @@ and what no step names goes under Other changes.
   from, or, once merged, what its merge brought in.
 - A merge card (§chat.worktrees/merge-card) has a chevron that unfolds the viewer inside the card,
   on that merge's commit against its first parent; the chevron folds it again. Inside the card the
-  viewer has no height or scroll area of its own: it grows with what it shows, and the transcript
-  scrolls it, so a drag over it always moves the page.
+  viewer is at most the transcript's visible height less some padding, at every width, so it fits
+  on screen with a little room above and below; a shorter change keeps its natural height. Beyond
+  that its file list and its diff each scroll inside it, and a scroll that reaches an inner pane's
+  end carries on to the transcript.
 - An agent's `show_changes` result (§chat.changes/show-changes-card).
 
 Nothing of the viewer exists until it is shown: a folded merge card, a `show_changes` card or a

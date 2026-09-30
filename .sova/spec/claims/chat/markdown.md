@@ -192,12 +192,15 @@ block's source (§app.baton/outsider-view).
   caption or note render as inline code; everything else is text.
 - **Emphasis.** `mark <target>[, <target>…] [tone] ["note"]`, at most 8 mark lines per block,
   notes ≤ 120 characters, works in every kind. Commas outside quotes separate targets (`a, b`,
-  `a,b`; a `"quoted, label"` is one target); a stray or trailing comma is an error. A marked item
+  `a,b`; a `"quoted, label"` is one target); a stray or trailing comma drops the mark (below). A marked item
   takes its tone (default accent), a heavier outline or a tinted row, and the note's number as a
   badge; one mark line naming several targets lists its note once and puts the same number on the
   first item of each target (a range still numbers only its first line); the notes are listed
   under the drawing in writing order.
-  A malformed mark line is an error. A mark that can't apply is dropped with a warning (below): a
+  A mark line that can't be read (a stray comma, a second note or tone, a word after its note or
+  tone, an unclosed quote, a backwards range) is dropped with a warning saying what it couldn't read,
+  and the figure still draws; bare words after a target are §chat.markdown/vis-lenience. A mark
+  that can't apply is dropped with a warning (below): a
   target that names nothing (the line's other targets are kept), an item already marked (a range keeps its items not yet marked, its
   note on the first of them), a mark past the 8th. A dropped mark takes no number. A note over 120
   characters is cut to 120, with a warning. Colour is never the only signal: emphasis adds weight
@@ -340,7 +343,8 @@ belong to that panel. For two small graphs to compare (before/after, A vs B).
   order (`gate "Manual approval" decision`, `db "Orders" store warn`); two different shapes or tones
   for one node are an error, and a chain shape applies to a node whose `node` line gives none. A
   fence with no such line reads exactly as before: a string after a target is the edge's label
-  (`idle -> busy "prompt"`) and a shape word in a chain is an error. The guide teaches inline labels
+  (`idle -> busy "prompt"`); a shape or tone word after a chain id reads as it does inline
+  (§chat.markdown/vis-lenience). The guide teaches inline labels
   first, with an example that shows the label-then-edge pair, a return edge's label and a shape.
 
 ## §chat.markdown/vis-flow-groups — `vis flow` groups: frames inside one graph
@@ -391,15 +395,21 @@ write, quoting the corrected line. Every line that parsed before keeps its meani
   is the edge's label, and it doesn't make the fence inline-style. A lone id is still an error
   that names the `node` line.
 - **After a flow target**, the first string still labels the node (inline style) and the second the
-  edge. A further string is an error that says what to write, by what came before it:
+  edge. When the target is labelled already (earlier in an inline-style fence, or by its `node`
+  line), both strings right after it are the edge's: its label on two lines, the first over the
+  second (`client -> api "Notify completion" "POST /confirm-upload"` labels the edge "Notify
+  completion" over "POST /confirm-upload"). Any other further string is an error that says what to
+  write, by what came before it:
   - the target was labelled on this line: "unexpected "own states" after d1: one label and one
     edge label per target; for a second line use node d1 "Decision" "own states"";
-  - the target was labelled earlier (or has a node line, or the fence isn't inline-style), so the
-    first string was the edge's: "… one string per edge label (\n breaks a line): -> api "Notify
-    completion\nPOST /confirm-upload"", led, when inline, by "api is labelled "API Server"
-    already, so "Notify completion" labels the edge";
-  - it follows a shape or tone word: "… strings go before shape and tone words: -> staging
-    "rejected" error".
+  - the first string was the edge's (the fence isn't inline-style and the target has no node
+    line, or a third string follows a labelled target's two): "… one string per edge label (\n
+    breaks a line): -> api "Notify completion\nPOST /confirm-upload"", led, when inline, by "api is
+    labelled "API Server" already, so "Notify completion" labels the edge";
+  - it follows a shape or tone word, and the target has no label yet or the edge has one: "…
+    strings go before shape and tone words: -> staging "rejected" error". (A target labelled
+    already, with no edge label, reads the string after its words as the edge's label:
+    `approval -> staging error "rejected"` draws as `approval -> staging "rejected" error`.)
 - **Sequence, Mermaid messages.** A message whose target ends in `:` or starts with `>`
   (`Client -> Server: SYN`, `Client->>Server: SYN`) is an error quoting the vis message: "write
   Client -> Server "SYN" (not Mermaid a -> b: msg)", a `-->>` reply as `-->`.
@@ -412,17 +422,41 @@ write, quoting the corrected line. Every line that parsed before keeps its meani
   total, "… in total"), with the warning "line N: the parts add up to 4.41, more than of: 4.19:
   drawn without of:" at the `of:` line (§chat.markdown/visuals, Warnings). Parts up to `of:` are
   unchanged.
+- **Mark targets with spaces** (every kind). In a `mark` line, bare words after a target, up to a
+  comma, a tone word or a string, are one run with it: `mark Sep 30 "…"`. A one-word run is the
+  target as before. A longer run names the item that its words joined by one space name, as that
+  quoted label would (`mark Sep 30` is `mark "Sep 30"`); failing that, when each word names an item
+  on its own, it is that many targets, as if comma-separated (`mark browser s3 "…"` marks both, one
+  note); failing both, the mark is dropped with the warning "mark: no row "Sep 30", dropped (quote
+  a target with spaces: mark "Sep 30" "…")". A tone word after the run is the mark's tone and a
+  string its note, as after one target.
+- **Layers and timeline, tone before note.** A row of four `|` fields whose third is a tone word and
+  whose fourth isn't (`Transport | TCP, UDP | accent | where ports live`) draws as the same row with
+  the two swapped (`… | where ports live | accent`).
+- **`node` as an id.** In `vis flow` and `vis state`, a line whose first word `node` is followed by
+  an arrow (`node -> db "Managed Postgres"`) is a chain from a node whose id is `node`.
+- **Shape and tone words in any chain.** In a `vis flow` or `vis state` fence that isn't
+  inline-style, shape and tone words after a chain id read as they do in an inline-style fence
+  (§chat.markdown/vis-flow-sections): `delivered -> done end` makes done the end dot, as `node done
+  end` does.
+- **A dotted Mermaid arrow.** In `vis flow` and `vis state`, `-.->` is a dashed edge, as `-->` is:
+  `auth -.-> gw "token valid?"`.
+- **`mark:` as a setting.** In every kind that reads `key: value` settings (all but wireframe, whose
+  settings never fail), a `mark:` line is the `mark` line without its colon: `mark: 3 error "…"` in
+  a `vis code` fence marks line 3.
 - **The guide** teaches flow example-first, one bullet per shape, each quoting its example (a
   node labelled where it first appears, two lines in a box by `\n` in its label, the edge label
   after a target, shape and tone, a `node` line declaring a node); says that after a target the
   first string labels it and the second the edge, never a second line; lists short "Not vis"
   wrong→right pairs for Mermaid habits (`A->>B: msg`, `A[Label] --> B`) in its shared rules; and
-  asks for a tree folder's `/` inside the quotes, a quoted mark target when it has spaces, and no
+  asks for a tree folder's `/` inside the quotes, a mark target as its item's exact label, quoted when it
+  has spaces (even when its row isn't quoted: `mark "Vue 2" "…"`, and the timeline example marks one
+  that way), a steps mark on a row, not a step, and no
   `of:` when a chart's parts exceed it. It shows no node with two strings (a source's second line,
   a declaration without `node`): in an offline eval of weak models at low effort, showing one led
   a model to write `-> b "B" "role"` on targets, drawing the role on the arrow; the parser reads
   those forms when a model writes them anyway. The text sent to the model stays within the size it
-  had (12,356 bytes), and so does the file (15,279).
+  had before mark targets with spaces (12,397 bytes), and so does the file (15,251).
 
 ## §chat.markdown/vis-matrix-tones — `vis matrix` cell tones
 
@@ -489,8 +523,10 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
   it at its right; a back, menu or left-arrow `icon` goes before the title. On a desktop screen
   whose first block is a `header` and which has a `sidebar`, the header spans the frame, with the
   sidebar and the page below it.
-  A `heading`'s first blocks, when they are a `button`, `link` or `icon`, sit at its right; the
-  rest of what it holds is its section, below it. `tabbar` and
+  A `heading`'s first blocks, when they are a `button`, `link` or `icon`, are its controls: they
+  sit at its right, after its chip, which in a wide heading sits at the right edge next to them;
+  when its text would keep less than about 12 characters' width beside them, the chip and the
+  controls wrap onto a line under the text. The rest of what it holds is its section, below it. `tabbar` and
   `footer` sit at the bottom.
 - **Screens.** Up to 6, each in a phone frame (240–300px) or a desktop frame (560–760px), both
   fluid with the figure, side by side in a strip. A frame never pans inside itself:
@@ -530,8 +566,8 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
   with a warning.
 - **Errors.** The kind's own: a block line that starts with neither a word nor a "text" (ASCII
   art, HTML), an unclosed quote on a block line (a quote that closes on a later line, spanning at most 12 lines
-  in all, is joined into one text, with a warning), and nothing to draw; plus a malformed `mark` line,
-  as in every kind (§chat.markdown/visuals). Settings are read as text and never fail.
+  in all, is joined into one text, with a warning), and nothing to draw. A `mark` line it can't read is dropped
+  with a warning, as in every kind (§chat.markdown/visuals). Settings are read as text and never fail.
 - **Height.** Reserved before it draws from wireframe.css' metrics (frame widths, nav row, row
   wrapping), within about 15% of the rendered height, so a drawing doesn't shift the thread.
 
@@ -543,6 +579,17 @@ at its right. Blocks that don't fit beside the title go on a line of their own u
 detail, wrapping, each at its own width, never overlapping one another or running out of the item.
 A `row` among them is laid out as part of that group. In a row beside other blocks, a badge takes
 its label's width, cut short with an ellipsis if it must, like a button.
+
+## §chat.markdown/vis-wireframe-chips — `vis wireframe` chips never squeeze a title
+
+A chip on a `card`, `col`, `sidebar`, `modal` or `sheet` sits on its title's line while the title
+keeps at least about 12 characters' width beside it, and otherwise goes on a line of its own under
+the title, never narrowing the title to a few letters. A `heading`'s chip and its controls do the
+same: at its right edge while its text keeps that width, else on a line under the text
+(§chat.markdown/vis-wireframe). On that line of its own a chip is never wider than its block, and a
+long screen name in it is cut short with an ellipsis. A `row`'s chip sits beside its blocks while
+each of up to 4 of them keeps about 12 characters' width with the chip at its widest, and otherwise
+goes on a line of its own under them. The reserved height counts the chip's own line.
 
 ## §chat.markdown/accessibility — Accessibility
 

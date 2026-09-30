@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { applyMarks, byIdOrLabel, emphasisMap, emphasisNotes, resolveMarks, takeMarks } from "./emphasis";
-import { collectWarnings, lines, VisError } from "./grammar";
+import { collectWarnings, lines } from "./grammar";
 
-const throws = (fn: () => unknown, re: RegExp) => assert.throws(fn, (e: unknown) => e instanceof VisError && re.test(e.message));
 
 test("takeMarks splits out mark lines: targets, tone, note, in any order after the target", () => {
   const { rest, marks } = takeMarks(lines('a -> b\nmark a\nmark "Merge sort" warn "slow"\nmark 3 "x" error\nmark 4-6\n  mark indented'));
@@ -16,10 +15,59 @@ test("takeMarks splits out mark lines: targets, tone, note, in any order after t
   ]);
 });
 
-test("takeMarks errors: no target, junk, backwards ranges", () => {
-  throws(() => takeMarks(lines("mark")), /needs a target/);
-  throws(() => takeMarks(lines("mark a sparkly")), /unexpected sparkly/);
-  throws(() => takeMarks(lines("mark 5-3")), /backwards/);
+// No mark line is an error: one that can't be read is dropped with a warning naming what it couldn't read.
+const dropped = (src: string) => {
+  const got = collectWarnings(() => takeMarks(lines(`${src}\nmark ok`)));
+  assert.deepEqual(got.value.marks.map((m) => m.target.text), ["ok"], `${src}: only the readable mark is kept`);
+  return got.warnings.map((w) => `${w.line}: ${w.message}`);
+};
+
+test("takeMarks: an unreadable mark line is dropped with a warning (no target, junk after the note, a backwards range, two notes or tones, an unclosed quote)", () => {
+  assert.deepEqual(dropped("mark"), ['1: mark needs a target: mark <id | "label" | line | from-to>[, more] [tone] ["note"]; mark dropped']);
+  assert.deepEqual(dropped('mark a "n" sparkly'), ['1: mark: unexpected sparkly (after the target: a tone and/or a "note"); mark dropped']);
+  assert.deepEqual(dropped("mark 5-3"), ["1: mark 5-3: the range runs backwards; mark dropped"]);
+  assert.deepEqual(dropped('mark a "one" "two"'), ["1: mark takes one note; mark dropped"]);
+  assert.deepEqual(dropped("mark a warn error"), ["1: mark takes one tone; mark dropped"]);
+  assert.deepEqual(dropped('mark a "open'), ["1: unclosed quote; mark dropped"]);
+  assert.deepEqual(dropped("mark a -> b"), ['1: mark: unexpected -> (after the target: a tone and/or a "note"); mark dropped']);
+  assert.deepEqual(dropped('mark "Merge" sort'), ['1: mark: unexpected sort (after the target: a tone and/or a "note"); mark dropped'], "a run is bare words only");
+});
+
+test("takeMarks: bare words after a target are one run with it, up to a comma, a tone or a string", () => {
+  const { marks } = takeMarks(lines('mark Sep 30 "burst"\nmark Vue 2 warn\nmark a b, "C d", e f g ok "n"\nmark a warn'));
+  assert.deepEqual(
+    marks.map((m) => m.targets.map((t) => (t.t === "run" ? ["run", t.text, t.words.map((w) => `${w.t}:${w.text}`)] : [t.t, t.text]))),
+    [
+      [["run", "Sep 30", ["id:Sep", "number:30"]]],
+      [["run", "Vue 2", ["id:Vue", "number:2"]]],
+      [["run", "a b", ["id:a", "id:b"]], ["label", "C d"], ["run", "e f g", ["id:e", "id:f", "id:g"]]],
+      [["id", "a"]],
+    ],
+  );
+  assert.deepEqual(marks.map((m) => [m.tone ?? null, m.note ?? null]), [[null, "burst"], ["warn", null], ["ok", "n"], ["warn", null]]);
+});
+
+test("resolveMarks: a run is its joined phrase, else each word when every word names an item, else dropped with the fix quoted", () => {
+  const items = byIdOrLabel([{ key: "k30", label: "Sep 30" }, { key: "kb", id: "browser", label: "Browser" }, { key: "ks", id: "s3", label: "S3" }, { key: "kv", id: "Vue", label: "Vue" }]);
+  const joined = collectWarnings(() => resolveMarks(takeMarks(lines('mark Sep 30 warn "burst"')).marks, items, "row"));
+  assert.deepEqual(joined.value, [{ key: "k30", tone: "warn", note: "burst", n: 1 }]);
+  assert.deepEqual(joined.warnings, []);
+  const split = collectWarnings(() => resolveMarks(takeMarks(lines('mark browser s3 "ends"')).marks, items, "node"));
+  assert.deepEqual(split.value, [{ key: "kb", tone: "accent", note: "ends", n: 1 }, { key: "ks", tone: "accent", note: "ends", n: 1 }]);
+  assert.deepEqual(split.warnings, []);
+  // "Vue" names an item but "3" doesn't: no guess, the whole run is dropped.
+  const none = collectWarnings(() => resolveMarks(takeMarks(lines('mark Vue 3 "gone"\nmark Sep 31\nmark s3 "kept"')).marks, items, "row"));
+  assert.deepEqual(none.value, [{ key: "ks", tone: "accent", note: "kept", n: 1 }], "a dropped run takes no number");
+  assert.deepEqual(none.warnings, [
+    { line: 1, message: 'mark: no row "Vue 3", dropped (quote a target with spaces: mark "Vue 3" "…")' },
+    { line: 2, message: 'mark: no row "Sep 31", dropped (quote a target with spaces: mark "Sep 31")' },
+  ]);
+});
+
+test("resolveMarks passes the mark's line to the kind's resolver", () => {
+  const seen: [string, number][] = [];
+  resolveMarks(takeMarks(lines("x\nmark a\nmark b c")).marks, (t, line) => (seen.push([t.text, line]), null), "item");
+  assert.deepEqual(seen, [["a", 2], ["b c", 3], ["b", 3], ["c", 3]]);
 });
 
 test("takeMarks warnings: a long note is cut, marks past the 8th are dropped", () => {
@@ -87,10 +135,8 @@ test("takeMarks: commas outside quotes separate several targets; a quoted comma 
   assert.equal(marks[0]!.target, marks[0]!.targets[0], "target is the first of targets");
 });
 
-test("takeMarks: a stray or trailing comma is an error; mark lines, not targets, count toward 8", () => {
-  throws(() => takeMarks(lines("mark a,")), /comma needs a target on each side/);
-  throws(() => takeMarks(lines("mark a, , b")), /comma needs a target on each side/);
-  throws(() => takeMarks(lines("mark , a")), /comma needs a target on each side/);
+test("takeMarks: a stray or trailing comma drops the mark with a warning; mark lines, not targets, count toward 8", () => {
+  for (const src of ["mark a,", "mark a, , b", "mark , a"]) assert.deepEqual(dropped(src), ["1: mark: a comma needs a target on each side (mark a, b, c); mark dropped"]);
   const many = collectWarnings(() => takeMarks(lines(Array.from({ length: 8 }, (_, i) => `mark n${i}, m${i}, k${i}`).join("\n"))));
   assert.equal(many.value.marks.length, 8);
   assert.deepEqual(many.warnings, []);

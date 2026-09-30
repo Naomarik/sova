@@ -91,6 +91,15 @@ pairs or unlinks it.
 - After a server restart, a step run again sends nothing: its outcome is uncertain, so what it made
   stays and it is logged as `unknown`, code `unknown-after-restart` (`<stateRoot>/outreach-pending.json`
   remembers each step in flight).
+- **Not sent is never ok.** A project overseer's send that is refused or fails when its step runs
+  (at once, or when its hold ends or is approved) never reads as sent anywhere. Its tool says "Not
+  sent to {name}: {why}"; an approval with `sova_hold` that released it answers as a refusal,
+  "Approved {id}, but the WhatsApp message to {name} was not sent: {why}"; the project's feed
+  (§app.project-overseer/reviews) gets an entry `outreach/not-sent`, refused "Not sent to {name}:
+  {why}", which `sova_pipeline` and the overseer's next look list; and Needs you shows it
+  (`outreach-not-sent`, §app.overseer/attention-digest), "The WhatsApp message to {name} was not
+  sent: {reason}.", the reason said from its log code, opening the person's page, until a later
+  send to that person in that project goes, or 7 days pass.
 
 - **On the strip.** The baton strip (which the Organizations region's Needs you row "Send {name}
   their link" opens) shows **Send on WhatsApp** beside Get Link while a person holds the baton, and
@@ -121,10 +130,24 @@ pairs or unlinks it.
   expiring when the original does and never later (an Extend of a sibling stops at the original's
   expiry), and turned off whenever the original is (§mesh.public/preview). The preview named stays
   as it is. The previews lists (the project's card, the Shares page) show a sibling as "sent to
-  {name}", so each person's link can be turned off on its own.
+  {name}", so each person's link can be turned off on its own. A sibling records who sent it
+  (`createdBy`): `operator` for the operator's own send, else `session:<id>` of the overseer that
+  sent it (the project's overseer conversation for a project overseer's send, the current Overseer
+  for the global Overseer's), so the lists say "Made by the overseer" for an overseer's.
 - Both refuse while the public address warning is `off`, `unreachable` or `not-accepted` (a link
   nobody outside can open), with that warning's text (§app.baton/links), and a preview while no
   preview address is set.
+- The preview resolver reads the preview address once, before it mints the sibling, and makes the
+  URL from that reading. A routed host's address reads as unset for a moment each time its gateway
+  comes back and states its kinds again (§mesh.public/registry), so a send whose check passed never
+  fails on a second reading after the sibling exists; one that finds no address mints nothing and
+  is refused `preview-address`.
+- Each refusal carries a code for the send log, never a URL or a number: `session-unknown`,
+  `other-project`, `session-ended`, `not-invited`, `not-reached`, `not-holder` (a hand-off);
+  `preview-unknown`, `other-project`, `preview-off`, `preview-expired`, `preview-address` (a
+  preview: no preview address, or a gateway that doesn't route previews); `address-off`,
+  `address-unreachable`, `address-not-accepted` (the public address's warning). `link` is left for
+  a reference of the wrong kind or an unexpected error.
 - No model sees a link, a token or a number: tools take ids and answer with the outcome.
 
 ## §app.outreach/log — The send log
@@ -134,7 +157,10 @@ pairs or unlinks it.
   "preview", sessionId?, n?, offerId?, previewId?, note?: true, by: "operator" |
   "operator-via-overseer" | "project-overseer", event: "sent" | "delivered" | "read" | "failed" |
   "refused" | "unknown", code?}`; a preview send records its sibling's `pv_…` id, never its URL. It never holds a number, a token, a link, a channel message id, the message or
-  the note's text.
+  the note's text. A refusal's `code` names its reason exactly: outreach's own (`off`, `paused`,
+  `no-number`) or the link's (§app.outreach/links); a failure's is the sender's.
+- A project overseer reads its project's lines with `sova_send_status` (§app.project-overseer/tools):
+  each send's latest event, code and time, never a number, a link or the note.
 - Receipts (delivered, read) are matched host-locally: `<stateRoot>/outreach-receipts.json` (0600)
   maps the channel's message ref to its log line's id for 7 days; a receipt appends a `delivered` or
   `read` line with the same `id`.

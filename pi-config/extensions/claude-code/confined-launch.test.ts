@@ -14,7 +14,7 @@ import { test } from "node:test";
 import type { ChildProcess } from "node:child_process";
 import { ClaudeRunner, type ClaudeSpawnOptions } from "./runner.ts";
 import { ClaudeLogins, loginDir, loginUsers, markLeaving, writeAccounts } from "./accounts.ts";
-import { CLAUDE_API_HOSTS, TOKEN_FD, TOKEN_FD_ENV, claudeNeeds, privateConfigDir, releasePrivateConfigDir, sweepPrivateConfigDirs } from "./confined-launch.ts";
+import { CLAUDE_API_HOSTS, TOKEN_FD, TOKEN_FD_ENV, claudeNeeds, confinedVersionProbe, privateConfigDir, releasePrivateConfigDir, sweepPrivateConfigDirs } from "./confined-launch.ts";
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 async function until(check: () => boolean, ms = 3000): Promise<void> {
@@ -54,7 +54,7 @@ const SESSION = "00000000-0000-4000-8000-00000000c0f1";
 const FAR = Date.now() + 8 * 3600_000;
 
 /** The sandbox's launch module, faked: records every call, wraps argv, hands back the needs' fds. */
-function fakeModule(root: string, refuse?: string): { file: string; calls: () => any[] } {
+function fakeModule(root: string, refuse?: string, probe?: "ok" | "fail"): { file: string; calls: () => any[]; released: () => string[] } {
 	const file = path.join(root, `launch-${Math.random().toString(36).slice(2)}.mjs`);
 	const key = `__confine_${path.basename(file, ".mjs").replace(/-/g, "_")}`;
 	fs.writeFileSync(file, `
@@ -67,6 +67,8 @@ export async function confineLaunch(scope, needs, launch) {
 	calls.push({ scope, needs: structuredClone(needs), launch: structuredClone(launch), cleaned: false });
 	const call = calls.at(-1);
 	${refuse ? `return { refused: ${JSON.stringify(refuse)} };` : ""}
+	if (launch.args[0] === "--version") return { command: process.execPath, args: ["-e", ${JSON.stringify(probe === "ok" ? "console.log('2.1.282 (Claude Code)')" : "process.exit(1)")}],
+		env: {}, spawnEnv: { PATH: process.env.PATH }, fds: [{ fd: 3, data: "env" }], tmpDir: "/x", tmpInside: "/tmp", enforcement: "full", async cleanup() { call.cleaned = true; } };
 	return { command: "/fake/bwrap", args: ["--wrapped", launch.command, ...launch.args], env: { ...needs.env },
 		spawnEnv: { PATH: "/usr/bin", ...needs.spawnEnv }, fds: needs.fds ?? [], tmpDir: workerTmpDir(scope, needs).host, tmpInside: "/tmp",
 		enforcement: "full", async cleanup() { call.cleaned = true; } };
@@ -80,7 +82,7 @@ function credentials(dir: string, token: string, expiresAt = FAR): void {
 	fs.writeFileSync(path.join(dir, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: token, refreshToken: "REFRESH-never", expiresAt } }));
 }
 
-function setup(t: { after: (fn: () => void) => void }, o: { pool?: boolean; refuse?: string; hosted?: boolean; noToken?: boolean; systemPrompt?: string; settingsJson?: string; resume?: string } = {}) {
+function setup(t: { after: (fn: () => void) => void }, o: { pool?: boolean; refuse?: string; hosted?: boolean; noToken?: boolean; systemPrompt?: string; settingsJson?: string; resume?: string; probe?: "ok" | "fail" } = {}) {
 	const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "claude-confined-")));
 	t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 	const agentDir = path.join(root, "agent");
@@ -113,7 +115,7 @@ function setup(t: { after: (fn: () => void) => void }, o: { pool?: boolean; refu
 		children.push(child);
 		return child as unknown as ChildProcess;
 	};
-	const module = fakeModule(root, o.refuse);
+	const module = fakeModule(root, o.refuse, o.probe);
 	const refreshed: { dir: string }[] = [];
 	const refreshImpl = async (dir: string) => {
 		refreshed.push({ dir });
@@ -132,7 +134,8 @@ function setup(t: { after: (fn: () => void) => void }, o: { pool?: boolean; refu
 		...(o.systemPrompt ? { systemPrompt: o.systemPrompt } : {}),
 		...(o.settingsJson ? { settingsJson: o.settingsJson } : {}),
 		...(o.resume ? { resume: { sessionId: o.resume } } : {}),
-		confine: { scope: "SCOPE", module: module.file, key: "sess-w1", agentDir, writable: [path.join(root, "mailbox")], ...(o.hosted ? { hostedTmpDir: path.join(root, "hosted-tmp") } : {}) },
+		launchProbe: !!o.probe,
+		confine: { scope: "SCOPE", module: module.file, key: "sess-w1", agentDir, writable: [path.join(root, "mailbox")], describe: "the session's sandbox, narrowed to /wt", ...(o.hosted ? { hostedTmpDir: path.join(root, "hosted-tmp") } : {}) },
 		spawnImpl: spawn, respawnImpl: spawn,
 		signalGroupImpl: (pid) => { children.find((c) => c.pid === pid)?.kill(); },
 	} as ClaudeSpawnOptions, {
@@ -218,6 +221,8 @@ test("every launch goes through the sandbox: a failover to the next login re-rea
 	assert.equal(third.fd3, `tok-${B}-1`);
 	assert.deepEqual(third.options.env, { PATH: "/usr/bin", CLAUDE_CONFIG_DIR: loginDir(s.agentDir, B) });
 	assert.equal(s.module.calls().length, 3, "three launches, three confinements");
+	assert.deepEqual(s.runner.transcript.filter((i) => i.text.startsWith("[sandbox:")).map((i) => [i.kind, i.text]),
+		[["system", "[sandbox: confined — the session's sandbox, narrowed to /wt]"]], "one line, at the first confined launch");
 	for (const child of s.children) assertNoToken(s, child);
 	await until(() => third.writes.length > 0);
 	third.ack();
@@ -255,6 +260,7 @@ test("a refusal, or a login without an access token, fails the worker; nothing r
 	const refused = setup(t, { refuse: "Sandbox: no" });
 	await until(() => refused.runner.status === "error");
 	assert.equal(refused.runner.error, "Sandbox: no");
+	assert.ok(refused.runner.transcript.some((i) => i.kind === "system" && i.text === "[sandbox: refused — Sandbox: no]"));
 	assert.equal(refused.children.length, 0);
 	const empty = setup(t, { noToken: true });
 	await until(() => empty.runner.status === "error");
@@ -347,4 +353,24 @@ test("a resume after the private config dir was swept starts on a fresh one, res
 	const slug = s.cwd.replace(/[^a-zA-Z0-9]/g, "-");
 	assert.ok(fs.statSync(home).isDirectory(), "made again");
 	assert.equal(fs.realpathSync(path.join(home, "projects", slug)), path.join(s.claudeDir, "projects", slug), "the record it resumes is reachable");
+});
+
+test("the launch gate: a confined `claude --version` must pass before the first confined launch; a failure refuses (fail closed), a pass is cached", { timeout: 10000 }, async (t) => {
+	const bad = setup(t, { probe: "fail" });
+	await until(() => bad.runner.status === "error");
+	assert.equal(bad.runner.error, "This Claude Code worker cannot start confined by the sandbox: a confined `claude --version` did not run (exit 1)");
+	assert.ok(bad.runner.transcript.some((i) => i.text === `[sandbox: refused — ${bad.runner.error}]`));
+	assert.equal(bad.children.length, 0, "the worker never ran");
+	assert.deepEqual(bad.module.calls().map((c) => c.launch.args), [["--version"]]);
+	assert.equal(bad.module.calls()[0].needs.fds, undefined, "the probe gets no token");
+	assert.ok(bad.module.calls()[0].cleaned, "its proxy is stopped");
+	const good = setup(t, { probe: "ok" });
+	await until(() => good.children.length === 1);
+	assert.deepEqual(good.module.calls().map((c) => [c.launch.command, c.launch.args[0]]), [["claude", "--version"], ["claude", "-p"]]);
+	await until(() => good.children[0]!.writes.length > 0);
+	good.children[0]!.ack();
+	await until(() => good.runner.status === "running");
+	await good.runner.kill("x");
+	assert.equal(await confinedVersionProbe({ module: await import(good.module.file) as any, moduleFile: good.module.file, scope: "S", needs: {}, command: "claude", cwd: good.cwd, env: {} }), undefined);
+	assert.equal(good.module.calls().length, 2, "passed once: not probed again in this process");
 });

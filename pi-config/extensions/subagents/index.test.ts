@@ -2597,7 +2597,7 @@ test("sandbox on: a claude worker is confined by the sandbox under its own sessi
 		assert.equal(asked.length, 2, "asked once to validate the batch, once under the worker's own id");
 		assert.equal(asked[1].backend, "claude-code");
 		assert.ok(asked[1].owner.startsWith(key) && asked[1].owner.endsWith("-ag_01"), asked[1].owner);
-		assert.deepEqual(claude.confine, { scope: JSON.stringify({ owner: asked[1].owner, root: null }), module: LAUNCH_MODULE, key: asked[1].owner, agentDir: NO_AGENT_DIR, writable: [] });
+		assert.deepEqual(claude.confine, { scope: JSON.stringify({ owner: asked[1].owner, root: null }), module: LAUNCH_MODULE, key: asked[1].owner, agentDir: NO_AGENT_DIR, writable: [], describe: "the session's sandbox" });
 		assert.ok(!("settingsJson" in claude), "the sandbox gives no Claude settings; the runner turns Claude's own sandbox off");
 		assert.equal(claude.permissionMode, undefined, "no forced mode: the runner's default bypassPermissions, or the spec's own");
 		assert.deepEqual(claude.backendOptions, { permissionMode: "bypassPermissions" });
@@ -3699,6 +3699,7 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 		assert.equal(created.length, 1);
 		assert.equal(flagsFor.length, 1);
 		assert.deepEqual(JSON.parse(created[0].confine.scope), { owner: created[0].confine.key, root: wt }, "the worktree's top level is its root");
+		assert.equal(created[0].confine.describe, `write-only to ${wt}`, "its transcript line: the sandbox is off");
 		assert.equal(created[0].cwd, wt);
 		// A dropped worktree admits nothing; the refusal names the active set.
 		await assert.rejects(h.call("agent_spawn", { prompt: "d", cwd: dropped }), new RegExp(`outside this session's cwd and its worktrees \\(${wt}\\)`));
@@ -3706,6 +3707,8 @@ test("worktrees: a worker starts only in the session cwd or an active tracked wo
 		// On: the sandbox's narrowed scope replaces its session-wide worker flags.
 		h.bus.emit(SANDBOX_STATE_EVENT, { ...SANDBOX_ON, workerLaunch });
 		await h.call("agent_spawn", { prompt: "on", cwd: wt });
+		await h.call("agent_spawn", { prompt: "claude on", cwd: wt, backend: "claude-code" });
+		assert.equal(created.at(-1).confine.describe, `the session's sandbox, narrowed to ${wt}`);
 		assert.deepEqual(h.workers.at(-1).flags, { sandbox: "on", "sandbox-parent": JSON.stringify({ version: 1, writeOnly: true, writable: [wt] }) });
 		await h.call("agent_spawn", { prompt: "on, session cwd" });
 		assert.deepEqual(h.workers.at(-1).flags, WORKER_FLAGS);

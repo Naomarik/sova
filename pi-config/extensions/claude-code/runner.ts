@@ -13,7 +13,7 @@ import {
 	type ClaudeToolPermissionRequest, type ControlAck, type Deferred,
 } from "./transport.ts";
 import { freshAccessToken, refreshLogin, switchText, type RefreshImpl, type ClaudeAccountFailure, type ClaudeLoginChoice, type LoginUser } from "./accounts.ts";
-import { ACCOUNTS_MODULE, CONFINED_DROP_ENV, CONFINED_SETTINGS, TOKEN_FD, claudeNeeds, confinedSourceEnv, launchModule, loginDirOf, type ClaudeConfine } from "./confined-launch.ts";
+import { ACCOUNTS_MODULE, CONFINED_DROP_ENV, CONFINED_SETTINGS, TOKEN_FD, claudeNeeds, confinedSourceEnv, confinedVersionProbe, launchModule, loginDirOf, type ClaudeConfine } from "./confined-launch.ts";
 import type { AgentStatus, AgentUsage, TaskOutcome, TranscriptItem, TranscriptKind, SteerResult } from "../subagents/runner.ts";
 import type { Worker, WorkerHandlers, SteerMode, SpawnOptions } from "../subagents/contracts.ts";
 
@@ -103,6 +103,11 @@ export interface ClaudeSpawnOptions extends SpawnOptions {
 	confine?: ClaudeConfine;
 	/** @internal How a confined launch refreshes its login (default accounts.ts refreshLogin with `executable`). */
 	refreshImpl?: RefreshImpl;
+	/**
+	 * Gate the first confined launch on a confined `<executable> --version` (confinedVersionProbe). Default:
+	 * on macOS only (Seatbelt); Linux's backend is probed by the sandbox itself.
+	 */
+	launchProbe?: boolean;
 }
 /** What a hosting process gets to confine a launch itself (host.ts); plain data, no secret. */
 export interface ClaudeHostedConfine {
@@ -236,6 +241,8 @@ export class ClaudeRunner implements Worker {
 	private viaHost = false;
 	/** Confined: a launch of this worker used the sandbox's default tmp (released when the worker closes). */
 	private defaultTmp = false;
+	/** Confined: the transcript already says how the worker is confined. */
+	private confinedNoted = false;
 	/** Confined: the next launch refreshes its login's token first (after a 401). */
 	private refreshNext = false;
 	/** Confined: the login whose token a 401 already refreshed once; a second 401 on it fails over. */
@@ -425,7 +432,7 @@ export class ClaudeRunner implements Worker {
 		const refusal = (why: string) => `This Claude Code worker cannot start confined by the sandbox: ${why}`;
 		let needs: ReturnType<typeof claudeNeeds>;
 		try { needs = claudeNeeds({ confine, cwd: o.cwd, login: this.login, env }); }
-		catch (error) { this.fail(refusal((error as Error).message)); return false; }
+		catch (error) { this.refuse(refusal((error as Error).message)); return false; }
 		// Only a hosting process owns the hosted tmp; an inline launch (a hosted worker's failover) uses the default one.
 		if (!this.viaHost) delete needs.tmpDir;
 		let module: Awaited<ReturnType<typeof launchModule>>;
@@ -433,7 +440,7 @@ export class ClaudeRunner implements Worker {
 		try {
 			module = await launchModule(confine.module);
 			tmp = module.workerTmpDir(confine.scope, needs);
-		} catch (error) { if (!gone()) this.fail(refusal(`the sandbox's launch module failed (${(error as Error).message})`)); return false; }
+		} catch (error) { if (!gone()) this.refuse(refusal(`the sandbox's launch module failed (${(error as Error).message})`)); return false; }
 		if (gone()) return false;
 		const args = built.args;
 		try {
@@ -444,28 +451,48 @@ export class ClaudeRunner implements Worker {
 		const loginDir = loginDirOf(this.login);
 		const source = confinedSourceEnv(claudeEnv(env));
 		const command = o.executable ?? "claude";
+		if (o.launchProbe ?? process.platform === "darwin") {
+			const failed = await confinedVersionProbe({ module, moduleFile: confine.module, scope: confine.scope, needs, command, cwd: o.cwd, env: source });
+			if (gone()) return false;
+			if (failed) { this.privateFiles.cleanup(); this.refuse(refusal(failed)); return false; }
+		}
 		if (this.viaHost) {
 			const hosted: ClaudeHostedConfine = { module: confine.module, scope: confine.scope, needs, token: { module: ACCOUNTS_MODULE, dir: loginDir, fd: TOKEN_FD, force }, dropEnv: [...CONFINED_DROP_ENV] };
 			try { transport.launch(command, args, { cwd: o.cwd, env, hosted }); }
 			catch (error) { this.fail(`Spawn failed: ${String(error)}`); return false; }
+			this.noteConfined(confine);
 			this.trackLogin();
 			return true;
 		}
 		this.defaultTmp = true;
 		const token = await freshAccessToken(loginDir, { force, refresh: o.refreshImpl ?? ((dir) => refreshLogin(dir, { executable: o.executable })) });
 		if (gone()) return false;
-		if (!token) { this.fail(refusal(`the Claude login ${this.login?.label ?? "default"} has no access token to hand over (sign it in again)`)); return false; }
+		if (!token) { this.refuse(refusal(`the Claude login ${this.login?.label ?? "default"} has no access token to hand over (sign it in again)`)); return false; }
 		let confined: Awaited<ReturnType<typeof module.confineLaunch>>;
 		try { confined = await module.confineLaunch(confine.scope, { ...needs, fds: [{ fd: TOKEN_FD, data: token.token }] }, { command, args, cwd: o.cwd, env: source }); }
-		catch (error) { if (!gone()) this.fail(refusal((error as Error).message)); return false; }
-		if ("refused" in confined) { if (!gone()) this.fail(confined.refused); return false; }
+		catch (error) { if (!gone()) this.refuse(refusal((error as Error).message)); return false; }
+		if ("refused" in confined) { if (!gone()) this.refuse(confined.refused); return false; }
 		if (gone()) { void confined.cleanup(); return false; }
 		try {
 			transport.launch(confined.command, confined.args, { cwd: o.cwd, spawnEnv: confined.spawnEnv, fds: confined.fds });
 		} catch (error) { void confined.cleanup(); this.fail(`Spawn failed: ${String(error)}`); return false; }
 		void transport.whenClosed.then(() => confined.cleanup()).catch(() => undefined);
+		this.noteConfined(confine);
 		this.trackLogin();
 		return true;
+	}
+
+	/** The transcript's one line saying how the worker is confined (its first confined launch). */
+	private noteConfined(confine: ClaudeConfine): void {
+		if (this.confinedNoted) return;
+		this.confinedNoted = true;
+		this.push("system", `[sandbox: confined — ${confine.describe ?? "the session's sandbox"}]`);
+	}
+	/** A launch the sandbox refused: the transcript's `[sandbox: refused — …]` line, then the worker fails with the reason. */
+	private refuse(reason: string): void {
+		if (this.closed || this.stopping) return;
+		this.push("system", `[sandbox: refused — ${reason}]`);
+		this.fail(reason);
 	}
 
 	/**

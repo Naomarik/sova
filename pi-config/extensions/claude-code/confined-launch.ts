@@ -15,6 +15,7 @@
  * Node builtins only, and the sandbox module is loaded by path (`confine.module`) at launch, never
  * imported: a hosting process (subagents/host.ts) runs the same steps with the serialized data.
  */
+import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -34,6 +35,11 @@ export interface ClaudeConfine {
 	writable?: string[];
 	/** A hosted worker: the host process confines it and owns this tmp (never the parent's). */
 	hostedTmpDir?: string;
+	/**
+	 * How the worker is confined, for its transcript's `[sandbox: confined — …]` line: "the session's
+	 * sandbox", "the session's sandbox, narrowed to <root>" or "write-only to <root>".
+	 */
+	describe?: string;
 }
 
 /** The fd the access token arrives on inside. */
@@ -203,3 +209,54 @@ export function sweepPrivateConfigDirs(o: {
 	}
 	return removed;
 }
+
+/** Probes that passed, per platform, launch module and executable: a confined `--version` once per process. */
+const probed = new Set<string>();
+/**
+ * The launch gate (§chat.sandbox/workers; the macOS rule): before the first confined launch of an
+ * executable, run it confined with `--version` and require a version line; fail closed. Only a pass is
+ * cached (a failure is tried again at the next launch). Resolves undefined when it passed, else why not.
+ */
+export async function confinedVersionProbe(o: {
+	module: LaunchModule;
+	moduleFile: string;
+	scope: string;
+	needs: LaunchNeeds;
+	command: string;
+	cwd: string;
+	env: Record<string, string>;
+	timeoutMs?: number;
+}): Promise<string | undefined> {
+	const key = `${process.platform}\u0000${o.moduleFile}\u0000${o.command}`;
+	if (probed.has(key)) return undefined;
+	const { fds: _fds, ...needs } = o.needs;
+	let confined: Awaited<ReturnType<LaunchModule["confineLaunch"]>>;
+	try { confined = await o.module.confineLaunch(o.scope, needs, { command: o.command, args: ["--version"], cwd: o.cwd, env: o.env }); }
+	catch (error) { return `the confined launch probe could not be set up (${(error as Error).message})`; }
+	if ("refused" in confined) return confined.refused;
+	const verdict = await new Promise<string | undefined>((resolve) => {
+		const stdio: ("pipe" | "ignore")[] = ["ignore", "pipe", "pipe"];
+		for (const { fd } of confined.fds) { while (stdio.length < fd) stdio.push("ignore"); stdio[fd] = "pipe"; }
+		let out = "";
+		let child: ReturnType<typeof spawn>;
+		try { child = spawn(confined.command, confined.args, { cwd: o.cwd, env: confined.spawnEnv, stdio, detached: process.platform !== "win32" }); }
+		catch (error) { resolve(`the confined launch probe failed to start (${(error as Error).message})`); return; }
+		for (const { fd, data } of confined.fds) {
+			const pipe = child.stdio[fd] as NodeJS.WritableStream | null;
+			pipe?.on("error", () => { /* the exit reports it */ });
+			pipe?.end(data);
+		}
+		const timer = setTimeout(() => { try { process.kill(-child.pid!, "SIGKILL"); } catch { child.kill("SIGKILL"); } }, o.timeoutMs ?? 20_000);
+		child.stdout?.on("data", (chunk: Buffer) => { if (out.length < 4096) out += chunk.toString("utf8"); });
+		child.on("error", (error) => { clearTimeout(timer); resolve(`the confined launch probe failed to start (${error.message})`); });
+		child.on("close", (code, signal) => {
+			clearTimeout(timer);
+			resolve(code === 0 && /\d+\.\d+\.\d+/.test(out) ? undefined : `a confined \`${path.basename(o.command)} --version\` did not run (${signal ?? `exit ${code}`})`);
+		});
+	});
+	try { await confined.cleanup(); } catch { /* the proxy is gone either way */ }
+	if (verdict === undefined) probed.add(key);
+	return verdict;
+}
+/** @internal Forget the passed probes (tests). */
+export function resetVersionProbes(): void { probed.clear(); }

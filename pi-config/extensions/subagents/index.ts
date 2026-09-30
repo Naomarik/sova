@@ -1133,7 +1133,10 @@ export function registerSubagents(
 			const hostedTmpDir = o.hostedTmp ? path.join(o.hostedTmp, "tmp") : undefined;
 			if (hostedTmpDir) fs.mkdirSync(hostedTmpDir, { recursive: true, mode: 0o700 });
 			return {
-				confine: { scope: answer.scope, module: answer.module, key: owner, agentDir: agentDir(), writable, ...(hostedTmpDir ? { hostedTmpDir } : {}) },
+				confine: {
+					scope: answer.scope, module: answer.module, key: owner, agentDir: agentDir(), writable, ...(hostedTmpDir ? { hostedTmpDir } : {}),
+					describe: sandboxState?.on ? `the session's sandbox${o.root ? `, narrowed to ${o.root}` : ""}` : `write-only to ${o.root}`,
+				},
 				...(settingsJson === undefined ? {} : { settingsJson }),
 			};
 		};

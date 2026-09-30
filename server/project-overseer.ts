@@ -1381,6 +1381,18 @@ export function lookAppendix(orgId: string, projectId: string, max = 20): string
       "Held acts (each goes ahead when its time comes unless cancelled; sova_hold approves or cancels, with a reason):",
       ...held.map((h) => `- ${h.id} · ${h.what} · ${h.reviewSince ? `waits for your review since ${h.reviewSince}` : h.wait === "hours" ? `waits for ${h.person ?? "the person"}'s working hours, until ${h.goesAt}` : `goes ahead at ${h.goesAt}`}`),
     );
+  // r12: an offer reaches each invitee in their own working hours; the ones still waiting, and when.
+  const reaching = allBatons().flatMap((b) => {
+    const o = b.orgId === orgId && b.projectId === projectId && (b.state === "open" || b.state === "needs-you") ? b.offers?.find((x) => x.id === b.offerId) : undefined;
+    const waiting = o && o.state !== "withdrawn" ? o.to.filter((id) => o.reach?.[id]?.state === "waiting") : [];
+    if (!o || !waiting.length) return [];
+    const when = (id: string) => {
+      const r = o.reach![id] as { until: string | null };
+      return `${nameOf(orgId, id)} ${r.until ? `at ${r.until} (their working hours)` : "when their working hours next start"}`;
+    };
+    return [`- Offer ${o.n} in "${b.publicTitle}" · ${o.state === "held" ? `held by ${nameOf(orgId, o.holder ?? "")}: nobody new is reached until the lease lapses; then ` : "reaches "}${waiting.map(when).join(", ")}`];
+  });
+  if (reaching.length) parts.push("Offers still reaching people (each invitee is reached in their own working hours):", ...reaching);
   if (feed.length)
     parts.push(
       `What the charts did since your last look (newest first${feed.length > max ? `, ${max} of ${feed.length}; sova_pipeline has the rest` : ""}):`,

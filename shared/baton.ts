@@ -167,6 +167,9 @@ export interface Offer {
   createdAt: string;
   /** The hand-off number it went out as. */
   n: number;
+  /** r12: each invitee reached or waiting for their window, by person id; absent: an offer from before r12 (everyone
+      reached). While withdrawn it is dropped (nobody is reached after). */
+  reach?: Record<string, OfferReach>;
 }
 
 export type BatonOwner = "operator" | { overseerOf: string /* projectId */ };
@@ -360,6 +363,9 @@ export interface BatonSummaryField {
   needsYou?: { from: string; question: string; since: number };
   /** Present while a person holds it through a hand-off with no live link: the operator must send one. */
   sendLink?: { to: string; question: string; since: number };
+  /** r12: an open offer's invitees not reached yet (their working hours haven't come), by name; `until`: their next
+      window (ISO), null when none is found. */
+  waiting?: { name: string; until: string | null }[];
   /** Present while an offer is open or held. `holder` is the claimer's name. */
   offer?: { state: "open" | "held"; invited: number; holder?: string };
   /** When the newest live link of the current hand-off (or open offer) was minted (ISO): it moves on

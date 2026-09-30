@@ -513,13 +513,15 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
   // to the caller that asked (baton.takeMinted), never into the result: that reaches the log.
   const mint = (e: Effect, people: string[], offerId?: string) => {
     const sessionId = sidOfEffect(e);
-    const again = linksOfKey(e.key);
+    // r12: a per-invitee reach names its own key (`reach/<offer>/<person>`); the host dedupes on it.
+    const key = typeof e.chartKey === "string" && e.chartKey ? e.chartKey : e.key;
+    const again = linksOfKey(key);
     // Run again after a restart: nobody has the first links, so they stop and Needs you asks for new ones.
     if (again.length) {
-      revokeLinks((l) => l.key === e.key);
+      revokeLinks((l) => l.key === key);
       return { minted: 0 };
     }
-    for (const personId of people) mintForEffect({ orgId, sessionId, n: Number(e.n), personId, ...(offerId ? { offerId } : {}), key: e.key });
+    for (const personId of people) mintForEffect({ orgId, sessionId, n: Number(e.n), personId, ...(offerId ? { offerId } : {}), key });
     refreshShare(sessionId);
     return { minted: people.length };
   };
@@ -532,7 +534,11 @@ export function registerBatonEffects(host: OrgHostApi, orgId: string): void {
     const holder = typeof d.holder === "string" && d.holder !== OPERATOR && d.holder !== POOL ? [d.holder] : [];
     return mint(e, holder);
   });
-  host.effects.register("mint-link", async (e) => mint(e, typeof e.personId === "string" ? [e.personId] : []));
+  // An offer's invitee reached later (r12: their hours came, by the chart's timer): no caller waits for a token, so none
+  // is made; Needs you asks the operator to send them their link.
+  host.effects.register("mint-link", async (e) =>
+    e.via === "reach" ? { minted: 0 } : mint(e, typeof e.personId === "string" ? [e.personId] : [], typeof e.offerId === "string" && e.offerId ? e.offerId : undefined),
+  );
 
   host.effects.register("revoke-links", async (e) => {
     const sessionId = sidOfEffect(e);

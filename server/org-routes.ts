@@ -86,7 +86,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
     ? {
         id: last.id,
         n: last.n,
-        to: last.to.map((id) => ({ id, name: nm(id) })),
+        to: last.to.map((id) => ({ id, name: nm(id), ...(last.reach?.[id] ? { reach: last.reach[id] } : {}) })),
         state: last.state,
         ...(last.holder ? { holder: { id: last.holder, name: nm(last.holder) } } : {}),
         ...(last.leaseUntil ? { leaseUntil: last.leaseUntil } : {}),

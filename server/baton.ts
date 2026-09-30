@@ -17,6 +17,7 @@ import {
   type GoneWhy,
   type Handoff,
   type Offer,
+  type OfferReach,
   type PersonRef,
   type ViewerReason,
   type WrapupInfo,
@@ -110,8 +111,26 @@ function offerOf(o: Record<string, unknown>): Offer {
     ...(o.lastActivityAt != null ? { lastActivityAt: isoOf(o.lastActivityAt) } : {}),
     createdAt: isoOf(o.createdAt),
     n: Number(o.n),
+    ...(o.state !== "withdrawn" && o.reach && typeof o.reach === "object" ? { reach: reachOf(o.reach as Record<string, unknown>, o.state === "held") } : {}),
   };
 }
+
+/** r12: the chart's per-invitee reach (`{pid {state at? next?}}`, ms) as the reads show it; waiting ones of a held
+    offer are paused (rule 12: nobody new is reached while it is leased). */
+function reachOf(r: Record<string, unknown>, held: boolean): Record<string, OfferReach> {
+  const out: Record<string, OfferReach> = {};
+  for (const [pid, v] of Object.entries(r)) {
+    const x = (v ?? {}) as Record<string, unknown>;
+    out[pid] =
+      x.state === "waiting"
+        ? { state: "waiting", until: typeof x.next === "number" ? isoOf(x.next) : null, ...(held ? { paused: true as const } : {}) }
+        : { state: "reached", ...(typeof x.at === "number" ? { at: isoOf(x.at) } : {}) };
+  }
+  return out;
+}
+
+/** Whether an invitee of this offer has been reached (r12; an offer from before r12 reached everyone). */
+export const reachedBy = (o: Pick<Offer, "reach">, personId: string): boolean => o.reach?.[personId]?.state !== "waiting";
 
 function wrapupOf(w: unknown): WrapupInfo | undefined {
   if (!isObj(w) || typeof w.state !== "string") return undefined;
@@ -828,6 +847,8 @@ export function rotateLink(sessionId: string, personId?: string): { token: strin
     if (!personId || !offer.to.includes(personId)) throw new OrgError("Name one of the invitees (?person=).", 400);
     const p = readRoster(row.orgId).find((x) => x.id === personId);
     if (p?.status !== "active") throw new OrgError(`${p?.name ?? "That person"} is not active, so they get no link.`, 409);
+    // r12: an invitee is reached only in their own working hours; until then there is no link to send.
+    if (!reachedBy(offer, personId)) throw new OrgError(`${p.name} is not reached yet: their link is made when their working hours start.`, 409);
     revokeLinks((l) => l.sessionId === sessionId && l.offerId === offer.id && l.personId === personId);
     return { token: mintLink({ orgId: row.orgId, sessionId, n: offer.n, personId, offerId: offer.id }), n: offer.n };
   }
@@ -873,7 +894,15 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
   const offer = currentOffer(row);
   const proposals = proposalsOf(row);
   const linked = offer && offer.state === "open" && last?.offerId === offer.id ? new Set(liveLinks(row.sessionId, offer.n).map((l) => l.personId)) : null;
-  const missing = linked ? offer!.to.filter((id) => !linked.has(id)).map((id) => nameOf(row.orgId, id)) : [];
+  // r12: only a reached invitee needs a link; one still waiting for their hours is listed as waiting.
+  const missing = linked ? offer!.to.filter((id) => reachedBy(offer!, id) && !linked.has(id)).map((id) => nameOf(row.orgId, id)) : [];
+  const waiting =
+    offer && offer.state !== "withdrawn" && offer.reach
+      ? offer.to.flatMap((id) => {
+          const r = offer.reach![id];
+          return r?.state === "waiting" ? [{ name: nameOf(row.orgId, id), until: r.until }] : [];
+        })
+      : [];
   return {
     holder: row.holder === null ? (offer ? `${offer.to.length} invited` : null) : nameOf(row.orgId, row.holder),
     state: row.state,
@@ -896,6 +925,7 @@ export function batonSummaryField(path: string): BatonSummaryField | undefined {
     // An open offer with invitees nobody has a link for (started in-process without links): the
     // operator sends them — named until each has one.
     ...(missing.length ? { sendLink: { to: missing.join(", "), question: offer!.question, since: Date.parse(last!.at) || 0 } } : {}),
+    ...(waiting.length ? { waiting } : {}),
   };
 }
 

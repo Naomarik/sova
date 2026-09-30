@@ -165,6 +165,7 @@ export function personSessions(ctx: Ctx, pid: string, conflicts: PersonConflict[
               invited: liveOffer.to.length,
               includesThem: liveOffer.to.includes(pid),
               ...(liveOffer.holder ? { holder: ref(ctx, liveOffer.holder) } : {}),
+              ...(liveOffer.reach?.[pid] ? { reach: liveOffer.reach[pid] } : {}),
             },
           }
         : {}),

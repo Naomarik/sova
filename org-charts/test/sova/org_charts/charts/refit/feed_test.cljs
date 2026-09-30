@@ -3,6 +3,8 @@
    from the classes the transitions declare). The enumeration is registry-test's."
   (:require
     [cljs.test :refer [deftest is testing]]
+    [sova.org-charts.charts.refit.feed-golden :as fg]
+    [sova.org-charts.charts.refit.feed-table :as ft]
     [sova.org-charts.charts.registry :as registry]
     [sova.org-charts.charts.rules.levels :as lv]
     [sova.org-charts.engine.core :as core]))
@@ -83,3 +85,11 @@
   (let [sid "build/o1/pr1/c1" mk #(started "build" sid {:org-id "o1" :project-id "pr1" :session-id "c1" :kind "coding" :title "T" :prompt "P"})]
     (is (= :quiet (feed-of (mk) sid :workers/changed {:n 0})))
     (is (= :feed (feed-of (mk) sid :effect/failed {:kind "make-worktree" :detail "x"})))))
+
+(deftest every-transitions-class-is-the-golden-one
+  (let [now (ft/table)
+        ks  (into (set (keys now)) (keys fg/golden))
+        bad (for [k (sort ks) :when (not= (get now k ::none) (get fg/golden k ::none))]
+              [k :now (get now k ::none) :golden (get fg/golden k ::none)])]
+    (is (= 418 (count fg/golden)))
+    (is (empty? bad) (str (count bad) " differ: " (pr-str (take 20 bad))))))

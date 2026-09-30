@@ -285,8 +285,8 @@
                                    [(ops/assign :archived (b/moved-in? d :archived))
                                     (ops/assign :has-overseer (b/moved-in? d :has-overseer))
                                     (ops/assign :project-name (get-in m [:exported :name]))]))}))
-      (transition {:sova/feed :quiet :event :org/attached-here} (script {:expr (fn [_ _] [(ops/assign :paused true)])}))
-      (transition {:sova/feed :quiet :event :operator/level-set}
+      (transition {:sova/feed :feed :event :org/attached-here} (script {:expr (fn [_ _] [(ops/assign :paused true)])}))
+      (transition {:sova/feed :feed :event :operator/level-set}
         (script {:expr (fn [_ d] [(ops/assign :paused false)
                                   ;; `resume-at`, never `autonomy`: the envelope's autonomy is the level in force (paused: L0)
                                   (ops/assign :settings (assoc (:settings d) :autonomy (or (:resume-at (b/evt d)) (:autonomy (settings d)))))])}))

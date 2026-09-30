@@ -265,7 +265,7 @@
           (script {:expr (fn [_ d] [(ops/assign :batons (dissoc (:batons d) (:session (e d))))
                                     (ops/assign :builds (dissoc (:builds d) (:session (e d))))])})
           (b/send-if :item/adopt (fn [d] (:to-item (e d))) (fn [d] {:session (:session (e d))})))
-        (transition {:sova/feed :quiet :event :item/adopt}
+        (transition {:sova/feed :feed :event :item/adopt}
           (dsl/watch (fn [d] (:session (e d)))))
 
         ;; ── the lane ──────────────────────────────────────────────────────────────────────────

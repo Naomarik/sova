@@ -97,6 +97,7 @@ import type { ProviderLimits, ProviderLimitsInfo, ProviderWaiting } from "../../
 import type { TargetInfo } from "./remote-session";
 import type { DecisionKeyInfo, DecisionProbeResult, DecisionSaveResult, DecisionSettings, DecisionSettingsInfo, TagsBackfillProgress, TagsBackfillScope } from "../../shared/protocol";
 import { hostOf, hostUrl, meshReadInit, noteHost, peerBase, routeUrl } from "./mesh";
+import type { PreviewList, PreviewMint, PreviewMinted, PreviewView } from "../../shared/preview-links";
 
 /**
  * What a batch send can come back as. The refusal is a VALUE, not a throw: it is the route's
@@ -1126,3 +1127,11 @@ export const applyCalibration = (info: VoiceDeviceInfo, key: string) => request<
 export const revertCalibration = (info: VoiceDeviceInfo) => request<VoiceStatus>(calPath("/revert", info.id), jsonInit("POST", { device: info }));
 /** Forget a device: its settings, clips and runs. */
 export const forgetVoiceDevice = (id: string) => request<VoiceStatus>(`/api/voice/devices/${encodeURIComponent(id)}`, jsonInit("DELETE"));
+
+// ---- preview links (§mesh.public/preview): this host's own, never a peer's ----------------------------
+
+export const getPreviews = (orgId?: string, projectId?: string) =>
+  request<PreviewList>(`/api/previews${orgId && projectId ? `?orgId=${encodeURIComponent(orgId)}&projectId=${encodeURIComponent(projectId)}` : ""}`, { cache: "no-store" });
+export const mintPreview = (body: PreviewMint) => request<PreviewMinted>("/api/previews", jsonInit("POST", body));
+export const turnOffPreview = (id: string) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/off`, jsonInit("POST", {}));
+export const extendPreview = (id: string, days: number) => request<PreviewView>(`/api/previews/${encodeURIComponent(id)}/extend`, jsonInit("POST", { days }));

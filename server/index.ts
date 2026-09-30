@@ -25,6 +25,7 @@ import { flushWorkspaces } from "./workspace-commits";
 import { registerDecisionRoutes } from "./decisions-routes";
 import { registerVoiceRoutes, stopVoice } from "./voice/service";
 import { registerSessionShareRoutes } from "./session-shares-routes";
+import { mountPreviewLinks } from "./preview-links-routes";
 import { mountPublicLinks } from "./public-links-routes";
 import { mountShareGateway } from "./share/gateway-routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
@@ -1315,6 +1316,9 @@ onSessionArchived((id) => void meshLinks.endFor(id));
 // listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
 mountPublicLinks(app);
 mountShareGateway(app, meshApi);
+// Preview links (shared/preview-links.ts, §mesh.public/preview): a project's loopback apps behind
+// their own public hosts, under /api/previews (main listener only).
+mountPreviewLinks(app);
 
 app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
 

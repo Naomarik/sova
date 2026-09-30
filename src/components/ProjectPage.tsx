@@ -28,6 +28,7 @@ import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
 import { OwnerProjectCard } from "./OwnerProjectCard";
 import { PipelineCard } from "./PipelineCard";
+import { PreviewsCard } from "./PreviewsCard";
 import { ProjectCostCard } from "./ProjectCostCard";
 import { ProjectOverseerPanel } from "./ProjectOverseerPanel";
 import { Banner, Chip } from "./ui";
@@ -205,6 +206,10 @@ export function ProjectPage(props: { orgId: string; projectId: string; titleRef(
       </Show>
       <Show when={`${props.orgId}/${props.projectId}`} keyed>
         <ProjectCostCard orgId={props.orgId} projectId={props.projectId} tick={costTick()} />
+      </Show>
+      {/* Preview links (§mesh.public/preview-card): this project's apps, on this host. */}
+      <Show when={`${props.orgId}/${props.projectId}`} keyed>
+        <PreviewsCard orgId={props.orgId} projectId={props.projectId} />
       </Show>
       {/* Only while the org has an owner (§app.owner-page/controls). */}
       <Show when={org()?.ownerPage?.person && project()}>

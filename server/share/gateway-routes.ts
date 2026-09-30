@@ -1,12 +1,12 @@
 import type { Context, Hono } from "hono";
 import { type GatewayInfo, type RegistryAck, REGISTRY_LINK_KINDS, SNAPSHOT_MAX_BYTES } from "../../shared/public-links";
 import type { MeshApi } from "../mesh";
-import { acceptsNode, type GatewayRegistry, gatewayPublicUrl, gatewaySetting, localShareHashes, RegistryUnavailable, shareRegistry } from "./registry";
+import { acceptsNode, type GatewayRegistry, gatewayPreviewUrl, gatewayPublicUrl, gatewaySetting, localShareHashes, RegistryUnavailable, shareRegistry } from "./registry";
 
 /**
  * A gateway's peer routes (§mesh.public/registry), under /api/peer/share-gateway/* so only the
- * peer listener's verified caller reaches them: GET info[?kinds=1] -> GatewayInfo (`kinds` only
- * when asked), PUT links body
+ * peer listener's verified caller reaches them: GET info[?kinds=1[&preview=1]] -> GatewayInfo
+ * (`kinds` only when asked, `previewUrl` only with `preview=1` too), PUT links body
  * RegistrySnapshot -> RegistryAck (shared/public-links.ts). The caller is always
  * `mesh.requestPeer` (its StableID keys the rows), never anything in the body. A host that is no
  * gateway answers 404 `not-gateway` on both.
@@ -50,7 +50,11 @@ export function mountShareGateway(app: Hono, mesh: MeshApi, registry: GatewayReg
     const accepting = acceptsNode(g, peer.nodeId);
     const info: GatewayInfo = { publicUrl, accepting, seq: accepting ? registry.seqOf(peer.nodeId) : null };
     // Only when asked: an older routed host parses the info strictly and would refuse the key.
-    if (c.req.query("kinds") === "1") info.kinds = [...REGISTRY_LINK_KINDS];
+    if (c.req.query("kinds") === "1") {
+      info.kinds = [...REGISTRY_LINK_KINDS];
+      const preview = c.req.query("preview") === "1" ? gatewayPreviewUrl() : null;
+      if (preview) info.previewUrl = preview;
+    }
     return c.json(info);
   });
 

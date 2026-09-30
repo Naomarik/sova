@@ -5,7 +5,9 @@ import { SHARE_PORT_DEFAULT, type PublicLinksFile } from "../../shared/public-li
 import { tailnetIp } from "../mesh/address-identity";
 import { gatewayGate, type GatewayIdentity } from "../mesh/gate";
 import { getIdentity } from "../mesh/localapi";
-import { createShareServer, type ShareDispatch, type ShareUpgrade } from "./edge";
+import { createShareServer, type PreviewHooks, type ShareDispatch, type ShareUpgrade } from "./edge";
+import { ingressPreviewMatch, localPreviewOrigin } from "./preview-address";
+import { createPreviewProxy } from "./preview-proxy";
 import { bumpRouteGeneration, routeSetting, viaGatewayIdentity, viaGatewayPeer } from "./gateway-client";
 import { registryRouteChanged, startRegistryPush, stopRegistryPush } from "./registry-push";
 import { trustedClient } from "./security";
@@ -20,7 +22,8 @@ import { onPublicLinksChanged } from "./setting-events";
  * re-runs the whole gate on every connection it admitted, kept-alive HTTP and upgraded sockets
  * alike, on a setting change and every RECHECK_MS (2 s, with a responsive event loop): whatever no
  * longer passes (the gateway removed or changed, its pins changed, its address now ambiguous or
- * unmapped) is closed. It never mints a link or emits a link change: it serves the share app.
+ * unmapped) is closed. It never mints a link or emits a link change: it serves the share app, and
+ * this host's own previews when its gateway names one with `x-sova-preview` (§mesh.public/preview-address).
  *
  * startIngress also starts the registry push, which follows the same setting.
  */
@@ -39,6 +42,8 @@ export interface IngressDeps {
   /** Tests: answer instead of the in-process share app. */
   dispatch?: ShareDispatch;
   upgrade?: ShareUpgrade;
+  /** Tests: answer previews instead of this host's preview proxy. */
+  preview?: PreviewHooks;
 }
 
 export interface IngressInfo {
@@ -98,8 +103,16 @@ export function createIngress(deps: IngressDeps): Ingress {
     );
   };
 
+  // This host's previews, named by the admitted gateway's header only (never the Host).
+  const proxy = deps.preview ? null : createPreviewProxy({ origin: localPreviewOrigin });
+  const preview: PreviewHooks = deps.preview ?? {
+    match: ingressPreviewMatch,
+    dispatch: (req, res, label) => proxy!.dispatch(req, res, label),
+    upgrade: (req, socket, head, label) => proxy!.upgrade(req, socket, head, label),
+  };
   const serverFor = (): Server =>
     createShareServer({
+      preview,
       admit: (req) => admit(req),
       client: (req) => trustedClient(req, { trust: "admitted", admitted: true }),
       ...(deps.dispatch ? { dispatch: deps.dispatch } : {}),
@@ -176,6 +189,7 @@ export function createIngress(deps: IngressDeps): Ingress {
     }
     // closeAllConnections leaves upgraded sockets alone.
     for (const socket of admitted) socket.destroy();
+    proxy?.dispose();
     admitted.clear();
     state = { addresses: [], port: deps.port };
   };

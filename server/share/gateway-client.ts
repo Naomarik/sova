@@ -5,7 +5,7 @@ import { entryAddresses, tailnetIp } from "../mesh/address-identity";
 import type { GatewayIdentity } from "../mesh/gate";
 import { getIdentity } from "../mesh/localapi";
 import { type PeerEntry, peerUrl } from "../mesh/peers";
-import { parsePublicUrl, readPublicLinks, recordLastKnownUrl } from "../public-links";
+import { parsePreviewUrl, parsePublicUrl, readPublicLinks, recordLastKnownUrl } from "../public-links";
 
 /**
  * A routed host's view of its `via` gateway (§mesh.public/setting, §mesh.public/gateway): its
@@ -41,6 +41,8 @@ export interface ViaGatewayStatus {
       since it became the target (targetKinds); null until then. An older gateway never lists
       them: it gets no `s` row. */
   kinds: RegistryLinkKind[] | null;
+  /** The preview address the gateway stated (asked with `preview=1`), when it has one. */
+  previewUrl: string | null;
 }
 
 const CALL_TIMEOUT_MS = 10_000;
@@ -169,7 +171,7 @@ export function parseInfo(reply: GatewayReply | null): GatewayInfo | "not-gatewa
   if (!reply || !isObj(reply.body)) return null;
   const b = reply.body;
   if (reply.status === 404) return onlyKeys(b, ["error"]) && b.error === "not-gateway" ? "not-gateway" : null;
-  if (reply.status !== 200 || !onlyKeys(b, ["publicUrl", "accepting", "seq", "kinds"]) || typeof b.accepting !== "boolean") return null;
+  if (reply.status !== 200 || !onlyKeys(b, ["publicUrl", "accepting", "seq", "kinds", "previewUrl"]) || typeof b.accepting !== "boolean") return null;
   if (b.seq !== null && !seqOk(b.seq)) return null;
   // `kinds` is optional (an older gateway omits it); a kind this build doesn't know is dropped.
   if (b.kinds !== undefined && !(Array.isArray(b.kinds) && b.kinds.length <= 16 && b.kinds.every((k) => typeof k === "string" && k.length <= 16))) return null;
@@ -177,6 +179,11 @@ export function parseInfo(reply: GatewayReply | null): GatewayInfo | "not-gatewa
   if (!publicUrl) return null;
   const info: GatewayInfo = { publicUrl, accepting: b.accepting, seq: b.seq as number | null };
   if (Array.isArray(b.kinds)) info.kinds = REGISTRY_LINK_KINDS.filter((k) => (b.kinds as string[]).includes(k));
+  // A preview address as the setting stores it (https only); anything else is none.
+  if (b.previewUrl !== undefined) {
+    const preview = parsePreviewUrl(b.previewUrl, false);
+    if (preview) info.previewUrl = preview;
+  }
   return info;
 }
 
@@ -221,7 +228,7 @@ export function viaGatewayIdentity(): GatewayIdentity | null {
 let cache: { node: string; status: ViaGatewayStatus; stated: boolean; asked: boolean } | null = null;
 
 function cached(peer: PeerEntry): ViaGatewayStatus {
-  if (cache?.node !== peer.nodeId) cache = { node: peer.nodeId, status: { publicUrl: null, label: peer.label, reachable: false, accepting: null, kinds: null }, stated: false, asked: false };
+  if (cache?.node !== peer.nodeId) cache = { node: peer.nodeId, status: { publicUrl: null, label: peer.label, reachable: false, accepting: null, kinds: null, previewUrl: null }, stated: false, asked: false };
   cache.status.label = peer.label;
   return cache.status;
 }
@@ -277,6 +284,9 @@ export function targetKinds(target: GatewayTarget | null): RegistryLinkKind[] | 
 /** Whether `target` stated that it routes session links (kind `s`). */
 export const routesSessions = (target: GatewayTarget | null): boolean => targetKinds(target)?.includes("s") ?? false;
 
+/** Whether `target` stated that it routes links of `kind` (h and i: always). */
+export const routesKind = (target: GatewayTarget | null, kind: RegistryLinkKind): boolean => kind === "h" || kind === "i" || (targetKinds(target)?.includes(kind) ?? false);
+
 /** Forget what any gateway said about its kinds (a refusal, a restart, the gateway unreachable). */
 export function forgetKinds(): void {
   kindsEvidence = null;
@@ -324,7 +334,7 @@ async function callGateway(target: GatewayTarget, path: string, init?: RequestIn
 export async function refreshGateway(): Promise<ViaGatewayStatus | null> {
   const target = currentTarget();
   if (!target) return viaGatewayStatus();
-  const [hello, info] = await Promise.all([callGateway(target, "/api/peer/hello"), callGateway(target, "/api/peer/share-gateway/info?kinds=1")]);
+  const [hello, info] = await Promise.all([callGateway(target, "/api/peer/hello"), callGateway(target, "/api/peer/share-gateway/info?kinds=1&preview=1")]);
   if (hello === "withdrawn" || info === "withdrawn" || !stillCurrent(target)) return viaGatewayStatus(); // the target changed meanwhile
   const peer = target.peer;
   const s = cached(peer);
@@ -344,6 +354,7 @@ export async function refreshGateway(): Promise<ViaGatewayStatus | null> {
     s.accepting = parsed.accepting;
     // An info without `kinds` (an older gateway) states none: nothing is believed.
     kindsEvidence = parsed.kinds ? { generation: target.generation, key: target.key, kinds: parsed.kinds } : null;
+    s.previewUrl = parsed.previewUrl ?? null;
     stateUrl(peer, parsed.publicUrl);
   }
   // A reply that doesn't parse: nothing learnt, nothing changed.

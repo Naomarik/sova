@@ -17,7 +17,7 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
 - `<stateRoot>/public-links.json`, mode 0600, written atomically, separate from `peers.json`, so it
   works with the mesh off: `{version: 1, route: "off" | "self" | {via: {nodeId}}, gateway?:
   {publicUrl, front: "vhost" | "caddy" | "funnel" | "cloudflared", sharePort, acceptFrom: "all" |
-  <StableID>[]}, ingressPort?, lastKnownUrl?, verifiedAt?}`. A missing file is `off`. It is parsed
+  <StableID>[], previewUrl?}, ingressPort?, lastKnownUrl?, verifiedAt?}`. A missing file is `off`. It is parsed
   strictly: an unknown key, a wrong type, a `route: "self"` without a `gateway`, a gateway missing
   a key, an `acceptFrom` naming a node twice, or a URL not written as its bare `https` origin (no
   path, query, login or trailing slash, nothing the URL parser would rewrite) rejects the whole
@@ -58,7 +58,7 @@ live in `shared/public-links.ts`, never in `shared/protocol.ts`, so the mesh fin
   `unconfirmed`, `not-accepted` and `sleeps`; no server path sets `sleeps` today. Texts:
   §design.copy-deck/public-links.
 - `pinnedByEnv` lists the `SOVA_SHARE_*` variables that are set (a refused `SOVA_SHARE_PUBLIC_URL`
-  isn't): they win over the setting, and the panel shows their fields as set by the environment.
+  isn't; `SOVA_SHARE_PREVIEW_URL` too, §mesh.public/preview-address): they win over the setting, and the panel shows their fields as set by the environment.
 
 ## §mesh.public/via-answer — Routing through a gateway answers with it
 
@@ -79,7 +79,8 @@ links". When nothing answers in time, it replies with the state as it stands.
   calling peer `{publicUrl, accepting, seq}` (`seq`: the last snapshot stored for it, null when not
   accepting); a host that is no gateway answers 404 `{error: "not-gateway"}`. Asked with
   `?kinds=1`, the answer adds `kinds`, the link kinds this gateway accepts and routes (`h`, `i`,
-  `s`, `x`); without it the answer keeps exactly the three keys, since an older routed host parses
+  `s`, `x`, `p`), and asked also with `preview=1` it adds `previewUrl` when a preview address is
+  set (§mesh.public/preview-address); without it the answer keeps exactly the three keys, since an older routed host parses
   it strictly.
 - `routed` (in `GET /api/public-links`, only while this host is the gateway): every host that
   registered links here, then every other host `acceptFrom` lists, each `{nodeId, peer, links, up,
@@ -108,7 +109,8 @@ links". When nothing answers in time, it replies with the state as it stands.
   "not-found"` and `X-Content-Type-Options: nosniff` (the page shell answers 200 for any token, so
   it can't tell Sova from another server). The address must be `https` with no path, query or
   login, or nothing is fetched; a redirect fails ("the front must forward, not redirect"), and it
-  gives up after 8 seconds. A pass writes `verifiedAt`; a failure drops it and the address reads
+  gives up after 8 seconds. With a preview address it also checks a random preview host
+  (§mesh.public/preview-address). A pass writes `verifiedAt`; a failure drops it and the address reads
   `unreachable` until a Verify passes. With no address it answers "No public address is set."
 
 ## §mesh.public/front-cdn — A web server behind a CDN
@@ -129,7 +131,7 @@ links". When nothing answers in time, it replies with the state as it stands.
 ## §mesh.public/registry — Which host minted a token
 
 - **Push.** A routed host sends its gateway its whole live set as a `RegistrySnapshot`, `PUT
-  /api/peer/share-gateway/links` `{v: 1, seq, links: {h, exp, kind: "h" | "i" | "s" | "x"}[],
+  /api/peer/share-gateway/links` `{v: 1, seq, links: {h, exp, kind: "h" | "i" | "s" | "x" | "p"}[],
   assets, ingressPort}`: every hand-off, owner and session share link not revoked or expired, as
   the lowercase hex SHA-256 of its token, and the names in its own share build's `assets/`.
   Session links (`s`) go only to a gateway target whose own info listed `s` in `kinds`: an older
@@ -137,7 +139,9 @@ links". When nothing answers in time, it replies with the state as it stands.
   new h and i link in it. The statement binds to that exact target (route generation and peer
   entry): a changed entry or route, an unreachable or restarted gateway, or a `bad-snapshot`
   refusal of a snapshot with `s` rows drops it, and the h/i set is sent again at once without
-  them. It is judged again right before a snapshot with `s` rows goes out. Until the target
+  them. It is judged again right before a snapshot with `s` rows goes out. Preview links (`p`,
+  §mesh.public/preview) follow the same rule with `p`: a gateway that doesn't list it gets no `p`
+  row, and a preview mint through it is refused as `gateway-old`. Until the target
   states `s`, a session link mint carries the `gateway-old` warning; when a later info states
   it, the session rows are sent without waiting for a mint. A mint that makes several links
   (one per recipient) is confirmed only when each of its own hashes was sent and accepted; an
@@ -197,8 +201,9 @@ links". When nothing answers in time, it replies with the state as it stands.
   the request is served in-process, which answers 404 for an unknown token's API and socket (the
   page shell answers 200 for any token). An unknown hash is never asked of any host.
 - **Kinds bind routes.** An `h` row serves `/h`, `/api/h` and `/ws/h`; an `i` row serves `/i` and
-  `/api/i`; an `s` row serves `/s`, `/api/s` (its image route included) and `/ws/s`; an `x` row
-  never routes. A socket's kind comes from its path.
+  `/api/i`; an `s` row serves `/s`, `/api/s` (its image route included) and `/ws/s`; a `p` row
+  serves only its own preview host, every path and websocket on it (§mesh.public/preview-address);
+  an `x` row never routes. A socket's kind comes from its path.
 - A hop dials a literal tailnet address verified to belong to the row's StableID (from Tailscale's
   status, at most 5 seconds old, or the pinned address in address-identity mode), never a name, at
   the row's ingress port. Authorization is judged again after each wait and for as long as a hop
@@ -209,7 +214,10 @@ links". When nothing answers in time, it replies with the state as it stands.
   hop is tried once; a POST is never retried or replayed. At most 256 HTTP hops and 256 socket hops
   (`/ws/h` and `/ws/s` together, 4 per link) are open at once.
 - A hop's answer passes through without cookies or `x-sova-*` headers and always with
-  `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `nosniff`. The minting host keeps
+  `Cache-Control: no-store`, `Referrer-Policy: no-referrer` and `nosniff`. A `p` hop is the
+  exception: its answer (redirects, 502s and cookies included) passes as the minting host sent it,
+  minus hop-by-hop and `x-sova-*` headers, with a preview's limits (§mesh.public/preview-limits),
+  and its websocket is passed through raw. The minting host keeps
   its per-token limits, visits and CSP.
 - `/ws/h` and `/ws/s` through a hop: the page's handshake is checked first (400 otherwise); the page is
   accepted only after the host's side opened and the route was judged again (404 otherwise). The
@@ -245,6 +253,7 @@ A registered hash whose host is down, has no verified address, refuses the gatew
 | A live `/ws/h` or `/ws/s` hop whose host goes away | Close 4503 |
 | An asset whose source fails | 503 |
 | An unknown hash | 404, never asked of any host |
+| A preview host (`p`) | As above for its host being down; its own answers are §mesh.public/preview-offline |
 
 A hop that dies after its headers went out is cut, never passed off as a whole answer. The share
 page shows "Reconnecting. Your draft is kept." while offline and reconnects, backing off from 5 to
@@ -264,7 +273,8 @@ reads again. Copy: §design.copy-deck/public-links.
   hop-by-hop headers and every header named in
   `Connection`, then sets exactly one `X-Forwarded-For` (the client address it computed),
   `X-Forwarded-Proto: https` and `X-Forwarded-Host` from its configured public URL, never from the
-  incoming `Host`.
+  incoming `Host`. A preview hop also sets `x-sova-preview: <label>` from the preview host it
+  matched; the minting host then sends the app none of these (§mesh.public/preview-proxy).
 - A routed host's ingress believes `X-Forwarded-For` only on a connection its gate admitted, and
   only a single value; otherwise it keys on the socket address. No other tailnet device can choose
   its own rate-limit key.
@@ -281,7 +291,8 @@ mesh off. Copy is §design.copy-deck/public-links.
   `None`. Then **Where links open**, radios: `Off`, `This host is the gateway`, and one `Through
   {gateway}` per peer advertising a gateway (a saved gateway no longer advertised keeps its radio),
   each with its hint.
-- **This host is the gateway:** Public address, Front (the four front labels), Local port, Accept
+- **This host is the gateway:** Public address, Preview address (optional, `https://*.<domain>`,
+  §mesh.public/preview-address), Front (the four front labels), Local port, Accept
   links from (`All hosts` or `These hosts`, a checklist of every peer; a saved StableID with no
   peer shows as its id), the front's steps under "Set up the front once" (each step's label, a
   `Needs root` chip when it does, `Copy Step`, the text in mono, then the guide's notes; while the
@@ -317,3 +328,113 @@ mesh off. Copy is §design.copy-deck/public-links.
 - In Settings → Public links the state chip reads `Not listening` (error) in place of the others,
   the Mesh card's Public links chip (while a route is on) takes the error tone, and an error banner under the Address row
   says "The share port isn't open." with the reason. Copy: §design.copy-deck/public-links.
+
+## §mesh.public/preview — Preview links
+
+- A **preview link** (registry kind `p`) publishes one web app running on a loopback port of the
+  host that minted it, at the root of an origin of its own: `<label>.<zone>`, where `<zone>` is
+  the preview address (§mesh.public/preview-address) and `<label>` is the link's secret, 52
+  lowercase base32 characters (32 random bytes, 256 bits). Every route, redirect, cookie, fetch,
+  websocket and deep-link reload of the app works through it as it does on `localhost`, and two
+  previews are two separate sites.
+- `<stateRoot>/preview-links.json` (0600, written atomically, parsed strictly: a file that breaks a
+  rule serves no preview and is never overwritten) keeps, per link, `{id, hash, orgId, projectId,
+  port, createdAt, expiresAt, revokedAt?, createdBy}`, where `hash` is the SHA-256 of the label and
+  `createdBy` is `operator` or `session:<id>`. The label itself is never stored: the mint's answer
+  carries the link once.
+- **Mint** (`POST /api/previews {orgId, projectId, port, days?}`, main listener only, like the
+  other local acts): `port` must be an integer 1–65535, not 4800, 4801, 4802 or 4810, and not a
+  port this Sova process binds or its settings name (main, peer, share, ingress). `days` is 1 by
+  default and at most 30. With no preview address it is refused with a named reason, and no link
+  is made: `no-address` (none set here or on the gateway) or `gateway-old` (the via gateway
+  doesn't list kind `p`: "{gateway} needs updating before it can carry preview links.").
+- The app is always dialed at `127.0.0.1:<port>`, then `[::1]:<port>` when nothing listens there,
+  and never at any other address.
+- **Turn Off** (`POST /api/previews/<id>/off`) revokes it: from then on its origin answers 410,
+  and every open HTTP connection and websocket through it is closed at once. The same happens
+  when it expires. **Extend** (`POST /api/previews/<id>/extend {days}`) moves its expiry to `days`
+  from now (at most 30). `GET /api/previews?orgId&projectId` lists a project's previews (every
+  project's without them) with each one's port, expiry, state and whether something listens on
+  its port now (`running`), with the preview address's state.
+- A routed host sends each live preview's hash as a `p` row (§mesh.public/registry) only to a
+  gateway target whose own info listed `p`; its gateway routes the preview host to its ingress
+  (§mesh.public/routing).
+
+## §mesh.public/preview-proxy — What the app sees and what the visitor gets
+
+- Toward the app, the minting host sends the request as a browser on this computer would: `Host:
+  localhost:<port>`; an `Origin` equal to the preview's public origin becomes
+  `http://localhost:<port>`, and so does the origin part of a `Referer` on it. Every
+  `Forwarded`, `X-Forwarded-*`, `X-Real-IP`, `CF-*`, `True-Client-IP`, `Tailscale-*` and
+  `x-sova-*` header and the hop-by-hop ones are removed, and none is added. Cookies, bodies,
+  methods and the raw path and query pass through as they came.
+- Toward the visitor: an absolute `Location` or `Access-Control-Allow-Origin` on
+  `http(s)://localhost|127.0.0.1|[::1]:<port>` is rewritten to the public origin; each
+  `Set-Cookie` loses only its `Domain=` attribute, so cookies stay on the preview's own host;
+  `Cache-Control` becomes `private` (a `public` or `s-maxage` is dropped, and `private` is added
+  when neither `private` nor `no-store` is there) so no CDN keeps an app response past Turn Off;
+  and `Referrer-Policy: same-origin` is added when the app sent none. Response bodies are never
+  read or rewritten, and both directions stream.
+- A websocket upgrade is passed through byte for byte after the same request headers, so its
+  subprotocols, extensions and frames (any size) are the app's own.
+- An app response carrying any `x-sova-*` header is never passed on (it is a Sova port under
+  another number): the visitor gets the 502 not-running answer.
+
+## §mesh.public/preview-limits — A preview's own limits
+
+The share host's limits (§app.baton/share-listener) stay as they are. A preview host has its own:
+1,200 requests a minute per client address per preview (429), request bodies streamed with a
+25 MB cap (413 before anything is sent when declared larger, else the connection is cut), 60
+seconds for the app's response headers (504), and at most 64 HTTP requests and 16 websockets
+open per preview and 256 of each across all previews (503).
+
+## §mesh.public/preview-offline — What a preview visitor sees
+
+Static answers that name no host, port or token; the app's own CSP is never replaced.
+
+| Case | Answer |
+|---|---|
+| Nothing listens on the port (both loopbacks refuse) | A navigation: 502 page "This preview isn't running right now. It will open here once the app is started again.", reloading itself every 10 seconds, `Retry-After: 10`, `no-store`. Any other request: 502 text. A websocket: 502 |
+| The minting host is down or its hop fails | The offline 503 (§mesh.public/offline) |
+| Turned off or expired | 410 "This preview link is no longer active." with `Clear-Site-Data: "cache", "storage"`, `no-store` |
+| Unknown label | 404 "This preview link isn't active." (JSON `{error, code: "preview-not-found"}` for a request that isn't a navigation), `no-store`, `nosniff` |
+
+A gateway remembers, in memory, the `p` hashes a live host withdrew from its snapshot until they
+would have expired, and answers them 410 too.
+
+## §mesh.public/preview-address — The preview address
+
+- The gateway's setting gains an optional `previewUrl`, written `https://*.<host>`: one wildcard
+  label over a host of at least two labels, with no path. `SOVA_SHARE_PREVIEW_URL` pins it (an
+  `http` or `https` address of that shape; any other value is ignored with one warning) and
+  appears in `pinnedByEnv`. A routed host takes it from its gateway's info, which carries
+  `previewUrl` only when asked with `?kinds=1&preview=1` (an older routed host parses the info
+  strictly).
+- The share listener splits by `Host` before its path allowlist: a `Host` that is exactly
+  `<label>.<zone>` of the preview address, with a well-formed label, goes to the preview, whose
+  raw request target passes byte for byte; any other `Host` keeps the share host's allowlist, so
+  `/h/`, `/i/`, `/s/` and `/api/*` are never reached on a preview host and no preview is reached
+  on the share host. A routed host's ingress takes the preview only from a `x-sova-preview:
+  <label>` header its admitted gateway set after stripping every incoming `x-sova-*`, never from
+  the `Host`.
+- The front guide, when a preview address is set, adds the wildcard name to the front's server
+  (nginx `server_name <share host> *.<zone>;`, a Caddy site for `*.<zone>`, a tunnel ingress rule
+  for it) and notes: a one-level wildcard catches every undefined subdomain of the domain, while
+  explicit DNS records (like the share host's) still win; a CDN's free certificate covers one
+  wildcard level; never issue a certificate per preview name (Certificate Transparency logs
+  publish every name, and so every token); update the gateway before adding the wildcard DNS
+  record.
+- **Verify** also fetches `<scheme>://<random label>.<zone>/` and passes it only on the preview
+  404 (`code: "preview-not-found"`, `nosniff`); its result is `preview` beside the share check.
+
+## §mesh.public/preview-card — Previews on the project page
+
+- The project page has a **Previews** card: each active preview with its port, `Expires {time}`,
+  whether something listens on the port (`App is running` / `Nothing on port {n}`), **Copy Link**
+  (only in the page that minted it, since the link is shown once) and **Turn Off**; turned-off
+  and expired previews are not listed. Then **New Preview**: Port, Expires (1, 7 or 30 days) and
+  the warning "Anyone with this link can use the app on port {n} as if they were on this
+  computer, including its logins, admin pages and anything it can change." A refused mint shows
+  its reason on the form. With no preview address the card says so and how to set it.
+- The Shares page lists this host's live previews, one row each, with the project, port, expiry
+  and Turn Off.

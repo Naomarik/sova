@@ -11,7 +11,12 @@ import { notePeerReach, preflight, watchStall } from "../mesh/proxy";
 import { findPersonLink } from "../person-links";
 import { findShareLink } from "../session-shares";
 import { verifiedAddress } from "./destination";
-import { inProcessShare, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
+import { hashLabel, previewHashKnown } from "../preview-links";
+import { inProcessShare, type PreviewHooks, type ShareDispatch, type ShareRequestContext, type ShareUpgrade } from "./edge";
+import { gatewayPreviewMatch, localPreviewOrigin } from "./preview-address";
+import { previewHopHeaders, previewHttpHop, previewUpgradeHop } from "./preview-hop";
+import { previewAnswer, previewUpgradeAnswer } from "./preview-pages";
+import { createPreviewProxy, type PreviewProxy, PreviewSlots } from "./preview-proxy";
 import { offlineKind, offlineResponse, offlineUpgrade } from "./offline";
 import { acceptsNode, type GatewayRegistry, gatewayPublicUrl, gatewaySetting, type RegistryHit, shareRegistry } from "./registry";
 import { SHARE_DIST } from "./routes";
@@ -46,6 +51,11 @@ import { createWsHop, WS_HOP_WITHDRAW_GRACE_MS, type WsHop } from "./ws-hop";
  * answer carries no-store, no-referrer and nosniff, and never a cookie. A hashed asset comes from
  * this host's own share build first, else from the first live host whose snapshot listed it,
  * streamed with a 5 MB cap. This file never binds.
+ *
+ * Preview hosts (kind `p`, §mesh.public/preview) come through `preview`: a label this host minted
+ * goes to its own preview proxy; a hash a live, accepted host registered as `p` is hopped to that
+ * host's ingress (server/share/preview-hop.ts) with the same checks, judged again the same way and
+ * closed by the same sweep; a hash a live host withdrew is 410; anything else the preview 404.
  */
 
 /** How long a hop waits for the routed host's response headers before it counts as down (504). */
@@ -93,11 +103,22 @@ export interface GatewayRouterOptions {
   /** How long a `/ws/h` or `/ws/s` hop whose host withdrew its row waits for that host's own close. */
   withdrawGraceMs?: number;
   httpTotal?: number;
+  /** This host's own preview proxy. Default: one on the store, at this host's preview address. */
+  previewLocal?: PreviewProxy;
+  /** Whether this host minted a preview hash. */
+  isLocalPreview?: (hash: string) => boolean;
+  /** Which preview a request is for (null: the share host). Default: its Host under this gateway's zone. */
+  previewMatch?: (req: IncomingMessage) => string | null;
+  /** The caps of preview hops (§mesh.public/preview-limits). */
+  previewSlots?: PreviewSlots;
+  previewHeadersMs?: number;
 }
 
 export interface GatewayRouter {
   dispatch: ShareDispatch;
   upgrade: ShareUpgrade;
+  /** Preview hosts: the edge's split (§mesh.public/preview-address). */
+  preview: PreviewHooks;
   /** Close every open hop whose host no longer holds its hash. */
   sweep: () => void;
   /** Close every open hop, stop the timer and listeners, and route nothing from here on (a
@@ -188,6 +209,9 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const imageMax = opts.imageMaxBytes ?? SESSION_SHARE_IMAGE_MAX_BYTES;
   const sweepMs = opts.sweepMs ?? HOP_SWEEP_MS;
   const httpTotal = opts.httpTotal ?? HTTP_HOPS_TOTAL;
+  const previewLocal = opts.previewLocal ?? createPreviewProxy({ origin: localPreviewOrigin });
+  const isLocalPreview = opts.isLocalPreview ?? previewHashKnown;
+  const previewSlots = opts.previewSlots ?? new PreviewSlots();
   let disposed = false;
 
   /** The gateway's view now: its setting, and each live, accepted peer by StableID. */
@@ -203,7 +227,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   /** Whether hash `h` still routes, for `kind`, to `nodeId` at ingress `port`, judged now:
       `same`; `moved` when it routes elsewhere (a newer snapshot kept the row but moved its port,
       or another host holds it now); `gone` when it no longer routes at all. */
-  const holds = (nodeId: string, h: string, kind: TokenKind, port: number): Standing => {
+  const holds = (nodeId: string, h: string, kind: TokenKind | "p", port: number): Standing => {
     const v = view();
     const hit = v && registry.lookup(h, kind, now(), (n) => v.byNode.has(n));
     return !hit ? "gone" : hit.nodeId === nodeId && hit.ingressPort === port ? "same" : "moved";
@@ -443,17 +467,101 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
     wsHop.forward(req, socket, head, hopKey(hit.nodeId, h, hit.ingressPort, address, kind), { host: address, port: hit.ingressPort, path: ctx.url.pathname + ctx.url.search, headers }, authorized);
   };
 
+  /** Open preview websocket tunnels, judged by the same sweep as the HTTP hops. */
+  const tunnels = new Set<{ nodeId: string; address: string; still: () => Standing; kill: () => void }>();
+
+  /** Where a preview hash goes, or why it doesn't: a live host's row, withdrawn (410), unknown (404). */
+  const previewRoute = (h: string): { hit: RegistryHit; still: () => Standing } | "gone" | "unknown" => {
+    const v = view();
+    const hit = v && registry.lookup(h, "p", now(), (n) => v.byNode.has(n));
+    if (!hit) return v && registry.previewWithdrawn(h, now()) ? "gone" : "unknown";
+    return { hit, still: () => holds(hit.nodeId, h, "p", hit.ingressPort) };
+  };
+
+  /** The verified address for a preview hop, judged after every wait; null: offline. */
+  const previewAddressFor = async (hit: RegistryHit, still: () => Standing): Promise<string | null> => {
+    const address = await addressNow(hit.nodeId);
+    if (still() !== "same" || !address) return null;
+    const pre = await reachable(`http://${bracket(address)}:${hit.ingressPort}`);
+    if (pre === false || still() !== "same") return null;
+    const again = await addressNow(hit.nodeId);
+    return again === address && still() === "same" ? address : null;
+  };
+
+  const previewDispatch: PreviewHooks["dispatch"] = async (req, res, label, client) => {
+    const h = hashLabel(label);
+    if (disposed) return previewAnswer(req, res, "busy");
+    if (isLocalPreview(h)) return previewLocal.dispatch(req, res, label);
+    const route = previewRoute(h);
+    if (route === "gone") return previewAnswer(req, res, "gone");
+    if (route === "unknown") return previewAnswer(req, res, "unknown");
+    const release = previewSlots.take(h, "http");
+    if (!release) return previewAnswer(req, res, "busy");
+    let address: string | null = null;
+    try {
+      address = await previewAddressFor(route.hit, route.still);
+    } catch {
+      address = null;
+    }
+    if (route.still() === "gone") {
+      release();
+      return previewAnswer(req, res, registry.previewWithdrawn(h, now()) ? "gone" : "unknown");
+    }
+    if (!address || res.destroyed) {
+      release();
+      return offlineResponse(res, "page");
+    }
+    const headers = previewHopHeaders(hopHeaders(req, client, address, route.hit.ingressPort), label);
+    const entry = { nodeId: route.hit.nodeId, address, still: route.still, kill: () => {} };
+    active.add(entry);
+    const handle = previewHttpHop(req, res, { address, port: route.hit.ingressPort, headers }, () => {
+      active.delete(entry);
+      release();
+    }, opts.previewHeadersMs !== undefined ? { headersMs: opts.previewHeadersMs } : {});
+    entry.kill = handle.kill;
+  };
+
+  const previewUpgrade: PreviewHooks["upgrade"] = async (req, socket, head, label, client) => {
+    const h = hashLabel(label);
+    if (disposed) return previewUpgradeAnswer(socket, "busy");
+    if (isLocalPreview(h)) return previewLocal.upgrade(req, socket, head, label);
+    const route = previewRoute(h);
+    if (route === "gone") return previewUpgradeAnswer(socket, "gone");
+    if (route === "unknown") return previewUpgradeAnswer(socket, "unknown");
+    const release = previewSlots.take(h, "ws");
+    if (!release) return previewUpgradeAnswer(socket, "busy");
+    let address: string | null = null;
+    try {
+      address = await previewAddressFor(route.hit, route.still);
+    } catch {
+      address = null;
+    }
+    if (!address || socket.destroyed) {
+      release();
+      return offlineUpgrade(socket);
+    }
+    const headers: Record<string, string | string[]> = {};
+    for (const [k, val] of Object.entries(previewHopHeaders(hopHeaders(req, client, address, route.hit.ingressPort), label))) headers[k] = val;
+    const entry = { nodeId: route.hit.nodeId, address, still: route.still, kill: () => {} };
+    tunnels.add(entry);
+    const handle = previewUpgradeHop(req, socket, head, { address, port: route.hit.ingressPort, headers }, () => {
+      tunnels.delete(entry);
+      release();
+    }, opts.previewHeadersMs !== undefined ? { headersMs: opts.previewHeadersMs } : {});
+    entry.kill = handle.kill;
+  };
+
   /** Cut every open hop whose target's verified address changed (address lookups are async, so
       this runs after the synchronous part of a sweep). */
   const sweepAddresses = async (): Promise<void> => {
-    const nodes = new Set<string>([...active].map((e) => e.nodeId));
+    const nodes = new Set<string>([...active, ...tunnels].map((e) => e.nodeId));
     wsHop.closeWhere((key) => {
       nodes.add(key.split(" ")[0]!);
       return false; // only listing the targets here
     });
     if (!nodes.size) return;
     const current = new Map(await Promise.all([...nodes].map(async (n) => [n, await addressNow(n)] as const)));
-    for (const entry of [...active]) if (current.has(entry.nodeId) && current.get(entry.nodeId) !== entry.address) entry.kill();
+    for (const entry of [...active, ...tunnels]) if (current.has(entry.nodeId) && current.get(entry.nodeId) !== entry.address) entry.kill();
     wsHop.closeWhere((key) => {
       const [nodeId, , , address] = key.split(" ");
       return current.has(nodeId!) && current.get(nodeId!) !== address;
@@ -461,7 +569,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   };
 
   const sweep = (): void => {
-    for (const entry of [...active]) if (entry.still() !== "same") entry.kill();
+    for (const entry of [...active, ...tunnels]) if (entry.still() !== "same") entry.kill();
     // A row its own host withdrew (a newer snapshot without it: revoked or expired there) while
     // that host is still live and accepted: its /ws/h and /ws/s hops wait for the host's own close
     // (4410 after a revoke), §mesh.public/withdrawn-hop. Any other lost route closes at once.
@@ -487,6 +595,7 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
   const router: GatewayRouter = {
     dispatch,
     upgrade,
+    preview: { match: opts.previewMatch ?? gatewayPreviewMatch, dispatch: previewDispatch, upgrade: previewUpgrade },
     sweep,
     dispose: () => {
       if (disposed) return;
@@ -494,8 +603,9 @@ export function createGatewayRouter(opts: GatewayRouterOptions = {}): GatewayRou
       routers.delete(router);
       if (timer) clearInterval(timer);
       for (const u of unsubscribe) u();
-      for (const entry of [...active]) entry.kill();
+      for (const entry of [...active, ...tunnels]) entry.kill();
       wsHop.dispose();
+      previewLocal.dispose();
     },
   };
   routers.add(router);

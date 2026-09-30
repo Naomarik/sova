@@ -208,7 +208,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
 - It lists every live public link this host and each up peer serve: **Session shares** first (the
   shares with a live link, then the stopped and expired ones folded under "Ended"), then
   **Organization links** (every live hand-off `/h/` and owner `/i/` link, from
-  `GET /api/shares-overview` on each host). With the mesh on, each row names its host.
+  `GET /api/shares-overview` on each host), then **Preview links** (this host's live previews,
+  §mesh.public/preview-card). With the mesh on, each row names its host.
 - A session share row: its public title (a link to the session), its slice line or mode line (as
   the Sharing section), its recipients
   with presence and opened lines, and **Manage** (the Share sheet on it) and **Stop Sharing**

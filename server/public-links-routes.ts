@@ -4,7 +4,8 @@ import type { AdvertisedGateway, PublicLinksFile, PublicLinksInfo, RoutedHost, V
 import { advertisedGateways } from "./mesh/hello";
 import { PROXIED_HEADER } from "./mesh/proxy";
 import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
-import { frontGuide, verifyPublicUrl } from "./share/front";
+import { frontGuide, verifyPreviewUrl, verifyPublicUrl } from "./share/front";
+import { previewAddress } from "./share/preview-address";
 import { refreshGateway } from "./share/gateway-client";
 import { noteVerify, shareListenerSettled, shareState } from "./share/listener";
 import { routedHosts } from "./share/registry";
@@ -42,6 +43,7 @@ export async function publicLinksInfo(file: PublicLinksFile = readPublicLinks(),
     file,
     share: shareState(process.env, file),
     pinnedByEnv: pinnedByEnv(),
+    preview: previewAddress(process.env, file),
     ...(self && file.gateway ? { front: frontGuide(file.gateway) } : {}),
     ...(self && routed ? { routed } : {}),
     gateways,
@@ -73,7 +75,10 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
     if (!local(c)) return notFound(c);
     const url = shareState().publicUrl;
     if (!url) return c.json({ ok: false, error: "No public address is set." } satisfies VerifyResult, 200, NO_STORE);
-    const result = await verifyPublicUrl(url);
+    const result: VerifyResult = await verifyPublicUrl(url);
+    // A gateway with a preview address checks a random preview host too (§mesh.public/preview-address).
+    const preview = previewAddress();
+    if (readPublicLinks().route === "self" && preview.url?.startsWith("https://")) result.preview = await verifyPreviewUrl(preview.url);
     noteVerify(url, result.ok);
     if (shareState().publicUrl === url) writeServerFields({ verifiedAt: result.ok ? Date.now() : null });
     return c.json(result satisfies VerifyResult, 200, NO_STORE);

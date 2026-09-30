@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { FrontGuide, ShareGatewaySetting, VerifyResult } from "../../shared/public-links";
+import { newPreviewLabel } from "../preview-links";
 
 /**
  * The gateway's front (§mesh.public/front): the steps for the chosen front, generated from the
@@ -13,6 +14,37 @@ import type { FrontGuide, ShareGatewaySetting, VerifyResult } from "../../shared
  */
 
 export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
+  const guide = shareGuide(setting);
+  const zone = setting.previewUrl ? setting.previewUrl.replace(/^https?:\/\/\*\./, "") : null;
+  return zone ? withPreview(guide, setting, zone) : guide;
+}
+
+/** The notes every front gets with a preview address (§mesh.public/preview-address). */
+export function previewNotes(zone: string): string[] {
+  return [
+    `Preview links open at <label>.${zone}: add a wildcard DNS record *.${zone} pointing at this host (proxied, if a CDN fronts it). A one-level wildcard catches every subdomain of ${zone} that has no record of its own; explicit records, like the share host's, still win.`,
+    `The certificate must cover *.${zone}. A CDN's free edge certificate covers one wildcard level below your domain; a deeper name needs a paid certificate or a DNS-01 wildcard certificate here.`,
+    "Never issue a certificate per preview name (on-demand TLS, certbot per name): Certificate Transparency logs publish every issued name, and a preview's name is its secret.",
+    "Update Sova on this gateway before adding the wildcard DNS record: an older gateway serves share pages on those names.",
+  ];
+}
+
+function withPreview(guide: FrontGuide, setting: ShareGatewaySetting, zone: string): FrontGuide {
+  const host = hostOf(setting.publicUrl);
+  const upstream = `127.0.0.1:${setting.sharePort}`;
+  const steps = guide.steps.map((step) => {
+    if (setting.front === "vhost" && step.text.includes(`server_name ${host};`)) return { ...step, text: step.text.replace(`server_name ${host};`, `server_name ${host} *.${zone};`) };
+    if (setting.front === "caddy" && step.label === "Caddyfile")
+      return { ...step, text: [step.text, `*.${zone} {`, `    reverse_proxy ${upstream} {`, "        header_up X-Forwarded-For {remote_host}", "    }", "}"].join("\n") };
+    if (setting.front === "cloudflared" && step.text.startsWith("tunnel: sova-share"))
+      return { ...step, text: step.text.replace("  - service: http_status:404", [`  - hostname: "*.${zone}"`, `    service: http://${upstream}`, "  - service: http_status:404"].join("\n")) };
+    return step;
+  });
+  const extra = setting.front === "caddy" ? [`The *.${zone} site needs a wildcard certificate (Caddy's DNS challenge for your DNS provider), or a CDN in front that holds one; never on-demand certificates.`] : [];
+  return { ...guide, steps, notes: [...(guide.notes ?? []), ...previewNotes(zone), ...extra] };
+}
+
+function shareGuide(setting: ShareGatewaySetting): FrontGuide {
   const host = hostOf(setting.publicUrl);
   const upstream = `127.0.0.1:${setting.sharePort}`;
   switch (setting.front) {
@@ -167,4 +199,33 @@ export async function verifyPublicUrl(url: string, opts: VerifyOptions = {}): Pr
   }
   const sova = (body as { code?: unknown } | null)?.code === "not-found" && res.headers.get("x-content-type-options") === "nosniff";
   return sova ? { ok: true, status } : { ok: false, status, error: "Something else answered, not Sova" };
+}
+
+/**
+ * The preview half of Verify (§mesh.public/preview-address): fetch `<scheme>://<random label>.<zone>/`
+ * and pass only on the preview 404 (`code: "preview-not-found"` with `nosniff`). No redirect is
+ * followed; the address must be `https://*.<host>`.
+ */
+export async function verifyPreviewUrl(previewUrl: string, opts: VerifyOptions = {}): Promise<{ ok: boolean; status?: number; error?: string }> {
+  const m = /^https:\/\/\*\.([^/?#@]+)$/.exec(previewUrl);
+  if (!m) return { ok: false, error: "The preview address must be like https://*.example.com" };
+  const target = `https://${newPreviewLabel()}.${m[1]}/`;
+  let res: Response;
+  try {
+    res = await (opts.fetch ?? fetch)(target, { redirect: "manual", signal: AbortSignal.timeout(opts.timeoutMs ?? VERIFY_TIMEOUT_MS), headers: { accept: "application/json" } });
+  } catch (err) {
+    const name = (err as { name?: string }).name;
+    return { ok: false, error: name === "TimeoutError" || name === "AbortError" ? "Timed out" : "Couldn't connect (is the wildcard DNS record there?)" };
+  }
+  const status = res.status;
+  if (status >= 300 && status < 400) return { ok: false, status, error: "It redirects; the front must forward, not redirect" };
+  if (status !== 404) return { ok: false, status, error: `Got ${status}, not Sova's preview answer` };
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    body = null;
+  }
+  const sova = (body as { code?: unknown } | null)?.code === "preview-not-found" && res.headers.get("x-content-type-options") === "nosniff";
+  return sova ? { ok: true, status } : { ok: false, status, error: "Something else answered, not Sova's preview host" };
 }

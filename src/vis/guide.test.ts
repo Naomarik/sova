@@ -94,9 +94,12 @@ test("the guide's Not vis pairs: the wrong side is refused with a hint, the righ
   assert.ok(flow.ok);
   assert.deepEqual([(flow.spec as FlowSpec).nodes[0]!.label, (flow.spec as FlowSpec).edges[0]!.dashed], ["Label", true]);
   // Tree: the folder's slash inside the quotes.
+  assert.match(GUIDE, /End folder names with `\/`, inside quotes: `"My Docs\/"`, never `"My Docs"\/`\./);
   assert.match(GUIDE, /`"My Docs\/" "shared"`/);
   const tree = parseVis("tree", '"My Docs/" "shared"');
   assert.ok(tree.ok && (tree.spec as { roots: { name: string; note?: string }[] }).roots[0]!.name === "My Docs/");
+  const outside = parseVis("tree", '"My Docs"/');
+  assert.ok(!outside.ok && outside.message === 'put the / inside the quotes: "My Docs/"');
 });
 
 test("each kind section names registered kinds, and every registered kind has a section", () => {

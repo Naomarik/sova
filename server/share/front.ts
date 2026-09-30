@@ -5,10 +5,11 @@ import type { FrontGuide, ShareGatewaySetting, VerifyResult } from "../../shared
  * The gateway's front (§mesh.public/front): the steps for the chosen front, generated from the
  * setting and never run by Sova, and Verify.
  *
- * Every front forwards the public hostname to 127.0.0.1:<sharePort> and overwrites
- * X-Forwarded-For with the one client address it saw (the share listener trusts a single value
- * from its local proxy, §mesh.public/forwarded-for). The share edge itself refuses every path but
- * the share ones, so no snippet needs a path filter.
+ * Every front forwards the public hostname to 127.0.0.1:<sharePort>. The nginx, Caddy and Funnel
+ * snippets overwrite X-Forwarded-For with the one client address they saw (the share listener
+ * trusts the last value from its local proxy, §mesh.public/forwarded-for); a tunnel's config.yml
+ * can't set a header, so the Cloudflare Tunnel guide says it relies on the tunnel's own. The share
+ * edge itself refuses every path but the share ones, so no snippet needs a path filter.
  */
 
 export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
@@ -43,6 +44,7 @@ export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
           },
         ],
         notes: [
+          `No certificate for ${host} yet? certbot can get one and add it to this block: sudo certbot --nginx -d ${host}`,
           `Another web server works the same way: terminate TLS for ${host}, forward everything to http://${upstream}, pass WebSocket upgrades, and set X-Forwarded-For to the client address (replace it, never append).`,
           `Behind a CDN that terminates TLS for ${host} (such as Cloudflare's proxy): listen on the port the CDN connects to instead of 443, and restore the visitor's address first, or X-Forwarded-For carries the CDN's. In the server block, add set_real_ip_from for each of the CDN's published ranges, and real_ip_header with its client header (real_ip_header CF-Connecting-IP for Cloudflare). Trust that header only this way, and never forward it as it is: anyone who reaches this server directly can set it.`,
         ],
@@ -66,6 +68,7 @@ export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
         notes: [
           `Caddy gets the certificate for ${host} itself: its DNS must point at this host, and ports 80 and 443 must be open.`,
           "Re-run the setcap step after upgrading the caddy binary.",
+          `Behind a CDN that terminates TLS for ${host} (such as Cloudflare's proxy), {remote_host} is the CDN's address. In the Caddyfile's global options, add a servers block with trusted_proxies static and the CDN's published ranges, and client_ip_headers with its client header (client_ip_headers CF-Connecting-IP for Cloudflare); then forward {client_ip} in place of {remote_host}. Trust that header only this way: anyone who reaches this host directly can set it.`,
         ],
       };
     case "funnel":
@@ -99,6 +102,9 @@ export function frontGuide(setting: ShareGatewaySetting): FrontGuide {
             ].join("\n"),
           },
           { label: "Run the tunnel", root: false, text: "cloudflared tunnel run sova-share" },
+        ],
+        notes: [
+          "Preview: config.yml can't set X-Forwarded-For, so this relies on the tunnel's own ending with each visitor's address, which isn't confirmed yet. Until it is, every visitor may share one rate limit.",
         ],
       };
   }

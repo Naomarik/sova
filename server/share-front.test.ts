@@ -31,6 +31,10 @@ test("guides: every front forwards to the share port, root steps marked", () => 
   assert.equal(cdn.length, 1, "one vhost note covers a CDN in front");
   for (const part of ["share.example.com", "the port the CDN connects to", "real_ip_header CF-Connecting-IP", "published ranges", "never forward"])
     assert.ok(cdn[0]!.includes(part), `the CDN note says ${JSON.stringify(part)}: ${cdn[0]}`);
+  assert.ok(
+    vhost.notes?.some((n) => n.includes("sudo certbot --nginx -d share.example.com")),
+    "the vhost guide says where the certificate comes from",
+  );
 
   const caddy = frontGuide({ ...setting("caddy"), sharePort: 4999 });
   assert.deepEqual(
@@ -41,6 +45,11 @@ test("guides: every front forwards to the share port, root steps marked", () => 
       [false, "caddy run --config Caddyfile"],
     ],
   );
+  // Behind a CDN, {remote_host} is the CDN's edge: trust only its ranges and read its client header.
+  const caddyCdn = (caddy.notes ?? []).filter((n) => n.includes("trusted_proxies"));
+  assert.equal(caddyCdn.length, 1, "one caddy note covers a CDN in front");
+  for (const part of ["share.example.com", "trusted_proxies static", "client_ip_headers CF-Connecting-IP", "published ranges", "{client_ip} in place of {remote_host}"])
+    assert.ok(caddyCdn[0]!.includes(part), `the caddy CDN note says ${JSON.stringify(part)}: ${caddyCdn[0]}`);
 
   const funnel = frontGuide(setting("funnel"));
   assert.deepEqual(
@@ -56,6 +65,8 @@ test("guides: every front forwards to the share port, root steps marked", () => 
   const cf = frontGuide(setting("cloudflared"));
   assert.ok(cf.steps.every((s) => !s.root));
   assert.match(cf.steps[1]!.text, /hostname: share\.example\.com\n {4}service: http:\/\/127\.0\.0\.1:4802\n {2}- service: http_status:404/);
+  // config.yml can't set X-Forwarded-For: the guide says what it relies on, as a preview.
+  assert.ok(cf.notes?.some((n) => n.startsWith("Preview:") && n.includes("X-Forwarded-For") && n.includes("isn't confirmed yet")), "cloudflared carries its preview warning");
 });
 
 const servers: Server[] = [];

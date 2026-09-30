@@ -85,3 +85,13 @@
                        :key (fn [d] (count (:sova/children d))) :max-configs 3})]
     (is (empty? (:failures r)) "a fresh id per state: no spawn of an existing id")
     (is (= 3 (:configs r)))))
+
+(deftest a-payload-key-that-shadows-the-envelope-fails-its-cell
+  ;; baton/extend's `by`: merged, the envelope's actor would hide the payload's count (the host throws)
+  (let [r (matrix/run {:charts rp/charts :chart "refit-parent" :level-check rp/level-check
+                       :acts [[:door/open {:by 5}] [:door/open {:reason "same"}] [:door/open {:reason "other"}] [:door/open {:more 5}]]
+                       :envelopes {"operator" {:by "operator" :reason "same"}}})]
+    (is (= [[:door/open [:by]] [:door/open [:reason]]]
+          (map (juxt :act :keys) (filter #(= "a payload key shadows the envelope's" (:why %)) (:failures r)))))
+    (is (= 2 (count (:failures r))) "an equal value and a key only the payload has pass"))
+  (is (= [:by :reason] (matrix/shadowed {:reason "a" :by 5 :x 1} {:by "operator" :reason "b" :x 1}))))

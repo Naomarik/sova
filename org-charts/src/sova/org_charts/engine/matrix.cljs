@@ -57,6 +57,13 @@
 (defn- in-world? [world s]
   (cond (nil? world) false (set? world) (contains? world s) (fn? world) (boolean (world s)) :else false))
 
+(defn shadowed
+  "The payload keys the envelope also carries with another value (sorted): the host refuses such an
+   act as a caller's bug (OrgPayloadError), since merged the envelope's value would hide the payload's."
+  [payload envelope]
+  (vec (sort (filter (fn [k] (and (some? (get payload k)) (some? (get envelope k)) (not= (get payload k) (get envelope k))))
+               (keys payload)))))
+
 (defn run
   "opts: `:charts` (the registry map), `:chart` (name), `:starts` [start-data …], `:drive`
    [[event payload] | [:fire ms] …], `:acts` [[event payload] …], `:envelopes` {name envelope},
@@ -71,7 +78,8 @@
    `sova/unknown-session`. So every absorbed id must be named in `:world` (a set or a pred): an
    absorbed id outside it is a failure. `:absorbed` in the report lists them all.
 
-   Failures: an act send that throws, an explain that throws, a drive that throws, taken while
+   Failures: an act payload key the envelope carries with another value (the host throws on it), an
+   act send that throws, an explain that throws, a drive that throws, taken while
    explain refuses, refused while explain is nil, a different sentence, a sentence outside the
    catalogue, an absorbed session outside the world.
    Returns `{:configs :cells :accepted :refused :failures [{…}] :reached #{configuration}
@@ -119,10 +127,17 @@
                               data    (core/data eng sid)
                               payload (if (fn? p) (p data) p)
                               envelope (if (fn? env) (env data) env)
-                              ex      (try {:r (core/explain eng sid event (merge payload envelope) {:now now})}
-                                        (catch :default e {:error (ex-message e)}))]
-                          (if (:error ex)
+                              shadow  (shadowed payload envelope)
+                              ex      (when-not (seq shadow)
+                                        (try {:r (core/explain eng sid event (merge payload envelope) {:now now})}
+                                          (catch :default e {:error (ex-message e)})))]
+                          (cond
+                            ;; the host throws on it (OrgPayloadError): the payload's value would be lost
+                            (seq shadow)
+                            (vswap! failures conj (assoc at :why "a payload key shadows the envelope's" :keys shadow))
+                            (:error ex)
                             (vswap! failures conj (assoc at :why "explain threw" :error (:error ex)))
+                            :else
                             (let [r   (:r ex)
                                   out (attempt eng now [event payload] envelope)]
                               (absorb! (:absorbed out) at)

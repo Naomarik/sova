@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { test } from "node:test";
+import { after, test } from "node:test";
 import { DetachedDriver, parseShow, SystemdDriver, systemdRunArgv, type Exec } from "./drivers";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-drivers-"));
+after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
 
 test("systemd-run argv: a transient user unit in the services slice, env sorted, argv after --", () => {
   const a = systemdRunArgv({ unit: "sova-svc-abc123-p-1-web", argv: ["node", "server.js", "--port", "4010"], cwd: "/w", env: { B: "2", A: "x y" } });

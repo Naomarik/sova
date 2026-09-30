@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -68,6 +68,8 @@ after(async () => {
   const main = readRegistry().instances.find((i) => i.slot === 0);
   if (main) await engine.run("down", { instance: main.id, services: ["web", "site", "bus"], confirm: true }, op);
   for (const s of staticServes()) await stopStaticServe(s.id);
+  rmSync(parent, { recursive: true, force: true });
+  rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true });
 });
 
 const shaped = (r: VerbResult) => {

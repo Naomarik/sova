@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -59,6 +59,7 @@ test("a lock is held against this process and taken over from a dead one", () =>
   const d = tryLock(file);
   assert.ok("release" in d, "a dead holder's lock is taken over");
   d.release();
+  rmSync(dir, { recursive: true, force: true });
 });
 
 test("mutateRegistry writes atomically and concurrent writers never lose an instance", async () => {
@@ -84,4 +85,5 @@ test("mutateRegistry writes atomically and concurrent writers never lose an inst
   assert.deepEqual(ids, Array.from({ length: 8 }, (_, n) => `i-${n}`).sort());
   mutateRegistry((r) => void (r.instances = []), file);
   assert.equal(readRegistry(file).instances.length, 0);
+  rmSync(dir, { recursive: true, force: true });
 });

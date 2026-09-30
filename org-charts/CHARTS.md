@@ -51,7 +51,8 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
   its earliest invitee's window, (A), pending q15. Tests: `hours_test`, `holds_test` r7.
 - **r8 / q12 review**: `:confirm-kind` on every held act (F12; `base/start-kind`: "offer" for ≥2
   targets); `b/hold-review` on each chart with held acts: `hold/approve` (approve early, L0, reason) and,
-  on `hold/waiting`, a soon `hold/review` reason to the project's watch. Tests: `registry_test`,
+  on `hold/waiting`, a soon `hold/review` reason to the project's watch, naming the hold as
+  `<session-id>:<hold-id>` (F19: hold ids are per session; `params.hold`). Tests: `registry_test`,
   `holds_test` F12 + r8.
 - **r8a feed classes**: every transition declares `:sova/feed` (rule in EVENTS.md); `registry_test`
   (none unclassified), `feed_test` (a pin per class per chart, and the golden table `feed_golden` of
@@ -200,7 +201,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-128 | L3 `sova_create_session` and `sova_send` | chart | `item` `build/start` (L3, decisions ⊆ promoted not built, held); `project` `build/start` gap none (q7 attended only); `build/prompt` (L3 `sova_send`) to a build; `session/prompt` (L3 `sova_send`, held) to a root coding session that is not a build; a gathering session is refused by the tool (r10: no chart act) |
 | F-129 | Limits: allowances, at-once, looks | chart | `rules/levels` `cap-check` (at once, then allowance), watch ledgers (`ledger/take`), settings data |
 | F-130 | Held items and release | chart | `watch` `limit/refused` → `held` (≤10), releases at midnight / raised limit / message at once (C12) |
-| F-131 | Watch-loop reasons (events → English) | chart | typed `reason/noted` from charts; `watch` `own-act?` (C2), key dedupe (C3), ≤50 pending, 20 in the text |
+| F-131 | Watch-loop reasons (events → English) | chart | typed `reason/noted` from charts; `watch` `own-act?` (C2; R3: news of the chart's own act, `by` chart from `b/tell-watch`, is never a reason: no look, no look used, it rides the next look's feed), key dedupe (C3), ≤50 pending, 20 in the text; R4: item reopened / answered-nothing are feed entries, not reasons (item/stalled stays, C5); tests `watch_decisions_build_test` R3, `item_test` R4 |
 | F-132 | Tick and unattended look | chart | `watch.loop` quiet → waiting (`due-in` on the 20 s tick) → due → running (`:sova/look`, `watch-text`) |
 | F-133 | Soon looks | chart | `with-reason` soon → `soon-at` |
 | F-134 | Run Now | chart | `watch` `operator/run-now` (`run-now-refusal`); refused → `look/skipped` recorded |

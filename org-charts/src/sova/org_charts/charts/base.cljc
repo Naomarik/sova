@@ -6,6 +6,7 @@
     [clojure.string :as str]
     [com.fulcrologic.statecharts.elements :refer [Send script]]
     [com.fulcrologic.statecharts.data-model.operations :as ops]
+    [com.fulcrologic.statecharts.environment :as sc-env]
     [sova.org-charts.charts.rules.hours :as hours]
     [sova.org-charts.engine.dsl :as dsl]))
 
@@ -98,11 +99,14 @@
 (defn tell-watch
   "Send a typed reason `{:kind :params :key :by}` to the project's watch session. `f` gives the
    reason from the data (nil sends nothing: the send's target is then no session, so we guard
-   with `:cond`-free content by returning an empty batch)."
+   with `:cond`-free content by returning an empty batch). News of the chart's own act (an event
+   `by` chart, r3) says so: the watch never looks for it (R3)."
   [f]
   (Send {:event      :reason/noted
          :targetexpr (fn [_ data] (watch-sid (:org-id data) (:project-id data)))
-         :content    (fn [_ data] (let [r (f data)] (if r (merge {:by "system" :at (now-ms data)} r) {:reasons []})))}))
+         :content    (fn [_ data] (let [r (f data)
+                                        by (if (= "chart" (some-> (:by (evt data)) name)) "chart" "system")]
+                                    (if r (merge {:by by :at (now-ms data)} r) {:reasons []})))}))
 
 (defn ledger
   "Send `ledger/take` (or `ledger/give-back`) `{kind n ledger}` to the project's watch: the
@@ -195,12 +199,16 @@
    the project's watch, so the overseer looks and approves or cancels it (it waits until then)."
   []
   [(dsl/hold-approve-correction)
-   (apply com.fulcrologic.statecharts.elements/transition {:sova/feed :feed :event :hold/waiting}
-     (send-if :reason/noted
-       (fn [d] (when-let [p (or (:project-id (evt d)) (:project-id d))] (watch-sid (:org-id d) p)))
-       (fn [d] (let [e (evt d)]
-                 {:kind "hold/review" :by "system" :at (now-ms d) :key (str "hold/review:" (:id e))
-                  :params {:id (:id e) :what (:what e) :act (some-> (:event e) name)}}))))])
+   ;; F19: a hold id is per session, so the reason names the hold as `<session-id>:<hold-id>`
+   (com.fulcrologic.statecharts.elements/transition {:sova/feed :feed :event :hold/waiting}
+     (script {:expr (fn [env d]
+                      (when-let [p (or (:project-id (evt d)) (:project-id d))]
+                        (let [e    (evt d)
+                              hold (str (sc-env/session-id env) ":" (:id e))]
+                          (queue-sends d [{:target (watch-sid (:org-id d) p) :event :reason/noted
+                                           :data {:kind "hold/review" :by "system" :at (now-ms d) :key (str "hold/review:" hold)
+                                                  :params {:id (:id e) :hold hold :what (:what e) :act (some-> (:event e) name)}}}]))))})
+     (com.fulcrologic.statecharts.elements/raise {:event :sova.charts/flush}))])
 
 (defn flush-transition
   "The top state's transition delivering queued sends, one per microstep."

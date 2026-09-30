@@ -153,3 +153,14 @@
     (is (= "A correction needs a reason: say why." (h/refusal p sid :correct/reopen {:by "overseer" :attended true})))
     (is (h/in? (h/send! p sid :correct/reopen {:by "overseer" :attended true :reason "the demo broke"}) sid :merged))
     (is (= "§gap/invoicing is not done." (h/refusal (start) sid :correct/reopen {:by "overseer" :attended true :reason "r"})))))
+
+(deftest R4-reopened-and-answered-nothing-are-feed-not-reasons
+  (let [kinds (fn [x] (set (keep #(when (= :reason/noted (:event %)) (get-in % [:data :kind])) (h/elsewhere x))))
+        p (-> (start) (watch-at "L0") (baton 1 [:done] :decisions ["d1"]) (decision "d1" "promoted"))
+        reopened (decision (h/clear! p sid) "d2" "pending")
+        nothing (-> (start) (watch-at "L0") (baton 1 [:open :with-person]) (h/clear! sid) (baton 1 [:closed]))]
+    (is (h/in? reopened sid :unreconciled))
+    (is (not (contains? (kinds reopened) "item/reopened")) "reopened: a feed entry, no reason")
+    (is (h/in? nothing sid :open))
+    (is (= 1 (:attempts (h/data nothing sid))))
+    (is (not (contains? (kinds nothing) "item/answered-nothing")) "answered nothing: a feed entry, no reason")))

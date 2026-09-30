@@ -4,6 +4,7 @@
    held and the second refused at once with today's sentence; cancelling the first frees it."
   (:require
     [cljs.test :refer [deftest is testing]]
+    [clojure.string]
     [sova.org-charts.charts.registry :as registry]
     [sova.org-charts.charts.rules.levels :as lv]
     [sova.org-charts.engine.core :as core]))
@@ -112,7 +113,9 @@
         (is (contains? (set (core/configuration eng wsid)) :running) "at its end it waits, and the overseer looks")
         (is (some? r) "the look's reasons carry the review")
         (is (:soon r) "a reason to look soon")
-        (is (re-find #"waits for your review" (str (:text r)))))
+        (is (re-find #"waits for your review" (str (:text r))))
+        (is (clojure.string/includes? (str (:text r)) (str "(hold " sid ":" id ")")) "F19: the full id, <session-id>:<hold-id>")
+        (is (= (str sid ":" id) (get-in r [:params :hold]))))
       (is (= [true] (map :waiting (core/holds eng))) "still waiting while the overseer looks")
       (testing "approve early: a reason, then it goes ahead through the full path"
         (is (= "A correction needs a reason: say why."

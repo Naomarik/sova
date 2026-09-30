@@ -227,5 +227,8 @@ Exported: `…, turn, workers, running, tree, branchState, merged, lastTurnAt`.
 
 `reason/noted {kind, params, key, by}`; kinds and sentences in `reasons.cljc`: baton/done, baton/closed,
 baton/proposal, baton/asked-operator, reconcile/{conflict,resolved,drafted,promoted}, coding/settled,
-build/merged, build/merge-refused, held/{looks,day,message,raised}, item/{stalled,answered-nothing,
-reopened,built}. `key` is typed (C3).
+build/merged, build/merge-refused, held/{looks,day,message,raised}, item/{stalled,built}, hold/review.
+`key` is typed (C3). A reason sent in a step whose event is `by` chart (r3, a drive) says `by: chart`,
+and the watch never looks for it (R3): it starts no look and uses none, and reaches the overseer as
+the next look's feed. item/answered-nothing and item/reopened are feed entries only, never sent (R4);
+their sentences stay in `reasons.cljc` for older rows.

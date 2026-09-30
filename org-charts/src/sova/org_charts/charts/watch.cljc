@@ -82,9 +82,12 @@
 
 (defn own-act?
   "C2: its own acts, made while it runs: a reason whose `by` is the overseer, noted while one of its
-   turns runs, is not a reason to look (it knows)."
+   turns runs, is not a reason to look (it knows). R3 (r8): news of the chart's own acts (`by`
+   chart) never is: it starts no look and uses no look; it reaches the overseer as the next look's
+   feed."
   [env reason]
-  (and (= "overseer" (some-> (:by reason) name)) (running-turn? env)))
+  (let [by (some-> (:by reason) name)]
+    (or (= "chart" by) (and (= "overseer" by) (running-turn? env)))))
 
 (defn kept [env data]
   (->> (incoming data)

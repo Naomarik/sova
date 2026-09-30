@@ -312,14 +312,12 @@
                 (transition {:sova/feed :feed :cond (fn [_ d] (= :needs-operator (lane-gathering d))) :target :needs-operator})
                 (transition {:sova/feed :feed :cond (fn [_ d] (and (= :ended (lane-gathering d)) (not= "none" (ri/dphase d)))) :target :deciding})
                 (transition {:sova/feed :feed :cond (fn [_ d] (and (= :ended (lane-gathering d)) (= "none" (ri/dphase d)))) :target :open}
-                  (answered-nothing)
-                  (reason "item/answered-nothing" (fn [_] {}))))
+                  (answered-nothing)))
               (state {:id :needs-operator} (mark :needs-operator) (stall-clock :needs-operator)
                 (transition {:sova/feed :feed :cond (fn [_ d] (= :asking (lane-gathering d))) :target :asking})
                 (transition {:sova/feed :feed :cond (fn [_ d] (and (= :ended (lane-gathering d)) (not= "none" (ri/dphase d)))) :target :deciding})
                 (transition {:sova/feed :feed :cond (fn [_ d] (and (= :ended (lane-gathering d)) (= "none" (ri/dphase d)))) :target :open}
-                  (answered-nothing)
-                  (reason "item/answered-nothing" (fn [_] {})))))
+                  (answered-nothing))))
 
             (state {:id :deciding :initial :unreconciled}
               (group "deciding")
@@ -331,9 +329,8 @@
 
             (state {:id :promoted :initial :awaiting-build}
               (group "promoted")
-              ;; a newer, superseding or edited decision reopens it
-              (transition {:sova/feed :feed :cond (fn [_ d] (contains? #{"pending" "conflict" "drafted" "edited"} (ri/dphase d))) :target :deciding}
-                (reason "item/reopened" (fn [d] {:dphase (ri/dphase d)})))
+              ;; a newer, superseding or edited decision reopens it (a feed entry, no look reason: R4)
+              (transition {:sova/feed :feed :cond (fn [_ d] (contains? #{"pending" "conflict" "drafted" "edited"} (ri/dphase d))) :target :deciding})
               (state {:id :awaiting-build} (mark :awaiting-build) (stall-clock :awaiting-build)
                 (to-phase :awaiting-build build-states build-phase)
                 (dsl/act {:sova/feed :feed :event :build/start :target :build-starting :checks [invalid archived-check decisions-check create-cap]} (build-content)))

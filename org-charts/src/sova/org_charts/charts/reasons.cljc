@@ -43,7 +43,7 @@
           "item/answered-nothing" (str "The gathering session for " item " ended with no decision.")
           "item/reopened" (str "A newer decision reopened " item ".")
           "item/built" (str item " is built: merged, and every decision it rests on is built per the spec.")
-          "hold/review" (str what " waits for your review (hold " (:id params) "): approve it, or cancel it with a reason. It does not go ahead until you do.")
+          "hold/review" (str what " waits for your review (hold " (or (:hold params) (:id params)) "): approve it, or cancel it with a reason. It does not go ahead until you do.")
           (str kind)))))
 
 (def soon-kinds

@@ -195,3 +195,23 @@
     (is (= (+ t 60000) (:soon-at (h/data y wsid))))
     (is (h/in? (h/advance! y 29999) wsid :waiting))
     (is (h/in? (h/advance! y 30000) wsid :running) "at t+60 s, not t+90 s")))
+
+;; ---- R3 / R4 (coordinator-40, r8): what does not wake the overseer ----------------------------------
+
+(deftest R3-news-of-the-charts-own-act-starts-no-look
+  (let [x (watch)
+        chart-news (assoc done-reason :by "chart")]
+    (is (h/in? (h/send! x wsid :reason/noted chart-news) wsid :quiet) "no look is due")
+    (is (empty? (:reasons (h/data (h/send! x wsid :reason/noted chart-news) wsid))) "it is no look reason: it reaches the next look as feed")
+    (is (= 0 (:looks-today (h/data (h/advance! (h/send! x wsid :reason/noted chart-news) (* 20 60000)) wsid) 0)) "it uses no look")
+    (testing "a batch keeps the others"
+      (let [y (h/send! x wsid :reason/noted {:reasons [chart-news (assoc done-reason :key "baton/done:s2")] :by "system"})]
+        (is (= ["baton/done:s2"] (map :key (:reasons (h/data y wsid)))))
+        (is (h/in? y wsid :waiting)))))
+  (testing "a chart-driven act's reason says by chart; the same act by the operator says system"
+    (let [r   (fn [by] (-> (h/start! (h/new-host) "baton" "baton/o1/s1" {:org-id "o1" :project-id "pr1" :session-id "s1" :public-title "T" :goal "G"
+                                                                        :owner {:overseer-of "pr1"} :to "p1" :names {"p1" "Ana"} :operator-name "Omar"})
+                           (h/send! "baton/o1/s1" :baton/close {:by by :reason "A newer gathering covers it." :owner-project "pr1" :autonomy "L1" :roster-active true :hold-ms 0})))
+          by-of (fn [x] (some #(when (= :reason/noted (:event %)) (get-in % [:data :by])) (h/elsewhere x)))]
+      (is (= "chart" (by-of (r "chart"))))
+      (is (= "system" (by-of (r "operator")))))))

@@ -234,14 +234,16 @@ appends (one line each).
 ## §app.decisions/session-tags — Session tags
 
 - Each session gets a **topic** from a fixed taxonomy — feature, bugfix, refactor, tests, docs,
-  infra, research, planning, review, data, config, experiment, chore, other — a **status** (done,
-  in progress, abandoned, blocked) and a **throwaway** probability (a test or scratch session with
-  no lasting work). The taxonomy is not editable; the classifier never invents labels.
+  infra, research, planning, review, data, config, experiment, chore, other — and a **throwaway**
+  probability (a test or scratch session with no lasting work). The taxonomy is not editable; the
+  classifier never invents labels. There is **no status tag**: whether work is done, ready or
+  waiting is the worktree readiness (§chat.worktrees/readiness), from git and the file. A status
+  answer stored before stays readable in the store and is never sent or shown.
 - **Input** comes from what the session list already reads (the file's head and tail, never a
   full read): the original first message, the outline's summary and "now" line, the folder's name,
   the model, how long it ran and how long it has been idle (both computed in code), the last user
   message (≤600 characters) and the end of the last reply (≤1,500), redacted before it leaves.
-- **Shown** only when confident: topic and status at confidence ≥ 0.5 and inside the taxonomy;
+- **Shown** only when confident: topic at confidence ≥ 0.5 and inside the taxonomy;
   throwaway at P(yes) ≥ 0.75. Anything below is absent on the wire; the raw answers are stored.
 - **Which sessions**, for live tagging and the backfill alike: those the privacy gate lets through
   (§app.decisions/privacy), except the Overseer's, workers', baton sessions (§app/baton) and
@@ -258,8 +260,8 @@ appends (one line each).
 - **Manual tags**, per session (`POST /api/sessions/tags`): trimmed, lowercased, a leading `#`
   dropped, deduplicated, letters, digits and `-`, at most 32 characters each and 8 per session;
   an empty list or `null` clears them. They are kept apart from the classifier's and always shown.
-- The row shows the status word (§app.session-list/anatomy); search matches topic, status and
-  manual tags (§app.session-list/search).
+- The row shows no tag word; its line 3 carries the readiness badge instead
+  (§app.session-list/anatomy). Search matches topic and manual tags (§app.session-list/search).
 
 ## §app.decisions/backfill — Tagging existing sessions
 
@@ -288,7 +290,8 @@ appends (one line each).
 - The same comparison sends `list_changed` (no payload; never on connect) when a session appears
   in or leaves the list, or a row's live record, running state, last activity, archived flag or
   title changes (a stored title changes in Sova's title store, never in the file: the Overseer's
-  rename, the automatic namer's, §app.session-list/auto-titles). The sidebar then reads the list again: at once if its last such read was at least a
+  rename, the automatic namer's, §app.session-list/auto-titles), or its merge readiness changes
+  (read from git in the background, §chat.worktrees/readiness). The sidebar then reads the list again: at once if its last such read was at least a
   second ago, otherwise once, a second after that read, however many more arrive meanwhile. It
   also reads the list after every reconnect of the feed, since the list may have changed while
   the socket was down. The feed adds no polling of its own. So a session started in a TUI reaches
@@ -299,3 +302,23 @@ appends (one line each).
   open the overlay is dropped and the list poll is the truth again; after the socket stops
   retrying, it tries again when the window regains focus.
 - The feed never writes and ignores anything the client sends.
+
+## §app.decisions/merge-followup — One follow-up check per merge
+
+- **What it asks.** Once per merge card (§chat.worktrees/merge-card), on the first reply that ends
+  a turn after the card: `follow_up`, a boolean — does the reply name work still to be done beyond
+  a restart, push or cleanup (open gaps, a known regression, "I'd fix it separately", unverified
+  parts)? — and `follow_up_weight`, a score over none / small / significant.
+- **The excerpt**: the branch, target, commits and lines of the card, the reply's last 1,500
+  characters, its `Deferred:` line when it has one, and the mechanical follow-ups
+  (§chat.worktrees/readiness) as facts so they are not judged again. Redacted before it leaves.
+- **When and which.** Only with **attention signals on** and through the same privacy gate
+  (§app.decisions/privacy), for the sessions readiness covers, and only for a reply from the last
+  24 hours: switching the feature on never checks old merges. A merge is checked at most once; a
+  failed check is retried after 5 minutes, at most 3 times. The answer is stored per merge card in
+  `<stateRoot>/merge-followups.json`, kept only while its session is listed.
+- **Reading it.** Follow-up work when `follow_up` P ≥ 0.5 and the weight's score is 0.5 or more:
+  significant at 1.5 or more with confidence ≥ 0.5, else small. The cue shown is the reply's own
+  first line naming open work, else its `Deferred:` line, else "see the reply after merging
+  {branch}". The model never writes
+  the follow-up; it only says whether there is one and how much.

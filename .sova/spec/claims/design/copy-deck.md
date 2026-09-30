@@ -22,8 +22,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Row unread dot (line 1) | wordless accent dot · hidden: "New activity. " |
 | Row turn-error mark (line 1, in the unread dot's place; §app.overseer/seen) | wordless alert circle in error · hidden: "Turn failed. " · `title`: "The last turn stopped with an error: {message}" · without a message: "The last turn stopped with an error." |
 | Row needs-you mark (line 1, after the unread dot or turn-error mark; one per row, §chat.alignment/session-mark, §app.decisions/attention-signals) | open questions: the accent count `{n}` alone, no glyph (the count is aria-hidden) · hidden "{n} open questions. " (1: "1 open question. ") · `title` "{n} open questions in {m} alignments" (1 alignment: "{n} open questions in {al_N} {title}") · otherwise a wordless glyph · hidden: a reply that asks "Asks you something. " · looping "May be looping. " · a stuck subagent "A subagent may be stuck. " · `title`: "The last reply asks you something." · "The last turn looks like it went in circles." · "A subagent looks stuck." |
-| Row meta title, when tagged | Topic: {topic word} · status: {status word} (tagged automatically) · without a topic: Status: {status word} (tagged automatically) |
-| Row status word (line 3, between time and model) | done · in progress · abandoned · blocked (lowercase) |
+| Row meta title, when tagged | Topic: {topic word} (tagged automatically) |
+| Row readiness badge (line 3, between time and model; §chat.worktrees/readiness) | ready ✓ · waiting for your OK · restart pending · merged · {n} follow-up(s) · merged (lowercase) |
 | Topic words (search; §app.decisions/session-tags) | feature · bug fix · refactor · tests · docs · infra · research · planning · review · data · config · experiment · chore · other |
 | Untitled row | Untitled (muted) |
 | Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |

@@ -484,6 +484,13 @@ itself.
   live link exists for, "Send <name> their link: <question>".
 - **Finished (decide):** replied since last seen and now idle; idle with an unsent draft or queued
   input.
+- **Needs you, ready to merge (act)** (§chat.worktrees/readiness): an idle, unarchived session
+  with a worktree ready and waiting for the go-ahead, "Ready to merge: {branch}". Not a push kind
+  (§app/notifications): it never sends a notification.
+- **Merges (decide)** (§chat.worktrees/readiness): a merge the follow-up check
+  (§app.decisions/merge-followup) calls significant, "Merged with open work: {cue}"; and one
+  `restart-pending` item of no session, "Restart pending: {n} merge(s) changed the server since it
+  started ({branches})", linking the newest such session.
 - **FYI:** running now; context at or above 85%; idle web sessions older than 3 days that aren't
   archived and have no draft.
 - Items are sorted by tier, then age, capped at 30 (every kind present keeps at least its newest

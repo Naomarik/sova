@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { afterEach, describe, test } from "node:test";
 import type { EngineOptions } from "../org-charts";
 import { OrgHost, OrgPayloadError, type OrgHostOptions } from "./index";
+import { verifyOrg } from "./rebuild";
 import { scanSnapshots } from "./store";
 import { HOST_CHARTS } from "./test-chart";
 
@@ -503,5 +504,31 @@ describe("org host", () => {
     assert.deepEqual((await host.reload()).map((p) => [p.kind, p.sessionId]), [["timer", "p/3"]]);
     assert.equal(host.nextDueAt(), null, "set aside again");
     await host.close();
+  });
+
+  test("r13: rewindowHours moves an hours wait after an hours edit; one in hours now goes at once under the fresh stamp; the log replays", async () => {
+    const at = place();
+    let now = 1_000_000;
+    let fresh: number | null = null; // the people's current next window, as the host's stamp would give it
+    const unattended = { by: "overseer", attended: false };
+    const host = await open(at, { clock: () => now, stamp: () => ({ ...unattended, window: fresh }) });
+    await host.start("p/1", "host-probe", {}, operator);
+    const r = await host.act("p/1", "say", { window: now + 3_600_000 }, unattended);
+    assert.equal(r.held?.wait, "hours");
+    assert.equal(r.held?.until, now + 3_600_000);
+    assert.equal(await host.rewindowHours(() => now + 7_200_000), 1, "a later window");
+    assert.equal(host.holds()[0]?.until, now + 7_200_000);
+    assert.equal(host.nextDueAt(), now + 7_200_000);
+    assert.equal(await host.rewindowHours(() => now + 7_200_000), 0, "unchanged: nothing sent");
+    now += 60_000;
+    fresh = null; // in hours now
+    assert.equal(await host.rewindowHours(() => null), 1, "in hours now");
+    assert.deepEqual(host.holds(), []);
+    assert.equal(host.data("p/1")?.["said"], 1, "it went at once");
+    const rows = host.log.rows({ session: "p/1" });
+    assert.deepEqual(rows.filter((x) => x.event === "sova/rewindow").map((x) => x.feed), ["quiet", "quiet"]);
+    await host.close();
+    const v = verifyOrg({ orgId: "o1", ...at, charts: HOST_CHARTS as unknown as EngineOptions["charts"] });
+    assert.deepEqual(v.differing, [], "rebuild --verify replays the moved wait");
   });
 });

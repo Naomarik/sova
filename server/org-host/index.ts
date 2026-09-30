@@ -619,6 +619,22 @@ export class OrgHost {
     commitJournal(this.paths.journal, j, this.durable);
   }
 
+  /** r13: after a working-hours edit (a person's or the company's), move every hours wait to its new
+      window. `windowOf(hold)` → the instant the act's people are next in hours, or null (in hours now:
+      released at once). The release re-checks the act under a fresh stamp, so `stamp` must give the
+      people's current hours. Each moved hold is one committed step; returns how many changed. */
+  async rewindowHours(windowOf: (hold: Hold) => number | null): Promise<number> {
+    await this.ready();
+    let n = 0;
+    for (const h of this.engine.holds(null).filter((x) => x.wait === "hours")) {
+      const until = windowOf(h);
+      if (until === h.until) continue;
+      this.step(() => this.engine.send(h.sessionId, "sova/rewindow", { id: h.id, until } as JsonObject, { now: this.clock() }));
+      n++;
+    }
+    return n;
+  }
+
   /** The earliest pending delayed event (the host's own timer follows it). */
   nextDueAt(): number | null {
     return this.engine.nextDueAt();

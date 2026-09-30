@@ -24,6 +24,8 @@ export const HOST_CHART = [
       ["transition", { event: "look", target: "looking" }],
       ["transition", { event: "wait", target: "timed" }],
       ["transition", { event: "arm-bomb", target: "bombing" }],
+      // reaches someone (r7): waits for `window` when unattended
+      ["transition", { event: "say" }, ["script", { expr: (d: Data) => assign({ said: ((d["said"] as number) ?? 0) + 1 }) }]],
     ],
     // a timer whose step always throws: `bang` enters an eventless cycle (the step limit)
     ["state", { id: "bombing" }, ["onEntry", {}, ["send", { event: "bang", delay: 50 }]], ["transition", { event: "bang", target: "spin-a" }], ["transition", { event: "defuse", target: "idle" }]],
@@ -41,7 +43,10 @@ export const HOST_CHARTS = {
     version: 1,
     storage: "portable",
     chart: HOST_CHART,
-    acts: { "gather/start": { needs: null, hold: true, counts: "gather", what: "Gathering" } },
+    acts: {
+      "gather/start": { needs: null, hold: true, counts: "gather", what: "Gathering" },
+      say: { needs: null, hours: (d: Data) => ((d["_event"] as Data | undefined)?.["data"] as Data | undefined)?.["window"] ?? null },
+    },
     redact: { secretish: "drop" },
   },
   "host-local-probe": { version: 1, storage: "host-local", chart: HOST_CHART, cold: (config: string[]) => config.includes("gathering") },

@@ -170,8 +170,17 @@ function rowsOf(orgId: string, dir: string): BatonSession[] {
   if (!isOrgHostOpen(orgId)) return [];
   return hostOf(orgId)
     .sessions("baton")
+    // r11: retired past its project's 200-row cap (its chart's final state): no longer the org's
+    .filter((s) => s.running)
     .map((s) => rowOf(dir, s))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}
+
+/** r11: a gathering its project retired past the 200-row cap (no longer organizational). */
+export function isRetiredBaton(orgId: string, sessionId: string): boolean {
+  if (!isOrgHostOpen(orgId)) return false;
+  const sid = batonSid(orgId, sessionId);
+  return hostOf(orgId).sessions("baton").some((s) => s.id === sid && !s.running);
 }
 
 /** Every baton session of every attached org. */
@@ -215,7 +224,9 @@ export function batonById(sessionId: string): { row: BatonSession; dir: string }
     const host = hostOf(o.id);
     const sid = batonSid(o.id, sessionId);
     const data = host.data(sid);
-    if (data) return { row: rowOf(o.dir, { configuration: host.configuration(sid) ?? [], data }), dir: o.dir };
+    const configuration = host.configuration(sid) ?? [];
+    // r11: retired (its chart's final state, an empty configuration): no longer the org's
+    if (data && configuration.length) return { row: rowOf(o.dir, { configuration, data }), dir: o.dir };
   }
   return null;
 }

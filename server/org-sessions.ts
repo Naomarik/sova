@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import type { BatonSession } from "../shared/baton";
 import type { SessionOrg, SessionOrgRef } from "../shared/protocol";
-import { allBatons } from "./baton";
+import { allBatons, isRetiredBaton } from "./baton";
 import { buildMerged } from "./build-merged";
 import { orgOfSessionPath, readIndex, readOrg, readProjects } from "./orgs";
 import { readOrgBuilds, type BuildKind, type BuildRow } from "./build-loadout";
@@ -105,6 +105,8 @@ export function orgLookup(): OrgLookup {
           const finished = b.state === "done" || b.state === "closed";
           return { ...ref(ws.orgId, ws.dir, b.projectId), kind: b.offers?.length ? "offer" : "gathering", ...(finished ? { finished: true as const } : {}) };
         }
+        // r11: a gathering its project retired is no longer organizational.
+        if (isRetiredBaton(ws.orgId, id)) return undefined;
         // The marker names the project; a file past the state's history cap is still that project's
         // (cleared) conversation — it sits in the org's own workspace, where no fork is ever written.
         const m = readPoMarker(path);

@@ -290,6 +290,7 @@ export const LINES: Record<string, string> = {
   "correct/skip-stall": "A stalled step was skipped.",
   "correct/relink": "A session was moved to another gap.",
   "correct/merged": "Its branch was marked merged by hand.",
+  "session/retire": "The session was retired: the project keeps the 200 sessions it started most recently, and this one was finished.",
   "sova/set-state": "Its state was set by hand.",
   "reconcile/request": "The decisions were reconciled.",
   "decision/promote": "Decisions were promoted.",

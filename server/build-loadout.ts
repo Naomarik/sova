@@ -127,7 +127,7 @@ export function readBuilds(orgId: string, projectId: string): BuildRow[] {
   if (!isOrgHostOpen(orgId)) return [];
   return hostOf(orgId)
     .sessions("build")
-    .filter((s) => s.data.projectId === projectId && !s.configuration.includes("not-started"))
+    .filter((s) => s.data.projectId === projectId && !s.configuration.includes("not-started") && s.running)
     .map((s) => rowOf(s.configuration, s.data))
     .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
@@ -137,7 +137,7 @@ export function readOrgBuilds(orgId: string): (BuildRow & { projectId: string })
   if (!isOrgHostOpen(orgId)) return [];
   return hostOf(orgId)
     .sessions("build")
-    .filter((s) => !s.configuration.includes("not-started"))
+    .filter((s) => !s.configuration.includes("not-started") && s.running)
     .map((s) => ({ ...rowOf(s.configuration, s.data), projectId: str(s.data.projectId) }));
 }
 

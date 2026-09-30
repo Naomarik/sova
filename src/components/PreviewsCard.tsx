@@ -1,25 +1,44 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, type JSX, Show } from "solid-js";
+import { PREVIEW_PURPOSE_MAX } from "../../shared/preview-links";
 import { getPreviews, mintPreview, turnOffPreview } from "../lib/api";
 import { createPoll } from "../lib/poll";
-import { activePreviews, parsePort, PREVIEW_EXPIRY_CHOICES, previewWarning, runningLine } from "../lib/previews";
-import { expiresWord } from "../lib/session-shares";
-import { toast } from "../lib/ui-state";
+import { previewRow } from "../lib/preview-rows";
+import { activePreviews, parsePort, PREVIEW_EXPIRY_CHOICES, previewWarning } from "../lib/previews";
+import { resolveAppLink, sessionIndex, sessionIndexVersion } from "../lib/session-links";
+import { copyText, toast } from "../lib/ui-state";
 import { Banner } from "./ui";
 
 const POLL_MS = 5_000;
 const errText = (x: unknown) => (x instanceof Error ? x.message : String(x));
 
+/** A `sova://s/<id>` link as a route in this tab (by id until the session list knows it); plain text without one. */
+function SessionLink(props: { href: string | null; children: JSX.Element }) {
+  const route = () => {
+    sessionIndexVersion();
+    const v = props.href ? resolveAppLink(props.href, sessionIndex()) : null;
+    return v?.kind === "route" ? v.href : null;
+  };
+  return (
+    <span>
+      <Show when={route()} fallback={props.children}>
+        {(href) => <a href={href()}>{props.children}</a>}
+      </Show>
+    </span>
+  );
+}
+
 /**
- * A project's preview links (§mesh.public/preview-card): each active one with its port, expiry,
- * whether the app answers on it, Copy Link (only for a link minted in this page: the link is shown
- * once, its label never stored) and Turn Off; then New Preview with the warning. Read every 5
- * seconds while the page shows.
+ * A project's preview links (§mesh.public/preview-card): each active one with what it is for, its
+ * coding session, branch and what it serves, who made it, whether it serves now, its expiry, Copy
+ * Link (the kept link, or one minted in this page) and Turn Off; then New Preview with the
+ * warning. Read every 5 seconds while the page shows.
  */
 export function PreviewsCard(props: { orgId: string; projectId: string }) {
   const poll = createPoll(() => getPreviews(props.orgId, props.projectId), POLL_MS);
-  /** Links minted in this page, by preview id: the only place a link can be copied from. */
+  /** Links minted in this page, by preview id: copyable even when the list keeps none. */
   const [links, setLinks] = createSignal<Record<string, string>>({});
   const [port, setPort] = createSignal("");
+  const [purpose, setPurpose] = createSignal("");
   const [days, setDays] = createSignal<number>(PREVIEW_EXPIRY_CHOICES[0]);
   const [formError, setFormError] = createSignal<string | null>(null);
   const [busy, setBusy] = createSignal(false);
@@ -30,14 +49,7 @@ export function PreviewsCard(props: { orgId: string; projectId: string }) {
   /** The number typed, for the warning (named even when the port is refused). */
   const typed = () => (/^\d{1,5}$/.test(port().trim()) ? Number(port().trim()) : null);
 
-  const copy = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-      toast("Link copied.");
-    } catch {
-      toast("Couldn't copy the link. Select it and copy it by hand.");
-    }
-  };
+  const copy = (url: string) => void copyText(url, "Link copied.");
 
   const create = async (e: Event) => {
     e.preventDefault();
@@ -47,11 +59,13 @@ export function PreviewsCard(props: { orgId: string; projectId: string }) {
     setBusy(true);
     setFormError(null);
     try {
-      const made = await mintPreview({ orgId: props.orgId, projectId: props.projectId, port: p.port, days: days() });
+      const why = purpose().trim();
+      const made = await mintPreview({ orgId: props.orgId, projectId: props.projectId, port: p.port, days: days(), ...(why ? { purpose: why } : {}) });
       setLinks({ ...links(), [made.preview.id]: made.url });
       setPort("");
+      setPurpose("");
       if (made.linkWarning) toast(made.linkWarning);
-      void copy(made.url);
+      copy(made.url);
       poll.refetch();
     } catch (x) {
       setFormError(errText(x));
@@ -87,33 +101,47 @@ export function PreviewsCard(props: { orgId: string; projectId: string }) {
       <Show when={list().length > 0}>
         <ul class="list previews-list">
           <For each={list()}>
-            {(v) => (
-              <li class="list-row previews-row">
-                <div class="list-main">
-                  <p class="list-title">
-                    Port <span class="text-mono">{v.port}</span>
-                    <span class={v.running ? "chip chip-success" : "chip chip-warn"}>
-                      <span class="chip-dot" aria-hidden="true" />
-                      {runningLine(v)}
-                    </span>
-                  </p>
-                  <p class="list-meta">{expiresWord(v.expiresAt, Date.now())}</p>
-                  <Show when={links()[v.id]}>{(url) => <p class="list-meta text-mono previews-url">{url()}</p>}</Show>
-                </div>
-                <div class="shares-row-actions">
-                  <Show when={links()[v.id]}>
-                    {(url) => (
-                      <button type="button" class="button button-sm" onClick={() => void copy(url())}>
-                        Copy Link
-                      </button>
-                    )}
-                  </Show>
-                  <button type="button" class="button button-sm button-destructive" onClick={() => void off(v.id)} onBlur={() => armed() === v.id && setArmed(null)}>
-                    {armed() === v.id ? "Turn Off Preview?" : "Turn Off"}
-                  </button>
-                </div>
-              </li>
-            )}
+            {(v) => {
+              const row = () => previewRow(v, Date.now(), links()[v.id]);
+              return (
+                <li class="list-row previews-row">
+                  <div class="list-main">
+                    <p class="list-title previews-row-title">{row().title}</p>
+                    <p class="list-meta previews-row-line">
+                      <Show when={row().session}>
+                        {(s) => <SessionLink href={s().href}>{s().title}</SessionLink>}
+                      </Show>
+                      <Show when={row().branch}>{(b) => <span class="text-mono">{b()}</span>}</Show>
+                      <span>{row().serves}</span>
+                    </p>
+                    <Show when={row().matched}>
+                      <p class="list-meta">Matched by the app's folder</p>
+                    </Show>
+                    <p class="list-meta previews-row-line">
+                      <span class={row().state.tone === "ok" ? "chip chip-success" : "chip chip-warn"}>
+                        <span class="chip-dot" aria-hidden="true" />
+                        {row().state.text}
+                      </span>
+                      <Show when={row().maker}>{(m) => <SessionLink href={m().href}>{m().text}</SessionLink>}</Show>
+                      <span>{row().expires}</span>
+                    </p>
+                    <Show when={row().linkNote}>{(note) => <p class="list-meta">{note()}</p>}</Show>
+                  </div>
+                  <div class="shares-row-actions previews-row-actions">
+                    <Show when={row().url}>
+                      {(url) => (
+                        <button type="button" class="button button-sm" onClick={() => copy(url())}>
+                          Copy Link
+                        </button>
+                      )}
+                    </Show>
+                    <button type="button" class="button button-sm button-destructive" onClick={() => void off(v.id)} onBlur={() => armed() === v.id && setArmed(null)}>
+                      {armed() === v.id ? "Turn Off Preview?" : "Turn Off"}
+                    </button>
+                  </div>
+                </li>
+              );
+            }}
           </For>
         </ul>
       </Show>
@@ -153,6 +181,20 @@ export function PreviewsCard(props: { orgId: string; projectId: string }) {
                 </For>
               </select>
             </div>
+          </div>
+          <div class="field settings-field">
+            <label class="field-label" for="preview-purpose">
+              Purpose <span class="text-muted">(optional)</span>
+            </label>
+            <input
+              id="preview-purpose"
+              class="input"
+              autocomplete="off"
+              maxlength={PREVIEW_PURPOSE_MAX}
+              placeholder="What it's for, like the new checkout"
+              value={purpose()}
+              onInput={(e) => setPurpose(e.currentTarget.value)}
+            />
           </div>
           <Show when={formError()}>
             {(e) => (

@@ -29,7 +29,8 @@ const DEF = {
   version: 1,
   slots: { cap: 4 },
   setup: [{ id: "mark", run: ["node", "setup.mjs"], inputs: ["setup.mjs"] }],
-  data: { store: { kind: "dir" } },
+  // `cache` sits in the checkout under a folder-only ignore pattern (`.agent/`), as Sova's own `.agent` does.
+  data: { store: { kind: "dir" }, cache: { kind: "dir", path: ".agent" } },
   services: {
     bus: { cmd: ["node", "bus.mjs"], scope: "shared", ports: { tcp: { fixed: PORTS.bus } } },
     web: { cmd: ["node", "web.mjs"], env: { STORE: "${data.store}" }, ports: { http: { base: PORTS.web } }, requires: ["bus"], ready: { http: "http", path: "/health", timeout: 20 }, reload: { signal: "HUP" } },
@@ -44,7 +45,7 @@ const FILES: Record<string, string> = {
   "web.mjs": `import { createServer } from "node:http"; process.on("SIGHUP", () => console.log("reloaded")); createServer((q, r) => { r.end(q.url === "/health" ? "ok" : "web " + process.env.SOVA_INSTANCE); }).listen(Number(process.env.SOVA_PORT_HTTP), "127.0.0.1", () => console.log("web up on", process.env.SOVA_PORT_HTTP));`,
   "probe.mjs": `import { existsSync, writeFileSync } from "node:fs"; const [op, token] = process.argv.slice(2); const f = process.env.SOVA_DATA + "/store/" + token; if (op === "write") writeFileSync(f, "1"); else process.exit(existsSync(f) ? 0 : 1);`,
   "public/index.html": "<h1>site</h1>",
-  ".gitignore": ".agent\n",
+  ".gitignore": ".agent/\n",
 };
 
 before(() => {
@@ -97,7 +98,8 @@ test("create cuts a worktree, allocates a slot, provisions data and runs setup; 
   assert.equal(a.slot, 1);
   assert.equal(a.state, "stopped");
   assert.ok(existsSync(join(a.checkout!, "web.mjs")));
-  assert.deepEqual(a.steps.map((s) => [s.id, s.result]), [["slot", "done"], ["worktree", "done"], ["data:store", "done"], ["setup:mark", "done"]]);
+  assert.deepEqual(a.steps.map((s) => [s.id, s.result]), [["slot", "done"], ["worktree", "done"], ["data:store", "done"], ["data:cache", "done"], ["setup:mark", "done"]]);
+  assert.equal(a.data.find((d) => d.name === "cache")?.ref, join(a.checkout!, ".agent"));
   assert.ok(a.data.every((d) => d.exists));
   const again = shaped(await engine.run("create", { project, branch: "sova/a" }, op));
   assert.equal(again.instance, a.instance);

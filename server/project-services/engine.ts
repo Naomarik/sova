@@ -717,7 +717,8 @@ export class ProjectEngine {
     }
     const path = this.dataPath(d, scope);
     if (d.path) {
-      const ig = await this.git(["check-ignore", "-q", "--", d.path], rec.checkout);
+      // Asked as a folder (trailing slash): a `.agent/` pattern matches only folders, and it does not exist yet.
+      const ig = await this.git(["check-ignore", "-q", "--", `${d.path}/`], rec.checkout);
       if (ig.code !== 0) throw new VerbFailure("invalid-definition", `data.${d.name}.path (${d.path}) must be ignored by git in the checkout`);
     }
     if (d.from === "empty") {

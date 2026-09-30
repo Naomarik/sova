@@ -27,6 +27,8 @@ import { PREVIEW_PURPOSE_MAX, type PreviewView } from "../shared/preview-links";
 import { holdsPreviewLink, redactPreviewLinks, redactPreviewLinksDeep } from "./preview-kept";
 import { handoffOf } from "./project-previews";
 import { notSentReason, type LinkRef, type SendAnswer } from "../shared/outreach";
+import { projectEngine } from "./project-services/routes";
+import { projectOverseerVerbsTool } from "./project-services/tools";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -178,6 +180,9 @@ const PLAIN_NEEDS: Record<string, Need> = {
   sova_send_status: "read",
   sova_hold: "L0", // hold/cancel, hold/approve: L0 corrections on every statechart that holds
   sova_set_state: "operator", // the engine takes it only in the operator's turn
+  // Its highest verb; the project-services engine checks each verb itself (reads at any level, down
+  // from L0, the rest at L3: §app.project-services/callers), no statechart act yet.
+  sova_project_verbs: "L3",
 };
 
 /**
@@ -1219,6 +1224,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         }
       }),
     },
+    // Project instances (§app.project-services/callers): this project only, gated by the level in force.
+    projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, level: () => host.effective().autonomy }),
   ];
 
   return tools.map((t) => previewLinkFree(redactingTool(t, redactor)));

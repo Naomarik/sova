@@ -32,6 +32,8 @@ import { readManifest, resolveIdeaId } from "./overseer-ideas";
 import { cardTool, type CardLinkInput } from "./overseer-card-tool";
 import { CARDS_NOTE_MESSAGE, safeHttpsUrl } from "../shared/overseer-card";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
+import { projectEngine } from "./project-services/routes";
+import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { resolveOrg, resolvePerson, resolveProject } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
@@ -1472,6 +1474,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     }),
     ...todoTools({ act, read, resolve, refusal: (m) => new Refusal(m), obj, str }),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
+    // Project instances (§app.project-services/callers): reads free, acts through `act` (turns the user started).
+    overseerVerbsTool(projectEngine, () => host.overseerId(), (exec) => act("sova_project_verbs", (params, toolCallId, call) => exec(toolCallId, params, call.signal, undefined, call.ctx)) as LooseExec),
     ...orgTools({
       act,
       read,

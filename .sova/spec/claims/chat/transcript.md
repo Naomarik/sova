@@ -204,6 +204,9 @@ a machine event fired the turn, not the person. Same `.toolcard` shell as tool-c
 ```
 
 - **Name.** Always "Wake nudge {id}" (`shared/wake.ts` `wakeTitle`), never the raw tag.
+- **A schedule's fire** (§chat.schedules/fire) is a wake too: tagged `[schedule s1] …`, it draws the
+  same card named "Scheduled run s1", with `· {late} late` from its "Late by … (Sova was not
+  running)." line, and is treated as a wake everywhere below.
 - **Arg slot.** The parsed reason (`WakeInfo.reason`), muted, truncated with an ellipsis, full text
   in `title`. Empty when the extension wrote `Reason: (none)`.
 - **Fired time.** Muted, `fired {HH:MM}` from the entry's own timestamp, same clock as every other

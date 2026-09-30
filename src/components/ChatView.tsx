@@ -23,8 +23,8 @@ import { cardFold, openCards } from "../lib/overseer";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
-import { getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
-import type { OverseerAutonomy } from "../../shared/protocol";
+import { approveSchedule, getChatClaudeAccounts, getOverseerAutonomy, revokeOverseerPermit, revokeSchedule, setSandbox, setSessionArchived, wsUrl } from "../lib/api";
+import type { OverseerAutonomy, ScheduleInfo } from "../../shared/protocol";
 import { LOGIN_UNCHANGED } from "../../shared/protocol";
 import { contextStateFor, messageContextTokens, windowOf } from "../lib/context";
 import {
@@ -314,6 +314,19 @@ export function ChatView(props: {
       return err instanceof Error ? err.message : String(err);
     }
   };
+  // A playbook schedule, approved or revoked from the same panel (§chat.schedules/where-shown).
+  const scheduleAct = async (fn: () => Promise<unknown>): Promise<string | null> => {
+    try {
+      await fn();
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    } finally {
+      refreshAutonomy();
+    }
+  };
+  const approveScheduleFromPanel = (s: ScheduleInfo) => scheduleAct(() => approveSchedule({ cwd: s.root, playbook: s.playbook, pin: s.pin ?? "" }));
+  const revokeScheduleFromPanel = (id: string) => scheduleAct(() => revokeSchedule(id));
   const jumpToCardId = (id: string) => {
     const card = cards().cards.get(id);
     if (card) jumpToCard(card);
@@ -1833,6 +1846,8 @@ export function ChatView(props: {
         onJumpCard={jumpToCard}
         autonomy={props.overseer ? autonomy() : undefined}
         onRevokePermit={props.overseer ? revokePermit : undefined}
+        onApproveSchedule={props.overseer ? approveScheduleFromPanel : undefined}
+        onRevokeSchedule={props.overseer ? revokeScheduleFromPanel : undefined}
         onJumpCardId={jumpToCardId}
         onJumpToolCall={jumpToToolCall}
         autofocus={props.autofocus}

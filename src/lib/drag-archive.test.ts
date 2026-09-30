@@ -1,9 +1,9 @@
 // Run: npx tsx --test src/lib/drag-archive.test.ts
-// Dragging a row out of the sidebar: what the drag may do, what shows while the pointer is
-// outside, and when the pointer has left the window altogether.
+// Dropping a row on the drop overlay's Archive tile: what the drag may do, what the tile says
+// when it can't, and what the drop says.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { archiveDragOf, archivedDropToast, blockedDropSentence, leftWindow, orgProjectOf, outsideDropEffect, outsideLabel, outsideTarget, unarchivedToast } from "./drag-archive";
+import { archiveDragOf, archivedDropToast, archiveTileReason, blockedDropSentence, orgProjectOf, unarchivedToast } from "./drag-archive";
 import type { SelectableSession } from "./session-selection";
 
 const row = (over: Partial<SelectableSession> = {}): SelectableSession => ({
@@ -17,18 +17,14 @@ const row = (over: Partial<SelectableSession> = {}): SelectableSession => ({
   ...over,
 });
 
-test("an eligible row archives outside the sidebar, and nothing happens inside it", () => {
+test("an eligible row's Archive tile is open: no reason, no refusal", () => {
   const drag = archiveDragOf(row());
   assert.deepEqual(drag, { kind: "archive" });
-  assert.equal(outsideTarget(drag, false), "archive");
-  assert.equal(outsideTarget(drag, true), null);
-  assert.equal(outsideDropEffect(outsideTarget(drag, false)), "move");
-  assert.equal(outsideLabel(outsideTarget(drag, false), drag, "Fix the build"), "Archive “Fix the build”");
-  assert.equal(outsideLabel(outsideTarget(drag, true), drag, "Fix the build"), null);
+  assert.equal(archiveTileReason(drag, false), null);
   assert.equal(blockedDropSentence(drag), null);
 });
 
-test("a row already in the Archive region dragged outside is no target: no state, no cursor, no words", () => {
+test("a row already in the Archive region can't be archived again, and the tile says where it already is", () => {
   // Archived, even one that would be blocked if it weren't: it's already where the gesture goes.
   const already: Partial<SelectableSession>[] = [{ archived: true }, { archived: true, origin: "external" }, { archived: true, busy: true }];
   // Archived and open in a TUI: on top while live, but archiving it again means nothing.
@@ -38,14 +34,12 @@ test("a row already in the Archive region dragged outside is no target: no state
   for (const over of already) {
     const drag = archiveDragOf(row(over));
     assert.deepEqual(drag, { kind: "none" });
-    assert.equal(outsideTarget(drag, false), null);
-    assert.equal(outsideDropEffect(outsideTarget(drag, false)), "none");
-    assert.equal(outsideLabel(outsideTarget(drag, false), drag, "x"), null);
+    assert.equal(archiveTileReason(drag, over.archived), over.archived ? "Already archived." : "Already in the Archive.");
     assert.equal(blockedDropSentence(drag), null);
   }
 });
 
-test("a blocked row shows archiveBlockReason's own words, refuses the drop, and never reads as archive", () => {
+test("a blocked row's Archive tile shows archiveBlockReason's own words and refuses the drop", () => {
   const cases: [Partial<SelectableSession>, string][] = [
     [{ live: { pid: 7, status: "idle" } }, "open in a TUI"],
     // Live wins: an external session open in a TUI is on top, and blocked for the TUI.
@@ -56,24 +50,8 @@ test("a blocked row shows archiveBlockReason's own words, refuses the drop, and 
   for (const [over, reason] of cases) {
     const drag = archiveDragOf(row(over));
     assert.deepEqual(drag, { kind: "blocked", reason });
-    const t = outsideTarget(drag, false);
-    assert.equal(t, "archive-blocked");
-    assert.equal(outsideDropEffect(t), "none");
-    assert.equal(outsideLabel(t, drag, "Fix the build"), `Can't archive: ${reason}`);
+    assert.equal(archiveTileReason(drag, false), `Can't archive: ${reason}`);
     assert.equal(blockedDropSentence(drag), `Can't archive this session: ${reason}.`);
-    assert.equal(outsideTarget(drag, true), null);
-  }
-});
-
-test("leftWindow: only a leave with no next element, at or past the viewport's edge", () => {
-  const view = { width: 1000, height: 800 };
-  const el = {};
-  // Crossing between elements names the next one: never "left the window", wherever the point is.
-  assert.equal(leftWindow({ relatedTarget: el, clientX: 0, clientY: 400 }, view), false);
-  // No next element, but mid-window (a browser that leaves relatedTarget null between elements).
-  assert.equal(leftWindow({ relatedTarget: null, clientX: 500, clientY: 400 }, view), false);
-  for (const [x, y] of [[0, 400], [500, 0], [1000, 400], [500, 800], [-5, 400], [1200, 900]] as const) {
-    assert.equal(leftWindow({ relatedTarget: null, clientX: x, clientY: y }, view), true, `${x},${y}`);
   }
 });
 

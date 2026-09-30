@@ -1,7 +1,7 @@
 import { createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { PlaybookCatalog, PlaybookInfo } from "../../shared/protocol";
-import { fetchPlaybooks } from "../lib/api";
+import { approveSchedule, fetchPlaybooks, revokeSchedule } from "../lib/api";
 import {
   groupPlaybooks,
   noPlaybookDrafts,
@@ -15,6 +15,8 @@ import {
   setPlaybookDraft,
 } from "../lib/playbooks";
 import type { ComposerReason } from "./Composer";
+import { scheduleLine } from "../lib/schedules";
+import { ScheduleCard } from "./ScheduleCard";
 import { Banner, Icon, trapFocus } from "./ui";
 import { hostOf } from "../lib/mesh";
 
@@ -105,6 +107,24 @@ export function PlaybooksDialog(props: {
     }
   };
   void load();
+  /** Approve or revoke the chosen playbook's schedule, then read the catalog again so the card and
+      the row show the state the server now holds; the error sentence, or null. */
+  const scheduleAct = async (fn: () => Promise<unknown>): Promise<string | null> => {
+    try {
+      await fn();
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    } finally {
+      const key = chosenKey();
+      const next = await fetchPlaybooks(props.cwd, hostOf(props.path)).catch(() => null);
+      if (next) {
+        setCatalog(next);
+        const again = key ? next.playbooks.find((x) => playbookKey(x) === key) : undefined;
+        if (again && chosenKey() === key) setChosen(again);
+      }
+    }
+  };
   onCleanup(() => {
     run++; // an answer that lands after the close writes to nothing
     if (leaving) return;
@@ -265,6 +285,16 @@ export function PlaybooksDialog(props: {
                                           <span class="list-meta">{p.description}</span>
                                         </span>
                                       </Show>
+                                      {/* Its schedule and state (§chat.schedules/where-shown). */}
+                                      <Show when={p.schedule}>
+                                        {(sch) => (
+                                          <span class="list-line list-meta-row">
+                                            <span class="list-meta playbook-schedule-line">
+                                              <Icon name="clock" small /> {scheduleLine(sch())}
+                                            </span>
+                                          </span>
+                                        )}
+                                      </Show>
                                     </span>
                                     <Icon name="chevron-right" small />
                                   </button>
@@ -286,6 +316,15 @@ export function PlaybooksDialog(props: {
             <div class="modal-body">
               <Show when={p().description}>
                 <p class="text-caption text-muted">{p().description}</p>
+              </Show>
+              <Show when={p().schedule}>
+                {(sch) => (
+                  <ScheduleCard
+                    schedule={sch()}
+                    onApprove={() => scheduleAct(() => approveSchedule({ cwd: props.cwd ?? "", playbook: p().id, pin: sch().pin ?? "" }, hostOf(props.path)))}
+                    onRevoke={() => scheduleAct(() => revokeSchedule(sch().id ?? "", hostOf(props.path)))}
+                  />
+                )}
               </Show>
               <div class="field">
                 <label class="field-label" for="playbooks-text">

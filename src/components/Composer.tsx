@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
-import type { ChatClaudeLogin, SlashCommand, UploadResult } from "../../shared/protocol";
+import type { ChatClaudeLogin, ScheduleInfo, SlashCommand, UploadResult } from "../../shared/protocol";
 import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
 import { createTouchMode, enterSends } from "../lib/input-mode";
@@ -51,7 +51,6 @@ import { OverseerCardChip } from "./OverseerCardChip";
 import { OverseerPermitsChip } from "./OverseerPermitsChip";
 import { livePermits, type Permit } from "../../shared/overseer-grants";
 import type { OverseerCard } from "../../shared/overseer-card";
-import { dragHasRow } from "../lib/session-groups";
 import { openSettings } from "../lib/settings-nav";
 import { showInputsOnTimelineLabel } from "../lib/timeline";
 import { showWorkersOfLabel, teamNote, type WorkingSplit, workersOfLabel, workersRunningLabel } from "../lib/workers";
@@ -167,8 +166,11 @@ export function Composer(props: {
   /** The Overseer's approvals and rules and its running count (§app.overseer/approvals,
       §app.overseer/caps): the run-status row carries "3 of 10 running" while any runs, and the
       approvals chip while any is live. */
-  autonomy?: { running: number; cap: number; permits: Permit[] };
+  autonomy?: { running: number; cap: number; permits: Permit[]; schedules?: ScheduleInfo[] };
   onRevokePermit?: (id: string) => Promise<string | null>;
+  /** Approve or revoke a playbook schedule from the same panel (§chat.schedules/where-shown). */
+  onApproveSchedule?: (s: ScheduleInfo) => Promise<string | null>;
+  onRevokeSchedule?: (id: string) => Promise<string | null>;
   onJumpCardId?: (card: string) => void;
   onJumpToolCall?: (toolCallId: string) => void;
   /** User messages on this chat's active branch; the status row's inputs trigger, hidden at 0. */
@@ -389,7 +391,11 @@ export function Composer(props: {
 
   /** The alignment chip, while an alignment is open (and there is somewhere to jump). */
   const runningRow = () => (props.autonomy && props.autonomy.running > 0 ? props.autonomy : null);
-  const permitsRow = () => (props.autonomy && props.onRevokePermit && livePermits(props.autonomy.permits).length ? props.autonomy.permits : null);
+  // The chip shows while an approval or rule is live, or while Sova knows of a schedule.
+  const permitsRow = () =>
+    props.autonomy && props.onRevokePermit && (livePermits(props.autonomy.permits).length || props.autonomy.schedules?.length)
+      ? { permits: props.autonomy.permits, schedules: props.autonomy.schedules ?? [] }
+      : null;
   const alignRow = () => (props.onJumpAlign && (props.aligns ?? []).some((e) => isOpenDoc(e.doc)) ? props.aligns! : null);
 
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
@@ -680,11 +686,9 @@ export function Composer(props: {
     focusAfterRemoval(images().length + index);
   };
 
-  // Stray drops anywhere else must not navigate the tab to the image — and a dragged session row
-  // must not type its path into the composer: that drag carries a text/plain fallback
-  // so a drop outside the app is still readable. Both events, or the text lands anyway.
+  // Stray drops anywhere else must not navigate the tab to the image. Both events, or it lands anyway.
   const guard = (e: DragEvent) => {
-    if (e.dataTransfer?.types.includes("Files") || dragHasRow(e)) e.preventDefault();
+    if (e.dataTransfer?.types.includes("Files")) e.preventDefault();
   };
   window.addEventListener("dragover", guard);
   window.addEventListener("drop", guard);
@@ -895,8 +899,11 @@ export function Composer(props: {
             <Show when={permitsRow()}>
               {(permits) => (
                 <OverseerPermitsChip
-                  permits={permits()}
+                  permits={permits().permits}
+                  schedules={permits().schedules}
                   onRevoke={(id) => props.onRevokePermit?.(id) ?? Promise.resolve(null)}
+                  onApproveSchedule={(s) => props.onApproveSchedule?.(s) ?? Promise.resolve(null)}
+                  onRevokeSchedule={(id) => props.onRevokeSchedule?.(id) ?? Promise.resolve(null)}
                   onJumpCard={(id) => props.onJumpCardId?.(id)}
                   onJumpUse={(id) => props.onJumpToolCall?.(id)}
                 />

@@ -402,7 +402,9 @@ it does to which items, never just its label. These too are the prompt's and the
   operations, 2 explorers launched (§app.overseer/explorer), 3 links made
   (§app.overseer/links-tools), 20 organization writes (`orgWritesPerTurn`) and 3 gathering
   sessions or offers started (`gatherPerTurn`). **At once:** at most 10 Overseer-started sessions
-  running (5 before; a settings file that stores its own number keeps it). All eight are
+  running (5 before; a settings file that stores its own number keeps it); a session a playbook
+  schedule started or woke counts as Overseer-started, as a resumed one does (§chat.schedules/fire),
+  and a fire with no slot free is skipped. All eight are
   configurable in Settings → Overseer; a settings file without the two new ones reads them as their
   defaults.
 - **The running count shows.** While any Overseer-started session counts as running, the
@@ -502,7 +504,10 @@ time. Both kinds of approval come only from the user's click on a card option th
   the sessions, as links, until the deadline; or the rule's text, its acts and sessions), where it
   came from (a link to its card and the option letter), when it expires ("Until 6:00 PM", or "Until
   revoked"), its uses (the last one's time, and each use as a link to the act in the thread), and a
-  **Revoke** button. There is no Settings page for them.
+  **Revoke** button. There is no Settings page for them. The same chip and panel also count and list
+  every playbook schedule, approved or not ("1 approval · 2 schedules"), each with **Approve
+  Schedule** or **Revoke Schedule** (§chat.schedules/where-shown); the chip shows while there is
+  one, even with no live approval or rule.
 - **The card shows it.** An option whose click wrote one shows its state under the card's answer:
   "Approved until 6:00 PM (g_2)", then "Expired" or "Revoked"; "Rule r_1 adopted", then "Revoked".
 - `GET /api/overseer/autonomy` returns the running count, the cap and every grant and rule of the
@@ -845,7 +850,8 @@ checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ s
   as a machine row ("Brief · <time>") with its body under it as markdown (the blockers as a list, each
   an in-app session link named summary-first, §app.overseer/session-names), and never navigates any tab. A brief turn is not a user turn: it is
   read-only (§app.overseer/tools), so it can report and offer a `sova_card` card but never act,
-  and it renews no caps (§app.overseer/caps).
+  and it renews no caps (§app.overseer/caps). Brief Me also sends one brief when Sova first finds a
+  playbook schedule that needs approval (§chat.schedules/where-shown).
 
 ## §app.overseer/standing-notes — Standing notes
 

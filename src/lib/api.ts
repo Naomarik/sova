@@ -35,6 +35,7 @@ import type {
   OverseerTodosInfo,
   TodoPatch,
   PlaybookCatalog,
+  ScheduleInfo,
   SandboxApplyResult,
   AssignGroupResult,
   BatchPromptResult,
@@ -371,6 +372,14 @@ export const fetchFileIndex = (cwd: string, host?: string | null) =>
     Never an error for a cwd it can't list — `project.state` says why instead. */
 export const fetchPlaybooks = (cwd: string | null, host?: string | null) =>
   request<PlaybookCatalog>(hostUrl(host, cwd ? `/api/playbooks?cwd=${encodeURIComponent(cwd)}` : "/api/playbooks"));
+
+/** Approve a playbook's schedule (§chat.schedules/approval): `pin` is what the user was shown; a
+    changed file refuses (409). Only a click in Sova calls this. */
+export const approveSchedule = (body: { cwd: string; playbook: string; pin: string }, host?: string | null) =>
+  request<ScheduleInfo>(hostUrl(host, "/api/schedules/approve"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+/** Revoke a schedule's approval: it fires nothing more and reads Needs approval again. */
+export const revokeSchedule = (id: string, host?: string | null) =>
+  request<{ ok: true }>(hostUrl(host, "/api/schedules/revoke"), { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
 
 /** The default for new sessions, and what exists (GET /api/mode). */
 export const getMode = (host?: string | null) => request<ModeInfo>(hostUrl(host, "/api/mode"));

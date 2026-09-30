@@ -754,6 +754,50 @@ export interface PlaybookInfo {
   dir: string;                // ABSOLUTE directory holding the playbook (its PLAYBOOK.md, phases/, templates/)
   body: string;               // PLAYBOOK.md body, frontmatter stripped
   replacesSova?: boolean;     // a user playbook with the same id as a shipped one
+  /** Its schedule (§chat/schedules), when its frontmatter has `when:`. */
+  schedule?: PlaybookSchedule;
+}
+
+/** A schedule's state as the Playbooks dialog and the permits panel read it (§chat.schedules/where-shown). */
+export type ScheduleState = "needs-approval" | "active" | "paused" | "invalid" | "not-project";
+
+/** A playbook's schedule in its catalog row. */
+export interface PlaybookSchedule {
+  /** The `when:` line as written. */
+  when: string;
+  /** The schedule in words ("Every 30 min · When a Claude limit resets"); absent when invalid. */
+  text?: string;
+  profile?: string;
+  profileLabel?: string;
+  tz?: string;
+  state: ScheduleState;
+  /** `sN`, once Sova knows the schedule. */
+  id?: string;
+  /** Why it is invalid or paused, or where schedules run. */
+  reason?: string;
+  /** What an approval would cover (§chat.schedules/approval): sent back with the approve. */
+  pin?: string;
+  /** The next time fire, ISO (active only). */
+  next?: string;
+}
+
+/** One fire of a schedule, as the permits panel lists it. */
+export interface ScheduleFire {
+  at: string;
+  trigger: string;
+  kind: "new" | "wake" | "reset";
+  sessionId?: string;
+}
+
+/** A schedule Sova knows of (GET /api/schedules, OverseerAutonomy.schedules). */
+export interface ScheduleInfo extends PlaybookSchedule {
+  id: string;
+  /** The project root the playbook is in, and its name. */
+  root: string;
+  projectName: string;
+  playbook: string;
+  title: string;
+  fires: ScheduleFire[];
 }
 
 /** GET /api/playbooks?cwd=<project cwd>  (cwd optional) */
@@ -2628,6 +2672,8 @@ export interface OverseerAutonomy {
   running: number;
   cap: number;
   permits: Permit[];
+  /** Every playbook schedule Sova knows of (§chat.schedules/where-shown). */
+  schedules?: ScheduleInfo[];
 }
 
 // --- Tool results the Overseer ChatView renders specially (tool_execution_end `result.details`

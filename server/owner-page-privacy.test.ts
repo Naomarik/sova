@@ -248,6 +248,7 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
     // legacy token count went with started.json. Both stay in the leak checks below.
     const unrecorded = new Set(["worktree", "tokens"]);
     for (const [field, mark] of Object.entries(M)) if (!unrecorded.has(field)) assert.ok(all.includes(mark), `${field} was planted`);
+    for (const field of unrecorded) assert.ok(!all.includes(M[field as keyof typeof M]), `${field} is recorded nowhere (q1: no started.json)`);
     const ok = answers.filter(([label]) => label.startsWith("200"));
     assert.ok(ok.some(([l]) => l.includes("/p/")) && ok.some(([l]) => l.includes("/c/")) && ok.some(([l]) => l.includes("preview")), answers.map(([l]) => l).join("\n"));
     const home = JSON.parse(answers.find(([l]) => l === `200 GET /api/i/${token}`)![1]) as OwnerHome;

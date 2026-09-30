@@ -328,7 +328,9 @@ describe("its gathering sessions, as the person sees them", async () => {
     const m = store.readMemo(p);
     assert.equal(m.pending.slice(before).length, 1, "one reason, however many turns");
     assert.match(m.pending.at(-1)!, /S-MINE-1/, "names the session (its id while it has no title)");
-    if (!soonBefore) assert.equal(m.soonAt, new Date(now + 60_000).toISOString(), "a look a minute after the first, not pushed back by the second");
+    // A soon look an earlier test left stays when it comes first; otherwise a minute after the first turn.
+    const soon = soonBefore && Date.parse(soonBefore) < now + 60_000 ? soonBefore : new Date(now + 60_000).toISOString();
+    assert.equal(m.soonAt, soon, "a look a minute after the first, not pushed back by the second");
   });
 
   test("its gathering session's model handing the baton to the operator is a reason to look soon; the operator's own sessions and moves are not", async () => {
@@ -398,7 +400,9 @@ describe("its gathering sessions, as the person sees them", async () => {
     } finally {
       po.setClockForTest(null);
     }
-    assert.equal(looks.length, 0, "watching is off");
+    // The old ticker's "watching is off" was its own return value, never recorded or shown: the watch chart's switch is that rule now.
+    assert.ok(hostOf(org.id).configuration(`watch/${org.id}/${project.id}`)?.includes("watch-off"), "watching is off");
+    assert.equal(looks.length, 0, "no look while watching is off");
     assert.deepEqual(store.readMemo(p).pending, before.pending);
     assert.deepEqual(store.readMemo(p).lastRun, before.lastRun);
   });
@@ -598,6 +602,13 @@ describe("limits through PATCH, held items and their retry", async () => {
     m = store.readMemo(p);
     assert.deepEqual(m.held, []);
     assert.ok(m.pending.includes("You raised the limit on prompts to coding sessions."));
+    // A per-message refusal is released at the refusal (F-130: its retry is now): nothing waits for a raise.
+    await hostOf(org.id).act(watch, "limit/refused", { kind: "create", ledger: "message", used: 2, max: 2 }, { by: "system" });
+    m = store.readMemo(p);
+    assert.deepEqual(m.held, [], "a message allowance's refusal holds nothing");
+    assert.ok(m.pending.includes("The operator's last message reached its limit on coding sessions started; it may go on within today's allowance."), JSON.stringify(m.pending));
+    await po.patchProjectOverseer(org.id, project.id, { caps: { createPerTurn: 3 } });
+    assert.deepEqual(store.readMemo(p).pending, m.pending, "raising it releases nothing more");
   });
 
   test("an old watch.json is never read: the watch chart's loop is the one shown", () => {
@@ -612,13 +623,13 @@ describe("limits through PATCH, held items and their retry", async () => {
 
   test("a look past the looks per day is held until midnight, and shown", async () => {
     await po.patchProjectOverseer(org.id, project.id, { caps: { unattendedPerDay: 1 }, watch: true });
-    const t = Date.now() + 2 * 86_400_000;
-    // A new day, then its one look (Run Now's counts too).
+    // A day of its own (the held-item test's looks fall on the day after tomorrow), then its one look (Run Now's counts too).
+    const t = Date.now() + 4 * 86_400_000;
     await po.patchProjectOverseer(org.id, project.id, { caps: { unattendedPerDay: 12 } });
     await at(t);
     assert.equal(await at(t, () => po.lookNow(org.id, project.id)).then((r) => r.started), true);
     await po.patchProjectOverseer(org.id, project.id, { caps: { unattendedPerDay: 1 } });
-    assert.ok((Object.values(store.readMemo(p).perDay)[0] ?? 0) >= 1, "its look today");
+    assert.equal(store.readMemo(p).perDay[store.dayKey(new Date(t))], 1, "its one look today");
     await at(t + 61 * 60_000, () => noteWatchReason(org.id, project.id, { kind: "baton/closed", params: { title: "B" }, key: "cap-b" }));
     await at(t + 2 * 60 * 60_000);
     const m = store.readMemo(p);

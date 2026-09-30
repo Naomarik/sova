@@ -57,8 +57,10 @@ describe("a wrap-up that never ended", async () => {
     hang();
     const late = await running();
     const t0 = Date.now();
-    setOrgClockForTest(() => t0 + 10 * 60_000);
+    setOrgClockForTest(() => t0 + 5 * 60_000);
     try {
+      const fresh = await running();
+      setOrgClockForTest(() => t0 + 10 * 60_000);
       hostOf(org.id).fireDue();
       assert.equal(wrapup(late)?.state, "running", "not before its time");
       setOrgClockForTest(() => t0 + 11 * 60_000 + 1);
@@ -66,6 +68,10 @@ describe("a wrap-up that never ended", async () => {
       assert.equal(wrapup(late)?.state, "failed");
       assert.equal(wrapup(late)?.error, "It ran past 10 minutes without finishing.");
       assert.equal(wrap.wantsWrapup(baton.batonById(late)!.row), false);
+      assert.equal(wrapup(fresh)?.state, "running", "one still in time is left alone");
+      const after = { late: wrapup(late), fresh: wrapup(fresh) };
+      hostOf(org.id).fireDue();
+      assert.deepEqual({ late: wrapup(late), fresh: wrapup(fresh) }, after, "a second pass changes nothing");
     } finally {
       setOrgClockForTest(null);
     }

@@ -25,7 +25,7 @@ const { batonView } = await import("./baton-view");
 const wrap = await import("./baton-wrapup");
 const { registerOrgRoutes } = await import("./org-routes");
 const { sessionItems } = await import("./attention");
-const { envelopeFor, hostOf } = await import("./org-engine");
+const { envelopeFor, hostOf, setOrgClockForTest } = await import("./org-engine");
 const { replyEnded } = await import("./org-test-fixtures");
 
 after(() => rmSync(root, { recursive: true, force: true }));
@@ -40,7 +40,10 @@ const carlos = await orgs.addPerson(org.id, { name: "Carlos", role: "CEO" });
 const events: { type: string; sessionId: string }[] = [];
 onOrgChange((_orgId, change) => {
   for (const st of change.steps)
-    if (st.sessionId.startsWith("baton/") && !st.refused && !st.held && !st.ignored) events.push({ type: st.event, sessionId: st.sessionId.split("/").slice(2).join("/") });
+    if (st.refused || st.held || st.ignored) continue;
+    else if (st.sessionId.startsWith("baton/")) events.push({ type: st.event, sessionId: st.sessionId.split("/").slice(2).join("/") });
+    // The start is the project chart's act: it names the baton it spawns.
+    else if (st.event === "baton/start") events.push({ type: st.event, sessionId: String(st.data?.sessionId ?? st.data?.["session-id"] ?? "") });
 });
 
 /** Polls until `cond` holds: waits on the event itself, not on a guess at how long it takes. */
@@ -105,13 +108,19 @@ describe("offers and leases", async () => {
 
   test("the first accepted message claims it; the others are 'taken' and refused, and see nothing past the offer", () => {
     const t0 = Date.now();
-    const noted = baton.noteMessage(c.sessionId, tony.id);
+    setOrgClockForTest(() => t0);
+    let noted;
+    try {
+      noted = baton.noteMessage(c.sessionId, tony.id);
+    } finally {
+      setOrgClockForTest(null);
+    }
     assert.equal(noted.claimed, true);
     const row = baton.batonById(c.sessionId)!.row;
     assert.equal(row.holder, tony.id);
     const offer = baton.currentOffer(row)!;
     assert.equal(offer.state, "held");
-    assert.ok(Math.abs(Date.parse(offer.leaseUntil!) - (t0 + LEASE_IDLE_MS)) < 1000, "the lease runs from the claim");
+    assert.equal(Date.parse(offer.leaseUntil!) - t0, LEASE_IDLE_MS, "the lease runs from the claim");
     const m = baton.linkAccess(tokenOf(maria.id));
     assert.equal(m.ok && m.reason, "taken");
     assert.throws(() => baton.noteMessage(c.sessionId, maria.id), /Someone else is answering/);
@@ -148,18 +157,35 @@ describe("offers and leases", async () => {
     const sid = `baton/${org.id}/${l.sessionId}`;
     const fact = (event: string) => hostOf(org.id).act(sid, event, {}, envelopeFor(org.id, project.id, { by: "system", attended: false }), { settle: true });
     const row = () => baton.batonById(l.sessionId)!.row;
-    baton.noteMessage(l.sessionId, tony.id);
-    const first = Date.parse(baton.currentOffer(row())!.leaseUntil!);
-    // The reply to Tony runs past the lease: it stays his.
-    await fact("reply/starting");
-    await new Promise((r) => setTimeout(r, 1300));
-    assert.equal(row().holder, tony.id, "mid-reply a lapsed lease stays with its holder");
-    await fact("reply/ended");
-    const renewed = Date.parse(baton.currentOffer(row())!.leaseUntil!);
-    assert.ok(renewed > first, "the reply's end renewed it");
-    await waitFor(() => row().holder === null, 5000);
+    const leaseEnd = () => Date.parse(baton.currentOffer(row())!.leaseUntil!);
+    const t0 = Date.now();
+    /** The org's clock at `t0 + ms`, its due timers fired. */
+    const at = (ms: number) => {
+      setOrgClockForTest(() => t0 + ms);
+      hostOf(org.id).fireDue();
+    };
+    const lapses = () => entriesOf(l.path).filter((e) => e.customType === BATON_LEASE_ENTRY && e.data.event === "expired" && e.data.by === tony.id).length;
+    try {
+      at(0);
+      baton.noteMessage(l.sessionId, tony.id);
+      assert.equal(leaseEnd(), t0 + 1000, "the message claims it for one lease");
+      // The reply to Tony runs past the lease: it stays his.
+      at(100);
+      await fact("reply/starting");
+      at(1300);
+      assert.equal(row().holder, tony.id, "mid-reply a lapsed lease stays with its holder");
+      await fact("reply/ended");
+      assert.equal(leaseEnd(), t0 + 1300 + 1000, "the reply's end renewed it");
+      at(2299);
+      assert.equal(row().holder, tony.id, "not before the lease ends");
+      at(2301);
+      assert.equal(row().holder, null, "idle past it, the pool takes it back");
+      at(5000);
+      assert.equal(lapses(), 1, "it lapses once");
+    } finally {
+      setOrgClockForTest(null);
+    }
     assert.equal(baton.batonSummaryField(l.path)!.holder, "3 invited");
-    assert.ok(entriesOf(l.path).some((e) => e.customType === BATON_LEASE_ENTRY && e.data.event === "expired" && e.data.by === tony.id), "the lapse is in the transcript");
     const m = baton.linkAccess(l.links!.find((x) => x.personId === maria.id)!.token);
     assert.equal(m.ok && m.canWrite, true, "anyone invited may claim it again");
     assert.equal(baton.noteMessage(l.sessionId, maria.id).claimed, true);
@@ -412,11 +438,11 @@ describe("routes: spawn-for-person, owner, handoff", () => {
     await baton.handTo(c.sessionId, OPERATOR, "q", "");
     await baton.markDone(c.sessionId);
     await baton.closeBaton(c.sessionId);
-    // The start is the project chart's act (baton/start): its moves are the baton's own acts.
-    const moves = new Set(["baton/offer", "baton/hand-to", "baton/goal-done", "baton/close"]);
+    // The start is the project chart's act (baton/start); the rest are the baton's own moves.
+    const moves = new Set(["baton/start", "baton/offer", "baton/hand-to", "baton/goal-done", "baton/close"]);
     assert.deepEqual(
       events.filter((e) => e.sessionId === c.sessionId && moves.has(e.type)).map((e) => e.type),
-      ["baton/offer", "baton/hand-to", "baton/goal-done", "baton/close"],
+      ["baton/start", "baton/offer", "baton/hand-to", "baton/goal-done", "baton/close"],
     );
   });
 });

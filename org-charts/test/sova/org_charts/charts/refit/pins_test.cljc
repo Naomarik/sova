@@ -3,6 +3,7 @@
    under one surviving mutant, named in its message (run2c.json ids)."
   (:require
     #?(:clj [clojure.test :refer [deftest is testing]] :cljs [cljs.test :refer-macros [deftest is testing]])
+    [sova.org-charts.charts.base :as b]
     [sova.org-charts.charts.person :as person]
     [sova.org-charts.charts.proj :as proj]
     [sova.org-charts.charts.watch :as w]
@@ -277,3 +278,70 @@
     (is (= ["baton/o1/b1" "baton/o1/b2"] (ri/same-target-older {:batons {"baton/o1/b1" (b {:overseer-of "pr1"} nil 1) "baton/o1/b2" (b {:overseer-of "pr1"} nil 2)}})))
     (is (nil? (ri/same-target-older {:batons {"baton/o1/b1" (b "operator" nil 1) "baton/o1/b2" (b {:overseer-of "pr1"} nil 2)}})) "ritem00: the operator's own is never the chart's to close")
     (is (nil? (ri/same-target-older {:batons {"baton/o1/b1" (b {:overseer-of "pr1"} 5 1) "baton/o1/b2" (b {:overseer-of "pr1"} nil 2)}})) "…nor one somebody wrote in")))
+
+;; ---- runF (verifier-3 FINAL, at 7824f35e) ---------------------------------------------------------------
+
+(def dsid "decision/o1/pr1/s1:e1")
+
+(deftest decision-runf-pins
+  (let [x (h/start! (h/new-host) "decision" dsid {:org-id "o1" :project-id "pr1" :id "s1:e1" :area "Pay" :owner-area "none" :statement "S"})
+        y (h/send! x dsid :reconcile/result {:state "bogus" :record-id "R9"})]
+    (is (h/in? y dsid :pending))
+    (is (nil? (:record-id (h/data y dsid))) "decisi07: a verdict naming no state it knows is not taken")
+    (is (= "R9" (:record-id (h/data (h/send! x dsid :reconcile/result {:state "pending" :record-id "R9"}) dsid))) "its own state's verdict is")))
+
+(deftest conflict-runf-pins
+  (let [x (h/clear! (conflict {}) csid)
+        to-rec #(filter (fn [s] (= :settle/results (:event s))) (h/elsewhere %))]
+    (is (empty? (to-rec (h/send! x csid :effect/done {:kind "spawn" :result {:decisions [{:id "d9"}]}}))) "confli01 confli03: another effect's result is not the settle's")
+    (is (= [{:decisions [{:id "d9"}]}] (map :data (to-rec (h/send! x csid :effect/done {:kind "settle" :result {:decisions [{:id "d9"}]}}))))))
+  (is (h/in? (conflict {:route-error "no such person"}) csid :unrouted) "confli10: a route error with a target is unrouted")
+  (is (h/in? (conflict {:routed-to nil}) csid :unrouted))
+  (is (h/in? (conflict {}) csid :routed-to-person)))
+
+(deftest reconciler-runf-pins
+  (let [x (h/send! (rec) rsid :reconcile/request (assoc op :delay-ms 500))]
+    (is (h/in? x rsid :debouncing))
+    (is (h/in? (h/send! x rsid :reconcile/request (assoc op :delay-ms 500)) rsid :debouncing) "reconc03: another delayed one waits for the same timer")
+    (is (h/in? (h/send! x rsid :reconcile/request op) rsid :running) "reconc10: one with no delay runs now")))
+
+(deftest item-runf-pins
+  (let [x (-> (h/start! (h/new-host) "item" isid {:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/invoicing"})
+              (h/send! isid :link/moved {:from "watch/o1/pr1" :chart "watch" :states [:watch]
+                                         :exported {:settings {:autonomy "L1"} :paused false :roster-active true :archived false}})
+              (h/send! isid :gather/start (assoc op :session-id "b1" :to "p1" :targets ["p1"] :public-title "Pay" :goal "Learn")))]
+    (is (h/in? x isid :gather-starting))
+    (is (h/in? (item-baton x 1 [:open :with-person] [{:to "p1"}]) isid :asking) "item00 item04: its gathering open is asking, nothing waits on the operator")
+    (is (h/in? (item-baton x 2 [:open :with-operator] [{:to "operator"}]) isid :gather-starting) "another gathering's news: still starting its own")
+    (let [back (-> x (h/send! isid :item/hold op) (item-baton 1 [:open :with-person] [{:to "p1"}])
+                   (h/send! isid :correct/relink (assoc op :session "baton/o1/b1" :to-item "item/o1/pr1/g_2"))
+                   (h/send! isid :item/resume op))]
+      (is (h/in? back isid :gather-starting) "item00 item04: resumed with its gathering moved to another gap, nothing waits on the operator")
+      (is (= "gather-starting" (:phase (h/data back isid))))))
+  (is (ri/build-landed? {:states #{:tree-root} :exported {}}) "ritem07: in the root and not working: landed")
+  (is (not (ri/build-landed? {:states #{:tree-root :working} :exported {}})))
+  (let [d {:idea-id "§gap/x" :decisions {"d1" {:exported {:statement "Pay monthly"}} "d2" {:exported {:record-id "R2" :statement "Pay in euros"}}}}]
+    (is (= (str "Build what these promoted decisions of §gap/x say (the project's spec holds their records):\n- d1: Pay monthly\n- R2: Pay in euros"
+                "\n\nRecord in the spec what you built (code and evidence) for each.")
+           (ri/build-prompt d ["d1" "d2"]))
+        "ritem08: by record, else by id")))
+
+(deftest build-runf-pins
+  (let [x (build {:prompt nil})]
+    (is (h/in? (h/send! x csid* :effect/failed {:kind "prompt" :detail "busy"}) csid* :making-worktree) "build01: another effect's failure is not the worktree's")
+    (let [made (h/send! x csid* :effect/done made-tree)]
+      (is (h/in? (h/send! made csid* :effect/done made-tree) csid* :setting-mode) "build02: a late worktree answer is not the mode's")
+      (is (h/in? (h/send! made csid* :effect/done {:kind "set-mode"}) csid* :ready))))
+  (let [x (ready (build))
+        ledger #(:ledger (:data (last (filter (fn [s] (= :ledger/take (:event s))) (h/elsewhere (h/send! (h/clear! x csid*) csid* :build/prompt (merge op {:text "go"} %)))))))]
+    (is (= "message" (ledger {:attended true})) "base08: an attended act takes from the message allowance")
+    (is (= "day" (ledger {:attended false})))
+    (is (= "day" (ledger {})))
+    (is (= "turn" (ledger {:attended true :ledger :turn})) "the host's own ledger wins")))
+
+(deftest day-key-runf-pins
+  (let [local (fn [y m dd] #?(:clj (.toEpochMilli (.toInstant (.atStartOfDay (java.time.LocalDate/of y m dd) (java.time.ZoneId/systemDefault))))
+                              :cljs (.getTime (js/Date. y (dec m) dd))))]
+    (is (= "2026-01-05" (b/day-key (+ (local 2026 1 5) 3600000))) "base02: January is 01")
+    (is (= "2026-10-10" (b/day-key (+ (local 2026 10 10) 3600000))) "base03: 10 has no leading zero")
+    (is (= "2026-12-09" (b/day-key (+ (local 2026 12 9) 3600000))))))

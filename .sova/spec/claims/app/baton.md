@@ -554,16 +554,9 @@ once), **lease** (an offer's lock on its first taker).
 - A person proposed from the session and still waiting (§app.organizations/referrals) is a
   decide-tier item `roster-proposal`, "Approve Bob Smith (IT lead) proposed by Tony Reyes?", listed
   in the Organizations region's Needs you.
-- **Later** (§app.session-list/needs-you) covers these rows too: each item carries a `later` key.
-  A person waiting on you and a send-link are anchored on their hand-off (a send-link for an open
-  offer on the offer), so a new hand-off or offer brings the row back. No message does: while the
-  baton is with the operator, or with a person who has no link, nobody else can write in the
-  session, and the operator's own messages (and the replies to them) are not new. A roster proposal is anchored on its proposed person, so
-  only a new proposal brings its row back. Answering clears them as before. The session list's
-  `baton` field carries the same key on each wait (`needsYou.later`, `sendLink.later`,
-  `proposals[i].later`), and a wait put away is left out of that field until its anchor moves, as
-  its item is left out of the digest, and out of the organization card's waiting counts
-  (§app.organizations/org-cards).
+- Nothing puts these rows away but answering them: every wait is listed, in the digest, the
+  session list's `baton` field and the organization card's waiting counts
+  (§app.organizations/org-cards), until it is answered.
 - Any change to a baton session's chart or its links (Get Link, a reply, Extend, Take back, a
   hand-off, approve, decline, close) re-diffs the session list at once (a baton session's state is
   part of what the list compares), and the page re-reads the attention digest whenever it re-reads the list for

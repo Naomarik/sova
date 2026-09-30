@@ -284,7 +284,7 @@
     "§app.session-list/selecting-several-sessions": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/lib/session-selection.ts",
         "src/lib/session-selection.test.ts",
@@ -1355,7 +1355,7 @@
     "§design.copy-deck/sidebar": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/drag-archive.ts",
@@ -2637,8 +2637,8 @@
         "server/attention.test.ts",
         "shared/protocol.ts",
         "server/align-state.ts",
-        "server/needs-you-later.ts",
-        "server/needs-you-later.test.ts",
+        "server/server-stop.ts",
+        "server/server-stop.test.ts",
         "server/index.ts"
       ],
       "requires": [
@@ -3404,7 +3404,7 @@
     "§app.session-list/needs-you": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/lib/needs-you.ts",
         "src/lib/needs-you.test.ts",
@@ -3418,7 +3418,6 @@
         "server/org-routes.ts",
         "server/overseer.ts",
         "server/attention.ts",
-        "src/components/RowMenu.tsx",
         "src/lib/api.ts",
         "src/design/base.css",
         "src/lib/org-region.ts"
@@ -3947,8 +3946,7 @@
         "src/lib/org-region.ts",
         "server/baton-links.ts",
         "src/components/Sidebar.tsx",
-        "shared/baton.ts",
-        "server/needs-you-later.test.ts"
+        "shared/baton.ts"
       ],
       "requires": [
         "§app.overseer/attention-digest"
@@ -5098,7 +5096,7 @@
     "§app.session-list/organizations": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "requires": [
         "§app.session-list/ordinary-surfaces",
         "§app.organizations/org-sessions",

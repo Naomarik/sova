@@ -622,7 +622,16 @@ itself.
   pending dialog); an errored turn (`turnError`, §app.overseer/seen, or `activity.state` error
   while a live record is up; one item either way, dated by the reply, its detail the error message
   — the file's first — else "The last turn stopped with an error."); a worker that ended in an error. A
-  killed worker is left out: a kill is usually the user's own gesture. A worker error counts as
+  killed worker is left out: a kill is usually the user's own gesture. So is a worker the server's
+  own restart ended: a worker this server restored (§app.worker-restore/restore) in its own
+  runtime, whose recorded ending is an error at a time between the previous server's stop and this
+  server's start, on any backend (a claude-code worker's "Claude exited before expected closure
+  (SIGTERM)", a pi worker's "pi exited with code 143" alike). The stop is the moment the previous
+  server began shutting down, which it writes to `<stateRoot>/server-stop.json` (`{v: 1, pid,
+  at}`) before anything else; the next start reads it and deletes it, and allows it 5 s of slack
+  (the workers die on the same signal). Without that file (a crash, or a stop by a server that
+  predates it) the stop is taken as 30 s before this start. A worker error while the server keeps
+  running is never one of these, and still shows. A worker error counts as
   seen once the session is on screen, or its seen stamp (§app.overseer/seen) is at or past the
   latest error; a new error after that raises it again. An error's time is its worker row's
   `endedAt` (else `lastActivity`, else `startedAt`); when rows were dropped from the live record
@@ -639,24 +648,10 @@ itself.
   turns, subagent errors, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
-- **Later.** An act item the user put away with Later (§app.session-list/needs-you) is left out
-  of the digest — its items, its counts and the "need you" count — until its **anchor** changes:
-  the thing whose change counts as new. Each act item carries a `later` key naming its session,
-  its kind and its anchor as the user saw it; `POST /api/attention/later {keys}` puts them away,
-  `POST /api/attention/later/undo {keys}` brings them back, and either drops the digest's memo.
-  The anchors: open questions — the open questions' ids (a new or reopened question is new; one
-  answered is not); a dialog — the open dialogs (a new one is new); an errored turn — its reply's
-  time; a subagent error — the latest error's time; a baton hand-off — the hand-off (or open
-  offer) (§app.baton/needs-you); a roster proposal, which
-  carries a key though it is a decide item — its proposed person; any other act item — its
-  `since`. A message the user sends or a look at the session changes no anchor. The store is
-  `<stateRoot>/needs-you-later.json` (atomic tmp+rename), one entry per session and kind (per
-  proposed person for roster proposals), so it
-  survives a restart and is the same on every device; an entry whose anchor has moved on is
-  dropped, and so is one whose session (or project item) is no longer listed at all. Time alone
-  never brings an item back, and neither does its absence: open questions leave the digest while a
-  turn runs, and stay put away when it ends. A reopened question is new because the question's id
-  carries how often the branch reopened it (`al_9/q1#1`).
+- **Nothing puts an item away.** The digest lists act items by the rules above and nothing else:
+  no choice of the user's hides one. A `<stateRoot>/needs-you-later.json` left by an earlier
+  version, whose choices once hid items, is deleted once when the server starts (best-effort; a
+  failure is logged and never stops the start), so no old choice keeps anything hidden.
 - **Finished (decide), from signals** (§app.decisions/attention-signals, only while the list carries them):
   `asks-you` when the last reply asks the user something (§app.decisions/asks-user) and the
   session has no `open-questions` item, "Asks you: {the asking sentence}", else "The last reply

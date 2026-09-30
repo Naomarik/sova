@@ -30,7 +30,6 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Draft row (a never-sent session with a stored draft) | title Untitled (muted) · line 2: `pencil` icon, then the draft's first non-empty line, about 80 characters · image-only: `1 image` / `2 images` · accessible name and `title`: Draft: {preview} |
 | Needs you region head (§app.session-list/needs-you) | Needs you · {n} where n = its rows · `title`: "The {n} sessions waiting on you, newest first." (1: "The 1 session waiting on you.") |
 | Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("2 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
-| Needs you row, Later | `Later` (a ghost button at the row's right end; desktop: shown on hover and keyboard focus; phone: always shown) · `aria-label` "Later: {title}" · `title` "Hide this until something new happens here." · the same `Later` in the row's right-click menu (desktop) and long-press menu (phone) · done: the row goes at once; hidden live region "{title} put away until something new happens." · refused: the row comes back, and the toast says "Couldn't put it away. {server message}" |
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
 | Overseer entry button (eye) | wordless · badge: {unread}, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
@@ -40,7 +39,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Organizations waiting chip (region head, warn, dot and word, while k ≥ 1) | {k} waiting · `title`: "{k} sessions waiting on you." (1: "1 session waiting on you.") |
 | Organizations working dot (collapsed region head or org) | Busy's dot, wordless, pulsing · `title`: "An agent is working in one of these sessions" · hidden: ", an agent is working here" |
 | Organizations Needs you label | Needs you, then its count · `title`: "The {k} organization sessions waiting on you, newest first." (1: "The 1 organization session waiting on you.") |
-| Organizations Needs you row | line 2: the digest's sentence, else "{from} → you: {question}" · "Send {to} their link: {question}" · "Approve {name} ({role}) proposed by {by}?" · `title`: every sentence, newest first · line 3: {time} · {org} · {project} (no project: {time} · {org}) · `Later` on every row, as the Needs you row's |
+| Organizations Needs you row | line 2: the digest's sentence, else "{from} → you: {question}" · "Send {to} their link: {question}" · "Approve {name} ({role}) proposed by {by}?" · `title`: every sentence, newest first · line 3: {time} · {org} · {project} (no project: {time} · {org}) |
 | Org section head | {org}, wordless warn dot with hidden ", {k} waiting on you", then its count · `title`: "{n} sessions in {org}." + " {k} waiting on you." when k ≥ 1 |
 | Org page link (org head) | wordless `arrow-right` · `aria-label` and `title`: Open the {org} page |
 | Project label | {project}, then its count · `title`: the project root (from its overseer's folder), else {project} · Unknown project · Other |

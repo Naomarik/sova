@@ -304,6 +304,13 @@ describe("its gathering sessions, as the person sees them", async () => {
   test("its coding sessions' finished turns are reasons to look soon; the operator's never are", async () => {
     const p = store.projectOverseerPaths(org.id, project.id);
     const now = Date.now();
+    // A look a minute before (master's memo.lastRunAt): the gap has not passed, so the reasons wait for their soon look.
+    po.setClockForTest(() => now - 60_000);
+    try {
+      assert.equal((await po.lookNow(org.id, project.id)).started, true);
+    } finally {
+      po.setClockForTest(null);
+    }
     const before = store.readMemo(p).pending.length;
     const mine = join(root, "coding-mine.jsonl");
     const theirs = join(root, "coding-theirs.jsonl");
@@ -319,7 +326,6 @@ describe("its gathering sessions, as the person sees them", async () => {
         po.setClockForTest(null);
       }
     };
-    const soonBefore = store.readMemo(p).soonAt;
     await settledAt(theirs, now);
     await settledAt(join(root, "unknown.jsonl"), now);
     assert.deepEqual(store.readMemo(p).pending.slice(before), [], "the operator's own session and an unknown file: nothing");
@@ -328,9 +334,7 @@ describe("its gathering sessions, as the person sees them", async () => {
     const m = store.readMemo(p);
     assert.equal(m.pending.slice(before).length, 1, "one reason, however many turns");
     assert.match(m.pending.at(-1)!, /S-MINE-1/, "names the session (its id while it has no title)");
-    // A soon look an earlier test left stays when it comes first; otherwise a minute after the first turn.
-    const soon = soonBefore && Date.parse(soonBefore) < now + 60_000 ? soonBefore : new Date(now + 60_000).toISOString();
-    assert.equal(m.soonAt, soon, "a look a minute after the first, not pushed back by the second");
+    assert.equal(m.soonAt, new Date(now + 60_000).toISOString(), "a look a minute after the first, not pushed back by the second");
   });
 
   test("its gathering session's model handing the baton to the operator is a reason to look soon; the operator's own sessions and moves are not", async () => {

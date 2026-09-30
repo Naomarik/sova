@@ -25,6 +25,7 @@ installs with `install.sh` alone, without the web app.
 | `extensions/extension-toggle/` | `/extensions` to switch extensions on and off in-session |
 | `extensions/explain/` | `/explain <topic>`: one forked subagent writes a self-contained HTML explanation into `~/.pi/agent/explanations/`, kept forever and read in Sova |
 | `extensions/model-policy/` | The shared model policy (`model-policy.json`): which providers and models may be used at all, and which of them subagents may be given. Written by Sova's Settings → Models tab; this extension enforces the global half in the TUI |
+| `extensions/provider-limits/` | How many model requests each provider runs at once on this device (`provider-limits.json`, written by Sova's Settings → Models); requests over the limit wait instead of failing. Every pi worker loads it. Its `gate.ts` (builtins only) is imported by Sova |
 | `extensions/mode/` | Per-session normal ↔ delegate mode switcher plus minor modes (`alt+m`, `ctrl+p` → Mode, `/mode`). Delegate orchestrates workers by four profiles — planning, investigation, routine and complex implementation — each a configurable backend/model/effort with an optional fallback (`mode-delegate.json`); the `spec` minor mode can hand its spec writing to one such worker (`mode-spec.json`) |
 | `extensions/spec/` | Not a pi extension (no `index.ts`; pi skips it): standalone `.sova/spec` tools that the `spec` minor mode in `extensions/mode/` tells the agent to run. `core/sova-spec.mjs` is read-only; `core/sova-spec-draft.mjs` keeps proposed documentation in full-copy drafts and promotes the implemented, verified part, writing only with `--write`; `core/sova-spec-review.mjs` records review evidence, and writes only under `.sova/spec/reviews/` and only with `--write` or `record` |
 | `extensions/sessions/` | Live pi sessions on this machine find each other through a filesystem presence registry; ships the `pi-sessions` CLI (`bin/pi-sessions.ts`) and the record schema (`public/SCHEMA.md`) |
@@ -177,6 +178,7 @@ cd extensions/claude-code && node tests/run.mjs && node tests/smoke.mjs && node 
 cd extensions/extension-toggle && node --test index.test.ts
 cd extensions/mode && node --test index.test.ts delegate.test.ts routing.test.ts align.test.ts spec.test.ts spec-guard.test.ts also-changes.test.ts && node tests/smoke.mjs && node tests/wake-turn.mjs && node tests/align-turn.mjs && node tests/note-turn.mjs && node tests/spec-turn.mjs && node tests/spec-worker.mjs
 cd extensions/model-policy && node --test policy.test.ts index.test.ts
+cd extensions/provider-limits && node tests/run.mjs
 cd extensions/command-palette && node --test test.mjs
 cd extensions/sessions && node --test test.mjs
 cd extensions/spec && node --test tests/*.test.mjs

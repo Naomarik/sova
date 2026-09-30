@@ -16,7 +16,7 @@
       </p>
     </div>
     <!-- a session with a profile, once its first message is sent (§chat.profiles/after-first-message) -->
-    <span class="profile-chip-wrap"><button class="button button-ghost profile-chip" aria-haspopup="dialog">…icon… Merge captain</button></span>
+    <span class="profile-chip-wrap"><button class="button button-ghost profile-chip" aria-haspopup="dialog">…icon… Read-only reviewer</button></span>
     <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- live only; static, no pulse -->
     <a class="button button-icon button-ghost session-share-open" href="#/share/…" aria-label="Share session">…share…</a>
     <button class="button button-icon button-ghost session-details-open" aria-label="Session details">…info…</button>

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BatonInfo, BatonSummaryField } from "../../shared/baton";
-import { batonComposerGate, leaseMinutes, linkReplaced, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
+import { batonComposerGate, goalShown, leaseMinutes, linkReplaced, linksStale, liveOffer, namesList, proposedAreasLine, whereLine, wrapupLine } from "./baton-strip";
 
 const NOW = Date.parse("2026-09-26T12:00:00Z");
 const info = (session: Partial<BatonInfo["session"]>, offer: BatonInfo["offer"] = null): Pick<BatonInfo, "offer" | "session" | "names"> => ({
@@ -110,4 +110,13 @@ test("a shown link reads as replaced only once a newer link of the same person e
   assert.equal(linkReplaced(shown, { linkAt: {} }), false, "turned off, not replaced");
   assert.equal(linkReplaced({ ...shown, at: undefined }, { linkAt: { p_1: "2026-09-27T10:00:05.000Z" } }), false, "no mint time known: never guessed");
   assert.equal(linkReplaced(shown, undefined), false);
+});
+
+test("the goal shows trimmed, and not at all when there is none", () => {
+  assert.equal(goalShown({ goal: "  Find out who approves invoices.\nAnd by when.  " }), "Find out who approves invoices.\nAnd by when.");
+  assert.equal(goalShown({ goal: "" }), null);
+  assert.equal(goalShown({ goal: " \n\t " }), null, "whitespace only");
+  assert.equal(goalShown({}), null, "an older row with no goal");
+  assert.equal(goalShown({ goal: null }), null);
+  assert.equal(goalShown(undefined), null);
 });

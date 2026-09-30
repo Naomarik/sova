@@ -1,11 +1,10 @@
 import { createMemo, createResource, createSignal, For, Show, type JSX } from "solid-js";
-import { singletonRunningText, titleCase, type Profile } from "../../shared/profiles";
+import { keyOf, type ListedProfile } from "../../shared/profiles";
 import type { SessionSummary } from "../../shared/protocol";
 import { fetchProfiles } from "../lib/api";
-import { openProfileStart } from "../lib/profile-start";
-import { pickerProfiles, profileIconName } from "../lib/profiles";
-import { openSettings } from "../lib/settings-nav";
-import { Banner, Icon } from "./ui";
+import { runProfile } from "../lib/profile-start";
+import { allProfiles, profileIconName } from "../lib/profiles";
+import { Icon } from "./ui";
 
 /** A shelf sub-group: one profile in use, its live sessions newest started first. */
 interface ShelfGroup {
@@ -13,40 +12,82 @@ interface ShelfGroup {
   label: string;
   icon: string;
   singleton: boolean;
-  profile?: Profile;
+  /** A project profile's project name, shown on the head. */
+  projectName?: string;
+  profile?: ListedProfile;
   rows: SessionSummary[];
 }
 
-/** The shelf's groups and One at a time slots (§app.session-list/profile-shelf). Pure. */
-export function shelfGroups(sessions: readonly SessionSummary[], profiles: readonly Profile[], everRun: readonly string[]): { groups: ShelfGroup[]; slots: Profile[] } {
+/** A One at a time profile run before, with no live session: its slot. */
+interface ShelfSlot {
+  profile: ListedProfile;
+  /** Where Start makes the session: the project's root for a project profile. */
+  cwd?: string;
+}
+
+/**
+ * The shelf's groups and One at a time slots (§app.session-list/profile-shelf), keyed by profile
+ * identity (§chat.profiles/projects), so the same id in two projects is two groups. `profiles`:
+ * every profile the listings know (a slot needs its profile to still exist). Pure.
+ */
+export function shelfGroups(sessions: readonly SessionSummary[], profiles: readonly ListedProfile[], everRun: readonly string[]): { groups: ShelfGroup[]; slots: ShelfSlot[] } {
   const by = new Map<string, ShelfGroup>();
   for (const s of sessions) {
     const p = s.profile;
     if (!p || s.archived) continue;
-    const key = p.custom ? `custom:${p.label}` : p.id;
-    const g = by.get(key) ?? { key, label: p.label, icon: p.icon, singleton: !!p.singleton, profile: p.custom ? undefined : profiles.find((x) => x.id === p.id), rows: [] };
+    const key = p.custom ? `custom:${p.label}` : keyOf(p);
+    const g =
+      by.get(key) ??
+      {
+        key,
+        label: p.label,
+        icon: p.icon,
+        singleton: !!p.singleton,
+        ...(p.projectName ? { projectName: p.projectName } : {}),
+        profile: p.custom ? undefined : profiles.find((x) => x.key === key),
+        rows: [],
+      };
     g.rows.push(s);
     by.set(key, g);
   }
   const groups = [...by.values()];
   for (const g of groups) g.rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt) || a.id.localeCompare(b.id));
   groups.sort((a, b) => b.rows[0]!.createdAt.localeCompare(a.rows[0]!.createdAt));
-  const slots = profiles.filter((p) => p.singleton && everRun.includes(p.id) && !by.has(p.id));
+  const seen = new Set<string>();
+  const slots: ShelfSlot[] = [];
+  for (const p of profiles) {
+    if (!p.singleton || seen.has(p.key) || !everRun.includes(p.key) || by.has(p.key)) continue;
+    seen.add(p.key);
+    slots.push({ profile: p, ...(p.project ? { cwd: p.project } : {}) });
+  }
   return { groups, slots };
 }
 
 /**
  * The Profiles region (§app.session-list/profile-shelf): a shortcut above Needs you. `row` draws a
- * session row the way the rest of the list does.
+ * session row the way the rest of the list does; `cwd` is the open session's folder.
  */
-export function ProfileShelf(props: { sessions: readonly SessionSummary[] | undefined; searching: boolean; row: (s: SessionSummary) => JSX.Element }) {
-  // Re-read whenever the set of profile sessions changes (a start, a stop), not on every poll.
-  const key = createMemo(() => (props.sessions ?? []).filter((s) => s.profile && !s.archived).map((s) => s.id).join(","));
-  const [listing] = createResource(key, () => fetchProfiles().catch(() => undefined));
+export function ProfileShelf(props: { sessions: readonly SessionSummary[] | undefined; searching: boolean; cwd: string | null; row: (s: SessionSummary) => JSX.Element }) {
+  // The folders whose profiles the shelf needs: the open one, and each folder a profile session ran
+  // in (a project profile exists only in its own project's listing). Re-read when that set changes.
+  const folders = createMemo(() => {
+    const set = new Set<string>();
+    if (props.cwd) set.add(props.cwd);
+    for (const s of props.sessions ?? []) if (s.profile && !s.profile.custom && (!s.archived || s.profile.singleton)) set.add(s.profile.project ?? s.cwd);
+    return [...set].sort().join("\n");
+  });
+  // And whenever the set of live profile sessions changes (a start, a stop), not on every poll.
+  const live = createMemo(() => (props.sessions ?? []).filter((s) => s.profile && !s.archived).map((s) => s.id).join(","));
+  const [listings] = createResource(
+    () => `${folders()}|${live()}`,
+    async () => Promise.all((folders() ? folders().split("\n") : [undefined]).map((c) => fetchProfiles(c).catch(() => undefined))),
+  );
   const [open, setOpen] = createSignal(true);
   const shelf = createMemo(() => {
-    const l = listing();
-    return shelfGroups(props.sessions ?? [], [...(l?.builtins ?? []), ...(l?.profiles ?? [])], l?.everRun ?? []);
+    const ls = (listings() ?? []).filter((l) => !!l);
+    const profiles = ls.flatMap((l) => allProfiles(l));
+    const everRun = [...new Set(ls.flatMap((l) => l!.everRun))];
+    return shelfGroups(props.sessions ?? [], profiles, everRun);
   });
   const count = () => shelf().groups.reduce((n, g) => n + g.rows.length, 0);
   return (
@@ -64,9 +105,12 @@ export function ProfileShelf(props: { sessions: readonly SessionSummary[] | unde
               <p class="profile-shelf-head">
                 <Icon name={profileIconName(g.icon)} small />
                 <span class="profile-shelf-name">{g.label}</span>
+                <Show when={g.projectName}>
+                  <span class="profile-shelf-project">· {g.projectName}</span>
+                </Show>
                 <span class="text-muted">{g.singleton ? "One at a time" : `${g.rows.length} live`}</span>
                 <Show when={g.profile && !g.singleton}>
-                  <button type="button" class="button button-sm button-ghost profile-shelf-run" aria-label={`Run ${g.label}`} onClick={() => openProfileStart(g.profile!, g.rows[0]?.cwd)}>
+                  <button type="button" class="button button-sm button-ghost profile-shelf-run" aria-label={`Run ${g.label}`} onClick={() => void runProfile(g.profile!, g.rows[0]?.cwd)}>
                     Run
                   </button>
                 </Show>
@@ -78,12 +122,15 @@ export function ProfileShelf(props: { sessions: readonly SessionSummary[] | unde
           )}
         </For>
         <For each={shelf().slots}>
-          {(p) => (
+          {(slot) => (
             <p class="profile-shelf-slot">
-              <Icon name={profileIconName(p.icon)} small />
-              <span class="profile-shelf-name">{p.label}</span>
+              <Icon name={profileIconName(slot.profile.icon)} small />
+              <span class="profile-shelf-name">{slot.profile.label}</span>
+              <Show when={slot.profile.projectName}>
+                <span class="profile-shelf-project">· {slot.profile.projectName}</span>
+              </Show>
               <span class="text-muted">· Not running</span>
-              <button type="button" class="button button-sm profile-shelf-run" aria-label={`Start ${p.label}`} onClick={() => openProfileStart(p)}>
+              <button type="button" class="button button-sm profile-shelf-run" aria-label={`Start ${slot.profile.label}`} onClick={() => void runProfile(slot.profile, slot.cwd ?? props.cwd)}>
                 Start
               </button>
             </p>
@@ -91,71 +138,5 @@ export function ProfileShelf(props: { sessions: readonly SessionSummary[] | unde
         </For>
       </details>
     </Show>
-  );
-}
-
-/** New Session ▾ (§app.session-list/profile-shelf): the saved profiles, each opening the start sheet. */
-export function NewSessionProfileMenu(props: { cwd?: string }) {
-  const [open, setOpen] = createSignal(false);
-  const [listing] = createResource(open, () => fetchProfiles().catch(() => undefined));
-  const [alert, setAlert] = createSignal<{ p: Profile; running: { id: string } } | null>(null);
-  const lists = () => pickerProfiles(listing());
-  const items = () => [...lists().builtins.filter((p) => p.id !== "default"), ...lists().yours];
-  const pick = (p: Profile) => {
-    const r = listing()?.running[p.id];
-    if (p.singleton && r) return setAlert({ p, running: r });
-    setOpen(false);
-    openProfileStart(p, props.cwd);
-  };
-  return (
-    <span
-      class="new-session-menu-wrap"
-      onFocusOut={(e) => {
-        const to = e.relatedTarget as Node | null;
-        if (!to || !e.currentTarget.contains(to)) (setOpen(false), setAlert(null));
-      }}
-      onKeyDown={(e) => e.key === "Escape" && (setOpen(false), setAlert(null))}
-    >
-      <button type="button" class="button button-icon new-session-menu-trigger" aria-label="New Session with a profile" title="New Session with a profile" aria-haspopup="menu" aria-expanded={open()} onClick={() => (setOpen(!open()), setAlert(null))}>
-        <Icon name="chevron-down" small />
-      </button>
-      <Show when={open()}>
-        <div class="profile-popover new-session-menu" role="menu" aria-label="Start a session with a profile">
-          <Show when={alert()}>
-            {(a) => (
-              <Banner
-                tone="warn"
-                title={singletonRunningText(a().p.label)}
-                action={
-                  <div class="profile-alert-actions">
-                    <a class="button button-sm button-primary" href={`#/sid/${encodeURIComponent(a().running.id)}`} onClick={() => setOpen(false)}>
-                      Open the Running {titleCase(a().p.label)}
-                    </a>
-                    <button type="button" class="button button-sm" onClick={() => setAlert(null)}>
-                      Pick Another Profile
-                    </button>
-                  </div>
-                }
-              />
-            )}
-          </Show>
-          <For each={items()}>
-            {(p) => (
-              <button type="button" role="menuitem" class="profile-option" onClick={() => pick(p)}>
-                <Icon name={profileIconName(p.icon)} small />
-                <span class="profile-option-name">{p.label}</span>
-                <span class="profile-option-meta">{lists().yours.includes(p) ? "Yours" : "Saved profile"}{p.singleton ? " · One at a time" : ""}</span>
-                <Show when={p.singleton && listing()?.running[p.id]}>
-                  <span class="chip">Running</span>
-                </Show>
-              </button>
-            )}
-          </For>
-          <button type="button" role="menuitem" class="button button-sm button-ghost" onClick={() => (setOpen(false), openSettings("profiles"))}>
-            Manage Profiles
-          </button>
-        </div>
-      </Show>
-    </span>
   );
 }

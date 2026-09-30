@@ -2,11 +2,12 @@
 > Part of the Sova design spec · [overview](../design/overview.md)
 
 A profile says what one session can do: which of the default tools it loses, and which session
-powers it gains. It is picked on the new session's empty screen (or started from the list or by the
-Overseer), fixed once the first message is sent, and kept by the session itself. The UI says
+powers it gains. Profiles are files: Sova's, yours, and each project's own (§chat.profiles/projects).
+It is picked on the new session's empty screen (or started from the list or by the Overseer), fixed
+once the first message is sent, and kept by the session itself. The UI says
 "profile"; "abilities" is the baton's word (§app.baton/abilities) and is not used here.
 
-## §chat.profiles/model — Capabilities, built-ins and saved profiles
+## §chat.profiles/model — Capabilities, sources and the session's copy
 
 - **Capabilities, not tool names.** A profile names groups (`shared/profiles.ts`, one map for server
   and client). Removable: **Shell** (`bash`), **Edit files** (`edit`, `write`), **Workers & teams**
@@ -16,23 +17,23 @@ Overseer), fixed once the first message is sent, and kept by the session itself.
   (`sessions.message`), **See all Sova sessions** (`sessions.all`). Messaging and See all each turn
   reading on; turning reading off turns both off.
 - **A profile** is `{id, label, icon, description, remove[], grant[], singleton, limits, mode?,
-  model?, firstMessage?, overseerMayStart}`. `singleton` is labelled **One at a time** in the UI
-  (§chat.profiles/singleton). `limits` are §chat.profiles/limits's five numbers.
-- **Built-ins** live in shared code and are never written anywhere: **Default** (nothing changed),
-  **Read-only reviewer** (reads sessions; no shell, edits or workers), **Mini overseer** (reads and
-  messages sessions; no edits), **Merge captain** (reads, messages and sees all Sova sessions; no
-  web; keeps the shell; One at a time). Every built-in but Default may be started by the Overseer.
-- **Saved profiles** ("Yours") are in `<state root>/session-profiles.json`
-  `{version: 1, profiles: [...], hiddenBuiltins: []}`, read on every request and written whole by an
-  atomic rename. A malformed file lists none of yours and refuses every write; it is never
-  overwritten. `hiddenBuiltins` hides a built-in from the pickers only; Default can't be hidden.
+  model?, firstMessage?, playbook?, overseerMayStart}`. `singleton` is labelled **One at a time** in
+  the UI (§chat.profiles/singleton). `limits` are §chat.profiles/limits's five numbers. `playbook`
+  links a playbook (§chat.profiles/playbook).
+- **Where profiles come from** is §chat.profiles/projects: **Default** in code (nothing changed),
+  the **Built in** files Sova ships (**Read-only reviewer**: reads sessions; no shell, edits or
+  workers. **Mini overseer**: reads and messages sessions in its project; no edits. The Overseer
+  may start either), **Yours**, and **This project**'s files. Sova never writes a profile file.
 - **The session keeps its own copy.** A session's profile is its invisible `custom` entry
-  `customType: "sova-profile"`, data `{v: 1, profile: {…the whole profile…}}` or `{v: 1, profile:
-  null}` (Default), newest on the branch wins. It is never LLM context, the TUI ignores it, and it
-  draws no transcript row of its own. Editing, hiding or deleting a saved profile never changes a
-  session that already has one. No entry means Default, exactly as before profiles existed.
-- `SessionSummary.profile` carries `{id, label, icon, singleton, builtin}` of the branch's newest
-  entry (absent for Default), read by Sova's own file reader, so a TUI-live file is never opened.
+  `customType: "sova-profile"`, data `{v: 1, profile: {…the whole profile…, source, project?,
+  projectName?}}` or `{v: 1, profile: null}` (Default), newest on the branch wins. `source` is
+  `sova`, `user` or `project`, and a project profile keeps its project's root and name. An older
+  entry's `builtin: true` reads as `sova`. It is never LLM context, the TUI ignores it, and it draws
+  no transcript row of its own. Changing, hiding or deleting a profile's file never changes a session
+  that already has one. No entry means Default, exactly as before profiles existed.
+- `SessionSummary.profile` carries `{id, label, icon, singleton, source, project?, projectName?}`
+  of the branch's newest entry (absent for Default), read by Sova's own file reader, so a TUI-live
+  file is never opened.
 
 ## §chat.profiles/picker — Picking a profile on the empty screen
 
@@ -40,10 +41,13 @@ On an ordinary session's empty screen (§chat.transcript/setup-card's empty stat
 card, sits a **Profile** select. The Overseer, project overseers, baton, organization and
 TUI-live sessions show no picker.
 
-- **The select** is searchable. Built-ins come first, then a **Yours** group; hidden built-ins are
-  left out. A One-at-a-time profile that is already live in another session carries the label
-  **Running** on its option. A last option, **Custom…**, opens the capability board. **Manage
-  Profiles** opens Settings → Profiles (§app.settings-dialog/profiles).
+- **The select** is searchable. **Built in** comes first (Default, then the shipped profiles), then
+  **This project ({name})**, then **Yours**; hidden profiles are left out, and Default can't be
+  hidden. A One-at-a-time profile that is already live in another session carries the label
+  **Running** on its option, and an unapproved project profile reads **Needs approval**
+  (§chat.profiles/trust). While a profile file here can't be read, a muted line under the options
+  says "{n} profile files have mistakes. See Manage Profiles." ("1 profile file has mistakes.") A last option, **Custom…**, opens the
+  capability board. **Manage Profiles** opens Settings → Profiles (§app.settings-dialog/profiles).
 - **Default shows nearly nothing**: the select and one muted line, "Everything a new session has
   today: {n} tools, no session powers."
 - **Any other profile** shows its one-line description, then **What changes** (vs Default): a row per
@@ -58,26 +62,26 @@ TUI-live sessions show no picker.
 - **Custom…** opens the capability board: one toggle per removable capability ("on" = kept) and per
   grant, starting from the profile picked before. A toggle it can't change right now is disabled
   with its reason in its title (§chat.profiles/enforcement's workers rule). Its head reads "{label},
-  edited" once it differs from where it started, with **Save as Profile** and **Reset**. Every flip
-  applies at once, like a pick.
-- **Save as Profile** opens a sheet: Name, Description (one line, optional), **One at a time**, and
-  the note "Starts with this session's mode and model." **Save Profile** adds it to Yours (with the
-  session's current mode and model) and picks it for this session; the toast says "Saved {name}. New
-  sessions can use it."
+  edited" once it differs from where it started, with **Reset**. Every flip applies at once, like a
+  pick. The board changes this session only and never makes a profile: profiles are files
+  (§chat.profiles/projects).
+- **A profile that links a playbook** shows its playbook card under What changes
+  (§chat.profiles/playbook).
 - **A session the Overseer started from a profile** shows the same screen with it preselected and
   one muted line: "Started by the Overseer with {label}." It stays changeable until a message is sent.
 
 ## §chat.profiles/applying — A pick writes the entry and reopens the runtime
 
-- `POST /api/sessions/profile {path, profile}` (`profile`: a built-in or saved id, or a custom
-  `{remove, grant}`; `null` is Default) writes the new `sova-profile` entry at once, after the
+- `POST /api/sessions/profile {path, profile}` (`profile`: `{source, id}` or a bare id, resolved
+  against the session's own project (§chat.profiles/projects), or a custom `{remove, grant}`; `null`
+  is Default) writes the new `sova-profile` entry at once, after the
   open-time model and thinking entries, then disposes the held runtime, the move the Overseer's model
   change makes: open tabs get `reloaded` and reconnect, keeping the draft. The reopened runtime reads
   the entry. A profile's `mode` is pinned (the mode extension's own entry) and its `model` becomes
   the opening model, in the same step; its `firstMessage` fills an empty composer.
 - **Refused** (409, nothing written) once a user message is on the branch ("The profile is fixed
-  once a message is sent."), mid-turn, TUI-live, for a foreign writer, and for the special sessions
-  above. A rewind to before the first message leaves a branch with no user message, so the picker
+  once a message is sent."), mid-turn, TUI-live, for a foreign writer, for the special sessions
+  above, and for a project profile that needs approval (§chat.profiles/trust). A rewind to before the first message leaves a branch with no user message, so the picker
   is back, with the profile that branch holds.
 - The chat socket sends a `profile` message after `hello`, whenever there is something to show (a
   profile, or a session still before its first message): the branch's profile (or null), who
@@ -108,15 +112,21 @@ TUI-live sessions show no picker.
 With **Read other sessions**: `session_list`, `session_detail`, `session_read`. With **Message other
 sessions**: `session_send` too.
 
-- **Which sessions it sees.** Without See all Sova sessions: sessions on this host whose folder is
-  this session's folder or inside it. With it: every session this host's list shows (Live & web and
+- **Which sessions it sees.** Without See all Sova sessions: sessions on this host in its project
+  (§chat.profiles/projects): the main checkout, its worktrees and their subfolders, or, outside git,
+  its folder and below. With it: every session this host's list shows (Live & web and
   the Archive, TUI-live ones included). Never, either way: itself, the Overseer's conversations,
   project overseers' conversations, organization and baton sessions, and workers' own sessions. A
   session it can't see answers "No session with id {id} that this session can see."
 - `session_list {query?, limit?}`: one row per session: id · title · folder · state · profile ·
-  last active, newest active first, 25 by default, at most 50.
-- `session_detail {session}`: the row, its summary's purpose and now, and, when this server holds
-  it, whether it is mid-turn and how many messages it has queued.
+  last active, then "hosted here" when this server runs it and "{n} workers working" while it has
+  working subagents; newest active first, 25 by default, at most 50. It ends with one line while
+  any session it never shows is hosted here and busy (a turn in flight or workers working): "Also
+  busy on this server, not listed: {n} Overseer, {n} project overseer, …", counts by kind only,
+  never ids or content.
+- `session_detail {session}`: the row, its summary's purpose and now, its open alignment questions
+  ("Open alignment questions: {n}"), each tracked worktree's readiness line, and, when this server
+  holds it, whether it is mid-turn and how many messages it has queued.
 - `session_read {session, from?, items?, chars?}`: the Overseer's bounded read (at most 40 rows and
   12,000 characters), wrapped as untrusted content from another session and redacted as the
   Overseer's reads are.
@@ -167,11 +177,11 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
 - **Head chip.** A session with a profile shows a chip in the session head: its icon and label
   (icon only in a narrow head). It opens a popover: one sentence ("A {label} session. It {powers}
   and keeps {n} of {m} tools{ with Web off}."), what is added and removed, "Fixed when the first
-  message was sent.", and, while the profile it came from still exists, **Run Again**
-  (§app.session-list/profile-shelf's start sheet with this profile, in this session's folder) and
-  **Edit Profile** for one of yours or **Duplicate Profile** for a built-in (both open Settings →
-  Profiles), "Changes reach new sessions only.", and for a live One at a time session **Stop
-  {Label}**, which archives it. Default shows no chip, and neither does a session before its first
+  message was sent.", and, while the profile it came from still exists, **Run Again** (a new session
+  in this session's folder with this profile picked, opened on its empty screen,
+  §app.session-list/profile-shelf) and **Manage Profiles** (Settings → Profiles), "Changes reach new
+  sessions only.", and for a live One at a time session **Stop {Label}**, which archives it. A
+  project profile's chip title and the popover's name read "{label} · {project}". Default shows no chip, and neither does a session before its first
   message (the picker is there instead).
 - **Info row.** A muted row where the entry sits, "Profile: {label}" (with "· One at a time"), once
   a message is on the branch. Before that, the entry draws nothing and doesn't count as a row,
@@ -180,7 +190,9 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
 
 ## §chat.profiles/singleton — One at a time
 
-- At most **one live (non-archived) session per One at a time profile**, on this host. A session
+- At most **one live (non-archived) session per One at a time profile**, on this host, where a
+  profile is its identity (§chat.profiles/projects): a project's profile allows one per project, so
+  the same id in two projects runs twice, and one of yours or a built-in one per host. A session
   counts from the moment the profile is picked for it, so a session that carries a profile is
   listed even before its first message (an empty session is otherwise never listed), where it can
   be opened or archived.
@@ -191,3 +203,79 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   refused and the draft kept: "{label} started in another session. Nothing was sent. Open it or pick
   another profile."
 - **Stop** archives the session; **Start** makes a fresh one.
+
+## §chat.profiles/projects — A session's project, and where profiles come from
+
+- **A session's project** is where its profiles and playbooks come from. For a folder inside a git
+  checkout it is that repository's main checkout: a linked worktree maps to the checkout that owns
+  its git directory, so the main checkout, every worktree and every subfolder of them are one
+  project. Any other local folder is its own project, with no walk up to a parent. The project's
+  name is its root folder's name. A relative or remote cwd has no project; that is decided before any
+  filesystem call, as for playbooks (§chat.playbooks/the-project-listing).
+- **Four sources.** **Default** is in code and changes nothing. **Built in**: one JSON file per
+  profile in `profiles/` at the Sova repo root (Read-only reviewer, Mini overseer). **Yours**:
+  `<state root>/session-profiles.json` `{version: 1, profiles: [...]}`. **This project**:
+  `<project root>/.sova/profiles/<id>.json`, one profile per file, whose `id` must equal the file's
+  name.
+- **Every file is parsed strictly** (§chat.profiles/model's fields). A file that doesn't parse, or
+  whose id doesn't match its name, is skipped and listed as a problem, with its path and the exact
+  error; one bad file never hides the others. A malformed Yours file lists none of yours, with its
+  error.
+- **Identity.** A profile is its source and id, plus the project root for a project profile:
+  `sova:<id>`, `user:<id>` or `project:<root>#<id>`. The same id in two projects is two profiles.
+- **Picking** names the source (`{source, id}`). A bare id (the Overseer's `profile`, an older
+  caller) is looked up in the session's project first, then Yours, then Built in. Either way it is
+  resolved against the session's own project, never another one.
+- **Profiles are files.** Sova never writes a profile file: an agent or you edit them, and a change
+  reaches new picks only. Sova keeps two things of its own, outside every repo: which profiles are
+  hidden from the pickers (`<state root>/profile-hidden.json`) and approvals (§chat.profiles/trust).
+  The file format, with an example, is `docs/profiles.md`.
+
+## §chat.profiles/trust — Approving what a project's profile may do
+
+- **What needs approval.** A project profile that grants a session power (Read other sessions,
+  Message other sessions, See all Sova sessions), or that the Overseer may start, needs your
+  approval before its first pick or start. It needs it again whenever those powers widen: a new
+  grant, or Overseer starts turned on. A project profile that only removes capabilities needs none,
+  and Default, Built in and Yours never do. Sova can't tell who wrote a file, so this includes
+  profiles you or your agent wrote.
+- **Approvals** are `<state root>/profile-trust.json`
+  `{version: 1, approved: {<identity>: {grant: [...], overseerMayStart, at}}}`, outside every repo.
+  Approving records the powers the file has at that moment. `POST /api/profiles/approve {cwd, id,
+  grant, overseerMayStart}` is refused when those aren't the powers the file has now (it changed
+  since you looked), so what you approve is what you saw.
+- **Where.** In the picker, an unapproved project profile reads **Needs approval**. Picking it
+  changes nothing and shows a warn alert, "{label} comes from {project}'s files and can {powers}.
+  Approve it to use it.", with **Approve** and **Pick Another Profile**. Settings → Profiles shows
+  **Approve** on its row (§app.settings-dialog/profiles).
+- **Refused until approved**, with nothing written or created: a pick, `POST /api/sessions` with it,
+  and the Overseer's `sova_create_session` (no cap taken). The sentence: "{label} is a profile from
+  {project}'s files that can {powers}. Approve it in Settings → Profiles or on the picker first."
+- A session that already has the profile keeps its copy; approval gates new picks only.
+
+## §chat.profiles/playbook — A profile that runs a playbook
+
+- **The link.** A profile may name a playbook, `playbook: "<id>"`. It is looked up among the
+  playbooks the session's folder lists (§chat.playbooks/where-playbooks-come-from): the profile's
+  own source first, then This project, Yours and Sova.
+- **The playbook card.** On the empty screen, a session whose picked profile links a playbook
+  shows a card under what the profile changes. It holds the playbook's title and description,
+  **View Playbook**, which opens its `PLAYBOOK.md` read-only with its folder, and **Run Playbook**.
+  The message box holds the playbook's arguments: "Anything you type in the message box goes with
+  it." Run Playbook sends the playbook's turn (§chat.playbooks/what-gets-sent) with the message
+  box's text as your text, through the ordinary send path, and empties the message box. Nothing is
+  sent before it is pressed, and Send still sends a plain message.
+- **A missing playbook.** When no listed playbook has the id, the card says "This profile runs the
+  playbook "{id}", but this folder has no playbook with that id." and has no Run Playbook.
+- **The Overseer.** `sova_create_session` with a profile that links a playbook sends that
+  playbook's turn as the first message, with its `prompt`, if any, as your text. So it counts as a
+  prompt against the Overseer's caps even without `prompt`. A missing playbook refuses before
+  anything is created or capped.
+- The turn is built by one function, `playbookTurnText` in `shared/playbooks.ts`, for both.
+
+## §chat.profiles/live-commit — What the live server runs
+
+- `GET /api/health` answers `{ok: true, startedAt, head}`: when this server process started (ISO
+  time) and the commit its own checkout had then (`git rev-parse HEAD` in the server's folder, read
+  once at start; `null` when that fails). So a merge round checks that the live server runs
+  master's commit with one request.

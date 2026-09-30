@@ -46,7 +46,7 @@ import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
-import { excludedTools, GRANT_TOOLS, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
+import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { profileOnBranch } from "./session-profile";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
 
@@ -882,7 +882,7 @@ export interface ProfileState {
 
 /** The One at a time check at the first message (§chat.profiles/singleton), bound by the module
     that can list sessions (server/session-profile-routes.ts). Resolves to the holder, or null. */
-let singletonCheck: ((profileId: string, path: string) => Promise<{ id: string; path: string; title: string } | null>) | null = null;
+let singletonCheck: ((key: string, path: string) => Promise<{ id: string; path: string; title: string } | null>) | null = null;
 export function setSingletonCheck(fn: typeof singletonCheck): void {
   singletonCheck = fn;
 }
@@ -2348,7 +2348,7 @@ class ChatSession {
     // live in another one is refused, the draft kept, before anything is written.
     const single = this.profileState?.data?.profile;
     if ((msg.type === "prompt" || msg.type === "steer") && single?.singleton && !this.singletonCleared && singletonCheck && this.isPristine()) {
-      singletonCheck(single.id, this.path).then(
+      singletonCheck(keyOf(single), this.path).then(
         (holder) => {
           if (holder) {
             client.send({ type: "error", code: "refused", message: singletonRaceText(single.label), profileRunning: holder, ...(clientId ? { clientId } : {}) });

@@ -240,8 +240,66 @@ export interface BatonSession {
       a re-route closes it. */
   conflict?: { id: string; area: string };
   /** Started by the global Overseer for the operator (`sova_gather`, §app.overseer/org-attribution).
-      Recorded, shown nowhere. */
+      Who started it is shown from `BatonInfo.started` (§app.baton/told). */
   startedVia?: "overseer";
+}
+
+/** Who started a gathering session (§app.baton/told): you, the project's overseer, or you through the
+    global Overseer. */
+export type BatonStarter = "operator" | "overseer" | "project-overseer";
+
+/** The strip's Started by line and its folded Why (operator only, §app.baton/told). */
+export interface BatonStarted {
+  who: BatonStarter;
+  /** When it started (ISO). */
+  at: string;
+  /** The overseer's reason, as it wrote it; absent when none was recorded. */
+  why?: string;
+  /** The overseer's conversation, when recorded: `current` when it is still that overseer's current one. */
+  overseer?: { id: string; current: boolean };
+}
+
+/** What it was started for, as recorded (§app.baton/told). */
+export type BatonStartedFor =
+  | { kind: "gap"; id: string; title: string }
+  | { kind: "conflict"; area: string }
+  | { kind: "parent"; sessionId: string; title: string }
+  | { kind: "todo" | "idea"; text: string };
+
+/** One tool as the session file last recorded it: the declaration its model was sent. */
+export interface BatonToldTool {
+  name: string;
+  description: string;
+  parameters: unknown;
+  /** The ability that turns it on (§app.baton/abilities), when one does. */
+  ability?: string;
+}
+
+/**
+ * GET /api/baton/:sid/told — What It's Told (§app.baton/told), the operator's only: who started it
+ * and why, the goal, the prompt as the session file last recorded it, its tools and model.
+ */
+export interface BatonTold {
+  publicTitle: string;
+  orgId: string;
+  projectId: string;
+  projectName: string;
+  started: BatonStarted;
+  /** Absent when it records none. */
+  startedFor?: BatonStartedFor;
+  goal: string;
+  /** `recorded`: replayed from the file's system entries (before any wrap-up); `preview`: none yet,
+      rendered now for the next reply. */
+  prompt: { kind: "recorded"; text: string; at: string; changes: number } | { kind: "preview"; text: string };
+  /** The wrap-up's own prompt, once it has run. */
+  wrapup?: { text: string; at: string };
+  /** The tools its model has now (recorded; the preview's are the loadout's as they would be sent). */
+  tools: BatonToldTool[];
+  /** The loadout's tools it doesn't have now, and when it would. */
+  inactive: { name: string; when: string }[];
+  model: string | null;
+  thinking: string | null;
+  budget: { messagesMax: number; messagesUsed: number };
 }
 
 export interface BatonStartInput {
@@ -353,6 +411,8 @@ export interface BatonInfo {
   wrapup: WrapupInfo | null;
   /** The org's owner, for the strip's Hide From {first} (`session.hiddenFromOwner`); null: none. */
   owner?: { name: string } | null;
+  /** Who started it, when, and why (§app.baton/told). */
+  started: BatonStarted;
 }
 
 export interface BatonSummaryField {

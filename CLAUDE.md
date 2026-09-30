@@ -231,7 +231,14 @@ Rules:
 - Before any restart, read the live records `~/.pi/agent/sessions/live/p<server-pid>-*.json`
   (heartbeat ≤ 30s) for every hosted session: `presence.workerCounts.working > 0`, or
   `presence.activity.state === "working"` (your own turn counts too). Hold the restart if any is busy.
-- Never restart from inside a hosted session: you are the server's child.
+- Never run `systemctl restart` from inside a hosted session: you are the server's child, and the
+  restart kills your turn mid tool call. The one allowed form is a delayed transient unit outside the
+  server, `systemd-run --user --on-active=30s systemctl --user restart <unit>`, scheduled right after
+  a final busy check of every session this server hosts (the rule above), as your turn's LAST tool
+  call, after which the turn ends at once. A turn another session starts in those 30 s can still be
+  cut off. If `systemd-run` fails (a sandboxed session can't reach the user bus, by design), never
+  work around it: ask the user to restart. Confirm afterwards with `GET /api/health` (`startedAt`,
+  `head`).
 - The claude-code bridge is a `globalThis` singleton (`getSessionBridge()`, Symbol.for registry): a
   fresh session that reloads the extension still gets the bridge built from the code loaded first,
   so provider edits also need a restart. Before trusting a live test, check the unit's start time

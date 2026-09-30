@@ -1,4 +1,4 @@
-import type { Profile, ProfilesFile, ProfilesListing } from "../../shared/profiles";
+import type { ProfilesListing } from "../../shared/profiles";
 import type {
   VoiceDeviceInfo,
   VoiceStatus,
@@ -69,7 +69,7 @@ import type {
 import type { MeshFrontDoor, MeshLocalSettings } from "../../shared/mesh-local";
 import type { OwnerConversation, OwnerHome, OwnerLinkResult, OwnerProject, ProjectUpdate } from "../../shared/owner";
 import type { NamedChange, OrgDetail, OrgsInfo, PersonHours, PersonInput, PersonPage, PersonPreview, ProfileChange } from "../../shared/orgs";
-import type { BatonInfo, BatonSettings, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
+import type { BatonInfo, BatonSettings, BatonTold, BatonStartInput, BatonStartResult, BatonView, GatheringAbilities, OfferLink } from "../../shared/baton";
 import type { ConflictResolveInput, DecisionsInfo, PromoteResult, SpecStatus } from "../../shared/decisions";
 import type { PipelineInfo, PipelineTimeline } from "../../shared/pipeline";
 import type { OrgCosts, ProjectCost } from "../../shared/costs";
@@ -479,17 +479,24 @@ export const setSessionTitle = (path: string, title: string | null) =>
 /** The sidebar's user-made groups, in creation order. */
 export const listSessionGroups = () => request<SessionGroup[]>("/api/session-groups");
 
-/** Profiles (§chat/profiles): the library, one pick, Save as Profile, the whole file (Settings). */
-export const fetchProfiles = () => request<ProfilesListing>("/api/profiles", { cache: "no-store" });
-export const pickProfile = (path: string, profile: string | { remove: string[]; grant: string[]; from?: string } | null) =>
+/** Profiles (§chat/profiles): what a folder can use, one pick, approving and hiding (profiles are files; nothing here writes one). */
+export type ProfilePickRef = { source: "sova" | "user" | "project"; id: string };
+export const fetchProfiles = (cwd?: string | null) =>
+  request<ProfilesListing>(cwd ? `/api/profiles?cwd=${encodeURIComponent(cwd)}` : "/api/profiles", { cache: "no-store" });
+export const pickProfile = (path: string, profile: ProfilePickRef | { remove: string[]; grant: string[]; from?: ProfilePickRef } | null) =>
   request<{ ok: true }>("/api/sessions/profile", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ path, profile }) });
-export const saveNewProfile = (profile: Partial<Profile>) =>
-  request<Profile>("/api/profiles", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(profile) });
-export const saveProfiles = (file: ProfilesFile) =>
-  request<ProfilesListing>("/api/profiles", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(file) });
-/** A new session with a profile, and optionally its first message (the start sheet). */
-export const startProfileSession = (cwd: string, profile: string, prompt?: string) =>
-  request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile, ...(prompt?.trim() ? { prompt } : {}) }) });
+/** Approve a project profile's powers, exactly the ones shown (§chat.profiles/trust). */
+export const approveProfile = (cwd: string, p: { id: string; grant: string[]; overseerMayStart: boolean }) =>
+  request<ProfilesListing>("/api/profiles/approve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cwd, id: p.id, grant: p.grant, overseerMayStart: p.overseerMayStart }),
+  });
+export const setProfileHidden = (key: string, hidden: boolean, cwd?: string | null) =>
+  request<ProfilesListing>("/api/profiles/hidden", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key, hidden, ...(cwd ? { cwd } : {}) }) });
+/** A new session in `cwd` with a profile picked; nothing is sent (the shelf's Run and Start, the chip's Run Again). */
+export const startProfileSession = (cwd: string, profile: ProfilePickRef) =>
+  request<SessionSummary>("/api/sessions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cwd, profile }) });
 
 export const createSessionGroup = (name: string) =>
   request<SessionGroup>("/api/session-groups", {
@@ -982,6 +989,8 @@ export const withdrawProjectUpdate = (id: string, pid: string, uid: string) =>
 
 export const startBaton = (input: BatonStartInput) => request<BatonStartResult>("/api/baton", jsonInit("POST", input));
 export const getBaton = (path: string) => request<BatonInfo>(`/api/baton?path=${encodeURIComponent(path)}`);
+/** What It's Told (§app.baton/told): fetched when opened, the operator's only. */
+export const getBatonTold = (sid: string) => request<BatonTold>(`/api/baton/${encodeURIComponent(sid)}/told`);
 export const batonLink = (sid: string) => request<{ link: string; n: number; at?: string; linkWarning?: string }>(`/api/baton/${encodeURIComponent(sid)}/link`);
 export const revokeBatonLink = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/revoke`, jsonInit("POST"));
 export const takeBaton = (sid: string) => request<{ ok: true }>(`/api/baton/${encodeURIComponent(sid)}/take`, jsonInit("POST"));

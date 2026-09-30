@@ -839,7 +839,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 
 | Where | Copy |
 |---|---|
-| Writer, wherever a change names who made it | `you, via the Overseer` (Profile Changes, Recent Profile Changes) · About History row: "by you, via the Overseer" · latest-change lines: "Set by you, via the Overseer {relative time}." · coding row: "Started by you, via the Overseer" |
+| Writer, wherever a change names who made it | `you, via the Overseer` (Profile Changes, Recent Profile Changes) · About History row: "by you, via the Overseer" · latest-change lines: "Set by you, via the Overseer {relative time}." · coding row: "Started by you, via the Overseer" · gathering strip: "Started by you, via the Overseer · {relative time}" |
 | Row tag and queued row, in a project overseer's thread | `Overseer` — the tag and word of §app.overseer/sent-marker |
 | Confirm card rows | project: `{project}` then `{org}` (muted) · person: `{name}` then `{org}` (muted) and, unless active, the status chip (`Proposed`, `Left`) |
 | Extra instructions (project's Overseer card) | label `Extra instructions` · hint "Added last to this overseer's prompt, after the organization's About text, and they win over it. It reads them at its next run." · counter `{n} / 8,000` · `Save` (secondary) · `Cancel` (ghost) · saved (toast): "Extra instructions saved." · blank: "Extra instructions removed." · refused (`.field-error`): "Extra instructions can be at most 8,000 characters." |

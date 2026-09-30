@@ -11,12 +11,7 @@
     <button class="button button-icon button-ghost sidebar-overview" type="button" aria-label="Overview"
             title="Overview"><svg class="icon" aria-hidden="true">…grid…</svg></button>
     <span class="sidebar-spacer"></span>
-    <span class="new-session-split">
-      <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
-      <!-- the saved profiles (§app.session-list/profile-shelf) -->
-      <button class="button button-icon new-session-menu-trigger" type="button" aria-haspopup="menu"
-              aria-label="New Session with a profile">…chevron-down…</button>
-    </span>
+    <button class="button" type="button"><svg class="icon" aria-hidden="true">…plus…</svg>New Session</button>
     <!-- unfolded (≥768) only: collapses the pane into the spine (§app.session-list/spine) -->
     <button class="button button-icon sidebar-spine-toggle" type="button" aria-expanded="true"
             aria-label="Collapse sessions pane" title="Collapse sessions pane · Ctrl/⌘+B">
@@ -681,30 +676,32 @@ place in Live & web (and Groups).
       <button class="button button-sm button-ghost">Run</button></p>
     <ul class="list">…session rows…</ul>
   </div>
-  <!-- a One at a time profile run at least once, with no live session: one line -->
-  <p class="profile-shelf-slot">…icon… Merge captain · <span class="text-muted">Not running</span>
+  <!-- a One at a time profile run at least once, with no live session: one line; a project's
+       profile names its project -->
+  <p class="profile-shelf-slot">…icon… Release checker <span class="text-muted">· acme ·</span>
+    <span class="text-muted">Not running</span>
     <button class="button button-sm">Start</button></p>
 </details>
 ```
 
 - **Rows**: every non-archived session on this host whose `SessionSummary.profile` is set, under
-  its profile's sub-head, newest started first; a custom (unsaved) pick is grouped by its label. A
-  sub-head carries the profile's icon and label, then "{n} live" and **Run**, or, for a One at a
-  time profile, "One at a time" and no Run. The region's count is its rows.
+  its profile's sub-head, newest started first. Sub-groups are keyed by the profile's identity
+  (§chat.profiles/projects), so the same id from two projects is two sub-groups; a custom pick is
+  grouped by its label. A sub-head carries the profile's icon and label, a project profile's
+  project name after it ("· {project}"), then "{n} live" and **Run**, or, for a One at a time
+  profile, "One at a time" and no Run. The region's count is its rows.
 - **One at a time slots.** A One at a time profile that has been run at least once keeps a one-line
   slot while none of its sessions is live: "{label} · Not running · Start". Once run it stays, for as
   long as the profile exists (a deleted profile loses its slot).
 - **Shown** only while it has a row or a slot; hidden while searching.
-- **Run / Start** open a small sheet, "Start {label}": the profile's description, Folder (the recent
-  folders, the current session's first), First message (optional, prefilled with the profile's own)
-  and **Start Session**. It creates the session with that profile (`POST /api/sessions` with
-  `profile` and `prompt`), then opens it. Start on a One at a time profile that is live answers with
-  the same alert as the picker (§chat.profiles/singleton).
-- **New Session ▾.** The New Session button gains a narrow menu button joined to it, listing the
-  profiles (built-ins not hidden, Default left out, then yours), each opening the same sheet in the
-  open session's folder; a live One at a time profile reads **Running** and answers with the alert
-  (**Open the Running {Label}**, **Pick Another Profile**). **Manage Profiles** closes the list.
-  The New Session dialog itself is unchanged, and the session it makes starts as Default.
+- **Run / Start** make a new session with that profile picked and open it on its empty screen,
+  where the picker, and a linked playbook's card, show it (§chat.profiles/picker). Nothing is sent.
+  Run starts in the sub-group's newest session's folder, Start in the project's root for a
+  project profile, else in the open session's folder. It is `POST /api/sessions` with `cwd` and
+  `profile`. Start on a One at a time profile that is live answers with the picker's alert
+  (§chat.profiles/singleton) as a toast with **Open the Running {Label}**.
+- **New Session** is one button: the session it makes starts as Default, and its empty screen is
+  where a profile is picked.
 
 ## §app.session-list/needs-you — Needs you
 

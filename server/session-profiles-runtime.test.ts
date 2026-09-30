@@ -47,7 +47,10 @@ const { archiveSession, getSessionSummary } = await import("./sessions-index");
 const { normalizeEntries, readActiveBranch } = await import("./transcript");
 const { applyProfile } = await import("./session-profile-routes");
 const { sessionActionsFile } = await import("./session-powers");
-const { BUILTIN_PROFILES, PROFILE_ENTRY, SESSION_SENT_ENTRY } = await import("../shared/profiles");
+const { parseProfile, PROFILE_ENTRY, SESSION_SENT_ENTRY } = await import("../shared/profiles");
+const { playbookTurnText } = await import("../shared/playbooks");
+const { findProfile } = await import("./profile-sources");
+const { approve } = await import("./profile-trust");
 const { overseerTools, TurnLimits } = await import("./overseer-tools");
 const { DEFAULT_CAPS } = await import("./overseer-store");
 const { addWebSession } = await import("./web-sessions");
@@ -57,7 +60,18 @@ after(async () => {
   await disposeAllChats();
 });
 
-const profile = (id: string) => ({ ...BUILTIN_PROFILES.find((p) => p.id === id)!, builtin: true });
+/** The project fixture (§chat.profiles/projects): `cwd` is a plain folder, so its own project. Its
+    One at a time captain reads, messages and sees all, and the Overseer may start it once approved. */
+const CAPTAIN = { id: "captain", label: "Release captain", icon: "branch", remove: ["workers", "web"], grant: ["sessions.read", "sessions.message", "sessions.all"], singleton: true, overseerMayStart: true };
+mkdirSync(join(cwd, ".sova", "profiles"), { recursive: true });
+writeFileSync(join(cwd, ".sova", "profiles", "captain.json"), JSON.stringify(CAPTAIN));
+approve((await findProfile({ source: "project", id: "captain" }, cwd))!, { grant: CAPTAIN.grant as never, overseerMayStart: true });
+/** A shipped profile's snapshot, or the fixture captain's. */
+const profile = (id: string) =>
+  id === "captain"
+    ? { ...(parseProfile(CAPTAIN) as object), source: "project", project: cwd, projectName: "cwd" }
+    : { ...(parseProfile(JSON.parse(readFileSync(new URL(`../profiles/${id}.json`, import.meta.url), "utf8"))) as object), source: "sova" };
+const CAPTAIN_PICK = { source: "project" as const, id: "captain" };
 let n = 0;
 /** A web session file: its header, and a profile entry when given. */
 function makeSession(p?: unknown, where = cwd, talked = false): string {
@@ -207,28 +221,70 @@ describe("One at a time (§chat.profiles/singleton)", () => {
   test("a second pick is refused naming the holder; after the holder is archived it is allowed", async () => {
     const a = makeSession();
     const b = makeSession();
-    assert.deepEqual(await applyProfile(a, "merge-captain"), { ok: true });
-    const refused = await applyProfile(b, "merge-captain");
+    assert.deepEqual(await applyProfile(a, CAPTAIN_PICK), { ok: true });
+    const refused = await applyProfile(b, CAPTAIN_PICK);
     assert.ok(!refused.ok);
-    assert.equal(!refused.ok && refused.error, "Merge captain is already running. It's set to One at a time, so only 1 session can use it.");
+    assert.equal(!refused.ok && refused.error, "Release captain is already running. It's set to One at a time, so only 1 session can use it.");
     assert.equal(!refused.ok && refused.running?.path, a);
     assert.ok(!entries(b).some((e) => e.customType === PROFILE_ENTRY), "nothing was written");
     await disposeAllChats();
     assert.equal((await archiveSession(a, true)).ok, true);
-    assert.deepEqual(await applyProfile(b, "merge-captain"), { ok: true });
+    assert.deepEqual(await applyProfile(b, CAPTAIN_PICK), { ok: true });
     await archiveSession(b, true);
   });
 
+  test("the same id in another project is another profile: both run at once", async () => {
+    const other = join(agentDir, "other-project");
+    mkdirSync(join(other, ".sova", "profiles"), { recursive: true });
+    writeFileSync(join(other, ".sova", "profiles", "captain.json"), JSON.stringify(CAPTAIN));
+    approve((await findProfile({ source: "project", id: "captain" }, other))!, { grant: CAPTAIN.grant as never, overseerMayStart: true });
+    const a = makeSession();
+    const b = makeSession(undefined, other);
+    assert.deepEqual(await applyProfile(a, CAPTAIN_PICK), { ok: true });
+    assert.deepEqual(await applyProfile(b, CAPTAIN_PICK), { ok: true }, "a second project's captain is its own One at a time slot");
+    const snap = (path: string) => entries(path).find((e) => e.customType === PROFILE_ENTRY).data.profile;
+    assert.equal(snap(a).project, cwd);
+    assert.equal(snap(b).project, other);
+    await disposeAllChats();
+    await archiveSession(a, true);
+    await archiveSession(b, true);
+  });
+
+  test("an unapproved project profile that grants powers is refused, and nothing is written", async () => {
+    const fresh = join(agentDir, "fresh-project");
+    mkdirSync(join(fresh, ".sova", "profiles"), { recursive: true });
+    writeFileSync(join(fresh, ".sova", "profiles", "captain.json"), JSON.stringify(CAPTAIN));
+    const a = makeSession(undefined, fresh);
+    const r = await applyProfile(a, "captain");
+    assert.ok(!r.ok && r.approval && r.status === 409);
+    assert.match(!r.ok ? r.error : "", /^Release captain is a profile from fresh-project's files that can read other sessions, message other sessions, see all Sova sessions and be started by the Overseer\. Approve it/);
+    assert.ok(!entries(a).some((e) => e.customType === PROFILE_ENTRY));
+  });
+
+  test("picking a profile that links a playbook sends nothing: the branch has no user message", async () => {
+    const pbRoot = join(agentDir, "pb-project");
+    mkdirSync(join(pbRoot, ".sova", "profiles"), { recursive: true });
+    mkdirSync(join(pbRoot, ".sova", "playbooks", "tidy"), { recursive: true });
+    writeFileSync(join(pbRoot, ".sova", "playbooks", "tidy", "PLAYBOOK.md"), "---\ntitle: Tidy\n---\n\n# Tidy\n");
+    writeFileSync(join(pbRoot, ".sova", "profiles", "tidier.json"), JSON.stringify({ id: "tidier", label: "Tidier", remove: ["web"], playbook: "tidy" }));
+    const a = makeSession(undefined, pbRoot);
+    assert.deepEqual(await applyProfile(a, { source: "project", id: "tidier" }), { ok: true });
+    await disposeAllChats();
+    const es = entries(a);
+    assert.equal(es.find((e) => e.customType === PROFILE_ENTRY).data.profile.playbook, "tidy");
+    assert.ok(!es.some((e) => e.type === "message" && e.message.role === "user"), "nothing is sent before Run Playbook");
+  });
+
   test("race at Send: the first message is refused, nothing written, naming the session that has it", async () => {
-    const a = makeSession(profile("merge-captain"));
-    const b = makeSession(profile("merge-captain"));
+    const a = makeSession(profile("captain"));
+    const b = makeSession(profile("captain"));
     const chat = await acquireChat(b, true);
     const { got, client } = sink();
     const before = readFileSync(b, "utf8");
     chat.handle(client, { type: "prompt", text: "merge everything", clientId: "c1" });
     await until(() => got.some((m) => m.type === "error"));
     const err = got.find((m) => m.type === "error") as Extract<ChatServerMessage, { type: "error" }>;
-    assert.equal(err.message, "Merge captain started in another session. Nothing was sent. Open it or pick another profile.");
+    assert.equal(err.message, "Release captain started in another session. Nothing was sent. Open it or pick another profile.");
     assert.equal(err.clientId, "c1", "the composer gets its draft back");
     assert.ok(err.profileRunning && [a, b].includes(err.profileRunning.path) && err.profileRunning.path !== b);
     assert.equal(readFileSync(b, "utf8"), before);
@@ -241,7 +297,7 @@ describe("One at a time (§chat.profiles/singleton)", () => {
 describe("session_send between sessions (§chat.profiles/session-tools, /delivery, /limits)", () => {
   test("a captain messages an idle session and a busy one; the marks, header, queue row, hop and audit are right", async () => {
     await disposeAllChats();
-    const captain = makeSession({ ...profile("merge-captain"), singleton: false, id: "captain-a" });
+    const captain = makeSession({ ...profile("captain"), singleton: false, id: "captain-a" });
     const mini = makeSession(profile("mini-overseer"), cwd, true);
     const other = makeSession(undefined, cwd, true);
     const busy = makeSession(undefined, cwd, true);
@@ -304,7 +360,7 @@ describe("session_send between sessions (§chat.profiles/session-tools, /deliver
 
   test("refusals: itself, a hidden or unseen session, and the hop limit; each takes nothing and is audited", async () => {
     await disposeAllChats();
-    const hopOne = { ...profile("merge-captain"), singleton: false, id: "captain-copy", limits: { ...profile("merge-captain").limits, hops: 1 } };
+    const hopOne = { ...profile("captain"), singleton: false, id: "captain-copy", limits: { ...(profile("captain") as unknown as { limits: object }).limits, hops: 1 } };
     const a = makeSession(hopOne);
     const elsewhere = makeSession(undefined, agentDir, true);
     const narrow = makeSession(profile("mini-overseer"));
@@ -334,7 +390,7 @@ describe("session_send between sessions (§chat.profiles/session-tools, /deliver
 
   test("a wake-up turn may send, on the day's allowance", async () => {
     await disposeAllChats();
-    const a = makeSession({ ...profile("merge-captain"), singleton: false, id: "captain-wake" });
+    const a = makeSession({ ...profile("captain"), singleton: false, id: "captain-wake" });
     const b = makeSession(undefined, cwd, true);
     const [aid, bid] = [a, b].map(idOfPath) as [string, string];
     const [ca, cb] = [await acquireChat(a, true), await acquireChat(b, true)];
@@ -356,6 +412,7 @@ describe("the Overseer may start only profiles marked for it (§app.overseer/too
     const host = {
       request: async (path: string, init?: RequestInit) => {
         requests.push(`${path} ${init?.body ?? ""}`);
+        if (path.startsWith("/api/sessions/prompt")) return Response.json({ queued: false, kind: "prompt" });
         return Response.json({ id: "new", path: "/s/new.jsonl", title: "Untitled", cwd }, { status: 201 });
       },
       overseerId: () => "ov",
@@ -373,23 +430,54 @@ describe("the Overseer may start only profiles marked for it (§app.overseer/too
   }
 
   test("a saved profile not marked is refused before anything is created", async () => {
-    const { writeProfiles } = await import("./profiles-store");
-    writeProfiles({ version: 1, profiles: [{ id: "spec-auditor", label: "Spec auditor", icon: "eye", remove: ["edit"], grant: ["sessions.read"], overseerMayStart: false }], hiddenBuiltins: [] });
+    mkdirSync(join(agentDir, "sova"), { recursive: true });
+    writeFileSync(join(agentDir, "sova", "session-profiles.json"), JSON.stringify({ version: 1, profiles: [{ id: "spec-auditor", label: "Spec auditor", icon: "eye", remove: ["edit"], grant: ["sessions.read"], overseerMayStart: false }] }));
     const h = harness([]);
     await assert.rejects(h.call({ cwd, profile: "spec-auditor" }), /isn't marked "The Overseer may start it"/);
     await assert.rejects(h.call({ cwd, profile: "nope" }), /No profile "nope"/);
+    // A project profile the user hasn't approved: refused the same way, before anything or any cap.
+    const fresh = join(agentDir, "fresh-overseer");
+    mkdirSync(join(fresh, ".sova", "profiles"), { recursive: true });
+    writeFileSync(join(fresh, ".sova", "profiles", "captain.json"), JSON.stringify(CAPTAIN));
+    await assert.rejects(h.call({ cwd: fresh, profile: "captain" }), /Release captain is a profile from fresh-overseer's files .* Approve it .* No session was created\./);
     assert.deepEqual(h.requests, []);
   });
 
   test("a live One at a time profile answers with its card and creates nothing; a free one is passed to the route", async () => {
-    const holder = { id: "cap1", path: "/s/cap1.jsonl", title: "Merge round", archived: false, profile: { id: "merge-captain", label: "Merge captain", icon: "branch", singleton: true } } as SessionSummary;
+    const holder = { id: "cap1", path: "/s/cap1.jsonl", title: "Release round", archived: false, profile: { id: "captain", label: "Release captain", icon: "branch", singleton: true, source: "project", project: cwd } } as SessionSummary;
     const busy = harness([holder]);
-    const r = await busy.call({ cwd, profile: "merge-captain" });
+    const r = await busy.call({ cwd, profile: "captain" });
     assert.deepEqual((r.details as { refused?: string; running?: { id: string } }).refused, "singleton");
-    assert.equal((r.details as { open: string }).open, "Open the Running Merge Captain");
+    assert.equal((r.details as { open: string }).open, "Open the Running Release Captain");
     assert.deepEqual(busy.requests, []);
     const free = harness([]);
     await free.call({ cwd, profile: "reviewer" });
-    assert.match(free.requests[0] ?? "", /^\/api\/sessions .*"profile":"reviewer"/);
+    assert.match(free.requests[0] ?? "", /^\/api\/sessions .*"profile":\{"source":"sova","id":"reviewer"\}/);
+  });
+
+  test("a profile that links a playbook: the playbook's turn is the first prompt, it takes the prompt caps, and a missing one refuses first", async () => {
+    const pbRoot = join(agentDir, "pb-overseer");
+    mkdirSync(join(pbRoot, ".sova", "profiles"), { recursive: true });
+    mkdirSync(join(pbRoot, ".sova", "playbooks", "tidy"), { recursive: true });
+    writeFileSync(join(pbRoot, ".sova", "playbooks", "tidy", "PLAYBOOK.md"), "---\ntitle: Tidy\n---\n\n# Tidy\n\nSweep.\n");
+    writeFileSync(join(pbRoot, ".sova", "profiles", "tidier.json"), JSON.stringify({ id: "tidier", label: "Tidier", remove: ["web"], playbook: "tidy", overseerMayStart: true }));
+    writeFileSync(join(pbRoot, ".sova", "profiles", "lost.json"), JSON.stringify({ id: "lost", label: "Lost", remove: ["web"], playbook: "gone", overseerMayStart: true }));
+    for (const id of ["tidier", "lost"]) approve((await findProfile({ source: "project", id }, pbRoot))!, { grant: [], overseerMayStart: true });
+    const h = harness([]);
+    await h.call({ cwd: pbRoot, profile: "tidier", prompt: "only src/" });
+    const turn = playbookTurnText({ title: "Tidy", dir: join(pbRoot, ".sova", "playbooks", "tidy"), body: "# Tidy\n\nSweep.\n" }, "only src/");
+    const sent = h.requests.find((r) => r.startsWith("/api/sessions/prompt "));
+    assert.ok(sent, "the first prompt went out");
+    assert.equal(JSON.parse(sent!.slice("/api/sessions/prompt ".length)).text, turn);
+    // It is a prompt even without one: with no prompts left, it is refused before anything is created.
+    const noPrompts = { ...DEFAULT_CAPS, promptsPerTurn: 0 };
+    const hostCaps = overseerTools(
+      { ...({ request: async () => Response.json({}, { status: 201 }), overseerId: () => "ov", confirmed: () => null, sessions: async () => [], started: () => {}, runningStarted: () => 0, counted: () => false, attended: () => true } as object), caps: () => noPrompts } as unknown as Parameters<typeof overseerTools>[0],
+      new TurnLimits(),
+    ).find((t) => t.name === "sova_create_session")!;
+    await assert.rejects(hostCaps.execute("tc", { cwd: pbRoot, profile: "tidier" } as never, undefined, undefined, undefined as never), /^Error: Limit reached: at most 0 prompts to other sessions per message from the user/);
+    const lost = harness([]);
+    await assert.rejects(lost.call({ cwd: pbRoot, profile: "lost" }), /This profile runs the playbook "gone", but this folder has no playbook with that id\. No session was created\./);
+    assert.deepEqual(lost.requests, []);
   });
 });

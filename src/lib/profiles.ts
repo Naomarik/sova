@@ -8,6 +8,7 @@ import {
   REMOVABLE,
   toolRemoved,
   type Grantable,
+  type ListedProfile,
   type Profile,
   type ProfilesListing,
   type Removable,
@@ -20,10 +21,34 @@ export function profileIconName(icon: string | undefined): IconName {
   return (known as string[]).includes(icon ?? "") ? (icon as IconName) : "wrench";
 }
 
-/** The pickers' list: built-ins not hidden (Default always), then yours. */
-export function pickerProfiles(l: ProfilesListing | undefined): { builtins: Profile[]; yours: Profile[] } {
-  if (!l) return { builtins: [], yours: [] };
-  return { builtins: l.builtins.filter((p) => p.id === DEFAULT_PROFILE_ID || !l.hiddenBuiltins.includes(p.id)), yours: l.profiles };
+/** The pickers' groups (§chat.profiles/picker): Built in (Default always), This project, Yours, each without the hidden ones. */
+export function pickerProfiles(l: ProfilesListing | undefined): { builtins: ListedProfile[]; project: ListedProfile[]; projectName: string | null; yours: ListedProfile[] } {
+  if (!l) return { builtins: [], project: [], projectName: null, yours: [] };
+  const shown = (p: ListedProfile) => (p.source === "sova" && p.id === DEFAULT_PROFILE_ID) || !l.hidden.includes(p.key);
+  return {
+    builtins: l.builtins.filter(shown),
+    project: l.project.profiles.filter(shown),
+    projectName: l.project.state === "ok" ? (l.project.name ?? null) : null,
+    yours: l.yours.filter(shown),
+  };
+}
+
+/** Every profile the listing has, in the pickers' order, hidden ones included. */
+export const allProfiles = (l: ProfilesListing | undefined): ListedProfile[] => (l ? [...l.builtins, ...l.project.profiles, ...l.yours] : []);
+
+/** What a pick sends for a listed profile. */
+export const pickRef = (p: Pick<ListedProfile, "source" | "id">) => ({ source: p.source, id: p.id });
+
+/** "reads and messages sessions · no edit files · One at a time": a profile's summary line (Settings → Profiles). */
+export function profileSummary(p: Pick<Profile, "remove" | "grant" | "singleton">): string {
+  const parts: string[] = [];
+  const g = new Set(p.grant);
+  if (g.has("sessions.message")) parts.push(g.has("sessions.all") ? "sees and messages all sessions" : "reads and messages sessions");
+  else if (g.has("sessions.read")) parts.push(g.has("sessions.all") ? "reads all sessions" : "reads sessions");
+  const off = p.remove.filter((r) => r !== "workers" || p.remove.length === 1);
+  if (off.length) parts.push(`no ${off.map((r) => CAPABILITY_LABEL[r].toLowerCase()).join(", ")}`);
+  if (p.singleton) parts.push("One at a time");
+  return parts.length ? parts.join(" · ") : "Nothing changed";
 }
 
 /** One row of "What changes vs Default". */

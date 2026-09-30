@@ -1,0 +1,12 @@
+{
+  "id": "merge-captain",
+  "label": "Merge captain",
+  "icon": "branch",
+  "description": "Lands finished branches on master one at a time: checked, spec'd, pushed and live. No web.",
+  "remove": ["web"],
+  "grant": ["sessions.read", "sessions.message"],
+  "singleton": true,
+  "limits": { "targetsPerRun": 10, "perDay": 80 },
+  "playbook": "merge-round",
+  "overseerMayStart": false
+}

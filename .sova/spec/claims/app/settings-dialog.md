@@ -377,28 +377,22 @@ offers Retry and the built-in themes list anyway — the app's own themes don't 
 
 ## §app.settings-dialog/profiles — Profiles
 
-The tab after Teams: the profile library (§chat.profiles/model). "Profiles set what a new session
-can do. Edits reach new sessions only."
+The tab after Teams: every profile a session in the open session's folder can use
+(§chat.profiles/projects), read-only. It opens with one line: "Profiles are files. Ask an agent to
+add or change one, or edit {path}." `{path}` is the project's `.sova/profiles/` folder (else your
+`session-profiles.json`), and a **File Format** link opens `docs/profiles.md`.
 
-- **The list.** Built-ins first, each with a **Built in** badge, its summary line of what it changes
-  ("sees and messages all sessions · no web · One at a time"; Default "Nothing changed") and
-  **Duplicate** and **Hide From Picker** (**Show In Picker** and a **Hidden** badge once hidden;
-  Default has neither). A duplicate is named "{label} copy" and opens in the editor. Then yours, each with **Edit**, **Duplicate** and
-  **Delete**. **New Profile** under them.
-- **The editor** (a new profile, a duplicate, or Edit), inline under its row: Name (required, unique), Icon, Description
-  (one line), **Can** (Read other sessions, Message other sessions, See all Sova sessions), **Can't**
-  (Shell, Edit files, Workers & teams, Web, Worktrees, Mesh links, Timers, under
-  §chat.profiles/enforcement's workers rule), **One at a time**, **Limits** (the five of
-  §chat.profiles/limits, whole numbers from 1), **Starts with** (Mode: "Session default", normal or
-  delegate; Model: "Session default" or a model; First message, optional) and **The Overseer may
-  start it**.
-- **See all and Web.** With both on, a warn note under See all: "This profile can read every
-  session and reach the web, so what it reads could leave this host." It is a warning, not a rule.
-- **Saving** goes through the dialog's one footer (§app.settings-dialog/save-bar): the whole file is
-  written in one `PUT /api/profiles`. A name already taken, or no name, keeps Save disabled with the
-  reason under the field.
-- **Delete** asks first: "Delete {name}? It leaves the picker. Sessions started with it keep their
-  permissions." Deleting is part of the draft the footer saves.
+- **The list**, in the picker's groups: **Built in** (Default first), **This project ({name})** and
+  **Yours**. Each row has the profile's icon and label, its source badge, its summary line of what it
+  changes ("reads and messages sessions · no edit files · One at a time"; Default "Nothing
+  changed"), the playbook it links ("Runs {title}", or "Runs "{id}", not found here"), and its file's
+  path. Without a session folder, This project says "Open a session to see its project's profiles."
+- **Problems.** A file that couldn't be read is its own row under its group, with a **Can't be
+  read** badge, its path and the exact error, so a mistake made by hand or by an agent shows here.
+- **Approve** on a project profile that needs approval (§chat.profiles/trust), beside a line naming
+  the powers it asks for; once approved the row says "Approved".
+- **Hide From Picker** on every profile but Default (**Show In Picker** and a **Hidden** badge once
+  hidden). Hiding and approving save at once; nothing here goes through the dialog's footer.
 
 ## §app.settings-dialog/overseer — Overseer
 

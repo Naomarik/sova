@@ -85,6 +85,11 @@ const M = {
   offProject: "MK-OFFPROJECT-q7x",
   offTitle: "MK-OFFTITLE-q7x",
   model: "mkprov/mk-model-q7x",
+  // Who started a gathering and why (§app.baton/told), and its prompt as pi 0.86+ records it.
+  why: "MK-WHY-q7x",
+  overseerId: "mk-overseer-q7x",
+  systemPreamble: "MK-PREAMBLE-q7x",
+  systemTool: "MK-SYSTOOL-q7x",
 } as const;
 
 const org = await orgs.createOrg({ name: "Gate Archery", dir: join(root, "ws") });
@@ -141,6 +146,7 @@ reply(s1.path, [
 ]);
 await recordDecision(s1.path, { area: "Hours", statement: `The range opens at 9 (${M.skill}).`, quote: "We open at nine." });
 await recordDecision(s1.path, { area: "Hours", statement: "Closed Mondays.", quote: "Mondays off" });
+line(s1.path, { type: "message", message: { role: "system", content: "", sections: { preamble: M.systemPreamble, cwd: "<cwd>(none)</cwd>" }, toolsAdded: [{ name: "record_decision", description: M.systemTool, parameters: { type: "object" } }], timestamp: Date.now() } });
 await baton.markDone(s1.sessionId);
 line(s1.path, { type: "custom", customType: BATON_WRAPUP_ENTRY, data: { v: 1, phase: "start" } });
 reply(s1.path, [{ type: "text", text: M.wrapup }]);
@@ -158,6 +164,12 @@ await baton.setHiddenFromOwner(s3.sessionId, true);
 // On a switched-off project.
 const s4 = await baton.createBaton({ orgId: org.id, projectId: pb.id, to: kim.id, publicTitle: M.offTitle, goal: "g" });
 await orgs.patchProject(org.id, pb.id, { ownerHidden: true });
+// Started by the global Overseer, with its conversation and its why on the chart; shown to the owner.
+const s5 = await baton.createBaton(
+  { orgId: org.id, projectId: pa.id, to: kim.id, publicTitle: "Hours again", goal: "g" },
+  { by: { kind: "operator", via: "overseer", overseerId: M.overseerId, card: { people: [kim.id], projects: [pa.id], sessions: [] } }, mintLink: false, startedVia: "overseer", why: M.why },
+);
+said(s5.path, kim.id, "Still nine.");
 // A conflict with a candid routing reason.
 const ds = listDecisions(org.id, pa.id).decisions;
 await seedConflicts(org.id, pa.id, [
@@ -194,7 +206,7 @@ const ids = (): string[] => [
   alp.id,
   kim.id,
   pat.id,
-  ...[s1, s2, s3, s4].map((s) => s.sessionId),
+  ...[s1, s2, s3, s4, s5].map((s) => s.sessionId),
   ...ds.map((d) => d.id),
   "cf_mkmkmkmk",
   kimToken,
@@ -219,7 +231,7 @@ async function everyAnswer(): Promise<[string, string][]> {
   assert.equal(home.status, 200, home.text);
   const h = JSON.parse(home.text) as OwnerHome;
   const projects = new Set([...h.projects.map((p) => p.id), plinks.handleOf("q", pa.id), plinks.handleOf("q", pb.id)]);
-  const conversations = new Set([...h.waiting.map((w) => w.conversation), ...[s1, s2, s3, s4].map((s) => plinks.handleOf("k", s.sessionId))]);
+  const conversations = new Set([...h.waiting.map((w) => w.conversation), ...[s1, s2, s3, s4, s5].map((s) => plinks.handleOf("k", s.sessionId))]);
   for (const q of projects) {
     const r = await get(`/api/i/${token}/p/${q}`);
     if (r.status === 200) for (const c of (JSON.parse(r.text) as OwnerProject).conversations) conversations.add(c.id);
@@ -273,6 +285,19 @@ describe("nothing private reaches the owner (§app.owner-page/never)", async () 
       for (const bad of ["cost", "tokens", "model", "thinking", "device", "lastSeenAt", "language", "role", "voice", "contact", "skills", "decides", "competence", "goal", "sessionId", "personId", "path", "file", "branch", "routeReason"])
         assert.ok(!keys.includes(bad), `key ${bad} in ${label}`);
     }
+  });
+
+  test("who started it and why stay on the operator's strip: never the session list's baton field or the org page's rows (§app.baton/told)", async () => {
+    const strip = await (await app.request(`/api/baton?path=${encodeURIComponent(s5.path)}`)).text();
+    assert.ok(strip.includes(M.why) && strip.includes(M.overseerId), "control: the operator's strip carries them");
+    const told = await (await app.request(`/api/baton/${s5.sessionId}/told`)).text();
+    assert.ok(told.includes(M.why), "control: What It's Told carries the why");
+    const toldS1 = await (await app.request(`/api/baton/${s1.sessionId}/told`)).text();
+    assert.ok(toldS1.includes(M.systemPreamble) && toldS1.includes(M.systemTool), "control: What It's Told carries the recorded prompt and tools");
+    const page = await (await app.request(`/api/orgs/${org.id}`)).text();
+    const summaries = JSON.stringify([s1, s2, s3, s4, s5].map((x) => baton.batonSummaryField(x.path)));
+    for (const [label, body] of [["the org page", page], ["the session list's baton field", summaries]] as const)
+      for (const mark of [M.why, M.overseerId, M.systemPreamble, M.systemTool]) assert.ok(!body.includes(mark), `${mark} in ${label}`);
   });
 
   test("hidden conversations and switched-off projects answer 404, the same as a random handle", () => {

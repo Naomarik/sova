@@ -113,7 +113,7 @@ describe("an act that reaches them outside their hours (r7)", () => {
     await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
     await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
     const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
-    const out = await tool.execute("t1", { gap: "none", person: "Sam Okafor", public_title: "Prices", goal: "Which prices apply", question: "Which prices apply?" } as never, undefined, undefined, undefined as never);
+    const out = await tool.execute("t1", { gap: "none", person: "Sam Okafor", why: "Nobody has said this yet.", public_title: "Prices", goal: "Which prices apply", question: "Which prices apply?" } as never, undefined, undefined, undefined as never);
     assert.match((out.content[0] as { text: string }).text, /^Held: starting "Prices" with Sam Okafor waits until /);
     const held = pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Sam Okafor: Prices")!;
     assert.deepEqual([held.wait, held.person], ["hours", "Sam Okafor"]);
@@ -141,14 +141,14 @@ describe("an act that reaches them outside their hours (r7)", () => {
     await setHours(ada.id, 2, 3);
     await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
     const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_offer")!;
-    await tool.execute("t2", { gap: "none", people: ["Sam Okafor", "Ada Lind"], public_title: "Invoices", goal: "g", question: "Who sends invoices?" } as never, undefined, undefined, undefined as never);
+    await tool.execute("t2", { gap: "none", people: ["Sam Okafor", "Ada Lind"], why: "Nobody has said this yet.", public_title: "Invoices", goal: "g", question: "Who sends invoices?" } as never, undefined, undefined, undefined as never);
     const held = pipelineInfo(org.id, project.id).held.find((h) => h.what === "An offer to 2 people: Invoices")!;
     assert.equal(held?.wait, "hours");
     assert.equal(held.goesAt, orgs.findPerson(org.id, ada.id)!.hoursNow!.nextOpen, "the earliest invitee's window (Ada's)");
     assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Invoices"), "nothing reached them");
     // Ada in her hours: the next offer goes now.
     await setHours(ada.id, -1, 1);
-    await tool.execute("t3", { gap: "none", people: ["Sam Okafor", "Ada Lind"], public_title: "Receipts", goal: "g", question: "Who files receipts?" } as never, undefined, undefined, undefined as never);
+    await tool.execute("t3", { gap: "none", people: ["Sam Okafor", "Ada Lind"], why: "Nobody has said this yet.", public_title: "Receipts", goal: "g", question: "Who files receipts?" } as never, undefined, undefined, undefined as never);
     assert.ok(baton.allBatons().some((b) => b.publicTitle === "Receipts"), "an invitee in hours: it went at once");
   });
 
@@ -156,7 +156,7 @@ describe("an act that reaches them outside their hours (r7)", () => {
     await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
     await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
     const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
-    await tool.execute("t4", { gap: "none", person: "Sam Okafor", public_title: "Moves", goal: "g", question: "Does it move?" } as never, undefined, undefined, undefined as never);
+    await tool.execute("t4", { gap: "none", person: "Sam Okafor", why: "Nobody has said this yet.", public_title: "Moves", goal: "g", question: "Does it move?" } as never, undefined, undefined, undefined as never);
     const heldOf = () => pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Sam Okafor: Moves");
     assert.equal(heldOf()?.goesAt, orgs.findPerson(org.id, sam.id)!.hoursNow!.nextOpen);
     await patch({ hours: { days: ALL, from: hm(5), to: hm(6) } });
@@ -250,7 +250,7 @@ describe("company working hours, the default (r13)", () => {
     await put({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
     await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
     const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
-    await tool.execute("t9", { gap: "none", person: "Di Park", public_title: "Terms", goal: "g", question: "Which terms?" } as never, undefined, undefined, undefined as never);
+    await tool.execute("t9", { gap: "none", person: "Di Park", why: "Nobody has said this yet.", public_title: "Terms", goal: "g", question: "Which terms?" } as never, undefined, undefined, undefined as never);
     const heldOf = () => pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Di Park: Terms");
     assert.equal(heldOf()?.goesAt, orgs.findPerson(org.id, di.id)!.hoursNow!.nextOpen, "it waits for the company's window");
     await put({ hours: { days: ALL, from: hm(-1), to: hm(1) } });
@@ -272,7 +272,7 @@ describe("an offer reaches each invitee in their own hours (r12)", () => {
     await setHours(fay.id, 2, 3);
     await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0, caps: { gatheringsOpen: 20, gatherPerTurn: null, gatherPerDay: null } });
     const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_offer")!;
-    await tool.execute("r12", { gap: "none", people: ["Eve Lund", "Fay Roth"], public_title: "Quotes", goal: "g", question: "Who sends quotes?" } as never, undefined, undefined, undefined as never);
+    await tool.execute("r12", { gap: "none", people: ["Eve Lund", "Fay Roth"], why: "Nobody has said this yet.", public_title: "Quotes", goal: "g", question: "Who sends quotes?" } as never, undefined, undefined, undefined as never);
     const row = () => baton.allBatons().find((b) => b.publicTitle === "Quotes")!;
     assert.ok(row(), "someone was in hours: it went now");
     const fayOpens = orgs.findPerson(org.id, fay.id)!.hoursNow!.nextOpen!;

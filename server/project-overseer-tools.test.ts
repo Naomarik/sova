@@ -155,8 +155,8 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
 
 /** A call per tool that does something when allowed (each the tool's "act" form). */
 const ACTS: Record<string, Record<string, unknown>> = {
-  sova_start_gathering: { gap: "none", person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" },
-  sova_offer: { gap: "none", people: ["Tony", "p_tony0002"], public_title: "Invoicing", goal: "g", question: "q?" },
+  sova_start_gathering: { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" },
+  sova_offer: { gap: "none", people: ["Tony", "p_tony0002"], why: "Nobody has said this yet.", public_title: "Invoicing", goal: "g", question: "q?" },
   sova_reconcile: {},
   sova_promote: { ids: ["s:1"] },
   sova_create_session: { gap: "none", prompt: "Build it" },
@@ -194,7 +194,7 @@ describe("the levels, as the charts declare them", () => {
 });
 
 describe("the wrapper relays a chart's refusal", () => {
-  const gather = { gap: "none", person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
+  const gather = { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
 
   test("the model gets the sentence and its tail; the activity log the sentence only, as a refusal", async () => {
     const said = "Today's allowance is used: 0 of 0 gathering sessions started on its own. It looks again at midnight.";
@@ -207,7 +207,7 @@ describe("the wrapper relays a chart's refusal", () => {
 
   test("an allowance refusal is held by the watch for the tool's kind; any other refusal holds nothing", async () => {
     const f = fake({ refuse: new OrgError("x", 409, "allowance", "t"), roster: [person("p_tony0001", "Tony"), person("p_tony0002", "Toni")] });
-    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony", "p_tony0002"], public_title: "I", goal: "g", question: "q?" }));
+    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony", "p_tony0002"], why: "Nobody has said this yet.", public_title: "I", goal: "g", question: "q?" }));
     assert.deepEqual(f.limited, ["gather"]);
     const g = fake({ refuse: new OrgError("2 of its gathering sessions are open, and the limit is 2 at once.", 409, "at-once", "One reaching its goal or being closed is a reason to look again; don't promise when.") });
     await assert.rejects(() => g.run("sova_start_gathering", gather), /2 of its gathering sessions are open, and the limit is 2 at once\. One reaching its goal/);
@@ -243,7 +243,7 @@ describe("the wrapper relays a chart's refusal", () => {
 });
 
 describe("gathering abilities (§app.baton/abilities)", () => {
-  const gather = { gap: "none", person: "Tony", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
+  const gather = { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "Invoicing", goal: "Who approves invoices", question: "Who approves invoices?" };
   test("a start with no abilities gets the project's set: Automatic is draw on, read links off", async () => {
     const f = fake({ attended: true });
     await f.run("sova_start_gathering", gather);
@@ -252,7 +252,7 @@ describe("gathering abilities (§app.baton/abilities)", () => {
   test("it may turn draw off or on, and read links only when the project allows it", async () => {
     const f = fake({ attended: true, roster: [person("p_tony0001", "Tony"), person("p_ana00001", "Ana")], settings: { gatheringAbilities: { draw: false, readLinks: false } } });
     await f.run("sova_start_gathering", { ...gather, abilities: { draw: true } });
-    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony", "Ana"], public_title: "x", goal: "g", question: "q?", abilities: { read_links: true } }), /Reading links is off for this project's gathering sessions; the operator can allow it on the project page\./);
+    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony", "Ana"], why: "Nobody has said this yet.", public_title: "x", goal: "g", question: "q?", abilities: { read_links: true } }), /Reading links is off for this project's gathering sessions; the operator can allow it on the project page\./);
     assert.deepEqual(f.abilities, [{ draw: true, readLinks: false }]);
     assert.deepEqual(f.calls.filter((c) => c.startsWith("gather:")).length, 1, "the refusal reached no chart, so it counted nothing");
     const g = fake({ attended: true, settings: { gatheringAbilities: { draw: true, readLinks: true } } });
@@ -271,10 +271,10 @@ describe("gathering abilities (§app.baton/abilities)", () => {
 describe("scope and caps", () => {
   test("gathering refuses people not on the roster, proposed people, and a one-person offer", async () => {
     const f = fake({ attended: true });
-    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Zed", public_title: "x", goal: "y", question: "q" }), /not on the roster/);
-    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Bob", public_title: "x", goal: "y", question: "q" }), /proposed but not approved/);
-    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony"], public_title: "x", goal: "y", question: "q" }), /at least two/);
-    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Tony", public_title: "x", goal: "y" }), /question \(both shown to the person as written/, "no question: no fallback to internal text");
+    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Zed", why: "Nobody has said this yet.", public_title: "x", goal: "y", question: "q" }), /not on the roster/);
+    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Bob", why: "Nobody has said this yet.", public_title: "x", goal: "y", question: "q" }), /proposed but not approved/);
+    await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony"], why: "Nobody has said this yet.", public_title: "x", goal: "y", question: "q" }), /at least two/);
+    await assert.rejects(() => f.run("sova_start_gathering", { gap: "none", person: "Tony", why: "Nobody has said this yet.", public_title: "x", goal: "y" }), /question \(both shown to the person as written/, "no question: no fallback to internal text");
     await assert.rejects(() => f.run("sova_offer", { gap: "none", people: ["Tony", "p_tony0002"], goal: "y", question: "q" }), /Give public_title and question/);
     assert.deepEqual(f.calls, []);
   });

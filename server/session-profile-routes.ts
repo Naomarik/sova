@@ -1,24 +1,27 @@
 import type { Hono } from "hono";
-import { BUILTIN_PROFILES, type ProfilesListing } from "../shared/profiles";
+import { keyOf, type ProfilesListing } from "../shared/profiles";
 import type { SessionSummary } from "../shared/protocol";
 import { acquireChat, disposeHeldChat, heldChat, setSingletonCheck } from "./chat-manager";
 import { getSessionInsight } from "./insights";
 import { resolveSessionPath } from "./paths";
-import { addProfile, readProfiles, writeProfiles } from "./profiles-store";
+import { findProfile, profileSources, readHidden, setHidden } from "./profile-sources";
+import { approve } from "./profile-trust";
+import { projectRootOf } from "./project-root";
 import { setPowersHost } from "./session-powers";
-import { resolveChoice, singletonHolder, SingletonRefusal, type ProfileChoice } from "./session-profile";
+import { resolveChoice, singletonHolder, SingletonRefusal, snapshotKey, type ProfileChoice } from "./session-profile";
 import { getSessionSummary, listSessions } from "./sessions-index";
 import { normalizeEntries, readActiveBranch } from "./transcript";
 
 /**
- * Profiles over HTTP (§chat.profiles/applying, §app.settings-dialog/profiles), the One at a time
- * check the chat runtime runs at a first message, and the host the session powers reach other
- * sessions through (§chat.profiles/session-tools). Registered by server/index.ts.
+ * Profiles over HTTP (§chat.profiles/applying, /projects, /trust, §app.settings-dialog/profiles),
+ * the One at a time check the chat runtime runs at a first message, and the host the session
+ * powers reach other sessions through (§chat.profiles/session-tools). Registered by server/index.ts.
+ * Profile files are never written here: only a pick, an approval and hide/show.
  */
 
 export type ApplyResult =
   | { ok: true }
-  | { ok: false; status: 400 | 404 | 409; error: string; running?: { id: string; path: string; title: string } };
+  | { ok: false; status: 400 | 404 | 409; error: string; running?: { id: string; path: string; title: string }; approval?: true };
 
 const holderOf = (s: SessionSummary) => ({ id: s.id, path: s.path, title: s.title });
 
@@ -42,10 +45,10 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   if (!s) return { ok: false, status: 404, error: "Session file not found" };
   if (s.overseer || s.projectOverseer || s.baton || s.org || s.workerSession) return { ok: false, status: 409, error: "This session can't take a profile." };
   if (s.live) return { ok: false, status: 409, error: `It is open in a terminal (pid ${s.live.pid}), so this server must not write to it.` };
-  const r = resolveChoice(choice);
-  if (!r.ok) return { ok: false, status: 400, error: r.error };
+  const r = await resolveChoice(choice, s.cwd);
+  if (!r.ok) return { ok: false, status: r.approval ? 409 : 400, error: r.error, ...(r.approval ? { approval: true as const } : {}) };
   if (r.profile?.singleton) {
-    const holder = singletonHolder(r.profile.id, await listSessions(), path);
+    const holder = singletonHolder(snapshotKey(r.profile), await listSessions(), path);
     if (holder) return { ok: false, status: 409, error: new SingletonRefusal(r.profile.label, holderOf(holder)).message, running: holderOf(holder) };
   }
   let chat;
@@ -71,62 +74,76 @@ async function applyNow(path: string, choice: ProfileChoice, by?: "overseer" | "
   return { ok: true };
 }
 
-/** GET /api/profiles. */
-export async function profilesListing(): Promise<ProfilesListing> {
-  const read = readProfiles();
-  const all = await listSessions();
+/** GET /api/profiles?cwd=: every profile a session in `cwd` can use (§chat.profiles/projects). */
+export async function profilesListing(cwd?: string | null): Promise<ProfilesListing> {
+  const [src, all] = await Promise.all([profileSources(cwd), listSessions()]);
   const running: ProfilesListing["running"] = {};
   const everRun = new Set<string>();
   for (const s of all) {
     const p = s.profile;
-    if (!p?.singleton) continue;
-    everRun.add(p.id);
-    if (!s.archived && !running[p.id]) running[p.id] = holderOf(s);
+    if (!p?.singleton || p.custom) continue;
+    const key = keyOf(p);
+    everRun.add(key);
+    if (!s.archived && !running[key]) running[key] = holderOf(s);
   }
   return {
-    builtins: [...BUILTIN_PROFILES],
-    profiles: read.ok ? read.file.profiles : [],
-    hiddenBuiltins: read.ok ? read.file.hiddenBuiltins : [],
+    builtins: src.builtins,
+    yours: src.yours,
+    yoursFile: src.yoursFile,
+    project: src.project,
+    problems: src.problems,
+    hidden: readHidden(),
     running,
     everRun: [...everRun],
-    ...(read.ok ? {} : { error: read.error }),
+    ...(src.yoursError ? { error: src.yoursError } : {}),
   };
 }
 
+const str = (v: unknown) => (typeof v === "string" && v ? v : undefined);
+
 export function registerProfileRoutes(app: Hono): void {
-  app.get("/api/profiles", async (c) => c.json(await profilesListing()));
-  // Settings → Profiles saves the whole file.
-  app.put("/api/profiles", async (c) => {
-    const body = await c.req.json().catch(() => null);
+  app.get("/api/profiles", async (c) => c.json(await profilesListing(c.req.query("cwd"))));
+  // Approve a project profile's powers (§chat.profiles/trust): the ones the file has now, and only
+  // when they are the ones the client was shown.
+  app.post("/api/profiles/approve", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { cwd?: unknown; id?: unknown; grant?: unknown; overseerMayStart?: unknown } | null;
+    const cwd = str(body?.cwd);
+    const id = str(body?.id);
+    if (!cwd || !id || !Array.isArray(body?.grant) || typeof body?.overseerMayStart !== "boolean")
+      return c.json({ error: "Expected {cwd, id, grant, overseerMayStart}" }, 400);
+    const p = await findProfile({ source: "project", id }, cwd);
+    if (!p) return c.json({ error: `No profile "${id}" in this folder's project.` }, 404);
     try {
-      writeProfiles(body);
+      approve(p, { grant: body.grant as never, overseerMayStart: body.overseerMayStart });
     } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      return c.json({ error: err instanceof Error ? err.message : String(err) }, 409);
     }
-    return c.json(await profilesListing());
+    return c.json(await profilesListing(cwd));
   });
-  // Save as Profile: one new profile, its id made from its name.
-  app.post("/api/profiles", async (c) => {
-    const body = await c.req.json().catch(() => null);
+  // Hide From Picker / Show In Picker, by identity.
+  app.post("/api/profiles/hidden", async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { key?: unknown; hidden?: unknown; cwd?: unknown } | null;
+    const key = str(body?.key);
+    if (!key || typeof body?.hidden !== "boolean") return c.json({ error: "Expected {key, hidden}" }, 400);
     try {
-      const profile = addProfile(body);
-      return c.json(profile, 201);
+      setHidden(key, body.hidden);
     } catch (err) {
       return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
     }
+    return c.json(await profilesListing(str(body.cwd)));
   });
   app.post("/api/sessions/profile", async (c) => {
     const body = (await c.req.json().catch(() => null)) as { path?: unknown; profile?: unknown } | null;
     const path = resolveSessionPath(typeof body?.path === "string" ? body.path : null);
     if (!path) return c.json({ error: "Invalid or missing path" }, 400);
     const r = await applyProfile(path, (body?.profile ?? null) as ProfileChoice);
-    return r.ok ? c.json({ ok: true }) : c.json({ error: r.error, ...(r.running ? { running: r.running } : {}) }, r.status);
+    return r.ok ? c.json({ ok: true }) : c.json({ error: r.error, ...(r.running ? { running: r.running } : {}), ...(r.approval ? { approval: true } : {}) }, r.status);
   });
 }
 
 // The first message of a One at a time session (chat-manager's check).
-setSingletonCheck(async (profileId, path) => {
-  const holder = singletonHolder(profileId, await listSessions(), path);
+setSingletonCheck(async (key, path) => {
+  const holder = singletonHolder(key, await listSessions(), path);
   return holder ? holderOf(holder) : null;
 });
 
@@ -142,6 +159,7 @@ setPowersHost({
     const chat = heldChat(path);
     return chat ? { streaming: chat.session.isStreaming, queued: chat.queue.size } : null;
   },
+  projectRoot: (cwd) => projectRootOf(cwd),
   async send(path, text, delivery, from) {
     const s = await getSessionSummary(path);
     if (!s) return { ok: false, error: "That session no longer exists." };
@@ -154,7 +172,7 @@ setPowersHost({
     }
     // A pristine One at a time session's first message: the same check as its composer's.
     const single = chat.profileState?.data?.profile;
-    if (single?.singleton && chat.pristine && singletonHolder(single.id, await listSessions(), path))
+    if (single?.singleton && chat.pristine && singletonHolder(snapshotKey(single), await listSessions(), path))
       return { ok: false, error: `${single.label} is set to One at a time and runs in another session, so "${s.title}" takes no first message.` };
     try {
       chat.assertModelAllowed();

@@ -705,6 +705,21 @@ html, body { overflow: clip; overscroll-behavior: none; }
   gap: var(--space-2);
 }
 .profile-changes-head { display: flex; align-items: baseline; gap: var(--space-2); margin: 0; }
+/* The empty screen's playbook card (§chat.profiles/playbook): the profile box's frame. */
+.profile-playbook {
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-md);
+  background: var(--color-surface);
+  padding: var(--space-3) var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.profile-playbook-head { display: flex; align-items: center; gap: var(--space-2); color: var(--color-ink-muted); }
+.profile-playbook-title { margin: 0; font-weight: var(--fw-medium); color: var(--color-ink); }
+.profile-playbook-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.profile-playbook-view { width: min(760px, calc(100vw - 2 * var(--space-4))); }
+.profile-playbook-body { max-height: min(70vh, 720px); overflow: auto; }
 .profile-changes-head .chip { margin-left: auto; }
 .profile-change-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-2); }
 .profile-change {
@@ -786,9 +801,7 @@ html, body { overflow: clip; overscroll-behavior: none; }
 }
 .profile-shelf-name { font-weight: var(--fw-medium); color: var(--color-ink); }
 .profile-shelf-run { margin-left: auto; }
-.new-session-split { display: inline-flex; align-items: stretch; gap: 1px; }
-.new-session-menu-wrap { position: relative; display: inline-flex; }
-.new-session-menu-wrap .profile-popover { left: auto; right: 0; }
+.profile-shelf-project { color: var(--color-ink-muted); }
 /* Settings → Profiles. */
 .profiles-list { list-style: none; margin: 0 0 var(--space-4); padding: 0; display: flex; flex-direction: column; }
 .profiles-row {
@@ -802,22 +815,12 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .profiles-row-main { display: flex; flex-direction: column; min-width: 0; }
 .profiles-row-name { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; }
 .profiles-row-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); justify-content: flex-end; }
-.profiles-row .profile-editor { grid-column: 1 / -1; }
-.profile-editor { display: flex; flex-direction: column; gap: var(--space-3); padding: var(--space-3) 0; }
-.profile-editor fieldset { border: 0; padding: 0; margin: 0; display: flex; flex-direction: column; gap: var(--space-2); }
-.profile-editor-limits { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); }
-.profiles-yours-head { margin: var(--space-4) 0 var(--space-1); }
+.profiles-row-file { overflow-wrap: anywhere; }
+.profiles-row-ask { font-size: var(--fs-caption); color: var(--status-warn); }
+.profiles-row-error { font-size: var(--fs-caption); color: var(--status-error); overflow-wrap: anywhere; }
+.profiles-row-problem > .icon { color: var(--status-error); }
+.profiles-group-head { margin: var(--space-4) 0 var(--space-1); }
 @media (max-width: 640px) { .profiles-row { grid-template-columns: auto 1fr; } .profiles-row-actions { grid-column: 1 / -1; justify-content: flex-start; } }
-/* New Session and its profile menu read as one split button; the menu half is narrow so the head keeps its toggle. */
-.new-session-split > .button:first-child { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.sidebar-head .new-session-menu-trigger {
-  width: 32px;
-  min-width: 0;
-  padding: 0;
-  border-top-left-radius: 0;
-  border-bottom-left-radius: 0;
-  margin-left: -1px;
-}
 .session-sender a { max-width: 48ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .session-sender { max-width: 100%; min-width: 0; }
 .session-sender > span { min-width: 0; white-space: nowrap; }

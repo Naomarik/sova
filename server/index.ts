@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import type { IncomingMessage, Server } from "node:http";
 import { homedir } from "node:os";
@@ -60,7 +61,8 @@ import { isExplanationId, listExplanations, readExplanationPage } from "./explan
 import { switchMode } from "./mode";
 import { configureSession } from "./sessions-configure";
 import { applyProfile, registerProfileRoutes } from "./session-profile-routes";
-import { resolveChoice, singletonHolder } from "./session-profile";
+import { resolveChoice, singletonHolder, snapshotKey } from "./session-profile";
+import type { ProfilePick } from "./profile-sources";
 import { singletonRunningText } from "../shared/profiles";
 import { cachedClaudeModels, delegateInfo, delegateOptions, saveDelegateSettings, type DelegateSources } from "./delegate";
 import { saveSpecSettings, specInfo, specOptions } from "./spec-settings";
@@ -139,6 +141,16 @@ const DESIGN_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "..", "src",
 /** AGENTS.md for the connection agent (owned by pi-config's remote extension team; read per request). */
 const CONNECT_TEMPLATE = fileURLToPath(new URL("./connect-agent-template.md", import.meta.url));
 
+/** When this process started, and the commit its checkout had then (§chat.profiles/live-commit). */
+const SERVER_STARTED_AT = new Date().toISOString();
+const SERVER_HEAD: string | null = (() => {
+  try {
+    return execFileSync("git", ["rev-parse", "HEAD"], { cwd: dirname(fileURLToPath(import.meta.url)), timeout: 5_000, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+  } catch {
+    return null;
+  }
+})();
+
 // Embedded pi runtimes / extensions must never take the server down.
 process.on("uncaughtException", (err) => console.error("[uncaughtException]", err));
 process.on("unhandledRejection", (err) => console.error("[unhandledRejection]", err));
@@ -162,7 +174,8 @@ app.onError((err, c) => {
   return c.json({ error: err.message }, 500);
 });
 
-app.get("/api/health", (c) => c.json({ ok: true }));
+// What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then.
+app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD }));
 // The folder this server lists sessions from (its agent dir's), which the empty list names.
 app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
 
@@ -172,19 +185,22 @@ registerProfileRoutes(app);
 /** Create a new empty webapp-owned session in `cwd` (an existing absolute directory) → 201 SessionSummary.
     With `start`, it is made with that profile (§app.session-list/profile-shelf) and, given one, its
     first message is sent; a One at a time profile live elsewhere refuses before anything is made. */
-async function createWebSession(c: Context, cwd: string, start?: { profile: string; prompt?: string; by?: "overseer" | "start" }) {
+async function createWebSession(c: Context, cwd: string, start?: { profile: ProfilePick; prompt?: string; by?: "overseer" | "start" }) {
+  let pick: ProfilePick | undefined = start?.profile;
   if (start) {
-    const r = resolveChoice(start.profile);
-    if (!r.ok) return c.json({ error: r.error }, 400);
+    // Resolved against the new session's own project (§chat.profiles/projects); unapproved refuses.
+    const r = await resolveChoice(start.profile, cwd);
+    if (!r.ok) return c.json({ error: r.error, ...(r.approval ? { approval: true } : {}) }, r.approval ? 409 : 400);
     if (r.profile?.singleton) {
-      const holder = singletonHolder(r.profile.id, await listSessions());
+      const holder = singletonHolder(snapshotKey(r.profile), await listSessions());
       if (holder) return c.json({ error: singletonRunningText(r.profile.label), running: { id: holder.id, path: holder.path, title: holder.title } }, 409);
     }
+    if (r.listed) pick = { source: r.listed.source, id: r.listed.id };
   }
   const made = await createWebSessionFile(c, cwd);
   if (made instanceof Response) return made;
-  if (!start) return c.json(made, 201);
-  const applied = await applyProfile(made.path, start.profile, start.by ?? "start");
+  if (!start || !pick) return c.json(made, 201);
+  const applied = await applyProfile(made.path, pick, start.by ?? "start");
   if (!applied.ok) return c.json({ error: `Created the session, but its profile was not set: ${applied.error}`, session: made }, applied.status);
   if (start.prompt?.trim()) {
     const sent = await promptSession(made.path, start.prompt);
@@ -237,10 +253,17 @@ app.post("/api/sessions", async (c) => {
   return createWebSession(c, cwd, startOf(body, !!overseerSender(c.req.header(OVERSEER_SENDER_HEADER))));
 });
 
-/** POST /api/sessions's optional `profile` (an id) and `prompt`, sent by the start sheet. */
-function startOf(body: { profile?: unknown; prompt?: unknown }, byOverseer = false): { profile: string; prompt?: string; by: "overseer" | "start" } | undefined {
-  if (typeof body.profile !== "string" || !body.profile) return undefined;
-  return { profile: body.profile, by: byOverseer ? "overseer" : "start", ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}) };
+/** POST /api/sessions's optional `profile` (an id or `{source, id}`) and `prompt`: the shelf's Run and Start, the Overseer. */
+function startOf(body: { profile?: unknown; prompt?: unknown }, byOverseer = false): { profile: ProfilePick; prompt?: string; by: "overseer" | "start" } | undefined {
+  const p = body.profile as { source?: unknown; id?: unknown } | string | undefined;
+  const pick: ProfilePick | undefined =
+    typeof p === "string" && p
+      ? p
+      : p && typeof p === "object" && typeof p.id === "string" && p.id && (p.source === "sova" || p.source === "user" || p.source === "project")
+        ? { source: p.source, id: p.id }
+        : undefined;
+  if (!pick) return undefined;
+  return { profile: pick, by: byOverseer ? "overseer" : "start", ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}) };
 }
 
 // The connection agent: a new session in a fixed seed dir whose AGENTS.md (the remote-runtime

@@ -199,3 +199,11 @@
   (let [y (h/send! (project) psid :spec/freeze (assoc op :frozen true :spec-hash "sha-abc"))]
     (is (= {:frozen true :spec-hash "sha-abc" :at (h/now y)} (:spec (h/data y psid))))
     (is (= {:frozen false :at (h/now y)} (:spec (h/data (h/send! y psid :spec/freeze (assoc op :frozen false)) psid))))))
+
+(deftest baton-start-keeps-who-started-it
+  (let [started {:by "project-overseer" :overseer-id "c9" :why "The invoicing rules are missing."}
+        y (h/send! (project) psid :baton/start (assoc op :session-id "s1" :to "p1" :public-title "T" :goal "G" :question "Q"
+                                                  :started started :started-via "overseer"))
+        spawn (first (filter #(= "baton" (:chart %)) (h/directives y psid)))]
+    (is (= started (get-in spawn [:data :started])))
+    (is (= "overseer" (get-in spawn [:data :started-via])))))

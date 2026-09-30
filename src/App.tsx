@@ -1,4 +1,3 @@
-import { ProfileStartSheet } from "./components/ProfileStartSheet";
 import { setProfileStartAdopt } from "./lib/profile-start";
 import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
@@ -1212,13 +1211,9 @@ export function App() {
       </Show>
       <Show when={settingsOpenAt()}>
         <Portal>
-          <SettingsDialog initialTab={settingsOpenAt() ?? undefined} onClose={closeSettings} />
+          <SettingsDialog initialTab={settingsOpenAt() ?? undefined} cwd={summary()?.cwd ?? null} onClose={closeSettings} />
         </Portal>
       </Show>
-      {/* Start a session with a profile (§app.session-list/profile-shelf): the shelf, New Session's menu, the chip. */}
-      <Portal>
-        <ProfileStartSheet />
-      </Portal>
       {/* Opened from the sidebar's host menu or #/mesh; only while the mesh is on. */}
       <Show when={meshDetailsOpen() && meshOn()}>
         <MeshDetails onClose={closeMeshDetails} />

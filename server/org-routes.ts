@@ -40,6 +40,7 @@ import {
   type OperatorBy,
 } from "./orgs";
 import { OVERSEER_SENDER_HEADER, overseerSender } from "./overseer";
+import { batonData, startedOf, toldOf } from "./baton-told";
 import { OVERSEER_CARD_HEADER } from "./overseer-tools";
 import type { EnvelopeCard } from "./org-envelope";
 import { archiveBlockers } from "./project-overseer";
@@ -122,6 +123,7 @@ export function batonInfo(row: BatonSession): BatonInfo {
       }),
     wrapup: row.wrapup ?? null,
     owner: ownerName(row.orgId, roster),
+    started: startedOf(row, batonData(row)),
   };
 }
 
@@ -691,6 +693,15 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const hit = path ? batonOfPath(path) : null;
       if (!hit) return c.json({ error: "Not a baton session" }, 404);
       return c.json(batonInfo(hit.row));
+    }),
+  );
+  // What It's Told (§app.baton/told): who started it and why, the prompt as last recorded, its tools. Operator only.
+  app.get(
+    "/api/baton/:sid/told",
+    handle(async (c) => {
+      const told = await toldOf(p(c, "sid"));
+      if (!told) return c.json({ error: "Not a baton session" }, 404);
+      return c.json(told);
     }),
   );
   app.get(

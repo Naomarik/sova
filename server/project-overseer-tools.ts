@@ -57,7 +57,7 @@ export interface PoToolHost {
   reconcile(): Promise<DecisionsInfo>;
   promote(ids: string[]): Promise<PromoteResult>;
   /** Start a gathering session (one person) or an offer (≥ 2), owned by this overseer. */
-  startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; model?: string; thinking?: string; abilities: GatheringAbilities; gap: string; plan?: boolean }): Promise<{ sessionId: string; path: string; invited: string[]; held?: { id: string; until: number }; planned?: true }>;
+  startGathering(input: { to: string | string[]; publicTitle: string; goal: string; question: string; why: string; model?: string; thinking?: string; abilities: GatheringAbilities; gap: string; plan?: boolean }): Promise<{ sessionId: string; path: string; invited: string[]; held?: { id: string; until: number }; planned?: true }>;
   /** What a gathering session gets for the `abilities` arg (the project's set, under the
       operator's ceiling, §app.baton/abilities), or the refusal. Pure: nothing is created or counted. */
   gatheringAbilities(arg: unknown): GatheringAbilities | { error: string };
@@ -358,6 +358,8 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     const goal = typeof p0.goal === "string" ? p0.goal.trim() : "";
     if (!publicTitle || !goal || !question)
       throw new Refusal("Give public_title and question (both shown to the person as written: neutral, no internal labels) and goal (for the session's model only).");
+    const why = typeof p0.why === "string" ? p0.why.trim() : "";
+    if (!why) throw new Refusal(WHY_REFUSAL);
     const roster = host.roster();
     const raw: string[] = many ? (Array.isArray(p0.people) ? p0.people.map(String) : []) : [String(p0.person ?? "")];
     if (many && raw.length < 2) throw new Refusal("An offer goes to at least two people; for one, use sova_start_gathering.");
@@ -378,7 +380,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
     const choice = { ...(typeof p0.model === "string" && p0.model.trim() ? { model: p0.model.trim() } : {}), ...(typeof p0.thinking === "string" && p0.thinking.trim() ? { thinking: p0.thinking.trim() } : {}) };
     const plan = p0.plan === true;
     if (plan && gap === "none") throw new Refusal("A planned gathering belongs to a gap: name it (gap \"§gap/<name>\").");
-    const made = await host.startGathering({ to: many ? to : to[0]!, publicTitle, goal, question, ...choice, abilities, gap, ...(plan ? { plan } : {}) });
+    const made = await host.startGathering({ to: many ? to : to[0]!, publicTitle, goal, question, why, ...choice, abilities, gap, ...(plan ? { plan } : {}) });
     const who = made.invited.join(", ");
     if (made.planned) return { content: text(`Planned "${publicTitle}" ${many ? `as an offer to ${who}` : `with ${who}`} on ${gap}: the chart starts it once your level reaches L1 (not again to someone whose attempt on this gap ended with no decision).`), details: { planned: gap } };
     if (made.held) return { content: text(heldText(`starting "${publicTitle}" ${many ? `as an offer to ${who}` : `with ${who}`}`, made.held)), details: { held: made.held.id } };
@@ -707,7 +709,7 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
       name: "sova_start_gathering",
       label: "Start gathering",
       description:
-        "Start a gathering session: a conversation with ONE roster person (or the operator) to get a decision or facts the project lacks. public_title and question are shown to the person verbatim (neutral wording; no internal labels such as \"gap\", idea or area ids, and no judgments about people); goal is for the session's model only. The operator sends the link. Counts against your gathering caps.",
+        "Start a gathering session: a conversation with ONE roster person (or the operator) to get a decision or facts the project lacks. public_title and question are shown to the person verbatim (neutral wording; no internal labels such as \"gap\", idea or area ids, and no judgments about people); goal is for the session's model only; why is for the operator only. The operator sends the link. Counts against your gathering caps.",
       promptSnippet: "start a gathering session with one roster person",
       parameters: obj(
         {
@@ -716,11 +718,12 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           goal: str(`What must be established, for the session's model: the gap, what is known, what to ask. ${GOAL_RULES}`),
           model: str('Optional model ref "provider/model" the person talks to (default: the project\'s gathering model, else yours).'),
           question: str(`The first question to put to them. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
+          why: str(WHY_PARAM),
           abilities: ABILITIES_PARAM,
           gap: str(GAP_PARAM),
           plan: { type: "boolean", description: "With a gap: file it as the gap's planned gathering instead (allowed at L0); the chart starts it itself once the level reaches L1." },
         },
-        ["person", "public_title", "goal", "question", "gap"],
+        ["person", "public_title", "goal", "question", "why", "gap"],
       ),
       execute: act("sova_start_gathering", async (q) => gather(q, false)),
     },
@@ -736,11 +739,12 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
           goal: str(`What must be established, for the session's model only. ${GOAL_RULES}`),
           model: str('Optional model ref "provider/model" (default: the project\'s gathering model, else yours).'),
           question: str(`The first question. ${"Shown to the person VERBATIM: neutral wording only, no internal labels (\"gap\", idea or area ids), no judgments about people."}`),
+          why: str(WHY_PARAM),
           abilities: ABILITIES_PARAM,
           gap: str(GAP_PARAM),
           plan: { type: "boolean", description: "With a gap: file it as the gap's planned gathering instead (allowed at L0)." },
         },
-        ["people", "public_title", "goal", "question", "gap"],
+        ["people", "public_title", "goal", "question", "why", "gap"],
       ),
       execute: act("sova_offer", async (q) => gather(q, true)),
     },
@@ -1051,6 +1055,10 @@ const buildNote = (d: DecisionRow): string =>
   d.state !== "promoted" ? "" : `${d.build === "built" ? " · built (as the build recorded it)" : d.build === "not-built" ? " · not built yet" : ""}${d.editedInSpec ? " · edited in the spec since it was promoted" : ""}`;
 
 /** What a gathering's `goal` never says: the session's model may repeat it to the person. */
+/** A start's `why` (§app.baton/told): the operator's, never the person's or the session model's. */
+const WHY_PARAM = "Why you start it, for the operator: one or two sentences (what is missing, and why these people). Shown to the operator only, never to the person or the session's model.";
+const WHY_REFUSAL = "Say why you start it (why): one or two sentences for the operator, never shown to the person.";
+
 export const GOAL_RULES =
   'Name people by name only, never by role or job title, and never say how the answers will be recorded or under which area ("as finance decisions"): the session\'s model may repeat it.';
 

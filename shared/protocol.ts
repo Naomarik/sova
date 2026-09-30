@@ -1557,7 +1557,11 @@ export interface SessionProfileField {
   label: string;
   icon: string;
   singleton?: true;
-  builtin?: true;
+  /** Where it came from (§chat.profiles/projects); absent for a custom pick. */
+  source?: import("./profiles").ProfileSource;
+  /** A project profile's project root and name. */
+  project?: string;
+  projectName?: string;
   custom?: true;
   /** Picked by the Overseer or a start sheet, not on the empty screen. */
   by?: "overseer" | "start";

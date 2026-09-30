@@ -1,9 +1,9 @@
 import { createResource, createSignal, For, Show } from "solid-js";
-import { CAPABILITY_LABEL, profileSentence, titleCase, type Profile } from "../../shared/profiles";
+import { CAPABILITY_LABEL, keyOf, profileSentence, titleCase, type ListedProfile } from "../../shared/profiles";
 import type { ChatProfileInfo, SessionSummary } from "../../shared/protocol";
 import { fetchProfiles, setSessionArchived } from "../lib/api";
-import { openProfileStart } from "../lib/profile-start";
-import { defaultTools, profileIconName } from "../lib/profiles";
+import { runProfile } from "../lib/profile-start";
+import { allProfiles, defaultTools, profileIconName } from "../lib/profiles";
 import { openSettings } from "../lib/settings-nav";
 import { toast } from "../lib/ui-state";
 import { Icon } from "./ui";
@@ -14,7 +14,7 @@ import { Icon } from "./ui";
  */
 export function ProfileChip(props: { summary: SessionSummary; info: ChatProfileInfo | null }) {
   const [open, setOpen] = createSignal(false);
-  const [listing] = createResource(open, () => fetchProfiles().catch(() => undefined));
+  const [listing] = createResource(open, () => fetchProfiles(props.summary.cwd).catch(() => undefined));
   const field = () => props.summary.profile;
   const snap = () => props.info?.profile ?? null;
   const shown = () => !!field() && (props.info ? props.info.locked && !!snap() : true);
@@ -24,16 +24,13 @@ export function ProfileChip(props: { summary: SessionSummary; info: ChatProfileI
     const total = defaultTools(i).length;
     return { kept: total - i.removed.length, total };
   };
-  /** The saved profile it came from, when it still exists (Run Again, Edit). */
-  const source = (): (Profile & { builtin: boolean }) | undefined => {
-    const l = listing();
-    const id = field()?.id;
-    if (!l || !id) return undefined;
-    const b = l.builtins.find((p) => p.id === id);
-    if (b) return { ...b, builtin: true };
-    const y = l.profiles.find((p) => p.id === id);
-    return y ? { ...y, builtin: false } : undefined;
+  /** The profile it came from, when it still exists (Run Again). */
+  const source = (): ListedProfile | undefined => {
+    const f = field();
+    if (!f || f.custom) return undefined;
+    return allProfiles(listing()).find((p) => p.key === keyOf(f));
   };
+  const label = (f: { label: string; projectName?: string }) => (f.projectName ? `${f.label} · ${f.projectName}` : f.label);
   const stop = async () => {
     setOpen(false);
     try {
@@ -54,12 +51,12 @@ export function ProfileChip(props: { summary: SessionSummary; info: ChatProfileI
           }}
           onKeyDown={(e) => e.key === "Escape" && setOpen(false)}
         >
-          <button type="button" class="button button-ghost profile-chip" aria-expanded={open()} aria-haspopup="dialog" title={`Profile: ${f().label}`} onClick={() => setOpen(!open())}>
+          <button type="button" class="button button-ghost profile-chip" aria-expanded={open()} aria-haspopup="dialog" title={`Profile: ${label(f())}`} onClick={() => setOpen(!open())}>
             <Icon name={profileIconName(f().icon)} small />
             <span class="profile-chip-label">{f().label}</span>
           </button>
           <Show when={open()}>
-            <div class="profile-popover" role="dialog" aria-label={`${f().label} profile`}>
+            <div class="profile-popover" role="dialog" aria-label={`${label(f())} profile`}>
               <p class="profile-popover-sentence">{snap() ? profileSentence(snap()!, counts()?.kept, counts()?.total) : `A ${f().label} session.`}</p>
               <Show when={snap()}>
                 {(p) => (
@@ -87,17 +84,15 @@ export function ProfileChip(props: { summary: SessionSummary; info: ChatProfileI
               <div class="profile-popover-actions">
                 <Show when={source()}>
                   {(p) => (
-                    <button type="button" class="button button-sm button-primary" onClick={() => (setOpen(false), openProfileStart(p(), props.summary.cwd))}>
+                    <button type="button" class="button button-sm button-primary" onClick={() => (setOpen(false), void runProfile(p(), props.summary.cwd))}>
                       Run Again
                     </button>
                   )}
                 </Show>
                 <Show when={source()}>
-                  {(p) => (
-                    <button type="button" class="button button-sm" onClick={() => (setOpen(false), openSettings("profiles"))}>
-                      {p().builtin ? "Duplicate Profile" : "Edit Profile"}
-                    </button>
-                  )}
+                  <button type="button" class="button button-sm" onClick={() => (setOpen(false), openSettings("profiles"))}>
+                    Manage Profiles
+                  </button>
                 </Show>
                 <Show when={f().singleton && !props.summary.archived}>
                   <button type="button" class="button button-sm button-ghost" onClick={() => void stop()}>

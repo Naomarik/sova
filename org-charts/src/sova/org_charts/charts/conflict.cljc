@@ -81,12 +81,11 @@
     [;; an owner-area change re-routes and changes the conflict's owner area (setOwnerArea)
      (ops/assign :owner-area (if (contains? ev :owner-area) (:owner-area ev) (:owner-area d)))
      (ops/assign :routed-to (:to ev))
-     (ops/assign :route-reason (or (:route-reason ev) (str (if (= "operator" (:to ev)) (:operator-name d) (get-in ev [:target :name])) " chosen by " (:operator-name d) ".")))
+     (ops/assign :route-reason (or (:route-reason ev) (let [nm (or (:operator-name ev) (:operator-name d))]
+                                                       (str (if (= "operator" (:to ev)) nm (get-in ev [:target :name])) " chosen by " nm "."))))
      (ops/assign :self-asserted (true? (:self-asserted ev)))
      (ops/assign :baton-session-id (:session-id ev))
      (ops/assign :route-error nil)]))
-
-(defn- routed-target [_ d] (if (= "operator" (:routed-to d)) :routed-to-operator :routed-to-person))
 
 (defn- reroute-transitions []
   (for [[target to-op?] [[:routed-to-operator true] [:routed-to-person false]]]

@@ -14,10 +14,14 @@
 
 (defn baton-open? [f] (contains? (states f) :open))
 (defn baton-ended? [f] (or (contains? (states f) :done) (contains? (states f) :closed)))
-(defn baton-needs-operator? [f] (contains? (states f) :with-operator))
+(defn baton-needs-operator?
+  "Something in it waits on the operator (master's needs-you): with them, and not yet answered by
+   them. Once the operator has replied it is only open (asking)."
+  [f]
+  (and (contains? (states f) :with-operator) (true? (:needs-you (ex f)))))
 
 (defn gathering
-  "The aggregate of these gatherings: needs-operator (any with the operator), asking (any open),
+  "The aggregate of these gatherings: needs-operator (any waiting on the operator), asking (any open),
    ended (all ended), or nil (none)."
   [fs]
   (cond

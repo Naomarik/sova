@@ -27,7 +27,10 @@
     (is (h/in? x sid :open))
     (let [a (baton x 1 [:open :with-person])]
       (is (h/in? a sid :asking))
-      (is (h/in? (baton a 1 [:open :with-operator]) sid :needs-operator))
+      (is (h/in? (baton a 1 [:open :with-operator] :needs-you true) sid :needs-operator))
+      (testing "coordinator-38: the operator replied, so nothing waits on them: it is only asking"
+        (is (h/in? (baton a 1 [:open :with-operator] :needs-you false) sid :asking))
+        (is (h/in? (-> a (baton 1 [:open :with-operator] :needs-you true) (baton 1 [:open :with-operator] :needs-you false)) sid :asking)))
       (testing "two gatherings: the lane waits for both"
         (let [two (-> a (baton 2 [:open :with-person]) (baton 1 [:done] :decisions ["d1"]) (decision "d1" "pending"))]
           (is (h/in? two sid :asking))
@@ -70,7 +73,9 @@
     (is (h/in? y sid :awaiting-build) "a gathering once promoted is a follow-up")
     (is (true? (get-in (h/data y sid) [:batons "baton/o1/b9" :follow-up])))
     (is (h/in? (baton y 9 [:open :with-person]) sid :follow-up-asking))
-    (is (h/in? (baton y 9 [:open :with-operator]) sid :follow-up-needs-operator))))
+    (is (h/in? (baton y 9 [:open :with-operator] :needs-you true) sid :follow-up-needs-operator))
+    (is (h/in? (-> y (baton 9 [:open :with-operator] :needs-you true) (baton 9 [:open :with-operator] :needs-you false)) sid :follow-up-asking)
+        "coordinator-38 (server-6 real-26): after the operator's reply the follow-up is asking")))
 
 (deftest hold-resume-drop
   (let [x (-> (start) (watch-at "L0") (baton 1 [:open :with-person]))

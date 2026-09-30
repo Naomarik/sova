@@ -258,6 +258,9 @@
         {:starts [{:org-id "o1" :project-id "pr1" :id "g_1" :idea-id "§gap/x" :stall-after-ms {:open 1000}}]
          :drive [(moved "watch" "watch/o1/pr1" [:watch] (ex "L0"))
                  (moved "baton" "baton/o1/b1" [:baton :open :with-person] {:decisions []})
+                 ;; with the operator: waiting on them, then answered by them (coordinator-38)
+                 (moved "baton" "baton/o1/b1" [:baton :open :with-operator] {:decisions [] :needs-you true})
+                 (moved "baton" "baton/o1/b1" [:baton :open :with-operator] {:decisions [] :needs-you false})
                  (moved "baton" "baton/o1/b1" [:baton :done] {:decisions ["d1"]})
                  (moved "decision" "decision/o1/pr1/d1" [:decision :pending] {:state "pending"})
                  (moved "decision" "decision/o1/pr1/d1" [:decision :promoted] {:state "promoted"})

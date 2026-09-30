@@ -67,7 +67,8 @@ function over (data, event) returning nil or `{sentence status code? tail?}` wit
 Tests: `test/sova/org_charts/charts/refit/` — `host.cljc` (a deterministic JVM/Node host: the real
 processor, a virtual clock, the engine's level and `:pre` checks; hosts are values) and one test
 namespace per chart group. Run on the JVM:
-`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test 'sova.org-charts.charts.refit.hours-test 'sova.org-charts.charts.refit.decision-results-test 'sova.org-charts.charts.refit.server4-findings-test 'sova.org-charts.charts.refit.started-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
+`cd org-charts && clojure -Srepro -M -e "(require 'clojure.test 'sova.org-charts.charts.refit.person-test 'sova.org-charts.charts.refit.baton-test 'sova.org-charts.charts.refit.item-test 'sova.org-charts.charts.refit.org-project-test 'sova.org-charts.charts.refit.watch-decisions-build-test 'sova.org-charts.charts.refit.hours-test 'sova.org-charts.charts.refit.decision-results-test 'sova.org-charts.charts.refit.server4-findings-test 'sova.org-charts.charts.refit.started-test 'sova.org-charts.charts.refit.pins-test) (clojure.test/run-all-tests #\".*refit.*\")"`.
+`pins_test` holds the pins for chart mutants that survived verifier-2's run2 (each assertion names its mutant id).
 The engine-level tests (`*_test.cljs`: matrix per chart and per baton start kind, registry, feed, holds,
 world) run in the shadow `:test` build. The whole CLJS suite (engine + charts, JVM-free under Node):
 `node scripts/build-org-charts.mjs --test` (from the repo root; `pnpm --dir org-charts test` is the same).
@@ -142,7 +143,7 @@ the envelope), **data** (plain data, unchanged rules), **del** (deleted, per cov
 | F-055 | Share listener | host | share listener; message route → `baton/message`, `message/refused` |
 | F-056 | Visits log | data | visits log |
 | F-057 | Share-page live transport | host | share transport; lapse pushed from the lapse's own step |
-| F-058 | Needs you from batons | proj | Needs-you over baton `needs-you` / holder link + `person.proposed` |
+| F-058 | Needs you from batons | proj | Needs-you over baton `needs-you` / holder link + `person.proposed`; an item's `needs-operator` / `follow-up-needs-operator` means the same: a gathering with the operator whose `needs-you` is true (`rules/item baton-needs-operator?`); once the operator replies it is `asking` (coordinator-38; `item_test` lane, follow-ups) |
 | F-059 | Hide from or show to the owner | chart | `baton/hide` |
 | F-060 | Baton events bus | del | replaced by sends and link notifications |
 | F-061 | Settle-session marker on the baton row | chart | baton data `conflict {id area}` (from the conflict's spawn), kept |

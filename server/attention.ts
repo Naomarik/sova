@@ -81,38 +81,36 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   };
   // An act item carries its Later key (server/needs-you-later.ts): its anchor is what counts as new
   // for it, its `since` unless the caller names better tokens.
-  // `slot` tells apart several items of one kind in a session (a roster proposal per person).
-  const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string, anchor?: string[], slot?: string) =>
+  // `key`: a Later key made elsewhere (a baton wait's, the same the session list carries).
+  const add = (tier: AttentionTier, kind: AttentionKind, since: number, detail?: string, anchor?: string[], key?: string) =>
     out.push({
       ...base,
       tier,
       kind,
       since,
       ...(detail ? { detail: cap(detail) } : {}),
-      ...(tier === "act" || slot ? { later: laterKey(s.id, slot ? `${kind}/${slot}` : kind, anchor ?? [`t${since}`]) } : {}),
+      ...(key ? { later: key } : tier === "act" ? { later: laterKey(s.id, kind, anchor ?? [`t${since}`]) } : {}),
     });
   const state = s.activity?.state;
   const running = s.busy || state === "working";
 
   // act: blocked on the user.
   // A baton session (§app.baton/needs-you): the baton is with the operator, or a person holds it
-  // through a hand-off nobody has a link for yet. Later's anchor is the hand-off (or offer) and the
-  // file's newest event: a new hand-off, or a new message on this one, is new.
-  const moved = `m${lastActive}`;
+  // through a hand-off nobody has a link for yet. Its Later keys are batonLaterKeys'.
+  const bk = batonLaterKeys(s);
   if (s.baton?.needsYou) {
     const n = s.baton.needsYou;
-    add("act", "baton-needs-you", n.since || lastActive, `${n.from} → you: ${n.question}`, [n.handoff !== undefined ? `h${n.handoff}` : `t${n.since}`, moved]);
+    add("act", "baton-needs-you", n.since || lastActive, `${n.from} → you: ${n.question}`, undefined, bk.needsYou);
   } else if (s.baton?.sendLink) {
     const l = s.baton.sendLink;
-    add("act", "baton-needs-you", l.since || lastActive, `Send ${l.to} their link: ${l.question}`, [l.offerId ? `o${l.offerId}` : l.handoff !== undefined ? `h${l.handoff}` : `t${l.since}`, moved]);
+    add("act", "baton-needs-you", l.since || lastActive, `Send ${l.to} their link: ${l.question}`, undefined, bk.sendLink);
     // r12: the offer's invitees still waiting for their hours ride on it (they need nothing yet).
     if (s.baton.waiting?.length) out[out.length - 1]!.waiting = s.baton.waiting;
   }
   // decide: a referral from this session waits for the operator (§app.organizations/referrals).
-  // Each carries a Later key of its own (the Organizations region's Needs you lists it), anchored
-  // on the proposed person: a new proposal is new.
+  // Each carries a Later key of its own (the Organizations region's Needs you lists it).
   for (const p of s.baton?.proposals ?? [])
-    add("decide", "roster-proposal", p.since || lastActive, `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`, [`p${p.personId}`, `t${p.since}`], p.personId);
+    add("decide", "roster-proposal", p.since || lastActive, `Approve ${p.name}${p.role ? ` (${p.role})` : ""}${p.by ? ` proposed by ${p.by}` : ""}?`, undefined, bk.proposals.get(p.personId));
   if (row.dialogs.length)
     add("act", "needs-input", row.activitySince || lastActive, `Waiting on: ${row.dialogs.join("; ")}`, row.dialogIds?.length ? row.dialogIds.map((d) => `d${d}`) : undefined);
   else if (state === "needs-input")
@@ -259,6 +257,53 @@ export function workerErrorTime(failed: number, rowTimes: number[], risenAt?: nu
   if (rowTimes.length >= failed) return latest;
   const t = Math.max(latest ?? 0, risenAt ?? 0);
   return t > 0 ? t : undefined;
+}
+
+/**
+ * A baton session's Later keys (§app.baton/needs-you), the same on its digest items and its
+ * session-list row: a person waiting on you and a send-link are anchored on their hand-off (a
+ * send-link for an open offer on the offer) and the file's newest event, so a new hand-off or a new
+ * message on it is new; a roster proposal on its proposed person, one key per person.
+ */
+export function batonLaterKeys(s: Pick<SessionSummary, "id" | "lastActiveAt" | "baton">): { needsYou?: string; sendLink?: string; proposals: Map<string, string> } {
+  const b = s.baton;
+  const moved = `m${Date.parse(s.lastActiveAt) || 0}`;
+  const out: { needsYou?: string; sendLink?: string; proposals: Map<string, string> } = { proposals: new Map() };
+  if (!b) return out;
+  if (b.needsYou) out.needsYou = laterKey(s.id, "baton-needs-you", [b.needsYou.handoff !== undefined ? `h${b.needsYou.handoff}` : `t${b.needsYou.since}`, moved]);
+  const l = b.sendLink;
+  if (l) out.sendLink = laterKey(s.id, "baton-needs-you", [l.offerId ? `o${l.offerId}` : l.handoff !== undefined ? `h${l.handoff}` : `t${l.since}`, moved]);
+  for (const p of b.proposals ?? []) out.proposals.set(p.personId, laterKey(s.id, `roster-proposal/${p.personId}`, [`p${p.personId}`, `t${p.since}`]));
+  return out;
+}
+
+/**
+ * The session list's side of Later for a baton session: each wait carries its `later` key, and a
+ * wait put away (its anchor unmoved) is dropped from the row, as the digest drops its item.
+ */
+export function withBatonLater<T extends Pick<SessionSummary, "id" | "lastActiveAt" | "baton">>(
+  row: T,
+  later: (items: { later: string }[]) => { later: string }[] = (items) => withoutLater(items),
+): T {
+  const b = row.baton;
+  if (!b || !(b.needsYou || b.sendLink || b.proposals?.length)) return row;
+  const k = batonLaterKeys(row);
+  const all = [k.needsYou, k.sendLink, ...k.proposals.values()].filter((x): x is string => !!x);
+  const shown = new Set(later(all.map((key) => ({ later: key }))).map((i) => i.later));
+  const { needsYou, sendLink, proposals, ...rest } = b;
+  const kept = (proposals ?? []).flatMap((p) => {
+    const key = k.proposals.get(p.personId)!;
+    return shown.has(key) ? [{ ...p, later: key }] : [];
+  });
+  return {
+    ...row,
+    baton: {
+      ...rest,
+      ...(needsYou && shown.has(k.needsYou!) ? { needsYou: { ...needsYou, later: k.needsYou! } } : {}),
+      ...(sendLink && shown.has(k.sendLink!) ? { sendLink: { ...sendLink, later: k.sendLink! } } : {}),
+      ...(kept.length ? { proposals: kept } : {}),
+    },
+  };
 }
 
 /** The digest's Later filter over the store (server/needs-you-later.ts). */

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, describe, test } from "node:test";
 import type { AttentionItem, SessionSummary } from "../shared/protocol";
-import { type AttentionRow, buildDigest, sessionItems } from "./attention";
+import { type AttentionRow, buildDigest, sessionItems, withBatonLater } from "./attention";
 import { bringBack, LATER_MAX_AGE_MS, laterKey, parseLaterKey, putAway, resetLaterCache, withoutLater } from "./needs-you-later";
 
 const NOW = Date.parse("2026-09-30T11:00:00.000Z");
@@ -173,5 +173,24 @@ describe("Later on the Organizations region's baton and roster rows", () => {
     const both = digest([r("p1", "p2")], file);
     assert.deepEqual(both.items.filter((i) => i.kind === "roster-proposal").map((i) => i.detail), ["Approve p2 proposed by Ann?"], "p1 stays away; p2 is new");
     assert.deepEqual(digest([r("p1", "p2")], file).items.filter((i) => i.kind === "roster-proposal").length, 1, "p2 showing does not bring p1 back");
+  });
+});
+
+describe("the session list's baton fields carry the same Later keys, and drop a put-away wait", () => {
+  test("needsYou.later / sendLink.later / proposals[i].later equal the digest's; a put-away one leaves the row until it moves", () => {
+    const file = freshFile();
+    const lat = (items: { later: string }[]) => withoutLater(items, NOW, file);
+    const s = summary("g", { baton: { holder: null, state: "needs-you", needsYou: { from: "Ann", question: "Venue?", since: NOW - 9000, handoff: 2 }, proposals: [{ personId: "p1", name: "Bo", role: "", by: "Ann", since: NOW - 5000 }] } as SessionSummary["baton"] });
+    const listed = withBatonLater(s, lat);
+    const d = digest([row(s)], file);
+    assert.equal(listed.baton?.needsYou?.later, d.items.find((i) => i.kind === "baton-needs-you")?.later);
+    assert.equal(listed.baton?.proposals?.[0]?.later, d.items.find((i) => i.kind === "roster-proposal")?.later);
+    putAway([listed.baton!.needsYou!.later!], NOW, file);
+    const after = withBatonLater(s, lat);
+    assert.equal(after.baton?.needsYou, undefined, "put away: gone from the row");
+    assert.equal(after.baton?.proposals?.length, 1, "the proposal is its own");
+    assert.equal(after.baton?.state, "needs-you", "the rest of the field stays");
+    const moved = withBatonLater({ ...s, lastActiveAt: new Date(NOW).toISOString() }, lat);
+    assert.ok(moved.baton?.needsYou?.later, "a new message on the hand-off: back");
   });
 });

@@ -280,9 +280,10 @@ export function looksLikeAsk(reply: string): boolean {
 }
 
 /** What a reply that waits on its subagents says (§app.decisions/team-stall). Read in code, never
-    by a model; loose on purpose, since the subagents' own quiet is the stronger fact. */
+    by a model; loose on purpose, since the subagents' own quiet is the stronger fact. A phrase
+    whose subject is "you" ("When you report a bug…") is advice to the user, never a wait. */
 const WAITS_ON_TEAM_RE =
-  /\b(?:still (?:running|in progress|working|going)|in progress|(?:when|once) (?:it|they|that|the \w+|\w+) (?:arrives?|lands?|finish(?:es)?|is done|are done|reports?(?: back)?|comes? (?:back|in)|signs? off)|reports? (?:back )?to me|(?:will|'ll) (?:send|report to|ping|tell) me|as they come|(?:waiting|wait) (?:on|for) (?:the )?(?:team|workers?|members?|subagents?|coordinator|verifier|reviewer|lead|builder|results?|report))\b/i;
+  /\b(?:still (?:running|in progress|working|going)|in progress|(?:when|once) (?:it|they|that|the \w+|(?!you\b)\w+) (?:arrives?|lands?|finish(?:es)?|is done|are done|reports?(?: back)?|comes? (?:back|in)|signs? off)|reports? (?:back )?to me|(?:will|'ll) (?:send|report to|ping|tell) me|as they come|(?:waiting|wait) (?:on|for) (?:the )?(?:team|workers?|members?|subagents?|coordinator|verifier|reviewer|lead|builder|results?|report))\b/i;
 
 /** Does the end of a reply (its last ASK_LOOK_CHARS, footer cut) say it waits on its subagents? */
 export function waitsOnTeam(reply: string): boolean {
@@ -291,13 +292,16 @@ export function waitsOnTeam(reply: string): boolean {
 
 /**
  * The facts of a stalled team apart from the reply's words (`waitsOnTeam`), or null
- * (§app.decisions/team-stall): an idle session whose last finished reply and subagents have all
- * been quiet for STALL_MS. Monitors and coordinators (`duties`) count neither as quiet members nor
- * as activity; a killed worker is gone. Pure.
+ * (§app.decisions/team-stall): an idle session whose counted subagents have all been quiet for
+ * STALL_MS. A subagent counts only when its last activity came after the session's last reply and
+ * it has not delivered a finished report (idle with a successful outcome): a leftover worker of a
+ * finished session — restored idle when an old session is opened again — never counts. Monitors
+ * and coordinators (`duties`) count neither as quiet members nor as activity; a killed worker is
+ * gone. Pure.
  */
 export function quietTeam(
   s: Pick<SessionSummary, "busy" | "activity" | "archived" | "overseer" | "projectOverseer" | "workerSession" | "baton">,
-  workers: readonly Pick<WorkerInfo, "id" | "name" | "status" | "working" | "startedAt" | "lastActivity" | "endedAt">[],
+  workers: readonly Pick<WorkerInfo, "id" | "name" | "status" | "working" | "startedAt" | "lastActivity" | "endedAt" | "outcome">[],
   duties: ReadonlyMap<string, TeamDuty>,
   reply: { at: number; stopReason: string } | undefined,
   now: number,
@@ -306,9 +310,10 @@ export function quietTeam(
   if (s.busy || s.activity?.state === "working" || !reply || reply.stopReason !== "stop") return null;
   const members = workers.filter((w) => !duties.has(w.id));
   if (members.some((w) => w.working)) return null;
-  const quiet = members.filter((w) => w.status !== "killed");
+  const activeAt = (w: (typeof members)[number]) => w.lastActivity ?? w.endedAt ?? w.startedAt ?? 0;
+  const quiet = members.filter((w) => w.status !== "killed" && w.outcome !== "success" && activeAt(w) > reply.at);
   if (!quiet.length) return null;
-  const since = Math.max(reply.at, ...quiet.map((w) => w.lastActivity ?? w.endedAt ?? w.startedAt ?? 0));
+  const since = Math.max(...quiet.map(activeAt));
   return now - since >= STALL_MS ? { since, names: quiet.map((w) => head(squash(w.name), 40)) } : null;
 }
 

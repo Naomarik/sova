@@ -95,9 +95,9 @@ from the parent's branch and the tree's `mode.json`, so the worker is always in 
 spec and never strict; it is never offered a spec writer; and its spec block is the worker form
 (§chat.mode-menu/workers). The parent's own worker modes are not added on top.
 
-## §chat.worktrees/inherit — Forks and fanouts share the set
+## §chat.worktrees/inherit — Forks share the set
 
-A fork or a fanout member starts with its source's set, because the entry is on the copied
+A fork (pi's `/fork` or `/clone`) starts with its source's set, because the entry is on the copied
 branch. A worktree whose recorded session is another session is **shared** with that session;
 the pane says so.
 

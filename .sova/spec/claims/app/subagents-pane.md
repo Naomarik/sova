@@ -197,8 +197,8 @@ strip, empty or not: a tab that came and went would move the strip under the rea
   and the selected tab is scrolled into view (to the nearest edge) when the pane opens and whenever
   the tab changes, so a tab a door opened is never off-screen at 375px.
 - **Session** is what the session is, in this order: Path (with Copy Session Path and Copy Resume
-  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity (with Move into group,
-  Group with parent and, for web sessions, Archive), Sharing (§app.session-share/sheet),
+  Command), Context, Repository, Worktrees (§chat.worktrees/pane), Identity (with Move into group
+  and, for web sessions, Archive), Sharing (§app.session-share/sheet),
   Compactions, Changes. Repository and Worktrees
   load after Identity, which sits below them, so both hold a placeholder while they load, sized
   to the common case: Repository's is a clean repository's layout (its root, three facts, a

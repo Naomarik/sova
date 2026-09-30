@@ -333,7 +333,10 @@ export function personPage(orgId: string, pid: string, now = Date.now()): Person
   const opened = visits.filter((v) => v.kind === "visit" && !v.bot);
   return {
     person,
-    org: { id: orgId, name: readOrg(orgId).name },
+    org: (() => {
+      const o = readOrg(orgId);
+      return { id: orgId, name: o.name, ...(o.tz ? { tz: o.tz } : {}), ...(o.hours ? { hours: o.hours } : {}) };
+    })(),
     operatorName: ctx.operator,
     sessions: personSessions(ctx, pid, conflicts),
     decisions: personDecisions(ctx, pid),

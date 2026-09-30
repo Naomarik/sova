@@ -22,7 +22,7 @@ export type { ActResult, Effect, EffectOutcome, HostChange, HostProblem, Invocat
     tests may hand in a fake with the same shape. */
 export type OrgHostApi = Pick<
   OrgHost,
-  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close"
+  "paths" | "feed" | "effects" | "invocations" | "log" | "act" | "actNow" | "settle" | "start" | "setState" | "trial" | "explain" | "enabledEvents" | "configuration" | "data" | "sessions" | "holds" | "nextDueAt" | "fireDue" | "chartOf" | "chartInfo" | "problems" | "logAct" | "onChange" | "reload" | "close" | "rewindowHours"
 >;
 
 /** Where a project's settings (overseer.json, as read now) come from: server/project-overseer-store.ts
@@ -36,6 +36,14 @@ export function setProjectSettingsSource(source: NonNullable<typeof settingsSour
 function settingsOf(): NonNullable<typeof settingsSource> {
   if (!settingsSource) throw new Error("The project settings reader is not loaded (server/project-overseer-store.ts).");
   return settingsSource;
+}
+
+/** r13: the people an engine-delivered act reaches, as records with their current effective hours (server/orgs.ts
+    registers it as it loads): the stamp carries them, so a held act released later is checked against the hours in
+    force then. */
+let stampPeopleSource: ((orgId: string, payload: Record<string, unknown>) => Record<string, unknown>) | null = null;
+export function setStampPeopleSource(fn: NonNullable<typeof stampPeopleSource>): void {
+  stampPeopleSource = fn;
 }
 
 export interface OpenOptions {
@@ -101,7 +109,8 @@ export async function openOrgHost(opts: OpenOptions): Promise<OrgHostApi> {
       if (!self) throw new Error("The org engine stamped before it opened.");
       const pid = stampProject(self, sid, payload, who);
       const settings = settingsOf();
-      return stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
+      const env = stampEnvelope(self, opts.orgId, pid, { by: (who?.by as ActBy | undefined) ?? "chart", ...(who?.overseerId ? { overseerId: who.overseerId } : {}), attended: false }, (projectId) => settings.read(opts.orgId, projectId, opts.workspaceDir), settings.defaults());
+      return { ...env, ...(stampPeopleSource?.(opts.orgId, payload) ?? {}) } as Envelope;
     };
     const host = await opener({ ...opts, stamp, clock: () => (testClock ? testClock() : Date.now()) });
     self = host;

@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import type { AttentionItem } from "../shared/protocol";
+import { OPERATOR } from "../shared/baton";
 import {
   ORG_ABOUT_MAX,
   PERSON_NAME_MAX,
@@ -11,6 +12,7 @@ import {
   type OrgBatonRow,
   type OrgChange,
   type OrgDetail,
+  type OrgHoursChange,
   type OrgProject,
   type OrgsInfo,
   type OrgSummary,
@@ -18,12 +20,13 @@ import {
   type OwnerChange,
   type Person,
   type PersonContact,
+  type PersonHours,
   type PersonInput,
   type PersonStatus,
   type ProfileChange,
   type StakeholderChange,
 } from "../shared/orgs";
-import { actOrThrow, closeOrgHost, envelopeFor, heldAt, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, refusalError, type OrgHostApi } from "./org-engine";
+import { actOrThrow, closeOrgHost, envelopeFor, heldAt, hostOf, isOrgHostOpen, onOrgChange, openOrgHost, refusalError, setStampPeopleSource, type OrgHostApi } from "./org-engine";
 import type { Envelope, EnvelopeCard } from "./org-envelope";
 import { hostIdentity } from "./org-holder";
 import { OrgHost, OrgWorkspaceError } from "./org-host";
@@ -413,7 +416,14 @@ function orgOfData(orgId: string, d: Record<string, unknown>): Org {
       ? { ownerHistory: history.map((h) => ({ at: isoOf(h.at), from: (h.from as string | null) ?? null, to: (h.to as string | null) ?? null, why: h.why as OwnerChange["why"], ...(h.via === "overseer" ? { via: "overseer" as const } : {}) })) }
       : {}),
     ...(isObj(cleared) && typeof cleared.personId === "string" ? { ownerCleared: { personId: cleared.personId, name: String(cleared.name ?? ""), at: isoOf(cleared.at) } } : {}),
+    ...(typeof d.tz === "string" && d.tz ? { tz: d.tz } : {}),
+    ...(hoursRecord(d.hours) ? { hours: hoursRecord(d.hours) } : {}),
   };
+}
+
+/** A working-hours record as a chart keeps it, or undefined. */
+function hoursRecord(v: unknown): PersonHours | undefined {
+  return isObj(v) && Array.isArray(v.days) && typeof v.from === "string" && typeof v.to === "string" ? { days: (v.days as unknown[]).map(Number), from: v.from, to: v.to } : undefined;
 }
 
 export function readOrg(orgId: string): Org {
@@ -456,13 +466,39 @@ function personOf(orgId: string, s: { configuration: string[]; data: Record<stri
   };
 }
 
-/** A person's tz and hours as their chart keeps them, and whether they are inside their hours now (r7). */
-function hoursOf(d: Record<string, unknown>, now = Date.now()): Pick<Person, "tz" | "hours" | "hoursNow"> {
+/** The hours a person is reached in (r13): the person chart's `effectiveHours` (their own, else the company's; null:
+    neither, always in hours) and whether those are the company's. A snapshot from before r13 has only their own. */
+function effectiveOfData(d: Record<string, unknown>): { tz: string; hours: PersonHours; inherited: boolean } | null {
+  if ("effectiveHours" in d) {
+    const e = d.effectiveHours;
+    const tz = isObj(e) && typeof e.tz === "string" && e.tz ? e.tz : undefined;
+    const h = isObj(e) ? hoursRecord(e.hours) : undefined;
+    return tz && h ? { tz, hours: h, inherited: d.hoursInherited === true } : null;
+  }
   const tz = typeof d.tz === "string" && d.tz ? d.tz : undefined;
-  const h = isObj(d.hours) && Array.isArray(d.hours.days) && typeof d.hours.from === "string" && typeof d.hours.to === "string" ? { days: (d.hours.days as unknown[]).map(Number), from: d.hours.from, to: d.hours.to } : undefined;
-  if (!tz && !h) return {};
-  const next = h && tz ? nextWindow({ tz, hours: h }, now) : null;
-  return { ...(tz ? { tz } : {}), ...(h ? { hours: h } : {}), ...(h && tz ? { hoursNow: next === null ? { open: true } : { open: false, nextOpen: new Date(next).toISOString() } } : {}) };
+  const h = hoursRecord(d.hours);
+  return tz && h ? { tz, hours: h, inherited: false } : null;
+}
+
+/** A person's own tz and hours as their chart keeps them, and whether they are inside their effective hours now
+    (r7, r13: their own, else the company's) and whose those are. */
+function hoursOf(d: Record<string, unknown>, now = Date.now()): Pick<Person, "tz" | "hours" | "hoursNow" | "hoursFrom"> {
+  const tz = typeof d.tz === "string" && d.tz ? d.tz : undefined;
+  const h = hoursRecord(d.hours);
+  const eff = effectiveOfData(d);
+  const next = eff ? nextWindow(eff, now) : null;
+  return {
+    ...(tz ? { tz } : {}),
+    ...(h ? { hours: h } : {}),
+    ...(eff ? { hoursNow: next === null ? { open: true } : { open: false, nextOpen: new Date(next).toISOString() }, hoursFrom: eff.inherited ? ("company" as const) : ("own" as const) } : {}),
+  };
+}
+
+/** The tz and hours an act reaching this person waits for (r13: effective; {} = always in hours). */
+export function effectiveHoursOf(orgId: string, personId: string): { tz?: string; hours?: PersonHours } {
+  const d = isOrgHostOpen(orgId) ? hostOf(orgId).data(personSid(orgId, personId)) : null;
+  const eff = d ? effectiveOfData(d) : null;
+  return eff ? { tz: eff.tz, hours: eff.hours } : {};
 }
 
 /** The roster, in the order people were added (their first history line). */
@@ -605,6 +641,145 @@ export async function patchOrg(orgId: string, patch: { name?: unknown; about?: u
   return readOrg(orgId);
 }
 
+// ---- company working hours (r13) --------------------------------------------------------------------------
+//
+// The org chart keeps the company's tz and hours (`org/hours`, operator only; it checks them as a person's);
+// each person chart combines them with their own into `effectiveHours`. Their history is org-history.jsonl's,
+// like About's: this module writes a line per changed field once the act is taken.
+
+function readOrgHoursHistoryFile(dir: string): OrgHoursChange[] {
+  let text: string;
+  try {
+    text = readFileSync(orgHistoryFile(dir), "utf8");
+  } catch {
+    return [];
+  }
+  const out: OrgHoursChange[] = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const c = JSON.parse(line);
+      if (isObj(c) && typeof c.at === "string" && (c.field === "tz" || c.field === "hours")) out.push(c as unknown as OrgHoursChange);
+    } catch {
+      // a torn line: skip
+    }
+  }
+  return out;
+}
+
+/** The company hours' history, oldest first. */
+export function readOrgHoursHistory(orgId: string): OrgHoursChange[] {
+  return readOrgHoursHistoryFile(orgDir(orgId));
+}
+
+const sameHours = (a: unknown, b: unknown): boolean => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+
+/** One history line per changed field (tz, hours), after the act; `at` stays unique and rising in the file. */
+function writeOrgHoursLines(dir: string, before: Org, after: Org, by: OperatorBy, revertOf?: string): void {
+  let t = Date.now();
+  const all = readFileSync(orgHistoryFile(dir), { encoding: "utf8", flag: "a+" })
+    .split("\n")
+    .flatMap((l) => {
+      try {
+        const c = JSON.parse(l);
+        return typeof c?.at === "string" ? [Date.parse(c.at)] : [];
+      } catch {
+        return [];
+      }
+    });
+  const lastAt = all.length ? Math.max(...all) : 0;
+  if (t <= lastAt) t = lastAt + 1;
+  const lines: OrgHoursChange[] = [];
+  if ((before.tz ?? "") !== (after.tz ?? "")) lines.push({ at: new Date(t++).toISOString(), field: "tz", from: before.tz ?? "", to: after.tz ?? "", by: { ...by }, ...(revertOf ? { revertOf } : {}) });
+  if (!sameHours(before.hours, after.hours))
+    lines.push({ at: new Date(t++).toISOString(), field: "hours", from: before.hours ?? null, to: after.hours ?? null, by: { ...by }, ...(revertOf ? { revertOf } : {}) });
+  for (const l of lines) appendFileSync(orgHistoryFile(dir), `${JSON.stringify({ ...l, by: { kind: l.by.kind, ...(l.by.via ? { via: l.by.via } : {}), ...(l.by.overseerId ? { overseerId: l.by.overseerId } : {}) } })}\n`);
+}
+
+/**
+ * Set or clear the company's tz and hours (the operator's; either key, null or "" clears it). The org chart refuses
+ * anyone else and checks them as a person's; every pending hours wait then moves to the new effective window.
+ */
+export async function setOrgHours(orgId: string, patch: { tz?: unknown; hours?: unknown }, by: OperatorBy = OPERATOR_BY, revertOf?: string): Promise<Org> {
+  const before = readOrg(orgId);
+  const body: Record<string, unknown> = {};
+  if (patch.tz !== undefined) {
+    if (patch.tz !== null && typeof patch.tz !== "string") throw new OrgError("tz must be an IANA zone, or null to clear it");
+    body.tz = patch.tz;
+  }
+  if (patch.hours !== undefined) {
+    if (patch.hours !== null && !isObj(patch.hours)) throw new OrgError("hours must be {days, from, to}, or null to clear them");
+    body.hours = patch.hours;
+  }
+  if (!Object.keys(body).length) throw new OrgError("Give tz, hours or both");
+  await actOrThrow(orgId, orgSid(orgId), "org/hours", body, operatorEnvelope(orgId, null, by), SETTLE);
+  const after = readOrg(orgId);
+  writeOrgHoursLines(orgDir(orgId), before, after, by, revertOf);
+  await rewindowOrgHours(orgId);
+  return after;
+}
+
+/** Set a company-hours field back to history line `at`'s `from`, as a new operator change (C6: only while the field
+    still holds that line's `to`). */
+export async function revertOrgHoursChange(orgId: string, at: string, by: OperatorBy = OPERATOR_BY): Promise<Org> {
+  const line = readOrgHoursHistory(orgId).find((c) => c.at === at);
+  if (!line) throw new OrgError("No such change", 404);
+  const now = readOrg(orgId);
+  const current = line.field === "tz" ? (now.tz ?? "") : (now.hours ?? null);
+  if (!sameHours(current, line.to))
+    throw new OrgError(`The company's ${line.field === "tz" ? "time zone has" : "working hours have"} changed since then, so reverting this would undo a later change. Revert the latest change instead.`, 409);
+  return setOrgHours(orgId, line.field === "tz" ? { tz: line.from || null } : { hours: line.from }, by, at);
+}
+
+/** The people an act waits for (its `to`, its offer's `targets`, or the records its envelope carried). */
+function peopleOfHold(h: { data?: Record<string, unknown> }): string[] {
+  const d = h.data ?? {};
+  const ids = new Set<string>();
+  if (typeof d.to === "string" && d.to !== OPERATOR) ids.add(d.to);
+  if (Array.isArray(d.targets)) for (const t of d.targets) if (typeof t === "string") ids.add(t);
+  if (isObj(d.target) && typeof d.target.id === "string") ids.add(d.target.id);
+  if (Array.isArray(d.targetPeople)) for (const t of d.targetPeople) if (isObj(t) && typeof t.id === "string") ids.add(t.id);
+  return [...ids];
+}
+
+/** After an hours edit (a person's, the company's, or a revert): every act waiting for someone's working hours moves
+    to the earliest effective window of its people, or goes now when any of them is in hours (engine rewindowHours). */
+export async function rewindowOrgHours(orgId: string): Promise<number> {
+  if (!isOrgHostOpen(orgId)) return 0;
+  const now = Date.now();
+  return hostOf(orgId).rewindowHours((h) => {
+    const nexts = peopleOfHold(h).map((pid) => {
+      const eff = effectiveHoursOf(orgId, pid);
+      return eff.tz && eff.hours ? nextWindow({ tz: eff.tz, hours: eff.hours }, now) : null;
+    });
+    return nexts.length && nexts.every((n): n is number => n !== null) ? Math.min(...nexts) : null;
+  });
+}
+
+/** The stamp's people (r13): an act reaching someone carries their current effective hours, so a held act released
+    later is checked against the hours in force then (engine: the stamp merges over the held data). */
+export function stampPeople(orgId: string, payload: Record<string, unknown>): Record<string, unknown> {
+  const rec = (pid: string) => {
+    const s = hostOf(orgId).sessions("person").find((x) => x.id === personSid(orgId, pid));
+    if (!s) return null;
+    const p = personOf(orgId, s);
+    const eff = effectiveHoursOf(orgId, pid);
+    return { id: p.id, name: p.name, status: p.status, ...(p.referral ? { referral: true } : {}), ...(eff.tz ? { tz: eff.tz } : {}), ...(eff.hours ? { hours: eff.hours } : {}) };
+  };
+  const out: Record<string, unknown> = {};
+  if (typeof payload.to === "string" && payload.to !== OPERATOR) {
+    const r = rec(payload.to);
+    if (r) out.target = r;
+  }
+  if (Array.isArray(payload.targets)) {
+    const rs = payload.targets.filter((t): t is string => typeof t === "string").map(rec).filter((r) => r !== null);
+    if (rs.length) out.targetPeople = rs;
+  }
+  return out;
+}
+
+setStampPeopleSource(stampPeople);
+
 // ---- profile history (§app.organizations/history-and-revert) --------------------------------------------
 //
 // `roster-history.jsonl`: plain data with today's rules, append-only, the one place (with the charts'
@@ -744,6 +919,7 @@ export async function applyChange(orgId: string, personId: string, patch: Record
   // A person whose snapshot doesn't load is no unknown person: the host answers "Fix or restore it, then reload."
   if (!findPerson(orgId, personId) && !unreadable(orgId, personSid(orgId, personId))) throw new OrgError("Unknown person", 404);
   await actOrThrow(orgId, personSid(orgId, personId), "person/edit", { patch: clean, namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, writerEnvelope(orgId, by), SETTLE);
+  if ("tz" in clean || "hours" in clean) await rewindowOrgHours(orgId);
   return findPerson(orgId, personId)!;
 }
 
@@ -777,6 +953,7 @@ export async function revertChange(orgId: string, personId: string, at: string, 
   if (!line) throw new OrgError("No such change", 404);
   if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
   await actOrThrow(orgId, personSid(orgId, personId), "person/revert", { row: { at: line.at, field: line.field, from: line.from, to: line.to }, namesTaken: namesTaken(orgId, personId) }, operatorEnvelope(orgId, null, by, extra), SETTLE);
+  if (line.field === "tz" || line.field === "hours") await rewindowOrgHours(orgId);
   return findPerson(orgId, personId)!;
 }
 
@@ -1126,6 +1303,7 @@ export async function orgDetail(orgId: string): Promise<OrgDetail> {
     problems: problemsOf(orgId, dir),
     ...(about ? { about } : {}),
     aboutHistory: readOrgHistory(orgId).slice(-ABOUT_HISTORY_ON_DETAIL).reverse(),
+    hoursHistory: readOrgHoursHistory(orgId).slice(-ABOUT_HISTORY_ON_DETAIL).reverse(),
   };
 }
 

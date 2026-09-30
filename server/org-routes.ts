@@ -32,6 +32,8 @@ import {
   recentChanges,
   revertChange,
   revertOrgChange,
+  revertOrgHoursChange,
+  setOrgHours,
   residenceSid,
   setOperatorName,
   setProjectArchived,
@@ -346,6 +348,26 @@ export function registerOrgRoutes(app: Hono<any>): void {
       const b = await body(c);
       await patchOrg(p(c, "id"), { name: b.name, about: b.about }, operatorBy(c));
       return c.json(await orgPage(p(c, "id")));
+    }),
+  );
+  // r13: the company's working hours (the default for anyone without their own), operator only.
+  app.put(
+    "/api/orgs/:id/hours",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const b = await body(c);
+      await setOrgHours(id, { tz: b.tz, hours: b.hours }, operatorBy(c));
+      return c.json(await orgPage(id));
+    }),
+  );
+  app.post(
+    "/api/orgs/:id/hours/revert",
+    handle(async (c) => {
+      const id = p(c, "id");
+      const at = (await body(c)).at;
+      if (typeof at !== "string") throw new OrgError("at is required");
+      await revertOrgHoursChange(id, at, operatorBy(c));
+      return c.json(await orgPage(id));
     }),
   );
   app.post(

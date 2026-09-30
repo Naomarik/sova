@@ -152,6 +152,22 @@ describe("an act that reaches them outside their hours (r7)", () => {
     assert.ok(baton.allBatons().some((b) => b.publicTitle === "Receipts"), "an invitee in hours: it went at once");
   });
 
+  test("r13: an hours edit moves every act waiting for them: a later window moves it, their hours now release it (checked against the hours in force)", async () => {
+    await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
+    await po.patchProjectOverseer(org.id, project.id, { autonomy: "L1", holdMin: 0 });
+    const tool = po.toolsForTest(org.id, project.id, { attended: false }).find((t) => t.name === "sova_start_gathering")!;
+    await tool.execute("t4", { gap: "none", person: "Sam Okafor", public_title: "Moves", goal: "g", question: "Does it move?" } as never, undefined, undefined, undefined as never);
+    const heldOf = () => pipelineInfo(org.id, project.id).held.find((h) => h.what === "A gathering with Sam Okafor: Moves");
+    assert.equal(heldOf()?.goesAt, orgs.findPerson(org.id, sam.id)!.hoursNow!.nextOpen);
+    await patch({ hours: { days: ALL, from: hm(5), to: hm(6) } });
+    assert.equal(heldOf()?.goesAt, orgs.findPerson(org.id, sam.id)!.hoursNow!.nextOpen, "moved to the new window");
+    assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Moves"));
+    await patch({ hours: { days: ALL, from: hm(-1), to: hm(1) } });
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(heldOf(), undefined, "in their hours now: released");
+    assert.ok(baton.allBatons().some((b) => b.publicTitle === "Moves"), "it went ahead");
+  });
+
   test("the operator's routes that reach them say so (offHours: when their window opens); the strip's people carry tz and hoursNow", async () => {
     await patch({ tz: "UTC", hours: { days: ALL, from: hm(2), to: hm(3) } });
     const opens = orgs.findPerson(org.id, sam.id)!.hoursNow!.nextOpen!;

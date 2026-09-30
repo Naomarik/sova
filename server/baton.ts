@@ -29,7 +29,7 @@ import { readBatonSettings } from "./baton-settings";
 import { heldAt, hostOf, isOrgHostOpen, refusalError, type ActResult, type OrgHostApi, type SessionInfo } from "./org-engine";
 import type { Envelope } from "./org-envelope";
 import { envelopeFor } from "./org-engine";
-import { isoOf, onOrgAttached, operatorEnvelope, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readProjects, readRoster, setOpenBatonCounter, shortId, type OperatorBy } from "./orgs";
+import { effectiveHoursOf, isoOf, onOrgAttached, operatorEnvelope, operatorName, orgDir, orgOfSessionPath, OrgError, readHistory, readIndex, readProjects, readRoster, setOpenBatonCounter, shortId, type OperatorBy } from "./orgs";
 import { baseAbilities, operatorAbilities } from "./gathering-abilities";
 import { canonicalPath } from "./paths";
 import { projectOverseerPaths, readPoSettings } from "./project-overseer-store";
@@ -302,15 +302,19 @@ export function namesOf(orgId: string): Record<string, string> {
 }
 
 /** A roster person as an act's envelope names a target (`target {id name status referral?}`). */
-export const targetOfPerson = (p: Pick<Person, "id" | "name" | "status" | "referral" | "tz" | "hours">) => ({
-  id: p.id,
-  name: p.name,
-  status: p.status,
-  ...(p.referral ? { referral: true } : {}),
-  // r7: the act waits for their working hours (the chart's act meta `:hours` reads these).
-  ...(p.tz ? { tz: p.tz } : {}),
-  ...(p.hours ? { hours: p.hours } : {}),
-});
+export const targetOfPerson = (p: Pick<Person, "id" | "name" | "status" | "referral" | "tz" | "hours"> & { orgId?: string }) => {
+  // r7: the act waits for their working hours (the chart's act meta `:hours` reads these); r13: the effective ones
+  // (their own, else the company's).
+  const eff = p.orgId ? effectiveHoursOf(p.orgId, p.id) : { tz: p.tz, hours: p.hours ?? undefined };
+  return {
+    id: p.id,
+    name: p.name,
+    status: p.status,
+    ...(p.referral ? { referral: true } : {}),
+    ...(eff.tz ? { tz: eff.tz } : {}),
+    ...(eff.hours ? { hours: eff.hours } : {}),
+  };
+};
 const operatorTarget = () => ({ id: OPERATOR, name: operatorName(), status: "active" as const });
 
 /**

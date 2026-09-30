@@ -48,7 +48,7 @@ import { sessionsGlance } from "./lib/home-sessions";
 import { applySidebarWidth } from "./lib/sidebar-width";
 import { closeSettings, openSettings, settingsOpenAt } from "./lib/settings-nav";
 import type { RewindControl } from "./lib/inputs";
-import { activeTab, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
+import { activeTab, groupSendAll, home, setActiveTab, setAdopter, setHome, toast } from "./lib/ui-state";
 import { createPaneInsight } from "./lib/pane-insight";
 import { sessionWorking, type UsageTotalView } from "./lib/workers";
 import { sourceBlocked } from "./lib/fanout";
@@ -632,14 +632,13 @@ export function App() {
   const [fanout, setFanout] = createSignal<{ source?: FanoutSource; into?: { id: string; name: string }; presetCwd?: string } | null>(null);
 
   /**
-   * The skip link's target and name move together: a workspace with members
-   * has one action — the group composer — so the link says "Skip to Group Composer" and lands on
-   * its input; before the composer exists (a workspace with no members) it is the focused pane's
-   * transcript and says so, because a link that says "Group Composer" and lands on a transcript
-   * is worse than either. A link that says "Transcript" in a workspace of N panes would also
-   * have to pick one silently; the composer is the one target that needs no picking.
+   * The skip link's target and name move together: a workspace in Send to All has one action —
+   * the group composer — so the link says "Skip to Group Composer" and lands on its input; while
+   * the group composer is not on screen (Send to All off, or a workspace with no members) it is
+   * the focused pane's transcript and says so, because a link that says "Group Composer" and
+   * lands on a transcript, or on a hidden box, is worse than either.
    */
-  const hasGroupComposer = () => !!groupRoute() && !!openGroup() && groupMembers().length > 0;
+  const hasGroupComposer = () => !!groupRoute() && !!openGroup() && groupMembers().length > 0 && groupSendAll();
   const skipHref = () => (hasGroupComposer() ? "#group-composer" : `#${transcriptIdOf(focusedPath())}`);
   const skipLabel = () => (hasGroupComposer() ? "Skip to Group Composer" : "Skip to Transcript");
 
@@ -996,7 +995,12 @@ export function App() {
 
         {/* The workspace takes the whole second column, so it IS the main: no session head, and
             its own head instead. */}
-        <main class={groupRoute() ? "workspace" : "app-main"} aria-label={openGroup() ? `Workspace: ${openGroup()!.name}` : undefined}>
+        <main
+          class={groupRoute() ? "workspace" : "app-main"}
+          aria-label={openGroup() ? `Workspace: ${openGroup()!.name}` : undefined}
+          /* Send to All: one rule in app.css hides every pane composer under it. */
+          data-send-all={groupRoute() && groupSendAll() ? "true" : undefined}
+        >
           <Show
             when={!insightsRoute() && !overseerRoute()}
             fallback={

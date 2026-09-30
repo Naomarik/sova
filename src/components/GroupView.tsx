@@ -12,9 +12,11 @@ import {
   PANE_MIN_WIDTH,
   paneWidths,
   readMode,
+  readSendAll,
   stepFrom,
   TABS_ONLY_WIDTH,
   writeMode,
+  writeSendAll,
   type GroupLayoutMode,
 } from "../lib/group-layout";
 import type { RewindControl } from "../lib/inputs";
@@ -32,7 +34,7 @@ import {
   setSessionGroup,
   tabLabels,
 } from "../lib/session-groups";
-import { announce, home, setGroupComposerActive, toast } from "../lib/ui-state";
+import { announce, home, setGroupSendAll, toast } from "../lib/ui-state";
 import { cwdLabel } from "../lib/remote-session";
 import { failureLines, partialClosing, partialTitle } from "../lib/fanout";
 import { ensureRendered, JUMP_EVENT, loadRow, transcriptRoot } from "../lib/jump";
@@ -175,13 +177,21 @@ export function GroupView(props: {
    * any pane in the row is "fit" (paneWidths). Nothing here is persisted, like the app shell's sessions pane.
    */
   const [widths, setWidths] = createSignal<Record<string, number | "fit">>({});
-  // Another group, another posture: its own remembered layout, and nobody's widths.
+  /**
+   * Send to All: the group composer on screen in place of every pane composer. Off by default,
+   * remembered per group for the browser session like the layout. Published app-wide
+   * (`groupSendAll`) because the skip link and the `<main>` that hides the pane composers are App's.
+   */
+  const [sendAll, setSendAll] = createSignal(readSendAll(props.group.id));
+  // Another group, another posture: its own remembered layout and Send to All, and nobody's widths.
   createEffect(
     on(gid, (next) => {
       setStored(readMode(next) ?? "split");
+      setSendAll(readSendAll(next));
       setWidths({});
     }, { defer: true }),
   );
+  createEffect(() => setGroupSendAll(sendAll()));
 
   const onResize = () => {
     setNarrow(window.innerWidth < TABS_ONLY_WIDTH);
@@ -191,7 +201,7 @@ export function GroupView(props: {
   window.addEventListener("resize", onResize);
   onCleanup(() => {
     window.removeEventListener("resize", onResize);
-    setGroupComposerActive(false); // nothing left to collapse under
+    setGroupSendAll(false); // no workspace, no group composer for the skip link to land on
   });
 
   /** What is remembered, unless the viewport is too narrow for a row of panes. */
@@ -472,11 +482,39 @@ export function GroupView(props: {
     queueMicrotask(() => {
       const section = document.getElementById(`pane-${paneIdFor(path)}`);
       // A read-only member (TUI-owned, archived) has a disabled composer, which takes no focus at
-      // all: the pane's own region does, so the keyboard still lands in the right pane.
-      const composer = composerOf(path);
+      // all: the pane's own region does, so the keyboard still lands in the right pane. So does
+      // every member while Send to All hides the pane composers.
+      const composer = sendAll() ? null : composerOf(path);
       (composer && !composer.disabled ? composer : section)?.focus();
       section?.scrollIntoView({ inline: "nearest", block: "nearest" });
       announce(`${nameOf(path)} — focused.`);
+    });
+  };
+
+  /**
+   * Send to All on or off, from the head, its menu row or the group composer's `×`. The caret
+   * follows the composer that is now on screen: the group's box, or the focused pane's own (its
+   * region when it has none to take focus). A microtask, so the swap has rendered first — a
+   * display:none box takes no focus.
+   */
+  const switchSendAll = (next: boolean) => {
+    setSendAll(next);
+    writeSendAll(id(), next);
+    const n = panes().length;
+    announce(
+      next
+        ? `Send to All on. One message goes to ${n === 1 ? "1 member" : `all ${n} members`}.`
+        : "Send to All off. Each member has its own composer again.",
+    );
+    queueMicrotask(() => {
+      if (next) {
+        document.getElementById("group-composer-input")?.focus();
+        return;
+      }
+      const at = active();
+      if (!at) return;
+      const composer = composerOf(at);
+      (composer && !composer.disabled ? composer : document.getElementById(`pane-${paneIdFor(at)}`))?.focus();
     });
   };
 
@@ -891,6 +929,8 @@ export function GroupView(props: {
             <HeadActions
               groupName={props.group.name}
               members={rows().length}
+              sendAll={panes().length > 0 ? sendAll() : null}
+              onSendAll={switchSendAll}
               candidates={candidates()}
               seeded={!!props.group.seed}
               onAlign={alignToFork}
@@ -928,6 +968,20 @@ export function GroupView(props: {
                 </button>
               </Show>
             </div>
+          </Show>
+          {/* Outside the split band's Show: Send to All means the same thing in tabs and split, so
+              it stays in the head under 768. Offered only with members — with none, there is no
+              group composer to switch to. */}
+          <Show when={panes().length > 0}>
+            <button
+              type="button"
+              class="button button-sm button-ghost workspace-send-all"
+              aria-pressed={sendAll()}
+              title="Write one message to every member, in place of each pane's own composer."
+              onClick={() => switchSendAll(!sendAll())}
+            >
+              Send to All
+            </button>
           </Show>
           {/* Absent for a group Sova didn't fan out: there is nothing to align to, and gate #10
               forbids inferring a fork point from lineage. A hand-made group that ADOPTS a seed
@@ -1214,8 +1268,10 @@ export function GroupView(props: {
             }}
           </For>
         </div>
-        {/* One composer for the whole workspace, under the row it writes to. Not rendered with no
-            members: there is nobody to send to, and the workspace spec says so rather than showing a dead box. */}
+        {/* One composer for the whole workspace, under the row it writes to, on screen only while
+            Send to All is on; off, it stays mounted and hidden so its draft and report survive. Not
+            rendered with no members: there is nobody to send to, and the workspace spec says so
+            rather than showing a dead box. */}
         <GroupComposer
           groupId={id()}
           members={rows()}
@@ -1229,7 +1285,8 @@ export function GroupView(props: {
             return ghost ? nameOf(ghostKey(ghost.id)) : "This member";
           }}
           onRefresh={props.wiring.onRefresh}
-          onActive={setGroupComposerActive}
+          shown={sendAll()}
+          onClose={() => switchSendAll(false)}
           onSent={noteSent}
         />
       </Show>
@@ -1432,11 +1489,21 @@ function PaneMenu(props: {
  * pointer is invisible to AT. Shared by the pane-head picker's ad-hoc rows so Enter and Space
  * work everywhere this file draws a menu (the same gap the narrow head had).
  */
-function MenuRow(props: { aria: string; title?: string; icon?: JSX.Element; onRun(): void; close?: () => void; children: JSX.Element }) {
+function MenuRow(props: {
+  aria: string;
+  title?: string;
+  icon?: JSX.Element;
+  /** Given, the row is a `menuitemcheckbox` in this state (Send to All). */
+  checked?: boolean;
+  onRun(): void;
+  close?: () => void;
+  children: JSX.Element;
+}) {
   return (
     <div
       class="mode-option group-option"
-      role="menuitem"
+      role={props.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+      aria-checked={props.checked === undefined ? undefined : props.checked}
       tabindex={0}
       aria-label={props.aria}
       title={props.title}
@@ -1621,6 +1688,9 @@ function HeadActions(props: {
   candidates: SessionSummary[];
   /** The group has a fork point, so Align to Fork is offered — same rule as the wide head. */
   seeded: boolean;
+  /** Send to All's state, or null with no members: no group composer, so no row. */
+  sendAll: boolean | null;
+  onSendAll(next: boolean): void;
   onAdd(session: SessionSummary): void;
   onAlign(): void;
   onFanOut(seed?: GroupSeed): void;
@@ -1650,7 +1720,7 @@ function HeadActions(props: {
     setPicking(pick);
     menu.showPopover();
     queueMicrotask(() =>
-      (pick ? menu.querySelector<HTMLInputElement>("input") : menu.querySelector<HTMLElement>("[role=menuitem]"))?.focus(),
+      (pick ? menu.querySelector<HTMLInputElement>("input") : menu.querySelector<HTMLElement>("[role^=menuitem]"))?.focus(),
     );
   };
   const openMenu = () => openInto(false);
@@ -1725,6 +1795,18 @@ function HeadActions(props: {
         </Show>
         <Show when={!asking() && !picking()}>
           <div class="model-menu-list" role="menu" aria-label={`Actions for ${quoted(props.groupName)}`}>
+            <Show when={props.sendAll !== null}>
+              <MenuRow
+                aria="Send to All"
+                title="Write one message to every member, in place of each pane's own composer."
+                icon={<Icon name={props.sendAll ? "check" : "chat"} small />}
+                checked={!!props.sendAll}
+                onRun={() => props.onSendAll(!props.sendAll)}
+                close={close}
+              >
+                <span class="mode-option-id">Send to All</span>
+              </MenuRow>
+            </Show>
             <Show when={props.seeded}>
               <MenuRow
                 aria={`Align every pane of ${quoted(props.groupName)} to its fork point`}

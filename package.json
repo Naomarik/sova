@@ -20,6 +20,8 @@
     "prices:update": "tsx scripts/prices-update.mjs",
     "voice:install": "tsx scripts/voice.ts",
     "org-charts": "tsx scripts/org-charts.ts",
+    "statecharts:watch": "node scripts/statecharts-watch.mjs",
+    "statecharts:test": "node scripts/statecharts-test.mjs",
     "typecheck": "tsc --noEmit",
     "build": "tsc --noEmit && vite build && vite build --mode share",
     "start": "tsx server/index.ts",

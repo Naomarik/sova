@@ -1,5 +1,18 @@
 # Org charts: the refit's eleven charts, and every inventory item they stand for
 
+## Fast loop
+
+`org-charts/` holds the org's statecharts ("charts" in code and file names means statecharts). While editing them:
+
+- `pnpm statecharts:watch` (repo root) starts one shadow-cljs server running `watch lib test` in `org-charts/`
+  (devtools off; output only in the gitignored `out/` and `.shadow-cljs/`). A one-line edit rebuilds in about 1 s.
+  Each worktree runs its own server: HTTP moves up from 9630 when taken, nREPL takes a random port.
+- `pnpm statecharts:test` runs every non-matrix test namespace on the watch's output in a fresh `node` (~5 s);
+  `pnpm statecharts:test <ns>…` runs only those (~2 s each); `--matrix` adds the refit matrix pieces (~17 s each).
+  With no or stale output it tells you to start the watch.
+- Never cold-compile in a loop; run the matrices only at the end (`node scripts/build-org-charts.mjs --test`
+  is the full cold path), and `release lib` (the vendored bundle, `scripts/build-org-charts.mjs`) only for the final bundle.
+
 Eleven charts in the fulcrologic/statecharts CLJC DSL (`com.fulcrologic/statecharts 1.4.0-RC18`) under
 `src/sova/org_charts/charts/`, registered in `registry.cljc` for the engine (`engine/API.md`). Every
 lifecycle state and every link of the organization layer lives here (q1: no state projection files;

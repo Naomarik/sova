@@ -150,7 +150,14 @@
                                             (ops/assign :promoted-text (:text-hash ev)) (ops/assign :edited-in-spec false)]))}))
               ;; Restore Their Words: the prose re-promoted (committed)
               (dsl/act {:sova/feed :feed :event :decision/settle-text :checks [text-check] :cond (fn [_ d] (= "restore" (:action (b/evt d))))}
-                (dsl/effect :restore-text (fn [d] {:id (:id d) :record-id (:record-id d)})))))
+                (dsl/effect :restore-text (fn [d] {:id (:id d) :record-id (:record-id d)})))
+              ;; restored: their words are the promoted text again ({restored, textHash, commit?});
+              ;; a failed restore leaves it edited
+              (transition {:sova/feed :feed :event :effect/done :cond (fn [_ d] (= "restore-text" (:kind (b/evt d)))) :target :as-promoted}
+                (script {:expr (fn [_ d] (let [res (:result (b/evt d))]
+                                           (cond-> [(ops/assign :promoted-text (:text-hash res)) (ops/assign :edited-in-spec false)
+                                                    (ops/assign :text-kept nil)]
+                                             (:commit res) (conj (ops/assign :promoted-commit (:commit res))))))}))))
           (state {:id :built :initial :not-built}
             (state {:id :not-built} (transition {:sova/feed :feed :cond (fn [_ d] (built? d)) :target :built-done}))
             (state {:id :built-done} (transition {:sova/feed :feed :cond (fn [_ d] (not (built? d))) :target :not-built})))))

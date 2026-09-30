@@ -50,6 +50,12 @@
 
 (def invalid (lv/invalid-check b/evt))
 
+(defn shown-title
+  "The title a reason names: the build's, else its branch, else its session (a New Coding Session
+   has no start title)."
+  [d]
+  (or (not-empty (:title d)) (:branch d) (:session-id d)))
+
 (defn prompt-check
   "sova_send after its mode check (the host's `invalid`): a terminal holds it, its worktree was
    removed, the text is blank."
@@ -101,6 +107,7 @@
     (state {:id :build :initial :regions}
       (on-entry {} (script {:expr (fn [_ d] [(ops/assign :turn "idle") (ops/assign :workers 0) (ops/assign :tree "open")])}))
       (dsl/hold-cancel-correction)
+      (b/hold-review)
       (b/flush-transition)
       (transition {:sova/feed :quiet :event :git/probe} (script {:expr (fn [_ d] (probe-ops d))}))
       (transition {:sova/feed :quiet :event :workers/changed}
@@ -158,13 +165,13 @@
             (transition {:sova/feed :quiet :event :turn/ended :cond (fn [_ d] (true? (:failed (e d)))) :target :turn-failed}
               (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
               (b/send-if :reason/noted (fn [d] (when (coding? d) (b/watch-sid (:org-id d) (:project-id d))))
-                (fn [d] {:kind "coding/settled" :params {:title (:title d) :failed true :session-id (:session-id d)} :by "system"
-                         :key (str "coding/settled:" (:session-id d) "@" (b/now-ms d))})))
+                (fn [d] {:kind "coding/settled" :params {:title (shown-title d) :failed true :session-id (:session-id d)} :by "system"
+                         :key (str "coding/settled:" (:session-id d) ":failed")})))
             (transition {:sova/feed :quiet :event :turn/ended :target :turn-idle}
               (script {:expr (fn [_ d] [(ops/assign :last-turn-at (b/now-ms d))])})
               (b/send-if :reason/noted (fn [d] (when (coding? d) (b/watch-sid (:org-id d) (:project-id d))))
-                (fn [d] {:kind "coding/settled" :params {:title (:title d) :failed false :session-id (:session-id d)} :by "system"
-                         :key (str "coding/settled:" (:session-id d) "@" (b/now-ms d))}))))
+                (fn [d] {:kind "coding/settled" :params {:title (shown-title d) :failed false :session-id (:session-id d)} :by "system"
+                         :key (str "coding/settled:" (:session-id d) ":ok")}))))
           (state {:id :turn-failed} (region :turn "failed")
             (transition {:sova/feed :quiet :event :turn/started :target :working})))
 
@@ -196,7 +203,7 @@
               (script {:expr (fn [_ d] [(ops/assign :merged {:at (b/now-ms d) :commit (:commit (result d))})
                                         (ops/assign :merge-refused nil)])})
               (b/send-if :reason/noted (fn [d] (b/watch-sid (:org-id d) (:project-id d)))
-                (fn [d] {:kind "build/merged" :params {:title (:title d) :branch (:branch d) :target (:target d)} :by "operator"
+                (fn [d] {:kind "build/merged" :params {:title (shown-title d) :branch (:branch d) :target (:target d)} :by "operator"
                          :key (str "build/merged:" (:session-id d) "@" (:commit (result d)))}))
               (b/send-if :milestone/noted (fn [d] (b/project-sid (:org-id d) (:project-id d))) (fn [_] {:kind "build-merged"})))
             ;; git refused (the reason in today's words): the overseer is told unless it is about the
@@ -204,8 +211,8 @@
             (transition {:sova/feed :feed :event :effect/failed :cond (done-kind? "merge") :target :merge-idle}
               (script {:expr (fn [_ d] [(ops/assign :merge-refused (:detail (e d)))])})
               (b/send-if :reason/noted (fn [d] (when-not (str/starts-with? (str (:detail (e d))) "The project root") (b/watch-sid (:org-id d) (:project-id d))))
-                (fn [d] {:kind "build/merge-refused" :params {:title (:title d) :reason (:detail (e d))} :by "operator"
-                         :key (str "build/merge-refused:" (:session-id d) "@" (b/now-ms d))})))))))))
+                (fn [d] {:kind "build/merge-refused" :params {:title (shown-title d) :reason (:detail (e d))} :by "operator"
+                         :key (str "build/merge-refused:" (:session-id d) ":" (:detail (e d)))})))))))))
 
 (def acts
   {:build/prompt          {:needs "L3" :tool "sova_send" :code-facing true :counts "prompt" :hold true :confirm-kind "prompt"
@@ -213,7 +220,8 @@
    :build/merge           {:needs nil}
    :build/remove-worktree {:needs nil}
    :correct/merged        {:needs "L2" :tool "sova_correct" :correction true}
-   :hold/cancel           {:needs "L0" :correction true}})
+   :hold/cancel           {:needs "L0" :correction true}
+   :hold/approve          {:needs "L0" :correction true}})
 
 (defn not-here [event config data]
   (case event

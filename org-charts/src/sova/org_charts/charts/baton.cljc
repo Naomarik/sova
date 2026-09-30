@@ -236,6 +236,15 @@
 (defn msg-check [d] (let [v (rb/message-verdict d (e d))] (when (r/refusal? v) v)))
 (defn claim? [d] (:claim? (rb/message-verdict d (e d))))
 
+(defn renew-ops
+  "lease/renew: the held offer's lease runs lease-ms from now again. Only on an event that carries its
+   time (a delivered one: the reply's end, the host's renew); the internal raise that re-arms the timer
+   has none and changes nothing."
+  [d]
+  (let [o (rb/current-offer d) now (:at (b/evt d))]
+    (when (and o (:holder o) now)
+      [(ops/assign :offers (mapv #(if (= (:id %) (:id o)) (assoc % :last-activity-at now :lease-until (+ now (lease-ms d))) %) (:offers d)))])))
+
 (defn note-ops
   "An accepted message: counted, the first one of someone it was sent to recorded (`wrote-at`), the
    operator's answer clears Needs you, the holder's renews the lease. `last-note` lets the host undo
@@ -356,6 +365,7 @@
         (script {:expr (fn [_ d] (when (and (not (false? (:mint-link d))) (not= operator (:holder d)))
                                    (dsl/effect-ops d (dsl/effect-map :mint-links (fn [_] {:n 1 :offer-id (:offer-id d)}) d))))}))
       (dsl/hold-cancel-correction)
+      (b/hold-review)
 
       ;; ── acts that don't move the course ──────────────────────────────────────────────────
       ;; record_decision: the transcript entry is written first (its id is the decision's); a
@@ -465,8 +475,12 @@
                 ;; 15 min idle from the later of the holder's message and the reply; never mid-reply
                 (on-entry {} (Send {:id :lease-timer :event :lease/lapse :delayexpr (fn [_ d] (lease-ms d))}))
                 (on-exit {} (cancel {:sendid :lease-timer}))
-                (transition {:sova/feed :quiet :event :lease/renew :target :leased})
-                (transition {:sova/feed :feed :event :baton/message :cond (fn [_ d] (and (nil? (msg-check d)) (= (:from (e d)) (:holder d)))) :target :leased}
+                ;; the timer restarts and the offer's lease end moves with it (share page, strip, linkAccess)
+                (transition {:sova/feed :quiet :event :lease/renew :target :leased}
+                  (script {:expr (fn [_ d] (renew-ops d))}))
+                ;; the holder's message renews the lease; anyone else's is refused with the verdict's
+                ;; sentence ("Someone else is answering right now.", "…no longer taking part…")
+                (dsl/act {:sova/feed :feed :event :baton/message :checks [msg-check] :target :leased}
                   (script {:expr (fn [_ d] (note-ops d))}))
                 (transition {:sova/feed :feed :event :lease/lapse :cond (fn [_ d] (reply-idle? d)) :target :pool}
                   (script {:expr (fn [_ d] (lapse-ops d))})
@@ -505,13 +519,13 @@
             (transition {:sova/feed :quiet :event :reply/stop :target :reply-stopping})
             (transition {:sova/feed :quiet :event :reply/ended :target :reply-idle}
               ;; the reply's end renews the lease
-              (raise {:event :lease/renew})))
+              (script {:expr (fn [_ d] (renew-ops d))}) (raise {:event :lease/renew})))
           (state {:id :reply-stopping}
             (on-entry {} (set-reply "stopping"))
             ;; The held move, delivered again now: its own transitions check it again, and a move
             ;; that now fails is a refused step (logged with its sentence); the stop stands.
             (transition {:sova/feed :quiet :event :reply/ended :target :reply-idle}
-              (raise {:event :lease/renew})
+              (script {:expr (fn [_ d] (renew-ops d))}) (raise {:event :lease/renew})
               (Send {:eventexpr (fn [_ d] (get-in d [:pending-move :event]))
                      :content (fn [_ d] (assoc (get-in d [:pending-move :data]) :sova/pending true))})
               (script {:expr (fn [_ _] [(ops/assign :pending-move nil)])}))))
@@ -586,7 +600,8 @@
    :baton/abilities       {:needs nil}
    :baton/hide            {:needs nil}
    :baton/wrapup-retry    {:needs nil}
-   :hold/cancel           {:needs "L0" :correction true}})
+   :hold/cancel           {:needs "L0" :correction true}
+   :hold/approve          {:needs "L0" :correction true}})
 
 (def entry
   {:chart    chart

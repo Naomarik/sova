@@ -151,6 +151,7 @@
   (statechart {:initial :reconciler}
     (state {:id :reconciler :initial :born}
       (dsl/hold-cancel-correction)
+      (b/hold-review)
 
       ;; the index of the project's decisions
       (transition {:sova/feed :quiet :event :decision/recorded}
@@ -245,7 +246,8 @@
                           :what (fn [d] (let [n (count (promote-ids d))] (str "Promoting " n " decision" (when (not= 1 n) "s"))))}
    :draft/rewrite        {:needs nil}
    :correct/clear-failed {:needs "L1" :correction true :tool "sova_correct"}
-   :hold/cancel          {:needs "L0" :correction true}})
+   :hold/cancel          {:needs "L0" :correction true}
+   :hold/approve         {:needs "L0" :correction true}})
 
 (defn not-here [event config _]
   (case event

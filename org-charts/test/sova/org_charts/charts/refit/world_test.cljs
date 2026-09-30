@@ -44,3 +44,17 @@
     (testing "and it keeps following the project"
       (core/send! b psid :project/archive op {:now (+ t0 4)})
       (is (true? (:archived (core/data b wsid)))))))
+
+(deftest server-3-4-a-held-offer-refuses-others-with-todays-sentences
+  (let [e   (core/new-engine registry/charts {:level-check lv/level-check :absorb-unknown true})
+        sid "baton/o1/s1"
+        msg (fn [from active] (core/send! e sid :baton/message {:by "person" :from from :active active} {:now (+ t0 1)}))
+        why (fn [r] (:sentence (:refused (first (filter #(= :baton/message (:event %)) (:steps r))))))]
+    (core/start! e sid "baton" {:org-id "o1" :project-id "pr1" :session-id "s1" :public-title "T" :goal "G" :targets ["p1" "p2"]
+                                :owner {:overseer-of "pr1"} :names {"p1" "Ana" "p2" "Bob"} :operator-name "Omar"} t0)
+    (msg "p1" true)
+    (is (in? e sid :leased))
+    (is (= "Someone else is answering right now." (why (msg "p2" true))))
+    (is (= "Someone else is answering right now." (:sentence (core/explain e sid :baton/message {:by "person" :from "p2" :active true} {:now (+ t0 1)}))))
+    (is (= "You are no longer taking part in this conversation." (why (msg "p2" false))) "an invitee who left")
+    (is (= "Ana holds the baton. Take it back to write." (why (core/send! e sid :baton/message {:by "operator" :from "operator"} {:now (+ t0 1)}))))))

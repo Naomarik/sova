@@ -187,6 +187,20 @@
   [(script {:expr (fn [_ data] (queue-sends data (vec (sends-fn data))))})
    (com.fulcrologic.statecharts.elements/raise {:event :sova.charts/flush})])
 
+(defn hold-review
+  "r8 (q12), on the top state of a chart with held acts: the approve-early correction
+   (`:hold/approve {:id :reason}`, declared in `:acts`) and, when a confirm-required hold ends
+   unreviewed (`:hold/waiting {:id :event :kind :what :project-id?}`), a soon `hold/review` reason to
+   the project's watch, so the overseer looks and approves or cancels it (it waits until then)."
+  []
+  [(dsl/hold-approve-correction)
+   (apply com.fulcrologic.statecharts.elements/transition {:sova/feed :feed :event :hold/waiting}
+     (send-if :reason/noted
+       (fn [d] (when-let [p (or (:project-id (evt d)) (:project-id d))] (watch-sid (:org-id d) p)))
+       (fn [d] (let [e (evt d)]
+                 {:kind "hold/review" :by "system" :at (now-ms d) :key (str "hold/review:" (:id e))
+                  :params {:id (:id e) :what (:what e) :act (some-> (:event e) name)}}))))])
+
 (defn flush-transition
   "The top state's transition delivering queued sends, one per microstep."
   []

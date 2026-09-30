@@ -5,6 +5,19 @@
 
 (def golden
   {
+   ["decision" ":edited-in-spec" [":effect/done"] "[:as-promoted]" 0] :feed
+   ["baton" ":baton" [":hold/approve"] "[]" 0] :correction
+   ["baton" ":baton" [":hold/waiting"] "[]" 0] :feed
+   ["build" ":build" [":hold/approve"] "[]" 0] :correction
+   ["build" ":build" [":hold/waiting"] "[]" 0] :feed
+   ["item" ":item" [":hold/approve"] "[]" 0] :correction
+   ["item" ":item" [":hold/waiting"] "[]" 0] :feed
+   ["person" ":person" [":hold/approve"] "[]" 0] :correction
+   ["person" ":person" [":hold/waiting"] "[]" 0] :feed
+   ["project" ":project" [":hold/approve"] "[]" 0] :correction
+   ["project" ":project" [":hold/waiting"] "[]" 0] :feed
+   ["reconciler" ":reconciler" [":hold/approve"] "[]" 0] :correction
+   ["reconciler" ":reconciler" [":hold/waiting"] "[]" 0] :feed
    ["baton" ":at-limit" [] "[:under]" 0] :quiet
    ["baton" ":baton" [":baton/abilities"] "[]" 0] :feed
    ["baton" ":baton" [":baton/extend"] "[]" 0] :feed

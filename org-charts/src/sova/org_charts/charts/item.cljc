@@ -241,6 +241,7 @@
     (state {:id :item :initial :live}
       (on-entry {} (dsl/watch (fn [d] (b/watch-sid (:org-id d) (:project-id d)))))
       (dsl/hold-cancel-correction)
+      (b/hold-review)
       (b/flush-transition)
 
       (parallel {:id :live}
@@ -381,7 +382,8 @@
    :correct/reopen     {:needs "L1" :tool "sova_correct" :correction true}
    :correct/skip-stall {:needs "L1" :tool "sova_correct" :correction true}
    :correct/relink     {:needs "L1" :tool "sova_correct" :correction true}
-   :hold/cancel        {:needs "L0" :correction true}})
+   :hold/cancel        {:needs "L0" :correction true}
+   :hold/approve       {:needs "L0" :correction true}})
 
 (defn not-here [event config data]
   (let [gap (:idea-id data)]

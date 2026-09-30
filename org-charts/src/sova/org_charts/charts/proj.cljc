@@ -162,6 +162,7 @@
   (statechart {:initial :project}
     (state {:id :project :initial :regions}
       (dsl/hold-cancel-correction)
+      (b/hold-review)
       (on-entry {}
         ;; project-scoped data names its project as every other chart does: the watch's ledger and
         ;; reasons (b/ledger, b/tell-watch) and the engine's drive stamp read :project-id
@@ -285,7 +286,8 @@
                        :what (fn [d] (str "A coding session \"" (or (:title (b/evt d)) "untitled") "\""))}
    :owner-update/post {:needs "L1" :tool "sova_owner_update" :people-facing true :hold true :confirm-kind "owner-update"
                        :what (fn [_] "An owner update")}
-   :hold/cancel       {:needs "L0" :correction true}})
+   :hold/cancel       {:needs "L0" :correction true}
+   :hold/approve      {:needs "L0" :correction true}})
 
 (defn not-here [event config data]
   (case event

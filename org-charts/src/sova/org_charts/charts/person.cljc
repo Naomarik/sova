@@ -162,6 +162,7 @@
   (statechart {:initial :person}
     (state {:id :person :initial :born}
       (dsl/hold-cancel-correction)
+      (b/hold-review)
       (state {:id :born}
         (on-entry {}
           (script {:expr (fn [_ d] (into [(ops/assign :status (get-in d [:person :status] "active"))]
@@ -213,7 +214,8 @@
                     ;; a revert that sets left needs the global Overseer's card (F-033, F-185)
                     :card (fn [d] (let [{:keys [field from]} (:row (b/evt d))]
                                     (when (and (= "status" (some-> field name)) (= "left" from)) {:people [(:id d)]})))}
-   :hold/cancel    {:needs "L0" :correction true}})
+   :hold/cancel    {:needs "L0" :correction true}
+   :hold/approve   {:needs "L0" :correction true}})
 
 (defn not-here
   "An act with no transition in this configuration."

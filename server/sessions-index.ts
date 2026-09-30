@@ -25,6 +25,7 @@ import { isOverseerId, overseerDir } from "./overseer-store";
 import { readDecisionSettings } from "./decide-settings";
 import { readSignals, signalsOverlay, workerSignalsOverlay } from "./signals-store";
 import { dropSessionTags, tagsFor } from "./session-tags";
+import { pruneReadiness, readinessOverlay } from "./merge-readiness";
 import { batonSummaryField } from "./baton";
 import { projectOverseerOfPath } from "./project-overseer-store";
 import { orgCodingIds, orgLookup } from "./org-sessions";
@@ -865,7 +866,7 @@ export async function listSessions(): Promise<SessionSummary[]> {
     const org = orgs.of(s.path, s.id);
     // The husk check above reads the DERIVED title on purpose: what keeps an empty session out of
     // the list is that nobody has written in it, which renaming it doesn't change.
-    out.push({
+    const row: SessionSummary = {
       ...withTitle(s, titles),
       ...outlineOverlay(s, liveOutline(l, ownRec)),
       live: liveField(l),
@@ -881,8 +882,12 @@ export async function listSessions(): Promise<SessionSummary[]> {
       ...(hasDraft ? { hasDraft: true as const } : {}),
       ...special,
       ...(org ? { org } : {}),
-    });
+    };
+    // Merge readiness (§chat.worktrees/readiness): the last background answer; git is never awaited here.
+    const readiness = readinessOverlay(row);
+    out.push(readiness ? { ...row, readiness } : row);
   }
+  pruneReadiness(out);
   out.sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
   return out;
 }
@@ -910,7 +915,7 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
   const ownRec = readOwnLiveRecords().get(path);
   const groupId = readAssignments()[s.id];
   const worker = await workerSessions.isWorker(s.path).catch(() => false);
-  return {
+  const row: SessionSummary = {
     ...withTitle(s, readSessionTitleRecords()),
     ...outlineOverlay(s, liveOutline(l, ownRec)),
     live: liveField(l),
@@ -925,6 +930,8 @@ export async function getSessionSummary(path: string, resolveWindow?: WindowReso
     ...batonFields(s.path),
     ...orgField(s.path, s.id),
   };
+  const readiness = readinessOverlay(row);
+  return readiness ? { ...row, readiness } : row;
 }
 
 const archivedListeners = new Set<(sessionId: string) => void>();

@@ -30,6 +30,12 @@ describe("pushDecision", () => {
     assert.deepEqual([...d.announced], ["a:error"]);
   });
 
+  test("blockers that are no notification kind (a stalled team, a reply that asks) are told, never sent", () => {
+    const d = pushDecision({ ...base, current: [b("a", "team-stalled"), b("c", "asks-you"), b("d", "error")], announced: new Set() });
+    assert.deepEqual(keysOf(d), ["d:error"]);
+    assert.ok(d.announced.has("a:team-stalled") && d.announced.has("c:asks-you"));
+  });
+
   test("a new blocker is sent once, until it clears; a recurrence is new", () => {
     let d = pushDecision({ ...base, current: [b("a", "error"), b("b", "needs-input")], announced: new Set(["a:error"]) });
     assert.deepEqual(keysOf(d), ["b:needs-input"]);
@@ -84,9 +90,9 @@ describe("pushPayload", () => {
     assert.equal(p.count, 2);
   });
   test("several sessions: a count, a line each, opens the Overseer", () => {
-    const p = pushPayload([b("a", "error"), b("b", "looping"), b("a", "open-questions")], 3, 5, plain);
+    const p = pushPayload([b("a", "error"), b("b", "worker-error"), b("a", "open-questions")], 3, 5, plain);
     assert.equal(p.title, "2 sessions need you");
-    assert.equal(p.body, "Session a — Error\nSession b — Subagent stuck");
+    assert.equal(p.body, "Session a — Error\nSession b — Subagent error");
     assert.equal(p.tag, "sova:several");
     assert.equal(p.hash, "#/overseer");
   });
@@ -153,6 +159,15 @@ describe("stores", () => {
     const stale = parsed({ kinds: { "asks-you": true, error: false } }, true);
     assert.equal(stale.kinds["open-questions"], true, "a stale client's PUT with the old key is accepted");
     assert.equal(parsed({}, false).kinds["open-questions"], true, "no stored choice: the default");
+  });
+
+  test("looping (Subagent stuck) is retired: a stored choice is dropped, and a stale client's key is never a 400", () => {
+    const out = store.parsePushSettings({ kinds: { looping: false, error: false } }, true);
+    assert.ok(!("error" in out), "a PUT with the retired key is accepted");
+    const kinds = (out as { kinds: Record<string, boolean> }).kinds;
+    assert.ok(!("looping" in kinds));
+    assert.equal(kinds.error, false);
+    assert.ok(!("looping" in store.defaultPushSettings().kinds));
   });
 
   test("quiet hours wrap across midnight, in server-local time", () => {

@@ -762,7 +762,8 @@ replaces the section's body, and nothing opens over Settings (§app.settings-dia
   button is accent-filled `Stop Recording` with the stop glyph, and the time and the level (number
   first, then the bar) show under the sentence. A sentence stops itself at 20 s, the passage at
   60 s. On stop the clip uploads at once (`PUT /api/voice/calibration/clips/<n>?device=<id>`, the
-  same WAV checks as transcribe, replacing any earlier take), then `Next Sentence`, `Record Again`,
+  same WAV checks as transcribe plus the clip check, §app.settings-dialog/voice-clip-check,
+  replacing any earlier take), then `Next Sentence`, `Record Again`,
   `Skip Sentence`. A clip whose level never rose above the speech threshold isn't uploaded; the
   line says so. If the page goes to the background mid-recording, the take is dropped (a cut
   sentence is worse than none) and the line says to record it again. `Esc` while recording cancels
@@ -775,10 +776,12 @@ replaces the section's body, and nothing opens over Settings (§app.settings-dia
   Forget and Uninstall remove them too.
 - **The sweep.** `Find Best Settings` (primary; needs at least 4 clips) starts a server job
   (`POST /api/voice/calibration/run?device=<id>`, 202), after an estimate of how long it takes. On
-  a GPU install it tries 24 settings — prompt {none, hotword list, hotword sentence} × beam {1, 5} ×
-  voice detection {off, on} × fallback {0.2, none} — and on a CPU install 8 — prompt {list,
-  sentence} × beam {1, 5} × fallback {0.2, none}, voice detection off. The device's current
-  settings are always among them, run first and again last; clips go round-robin, and each
+  a GPU install it tries 12 settings — prompt {none, hotword list, hotword sentence} × beam {1, 5} ×
+  voice detection {off, on} — and on a CPU install 4 — prompt {list, sentence} × beam {1, 5}, voice
+  detection off — all with the 0.2 fallback (on clips a few seconds long it almost never fires, so
+  trying it off doubled the sweep for nothing). The device's current settings are always among them,
+  run first and again last; each clip is decoded as dictation would decode it, with the folder
+  hint of this device's last dictation on this host (§chat.voice/transcribe), if any; clips go round-robin, and each
   setting's time is its median. It runs through the dictation-first lane (§chat.voice/runtime), so
   dictating on any device keeps working and the progress says "Paused for dictation." meanwhile.
   Progress: which setting of how many, a meter, time left, and the best so far. You can close
@@ -787,11 +790,19 @@ replaces the section's body, and nothing opens over Settings (§app.settings-dia
   Settings` is `aria-disabled` with the reason (recording still works). A model switch is refused
   while it runs. On Parakeet there is nothing to sweep:
   the job is one scoring run of the clips, giving one results row.
-- **Scoring.** Word error is the normalized word error rate against the reference (case and
-  punctuation ignored). Jargon hits count each jargon word heard as written — edge punctuation and a
-  possessive 's don't matter ("Sova's" counts), a hyphen does ("sub-agent" misses) — and "Sova"
-  counts only capitalized. The best setting has the fewest word errors; among settings within 1
-  word of it, more jargon hits win, then fewer errors, then the shorter time per clip. A setting
+- **Scoring.** What was heard is scored after the jargon post-correction dictation applies
+  (§chat.voice/jargon-fixes). Word error is the normalized word error rate against the reference
+  (case and punctuation ignored, and a compound split in two — "work tree", "state chart", "sub
+  agent", "type script" — counted as the one word it is, so one spelling slip is one error). A
+  transcript that repeats a run of 6 or more words of the prompt it was decoded with is the model
+  echoing its prompt, not hearing: it scores as nothing heard. Jargon hits count each jargon word
+  (Sova, worktree, Overseer, statechart, subagent, TypeScript, Claude) aligned with the same word,
+  heard as written, at its place in the word alignment — a jargon word elsewhere in the transcript
+  doesn't count; edge punctuation and a possessive 's don't matter ("Sova's" counts), a hyphen or a
+  split does ("sub-agent" misses) — and "Sova" counts only capitalized. The best setting has the
+  fewest word errors; among settings within 1 word of it, more jargon hits win, then fewer errors,
+  then the shorter time per clip. The device's current settings stay first unless the best of the
+  others has at least 3 fewer word errors: on about 100 words a smaller gain is noise. A setting
   scored on fewer clips (a stopped run) ranks after every fully scored one.
 - **Voice detection unavailable.** If the Silero model can't be fetched, the sweep skips the
   settings with voice detection on and the results say so; it never scores them without it.
@@ -807,7 +818,7 @@ replaces the section's body, and nothing opens over Settings (§app.settings-dia
   for this device and the active model, and the results say so with `Revert to Previous`
   (`POST /api/voice/calibration/revert?device=<id>`), which puts back what was saved before. Any
   other row has `Use These Settings`, which saves that row
-  (`POST /api/voice/calibration/apply?device=<id>` with the chosen row). If the current settings scored best, nothing changes and the results say so. A
+  (`POST /api/voice/calibration/apply?device=<id>` with the chosen row). If the current settings rank first (no setting beat them by 3 words or more), nothing changes and the results say so. A
   stopped or failed sweep applies nothing; its rows still offer `Use These Settings`, which
   saves that row's settings as chosen, with no calibration summary (only a completed run gives one). On Parakeet
   nothing is applied: its score is one row labelled with the model, shown beside the device's
@@ -816,3 +827,21 @@ replaces the section's body, and nothing opens over Settings (§app.settings-dia
   model; there is no separate discard.
 - **No Save.** Applying, reverting, forgetting and model jobs are immediate actions, like
   Uninstall: Voice has no staged form and no part in the footer's Save (§app.settings-dialog/save-bar).
+
+## §app.settings-dialog/voice-clip-check — Calibration clip check
+
+A calibration clip is checked on upload, before it is kept, because a damaged clip makes every
+model look bad. It is refused (400) with one plain sentence naming the first cause found, and the
+sentence step shows that sentence on its status line; nothing is kept:
+
+- **Clipping** — more than 0.1% of samples at full scale: "This clip is clipping: the mic is too
+  loud. Lower its input level and record again."
+- **Too quiet** — no 20 ms stretch louder than −40 dBFS: "This clip is too quiet to score. Move
+  closer to the mic or raise its input level, and record again."
+- **Digital silence** — a run of exactly-zero samples longer than 50 ms between the first and last
+  speech (a 20 ms stretch above −40 dBFS), or more than 10% of all samples exactly zero: "This clip
+  has digital silence inside speech — a system noise gate (like EasyEffects' RNNoise VAD) is
+  cutting your voice. Turn it off and record again." A raw mic always carries some noise, so exact
+  zeros only come from processing.
+- **Cut off** — the last 100 ms still above −45 dBFS: "This clip ends mid-word. Record it again and
+  stop a moment after the last word."

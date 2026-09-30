@@ -32,7 +32,6 @@ const SETTINGS: DecisionSettings = {
 };
 const REPLY = {
   topic: { probabilities: { feature: 1 } },
-  status: { probabilities: { done: 1 } },
   throwaway: { p: 0 },
 };
 

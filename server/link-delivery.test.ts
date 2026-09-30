@@ -118,11 +118,11 @@ describe("§mesh.links/transcript: exclusions", () => {
     assert.equal((await readTailTurn(own, st.size))?.user, "own ask");
   });
 
-  test("attention signals never ask whether any turn asks something; a long link-opened turn is still checked for stuck", () => {
+  test("attention signals never ask whether a link-opened turn asks something; a long one is still checked for stuck", () => {
     const facts = (lastUser: string, tools = 0) => ({ turnId: "a", replyAt: 2, lastUser, assistantLast: "Should I merge it?", tools: Array.from({ length: tools }, () => ({ name: "bash", args: "{}", result: "" })), stopReason: "stop", durationMs: 1000 });
     assert.deepEqual(Object.keys(turnQuestions(facts(linkText()))), []);
     assert.deepEqual(Object.keys(turnQuestions(facts(linkText(), 50))), ["stuck"]);
-    assert.deepEqual(Object.keys(turnQuestions(facts("please fix the build"))), [], "nor is the user's own: a question to the user is no model's call (§chat.alignment/session-mark)");
+    assert.deepEqual(Object.keys(turnQuestions(facts("please fix the build"))), ["asks_user"], "the user's own turn is asked (§app.decisions/asks-user): the tag makes the difference");
     // turnFacts reads the tagged message as the turn's opener, as the classifier needs.
     const branch = [msg("l1", null, "user", linkText()), msg("a1", "l1", "assistant", "Should I merge it?")];
     assert.ok(turnFacts(branch as never)!.lastUser.startsWith("[link_msg "));

@@ -45,7 +45,8 @@ const full = (): Required<SessionSummary> => ({
   signals: { at: 11, turnId: "e1", provider: "jev", stuck: { score: 2, confidence: 0.9 }, kinds: ["looping"] },
   workerSignals: { stuck: 1 },
   turnError: { message: "overloaded" },
-  tags: { topic: "feature", status: "done" },
+  tags: { topic: "feature" },
+  readiness: { trees: [{ path: "/w/t", branch: "feat/x", state: "ready", why: "checks passed" }], badge: "ready", branch: "feat/x", since: 12 },
 });
 
 /** A different value of the same shape, reaching inside objects. */

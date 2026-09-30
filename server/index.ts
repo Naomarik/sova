@@ -38,7 +38,7 @@ import { addWebSession } from "./web-sessions";
 import { draftForClient, setDraft } from "./drafts";
 import { worktreeInsights } from "./worktrees";
 import { DiffError, gitDiffs, scopeFromQuery } from "./git-diff";
-import { decodeWorkers, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
+import { decodeWorkers, teamDuties, getAgentsInsight, getHiddenWorkers, getSessionInsight, setInsightLinks, getUsageInsight, invalidateUsageMemo, refreshUsageInsight, usageRefreshBusy } from "./insights";
 import { startUsagePoller } from "./usage-poll";
 import { startPriceRefresh } from "./model-prices";
 import { archiveSession, cachedTitleOf, cleanupSessions, getSessionSummary, idOf, lastReplyOf, listCwds, listSessionFiles, listSessions, onSessionArchived, onSummaryLineChanged } from "./sessions-index";
@@ -113,6 +113,9 @@ import { decisionsInfo, decisionsOptions, deleteKey, probeDecisions, putJevKey, 
 import { AttentionSignals } from "./attention-signals";
 import { configureSessionFeed, nudgeMarks, publishFeed } from "./session-feed";
 import { onTagsChanged } from "./session-tags";
+import { terminalSession } from "./decide-settings";
+import { MergeFollowUps } from "./merge-followup";
+import { configureReadiness } from "./merge-readiness";
 import { startSessionTags, tagRoutes } from "./tags-backfill";
 import { pushRoutes } from "./push-routes";
 import { readLiveRecords } from "./live";
@@ -1416,6 +1419,7 @@ const attentionSignals = new AttentionSignals({
   held: (path) => !!heldChat(path),
   liveRecords: () => readLiveRecords({ includeOwn: true }),
   decodeWorkers: (presence) => decodeWorkers(presence),
+  duties: teamDuties,
   adapters: defaultAdapters,
   redact: (value) => serverRedactor().redactDeep(value),
   changed: nudgeMarks,
@@ -1435,6 +1439,12 @@ startSessionTags({
   publish: (progress) => publishFeed({ type: "tags_backfill", progress }),
 });
 onTagsChanged(() => nudgeMarks());
+// Merge readiness (§chat.worktrees/readiness) is git and the file; its one follow-up check per
+// merge (§app.decisions/merge-followup) goes through the same seam, only with attention signals on.
+configureReadiness({
+  followUps: new MergeFollowUps({ provider: decisions, settings: decisionSettings, ready: decisionsReady }),
+  terminal: (s) => terminalSession(s, !!heldChat(s.path)),
+});
 
 // With the experimental switch on, register the Claude Code provider now rather than when the
 // user first opens a session, so its models are in GET /api/models for the picker straight away.

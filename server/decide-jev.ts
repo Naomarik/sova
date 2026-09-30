@@ -19,6 +19,10 @@ import {
 
 export const JEV_API = "https://api.typesafe.ai";
 export const JEV_TIMEOUT_MS = 8_000;
+/** Purposes nobody waits on (tags, subagent checks, a merge's follow-up check) get longer: Jev
+    takes 3–9 s at these state sizes, and a timeout is a missing answer. */
+export const JEV_BACKGROUND_TIMEOUT_MS = 15_000;
+const BACKGROUND_PURPOSES: ReadonlySet<string> = new Set(["tags", "worker", "merge-followup"]);
 /** Jev's limit is 32k tokens for state + the longest question; keep a margin (chars/4 is rough). */
 export const JEV_MAX_TOKENS = 30_000;
 
@@ -27,6 +31,7 @@ export interface JevProviderOptions {
   fetch?: typeof fetch;
   model?: string;
   timeoutMs?: number;
+  backgroundTimeoutMs?: number;
   baseUrl?: string;
 }
 
@@ -127,6 +132,7 @@ export function createJevProvider(opts: JevProviderOptions): DecisionProvider & 
   const doFetch = opts.fetch ?? fetch;
   const model = opts.model ?? "jev-latest";
   const timeoutMs = opts.timeoutMs ?? JEV_TIMEOUT_MS;
+  const backgroundTimeoutMs = opts.backgroundTimeoutMs ?? JEV_BACKGROUND_TIMEOUT_MS;
   const base = opts.baseUrl ?? JEV_API;
 
   /** Scrub the key out of anything we are about to report (belt and braces: we never include it). */
@@ -143,9 +149,10 @@ export function createJevProvider(opts: JevProviderOptions): DecisionProvider & 
       const longest = Math.max(...Object.values(questions).map((q) => estimateTokens(q)));
       if (estimateTokens(req.state) + longest > JEV_MAX_TOKENS) throw new DecisionError("too-large", "the state is too large for Jev", { provider: "jev" });
       const started = Date.now();
+      const deadline = BACKGROUND_PURPOSES.has(req.purpose) ? backgroundTimeoutMs : timeoutMs;
       let res: Response;
       try {
-        res = await withDeadline(timeoutMs, req.signal, (signal) =>
+        res = await withDeadline(deadline, req.signal, (signal) =>
           doFetch(`${base}/v1/systemone`, {
             method: "POST",
             headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
@@ -155,7 +162,7 @@ export function createJevProvider(opts: JevProviderOptions): DecisionProvider & 
         );
       } catch (err) {
         const aborted = err instanceof Error && (err.name === "AbortError" || err.name === "TimeoutError");
-        throw new DecisionError(aborted ? "timeout" : "network", aborted ? `Jev did not answer within ${timeoutMs} ms` : scrub(`Jev unreachable: ${failureMessage(err)}`, key), { provider: "jev" });
+        throw new DecisionError(aborted ? "timeout" : "network", aborted ? `Jev did not answer within ${deadline} ms` : scrub(`Jev unreachable: ${failureMessage(err)}`, key), { provider: "jev" });
       }
       const requestId = res.headers.get("x-typesafe-request-id") ?? undefined;
       let body: unknown;

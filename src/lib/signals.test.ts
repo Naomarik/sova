@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type SessionSignals, type SessionSummary, TAG_STATUSES, TAG_TOPICS, type SignalKind } from "../../shared/protocol";
+import { type SessionSignals, type SessionSummary, TAG_TOPICS, type SignalKind } from "../../shared/protocol";
 import {
   applyMarks,
   createNudgeThrottle,
@@ -14,7 +14,6 @@ import {
   signalTitle,
   signalWords,
   tagSearchText,
-  tagStatusWord,
   tagsTitle,
   tagTopicWord,
   turnErrorTitle,
@@ -32,6 +31,13 @@ test("the mark is the most urgent kind the server sent, never one it didn't", ()
   assert.equal(rowNeedsYou(row(), open), null);
   assert.equal(rowNeedsYou(row({ signals: sig([]) }), open), null, "a classified turn with no kinds shows nothing");
   assert.deepEqual(rowNeedsYou(row({ signals: sig(["looping"]) }), open), { kind: "looping", worker: false });
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you", "looping"]) }), open), { kind: "asks-you", worker: false }, "an ask outranks looping");
+  assert.deepEqual(rowNeedsYou(row({ signals: sig(["asks-you"]), workerSignals: { stuck: 1 } }), open), { kind: "asks-you", worker: false });
+  assert.equal(rowNeedsYou(row({ align: align(1), signals: sig(["asks-you"]) }), open)?.kind, "questions", "open questions outrank an ask");
+  assert.equal(rowNeedsYou(row({ signals: sig(["asks-you", "looping"], 100), seenAt: 200 }), open)?.kind, "asks-you", "a look does not answer it; looping is gone once seen");
+  assert.equal(rowNeedsYou(row({ signals: sig(["looping"], 100), seenAt: 200 }), open), null);
+  assert.equal(signalWords({ kind: "asks-you", worker: false }), "Asks you something. ");
+  assert.equal(signalTitle({ kind: "asks-you", worker: false }), "The last reply asks you something.");
   // Raw answers far past any threshold don't make a mark: the kinds are the server's word.
   const raw = { ...sig([]), stuck: { score: 2, confidence: 1 } };
   assert.equal(rowNeedsYou(row({ signals: raw }), open), null);
@@ -86,41 +92,39 @@ test("the turn-error tooltip says the fact, then pi's message when there is one"
 });
 
 test("every kind has its own glyph, class and words", () => {
-  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "looping"]);
-  const icons = SIGNAL_PRECEDENCE.map((k) => SIGNAL_ICON[k]);
+  assert.deepEqual([...SIGNAL_PRECEDENCE], ["questions", "asks-you", "looping"]);
+  // Open questions show their count, no glyph: only the glyph kinds need distinct icons.
+  const icons = SIGNAL_PRECEDENCE.filter((k) => k !== "questions").map((k) => SIGNAL_ICON[k]);
   const classes = SIGNAL_PRECEDENCE.map((k) => SIGNAL_CLASS[k]);
   const words = SIGNAL_PRECEDENCE.flatMap((k) => [signalWords({ kind: k, worker: false }), signalWords({ kind: k, worker: true })]);
-  assert.equal(new Set(icons).size, SIGNAL_PRECEDENCE.length);
+  assert.equal(new Set(icons).size, icons.length);
   assert.equal(new Set(classes).size, SIGNAL_PRECEDENCE.length);
-  // A worker only ever speaks for "looping"; open questions are the session's own, whatever the flag.
-  assert.equal(new Set(words).size, 3, "worker and session words differ except where one never applies");
+  // A worker only ever speaks for "looping"; open questions and asks are the session's own, whatever the flag.
+  assert.equal(new Set(words).size, 4, "worker and session words differ except where one never applies");
   for (const w of words) assert.match(w, /\. $/, "hidden words end a sentence before the title");
 });
 
-test("status words: every status has one, lowercase, and absent means none", () => {
-  for (const st of TAG_STATUSES) assert.match(tagStatusWord({ status: st }) ?? "", /^[a-z ]+$/);
-  assert.equal(tagStatusWord({ status: "in_progress" }), "in progress");
-  assert.equal(tagStatusWord({ topic: "docs" }), null);
-  assert.equal(tagStatusWord(undefined), null);
+test("topic words: every topic has one, and absent means none", () => {
+  assert.equal(tagTopicWord({ user: ["x"] }), null);
+  assert.equal(tagTopicWord(undefined), null);
   for (const t of TAG_TOPICS) assert.ok(tagTopicWord({ topic: t }));
   assert.equal(tagTopicWord({ topic: "bugfix" }), "bug fix");
 });
 
 test("search matches a tag by id and by its display word, and the user's own tags", () => {
-  const text = tagSearchText({ topic: "bugfix", status: "in_progress", user: ["release"] });
-  for (const q of ["bugfix", "bug fix", "in_progress", "in progress", "release"]) assert.ok(text.includes(q), q);
+  const text = tagSearchText({ topic: "bugfix", user: ["release"] });
+  for (const q of ["bugfix", "bug fix", "release"]) assert.ok(text.includes(q), q);
   assert.equal(tagSearchText(undefined), "");
 });
 
 test("line 3's title names what is tagged, and nothing when nothing is", () => {
-  assert.equal(tagsTitle({ topic: "bugfix", status: "done" }), "Topic: bug fix · status: done (tagged automatically)");
-  assert.equal(tagsTitle({ status: "done" }), "Status: done (tagged automatically)");
+  assert.equal(tagsTitle({ topic: "bugfix" }), "Topic: bug fix (tagged automatically)");
   assert.equal(tagsTitle({ user: ["x"] }), null);
   assert.equal(tagsTitle(undefined), null);
 });
 
 test("the feed: nothing applies before a full snapshot; then it is the whole truth for this host", () => {
-  const listed = row({ signals: sig(["looping"]), tags: { status: "done" } });
+  const listed = row({ signals: sig(["looping"]), tags: { topic: "docs" } });
   assert.equal(overlaid(listed, EMPTY_OVERLAY), listed, "no snapshot yet: the list's own fields");
   const full = applyMarks(EMPTY_OVERLAY, { full: true, sessions: [] });
   const bare = overlaid(listed, full);
@@ -130,27 +134,27 @@ test("the feed: nothing applies before a full snapshot; then it is the whole tru
 });
 
 test("the feed: deltas set, clear with null, and leave absent fields alone", () => {
-  let o = applyMarks(EMPTY_OVERLAY, { full: true, sessions: [{ id: "a", path: "/s/a.jsonl", signals: sig(["looping"]), tags: { status: "done" } }] });
+  let o = applyMarks(EMPTY_OVERLAY, { full: true, sessions: [{ id: "a", path: "/s/a.jsonl", signals: sig(["looping"]), tags: { topic: "docs" } }] });
   o = applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", signals: null }] });
   const s = overlaid(row(), o);
   assert.equal(s.signals, undefined);
-  assert.deepEqual(s.tags, { status: "done" });
+  assert.deepEqual(s.tags, { topic: "docs" });
   o = applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", workerSignals: { stuck: 1 } }] });
   assert.deepEqual(overlaid(row(), o).workerSignals, { stuck: 1 });
   // The turn-error mark rides the same feed: it appears and clears without a list read.
   o = applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", turnError: { message: "boom" } }] });
   assert.deepEqual(overlaid(row(), o).turnError, { message: "boom" });
   assert.equal(overlaid(row({ turnError: { message: "boom" } }), applyMarks(o, { sessions: [{ id: "a", path: "/s/a.jsonl", turnError: null }] })).turnError, undefined);
-  assert.deepEqual(overlaid(row(), o).tags, { status: "done" });
+  assert.deepEqual(overlaid(row(), o).tags, { topic: "docs" });
   // A new full snapshot replaces everything the deltas built.
   o = applyMarks(o, { full: true, sessions: [] });
-  assert.deepEqual(overlaid(row({ tags: { status: "done" } }), o).tags, undefined);
+  assert.deepEqual(overlaid(row({ tags: { topic: "docs" } }), o).tags, undefined);
 });
 
 test("the feed keeps row identity: untouched rows are the same object, changed rows are new", () => {
-  const a = row({ tags: { status: "done" } });
+  const a = row({ tags: { topic: "docs" } });
   const b = row({ id: "b", path: "/s/b.jsonl" });
-  const o = applyMarks(EMPTY_OVERLAY, { full: true, sessions: [{ id: "a", path: a.path, tags: { status: "done" } }] });
+  const o = applyMarks(EMPTY_OVERLAY, { full: true, sessions: [{ id: "a", path: a.path, tags: { topic: "docs" } }] });
   assert.equal(overlaid(a, o), a);
   assert.equal(overlaid(b, o), b);
   const o2 = applyMarks(o, { sessions: [{ id: "b", path: b.path, signals: sig(["looping"]) }] });

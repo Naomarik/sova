@@ -46,10 +46,13 @@ tier and comes back is new again.
 - **Kinds.** `needs-input` (a dialog is open), `open-questions` (an idle session's alignment has
   questions waiting on your answer, §chat.alignment/session-mark; a stored choice for the kind it
   replaced, `asks-you`, carries over to it, and a client still sending that key is not refused), `error` (the
-  last turn stopped with an error), `looping` (a subagent looks stuck — a main session's own
-  looping is not a blocker), `baton-needs-you` (a baton session waits on you) and `worker-error`
+  last turn stopped with an error), `baton-needs-you` (a baton session waits on you) and `worker-error`
   (a subagent ended in an error). Each can be switched off; all are on by default except
-  `worker-error`.
+  `worker-error`. `looping` ("Subagent stuck") is retired: a stuck subagent is no longer a blocker
+  (§app.overseer/attention-digest), so nothing could send it; a stored choice for it is dropped,
+  and a client still sending that key is not refused. A reply that asks you (`asks-you`,
+  §app.decisions/asks-user) and a team gone quiet (`team-stalled`, §app.decisions/team-stall) are
+  blockers but no notification kind: they are told without sending.
 - **Nothing old on start.** The first reading after the server starts is the baseline: blockers
   already there are never sent. The told-set is kept in memory only.
 - **Told without sending** — dropped for good, not held: when sending is off, no contact address
@@ -63,7 +66,7 @@ tier and comes back is new again.
   gives; its tag is `sova:{sessionId}`, so a newer one for the same session replaces the older
   on the device instead of stacking. Blockers of several sessions: "{n} sessions need you", the
   body one line per session ("{session title} — {Kind}"), tag `sova:several`. Kind words:
-  Needs input, Open questions, Error, Subagent stuck, Baton, Subagent error. While nothing could be sent
+  Needs input, Open questions, Error, Baton, Subagent error. While nothing could be sent
   (sending off, no contact, no device) the loop doesn't read the digest for this at all, and its
   first reading once something could be sent is a new baseline — the same outcome as dropping.
 - **Redacted.** Titles and details come from other sessions and show on a lock screen: both go

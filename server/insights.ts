@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type {
   AgentsInsight,
+  SessionWorktreeInfo,
+  WorktreeReadiness,
   CompactionInfo,
   ExplanationInfo,
   LiveAgentSession,
@@ -46,6 +48,7 @@ import { resolveSessionPath } from "./paths";
 import { collectSkills, hasSkills } from "./skills";
 import { activeBranch, parseLines } from "./transcript";
 import { describeWorktrees, worktreesOf } from "./worktrees-state";
+import { treeReadinessOf } from "./merge-readiness";
 import { LAST_KNOWN_REASON, lastKnownUsage, rememberUsage } from "./usage-last-known";
 import { workerSkills } from "./worker-skills";
 import { defaultAdapters } from "./worker-adapters";
@@ -1185,7 +1188,7 @@ export async function getSessionInsight(path: string): Promise<SessionInsight> {
     ...(usageTotal ? { usageTotal } : {}),
     ...(usage ? { usage } : {}),
     explanations: await explanations(facts),
-    ...(await worktreeRows(facts, workers)),
+    ...(await worktreeRows(facts, workers, path)),
     ...(await linkRows(facts.sessionId, path)),
   };
 }
@@ -1213,12 +1216,15 @@ export async function getHiddenWorkers(path: string): Promise<SessionHiddenWorke
   return { workers, listed: listed.length, total: listed.length + workers.length };
 }
 
-async function worktreeRows(facts: SessionFacts, workers: WorkerInfo[] | null): Promise<Pick<SessionInsight, "worktrees">> {
+async function worktreeRows(facts: SessionFacts, workers: WorkerInfo[] | null, path: string): Promise<Pick<SessionInsight, "worktrees">> {
   if (!facts.worktrees?.trees.length) return {};
   const cwds = workerCwds(facts.workerRecords.all);
   const rows = await describeWorktrees(facts.worktrees, facts.sessionId, (workers ?? []).map((w) => ({ status: w.status, cwd: cwds.get(w.id) })));
-  return rows ? { worktrees: rows } : {};
+  // Each row's merge readiness, as the session list last read it (§chat.worktrees/readiness).
+  return rows ? { worktrees: rows.map((r) => withReadiness(r, treeReadinessOf(path, r.path))) } : {};
 }
+
+const withReadiness = (row: SessionWorktreeInfo, readiness: WorktreeReadiness | undefined): SessionWorktreeInfo => (readiness ? { ...row, readiness } : row);
 
 /** SessionUsage = main rows from the branch tally + worker rows from the live record (team
  *  members via teamId), or undefined while nothing was spent. The lifetime workers Σ rides along
@@ -1268,3 +1274,11 @@ const toUsage = (t: ModelSpendTotal): TokenUsage => ({
   ...(t.cost > 0 ? { cost: t.cost } : {}),
 });
 const spendOf = (t: ModelSpendTotal, origin: SpendOrigin): ModelSpend => ({ model: t.model, origin, ...toUsage(t) });
+
+/** A session's team members with a standing duty (monitor, coordinator), by worker id: attention
+    signals never judge them stuck (server/attention-signals.ts), since they poll on purpose. */
+export async function teamDuties(path: string): Promise<Map<string, TeamDuty>> {
+  const out = new Map<string, TeamDuty>();
+  for (const t of (await sessionFacts(path)).teams) for (const m of t.members) if (m.duty) out.set(m.workerId, m.duty);
+  return out;
+}

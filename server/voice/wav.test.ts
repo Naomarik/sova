@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import { SELFTEST_WAV } from "./install";
-import { cleanTranscript, hintWord, inspectWav } from "./wav";
+import { cleanTranscript, clipProblem, fixJargon, hintWord, inspectWav, type WavInfo } from "./wav";
 
 /** A WAV header over `frames` of silence. */
 export function wav(o: { rate?: number; channels?: number; bits?: number; format?: number; frames?: number; extraChunk?: boolean } = {}): Buffer {
@@ -52,6 +52,42 @@ describe("inspectWav", () => {
     assert.match((inspectWav(wav({ channels: 2 })) as { error: string }).error, /mono \(got 2 channels\)/);
     assert.match((inspectWav(wav({ bits: 8 })) as { error: string }).error, /16-bit PCM/);
     assert.match((inspectWav(wav({ format: 3, bits: 32 })) as { error: string }).error, /16-bit PCM \(got format 3, 32-bit\)/);
+  });
+});
+
+describe("clipProblem", () => {
+  /** 1.5 s: 0.2 s of room noise, 1 s of a tone at `amp`, 0.3 s of room noise; `edit` changes samples. */
+  const clip = (amp = 3000, edit?: (s: Int16Array) => void) => {
+    const b = wav({ frames: 24000 });
+    const s = new Int16Array(24000);
+    for (let i = 0; i < s.length; i++) s[i] = i >= 3200 && i < 19200 ? Math.round(amp * Math.sin(i / 3)) : i % 2 ? 2 : -2;
+    edit?.(s);
+    Buffer.from(s.buffer).copy(b, 44);
+    return clipProblem(b, inspectWav(b) as WavInfo);
+  };
+  it("passes a clean clip, with its silence before and after the speech", () => {
+    assert.equal(clip(), null);
+  });
+  it("names digital silence inside speech, or too many exact zeros anywhere", () => {
+    assert.match(clip(3000, (s) => s.fill(0, 8000, 8000 + 960))!, /noise gate \(like EasyEffects' RNNoise VAD\)/);
+    assert.equal(clip(3000, (s) => s.fill(0, 8000, 8000 + 640)), null, "40 ms is under the limit");
+    assert.match(clip(3000, (s) => s.fill(0, 0, 3000))!, /digital silence/, "over 10% zeros, even outside speech");
+  });
+  it("names a cut-off tail, a too-quiet clip and clipping", () => {
+    assert.match(clip(3000, (s) => s.fill(3000, 22800))!, /ends mid-word/);
+    assert.match(clip(200)!, /too quiet/);
+    assert.match(clip(32767)!, /clipping/);
+  });
+});
+
+describe("fixJargon", () => {
+  it("fixes the jargon whisper misspells, whole words only, keeping a sentence-initial capital", () => {
+    assert.equal(
+      fixJargon("Work tree and worktreet, sub agents and a subagen, the state chart, Claud, SOVA and the overseer."),
+      "Worktree and worktree, subagents and a subagent, the statechart, Claude, Sova and the Overseer.",
+    );
+    assert.equal(fixJargon("claudette works on the treetop; a subagency charts state"), "claudette works on the treetop; a subagency charts state");
+    assert.equal(cleanTranscript(" check the work trees [BLANK_AUDIO]"), "check the worktrees");
   });
 });
 

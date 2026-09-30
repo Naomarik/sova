@@ -150,6 +150,26 @@ export class WorktreeInsights {
     return { sessions, generatedAt: this.now() };
   }
 
+  /**
+   * One linked worktree's reading by folder, for merge readiness (server/merge-readiness.ts): the
+   * same comparison and caches as `get`, plus its HEAD and, while it is unmerged and ahead, the
+   * subjects of its commits past the base (newest first, at most 50). null when the folder is gone
+   * or is not a linked worktree.
+   */
+  async treeStatus(dir: string): Promise<(WorktreeStatus & { head?: string; subjects?: string[] }) | null> {
+    const layout = await this.layout(dir);
+    if (!layout || layout === "gone" || !layout.linked) return null;
+    const st = await this.status({ path: layout.top, source: "session", exists: true }, layout);
+    this.prune();
+    const head = await this.git(layout.top, ["rev-parse", "--verify", "-q", "HEAD"]);
+    const out: WorktreeStatus & { head?: string; subjects?: string[] } = { ...st, ...(head.code === 0 ? { head: head.stdout.trim() } : {}) };
+    if (st.base && st.merged === "no" && (st.ahead ?? 0) > 0) {
+      const log = await this.git(layout.top, ["log", "--format=%s", "-n", "50", `${st.base}..HEAD`]);
+      if (log.code === 0) out.subjects = log.stdout.split("\n").filter(Boolean);
+    }
+    return out;
+  }
+
   private async forSession(raw: string): Promise<SessionWorktrees> {
     const path = resolveSessionPath(raw);
     if (!path) return { sessionPath: raw, trees: [] };

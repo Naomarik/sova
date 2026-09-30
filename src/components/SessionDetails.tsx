@@ -2,7 +2,7 @@ import { createEffect, createMemo, createSignal, For, Match, on, onCleanup, Show
 import type { CompactionInfo, ContextInfo, GitFileChange, GitRepoSummary, GitSummary, SessionInsight, SessionSummary, SessionWorktreeInfo, TranscriptItem } from "../../shared/protocol";
 import { contextSentence, contextStateFor } from "../lib/context";
 import { relativeTime, thousands, tildePath } from "../lib/format";
-import { readinessChip, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
+import { readinessChip, readinessReason, type WorktreeChip, worktreeChips, worktreesSummary, worktreeStatus } from "../lib/worktrees";
 import { absoluteTime, firstLine, timelineEntries } from "../lib/spend";
 import { orgProjectOf } from "../lib/drag-archive";
 import { archiveSession } from "../lib/session-actions";
@@ -647,6 +647,7 @@ function WorktreeRow(props: { worktree: SessionWorktreeInfo; path: string; cwd?:
             )}
           </Show>
         </div>
+        <Show when={readinessReason(w())}>{(line) => <p class="list-meta worktree-reason">{line()}</p>}</Show>
       </div>
       <Show when={w().status === "active" && w().exists}>
         <button

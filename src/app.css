@@ -649,6 +649,8 @@ html, body { overflow: clip; overscroll-behavior: none; }
   gap: var(--space-1) var(--space-2);
   margin-top: var(--space-1);
 }
+/* The readiness reason, visible so a phone gets it without hover: muted, and it wraps. */
+.worktree-row .worktree-reason { margin-top: var(--space-1); white-space: normal; overflow-wrap: anywhere; }
 
 /* §chat.worktrees/merge-card: one merge the session recorded, as a quiet card in the thread. */
 .worktree-merge { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-1); }

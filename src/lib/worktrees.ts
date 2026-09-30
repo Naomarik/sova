@@ -57,7 +57,7 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
   const why = r.why ? `${r.why[0]!.toUpperCase()}${r.why.slice(1)}.` : "";
   switch (r.state) {
     case "ready":
-      return { label: "Ready", tone: "success", title: why || "Ready to merge." };
+      return { label: "Ready to merge", tone: "success", title: why || "Nothing stands in the way of a merge." };
     case "waiting-approval":
       return { label: "Waiting for your OK", tone: "info", title: `Ready to merge, and the last reply asks you. ${why}`.trim() };
     case "in-progress":
@@ -67,6 +67,17 @@ export function readinessChip(w: Pick<SessionWorktreeInfo, "readiness">): Worktr
     case "stale":
       return { label: "Stale", tone: "warn", title: why || "Merged, but not clean." };
   }
+}
+
+/** The visible muted line under a worktree with a readiness, so a phone gets the reason without
+    hover: the server's `reason` ("Ready to merge · checks passed · 19 commits ahead"), else its
+    state and why. None with neither: the chip alone already says the state. */
+export function readinessReason(w: Pick<SessionWorktreeInfo, "readiness">): string | null {
+  const r = w.readiness;
+  if (r?.reason) return r.reason;
+  if (!r?.why) return null;
+  const label = r.state === "merged" ? "Merged" : readinessChip(w)!.label;
+  return `${label} · ${r.why}`;
 }
 
 /** The Session tab's line for a branch that tracks none: the section stays, and says so. */

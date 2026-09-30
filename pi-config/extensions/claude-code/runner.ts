@@ -234,6 +234,8 @@ export class ClaudeRunner implements Worker {
 	private lastStderr?: string;
 	/** The current transport's process is started by the hosting process (a confined launch is then the host's). */
 	private viaHost = false;
+	/** Confined: a launch of this worker used the sandbox's default tmp (released when the worker closes). */
+	private defaultTmp = false;
 	/** Confined: the next launch refreshes its login's token first (after a 401). */
 	private refreshNext = false;
 	/** Confined: the login whose token a 401 already refreshed once; a second 401 on it fails over. */
@@ -424,6 +426,8 @@ export class ClaudeRunner implements Worker {
 		let needs: ReturnType<typeof claudeNeeds>;
 		try { needs = claudeNeeds({ confine, cwd: o.cwd, login: this.login, env }); }
 		catch (error) { this.fail(refusal((error as Error).message)); return false; }
+		// Only a hosting process owns the hosted tmp; an inline launch (a hosted worker's failover) uses the default one.
+		if (!this.viaHost) delete needs.tmpDir;
 		let module: Awaited<ReturnType<typeof launchModule>>;
 		let tmp: { host: string; inside: string };
 		try {
@@ -447,6 +451,7 @@ export class ClaudeRunner implements Worker {
 			this.trackLogin();
 			return true;
 		}
+		this.defaultTmp = true;
 		const token = await freshAccessToken(loginDir, { force, refresh: o.refreshImpl ?? ((dir) => refreshLogin(dir, { executable: o.executable })) });
 		if (gone()) return false;
 		if (!token) { this.fail(refusal(`the Claude login ${this.login?.label ?? "default"} has no access token to hand over (sign it in again)`)); return false; }
@@ -1026,9 +1031,10 @@ export class ClaudeRunner implements Worker {
 		else if (this.initialOwed) {
 			this.initialOwed = false; this.taskOutcome = this.stopping && this.status !== "error" ? "aborted" : "error";
 			}
-		// A confined worker's default sandbox tmp goes with it (a hosted one's is the host's).
+		// A confined worker's default sandbox tmp goes with it: every inline launch used it (a hosted
+		// process's tmp is its host's).
 		const confine = this.options.confine;
-		if (confine && !confine.hostedTmpDir) void launchModule(confine.module).then((m) => m.releaseWorkerTmp?.(confine.scope)).catch(() => undefined);
+		if (confine && this.defaultTmp) void launchModule(confine.module).then((m) => m.releaseWorkerTmp?.(confine.scope)).catch(() => undefined);
 		this.endedAt = Date.now(); this.notifySettled(); this.touch(); this.handlers.onExit(this);
 		this.closedState.resolve();
 	}

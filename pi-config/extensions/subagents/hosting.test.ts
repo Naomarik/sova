@@ -290,6 +290,7 @@ test("real host, confined: the host reads the token, calls confineLaunch itself,
 		module: m.module, scope: "SCOPE", needs: { writable: ["/w"], spawnEnv: { CLAUDE_CONFIG_DIR: "/login/dir" }, tmpDir: path.join(dir, "tmp") },
 		token: { module: m.token, dir: "/login/dir", fd: 3, force: false }, dropEnv: ["CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CONFIG_DIR"],
 	};
+	fs.mkdirSync(path.join(dir, "tmp", "pi-claude-x"), { recursive: true });
 	const env = { ...process.env, CLAUDE_CODE_OAUTH_TOKEN: "leak", CLAUDE_CONFIG_DIR: "/login/dir" } as Record<string, string>;
 	const transport = hostedSpawnImpl({ dir, sock, lingerMs: 100, onHostStarted: (pid) => { hostPid = pid; } })("claude", ["-p", "x"], { cwd: dir, env, stdio: [], hosted }) as unknown as HostTransport;
 	const out: string[] = [];
@@ -307,6 +308,7 @@ test("real host, confined: the host reads the token, calls confineLaunch itself,
 	transport.stdin.end();
 	await until(() => closed, 5000, "close");
 	await until(() => fs.readFileSync(m.log, "utf8").includes('"cleanup":true'), 3000, "cleanup");
+	await until(() => !fs.existsSync(path.join(dir, "tmp")), 3000, "the host's own tmp removed with the worker");
 });
 
 test("real host, confined: a refusal or a missing token never runs the worker; status.json says why", { skip, timeout: 20_000 }, async (t) => {

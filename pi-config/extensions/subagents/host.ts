@@ -83,7 +83,14 @@ async function target(spec: HostSpawnSpec): Promise<Target> {
 	const sandbox = await import(c.module) as { confineLaunch(scope: string, needs: unknown, launch: unknown): Promise<{ refused: string } | { command: string; args: string[]; spawnEnv: Record<string, string>; fds: { fd: number; data: string }[]; cleanup(): Promise<void> }> };
 	const confined = await sandbox.confineLaunch(c.scope, { ...c.needs, fds: [{ fd: c.token.fd, data: token.token }] }, { command: spec.command, args: spec.args, cwd: spec.cwd ?? process.cwd(), env });
 	if ("refused" in confined) throw new Error(confined.refused);
-	return { command: confined.command, args: confined.args, env: confined.spawnEnv, fds: confined.fds, cleanup: () => confined.cleanup() };
+	// The launch's own tmp (needs.tmpDir) is this host's: it goes when the worker has exited.
+	const tmp = typeof c.needs.tmpDir === "string" ? c.needs.tmpDir : undefined;
+	return {
+		command: confined.command, args: confined.args, env: confined.spawnEnv, fds: confined.fds,
+		cleanup: async () => {
+			try { await confined.cleanup(); } finally { if (tmp) fs.rmSync(tmp, { recursive: true, force: true }); }
+		},
+	};
 }
 
 const DEFAULT_LINGER_MS = 60_000;

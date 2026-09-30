@@ -60,6 +60,8 @@ function fakeModule(root: string, refuse?: string): { file: string; calls: () =>
 	fs.writeFileSync(file, `
 import fs from "node:fs"; import path from "node:path";
 const calls = globalThis[${JSON.stringify(key)}] = [];
+export function releaseWorkerTmp(scope) { released.push(scope); }
+const released = globalThis[${JSON.stringify(key + "_released")}] = [];
 export function workerTmpDir(scope, needs) { const host = needs?.tmpDir ?? path.join(${JSON.stringify(root)}, "wtmp-" + scope); fs.mkdirSync(host, { recursive: true, mode: 0o700 }); return { host, inside: "/tmp" }; }
 export async function confineLaunch(scope, needs, launch) {
 	calls.push({ scope, needs: structuredClone(needs), launch: structuredClone(launch), cleaned: false });
@@ -70,7 +72,7 @@ export async function confineLaunch(scope, needs, launch) {
 		enforcement: "full", async cleanup() { call.cleaned = true; } };
 }
 `);
-	return { file, calls: () => (globalThis as any)[key] ?? [] };
+	return { file, calls: () => (globalThis as any)[key] ?? [], released: () => (globalThis as any)[`${key}_released`] ?? [] };
 }
 
 function credentials(dir: string, token: string, expiresAt = FAR): void {
@@ -224,6 +226,10 @@ test("every launch goes through the sandbox: a failover to the next login re-rea
 	await until(() => s.settled.length === 1);
 	assert.deepEqual(s.settled, ["success:DONE"]);
 	await until(() => s.module.calls().slice(0, 2).every((c) => c.cleaned), 3000);
+	assert.deepEqual(s.module.released(), [], "its tmp stays between launches");
+	await s.runner.kill("done");
+	await until(() => s.module.released().length === 1);
+	assert.deepEqual(s.module.released(), ["SCOPE"], "released once the worker closes for good");
 });
 
 test("the pool: a borrowed start and a move off a leaving login are confined too", { timeout: 10000 }, async (t) => {
@@ -274,6 +280,10 @@ test("hosted: the host confines the launch itself; the runner hands it plain dat
 	const file = child.argv[child.argv.indexOf("--append-system-prompt-file") + 1]!;
 	assert.match(file, /^\/tmp\/pi-claude-[^/]+\/system\.md$/);
 	assert.ok(fs.existsSync(path.join(s.root, "hosted-tmp", file.slice("/tmp/".length))), "written in the host's own tmp");
+	child.close();
+	await s.runner.whenClosed;
+	await tick();
+	assert.deepEqual(s.module.released(), [], "a hosted worker's tmp is its host's to remove");
 });
 
 test("claudeNeeds: an over-long transcript folder name is refused; the private dir is released", (t) => {

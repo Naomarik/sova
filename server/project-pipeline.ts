@@ -110,7 +110,10 @@ export function heldAttention(): AttentionItem[] {
         tier: "act",
         kind: "held-act",
         since: Date.parse(h.since) || 0,
-        detail: `${h.what} starts in ${Math.max(0, Math.ceil((goesAt - Date.now()) / 60_000))} min unless you cancel it.`,
+        detail:
+          h.wait === "hours"
+            ? `${h.what} waits for ${h.person ?? "the person"}'s working hours: it starts in ${Math.max(0, Math.ceil((goesAt - Date.now()) / 60_000))} min unless you cancel it.`
+            : `${h.what} starts in ${Math.max(0, Math.ceil((goesAt - Date.now()) / 60_000))} min unless you cancel it.`,
         href: p ? `#/orgs/${encodeURIComponent(o.id)}/projects/${encodeURIComponent(p.id)}` : `#/orgs/${encodeURIComponent(o.id)}`,
         org: { orgId: o.id, orgName, ...(p ? { projectId: p.id, projectName: p.name, ...(p.archived ? { projectArchived: true as const } : {}) } : {}) },
         held: {

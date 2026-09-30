@@ -1,3 +1,4 @@
+import { nextWindow } from "./org-charts";
 import { randomBytes } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
@@ -441,7 +442,17 @@ function personOf(orgId: string, s: { configuration: string[]; data: Record<stri
     language: String(d.language ?? ""),
     voice: String(d.voice ?? ""),
     ...(isObj(d.referral) ? { referral: d.referral as unknown as NonNullable<Person["referral"]> } : {}),
+    ...hoursOf(d),
   };
+}
+
+/** A person's tz and hours as their chart keeps them, and whether they are inside their hours now (r7). */
+function hoursOf(d: Record<string, unknown>, now = Date.now()): Pick<Person, "tz" | "hours" | "hoursNow"> {
+  const tz = typeof d.tz === "string" && d.tz ? d.tz : undefined;
+  const h = isObj(d.hours) && Array.isArray(d.hours.days) && typeof d.hours.from === "string" && typeof d.hours.to === "string" ? { days: (d.hours.days as unknown[]).map(Number), from: d.hours.from, to: d.hours.to } : undefined;
+  if (!tz && !h) return {};
+  const next = h && tz ? nextWindow({ tz, hours: h }, now) : null;
+  return { ...(tz ? { tz } : {}), ...(h ? { hours: h } : {}), ...(h && tz ? { hoursNow: next === null ? { open: true } : { open: false, nextOpen: new Date(next).toISOString() } } : {}) };
 }
 
 /** The roster, in the order people were added (their first history line). */
@@ -787,7 +798,7 @@ export function proposedGaps(p: Pick<Person, "name" | "contact" | "role" | "refe
 /** A person as an act's `target` stamp (the charts can't read another session's status). */
 export function targetOf(orgId: string, personId: unknown): { id: string; name: string; status: PersonStatus; referral?: unknown } | null {
   const p = typeof personId === "string" ? findPerson(orgId, personId) : undefined;
-  return p ? { id: p.id, name: p.name, status: p.status, ...(p.referral ? { referral: p.referral } : {}) } : null;
+  return p ? { id: p.id, name: p.name, status: p.status, ...(p.referral ? { referral: p.referral } : {}), ...(p.tz ? { tz: p.tz } : {}), ...(p.hours ? { hours: p.hours } : {}) } : null;
 }
 
 // ---- prompt partition and redaction (§app.organizations/privacy) ------------------------------------------

@@ -34,6 +34,8 @@ const VALUE: Record<ProfileField, unknown> = {
   language: "fr",
   voice: "Formal.",
   referral: { why: "Knows it", referredBy: "operator" },
+  tz: "Europe/Istanbul",
+  hours: { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" },
 };
 
 describe("organizations", async () => {

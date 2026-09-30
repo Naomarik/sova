@@ -272,7 +272,15 @@ export function namesOf(orgId: string): Record<string, string> {
 }
 
 /** A roster person as an act's envelope names a target (`target {id name status referral?}`). */
-export const targetOfPerson = (p: Pick<Person, "id" | "name" | "status" | "referral">) => ({ id: p.id, name: p.name, status: p.status, ...(p.referral ? { referral: true } : {}) });
+export const targetOfPerson = (p: Pick<Person, "id" | "name" | "status" | "referral" | "tz" | "hours">) => ({
+  id: p.id,
+  name: p.name,
+  status: p.status,
+  ...(p.referral ? { referral: true } : {}),
+  // r7: the act waits for their working hours (the chart's act meta `:hours` reads these).
+  ...(p.tz ? { tz: p.tz } : {}),
+  ...(p.hours ? { hours: p.hours } : {}),
+});
 const operatorTarget = () => ({ id: OPERATOR, name: operatorName(), status: "active" as const });
 
 /**
@@ -541,7 +549,9 @@ export async function createBaton(input: BatonStartInput, opts: CreateOptions = 
     leaseMs: leaseMs(),
     operatorName: operatorName(),
   };
-  const envelope = { ...(opts.envelope ?? operatorEnvelope(orgId, project.id, opts.by)), ...(invalid ? { invalid } : {}) };
+  // The person it reaches, as the chart reads them (status, and r7's zone and hours).
+  const person = to && to !== OPERATOR ? roster.find((p) => p.id === to) : undefined;
+  const envelope = { ...(opts.envelope ?? operatorEnvelope(orgId, project.id, opts.by)), ...(invalid ? { invalid } : {}), ...(person ? { target: targetOfPerson(person) } : {}) };
   const [sid, event] = opts.item ? [opts.item, opts.plan ? "gather/plan" : "gather/start"] : [`project/${orgId}/${project.id}`, "baton/start"];
   const out = await hostOf(orgId).act(sid, event, payload, envelope, { settle: true });
   if (!out.taken) throw refusalError(out.refusal ?? { sentence: "That can't be done now." });

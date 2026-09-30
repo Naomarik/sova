@@ -75,11 +75,25 @@ export interface Person {
   /** How to talk to them, ≤ 300 characters. */
   voice: string;
   referral?: PersonReferral;
+  /** r7: an IANA zone ("Europe/Istanbul"). Absent or "": unknown, so no hours check. */
+  tz?: string;
+  /** r7: when they work, in `tz`: days 0 = Sunday … 6 = Saturday, "HH:MM" from–to (`to` ≤ `from`: overnight).
+      Absent or null: no hours (acts reach them at once, as before). Not private: roster history like contact. */
+  hours?: PersonHours | null;
+  /** Computed on every read from the charts' next-window rule, never stored: inside their hours now, else
+      when the next window opens (ISO). Absent: no hours set. The page's off-hours note on the operator's own acts. */
+  hoursNow?: { open: boolean; nextOpen?: string };
+}
+
+export interface PersonHours {
+  days: number[];
+  from: string;
+  to: string;
 }
 
 /** The fields a change can set, one history line each. */
-export type ProfileField = "name" | "status" | "contact" | "role" | "decides" | "skills" | "competence" | "language" | "voice" | "referral";
-export const PROFILE_FIELDS: readonly ProfileField[] = ["name", "status", "contact", "role", "decides", "skills", "competence", "language", "voice", "referral"];
+export type ProfileField = "name" | "status" | "contact" | "role" | "decides" | "skills" | "competence" | "language" | "voice" | "referral" | "tz" | "hours";
+export const PROFILE_FIELDS: readonly ProfileField[] = ["name", "status", "contact", "role", "decides", "skills", "competence", "language", "voice", "referral", "tz", "hours"];
 
 export type ChangeWriter = "operator" | "wrapup" | "referral" | "overseer";
 

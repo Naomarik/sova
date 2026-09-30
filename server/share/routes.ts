@@ -10,6 +10,7 @@ import { OrgError } from "../orgs";
 import { refreshShare, viewForToken } from "./hub";
 import { ownerAccess } from "../owner";
 import { ownerView } from "../owner-page";
+import { mountSessionShareRoutes } from "./session-routes";
 import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink } from "../visits";
 
 /**
@@ -247,6 +248,10 @@ export function createShareApp(): Hono {
   app.get("/api/i/:token", ownerRead(() => ({})));
   app.get("/api/i/:token/p/:handle", ownerRead((c) => ({ project: c.req.param("handle") ?? "" })));
   app.get("/api/i/:token/c/:handle", ownerRead((c) => ({ conversation: c.req.param("handle") ?? "" })));
+
+  // ---- session shares (§app/session-share): read-only ------------------------------------------
+
+  mountSessionShareRoutes(app, shareDist, PAGE_CSP);
 
   app.all("*", (c) => c.json({ error: "Not found" }, 404));
   return app;

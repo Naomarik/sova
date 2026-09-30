@@ -282,7 +282,9 @@ describe("a project's coding sessions", async () => {
     const chat = await acquireChat(made.path);
     const llm = convertToLlm(chat.session.sessionManager.buildSessionContext().messages);
     assert.ok(llm.some((m) => m.role === "user" && JSON.stringify(m.content).includes(`on the branch ${made.worktree!.branch}`)), JSON.stringify(llm));
-    assert.deepEqual(store.readMemo(p).pending, pendingBefore, "no reason to look");
+    // Only its own: an earlier test's merge may still reach the watch in this window (master notes every merge).
+    const added = store.readMemo(p).pending.filter((t) => !pendingBefore.includes(t));
+    assert.deepEqual(added.filter((t) => t.includes(made.sessionId) || t.includes(made.worktree!.branch)), [], "no reason to look");
     assert.equal(JSON.stringify(readTodos(p.todos)), todosBefore, "no to-do touched");
     const info = await po.projectOverseerInfo(org.id, project.id);
     const listed = info.worktrees.sessions.find((s) => s.sessionId === made.sessionId);

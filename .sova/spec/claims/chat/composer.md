@@ -52,7 +52,7 @@
              accept="image/png,image/jpeg,image/gif,image/webp">
       <label class="visually-hidden" for="composer-input">Message</label>
       <textarea class="input textarea composer-input" id="composer-input" rows="1"
-                placeholder="Enter sends, Shift+Enter adds a line" enterkeyhint="send"
+                placeholder="Enter sends" enterkeyhint="send"
                 aria-describedby="composer-reason"></textarea>   <!-- touch mode: no placeholder, enterkeyhint="enter" -->
       <div class="composer-actions">
         <button class="button button-primary" type="submit">
@@ -134,8 +134,8 @@ button in flow and drops the rest (the disabled reason stays for assistive techn
   - Ignore `Enter` while `event.isComposing` (IME).
   - `enterkeyhint` is "enter" in touch mode and "send" otherwise.
   - **The key hint is in the placeholder** exactly when `Enter` sends (touch mode off), at any
-    width: "Enter sends, Shift+Enter adds a line", and while streaming "Steer the
-    current turn… Enter sends, Shift+Enter adds a line". In touch mode it's the short string alone
+    width: "Enter sends", and while streaming "Steer the current turn… Enter sends". A
+    placeholder wider than the box is cut on one line, never scrolled sideways. In touch mode it's the short string alone
     (none / "Steer the current turn…"), swapped in place when the mode changes. A read-only
     composer keeps the short string.
   - Empty or whitespace-only text doesn't send, and Send is `aria-disabled` with no reason text,

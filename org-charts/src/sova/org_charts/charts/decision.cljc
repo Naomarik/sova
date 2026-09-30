@@ -49,8 +49,8 @@
 (defn- result-transitions
   "The reconciler's verdict moves the decision, from wherever it is (a promoted one compared again
    and found in conflict, superseded or restated included)."
-  [here]
-  (for [[s target] result-states :when (not= target here)]
+  [here & [keep-on]]
+  (for [[s target] result-states :when (and (not= target here) (not (contains? keep-on s)))]
     (transition {:event :reconcile/result :cond (result-to? s) :target target}
       (script {:expr (fn [_ d] (take-result-ops d))}))))
 
@@ -123,7 +123,9 @@
 
       (state {:id :promoted}
         (state-name "promoted")
-        (result-transitions :promoted)
+        ;; a promoted one's fields come as "drafted": it stays promoted and takes them; it leaves
+        ;; only for conflict or superseded (and goes stale through the facts)
+        (result-transitions :promoted #{"drafted"})
         (transition {:event :reconcile/result :cond (result-to? "drafted")}
           (script {:expr (fn [_ d] (take-result-ops d))}))
         (parallel {:id :promoted-regions}
@@ -154,7 +156,9 @@
             (state {:id :built-done} (transition {:cond (fn [_ d] (not (built? d))) :target :not-built})))))
 
       (state {:id :superseded} (state-name "superseded")
-        (result-transitions :superseded)))))
+        (result-transitions :superseded)
+        ;; a restatement folded into it: it keeps collecting them (they share its fate)
+        (same-result "superseded")))))
 
 (def acts
   {:decision/owner-area  {:needs nil}

@@ -8,6 +8,7 @@ import {
   type SessionShareServerMessage,
   type SessionShareView,
 } from "../../shared/session-share";
+import { earlierLine, mergeNewest } from "../lib/share-slice";
 import { SESSION_VIS_KINDS } from "./markdown";
 import { LinkedText, Reply } from "./thread";
 import { visitTab } from "./visit-tab";
@@ -47,15 +48,6 @@ const moment = (iso: string) => new Date(iso).toLocaleString("en-US", { month: "
 export function viewLine(v: Pick<SessionShareView, "mode" | "sharedAt" | "through">): string {
   if (v.mode === "live") return `Shared ${day(v.sharedAt)} · read only`;
   return v.through ? `Shared ${day(v.sharedAt)} · up to ${moment(v.through)} · read only` : `Shared ${day(v.sharedAt)} · read only`;
-}
-
-/** A pushed newest page, kept with the earlier pages the reader already opened. */
-export function mergeNewest(cur: SessionShareView | null, next: SessionShareView): SessionShareView {
-  const first = next.items[0]?.n;
-  if (!cur || first === undefined) return next;
-  const earlier = cur.items.filter((i) => i.n < first);
-  if (earlier.length === 0) return next;
-  return { ...next, items: [...earlier, ...next.items], before: cur.before };
 }
 
 // ---- the thread ---------------------------------------------------------------------------------
@@ -129,6 +121,10 @@ export function SessionThread(props: {
           </div>
         }
       >
+        {/* A slice that starts partway says so once, above its first item (§app.session-share/slice). */}
+        <Show when={earlierLine(props.view)}>
+          <p class="ss-note ss-earlier-line">Earlier messages aren't part of this share.</p>
+        </Show>
         <For each={props.view.items}>{(it) => <Item item={it} imageUrl={props.imageUrl} />}</For>
       </Show>
     </section>
@@ -169,9 +165,12 @@ export function SessionShareApp() {
 
   /** Near the bottom when a live push lands: stay there, so new messages come into view. */
   const atBottom = () => window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 80;
-  const applyNewest = (v: SessionShareView) => {
+  /** Bumped by a reset: an earlier page read before it belongs to the old slice and is dropped. */
+  let generation = 0;
+  const applyNewest = (v: SessionShareView, reset = false) => {
+    if (reset) generation++;
     const pin = view() !== null && atBottom();
-    setView((cur) => mergeNewest(cur, v));
+    setView((cur) => mergeNewest(cur, v, reset));
     document.title = v.title;
     if (pin) queueMicrotask(() => window.scrollTo(0, document.documentElement.scrollHeight));
   };
@@ -203,7 +202,9 @@ export function SessionShareApp() {
   const load = async () => {
     if (!TOKEN) return;
     const v = await read();
-    if (v && v !== "failed") applyNewest(v);
+    // A read (the first, or again after a reconnect) replaces the view: a start moved while the
+    // socket was down renumbers every item, and a merge would mix the two slices.
+    if (v && v !== "failed") applyNewest(v, true);
   };
 
   const showEarlier = async () => {
@@ -212,7 +213,9 @@ export function SessionShareApp() {
     setEarlier("busy");
     const doc = document.documentElement;
     const fromBottom = doc.scrollHeight - window.scrollY;
+    const gen = generation;
     const page = await read(v.before);
+    if (gen !== generation) return setEarlier(null);
     if (!page) return setEarlier(null);
     if (page === "failed") return setEarlier("Couldn't load earlier messages. Try again.");
     setEarlier(null);
@@ -243,7 +246,7 @@ export function SessionShareApp() {
       } catch {
         return;
       }
-      if (msg.type === "view") applyNewest(msg.view);
+      if (msg.type === "view") applyNewest(msg.view, msg.reset === true);
       else if (msg.type === "error" && msg.code === "gone") setProblem(gone(msg.why));
     };
     ws.onclose = (e) => {

@@ -25,12 +25,16 @@
  * the share listener):
  * GET  /api/session-shares[?session=<id>]              -> SessionShare[] (newest first)
  * POST /api/session-shares  body SessionShareCreate    -> 201 SessionShareMinted
- * GET  /api/session-shares/preview?session=<id>[&cut=<c>][&before=<n>] -> SessionSharePreview (as a
- *                                                         recipient would see it; the first read
- *                                                         fixes `cut`, later reads and images pass
- *                                                         it; 409 stale-preview when it's gone;
- *                                                         no token, no visit)
- * GET  /api/session-shares/preview/img/<n>?session=<id>&cut=<c> -> image bytes (of that preview)
+ * GET  /api/session-shares/preview?session=<id>[&cut=<c>][&from=<entryId>][&before=<n>]
+ *                                                      -> SessionSharePreview (as a recipient would
+ *                                                         see it; the first read fixes `cut`, later
+ *                                                         reads and images pass it; `from` slices
+ *                                                         it; 409 stale-preview when either is
+ *                                                         gone; no token, no visit)
+ * GET  /api/session-shares/preview?session=<id>&outline=1[&cut=<c>] -> SessionShareOutline (the
+ *                                                         share page's picker: every shown message
+ *                                                         as a short excerpt with its entry id)
+ * GET  /api/session-shares/preview/img/<n>?session=<id>&cut=<c>[&from=<entryId>] -> image bytes
  * GET  /api/session-shares/:id/preview[?before=<n>]    -> SessionShareView (this share, now)
  * GET  /api/session-shares/:id/preview/img/<n>         -> image bytes
  * PATCH /api/session-shares/:id  body SessionSharePatch -> SessionShare
@@ -46,6 +50,10 @@
  * GET  /api/shares-overview                            -> SharesOverview (this host only; the
  *                                                         Shares page fans out to up peers)
  * Errors: 4xx { error, code }.
+ *
+ * Slices (§app.session-share/slice): a share may start at an entry (`from`) and end at its cut.
+ * Entry ids go only to the operator (the outline, `from` on create, patch and preview); no
+ * recipient answer, image, shell or frame carries one.
  *
  * Files (host-local, never synced or committed):
  *   <stateRoot>/session-shares.json         0600, atomic (server/session-shares.ts)
@@ -113,7 +121,20 @@ export interface SessionShare {
   stoppedAt?: string;
   /** The session file is gone or unreadable: every link answers the generic dead page. */
   missing?: true;
+  /** A snapshot: its cut's entry id (the slice's end; Change Slice opens on it). */
+  cut?: string;
+  /** A sliced share only: its start's entry id (Change Slice opens on it). */
+  from?: string;
+  /** A sliced share only: where it sits among the messages the whole view would show, 1-based;
+      `last` null while it follows live. Absent for a whole-session share. */
+  span?: SessionShareSpan;
   recipients: SessionShareRecipient[];
+}
+
+export interface SessionShareSpan {
+  first: number;
+  last: number | null;
+  total: number;
 }
 
 /** POST /api/session-shares. `recipients`: named labels, one link each (may be empty when
@@ -123,6 +144,9 @@ export interface SessionShareCreate {
   /** Required for a snapshot: the `cut` of the preview the operator saw (SessionSharePreview.cut).
       The snapshot is exactly that preview; a cut no longer in the file is 409 stale-preview. */
   cut?: string;
+  /** The slice's start: an entry id from the outline (absent: from the first message). Not on the
+      branch to `cut` (or, live, the current branch): 409 stale-preview. */
+  from?: string;
   title: string;
   mode: SessionShareMode;
   expiresInDays: SessionShareDays;
@@ -134,8 +158,11 @@ export interface SessionShareCreate {
 export interface SessionSharePatch {
   title?: string;
   mode?: SessionShareMode;
-  /** With `mode: "snapshot"` from live: the previewed cut to stop at (else the current leaf). */
+  /** With `mode: "snapshot"` from live: the previewed cut to stop at (else the current leaf).
+      On a snapshot, alone or with `from`: the slice's new end (Save Slice). */
   cut?: string;
+  /** The slice's new start; null: from the first message again. Open pages get a reset view. */
+  from?: string | null;
 }
 
 /** POST …/:id/recipients: a named label, or `{ anyone: true }` (409 when one is already live). */
@@ -196,18 +223,43 @@ export interface SessionShareView {
   before?: number;
   /** Every image in the whole view, in order (so Preview can show them all before minting). */
   images: number;
+  /** The share starts after a message the whole session would show (no count, nothing of it). */
+  earlier?: true;
 }
 
 /** The operator's Preview (never on the share page): the view plus the cut it was built at, to
     pass to the mint (and to its later pages and images). */
 export interface SessionSharePreview extends SessionShareView {
   cut: string;
+  /** The `from` it was sliced at, echoed. */
+  from?: string;
 }
+
+/** The share page's picker (operator only): every message the share would show at `cut`, whole
+    session, oldest first. `n` is the item's index in the whole (unsliced) view. */
+export interface SessionShareOutline {
+  cut: string;
+  items: SessionShareOutlineItem[];
+}
+
+export interface SessionShareOutlineItem {
+  /** The entry id: what `from` names, and a snapshot's `cut` when the slice ends here. */
+  id: string;
+  n: number;
+  kind: "user" | "reply";
+  at?: string;
+  /** The scrubbed text, cut at a token boundary to at most SESSION_SHARE_EXCERPT_MAX characters. */
+  excerpt: string;
+  images: number;
+}
+
+export const SESSION_SHARE_EXCERPT_MAX = 160;
 
 export type SessionShareServerMessage =
   /** The newest page again: sent on Update to now, a mode switch, and in live mode when the
-      session grew. */
-  | { type: "view"; view: SessionShareView }
+      session grew. `reset`: the slice's start moved, so the page replaces its view (earlier pages
+      already read included) instead of merging. */
+  | { type: "view"; view: SessionShareView; reset?: true }
   | { type: "error"; code: "gone"; why?: "expired" };
 
 /** The only frame a page sends: whether the page is visible (visibilitychange). */

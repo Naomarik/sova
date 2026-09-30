@@ -179,6 +179,7 @@ mark "Unpaid" "tap to filter"
 ## matrix
 <!-- owner: data member. Emphasis target: row label (key = index) or column name (key = c<index>). -->
 Options against criteria; also capabilities by level or role (a matrix, not a flow). `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text that may end with a tone (`72% warn`; quote text ending in a tone word). At most 6 columns.
+Quote a column name that has a comma: `columns: Merge, "Rebase, then merge"`.
 ```vis matrix
 columns: Merge, Rebase
 Keeps original commits | yes | no "new SHAs"

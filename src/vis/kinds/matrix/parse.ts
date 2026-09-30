@@ -5,7 +5,7 @@
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaList, fail, fields, isTone, lines, takeSettings, unquote, type Tone, type VisBase } from "../../core/grammar";
+import { commaListFor, fail, fields, isTone, lines, takeSettings, unquote, type Tone, type VisBase } from "../../core/grammar";
 
 export type CellMark = "yes" | "no" | "partial";
 export interface MatrixCell {
@@ -33,7 +33,8 @@ export function parseMatrix(body: string): MatrixSpec {
   const { rest, marks } = takeMarks(settled);
   const cols = values.get("columns");
   if (!cols) fail(0, "matrix needs columns: A, B, C");
-  spec.columns = commaList(cols!.raw, cols!.n);
+  // The rows' cell counts settle a `columns:` line that reads more than one way (commaListFor).
+  spec.columns = commaListFor(cols!.raw, cols!.n, () => rest.map((line) => line.text.split(/(?<!\\)\|/).length - 1));
   if (spec.columns.length < 1 || spec.columns.length > MAX_COLUMNS) fail(cols!.n, `1 to ${MAX_COLUMNS} columns`);
   for (const line of rest) {
     const fs = fields(line);

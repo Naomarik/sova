@@ -5,7 +5,7 @@
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaList, fail, isTone, lines, takeSettings, text, tokenize, warn, type Tone, type VisBase } from "../../core/grammar";
+import { commaListFor, fail, isTone, lines, takeSettings, text, tokenize, warn, type Tone, type VisBase } from "../../core/grammar";
 
 export type ChartType = "bar" | "stacked" | "line" | "scatter" | "parts";
 export interface ChartRow {
@@ -53,7 +53,8 @@ export function parseChart(body: string): ChartSpec {
     if (v) spec[key] = text(v.value, v.n);
   }
   const series = values.get("series");
-  if (series) spec.series = commaList(series.raw, series.n);
+  // The rows' value counts settle a `series:` line that reads more than one way (commaListFor).
+  if (series) spec.series = commaListFor(series.raw, series.n, () => rest.map((line) => tokenize(line).slice(1).filter((t) => !(t.t === "word" && isTone(t.v))).length));
   if (spec.series.length > MAX_SERIES) fail(series!.n, `${spec.series.length} series; at most ${MAX_SERIES}`);
   if (spec.type === "scatter" && series) fail(series.n, "scatter takes no series: each row is label x y");
   if (spec.type === "parts") {

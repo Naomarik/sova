@@ -147,6 +147,14 @@ test("the guide teaches several targets per mark and matrix cell tones, with exa
   assert.ok(cells.some((c) => c.tone === "ok") && cells.some((c) => c.tone === "warn"), "the matrix example tones a text cell");
 });
 
+test("the guide asks for a matrix column name with a comma quoted, and its example means it", () => {
+  const line = /^Quote a column name that has a comma: `(columns: [^`]+)`\.$/m.exec(GUIDE);
+  assert.ok(line, "the matrix section's quoting line");
+  const r = parseVis("matrix", `${line![1]}\nLinear history | no | yes`);
+  assert.ok(r.ok && r.warnings.length === 0);
+  assert.deepEqual((r.spec as MatrixSpec).columns, ["Merge", "Rebase, then merge"]);
+});
+
 // server/baton-vis-guide.ts rewrites this one line for gathering sessions, by its start.
 test("the rules keep the '- The parser is strict:' line the gathering guide rewrites", () => {
   assert.match(GUIDE, /^Rules for every kind:\n(?:- .*\n)*- The parser is strict: .*$/m);

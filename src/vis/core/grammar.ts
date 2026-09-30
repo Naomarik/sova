@@ -257,21 +257,106 @@ export function fields(line: Line): string[] {
   });
 }
 
-/** Comma list with optional quotes around items that contain commas. */
-export function commaList(s: string, n: number): string[] {
-  const out: string[] = [];
-  const re = /\s*(?:"((?:[^"\\]|\\.)*)"|([^,]*?))\s*(?:,|$)/y;
-  let i = 0;
-  while (i < s.length) {
-    re.lastIndex = i;
-    const m = re.exec(s);
-    if (!m || m[0] === "") fail(n, "malformed comma list");
-    const item = m![1] !== undefined ? unquote(m![1]) : m![2]!.trim();
-    if (item === "") fail(n, "empty item in comma list");
-    out.push(text(item, n));
-    i = re.lastIndex;
+/** Parentheses that open before they close and all close: only then does a comma inside them not split. */
+const balanced = (s: string): boolean => {
+  let depth = 0;
+  for (const c of s) {
+    if (c === "(") depth++;
+    else if (c === ")" && --depth < 0) return false;
   }
+  return depth === 0;
+};
+
+/**
+ * Split at commas outside balanced parentheses (`A (x, y), B` is two). A list whose parentheses
+ * don't balance (`Happy :), Sad`) splits at every comma. The parts are raw, untrimmed.
+ */
+export function splitCommas(s: string, parens = balanced(s)): string[] {
+  const out: string[] = [];
+  let cur = "";
+  let depth = 0;
+  for (const c of s) {
+    if (parens && c === "(") depth++;
+    else if (parens && c === ")") depth--;
+    if (c === "," && depth === 0) {
+      out.push(cur);
+      cur = "";
+    } else cur += c;
+  }
+  out.push(cur);
   return out;
+}
+
+/**
+ * One reading of a comma list: its trimmed items, a whole-quoted item unquoted, or null on an empty
+ * item. `parens`: a comma inside balanced parentheses doesn't split. `quotes`: "start" groups a
+ * quoted item (`"a, b", c`); "any" also a balanced quoted stretch inside one (`The "a, b" plan`).
+ */
+function readList(s: string, parens: boolean, quotes: "start" | "any"): string[] | null {
+  const out: string[] = [];
+  if (s === "") return out;
+  const q = /"(?:[^"\\]|\\.)*"/y;
+  const whole = /^"((?:[^"\\]|\\.)*)"$/;
+  const anyQuotes = quotes === "any" && (s.replace(/\\./g, "").match(/"/g)?.length ?? 0) % 2 === 0;
+  let cur = "";
+  let depth = 0;
+  const push = () => {
+    const t = cur.trim();
+    const m = whole.exec(t);
+    out.push(m ? unquote(m[1]!) : t);
+    cur = "";
+  };
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i]!;
+    if (c === '"' && (anyQuotes || cur.trim() === "")) {
+      q.lastIndex = i;
+      const m = q.exec(s);
+      // A quoted item groups only when it is the whole item (then a comma or the end), as it always has.
+      if (m && (anyQuotes || /^\s*(,|$)/.test(s.slice(q.lastIndex)))) {
+        cur += m[0];
+        i = q.lastIndex - 1;
+        continue;
+      }
+    }
+    if (parens && c === "(") depth++;
+    else if (parens && c === ")") depth--;
+    if (c === "," && depth === 0) push();
+    else cur += c;
+  }
+  // A trailing comma, right at the end, adds no item.
+  if (cur !== "") push();
+  return out.some((t) => t === "") ? null : out;
+}
+
+/** Comma list with optional quotes around items that contain commas; a comma inside balanced parentheses doesn't split. */
+export function commaList(s: string, n: number): string[] {
+  const items = readList(s, balanced(s), "start");
+  if (!items) fail(n, "empty item in comma list");
+  return items!.map((t) => text(t, n));
+}
+
+/**
+ * A comma list whose length something else fixes (a matrix's columns by its rows' cells): `counts`
+ * gives each row's. When every row agrees on a number the list doesn't read as, and exactly one
+ * other reading gives it (splitting inside parentheses too, or keeping a quoted stretch inside an
+ * item whole), that reading; otherwise the list as commaList reads it. `counts` runs only when the
+ * readings differ, and what it warns or throws is dropped (the rows are read again after).
+ */
+export function commaListFor(s: string, n: number, counts: () => number[]): string[] {
+  const first = readList(s, balanced(s), "start");
+  const others = [readList(s, false, "start"), readList(s, balanced(s), "any")].filter((r): r is string[] => !!r && r.length !== first?.length);
+  if (others.length > 0) {
+    let cs: number[] = [];
+    try {
+      cs = collectWarnings(counts).value;
+    } catch {
+      /* a row that can't be read settles nothing */
+    }
+    const k = cs[0];
+    const fits = others.filter((r) => r.length === k);
+    if (cs.length > 0 && cs.every((c) => c === k) && new Set(fits.map((r) => JSON.stringify(r))).size === 1) return fits[0]!.map((t) => text(t, n));
+  }
+  return commaList(s, n);
 }
 
 /** The last field is a tone when it is exactly a tone word. */

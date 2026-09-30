@@ -14,7 +14,7 @@
  */
 
 import { applyMarks, takeMarks, type MarkTarget } from "../../core/emphasis";
-import { fail, isTone, lines, text, tokenize, warn, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { fail, isTone, lines, splitCommas, text, tokenize, warn, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 /** Blocks that hold blocks. */
 export const CONTAINERS = ["header", "sidebar", "footer", "row", "col", "grid", "card", "list", "item", "table", "modal", "sheet", "heading", "empty"] as const;
@@ -380,7 +380,7 @@ export function parseWireframe(body: string): WireframeSpec {
       // Every string and stray word, in order, so a mis-quoted `"A, "B", C"` keeps B.
       // Modifiers (`wide`, `on`, a tone) are applied above, never items.
       const parts = main.filter((t) => t.t === "str" || (t.t === "word" && !isModifier(t.v) && !Object.hasOwn(DEVICES, t.v.toLowerCase()))).map((t) => String(t.v));
-      let items = parts.flatMap((s) => s.split(",")).map((s) => s.trim()).filter(Boolean);
+      let items = parts.flatMap((s) => splitCommas(s)).map((s) => s.trim()).filter(Boolean);
       const star = items.findIndex((s) => s.startsWith("*"));
       items = items.map((s) => s.replace(/^\*\s*/, ""));
       if (items.length > MAX_ITEMS) {
@@ -422,7 +422,12 @@ export function parseWireframe(body: string): WireframeSpec {
         warn(line.n, `a table draws ${MAX_ROWS} rows; the rest dropped`);
         continue;
       }
-      if (b.texts.length === 1 && (parent.block.items?.length ?? 0) > 1 && b.texts[0]!.includes(",")) b.texts = b.texts[0]!.split(",").map((s) => s.trim());
+      if (b.texts.length === 1 && (parent.block.items?.length ?? 0) > 1 && b.texts[0]!.includes(",")) {
+        // Commas inside parentheses don't split, unless splitting them too is what gives the table's column count.
+        const cols = parent.block.items!.length;
+        const cells = splitCommas(b.texts[0]!);
+        b.texts = (cells.length !== cols && b.texts[0]!.split(",").length === cols ? b.texts[0]!.split(",") : cells).map((s) => s.trim());
+      }
     }
     count++;
     (parent.block ? parent.block.children : screen.blocks).push(b);

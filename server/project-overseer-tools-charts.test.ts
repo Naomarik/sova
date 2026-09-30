@@ -160,6 +160,31 @@ describe("the allowances are the watch chart's ledgers (§app.project-overseer/l
     await run("sova_start_gathering", gather("Unlimited"));
   });
 
+  test("one ledger (r5): a chart act released from its hold counts on it; a chart-refused call counts nothing", async () => {
+    // Not on the confirm list: it goes ahead when its hold ends, with no review (r8).
+    await settings({ autonomy: "L1", holdMin: 10, confirmKinds: [], caps: { gatherPerDay: null, gatheringsOpen: 20 } });
+    const today = () => po.allowanceUse(org.id, project.id, store.readPoSettings(store.projectOverseerPaths(org.id, project.id)).caps).today.gather.used;
+    const t0 = Date.now() + 9 * 86_400_000;
+    setOrgClockForTest(() => t0);
+    try {
+      hostOf(org.id).fireDue();
+      const before = today();
+      await run("sova_start_gathering", gather("Released"));
+      assert.equal(today(), before, "held: reserved, not yet counted");
+      setOrgClockForTest(() => t0 + 10 * 60_000);
+      hostOf(org.id).fireDue();
+      await new Promise((r) => setTimeout(r, 50));
+      assert.ok(baton.allBatons().some((b) => b.publicTitle === "Released"), "the hold ended: it went ahead");
+      assert.equal(today(), before + 1, "the chart's own act counted on the watch's day ledger");
+      await settings({ autonomy: "L0" });
+      await assert.rejects(() => run("sova_start_gathering", gather("Refused")), /needs L1/);
+      assert.equal(today(), before + 1, "a refused call is not counted");
+      await settings({ autonomy: "L1", confirmKinds: ["gather", "offer", "close", "promote", "build", "prompt", "owner-update", "roster-approve", "roster-decline"] });
+    } finally {
+      setOrgClockForTest(null);
+    }
+  });
+
   test("sova_project reports both allowances from the ledgers, the looks, and no cost or tokens", async () => {
     const out = textOf(await run("sova_project", {}));
     assert.match(out, /Today on your own: \d+ gathering sessions started \(no limit\)/);
@@ -240,6 +265,26 @@ describe("the Pipeline and held acts (§app.project-overseer/pipeline, /holds)",
     assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Cancel me"), "cancelled: it never started");
     const rows = hostOf(org.id).log.rows({ newestFirst: true }).filter((r) => r.event === "hold/cancel" || r.event === "hold/approve");
     assert.deepEqual(rows.slice(0, 2).map((r) => [r.event, r.reason]), [["hold/cancel", "covered by Review me"], ["hold/approve", "Tony is waiting for it"]]);
+  });
+
+  test("r8: an act on the confirm list waits past its hold for the overseer's review, shown with its stall clock, until approved", async () => {
+    await clearHolds();
+    const t0 = Date.now() + 20 * 86_400_000;
+    setOrgClockForTest(() => t0);
+    try {
+      await run("sova_start_gathering", gather("Needs review"));
+      const h = holdsOf()[0]!;
+      setOrgClockForTest(() => h.until + 60_000);
+      hostOf(org.id).fireDue();
+      const held = (await pipeline()).held.find((x) => x.id === h.id)!;
+      assert.equal(held.reviewSince, new Date(h.until).toISOString(), "it waits, the stall clock from its hold's end");
+      assert.equal(heldAttention().find((i) => i.held?.id === h.id)?.held?.reviewSince, h.until);
+      assert.ok(!baton.allBatons().some((b) => b.publicTitle === "Needs review"), "not gone ahead unreviewed");
+      await run("sova_hold", { op: "approve", id: h.id, reason: "reviewed: Tony is the right person" });
+      assert.ok(baton.allBatons().some((b) => b.publicTitle === "Needs review"));
+    } finally {
+      setOrgClockForTest(null);
+    }
   });
 
   test("sova_correct: only a correction the session declares, only this project's sessions", async () => {

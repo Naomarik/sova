@@ -399,12 +399,15 @@ describe("routes: spawn-for-person, owner, handoff", () => {
     app.request(path, { method, headers: { "Content-Type": "application/json" }, ...(body ? { body: JSON.stringify(body) } : {}) });
 
   test("POST /api/baton: an offer returns one link per invitee; owner from a request is ignored; a parent carries its project", async () => {
-    const res = await json("POST", "/api/baton", { orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Offer", goal: "g", owner: { overseerOf: "evil" } });
+    // In-process options in a request body are ignored (F-040): the owner, no link, how it was started.
+    const res = await json("POST", "/api/baton", { orgId: org.id, projectId: project.id, to: [tony.id, maria.id], publicTitle: "Offer", goal: "g", owner: { overseerOf: "evil" }, mintLink: false, startedVia: "overseer" });
     assert.equal(res.status, 201);
     const out = (await res.json()) as { sessionId: string; links: { personId: string; name: string; link: string }[] };
-    assert.deepEqual(out.links.map((l) => l.name), ["Tony Reyes", "Maria Lopez"]);
+    assert.deepEqual(out.links.map((l) => l.name), ["Tony Reyes", "Maria Lopez"], "links minted: mintLink from a body is ignored");
     assert.match(out.links[0]!.link, /\/h\/[A-Za-z0-9_-]{43}$/);
-    assert.equal(baton.batonById(out.sessionId)!.row.owner, "operator");
+    const made = baton.batonById(out.sessionId)!.row;
+    assert.equal(made.owner, "operator");
+    assert.equal((made as { startedVia?: string }).startedVia, undefined, "startedVia from a body is ignored");
     const child = await json("POST", "/api/baton", { orgId: org.id, parentSessionId: out.sessionId, to: carlos.id, publicTitle: "For Carlos", goal: "g", briefing: "Tony referred you" });
     assert.equal(child.status, 201);
     const row = baton.batonById(((await child.json()) as { sessionId: string }).sessionId)!.row;

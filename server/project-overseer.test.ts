@@ -651,6 +651,27 @@ describe("limits through PATCH, held items and their retry", async () => {
   });
 });
 
+describe("a project with no overseer conversation never looks", async () => {
+  const org = await orgs.createOrg({ name: "Quiet", dir: join(root, "ws-quiet") });
+  mkdirSync(join(root, "proj-quiet"));
+  const project = await orgs.addProject(org.id, { name: "Quiet", root: join(root, "proj-quiet") });
+  await orgs.addPerson(org.id, { name: "Alperen", role: "Owner" });
+  const { looks } = fakeLooks(org.id);
+
+  test("news with no overseer: no look, whatever time passes (the watch's exists region)", async () => {
+    await noteWatchReason(org.id, project.id, { kind: "baton/closed", params: { title: "S" }, key: "q1", by: "person" });
+    po.setClockForTest(() => Date.now() + 86_400_000);
+    try {
+      hostOf(org.id).fireDue();
+      await new Promise((r) => setTimeout(r, 20));
+    } finally {
+      po.setClockForTest(null);
+    }
+    assert.equal(looks.length, 0);
+    assert.ok(hostOf(org.id).configuration(`watch/${org.id}/${project.id}`)?.includes("no-overseer"));
+  });
+});
+
 describe("the watch loop's decision, on its watch chart", async () => {
   const org = await orgs.createOrg({ name: "Loop", dir: join(root, "ws-loop") });
   mkdirSync(join(root, "proj-loop"));
@@ -761,6 +782,24 @@ describe("the watch loop's decision, on its watch chart", async () => {
       await to(t + 2 * 60_000 + 20_000);
     }
     assert.equal(looks.length, seen + 20, "one every 2 minutes, past any daily count");
+  });
+
+  test("the gap's boundary, to the millisecond: the first 20 s tick at or after last look + gap (the project's own 2 minutes)", async () => {
+    await po.patchProjectOverseer(org.id, project.id, { watchGapMin: 2, soonLookSec: null, caps: { unattendedPerDay: null } });
+    await news();
+    await to(t + 3 * 60_000 + 7_000); // a look off the tick grid, so the gap's end is too
+    const seen = looks.length;
+    const last = Date.parse(store.readMemo(p).lastRunAt!);
+    const due = Math.ceil((last + 2 * 60_000) / 20_000) * 20_000;
+    assert.ok(due >= last + 2 * 60_000 && due - (last + 2 * 60_000) < 20_000);
+    await news();
+    await to(last + 2 * 60_000 - 1);
+    assert.equal(looks.length, seen, "now − gap + 1 ms: too soon");
+    await to(due - 1);
+    assert.equal(looks.length, seen, "past the gap, 1 ms before its tick: not yet");
+    await to(due);
+    assert.equal(looks.length, seen + 1, "the tick at or after now − gap: it looks");
+    await po.patchProjectOverseer(org.id, project.id, { soonLookSec: 60 });
   });
 
   test("the watch message says it is automatic and names the level", async () => {

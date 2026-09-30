@@ -771,6 +771,8 @@ describe("decisions → conflicts → draft → promotion", async () => {
     assert.ok(files.length > 0);
     const text = files.map((f) => readFileSync(f, "utf8")).join("\n");
     assert.ok(!/token/i.test(text));
+    // The one hash a decision keeps is its promoted text's (`text-hash`, for "edited in the spec"); never a link's.
+    assert.deepEqual([...new Set(text.match(/[a-z-]*hash[a-z-]*/gi) ?? [])].filter((k) => k.toLowerCase() !== "text-hash" && k !== "textHash"), [], "no hash but the promoted text's");
     assert.ok(!existsSync(join(orgs.orgDir(org.id), "projects", project.id, "conflicts.json")), "no conflicts.json (q1)");
   });
 });

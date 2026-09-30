@@ -1,4 +1,4 @@
-{"v":1,"id":"real-03","source":"e2e-lane","note":"Mined from a real run and anonymized (scripts/org-charts-mine.mjs): ids are per-trace tokens, times are ms from the first event, no text.","t0":"2026-09-26T21:11:00.000Z","hosts":1,"sova":{"commit":"562f07a3","how":"worktree-by-date","features":{"askedOperatorReason":false,"codingSettledReason":false,"noDecisionRecordedReason":false,"allowanceHeld":false,"mergeReasonAndTodosOperatorOnly":false,"noTokenBudget":false}},
+{"v":1,"id":"real-03","source":"e2e-lane","note":"Mined from a real run and anonymized (scripts/org-charts-mine.mjs): ids are per-trace tokens, times are ms from the first event, no text.","t0":"2026-09-26T21:11:00.000Z","hosts":1,"sova":{"commit":"ec9a9a8c","how":"worktree-by-date","features":{"askedOperatorReason":false,"codingSettledReason":false,"noDecisionRecordedReason":false,"allowanceHeld":false,"mergeReasonAndTodosOperatorOnly":false,"noTokenBudget":false}},
 "events": [
 {"dt":18607,"kind":"fact","entity":"person","id":"p1","status":"active"},
 {"dt":18744,"kind":"fact","entity":"person","id":"p2","status":"active"},

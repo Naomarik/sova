@@ -118,7 +118,8 @@ const git = (...args: string[]): string | null => {
 };
 
 // Drift: the trace ran code without the commit that changed this behaviour, and the code the charts model has
-// it. A trace may have run a side branch (real-03: feat/bw-fix-overseer), so "without" is not "an ancestor of".
+// it. A trace may have run a side branch, so "without" is not "an ancestor of"; but every trace's commit must be
+// in this clone's history (a fixture cites master's commit, not a local branch's), or "lacks" would pass untested.
 test("every drift names a commit the charts' code has and its trace's code lacks", (t) => {
   if (git("rev-parse", "--git-dir") === null) return t.skip("no git history in this copy");
   const drift = reports.flatMap((r) => r.divergences.filter((d) => d.cls === "drift").map((d) => ({ d, trace: traces.find((x) => x.id === r.trace)! })));
@@ -135,6 +136,8 @@ test("every drift names a commit the charts' code has and its trace's code lacks
       assert.equal(git("merge-base", "--is-ancestor", c, trace.sova.commit!), null, `${trace.id} @${d.dt}: the trace's ${trace.sova.commit} already has ${c}`);
     }
   }
+  for (const trace of traces)
+    if (trace.sova.commit) assert.notEqual(git("merge-base", "--is-ancestor", trace.sova.commit, "HEAD"), null, `${trace.id}: its Sova commit ${trace.sova.commit} is not in this history`);
   for (const { commit } of Object.values(DRIFT_COMMIT)) assert.notEqual(git("rev-parse", "--verify", "--quiet", `${commit}^{commit}`), null, commit);
   assert.deepEqual([...commits].sort(), ["239852ee", "320042f0", "77f3cdbf", "80a785ca", "8b7f6751"]);
 });

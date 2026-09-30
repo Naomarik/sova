@@ -766,6 +766,13 @@ export class OrgHost {
         } catch (err) {
           this.stuck.push({ kind: "resume", file: this.index.get(sid)?.file ?? sid, why: message(err), sessionId: sid });
         }
+      // a session whose file was just fixed missed the notifications of those it watches: catch it up
+      if (fixed.length)
+        try {
+          this.commit(this.engine.renotify(fixed, { now: this.clock() }));
+        } catch (err) {
+          console.warn(`[org-host] ${this.orgId}: renotify after reload: ${message(err)}`);
+        }
       // and give stalled timers another go (one still throwing is stalled again, once)
       if (this.stalled.size) {
         this.stalled.clear();

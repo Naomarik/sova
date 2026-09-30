@@ -531,4 +531,24 @@ describe("org host", () => {
     const v = verifyOrg({ orgId: "o1", ...at, charts: HOST_CHARTS as unknown as EngineOptions["charts"] });
     assert.deepEqual(v.differing, [], "rebuild --verify replays the moved wait");
   });
+
+  test("a watcher whose snapshot can't be read misses notifications without failing its source; reload catches it up (server-7: one broken person flagged its org)", async () => {
+    const at = place();
+    const host = await open(at);
+    await host.start("org/o1", "org", { id: "o1", name: "Acme", slug: "acme", createdAt: 1 }, operator);
+    await host.start("person/o1/p1", "person", { orgId: "o1", id: "p1", person: { name: "Ana", status: "active", role: "R", decides: [], skills: [] }, changed: [], by: { kind: "operator" } }, operator);
+    await host.close();
+    const file = scanSnapshots(join(at.workspaceDir, "charts")).find((s) => s.sid === "person/o1/p1")!.file;
+    const good = readFileSync(file, "utf8");
+    writeFileSync(file, "<<<<<<< HEAD\n{:broken");
+    const again = await open(at);
+    assert.deepEqual(again.problems().map((p) => [p.kind, p.sessionId]), [["snapshot", "person/o1/p1"]], "the org resumes: only the person's file is a problem");
+    const r = await again.act("org/o1", "org/hours", { tz: "UTC", hours: { days: [1, 2, 3, 4, 5], from: "09:00", to: "17:00" } }, operator);
+    assert.equal(r.taken, true, "the org's own act goes through");
+    assert.equal(r.result?.unreadable[0]?.watcher, "person/o1/p1", "the person missed it (reported)");
+    writeFileSync(file, good);
+    assert.deepEqual(await again.reload(), []);
+    assert.equal(again.data("person/o1/p1")?.["hoursInherited"], true, "reloaded, it sees the company hours set meanwhile");
+    await again.close();
+  });
 });

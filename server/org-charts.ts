@@ -162,6 +162,8 @@ export interface StepResult {
   stale: JsonObject[];
   /** Link notifications to a watcher that exists nowhere: dropped, the watcher taken off its source. */
   dangling: { from: string | null; watcher: string }[];
+  /** Link notifications to a watcher whose snapshot can't be read: missed (the watcher kept; `renotify` catches it up). */
+  unreadable: { from: string | null; watcher: string; why: string }[];
   errors: EngineError[];
   /** The snapshot of every session this call moved: write them together, once per call. */
   snapshots: Record<string, string>;
@@ -264,6 +266,8 @@ export interface OrgCharts {
   setState(sessionId: string, change: { states: string[]; patch?: JsonObject; reason?: string }, envelope: JsonObject, opts?: CallOptions): StepResult;
   /** `sova/resumed` to each, then link/moved per link; past-due timers wait for fireDue. */
   resume(sessionIds: string[], opts?: CallOptions): StepResult;
+  /** A link/moved to each of `sessionIds` from every loaded session it watches (after its file was fixed). */
+  renotify(sessionIds: string[], opts?: CallOptions): StepResult;
   configuration(sessionId: string): string[] | null;
   running(sessionId: string): boolean;
   data(sessionId: string): JsonObject | null;
@@ -398,6 +402,7 @@ export function typedEngine<E extends OrgCharts>(e: E): E {
     explain: typed(e.explain),
     setState: typed(e.setState),
     resume: typed(e.resume),
+    renotify: typed(e.renotify),
     fireDue: typed(e.fireDue),
     load: typed(e.load),
   };

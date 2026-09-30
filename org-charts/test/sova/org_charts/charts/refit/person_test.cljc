@@ -134,3 +134,18 @@
         (is (= "" (:tz (h/data z sid))))
         (is (nil? (:hours (h/data z sid))))))
     (is (= [:name :decides :referral :status :tz :hours] (:exported person/entry)) "the hours checks read them")))
+
+(deftest r7-reverting-hours-and-zone
+  ;; server-6/ui: "hours — → Mon–Fri 09:00–17:00" (from absent), Revert → it clears (never a 400)
+  (let [wh  {:days [1 2 3 4 5] :from "09:00" :to "17:00"}
+        wh2 {:days [1 2 3] :from "10:00" :to "16:00"}
+        x   (h/send! (born ana) sid :person/edit (assoc op :patch {:tz "Europe/Istanbul" :hours wh}))
+        y   (h/send! x sid :person/edit (assoc op :patch {:tz "Europe/Berlin" :hours wh2}))]
+    (let [z (-> x (h/send! sid :person/revert (assoc op :row {:at 1 :field "hours" :from nil :to wh}))
+                  (h/send! sid :person/revert (assoc op :row {:at 1 :field "tz" :from nil :to "Europe/Istanbul"})))]
+      (is (nil? (:hours (h/data z sid))) "hours set from nothing: revert clears them")
+      (is (= "" (:tz (h/data z sid)))))
+    (let [z (-> y (h/send! sid :person/revert (assoc op :row {:at 2 :field "hours" :from wh :to wh2}))
+                  (h/send! sid :person/revert (assoc op :row {:at 2 :field "tz" :from "Europe/Istanbul" :to "Europe/Berlin"})))]
+      (is (= wh (:hours (h/data z sid))) "a later change: revert restores the earlier map")
+      (is (= "Europe/Istanbul" (:tz (h/data z sid)))))))

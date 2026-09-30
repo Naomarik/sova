@@ -52,7 +52,7 @@
       (:person/decline :person/leave) {:status "left"}
       :person/revert (let [{:keys [field from]} (:row e)
                            f (keyword field)]
-                       {f (if (some? from) from (case f (:decides :skills) [] (:contact :competence) {} :referral nil ""))})
+                       {f (if (some? from) from (case f (:decides :skills) [] (:contact :competence) {} (:referral :hours) nil ""))})
       {})))
 
 (defn- writer-for [data]

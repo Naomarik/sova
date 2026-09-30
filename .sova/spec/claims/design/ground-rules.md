@@ -140,6 +140,7 @@ and `fill="none" stroke="currentColor"`.
 | `file.svg` | Tool card for `read` / `write` / `edit` |
 | `more.svg` | Tool card for any other tool |
 | `copy.svg` | Copy Session Path, Copy Output |
+| `share.svg` | Share session (the session head) and a message's Share from here (§app.session-share/share-page): a tray with an arrow up out of it. New, drawn on the system grid |
 | `archive.svg` | Archive Session / Unarchive Session (Session pane, web sessions only, §app/session-list "Archiving"): a lidded box. New, drawn on the system grid |
 | `chevron-left.svg` / `chevron-right.svg` | Also: lightbox Previous Image / Next Image |
 | `check.svg` | The copy button's icon for 1.5s after a copy; the current-model mark |
@@ -165,7 +166,7 @@ and `fill="none" stroke="currentColor"`.
 | `sliders.svg` | Mode: the mode trigger at the right end of the composer foot (§chat/mode-menu). Three tracks with an offset handle each. New, drawn on the system grid |
 | `worker.svg` | Agents: the sidebar foot's Agents row, plus the Teams and Subagents section heads, and the composer's subagents trigger (§app.subagents-pane/trigger) (from the skill's set) |
 | `settings.svg` | Settings: the gear at the right end of the sidebar foot's Agents row, and the Settings dialog's tab rail. A cog on the system grid (the skill ships a sun-burst under this name)
-| `branch.svg` | Git branches and the mesh: the setup card's repository line, a worktree's line on the Agents page, the worktree merge card, the Mesh card and the Settings dialog's Mesh tab |
+| `branch.svg` | The fork-point row in a forked member's transcript, the `Align to Fork` button, and the overview's `Fan Out` action card (§workspace/groups, §workspace/fanout) |
 | `external.svg` | Opens elsewhere: Open in New Tab (extension view), Open Directly (mesh), Open workspace, Open {n} Explanations, the Settings dialog's Public links tab |
 | `network.svg` | Organizations (its Settings tab, the overview's Organizations card); the mesh: the host filter, the Overseer's link card, a link's section in the subagents pane |
 | `building.svg` | The spine's Organizations item |

@@ -7,7 +7,8 @@ The unit is a **login**: one Claude Code config directory with its own `.credent
 is, one refresh chain. Several logins may belong to the same Claude account (the same
 `accountUuid`); they are kept, and listed together under that account. Claude Code stays the only
 program that signs in, refreshes and signs out: Sova runs `claude` in the login's directory and
-never reads or writes a token itself.
+never writes a token itself. It reads one only to launch a sandboxed Claude Code worker, and then
+only the login's short-lived access token, never its refresh token (§chat.sandbox/claude-state).
 
 Claude Code's own directory (`~/.claude`, or `$CLAUDE_CONFIG_DIR` when the server has one) is
 the implicit login `default`. A `$CLAUDE_CONFIG_DIR` that names an added login's directory (anything
@@ -125,7 +126,10 @@ Every `claude` process Sova or its extensions start runs on exactly one login, b
 `CLAUDE_CONFIG_DIR` to that login's directory (or, for `default`, leaving the environment as it
 was, less an inherited `CLAUDE_CONFIG_DIR` that names an added login's directory): the Claude Code chat provider's child for a session, claude-code workers (including a
 worker's detached host), model discovery (the extension's and the server's), the server's
-`claude --version` check, and the topic-outline summarizer.
+`claude --version` check, and the topic-outline summarizer. A sandboxed Claude Code worker
+(§chat.sandbox/claude-state) is launched the same way, so its process as the host sees it
+carries its login's directory, while the `claude` inside the sandbox runs on the worker's
+private config directory with that login's access token.
 
 The login is **this host's first usable login in its order**: enabled, assigned here, neither
 limited nor needing sign-in, and not leaving this device (§app.claude-logins/drain). While the mesh
@@ -180,7 +184,11 @@ that:
   transcript gets the same note line, and no completion is announced for the failed attempt. The
   worker's id, record and usage carry on; a worker that was running under a detached host
   continues without one, and a worker re-adopted from its detached host after a restart does not
-  fail over.
+  fail over. A worker confined by the sandbox (§chat.sandbox/claude-state) treats its first auth
+  failure on a login differently: nothing is recorded, its transcript gets `Claude: {login}
+  refused the worker's token; refreshing it and resuming on the same login`, and it resumes on
+  that login with a refreshed token. Only a second auth failure there, with no successful task in
+  between, fails over as above.
 
 With no usable login left, the failure ends the turn or the task exactly as before: the error,
 and the team usage pause. A turn fails over at most once per login.

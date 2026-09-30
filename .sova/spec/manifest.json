@@ -230,8 +230,7 @@
         "src/design/base.css",
         "src/components/Groups.tsx",
         "src/components/Sidebar.tsx",
-        "server/index.ts",
-        "server/session-groups-index.test.ts"
+        "server/index.ts"
       ]
     },
     "§app.session-list/recent": {
@@ -536,8 +535,7 @@
       "authority": "accepted",
       "evidence": "unreviewed",
       "code": [
-        "src/components/NewSessionDialog.tsx",
-        "server/targets.ts"
+        "src/components/NewSessionDialog.tsx"
       ]
     },
     "§app/session-list": {
@@ -1111,7 +1109,8 @@
         "§app.session-list/needs-you",
         "§app.session-list/recent",
         "§mesh.ui/card",
-        "§app.extensions/cards"
+        "§app.extensions/cards",
+        "§workspace.fanout/entry-points"
       ]
     },
     "§chat.transcript/live-watch": {
@@ -1134,7 +1133,11 @@
         "src/lib/message-reveal.ts",
         "src/components/Thread.tsx",
         "src/design/base.css",
-        "src/app.css"
+        "src/app.css",
+        "src/lib/message-actions.ts",
+        "src/lib/message-actions.test.ts",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx"
       ]
     },
     "§chat.transcript/open-questions": {
@@ -1289,6 +1292,11 @@
       "authority": "accepted",
       "evidence": "reviewed"
     },
+    "§design.copy-deck/fanout": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "unreviewed"
+    },
     "§design.copy-deck/images": {
       "kind": "note",
       "authority": "accepted",
@@ -1378,7 +1386,7 @@
     "§design.copy-deck/workspace": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "unreviewed"
     },
     "§design.ground-rules/color-budget": {
       "kind": "note",
@@ -1405,7 +1413,8 @@
         "public/icons/mic.svg",
         "src/components/ui.tsx",
         "src/vis/icons.ts",
-        "src/vis/kinds/wireframe/icons.ts"
+        "src/vis/kinds/wireframe/icons.ts",
+        "public/icons/share.svg"
       ]
     },
     "§design.ground-rules/motion": {
@@ -1463,6 +1472,76 @@
       "authority": "accepted",
       "evidence": "verified"
     },
+    "§workspace.fanout/classes": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/cost-preview": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/entry-points": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ComposerMenu.tsx",
+        "src/components/ChatView.tsx",
+        "src/lib/older-rows.ts",
+        "shared/row-counts.ts",
+        "src/lib/message-count.ts"
+      ]
+    },
+    "§workspace.fanout/states": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/the-dialog": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/the-fork-point-in-a-transcript": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/GroupView.tsx",
+        "src/lib/jump.ts"
+      ]
+    },
+    "§workspace.fanout/the-route": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/targets.ts",
+        "server/fanout.ts"
+      ]
+    },
+    "§workspace.fanout/tokens": {
+      "kind": "note",
+      "authority": "accepted",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/two-sources": {
+      "kind": "behavior",
+      "authority": "migrated",
+      "evidence": "unreviewed"
+    },
+    "§workspace.fanout/what-creation-does": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/fanout.ts",
+        "server/chat-manager.ts",
+        "server/fork.ts"
+      ]
+    },
     "§workspace.groups/a-pane": {
       "kind": "behavior",
       "requires": [
@@ -1479,11 +1558,8 @@
     },
     "§workspace.groups/accessibility": {
       "kind": "behavior",
-      "authority": "accepted",
-      "evidence": "unreviewed",
-      "code": [
-        "src/App.tsx"
-      ]
+      "authority": "migrated",
+      "evidence": "unreviewed"
     },
     "§workspace.groups/announcements": {
       "kind": "behavior",
@@ -1492,23 +1568,23 @@
     },
     "§workspace.groups/classes": {
       "kind": "note",
-      "authority": "accepted",
+      "authority": "migrated",
       "evidence": "unreviewed"
     },
     "§workspace.groups/data": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "unreviewed"
     },
     "§workspace.groups/decisions": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "unreviewed"
     },
     "§workspace.groups/group-lifecycle": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "unreviewed"
     },
     "§workspace.groups/keyboard": {
       "kind": "behavior",
@@ -1531,7 +1607,7 @@
     "§workspace.groups/member-states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "unreviewed"
     },
     "§workspace.groups/rejected": {
       "kind": "note",
@@ -1572,8 +1648,7 @@
         "src/lib/group-prompt.ts",
         "src/lib/group-prompt.test.ts",
         "src/lib/input-mode.ts",
-        "src/components/VoiceInput.tsx",
-        "server/group-prompt.ts"
+        "src/components/VoiceInput.tsx"
       ]
     },
     "§workspace.groups/tokens": {
@@ -1581,13 +1656,15 @@
       "authority": "accepted",
       "evidence": "verified"
     },
+    "§workspace/fanout": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "unreviewed"
+    },
     "§workspace/groups": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
-      "code": [
-        "src/components/GroupView.tsx"
-      ]
+      "evidence": "unreviewed"
     },
     "§chat.transcript/setup-card-figures": {
       "kind": "behavior",
@@ -1866,7 +1943,13 @@
         "pi-config/extensions/sandbox/tools.ts",
         "pi-config/extensions/sandbox/README.md",
         "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
-        "pi-config/extensions/sandbox/tests/policy.unit.test.ts"
+        "pi-config/extensions/sandbox/tests/policy.unit.test.ts",
+        "pi-config/extensions/sandbox/launch.ts",
+        "pi-config/extensions/claude-code/confined-launch.ts",
+        "pi-config/extensions/sandbox/tests/launch.unit.test.ts",
+        "pi-config/extensions/subagents/host.ts",
+        "pi-config/extensions/sandbox/tests/claude-confine.mjs",
+        "pi-config/extensions/sandbox/tests/claude-worker.mjs"
       ]
     },
     "§chat/sandbox": {
@@ -2105,9 +2188,9 @@
         "shared/image-note.ts",
         "server/transcript.ts",
         "server/sessions-index.ts",
+        "server/fork.ts",
         "server/chat-manager.ts",
-        "src/lib/live.ts",
-        "server/image-note.test.ts"
+        "src/lib/live.ts"
       ]
     },
     "§mesh.peers/allowlist": {
@@ -4898,7 +4981,8 @@
         "src/lib/spend.ts",
         "src/lib/spend.test.ts",
         "src/components/AgentsView.tsx",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/lib/session-shares.ts"
       ]
     },
     "§app.settings-dialog/claude-long-context-offered": {
@@ -5032,6 +5116,7 @@
         "src/lib/recent.test.ts",
         "src/lib/home-sessions.ts",
         "src/lib/home-sessions.test.ts",
+        "src/components/FanoutDialog.tsx",
         "src/components/Groups.tsx",
         "src/components/SelectionToolbar.tsx",
         "src/lib/session-selection.ts",
@@ -7192,7 +7277,8 @@
         "pi-config/extensions/claude-code/runner-failover.test.ts",
         "server/claude-accounts.test.ts",
         "pi-config/extensions/claude-code/tests/fixtures/failures/limit-rejected.ndjson",
-        "server/claude-pool/agent.ts"
+        "server/claude-pool/agent.ts",
+        "pi-config/extensions/claude-code/confined-launch.test.ts"
       ]
     },
     "§app.claude-logins/registry": {
@@ -8503,6 +8589,30 @@
         "src/lib/session-shares.ts"
       ]
     },
+    "§chat.sandbox/claude-state": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.sandbox/workers",
+        "§app.claude-logins/spawn-selection",
+        "§app.claude-logins/failover"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "pi-config/extensions/claude-code/accounts.ts",
+        "pi-config/extensions/claude-code/confined-launch.ts",
+        "pi-config/extensions/claude-code/runner.ts",
+        "pi-config/extensions/claude-code/transport.ts",
+        "pi-config/extensions/subagents/host.ts",
+        "pi-config/extensions/subagents/host-transport.ts",
+        "pi-config/extensions/subagents/index.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/sandbox/launch.ts",
+        "pi-config/extensions/claude-code/confined-launch.test.ts",
+        "pi-config/extensions/claude-code/accounts.test.ts"
+      ]
+    },
     "§app.settings-dialog/voice-clip-check": {
       "kind": "behavior",
       "authority": "accepted",
@@ -8886,66 +8996,42 @@
         "pi-config/README.md"
       ]
     },
-    "§workspace.groups/send-all-mode": {
+    "§app.session-share/share-page": {
       "kind": "behavior",
-      "requires": [
-        "§workspace.groups/the-group-composer",
-        "§workspace.groups/layout-tabs",
-        "§workspace.groups/shell",
-        "§workspace.groups/announcements",
-        "§design.copy-deck/workspace"
-      ],
       "authority": "accepted",
       "evidence": "verified",
+      "requires": [
+        "§app.session-share/slice",
+        "§app.session-share/sheet"
+      ],
       "code": [
-        "src/components/GroupView.tsx",
-        "src/components/GroupComposer.tsx",
-        "src/lib/group-layout.ts",
-        "src/lib/group-layout.test.ts",
-        "src/lib/ui-state.ts",
+        "src/components/SharePage.tsx",
+        "src/lib/share-slice.ts",
+        "src/lib/share-slice.test.ts",
         "src/App.tsx",
-        "src/app.css",
-        "src/components/Composer.tsx"
+        "src/share-page.css"
       ]
     },
-    "§workspace.groups/legacy-groups": {
+    "§app.session-share/slice": {
       "kind": "behavior",
-      "requires": [
-        "§app.session-list/auto-titles"
-      ],
       "authority": "accepted",
       "evidence": "verified",
-      "code": [
-        "server/session-groups.ts",
-        "server/session-groups.test.ts",
-        "server/group-prompt-wiring.test.ts",
-        "server/chat-manager.ts",
-        "server/session-autotitle.ts",
-        "server/session-autotitle.test.ts",
-        "server/index.ts",
-        "shared/protocol.ts",
-        "src/lib/session-groups.ts",
-        "src/lib/session-groups.test.ts",
-        "src/components/GroupView.tsx"
-      ]
-    },
-    "§workspace.groups/making-a-comparison": {
-      "kind": "behavior",
       "requires": [
-        "§app.overseer/tools",
-        "§app.session-list/groups"
+        "§app.session-share/link",
+        "§app.session-share/snapshot",
+        "§app.session-share/never"
       ],
-      "authority": "accepted",
-      "evidence": "unreviewed",
       "code": [
-        "server/overseer-prompt.md",
-        "server/index.ts",
-        "server/merge-routes.test.ts",
-        "server/chat-model.test.ts",
-        "src/components/GroupView.tsx",
-        "src/components/NewSessionDialog.tsx",
-        "src/components/OverviewActions.tsx",
-        "src/App.tsx"
+        "shared/session-share.ts",
+        "server/session-share-view.ts",
+        "server/session-shares.ts",
+        "server/session-shares-routes.ts",
+        "server/share/session-routes.ts",
+        "server/share/session-live.ts",
+        "server/session-share-view.test.ts",
+        "server/session-share-privacy.test.ts",
+        "server/session-shares.test.ts",
+        "src/share/SessionShareApp.tsx"
       ]
     }
   },

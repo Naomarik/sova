@@ -1,14 +1,18 @@
+import { randomBytes } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { stripImageNotes } from "../shared/image-note";
 import { parseLinkMessage } from "../shared/link-message";
 import {
+  SESSION_SHARE_EXCERPT_MAX,
   SESSION_SHARE_IMAGE_MAX_BYTES,
   SESSION_SHARE_IMAGE_TYPES,
   SESSION_SHARE_PAGE,
   type SessionShareImageRef,
   type SessionShareItem,
   type SessionShareMode,
+  type SessionShareOutline,
+  type SessionShareSpan,
   type SessionShareView,
 } from "../shared/session-share";
 import { parseWakeNudge } from "../shared/wake";
@@ -28,24 +32,34 @@ import { parseLines, type Entry } from "./transcript";
  * Images are never inlined: an item names them by index (`images: [{n, mime}]`), the n-th image
  * block embedded in a shown message on the shared branch, in order, and the image route serves one
  * (`sessionShareImage`). Only the four raster types; never a file named by a path.
+ *
+ * A slice (§app.session-share/slice) is cut from the branch BEFORE anything is built
+ * (`sliceBranch`), so item numbers, image indices and pages are the slice's own, and nothing before
+ * its start is ever read into a view.
  */
 
 /** What the view needs of a share (server/session-shares.ts's record). `cutEntryId` null: live,
-    the session's current branch. */
+    the session's current branch. `from`: the slice's first entry; null, from the first message. */
 export interface ShareSource {
   sessionPath: string;
   cutEntryId: string | null;
+  from: string | null;
   title: string;
   sharedAt: string;
   mode: SessionShareMode;
+  /** The share's id, for a recipient's view: its views then carry a `lineage`. */
+  lineageKey?: string;
 }
 
 type ImageBlock = { data: string; mime: string };
 
 interface Built {
   items: SessionShareItem[];
+  /** Each item's entry id, by `n` (operator-only: the outline). */
+  ids: string[];
   images: ImageBlock[];
   through: string | null;
+  earlier: boolean;
 }
 
 const IMAGE_TYPES: ReadonlySet<string> = new Set(SESSION_SHARE_IMAGE_TYPES);
@@ -237,17 +251,33 @@ export function canonicalTime(t: unknown): string | undefined {
   return Number.isFinite(ms) ? new Date(ms).toISOString() : undefined;
 }
 
-function build(entries: Entry[], branch: Entry[]): Built {
-  const header = entries.find((e) => e.type === "session");
-  const scrub = scrubberFor(typeof header?.cwd === "string" ? header.cwd : undefined);
-  const items: SessionShareItem[] = [];
-  const images: ImageBlock[] = [];
-  const refs = (blocks: ImageBlock[]): SessionShareImageRef[] | undefined =>
-    blocks.length ? blocks.map((b) => ({ n: images.push(b) - 1, mime: b.mime })) : undefined;
-  let through: string | null = null;
+/**
+ * The branch from `from` on: the suffix of `branch` that starts at that entry, or the whole branch
+ * when `from` is null. null when `from` isn't on the branch (a rewind above it, another branch, a
+ * start after the cut): the share then reads as gone. Pure.
+ */
+export function sliceBranch(branch: Entry[], from: string | null): Entry[] | null {
+  if (from === null) return branch;
+  const at = branch.findIndex((e) => e.id === from);
+  return at < 0 ? null : branch.slice(at);
+}
+
+/** A message the view shows, before any scrub: its entry, role, unscrubbed text and images. */
+interface Shown {
+  e: Entry;
+  role: "user" | "assistant";
+  text: string;
+  blocks: ImageBlock[];
+}
+
+/**
+ * The messages of `branch` a view shows, in order, decided before any scrub (so a count or span is
+ * cheap): user and assistant messages with text or an image, not a wake nudge or a link partner's
+ * message. Pure.
+ */
+export function shownEntries(branch: Entry[]): Shown[] {
+  const out: Shown[] = [];
   for (const e of branch) {
-    const at = canonicalTime(e.timestamp);
-    if (at) through = at;
     if (e.type !== "message") continue;
     const m = e.message ?? {};
     const role = m.role;
@@ -258,18 +288,71 @@ function build(entries: Entry[], branch: Entry[]): Built {
     const text = withoutImagePaths(role === "user" ? stripImageNotes(raw, m.content) : raw).trim();
     const blocks = imageBlocks(m.content);
     if (!text && !blocks.length) continue;
-    const imgs = refs(blocks);
-    items.push({ kind: role === "user" ? "user" : "reply", n: items.length, text: cutAtToken(scrub(text), SESSION_SHARE_TEXT_MAX), ...(at ? { at } : {}), ...(imgs ? { images: imgs } : {}) });
+    out.push({ e, role, text, blocks });
   }
-  return { items, images, through };
+  return out;
 }
 
-async function built(src: Pick<ShareSource, "sessionPath" | "cutEntryId">): Promise<Built | null> {
+/** `slice` is the branch as built; `earlier`, whether the slice dropped a shown message. */
+function build(entries: Entry[], slice: Entry[], earlier: boolean): Built {
+  const header = entries.find((e) => e.type === "session");
+  const scrub = scrubberFor(typeof header?.cwd === "string" ? header.cwd : undefined);
+  const items: SessionShareItem[] = [];
+  const ids: string[] = [];
+  const images: ImageBlock[] = [];
+  const refs = (blocks: ImageBlock[]): SessionShareImageRef[] | undefined =>
+    blocks.length ? blocks.map((b) => ({ n: images.push(b) - 1, mime: b.mime })) : undefined;
+  let through: string | null = null;
+  for (const e of slice) {
+    const at = canonicalTime(e.timestamp);
+    if (at) through = at;
+  }
+  for (const { e, role, text, blocks } of shownEntries(slice)) {
+    const at = canonicalTime(e.timestamp);
+    const imgs = refs(blocks);
+    ids.push(typeof e.id === "string" ? e.id : "");
+    items.push({ kind: role === "user" ? "user" : "reply", n: items.length, text: cutAtToken(scrub(text), SESSION_SHARE_TEXT_MAX), ...(at ? { at } : {}), ...(imgs ? { images: imgs } : {}) });
+  }
+  return { items, ids, images, through, earlier };
+}
+
+type Src = Pick<ShareSource, "sessionPath" | "cutEntryId" | "from">;
+
+/** Per share, the lineage its views were last built in, and that view's start and last entry. */
+const lineages = new Map<string, { id: string; from: string | null; tip: string | null }>();
+
+/**
+ * The share's lineage for a view of `slice`: kept only while the slice extends the last one built
+ * (same start, and that view's last entry still on it), so every view of a lineage extends every
+ * earlier one and an item's number always names the same message; else a new random id (a moved
+ * start, a rewind, an end moved back or onto another branch). Opaque: nothing of the session is in
+ * it. A stale or out-of-order build can only start a new lineage (a spare reset), never keep one.
+ */
+function lineageOf(key: string, from: string | null, slice: Entry[]): string {
+  const ids = new Set<string>();
+  for (const e of slice) if (typeof e.id === "string") ids.add(e.id);
+  const prev = lineages.get(key);
+  const same = !!prev && prev.from === from && (prev.tip === null || ids.has(prev.tip));
+  const id = same ? prev!.id : randomBytes(9).toString("base64url");
+  lineages.set(key, { id, from, tip: [...ids].at(-1) ?? null });
+  return id;
+}
+
+/** The strict branch and its slice, or null (gone). */
+async function sliced(src: Src): Promise<{ entries: Entry[]; branch: Entry[]; slice: Entry[] } | null> {
   const entries = await entriesOf(src.sessionPath);
   if (!entries) return null;
   const branch = branchTo(entries, src.cutEntryId);
-  if (!branch) return null;
-  return build(entries, branch);
+  const slice = branch && sliceBranch(branch, src.from);
+  return slice ? { entries, branch, slice } : null;
+}
+
+async function built(src: Src & { lineageKey?: string }): Promise<(Built & { lineage?: string }) | null> {
+  const got = await sliced(src);
+  if (!got) return null;
+  const earlier = shownEntries(got.branch.slice(0, got.branch.length - got.slice.length)).length > 0;
+  const made = build(got.entries, got.slice, earlier);
+  return src.lineageKey ? { ...made, lineage: lineageOf(src.lineageKey, src.from, got.slice) } : made;
 }
 
 /**
@@ -291,6 +374,46 @@ export async function sessionShareView(src: ShareSource, opts: { before?: number
     items: b.items.slice(start, end),
     ...(start > 0 ? { before: start } : {}),
     images: b.images.length,
+    ...(b.earlier ? { earlier: true as const } : {}),
+    ...(b.lineage ? { lineage: b.lineage } : {}),
+  };
+}
+
+/**
+ * The share page's picker (operator only): every message the whole session shows at `cutEntryId`,
+ * as a scrubbed excerpt with its entry id. null: as the view's null.
+ */
+export async function sessionShareOutline(src: Pick<ShareSource, "sessionPath"> & { cutEntryId: string }): Promise<SessionShareOutline | null> {
+  const b = await built({ sessionPath: src.sessionPath, cutEntryId: src.cutEntryId, from: null });
+  if (!b) return null;
+  return {
+    cut: src.cutEntryId,
+    items: b.items.map((it, i) => ({
+      id: b.ids[i]!,
+      n: it.n,
+      kind: it.kind,
+      ...(it.at ? { at: it.at } : {}),
+      excerpt: cutAtToken(it.text.replace(/\s+/g, " ").trim(), SESSION_SHARE_EXCERPT_MAX),
+      images: it.images?.length ?? 0,
+    })),
+  };
+}
+
+/**
+ * Where a sliced share sits among the messages the whole view shows, 1-based: `first` its first
+ * message, `last` its last (null while live), `total` those the session's current branch shows.
+ * undefined: a whole-session share, or one that no longer reads.
+ */
+export async function shareSpan(src: Src): Promise<SessionShareSpan | undefined> {
+  if (src.from === null) return undefined;
+  const got = await sliced(src);
+  if (!got) return undefined;
+  const before = shownEntries(got.branch.slice(0, got.branch.length - got.slice.length)).length;
+  const current = src.cutEntryId === null ? got.branch : branchTo(got.entries, null);
+  return {
+    first: before + 1,
+    last: src.cutEntryId === null ? null : before + shownEntries(got.slice).length,
+    total: current ? shownEntries(current).length : 0,
   };
 }
 
@@ -308,7 +431,7 @@ function sniff(b: Uint8Array): string | null {
  * Image `n` of the shared branch, as its sniffed type and bytes, or null: no such image, over
  * SESSION_SHARE_IMAGE_MAX_BYTES, or not really a png, jpeg, webp or gif.
  */
-export async function sessionShareImage(src: Pick<ShareSource, "sessionPath" | "cutEntryId">, n: number): Promise<{ mime: string; bytes: Buffer } | null> {
+export async function sessionShareImage(src: Src, n: number): Promise<{ mime: string; bytes: Buffer } | null> {
   if (!Number.isSafeInteger(n) || n < 0) return null;
   const img = (await built(src))?.images[n];
   if (!img || img.data.length > Math.ceil(SESSION_SHARE_IMAGE_MAX_BYTES / 3) * 4 + 4) return null;
@@ -327,14 +450,25 @@ export async function currentLeaf(sessionPath: string): Promise<{ entryId: strin
   return { entryId: leaf.id, at: canonicalTime(leaf.timestamp) ?? null };
 }
 
-/** Whether a share still reads: its file is there and parses, and its branch (the cut's, or the
-    current one) is unambiguous. false is the view's null: the dead page, and its sockets close. */
-export async function sourceReadable(src: Pick<ShareSource, "sessionPath" | "cutEntryId">): Promise<boolean> {
-  const entries = await entriesOf(src.sessionPath);
-  return !!entries && branchTo(entries, src.cutEntryId) !== null;
+/** A source's bounds, when it reads (else null): the time of its newest entry (a snapshot's cut
+    time) and of its start entry (null with no start, or no canonical time). */
+export async function sliceBounds(src: Src): Promise<{ through: string | null; fromAt: string | null } | null> {
+  const got = await sliced(src);
+  if (!got) return null;
+  let through: string | null = null;
+  for (const e of got.slice) through = canonicalTime(e.timestamp) ?? through;
+  return { through, fromAt: src.from === null ? null : (canonicalTime(got.slice[0]?.timestamp) ?? null) };
+}
+
+/** Whether a share still reads: its file is there and parses, its branch (the cut's, or the
+    current one) is unambiguous, and a slice's start is on it. false is the view's null: the dead
+    page, and its sockets close. */
+export async function sourceReadable(src: Src): Promise<boolean> {
+  return (await sliced(src)) !== null;
 }
 
 /** Forget parsed files (tests). */
 export function resetShareViewCache(): void {
   parsed.clear();
+  lineages.clear();
 }

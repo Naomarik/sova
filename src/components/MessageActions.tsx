@@ -6,6 +6,7 @@ import { Icon, type IconName } from "./ui";
 
 const ICON: Record<MessageActionKind, IconName> = {
   copy: "copy",
+  share: "share",
   rewind: "undo",
   regenerate: "refresh",
   remove: "close",

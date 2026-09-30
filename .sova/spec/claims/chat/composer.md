@@ -221,7 +221,7 @@ Commands) and took the model trigger and the session's own facts out of the head
 composer is where the session is acted on, and the head is for reading.
 
 **One popover, two triggers, three panels.** The `plus` button opens the **menu** panel — Attach
-images, Commands, Playbooks, Hide tool calls, Hide thinking, Sandbox and Undo
+images, Commands, Playbooks, Hide tool calls, Hide thinking, Sandbox, Fan Out… and Undo
 last turn, each present only where it applies (below). The model indicator in `.composer-foot` (§chat/composer) opens the **model**
 panel — the Model row and this model's Thinking ladder, the two things the indicator is the label
 for. The Model row opens the §chat/model-menu **picker** as the third panel, which comes back to the model
@@ -250,7 +250,7 @@ it.
 
     <div class="composer-flyout-sep" role="separator"></div>
     …Hide tool calls, Hide thinking, Sandbox (menuitemcheckbox)…
-    …then Undo last turn after its own separator (§chat/timeline)…
+    …Fan Out… (§workspace/fanout), then Undo last turn after its own separator (§chat/timeline)…
   </div>
 </div>
 
@@ -297,7 +297,7 @@ it.
   closes it if the picker is already in front), with `preventDefault()` so print never fires. It's
   bound in chat sessions only; watch sessions print as usual.
 - **Rows.** The menu panel's, in order: Attach images, Commands, Playbooks, Hide tool calls, Hide
-  thinking, Sandbox and, after its own separator, Undo last turn (§chat/timeline).
+  thinking, Sandbox, Fan Out… (§workspace/fanout) and, after its own separator, Undo last turn (§chat/timeline).
   §design.copy-deck/composer-flyout is the inventory. Model and Thinking are the model panel's.
   - **Attach images** opens the composer's hidden file picker (§chat/images). `aria-disabled` and
     `aria-describedby="composer-reason"` while the composer is disabled.

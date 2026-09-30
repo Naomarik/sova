@@ -4,7 +4,8 @@
 pi's sandbox extension (`pi-config/extensions/sandbox`) confines what an agent's **tools** do to
 the machine: the `bash` tool runs inside an OS sandbox, and the file tools (`read`, `write`,
 `edit`, `ls`, `find`, `grep`) check every path against the same policy. The agent process itself
-is not confined; the server and every worker keep their own state writable. The sandbox is **on
+is not confined, except a Claude Code worker's, which runs whole inside the sandbox
+(§chat.sandbox/workers); the server and every worker keep their own state writable. The sandbox is **on
 or off per session**, and only the user turns it either way.
 
 It is local containment of an agent's mistakes on a single-user machine. It is not a boundary
@@ -193,17 +194,50 @@ at spawn with a message naming the sandbox. A worker started with `--sandbox on`
 off: its `/sandbox off` refuses, so the parent's agent cannot switch it off by sending the
 command as a steer.
 
-Claude Code workers get the policy as the CLI's own settings (`--settings`): its sandbox enabled
-with `failIfUnavailable` and no unsandboxed commands, the writable roots as its allowed writes, the
-hidden list as denied reads, and the proxy allowlist as its allowed domains; plus permission rules
-that allow Edit only under the writable roots and deny Read of hidden paths. Its permission mode
-is forced to `dontAsk`, never `bypassPermissions`. Its Bash is OS-confined by the CLI; its Write,
-Edit and Read are confined by those permission rules, the same policy-not-OS shape as pi's file
-tools (§chat.sandbox/limits). Enforcement is `full`. A Claude Code worker whose CLI sandbox is
-unavailable refuses to start.
+A Claude Code worker runs whole inside the same OS sandbox: the `claude` process, its Bash, its
+Write, Edit, Read, Glob and Grep, and every MCP server it starts are confined by the sandbox's own
+backend (bubblewrap, or Seatbelt on macOS), with the policy a pi worker would get in that cwd and
+scope: the same writable roots, hidden list, protected git and trust-store paths, and proxy and
+environment allowlists. The CLI's own sandbox is turned off, and the worker runs with
+`bypassPermissions` unless its spawn asks for another permission mode. Every launch of the worker
+is confined, its start, a resume, a move to another login and a failover alike, and a policy change
+reaches a running worker at its next launch. If its confinement cannot be set up (the backend's
+probe fails, or on macOS a confined `claude --version` fails), the spawn is refused with a message
+naming the sandbox; it never runs unconfined. Enforcement is `full`. Its own Claude Code state and
+its login's token are handled as §chat.sandbox/claude-state says. A session whose model is Claude
+(the chat provider) is not wrapped this way: its `claude` runs with no built-in tools, and every
+tool it calls is pi's, confined as above.
 
 Any worker whose enforcement is `partial` refuses to start unattended unless the policy sets
 `acceptPartial`.
+
+## §chat.sandbox/claude-state — A confined Claude Code worker's own state and token
+
+A confined Claude Code worker keeps Claude Code's own state in a private config directory,
+`<agentDir>/sova/sandbox/claude/<parent-session-id>-<worker-id>/`, which is its
+`CLAUDE_CONFIG_DIR` inside the sandbox. It is kept across the worker's resumes, archiving
+included, and deleted at a later session start once it has sat unused for 24 hours and its parent
+session's file is deleted, or its worker's record is gone from that session; a running worker's
+is never deleted. A worker whose directory is gone starts a fresh one and still resumes its
+conversation. Its
+transcript still lands in Claude Code's own `projects/` folder, where Sova reads it
+(§app.subagents-pane/claude-code-workers), through a writable view of that worker's project
+folder only. Its team mailbox, its own spec-hook state directory and its own spec ledger file
+(which the parent's spec mode also reads) are writable; nothing else of the agent dir, the
+login's directory or `~/.claude` is. Each worker has its own tmp, removed when it closes, and
+under the sandbox its own proxy, which also allows the Anthropic API hosts.
+
+The login's credentials stay hidden inside. Before each launch, Sova reads the login's
+short-lived access token outside the sandbox (never its refresh token) and hands it to the
+worker over a file descriptor, so it never appears in a command line, in the spawn environment
+or in the worker's own environment. When the token has under 60 minutes left, Sova first
+runs Claude Code unconfined on that login, without a model call, so that it refreshes the token
+when it is due. When a confined worker's request is refused as
+unauthorized, Sova refreshes that login once and resumes the worker on it; only a second failure
+fails over (§app.claude-logins/failover). Seen from outside, the worker's process still carries
+its login's directory in `CLAUDE_CONFIG_DIR`, so the pool counts it on that login
+(§app.claude-logins/drain). A hosted worker's host process reads its token and owns its proxy
+and tmp, so the worker keeps its network after the parent restarts.
 
 ## §chat.sandbox/backends — Platform-neutral: Linux and macOS
 
@@ -219,9 +253,19 @@ enforced on remote", and reads "Sandbox on · not enforced on remote" (§chat.sa
 
 - **The file tools are policy-enforced, not OS-enforced.** `read`, `write`, `edit`, `ls`, `find`
   and `grep` run inside the agent process and check canonical paths against the policy; only
-  `bash` is inside the OS sandbox. A bug in that check is not caught by the kernel. The same
-  holds for a Claude Code worker: its Bash is OS-confined by the CLI's sandbox, while its Write,
-  Edit and Read are held only by the CLI's permission rules.
+  `bash` is inside the OS sandbox. A bug in that check is not caught by the kernel. A Claude Code
+  worker's file tools run inside its confined process, so for it they are OS-enforced too.
+- **A confined Claude Code worker's own state and network.** Its private config directory, its
+  transcript folder, its team mailbox and its spec-hook state and ledger are writable even under
+  `read-only` (§chat.sandbox/claude-state), so it can forge only its own spec ledger. Under
+  `read-only` its network is the Anthropic API rather than none, and under `workspace-write` its
+  Bash can reach the API hosts too; each worker has its own proxy, so the parent's `bash` cannot.
+  Stopping it with TERM ends the sandbox abruptly (closing its input stays graceful), a policy
+  change reaches it only at its next launch, and the model sees a denial as the raw
+  "Read-only file system" or "Permission denied" error. The worker's transcript says once that it
+  is confined (`[sandbox: confined — the session's sandbox]`, "…, narrowed to {worktree}", or
+  `[sandbox: confined — write-only to {worktree}]`) and says `[sandbox: refused — {reason}]` when
+  a launch is refused.
 - **Delayed escapes.** Whatever the agent writes in the workspace, the user may later run outside
   the sandbox: `npm run`, `make`, `direnv allow`, an editor or mise task, a Clojure alias. The
   sandbox bounds what the agent does now, not what is done later with its output. Reviewing the

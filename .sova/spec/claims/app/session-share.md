@@ -1,7 +1,8 @@
 # §app/session-share — Session share links: a whole session, read-only, one link per recipient
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-The operator can share a whole session read-only with people outside the tailnet. A share has a
+The operator can share a whole session, or a slice of it (§app.session-share/slice), read-only
+with people outside the tailnet. A share has a
 public title, a mode (a snapshot, or Follow live), an expiry, and one link per recipient: a named
 recipient (the operator's private label, such as "Ana") or the optional "Anyone with the link"
 row. The recipient opens a phone-first page on the share listener (§app.baton/share-listener) that
@@ -18,7 +19,7 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   label is never shown to any viewer.
 - **Store.** `<stateRoot>/session-shares.json`, mode 0600, written atomically, host-local, never
   synced or committed: `{version: 1, shares: [{id: "ss_…", sessionId, sessionPath, title, mode,
-  cut: {entryId, at} | null, createdAt, stoppedAt?}], links: [{hash, shareId, recipientId: "r_…",
+  cut: {entryId, at} | null, from?: {entryId, at}, createdAt, stoppedAt?}], links: [{hash, shareId, recipientId: "r_…",
   label, anyone?, createdAt, expiresAt, revokedAt?, revokedWhy?}]}`. A file that fails the strict
   parse serves no link and is never overwritten.
 - **Expiry.** 1, 7, 30 or 90 days, 30 by default, absolute. Extend sets every live link of the share
@@ -32,14 +33,15 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   A recipient can be added later, relinked (a new token; the old one stops at once, and its open
   pages close before any wait on the gateway for the new one) or turned off. Stop sharing turns
   every link of the share off.
-- **Dead links.** A revoked, relinked, stopped or expired link, or one whose session file is gone or
-  whose cut entry is no longer in it, answers 410 `{error, code: "gone"}` (`why: "expired"` only
+- **Dead links.** A revoked, relinked, stopped or expired link, or one whose session file is gone,
+  whose cut entry is no longer in it, or whose start is no longer on its branch
+  (§app.session-share/slice), answers 410 `{error, code: "gone"}` (`why: "expired"` only
   when it expired) with no title or name; an unknown token answers 404 `{code: "not-found"}`.
   Open pages of a link that dies are closed with 4410; a socket is admitted only where the view
   would answer, and a 30-second sweep closes pages whose link expired or whose share no longer
   reads. Archiving a session stops its shares.
 - **Nothing after narrowing.** A view, image or pushed view is sent only while the token still
-  opens and the share's source (mode, cut, title, stopped) is the one it was built from, judged
+  opens and the share's source (mode, cut, start, title, stopped) is the one it was built from, judged
   after the build: a revoke, stop or switch to a snapshot during a read or a live rebuild sends
   nothing from it, and of two rebuilds only the newest is pushed.
 - **Registry.** Live links are registered with the gateway as kind `s` rows (§mesh.public/registry)
@@ -57,8 +59,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   stale preview), and its time. What is minted is exactly what was previewed, images included,
   whatever the session wrote meanwhile. Its view is the branch from the root to the cut, rebuilt and filtered on each read, so it
   stays the same after later messages, rewinds or branches. **Update to now** moves the cut to a
-  previewed cut when one is given, else the current leaf, and pushes the new view to open pages.
-- **Follow live** (`mode: "live"`) has no cut: the view is the session's current branch. While a
+  previewed cut when one is given, else the current leaf, keeps a slice's start (refused as a stale
+  preview when the new branch no longer holds it), and pushes the new view to open pages.
+- **Follow live** (`mode: "live"`) has no cut: the view is the session's current branch (from its
+  start, for a slice with one; a slice with an end is always a snapshot). While a
   live share has an open page, the minting host watches the session file (TUI-owned sessions
   included) and, debounced, pushes the refiltered view when whole entries were appended; it never
   streams a reply as it is written.
@@ -69,7 +73,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
 - The page shows the public title, "Shared {date} · read only" and the conversation: each user
   message's text and each assistant reply's text as markdown, with its `vis` drawings, and the
   images embedded in those messages. The newest 200 items come first; Show earlier reads the page
-  before them. No composer, no names, no recipient label.
+  before them. No composer, no names, no recipient label. A sliced share shows only its slice
+  (§app.session-share/slice), with `earlier` set when it starts after a shown message.
 - **Size.** Only the first 1 MB (1,048,576 characters) of a message's text is read at all. After
   every scrub, an item's text is at most 256 KB (262,144 characters), ending in "…" when cut.
   Both cuts step back to the last token boundary (whitespace, a quote, a bracket or a
@@ -85,7 +90,7 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
 - Never sent to a recipient: thinking, tool calls, tool results and their output, the system
   prompt and `role: "system"` entries, usage, model ids, the session id, its path or cwd, the host
   name, costs, subagent transcripts and reports, every custom entry and card, clipboard or
-  attachment paths, and recipient labels. The view is built field by field on the server; no
+  attachment paths, recipient labels, and entry ids (the operator's outline alone carries them). The view is built field by field on the server; no
   transcript row is passed along whole. What is excluded are the records and fields themselves: an
   assistant reply that quotes a tool's output, or any other private value, is still reply text,
   and only the redactor's known secrets and patterns are taken out of it; Preview and the Follow
@@ -106,7 +111,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   file and, for every field the operator's transcript shows, there too, and checks it is absent
   from every `/api/s` answer, the page shell, the image route and the socket frames. Its markers
   include image paths in code, fences and vis source, marker-bearing and invalid entry times, and
-  an abandoned branch next to an id-less record in Follow live.
+  an abandoned branch next to an id-less record in Follow live. For a slice it plants text, an
+  image and a vis source before the start and after a snapshot's end, and checks that none of them
+  and no entry id reach any answer, any image index up to the whole session's count, or a frame,
+  in either mode, and that a rewind above a live slice's start makes its link read as gone.
 
 ## §app.session-share/rejected — Rejected shapes
 
@@ -131,7 +139,14 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   opens the full image in a new tab.
 - The page reads the newest page first, from the top; **Show Earlier** reads the page before and
   keeps the reader's place. A `view` push replaces the newest page and keeps the earlier pages
-  already read; a reader at the bottom stays at the bottom.
+  already read; a reader at the bottom stays at the bottom. A push with `reset` (its lineage changed)
+  replaces the whole view, earlier pages included, and so does any view (a push or a read)
+  of another `lineage` (§app.session-share/slice); a Show Earlier answer of another lineage is
+  dropped and the newest page is read again. Reads act in order: a read overtaken by a push, or by
+  a newest-page read begun after it, is dropped whole when it answers, its view and its gone, busy
+  or offline state alike, so a late answer never brings back an older, wider view.
+- **A slice that starts partway** (`earlier`) shows one quiet line above its first item, once no
+  earlier page remains: "Earlier messages aren't part of this share.", with no count.
 - The page opens `/ws/s?token=&v=` and sends only `{t: "vis", on}` on open and on each
   visibilitychange. A `gone` frame or a 4410 close shows the dead page ("This link has expired."
   only when it expired); an unknown token shows "This link doesn't open a shared session.". A
@@ -140,19 +155,23 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
 
 ## §app.session-share/sheet — Sharing in Session detail, and the Share sheet
 
-- **Sharing section.** Session detail's Session tab has a Sharing section after Identity
+- **Sharing section.** Session detail's Sharing tab holds the Sharing section
   (§app.subagents-pane/tabs). It lists the session's shares, newest first: each share's public
-  title, its mode line ("Snapshot up to {time}" or "Follows live"), and its recipients, each with
+  title, its slice line for a sliced share ("Messages 12–18 of 40", "Message 3 of 9", "From
+  message 12 · follows live", from its `span`) or else its mode line ("Snapshot up to {time}" or
+  "Follows live"), and its recipients, each with
   a presence word when a page is open ("Viewing now", "Open in a tab") and "Opened {n}× · last
   {time}" or "Not opened yet". A stopped share says "Stopped". Each share has **Manage**; the
-  section has **Share Session** and a link to `#/shares`. None: "Not shared with anyone."
-- **The Share sheet** is a dialog that becomes a sheet at folded width. Creating a share, it holds:
+  section has **Share Session** (a link to the share page, §app.session-share/share-page) and a
+  link to `#/shares`. None: "Not shared with anyone."
+- **The Share sheet** is a dialog that becomes a sheet at folded width, and only manages a share:
+  shares are created on the share page, whose create form holds:
   the public title (the session's title, editable, at most 120 characters, with a hint that the
   session's own title may say more than you mean); the people, one label each (Enter or **Add**;
   each removable; at most 20 links in all, no two alike); an **Anyone with the link** switch, off by
   default; a **Follow live** switch, off by default (a snapshot), whose hint says which one it is;
   and the expiry (1 day, 7 days, 30 days or 90 days; 30 by default).
-- **Images before any link.** The sheet reads the preview (the same builder, no token) when it
+- **Images before any link.** The create form reads the preview (the same builder, no token) when it
   opens; the preview is fixed at its `cut`, and its later pages and images are read at that cut.
   When the session shares images, it shows every one of them as thumbnails, loaded at once (never
   lazily), with "Images are shared as they are: nothing in them is hidden." **Create Links** stays
@@ -165,7 +184,9 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   session changed. Preview it again." beside the preview and reads it again, to be reviewed again.
 - **Create Links** (`Create Link` for one) mints them and shows each link once, with its label and
   **Copy Link**; the `linkWarning`, when there is one, shows with **Open Settings** (§app.baton/links).
-- **Managing a share** opens the same sheet on it: the title (Save Title), the Follow live switch,
+- **Managing a share** opens the sheet on it: its slice line (or "The whole session.") with
+  **Change Slice** (the share page on this share; the sheet closes; not on a stopped share), the title (Save Title), the
+  Follow live switch,
   **Update to Now** on a snapshot (both it and switching Follow live off first show the
   conversation as it is now, images loaded as above, and then stop at that preview's cut:
   **Update to This** / **Stop Following Here**, with the same stale-preview handling; Back
@@ -188,7 +209,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   shares with a live link, then the stopped and expired ones folded under "Ended"), then
   **Organization links** (every live hand-off `/h/` and owner `/i/` link, from
   `GET /api/shares-overview` on each host). With the mesh on, each row names its host.
-- A session share row: its public title (a link to the session), its mode line, its recipients
+- A session share row: its public title (a link to the session), its slice line or mode line (as
+  the Sharing section), its recipients
   with presence and opened lines, and **Manage** (the Share sheet on it) and **Stop Sharing**
   asked twice.
 - An org link row: the person, the organization, the hand-off's title and number or "Owner page",
@@ -197,7 +219,8 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   page never changes those stores otherwise.
 - It reads every host again every 5 seconds while the page is visible, and not while hidden. A
   host that doesn't answer is one line: "{host} can't be reached, so its links aren't listed.".
-  None anywhere: "No public links are open. Share a session from its Session tab."
+  None anywhere: "No public links are open. Share a session from its Sharing tab: Session details,
+  then Sharing."
 
 ## §app.session-share/visits — Who opened each link
 
@@ -227,8 +250,10 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   otherwise.
 - When a link dies (turned off, relinked, expired, the share stopped, the session gone) its open
   pages get `{type: "error", code: "gone"}` (`why: "expired"` only when it expired) and close with
-  4410; a 30-second sweep catches expiry. Update to now, a mode switch and a live share's growth
-  push `{type: "view"}` to every open page of the share.
+  4410; a 30-second sweep catches expiry, and a share that no longer reads (a live slice whose
+  start left the branch included). Update to now, a mode switch, a slice change and a live share's
+  growth push `{type: "view"}` to every open page of the share (`reset: true` when its lineage
+  changed, §app.session-share/slice).
 
 ## §app.session-share/overview — The Shares page's data
 
@@ -242,3 +267,85 @@ gateway only routes by hash (§mesh/public). Wire shapes: `shared/session-share.
   visibility); an owner link, which has no socket, carries no presence.
 - It only reads the hand-off and owner link stores and the visit logs, and never writes them. An
   org whose workspace can't be read is left out. A turned-off or expired link is not listed.
+
+## §app.session-share/slice — A share of part of a session
+
+- **Start and end.** A share may start partway: the store keeps an optional `from: {entryId, at}`
+  beside its `cut`, and the cut is the end. `from` absent or null means from the first message.
+  Both are entry ids, never item numbers: an entry id on the root → cut path never moves.
+- **The builder slices first.** The view is the strict branch (root → cut, or the current branch
+  in Follow live) cut down to its suffix that starts at `from`, before anything is built. So item
+  numbers, image indices and pages are the slice's own: item 0 and image 0 are the slice's first,
+  and no answer, image route or pushed view reaches an entry before `from` or after the cut.
+- **A start no longer on the branch** (a rewind above it, a branch that left it, a start after the
+  cut) makes the share read as gone, the rule a cut that left the file already follows.
+- **Follow live with a start.** A slice with only a start may Follow live ("from here on, keep
+  following"); a slice with an end is always a snapshot. An end given to a share that follows live
+  (on create, PATCH, Update to now or in the store) is refused with 400 `live-end` ("A share that follows live has
+  no end. Turn Follow live off to end it."), never dropped, and the store's strict parse refuses a
+  live record with a cut. A change of start, end or mode is written only if the share's mode, end
+  and start are still the ones it was validated against; otherwise nothing is written (409
+  `share-changed`, "This share changed meanwhile. Try again."). Update to now moves the end and keeps the
+  start; when the new branch no longer holds the start it is refused as a stale preview ("The
+  start of this share is no longer in the session.") and nothing changes.
+- **Earlier messages.** When the slice drops a message the whole view would show, the view says
+  `earlier: true`, with no count, excerpt or id, and the page shows one line above its first item:
+  "Earlier messages aren't part of this share.". A dropped wake nudge or other left-out entry
+  alone doesn't set it.
+- **Narrowing resets open pages.** `from` is part of the share's source, so a read or live rebuild
+  begun before the start moved sends nothing. Every recipient view carries a `lineage`: an opaque
+  random id, kept only while each view extends the one built before it (same start, the last view's
+  last entry still on the slice), so an item's number always names the same message within a
+  lineage; a moved start, a rewind, or an end moved back or onto another branch starts a new one.
+  A page replaces its whole view (earlier pages included) when a view of another lineage arrives,
+  by push or by read, and drops an earlier page read in another lineage. A push whose lineage
+  differs from the last one pushed also says `reset: true`, so a reset owed by an overtaken build
+  is carried by the next one sent.
+- **Entry ids are the operator's.** The operator's outline carries them to the share page; no
+  recipient answer, image route, shell or frame ever carries one.
+- **Span.** The operator's share rows carry `span: {first, last, total}` for a sliced share: 1-based
+  positions among the messages the whole view would show (`last` null while it follows live), so
+  lists can say "Messages 12–18 of 40". Whole-session shares carry none.
+
+## §app.session-share/share-page — The operator's share page
+
+- `#/share/<sessionId>[?host=<peer>][&share=<ss_id>][&from=<entryId>]` is a main-pane page (like
+  `#/shares`: `data-view="session"` and `.app-back` at folded width), isolated in its own component
+  (`src/components/SharePage.tsx`) over a pure slice model (`src/lib/share-slice.ts`). It is where
+  shares are created; the Share sheet only manages them.
+- **The outline.** The page reads `GET /api/session-shares/preview?session=<id>&outline=1`: one
+  row per message the share would show, with its entry id, kind, time, a scrubbed excerpt of at
+  most 160 characters and its image count, fixed at a `cut` like the preview. A host that answers
+  without an outline can't slice, and the page says "This host needs an update to share part of a
+  session." and never mints.
+- **Two taps.** The list is one column of rows at least 44px tall (a role mark, the time and a
+  two-line excerpt). The first tap marks the start, the second the end; a second tap above the
+  start swaps them; tapping a boundary again clears it; a tap once both are set moves the nearer
+  one. Until picked, the range is the whole session ("From the first message", "To the latest").
+  Rows are buttons, so Enter and a mouse pick the same way. No row is marked until a boundary is
+  picked; the list opens scrolled to the picked start (else the end).
+- **The bar.** A sticky bottom bar says the range ("Messages 12–18 of 40", "Message 12 of 40", or
+  "From message 12 · follows live") and holds **Preview** and **Next**. It offers one-tap hints and
+  never moves a boundary by itself: "Starts with a reply. Include the question?" and "Ends with your
+  question. Include the reply?".
+- **Follow live** is offered only while the end is "To the latest"; picking an end turns it off.
+  **Preview** shows the slice exactly as recipients will see it, the "Earlier messages…" line
+  included. **Next** shows the create form (title, people, Anyone, Follow live, expiry, the images
+  and Create Links, as §app.session-share/sheet describes them), sending `from` and the previewed
+  `cut`; a start or cut no longer on the branch is 409 stale-preview and nothing is minted. The new
+  links show once on the page, with **Copy Link** and the `linkWarning`, and **Done** returns to the
+  session.
+- **Changing a slice.** With `&share=<id>` the page opens on that share's slice and Next becomes
+  **Save Slice**: the same review step (the new slice's images load and gate it, as Create's do,
+  since a later end can publish new images), then PATCH `from` and `cut`, with the same
+  stale-preview handling; open pages start over with the new slice. Save Slice on a share that
+  follows live with an end picked makes it a snapshot (`mode: "snapshot"` and the cut); Follow live
+  is turned back on only in the Share sheet. Saved, the page says "Slice saved." and returns to the
+  session. When the share changed meanwhile (409 `share-changed`), nothing is saved: the page reads
+  the share again, keeps the picks, and says so ("This share changed meanwhile."), to be saved
+  again. With
+  `&from=<entryId>` the start is preselected and the list scrolls to it, waiting for the end tap.
+- **Doors.** The session head's Share button, a message's **Share from here** action (with
+  `&from=`), the Sharing tab's **Share Session** (with or without shares), and a share's **Change
+  Slice** (with `&share=`). #/shares' empty state points the way there ("Share a session from its
+  Sharing tab").

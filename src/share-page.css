@@ -1,0 +1,68 @@
+/* The share page (§app.session-share/share-page): one column of message rows picked in two taps,
+   and a bar pinned to the pane's bottom edge, inside the thumb arc. Token values only. */
+/* The inner column fills the pane, so the bar sits at the bottom edge even when the page is short. */
+.insights.share-page > .insights-inner { max-width: 760px; min-height: 100%; box-sizing: border-box; gap: var(--space-4); padding-bottom: 0; }
+.share-page-col { display: flex; flex-direction: column; min-width: 0; }
+.share-page-done { display: flex; justify-content: flex-end; }
+
+/* ---- the list ---- */
+.slice-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--space-1); }
+.slice-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--tap-min);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--color-ink-muted);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.slice-row:hover { background: var(--color-sunken); }
+.slice-row:focus-visible { outline: var(--focus-width) solid var(--focus-color); outline-offset: var(--focus-offset); }
+/* In the slice: the selected-row tint and ink; a boundary adds a border and its Start / End chip,
+   so the state never rests on the tint alone. */
+.slice-row-in { background: var(--color-accent-tint); color: var(--color-ink); }
+.slice-row-in:hover { background: var(--color-accent-tint); }
+.slice-row-edge { border-color: var(--color-accent); }
+.slice-row-head { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-size: var(--fs-caption); line-height: var(--lh-caption); }
+.slice-row-n { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink-muted); min-width: 2ch; }
+.slice-row-role { font-weight: var(--fw-semibold); color: var(--color-ink-2); }
+.slice-row-user .slice-row-role { color: var(--color-accent); }
+.slice-row-time,
+.slice-row-images { color: var(--color-ink-muted); display: inline-flex; align-items: center; gap: 2px; }
+.slice-row-mark { margin-left: auto; }
+.slice-row-text {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+}
+
+/* ---- the bar ---- */
+.slice-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  /* auto on top: pushed to the pane's bottom edge on a short page; bleeds to the pane's sides. */
+  margin: auto calc(-1 * var(--space-4)) 0;
+  padding: var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  box-shadow: var(--shadow-2);
+}
+.slice-bar-label { margin: 0; font-weight: var(--fw-semibold); }
+.slice-bar-ends { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.slice-hint { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-1) var(--space-2); font-size: var(--fs-caption); }
+.slice-bar-actions { display: flex; align-items: center; gap: var(--space-2); }

@@ -563,8 +563,9 @@ renders as its text, unlinked.
   slot the mode switch holds in every other chat (the Overseer has none, §app.overseer/hosting).
   It opens a flyout listing the quick actions, each with its label and a short description.
   Picking one sends its prompt (queued as a follow-up while a turn runs).
-- While the composer is disabled the button still opens, and each quick action carries the
-  disabled reason instead of running.
+- **It stays when the foot collapses.** A collapsed composer's foot drops everything but this
+  button, which is an action, not reference. While the composer is disabled the button still
+  opens, and each quick action carries the disabled reason instead of running.
 - Defaults: **What Needs Me**, **What Finished**, **What's Running**, **Tidy Up**, **Where Was I**.
 - They are editable in Settings → Overseer (label, description, prompt; add, remove, reorder,
   reset to defaults).

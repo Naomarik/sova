@@ -558,7 +558,7 @@ try {
 	assert.match(checks().at(-1).content, /lands on the default branch with draft records unpromoted: §app\/shell: .*a "Deferred:" line doesn't pass a landing on the default branch/);
 	git("worktree", "remove", "--force", wtC);
 
-	// M4: a worker commits a promotion in the session's OWN checkout and says so in the ledger; a third
+	// M4: a worker commits a promotion in the session's OWN checkout and says so in its ledger file; a third
 	// party's commit right after is not in the ledger. The relay run lists the worker's § only.
 	const sid = sessionManager.getSessionId();
 	const ledger = path.join(agentDir, "sova", "spec-ledger", `${sid.replace(/[^\w.-]/g, "_")}.jsonl`);
@@ -567,8 +567,10 @@ try {
 	const w0 = headNow();
 	put(".sova/spec/claims/app/shell.md", "# §app/shell\n\nShell, own-tree worker.\n");
 	git("commit", "-qam", "spec: a worker's promotion in the root");
-	mkdirSync(path.dirname(ledger), { recursive: true });
-	writeFileSync(ledger, `${JSON.stringify({ v: 1, at: Date.now(), actor: { runtime: "pi", session: "ag_07" }, top: topNow, before: w0, after: headNow(), kind: "commit" })}\n`, { flag: "a" });
+	// A confined Claude worker writes its own ledger file beside the session's (spec-guard.ts workerLedgerPath).
+	const ownLedger = path.join(path.dirname(ledger), `${sid.replace(/[^\w.-]/g, "_")}.workers`, `${sid.replace(/[^\w.-]/g, "_")}-ag_07.jsonl`);
+	mkdirSync(path.dirname(ownLedger), { recursive: true });
+	writeFileSync(ownLedger, `${JSON.stringify({ v: 1, at: Date.now(), actor: { runtime: "claude-code", session: "ag_07" }, top: topNow, before: w0, after: headNow(), kind: "commit" })}\n`, { flag: "a" });
 	put(".sova/spec/claims/app/other.md", "# §app/other\n\nOther, third party.\n");
 	git("commit", "-qam", "spec: a third party");
 	at = requests.length;
@@ -588,6 +590,7 @@ try {
 	writeFileSync(path.join(wt5, ".sova/spec/claims/app/shell.md"), "# §app/shell\n\nShell, wt5 ledger worker.\n");
 	wt5Git("commit", "-qam", "spec: a worker's promotion in wt5");
 	const w5Top = spawnSync("git", ["-C", wt5, "rev-parse", "--show-toplevel"], { encoding: "utf8" }).stdout.trim();
+	mkdirSync(path.dirname(ledger), { recursive: true });
 	writeFileSync(ledger, `${JSON.stringify({ v: 1, at: Date.now(), actor: { runtime: "pi", session: "ag_05" }, top: w5Top, before: w5, after: spawnSync("git", ["-C", wt5, "rev-parse", "HEAD"], { encoding: "utf8" }).stdout.trim(), kind: "commit" })}\n`, { flag: "a" });
 	at = requests.length;
 	const beforeE = checks().length;

@@ -88,15 +88,17 @@ test("each role gets its own branch action, never the other's", () => {
   const a = actionsFor("assistant", { copyable: true });
   assert.ok(u.includes("rewind") && !u.includes("regenerate"));
   assert.ok(a.includes("regenerate") && !a.includes("rewind"));
-  // Both offer Copy first and the branch-changing one last — and nothing else: there is no Fork.
-  assert.deepEqual(u, ["copy", "rewind"]);
-  assert.deepEqual(a, ["copy", "regenerate"]);
+  // Both offer the same safe two, Copy then Share, and the branch-changing one last — and nothing
+  // else: there is no Fork.
+  assert.deepEqual(u, ["copy", "share", "rewind"]);
+  assert.deepEqual(a, ["copy", "share", "regenerate"]);
+  assert.equal(a[a.length - 1], "regenerate");
 });
 
-test("an images-only message keeps Rewind but offers no Copy", () => {
+test("an images-only message keeps Share and Rewind but offers no Copy", () => {
   const [strip] = messageStrips([user("u1", "", 2)]);
   assert.equal(copyable(strip!), false);
-  assert.deepEqual(actionsFor(strip!.role, { copyable: copyable(strip!) }), ["rewind"]);
+  assert.deepEqual(actionsFor(strip!.role, { copyable: copyable(strip!) }), ["share", "rewind"]);
 });
 
 test("a whitespace-only message is not copyable either", () => {
@@ -279,4 +281,10 @@ test("a reply to a link message is refused Regenerate; the user's next message s
   assert.equal(byEntry.get("a2")!.fromLink, undefined);
   assert.equal(actionReason("regenerate", state({ link: true, streaming: true })), REGENERATE_LINK_REASON);
   assert.equal(actionReason("regenerate", state({ link: false })), null);
+});
+
+test("Share from here only opens the share page, so nothing refuses it, a watch or a live terminal included", () => {
+  const busy = { chat: false, live: true, streaming: true, compacting: true, pending: true, paused: "Archived." };
+  assert.equal(actionReason("share", busy), null);
+  assert.equal(ACTION_LABEL.share, "Share from here");
 });

@@ -250,10 +250,14 @@ start goes through it: `agent_spawn`, `team_create`, `team_add`, a team successo
 re-adopted after a restart with a cwd no longer allowed keeps running; `agent_list` flags it
 "outside this session's worktrees".
 
-A **pi** worker started inside a tracked worktree is confined to writing there: the sandbox
-extension's `workerFlagsIn(<worktree>)` flags (the parent's scope narrowed to the worktree while
-the parent's sandbox is on; a write-only scope while it is off). If the sandbox extension is not
-loaded, or gives no scope, the spawn is refused. Claude Code workers get only the spawn check.
+Every worker start, pi or Claude Code, asks the sandbox extension's one `workerLaunch({cwd, root?,
+backend, owner})`. A worker started inside a tracked worktree is confined to writing there
+(`root` set: the parent's scope narrowed to the worktree while the parent's sandbox is on; a
+write-only scope while it is off). A pi worker gets extension flags. A Claude Code worker gets an
+opaque `scope` that the runner, or its host when it is hosted, hands to the sandbox's
+`confineLaunch` at every launch (see the claude-code README, **Under the sandbox**). This file
+only passes that data through and interprets no policy. If the sandbox extension is not loaded, or
+refuses, the spawn is refused.
 
 `useWorktreeConfig: true` (agent_spawn, pi only, cwd inside an active tracked worktree with a
 `.agent`) runs the worker on `<worktree>/.agent`: `PI_CODING_AGENT_DIR` set to it, `--session-dir`
@@ -315,10 +319,12 @@ pi workers, which run with `--no-extensions`, also load `../mode/spec-worker.ts`
 mode extension's census hook alone: a census digest after a tool call that changes `git status`),
 under the same condition as the brief; it is plumbing, so the spawn summary does not list it.
 
-Claude Code workers also get the spec hooks (`../claude-code/spec-hooks.ts`) in their `--settings`,
-merged over the sandbox's: a census digest after any tool call that changes `git status`, and a
-check of the reply's `Also changes:` line at Stop. State and a log of what the hooks said live in
-`<agentDir>/spec-hooks/<claude session id>.json` / `.log.jsonl`.
+Claude Code workers also get the spec hooks (`../claude-code/spec-hooks.ts`) in their `--settings`:
+a census digest after any tool call that changes `git status`, and a check of the reply's
+`Also changes:` line at Stop. State and a log of what the hooks said live in
+`<agentDir>/spec-hooks/<claude session id>.json` / `.log.jsonl`. A confined worker cannot write
+there, so it gets its own writable state dir `<agentDir>/spec-hooks/workers/<key>/` and ledger file
+(`mode/spec-guard.ts` `workerLedgerPath`), which the parent's spec mode reads beside its own.
 
 ## Model policy
 
@@ -671,7 +677,8 @@ for that call with a warning line in the result; the extension never writes the 
 
 ## Isolation, retention, and shutdown
 
-These are **not sandboxes**. Workers share the host filesystem and user permissions;
+Unless the parent's sandbox is on, or the worker starts in a tracked worktree, these are **not
+sandboxes**. Workers share the host filesystem and user permissions;
 assign non-overlapping edits or use separate worktrees. The parent conversation
 is not copied. Children load their own normal Pi context, skills, settings, and
 credentials for their cwd.

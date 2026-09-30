@@ -3,7 +3,7 @@ import type { OrgLinkRow, SessionShare, SharesOverview } from "../../shared/sess
 import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
 import { hostLabel, meshOn, meshPeers, selfLabel } from "../lib/mesh";
-import { expiresWord, modeLine, openedLine, presenceWord, revokeHandoff, revokeOwnerLink, sharesOverview, shareLive, stopShare, visitLine } from "../lib/session-shares";
+import { expiresWord, openedLine, presenceWord, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, visitLine } from "../lib/session-shares";
 import { InsightsPage } from "./InsightsPage";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
 import { Icon } from "./ui";
@@ -105,7 +105,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
       <Show when={loaded() && shares().length === 0 && orgLinks().length === 0 && down().length === 0}>
         <div class="empty">
           <p class="empty-title">No public links are open.</p>
-          <p class="empty-body">Share a session from its Session tab: Session details, then Sharing.</p>
+          <p class="empty-body">Share a session from its Sharing tab: Session details, then Sharing.</p>
         </div>
       </Show>
 
@@ -158,8 +158,6 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
         {(m) => (
           <ShareSheet
             host={m().host}
-            sessionId={m().share.sessionId}
-            sessionTitle={m().share.sessionTitle}
             share={m().share}
             onClose={() => {
               setManaging(null);
@@ -203,7 +201,7 @@ function ShareRow(props: { host: string | null; share: SessionShare; now: number
           <Show when={props.hostName}>{(h) => <span class="chip chip-count">{h()}</span>}</Show>
         </p>
         <p class="list-meta">
-          {s().stoppedAt ? `Stopped ${relativeTime(s().stoppedAt!, props.now)}` : modeLine(s(), (iso) => absoluteTime(iso, props.now))}
+          {s().stoppedAt ? `Stopped ${relativeTime(s().stoppedAt!, props.now)}` : shareLine(s(), (iso) => absoluteTime(iso, props.now))}
           <Show when={s().sessionTitle !== s().title}> · session “{s().sessionTitle}”</Show>
         </p>
         <ul class="shares-recipients">

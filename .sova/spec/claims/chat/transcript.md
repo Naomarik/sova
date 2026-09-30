@@ -16,6 +16,7 @@
       </p>
     </div>
     <span class="chip chip-accent"><i class="chip-dot"></i>TUI</span>   <!-- live only; static, no pulse -->
+    <a class="button button-icon button-ghost session-share-open" href="#/share/…" aria-label="Share session">…share…</a>
     <button class="button button-icon button-ghost session-details-open" aria-label="Session details">…info…</button>
   </header>
 
@@ -36,7 +37,8 @@
   `h1` is sized as a heading-s on purpose: the page is dense and the title is chrome, not a
   display headline.
 - **What the head holds.** Back, the title block, the context readout (§chat/context-window), the remote
-  chips, the `TUI` chip and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
+  chips, the `TUI` chip, a 44px **Share session** icon link (`.session-share-open`, icon `share`, to
+  the share page `#/share/<id>`, §app.session-share/share-page) and Session details. No subagents or team chip (§app/insights). Nothing else: the model and the session's
   own facts moved into the composer (§chat/composer, §chat/images), which is where the session is acted on.
 - **Model.** Chat sessions read it off the composer's model indicator (§chat/composer) and change it in the
   flyout's Model row (§chat/images); neither is in the head. Watch sessions keep it in
@@ -349,8 +351,12 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   SHOWN text row; an entry with nothing shown has no strip, and the hidden-rows disclosure never
   draws one (it renders without the actions provider). Decided in `src/lib/message-actions.ts`,
   which is the only place that answers "where does a strip go".
-- **What each role offers.** Your message: `Copy` · `Rewind`. A reply: `Copy` · `Regenerate`.
-  The safe action comes first and the one that changes the branch is last. Copy is
+- **What each role offers.** Your message: `Copy` · `Fork` · `Share` · `Rewind`. A reply: `Copy` ·
+  `Fork` · `Share` · `Regenerate`. The safe actions come first and the one that changes the branch is
+  last. **Share** (icon `share`, "Share from here") opens the share page with this message as the
+  start (`#/share/<id>?from=<entryId>`, §app.session-share/share-page), in chat and watch sessions
+  alike; sharing only reads, so it is never refused, except off while the view doesn't know the
+  session's id yet. Copy is
   absent — not disabled — when there is no text to copy (an images-only message): a Copy that
   copies nothing would claim to have copied the message.
 - **Quiet until the message is asked about, and every input can ask.** The strip is hidden with
@@ -400,6 +406,24 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   `Rewind Here` / `Regenerate Here` and `Cancel`. Focus follows into the confirm and back to the
   button that armed it on Cancel or Esc. The sentence says what survives as well as what goes:
   "This message and every reply after it leave the branch. The session file keeps them."
+- **Fork** makes a new session from this branch: at a message of yours, the branch through its
+  parent with that message (text and COPIES of its images) staged in the new session's composer, unsent
+  (pi's `/fork`); at a reply, everything through it (pi's `/clone`). The new session opens; this
+  one is unchanged. **Images are counted, never quietly left behind.** Files that still exist are
+  staged by path; images the server could only return as BYTES (a /tmp file cleaned up months ago)
+  are uploaded into the new session's own attachments. **Every image is copied; no path is ever
+  borrowed.** A draft chip's Remove deletes by path, and the server allows deleting anything under
+  the attachments root, so a child holding the SOURCE's path could delete the picture out of the
+  message it was forked from — silent, permanent loss in the original session. The draft's text is
+  rewritten to name the copies, and a name it couldn't copy is removed from the text rather than
+  left pointing at a file the child doesn't own. A duplicate between the two channels is dropped
+  only when the copied CONTENT proves it is one; one that
+  can do neither is counted in the sentence ("…, with 1 of 2 images. The other 1 couldn't come
+  along.") — counted, never explained, because `available: false` covers a deleted file, a path
+  this server won't read and an upload over the size cap alike. When a readable path and stored
+  bytes are both present the FILE wins, so one picture never lands in the draft twice. An
+  unavailable path is never staged as a draft attachment — a draft attachment carries no
+  availability, so it would look fine in the composer and fail at send.
 - **Some refusals are only the server's to make.** A steer awaits the extension input handlers
   before it is queued, so a message can still be on its way out after the turn it meant to
   interrupt has ended: `isStreaming` is false and the pane looks idle, yet a rewind there would
@@ -409,13 +433,15 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
 - **A blocked action keeps its reason.** `aria-disabled` with the reason as `title`, never hidden:
   "Stop the current turn first.", "Wait for the compaction to finish.", "This session is open in a
   terminal, so Sova won't write to it.", "Only a chat open in Sova can rewind." (watch mode),
-  "A rewind is already in progress."
+  "A rewind is already in progress." Fork is blocked by what would stop it READING the file (a
+  terminal, a turn in flight, a compaction), not by anything that only stops writing — a model
+  switch or an archived pane leaves it available.
 - **A refusal stays on the row.** The chat announces it once; the strip keeps the sentence under
   the message it was about (`.message-actions-refusal`), so looking away doesn't lose it. The
   server is the authority: the client's own checks are a fast path, and every refusal it sends is
   rendered as-is rather than pre-empted.
 - **A live reply has no strip until it lands.** Streaming rows carry no entry ids, so nothing on
-  them could be copied or regenerated by id; the resync after `agent_settled` replaces
+  them could be copied, forked or regenerated by id; the resync after `agent_settled` replaces
   them with canonical rows and the strip appears then. A disabled action that could never enable
   itself is not drawn at all.
 
@@ -653,7 +679,7 @@ machine. Nothing that's held is virtualized.
 - **Jumps build their target first.** Whether an entry can be jumped to is asked of the rows the
   thread renders, not of what is built. Every jump builds the rows down from its target if the
   fill hasn't reached it, then scrolls and tints as before (§chat.timeline/jumping): a Timeline
-  input row, the outline's Jump to Message, the Skills tab, Open in Session, and a
+  input row, the outline's Jump to Message, the Skills tab, Open in Session, Align to Fork, and a
   switch back (below). A jump to a row the list doesn't hold, while the branch has rows above
   the list, fetches every row down to it in one request and then lands; nothing is said while it
   waits, and a slow fetch shows the top edge's bar (above). A newer jump replaces a waiting one. "Isn't in
@@ -780,11 +806,13 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
    body line; the session count lives only in the Sessions card.
 2. **The Start section**, under a `Start` section eyebrow: one action card per way to start
    something, in a `ul.overview-actions` grid — `New Session` ("Start a chat with pi in any folder
-   or on any host."), the only one. Organizations is not a Start
+   or on any host."), `Fan Out` ("Send one prompt to several models and compare the replies side by
+   side."; §workspace.fanout/entry-points — the overview is fanout's front door, a creation gesture
+   offered beside the other creation gesture, not in the sidebar). Organizations is not a Start
    card: it has its own section, the page's last (part 6). Each card is one
-   `.card.action-card`: its icon (`plus`) on a 36px `--color-sunken` tile, the
+   `.card.action-card`: its icon (`plus`, `branch`) on a 36px `--color-sunken` tile, the
    title (`--fs-heading-s`, semibold) and the line (`--color-ink-2`). The whole card is the control,
-   a `<button>` that opens its dialog (New Session's), named by
+   a `<button>` that opens its dialog (New Session's, and Fan Out's on **A fresh prompt**), named by
    its title (`aria-labelledby`) and described by its line (`aria-describedby`). Hover lifts the
    border to `--color-border-strong` and the shadow to `--shadow-2`, like the extension cards; focus
    is the ring round the whole card. The grid is one column, and two once `.overview` (the
@@ -887,7 +915,7 @@ card). On a phone it is `#/overview`, under the list's head row (§app.shell/ove
 
 | State | What renders |
 |---|---|
-| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action card (`New Session`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
+| No session selected (unfolded) | The landing page below, not a bare `.empty`: `.overview` fills `.app-main`: the title "Overview" in `.overview-head`, the Start section's action cards (`New Session`, `Fan Out`), then the Sessions card, Mesh, the Extensions section and the Explained grid when there are any, and last the Organizations card. No composer |
 | Loading transcript (after 300ms) | Three placeholder messages in `.thread`: a right-aligned `.skeleton` 40% × 44px, then a left `.skeleton-title` plus 3 `.skeleton-line` at 92/78/60%, then a `.skeleton-row` at 60% width. Put `aria-busy="true"` on the `section`. The head renders straight away from the `SessionSummary` |
 | Error (a watched TUI session) | `.banner.banner-error` in `.transcript-inner`. Title: "Couldn't load this transcript." Body: "The file at `{path}` wasn't changed. {server message}." Action: `Retry`. A chat the server refuses to open shows §app.shell's open-failure banner instead |
 | Empty (new session) | `.empty` with no icon: the title "New session in `~/webapps/sova`.", then the setup card (§chat.transcript/setup-card), then the footnote `.empty-body` "Your first message becomes its title." No action; the composer has focus. Show it only while the thread, holding every row of the branch (a list this short sits at the top, so its older rows, if any, are fetched at once), has no **rendered row**: model, thinking and mode change rows draw nothing and don't count, while local rows such as "Ran `/cmd`" (§chat/slash-commands) still do. Once any rendered row exists, the thread renders normally with no empty state |

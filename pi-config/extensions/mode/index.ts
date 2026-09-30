@@ -93,7 +93,7 @@ import {
 	isAncestor,
 	freshTally,
 	LANDING_REPROMPTS,
-	ledgerPath,
+	ledgerFiles,
 	type OpLanding,
 	promoteWrites,
 	readLedger,
@@ -1051,10 +1051,13 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		specRun = freshSpecRun();
 		specReprompts = 0;
 	};
-	/** This session's ledger: its workers append their git operations (SOVA_SPEC_LEDGER, set by the spawn path). */
-	const ledgerFile = (ctx: ExtensionContext): string | undefined => {
+	/**
+	 * This session's ledger: its workers append their git operations (SOVA_SPEC_LEDGER, set by the spawn
+	 * path), a confined Claude worker to a file of its own beside it (spec-guard.ts ledgerFiles).
+	 */
+	const ledgerOf = (ctx: ExtensionContext): string[] => {
 		const id = ctx.sessionManager.getSessionId?.();
-		return id ? ledgerPath(getAgentDir(), id) : undefined;
+		return id ? ledgerFiles(getAgentDir(), id) : [];
 	};
 	/**
 	 * Each tree as the last run left it, by top: a relay run (a worker's report) compares tracked worktrees
@@ -1190,8 +1193,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			// landing; what the merges brought in is theirs, the rest waits for the next run.
 			const merges = ops.filter((o) => o.actor === "self" && (o.kind === "merge" || o.kind === "ff"));
 			const pinned = specRun.merged || merges.length > 0;
-			const file = ledgerFile(ctx);
-			const ledger = file ? readLedger(file).filter((e) => !ledgerSeen.has(ledgerKey(e))) : [];
+			const ledger = ledgerOf(ctx).flatMap((file) => readLedger(file)).sort((a, b) => a.at - b.at).filter((e) => !ledgerSeen.has(ledgerKey(e)));
 			if ((relay || t.changed || carried) && ledger.length) {
 				const workerOps: OpLanding[] = [];
 				for (const e of ledger) {

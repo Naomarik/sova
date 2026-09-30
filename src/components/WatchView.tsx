@@ -24,7 +24,9 @@ import {
   COPIED,
   copyable,
   type ActionState,
+  SHARE_WAIT_REASON,
 } from "../lib/message-actions";
+import { shareHref } from "../lib/share-slice";
 import { Banner } from "./ui";
 
 /** SR announcements of appended entries are throttled to one per this interval. */
@@ -142,6 +144,10 @@ export function WatchView(props: {
         switch (kind) {
           case "copy":
             return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
+          case "share": {
+            const id = props.sessionId;
+            return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
+          }
           default:
             return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink)), run: () => {} };
         }

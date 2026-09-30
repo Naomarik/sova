@@ -9,7 +9,7 @@ import { backendFor, gitProtectedPaths, mapShadowed, shadowSource } from "../bac
 import { spawnSync } from "node:child_process";
 import { scrubEnv } from "../env.ts";
 import { canonicalize, isWithin, readDenial, resolvePolicy, type ResolvedPolicy, writeDenial } from "../policy.ts";
-import { type AnyToolDefinition, claudeSettingsFor, confinedDefinitions, sandboxView, filterHidden, mapTmp, type Snapshot, stockDefinitions, TOOL_NAMES } from "../tools.ts";
+import { type AnyToolDefinition, confinedDefinitions, sandboxView, filterHidden, mapTmp, type Snapshot, stockDefinitions, TOOL_NAMES } from "../tools.ts";
 
 const TEMPLATE_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "sandbox-policy");
 
@@ -259,38 +259,50 @@ test("bash under the real backend: writes land in the workspace only", { skip: p
 	cleanup();
 });
 
-test("claudeSettingsFor: the CLI sandbox plus Edit/Read rules, never Write rules (PROBE.md)", () => {
-	const { ws, agentDir, home, policy, cleanup } = setup({ git: true });
-	const s = JSON.parse(claudeSettingsFor(policy));
-	assert.deepEqual(Object.keys(s).sort(), ["permissions", "sandbox"]);
-	assert.equal(s.sandbox.enabled, true);
-	assert.equal(s.sandbox.failIfUnavailable, true);
-	assert.equal(s.sandbox.allowUnsandboxedCommands, false);
-	assert.equal(s.sandbox.autoAllowBashIfSandboxed, true);
-	assert.deepEqual(s.sandbox.excludedCommands, []);
-	assert.deepEqual(s.sandbox.network, { allowUnixSockets: [], allowLocalBinding: false, allowedDomains: policy.proxyAllow });
-	assert.ok(s.sandbox.filesystem.allowWrite.includes(ws), "workspace root is writable");
-	assert.deepEqual(s.sandbox.filesystem.denyRead, policy.hidden);
-	const policyRoot = join(agentDir, "sandbox-policy");
-	for (const p of [policyRoot, agentDir, join(ws, ".git", "hooks"), join(ws, ".git", "config")]) {
-		assert.ok(s.sandbox.filesystem.denyWrite.includes(p), `denyWrite ${p}`);
-		assert.ok(s.permissions.deny.includes(`Edit(/${p})`) && s.permissions.deny.includes(`Edit(/${p}/**)`), `deny Edit ${p}`);
-	}
-	assert.ok(s.permissions.allow.includes("Read"));
-	assert.ok(s.permissions.allow.includes(`Edit(/${ws}/**)`));
-	assert.ok(s.permissions.deny.includes(`Read(/${join(home, ".ssh")}/**)`));
-	assert.ok(s.permissions.deny.includes(`Read(/${join(policyRoot, "linux", "policy.json")})`));
-	assert.ok(!s.permissions.deny.some((r: string) => r.includes("CLAUDE.md")), "the policy note stays readable");
-	const all = [...s.permissions.allow, ...s.permissions.deny];
-	assert.ok(all.every((r: string) => !r.startsWith("Write(")), "no Write(...) rules");
-	assert.ok(all.filter((r: string) => r !== "Read").every((r: string) => /^(Read|Edit)\(\/\//.test(r)), "absolute rules use //");
-	assert.ok(!s.permissions.deny.includes("Edit(//**)"), "workspace-write never denies every edit");
+test("bash under the real backend: no variable on bwrap's argv; the command's environment is the one --setenv gave", { skip: process.platform !== "linux" || !existsSync("/usr/bin/bwrap") }, async () => {
+	const { ws, policy, cleanup } = setup();
+	const backend = backendFor("linux");
+	const bp = { ...backendPolicy(policy), env: { ...backendPolicy(policy).env, MISE_GITHUB_TOKEN: "gh-unit-1", LANG: "C.UTF-8" } };
+	const seen: string[][] = [];
+	const spy: typeof backend = Object.assign(Object.create(Object.getPrototypeOf(backend)), backend, {
+		confine: async (req: Parameters<typeof backend.confine>[0]) => {
+			const r = await backend.confine(req);
+			if (r.ok) seen.push(r.confined.argv);
+			return r;
+		},
+	});
+	const snap = async (): Promise<Snapshot> => ({ ok: true, policy, backendPolicy: bp, backend: spy, enforcement: "full" });
+	const viaFd = text(await run(defs(ws, snap).get("bash")!, { command: "env -0 | sort -z | tr '\\0' '\\n'; ls /proc/$$/fd | tr '\\n' ' '" }, ws));
+	assert.equal(seen.length, 1);
+	assert.ok(!seen[0]!.includes("--setenv") && !seen[0]!.join(" ").includes("gh-unit-1"), "nothing of the environment on argv");
+	// The old spelling (--setenv on argv), run directly: the same environment, and fds 0-2 only either way.
+	const old = await backend.confine({ argv: ["/bin/sh", "-c", "env -0 | sort -z | tr '\\0' '\\n'; ls /proc/$$/fd | tr '\\n' ' '"], cwd: ws, policy: bp, env: { PATH: process.env.PATH!, PI_SESSION_ID: "unit" } });
+	assert.ok(old.ok);
+	const { execFileSync } = await import("node:child_process");
+	const direct = execFileSync(old.confined.argv[0]!, old.confined.argv.slice(1), { cwd: ws, env: old.confined.env, encoding: "utf8" });
+	assert.ok(viaFd.includes("MISE_GITHUB_TOKEN=gh-unit-1"));
+	assert.equal(viaFd.replace(/^PATH=.*$/m, "").trim(), direct.replace(/^PATH=.*$/m, "").trim());
+	cleanup();
+});
 
-	const ro = JSON.parse(claudeSettingsFor({ ...policy, level: "read-only" }));
-	assert.deepEqual(ro.sandbox.filesystem.allowWrite, []);
-	assert.deepEqual(ro.permissions.allow, ["Read"]);
-	assert.equal(ro.permissions.deny[0], "Edit(//**)");
-	assert.ok(ro.permissions.deny.includes(`Read(/${join(home, ".ssh")}/**)`));
+test("bash in a write-only worker (host network, host env): no variable on bwrap's argv; the host env arrives inside", { skip: process.platform !== "linux" || !existsSync("/usr/bin/bwrap") }, async () => {
+	const { ws, policy, cleanup } = setup();
+	const backend = backendFor("linux");
+	const bp: Policy = { ...backendPolicy(policy), network: { mode: "host" }, env: { PATH: process.env.PATH!, HOME: process.env.HOME!, GH_TOKEN: "gh-wo-1" } };
+	const seen: string[][] = [];
+	const spy: typeof backend = Object.assign(Object.create(Object.getPrototypeOf(backend)), backend, {
+		confine: async (req: Parameters<typeof backend.confine>[0]) => {
+			const r = await backend.confine(req);
+			if (r.ok) seen.push(r.confined.argv);
+			return r;
+		},
+	});
+	const snap = async (): Promise<Snapshot> => ({ ok: true, policy, backendPolicy: bp, backend: spy, enforcement: "full" });
+	const out = text(await run(defs(ws, snap).get("bash")!, { command: "echo gh=$GH_TOKEN" }, ws));
+	assert.match(out, /gh=gh-wo-1/);
+	assert.equal(seen.length, 1);
+	assert.ok(!seen[0]!.includes("--setenv") && !seen[0]!.join(" ").includes("gh-wo-1"), "nothing of the host env on argv");
+	assert.ok(!seen[0]!.includes("--unshare-net"), "it is the write-only (host network) profile");
 	cleanup();
 });
 

@@ -95,7 +95,9 @@ import {
   queueRemoveReason,
   queueRemoveRefusalText,
   type ActionState,
+  SHARE_WAIT_REASON,
 } from "../lib/message-actions";
+import { shareHref } from "../lib/share-slice";
 import type { MessageActionItem } from "./MessageActions";
 import { isInput } from "../lib/turn";
 import { noteLinks } from "../lib/links-live";
@@ -993,6 +995,10 @@ export function ChatView(props: {
         switch (kind) {
           case "copy":
             return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
+          case "share": {
+            const id = props.summary?.()?.id;
+            return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
+          }
           case "rewind":
             return { kind, reason: actionReason("rewind", actionState()), run: () => rewindFrom(strip.entryId) };
           case "regenerate":

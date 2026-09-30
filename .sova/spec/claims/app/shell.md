@@ -109,8 +109,9 @@ restart) and not only after the keyboard has opened once.
   Forward returns here), otherwise a new `#/` entry (a reload or a typed `#/overview`).
 - **Everything else is as on master.** Every page's back link and "Back to Sessions" still goes to
   `#/`, the list. Organizations is reached only from the overview's Organizations card, its last
-  section (§app/organizations).
-  On a phone the overview holds the Start card (New Session), the Sessions card,
+  section (§app/organizations). Fan Out keeps
+  its two entries, the overview and the New Session dialog (§workspace.fanout/entry-points).
+  On a phone the overview holds the Start cards (New Session, Fan Out), the Sessions card,
   Mesh, Extensions, the Explanations card (the way to `#/explanations`) and the Organizations card; the list holds New Session in its head
   and Usage, Agents, Shares and Settings in its foot.
 

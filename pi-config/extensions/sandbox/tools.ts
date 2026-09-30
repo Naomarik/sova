@@ -39,7 +39,7 @@ import {
 	type ToolDefinition,
 	type WriteOperations,
 } from "@earendil-works/pi-coding-agent";
-import { type Backend, checkWrite, classifyRun, DENIAL_NOTE, type Policy } from "./backend.ts";
+import { type Backend, checkWrite, classifyRun, DENIAL_NOTE, type FdPayload, type Policy } from "./backend.ts";
 import { canonicalize, hiddenBelow, isWithin, readDenial, type ResolvedPolicy, writeDenial } from "./policy.ts";
 
 export const TOOL_NAMES = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
@@ -269,10 +269,18 @@ function searchTool(def: AnyToolDefinition, cwd: string, deps: ConfineDeps): Any
 }
 
 /** Run a confined argv like pi's local shell runs its own: streamed, process-group kill on abort/timeout. */
-function runConfined(argv: string[], env: Record<string, string>, cwd: string, o: { onData: (d: Buffer) => void; signal?: AbortSignal; timeout?: number }, tail: { text: string }): Promise<number | null> {
+function runConfined(argv: string[], env: Record<string, string>, cwd: string, o: { onData: (d: Buffer) => void; signal?: AbortSignal; timeout?: number }, tail: { text: string }, fds: FdPayload[] = []): Promise<number | null> {
 	return new Promise((resolveRun, reject) => {
 		if (o.signal?.aborted) return reject(new Error("aborted"));
-		const child = spawn(argv[0]!, argv.slice(1), { cwd, env, detached: true, stdio: ["ignore", "pipe", "pipe"] });
+		const stdio: ("ignore" | "pipe")[] = ["ignore", "pipe", "pipe"];
+		for (let i = 3; i <= Math.max(2, ...fds.map((f) => f.fd)); i++) stdio.push(fds.some((f) => f.fd === i) ? "pipe" : "ignore");
+		const child = spawn(argv[0]!, argv.slice(1), { cwd, env, detached: true, stdio });
+		for (const f of fds) {
+			const s = child.stdio[f.fd] as NodeJS.WritableStream | null;
+			// A runner that dies before reading gives EPIPE here; its own failure is reported below.
+			s?.on("error", () => {});
+			s?.end(f.data);
+		}
 		let timedOut = false;
 		const kill = () => {
 			try {
@@ -319,12 +327,14 @@ function bashOps(deps: ConfineDeps, shellPath: string | undefined): BashOperatio
 			// pi's per-call env: its PATH (with the managed bin dir for rg/fd) and the session variables it sets.
 			const perCall: Record<string, string> = {};
 			for (const [k, v] of Object.entries(o.env ?? {})) if (v !== undefined && PER_CALL_ENV.has(k)) perCall[k] = v;
-			const res = await s.backend.confine({ argv: [shell.shell, ...shell.args, command], cwd, policy: s.backendPolicy, env: perCall });
+			// The variables go on an fd where the backend would put them on argv (bwrap), which any
+			// local user can read in /proc/<pid>/cmdline; the command sees the same environment.
+			const res = await s.backend.confine({ argv: [shell.shell, ...shell.args, command], cwd, policy: s.backendPolicy, env: perCall, secretFd: 3, envOnFd: true });
 			if (!res.ok) throw new Error(unavailableMessage(res.reason));
 			const c = res.confined;
 			const tail = { text: "" };
 			try {
-				const exitCode = await runConfined(c.argv, c.env, cwd, o, tail);
+				const exitCode = await runConfined(c.argv, c.env, cwd, o, tail, c.fds);
 				const k = classifyRun(c, { exitCode, output: tail.text });
 				if (k.kind === "runner-failure") throw new Error(k.message);
 				if (k.kind === "denied") o.onData(Buffer.from(`\n${k.note}\n`));
@@ -358,41 +368,4 @@ export function confinedDefinitions(cwd: string, opts: StockOptions, deps: Confi
 			},
 		},
 	] as AnyToolDefinition[];
-}
-
-/** Claude Code rule spelling of an absolute path: `//abs` (PROBE.md). */
-const rulePath = (abs: string) => `/${abs}`;
-/** A rule for a path that may be a file or a directory: both spellings. */
-const rules = (tool: "Read" | "Edit", paths: readonly string[]) => paths.flatMap((p) => [`${tool}(${rulePath(p)})`, `${tool}(${rulePath(p)}/**)`]);
-
-/**
- * The Claude Code CLI's own settings for a worker under this policy (PROBE.md, F4 decided). Bash
- * runs in the CLI's OS sandbox; Read/Write/Edit are held by permission rules, which bind only
- * under `--permission-mode dontAsk` (never bypassPermissions: it skips them), so the state event
- * carries `claudePermissionMode`. Only `Edit(...)` rules are matched for file tools (`Write(...)`
- * is ignored by the CLI), and `//abs` is an absolute path. Opaque to subagents and the transport.
- */
-export function claudeSettingsFor(policy: ResolvedPolicy): string {
-	// The resolved policy already holds the git paths of every writable root (resolvePolicy `git`).
-	const writable = policy.level === "read-only" ? [] : policy.writable;
-	const protectedPaths = [...new Set([...policy.readOnlyWithinWritable, ...policy.hidden])];
-	const permissions =
-		policy.level === "read-only"
-			? { allow: ["Read"], deny: ["Edit(//**)", ...rules("Read", policy.hidden)] }
-			: {
-					allow: ["Read", ...writable.map((w) => `Edit(${rulePath(w)}/**)`)],
-					deny: [...rules("Read", policy.hidden), ...rules("Edit", protectedPaths)],
-				};
-	return JSON.stringify({
-		sandbox: {
-			enabled: true,
-			failIfUnavailable: true,
-			allowUnsandboxedCommands: false,
-			autoAllowBashIfSandboxed: true,
-			excludedCommands: [],
-			network: { allowUnixSockets: [], allowLocalBinding: false, allowedDomains: policy.proxyAllow },
-			filesystem: { allowWrite: writable, denyRead: policy.hidden, denyWrite: protectedPaths },
-		},
-		permissions,
-	});
 }

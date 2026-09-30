@@ -215,9 +215,13 @@ test("reconcile brings an instance back to what it should be doing", async () =>
   await stopStaticServe(site.unit!);
   await engine.driver.stop(web.unit!);
   assert.equal(shaped(await engine.run("status", { instance: a.instance }, op)).state, "degraded");
+  const gen = st.generation!;
   const did = await engine.reconcile();
   assert.ok(did.some((d) => d.includes("started web")) && did.some((d) => d.includes("started site")), JSON.stringify(did));
-  assert.equal(shaped(await engine.run("status", { instance: a.instance }, op)).state, "running");
+  const back = shaped(await engine.run("status", { instance: a.instance }, op));
+  assert.equal(back.state, "running");
+  assert.equal(back.generation, gen + 1, "nothing of A ran (the shared bus is the project's): a start from nothing is a new generation");
+  assert.deepEqual(await engine.reconcile(), [], "a second reconcile has nothing to do");
 });
 
 test("reset gives fresh data; down keeps it; teardown deletes it and keeps the branch", async () => {

@@ -1303,6 +1303,14 @@ export class ProjectEngine {
         }
         const def = run.def;
         const scope = scopeOf(rec);
+        // A start from nothing is a new generation, whoever starts it.
+        const own = def.services.filter((x) => x.scope === "checkout");
+        const anyActive = (await Promise.all(own.map((s) => this.isActive(this.unitOf(rec.id, s.name), s)))).some((a) => a.active);
+        const due = own.some((s) => rec.desired[s.name] === "running");
+        if (!anyActive && due) {
+          rec.generation += 1;
+          this.save(rec);
+        }
         for (const s of serviceOrder(def).filter((x) => x.scope === "checkout")) {
           const unit = this.unitOf(rec.id, s.name);
           const a = await this.isActive(unit, s);

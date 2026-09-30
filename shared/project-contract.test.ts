@@ -85,6 +85,9 @@ test("refusals name the JSON path of the first problem", () => {
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["npm", ""] } } }), "$.services.web.cmd[1]");
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x"], static: "." } } }), "$.services.web");
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x"], env: { SOVA_SLOT: "1" } } } }), "$.services.web.env.SOVA_SLOT");
+  assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x"], env: { SOVA_PORT_WEB_HTTP: "1" } } } }), "$.services.web.env.SOVA_PORT_WEB_HTTP");
+  // Sova's own configuration (Sova as a project) is an app's env like any other.
+  assert.doesNotThrow(() => parse({ version: 1, services: { web: { cmd: ["x"], env: { SOVA_PRICES_FETCH: "off" } } } }));
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x", "${nope}"] } } }), "$.services.web.cmd[1]");
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x", "$HOME"] } } }), "$.services.web.cmd[1]");
   assert.equal(refusedAt({ version: 1, services: { web: { cmd: ["x"], cwd: "../up" } } }), "$.services.web.cwd");

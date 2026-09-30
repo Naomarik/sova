@@ -121,6 +121,9 @@ export const HOOK_TIMEOUT_MAX = 1800;
 export const scratchSlots = (def: Pick<ProjectDef, "slots">): [number, number] => [def.slots.cap + 1, def.slots.cap + 2];
 
 const NAME = /^[a-z][a-z0-9-]{0,30}$/;
+/** The variables Sova sets itself (§app.project-services/contract): a definition's env never names one. */
+export const SOVA_ENV = ["SOVA_V", "SOVA_PROJECT", "SOVA_INSTANCE", "SOVA_SLOT", "SOVA_CHECKOUT", "SOVA_MAIN", "SOVA_BRANCH", "SOVA_DATA", "SOVA_VERB", "SOVA_STEP", "SOVA_OUT"];
+const sovaSets = (k: string) => SOVA_ENV.includes(k) || k.startsWith("SOVA_PORT_");
 const ENV_NAME = /^[A-Z_][A-Z0-9_]*$/;
 const SIGNALS = ["HUP", "USR1", "USR2", "INT", "TERM"] as const;
 
@@ -243,7 +246,7 @@ function service(nm: string, v: unknown, path: string): ServiceDecl {
   const env: Record<string, string> = {};
   if (o.env !== undefined)
     for (const [k, e] of Object.entries(obj(o.env, `${path}.env`))) {
-      if (!ENV_NAME.test(k) || k.startsWith("SOVA_")) throw new DefinitionError(`${path}.env.${k}`, "an env name is A-Z, 0-9 and _, never starting with SOVA_");
+      if (!ENV_NAME.test(k) || sovaSets(k)) throw new DefinitionError(`${path}.env.${k}`, "an env name is A-Z, 0-9 and _, and never one Sova sets itself (SOVA_V, SOVA_SLOT, SOVA_PORT_…)");
       if (typeof e !== "string") throw new DefinitionError(`${path}.env.${k}`, "must be a string");
       env[k] = e;
     }

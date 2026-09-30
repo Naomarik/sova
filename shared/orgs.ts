@@ -15,6 +15,8 @@
  * POST   /api/orgs/:id/about/revert         body { at } -> OrgDetail (the About text back to that line's `from`)
  * DELETE /api/orgs/:id                      -> { ok: true } (detach: removes it from this host's index only)
  * POST   /api/orgs/:id/commit               -> OrgDetail (Commit now; pushes when a remote is set)
+ * POST   /api/orgs/:id/reload               -> OrgDetail (the Workspace tab's Reload: retries a fixed journal and restored
+ *                                    snapshots; `problems` lists what is still wrong, [] when all loaded)
  * PUT    /api/orgs/:id/remote               body { url } ("" removes it) -> OrgDetail
  * POST   /api/orgs/:id/people               body PersonInput -> 201 OrgDetail
  * PATCH  /api/orgs/:id/people/:pid          body Partial<PersonInput> -> OrgDetail

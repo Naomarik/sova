@@ -464,6 +464,9 @@ export function readRoster(orgId: string): Person[] {
   return people.sort((a, b) => (order.get(a.id) ?? Infinity) - (order.get(b.id) ?? Infinity) || a.id.localeCompare(b.id));
 }
 
+/** A session whose snapshot doesn't load (a workspace problem the Workspace tab's Reload retries). */
+const unreadable = (orgId: string, sid: string): boolean => orgHost(orgId).problems().some((p) => p.sessionId === sid);
+
 export function findPerson(orgId: string, personId: string): Person | undefined {
   const s = orgHost(orgId).sessions("person").find((x) => x.id === personSid(orgId, personId));
   return s ? personOf(orgId, s) : undefined;
@@ -727,7 +730,8 @@ export async function addPerson(orgId: string, input: PersonInput, by: ProfileCh
  */
 export async function applyChange(orgId: string, personId: string, patch: Record<string, unknown>, by: ProfileChange["by"]): Promise<Person> {
   const clean = Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined));
-  if (!findPerson(orgId, personId)) throw new OrgError("Unknown person", 404);
+  // A person whose snapshot doesn't load is no unknown person: the host answers "Fix or restore it, then reload."
+  if (!findPerson(orgId, personId) && !unreadable(orgId, personSid(orgId, personId))) throw new OrgError("Unknown person", 404);
   await actOrThrow(orgId, personSid(orgId, personId), "person/edit", { patch: clean, namesTaken: namesTaken(orgId, personId), ...writerPayload(by) }, writerEnvelope(orgId, by), SETTLE);
   return findPerson(orgId, personId)!;
 }

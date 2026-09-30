@@ -1,0 +1,58 @@
+// Run: pnpm exec tsx --test server/org-reload.test.ts. The Workspace tab's Reload (POST /api/orgs/:id/reload): a
+// snapshot that doesn't load refuses every act on its session with "Fix or restore it, then reload."; once the file is
+// restored, Reload loads it and the act goes through. Throwaway workspace; no model is called.
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { after, test } from "node:test";
+import { Hono } from "hono";
+import type { OrgDetail } from "../shared/orgs";
+
+const root = realpathSync(mkdtempSync(join(tmpdir(), "sova-org-reload-")));
+process.env.PI_CODING_AGENT_DIR = join(root, "agent");
+mkdirSync(join(root, "agent", "sessions"), { recursive: true });
+
+const orgs = await import("./orgs");
+const { registerOrgRoutes } = await import("./org-routes");
+const { closeOrgHost, hostOf } = await import("./org-engine");
+const { scanSnapshots } = await import("./org-host/store");
+const { settled } = await import("./workspace-git");
+
+after(async () => {
+  for (const o of orgs.orgsInfo().orgs) await settled(o.dir);
+  rmSync(root, { recursive: true, force: true });
+});
+
+const app = new Hono();
+registerOrgRoutes(app);
+const call = (method: string, path: string, body?: unknown) =>
+  app.request(path, { method, ...(body === undefined ? {} : { headers: { "content-type": "application/json" }, body: JSON.stringify(body) }) });
+
+test("a broken snapshot is refused until it is restored and reloaded; Reload answers the problems left", async () => {
+  const org = await orgs.createOrg({ name: "Reload", dir: join(root, "ws") });
+  const sam = await orgs.addPerson(org.id, { name: "Sam Okafor", role: "Pricing" });
+  const sid = `person/${org.id}/${sam.id}`;
+  await closeOrgHost(org.id);
+  const file = scanSnapshots(join(orgs.orgDir(org.id), "charts")).find((s) => s.sid === sid)!.file;
+  const good = readFileSync(file, "utf8");
+  writeFileSync(file, "<<<<<<< HEAD\n{:broken");
+  await orgs.openAttachedOrgs();
+  assert.deepEqual(hostOf(org.id).problems().map((p) => [p.kind, p.sessionId]), [["snapshot", sid]]);
+  const page = (await (await call("GET", `/api/orgs/${org.id}`)).json()) as OrgDetail;
+  assert.equal(page.problems.length, 1);
+  const refused = await call("PATCH", `/api/orgs/${org.id}/people/${sam.id}`, { role: "Prices" });
+  assert.equal(refused.status, 409);
+  assert.match(((await refused.json()) as { error: string }).error, /can't be read\. Fix or restore it, then reload\.$/);
+  // Reloading a file still broken changes nothing and says so.
+  const still = await call("POST", `/api/orgs/${org.id}/reload`);
+  assert.equal(still.status, 200);
+  assert.equal(((await still.json()) as OrgDetail).problems.length, 1);
+  writeFileSync(file, good);
+  const r = await call("POST", `/api/orgs/${org.id}/reload`);
+  assert.equal(r.status, 200);
+  assert.deepEqual(((await r.json()) as OrgDetail).problems, []);
+  assert.equal((await call("PATCH", `/api/orgs/${org.id}/people/${sam.id}`, { role: "Prices" })).status, 200);
+  assert.equal(orgs.findPerson(org.id, sam.id)!.role, "Prices");
+  assert.equal((await call("POST", "/api/orgs/org_nope0000/reload")).status, 404);
+});

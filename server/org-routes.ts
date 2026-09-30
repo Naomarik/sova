@@ -54,7 +54,7 @@ import { mintOwnerLinkFor, ownerLinkNeeds, ownerPageInfo, revokeOwnerLinks, setO
 import { ownerView } from "./owner-page";
 import { readUpdates, withdrawUpdate } from "./project-updates";
 import { setRemote } from "./workspace-git";
-import { actOrThrow } from "./org-engine";
+import { actOrThrow, hostOf } from "./org-engine";
 
 /**
  * The operator's routes for organizations and baton sessions (§app/organizations, §app/baton). On
@@ -379,6 +379,17 @@ export function registerOrgRoutes(app: Hono<any>): void {
       if (out.error) return c.json({ error: out.error }, 502);
       const commit: CommitNowOutcome = { committed: !!out.committed, ...(out.sha ? { sha: out.sha } : {}), ...(out.pushed ? { pushed: true } : {}) };
       return c.json({ ...(await orgPage(id)), commit });
+    }),
+  );
+  // The Workspace tab's Reload: retry what did not load (a fixed journal, a restored snapshot); the page's
+  // `problems` are what is still wrong.
+  app.post(
+    "/api/orgs/:id/reload",
+    handle(async (c) => {
+      const id = p(c, "id");
+      orgDir(id); // 404 for an unknown org
+      await hostOf(id).reload();
+      return c.json(await orgPage(id));
     }),
   );
   app.put(

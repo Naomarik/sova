@@ -186,7 +186,7 @@ test("flow: a stray string after a target says what to write instead", () => {
   // Outside inline style: one string, the edge's.
   assert.equal(msg('a -> b "go" "more"'), 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
   // A stray word keeps its message.
-  assert.equal(msg("a -> b decision"), "unexpected decision after b");
+  assert.equal(msg("a -> b cloud"), "unexpected cloud after b");
 });
 
 test("flow: a second string after a chain's source is its second line; before the arrow it can't be an edge's", () => {
@@ -251,7 +251,8 @@ test("flow inline style: shape and tone words may follow an inline label, on sou
   // A node line's own shape wins over none, and disagrees with a different chain shape.
   assert.equal(ok<FlowSpec>("flow", 'a "A" -> b decision\nnode b "B"').nodes.find((n) => n.id === "b")!.shape, "decision");
   assert.match(err("flow", 'a "A" -> b decision\nnode b "B" store').message, /shaped store on its node line and decision/);
-  // Outside inline style, a shape word in a chain is still an error, as on master.
-  assert.match(err("flow", "a -> b decision").message, /unexpected decision after b/);
-  assert.match(err("state", 'idle -> busy "prompt" round').message, /unexpected round after busy/);
+  // Outside inline style too (§chat.markdown/vis-lenience): a shape word after a chain id is its shape.
+  assert.equal(ok<FlowSpec>("flow", "a -> b decision").nodes[1]!.shape, "decision");
+  const st = ok<FlowSpec>("state", 'idle -> busy "prompt" circle');
+  assert.deepEqual([st.nodes[1]!.shape, st.edges[0]!.label], ["circle", "prompt"]);
 });

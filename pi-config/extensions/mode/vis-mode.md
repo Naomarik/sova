@@ -11,7 +11,7 @@
 -->
 # Minor mode: vis
 
-The chat renders `vis` fences as drawings. When a picture explains faster than prose — a flow, an exchange between parties, a hierarchy, a history, numbers to compare, layers of a system, a screen's layout — draw one inline in your reply with a fenced block whose info string is `vis <kind>`. Use them when apt, not by default: at most 1–2 per reply, each small (read at a glance on a phone), next to prose that says what to notice. Give every visual a one-line `caption:`.
+The chat renders `vis` fences as drawings. When a picture explains faster than prose — a flow, an exchange between parties, a hierarchy, a history, numbers to compare, layers of a system, a screen's layout — draw one with a fenced block whose info string is `vis <kind>`. Use them when apt, not by default: at most 1–2 per reply, each small (read at a glance on a phone), next to prose that says what to notice. Give every visual a one-line `caption:`.
 
 Rules for every kind:
 - One statement per line; `#` starts a comment. Settings are `key: value` lines; every kind takes `title:` and `caption:` (one short sentence).
@@ -22,8 +22,8 @@ Rules for every kind:
 
 ## Shared: emphasis
 <!-- owner: foundation. core/emphasis.ts implements this; every kind calls it. -->
-To point at what matters, add a `mark` line (at column 0, after the settings): `mark <target> [tone] ["short note"]`. Quote a target with spaces, even if its row isn't: `mark "Vue 2" "…"`. The item is highlighted (accent by default); a note is numbered and listed under the drawing. Mark at most 1–3 things; notes under 120 characters. Targets may share one mark: `mark a, b, c "the scope set"`.
-- Targets: flow and state, a node's id or label; sequence, an actor, a message's "label" or its number (1 = the first message; notes and dividers don't count); code, a line or a range `20-23` as displayed; matrix, a row's criterion or a column's name; timeline, a row's when or label; steps, a row's label, not a step; wireframe, see its section; else a row's (layer's, item's) label.
+To point at what matters, add a `mark` line (at column 0, after the settings): `mark <target> [tone] ["short note"]`. A target is its item's exact label, quoted if it has spaces (even if its row isn't): `mark "Vue 2" "…"`. The item is highlighted (accent by default); a note is numbered and listed under the drawing. Mark at most 1–3 things; notes under 120 characters. Targets may share one mark: `mark a, b, c "the scope set"`.
+- Targets: flow and state, a node's id or label; sequence, an actor, a message's "label" or its number (1 = the first message; notes and dividers don't count); code, a line or a range `20-23` as displayed; matrix, a row's criterion or a column's name; timeline, a row's when or label; wireframe, see its section; else a row's (layer's, item's) label.
 
 ## flow
 <!-- owner: process member. Emphasis target: node id or label. Phones re-lay it out (dir: right turns down). kinds/flow/parse.ts picks the label style per fence; guide.test.ts pins each bullet. -->
@@ -139,7 +139,7 @@ mark "Vue 2" "templates, not JSX"
 
 ## steps
 <!-- owner: data member. kinds/steps: HTML rows of chips, a status mark per row, lanes as heads; the label folds above its chain on a phone. Emphasis target: row label (key = item index). -->
-Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> step -> …`, a step being a word or a "quoted label"; `== lane ==` groups rows. No ids.
+Scenarios or journeys as chains, each with a status: `"Label" [tone] | step -> step -> …`, a step being a word or a "quoted label"; `== lane ==` groups rows. No ids; mark a row, not a step.
 ```vis steps
 == Asking people ==
 "Simple question" ok | You -> "Maria gets a link" -> "decision recorded"

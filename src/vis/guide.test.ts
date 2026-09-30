@@ -130,7 +130,8 @@ test("the shared section exists (emphasis), and the free-form limits are in html
 });
 
 test("the guide quotes a mark target with spaces, and its timeline example marks one that way", () => {
-  assert.match(GUIDE, /Quote a target with spaces, even if its row isn't: `mark "Vue 2" "…"`/);
+  assert.match(GUIDE, /A target is its item's exact label, quoted if it has spaces \(even if its row isn't\): `mark "Vue 2" "…"`/);
+  assert.match(GUIDE, /No ids; mark a row, not a step\./, "steps: a mark names a row");
   const body = /^```vis timeline\n([\s\S]*?)^```$/m.exec(GUIDE)![1]!;
   assert.match(body, /^mark "Vue 2" /m);
   const r = parseVis("timeline", body);

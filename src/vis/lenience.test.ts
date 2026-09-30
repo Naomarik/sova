@@ -132,3 +132,29 @@ test("replay: a layers row with its tone before its note (eval, glm-5.3) draws w
   assert.equal(parseVis("layers", "A | b | c | d\n").ok, false);
   assert.equal(parseVis("timeline", "2020 | a | b | c\n").ok, false);
 });
+
+// Four blocks from sessions (09-2x) that failed on a line with one reading, replayed as written.
+test("replay: `node` as an id, `-> done end` in a state, a dotted Mermaid arrow, a code `mark:` line", () => {
+  const nodeId = ok("flow", 'title: App Deployment Architecture\ncaption: Both services run in a single Node process on the VM.\nclients "Clients" -> nginx "nginx\\nreverse proxy"\nnginx -> node "Node.js process\\n(API + Job runner)"\nnode -> db "Managed Postgres"\nmark node "one VM, one process, two services"\n');
+  assert.deepEqual(edges(nodeId), ["clients>nginx", "nginx>node", "node>db"]);
+  assert.deepEqual(nodeId.emphasis!.map((e) => e.key), ["node"]);
+  const state = ok("state", 'node s0 start\ns0 -> placed\nplaced -> paid "payment received"\nplaced -> cancelled "cancel before payment"\npaid -> delivered "ships"\ndelivered -> done end\ncancelled -> done end\nmark paid "payment committed"\n');
+  assert.deepEqual(node(state, "done"), ["done", null, "end", null]);
+  assert.deepEqual(edges(state).slice(-2), ["delivered>done", "cancelled>done"]);
+  const dotted = ok("flow", 'client "Client" -> gw "API Gateway\\nRoutes & load balances"\ngw -> auth "Auth Service\\nValidates tokens, manages users"\nauth -.-> gw "token valid?"\n');
+  assert.deepEqual(dotted.edges.map((e) => [e.from, e.to, e.label ?? null, e.dashed]), [["client", "gw", null, false], ["gw", "auth", null, false], ["auth", "gw", "token valid?", true]]);
+  const code = parseVis("code", 'lang: js\nmark: 3 error "off-by-one: should be i < arr.length"\nmark: 4 "arr[i] is undefined when i === arr.length, making total NaN"\n---\nfunction sum(arr) {\n  let total = 0;\n  for (let i = 0; i <= arr.length; i++) {\n    total += arr[i];\n  }\n  return total;\n}\n');
+  if (!code.ok) assert.fail(code.message);
+  assert.deepEqual(code.warnings, []);
+  assert.deepEqual((code.spec as { emphasis?: unknown[] }).emphasis, [{ key: "3", tone: "error", note: "off-by-one: should be i < arr.length", n: 1 }, { key: "4", tone: "accent", note: "arr[i] is undefined when i === arr.length, making total NaN", n: 2 }]);
+});
+
+test("round 2 leniences keep their bounds: `node a` still declares, an indented or empty mark: is not a mark, shapes in a plain chain need an id before them", () => {
+  assert.deepEqual(node(ok("flow", 'node a "A" round\na -> b\n'), "a"), ["A", null, "round", null]);
+  const tree = parseVis("tree", "root\n  mark: x\n");
+  assert.equal(tree.ok, false, "an indented mark: is a setting the tree doesn't take, as before");
+  assert.equal(parseVis("timeline", "2020 | a\nmark:\n").ok, false, "mark: with nothing after it is still an unknown setting");
+  const plain = ok("flow", 'a -> b "go" decision\nb -> c\n');
+  assert.deepEqual([node(plain, "b"), plain.edges[0]!.label], [["b", null, "decision", null], "go"]);
+  assert.equal(parseVis("flow", "a -> b round square\n").ok, false);
+});

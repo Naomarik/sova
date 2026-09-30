@@ -91,6 +91,7 @@ export function startScheduleKeeper(request: AppRequest): ScheduleKeeper {
     },
     seenAt: (id) => readSeen()[id] ?? 0,
     logins: loginsNow,
+    loginName: (id) => loginName(id),
     lastTurn,
     brief: (text) => void briefOverseer(text).catch(() => {}),
   });

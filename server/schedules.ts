@@ -73,6 +73,7 @@ export interface StoredSchedule {
 export type LoginState = "ready" | "limited" | "auth";
 export interface LoginSeen {
   state: LoginState;
+  name?: string;
   /** Limited: when the limit began, and when it ends. */
   since?: number;
   until?: number;
@@ -150,6 +151,8 @@ export interface KeeperDeps {
   /** When the user last looked at a session (real ms; 0 = never). */
   seenAt(sessionId: string): number;
   logins(): LoginNow[];
+  /** A login's name when it is no longer listed (its standing was cleared). */
+  loginName?(id: string): string;
   /** The session's branch ends in a failed turn: when, and the Claude login it ran on (recorded). */
   lastTurn(path: string): Promise<{ failed: boolean; at: number; login?: string } | null>;
   /** Tell the Overseer (under Brief Me only). */
@@ -352,11 +355,13 @@ export class ScheduleKeeper {
     });
   }
 
-  /** New sessions this schedule started that nobody opened since, counted back from its newest fire. */
+  /** New sessions this schedule started that nobody opened since, counted back from its newest fire
+      to its approval (approving again starts the count over). */
   unopenedRun(s: StoredSchedule): number {
     let n = 0;
     for (let i = s.fires.length - 1; i >= 0; i--) {
       const f = s.fires[i]!;
+      if (s.approved && f.at < s.approved.at) break;
       if (f.kind !== "new") continue; // a wake of a running session neither counts nor breaks the run
       if (f.sessionId && this.deps.seenAt(f.sessionId) > f.real) break;
       n++;
@@ -417,9 +422,14 @@ export class ScheduleKeeper {
       seen.add(l.id);
       const prev = store.logins[l.id];
       if (prev?.state === "limited" && l.state === "ready") out.push({ id: l.id, name: l.name, since: prev.since ?? 0, at: prev.until && prev.until <= real ? prev.until : real });
-      store.logins[l.id] = l.state === "limited" ? { state: "limited", ...(l.since ? { since: l.since } : {}), ...(l.until ? { until: l.until } : {}) } : { state: l.state };
+      store.logins[l.id] = { state: l.state, name: l.name, ...(l.state === "limited" && l.since ? { since: l.since } : {}), ...(l.state === "limited" && l.until ? { until: l.until } : {}) };
     }
-    for (const id of Object.keys(store.logins)) if (!seen.has(id)) delete store.logins[id];
+    // A standing removed outright (the file no longer lists the login) is ready again too.
+    for (const [id, prev] of Object.entries(store.logins)) {
+      if (seen.has(id)) continue;
+      if (prev.state === "limited") out.push({ id, name: prev.name ?? this.deps.loginName?.(id) ?? id, since: prev.since ?? 0, at: prev.until && prev.until <= real ? prev.until : real });
+      delete store.logins[id];
+    }
     return out;
   }
 

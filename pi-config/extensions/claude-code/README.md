@@ -328,22 +328,27 @@ Claude half and no policy: it turns the worker and its login into the sandbox's 
 path installs it for code-writing workers of a spec-on session, as `hooks` in the one `--settings`
 JSON (`withClaudeSettings` merges them into the worker's settings; flag settings, hooks included, apply
 under `--setting-sources ""`, probed with CLI 2.1.282). Each hook is `node spec-hooks.ts
-<turn|post|stop> --core <spec/core> --state <dir> [--ledger <file>]`, a fresh process per event with
+<turn|pre|post|stop> --core <spec/core> --state <dir> [--ledger <file>]`, a fresh process per event with
 plain-JSON state per Claude session:
 
-- `UserPromptSubmit`: the turn's baseline (`git status`, HEAD, the HEAD of every worktree of the
-  repository, and the default branch's tip: the task's own claims are absent there and at the fork point).
+- `UserPromptSubmit`: the cwd's baseline plus worktree HEAD metadata and the default branch's tip.
+  It does not inspect every worktree's source, drafts, or census. The task's own claims are absent
+  at that default tip and at the fork point.
+- `PreToolUse`: nonblocking observation of the call's explicit destinations before it executes.
+  This supplies the baseline for a shell edit in another worktree without scanning unrelated trees.
 - `PostToolUse` (every tool, Bash included): the shared census step on a git-status delta; its
-  `[spec census]` digest comes back as `additionalContext`. The hooks keep one census state, so the
-  once-a-session lines (`Rule:`, "No draft yet", each printed "New claims under a foreign §" pair)
-  start over whenever a call moves to another tree, even one seen before. The read-only tools (`READ_ONLY`, exact
+  `[spec census]` digest comes back as `additionalContext`. Each worktree keeps its own census
+  state, so once-a-session lines (`Rule:`, "No draft yet", each printed "New claims under a foreign §"
+  pair) do not start over when returning to a tree already seen. The read-only tools (`READ_ONLY`, exact
   names: Read, Glob, Grep, LS, the web tools, TodoWrite, BashOutput and the team MCP tools
   `mcp__team__team_inbox`, `…team_msg`, `…team_ask`, `…team_roster`, `…team_report`, `…wake_nudge`)
   are skipped whole: no git status, no census, so the next writing call sees every change. Every tree a Bash command works in (its
   cwd, each `cd <dir>`, `git -C <dir>`, a promote's `--root`) is looked at: the HEAD reflog entries
-  since the last look are its git operations, each HEAD before → after (never `HEAD^1`), so a merge
-  into master in the root from a worktree, fast-forward or not, and several merges in one command
-  each count; a tree first seen mid-turn keeps only the kinds the command's own git verbs make.
+  since the pre-call observation are filtered to the kinds the command's own Git verbs can make,
+  each HEAD before → after (never `HEAD^1`). A merge into master in the root from a worktree,
+  fast-forward or not, and several merges in one command each count. An external commit followed
+  by this worker's `true` is not attributed to the worker. Shell recognition remains a bounded
+  heuristic, not a complete execution trace.
   Each operation is appended to the parent's ledger (`--ledger`, else `SOVA_SPEC_LEDGER`;
   `{v: 1, at, actor: {runtime: "claude-code", session}, top, before, after, kind, target?}`) and
   judged by spec-guard's `judgeOp`, as the pi session's check does: merging master into a feature
@@ -351,7 +356,7 @@ plain-JSON state per Claude session:
   foreign §, the task's own claims out, and the landing lists (unmapped files, unpromoted drafts,
   § whose code changed under unchanged prose).
   The same call runs the pi session's write guard (spec-guard's helpers; "before" is the tree the
-  previous hook call saw): an edit of the current `manifest.json` or `claims/**`, or a shell command
+  pre-call hook saw): an edit of the current `manifest.json` or `claims/**`, or a shell command
   that writes them and is neither a draft tool nor git, gets "you wrote the current spec directly";
   a git operation after which a draft's evidence commit left the branch gets the rebase note (abort
   a rebase under way, else the exact old tip to restore with a clean tree, then merge master in).
@@ -364,9 +369,13 @@ plain-JSON state per Claude session:
   the override line.
   The line is parsed by `mode/also-changes.ts`, the one grammar. The reply is sent back up to twice. Otherwise a warning, sent back once: a
   writing turn without the exact `Also changes:` line, a non-writing turn with one, a line omitting
-  a foreign § the turn's draft edits, or a named § the census never saw touched. Drafts are
-  gitignored: a draft edit (found by mtime) counts as writing, and its foreign § come from
-  `foreign --spec` against the draft's base commit.
+  a foreign § the turn's draft edits, or a named § absent from the known current mapping candidates.
+  Optional mapped names come from this turn's changed/touched paths and freshly read mappings,
+  even when a dirty-baseline or repeated-path edit caused no new census digest. Unknown mappings
+  are reported as incomplete, not used to accuse a truthful name as extra. Drafts are gitignored:
+  a draft edit (found by mtime) counts as writing, and its foreign § come from
+  `foreign --spec` against the draft's base commit. Known partial census and landing inventories
+  remain visibly incomplete; a successful reply check is not semantic verification.
 
 A hook that fails prints nothing and exits 0.
 

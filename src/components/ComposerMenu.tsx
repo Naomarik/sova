@@ -539,14 +539,7 @@ export function ComposerMenu(props: {
                     close(true);
                     props.onRefocus();
                   }}
-                  head={
-                    <div class="composer-flyout-head">
-                      <button type="button" class="button button-sm button-ghost composer-flyout-back" onClick={() => openPanel("model")}>
-                        <Icon name="chevron-left" small />
-                        Back
-                      </button>
-                    </div>
-                  }
+                  onBack={() => openPanel("model")}
                 />
               )}
             </Show>

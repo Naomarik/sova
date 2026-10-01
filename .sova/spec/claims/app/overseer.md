@@ -504,6 +504,15 @@ who the run belongs to (§app.overseer/tools).
   nothing and shows no approval state, since the project overseer's cards carry no `at` or `rule`.
 - An earlier project overseer conversation stays read only: its cards show no live buttons.
 
+## §app.overseer/transcript-window — Only the rows shown or jumped to
+
+The Overseer's chat and its earlier conversations never fetch their older rows in the
+background, in a browser on this machine too: they hold the newest rows and the ones the reader
+scrolls up to or a jump fetches (§chat.transcript/rendering), so the end of a reply fetches again
+only those. The card chip still counts every open card on the branch, and the chip, a card
+reference and the Timeline still reach every card and message on it: one above the rows held is
+fetched down to, then lands.
+
 ## §app.overseer/caps — Limits and the audit log
 
 - **Per user turn:** at most 5 sessions created, 10 prompts sent to other sessions, 50 archive

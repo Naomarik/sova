@@ -100,9 +100,13 @@ shell and under a timeout.
   "<name>", text one line: READY <branch> <the head sha you checked>, or NOT READY: <why>.`, which
   never holds the head's sha, and its `next:` line says not to poll. **`reply <branch>`** reads the
   delivered topic batches on stdin (§chat.topics/delivery) — every batch piped, when several arrive
-  together — or the owner's `session_read` output. When no piped batch is on the ask's topic the
-  answer is refused as another topic's; in the batches that are, only the notes whose sender is the
-  recorded owner count, as the server framed them, so another session's READY never does. A
+  together — or the owner's `session_read` output. A batch is read only against a recorded ask:
+  with none, it is refused. When no piped batch is on the ask's topic the answer is refused as
+  another topic's; in the batches that are, only the notes whose sender is the recorded owner count,
+  as the server framed them, so another session's READY never does. A note counts once and only for
+  the current ask: one stamped before the ask, or before the note the recorded answer came from,
+  doesn't count, and the ids of the notes already read are kept in the state, so a batch piped again
+  (a reused topic, the same head) or an older batch after a newer answer changes nothing. A
   transcript of another session is refused, and in it only the owner's own reply rows (`ASSISTANT:`)
   count. Either way it accepts only a whole line `READY <branch> <sha>`, whose sha (7 or more
   characters) begins the branch's current head, or `NOT READY: <why>`. Any other sha is **stale**;

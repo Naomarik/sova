@@ -269,9 +269,11 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Opened from | the Model row on the composer flyout's model panel (see "Composer flyout" above) and `Ctrl+P` / `⌘P` |
 | Menu `aria-label` | Choose model |
-| Search placeholder / label | Search models |
-| Listbox `aria-label` | Models |
-| Group labels | Favorites · All models |
+| Search placeholder / label | Search models · on one provider's step: Search {provider} |
+| Listbox `aria-label` | Models · on one provider's step: {provider} models |
+| Group labels | Favorites · Providers · while searching on Providers: each provider's name |
+| Provider row caption | {n} models · 1 model |
+| One provider's head | {provider} |
 | Foot (≥768) | `↑` `↓` to move · `Enter` to choose · `Esc` to close |
 | No matches | 0 models match “{query}”. |
 | No models | 0 models have credentials. Log in with `pi` in a terminal to add one. |

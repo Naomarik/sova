@@ -15,6 +15,13 @@ export const ARCHIVE_GROUPS: readonly { id: ArchiveGroupId; label: string }[] = 
 
 const DAY_MS = 86_400_000;
 
+/** Local midnight of the day `ms` falls in, as epoch ms. The date sections read only the calendar
+    day, so this is all of `now` they need: every instant of one day maps to one number. */
+export function startOfDay(ms: number): number {
+  const d = new Date(ms);
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
 /** Local calendar days between `then` and `now` (0 = same day). Future times count as today. */
 function calendarDaysAgo(then: Date, now: Date): number {
   const a = new Date(then.getFullYear(), then.getMonth(), then.getDate()).getTime();

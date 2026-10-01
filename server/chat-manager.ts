@@ -1339,6 +1339,9 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     this.topicMarks.push(mark);
+    // Inside an agent_settled emit the SDK defers the prompt and resolves it at once (CLAUDE.md);
+    // delivery stays out of that window, and if it ever didn't, the settle sweep owns the mark.
+    const deferred = (this.session as unknown as { _isEmittingAgentSettled?: boolean })._isEmittingAgentSettled === true;
     let turn: Promise<void>;
     try {
       turn = this.session.prompt(mark.text, { expandPromptTemplates: false, source: "extension" });
@@ -1349,12 +1352,19 @@ class ChatSession {
       this.dropTopicMark(mark);
       throw err;
     }
-    turn.catch((err) => {
-      this.dropTopicMark(mark);
-      if (this.disposed || isCompactionInProgress(err)) return; // retried at compaction_end
-      this.reportTurnFailure(err);
-      this.queue.onSdkEvent();
-    });
+    turn.then(
+      // Finished without its message ever entering (an input handler returned "handled"): no run,
+      // so no settle sweeps the mark. Drop it now, so the batch isn't stuck in flight.
+      () => {
+        if (!deferred) this.dropTopicMark(mark);
+      },
+      (err) => {
+        this.dropTopicMark(mark);
+        if (this.disposed || isCompactionInProgress(err)) return; // retried at compaction_end
+        this.reportTurnFailure(err);
+        this.queue.onSdkEvent();
+      },
+    );
     return "started";
   }
 

@@ -283,6 +283,41 @@ export function parseClaudeFrame(value: unknown): ClaudeFrame | undefined {
 	}
 }
 
+/**
+ * A streamed tool call's complete arguments, judged once: the stream adapter
+ * and the bridge both call this on the same bytes, so they never disagree on
+ * which calls were rejected.
+ */
+export type ToolInputVerdict =
+	| { ok: true; args: Record<string, unknown> }
+	/** `error` and `position` never quote the input; `position` is in characters. */
+	| { ok: false; bytes: number; error: string; position?: number };
+
+/**
+ * Parse the concatenated `input_json` deltas of one tool_use block. `""` (no
+ * deltas) means the block-start input. Anything `JSON.parse` refuses, and any
+ * value that is not a plain object, is invalid. Never repairs or salvages: the
+ * CLI rejects the same bytes and the model retries.
+ */
+export function parseToolInput(json: string, startInput?: unknown): ToolInputVerdict {
+	const bytes = Buffer.byteLength(json, "utf8");
+	let value: unknown;
+	if (json === "") value = startInput === undefined ? {} : startInput;
+	else {
+		try {
+			value = JSON.parse(json);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : "";
+			const at = /at position (\d+)/.exec(message);
+			const position = at ? Number(at[1]) : /Unexpected end/.test(message) ? json.length : undefined;
+			// V8 quotes the input in some messages (`"{oops" is not valid JSON`); keep only those that don't.
+			return { ok: false, bytes, error: message && !message.includes("\"") ? message : "invalid JSON", ...(position === undefined ? {} : { position }) };
+		}
+	}
+	if (!record(value)) return { ok: false, bytes, error: `not a JSON object (${Array.isArray(value) ? "array" : value === null ? "null" : typeof value})` };
+	return { ok: true, args: value };
+}
+
 /** Map an MCP facade tool name back to the pi tool name pi will execute. */
 export function toPiToolName(name: string, tools: readonly Tool[]): string {
 	const bare = name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;

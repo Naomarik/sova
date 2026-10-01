@@ -1,5 +1,5 @@
 import { setProfileStartAdopt } from "./lib/profile-start";
-import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
@@ -26,7 +26,7 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
-import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
@@ -189,7 +189,9 @@ export function App() {
       .then((s) => {
         meshFailures = 0;
         servedBy ??= { id: s.self.id, label: s.self.label || s.self.hostname };
-        setMeshState(s);
+        // An answer that says what the last one did keeps the last state: every poll would
+        // otherwise hand each reader of the mesh a fresh object (lib/mesh `sameMeshInfo`).
+        setMeshState((prev) => (sameMeshInfo(prev, s) ? prev : s));
         setMeshError(null);
         setMeshSettled(true);
       })
@@ -203,7 +205,7 @@ export function App() {
   void loadMesh();
   onCleanup(() => clearTimeout(meshRetry));
   /** Each peer's last good session list, by peer id. */
-  const [peerLists, setPeerLists] = createSignal<Map<string, SessionSummary[]>>(new Map());
+  const [peerLists, setPeerLists] = createSignal<ReadonlyMap<string, SessionSummary[]>>(new Map());
   /** The first GET /api/mesh/sessions has answered or failed: a peer's session a link names is known by now. */
   const [peersSettled, setPeersSettled] = createSignal(false);
   const loadPeerSessions = async () => {
@@ -223,12 +225,16 @@ export function App() {
     }
     setPeersSettled(true);
   };
+  // Gated on the boolean, not on the mesh state: the effect read `meshOn()` straight, which reads
+  // the whole state, so every mesh poll re-ran it — an extra peer-session fetch and a restarted
+  // interval each time (CLAUDE.md, the `on(deps)` note).
+  const meshIsOn = createMemo(meshOn);
   createEffect(() => {
-    if (!meshOn()) {
-      if (peerLists().size) setPeerLists(new Map());
+    if (!meshIsOn()) {
+      if (untrack(peerLists).size) setPeerLists(new Map());
       return;
     }
-    void loadPeerSessions();
+    void untrack(loadPeerSessions);
     const t = setInterval(() => {
       if (document.hidden) return;
       void loadMesh();

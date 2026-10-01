@@ -97,6 +97,7 @@ import type { Envelope, LedgerCounts } from "./org-envelope";
 import { ledgerOf } from "./org-stamp";
 import type { ProjectUpdate } from "../shared/owner";
 import { normalizeEntries, readActiveBranch } from "./transcript";
+import { UnreadReplies } from "./unread-replies";
 import { loadDefaults } from "./web-defaults";
 import { addWebSession } from "./web-sessions";
 import { markOwned } from "./write-guard";
@@ -280,16 +281,13 @@ export async function clearProjectOverseer(orgId: string, projectId: string): Pr
 
 // ---- info ------------------------------------------------------------------------------------------
 
-async function unreadReplies(path: string, since: number | undefined): Promise<number> {
-  if (since === undefined) return 0;
-  let count = 0;
-  for (const e of await readActiveBranch(path).catch(() => [])) {
-    const m = e.type === "message" ? e.message : null;
-    if (m?.role !== "assistant" || m.stopReason === "toolUse") continue;
-    const t = typeof m.timestamp === "number" ? m.timestamp : Date.parse(e.timestamp ?? "");
-    if (Number.isFinite(t) && t > since) count++;
-  }
-  return count;
+/** Each project overseer's unread count, kept between polls (server/unread-replies). */
+const unread = new Map<string, UnreadReplies>();
+function unreadReplies(orgId: string, projectId: string, path: string, since: number | undefined): Promise<number> {
+  const key = `${orgId}\0${projectId}`;
+  let counter = unread.get(key);
+  if (!counter) unread.set(key, (counter = new UnreadReplies()));
+  return counter.count(path, since);
 }
 
 /** A baton's file on this host (the registry knows it; the listing cache may not yet). */
@@ -420,7 +418,7 @@ export async function projectOverseerInfo(orgId: string, projectId: string): Pro
     busy: exists && path ? isSessionBusy(path) : false,
     lastRun: memo.lastRun,
     started,
-    unread: exists && path && !isViewing(st!.current) ? await unreadReplies(path, readSeen()[st!.current]) : 0,
+    unread: exists && path && !isViewing(st!.current) ? await unreadReplies(orgId, projectId, path, readSeen()[st!.current]) : 0,
     usage: {
       allowance: allowanceUse(orgId, projectId, settings.caps),
       held: memo.held,

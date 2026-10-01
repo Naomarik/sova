@@ -1,13 +1,13 @@
 import { ProfileShelf } from "./ProfileShelf";
 import { profileIconName } from "../lib/profiles";
-import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
 import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
-import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
+import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
@@ -673,6 +673,24 @@ function SessionRow(props: {
   );
 }
 
+/** `<For>` keyed by a string the caller names rather than by object identity. Folder sections,
+    date sections and rows are rebuilt as new objects on every poll, so a plain `<For>` over them
+    tore down and rebuilt every node each time; keyed by cwd, id or path, each one is built once
+    and its item accessor updates in place. The last item is held while a removed key is being
+    disposed, so an accessor read in that gap never sees `undefined`. */
+function ForKey<T>(props: { each: readonly T[]; by: (item: T) => string; children: (item: () => T, index: () => number) => JSX.Element }) {
+  const byKey = createMemo(() => new Map(props.each.map((x) => [props.by(x), x])));
+  const keys = createMemo(() => props.each.map(props.by));
+  return (
+    <For each={keys()}>
+      {(k, i) => {
+        let last = byKey().get(k)!;
+        return props.children(() => (last = byKey().get(k) ?? last), i);
+      }}
+    </For>
+  );
+}
+
 /** Sessions grouped by folder: the markup of the session list "Anatomy". The ORDER is the
     caller's — `groupByCreation` for Live & web, `groupByActivity` for the Archive and for a group
     (src/lib/session-order.ts) — so this component never decides what "newest" means.
@@ -689,29 +707,39 @@ function GroupList(props: {
   level?: 4;
 }) {
   return (
-    <For each={props.groups}>
+    <ForKey each={props.groups} by={(g) => g.cwd}>
       {(group, gi) => {
+        // Keyed by cwd (ForKey): this section is built once per folder and `group()` follows each
+        // poll's fresh object, so everything read from it below stays an accessor.
+        const cwd = group().cwd;
         // The label's remote form is the group's only while every row runs at one target and folder:
         // a mixed group keeps the plain folder label and its rows' marks speak.
-        const remote = groupRemotePlaceOf(group.sessions, group.cwd);
-        const host = () => (remote ? props.targets.find((t) => t.name === remote.target)?.host : undefined);
+        const remote = createMemo(() => groupRemotePlaceOf(group().sessions, cwd));
+        const host = () => {
+          const r = remote();
+          return r ? props.targets.find((t) => t.name === r.target)?.host : undefined;
+        };
         const label = (name: string) => props.targets.find((t) => t.name === name)?.label || name;
         // Open/closed per region + folder, remembered for the browser session. The folder object
         // is rebuilt on every poll, so the choice lives in module state and sessionStorage, never
         // in this component.
-        const key = folderOpenKey(props.idPrefix, group.cwd);
+        const key = folderOpenKey(props.idPrefix, cwd);
         const open = () =>
           folderOpen({
-            stored: openFolders()[key] ?? storedFolderOpen(readFolderOpenRaw(props.idPrefix, group.cwd)),
+            stored: openFolders()[key] ?? storedFolderOpen(readFolderOpenRaw(props.idPrefix, cwd)),
             searching: props.searching,
           });
+        // Rows are built the first time the folder is open and kept after it closes: a folder
+        // never opened costs its head alone (§app.session-list/content-rules, open/closed state).
+        let built = false;
+        const rowsBuilt = createMemo(() => built || (built = open()));
         // Folders start collapsed, so one holding an agent at work says so on its own head.
-        const active = () => folderActive(group.sessions, localRunning());
+        const active = () => folderActive(group().sessions, localRunning());
         const onFolderToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
           const now = e.currentTarget.open;
           if (now === open()) return; // our own `open` update, not the user's
           setOpenFolders((m) => ({ ...m, [key]: now }));
-          writeFolderOpenRaw(props.idPrefix, group.cwd, now);
+          writeFolderOpenRaw(props.idPrefix, cwd, now);
         };
         return (
           <details class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`} open={open()} onToggle={onFolderToggle}>
@@ -722,13 +750,16 @@ function GroupList(props: {
                 component={props.level === 4 ? "h4" : "h3"}
                 class="list-group-label"
                 id={`${props.idPrefix}-${gi()}`}
-                title={remote ? `${remote.target}${host() ? ` (${host()})` : ""}:${remote.remoteCwd}` : group.cwd}
+                title={(() => {
+                  const r = remote();
+                  return r ? `${r.target}${host() ? ` (${host()})` : ""}:${r.remoteCwd}` : cwd;
+                })()}
               >
                 <Icon name="chevron-right" small class="icon-twist" />
-                <Icon name={remote ? "terminal" : "folder"} small />
+                <Icon name={remote() ? "terminal" : "folder"} small />
                 {/* Remote: the target's label stays whole and the folder on it truncates from the left
                     like a local path, but never as "~": the target's $HOME isn't ours. */}
-                <Show when={remote}>
+                <Show when={remote()}>
                   {(r) => (
                     <>
                       <span>{label(r().target)}</span>
@@ -740,7 +771,7 @@ function GroupList(props: {
                   )}
                 </Show>
                 <span class="session-group-path">
-                  <bdi>{remote ? remote.remoteCwd : tildePath(group.cwd, home())}</bdi>
+                  <bdi>{remote()?.remoteCwd ?? tildePath(cwd, home())}</bdi>
                 </span>
                 <Show when={active()}>
                   <span class="session-group-active" title="An agent is working in this folder">
@@ -748,18 +779,20 @@ function GroupList(props: {
                     <span class="visually-hidden">, an agent is working here</span>
                   </span>
                 </Show>
-                <span class="text-num">{group.sessions.length}</span>
+                <span class="text-num">{group().sessions.length}</span>
               </Dynamic>
             </summary>
             <ul class="list">
-              <For each={group.sessions}>
-                {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={props.targets} />}
-              </For>
+              <Show when={rowsBuilt()}>
+                <ForKey each={group().sessions} by={(s) => s.path}>
+                  {(s) => <SessionRow session={s()} selected={props.selected} now={props.now} targets={props.targets} />}
+                </ForKey>
+              </Show>
             </ul>
           </details>
         );
       }}
-    </For>
+    </ForKey>
   );
 }
 
@@ -1077,9 +1110,10 @@ export function Sidebar(props: {
 }) {
   const [query, setQuery] = createSignal("");
   /** The host filter as remembered (lib/mesh.ts); what applies is `hostFilter()`, which reads All
-      while its host isn't known or the filter isn't shown. */
+      while its host isn't known or the filter isn't shown. A memo, so the search hits re-run only
+      when the filter's value moves, not on every mesh poll that rebuilds the peer list. */
   const [storedHostFilter, setStoredHostFilter] = createSignal(readKey(localStorage, HOST_FILTER_KEY));
-  const hostFilter = () => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown());
+  const hostFilter = createMemo(() => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown()));
   const chooseHostFilter = (value: string | null) => {
     setStoredHostFilter(value);
     if (value === null) removeKey(localStorage, HOST_FILTER_KEY);
@@ -1308,9 +1342,12 @@ export function Sidebar(props: {
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
   };
   // The Archive splits by date first (Today … Older), then by cwd inside each date section.
+  // The date sections move only when the calendar day does, so they read the start of today,
+  // not the 30 s clock: a tick that stays inside one day re-runs nothing below.
+  const today = createMemo(() => startOfDay(props.now));
   const archiveSections = createMemo(() => {
     const sorted = [...archiveHits()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
-    return groupByArchiveDate(sorted, new Date(props.now)).map((d) => ({ ...d, groups: groupByActivity(d.items) }));
+    return groupByArchiveDate(sorted, new Date(today())).map((d) => ({ ...d, groups: groupByActivity(d.items) }));
   });
   const archiveTotal = () => ordinary().filter((s) => !isTop(s)).length;
   /**
@@ -2297,18 +2334,18 @@ export function Sidebar(props: {
                 </span>
                 <NameSessionsButton section="a" rows={archiveHits()} onDone={props.onRefresh} />
               </summary>
-              <For each={archiveSections()}>
+              <ForKey each={archiveSections()} by={(d) => d.id}>
                 {(d) => (
-                  <details class="archive-date" open={dateOpen(d)} onToggle={(e) => onDateToggle(d, e)}>
+                  <details class="archive-date" open={dateOpen(d())} onToggle={(e) => onDateToggle(d(), e)}>
                     <summary class="list-group-label archive-date-label">
                       <Icon name="chevron-right" small class="icon-twist" />
-                      <span class="archive-date-name">{d.label}</span>
-                      <span class="text-num">{d.items.length}</span>
+                      <span class="archive-date-name">{d().label}</span>
+                      <span class="text-num">{d().items.length}</span>
                     </summary>
-                    <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} targets={targets()} searching={searching()} />
+                    <GroupList groups={d().groups} selected={props.selected} now={props.now} idPrefix={`a-${d().id}`} targets={targets()} searching={searching()} />
                   </details>
                 )}
-              </For>
+              </ForKey>
               {/* Cleanup ignores the search, so it's hidden while one filters the list. */}
               <Show when={!query().trim()}>
                 <ArchiveCleanup sessions={ordinary()} selected={props.selected} onDeleted={() => props.onRefresh()} />

@@ -194,7 +194,8 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/storage-keys.ts",
-        "src/lib/archive.ts"
+        "src/lib/archive.ts",
+        "src/lib/archive.test.ts"
       ]
     },
     "§app.session-list/archive-cleanup": {
@@ -214,7 +215,7 @@
         "§chat.context-window/sidebar-ring"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -623,7 +624,9 @@
         "src/lib/input-mode.ts",
         "src/lib/input-mode.test.ts",
         "src/components/VoiceInput.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/release-control.ts",
+        "src/lib/release-control.test.ts"
       ],
       "requires": [
         "§chat.images/composer-attachments"
@@ -871,8 +874,15 @@
     },
     "§chat.model-menu/content-and-order": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/contrast": {
       "kind": "behavior",
@@ -886,8 +896,15 @@
     },
     "§chat.model-menu/keyboard": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/menu": {
       "kind": "behavior",
@@ -895,14 +912,26 @@
         "§chat.composer/composer-flyout"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
-        "src/components/ChatView.tsx"
+        "src/components/ChatView.tsx",
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
       ]
     },
     "§chat.model-menu/tokens": {
@@ -2885,7 +2914,9 @@
         "src/lib/signals.ts",
         "src/lib/summary-diff.ts",
         "server/turn-error.test.ts",
-        "src/lib/summary-diff.test.ts"
+        "src/lib/summary-diff.test.ts",
+        "server/unread-replies.ts",
+        "server/unread-replies.test.ts"
       ],
       "requires": []
     },
@@ -5960,7 +5991,7 @@
         "§chat.images/thread-thumbnails"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/tail-render.ts",
         "src/lib/tail-render.test.ts",
@@ -10958,7 +10989,8 @@
       "code": [
         "server/topics.ts",
         "server/chat-manager.ts",
-        "server/topics-runtime.test.ts"
+        "server/topics-runtime.test.ts",
+        "server/topic-store.ts"
       ],
       "requires": [
         "§chat.topics/open",
@@ -11003,7 +11035,10 @@
       "evidence": "verified",
       "code": [
         "server/topic-store.ts",
-        "server/topic-store.test.ts"
+        "server/topic-store.test.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
       ],
       "requires": []
     },
@@ -11035,6 +11070,95 @@
         "src/components/Unlock.tsx",
         "src/lib/qr.test.ts",
         "src/lib/qr.ts"
+      ]
+    },
+    "§tools.spec/inspection-safety": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/sova-spec-review.mjs",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/core.test.mjs",
+        "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/inspection.test.mjs"
+      ]
+    },
+    "§tools.spec/promotion-integrity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft.test.mjs",
+        "pi-config/extensions/spec/tests/enforce.test.mjs",
+        "pi-config/extensions/spec/tests/publication.test.mjs",
+        "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md"
+      ]
+    },
+    "§tools.spec/runtime-accounting": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/mode/tests/spec-turn.mjs",
+        "pi-config/extensions/mode/tests/ordinary-mapped.mjs",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/tests/note-turn.mjs",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§app.overseer/transcript-window": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/components/OverseerView.tsx",
+        "src/lib/older-rows-view.ts"
+      ],
+      "requires": [
+        "§chat.transcript/rendering",
+        "§app.overseer/confirm"
+      ]
+    },
+    "§app.claude-code-provider/invalid-tool-input": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "pi-config/extensions/claude-code/provider/stream.test.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/provider/fixtures/invalid-tool-input-turn.ndjson"
+      ]
+    },
+    "§app/claude-code-provider": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
       ]
     }
   },

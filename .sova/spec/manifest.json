@@ -2946,12 +2946,9 @@
         "server/overseer-org-tools.test.ts",
         "src/components/ProfileCards.tsx",
         "server/profile-sources.ts",
-<<<<<<< HEAD
         "server/archive-worktrees.ts",
-        "server/archive-worktrees.test.ts"
-=======
+        "server/archive-worktrees.test.ts",
         "server/project-services/tools.ts"
->>>>>>> master
       ],
       "requires": [
         "§app.overseer/caps",

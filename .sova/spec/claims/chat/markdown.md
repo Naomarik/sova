@@ -182,7 +182,8 @@ block's source (§app.baton/outsider-view).
   | `vis code` | an annotated snippet: highlighted, numbered, marked lines with notes | line number or range |
   | `vis html`, `vis svg` | free-form, in a sandboxed frame (below) | — |
 
-  An unknown kind word is an error (below). The grammar of each kind is taught to the model by the
+  A kind word that is neither in the registry nor one of its aliases
+  (§chat.markdown/vis-lenience-content) is an error (below). The grammar of each kind is taught to the model by the
   `vis` minor mode (`pi-config/extensions/mode/vis-mode.md`); its examples are parsed by the
   renderer's own parser in tests, so the guide and the renderer can't drift.
 - **The figure.** Every kind sits in one shell (`Visual.tsx`): a head with the `title:` (wrapping,
@@ -202,7 +203,8 @@ block's source (§app.baton/outsider-view).
   and the figure still draws; bare words after a target are §chat.markdown/vis-lenience. A mark
   that can't apply is dropped with a warning (below): a
   target that names nothing (the line's other targets are kept), an item already marked (a range keeps its items not yet marked, its
-  note on the first of them), a mark past the 8th. A dropped mark takes no number. A note over 120
+  note on the first of them; a code line a range only highlighted is taken by a later mark with a
+  note: §chat.markdown/vis-lenience-content), a mark past the 8th. A dropped mark takes no number. A note over 120
   characters is cut to 120, with a warning. Colour is never the only signal: emphasis adds weight
   and a number, chart series pair hue with marker and dash, matrix marks carry a word, toned matrix
   cells carry an icon and a visually hidden word, flow frames carry a title.
@@ -321,7 +323,8 @@ belong to that panel. For two small graphs to compare (before/after, A vs B).
   later one's key in the spec is `<id>@<panel number>`, which no written id can be; its label
   defaults to the id as written). So an edge never crosses panels. `mark <id>` names the node in
   the first panel that has the id; `mark "label"` the first node with that label.
-- **Errors.** Nodes or edges before the first section line, a node declared twice in one panel, an
+- **Errors.** Nodes or edges before the first section line, a node declared twice in one panel
+  (unless the same `node` line is written again: §chat.markdown/vis-lenience-content), an
   empty or unlabelled section, a repeated section label, more than 4 sections.
 - **No regression.** A flow without `==` lines parses and draws exactly as before (no `sections`),
   and so does a sectioned flow whose ids differ across panels (every one that parsed before).
@@ -329,7 +332,8 @@ belong to that panel. For two small graphs to compare (before/after, A vs B).
   hold its own groups.
 - **Chain tones** (any `vis flow` or `vis state`, panels or not). A tone word right after an edge's
   target (after its optional quoted edge label) tones that node: `a -> miss "dead" error`; a node
-  given two different tones (by a `node` line or another chain) is an error naming both.
+  given two different tones (by a `node` line or another chain) keeps its `node` line's, else the
+  first chain's, with a warning naming both (§chat.markdown/vis-lenience-content).
 - **Inline labels** (any `vis flow` or `vis state`, panels or not), decided per fence. When any
   chain line has a quoted string right after its first id (`web "Browser" -> srv "Server"`), the
   fence is inline-style. Then, reading in order, the first string after an id labels that node when
@@ -338,10 +342,12 @@ belong to that panel. For two small graphs to compare (before/after, A vs B).
   `db --> app "rows"` (app already labelled) labels the return edge. Writing a node's inline label
   again is not an edge label. After a target with a `node` line one string labels the edge. A
   different string right after an already-labelled source has no edge to label: the first label is
-  kept, with a warning. A string right after a source that has a `node` line, or a third string, is
-  an error. Shape and tone words may follow an id in an inline-style chain, one of each in any
-  order (`gate "Manual approval" decision`, `db "Orders" store warn`); two different shapes or tones
-  for one node are an error, and a chain shape applies to a node whose `node` line gives none. A
+  kept, with a warning, unless the source is a decision, whose string labels the line's first edge
+  (§chat.markdown/vis-lenience-content). A string right after a source that has a `node` line (other
+  than a decision's), or a third string, is an error. Shape and tone words may follow an id in an
+  inline-style chain, one of each in any order (`gate "Manual approval" decision`, `db "Orders"
+  store warn`); two different shapes for one node are an error (two tones keep one, as above), and
+  a chain shape applies to a node whose `node` line gives none. A
   fence with no such line reads exactly as before: a string after a target is the edge's label
   (`idle -> busy "prompt"`); a shape or tone word after a chain id reads as it does inline
   (§chat.markdown/vis-lenience). The guide teaches inline labels
@@ -380,7 +386,9 @@ called `group` or `frame` in a chain still parses as before.
 
 Models writing `vis` fences reach for a few shapes the grammar didn't read. Where such a line has
 only one plausible meaning, it draws with that meaning; where it doesn't, its error says what to
-write, quoting the corrected line. Every line that parsed before keeps its meaning.
+write, quoting the corrected line. Every line that parsed before keeps its meaning, except the changes
+of meaning named in §chat.markdown/vis-lenience-content, which drew wrongly or dropped part of the
+line with a warning.
 
 - **A flow source's second line.** In a `vis flow` or `vis state` chain, a second string right
   after the chain's source, before its first arrow, is that node's second line, drawn under its
@@ -403,7 +411,9 @@ write, quoting the corrected line. Every line that parsed before keeps its meani
   - the target was labelled on this line: "unexpected "own states" after d1: one label and one
     edge label per target; for a second line use node d1 "Decision" "own states"";
   - the first string was the edge's (the fence isn't inline-style and the target has no node
-    line, or a third string follows a labelled target's two): "… one string per edge label (\n
+    line, and is labelled already or has three strings after it: two after an unlabelled one are
+    its label and the edge's, §chat.markdown/vis-lenience-content; or a third string follows a
+    labelled target's two): "… one string per edge label (\n
     breaks a line): -> api "Notify completion\nPOST /confirm-upload"", led, when inline, by "api is
     labelled "API Server" already, so "Notify completion" labels the edge";
   - it follows a shape or tone word, and the target has no label yet or the edge has one: "…
@@ -411,8 +421,9 @@ write, quoting the corrected line. Every line that parsed before keeps its meani
     already, with no edge label, reads the string after its words as the edge's label:
     `approval -> staging error "rejected"` draws as `approval -> staging "rejected" error`.)
 - **Sequence, Mermaid messages.** A message whose target ends in `:` or starts with `>`
-  (`Client -> Server: SYN`, `Client->>Server: SYN`) is an error quoting the vis message: "write
-  Client -> Server "SYN" (not Mermaid a -> b: msg)", a `-->>` reply as `-->`.
+  (`Client -> Server: SYN`, `Client->>Server: SYN`) draws as the vis message it stands for
+  (`Client -> Server "SYN"`, a `-->>` reply as `-->`): §chat.markdown/vis-lenience-content. A
+  target that still isn't an id keeps the error that says so.
 - **Tree, a slash outside the quotes.** A lone `/` right after a quoted name's closing quote (then
   the line's end or a space) is the folder's slash: `"Docs"/ "shared" ok` draws exactly as `"Docs/"
   "shared" ok` (a name already ending in `/` takes no second one). A slash joined to more text
@@ -461,7 +472,9 @@ write, quoting the corrected line. Every line that parsed before keeps its meani
 - **The guide** teaches flow example-first, one bullet per shape, each quoting its example (a
   node labelled where it first appears, two lines in a box by `\n` in its label, the edge label
   after a target, shape and tone, a `node` line declaring a node); says that after a target the
-  first string labels it and the second the edge, never a second line; lists short "Not vis"
+  first string labels it and the second the edge, never a second line; asks for the first node to
+  be labelled too, since with no string right after any line's first id every string after a
+  target labels an edge; lists short "Not vis"
   wrong→right pairs for Mermaid habits (`A->>B: msg`, `A[Label] --> B`) in its shared rules; and
   asks for a tree folder's `/` inside the quotes, a mark target as its item's exact label, quoted when it
   has spaces (even when its row isn't quoted: `mark "Vue 2" "…"`, and the timeline example marks one
@@ -473,6 +486,211 @@ write, quoting the corrected line. Every line that parsed before keeps its meani
   those forms when a model writes them anyway. The text sent to the model stays within the size it
   had before mark targets with spaces (12,397 bytes) plus that matrix line: 12,473 bytes, and the
   file within 15,327.
+
+## §chat.markdown/vis-lenience-content — `vis` content as models write it: numbers, labels, Mermaid habits
+
+Weak models get a `vis` fence's syntax right and trip on its content: a value with a unit, a label
+with spaces, a Mermaid habit. Where such a line has one reading, it draws with it, silently (nothing
+is dropped, so no warning); where it has two, the error stands. Each rule below applies only to a line
+(or a fence) that did not parse before, except the changes of meaning named at the end.
+
+- **Chart values.** A value may carry a sign, a currency prefix (`$ € £ ¥`), thousands commas in
+  groups of three (`4,200`; `1,5` stays an error), a magnitude (`k`/`K` thousand, `M` million,
+  `bn` billion, and `B` billion after a currency: `500B` is bytes) and a unit suffix (`120ms`,
+  `6.5GB`, `2.5x`); a unit word may follow it (`120 ms`). A `type: parts` chart's `of:` reads the
+  same forms (`of: 200k`). `n/a`, `na`, `?`, `—` and `–` are a gap,
+  as `-` is. A chart's rows share one unit: with no `unit:` it becomes the chart's unit (a currency
+  as its symbol); with `unit:` a row's unit must be one of its words (a currency is always fine).
+  Two units are an error: "mixed units ms and s: write every value in one unit", unless they are
+  sizes or durations (below). `12%` reads as before and sets no unit.
+- **Chart sizes and durations.** Outside a scatter, rows whose units (and the words of `unit:`) are
+  all sizes (`B`, `byte`, `bytes`; `KB`/`kB`, `MB`, `GB`, `TB`, `PB` in powers of 1000; `KiB`,
+  `MiB`, `GiB`, `TiB` in powers of 1024; `G` and `T` as GB and TB when another of them is a size)
+  or all durations (`ns`, `µs`/`us`, `ms`; `s`, `sec`, `second(s)`; `min`, `minute(s)`; `h`, `hr`,
+  `hour(s)`; `d`, `day(s)`) draw in one unit: `unit:`'s when it names one, every value without a
+  unit being in it; else the smallest seen, when every value has a unit (a value without one could
+  be in any of them, so the error stands). Each value is converted exactly: under `unit: bytes`,
+  `3.5MB` is 3,500,000 and `4GB` 4,000,000,000.
+- **Chart labels without quotes.** When a row's head is a bare word and a later word is neither a
+  value nor a unit, the row's values are read from its end (a tone, then one value per series, each
+  with its unit word) and every word before them is the label: `GET /users 120` is "GET /users",
+  `Auth Service 1.2 800` in a scatter is "Auth Service". When every word after the head reads as a
+  value (`Sep 28 410` with one series) the row stays an error, which now also says: quote the label:
+  "Sep 28" 410. A `|` between a chart row's label and values is ignored, except in a row that reads
+  no other way, whose bare words before its first `|` are then the label: `Sep 24 | 120` is "Sep
+  24" at 120. In a row that reads no other way, a `|` glued to a value (`10|`, `|10`) is ignored
+  too: `v2.0 | 10| 35 | 15`. A lowercase `key: values`
+  line whose key isn't a chart setting is a row (`jan: 1200`, labelled "jan:" as `Jan: 1200` is).
+- **Chart type words.** `type:` also reads `column`, `columns`, `bars`, `hbar`, `horizontal`,
+  `vertical` and `grouped` as bar; `area`, `lines` and `trend` as line; `stack` and `stacked bar(s)`
+  as stacked; `pie`, `donut` and `doughnut` as parts (§chat.markdown/vis-parts); `points` and
+  `dots` as scatter. `scale: logarithmic` is log.
+- **Kind words.** Besides the registry's words, a fence's kind may be `flowchart`, `graph`,
+  `diagram`, `architecture` (flow); `sequencediagram`, `seq` (sequence); `statediagram`, `states`,
+  `fsm`, `statemachine` (state); `stack` (layers); `hierarchy`, `filetree`, `files` (tree); `table`,
+  `comparison`, `compare` (matrix); `mockup`, `ui`, `screen`, `wire` (wireframe); `journey`,
+  `scenarios` (steps); and `bar`, `line`, `scatter`, `stacked`, `parts`, `pie` (a chart of that
+  type, `pie` of parts, unless its `type:` says otherwise). Such a fence draws exactly as the same
+  fence under its kind's word, and its error line names the word as written. The info string may
+  join `vis` and a kind or alias with `-` or `:` (`vis-flow`); any other `vis-…` fence is code, as
+  before. Any other word after `vis` is still an unknown kind.
+- **Settings in capitals.** `Title:`, `Caption:`, `Type:` and every other setting a kind takes read
+  in any case, except in `vis tree` (where `Title: x` is an item, as before), `vis wireframe`
+  (whose settings never fail) and a chart line whose value is numbers (`X: 10` is a row, as before).
+- **Wide arrows.** In `vis flow`, `vis state`, `vis sequence` and `vis steps`, `→ ⟶ ➔ ➜ => ==>`
+  are `->` and `↔ ⟷` are `<->`, outside quotes.
+- **Flow and state, Mermaid habits.** Outside quotes:
+  - `id[Label]` is `id "Label"`, and `id(Label)` / `id([Label])` add `round`, `id[(Label)]`
+    `store`, `id{Label}` `decision`, `id((Label))` `circle` (quotes inside are allowed);
+  - an edge's text on its arrow is its label: `a -->|yes| b`, `a -- yes --> b`, `a -- "yes" --> b`
+    (a string after `b` then labels b);
+  - `a -> b: text` and `a -> b : text` label the edge with the rest of the line;
+  - `[*]` is the start dot as a source and the end dot as a target, one of each per panel;
+    `state "Long name" as s1` declares s1 labelled "Long name";
+  - a first line `graph TD` / `flowchart LR` (`TD TB BT` down, `LR RL` right), `stateDiagram`
+    or `stateDiagram-v2`, and styling lines (`classDef`, `class`, `style`, `linkStyle`, `click`,
+    `%%`, `direction LR`) with no arrow are dropped; a trailing `;` is dropped. Arrows keep their
+    vis meaning (`-->` is dashed).
+- **Flow and state, words.** `diamond rhombus condition choice` are `decision`; `cylinder database
+  db` `store`; `rounded pill stadium oval` `round`; `rect rectangle square` `box`. `dir:` reads `LR
+  RL horizontal left-right across` as right and `TD TB BT vertical top-down` as down, and
+  `direction:` is `dir:`. On a `node` line (or one without the word) strings may follow the shape
+  and tone words: `node pending start "Pending payment"`. A string where an id belongs (a chain's
+  first item, or right after an arrow) names the node with that label in its panel, else a new node
+  with that label: `"Browser" -> "API"`. An id may start with a digit and hold any letters, digits,
+  `_ . - /` (`1`, `web/app`, `العميل`); `mark 1` names node `1`.
+- **A labelled start or end dot.** A `start` or `end` node whose label isn't its id (nor start,
+  begin, end, done, finish, stop) is drawn as a round state with that label plus the dot: an
+  unlabelled start dot with an edge into it, or an edge from it to an unlabelled end dot. A mark on
+  it marks the state.
+- **Sequence, Mermaid habits.** `a -> b: text`, `a ->> b: text`, `a -->> b: text` (a reply) and
+  `a -> a: text` are messages labelled with the rest of the line (`+`/`-` after the arrow dropped);
+  unquoted words after a message's target are its label; `participant a as Alice` and `actor a as
+  "Alice"` label a; `participant "Auth Server"` declares an actor with that label; a string where
+  an actor belongs names the actor with that label, else a new one. `note over a, b: text`, `note
+  left of a: text` and `note right of a: text` are notes. `loop`, `alt`, `opt`, `par`, `critical`,
+  `break`, `else` and `and` lines start a divider named by their text (or the word); `end`,
+  `autonumber`, `activate x`, `deactivate x`, `rect …` and a first `sequenceDiagram` are dropped.
+- **Rows without `|`.** A `vis timeline` row with no `|` splits once at its first `: ` or at ` — `,
+  ` – ` or ` - ` (several dashes: when — label — note): `2013: React`. A `vis layers` row with no `|`
+  but a `: ` is `label | items`: `Browser: React, Redux`.
+- **Markdown tables.** In `vis timeline`, `vis layers` and `vis matrix`, a row starting with `|`
+  loses that `|` and a trailing one, and a line of only `|`, `-`, `:` and spaces is skipped. A
+  matrix with no `columns:` and at least two rows takes its first row as the header, its first cell
+  dropped. `columns: A | B | C` splits at `|` when every row then has that many cells.
+- **Error text.** A layers or timeline row one field too long whose last field is one word but not
+  a tone says so: ""store" is not a tone (accent ok warn error info muted): a layer is: label |
+  item, item, … | note (optional) | tone (optional)". A chart row whose bare head is followed by
+  one value too many also suggests quoting: "2 values; expected 1 (add series: a, b for more than
+  one); or quote a label with spaces: "Sep 28" 410".
+- **Marks.** After a quoted target, a number or a range, bare words that aren't a tone are the note
+  (a leading `:`, `-` or `—` dropped): `mark "Vue 2" templates, not JSX`. A run of bare words whose
+  last ends in `:` is the target up to there, and the rest the note: `mark Sep 30: the outage`. An
+  indented `mark` line reads as one in chart, timeline, layers, matrix, steps, sequence and code
+  (before `---`).
+- **Tree indentation.** When the indentation can't be read as multiples of the first indent, each
+  line is a child of the nearest less-indented line above it (as in wireframe).
+- **Code without `---`.** The settings and marks end at the first line that is none of blank, a
+  setting or a mark (a `#` line is code); the rest is code (all of it, when there are none).
+- **A `|` inside a quoted field.** In `vis timeline`, `vis layers` and `vis matrix` rows, a field
+  that is one whole quoted string keeps the `|` inside it: `2023 | "Quality | Speed" | the pipe was
+  deliberate` is three fields, its label "Quality | Speed".
+- **Steps, words beside a quoted step.** A step of one quoted label and bare words is kept as
+  written, quotes and all, as a label is: `-> error "invalid audience"`. Two quoted labels in one
+  step are still an error. In a row whose label has no tone, a tone word after the last step's
+  quoted label is the row's tone, as `| error` is: `-> "Show expiry" error`.
+- **Flow and state, more words.** `cache` is `store`. After an edge's target (its strings and
+  words), `dashed` or `dotted` makes the edge dashed, as `-->` does: `l7a -> a2 "failover" dashed`.
+  A node given two different tones keeps one, with the warning "node api is toned ok and warn: kept
+  ok": its `node` line's, else the first chain's.
+- **Decision branches.** A string right after a chain's source that is a `decision` node labelled
+  otherwise already (`days "yes" -> damaged`, after `days "Within 30 days?" decision`) labels that
+  line's first edge, when that edge has no label of its own.
+- **Sequence, two more shapes.** A line of an id and a string, with an optional tone and no arrow
+  (`u "User"`), declares that actor as `actor u "User"` does. A message with two strings after its
+  target has its label on two lines, the first over the second (`cdn -> org "GET /items?page=2"
+  "cache miss"`), as a flow edge's does.
+- **Chart labels ending in a number.** A row whose words after its bare head all read as values,
+  more of them than the chart takes (`iPhone 16 799 22` in a scatter), is read from its end as
+  above, the words before its values being the label ("iPhone 16" at 799, 22), when a missing
+  `series:` can't be what's meant: another row of the chart reads as written with exactly as many
+  values as the chart takes, or reads from its end with a label word that is no value (`Galaxy S24
+  859 21`); or two rows share their first word while the labels read from their ends all differ
+  (`Sep 24 120`, `Sep 25 135`: a missing `series:` would label both "Sep"). Otherwise the error
+  stands.
+- **A tone on a row of several series** (`"/checkout" 80 2400 warn`) marks that row in that tone,
+  as `mark "/checkout" warn` does, after the fence's own marks (none of which it displaces).
+- **Marks naming part of an item.** In `vis steps`, a target that names no row but a step of
+  exactly one row (`mark "Verify email"`) marks that row. In `vis layers`, a target that names no
+  layer but an item of exactly one layer (`mark Redis`, `mark TLS 1.3`) marks that layer, and a
+  number names the one layer whose label starts with that number (`mark 4` over `4 Transport | TCP,
+  UDP`). In `vis tree`, a target that names no item names the one item whose name is the target with
+  a `/` added or removed (`mark "Tax Returns"` for `Tax Returns/`, `mark src` for `src/`), a number
+  is a name (`mark 2023` for `2023/`), and a `/` right after a quoted target is inside it (`mark
+  "Photos"/` is `mark "Photos/"`), as is an extension glued to it (below).
+- **A line inside a marked range.** In `vis code`, a later mark with a note that names a single line
+  an earlier range only highlighted (any line of it but the one holding the range's note) takes that
+  line with its own tone, note and number: `mark 3-5 "retry loop"` then `mark 4 error "error
+  swallowed"`.
+- **A `node` line written twice.** In `vis flow` and `vis state`, a `node` line declaring a node its
+  panel already declared, with the same label, second line, shape and tone (`node done end` twice),
+  is that node again, silently. A repeat that differs in any of them is still the error "node done
+  is declared twice".
+- **A `node` line without its id first.** In `vis flow` and `vis state`, a `node` line whose first
+  word is a shape and whose second is an id that is neither a tone nor a shape (`node end done`) is
+  `node done end`, when no edge in its panel names the shape word as a node and no other `node`
+  line declares it; otherwise the error stands. A `node` line with no arrow whose first item is a
+  string (`node "In progress"`, optionally followed by a second string, a shape and a tone) declares
+  the node with that label in its panel, as a string where an id belongs names it: the one already
+  labelled so, else a new node whose id is made from the label. Edges and marks then name it by its
+  label (`"In progress" -> Resolved`, `mark "In progress"`). Any other word after its strings keeps
+  the error "expected a node id after node".
+- **Timeline labels with a tone or a note.** In a `vis timeline` row with no tone field, a label of
+  bare words whose last word is a tone takes that tone: `2024-06-30 | Beta warn` is "Beta" in warn.
+  In a row with no note field, a label of bare words then one quoted string (then an optional tone)
+  is the words, with the string as the note: `2024-07-14 | Beta "was 2024-06-30" warn`. A timeline
+  mark that names no row names the one row whose label, without a trailing `(…)`, is the target:
+  `mark CommonJS` for `2009 | CommonJS (Node.js)`.
+- **Wireframe blocks on one line.** In `vis wireframe`, after a block's texts, a leaf block's word
+  (`badge`, `button`, `link`, `toggle`, `text`, … : not `tabs`, `tabbar` or `divider`) followed by
+  its own quoted text starts another block on that line, with its own texts and words; a `|` before
+  it is dropped. When the line's block holds blocks it goes inside it, before the blocks indented under
+  that line (`item "#1042" "placed today" badge "Delivered" ok`), else right after it (`text "Have an account?" link "Sign
+  in"`, `button "Refund" | button "Resend"`). A `-> "Screen"` at the line's end belongs to the
+  line's first block when that block holds blocks, else to the last. A word not followed by a quoted
+  text (`button "Terms" link`) is still ignored with a warning, as are a line's words for `tabs`,
+  `tabbar` and `table`. A wireframe `chart` also reads `parts`, `doughnut` as pie, `stacked`,
+  `grouped`, `columns` as bar, and `lines`, `trend` as line.
+- **Arrows written backwards.** In `vis flow`, `vis state` and `vis sequence`, `<-` and `<--`
+  outside quotes are `->` and `-->` pointing the other way: `w <- q "dequeue"` is the message `q ->
+  w "dequeue"`. In a flow chain the ids and strings around the arrow keep their roles, only the
+  edge turns: `app "Live app" <- vps` labels app and draws vps → app.
+- **Sequence, words after a message.** After a message's label, `dashed` or `dotted` draws it
+  dashed, as `-->` does (`app -> auth "POST /token" dashed`), and a tone marks that message in that
+  tone, as `mark <its number> <tone>` does, after the fence's own marks (none of which it displaces).
+- **Two strings after an unlabelled target.** In a `vis flow` or `vis state` fence whose strings
+  after targets are edge labels, a target with no label yet and no `node` line followed by two
+  strings takes the first as its label and the second as the edge's, as the guide teaches for any
+  target (`cache -> render "Render" "hit"`). A target labelled already, or three strings, read as
+  before.
+- **A row ending in `|`.** In `vis layers` and `vis timeline`, a row with a field past its tone
+  field, or with an empty tone field (`Registers | CPU registers | <1 ns |`), reads without its empty
+  last fields. A tone field that is the word `mark` (`DRAM | DIMMs | 100 ns | mark`) marks that row,
+  as `mark DRAM` does, after the fence's own marks (none of which it displaces).
+- **`Mark` in capitals.** In `vis matrix`, a line with no `|` whose first word is `mark` in any case
+  (`Mark "WebGPU" "gated"`) is a mark line.
+- **Tree, an extension after the quotes.** In `vis tree`, a `.` then letters, digits, `_ . -` glued
+  right after a quoted name are part of it, on item and mark lines: `"Nav Bar".tsx` is `Nav Bar.tsx`.
+- **Changes of meaning.** These lines drew before, wrongly: a `vis steps` row ending `| <tone>`
+  (with no tone after its label) takes that tone, where it drew a step "done | ok"; a steps chain
+  joined by a wide arrow (`→`, `=>`, …) is that many steps, where it drew one chip; a labelled start
+  or end dot is drawn as above, where the label was never shown; a row with a `|` inside a
+  quoted field, split there before; and a timeline label ending in a tone word or a quoted string,
+  drawn as written before. These drew before with a warning that part of them was dropped,
+  and now draw it: a decision's branch string (the node's second label), a mark naming a step, a
+  layer's item or number or a tree item without its slash, a mark on a line inside a range, a
+  timeline mark without its row's `(…)`, a wireframe block written after another's texts, a
+  wireframe chart's type word, and a tree mark with an extension glued after its quotes.
 
 ## §chat.markdown/vis-matrix-tones — `vis matrix` cell tones
 
@@ -497,8 +715,11 @@ A kind for scenarios or journeys as chains, each with a status. HTML, `src/vis/k
 
 - **Syntax.** One row per line: `"Label" [tone] | step -> step -> …`. The label is a "quoted label"
   or bare words (a label mixing the two, such as `'"all"'`, is kept as written, quotes and all); a
-  step is a "quoted label" or bare words, and steps join with `->` only.
-  `== lane ==` lines group the rows under a heading. No ids. `mark` a row by its label.
+  step is a "quoted label" or bare words (one of each is kept as written, as a label is), and steps
+  join with `->` (or a wide arrow, `→` `=>` …: §chat.markdown/vis-lenience-content). A row whose
+  label has no tone may end `| <tone>` instead, or a tone word after its last quoted step.
+  `== lane ==` lines group the rows under a heading. No ids. `mark` a row by its label (or by a
+  step no other row has: §chat.markdown/vis-lenience-content).
 - **Row.** A status mark, then the label (semibold), then the steps as chips (sunken, 1px border)
   each after the first led by an arrow; the chips wrap with the pane, an arrow staying with the
   chip it leads to. Beside a 144px label column; at a figure width of 420px or less the label sits
@@ -508,9 +729,9 @@ A kind for scenarios or journeys as chains, each with a status. HTML, `src/vis/k
   the tone's colour, so status never rests on hue alone; `accent` a filled dot, `muted` a dotted ring
   (and a muted label), no tone an empty ring.
 - **Lane heads.** Caption size, semibold, 8px more space above all but the first.
-- **Errors.** A row without `|`, an empty label or step, a step mixing a quoted label and bare
-  words, an arrow other than `->`, an empty or unlabelled lane, more than 10 steps in a row, 16 rows
-  or 6 lanes.
+- **Errors.** A row without `|`, an empty label or step, a step with two quoted labels, an arrow
+  other than `->` (or a wide one), an empty or unlabelled lane, more than 10 steps in
+  a row, 16 rows or 6 lanes.
 - **Height.** Estimated from steps.css' fixed metrics before it draws.
 
 ## §chat.markdown/vis-wireframe — `vis wireframe`: low-fi screens and wireflows
@@ -524,7 +745,8 @@ taps between them, before/after and states. DOM blocks with an SVG arrow overlay
   inside the nearest less-indented line, so any indent width works. `screen "Name" [phone|desktop]`
   starts a screen (optional for one screen); `== Name ==` does too, and a `screen` line right after
   it names the same screen. The strings fill the block's slots left to right; the words after them,
-  in any order, are a tone, `on` (checked, selected), `wide`, and for `chart` `bar|line|pie`. No ids:
+  in any order, are a tone, `on` (checked, selected), `wide`, and for `chart` `bar|line|pie` (a
+  block word with its own text there starts another block: §chat.markdown/vis-lenience-content). No ids:
   an arrow names a screen; `mark` names a block by its first text (first in the screen it is
   written under, then anywhere), a screen by its name, or a block word. A block word written
   before a quoted text, or before a list of targets (`mark button "Save", "Cancel"`), is ignored.

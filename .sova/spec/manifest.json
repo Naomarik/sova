@@ -10242,6 +10242,43 @@
         "src/vis/kinds/wireframe/layout.ts",
         "src/vis/kinds/wireframe/layout.test.ts"
       ]
+    },
+    "§chat.markdown/vis-lenience-content": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.markdown/vis-lenience",
+        "§chat.markdown/vis-parts",
+        "§chat.markdown/vis-steps",
+        "§chat.markdown/vis-wireframe",
+        "§chat.markdown/vis-flow-sections"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/core/grammar.ts",
+        "src/vis/core/emphasis.ts",
+        "src/vis/parse.ts",
+        "src/vis/registry.ts",
+        "src/vis/kinds/chart/parse.ts",
+        "src/vis/kinds/flow/parse.ts",
+        "src/vis/kinds/sequence/parse.ts",
+        "src/vis/kinds/timeline/parse.ts",
+        "src/vis/kinds/layers/parse.ts",
+        "src/vis/kinds/matrix/parse.ts",
+        "src/vis/kinds/steps/parse.ts",
+        "src/vis/kinds/tree/parse.ts",
+        "src/vis/kinds/code/parse.ts",
+        "src/vis/kinds/wireframe/parse.ts",
+        "src/vis/content-lenience.test.ts",
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/lib/markdown.ts",
+        "src/share/markdown.ts",
+        "src/vis/guide.test.ts",
+        "src/vis/lenience.test.ts",
+        "src/vis/markdown.test.ts",
+        "server/vis-check.test.ts"
+      ]
     }
   },
   "boundary": {

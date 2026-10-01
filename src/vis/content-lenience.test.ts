@@ -312,6 +312,12 @@ test("chart sizes and durations: one unit, each value converted", () => {
   assert.match(err("chart", 'type: scatter\n"a" 1ms 2s').message, /mixed units ms and s/);
 });
 
+test("chart: bare words before a row's | are its label when it reads no other way", () => {
+  assert.deepEqual(rows(ok<ChartSpec>("chart", "type: line\nSep 24 | 120\nSep 25 | 140")), [["Sep 24", 120], ["Sep 25", 140]]);
+  assert.deepEqual(rows(ok<ChartSpec>("chart", "series: a, b\nSep 24 | 1 | 2")), [["Sep 24", 1, 2]]);
+  assert.match(err("chart", "Sep 24 120").message, /quote a label with spaces: "Sep 24" 120/);
+});
+
 test("flow and state: the same node line written twice is one node", () => {
   const s = ok<FlowSpec>("state", "node s0 start\nnode done end\ns0 -> idle\nnode done end\nidle -> done");
   assert.deepEqual(shapes(s), { s0: "start", done: "end", idle: "round" });

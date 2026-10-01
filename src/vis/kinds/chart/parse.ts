@@ -226,6 +226,17 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
     if (vals.length !== width) fail(line.n, `${vals.length} values; expected ${width}${spec.type === "scatter" ? " (x y)" : spec.series.length ? ` (series: ${spec.series.join(", ")})` : " (add series: a, b for more than one)"}${quote}`);
     return { label, vals, units: [], ...(tone ? { tone } : {}) };
   };
+  // Bare words then a `|` (`Sep 24 | 120`): the words are the label, when the row reads no other way.
+  const labelBeforeBar = (line: Line, toks: Token[]): RowRead | null => {
+    const bar = toks.findIndex((t) => t.t === "word" && t.v === "|");
+    if (bar < 1 || toks.slice(0, bar).some((t) => t.t !== "word")) return null;
+    const rest = [{ t: "str", v: toks.slice(0, bar).map((t) => t.v).join(" ") } as Token, ...toks.slice(bar + 1).filter((t) => !(t.t === "word" && t.v === "|"))];
+    try {
+      return strict(line, rest);
+    } catch {
+      return readRowFromEnd(rest, width, true);
+    }
+  };
   // A row that reads as written with exactly `width` values settles the width: then a label may end
   // in a number (`iPhone 16 799 22` in a scatter), as a missing `series:` can't be what's meant.
   const widthSettled = rest.some((line) => {
@@ -247,7 +258,7 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
       row = strict(line, all);
     } catch (e) {
       // Today's reading refuses the row: the one other reading, or today's error.
-      const lenient = e instanceof VisError ? readRowFromEnd(all.filter((t) => !(t.t === "word" && t.v === "|")), width, widthSettled) : null;
+      const lenient = e instanceof VisError ? (readRowFromEnd(all.filter((t) => !(t.t === "word" && t.v === "|")), width, widthSettled) ?? labelBeforeBar(line, all)) : null;
       if (!lenient) throw e;
       row = lenient;
     }

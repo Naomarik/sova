@@ -1269,7 +1269,7 @@ Every op is an act (§app.overseer/org-tools), attended only, counted as one org
 `sova_project_overseer {op, org, project, …}`; every op is an act, attended only.
 
 - **`start`** creates the project's overseer, as the project page's Start Overseer does
-  (§app.project-overseer/identity). **`settings {…}`** changes what the Overseer card sets (level,
+  (§app.project-overseer/identity). **`settings {…}`** changes what the project page's Settings tab sets (level,
   models and thinking, the coding sessions' mode, the limits and the pace, watching, the extra
   instructions): one PATCH, refused whole as the page's is. **`run_now`** is Run Now
   (§app.project-overseer/watch-loop). **`clear`** is its Clear, behind a confirm card

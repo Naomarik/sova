@@ -33,7 +33,7 @@ can be marked **Viewed**; the mark lives only while the viewer is open. A file's
 when the file (or a step holding it) is first shown, and to place hunks into steps; a file too
 large to read whole says so and shows its counts.
 
-Below 768px of the viewer's own width (a phone, or a merge card in a narrow column) the two panes
+Below 768px of the viewer's own width (a phone) the two panes
 become two views: the tree and steps first, and picking a file or step shows its diff full-width
 with a Back control that returns to the list; the pane control and the Unified / Split switch are
 not offered there, and the diff is Unified. Focus moves with the view.
@@ -81,23 +81,20 @@ and what no step names goes under Other changes.
   each active tracked worktree row has a **Review Changes** control at its end (below its chips
   when the pane is narrow) that opens its branch against its merge-base with the branch it came
   from, or, once merged, what its merge brought in.
-- A merge card (§chat.worktrees/merge-card) has a chevron that unfolds the viewer inside the card,
-  on that merge's commit against its first parent; the chevron folds it again. Inside the card the
-  viewer is at most the transcript's visible height less some padding, at every width, so it fits
-  on screen with a little room above and below; a shorter change keeps its natural height. Beyond
-  that its file list and its diff each scroll inside it, and a scroll that reaches an inner pane's
-  end carries on to the transcript.
+- A merge card (§chat.worktrees/merge-card) has a **Review Changes** control that opens the viewer
+  on what that merge brought in: the merge commit against its first parent, or, for a
+  fast-forward, the branch from the tracked worktree's base (§chat.changes/endpoint).
 - An agent's `show_changes` result (§chat.changes/show-changes-card).
 
-Nothing of the viewer exists until it is shown: a folded merge card, a `show_changes` card or a
-Review Changes control whose viewer isn't open reads nothing from the server and parses, diffs,
-places and highlights nothing; closing or folding the viewer drops it.
+Nothing of the viewer exists until it is shown: a Review Changes control whose viewer isn't open,
+on the session pane, a merge card or a `show_changes` card, reads nothing from the server and
+parses, diffs, places and highlights nothing; closing the viewer drops it.
 
-From the session pane the viewer opens as a dialog over the page (a full-height sheet at folded
-width), closed with Close, Esc or the scrim, and focus returns to the control that opened it.
+From the session pane and from a transcript's card the viewer opens as a dialog over the page (a
+full-height sheet at folded width), closed with Close, Esc or the scrim, and focus returns to the control that opened it.
 For steps from turns the viewer reads the session's whole transcript when it opens, not only the
 rows the chat has loaded. A card in a transcript Sova can't tie to a session (a subagent's) has
-no chevron and no Review Changes control.
+no Review Changes control.
 
 ## §chat.changes/show-changes-card — The agent's show_changes card
 
@@ -148,7 +145,7 @@ Sova ignores a result whose details are malformed.
 ## §chat.changes/endpoint — Reading a diff from git
 
 The server reads every diff itself, read-only, and the client never names a ref: it names a
-session and one of three comparisons, and the server resolves the rest. A **worktree** comparison
+session and one of four comparisons, and the server resolves the rest. A **worktree** comparison
 is the worktree's committed branch against its merge-base with its base branch (the tracked
 worktree's base branch when that branch still exists, else master, else main, else the remote's
 default). Once the branch is merged, its tip is already in the base branch and that merge-base is
@@ -160,12 +157,19 @@ branch that fast-forwarded to the tip has no such commit: the tip is then compar
 tracked base commit when that is an ancestor of the tip, named as the commit it was created from,
 else the comparison stays empty. A branch with new commits after its merge is compared against its
 plain merge-base as before, as is one whose tip is not in the base branch at all. A **commit**
-comparison is one commit against its first parent (a first commit against nothing); an **uncommitted** comparison is the working tree, staged changes included, against HEAD,
+comparison is one commit against its first parent (a first commit against nothing). A **merge**
+comparison names a merge card's folder and commit, and is refused unless the session recorded a
+merge card with that folder and commit; it is what that merge brought in: a merge commit against
+its first parent, headed by the branch and with the base named as in "master before 4ef9f18"; a
+fast-forward, whose commit is the branch tip, against the tracked worktree's base commit, so all
+the branch's commits show, when that commit is an ancestor of the tip and not the tip itself
+(named as the commit it was created from), else against the tip's first parent. An
+**uncommitted** comparison is the working tree, staged changes included, against HEAD,
 with untracked files shown as added and a file whose content did not change never listed. The
 folder named must be one the session already knows (its folder, its workers' folders, a
 worktree it tracked, a merged worktree's folder) or inside one; the diff covers that folder's whole
-repository. Anything else is refused with a reason, before git runs there. A commit whose folder is
-gone, as a merged worktree's often is, is read from the first folder the session knows whose
+repository. Anything else is refused with a reason, before git runs there. A commit or merge whose
+folder is gone, as a merged worktree's often is, is read from the first folder the session knows whose
 repository still has it, the session's own folder first.
 
 A diff comes in two reads: the file list (each file's path, its old path when renamed, whether it
@@ -182,7 +186,7 @@ untracked files in all; the files after that are listed, marked too large, and n
 
 ## §chat.changes/diff-renderer — How one file's diff reads
 
-Every diff in Sova (the changes viewer, a tool card, a merge card) draws one file the same way.
+Every diff in Sova (the changes viewer, a tool card) draws one file the same way.
 Each line has two line-number columns (old, new) and a sign (+, −, or blank) before the code, in
 a gutter that selection skips, so copying a range copies code only. Added lines sit on
 `--diff-add-bg`, removed lines on `--diff-del-bg`. Code is highlighted by the file's path, each

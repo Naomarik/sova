@@ -14,7 +14,7 @@
  */
 
 import { applyMarks, takeMarks, type MarkTarget } from "../../core/emphasis";
-import { fail, isTone, lines, text, tokenize, warn, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { fail, isTone, lines, splitCommas, text, tokenize, warn, type Line, type Token, type Tone, type VisBase } from "../../core/grammar";
 
 /** Blocks that hold blocks. */
 export const CONTAINERS = ["header", "sidebar", "footer", "row", "col", "grid", "card", "list", "item", "table", "modal", "sheet", "heading", "empty"] as const;
@@ -22,6 +22,8 @@ export const LEAVES = ["tabs", "tabbar", "text", "image", "avatar", "icon", "bad
 export const BLOCKS: readonly string[] = [...CONTAINERS, ...LEAVES];
 /** The words the guide teaches; `divider` is lenient-only. */
 export const TAUGHT: readonly string[] = BLOCKS.filter((b) => b !== "divider");
+/** Leaf words that start another block when written after a line's texts, with a text of their own. */
+const INLINE: readonly string[] = LEAVES.filter((b) => b !== "tabs" && b !== "tabbar" && b !== "divider");
 
 /** Words a model reaches for, mapped silently to the block that draws them. */
 export const SYNONYMS: Readonly<Record<string, string>> = {
@@ -59,7 +61,7 @@ const TONE_SYN: Record<string, Tone> = { primary: "accent", danger: "error", des
 const ON = new Set(["on", "checked", "selected", "active", "current", "enabled", "open", "yes"]);
 export const CHARTS = ["bar", "line", "pie"] as const;
 export type ChartType = (typeof CHARTS)[number];
-const CHART_SYN: Record<string, ChartType> = { area: "line", donut: "pie", column: "bar", bars: "bar" };
+const CHART_SYN: Record<string, ChartType> = { area: "line", lines: "line", trend: "line", donut: "pie", doughnut: "pie", parts: "pie", column: "bar", columns: "bar", bars: "bar", stacked: "bar", grouped: "bar" };
 const DEVICES: Record<string, Device> = { phone: "phone", mobile: "phone", ios: "phone", android: "phone", desktop: "desktop", web: "desktop", wide: "desktop", browser: "desktop", laptop: "desktop", tablet: "desktop" };
 /** Words with a plain meaning that a lo-fi drawing doesn't draw: dropped without a warning. */
 const IGNORED = new Set(["secondary", "ghost", "outline", "outlined", "small", "large", "full", "centered", "center", "left", "right", "sticky", "scroll", "fixed", "bold", "off", "no", "unchecked"]);
@@ -343,59 +345,79 @@ export function parseWireframe(body: string): WireframeSpec {
         continue;
       }
     }
-    const bw = blockWord(word);
-    const b: WBlock = { type: bw.type, texts: [], children: [], key: "", line: line.n };
-    if (!bw.known) {
-      b.tag = bw.tag;
-      warn(line.n, `"${word}" isn't a wireframe block; drawn as a plain box`);
-    }
-    const strs = main.filter((t) => t.t === "str").map((t) => String(t.v));
-    const words = main.filter((t) => t.t === "word").map((t) => String(t.v));
-    const flag = (w: string): boolean => {
-      const l = w.toLowerCase();
-      const tone = toneOf(l);
-      if (tone) return !!(b.tone = tone);
-      if (ON.has(l)) return (b.on = true);
-      if (l === "wide") return (b.wide = true);
-      if (b.type === "chart" && chartOf(l)) return !!(b.chart = chartOf(l));
-      return IGNORED.has(l) || Object.hasOwn(DEVICES, l);
-    };
-    const isModifier = (w: string) => {
-      const l = w.toLowerCase();
-      return isFlagWord(l) || IGNORED.has(l) || (b.type === "chart" && !!chartOf(l));
-    };
-    if (strs.length === 0 && words.length > 0) {
-      // Unquoted: the whole rest of the line is the text (`|` splits it), unless every word is a modifier.
-      if (words.every(isModifier)) words.forEach(flag);
-      else {
-        const joined = words.join(" ");
-        b.texts = (joined.includes("|") ? joined.split("|").map((s) => s.trim()).filter(Boolean) : [joined]).map((s) => text(s, line.n));
+    const build = (word: string, main: Token[]): WBlock => {
+      const bw = blockWord(word);
+      const b: WBlock = { type: bw.type, texts: [], children: [], key: "", line: line.n };
+      if (!bw.known) {
+        b.tag = bw.tag;
+        warn(line.n, `"${word}" isn't a wireframe block; drawn as a plain box`);
       }
-    } else {
-      b.texts = strs;
-      const stray = words.filter((w) => !flag(w));
-      if (stray.length && !["tabs", "tabbar", "table"].includes(b.type)) warn(line.n, `ignored ${stray.map((s) => `"${s}"`).join(", ")} (after the texts: a tone, on, wide${b.type === "chart" ? ", bar line pie" : ""})`);
-    }
-    if (b.type === "tabs" || b.type === "tabbar" || b.type === "table") {
-      // Every string and stray word, in order, so a mis-quoted `"A, "B", C"` keeps B.
-      // Modifiers (`wide`, `on`, a tone) are applied above, never items.
-      const parts = main.filter((t) => t.t === "str" || (t.t === "word" && !isModifier(t.v) && !Object.hasOwn(DEVICES, t.v.toLowerCase()))).map((t) => String(t.v));
-      let items = parts.flatMap((s) => s.split(",")).map((s) => s.trim()).filter(Boolean);
-      const star = items.findIndex((s) => s.startsWith("*"));
-      items = items.map((s) => s.replace(/^\*\s*/, ""));
-      if (items.length > MAX_ITEMS) {
-        warn(line.n, `drew ${MAX_ITEMS} of ${items.length} ${b.type === "table" ? "columns" : "tabs"}`);
-        items = items.slice(0, MAX_ITEMS);
+      const strs = main.filter((t) => t.t === "str").map((t) => String(t.v));
+      const words = main.filter((t) => t.t === "word").map((t) => String(t.v));
+      const flag = (w: string): boolean => {
+        const l = w.toLowerCase();
+        const tone = toneOf(l);
+        if (tone) return !!(b.tone = tone);
+        if (ON.has(l)) return (b.on = true);
+        if (l === "wide") return (b.wide = true);
+        if (b.type === "chart" && chartOf(l)) return !!(b.chart = chartOf(l));
+        return IGNORED.has(l) || Object.hasOwn(DEVICES, l);
+      };
+      const isModifier = (w: string) => {
+        const l = w.toLowerCase();
+        return isFlagWord(l) || IGNORED.has(l) || (b.type === "chart" && !!chartOf(l));
+      };
+      if (strs.length === 0 && words.length > 0) {
+        // Unquoted: the whole rest of the line is the text (`|` splits it), unless every word is a modifier.
+        if (words.every(isModifier)) words.forEach(flag);
+        else {
+          const joined = words.join(" ");
+          b.texts = (joined.includes("|") ? joined.split("|").map((s) => s.trim()).filter(Boolean) : [joined]).map((s) => text(s, line.n));
+        }
+      } else {
+        b.texts = strs;
+        const stray = words.filter((w) => !flag(w));
+        if (stray.length && !["tabs", "tabbar", "table"].includes(b.type)) warn(line.n, `ignored ${stray.map((s) => `"${s}"`).join(", ")} (after the texts: a tone, on, wide${b.type === "chart" ? ", bar line pie" : ""})`);
       }
-      b.items = items;
-      b.texts = [];
-      if (b.type !== "table") b.current = star >= 0 && star < items.length ? star : 0;
+      if (b.type === "tabs" || b.type === "tabbar" || b.type === "table") {
+        // Every string and stray word, in order, so a mis-quoted `"A, "B", C"` keeps B.
+        // Modifiers (`wide`, `on`, a tone) are applied above, never items.
+        const parts = main.filter((t) => t.t === "str" || (t.t === "word" && !isModifier(t.v) && !Object.hasOwn(DEVICES, t.v.toLowerCase()))).map((t) => String(t.v));
+        let items = parts.flatMap((s) => splitCommas(s)).map((s) => s.trim()).filter(Boolean);
+        const star = items.findIndex((s) => s.startsWith("*"));
+        items = items.map((s) => s.replace(/^\*\s*/, ""));
+        if (items.length > MAX_ITEMS) {
+          warn(line.n, `drew ${MAX_ITEMS} of ${items.length} ${b.type === "table" ? "columns" : "tabs"}`);
+          items = items.slice(0, MAX_ITEMS);
+        }
+        b.items = items;
+        b.texts = [];
+        if (b.type !== "table") b.current = star >= 0 && star < items.length ? star : 0;
+      }
+      if (b.type === "chart") b.chart ??= "bar";
+      if (b.type === "progress") {
+        const m = /(\d+(?:\.\d+)?)\s*%/.exec(b.texts.join(" "));
+        b.value = m ? Math.min(100, Number(m[1])) : 50;
+      }
+      return b;
+    };
+    // More blocks on this line (§chat.markdown/vis-lenience-content): a leaf block's word after the
+    // texts, followed by its own text (`item "#1042" badge "Delivered" ok`, `button "A" | button "B"`).
+    const segs: { word: string; toks: Token[] }[] = [];
+    let from = 0;
+    let segWord = word;
+    if (!["tabs", "tabbar", "table"].includes(blockWord(word).type)) {
+      main.forEach((t, i) => {
+        if (i <= from || t.t !== "word" || !INLINE.includes(t.v) || main[i + 1]?.t !== "str" || !main.slice(from, i).some((x) => x.t === "str")) return;
+        const seg = main.slice(from, i);
+        if (seg[seg.length - 1]?.t === "word" && seg[seg.length - 1]!.v === "|") seg.pop();
+        segs.push({ word: segWord, toks: seg });
+        segWord = t.v;
+        from = i + 1;
+      });
     }
-    if (b.type === "chart") b.chart ??= "bar";
-    if (b.type === "progress") {
-      const m = /(\d+(?:\.\d+)?)\s*%/.exec(b.texts.join(" "));
-      b.value = m ? Math.min(100, Number(m[1])) : 50;
-    }
+    segs.push({ word: segWord, toks: segs.length ? main.slice(from) : main });
+    const b = build(word, segs[0]!.toks);
 
     // Place it: the parent is the nearest line above with a smaller indent.
     while (stack.length > 1 && stack[stack.length - 1]!.indent >= indent) stack.pop();
@@ -422,11 +444,31 @@ export function parseWireframe(body: string): WireframeSpec {
         warn(line.n, `a table draws ${MAX_ROWS} rows; the rest dropped`);
         continue;
       }
-      if (b.texts.length === 1 && (parent.block.items?.length ?? 0) > 1 && b.texts[0]!.includes(",")) b.texts = b.texts[0]!.split(",").map((s) => s.trim());
+      if (b.texts.length === 1 && (parent.block.items?.length ?? 0) > 1 && b.texts[0]!.includes(",")) {
+        // Commas inside parentheses don't split, unless splitting them too is what gives the table's column count.
+        const cols = parent.block.items!.length;
+        const cells = splitCommas(b.texts[0]!);
+        b.texts = (cells.length !== cols && b.texts[0]!.split(",").length === cols ? b.texts[0]!.split(",") : cells).map((s) => s.trim());
+      }
     }
     count++;
-    (parent.block ? parent.block.children : screen.blocks).push(b);
-    if (target) pendingArrows.push({ from: b, target, n: line.n, home: spec.screens.indexOf(screen) });
+    const siblings = parent.block ? parent.block.children : screen.blocks;
+    siblings.push(b);
+    // The line's other blocks: inside it when it holds blocks (and may go a level deeper), else after it.
+    const inside = isContainer(b.type) && parent.depth + 1 < MAX_DEPTH;
+    let last = b;
+    for (const seg of segs.slice(1)) {
+      if (count >= MAX_BLOCKS) {
+        if (!cutBlocks) warn(line.n, `at most ${MAX_BLOCKS} blocks; the rest dropped`);
+        cutBlocks = true;
+        break;
+      }
+      last = build(seg.word, seg.toks);
+      (inside ? b.children : siblings).push(last);
+      count++;
+    }
+    // A tap on the line opens the screen: the block holding the others, else the last one.
+    if (target) pendingArrows.push({ from: inside ? b : last, target, n: line.n, home: spec.screens.indexOf(screen) });
     stack.push({ indent, block: b, depth: parent.depth + 1 });
   }
 

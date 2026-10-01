@@ -322,3 +322,11 @@ test("wireframe: an item holding a row of badges and buttons parses as written",
   ]);
   assert.deepEqual(s.emphasis!.map((e) => e.key), ["s0.1.0.1", "s1.1.0.0.0.0"]);
 });
+
+test("wireframe: a comma inside parentheses doesn't split a tab, a column or a row's cell, unless the table's columns say so", () => {
+  const s = ok('tabs "All, Open (new, reopened), Closed"\ntable "Name, Size (KB, raw)"\n  item "report.pdf, 120 (compressed, 80)"\n  item "a (b, c)"');
+  assert.deepEqual(top(s), [
+    ["tabs", [], { items: ["All", "Open (new, reopened)", "Closed"] }, { current: 0 }],
+    ["table", [], { items: ["Name", "Size (KB, raw)"] }, [["item", ["report.pdf", "120 (compressed, 80)"]], ["item", ["a (b", "c)"]]]],
+  ]);
+});

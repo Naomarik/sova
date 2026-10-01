@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { ORG_TABS, orgHref, orgsRouteFromHash, orgTabHref, personHref, projectHref, projectOverseerHref, startForHref } from "./orgs-route";
+import { ORG_TABS, orgHref, orgsRouteFromHash, orgTabHref, personHref, PROJECT_TABS, projectHref, projectOverseerHref, projectTabHref, startForHref } from "./orgs-route";
 
 test("the list, one org, a start, a project and its overseer", () => {
   assert.deepEqual(orgsRouteFromHash("#/orgs"), { kind: "list" });
@@ -22,6 +22,23 @@ test("a tab: sessions, people, projects, workspace; the bare org is Sessions by 
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects"), { kind: "org", id: "org_ab12", tab: "projects" }, "no project id: the tab");
   assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/workspace/"), { kind: "org", id: "org_ab12", tab: "workspace" });
   for (const tab of ORG_TABS) assert.deepEqual(orgsRouteFromHash(orgTabHref("org_x", tab)), { kind: "org", id: "org_x", tab });
+});
+
+test("a project's tabs: Overview is the bare address, the others one segment after it", () => {
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/requirements"), { kind: "project", id: "org_ab12", projectId: "prj_1", tab: "requirements" });
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/cost/"), { kind: "project", id: "org_ab12", projectId: "prj_1", tab: "cost" });
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/settings"), { kind: "project", id: "org_ab12", projectId: "prj_1", tab: "settings" });
+  // The overseer's door is not a tab, and "overview" is never spelled out.
+  assert.deepEqual(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/overseer"), { kind: "overseer", id: "org_ab12", projectId: "prj_1" });
+  assert.equal(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/overview"), null);
+  assert.equal(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/Settings"), null);
+  assert.equal(orgsRouteFromHash("#/orgs/org_ab12/projects/p q/cost"), null);
+  assert.equal(orgsRouteFromHash("#/orgs/org_ab12/projects/prj_1/cost/x"), null);
+  for (const tab of PROJECT_TABS) {
+    const want = tab === "overview" ? { kind: "project", id: "org_x", projectId: "j1" } : { kind: "project", id: "org_x", projectId: "j1", tab };
+    assert.deepEqual(orgsRouteFromHash(projectTabHref("org_x", "j1", tab)), want, tab);
+  }
+  assert.equal(projectTabHref("org_x", "j1", "overview"), projectHref("org_x", "j1"));
 });
 
 test("anything else is not this route", () => {
@@ -78,6 +95,7 @@ test("an org on a peer (§mesh.remote-sessions/org-pages): every href of it carr
     assert.deepEqual(orgsRouteFromHash(orgHref("org_far")), { kind: "org", id: "org_far", host: "vps" });
     assert.deepEqual(orgsRouteFromHash(orgTabHref("org_far", "workspace")), { kind: "org", id: "org_far", tab: "workspace", host: "vps" });
     assert.deepEqual(orgsRouteFromHash(projectOverseerHref("org_far", "j1")), { kind: "overseer", id: "org_far", projectId: "j1", host: "vps" });
+    assert.deepEqual(orgsRouteFromHash(projectTabHref("org_far", "j1", "settings")), { kind: "project", id: "org_far", projectId: "j1", tab: "settings", host: "vps" });
     assert.deepEqual(orgsRouteFromHash(personHref("org_far", "p_1")), { kind: "person", id: "org_far", personId: "p_1", host: "vps" });
     assert.deepEqual(orgsRouteFromHash("#/orgs/org_x/projects/j2?host=phone"), { kind: "project", id: "org_x", projectId: "j2", host: "phone" });
     assert.equal(orgHref("org_here"), "#/orgs/org_here");

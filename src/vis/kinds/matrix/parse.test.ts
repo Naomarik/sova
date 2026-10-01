@@ -57,3 +57,32 @@ test("matrix cell tones: an unquoted text cell ending in a tone word; quoted tex
   // An escaped pipe inside a cell doesn't shift which cells were quoted.
   assert.deepEqual(ok<MatrixSpec>("matrix", 'columns: A, B\nr | a \\| b warn | "c ok"').rows[0]!.cells, [{ text: "a | b", tone: "warn" }, { text: "c ok" }]);
 });
+
+test("matrix columns: a comma inside parentheses doesn't split a column name", () => {
+  const s = ok<MatrixSpec>(
+    "matrix",
+    `columns: Critic (Astra), Advocate (K3, your side), Coordinator (Opus, partial)
+Fixed verb API for every project | yes | yes | yes
+Default isolation | native + slots; Compose where the project already uses it | container per worktree | per-instance network namespace
+mark "Default isolation" "the one real disagreement"`,
+  );
+  assert.deepEqual(s.columns, ["Critic (Astra)", "Advocate (K3, your side)", "Coordinator (Opus, partial)"]);
+  assert.equal(s.rows.length, 2);
+  assert.deepEqual(s.emphasis!.map((e) => [s.rows[Number(e.key)]!.label, e.note]), [["Default isolation", "the one real disagreement"]]);
+  // Parentheses that don't balance split at every comma, as before.
+  assert.deepEqual(ok<MatrixSpec>("matrix", "columns: Happy :), Sad :(\nMood | yes | no").columns, ["Happy :)", "Sad :("]);
+});
+
+test("matrix columns: the rows' agreed cell count picks the one reading that gives it", () => {
+  // A quoted stretch inside a name: two columns, as the rows have.
+  const q = ok<MatrixSpec>("matrix", 'columns: The "fast, cheap" plan, Other\nCost | low | high\nSpeed | yes | no');
+  assert.deepEqual(q.columns, ['The "fast, cheap" plan', "Other"]);
+  // Rows of three cells under a parenthesised comma: split inside the parentheses too, as before.
+  const p = ok<MatrixSpec>("matrix", "columns: Dev (local, CI), Prod\nFast | yes | yes | no");
+  assert.deepEqual(p.columns, ["Dev (local", "CI)", "Prod"]);
+});
+
+test("matrix columns: no reading gives the rows' count, or the rows disagree: still an error", () => {
+  assert.match(err("matrix", "columns: A, B, C, D\nX | yes | no | yes\nY | no | no | yes").message, /3 cells; expected 4/);
+  assert.match(err("matrix", "columns: Dev (local, CI), Prod\nFast | yes | yes | no\nSlow | yes | no").message, /cells; expected 2/);
+});

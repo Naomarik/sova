@@ -84,6 +84,6 @@ test("an overlong title, caption or label still draws: the figure lists the warn
   assert.deepEqual(clean.warnings, []);
   assert.equal("warnings" in clean.spec, false);
   // Hard errors stay hard.
-  const bad = parseVis("flow", "a => b");
+  const bad = parseVis("flow", "a b c");
   assert.equal(bad.ok, false);
 });

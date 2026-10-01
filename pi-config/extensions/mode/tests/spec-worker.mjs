@@ -64,6 +64,7 @@ function streamSimple(model, context, options) {
 	const stream = createAssistantMessageEventStream();
 	requests.push({ messages: context.messages });
 	const step = script.shift() ?? { text: "ok" };
+	step.before?.();
 	const message = { role: "assistant", content: [], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() };
 	(async () => {
 		options?.onPayload?.({});
@@ -107,17 +108,26 @@ const toolText = (req) => JSON.stringify(req.messages.filter((m) => m.role === "
 try {
 	await session.setModel(session.modelRuntime.getModel("scripted", "scripted-1"));
 
-	// The worker's first edit, a bash heredoc in the boundary: the digest rides that tool result.
-	script.push({ tool: "bash", args: { command: "cat > src/App.tsx <<'EOF'\n2\nEOF" } }, { tool: "bash", args: { command: "printf '3\\n' > src/App.tsx" } }, { tool: "bash", args: { command: "printf '2\\n' > tools/footer.ts" } }, { text: "Done." }, { text: "Done.\nAlso changes: none" });
+	// A read after the tree changed mid-run says nothing and moves no baseline; the worker's first edit, a
+	// bash heredoc in the boundary, then carries the digest.
+	script.push(
+		{ before: () => put("src/App.tsx", "2\n"), tool: "read", args: { path: "src/App.tsx" } },
+		{ tool: "bash", args: { command: "cat > src/App.tsx <<'EOF'\n2\nEOF" } },
+		{ tool: "bash", args: { command: "printf '3\\n' > src/App.tsx" } },
+		{ tool: "bash", args: { command: "printf '2\\n' > tools/footer.ts" } },
+		{ text: "Done." },
+		{ text: "Done.\nAlso changes: none" },
+	);
 	await session.prompt("change the shell and the footer");
-	assert.equal(requests.length, 5, "one re-prompt for an edit run without the line");
-	assert.match(seen(requests[4]), /your reply has no `Also changes:` line/);
-	assert.match(toolText(requests[1]), /\[spec census\] 1 changed file\(s\) in the boundary/, "the first edit carries the digest");
-	assert.match(toolText(requests[1]), /No draft yet/);
-	assert.match(toolText(requests[1]), /§app\/shell/);
-	assert.doesNotMatch(toolText(requests[2]), /\[spec census\]/, "the same file again: no digest");
-	assert.match(toolText(requests[3]), /tools\/footer\.ts is outside the boundary and no claim maps it/, "a new unmapped file outside the boundary: its line");
-	assert.ok(seen(requests[3]).includes("spec census"));
+	assert.equal(requests.length, 6, "one re-prompt for an edit run without the line");
+	assert.match(seen(requests[5]), /your reply has no `Also changes:` line/);
+	assert.doesNotMatch(toolText(requests[1]), /\[spec census\]/, "a read is skipped");
+	assert.match(toolText(requests[2]), /\[spec census\] 1 changed file\(s\) in the boundary/, "the first edit carries the digest");
+	assert.match(toolText(requests[2]), /No draft yet/);
+	assert.match(toolText(requests[2]), /§app\/shell/);
+	assert.doesNotMatch(toolText(requests[3]), /\[spec census\]/, "the same file again: no digest");
+	assert.match(toolText(requests[4]), /tools\/footer\.ts is outside the boundary and no claim maps it/, "a new unmapped file outside the boundary: its line");
+	assert.ok(seen(requests[4]).includes("spec census"));
 
 	// A promote with a wrong line: re-prompted twice with Git's list, then let through; the ledger has it.
 	git("add", "-A");

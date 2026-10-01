@@ -4,6 +4,7 @@ import { closeSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { after, before, describe, it } from "node:test";
+import type { WorktreeMergeDetails } from "../pi-config/extensions/worktrees/state.ts";
 import type { DiffScope } from "../shared/protocol";
 import { DiffError, GitDiffs, knownFoldersOf, MAX_UNTRACKED_READ, PATCH_CAP, parseNumstatZ, parseRawZ, quotePath, scopeFromQuery, splitPatch } from "./git-diff";
 
@@ -18,11 +19,11 @@ let firstSha: string;
 let secondSha: string;
 const SESSION = "/fake/session.jsonl";
 
-function diffs(roots: () => string[], trees: { path: string; baseBranch?: string; base?: string }[] = [], untrackedBudget?: number) {
+function diffs(roots: () => string[], trees: { path: string; baseBranch?: string; base?: string }[] = [], untrackedBudget?: number, merges: WorktreeMergeDetails[] = []) {
   return new GitDiffs({
     untrackedBudget,
     sessionKnown: async (p) =>
-      p === SESSION ? { roots: roots(), trees: trees.map((t) => ({ branch: "x", base: "0", status: "active", session: "s", how: "created", at: 0, ...t }) as never) } : null,
+      p === SESSION ? { roots: roots(), trees: trees.map((t) => ({ branch: "x", base: "0", status: "active", session: "s", how: "created", at: 0, ...t }) as never), merges } : null,
   });
 }
 
@@ -277,6 +278,118 @@ describe("worktree scope once merged", () => {
   });
 });
 
+describe("merge scope", () => {
+  let n = 0;
+  /** A fresh repository with master at one commit, and a worktree on feat/m with `files` committed one by one. */
+  function setup(files: string[]) {
+    const dir = join(root, `merge-scope-${++n}`);
+    const main = join(dir, "main");
+    const wt = join(dir, "wt");
+    mkdirSync(main, { recursive: true });
+    git(main, "init", "-q", "-b", "master");
+    writeFileSync(join(main, "a.txt"), "a\n");
+    git(main, "add", "-A");
+    git(main, "commit", "-q", "-m", "c0");
+    const c0 = git(main, "rev-parse", "HEAD");
+    git(main, "worktree", "add", "-q", "-b", "feat/m", wt);
+    const commit = (cwd: string, file: string) => {
+      writeFileSync(join(cwd, file), `${file}\n`);
+      git(cwd, "add", "-A");
+      git(cwd, "commit", "-q", "-m", file);
+      return git(cwd, "rev-parse", "HEAD");
+    };
+    for (const f of files) commit(wt, f);
+    const card = (sha: string, fastForward: boolean, path = wt): WorktreeMergeDetails => ({ version: 1, path, branch: "feat/m", target: "master", sha, commits: files.length, added: 0, removed: 0, fastForward, how: "tool" });
+    const scope = (sha: string, repoPath = wt): DiffScope => ({ kind: "merge", sessionPath: SESSION, repoPath, sha });
+    return { main, wt, c0, commit, card, scope };
+  }
+
+  it("shows a merge commit against its first parent, headed by the branch", async () => {
+    const { main, wt, commit, card, scope } = setup(["f1.txt", "f2.txt"]);
+    commit(main, "m1.txt");
+    git(main, "merge", "-q", "--no-ff", "--no-edit", "feat/m");
+    const landing = git(main, "rev-parse", "HEAD");
+    const s = await diffs(() => [main, wt], [], undefined, [card(landing, false)]).summary(scope(landing));
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt"]);
+    assert.equal(s.base.oid, git(main, "rev-parse", `${landing}^1`));
+    assert.equal(s.base.label, `master before ${landing.slice(0, 7)}`);
+    assert.equal(s.head.label, "feat/m");
+    assert.equal(s.head.oid, landing);
+  });
+
+  it("shows every commit a fast-forward brought, from the tracked base", async () => {
+    const { main, wt, c0, card, scope } = setup(["f1.txt", "f2.txt", "f3.txt"]);
+    git(main, "merge", "-q", "--ff-only", "feat/m");
+    const tip = git(main, "rev-parse", "HEAD");
+    const tracked = [{ path: wt, baseBranch: "master", base: c0 }];
+    const s = await diffs(() => [main, wt], tracked, undefined, [card(tip, true)]).summary(scope(tip));
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt", "f3.txt"]);
+    assert.equal(s.totals.added, 3);
+    assert.equal(s.base.oid, c0);
+    assert.equal(s.base.label, `${c0.slice(0, 7)} (created from)`);
+    assert.equal(s.head.label, "feat/m");
+    // The commit scope on the same sha is only the tip commit: the case this scope exists for.
+    const c = await diffs(() => [main, wt]).summary({ kind: "commit", sessionPath: SESSION, repoPath: wt, sha: tip });
+    assert.deepEqual(c.files.map((f) => f.path), ["f3.txt"]);
+    // No usable tracked base (none, not an ancestor, or the tip itself): the tip's first parent.
+    for (const t of [[], [{ path: wt, base: "0".repeat(40) }], [{ path: wt, base: tip }]]) {
+      const f = await diffs(() => [main, wt], t, undefined, [card(tip, true)]).summary(scope(tip));
+      assert.deepEqual(f.files.map((x) => x.path), ["f3.txt"]);
+      assert.equal(f.base.label, `${tip.slice(0, 7)}^1`);
+    }
+  });
+
+  it("reads a removed worktree's merge from another known folder", async () => {
+    const { main, wt, c0, card, scope } = setup(["f1.txt", "f2.txt", "f3.txt"]);
+    git(main, "merge", "-q", "--ff-only", "feat/m");
+    const tip = git(main, "rev-parse", "HEAD");
+    git(main, "worktree", "remove", "--force", wt);
+    const s = await diffs(() => [main, wt], [{ path: wt, base: c0 }], undefined, [card(tip, true)]).summary(scope(tip));
+    assert.equal(s.repo, main);
+    assert.deepEqual(s.files.map((f) => f.path), ["f1.txt", "f2.txt", "f3.txt"]);
+    const p = await diffs(() => [main, wt], [{ path: wt, base: c0 }], undefined, [card(tip, true)]).patch(scope(tip), "f2.txt");
+    assert.match(p.patch ?? "", /\+f2\.txt/);
+  });
+
+  it("refuses a sha that is not a merge card in the session, before any git runs", async () => {
+    const { main, wt, c0, card, scope } = setup(["f1.txt"]);
+    git(main, "merge", "-q", "--ff-only", "feat/m");
+    const tip = git(main, "rev-parse", "HEAD");
+    let ran = 0;
+    const counting = (merges: WorktreeMergeDetails[]) =>
+      new GitDiffs({
+        run: async () => {
+          ran++;
+          return { code: 0, stdout: Buffer.alloc(0), stderr: "", cut: false };
+        },
+        sessionKnown: async () => ({ roots: [main, wt], trees: [], merges }),
+      });
+    // A real commit, but no card names it.
+    await rejects(counting([card(tip, true)]).summary(scope(c0)), 400, /not a merge this session recorded/);
+    // The card's sha, but another folder.
+    await rejects(counting([card(tip, true)]).summary(scope(tip, main)), 400, /not a merge this session recorded/);
+    // No cards at all.
+    await rejects(counting([]).summary(scope(tip)), 400, /not a merge this session recorded/);
+    // An abbreviated sha is not the card's sha.
+    await rejects(counting([card(tip, true)]).summary(scope(tip.slice(0, 10))), 400, /not a merge this session recorded/);
+    assert.equal(ran, 0);
+    // Still no folder outside what the session knows, card or not.
+    await rejects(diffs(() => [main], [], undefined, [card(tip, true)]).summary(scope(tip)), 400, /not one this session knows/);
+  });
+
+  it("reads merge cards and their folders from the session file", () => {
+    const details = { version: 1, path: "/w/wt", branch: "feat/m", target: "master", sha: "a".repeat(40), commits: 3, added: 1, removed: 0, fastForward: true, how: "tool" };
+    const text = [
+      JSON.stringify({ type: "session", version: 3, id: "s", timestamp: "t", cwd: "/w/main" }),
+      JSON.stringify({ type: "custom_message", customType: "worktree-merge", content: "Merged", display: true, details }),
+      JSON.stringify({ type: "custom_message", customType: "worktree-merge", content: "Merged", display: true, details: { ...details, sha: 1 } }),
+    ].join("\n");
+    const k = knownFoldersOf(text);
+    assert.deepEqual(k.merges, [details]);
+    assert.ok(k.roots.includes("/w/wt"));
+  });
+});
+
 describe("dirty scope", () => {
   it("shows staged, unstaged and untracked changes against HEAD, and drops stat-only changes", async () => {
     const d = diffs(() => [tree]);
@@ -408,6 +521,8 @@ describe("trust", () => {
     const q = (o: Record<string, string>) => (n: string) => o[n];
     assert.deepEqual(scopeFromQuery(q({ kind: "commit", session: "s", path: "/p", sha: "ABCDEF1" })), { kind: "commit", sessionPath: "s", repoPath: "/p", sha: "abcdef1" });
     for (const sha of ["HEAD", "master", "abc", "--output=x", "abcdef1^"]) assert.throws(() => scopeFromQuery(q({ kind: "commit", session: "s", path: "/p", sha })), DiffError);
+    assert.deepEqual(scopeFromQuery(q({ kind: "merge", session: "s", path: "/p", sha: "ABCDEF1" })), { kind: "merge", sessionPath: "s", repoPath: "/p", sha: "abcdef1" });
+    for (const sha of ["HEAD", "master", "abcdef1^"]) assert.throws(() => scopeFromQuery(q({ kind: "merge", session: "s", path: "/p", sha })), DiffError);
     assert.throws(() => scopeFromQuery(q({ kind: "tree", session: "s", path: "/p" })), DiffError);
     assert.throws(() => scopeFromQuery(q({ kind: "dirty", path: "/p" })), DiffError);
   });

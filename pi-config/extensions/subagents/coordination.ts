@@ -74,17 +74,24 @@ export function contextText(tokens: number | undefined, window: number | undefin
 
 export type UsageProvider = "claude" | "openai" | "zai" | "ollama" | "deepseek";
 interface Window { pct?: unknown; resetsAt?: unknown; label?: unknown }
+interface ClaudeLike { state?: unknown; fiveHour?: Window; sevenDay?: Window; limits?: unknown }
 /** The part of usage-status's CacheFile a monitor reads; anything else in it is ignored. */
 export interface UsageCacheLike {
 	fetchedAt?: unknown;
-	claude?: { state?: unknown; fiveHour?: Window; sevenDay?: Window; limits?: unknown };
+	claude?: ClaudeLike;
+	/** Every other Claude login on this host, by login id; `skipped: "auth"` needs sign-in. */
+	claudeAccounts?: Record<string, { data?: ClaudeLike; skipped?: unknown } | undefined>;
 	openai?: { state?: unknown; windows?: unknown };
 	zai?: { state?: unknown; fiveHour?: Window };
 	ollama?: { state?: unknown; usedPct?: unknown };
 	deepseek?: { state?: unknown };
 }
-/** `reset`: the window's resetsAt has passed, so the cached pct predates the reset and says nothing now. */
-export interface UsageWindow { provider: UsageProvider; label: string; pct: number; resetsAt?: string; reset?: true }
+/**
+ * `reset`: the window's resetsAt has passed, so the cached pct predates the reset and says nothing now.
+ * `login`: the Claude login it belongs to (`default` = Claude Code's own). `weekly`: a `7d…` window,
+ * which blocks only at 100%.
+ */
+export interface UsageWindow { provider: UsageProvider; label: string; pct: number; resetsAt?: string; reset?: true; login?: string; weekly?: true }
 
 /** The usage-status provider a worker spends from, or undefined when none is tracked. */
 export function usageProviderOf(backend: string, model: string | undefined): UsageProvider | undefined {
@@ -105,7 +112,15 @@ function windowAt(now: number, provider: UsageProvider, label: string, w: Window
 	const pct = pctOf(w?.pct);
 	if (pct === undefined) return [];
 	const resetsAt = resetOf(w?.resetsAt);
-	return [{ provider, label, pct, ...(resetsAt ? { resetsAt } : {}), ...(resetsAt && Date.parse(resetsAt) <= now ? { reset: true as const } : {}) }];
+	return [{ provider, label, pct, ...(resetsAt ? { resetsAt } : {}), ...(resetsAt && Date.parse(resetsAt) <= now ? { reset: true as const } : {}), ...(label.startsWith("7d") ? { weekly: true as const } : {}) }];
+}
+function claudeWindows(now: number, login: string, c: ClaudeLike | undefined): UsageWindow[] {
+	if (c?.state !== "ok") return [];
+	const windows = Array.isArray(c.limits) && c.limits.length
+		? c.limits.flatMap((l: Window & { scope?: unknown }) =>
+			windowAt(now, "claude", `${typeof l?.label === "string" ? l.label : "limit"}${typeof l?.scope === "string" ? ` ${l.scope}` : ""}`, l))
+		: [...windowAt(now, "claude", "5h", c.fiveHour), ...windowAt(now, "claude", "7d", c.sevenDay)];
+	return windows.map((w) => ({ ...w, login }));
 }
 
 /**
@@ -117,12 +132,12 @@ export function usageWindows(cache: UsageCacheLike | undefined, provider: UsageP
 	const windowOf = (p: UsageProvider, label: string, w: Window | undefined) => windowAt(now, p, label, w);
 	switch (provider) {
 		case "claude": {
-			const c = cache.claude;
-			if (c?.state !== "ok") return [];
-			if (Array.isArray(c.limits) && c.limits.length)
-				return c.limits.flatMap((l: Window & { scope?: unknown }) =>
-					windowOf("claude", `${typeof l?.label === "string" ? l.label : "limit"}${typeof l?.scope === "string" ? ` ${l.scope}` : ""}`, l));
-			return [...windowOf("claude", "5h", c.fiveHour), ...windowOf("claude", "7d", c.sevenDay)];
+			// Claude Code's own login, then each added login with a reading that is not waiting on sign-in.
+			const accounts = cache.claudeAccounts && typeof cache.claudeAccounts === "object" ? Object.entries(cache.claudeAccounts) : [];
+			return [
+				...claudeWindows(now, "default", cache.claude),
+				...accounts.flatMap(([id, a]) => (a && a.skipped !== "auth" ? claudeWindows(now, id, a.data) : [])),
+			];
 		}
 		case "openai": {
 			const o = cache.openai;
@@ -142,9 +157,38 @@ export function usageWindows(cache: UsageCacheLike | undefined, provider: UsageP
 	}
 }
 
+/** Whether `w` puts its login out: a live window with a reset time, weekly at 100%, any other at `pausePct`. */
+const blocks = (w: UsageWindow, pausePct: number): boolean =>
+	!w.reset && !!w.resetsAt && w.pct >= (w.weekly ? 100 : pausePct);
+/** `windows` by login (one group for a provider without logins), each with the windows that block it. */
+function byLogin(windows: readonly UsageWindow[], pausePct: number): Map<string, UsageWindow[]> {
+	const logins = new Map<string, UsageWindow[]>();
+	for (const w of windows) {
+		const blocking = logins.get(w.login ?? "") ?? [];
+		logins.set(w.login ?? "", blocking);
+		if (blocks(w, pausePct)) blocking.push(w);
+	}
+	return logins;
+}
+const latestReset = (ws: readonly UsageWindow[]): number => Math.max(...ws.map((w) => Date.parse(w.resetsAt!)));
+
 /**
- * The roster's usage section for the providers a team uses: one line per window, the cache's age,
- * and which windows are at or over `pausePct`.
+ * The windows that block `provider` now, or none while it can still be used: a provider is blocked
+ * only when every login has a blocking window. Returns the blocking windows of the login that frees
+ * soonest (the earliest latest-reset), which is when the provider can be used again.
+ */
+export function blockingWindows(cache: UsageCacheLike | undefined, provider: UsageProvider, pausePct: number, now = Date.now()): UsageWindow[] {
+	return blockingOf(byLogin(usageWindows(cache, provider, now), pausePct));
+}
+function blockingOf(logins: Map<string, UsageWindow[]>): UsageWindow[] {
+	const blocked = [...logins.values()];
+	if (!blocked.length || blocked.some((b) => !b.length)) return [];
+	return blocked.reduce((a, b) => (latestReset(b) < latestReset(a) ? b : a));
+}
+
+/**
+ * The roster's usage section for the providers a team uses: one line per window (per login for
+ * Claude), the cache's age, and which windows block their provider at `pausePct`.
  */
 export function usageLines(cache: UsageCacheLike | undefined, providers: readonly UsageProvider[], pausePct: number | undefined, now = Date.now()): string[] {
 	const wanted = [...new Set(providers)];
@@ -155,14 +199,22 @@ export function usageLines(cache: UsageCacheLike | undefined, providers: readonl
 	for (const provider of wanted) {
 		const windows = usageWindows(cache, provider, now);
 		if (!windows.length) { lines.push(`    ${provider}: no window data`); continue; }
+		const logins = pausePct !== undefined ? byLogin(windows, pausePct) : new Map<string, UsageWindow[]>();
+		const blocking = blockingOf(logins);
+		const named = new Set(windows.map((w) => w.login)).size > 1;
 		for (const w of windows) {
+			const name = `${provider} ${w.label}${named ? ` [${w.login}]` : ""}`;
 			if (w.reset) {
-				lines.push(`    ${provider} ${w.label}: reset at ${w.resetsAt} — current usage unknown (the cached ${Math.round(w.pct)}% predates the reset); not a reason to pause`);
+				lines.push(`    ${name}: reset at ${w.resetsAt} — current usage unknown (the cached ${Math.round(w.pct)}% predates the reset); not a reason to pause`);
 				continue;
 			}
-			const over = pausePct !== undefined && w.pct >= pausePct ? ` — AT/OVER the ${pausePct}% pause threshold` : "";
-			lines.push(`    ${provider} ${w.label}: ${Math.round(w.pct)}%${w.resetsAt ? `, resets ${w.resetsAt}` : ""}${over}`);
+			const weekly = w.weekly ? " (weekly, informational below 100%)" : "";
+			const over = blocking.includes(w) ? ` — AT/OVER the ${w.weekly ? 100 : pausePct}% pause threshold` : "";
+			lines.push(`    ${name}: ${Math.round(w.pct)}%${w.resetsAt ? `, resets ${w.resetsAt}` : ""}${weekly}${over}`);
 		}
+		const free = [...logins.values()].filter((b) => !b.length).length;
+		if (logins.size > 1 && free && free < logins.size)
+			lines.push(`    ${provider}: headroom on ${free} of ${logins.size} logins — not a reason to pause`);
 	}
 	return lines;
 }

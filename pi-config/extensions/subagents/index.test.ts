@@ -2920,7 +2920,7 @@ test("team defaults synthesize a coordinator and a monitor in code, with role he
 		assert.match(dev.task, /team_ask sends a question to your team's coordinator/);
 		assert.match(monitor.task, /call them as mcp__team__team_msg, mcp__team__team_inbox, mcp__team__team_roster, mcp__team__wake_nudge;/);
 		assert.match(monitor.task, /at or over 60% of its context window: team_msg it with notice "wrap-up"/);
-		assert.match(monitor.task, /AT\/OVER the 90% pause threshold: team_msg coordinator with notice "pause".*plus 5 min/);
+		assert.match(monitor.task, /AT\/OVER the pause threshold \(it marks one only when no login of that provider has headroom — a non-weekly window such as 5h at 90% or more, or a 7d window at 100%; a 7d window below 100% is informational[^)]*\): team_msg coordinator with notice "pause".*plus 5 min/);
 		assert.match(monitor.task, /wake_nudge schedule delay "10m" and end your turn\. Never sleep or poll in a shell/);
 		assert.doesNotMatch(monitor.task, /team_ask/);
 		for (const [w, role] of [[coordinator, "coordinator"], [dev, "dev"], [writer, "writer"]])
@@ -3109,7 +3109,7 @@ test("the monitor: roster with context, thresholds and usage; notices recorded; 
 		assert.match(roster.text, /ag_01 coordinator \(coordinator\) \[claude-code, has team tools\] working \(running\) · context 640k\/1M \(64%\)/);
 		assert.match(roster.text, /ag_02 dev \[pi, has team tools\] working \(running\) · context — /);
 		assert.match(roster.text, /ag_03 monitor \(monitor\) .* context 150k\/200k \(75%\)/);
-		assert.match(roster.text, /Thresholds \(team defaults, read now\): wrap-up at 60% context · check every 10 min · usage pause at 90%, resume 5 min after the reset/);
+		assert.match(roster.text, /Thresholds \(team defaults, read now\): wrap-up at 60% context · check every 10 min · usage pause when no login of a provider has headroom \(a non-weekly window at 90%, a 7d window at 100%\), resume 5 min after the reset/);
 		assert.ok(roster.text.includes(`claude 5h: 92%, resets ${reset} — AT/OVER the 90% pause threshold`), roster.text);
 		assert.doesNotMatch(roster.text, /openai/, "only providers this team's models spend from");
 		// Thresholds are re-read: a later file change shows at the next roster.
@@ -3366,6 +3366,31 @@ test("N9: a resume notice is refused until the pausing window's reset plus the r
 			await h2.ask("ag_03", { type: "message", to: "coordinator", message: "pause", notice: "pause" });
 			assert.equal((await h2.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" })).ok, true);
 		} finally { await h2.cleanup(); }
+	} finally { await h.cleanup(); }
+});
+
+test("with several Claude logins the roster marks nothing while one has 5h headroom, and a full pause holds until the soonest login frees", async () => {
+	const h = coordinatedHarness(DEFAULTS_FILE);
+	try {
+		fs.mkdirSync(path.join(h.agentDir, "cache"));
+		const at = (hours: number) => new Date(Math.ceil((Date.now() + hours * 3600_000) / 1000) * 1000).toISOString();
+		const weekly = at(96), soonest = at(2), later = at(4);
+		const login = (pct: number, resetsAt: string) => ({ state: "ok", limits: [{ label: "5h", pct, resetsAt }, { label: "7d", pct: 96, resetsAt: weekly }] });
+		const cache = (other: number) => fs.writeFileSync(path.join(h.agentDir, "cache", "usage-status.json"), JSON.stringify({
+			fetchedAt: Date.now(), nextFetchAt: Date.now(), errors: {},
+			claude: login(95, later), claudeAccounts: { "l-b": { data: login(other, soonest), nextFetchAt: 0 } },
+		}));
+		cache(30);
+		await h.call("team_create", { name: "Crew", objective: "Ship", members: [{ role: "dev", prompt: "build" }] });
+		const roster = (await h.ask("ag_03", { type: "roster" })).text;
+		assert.doesNotMatch(roster, /AT\/OVER/);
+		assert.ok(roster.includes(`claude 7d [l-b]: 96%, resets ${weekly} (weekly, informational below 100%)`), roster);
+		assert.ok(roster.includes("claude: headroom on 1 of 2 logins — not a reason to pause"), roster);
+		cache(92);
+		assert.ok((await h.ask("ag_03", { type: "roster" })).text.includes(`claude 5h [l-b]: 92%, resets ${soonest} — AT/OVER the 90% pause threshold`));
+		await h.ask("ag_03", { type: "message", to: "coordinator", message: "pause", notice: "pause" });
+		const early = await h.ask("ag_03", { type: "message", to: "coordinator", message: "resume", notice: "resume" });
+		assert.match(early.text, new RegExp(`^Resume refused: claude 5h \\[l-b\\] paused this team and resets at ${esc(soonest)};`));
 	} finally { await h.cleanup(); }
 });
 

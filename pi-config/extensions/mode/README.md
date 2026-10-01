@@ -161,7 +161,17 @@ writer**).
     worktree its newest) and, on the first in-boundary change,
     each new file in the boundary or mapped outside it, or a new foreign §, a
     short `[spec census]` digest is appended to that tool result, with a
-    "No draft yet" line while there is none. The same digest says, on the call
+    "No draft yet" line while there is none. It stays short: each file in
+    `New:` names at most 3 §, then `(+N more)`; the `Rule:` and "No draft yet"
+    lines print once a session per tree, and each "New claims under a foreign §"
+    pair once (only printed pairs count as said, in the census state; a Claude
+    Code worker keeps one census state, so moving to another tree starts these
+    over, even on returning to a tree already seen); the
+    state still keeps every foreign § seen. Tools that cannot write the repo
+    (`CENSUS_SKIP_TOOLS`, exact names: read, grep, find, ls, align, the agent
+    and team listing tools, agent_wait (it waits on workers and writes nothing
+    to the repo), the link inbox tools; never bash) skip the census:
+    no look, no baseline move, so the next writing call reports it all. The same digest says, on the call
     that did it, when the current spec (`manifest.json`, `claims/**`) was
     written by hand: an edit or write call on it, or a shell command that is
     neither a draft tool nor git and changed it; and when a git operation

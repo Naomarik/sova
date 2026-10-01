@@ -17,6 +17,7 @@ import type {
 } from "../../shared/protocol";
 import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
+import { tuiOnlyCommand } from "../lib/slash";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
@@ -1447,7 +1448,7 @@ export function ChatView(props: {
     if (command && commands().some((c) => c.name === command)) {
       const label = text.length > 61 ? `${text.slice(0, 60)}…` : text;
       batch(() => {
-        setCommandRows((rows) => [...rows, { label, tui: false }]);
+        setCommandRows((rows) => [...rows, { label, tui: tuiOnlyCommand(text) !== null }]);
         setResume((n) => n + 1);
       });
       return true;

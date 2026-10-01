@@ -62,6 +62,7 @@ import { describeTeamDefaults, readTeamDefaults, type WorkerTuple } from "./team
 import {
 	NUDGE_MAX_ACTIVE,
 	NUDGE_MAX_IDLE_FIRES,
+	blockingWindows,
 	claudeContextWindow,
 	contextShare,
 	contextPct,
@@ -73,7 +74,6 @@ import {
 	successorRole,
 	usageLines,
 	usageProviderOf,
-	usageWindows,
 	type UsageCacheLike,
 	type UsageProvider,
 	type UsageWindow,
@@ -1682,14 +1682,14 @@ export function registerSubagents(
 		const provider = usageProviderOf(x.backend, (w && launches.get(w)?.model) ?? x.model);
 		return provider ? [provider] : [];
 	});
-	/** The windows of a team's providers at or over the pause threshold now, with a known reset time. */
+	/** For each of a team's providers that no login can use now, the windows of the login that frees soonest. */
 	const pausingWindows = (teamId: string): UsageWindow[] => {
 		const state = readTeamDefaults(agentDir());
 		const usage = state.state === "ok" && state.value.monitor.usage.enabled ? state.value.monitor.usage : undefined;
 		const t = teamViews().find((v) => v.id === teamId);
 		if (!usage || !t) return [];
 		const cache = readUsageCache();
-		return [...new Set(teamProviders(t))].flatMap((p) => usageWindows(cache, p)).filter((w) => !w.reset && w.resetsAt && w.pct >= usage.pausePct);
+		return [...new Set(teamProviders(t))].flatMap((p) => blockingWindows(cache, p, usage.pausePct));
 	};
 	/** Why a monitor's resume notice is refused now (N9), if it is: the pausing window's reset plus the margin has not passed. */
 	const resumeNoticeRefusal = (teamId: string, now = Date.now()): string | undefined => {
@@ -1700,7 +1700,7 @@ export function registerSubagents(
 		const last = held.reduce((a, w) => (Date.parse(w.resetsAt!) > Date.parse(a.resetsAt!) ? w : a));
 		const from = Date.parse(last.resetsAt!) + margin * 60_000;
 		if (now >= from) return undefined;
-		return `Resume refused: ${last.provider} ${last.label} paused this team and resets at ${last.resetsAt}; resume is allowed from ${new Date(from).toISOString()} (the reset plus ${margin} min), in ${fmtDur(from - now)}. Schedule wake_nudge at that time and end your turn.`;
+		return `Resume refused: ${last.provider} ${last.label}${last.login && last.login !== "default" ? ` [${last.login}]` : ""} paused this team and resets at ${last.resetsAt}; resume is allowed from ${new Date(from).toISOString()} (the reset plus ${margin} min), in ${fmtDur(from - now)}. Schedule wake_nudge at that time and end your turn.`;
 	};
 	const readUsageCache = (): UsageCacheLike | undefined => {
 		try {
@@ -1758,8 +1758,8 @@ export function registerSubagents(
 	/** Teams whose monitor sent "pause" and not yet "resume". */
 	const pausedTeams = new Set<string>();
 	/**
-	 * N9: the usage windows that were AT/OVER the pause threshold when a team's monitor paused it,
-	 * by team. A resume notice is refused until the latest of their resets plus the resume margin
+	 * N9: the usage windows that blocked a provider (no login with headroom; see blockingWindows)
+	 * when a team's monitor paused it, by team. A resume notice is refused until the latest of their resets plus the resume margin
 	 * (read at the resume) has passed. In memory only: a pause restored after a reload has no hold.
 	 */
 	const pauseHolds = new Map<string, UsageWindow[]>();
@@ -2025,7 +2025,7 @@ export function registerSubagents(
 			const state = readTeamDefaults(agentDir());
 			const m = state.state === "ok" ? state.value.monitor : undefined;
 			standing.push(m
-				? `  Thresholds (team defaults, read now): wrap-up at ${m.contextPct}% context · check every ${m.everyMinutes} min · usage ${m.usage.enabled ? `pause at ${m.usage.pausePct}%, resume ${m.usage.resumeMarginMinutes} min after the reset` : "not watched"}`
+				? `  Thresholds (team defaults, read now): wrap-up at ${m.contextPct}% context · check every ${m.everyMinutes} min · usage ${m.usage.enabled ? `pause when no login of a provider has headroom (a non-weekly window at ${m.usage.pausePct}%, a 7d window at 100%), resume ${m.usage.resumeMarginMinutes} min after the reset` : "not watched"}`
 				: `  Thresholds: team defaults are ${state.state === "absent" ? "absent" : "malformed"} now; keep the thresholds in your assignment.`);
 			standing.push(...usageLines(readUsageCache(), teamProviders(t), m?.usage.enabled ? m.usage.pausePct : undefined));
 		}

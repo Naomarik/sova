@@ -6,9 +6,14 @@ run by the project profile **Merge captain** (`.sova/profiles/merge-captain.json
 every 30 minutes and after a Claude limit resets (§chat/schedules). A round finds finished branches,
 checks each one, lands it on master, pushes it and restarts the live server when that is safe. The
 playbook is instructions to a model: what it promises is what it tells the captain to do, and what
-its two scripts, `discover-names.mjs` and `leak-scan.mjs` (Node builtins only), do.
+its scripts in `scripts/` (Node builtins only) do: the driver `round.mjs` (§chat.merge-round/driver),
+`discover-names.mjs` and `leak-scan.mjs`, with their tests in `tests/` (§chat.playbooks/bundles).
 
 ## §chat.merge-round/round — What one round does
+
+The captain takes each step through the driver (§chat.merge-round/driver) and makes the judgement
+calls itself: whether a branch's intent is finished, whether its owner has open questions, whom to
+ask, and what to tell the user.
 
 - **Settings and the start interview.** Local settings are `<state root>/merge-round.json`, one per
   machine and never committed. On the first round of a new captain session (it reads its own
@@ -26,30 +31,103 @@ its two scripts, `discover-names.mjs` and `leak-scan.mjs` (Node builtins only), 
   order given.
 - **The poll.** Each round also reads, for every session `session_list` shows, its `session_detail`
   worktree lines (`Worktree <branch>: Ready to merge …` or `… Waiting for your OK …`), the Ready to
-  merge chip's own rule set (§chat.worktrees/readiness). The owner of a branch is the session whose
-  detail lists it, never a guess from session files. A branch ahead of master that no session
-  reports is listed as **unowned** and never merged on the captain's own say.
+  merge chip's own rule set (§chat.worktrees/readiness), and records what it read with the driver's
+  `note`. The owner of a branch is the session whose detail lists it, never a guess from session
+  files. A branch ahead of master that no session reports is listed as **unowned** and never merged
+  on the captain's own say.
 - **Verify.** The chip can be wrong (it doesn't know intent, and its checks-passed isn't tied to
   the branch's head), so before accepting a branch the captain reads the owner's transcript
   (`session_read`) and the git state: commits ahead, a clean tree (the sandbox tests' own output
-  apart), no TEMP, WIP, `fixup!` or `squash!` subject, and no open alignment questions.
+  apart), no TEMP, WIP, `fixup!`, `squash!` or `amend!` subject, and no open alignment questions.
 - **Asking the owner.** Unsure, and only when the owner session and all its workers are idle, the
-  captain asks it with `session_send` whether the branch is ready, for a reply of `READY <branch>
-  <sha>` or `NOT READY: <why>`, and reads the reply about 30 seconds later or on a later round. It
+  captain asks it with `session_send` whether the branch is ready at its current head, for a reply of
+  `READY <branch> <sha>` or `NOT READY: <why>`, and reads the reply about 30 seconds later or on a
+  later round, through the driver's `ask` and `reply`. It
   never asks a busy session. "Waiting for your OK" means ask, never merge. A branch its owner
   confirms at the head it reports, and that passes every check, merges without asking the user.
 - **Each branch** is merged with master in its worktree, checked (typecheck, tests with timeouts
   near their baseline, each touched pi-config extension's suite, build; a failure that also fails
   on master is named as pre-existing), its drafts promoted, then landed with `worktree merge` and
   built in the main checkout.
-- **Push.** `leak-scan.mjs` runs before every push; any hit means push nothing and report the
-  commit, file and line, never the matched value. Never `--force`, `--tags` or `--all`.
+- **Push.** Through the driver's `push`: `leak-scan.mjs` runs before every push; any hit means push
+  nothing and report the commit, file and line, never the matched value. Never `--force`, `--tags`
+  or `--all`.
 - **Restart** as before: only when every hosted session is idle, scheduled outside the server with
   `systemd-run` as the turn's last call, and confirmed on the next round.
 - **Always the user's call:** rewriting unpushed commits to scrub a hit, names origin already has in
   public, a restart while sessions are busy, and any deploy to a peer.
+- **Never:** force-push or rewrite pushed history; `filter-branch`, `read-tree` or `update-ref` on
+  master; a private name written inline in a command.
 - **The report** each round: shas merged, push result, spec check, restart state (with the busy
   list), unowned branches, owners asked and their answers, anything handed back and why.
+
+## §chat.merge-round/driver — The round's driver
+
+`scripts/round.mjs` (Node builtins only) does the round's mechanical steps. The captain still picks
+each next step, and every command ends with a `next:` line naming the likely one. Its state is one
+small file, `<state root>/playbooks/merge-round/state.json` (mode 0600, written by atomic rename),
+with each check's logs in `logs/` beside it. Output is a compact digest, or JSON with `--json`.
+Exits follow the bundle convention (§chat.playbooks/bundles): 0 go, 1 something to act on or
+decide, 2 couldn't tell, which fails closed. Every git and child process runs by argv, with no
+shell and under a timeout.
+
+- **Never a private name.** Every line it prints, and everything in its state file, has each name
+  in `merge-round.json` masked; the logs are the checks' own output, kept on this machine and never
+  printed. It prints no value from that file, except the restart unit, and that only when it is a
+  plain unit name holding no private name.
+- **It never reads sessions.** The session tools stay the only way to read them: the captain
+  records what it read with `note <branch> owner=<id> chip=ready|waiting|none idle=yes|no
+  [source=<word>]`. Its only HTTP is `GET /api/health`, best effort, to confirm a restart.
+- **`start`** knows this session's first round by `PI_SESSION_ID`: it says whether to run the start
+  interview, turns the push hold on when the settings file is missing at that first round, and says
+  whether a pending restart has happened (the server's `startedAt` after the merge, and its `head`
+  at master). **`names-answered`** lifts the hold once the user has answered.
+- **`status`** lists every local branch ahead of master that has a worktree: ahead and behind,
+  uncommitted files (the sandbox tests' `FIRST-RUN.txt` and `NAIVE-RUN.txt` apart), a TEMP, WIP,
+  `fixup!`, `squash!` or `amend!` subject, how many files a trial merge with master conflicts in
+  (`git merge-tree --write-tree` into a throwaway object directory, so the repository is never
+  written), the last commit's age, the recorded owner and ask, and whether landing it needs a
+  restart (§chat.worktrees/readiness's rule). A branch with no recorded owner is flagged unowned. It
+  also says whether the main checkout is on master, how many files are dirty there, and how far it
+  is from origin/master.
+- **`ask <branch>`** refuses an owner not recorded idle, a note older than 15 minutes, and an owner
+  asked in the last 10 minutes. Otherwise it prints the text to `session_send`: `Is <branch> ready
+  to merge at its current head? Reply with one line: READY <branch> <the head sha you checked>, or
+  NOT READY: <why>.`, which never holds the head's sha. **`reply <branch>`** reads the owner's
+  `session_read` output on stdin and refuses another session's transcript. It accepts only a whole
+  line `READY <branch> <sha>` in one of the owner's own reply rows (`ASSISTANT:`), whose sha (7 or
+  more characters) begins the branch's current head, or `NOT READY: <why>`. Any other sha is
+  **stale**; nothing else is an answer, so an echoed ask or a line in another row never counts.
+- **`check <branch>`** refuses a branch with no worktree, no commit ahead, uncommitted files or a
+  TEMP-style subject. It merges master into the branch in its worktree, never on master. On
+  conflicts it stops and leaves them to the captain, except that a conflicting
+  `.sova/spec/manifest.json` first goes through the spec tool's `merge-manifest --write`. It then
+  runs the typecheck, `pnpm test` without `CLAUDE_CONFIG_DIR`, each touched pi-config extension's
+  line from `pi-config/README.md`'s Tests block, and the build, each in its own process group,
+  killed whole at its timeout (the larger of a floor and twice the median of its earlier passing
+  runs); then the spec tool's `check`, `census --changed --base master`, and each draft's status. A
+  test file that fails is run again on master, in the main checkout at master's sha (refused when
+  that file is dirty there), cached per master sha and file: one that fails there too is named
+  pre-existing and doesn't block. The verdict, `landable at <sha>` or `needs: …`, is recorded
+  against the branch's head and master's sha.
+- **`land <branch>`** never merges. With a landable check at the current head and the current
+  master, it prints the `worktree` tool's merge call; a moved head or master means check again.
+  **`landed <branch>`** verifies with git that the checked head is in master, builds the main
+  checkout, records whether a restart is needed, and prints the notice for the owner.
+- **`push`** refuses under the hold, when the main checkout isn't on master, and when master isn't a
+  fast-forward of origin/master after a fetch. It runs `leak-scan.mjs` and, only when that exits 0,
+  runs exactly `git push origin master`. It has no force, tags or all path.
+- **`restart-check`** reads the live records (`<agent dir>/sessions/live/`) of the server it runs
+  under, found through its process ancestry, else as the restart unit's main pid; only records whose
+  heartbeat is at most 30 seconds old count, and its own session's is left out. A session is busy
+  when a worker is working or its turn is in flight. Exit 0 means every one is idle, and only then
+  does it print the `systemd-run --user --on-active=30s systemctl --user restart <unit>` line; 1
+  lists the busy ones; 2 means it found no server or none of its records. It never schedules or runs
+  a restart itself.
+- **`report`** prints the round report's skeleton from the state.
+
+The two rules it shares with the server, which subjects are temporary and which changed files need a
+restart, are copies, held equal to `server/merge-readiness.ts`'s by a test over an enumerated table.
 
 ## §chat.merge-round/private-names — Finding the private names, and the leak scan
 

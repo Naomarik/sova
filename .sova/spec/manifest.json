@@ -10706,10 +10706,10 @@
       "authority": "accepted",
       "evidence": "verified",
       "code": [
-        ".sova/playbooks/merge-round/discover-names.mjs",
-        ".sova/playbooks/merge-round/discover-names.test.mjs",
-        ".sova/playbooks/merge-round/leak-scan.mjs",
-        ".sova/playbooks/merge-round/leak-scan.test.mjs"
+        ".sova/playbooks/merge-round/scripts/discover-names.mjs",
+        ".sova/playbooks/merge-round/tests/discover-names.test.mjs",
+        ".sova/playbooks/merge-round/scripts/leak-scan.mjs",
+        ".sova/playbooks/merge-round/tests/leak-scan.test.mjs"
       ],
       "requires": []
     },
@@ -10732,6 +10732,20 @@
       "evidence": "reviewed",
       "code": [
         ".sova/playbooks/merge-round/PLAYBOOK.md"
+      ]
+    },
+    "§chat.merge-round/driver": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        ".sova/playbooks/merge-round/scripts/round.mjs",
+        ".sova/playbooks/merge-round/tests/round.test.mjs",
+        "server/merge-round-rules.test.ts"
+      ],
+      "requires": [
+        "§chat.merge-round/private-names",
+        "§chat.worktrees/readiness"
       ]
     }
   },

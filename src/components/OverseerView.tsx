@@ -400,6 +400,7 @@ export function OverseerView(props: {
                     streaming={false}
                     stateBanner={<></>}
                     readOnly={{ icon: "clock", text: "An earlier conversation. Read only." }}
+                    prefetch={false}
                   />
                 </>
               )}

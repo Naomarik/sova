@@ -46,6 +46,8 @@ export function WatchView(props: {
   streaming: boolean;
   stateBanner: JSX.Element;
   readOnly: ComposerReason;
+  /** False: never fetch the older rows in the background (an earlier Overseer conversation). */
+  prefetch?: boolean;
   /** Rows were appended: data derived from the session file may have changed. */
   onAppend?(): void;
   /** Subagents working now (live record); the composer shows them as a status row. */
@@ -65,7 +67,7 @@ export function WatchView(props: {
   onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   /** The rows above the list that it doesn't hold (lib/older-rows, as ChatView's). */
-  const olderRows = createOlderRows({ path: props.path, items, setItems });
+  const olderRows = createOlderRows({ path: props.path, items, setItems, prefetch: props.prefetch });
   const { older, whole } = olderRows;
   createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
   /** The last snapshot's first row: rows that arrive above it are history, never "N new". */

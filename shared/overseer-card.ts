@@ -25,7 +25,7 @@ export const CARD_DETAILS_VERSION = 1;
 /** Answer options (lettered) and link options (not) a card may carry. */
 export const CARD_ANSWERS_MAX = 4;
 export const CARD_LINKS_MAX = 4;
-/** Per-item choices: 2 to 4, shared by every item. */
+/** Per-item choices: 2 to 4 per list, the card's (every row without its own) or a row's own. */
 export const CARD_CHOICES_MIN = 2;
 export const CARD_CHOICES_MAX = 4;
 
@@ -61,8 +61,9 @@ export interface CardItemDecision {
 }
 
 /** A card row: the resolved item snapshot, its number (1..N in display order, never renumbered),
-    the choice it starts on (`default`, also the recommendation for it) and its answer once recorded. */
-export type CardItem = SovaConfirmItem & { n: number; default?: string; decided?: CardItemDecision };
+    its own choices when they differ from the card's (`choices`, lettered per row), the choice it
+    starts on (`default`, also the recommendation for it) and its answer once recorded. */
+export type CardItem = SovaConfirmItem & { n: number; choices?: { label: string }[]; default?: string; decided?: CardItemDecision };
 
 /** The card's answer: the user's words, the option letter when it was one. */
 export interface CardAnswer {
@@ -138,8 +139,13 @@ export function answerOptions(card: Pick<OverseerCard, "options">): { option: Ca
 }
 export const linkOptions = (card: Pick<OverseerCard, "options">): CardOption[] => card.options.filter((o) => !!o.href);
 export const optionByLetter = (card: Pick<OverseerCard, "options">, letter: string): CardOption | undefined => answerOptions(card).find((o) => o.letter === letter)?.option;
-export const choiceByLetter = (card: Pick<OverseerCard, "choices">, letter: string): { label: string } | undefined =>
-  card.choices?.find((_, i) => cardLetter(i) === letter);
+/** A row's choices: its own, else the card's; undefined when it has none. */
+export const choicesOf = (card: Pick<OverseerCard, "choices">, item: Pick<CardItem, "choices">): { label: string }[] | undefined => item.choices ?? card.choices;
+/** A row's choice by letter: letters are per row, so "a" is the first of that row's own list. */
+export const choiceByLetter = (card: Pick<OverseerCard, "choices">, item: Pick<CardItem, "choices">, letter: string): { label: string } | undefined =>
+  choicesOf(card, item)?.find((_, i) => cardLetter(i) === letter);
+/** Whether any row takes a choice (the card's Apply). */
+export const hasChoices = (card: Pick<OverseerCard, "choices" | "items">): boolean => card.choices !== undefined || card.items.some((it) => it.choices !== undefined);
 /** The text an answer option sends: its reply, else its label. */
 export const optionReply = (o: CardOption): string => o.reply?.trim() || o.label;
 export const isOpenCard = (card: OverseerCard): boolean => card.phase === "open";
@@ -205,7 +211,8 @@ export type CardOpName = (typeof CARD_OPS)[number];
  * this check can't disagree.
  */
 export const CARD_OP_FIELDS: Record<CardOpName, { required: readonly string[]; optional: readonly string[] }> = {
-  create: { required: ["title", "options"], optional: ["detail", "items", "choices", "recommendation", "replaces"] },
+  // `options` may be left out when every item takes a choice (the card's Apply is then its answer).
+  create: { required: ["title"], optional: ["options", "detail", "items", "choices", "recommendation", "replaces"] },
   answer: { required: ["text"], optional: ["option", "items"] },
   accept: { required: [], optional: ["items"] },
   reopen: { required: [], optional: [] },
@@ -261,18 +268,25 @@ export function checkCardCall(input: unknown): (Record<string, unknown> & { op: 
     const fields = CARD_OP_FIELDS[o.op as CardOpName];
     onlyKeys(o, ["op", ...fields.required, ...fields.optional], where);
     for (const key of fields.required) need(o[key] !== undefined, `${where}: ${key} is required`);
-    return o as Record<string, unknown> & { op: CardOpName };
+    return { ...o } as Record<string, unknown> & { op: CardOpName };
   });
   const creates = ops.filter((o) => o.op === "create").length;
   need(creates === 0 || ops.length === 1, "create stands alone in its call");
-  need(creates === 0 || params.card === undefined, "create takes no card: the new card gets the next id");
+  // The new card gets the next id, so a `card` on a create can only mean the card it replaces.
+  if (creates && params.card !== undefined) {
+    const named = text(params.card, "card");
+    const replaces = ops[0]!.replaces;
+    need(replaces === undefined || replaces === named, `create takes card only as the card it replaces, but card is ${named} and replaces is ${String(replaces)}: give one of them`);
+    ops[0]!.replaces = named;
+  }
   return ops;
 }
 
 /** What the host resolved for a create before it is applied. */
 export interface CardPrepared {
-  /** The resolved items (each may carry the `default` letter its entry gave), in any order. */
-  items: (SovaConfirmItem & { default?: string })[];
+  /** The resolved items (each may carry the `default` letter its entry gave, and its own `choices`
+      as the model wrote them, checked here), in any order. */
+  items: (SovaConfirmItem & { default?: string; choices?: unknown })[];
   /** Per option index: its link's resolved href, for an option that gave `link`. */
   hrefs: (string | undefined)[];
   clickOnly?: boolean;
@@ -323,8 +337,8 @@ export function isCardHref(href: string): boolean {
 function createCard(id: string, o: Record<string, unknown>, env: CardEnv): OverseerCard {
   const where = "ops[0] (create)";
   const prepared = env.prepared ?? { items: [], hrefs: [] };
-  need(Array.isArray(o.options) && o.options.length > 0, `${where}: options must be a non-empty array of {label, reply?, tone?, link?}`);
-  const options: CardOption[] = (o.options as unknown[]).map((raw, i) => {
+  need(o.options === undefined || Array.isArray(o.options), `${where}: options must be an array of {label, reply?, tone?, link?}`);
+  const options: CardOption[] = ((o.options as unknown[] | undefined) ?? []).map((raw, i) => {
     const w = `${where}: options[${i}]`;
     need(isRecord(raw), `${w} must be an object {label, reply?, tone?, link?}`);
     const v = raw as Record<string, unknown>;
@@ -386,27 +400,37 @@ function createCard(id: string, o: Record<string, unknown>, env: CardEnv): Overs
   need(answers <= CARD_ANSWERS_MAX, `${where}: at most ${CARD_ANSWERS_MAX} answer options (this has ${answers}); split the question`);
   need(links <= CARD_LINKS_MAX, `${where}: at most ${CARD_LINKS_MAX} link options (this has ${links})`);
 
+  /** A list of 2 to 4 distinct short labels: the card's `choices`, or an item's own. */
+  const choiceList = (raw: unknown, w: string): { label: string }[] => {
+    need(Array.isArray(raw), `${w} must be an array of ${CARD_CHOICES_MIN} to ${CARD_CHOICES_MAX} short labels`);
+    const list = (raw as unknown[]).map((c, i) => ({ label: cut(text(isRecord(c) ? c.label : c, `${w}[${i}]`), 30) }));
+    need(list.length >= CARD_CHOICES_MIN && list.length <= CARD_CHOICES_MAX, `${w} takes ${CARD_CHOICES_MIN} to ${CARD_CHOICES_MAX} labels (this has ${list.length})`);
+    const labels = list.map((c) => c.label.toLowerCase());
+    need(new Set(labels).size === labels.length, `${w}: each choice needs its own label`);
+    return list;
+  };
   let choices: { label: string }[] | undefined;
   if (o.choices !== undefined) {
-    need(Array.isArray(o.choices), `${where}: choices must be an array of 2 to 4 short labels`);
-    choices = (o.choices as unknown[]).map((c, i) => ({ label: cut(text(isRecord(c) ? c.label : c, `${where}: choices[${i}]`), 30) }));
-    need(choices.length >= CARD_CHOICES_MIN && choices.length <= CARD_CHOICES_MAX, `${where}: choices takes ${CARD_CHOICES_MIN} to ${CARD_CHOICES_MAX} labels (this has ${choices.length})`);
+    choices = choiceList(o.choices, `${where}: choices`);
     need(prepared.items.length > 0, `${where}: choices are per item, so the card needs items`);
-    const labels = choices.map((c) => c.label.toLowerCase());
-    need(new Set(labels).size === labels.length, `${where}: each choice needs its own label`);
   }
-  need(answers > 0 || choices !== undefined, `${where}: give at least one answer option (an option without link), or per-item choices`);
 
   const items: CardItem[] = displayOrder(prepared.items).map((it, i) => {
-    const { default: def, ...rest } = it;
+    const { default: def, choices: own, ...rest } = it;
     const item: CardItem = { ...(rest as SovaConfirmItem), n: i + 1 };
+    if (own !== undefined) item.choices = choiceList(own, `${where}: ${it.id}'s choices`);
+    const row = choicesOf({ choices }, item);
     if (def !== undefined) {
-      need(choices !== undefined, `${where}: ${it.id} has a default, but the card has no choices`);
-      need(choices!.some((_, k) => cardLetter(k) === def), `${where}: ${it.id}'s default "${def}" is not a choice letter (${choices!.map((_, k) => cardLetter(k)).join(", ")})`);
+      need(row !== undefined, `${where}: ${it.id} has a default, but neither it nor the card has choices`);
+      need(row!.some((_, k) => cardLetter(k) === def), `${where}: ${it.id}'s default "${def}" is not one of its choice letters (${row!.map((_, k) => `${cardLetter(k)}. ${row![k]!.label}`).join(", ")})`);
       item.default = def;
     }
     return item;
   });
+  need(
+    answers > 0 || (items.length > 0 && items.every((it) => choicesOf({ choices }, it) !== undefined)),
+    `${where}: give at least one answer option (an option without link), or choices for every item (the card's, or each item's own)`,
+  );
 
   const card: OverseerCard = {
     id,
@@ -518,9 +542,11 @@ export function applyCardCall(cards: readonly OverseerCard[], input: unknown, en
           for (const [key, value] of Object.entries(o.items as Record<string, unknown>)) {
             const item = itemNumber(c, key, where);
             const said = oneLine(text(value, `${where}: items["${key}"]`));
-            const choice = /^[a-z]$/i.test(said) ? choiceByLetter(c, said.toLowerCase()) : undefined;
-            need(!(c.choices === undefined && /^[a-z]$/i.test(said)), `${where}: items["${key}"] is "${said}", but ${c.id} has no choices; give the user's words`);
-            need(!(c.choices !== undefined && /^[a-z]$/i.test(said) && choice === undefined), `${where}: items["${key}"]: "${said}" is not a choice letter (${c.choices?.map((_, k) => cardLetter(k)).join(", ")})`);
+            const row = choicesOf(c, item);
+            const letter = /^[a-z]$/i.test(said);
+            const choice = letter ? choiceByLetter(c, item, said.toLowerCase()) : undefined;
+            need(!(row === undefined && letter), `${where}: items["${key}"] is "${said}", but item ${key} of ${c.id} has no choices; give the user's words`);
+            need(!(row !== undefined && letter && choice === undefined), `${where}: items["${key}"]: "${said}" is not one of item ${key}'s choice letters (${row?.map((x, k) => `${cardLetter(k)}. ${x.label}`).join(", ")})`);
             item.decided = choice ? { choice: said.toLowerCase(), text: choice.label, by: "user", at: env.now } : { text: said, by: "user", at: env.now };
             decided.push(item.n);
           }
@@ -546,7 +572,7 @@ export function applyCardCall(cards: readonly OverseerCard[], input: unknown, en
           const dup = nums.find((it, k) => nums.indexOf(it) !== k);
           need(dup === undefined, `${where}: item ${dup?.n} is named twice`);
           for (const it of nums) need(it.default !== undefined, `${where}: item ${it.n} has no default to accept; record the user's words with answer`);
-          for (const it of nums) it.decided = { choice: it.default!, text: choiceByLetter(c, it.default!)!.label, by: "accepted-recommendation", at: env.now };
+          for (const it of nums) it.decided = { choice: it.default!, text: choiceByLetter(c, it, it.default!)!.label, by: "accepted-recommendation", at: env.now };
           const complete = completeByItems(c);
           if (complete) {
             c.phase = "answered";
@@ -561,7 +587,7 @@ export function applyCardCall(cards: readonly OverseerCard[], input: unknown, en
         } else {
           const open = c.items.filter((it) => it.decided === undefined && it.default !== undefined);
           need(open.length > 0, `${where}: ${c.id} recommends no option and no undecided item has a default; record the user's words with answer`);
-          for (const it of open) it.decided = { choice: it.default!, text: choiceByLetter(c, it.default!)!.label, by: "accepted-recommendation", at: env.now };
+          for (const it of open) it.decided = { choice: it.default!, text: choiceByLetter(c, it, it.default!)!.label, by: "accepted-recommendation", at: env.now };
           const complete = completeByItems(c);
           if (complete) {
             c.phase = "answered";
@@ -607,10 +633,12 @@ export function applyCardCall(cards: readonly OverseerCard[], input: unknown, en
   } else lines.push(...(openCardsOf(after).length ? openCardsOf(after).flatMap((c) => cardLines(c, "")) : ["No open cards in this conversation."]));
   const others = card ? openCardsOf(after).filter((c) => c.id !== card!.id) : [];
   if (others.length) lines.push(`Other open cards: ${others.map((c) => `${c.id} "${c.title}"`).join(" · ")}`);
-  if (creates)
+  if (creates) {
+    const clicks = [answerOptions(card!).length ? `"${card!.id} b: …"` : "", hasChoices(card!) ? `"${card!.id}: 1a …, 2b …" (each letter its own row's)` : ""].filter(Boolean).join(" or ");
     lines.push(
-      `Shown to the ${who} under your reply. It stays open until you record it: when the ${who} answers (a click reads "${card!.id} b: …"; typed text may name the card, an item number or an option letter), call sova_card answer with their words, or accept for "your recommendation", in the run you act on it.`,
+      `Shown to the ${who} under your reply. It stays open until you record it: when the ${who} answers (a click reads ${clicks}; typed text may name the card, an item number or an option letter), call sova_card answer with their words, or accept for "your recommendation", in the run you act on it.`,
     );
+  }
   return { details, text: lines.join("\n") };
 }
 
@@ -676,6 +704,12 @@ function normBy(v: unknown): CardAnswerBy | undefined {
   return v === "user" || v === "accepted-recommendation" ? v : undefined;
 }
 
+/** A stored choice list (the card's, or an item's own): 2 to 4 labels. */
+function normChoices(v: unknown): { label: string }[] | undefined {
+  const choices = normAll(v, (c) => (isRecord(c) && nonEmpty(c.label) ? { label: c.label } : undefined));
+  return choices && choices.length >= CARD_CHOICES_MIN && choices.length <= CARD_CHOICES_MAX ? choices : undefined;
+}
+
 /** A stored item snapshot, strict per kind. */
 export function normalizeCardItem(v: unknown): CardItem | undefined {
   if (!isRecord(v) || !nonEmpty(v.id) || !count(v.n) || v.n < 1) return undefined;
@@ -718,6 +752,11 @@ export function normalizeCardItem(v: unknown): CardItem | undefined {
       return undefined;
   }
   const item: CardItem = { ...base, n: v.n };
+  if (v.choices !== undefined) {
+    const choices = normChoices(v.choices);
+    if (!choices) return undefined;
+    item.choices = choices;
+  }
   if (v.default !== undefined) {
     if (!str(v.default) || !LETTER.test(v.default)) return undefined;
     item.default = v.default;
@@ -774,14 +813,14 @@ export function normalizeCard(v: unknown): OverseerCard | undefined {
       card.detail = v.detail;
     }
     if (v.choices !== undefined) {
-      const choices = normAll(v.choices, (c) => (isRecord(c) && nonEmpty(c.label) ? { label: c.label } : undefined));
-      if (!choices || choices.length < CARD_CHOICES_MIN || choices.length > CARD_CHOICES_MAX) return undefined;
+      const choices = normChoices(v.choices);
+      if (!choices) return undefined;
       card.choices = choices;
     }
-    // Items are numbered 1..N in order, and defaults and decided choices name real choices.
+    // Items are numbered 1..N in order, and defaults and decided choices name real choices of their own row.
     if (items.some((it, i) => it.n !== i + 1)) return undefined;
-    const letters = new Set((card.choices ?? []).map((_, i) => cardLetter(i)));
-    if (items.some((it) => (it.default !== undefined && !letters.has(it.default)) || (it.decided?.choice !== undefined && !letters.has(it.decided.choice)))) return undefined;
+    const names = (it: CardItem, l: string | undefined) => l === undefined || choiceByLetter(card, it, l) !== undefined;
+    if (items.some((it) => !names(it, it.default) || !names(it, it.decided?.choice))) return undefined;
     if (v.recommendation !== undefined) {
       const r = v.recommendation;
       if (!isRecord(r) || !nonEmpty(r.why)) return undefined;
@@ -915,10 +954,10 @@ function optionGrantText(o: CardOption): string {
   return "";
 }
 
-const choicesText = (card: OverseerCard): string => (card.choices ?? []).map((c, i) => `${cardLetter(i)}. ${c.label}`).join(" · ");
+const choicesText = (list: readonly { label: string }[]): string => list.map((c, i) => `${cardLetter(i)}. ${c.label}`).join(" · ");
 
-function decisionText(card: OverseerCard, d: CardItemDecision): string {
-  return `${d.choice ? `${d.choice} ${choiceByLetter(card, d.choice)?.label ?? d.text}` : `"${d.text}"`}${d.by === "accepted-recommendation" ? " (your recommendation)" : ""}`;
+function decisionText(card: OverseerCard, item: CardItem, d: CardItemDecision): string {
+  return `${d.choice ? `${d.choice} ${choiceByLetter(card, item, d.choice)?.label ?? d.text}` : `"${d.text}"`}${d.by === "accepted-recommendation" ? " (your recommendation)" : ""}`;
 }
 
 /** The phase in words, for the model: "open", "answered: b Archive all", "superseded by c_7", "dropped: …". */
@@ -945,11 +984,12 @@ export function cardLines(card: OverseerCard, line: string): string[] {
   if (opts) out.push(`  options: ${opts}`);
   const links = linkOptions(card);
   if (links.length) out.push(`  links (they open a page, never an answer): ${links.map((o) => `${o.label} → ${o.href}`).join(" · ")}`);
-  if (card.choices) out.push(`  per-item choices: ${choicesText(card)}`);
+  if (card.choices) out.push(`  per-item choices${card.items.some((it) => it.choices) ? " (items without their own)" : ""}: ${choicesText(card.choices)}`);
   for (const it of card.items) {
+    const own = it.choices ? ` [choices ${choicesText(it.choices)}]` : "";
     const def = it.default ? ` [default ${it.default}]` : "";
-    const done = it.decided ? ` — decided: ${decisionText(card, it.decided)}` : "";
-    out.push(`  ${it.n}. ${itemText(it)}${it.note ? ` — ${it.note}` : ""}${def}${done}`);
+    const done = it.decided ? ` — decided: ${decisionText(card, it, it.decided)}` : "";
+    out.push(`  ${it.n}. ${itemText(it)}${it.note ? ` — ${it.note}` : ""}${own}${def}${done}`);
   }
   if (card.recommendation) {
     const opt = card.recommendation.option ? `${card.recommendation.option} — ${optionByLetter(card, card.recommendation.option)?.label ?? ""}: ` : "";
@@ -962,15 +1002,34 @@ export function cardLines(card: OverseerCard, line: string): string[] {
 /**
  * The hidden note on a user prompt: every open card, so an answer by handle lands on the right
  * card. undefined when none is open. `afterCompaction` is the note written once right after a
- * compaction, when the summary may have lost the tool results.
+ * compaction, when the summary may have lost the tool results. `activeAt` (a session id → when it
+ * was last active, ISO) marks a card whose listed sessions changed after it was raised as maybe stale.
  */
-export function cardsNote(cards: readonly OverseerCard[], afterCompaction = false): string | undefined {
+export function cardsNote(cards: readonly OverseerCard[], afterCompaction = false, activeAt?: (sessionId: string) => string | undefined): string | undefined {
   const open = openCardsOf(cards);
   if (open.length === 0) return undefined;
   const head = afterCompaction
     ? "[cards] The context was just compacted. The open cards in this conversation, exactly as recorded (the summary above may describe them loosely); ids are stable."
-    : "[cards] Open cards in this conversation. If the user's message answers any of them (a click reads \"c_4 b: …\" or \"c_4: 1a …, 2b …\"; typed text may name a card, an item number or an option letter), record it with sova_card (answer with their words, accept for \"your recommendation\") in the run you act on it, one call per card. Drop a card that no longer applies, or replace it (create with replaces). Name a card by its id, never \"the card above\"; ids are stable.";
-  return [head, ...open.flatMap((c) => cardLines(c, ""))].join("\n");
+    : "[cards] Open cards in this conversation. If the user's message answers any of them (a click reads \"c_4 b: …\" or \"c_4: 1a …, 2b …\", each item's letter one of its own choices; typed text may name a card, an item number or an option letter), record it with sova_card (answer with their words, accept for \"your recommendation\") in the run you act on it, one call per card. Drop a card that no longer applies, or replace it (create with replaces). Name a card by its id, never \"the card above\"; ids are stable.";
+  const lines = open.flatMap((c) => {
+    const stale = activeAt ? staleSessions(c, activeAt) : [];
+    return [...cardLines(c, ""), ...stale.map((s) => `  may be stale: ${s.id} active since ${s.at}`)];
+  });
+  const anyStale = lines.some((l) => l.startsWith("  may be stale: "));
+  return [head, ...(anyStale ? ["A card marked \"may be stale\" lists a session that changed after you raised it: check that session before acting on the card, and drop or replace the card if it no longer applies."] : []), ...lines].join("\n");
+}
+
+/** The card's sessions whose activity (`activeAt`) is after the card was raised, with that time. */
+export function staleSessions(card: OverseerCard, activeAt: (sessionId: string) => string | undefined): { id: string; at: string }[] {
+  const raised = Date.parse(card.createdAt);
+  if (!Number.isFinite(raised)) return [];
+  const out: { id: string; at: string }[] = [];
+  for (const it of card.items) {
+    if (it.kind !== "session") continue;
+    const at = activeAt(it.id);
+    if (at && Date.parse(at) > raised) out.push({ id: it.id, at });
+  }
+  return out;
 }
 
 /** "created" / "answered b" / "1, 3 decided" / "accepted" / "dropped"; "" for no changes. */
@@ -1006,13 +1065,14 @@ export function optionClick(card: Pick<OverseerCard, "id" | "options">, letter: 
   return o ? `${card.id} ${letter}: ${oneLine(optionReply(o))}` : null;
 }
 
-/** A per-item Apply: "c_4: 1a Archive, 2b Keep", items in number order; null when nothing is picked. */
+/** A per-item Apply: "c_4: 1a Archive, 2b Keep", items in number order, each letter and label its
+    own row's; null when nothing is picked or a pick isn't one of its row's letters. */
 export function itemsClick(card: Pick<OverseerCard, "id" | "choices" | "items">, picks: Readonly<Record<number, string>>): string | null {
   const parts: string[] = [];
   for (const it of card.items) {
     const letter = picks[it.n];
     if (letter === undefined) continue;
-    const c = choiceByLetter(card, letter);
+    const c = choiceByLetter(card, it, letter);
     if (!c) return null;
     parts.push(`${it.n}${letter} ${c.label}`);
   }
@@ -1034,7 +1094,7 @@ export function clickCardId(text: string): string | null {
 export function matchCardClick(card: OverseerCard, text: string): CardClick | null {
   for (const { letter } of answerOptions(card)) if (optionClick(card, letter) === text) return { card: card.id, option: letter };
   const prefix = `${card.id}: `;
-  if (!card.choices || !text.startsWith(prefix)) return null;
+  if (!hasChoices(card) || !text.startsWith(prefix)) return null;
   const picks: Record<number, string> = {};
   for (const token of text.slice(prefix.length).split(/, (?=[1-9]\d*[a-z] )/)) {
     const m = /^([1-9]\d*)([a-z]) /.exec(token);

@@ -35,6 +35,9 @@ dependency needs approval under CLAUDE.md):
   - `sova://s/<id>` and `sova://g/<groupId>` also become links, **in-app** ones (§app.overseer/links):
     resolved to the session's or group's route, same tab, no new-tab text or glyph. An unknown session id
     still links, through `#/sid/<id>`; an unknown group renders as its text, unlinked.
+  - `#c_N` (`[c_5](#c_5)`, an Overseer card's id) becomes an in-app **card ref**, same tab, no
+    new-tab text or glyph: its click jumps to that card in the thread and never changes the route
+    (§app.overseer/links). Any other `#…` href that isn't a `#/` route renders as its text, unlinked.
   - Every other link gets `target="_blank" rel="noreferrer"` and a trailing
     `<span class="visually-hidden"> (opens in a new tab)</span>`. The CSS adds the `external`
     glyph after it.

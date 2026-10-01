@@ -14,7 +14,7 @@ process.env.PI_CODING_AGENT_DIR = agentDir;
 const { ScheduleKeeper, CHANGED, PAUSED_UNOPENED, MAX_APPROVED, UNOPENED_PAUSE } = await import("./schedules");
 type Keeper = InstanceType<typeof ScheduleKeeper>;
 import type { ListedProfile } from "../shared/profiles";
-import type { PlaybookInfo, SessionSummary } from "../shared/protocol";
+import type { PlaybookEntry, PlaybookInfo, SessionSummary } from "../shared/protocol";
 import type { LoginNow } from "./schedules";
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
@@ -84,7 +84,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
       async readPlaybook(root, id) {
         const fields = root === ROOT ? playbooks.get(id) : undefined;
         if (!fields) return null;
-        const info: PlaybookInfo = { id, title: fields.title ?? id, description: "", source: "project", dir: `${ROOT}/.sova/playbooks/${id}`, body: fields.body ?? "Do the round." };
+        const info: PlaybookInfo = { id, title: fields.title ?? id, description: "", source: "project", dir: `${ROOT}/.sova/playbooks/${id}`, entry: (fields.entry as PlaybookEntry | undefined) ?? "PLAYBOOK.md", body: fields.body ?? "Do the round." };
         return { info, fields };
       },
       findProfile: async (id) => (id === profile.id ? { ...profile } : null),
@@ -140,7 +140,7 @@ function harness(opts: { when?: string; singleton?: boolean; start?: string } = 
       if (s?.pin) return s.pin;
       // Not registered yet: the catalog registers it, as the Playbooks dialog does.
       const cat = await h.keeper.decorate(
-        { playbooks: [{ id: "merge-round", title: "Merge round", description: "", source: "project", dir: "", body: "", schedule: { when: "x", state: "needs-approval" } }], project: { state: "ok" } },
+        { playbooks: [{ id: "merge-round", title: "Merge round", description: "", source: "project", dir: "", entry: "PLAYBOOK.md", body: "", schedule: { when: "x", state: "needs-approval" } }], project: { state: "ok" } },
         ROOT,
       );
       return cat.playbooks[0]!.schedule!.pin!;
@@ -208,6 +208,22 @@ test("One at a time: the first fire starts the session, later fires wake it, nev
   h.sessions[0]!.archived = true;
   await tickAt(h, "2026-10-05T10:30:00Z");
   assert.equal(h.created.length, 2);
+});
+
+test("a wake names the playbook's entry file as read at that fire; moving to SKILL.md keeps the approval", async () => {
+  const h = harness({ singleton: true });
+  await approve(h);
+  const pinned = await h.pin();
+  await tickAt(h, "2026-10-05T09:00:00Z");
+  assert.equal(h.created.length, 1);
+  h.playbooks.get("merge-round")!.entry = "SKILL.md";
+  const s = (await h.keeper.list())[0]!;
+  assert.equal(s.state, "active", "the entry file is not part of what an approval covers");
+  assert.equal(await h.pin(), pinned, "the pin an approval is checked against is unchanged");
+  await tickAt(h, "2026-10-05T09:30:00Z");
+  assert.equal(h.woken.length, 1);
+  assert.match(h.woken[0]!.text, /\nRun the playbook "Merge round" again: read \/work\/sova\/\.sova\/playbooks\/merge-round\/SKILL\.md first, since it may have changed\.$/);
+  assert.doesNotMatch(h.woken[0]!.text, /PLAYBOOK\.md/);
 });
 
 test("a fire is skipped while the last run is still going or queued", async () => {
@@ -444,7 +460,7 @@ test("the first sight of a schedule tells the Overseer once; an invalid one or a
   const h = harness();
   const briefs: string[] = [];
   (h.keeper.deps as { brief?: (t: string) => void }).brief = (t) => briefs.push(t);
-  const row = (id: string, state: "needs-approval" | "invalid") => ({ id, title: id === "merge-round" ? "Merge round" : id, description: "", source: "project" as const, dir: "", body: "", schedule: { when: "every 30m", text: "Every 30 min", state } });
+  const row = (id: string, state: "needs-approval" | "invalid") => ({ id, title: id === "merge-round" ? "Merge round" : id, description: "", source: "project" as const, dir: "", entry: "PLAYBOOK.md" as const, body: "", schedule: { when: "every 30m", text: "Every 30 min", state } });
   await h.keeper.decorate({ playbooks: [row("merge-round", "needs-approval"), row("broken", "invalid")], project: { state: "ok" } }, ROOT);
   await h.keeper.decorate({ playbooks: [row("merge-round", "needs-approval")], project: { state: "ok" } }, ROOT);
   assert.deepEqual(briefs, ["The playbook Merge round in sova wants to run on a schedule (Every 30 min). It fires only once the user approves it in the Playbooks dialog or on your permits chip."]);

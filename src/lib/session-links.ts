@@ -101,8 +101,17 @@ export function setGroupLinkIndex(list: readonly { id: string; name: string }[])
   setVersion((v) => v + 1);
 }
 
+// Each listed session's last activity, for a card row's "Changed since asked": its own signal, so a
+// session's activity never re-renders the messages that hold links (the version above).
+const [activity, setActivity] = createSignal<ReadonlyMap<string, string>>(new Map());
+/** When the session list last saw the session active (ISO); undefined when it isn't listed. */
+export const sessionActiveAt = (id: string): string | undefined => activity().get(id);
+
 /** Called by App with every list load. Only a change of ids, paths or titles bumps the version. */
-export function setSessionIndex(list: readonly { id: string; path: string; title: string }[]): void {
+export function setSessionIndex(list: readonly { id: string; path: string; title: string; lastActiveAt?: string }[]): void {
+  const seen = new Map(list.flatMap((s) => (s.lastActiveAt ? [[s.id, s.lastActiveAt] as const] : [])));
+  const was = activity();
+  if (seen.size !== was.size || [...seen].some(([id, at]) => was.get(id) !== at)) setActivity(seen);
   const next = new Map(list.map((s) => [s.id, { path: s.path, title: s.title }]));
   if (index && sameIndex(index, next)) return;
   index = next;

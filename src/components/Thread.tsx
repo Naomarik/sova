@@ -36,7 +36,7 @@ import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { ShowChangesCard } from "./ChangesViewer";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
 import { Banner, Chip, Icon } from "./ui";
-import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow } from "./OverseerCards";
+import { BriefRow, CardRevision, ConfirmCard, DeckCard, LinkCard, linkDetails, NavigateGo, OverseerChoiceRow, useOverseerThread } from "./OverseerCards";
 import { cardFold, confirmAnswer, confirmDetails, detailsOf, isBriefText } from "../lib/overseer";
 import { CARD_TOOL, LEGACY_CONFIRM_TOOL, normalizeCardDetails } from "../../shared/overseer-card";
 import { MessageActions, type MessageActionItem } from "./MessageActions";
@@ -870,6 +870,7 @@ export function HistoryItems(props: {
 }
 
 function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: string; model?: string; streaming: boolean; showHead: boolean }) {
+  const overseerThread = useOverseerThread();
   return (
     <Switch>
       <Match when={props.block.type === "text" && props.block}>
@@ -892,12 +893,27 @@ function LiveBlockView(props: { block: LiveBlock; live: LiveState; author: strin
           };
           /** A card this run raised or changed: the card itself, as soon as the result lands. */
           const card = () => (b().name === CARD_TOOL && status() === "done" ? normalizeCardDetails(tool()?.details) : undefined);
+          /** The card at the fold's newest snapshot; null when a later call (this run's too) changed
+              it since this one, so this call is a revision line and never takes a click. */
+          const deck = () => {
+            const own = card()?.card;
+            if (!own) return undefined;
+            const newest = overseerThread?.card?.(own.id) ?? own;
+            return newest.rev > own.rev ? null : newest;
+          };
           const linked = () => ((b().name === "sova_link" || b().name === "sova_unlink") && status() === "done" ? linkDetails(tool()?.details) : null);
           /** An align result that changed an alignment: its card, as soon as the result lands. */
           const aligned = () => (b().name === "align" && status() === "done" ? alignRowFromDetails(tool()?.details) : undefined);
           return (
             <Show when={!aligned()} fallback={<div class="entry-live-align" data-align-live={aligned()?.doc?.id}><AlignRow row={aligned()!} newest /></div>}>
-            <Show when={!card()?.card} fallback={<DeckCard card={card()!.card!} line={card()!.line} />}>
+            <Show
+              when={!card()?.card}
+              fallback={
+                <Show when={deck()} fallback={<CardRevision card={card()!.card!} line={card()!.line} />}>
+                  {(c) => <DeckCard card={c()} line={card()!.line} />}
+                </Show>
+              }
+            >
                 <Show
                   when={linked()}
                   fallback={

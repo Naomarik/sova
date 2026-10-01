@@ -19,11 +19,12 @@ const pb = (over: Partial<PlaybookInfo>): PlaybookInfo => ({
   description: "",
   source: "sova",
   dir: "/abs/playbooks/x",
+  entry: "PLAYBOOK.md",
   body: "# X\n",
   ...over,
 });
 
-const HEAD = "Playbook: Brandmaker — /repo/playbooks/brandmaker\nRead the files in that directory as the playbook directs.\n\n";
+const HEAD = "Playbook: Brandmaker — /repo/playbooks/brandmaker\nEvery relative path in this playbook is relative to that directory; read its files as the playbook directs.\n\n";
 const brand = pb({ title: "Brandmaker", dir: "/repo/playbooks/brandmaker", body: "# Brandmaker\n\nDo the thing.\n" });
 
 test("the turn is the pinned header, a blank line, then the body verbatim", () => {

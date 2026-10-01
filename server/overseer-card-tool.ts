@@ -18,6 +18,7 @@ import {
   type OverseerCard,
 } from "../shared/overseer-card";
 import { GRANTABLE_ACTS } from "../shared/overseer-grants";
+import { CONFIRM_NOTE_MAX } from "../shared/protocol";
 import { clickOnlyCard, itemsSchema, resolveConfirmItems, type ConfirmLookup } from "./overseer-confirm";
 
 /**
@@ -114,9 +115,8 @@ function opSchemas(orgs: boolean, grants: boolean): Record<CardOpName, { descrip
         detail: S("One or two sentences of context."),
         options: {
           type: "array",
-          minItems: 1,
           maxItems: CARD_ANSWERS_MAX + CARD_LINKS_MAX,
-          description: `The buttons: up to ${CARD_ANSWERS_MAX} answer options (lettered a, b, c…) and up to ${CARD_LINKS_MAX} link options (with link: they open a page and answer nothing).`,
+          description: `The buttons: up to ${CARD_ANSWERS_MAX} answer options (lettered a, b, c…) and up to ${CARD_LINKS_MAX} link options (with link: they open a page and answer nothing). Leave answer options out of a per-item card (every item has choices): its Apply button is the answer, and an "Apply" option would send no item's pick.`,
           items: option,
         },
         items: itemsSchema(orgs),
@@ -125,7 +125,8 @@ function opSchemas(orgs: boolean, grants: boolean): Record<CardOpName, { descrip
           minItems: CARD_CHOICES_MIN,
           maxItems: CARD_CHOICES_MAX,
           items: S(),
-          description: 'Per-item choices shared by every item (e.g. ["Archive", "Keep"]), lettered a, b…: each item row gets its own control and the user applies them per item ("c_4: 1a Archive, 2b Keep"). Give each item a default.',
+          description:
+            'Per-item choices for every item without its own (e.g. ["Archive", "Keep"]), lettered a, b…: each item row gets its own control and the user applies them per item in one click ("c_4: 1a Archive, 2b Keep"). An item whose actions differ gives its own choices instead (items.sessions[].choices), lettered per row. Give each item a default from its row\'s list.',
         },
         recommendation: obj({ option: S('The answer option you recommend, by letter ("b").', { pattern: "^[a-z]$" }), why: S("Why, in a sentence.") }, ["why"]),
         replaces: S('An open card this one replaces ("c_3"): it becomes superseded, in the same result.', { pattern: "^c_[1-9][0-9]*$" }),
@@ -157,7 +158,7 @@ export function cardParameters(orgs: boolean, grants = false) {
   };
   return obj(
     {
-      card: S('The card to change, e.g. "c_2". Required while more than one card is open; omit for create.', { pattern: "^c_[1-9][0-9]*$" }),
+      card: S('The card to change, e.g. "c_2". Required while more than one card is open. With create, it is read as replaces (the new card gets the next id).', { pattern: "^c_[1-9][0-9]*$" }),
       ops: { type: "array", minItems: 1, items: { anyOf: CARD_OPS.map(branch) }, description: "Operations on ONE card, applied in order and atomically. create stands alone." },
     },
     ["ops"],
@@ -168,9 +169,10 @@ export function cardDescription(who: "user" | "operator"): string {
   return (
     `Ask the ${who} with a card under your reply, and record their answer. Each card gets an id c_N; its items are numbered 1..N and its answer options lettered a, b, c…, so "c_4 b" is option b and "c_4 2a" is item 2 taking choice a. ` +
     `A call applies its ops to ONE card atomically (pass card to change an existing one); it never ends your turn. ` +
-    `Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link ("see c_4"), never "the card above". ` +
+    `Write your reply first (what you found, and why you ask), then create the card, and name it by its id as a link ("see [c_4](#c_4)": it jumps to the card), never "the card above"; never add a typed fallback ("You can also type…") to a card. ` +
     `A card about specific things (archive, tick, send, …) lists every one of them in items, each with a note: what it is, then why the action fits it, in at most 2 short sentences; an idea or todo a button also acts on says the effect ("… Ticking marks it done."). Every option's reply says exactly what it does to which items. ` +
-    `A card stays open until you record it: when the ${who} answers (a click arrives as "c_4 b: …" or "c_4: 1a Archive, 2b Keep"; typed text may name the card, an item number or an option letter), call answer with their words (option, or items) or accept for "your recommendation", in the same run you act on it. Replace a card that changed (create with replaces), drop one that no longer applies. ` +
+    `When each item wants its own answer, give choices (and each item a default): an item whose actions differ gives its own choices, lettered for its row only, and the card needs no answer option, since its Apply sends every row's pick at once. ` +
+    `A card stays open until you record it: when the ${who} answers (a click arrives as "c_4 b: …" or "c_4: 1a Archive, 2b Keep", each letter its own row's; typed text may name the card, an item number or an option letter), call answer with their words (option, or items) or accept for "your recommendation", in the same run you act on it. Replace a card that changed (create with replaces), drop one that no longer applies. ` +
     `Link options (link) open a session, a page${who === "user" ? ", an org, project or person page" : ""} or an https URL without a turn; use them instead of asking to navigate.`
   );
 }
@@ -198,9 +200,10 @@ export function cardTool(d: CardToolDeps): Tool {
     try {
       const ops = checkCardCall(params);
       let prepared: CardPrepared | undefined;
+      const cutNotes: string[] = [];
       if (ops[0]!.op === "create") {
         const o = ops[0]!;
-        const items = await resolveConfirmItems(o.items, d.lookup, d.refusal);
+        const items = await resolveConfirmItems(o.items, d.lookup, d.refusal, cutNotes);
         const hrefs: (string | undefined)[] = [];
         const bad: string[] = [];
         for (const [i, opt] of (Array.isArray(o.options) ? o.options : []).entries()) {
@@ -222,7 +225,8 @@ export function cardTool(d: CardToolDeps): Tool {
       }
       const outcome = applyCardCall(cardsNow(ctx), params, { now: new Date().toISOString(), audience: d.audience, grants: d.grants === true, ...(prepared ? { prepared } : {}) });
       if (outcome.details.card || outcome.details.closed) pending.set(toolCallId, { session: ctx?.sessionManager?.getSessionId?.() ?? "", details: outcome.details, at: Date.now() });
-      return { content: [{ type: "text", text: outcome.text }], details: outcome.details };
+      const cutLine = cutNotes.length ? `\nNotes over ${CONFIRM_NOTE_MAX} characters were cut with "…" (item, length): ${cutNotes.join(", ")}. Keep notes to 2 short sentences.` : "";
+      return { content: [{ type: "text", text: outcome.text + cutLine }], details: outcome.details };
     } catch (err) {
       if (err instanceof CardError) throw d.refusal(`${err.message}. Nothing was changed.`);
       throw err;

@@ -127,7 +127,7 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   the whole call before any session is created, and a mode switch that fails sends no prompt: the
   result says the session was created but its first prompt was not sent. Send a message to a
   session (below); archive and unarchive
-  (never permanent delete); rename; give a session an alias (§app.overseer/session-names); groups (create, move a session in, remove it); set a session's
+  (never permanent delete; below); rename; give a session an alias (§app.overseer/session-names); groups (create, move a session in, remove it); set a session's
   model or mode; answer a hosted session's pending extension dialog; standing notes; navigate;
   ask with cards (`sova_card`, §app.overseer/confirm); the ideas backlog (`sova_idea`: file, grow, update, link and rename ideas, launch and
   message an idea's explorer); the user's todos (`sova_todo`: add, tick, untick, edit, remove, clear the
@@ -135,7 +135,9 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   §app.overseer/links-tools); this host's organizations: orgs, projects, rosters, owners and
   decisions (`sova_org`, `sova_org_project`, `sova_roster`, `sova_owner`, `sova_project_decisions`,
   §app.overseer/org-writes), gathering sessions (`sova_gather`, §app.overseer/org-people-facing) and
-  project overseers (`sova_project_overseer`, §app.overseer/org-project-overseers).
+  project overseers (`sova_project_overseer`, §app.overseer/org-project-overseers); any project's
+  running instances on this host (`sova_project_verbs`, §app.project-services/callers: status,
+  logs and doctor at any time, the other verbs in a turn the user started).
 - **Sending (`sova_send`) is typing in that session's composer.** Idle, with subagents working or
   not, the message starts a turn. Mid-turn it is **queued as a follow-up** behind the running turn
   by default: a queued row in that session, "Queued", which the user can remove
@@ -273,6 +275,16 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
 - **Archived sessions** take no prompt from the Overseer: `sova_send` refuses one and says that
   unarchiving it (`sova_archive`, itself an act, on the caps) comes first, as the UI's "Unarchive it
   to send" does for the user. The route itself is unchanged.
+- **Archiving can clean up worktrees.** `sova_archive` with `worktrees: "remove"` (archiving only)
+  also removes the git worktrees each session tracks (its `worktrees` set, §chat.worktrees/entry) that it
+  created or attached itself; one it inherited from another session is left, and the result says so.
+  Before anything changes, a session any of whose worktrees has uncommitted changes (tracked or
+  untracked files) is refused whole, naming the worktree and a file: nothing of it is archived or
+  removed. Otherwise the session is archived first (its own refusals unchanged), then each worktree
+  is removed with git's own `worktree remove` (a folder already gone is pruned from git's list), and
+  its branch is deleted only when it is merged; an unmerged branch keeps its commits. The result
+  says per session what was archived, each worktree removed or kept and why, and each branch deleted
+  or kept. Without `worktrees`, archiving never touches a worktree.
 
 ## §app.overseer/confirm — Decision cards
 
@@ -288,17 +300,24 @@ notifications for Overseer briefs. Merged to master yesterday, nothing running."
 prompt's; the server cannot tell such a card from any other, so it never requires `items` or notes.
 When a button also acts on an idea or a todo, that item's note says the effect ("Covered by the
 push session's final report. Ticking marks it done."), and every option's `reply` says exactly what
-it does to which items, never just its label. These too are the prompt's and the tool description's.
+it does to which items, never just its label. These too are the prompt's and the tool description's,
+as is giving a row its own `choices` when its actions differ from the others', and never writing a
+typed fallback into a card ("You can also type…"): the reply names the card as a `#c_N` link that
+jumps to it (§app.overseer/links).
 
 - **Ids and handles.** Each card gets the next id `c_N` of its conversation (one past the highest on
   the branch; a new conversation starts at `c_1`), and never another. Its items are numbered 1..N in
   display order when it is created and never renumbered; its answer options are lettered a, b, c…
-  in order, and so are its per-item choices. "c_4 b" is card c_4's option b; "c_4 2a" is its item 2
-  taking choice a. Link options carry no letter.
+  in order, and so are each row's choices, per row: "a" is the first choice of that row's own list.
+  "c_4 b" is card c_4's option b; "c_4 2a" is its item 2 taking its choice a. Link options carry no
+  letter.
 - **The tool never ends the turn.** A call applies its ops to one card, atomically: if any op is
   invalid nothing changes and the error says why (a field another op takes is named). Ops:
-  `create {title, detail?, options, items?, choices?, recommendation?, replaces?}` (alone in its
-  call); `answer {text, option?, items?}` records the user's answer in their words, a card-level
+  `create {title, detail?, options?, items?, choices?, recommendation?, replaces?}` (alone in its
+  call; `options` may be left out only when every item has choices, its own or the card's, and then
+  the card's **Apply** is its only answer); a `card` given with a create names the card it replaces,
+  read as `replaces` (refused only when it names a different card than `replaces` does);
+  `answer {text, option?, items?}` records the user's answer in their words, a card-level
   option by its letter, or per item (`{"2": "b"}` a choice letter, or the user's words); `accept
   {items?}` records "your recommendation" (the recommended option, or each named item's default);
   `reopen`; `drop {reason}`; and `get`. The result echoes the card, its lettered options and numbered
@@ -313,15 +332,19 @@ it does to which items, never just its label. These too are the prompt's and the
   itself: a card stays open until the model records it.
 - **A hidden note every turn.** Every run a user message starts carries a hidden note (never in the
   thread, never the system prompt) listing each open card: id, title, lettered options, numbered
-  items with their ids and names, choices, recommendation and any item already decided, and a line
+  items with their ids and names, each row's choices (its own list on the row, the card's shared
+  list once), recommendation and any item already decided, and a line
   telling the model to record answers with `answer` or `accept` and to drop or replace a card that
-  no longer applies. After a compaction the same note is written once, after the summary. The note
+  no longer applies. An open card listing a session whose file changed after the card was raised
+  carries a line "may be stale: <session id> active since <time>" for each such session, so the
+  model checks it before acting and drops or replaces it; the server never changes the card itself.
+  After a compaction the same note is written once, after the summary. The note
   is persisted, so it survives restarts, folds and compaction, and it never changes who a run belongs
   to (§app.overseer/tools). Typed replies ("2", "archive a and c, keep b") are mapped by the model,
   using the note; the server parses none.
 - **Items.** `items` is `{sessions?, ideas?, todos?, people?, projects?}`, each a list whose
-  entries are an id or `{id, note?, default?}`; a person or a project also names its org,
-  `{org, id, note?, default?}`, by id or exact name, as the org tools take them
+  entries are an id or `{id, note?, default?, choices?}`; a person or a project also names its org,
+  `{org, id, note?, default?, choices?}`, by id or exact name, as the org tools take them
   (§app.overseer/org-tools). Sessions are addressed in
   any form the tools print them (§app.overseer/tools), and any session on this host will do (a
   card only points at it: TUI-live or archived is fine); ideas by their § id (a former id resolves
@@ -331,18 +354,25 @@ it does to which items, never just its label. These too are the prompt's and the
   or project of an org not attached here matches nothing.
 - **Refusals.** Each of these refuses the whole card, and one refusal names every case at once: an
   id that matches nothing; the asking overseer's own conversation (any Overseer file; for a project
-  overseer, its own); a note over 220 characters (whitespace collapsed), named with its item and
-  length. Before any of that, a key in `items` other than the five lists refuses on its own, with
-  an example of where an entry goes.
+  overseer, its own). Before any of that, a key in `items` other than the five lists refuses on its
+  own, with an example of where an entry goes. A note over 220 characters (whitespace collapsed) is
+  not refused: it is cut to 220 with "…", and the result names each cut note's item and its length.
 - **A snapshot.** The resolved rows are stored in the card, so the card shows what the Overseer
   asked about then, whatever changes later. A session row carries its title, its folder's short
   name, its last activity, its one-line summary when it has one, and how many subagents were working
   in it; a person row their name, status and org; a project row its name and org; every row carries
   its note when it was given one. Never a contact or a link (§app.overseer/org-projection).
-- **Per-item choices.** `choices` (2 to 4 labels, lettered) apply to every item of any kind; an
-  item's `default` is the choice it starts on and the recommendation for it. Each item row then
-  shows a segmented control of the choices, set to its default, or to its decided choice once one is
-  recorded; **Apply** sends one message for the items that have a choice, "c_4: 1a Archive, 2b Keep".
+- **Per-item choices.** The card's `choices` (2 to 4 labels, lettered) apply to every item of any
+  kind that has none of its own; an item's own `choices` (2 to 4 labels, each distinct) replace them
+  for that row only, so one card can offer "Clean Up & Archive / Archive Only / Keep" on one row and
+  "Archive / Keep" on the next. An item's `default` is a letter of its own row's list: the choice it
+  starts on and the recommendation for it; a default with no list for its row, or a letter past
+  that list, refuses the card. Each item row with choices shows a segmented control of its own
+  row's labels, set to its default, or to its decided choice once one is recorded; **Apply**, the
+  card's primary button, sends one message for the items that have a choice, each with its row's
+  letter and label, "c_4: 1a Clean Up & Archive, 5b Keep". A stored card from before per-row choices
+  (card-level `choices` only) reads and renders unchanged, and an answer option it carries stays a
+  live button.
 - **Link options.** An option with `link` (a session, a group, a page, a Settings tab, an org, a
   project, a person, or an `https` URL) is a link, not an answer. The server resolves it when the card
   is raised, with the same targets as `sova_navigate` (§app.overseer/navigation) plus `https` URLs;
@@ -352,7 +382,9 @@ it does to which items, never just its label. These too are the prompt's and the
   `https` URL opens in a new tab (`noopener noreferrer`).
 - The chat renders the newest snapshot of each card as the card in the thread: its id as the
   eyebrow ("c_4"), title, detail, the items, and its options, each with its letter; an earlier
-  snapshot of the same card is one line (its id, title and what that call changed).
+  snapshot of the same card is one line (its id, title and what that call changed). This holds while
+  a run streams too: a card the run raised and then replaced or changed again draws, at its earlier
+  call, that one line, never live buttons, so only its newest snapshot takes a click.
   - The items sit between the detail and the buttons, one compact row each, numbered: ideas, then
     todos, then projects, then people, then sessions. A project row is an in-app link to its project page,
     reading the project's name and, after it, the org's; a person row an in-app link to their page
@@ -361,7 +393,8 @@ it does to which items, never just its label. These too are the prompt's and the
     §app.overseer/links) whose text is the session's summary, or its title when it has none (the
     title is the first prompt, which rarely names the work); then its folder and how long ago it was
     active ("sova · 3d ago"), and a warning chip ("2 subagents working") when it had working
-    subagents. An idea row is its § id and title as plain text, never a link (§app.overseer/ideas).
+    subagents. On an open card, a session row whose session the session list shows active after
+    the card was raised also carries a "Changed since asked" chip (its time on hover). An idea row is its § id and title as plain text, never a link (§app.overseer/ideas).
     A todo row is its text.
   - Under each row, its note in body text (not muted), up to 2 lines and then clamped; a row
     without a note has nothing under it.
@@ -383,7 +416,10 @@ it does to which items, never just its label. These too are the prompt's and the
   click an approval for later, or `rule`, which makes its click adopt a standing rule; the button
   says so under its label, and the card shows the approval's state (§app.overseer/approvals).
 - **The composer chip.** While the Overseer's thread has open cards, its composer shows a chip
-  ("2 open cards") whose menu lists each one (id, title) and jumps to its card.
+  ("2 open cards") whose menu lists each one (id, title) and jumps to its card. It counts the open
+  cards of the whole branch, also those above the rows the view has loaded (the transcript's summary
+  of older rows carries each open card's newest snapshot and its row), and a jump to one of those
+  builds the older rows down to it first.
 - **Hide tool calls never folds it.** The card is the Overseer's question, not its working, so
   "Hide tool calls" leaves it (and its result) in the thread, like the link card
   (§app.overseer/links-tools).
@@ -765,6 +801,12 @@ A session id the list doesn't carry (or a list not loaded yet) still links, by i
 an unlisted id is not proof the session is gone. Opening it asks the server, which swaps in the
 session's route, or says "That session is gone." and goes back to `#/`. An unknown **group** id
 renders as its text, unlinked.
+
+A link to `#c_N` (`[c_5](#c_5)`, the way the Overseer names a card) is a **card ref**: an in-app
+link that never changes the route. Clicking it scrolls to that card's newest snapshot in the
+thread, building older rows down to it first when it sits above the rows loaded; a card the
+thread doesn't have gets a toast, "That card isn't in the transcript on screen.". Any other `#…`
+href that isn't a `#/` route still renders as its text, unlinked.
 
 A card's link option (§app.overseer/confirm) opens an in-app target the same way, in the same tab
 (so Back returns to the Overseer on the phone), and an `https` URL in a new tab, with

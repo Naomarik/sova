@@ -268,11 +268,11 @@ describe("approving what a project's profile may do (§chat.profiles/trust)", ()
 });
 
 describe("a profile's linked playbook (§chat.profiles/playbook)", () => {
-  const pb = (source: "sova" | "user" | "project", id = "merge-round") => ({ id, title: `T ${source}`, description: "", source, dir: `/abs/${source}/${id}`, body: "# Body\n" });
+  const pb = (source: "sova" | "user" | "project", id = "merge-round") => ({ id, title: `T ${source}`, description: "", source, dir: `/abs/${source}/${id}`, entry: "PLAYBOOK.md" as const, body: "# Body\n" });
   test("the turn is exactly the Playbooks dialog's, with the message box's text as the user's", () => {
     const p = pb("project");
-    assert.equal(playbookTurnText(p, ""), "Playbook: T project — /abs/project/merge-round\nRead the files in that directory as the playbook directs.\n\n# Body\n");
-    assert.equal(playbookTurnText(p, "  feat/x and feat/y "), "Playbook: T project — /abs/project/merge-round\nRead the files in that directory as the playbook directs.\n\n# Body\n\n---\n\nfeat/x and feat/y\n");
+    assert.equal(playbookTurnText(p, ""), "Playbook: T project — /abs/project/merge-round\nEvery relative path in this playbook is relative to that directory; read its files as the playbook directs.\n\n# Body\n");
+    assert.equal(playbookTurnText(p, "  feat/x and feat/y "), "Playbook: T project — /abs/project/merge-round\nEvery relative path in this playbook is relative to that directory; read its files as the playbook directs.\n\n# Body\n\n---\n\nfeat/x and feat/y\n");
   });
   test("found in the profile's own source first, then This project, Yours and Sova; none is null", () => {
     const all = [pb("sova"), pb("user"), pb("project")];

@@ -99,7 +99,7 @@ describe("create", () => {
     bad({ ops: [{ op: "create", title: "x", options: [{ label: "Go", link: {}, reply: "r" }] }] }, /takes no reply/, { items: [], hrefs: ["#/usage"] });
     bad({ ops: [{ op: "create", title: "x", options: [{ label: "A" }], choices: ["One", "Two"] }] }, /needs items/, { items: [], hrefs: [] });
     bad({ ops: [{ op: "create", title: "x", options: [{ label: "A" }], choices: ["One"] }] }, /2 to 4 labels/, { items: [todo("t")], hrefs: [] });
-    bad({ ops: [{ op: "create", title: "x", options: [{ label: "A" }] }] }, /has a default, but the card has no choices/, { items: [{ ...todo("t"), default: "a" }], hrefs: [] });
+    bad({ ops: [{ op: "create", title: "x", options: [{ label: "A" }] }] }, /has a default, but neither it nor the card has choices/, { items: [{ ...todo("t"), default: "a" }], hrefs: [] });
     bad({ ops: [{ op: "create", title: "x", options: [{ label: "A" }], recommendation: { option: "c", why: "w" } }] }, /not an answer option's letter/, { items: [], hrefs: [] });
     bad({ ops: [{ op: "create", title: "x", options: [1, 2, 3, 4, 5].map((i) => ({ label: `O${i}` })) }] }, /at most 4 answer options/, { items: [], hrefs: [] });
   });
@@ -138,7 +138,7 @@ describe("answers: only the model's ops move a card", () => {
     assert.deepEqual(done.details.card?.items[2]!.decided, { text: "after lunch", by: "user", at: NOW });
     assert.equal(done.details.line, "2, 3 decided · answered");
     assert.throws(() => applyCardCall(cards, { ops: [{ op: "answer", text: "x", items: { "9": "a" } }] }, { now: NOW }), /has no item 9 \(it has 1\.\.3\)/);
-    assert.throws(() => applyCardCall(cards, { ops: [{ op: "answer", text: "x", items: { "1": "z" } }] }, { now: NOW }), /"z" is not a choice letter/);
+    assert.throws(() => applyCardCall(cards, { ops: [{ op: "answer", text: "x", items: { "1": "z" } }] }, { now: NOW }), /"z" is not one of item 1's choice letters \(a\. Archive, b\. Keep\)/);
   });
 
   test("accept takes the recommended option, or each named item's default", () => {
@@ -245,6 +245,132 @@ describe("clicks compose a message, and only that exact message matches", () => 
     for (const typed of ["c_1 a", "c_1 a: archive them", "c_1 c: Open s1", "yes", "c_1: 1b keep", "c_1: 1b Keep, 1a Archive", "c_1: 4a Archive", "c_2 a: Archive the 2 sessions listed"]) {
       assert.equal(matchCardClick(c, typed), null, typed);
     }
+  });
+});
+
+describe("per-row choices", () => {
+  // c_28's shape: one row with a worktree to clean up, one without, and no answer option at all.
+  const cleanup = ["Clean Up & Archive", "Archive Only", "Keep"];
+  const perRow = {
+    input: { ops: [{ op: "create", title: "Archive these?", choices: ["Archive", "Keep"], items: { sessions: ["s1", "s2"] } }] },
+    prepared: { items: [session("s1", { default: "a", choices: cleanup } as never), session("s2", { default: "b" } as never)], hrefs: [] },
+  };
+  const card = () => run([perRow]).cards[0]!;
+
+  test("a row's own choices replace the card's for that row only; no answer option is needed", () => {
+    const c = card();
+    assert.deepEqual(c.options, []);
+    assert.deepEqual(c.items[0]!.choices, cleanup.map((label) => ({ label })));
+    assert.equal(c.items[1]!.choices, undefined, "the second row takes the card's list");
+    assert.deepEqual(c.choices, [{ label: "Archive" }, { label: "Keep" }]);
+  });
+
+  test("Apply sends each row's own letter and label, and matches exactly; a letter past its row's list is no click", () => {
+    const c = card();
+    const apply = itemsClick(c, { 1: "c", 2: "a" })!;
+    assert.equal(apply, "c_1: 1c Keep, 2a Archive");
+    assert.deepEqual(matchCardClick(c, apply), { card: "c_1", items: { 1: "c", 2: "a" } });
+    assert.equal(itemsClick(c, { 2: "c" }), null, "row 2 has only a and b");
+    for (const typed of ["c_1: 2c Keep", "c_1: 1c Archive", "c_1: 1a Archive", "c_1: 1a Clean Up & Archive, 2b Archive"]) assert.equal(matchCardClick(c, typed), null, typed);
+    assert.deepEqual(matchCardClick(c, "c_1: 1a Clean Up & Archive, 2b Keep"), { card: "c_1", items: { 1: "a", 2: "b" } });
+  });
+
+  test("answer and accept read each row's own list", () => {
+    const { cards } = run([perRow, { input: { card: "c_1", ops: [{ op: "answer", text: "1c, 2a", items: { "1": "c", "2": "a" } }] } }]);
+    assert.deepEqual(cards[0]!.items.map((it) => [it.decided?.choice, it.decided?.text]), [["c", "Keep"], ["a", "Archive"]]);
+    assert.equal(cards[0]!.phase, "answered");
+    assert.throws(() => run([perRow, { input: { card: "c_1", ops: [{ op: "answer", text: "2c", items: { "2": "c" } }] } }]), /"c" is not one of item 2's choice letters \(a\. Archive, b\. Keep\)/);
+    const accepted = run([perRow, { input: { card: "c_1", ops: [{ op: "accept" }] } }]).cards[0]!;
+    assert.deepEqual(accepted.items.map((it) => it.decided?.text), ["Clean Up & Archive", "Keep"]);
+  });
+
+  test("the echo and the note list each row's own choices", () => {
+    const { cards, outs } = run([perRow]);
+    const note = cardsNote(cards)!;
+    assert.match(note, /per-item choices \(items without their own\): a\. Archive · b\. Keep/);
+    assert.match(note, /1\. \[Title s1\]\(sova:\/\/s\/s1\) \(s1\) \[choices a\. Clean Up & Archive · b\. Archive Only · c\. Keep\] \[default a\]/);
+    assert.match(note, /2\. \[Title s2\]\(sova:\/\/s\/s2\) \(s2\) \[default b\]$/m);
+    assert.match(note, /each item's letter one of its own choices/);
+    assert.match(outs[0]!.text, /\[choices a\. Clean Up & Archive/);
+  });
+
+  test("refusals: a default outside its row's list, a row with no choices on a card without options, a bad own list", () => {
+    const bad = (prepared: CardPrepared, re: RegExp, input: unknown = perRow.input) =>
+      assert.throws(() => applyCardCall([], input, { now: NOW, prepared }), (e: unknown) => e instanceof CardError && re.test(e.message));
+    bad({ items: [session("s1", { default: "c" } as never)], hrefs: [] }, /s1's default "c" is not one of its choice letters \(a\. Archive, b\. Keep\)/);
+    bad({ items: [session("s1", { choices: ["Only"] } as never)], hrefs: [] }, /s1's choices takes 2 to 4 labels \(this has 1\)/);
+    bad({ items: [session("s1", { choices: ["Go", "go"] } as never)], hrefs: [] }, /s1's choices: each choice needs its own label/);
+    bad({ items: [session("s1", { choices: ["A", "B"] } as never), todo("t")], hrefs: [] }, /choices for every item/, { ops: [{ op: "create", title: "x", items: {} }] });
+    bad({ items: [], hrefs: [] }, /give at least one answer option/, { ops: [{ op: "create", title: "x" }] });
+  });
+
+  test("a stored v1 card from before per-row choices reads unchanged, and its legacy Apply option stays a live answer", () => {
+    // As the old code wrote it: card-level choices only, and the forced "a. Apply" answer option.
+    const old = {
+      v: 1,
+      changes: [{ kind: "created" }],
+      line: "created",
+      card: {
+        id: "c_26",
+        title: "Tidy these?",
+        options: [{ label: "Apply" }],
+        items: [
+          { kind: "session", id: "s1", title: "One", n: 1, default: "a" },
+          { kind: "todo", id: "td_1", text: "Do it", n: 2, default: "b" },
+        ],
+        choices: [{ label: "Archive" }, { label: "Keep" }],
+        phase: "open",
+        rev: 1,
+        createdAt: NOW,
+        updatedAt: NOW,
+      },
+    };
+    const d = normalizeCardDetails(JSON.parse(JSON.stringify(old)))!;
+    assert.deepEqual(d.card, old.card);
+    const [c] = foldCards([entry(old)]);
+    assert.equal(optionClick(c!, "a"), "c_26 a: Apply");
+    assert.deepEqual(matchCardClick(c!, "c_26 a: Apply"), { card: "c_26", option: "a" });
+    assert.equal(itemsClick(c!, { 1: "b", 2: "a" }), "c_26: 1b Keep, 2a Archive");
+    assert.deepEqual(matchCardClick(c!, "c_26: 1b Keep, 2a Archive"), { card: "c_26", items: { 1: "b", 2: "a" } });
+  });
+
+  test("normalize checks a row's default and decided choice against its own list", () => {
+    const c = card();
+    assert.deepEqual(normalizeCard(structuredClone(c)), c);
+    assert.ok(normalizeCard({ ...c, items: [{ ...c.items[0]!, default: "c" }, c.items[1]] }), "c is row 1's third choice");
+    assert.equal(normalizeCard({ ...c, items: [c.items[0], { ...c.items[1]!, default: "c" }] }), undefined, "row 2 takes the card's two");
+    assert.equal(normalizeCard({ ...c, items: [{ ...c.items[0]!, choices: [{ label: "Only" }] }, c.items[1]] }), undefined, "an own list of one");
+  });
+});
+
+describe("create with card", () => {
+  const open = { input: { ops: [{ op: "create", title: "First", options: [{ label: "Go" }] }] }, prepared: { items: [], hrefs: [] } };
+  test("card alone, or equal to replaces, is read as replaces", () => {
+    for (const ops of [[{ op: "create", title: "Second", options: [{ label: "Go" }] }], [{ op: "create", title: "Second", options: [{ label: "Go" }], replaces: "c_1" }]]) {
+      const { cards, outs } = run([open, { input: { card: "c_1", ops }, prepared: { items: [], hrefs: [] } }]);
+      assert.equal(outs[1]!.details.card?.id, "c_2");
+      assert.equal(outs[1]!.details.card?.replaces, "c_1");
+      assert.equal(cards.find((c) => c.id === "c_1")!.phase, "superseded");
+    }
+  });
+  test("card naming a different card than replaces refuses", () => {
+    assert.throws(
+      () => run([open, open, { input: { card: "c_1", ops: [{ op: "create", title: "x", options: [{ label: "Go" }], replaces: "c_2" }] }, prepared: { items: [], hrefs: [] } }]),
+      /card is c_1 and replaces is c_2/,
+    );
+  });
+});
+
+describe("staleness in the note", () => {
+  test("an open card whose listed session was active after it was raised is marked; the card itself is unchanged", () => {
+    const { cards } = run([archiveCard]);
+    const activity: Record<string, string> = { s1: LATER, s2: "2026-09-30T09:00:00.000Z" };
+    const note = cardsNote(cards, false, (id) => activity[id])!;
+    assert.match(note, /c_1 "Archive these\?"[\s\S]*\n {2}may be stale: s1 active since 2026-09-30T10:05:00\.000Z/);
+    assert.doesNotMatch(note, /may be stale: s2/, "activity before the card was raised");
+    assert.match(note, /check that session before acting on the card/);
+    assert.doesNotMatch(cardsNote(cards, false, () => undefined)!, /may be stale/);
+    assert.equal(cards[0]!.phase, "open");
   });
 });
 

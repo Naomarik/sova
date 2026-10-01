@@ -18,23 +18,31 @@ The dialog fetches once each time it opens.
 | **Yours** | `user` | `~/.pi/agent/sova/playbooks/` | Your own. An id that matches a shipped one **replaces** it: the shipped entry is dropped and yours carries `replacesSova: true`. The interface deliberately **does not render** that flag: the row already sits under the Yours heading, so a marker would only repeat it. The field exists in the data, asserted in `server/playbooks.test.ts` |
 | **This project** | `project` | `<project root>/.sova/playbooks/`, then `<project root>/.sova/marketing/playbooks/` | The session's project (§chat.profiles/projects): a worktree or subfolder reads its main checkout's. An id in both folders is listed once, from `.sova/playbooks/`. It never replaces anything. It is always its own group, even when an id matches one above |
 
-**The grammar is the same in all three folders.** A playbook is a directory `<id>/` holding a
-`PLAYBOOK.md`, plus whatever `phases/` or `templates/` its body tells the agent to read.
+**The grammar is the same in all three folders.** A playbook is a directory `<id>/` whose
+**entry file** is either `PLAYBOOK.md` or `SKILL.md`, plus whatever other files its entry tells
+the agent to read (§chat.playbooks/bundles). One file is the whole entry: Sova's keys go in its
+frontmatter either way, so a folder written as a pi or Claude Code skill is also a playbook.
 
+- **Which file is the entry.** `PLAYBOOK.md` when the folder has one, otherwise `SKILL.md`. A
+  folder with both is read from `PLAYBOOK.md` alone, and its `SKILL.md` is just another file in
+  the bundle, so every playbook written before `SKILL.md` was accepted reads exactly as it did.
+  The catalog entry's `entry` names the file that was read.
 - `id` is the directory name and must match `^[a-z0-9][a-z0-9-]*$`, so no dot entries and no
   separators. Other names are skipped. So is a child that isn't a directory (symlinks are
-  followed) or has no readable `PLAYBOOK.md`. One bad folder never hides the others.
+  followed) or has no readable entry file. One bad folder never hides the others.
 - **Frontmatter** is a leading `---` fence of `key: value` lines. Values are single-line scalars.
-  Matching quotes around a value are removed, and lines that aren't `key: value` are ignored. It
-  is **not YAML**. Sova reads `title`, `description` and the optional `promptHint`: what you may
-  want to say in the first turn. A project playbook may also carry a schedule, `when:` with
-  `profile:`, `tz:` and `task:` (§chat/schedules).
-- If `title` is missing, empty or whitespace-only, the id is used (`fields.title?.trim() || id`).
+  Matching quotes around a value are removed, and lines that aren't `key: value` are ignored, as
+  are keys Sova doesn't read (a skill's `allowed-tools:`, say). It is **not YAML**: a multi-line
+  value isn't read. Sova reads `title`, `name`, `description` and the optional `promptHint`: what
+  you may want to say in the first turn. A project playbook may also carry a schedule, `when:`
+  with `profile:`, `tz:` and `task:` (§chat/schedules).
+- The title is `title`, else `name` (a skill's own key), else the id: each is skipped when it is
+  missing, empty or whitespace-only (`fields.title?.trim() || fields.name?.trim() || id`).
   If `description` is missing, it is empty (`?? ""`). An empty `description:` also stays empty. A file with no
   opening fence on line 1, or no closing fence, has no frontmatter: its whole text is the body,
   the title is the id and the description is empty.
-- `body` is the text after the fence, with leading blank lines removed. `dir` is the playbook's
-  **absolute** directory, which the sent turn names (below).
+- `body` is the entry file's text after the fence, with leading blank lines removed. `dir` is the
+  playbook's **absolute** directory, which the sent turn names (below).
 
 **Order.** Sova, then Yours, then This project. Each group is sorted by title,
 case-insensitively, with the id breaking ties, so the order never depends on `readdir`. The
@@ -43,6 +51,39 @@ client groups and sorts the same way again (`src/lib/playbooks.ts`).
 **An unreadable user folder** doesn't fail the request. The catalog carries `error`, still lists
 everything else, and the dialog shows a caption line above the groups (§design/copy-deck). A user folder that
 doesn't exist is simply empty.
+
+## §chat.playbooks/bundles — A playbook is a bundle
+
+A playbook folder is a bundle, laid out like a skill: the entry file, and beside it whatever the
+entry names. **Every relative path in a playbook resolves against its own folder**, never the
+session's cwd, and the sent turn says so (§chat.playbooks/what-gets-sent). The entry needs no
+placeholder for its own location: `scripts/check.mjs` means the one in the playbook's folder.
+
+The layout is a convention, and every part of it is optional:
+
+| Folder | Holds |
+|---|---|
+| `scripts/` | Programs the entry tells the agent to run |
+| `references/` | Documents the entry tells the agent to read when it needs them |
+| `tests/` | The scripts' own tests |
+
+Older playbooks name `phases/` and `templates/`; those keep working, since any relative path does.
+
+**Sova never runs a playbook's scripts.** Listing, sending, a schedule's fire and a wake only
+read the entry file. A script runs when the agent, following the entry, calls it with its own
+tools, under the session's own sandbox and permissions.
+
+A playbook's driver script, when it has one, follows these conventions:
+
+- **One entry script with subcommands** (`scripts/<name>.mjs status`, `… check`), not a folder of
+  loose scripts the entry has to sequence.
+- **A compact digest on stdout**: what the agent needs to decide its next step, not a log. Detail
+  goes to a file the digest names.
+- **Exit 0** when all is well, **1** when it found something to act on, **2** when it couldn't
+  check. A 2 fails closed: the agent treats it as "not known to be fine" and says so, never as 0.
+- **State under `<state root>/playbooks/<id>/`** (`~/.pi/agent/sova/playbooks/<id>/` by
+  default), never in the playbook's folder or the project tree.
+- **Never print secrets**: no tokens, keys or credentials on stdout, stderr or in its state.
 
 ## §chat.playbooks/the-project-listing — The project listing
 
@@ -194,7 +235,7 @@ by `src/lib/playbooks.test.ts`; a profile's linked playbook uses the same one,
 
 ```
 Playbook: <title> — <absolute dir>
-Read the files in that directory as the playbook directs.
+Every relative path in this playbook is relative to that directory; read its files as the playbook directs.
 
 <body>
 ```
@@ -213,9 +254,10 @@ separator and no filler. The body goes through **verbatim**. The SDK expands pro
 and skills on the way in, so anything that looks like one must arrive intact.
 
 The first line is always plain prose, so **the text can never begin with `/`**, which Sova would
-dispatch as an extension command (§chat/slash-commands). It names the **absolute** directory because the body
-refers to its `phases/` and `templates/` by relative path, and the session's cwd is a different
-folder.
+dispatch as an extension command (§chat/slash-commands). It names the **absolute** directory, and
+the second line makes it the base of every relative path, because the body refers to its
+`scripts/`, `references/` (or `phases/`, `templates/`) by relative path (§chat.playbooks/bundles),
+and the session's cwd is a different folder.
 
 The transcript shows the result as your message (§chat/transcript), with no special styling.
 

@@ -30,8 +30,11 @@ import { todoTools } from "./overseer-todo-tools";
 import { readTodos } from "./overseer-todos";
 import { readManifest, resolveIdeaId } from "./overseer-ideas";
 import { cardTool, type CardLinkInput } from "./overseer-card-tool";
+import type { ArchiveWorktrees, WorktreePlan } from "./archive-worktrees";
 import { CARDS_NOTE_MESSAGE, safeHttpsUrl } from "../shared/overseer-card";
 import { linkTools, type LinksApi } from "./overseer-link-tools";
+import { projectEngine } from "./project-services/routes";
+import { overseerVerbsTool, type LooseExec } from "./project-services/tools";
 import { orgConfirmLookup, orgTools } from "./overseer-org-tools";
 import { resolveOrg, resolvePerson, resolveProject } from "./overseer-org-view";
 import { contactRedactor, loggedArgs } from "./overseer-org-view";
@@ -122,6 +125,8 @@ export interface OverseerToolHost extends IdeaToolHost {
   startedOnPeer(peerId: string, sessionId: string, prompted: boolean): void;
   /** This host's links (server/mesh/links.ts `meshLinks`), for sova_link, sova_unlink, sova_links. */
   links: LinksApi;
+  /** sova_archive's worktree cleanup (server/archive-worktrees.ts). Absent: archive refuses `worktrees`. */
+  worktrees?: ArchiveWorktrees;
 }
 
 /** A mesh peer as the host-taking tools see it. */
@@ -1276,16 +1281,27 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
       name: "sova_archive",
       label: "Archive",
       description:
-        "Archive (or unarchive) sessions started in Sova. Reversible; never deletes. Refused for sessions open in a terminal, mid-turn, or with subagents working — relay the refusal as given. Counts against the per-turn archive cap.",
-      promptSnippet: "archive or unarchive Sova sessions (reversible)",
+        'Archive (or unarchive) sessions started in Sova. Reversible; never deletes. Refused for sessions open in a terminal, mid-turn, or with subagents working — relay the refusal as given. Counts against the per-turn archive cap. With worktrees: "remove", archiving also removes the git worktrees each session created or attached (refused for a session whose worktrees have uncommitted changes; a branch is deleted only when merged), and the result says what was removed and kept.',
+      promptSnippet: "archive or unarchive Sova sessions (reversible), optionally removing their worktrees",
       parameters: obj(
-        { sessions: { type: "array", items: { type: "string" }, description: "Session ids.", minItems: 1, maxItems: 50 }, archived: bool("true to archive, false to unarchive (default true).") },
+        {
+          sessions: { type: "array", items: { type: "string" }, description: "Session ids.", minItems: 1, maxItems: 50 },
+          archived: bool("true to archive, false to unarchive (default true)."),
+          worktrees: str(
+            'With "remove" (archiving only): also remove each session\'s own git worktrees after archiving it: git worktree remove, the branch deleted only when merged. A session with uncommitted changes in one is refused whole. Omit to leave worktrees alone.',
+            { enum: ["remove"] },
+          ),
+        },
         ["sessions"],
       ),
       execute: act("sova_archive", async (p) => {
         const ids: string[] = Array.isArray(p.sessions) ? p.sessions : [];
         if (!ids.length) throw new Refusal("Name at least one session id.");
         const archived = p.archived !== false;
+        if (p.worktrees !== undefined && p.worktrees !== "remove") throw new Refusal('worktrees takes only "remove". Nothing was archived.');
+        const cleanup = p.worktrees === "remove";
+        if (cleanup && !archived) throw new Refusal('worktrees: "remove" goes only with archiving. Nothing was unarchived.');
+        if (cleanup && !host.worktrees) throw new Refusal("Worktree cleanup isn't available here. Nothing was archived.");
         const over = limits.take("archive", host.caps(), ids.length);
         if (over) throw new Refusal(over);
         const lines: string[] = [];
@@ -1293,10 +1309,18 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
         for (const id of ids) {
           try {
             const s = await resolveWritable(id);
+            // Read and checked before anything changes: a dirty worktree refuses the whole session.
+            let plan: WorktreePlan | undefined;
+            if (cleanup) {
+              plan = await host.worktrees!.plan(s);
+              if (plan.dirty.length)
+                throw new Refusal(`uncommitted changes in its worktree${plan.dirty.length === 1 ? "" : "s"} ${plan.dirty.join("; ")}. Nothing of it was archived or removed: commit or discard them in that session first.`);
+            }
             const r = await call("POST", "/api/sessions/archive", { path: s.path, archived });
             if (r.status !== 200) throw failed(r, "Archiving");
             okCount++;
             lines.push(`- ${link(s)}: ${archived ? "archived" : "unarchived"}`);
+            if (plan) lines.push(...(await host.worktrees!.remove(plan, s.cwd)));
           } catch (err) {
             lines.push(`- ${id}: refused — ${err instanceof Error ? err.message : String(err)}`);
           }
@@ -1472,6 +1496,8 @@ export function overseerTools(host: OverseerToolHost, limits: TurnLimits, redact
     }),
     ...todoTools({ act, read, resolve, refusal: (m) => new Refusal(m), obj, str }),
     ...linkTools({ act, read, links: host.links, take: () => limits.take("link", host.caps()), refusal: (m) => new Refusal(m), obj, str }),
+    // Project instances (§app.project-services/callers): reads free, acts through `act` (turns the user started).
+    overseerVerbsTool(projectEngine, () => host.overseerId(), (exec) => act("sova_project_verbs", (params, toolCallId, call) => exec(toolCallId, params, call.signal, undefined, call.ctx)) as LooseExec),
     ...orgTools({
       act,
       read,

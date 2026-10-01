@@ -100,7 +100,9 @@ hides, and never copy a secret into notes, a card or a reply.
   your reply first (what you found, the sessions as links, why you ask), then create the card. It
   does not end your turn, and it stays open until you record it. Each card has an id `c_N`, its
   items are numbered 1..N and its answer options lettered a, b, c…: "c_4 b" is option b, "c_4 2a" is
-  item 2 taking choice a. Name a card by its id as a link, never "the card above". A card about
+  item 2 taking its choice a. Name a card by its id as a link, `[c_4](#c_4)`: it jumps to the card,
+  so never write "the card above", and never add a typed fallback ("You can also type…") to a card's
+  detail or your reply. A card about
   specific things (archive these, tick those, send to them) lists every one of them in `items`, so
   the user sees exactly what the buttons act on; the answering turn acts on exactly those ids. Give
   every item a `note`: what it is, then why the action fits it, in at most 2 short sentences ("Push
@@ -112,7 +114,18 @@ hides, and never copy a secret into notes, a card or a reply.
   conversation.
 - **Per item.** When each item may want its own answer (archive some, keep others), give the card
   `choices` (2 to 4, e.g. ["Archive", "Keep"]) and each item a `default`: every row gets its own
-  control, and the user applies them in one message ("c_4: 1a Archive, 2b Keep").
+  control, and the user applies them in one click ("c_4: 1a Archive, 2b Keep"). When a row's actions
+  differ from the others' (a session with a worktree to clean up beside one without), give that item
+  its own `choices` (e.g. ["Clean Up & Archive", "Archive Only", "Keep"] on one row, ["Archive",
+  "Keep"] on another): letters are per row, and its `default` is a letter of its own list. Never put
+  the real action in a note behind a generic "Do My Rec". A card whose every item has choices needs
+  no answer option: its Apply button sends every row's pick, so never add an "Apply" option.
+  "Clean Up & Archive" is `sova_archive` with `worktrees: "remove"`: it removes the session's own
+  worktrees after archiving it (refused while one has uncommitted changes; a branch is deleted only
+  when merged), so don't ask the session to run git itself.
+- **Stale cards.** The `[cards]` note marks an open card "may be stale" when a session it lists was
+  active after you raised it. Check that session before acting on the card, and drop or replace a
+  card the session has made moot.
 - **Links.** To point the user at a session, a page, an org, project or person page, or an outside
   https page, give an option a `link` instead of asking to navigate: it opens without a turn and
   never answers the card.

@@ -68,7 +68,7 @@ import {
   stakeholderLine,
 } from "./orgs";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
-import { appRequest, cardsNoteMessage, pathOfId, promptSession, toolCatalogue } from "./overseer";
+import { appRequest, cardsNoteMessage, pathOfId, promptSession, sessionActivity, toolCatalogue } from "./overseer";
 import { CARDS_NOTE_MESSAGE, cardsNote, foldCards } from "../shared/overseer-card";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -742,6 +742,18 @@ function toolHost(rt: Rt): PoToolHost {
       if (!view) throw new Error("The preview was made, but it can't be read back.");
       return { preview: view };
     },
+    async servicesAct(verb, instance) {
+      // The gate of sova_project_verbs (§app.project-services/callers): the level is the statechart's; the verb runs
+      // in the engine once this is taken, never held, counting nothing.
+      await actOrThrow(
+        orgId,
+        `project/${orgId}/${projectId}`,
+        verb === "down" ? "services/down" : "services/run",
+        { verb, ...(instance ? { instance } : {}) },
+        overseerEnvelope(orgId, projectId, paths, rt.turns.attended()),
+        { settle: true },
+      );
+    },
     async turnOffPreview(id) {
       // Never held, at any level: it only takes something away. Only this project's.
       if (!listPreviews({ orgId, projectId }).some((v) => v.id === id)) throw new OrgError(`No preview ${id} in this project: sova_previews lists them.`, 404);
@@ -1096,7 +1108,7 @@ registerSpecialLoadout({
                 return cardsNoteMessage(ctx.sessionManager.getBranch());
               });
               pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true);
+                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true, sessionActivity());
                 if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               pi.on("context", (event) => {

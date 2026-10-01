@@ -17,9 +17,11 @@ import type {
 } from "../../shared/protocol";
 import { createTurnOwner, goTo, navigateDetails } from "../lib/overseer";
 import { batonComposerGate } from "../lib/baton-strip";
+import { tuiOnlyCommand } from "../lib/slash";
 import { OverseerThreadContext, QuickActions, scrollToCard } from "./OverseerCards";
 import { CARD_TOOL, type OverseerCard } from "../../shared/overseer-card";
 import { cardFold, openCards } from "../lib/overseer";
+import { CardJumpContext } from "../lib/card-refs";
 import { AlignAnswerContext, type AlignAnswer } from "./AlignDocCard";
 import { acceptAllMessage, choosePick, clearPicks, composeWithPicks, optionPick, pickCount, picksLabel, picksOf, prunePicks, samePicks } from "../lib/align-picks";
 import { BatonStrip } from "./BatonStrip";
@@ -281,7 +283,8 @@ export function ChatView(props: {
   const liveAlignIds = createMemo(() => new Set(liveAligns().flatMap((r) => (r.doc ? [r.doc.id] : []))));
   /** This run's sova_card results, in call order, and the thread's cards with them (§app.overseer/confirm). */
   const liveCards = createMemo(() => Object.values(live.tools).filter((t) => t.name === CARD_TOOL && t.status === "done").map((t) => t.details));
-  const cards = createMemo(() => cardFold(items() ?? [], liveCards()));
+  // The cards open above the rows held (the hello's summary) come first, so the chip counts them.
+  const cards = createMemo(() => cardFold(items() ?? [], liveCards(), older()?.summary.cards ?? []));
   /** Cards this run changed: their settled rows read as one line until the refetch. */
   const liveCardIds = createMemo(() => new Set([...cards().cards.keys()].filter((id) => !cards().newest.has(id))));
   /** What a click on each card sent, until the turn it started settles (the card shows "Sent: b"). */
@@ -289,6 +292,11 @@ export function ChatView(props: {
   const jumpToCard = (card: OverseerCard) => {
     if (scrollToCard(card.id)) return;
     const row = cards().newest.get(card.id);
+    // A card above the rows held: fetch down to its row, then land.
+    if (row && !items()?.some((it) => it.id === row)) {
+      jumpWhenArrived(row, props.path, () => toast("That card isn't in the transcript on screen."));
+      return;
+    }
     if (row && jumpToEntry(row, props.path)) return;
     toast("That card isn't in the transcript on screen.");
   };
@@ -1447,7 +1455,7 @@ export function ChatView(props: {
     if (command && commands().some((c) => c.name === command)) {
       const label = text.length > 61 ? `${text.slice(0, 60)}…` : text;
       batch(() => {
-        setCommandRows((rows) => [...rows, { label, tui: false }]);
+        setCommandRows((rows) => [...rows, { label, tui: tuiOnlyCommand(text) !== null }]);
         setResume((n) => n + 1);
       });
       return true;
@@ -1686,10 +1694,12 @@ export function ChatView(props: {
                       sent: (card) => cardSent()[card],
                       // Approvals are the global Overseer's alone; a project overseer's card carries none.
                       permits: () => (props.overseer ? autonomy()?.permits ?? [] : []),
+                      card: (id) => cards().cards.get(id),
                     }
                   : null
               }
             >
+            <CardJumpContext.Provider value={jumpToCardId}>
             <AlignAnswerContext.Provider value={alignAnswer}>
               <ChangesSession.Provider value={{ get path() { return props.path; }, get cwd() { return props.summary?.()?.cwd; } }}>
               <HistoryItems
@@ -1791,6 +1801,7 @@ export function ChatView(props: {
                 </Show>
               </Show>
             </AlignAnswerContext.Provider>
+            </CardJumpContext.Provider>
             </OverseerThreadContext.Provider>
           )}
         </Show>

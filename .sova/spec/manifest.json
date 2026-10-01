@@ -505,7 +505,8 @@
         "src/design/base.css",
         "src/design/align-viewer.css",
         "src/lib/workers.ts",
-        "src/lib/workers.test.ts"
+        "src/lib/workers.test.ts",
+        "src/lib/slash.ts"
       ]
     },
     "§app.subagents-pane/worker-rows": {
@@ -944,7 +945,9 @@
       "authority": "accepted",
       "evidence": "unreviewed",
       "code": [
-        "src/components/SlashMenu.tsx"
+        "src/components/SlashMenu.tsx",
+        "src/lib/slash.ts",
+        "src/components/Composer.tsx"
       ]
     },
     "§chat.slash-commands/in-the-thread": {

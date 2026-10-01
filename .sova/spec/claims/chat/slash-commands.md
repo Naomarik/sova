@@ -91,13 +91,14 @@ The textarea gains these attributes, and keeps them only while the menu is open:
 
 ## §chat.slash-commands/filtering-and-order — Filtering and order
 
-- **Query.** The query is the token without its `/`, matched case-insensitively against `name`.
+- **Query.** The query is the token without its `/`, matched case-insensitively against `name`
+  of the commands the menu offers (§chat.slash-commands/commands-that-need-the-terminal-ui hides some).
 - **Order.**
   1. Names that **start with** the query.
   2. Names that **contain** it.
   3. Names whose **description** contains it.
 
-  Within each tier, sort by name. An empty query (just `/`) lists every command by name.
+  Within each tier, sort by name. An empty query (just `/`) lists every command the menu offers by name.
 - **Active option.** The first row becomes active whenever the results change.
 - **Empty result.** Keep the menu open, drop the list, and show
   `<p class="command-menu-empty">0 commands match “/{query}”. Enter sends it as a message.</p>`.

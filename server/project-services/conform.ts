@@ -215,9 +215,9 @@ async function runSuite(
     const own: string[] = [];
     for (const svc of upA.services.filter((x) => x.scope === "checkout"))
       for (const [k, port] of Object.entries(svc.ports)) {
-        const o = engine.portOwner(port);
-        const mine = typeof o === "object" && (svc.kind === "static" ? o.pid === process.pid : !!svc.unit && engine.driver.owns(svc.unit, o.pid));
-        if (!mine) own.push(`${svc.name}.${k} (${port}): ${typeof o === "object" ? `pid ${o.pid} (${o.cwd})` : o}`);
+        // Its own process, or its own container publishing the port (§app.project-services/up).
+        const c = await engine.portClaim(recA!, def, svc.name, port);
+        if (!c.held || !c.own) own.push(`${svc.name}.${k} (${port}): ${c.held ? c.who : "nothing listens"}`);
       }
     if (!s.check("ports-owned", !own.length, own.length ? `not held by A's own processes: ${own.join("; ")}` : "every declared port is held by A's own processes", t0)) return;
     t0 = Date.now();

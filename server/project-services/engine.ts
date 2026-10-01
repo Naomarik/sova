@@ -36,6 +36,7 @@ import { startStaticServe, staticServes, StaticServeError, stopStaticServe } fro
 import { projectOf } from "../project-root";
 import { DriverError, type Driver, type UnitSpec } from "./drivers";
 import { hostPortOwner } from "./proctable";
+import { publishedPorts, publisherOf, type ContainerQuery } from "./container-ports";
 import {
   dataRootOf,
   instanceLockFile,
@@ -221,6 +222,8 @@ export interface EngineDeps {
   portOwner?: (port: number) => PortOwner;
   /** Run a container engine command (`docker rm -f …`); tests fake it. */
   containerExec?: (engine: string, args: string[]) => Promise<number>;
+  /** Ask a container engine (`docker port …`, `inspect`, `ps`) and read its output; tests fake it. */
+  containerQuery?: ContainerQuery;
   /** Poll interval for readiness waits. */
   pollMs?: number;
 }
@@ -239,6 +242,9 @@ interface Run {
   steps: Step[];
   extra: Partial<Pick<VerbResult, "instances" | "lines" | "checks" | "conform">>;
 }
+
+/** Who holds a port, as one service sees it: nobody, its own, or someone it must not touch. */
+export type PortClaim = { held: false } | { held: true; own: boolean; who: string };
 
 /** The scope a process runs in: an instance, or the project's shared services. */
 interface Scope {
@@ -262,6 +268,7 @@ export class ProjectEngine {
   /** Who listens on a port of this host (conform reads it too). */
   readonly portOwner: (port: number) => PortOwner;
   private readonly containerExec: (engine: string, args: string[]) => Promise<number>;
+  private readonly containerQuery: ContainerQuery;
   private readonly pollMs: number;
   private sharedChain = new Map<string, Promise<unknown>>();
   /** The conformance runner (server/project-services/conform.ts), wired at startup. */
@@ -276,6 +283,14 @@ export class ProjectEngine {
       ((engine, args) =>
         new Promise((done) => {
           execFile(engine, args, { timeout: 60_000 }, (err) => done(err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 127) : 0));
+        }));
+    this.containerQuery =
+      deps.containerQuery ??
+      ((engine, args) =>
+        new Promise((done) => {
+          execFile(engine, args, { timeout: 30_000, encoding: "utf8" }, (err, stdout) =>
+            done({ code: err ? (typeof (err as { code?: unknown }).code === "number" ? (err as { code: number }).code : 127) : 0, stdout: String(stdout ?? "") }),
+          );
         }));
     this.pollMs = deps.pollMs ?? 250;
   }
@@ -843,14 +858,51 @@ export class ProjectEngine {
     });
   }
 
-  /** A listener on one of `s`'s ports refuses the start (never stopped). */
-  private preflight(def: ProjectDef, scope: Scope, s: ServiceDecl): void {
+  /** A holder of one of `s`'s ports that is not the instance's own refuses the start (never stopped). */
+  private async preflight(def: ProjectDef, scope: Scope, s: ServiceDecl): Promise<void> {
     for (const [k, port] of Object.entries(this.allPorts(def, scope)[s.name] ?? {})) {
-      const o = this.portOwner(port);
-      if (o === "none") continue;
-      const who = o === "unknown" ? "a process this user can't read" : `pid ${o.pid} (${o.cwd})`;
-      throw new VerbFailure("port-held", `${s.name}.${k} needs port ${port}, which ${who} holds; Sova never stops it`, { service: s.name });
+      const c = await this.claimOf(def, scope, s, port);
+      if (!c.held || c.own) continue;
+      throw new VerbFailure("port-held", `${s.name}.${k} needs port ${port}, which ${c.who} holds; Sova never stops it`, { service: s.name });
     }
+  }
+
+  /** The container `s` runs as in `scope`, if it is a container service. */
+  private containerOf(def: ProjectDef, scope: Scope, s: ServiceDecl): { engine: string; name: string } | null {
+    return s.container ? { engine: s.container.engine, name: render(s.container.name, this.vars(def, scope)) } : null;
+  }
+
+  /**
+   * Who holds `port` of service `s` (§app.project-services/up). Its own: its unit's process (the
+   * server, for a static service), or, for a container service, its container whenever the engine
+   * says it publishes the port, whatever process listens (docker-proxy, rootlessport, pasta, Docker
+   * Desktop) or none at all. Anything else is foreign, named by pid or by the container of one of
+   * the definition's engines that publishes the port.
+   */
+  private async claimOf(def: ProjectDef, scope: Scope, s: ServiceDecl, port: number): Promise<PortClaim> {
+    const o = this.portOwner(port);
+    const unit = this.unitOf(scope.id, s.name);
+    if (typeof o === "object" && (s.static !== undefined ? o.pid === process.pid : this.driver.owns(unit, o.pid))) return { held: true, own: true, who: `its own process (pid ${o.pid})` };
+    const mine = this.containerOf(def, scope, s);
+    if (mine && (await publishedPorts(this.containerQuery, mine.engine, mine.name)).has(port)) return { held: true, own: true, who: `its own container ${mine.name}` };
+    let other: string | null = null;
+    for (const engine of new Set(def.services.flatMap((x) => (x.container ? [x.container.engine] : [])))) {
+      const name = await publisherOf(this.containerQuery, engine, port);
+      if (name) {
+        other = `container ${name}`;
+        break;
+      }
+    }
+    if (o === "none") return other ? { held: true, own: false, who: other } : { held: false };
+    const pid = o === "unknown" ? "a process this user can't read" : `pid ${o.pid} (${o.cwd})`;
+    return { held: true, own: false, who: other ? `${other} (${o === "unknown" ? "its listener unreadable" : `pid ${o.pid}`})` : pid };
+  }
+
+  /** `claimOf` for conform: a declared port of `rec`'s checkout service `service`. */
+  async portClaim(rec: InstanceRecord, def: ProjectDef, service: string, port: number): Promise<PortClaim> {
+    const s = def.services.find((x) => x.name === service);
+    if (!s) return { held: this.portOwner(port) !== "none", own: false, who: `an undeclared service ${service}` };
+    return this.claimOf(def, scopeOf(rec), s, port);
   }
 
   private async removeContainer(def: ProjectDef, scope: Scope, s: ServiceDecl): Promise<void> {
@@ -869,11 +921,11 @@ export class ProjectEngine {
           await startStaticServe({ id: unit, root, port: port! });
           return { result: "done", detail: `serving ${root} on 127.0.0.1:${port}` };
         } catch (err) {
-          if (err instanceof StaticServeError && err.code === "port-taken") this.preflight(def, scope, s);
+          if (err instanceof StaticServeError && err.code === "port-taken") await this.preflight(def, scope, s);
           throw new VerbFailure("start-failed", err instanceof Error ? err.message : String(err), { service: s.name });
         }
       }
-      this.preflight(def, scope, s);
+      await this.preflight(def, scope, s);
       await this.removeContainer(def, scope, s);
       const vars = this.vars(def, scope);
       try {
@@ -903,14 +955,20 @@ export class ProjectEngine {
   }
 
   /**
-   * After stopping its own process, wait (at most 5 s) until the service's ports have no listener:
-   * a socket can outlive its process by a moment, and a start right after would take it for a
-   * foreign holder.
+   * After stopping its own process, wait (at most 5 s) until the service's ports have no listener
+   * and its container publishes none of them: a socket can outlive its process by a moment, and an
+   * engine can keep a removed container's ports a moment longer, which a start right after would
+   * take for a foreign holder.
    */
   private async portsReleased(def: ProjectDef, scope: Scope, s: ServiceDecl): Promise<void> {
     const ports = Object.values(this.allPorts(def, scope)[s.name] ?? {});
+    const mine = this.containerOf(def, scope, s);
     const until = Date.now() + 5_000;
-    while (ports.some((p) => this.portOwner(p) !== "none") && Date.now() < until) await sleep(50);
+    for (;;) {
+      const published = mine ? await publishedPorts(this.containerQuery, mine.engine, mine.name) : new Set<number>();
+      if (!ports.some((p) => published.has(p) || this.portOwner(p) !== "none") || Date.now() >= until) return;
+      await sleep(50);
+    }
   }
 
   /** Bring the project's shared services `names` up, one caller at a time per project. */
@@ -1180,11 +1238,10 @@ export class ProjectEngine {
         }
       if (run.rec) {
         for (const s of def.services) {
-          const unit = this.unitOf(s.scope === "shared" ? sharedIdOf(run.project!) : run.rec.id, s.name);
-          for (const [k, port] of Object.entries(this.allPorts(def, scope)[s.name] ?? {})) {
-            const o = this.portOwner(port);
-            const own = o === "none" || (typeof o === "object" && (s.static !== undefined ? o.pid === process.pid : this.driver.owns(unit, o.pid)));
-            add(`port:${s.name}.${k}`, own, o === "none" ? `${port} free` : own ? `${port} held by its own process` : `${port} held by ${o === "unknown" ? "an unreadable process" : `pid ${o.pid} (${o.cwd})`}`);
+          const sc = s.scope === "shared" ? this.sharedScope(def, run.project!) : scope;
+          for (const [k, port] of Object.entries(this.allPorts(def, sc)[s.name] ?? {})) {
+            const c = await this.claimOf(def, sc, s, port);
+            add(`port:${s.name}.${k}`, !c.held || c.own, c.held ? `${port} held by ${c.who}` : `${port} free`);
           }
         }
       }

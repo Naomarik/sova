@@ -11,7 +11,7 @@ import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
-import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
+import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -542,7 +542,8 @@ export function HistoryItems(props: {
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
   /**
    * Tail-first (lib/tail-render): inside a transcript, the newest rows are built with the list and
-   * the older ones prepended above them while the browser is idle, until all are built. The window
+   * the older ones prepended above them while the browser is idle, up to MAX_BUILT_ROWS, then as
+   * the view nears their top or a jump needs them. The window
    * is held as the id of its first row, so an append or a refetch keeps what is already built.
    * Every index below is the row's index in `rows()`, never in the built slice.
    */
@@ -572,50 +573,56 @@ export function HistoryItems(props: {
     const buildFrom = (i: number) => scroller.prepend(() => setFirstId(idAt(i)));
     let chunk = FIRST_CHUNK;
     let cancel: (() => void) | null = null;
-    const step = () => {
-      cancel = null;
-      const s = start();
-      if (s === 0) return;
-      // A jump's smooth scroll is under way: moving the content now would stop it short.
-      if (scroller.jumping()) return schedule();
-      const next = chunkStart(s, chunk);
+    /** One chunk above the built rows, timed for the next one's size. */
+    const buildChunk = () => {
+      const next = chunkStart(start(), chunk);
       const t0 = performance.now();
       buildFrom(next);
       chunk = nextChunk(chunk, performance.now() - t0);
-      if (next > 0) schedule();
+      return next;
+    };
+    // The idle fill: up to MAX_BUILT_ROWS (lib/tail-render `fillStops`); past that, the view nearing
+    // the top builds the next chunk (below).
+    const step = () => {
+      cancel = null;
+      if (fillStops(rows().length, start())) return;
+      // A jump's smooth scroll is under way: moving the content now would stop it short.
+      if (scroller.jumping()) return schedule();
+      const next = buildChunk();
+      if (!fillStops(rows().length, next)) schedule();
     };
     const schedule = () => {
       if (cancel) return;
       cancel = whenIdle(step);
     };
-    createEffect(() => start() > 0 && schedule());
+    createEffect(() => !fillStops(rows().length, start()) && schedule());
     onCleanup(() => cancel?.());
-    // Older rows not held yet: once every row held is built and the view is within
-    // NEAR_TOP_VIEWS viewports of the top, the next chunk is fetched; it lands above the window,
-    // where the fill builds it with the view held still, as any row not built yet.
-    if (props.older) {
-      const older = props.older;
-      let later: ReturnType<typeof setTimeout> | undefined;
-      const check = () => {
-        const left = older.left();
-        if (left === null || left <= 0 || start() > 0 || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
-        // A jump's smooth scroll is under way (it may have landed near the top): rows landing above
-        // now would cut it short, as the fill knows too. Look again once it's over.
-        if (scroller.jumping()) {
-          clearTimeout(later);
-          later = setTimeout(check, 300);
-          return;
-        }
-        older.more();
-      };
-      root.addEventListener("scroll", check, { passive: true });
-      onCleanup(() => {
+    // Once the view is within NEAR_TOP_VIEWS viewports of the top of the built rows: rows held but
+    // not built (the fill stopped at its cap) are built a chunk at a time, with the view held still;
+    // once every row held is built, the next older rows are fetched, and they land above the
+    // window, where the fill builds them as any row not built yet.
+    const older = props.older;
+    let later: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      const left = older?.left() ?? 0;
+      if ((start() === 0 && (left === null || left <= 0)) || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
+      // A jump's smooth scroll is under way (it may have landed near the top): rows landing above
+      // now would cut it short, as the fill knows too. Look again once it's over.
+      if (scroller.jumping()) {
         clearTimeout(later);
-        root.removeEventListener("scroll", check);
-      });
-      // After a change to what's held or built, when the frame has settled (a short list sits at the top).
-      createEffect(on([start, () => older.left(), () => rows().length], () => requestAnimationFrame(check)));
-    }
+        later = setTimeout(check, 300);
+        return;
+      }
+      if (start() > 0) buildChunk();
+      else older?.more();
+    };
+    root.addEventListener("scroll", check, { passive: true });
+    onCleanup(() => {
+      clearTimeout(later);
+      root.removeEventListener("scroll", check);
+    });
+    // After a change to what's held or built, when the frame has settled (a short list sits at the top).
+    createEffect(on([start, () => older?.left(), () => rows().length], () => requestAnimationFrame(check)));
     registerRows(root, {
       has: (entryId) => rowIndexFor(ids(), entryId) >= 0,
       ensure: (entryId) => {

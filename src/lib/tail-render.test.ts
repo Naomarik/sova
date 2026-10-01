@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { carriedStart, chunkStart, imagesEstimate, initialStart, lineCols, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, textShape, windowId } from "./tail-render";
+import { carriedStart, chunkStart, fillStops, imagesEstimate, initialStart, lineCols, MAX_BUILT_ROWS, MAX_CHUNK, MIN_CHUNK, nextChunk, rowEstimate, rowIndexFor, TAIL_ROWS, textShape, windowId } from "./tail-render";
 
 test("a long list opens on its last TAIL_ROWS rows; a short one is built whole", () => {
   assert.equal(initialStart(802), 802 - TAIL_ROWS);
@@ -14,6 +14,22 @@ test("chunks walk the window up to row 0 and stop there", () => {
   const seen: number[] = [];
   while (start > 0) seen.push((start = chunkStart(start, 50)));
   assert.deepEqual(seen, [20, 0]);
+});
+
+test("the idle fill stops at MAX_BUILT_ROWS built, or at the top of a shorter list", () => {
+  const fill = (n: number, chunk: number) => {
+    let start = initialStart(n);
+    while (!fillStops(n, start)) start = chunkStart(start, chunk);
+    return start;
+  };
+  const n = 5300;
+  const stop = fill(n, 50);
+  assert.ok(n - stop >= MAX_BUILT_ROWS, "at least the cap is built");
+  assert.ok(n - stop < MAX_BUILT_ROWS + 50, "and no more than one chunk past it");
+  assert.equal(fill(MAX_BUILT_ROWS - 1, 50), 0, "a list under the cap is built whole");
+  assert.equal(fillStops(n, 0), true, "the top always stops it");
+  assert.equal(fillStops(n, n - MAX_BUILT_ROWS + 1), false, "one row short of the cap goes on");
+  assert.equal(fillStops(n, n - 100, 100), true, "the cap is a parameter");
 });
 
 test("the chunk size follows the budget, at most doubling or halving per step", () => {

@@ -260,13 +260,27 @@ export interface MergeProbe {
 	merged: boolean;
 }
 
+/**
+ * Without `targetOverride`, the branch is checked against its base branch and the repo's main
+ * branch: merged when either has it, and `target` is the one that does (the base branch first).
+ * Merged into neither, `target` is the base branch, else the main branch. An override is the only
+ * target checked.
+ */
 export async function probeMerge(git: Git, tree: Pick<TrackedWorktree, "path" | "branch" | "base" | "baseBranch">, targetOverride?: string): Promise<MergeProbe | undefined> {
 	const cwd = existsSync(tree.path) ? tree.path : undefined;
 	if (!cwd) return undefined;
-	const target = targetOverride ?? tree.baseBranch ?? (await defaultTarget(git, cwd));
-	if (!target || target === tree.branch) return undefined;
-	const [branchSha, targetSha] = [await refSha(git, tree.branch, cwd), await refSha(git, target, cwd)];
-	if (!branchSha || !targetSha) return undefined;
-	const merged = branchSha !== tree.base && (await git(["merge-base", "--is-ancestor", branchSha, targetSha], cwd)).code === 0;
-	return { target, targetSha, branchSha, merged };
+	const main = targetOverride ? undefined : await defaultTarget(git, cwd);
+	const targets = [...new Set([targetOverride ?? tree.baseBranch ?? main, main])].filter((t): t is string => !!t && t !== tree.branch);
+	const branchSha = await refSha(git, tree.branch, cwd);
+	if (!branchSha) return undefined;
+	let first: MergeProbe | undefined;
+	for (const target of targets) {
+		const targetSha = await refSha(git, target, cwd);
+		if (!targetSha) continue;
+		const merged = branchSha !== tree.base && (await git(["merge-base", "--is-ancestor", branchSha, targetSha], cwd)).code === 0;
+		const probe = { target, targetSha, branchSha, merged };
+		if (merged) return probe;
+		first ??= probe;
+	}
+	return first;
 }

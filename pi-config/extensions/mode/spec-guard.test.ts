@@ -17,8 +17,10 @@ import {
 	coreDir,
 	describeProblem,
 	extraText,
+	CENSUS_SKIP_TOOLS,
 	DIGEST_TAG,
 	digest,
+	digestSaying,
 	draftForeign,
 	draftStamps,
 	draftsTouched,
@@ -211,6 +213,123 @@ test("digest: the first in-boundary change, each new file, new foreign §; says 
 	assert.equal(digest(censusView(), ["README.md"], { reported: false, foreign: [] }, false), undefined, "no in-boundary change: silent");
 });
 
+test("digest: each file in New: names at most 3 §, mapped outside the boundary too; unclaimed stays", () => {
+	const five = ["§a/1", "§a/2", "§a/3", "§a/4", "§a/5"];
+	const v = censusView({ claimed: [{ path: "src/f.ts", claims: five }, { path: "src/t.ts", claims: five.slice(0, 3) }], unclaimed: ["src/u.ts"], mappedOutside: [{ path: "pi-config/g.ts", claims: five }] });
+	const text = digest(v, ["src/f.ts", "src/t.ts", "src/u.ts", "pi-config/g.ts"], { reported: false, foreign: [] }, true);
+	assert.ok(
+		text?.includes("New: src/f.ts → §a/1, §a/2, §a/3 (+2 more); src/t.ts → §a/1, §a/2, §a/3; src/u.ts → unclaimed; pi-config/g.ts → outside the boundary, mapped by §a/1, §a/2, §a/3 (+2 more)"),
+		text,
+	);
+});
+
+test("digest: the Rule and No draft lines print once, on the note that has them; the header and Foreign § every time", () => {
+	const a = { path: "src/a.ts", claims: ["§a/x"] };
+	const one = digestSaying(censusView({ foreign: ["§a/x"], claimed: [a] }), ["src/a.ts"], { reported: false, foreign: [] }, false);
+	assert.ok(one.text?.includes(NO_DRAFT_NOTE) && one.text.includes("Rule: flag only a contradiction."), one.text);
+	assert.deepEqual(one.said, { noDraft: true, rule: true });
+	const v2 = censusView({ foreign: ["§a/x", "§a/y"], claimed: [a, { path: "src/b.ts", claims: ["§a/y"] }] });
+	const two = digestSaying(v2, ["src/b.ts"], { reported: true, foreign: ["§a/x"], said: one.said }, false);
+	assert.ok(two.text !== undefined);
+	assert.ok(two.text.startsWith(`${DIGEST_TAG} 2 changed file(s) in the boundary, 0 unclaimed; 2 foreign § touched.`), two.text);
+	assert.ok(two.text.includes("Foreign §: §a/y"));
+	assert.ok(!two.text.includes("Rule:") && !two.text.includes(NO_DRAFT_NOTE), two.text);
+	// Not printed, not marked: a note without a new foreign § leaves the Rule for a later one.
+	const quiet = digestSaying(censusView({ claimed: [a] }), ["src/a.ts"], { reported: false, foreign: [] }, true);
+	assert.deepEqual(quiet.said, {});
+});
+
+test("digest: each new-claim pair prints once; pairs past the cap come in a later note; the line never triggers a note", () => {
+	const pair = (n: number) => ({ id: `§x.p/c${n}`, parent: "§x/p" });
+	const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => pair(from + i));
+	let state: Parameters<typeof digestSaying>[2] = { reported: true, foreign: [] };
+	let n = 0;
+	const fire = (pairs: { id: string; parent: string }[]) => {
+		const file = `src/n${n++}.ts`;
+		const out = digestSaying(censusView({ unclaimed: [file], childUnderForeign: pairs }), [file], state, true);
+		state = { ...state, said: out.said };
+		return out.text ?? "";
+	};
+	const line = (text: string) => text.split("\n").find((l) => l.startsWith("New claims under a foreign §:"));
+	assert.equal(line(fire(range(1, 2))), "New claims under a foreign §: §x.p/c1 → §x/p, §x.p/c2 → §x/p");
+	assert.equal(line(fire(range(1, 3))), "New claims under a foreign §: §x.p/c3 → §x/p");
+	const none = fire(range(1, 2));
+	assert.ok(none.startsWith(DIGEST_TAG) && line(none) === undefined, none);
+	assert.equal(line(fire(range(1, 17))), `New claims under a foreign §: ${range(4, 15).map((p) => `${p.id} → ${p.parent}`).join(", ")} (+2 more)`);
+	assert.equal(line(fire(range(1, 17))), "New claims under a foreign §: §x.p/c16 → §x/p, §x.p/c17 → §x/p");
+});
+
+test("digest: it fires in exactly the old cases, whatever was said before", () => {
+	const said = { rule: true, noDraft: true, pairs: ["§x.p/c1 → §x/p"] };
+	const cases: [string, CensusView, string[], { reported: boolean; foreign: string[] }, boolean][] = [
+		["nothing new", censusView({ unclaimed: ["src/u.ts"], foreign: ["§a/x"] }), [], { reported: true, foreign: ["§a/x"] }, false],
+		["new-claim pairs only", censusView({ unclaimed: ["src/u.ts"], childUnderForeign: [{ id: "§x.p/c2", parent: "§x/p" }] }), [], { reported: true, foreign: [] }, false],
+		["first in-boundary change", censusView({ unclaimed: ["src/u.ts"] }), [], { reported: false, foreign: [] }, true],
+		["a new unmapped file outside", censusView({ outside: ["README.md"] }), ["README.md"], { reported: true, foreign: [] }, true],
+		["a new foreign §", censusView({ foreign: ["§a/x"] }), [], { reported: true, foreign: [] }, true],
+	];
+	for (const [name, v, fresh, state, fires] of cases) {
+		for (const s of [state, { ...state, said }]) assert.equal(digest(v, fresh, s, false) !== undefined, fires, name);
+	}
+});
+
+test("census on a real Git tree: every foreign § is kept though New: shows 3; a read-only tool is skipped, bash never; reset says the Rule again", async () => {
+	mkdirSync(scratchRoot, { recursive: true });
+	const project = mkdtempSync(join(scratchRoot, "census-note-"));
+	try {
+		const put = (rel: string, text: string) => {
+			mkdirSync(dirname(join(project, rel)), { recursive: true });
+			writeFileSync(join(project, rel), text);
+		};
+		const git = (...args: string[]) =>
+			assert.equal(spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", project, ...args]).status, 0, `git ${args.join(" ")}`);
+		const claims: Record<string, { kind: string; code: string[] }> = {};
+		for (const n of ["a", "b", "c", "d", "e"]) claims[`§app/a${n}`] = { kind: "surface", code: ["src/a.ts"] };
+		for (const f of ["b", "c", "d"]) claims[`§app/${f}`] = { kind: "surface", code: [`src/${f}.ts`] };
+		put(".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }));
+		for (const id of Object.keys(claims)) put(`.sova/spec/claims/app/${id.slice(5)}.md`, `# ${id}\n\nText.\n`);
+		for (const f of ["a", "b", "c", "d"]) put(`src/${f}.ts`, "1\n");
+		put(".sova/spec/.gitignore", "/drafts/\n");
+		git("init", "-q");
+		git("add", "-A");
+		git("commit", "-qm", "base");
+
+		// The census state: every foreign § the census saw, those New: holds back included.
+		let state = (await censusStep(freshCensusState(), { cwd: project, toolName: "", input: undefined }, CORE)).state;
+		put("src/a.ts", "2\n");
+		const step = await censusStep(state, { cwd: project, toolName: "edit", input: {} }, CORE);
+		assert.ok(step.result.text?.includes("New: src/a.ts → §app/aa, §app/ab, §app/ac (+2 more)"), step.result.text);
+		assert.deepEqual([...step.state.foreign].sort(), ["§app/aa", "§app/ab", "§app/ac", "§app/ad", "§app/ae"]);
+		assert.deepEqual(step.state.said, { noDraft: true, rule: true });
+		state = step.state;
+
+		const execs: string[][] = [];
+		const io: SpecIO = { ...localIO, exec: (cmd, args, o) => (execs.push([cmd, ...args]), localIO.exec(cmd, args, o)) };
+		const hook = new CensusHook({ io, core: () => CORE });
+		await hook.prime(project);
+		put("src/b.ts", "2\n");
+		execs.length = 0;
+		for (const toolName of CENSUS_SKIP_TOOLS) {
+			await hook.before({ cwd: project, toolName, input: { path: "src/b.ts" } });
+			assert.deepEqual(await hook.after({ cwd: project, toolName, input: { path: "src/b.ts" } }), {}, toolName);
+		}
+		assert.deepEqual(execs, [], "a skipped tool neither looks nor runs the census");
+		assert.ok(!CENSUS_SKIP_TOOLS.has("bash") && !CENSUS_SKIP_TOOLS.has("edit") && !CENSUS_SKIP_TOOLS.has("write"));
+		const first = await hook.after({ cwd: project, toolName: "bash", input: { command: "true" } });
+		assert.ok(first.text?.includes("New: src/b.ts → §app/b") && first.text.includes("Rule:") && first.text.includes(NO_DRAFT_NOTE), `the next writing call reports it: ${first.text}`);
+		put("src/c.ts", "2\n");
+		const second = await hook.after({ cwd: project, toolName: "edit", input: { path: "src/c.ts" } });
+		assert.ok(second.text?.includes("Foreign §: §app/c") && !second.text.includes("Rule:") && !second.text.includes(NO_DRAFT_NOTE), second.text);
+		hook.reset();
+		await hook.prime(project);
+		put("src/d.ts", "2\n");
+		const fresh = await hook.after({ cwd: project, toolName: "edit", input: { path: "src/d.ts" } });
+		assert.ok(fresh.text?.includes("Rule:") && fresh.text.includes(NO_DRAFT_NOTE), `a new session says them again: ${fresh.text}`);
+	} finally {
+		rmSync(project, { recursive: true, force: true });
+	}
+});
+
 test("foreignBetween wraps `sova-spec.mjs foreign`; unusable output is undefined", async () => {
 	const calls: string[][] = [];
 	const io = (stdout: string): SpecIO => ({
@@ -263,7 +382,7 @@ test("CensusHook on a real Git tree: bash-style writes are caught by the git del
 		const outside = await after();
 		assert.equal(outside.text, `${DIGEST_TAG} 0 changed file(s) in the boundary, 0 unclaimed; 0 foreign § touched.\n${unmappedNote("README.md")}`, "a change outside the boundary no claim maps: one line");
 		put("src/App.tsx", "2\n");
-		const first = await after("read");
+		const first = await after("edit");
 		assert.ok(first.text?.startsWith(DIGEST_TAG), `first in-boundary change: ${JSON.stringify(first)}`);
 		assert.ok(first.text?.includes("§app/shell"));
 		assert.ok(first.text?.includes(NO_DRAFT_NOTE));

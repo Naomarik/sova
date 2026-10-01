@@ -47,7 +47,12 @@ const keyed = (p: PipelineInfo): Info => ({ rows: p.rows.map((r) => ({ ...r, id:
  * Cancel (§app.project-overseer/holds), then one row per gap, each with its phase, how long, Stalled,
  * its gatherings, decisions and builds, Hold or Resume, and its timeline.
  */
-export function PipelineCard(props: { orgId: string; projectId: string }) {
+export function PipelineCard(props: {
+  orgId: string;
+  projectId: string;
+  /** Read and holding no gap and no held act (null until the first read): the card leaves itself out, and the page's counts line names it. */
+  onEmpty?(empty: boolean | null): void;
+}) {
   const poll = createPoll(async () => keyed(await getPipeline(props.orgId, props.projectId)), PIPELINE_POLL_MS);
   const [now, setNow] = createSignal(Date.now());
   const clock = setInterval(() => setNow(Date.now()), CLOCK_MS);
@@ -56,6 +61,8 @@ export function PipelineCard(props: { orgId: string; projectId: string }) {
   const held = createMemo(() => [...(poll.data()?.held ?? [])].sort((a, b) => Date.parse(a.goesAt) - Date.parse(b.goesAt)));
   const [busy, setBusy] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  const empty = createMemo(() => (poll.data() ? !rows().length && !held().length && !error() : null));
+  createEffect(on(empty, (e) => props.onEmpty?.(e)));
 
   const holdOrResume = async (r: Row, hold: boolean) => {
     if (busy()) return;
@@ -74,6 +81,7 @@ export function PipelineCard(props: { orgId: string; projectId: string }) {
   };
 
   return (
+    <Show when={!(props.onEmpty && empty() !== false)}>
     <section class="card orgs-section pipeline" aria-labelledby="project-pipeline">
       <div class="orgs-head">
         <h2 class="orgs-h2" id="project-pipeline">
@@ -114,6 +122,7 @@ export function PipelineCard(props: { orgId: string; projectId: string }) {
         </ul>
       </Show>
     </section>
+    </Show>
   );
 }
 

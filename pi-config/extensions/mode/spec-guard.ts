@@ -33,6 +33,8 @@ export const TOOL_TIMEOUT_MS = 5000;
 /** Files and ids shown before "+N more". */
 export const FILE_CAP = 8;
 export const ID_CAP = 12;
+/** How many § each file in the digest's `New:` line names. */
+export const NEW_ID_CAP = 3;
 const SPEC_REL = ".sova/spec";
 
 /** The hook's view of the machine the tools run on. Methods may be sync or async. */
@@ -301,6 +303,16 @@ export interface CensusState {
 	orphans?: string[];
 	/** Revs the task's own claims are absent at (ownBasesFor at the first look): census --own-base. */
 	ownBases?: string[];
+	/** What the digest printed once and holds back after (absent in older state files). */
+	said?: CensusSaid;
+}
+
+/** The digest's once-per-session lines, marked only on the note that printed them. */
+export interface CensusSaid {
+	rule?: boolean;
+	noDraft?: boolean;
+	/** "id → parent" pairs of new claims under a foreign § already listed. */
+	pairs?: string[];
 }
 
 export const freshCensusState = (): CensusState => ({ base: null, top: null, known: [], reported: false, foreign: [], failed: false });
@@ -347,32 +359,56 @@ export const NO_DRAFT_NOTE =
  * in-boundary change, a new file in the boundary or mapped by a claim, a new file outside the boundary
  * that no claim maps (it may still change behavior: said once per file), or a new foreign §.
  */
-export function digest(v: CensusView, fresh: readonly string[], state: Pick<CensusState, "reported" | "foreign">, hasDraft: boolean): string | undefined {
+export function digest(v: CensusView, fresh: readonly string[], state: Pick<CensusState, "reported" | "foreign" | "said">, hasDraft: boolean): string | undefined {
+	return digestSaying(v, fresh, state, hasDraft).text;
+}
+
+/**
+ * The digest and what it printed of the once-per-session lines (`said`, the next state's). Each file in
+ * `New:` names at most NEW_ID_CAP §; the Rule and No draft lines print once; each new-claim pair prints
+ * once, and only a printed pair is marked, so pairs past ID_CAP come in a later note. When it fires is
+ * unchanged: the pairs never trigger it.
+ */
+export function digestSaying(v: CensusView, fresh: readonly string[], state: Pick<CensusState, "reported" | "foreign" | "said">, hasDraft: boolean): { text?: string; said: CensusSaid } {
+	const said: CensusSaid = { ...state.said, ...(state.said?.pairs ? { pairs: [...state.said.pairs] } : {}) };
 	const inBoundary = new Map<string, string>();
-	for (const e of v.claimed) inBoundary.set(e.path, e.claims.join(", "));
+	for (const e of v.claimed) inBoundary.set(e.path, capped(e.claims, NEW_ID_CAP));
 	for (const p of v.unclaimed ?? []) inBoundary.set(p, "unclaimed");
-	for (const e of v.mappedOutside) inBoundary.set(e.path, `outside the boundary, mapped by ${e.claims.join(", ")}`);
+	for (const e of v.mappedOutside) inBoundary.set(e.path, `outside the boundary, mapped by ${capped(e.claims, NEW_ID_CAP)}`);
 	const freshIn = fresh.filter((p) => inBoundary.has(p));
 	const newForeign = v.foreign.filter((id) => !state.foreign.includes(id));
 	const first = !state.reported && inBoundary.size > 0;
 	// Outside the boundary and no claim maps it: the spec's own files never count.
 	const unmapped = fresh.filter((p) => v.outside?.includes(p) && !inBoundary.has(p) && !p.startsWith(".sova/"));
-	if (!first && !freshIn.length && !newForeign.length && !unmapped.length) return undefined;
+	if (!first && !freshIn.length && !newForeign.length && !unmapped.length) return { said: state.said ?? {} };
 	const unclaimed = v.unclaimed?.length ?? 0;
 	const lines = [
 		`${DIGEST_TAG} ${v.claimed.length + unclaimed} changed file(s) in the boundary, ${unclaimed} unclaimed; ${v.foreign.length} foreign § touched` +
 			(v.mappedOutside.length ? `; ${v.mappedOutside.length} mapped outside the boundary.` : "."),
 	];
-	if (!hasDraft && inBoundary.size) lines.push(NO_DRAFT_NOTE);
+	if (!hasDraft && inBoundary.size && !said.noDraft) {
+		lines.push(NO_DRAFT_NOTE);
+		said.noDraft = true;
+	}
 	if (freshIn.length) {
 		const shown = freshIn.slice(0, FILE_CAP).map((p) => `${p} → ${inBoundary.get(p)}`);
 		lines.push(`New: ${shown.join("; ")}${freshIn.length > FILE_CAP ? ` (+${freshIn.length - FILE_CAP} more)` : ""}`);
 	}
 	for (const p of unmapped.slice(0, FILE_CAP)) lines.push(unmappedNote(p));
 	if (unmapped.length > FILE_CAP) lines.push(`(+${unmapped.length - FILE_CAP} more such files)`);
-	if (newForeign.length) lines.push(`Foreign §: ${capped(newForeign, ID_CAP)}`, `Rule: ${v.foreignNote}.`);
-	if (v.childUnderForeign.length) lines.push(`New claims under a foreign §: ${capped(v.childUnderForeign.map((p) => `${p.id} → ${p.parent}`), ID_CAP)}`);
-	return lines.join("\n");
+	if (newForeign.length) {
+		lines.push(`Foreign §: ${capped(newForeign, ID_CAP)}`);
+		if (!said.rule) {
+			lines.push(`Rule: ${v.foreignNote}.`);
+			said.rule = true;
+		}
+	}
+	const pairs = [...new Set(v.childUnderForeign.map((p) => `${p.id} → ${p.parent}`))].filter((p) => !said.pairs?.includes(p));
+	if (pairs.length) {
+		lines.push(`New claims under a foreign §: ${capped(pairs, ID_CAP)}`);
+		said.pairs = [...(said.pairs ?? []), ...pairs.slice(0, ID_CAP)];
+	}
+	return { text: lines.join("\n"), said };
 }
 
 /** A git-top-relative path as the spec root sees it, or undefined outside the root. */
@@ -410,6 +446,7 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 			const tip = main ? (await io.exec("git", ["rev-parse", "--verify", "-q", `refs/heads/${main}`], { cwd: view.top, timeout: TOOL_TIMEOUT_MS })).stdout.trim() : "";
 			const ownBases = await ownBasesFor(view.top, view.head, tip || undefined, io);
 			Object.assign(next, freshCensusState(), { base: view.head, top: view.top, known: Object.keys(view.files), ...(ownBases.length ? { ownBases } : {}) });
+			delete next.said;
 			return { state: next, result: {} };
 		}
 		const known = new Set(next.known);
@@ -449,10 +486,11 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		if (!r.view) return { state: next, result: {} };
 		const freshRel = fresh.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined);
 		const orphans = (r.view.orphanedEvidence ?? []).filter((e) => !next.orphans?.includes(e.commit));
-		const said = digest(r.view, freshRel, next, Boolean(spec));
+		const { text: said, said: printed } = digestSaying(r.view, freshRel, next, Boolean(spec));
 		if (said) {
 			next.reported = true;
 			next.foreign = [...new Set([...next.foreign, ...r.view.foreign])];
+			next.said = printed;
 		}
 		if (orphans.length) next.orphans = [...(next.orphans ?? []), ...orphans.map((e) => e.commit)];
 		const text = [orphans.length ? orphanNote(orphans) : undefined, said].filter(Boolean).join("\n");
@@ -463,6 +501,16 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		return { state: next, result: { failure: `spec census hook: ${error instanceof Error ? error.message : String(error)}` } };
 	}
 }
+
+/**
+ * pi tools that cannot write the repository, by exact name: the census neither looks nor moves its
+ * baseline after them, so the next call that can write reports every change since. Bash is never here.
+ */
+export const CENSUS_SKIP_TOOLS: ReadonlySet<string> = new Set([
+	"read", "grep", "find", "ls", "align",
+	"agent_list", "agent_models", "agent_transcript", "agent_wait", "team_list", "team_inbox", "team_roster",
+	"link_inbox", "link_members", "link_offers",
+]);
 
 /** The directories a tool call writes in: a shell command's (commandDirs), an edit's file's, and the cwd. */
 export function callDirs(call: Pick<CensusCall, "cwd" | "toolName" | "input">): string[] {
@@ -526,12 +574,14 @@ export class CensusHook {
 
 	/** Before a call: the baseline of each tree it will write in and the session hasn't seen yet. */
 	before(call: CensusCall): Promise<void> {
+		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve();
 		return this.serial(async () => {
 			for (const dir of callDirs(call)) await this.baseline(dir, call.signal);
 		}, undefined);
 	}
 
 	after(call: CensusCall): Promise<CensusResult> {
+		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve({});
 		return this.serial(async () => {
 			const texts: string[] = [];
 			let failure: string | undefined;

@@ -10935,6 +10935,57 @@
         "server/topic-delivery.ts",
         "shared/topic-message.ts"
       ]
+    },
+    "§tools.spec/inspection-safety": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/sova-spec-review.mjs",
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/core.test.mjs",
+        "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md",
+        "pi-config/extensions/spec/tests/inspection.test.mjs"
+      ]
+    },
+    "§tools.spec/promotion-integrity": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec-draft.mjs",
+        "pi-config/extensions/spec/tests/draft.test.mjs",
+        "pi-config/extensions/spec/tests/enforce.test.mjs",
+        "pi-config/extensions/spec/tests/publication.test.mjs",
+        "pi-config/extensions/spec/tests/milestone-integrity.test.mjs",
+        "pi-config/extensions/spec/PROMOTE.md",
+        "pi-config/extensions/spec/DRAFTS.md"
+      ]
+    },
+    "§tools.spec/runtime-accounting": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/spec-worker.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/mode/tests/spec-turn.mjs",
+        "pi-config/extensions/mode/tests/ordinary-mapped.mjs",
+        "pi-config/extensions/mode/tests/smoke.mjs",
+        "pi-config/extensions/mode/tests/note-turn.mjs",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/README.md",
+        "pi-config/extensions/spec/README.md"
+      ]
     }
   },
   "boundary": {

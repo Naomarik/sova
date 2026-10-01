@@ -36,8 +36,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
-	CHECK_TAG, LANDING_REPROMPTS, LEDGER_ENV, appendLedger, censusStep, checkAlsoChanges, commandDirs, commandRoot, currentSpecPath, defaultBranch, describeProblem, directWriteNote, evidenceCommits, headAt, judgeOp, rebaseUnderway, rewriteNote, sanctionedSpecWrite, draftForeign, draftStamps, draftsTouched, findSpecRoot, freshCensusState, gitCommits, gitView,
-	localIO, promoteWrites, repromptText, viewChanged, type CensusState, type GitView, type LedgerEntry, type OpLanding, type SpecIO,
+	CHECK_TAG, LANDING_REPROMPTS, LEDGER_ENV, appendLedger, callDirs, censusStep, checkAlsoChanges, commandDirs, commandRoot, currentSpecPath, defaultBranch, describeProblem, directWriteNote, evidenceCommits, headAt, judgeOp, rebaseUnderway, rewriteNote, sanctionedSpecWrite, draftForeign, draftStamps, draftsTouched, findSpecRoot, freshCensusState, gitCommits, gitView,
+	localIO, mappedClaims, promoteWrites, repromptText, treeStart, treeTurn, viewChanged, type TreeStart, type CensusState, type GitView, type LedgerEntry, type OpLanding, type SpecIO,
 } from "../mode/spec-guard.ts";
 import { lastLine, parseAlsoChanges } from "../mode/also-changes.ts";
 
@@ -70,6 +70,7 @@ export function specHookSettings(o: { node: string; coreDir: string; stateDir: s
 	return {
 		hooks: {
 			UserPromptSubmit: [{ hooks: [command("turn")] }],
+			PreToolUse: [{ matcher: "*", hooks: [command("pre")] }],
 			PostToolUse: [{ matcher: "*", hooks: [command("post")] }],
 			Stop: [{ hooks: [command("stop")] }],
 		},
@@ -104,6 +105,10 @@ export interface TurnState {
 	id?: string;
 	/** The work tree at the last look (the turn's start, then after each tool). */
 	view?: GitView;
+	views?: Record<string, GitView>;
+	trees?: Record<string, TreeStart>;
+	touchedTrees?: string[];
+	paths?: Record<string, string[]>;
 	/** The spec root and each draft's newest spec/ mtime at the turn's start: drafts are gitignored, so git never shows their edits. */
 	root?: string;
 	drafts?: Record<string, number>;
@@ -144,6 +149,7 @@ export interface HookState {
 	/** When the hooks first saw this session (ISO): pickDraft's fallback. */
 	sessionStart: string;
 	census: CensusState;
+	censuses?: Record<string, CensusState>;
 	/** This session's shell commands, newest last (bounded): the drafts it created. */
 	commands: string[];
 	turn: TurnState;
@@ -213,7 +219,43 @@ export async function onTurn(input: HookInput, ctx: HookContext): Promise<HookOu
 		...freshTurn(), id: input.prompt_id, view, head: view?.head, ...(root ? { root, drafts: await draftStamps(root, ctx.io) } : {}),
 		heads: { ...(view ? await worktreeHeads(view.top, ctx.io) : {}), ...(view?.head ? { [await realTop(view.top)]: view.head } : {}) }, lookedAt: Date.now(), ...(tip?.code === 0 && tip.stdout.trim() ? { tip: tip.stdout.trim() } : {}),
 	};
-	ctx.state.census = (await censusStep(ctx.state.census, { cwd, toolName: "", input: undefined }, ctx.core, ctx.io)).state;
+	ctx.state.censuses ??= {};
+	ctx.state.turn.views = {};
+	ctx.state.turn.trees = {};
+	// Worktree metadata is cheap; source/spec baselines belong only to destinations actually used.
+	for (const dir of [cwd]) {
+		const start = await treeStart(dir, ctx.io);
+		if (!start) continue;
+		ctx.state.turn.views[start.view.top] = start.view;
+		(ctx.state.turn.paths ??= {})[start.view.top] = Object.keys(start.view.files);
+		ctx.state.turn.trees[start.view.top] = start;
+		const previous = view?.top === start.view.top && ctx.state.census.top === start.view.top ? ctx.state.census : ctx.state.censuses[start.view.top] ?? freshCensusState();
+		ctx.state.censuses[start.view.top] = (await censusStep(previous, { cwd: dir, toolName: "", input: undefined }, ctx.core, ctx.io)).state;
+	}
+	if (view) ctx.state.census = ctx.state.censuses[view.top] ?? ctx.state.census;
+	return undefined;
+}
+
+/** Observe explicit destinations before execution; never permission-gate or block the call. */
+export async function onPre(input: HookInput, ctx: HookContext): Promise<HookOutput> {
+	const tool = input.tool_name ?? "";
+	if (READ_ONLY.has(tool)) return undefined;
+	const cwd = input.cwd ?? process.cwd();
+	const { state } = ctx;
+	state.turn.views ??= {};
+	state.turn.trees ??= {};
+	state.censuses ??= {};
+	for (const dir of callDirs({ cwd, toolName: tool, input: input.tool_input })) {
+		const start = await treeStart(dir, ctx.io).catch(() => undefined);
+		if (!start) { state.turn.partial = true; continue; }
+		const top = start.view.top;
+		state.turn.views[top] = start.view;
+		(state.turn.paths ??= {})[top] = union(state.turn.paths?.[top] ?? [], Object.keys(start.view.files));
+		state.turn.trees[top] ??= start;
+		if (start.view.head) (state.turn.heads ??= {})[top] = start.view.head;
+		const prior = state.census.top === top ? state.census : state.censuses[top] ?? freshCensusState();
+		if (prior.top !== top) state.censuses[top] = (await censusStep(prior, { cwd: dir, toolName: "", input: undefined }, ctx.core, ctx.io)).state;
+	}
 	return undefined;
 }
 
@@ -225,17 +267,52 @@ export async function onPost(input: HookInput, ctx: HookContext): Promise<HookOu
 	const turn = state.turn;
 	const command = tool === "Bash" && typeof input.tool_input?.command === "string" ? input.tool_input.command : undefined;
 	if (command) state.commands = [...state.commands, command].slice(-MAX_COMMANDS);
-	const before = turn.view;
-	const view = await gitView(cwd, ctx.io);
-	if (WRITE_TOOLS.has(tool) || viewChanged(before, view) || (command && gitCommits(command))) turn.wrote = true;
-	turn.view = view ?? before;
-	if (command) await landOps(command, cwd, input.tool_response, ctx).catch(() => { turn.partial = true; });
-	const g = await writeGuard(tool, input, cwd, before, view, ctx).catch(() => ({ text: undefined, lost: [] as string[] }));
-	const guard = g.text;
-	const step = await censusStep(state.census, { cwd, toolName: tool, input: input.tool_input ?? {}, commands: state.commands, sessionStart: state.sessionStart, orphansSaid: g.lost }, ctx.core, ctx.io);
-	state.census = step.state;
-	if (step.result.failure) return { systemMessage: [guard, step.result.failure].filter(Boolean).join("\n") };
-	const text = [guard, step.result.text].filter(Boolean).join("\n");
+	if (WRITE_TOOLS.has(tool)) turn.wrote = true;
+	const texts: string[] = [];
+	const done = new Set<string>();
+	state.censuses ??= {};
+	turn.views ??= {};
+	turn.touchedTrees ??= [];
+	for (const dir of callDirs({ cwd, toolName: tool, input: input.tool_input })) {
+		const view = await gitView(dir, ctx.io);
+		if (!view) {
+			if (path.resolve(dir) !== path.resolve(cwd) || turn.view) {
+				turn.partial = true;
+				texts.push(`${CHECK_TAG} incomplete check: Git view unavailable for ${dir}; inspect changes by hand.`);
+			}
+			continue;
+		}
+		if (done.has(view.top)) continue;
+		done.add(view.top);
+		const before = turn.views[view.top] ?? (turn.view?.top === view.top ? turn.view : undefined);
+		// HEAD movement alone may be somebody else's commit, not this shell call's write.
+		const changed = before && viewChanged({ ...before, head: view.head }, view);
+		if (changed) turn.wrote = true;
+		if (changed || WRITE_TOOLS.has(tool)) turn.touchedTrees = union(turn.touchedTrees, [view.top]);
+		if (!before) {
+			turn.partial = true;
+			turn.wrote = true;
+			texts.push(`${CHECK_TAG} incomplete check: no pre-call baseline for explicit destination ${view.top}; inspect its changes by hand.`);
+		}
+		const paths = union(union(turn.paths?.[view.top] ?? [], Object.keys(before?.files ?? {})), Object.keys(view.files));
+		if (before?.head && view.head && before.head !== view.head && command && commandKinds(command).size) {
+			const diff = await ctx.io.exec("git", ["diff-tree", "--no-commit-id", "--name-only", "-r", "-z", before.head, view.head], { cwd: view.top, timeout: 5000 }).catch(() => undefined);
+			if (diff?.code === 0) paths.push(...diff.stdout.split("\0").filter(Boolean));
+			else turn.partial = true;
+		}
+		(turn.paths ??= {})[view.top] = union([], paths);
+		turn.views[view.top] = view;
+		if (path.resolve(dir) === path.resolve(cwd)) turn.view = view;
+		const g = await writeGuard(tool, input, dir, before, view, ctx).catch(() => ({ text: undefined, lost: [] as string[] }));
+		const prior = path.resolve(dir) === path.resolve(cwd) && state.census.top === view.top ? state.census : state.censuses[view.top] ?? freshCensusState();
+		const step = await censusStep(prior, { cwd: dir, toolName: tool, input: input.tool_input ?? {}, commands: state.commands, sessionStart: state.sessionStart, orphansSaid: g.lost }, ctx.core, ctx.io);
+		state.censuses[view.top] = step.state;
+		if (path.resolve(dir) === path.resolve(cwd)) state.census = step.state;
+		if (step.result.failure) turn.partial = true;
+		texts.push(...[g.text, step.result.text, step.result.failure].filter((s): s is string => Boolean(s)));
+	}
+	if (command) await landOps(command, cwd, input.tool_response, ctx).catch(() => { turn.partial = true; texts.push(`${CHECK_TAG} incomplete check: operation scan failed; inspect by hand.`); });
+	const text = texts.join("\n");
 	if (!text) return undefined;
 	return { hookSpecificOutput: { hookEventName: "PostToolUse", additionalContext: text } };
 }
@@ -329,8 +406,8 @@ export async function landOps(command: string, cwd: string, response: unknown, c
 		const was = heads[at.top];
 		if (was !== at.head || !was) {
 			const allowed = commandKinds(command);
-			const moved = opsSince(await headReflog(at.top, ctx.io), was, since).filter((m) => was || allowed.has(m.kind));
-			if (!moved.length && was && was !== at.head && /\bgit\b/.test(command)) ops.push({ top: at.top, before: was, after: at.head, kind: gitCommits(command) ? "commit" : "merge" });
+			const moved = opsSince(await headReflog(at.top, ctx.io), was, since).filter((m) => allowed.has(m.kind));
+			if (!moved.length && was && was !== at.head && allowed.size) ops.push({ top: at.top, before: was, after: at.head, kind: gitCommits(command) ? "commit" : "merge" });
 			for (const m of moved) ops.push({ top: at.top, before: m.before, after: m.after, kind: m.kind });
 		}
 		heads[at.top] = at.head;
@@ -354,6 +431,7 @@ export async function landOps(command: string, cwd: string, response: unknown, c
 		if (listed) turn.foreign = union(turn.foreign, listed);
 		const l = j.lists;
 		if (!l) { turn.partial = true; continue; }
+		if (l.complete === false) turn.partial = true;
 		const promoted = op.kind === "promote" ? landingOf((response as { stdout?: unknown } | undefined)?.stdout) : undefined;
 		(turn.landings ??= []).push({
 			top: op.top, before: op.before, after: op.after, kind: op.kind, root: await findSpecRoot(op.top, (p) => ctx.io.exists(p)),
@@ -469,6 +547,14 @@ export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOu
 	const turn = ctx.state.turn;
 	const reply = input.last_assistant_message ?? "";
 	const block = (reason: string): HookOutput => { turn.blocks++; return { decision: "block", reason }; };
+	for (const top of turn.touchedTrees ?? []) {
+		const start = turn.trees?.[top];
+		if (!start) continue;
+		const result = await treeTurn(start, ctx.core, ctx.io, { commits: false });
+		if (result.error || (result.changed && result.foreign === undefined)) turn.partial = true;
+		if (result.specChanged) turn.landed = true;
+		turn.foreign = union(turn.foreign, result.foreign ?? []);
+	}
 	const drafted = await draftEdits(turn, ctx);
 	if (drafted) turn.wrote = true;
 	if (turn.landed) {
@@ -480,13 +566,14 @@ export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOu
 		if (turn.blocks >= MERGE_BLOCKS) return undefined;
 		const gate = await gateNow(turn.landings ?? [], ctx.core, ctx.io);
 		const check = checkAlsoChanges(reply, { required: true, foreign, exact: !turn.partial, advisory: gate.advisory, unmapped: gate.unmapped, unpromoted: gate.unpromoted, unpromotedAtDefault: gate.unpromotedAtDefault });
-		if (check.ok) return undefined;
-		return block(repromptText(check, foreign, "promoted or merged"));
+		if (check.ok) return turn.partial ? { systemMessage: `${CHECK_TAG} incomplete check: some operation or tree lists were unavailable; inspect foreign/landing lists by hand.` } : undefined;
+		return block([repromptText(check, foreign, "promoted or merged"), turn.partial ? `${CHECK_TAG} incomplete check: inspect foreign/landing lists by hand.` : ""].filter(Boolean).join("\n"));
 	}
 	// Elsewhere a warning: sent back once (stop_hook_active marks the retry), then let through.
-	if (input.stop_hook_active || turn.blocks >= 1) return undefined;
+	if (input.stop_hook_active || turn.blocks >= 1) return turn.partial ? { systemMessage: `${CHECK_TAG} incomplete check: some destination checks were unavailable; inspect changes by hand.` } : undefined;
 	const ids = parseAlsoChanges(lastLine(reply));
 	if (!turn.wrote) {
+		if (turn.partial) return { systemMessage: `${CHECK_TAG} incomplete check: destination changes could not be determined; inspect changes by hand.` };
 		const qa = checkAlsoChanges(reply, { required: false, foreign: [], forbidden: true });
 		return qa.ok ? undefined
 			: block(`${CHECK_TAG} This turn changed no files, so its reply carries no \`Also changes:\` line; drop it. If it is right because you did change files, repeat your reply unchanged.`);
@@ -497,12 +584,19 @@ export async function onStop(input: HookInput, ctx: HookContext): Promise<HookOu
 		return block(`${CHECK_TAG} This turn changed files: ${describeProblem(check)}. End your reply with exactly "Also changes: §X — <what>" or "Also changes: none" as its last line, nothing after it. If it is right as written, repeat your reply unchanged.`);
 	}
 	// The census's foreign list, when it ran: a named § it never saw touched is a new claim or a guess.
-	const seen = union(ctx.state.census.foreign, drafted ?? []);
-	const unseen = seen.length ? (ids ?? []).filter((id) => !seen.includes(id)) : [];
+	let seen = union(turn.foreign, drafted ?? []);
+	for (const view of Object.values(turn.views ?? {})) {
+		const census = ctx.state.census.top === view.top ? ctx.state.census : ctx.state.censuses?.[view.top];
+		const mapped = await mappedClaims(view, union(Object.keys(view.files), turn.paths?.[view.top] ?? []), ctx.io, census?.ownBases, { commands: ctx.state.commands, sessionStart: ctx.state.sessionStart });
+		seen = union(seen, mapped.ids);
+		if (mapped.error || census?.incomplete) turn.partial = true;
+	}
+	const knownSpec = Boolean(turn.root) || Object.values(turn.trees ?? {}).some((tree) => Boolean(tree.root));
+	const unseen = !turn.partial && (seen.length || knownSpec) ? (ids ?? []).filter((id) => !seen.includes(id)) : [];
 	if (unseen.length) {
 		return block(`${CHECK_TAG} Your last line names ${unseen.join(", ")}, which the census never saw this session's changes touch (it saw ${seen.join(", ")}). It names foreign § only, never your new claims. Fix it, or repeat your reply unchanged if it is right.`);
 	}
-	return undefined;
+	return turn.partial ? { systemMessage: `${CHECK_TAG} incomplete check: some destination checks were unavailable; inspect changes by hand.` } : undefined;
 }
 
 /** One hook call: read the state, run the event, write the state, log what was said. */
@@ -511,7 +605,7 @@ export async function runHook(event: string, input: HookInput, o: { core: string
 	if (!file) return undefined;
 	const ledger = o.ledger ?? process.env[LEDGER_ENV];
 	const ctx: HookContext = { core: o.core, state: readState(file), io: o.io ?? localIO, ...(ledger ? { ledger } : {}), session: input.session_id };
-	const out = event === "turn" ? await onTurn(input, ctx) : event === "post" ? await onPost(input, ctx) : event === "stop" ? await onStop(input, ctx) : undefined;
+	const out = event === "turn" ? await onTurn(input, ctx) : event === "pre" ? await onPre(input, ctx) : event === "post" ? await onPost(input, ctx) : event === "stop" ? await onStop(input, ctx) : undefined;
 	writeState(file, ctx.state);
 	if (out) fs.appendFileSync(file.replace(/\.json$/, ".log.jsonl"), `${JSON.stringify({ at: new Date().toISOString(), event, tool: input.tool_name, out })}\n`, { mode: 0o600 });
 	return out;

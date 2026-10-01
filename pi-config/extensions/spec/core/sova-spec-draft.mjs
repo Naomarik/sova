@@ -265,13 +265,36 @@ async function declsOf(root, specRel) {
 }
 
 // ---------------------------------------------------------------- git (read-only plumbing, no shell)
-function git(root, args, binary = false) {
+function git(root, args, binary = false, input) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
   const r = spawnSync("git", ["-c", "core.fsmonitor=false", "-C", root, ...args], {
-    shell: false, encoding: binary ? "buffer" : "utf8", maxBuffer: 4 * MAX_FILE_BYTES, stdio: ["ignore", "pipe", "pipe"],
+    shell: false, encoding: binary ? "buffer" : "utf8", maxBuffer: 4 * MAX_FILE_BYTES, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"], input,
     env: { ...env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
   });
   return r.error ? { status: null, error: r.error.code } : { status: r.status, out: r.stdout, err: String(r.stderr ?? "") };
+}
+// Work-tree diff can execute configured filters even with --no-ext-diff/--no-textconv.
+function refuseGitFilters(root, base) {
+  const tracked = git(root, ["ls-files", "--cached", "-z", "--", "."]);
+  const prior = git(root, ["ls-tree", "--name-only", "-r", "-z", base, "--", "."]);
+  if (tracked.status !== 0 || prior.status !== 0) throw new Fail(2, "git-failed", "cannot enumerate paths for Git filter inspection");
+  const paths = uniqSorted([...tracked.out.split("\0"), ...prior.out.split("\0")].filter(Boolean));
+  if (!paths.length) return;
+  const attrs = git(root, ["check-attr", "--all", "-z", "--stdin"], false, paths.join("\0") + "\0");
+  if (attrs.status !== 0) throw new Fail(2, "git-failed", "cannot inspect Git filter attributes");
+  const fields = attrs.out.split("\0");
+  if (fields.pop() !== "" || fields.length % 3 !== 0) throw new Fail(2, "git-failed", "unexpected Git filter attribute output");
+  const drivers = new Set();
+  for (let i = 0; i < fields.length; i += 3) {
+    // --all omits absent/reset attributes, distinguishing them from literal filter=unspecified.
+    // Boolean set/unset still collide with literal driver names and must fail closed.
+    if (fields[i + 1] === "filter") drivers.add(fields[i + 2]);
+  }
+  for (const driver of drivers) for (const kind of ["clean", "process"]) {
+    const r = git(root, ["config", "--get", `filter.${driver}.${kind}`]);
+    if (r.status !== 0 && r.status !== 1) throw new Fail(2, "git-failed", "cannot inspect selected Git filter configuration");
+    if (r.status === 0 && r.out.trim()) throw new Fail(2, "git-filter-refused", "a tracked path's filter attribute names or is ambiguous with a configured Git clean/process filter; read-only work-tree inspection is unsupported and no diff was run");
+  }
 }
 async function dotGitAbove(root) {
   for (let d = root; ; d = dirname(d)) { if (await exists(join(d, ".git"))) return true; if (dirname(d) === d) return false; }
@@ -422,7 +445,16 @@ async function analyze(root, name) {
 // Recheck one evidence entry against the bytes and revisions now. → [] (valid) or reasons.
 async function evidenceProblems(root, g, e, draftRelDir) {
   const out = [];
-  if (e.mode === "doc-only") return out;
+  if (e.log) {
+    const log = await readFileSafe(root, `${draftRelDir}/evidence/objects/${e.log.sha256}`, { secrets: false });
+    if (log.state !== "present" || log.sha256 !== e.log.sha256) out.push("retained verification log is missing or corrupt");
+  }
+  if (e.mode === "doc-only") {
+    if (e.inputs.length) out.push("--doc-only evidence takes no implementation inputs");
+    return out;
+  }
+  for (const i of e.inputs) if (i.path === SPEC || i.path.startsWith(`${SPEC}/`) || i.path === ".sova" || secretOf(i.path))
+    out.push(`${i.path} is not an allowed implementation evidence path`);
   if (e.mode === "snapshot") {
     if (g.git) out.push("snapshot evidence, but this is now a Git project: record --commit evidence");
     for (const i of e.inputs) if (i.state === "present") {
@@ -453,6 +485,8 @@ async function evidenceState(root, a, g, c) {
   if (bound.recordSha !== c.binding.recordSha) reasons.push("the proposed record changed after evidence was recorded");
   if (bound.textSha256 !== c.binding.textSha256) reasons.push("the proposed prose changed after evidence was recorded");
   if (e.mode === "doc-only" && !DOC_ONLY_KINDS.has(c.kind)) reasons.push(`--doc-only evidence does not cover kind ${c.kind}`);
+  if (e.mode !== "doc-only" && !c.deleted && !e.inputs.some((i) => i.state === "present"))
+    reasons.push("evidence has no present implementation file");
   for (const p of c.code) if (e.mode !== "doc-only" && !e.inputs.some((i) => i.path === p && (c.deleted || i.state === "present")))
     reasons.push(`mapped code ${p} is not among the evidence inputs as a present file`);
   reasons.push(...(await evidenceProblems(root, g, e, a.rel)));
@@ -632,6 +666,7 @@ async function drift(root, a, g, baseRev) {
   if (g.git && rev) {
     base = resolveCommit(root, rev);
     if (!base) throw new Fail(1, "bad-rev", `--base ${rev} does not name a commit`);
+    refuseGitFilters(root, base);
     const diff = git(root, ["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--relative", base, "--", "."]);
     const others = git(root, ["ls-files", "-z", "--others", "--exclude-standard", "--", "."]);
     if (diff.status !== 0 || others.status !== 0) throw new Fail(2, "git-failed", `git diff/ls-files: ${(diff.err || others.err || "").trim()}`);
@@ -669,11 +704,15 @@ async function cmdCheck(root, o) {
   if (dr && !dr.base && g.git) findings.push({ severity: "note", code: "drift-base-unknown", message: "the draft records no base commit (made before drafts recorded one): pass --base REV to check code changed since then" });
   // Evidence that names a commit this line no longer has (a rebase after evidence): the record's claim is orphaned.
   const evidenceNotAncestor = [];
+  const latest = new Map();
+  for (const e of d.evidence) for (const i of e.ids) latest.set(i.id, e);
   if (g.git) for (const e of d.evidence) if (e.mode === "commit") {
+    const activeIds = e.ids.filter((i) => latest.get(i.id) === e).map((i) => i.id);
+    if (!activeIds.length) continue;
     const why = resolveCommit(root, e.commit) !== e.commit ? "missing" : !isAncestor(root, e.commit) ? "not-ancestor" : null;
     if (!why) continue;
     const x = evidenceNotAncestor.find((y) => y.commit === e.commit) ?? (evidenceNotAncestor.push({ commit: e.commit, reason: why, ids: [] }), evidenceNotAncestor.at(-1));
-    x.ids = uniqSorted([...x.ids, ...e.ids.map((i) => i.id)]);
+    x.ids = uniqSorted([...x.ids, ...activeIds]);
   }
   for (const x of evidenceNotAncestor)
     findings.push({ severity: "warn", code: "evidence-not-ancestor", message: `evidence commit ${x.commit.slice(0, 12)} (${x.ids.join(", ")}) is ${x.reason === "missing" ? "gone" : "not an ancestor of HEAD"}: a rebase after evidence orphans it; merge instead, and re-record evidence against the commit HEAD has` });
@@ -719,9 +758,8 @@ async function cmdEvidence(root, o) {
     }
     let log;
     if (o.log !== undefined) {
-      const abs = resolve(o.log), st = await lstat(abs).catch(() => null);
-      if (!st?.isFile() || secretOf(abs.split("\\").join("/").replace(/^\/+/, ""))) throw new Fail(1, "log-refused", `--log ${o.log}: not a readable, non-secret regular file`);
-      const r = await readOpen(abs);
+      const abs = resolve(o.log), rel = abs.split("\\").join("/").replace(/^\/+/, "");
+      const r = await readFileSafe(resolve("/"), rel);
       if (r.state !== "present") throw new Fail(1, "log-refused", `--log ${o.log}: ${r.why}`);
       log = r;
     }
@@ -824,7 +862,7 @@ async function plan(root, o) {
   const bases = ownBases(root, g, o), own = ownPredicate(root, g, bases);
   const also = alsoChanges(a, [...ids].filter((x) => a.changed.has(x)), own);
   // Drift the draft carries, shown at promotion too (never a refusal): nobody has to have run `check`.
-  const dr = a.bc.exit !== 2 && a.pc.exit !== 2 ? await drift(root, a, g, undefined).catch(() => null) : null;
+  const dr = a.bc.exit !== 2 && a.pc.exit !== 2 ? await drift(root, a, g, undefined) : null;
   const driftWarnings = dr ? [...dr.removedElsewhere.map(removedText), ...dr.proseUnchanged.filter((r) => r.citedBy).map((r) => citedText(r, dr.base))] : [];
   return { a, g, bases, cand, targets, planSha, refusals, out: {
     name: o.name, ids: [...ids].sort(), alsoChanges: also.map((x) => x.id), alsoChangesDetail: also, driftWarnings, meta: meta.map((m) => m.key), files: files.map((f) => ({ path: f.path, merge: f.merge, ids: f.ids })),
@@ -876,7 +914,8 @@ function landingOf(root, g, a, bases) {
   let j;
   try { j = JSON.parse(r.stdout); } catch { return { landingError: `core foreign --landing printed no JSON (status ${r.status})` }; }
   if (!Array.isArray(j.unmappedChanged)) return { landingError: j.findings?.map((f) => f.message).join("; ") || "no landing data" };
-  return { unmappedChanged: j.unmappedChanged, mappedUntouched: j.mappedUntouched, unpromotedDrafts: j.unpromotedDrafts };
+  return { unmappedChanged: j.unmappedChanged, mappedUntouched: j.mappedUntouched, unpromotedDrafts: j.unpromotedDrafts,
+    complete: j.complete, incomplete: j.incomplete, draftScan: j.draftScan, findings: j.findings ?? [] };
 }
 
 // The foreign § a promotion of `ids` changes: each one current already has, and each current H1 that gains a new H2,
@@ -911,10 +950,10 @@ async function cmdPromote(root, o) {
     if (p.refusals.length) throw new Fail(1, p.refusals[0].code, `promotion refused (${p.refusals.length} reason(s)); nothing was written`, { written: false, ...p.out });
     if (o.plan !== undefined && o.plan !== p.planSha) throw new Fail(1, "plan-changed", "the plan differs from the previewed --plan; preview again", { written: false, ...p.out });
     if (!p.targets.length) throw new Fail(1, "nothing-to-write", "current already equals the selected proposal", { written: false, ...p.out });
-    await applyTxn(root, o.name, p.targets, p.cand);
-    const cur = await loadDraft(root, o.name);
-    cur.d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids, meta: p.out.meta, files: p.targets.map((t) => t.path) });
-    await saveDraft(root, cur.rel, cur.d);
+    const d = structuredClone(p.a.d);
+    d.promotions.push({ at: new Date().toISOString(), plan: p.planSha, ids: p.out.ids, meta: p.out.meta, files: p.targets.map((t) => t.path) });
+    const receipt = Buffer.from(JSON.stringify(d, null, 2) + "\n");
+    await applyTxn(root, o.name, p.targets, p.cand, { before: p.a.sha, buf: receipt });
     return { exit: 0, written: true, ...p.out, ...landingOf(root, p.g, p.a, p.bases) };
   });
 }
@@ -922,53 +961,67 @@ async function cmdPromote(root, o) {
 // ---------------------------------------------------------------- transaction
 // Journal first (with old and new bytes), then each file by rename; any failure rolls back what was
 // applied. A journal left behind (crash, failed rollback) blocks every write until `recover`.
-async function applyTxn(root, name, targets, cand) {
+const targetRel = (t) => `${t.storage === "draft" ? DRAFTS : SPEC}/${t.path}`;
+async function applyTxn(root, name, targets, cand, receipt) {
   const drafts = await ownDir(root, DRAFTS, true);
   const txn = join(drafts, ".txn");
   await mkdir(txn);
-  const entries = targets.map((t, i) => ({ ...t, i }));
-  const cur = await readTree(root, SPEC, true);
-  for (const t of entries) if ((cur.files.get(t.path)?.sha256 ?? null) !== t.before) {
+  const entries = [...targets, { storage: "draft", path: `${name}/draft.json`, before: receipt.before, after: sha(receipt.buf) }].map((t, i) => ({ ...t, i }));
+  const before = new Map();
+  for (const t of entries) before.set(t.i, await readFileSafe(root, targetRel(t)));
+  for (const t of entries) if ((before.get(t.i).sha256 ?? null) !== t.before || !["present", "absent"].includes(before.get(t.i).state)) {
     await rm(txn, { recursive: true, force: true });
-    throw new Fail(1, "race", `${SPEC}/${t.path} changed after the plan was made; nothing was written`);
+    throw new Fail(1, "race", `${targetRel(t)} changed after the plan was made; nothing was written`);
   }
   for (const t of entries) {
-    if (t.before !== null) await writeFile(join(txn, `old-${t.i}`), cur.files.get(t.path).buf, { flag: "wx" });
-    if (t.after !== null) await writeFile(join(txn, `new-${t.i}`), cand.get(t.path), { flag: "wx" });
+    if (t.before !== null) await writeFile(join(txn, `old-${t.i}`), before.get(t.i).buf, { flag: "wx" });
+    if (t.after !== null) await writeFile(join(txn, `new-${t.i}`), t.storage === "draft" ? receipt.buf : cand.get(t.path), { flag: "wx" });
   }
   await writeAtomic(txn, "journal.json", JSON.stringify({ format: FORMAT, draft: name, startedAt: new Date().toISOString(), pid: process.pid, targets: entries }, null, 2) + "\n");
-  const applied = [], made = [];
+  const made = [];
   try {
     for (const t of entries) {
-      const now = await readFileSafe(root, `${SPEC}/${t.path}`);
-      if ((now.sha256 ?? null) !== t.before || (now.state !== "present" && now.state !== "absent")) throw new Fail(1, "race", `${SPEC}/${t.path} changed during promotion`);
-      const dir = await ownDir(root, dirname(`${SPEC}/${t.path}`), true, made);
+      const now = await readFileSafe(root, targetRel(t));
+      if ((now.sha256 ?? null) !== t.before || (now.state !== "present" && now.state !== "absent")) throw new Fail(1, "race", `${targetRel(t)} changed during promotion`);
+      const dir = await ownDir(root, dirname(targetRel(t)), true, made);
       if (t.after === null) await unlink(join(dir, posix.basename(t.path)));
-      else await writeAtomic(dir, posix.basename(t.path), cand.get(t.path));
-      applied.push(t);
+      else await writeAtomic(dir, posix.basename(t.path), t.storage === "draft" ? receipt.buf : cand.get(t.path));
     }
     for (const t of entries) {
-      const now = await readFileSafe(root, `${SPEC}/${t.path}`);
-      if ((now.sha256 ?? null) !== t.after) throw new Fail(1, "race", `${SPEC}/${t.path} changed right after it was written`);
+      const now = await readFileSafe(root, targetRel(t));
+      if (now.state !== (t.after === null ? "absent" : "present") || (now.sha256 ?? null) !== t.after) throw new Fail(1, "race", `${targetRel(t)} changed right after it was written`);
     }
   } catch (e) {
     try {
+      // Inspect actual bytes: a syscall may have applied a rename before reporting failure.
+      const applied = [];
+      for (const t of entries) {
+        const now = await readFileSafe(root, targetRel(t)), h = now.sha256 ?? null;
+        if (!["present", "absent"].includes(now.state) || (h !== t.before && h !== t.after)) throw new Fail(1, "race", `${targetRel(t)} matches neither transaction side`);
+        if (h === t.after) applied.push(t);
+      }
+      for (const t of applied) await backupOf(txn, t);
       for (const t of applied.reverse()) await restore(root, txn, t);
       for (const d of made.reverse()) await rmdir(d).catch(() => {});
-    } catch (r) { throw new Fail(2, "rollback-failed", `promotion failed (${e.message}) and rollback failed (${r.message}); ${TXN} is kept — run recover`); }
+    } catch (r) { throw new Fail(2, "rollback-failed", `promotion failed (${e.message}) and rollback failed (${r.message}); ${TXN} is kept — run recover`, { pending: true }); }
     await rm(txn, { recursive: true, force: true });
     if (!(e instanceof Fail)) e = new Fail(2, "write-failed", `${e.code ?? ""} ${e.message}`.trim());
     throw Object.assign(e, { message: `${e.message}; every applied file was rolled back` });
   }
-  await unlink(join(txn, "journal.json"));
+  // The receipt has been applied and checked before the journal is retired.
   await rm(txn, { recursive: true, force: true });
 }
-async function restore(root, txn, t) {
-  const dir = await ownDir(root, dirname(`${SPEC}/${t.path}`), true);
-  if (t.before === null) { await unlink(join(dir, posix.basename(t.path))).catch((e) => { if (e.code !== "ENOENT") throw e; }); return; }
+async function backupOf(txn, t) {
+  if (t.before === null) return null;
   const old = await readOpen(join(txn, `old-${t.i}`));
-  if (old.sha256 !== t.before) throw new Fail(2, "backup-corrupt", `backup of ${t.path} is missing or corrupt`);
-  await writeAtomic(dir, posix.basename(t.path), old.buf);
+  if (old.state !== "present" || old.sha256 !== t.before) throw new Fail(2, "backup-corrupt", `backup of ${t.path} is missing or corrupt`);
+  return old.buf;
+}
+async function restore(root, txn, t) {
+  const old = await backupOf(txn, t);
+  const dir = await ownDir(root, dirname(targetRel(t)), true);
+  if (t.before === null) { await unlink(join(dir, posix.basename(t.path))).catch((e) => { if (e.code !== "ENOENT") throw e; }); return; }
+  await writeAtomic(dir, posix.basename(t.path), old);
 }
 
 async function cmdRecover(root, o) {
@@ -982,8 +1035,9 @@ async function cmdRecover(root, o) {
     if (!obj(journal) || journal.format !== FORMAT || !Array.isArray(journal.targets)) throw new Fail(2, "journal-corrupt", `${TXN}/journal.json is not a ${FORMAT} journal`);
     const targets = [];
     for (const t of journal.targets) {
-      if (!obj(t) || !normRel(t.path) || !Number.isInteger(t.i) || ![t.before, t.after].every((h) => h === null || HEX.test(h))) throw new Fail(2, "journal-corrupt", "journal target malformed");
-      const now = await readFileSafe(root, `${SPEC}/${t.path}`);
+      if (!obj(t) || normRel(t.path) !== t.path || !Number.isInteger(t.i) || t.i < 0 || targets.some((x) => x.i === t.i || targetRel(x) === targetRel(t)) || ![t.before, t.after].every((h) => h === null || HEX.test(h)) ||
+          (t.storage !== undefined && (t.storage !== "draft" || !NAME_RE.test(journal.draft ?? "") || t.path !== `${journal.draft}/draft.json`))) throw new Fail(2, "journal-corrupt", "journal target malformed");
+      const now = await readFileSafe(root, targetRel(t));
       const h = now.sha256 ?? null;
       targets.push({ ...t, state: now.state === "refused" ? "foreign" : h === t.before ? "untouched" : h === t.after ? "applied" : "foreign" });
     }
@@ -1005,6 +1059,8 @@ async function cmdRecover(root, o) {
     const x = await inspectTxn();
     if (!x) return { exit: 0, pending: false, written: true, action: "no pending promotion; lock is clear" };
     foreignFail(x);
+    // Validate every needed backup before restoring anything, receipt included.
+    for (const t of x.targets) if (t.state === "applied") await backupOf(x.txn, t);
     for (const t of x.targets) if (t.state === "applied") await restore(root, x.txn, t);
     await rm(x.txn, { recursive: true, force: true });
     return { exit: 0, pending: false, written: true, ...view(x), action: "rolled back" };

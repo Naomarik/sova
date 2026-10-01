@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 
 const CLI = resolve(dirname(fileURLToPath(import.meta.url)), "../core/sova-spec-draft.mjs");
 const CORE = resolve(dirname(fileURLToPath(import.meta.url)), "../core/sova-spec.mjs");
+const fixtureEnv = (root) => ({ ...Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_"))), HOME: join(root, "home"), XDG_CONFIG_HOME: join(root, "home") });
 const sha = (s) => createHash("sha256").update(s).digest("hex");
 
 const roots = [];
@@ -41,7 +42,7 @@ function project({ spec = true } = {}) {
   return root;
 }
 function run(root, ...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args, "--root", root, "--json"], { encoding: "utf8", cwd: root });
+  const r = spawnSync(process.execPath, [CLI, ...args, "--root", root, "--json"], { encoding: "utf8", cwd: root, env: fixtureEnv(root) });
   let j;
   try { j = JSON.parse(r.stdout); } catch { assert.fail(`non-JSON stdout (status ${r.status}): ${r.stdout}\n${r.stderr}`); }
   assert.equal(r.status, j.exit, "process status equals JSON exit");
@@ -59,9 +60,9 @@ function tree(root, sub = ".sova/spec") {
   return out;
 }
 const current = (root) => Object.fromEntries(Object.entries(tree(root)).filter(([p]) => !p.includes("/drafts/")));
-const core = (root, ...a) => JSON.parse(spawnSync(process.execPath, [CORE, ...a, "--root", root, "--json"], { encoding: "utf8" }).stdout);
+const core = (root, ...a) => JSON.parse(spawnSync(process.execPath, [CORE, ...a, "--root", root, "--json"], { encoding: "utf8", env: fixtureEnv(root) }).stdout);
 function git(root, ...a) {
-  const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", "-C", root, ...a], { encoding: "utf8" });
+  const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "init.defaultBranch=main", "-C", root, ...a], { encoding: "utf8", env: fixtureEnv(root) });
   assert.equal(r.status, 0, r.stderr);
   return r.stdout.trim();
 }

@@ -363,6 +363,114 @@ describe("sova_session's Topics line", () => {
   });
 });
 
+describe("sova_session's truth lines (§app.overseer/session-truth)", () => {
+  const now = Date.parse("2026-10-01T10:00:00Z");
+  const min = 60_000;
+  const iso = (ms: number) => new Date(ms).toISOString();
+  const item = (raw: unknown): TranscriptItem => ({ id: "x", kind: "unknown", raw });
+  const question = (n: number, decided = false) => ({
+    id: `q${n}`,
+    topic: `Topic ${n}`,
+    ask: `Ask ${n}?`,
+    recommendation: { choice: "A", why: "because" },
+    ...(decided ? { decision: { text: "A", by: "user", at: iso(now) } } : {}),
+  });
+  const alignDoc = (id: string, phase: "open" | "done", questions: unknown[]) => ({
+    id,
+    title: `Doc ${id}`,
+    summary: "s",
+    findings: [],
+    approach: [],
+    rejected: [],
+    questions,
+    phase,
+    next: { f: 0, a: 0, x: 0, q: questions.length },
+    rev: 1,
+    createdAt: iso(now - 90 * min),
+    updatedAt: iso(now - 90 * min),
+  });
+  const alignResult = (doc: unknown) => item({ type: "message", timestamp: iso(now - 80 * min), message: { role: "toolResult", toolName: "align", details: { v: 1, doc, changes: [{ kind: "created" }], line: "created" } } });
+  const assistant = (at: number, text: string, stopReason = "stop", extra: Record<string, unknown> = {}) =>
+    item({ type: "message", timestamp: iso(at), message: { role: "assistant", content: [{ type: "text", text }], stopReason, ...extra } });
+  const base = { id: "s1", path: "/s/s1.jsonl", title: "T", archived: false } as SessionSummary;
+
+  test("the last reply with its age, stop reason and opening text; the summary dated and marked as written before it", async () => {
+    const { truthLines } = await import("./overseer-tools");
+    const long = `Done. ${"word ".repeat(100)}`;
+    const items = [assistant(now - 3 * 3_600_000, "older"), assistant(now - 12 * min, long)];
+    const outline = { now: "Running the migration", overall: "Port the store", lastHeading: null, state: "stale" as const, generatedAt: now - 2 * 3_600_000, topics: [] };
+    const lines = truthLines(base, items, outline, undefined, now);
+    const last = lines.find((l) => l.startsWith("Last reply: "))!;
+    assert.match(last, /^Last reply: 12m ago \(stop: stop\) — "Done\. word word/);
+    assert.ok(last.endsWith('…"') && last.length < 340, "the text is cut to 300 characters");
+    assert.ok(lines.includes("Now (summary, 2h ago, written before the last reply, stale): Running the migration"), lines.join("\n"));
+    assert.ok(lines.includes("Purpose (summary, 2h ago, written before the last reply, stale): Port the store"));
+    // A summary newer than the last reply carries no such words.
+    const fresh = truthLines(base, items, { ...outline, state: "fresh", generatedAt: now - min }, undefined, now);
+    assert.ok(fresh.includes("Now (summary, 1m ago): Running the migration"), fresh.join("\n"));
+  });
+
+  test("an errored last turn, a session with no reply yet, and open alignments with their question counts and who they wait on", async () => {
+    const { truthLines } = await import("./overseer-tools");
+    const errored = truthLines(base, [assistant(now - 5 * min, "", "error", { errorMessage: "429 rate limited" })], undefined, undefined, now);
+    assert.ok(errored.includes("Turn error: 429 rate limited"), errored.join("\n"));
+    assert.deepEqual(truthLines(base, [], undefined, undefined, now), ["Last reply: none yet."]);
+    const items = [
+      alignResult(alignDoc("al_3", "open", [question(1), question(2, true), question(3)])),
+      alignResult(alignDoc("al_4", "done", [question(1)])),
+      assistant(now - min, "Which do you want?"),
+    ];
+    const waiting = truthLines({ ...base, align: { openDocs: 1, openQuestions: 2, questionDocs: 1 } }, items, undefined, undefined, now);
+    assert.ok(waiting.includes(`Alignments: al_3 "Doc al_3": 2 of 3 questions open — the session waits on the user's answers`), waiting.join("\n"));
+    const movedOn = truthLines(base, items, undefined, undefined, now);
+    assert.ok(movedOn.some((l) => l.startsWith("Alignments: al_3") && l.endsWith("not waiting on the user (they spoke since, or align is off)")));
+    assert.ok(!movedOn.join("\n").includes("al_4"), "a done alignment is not listed");
+  });
+
+  test("merge lines: each worktree's readiness, the merged badge, and the last check before or after the newest commit", async () => {
+    const { truthLines } = await import("./overseer-tools");
+    const s = {
+      ...base,
+      readiness: {
+        trees: [
+          { path: "/wt/a", branch: "feat/a", state: "ready", reason: "Ready to merge · checks passed · 3 commits ahead" },
+          { path: "/wt/b", branch: "feat/b", state: "in-progress", reason: "In progress · uncommitted changes" },
+        ],
+        since: now - 30 * min,
+      },
+    } as unknown as SessionSummary;
+    const checks = { lastCheck: { at: now - 10 * min, ok: true }, heads: { "/wt/a": now - 20 * min, "/wt/b": now - 5 * min } };
+    const lines = truthLines(s, [], undefined, checks, now);
+    assert.ok(lines.includes("Merge: feat/a — Ready to merge · checks passed · 3 commits ahead; last check passed 10m ago, after its newest commit (20m ago)"), lines.join("\n"));
+    assert.ok(lines.includes("Merge: feat/b — In progress · uncommitted changes; last check passed 10m ago, before its newest commit (5m ago)"));
+    const none = truthLines(s, [], undefined, { heads: {} }, now);
+    assert.ok(none.includes("Merge: feat/a — Ready to merge · checks passed · 3 commits ahead; no check run seen"));
+    const merged = truthLines({ ...s, readiness: { ...s.readiness!, badge: "restart", branch: "feat/a" } }, [], undefined, checks, now);
+    assert.ok(merged.includes("Merged: feat/a 30m ago, the server restart it needs is pending"), merged.join("\n"));
+  });
+
+  test("the tool prints them for a session, and sova_read_session no longer says to prefer the summary", async () => {
+    const s = { ...base, cwd: "/w", model: null, lastActiveAt: iso(now), live: null, busy: false, origin: "web" } as unknown as SessionSummary;
+    const host = {
+      session: async (ref: string) => (ref === "s1" ? s : null),
+      insight: async () => ({ outline: { now: "Old line", overall: "", lastHeading: null, state: "fresh", generatedAt: Date.now() - 3_600_000, topics: [] } }),
+      transcript: async () => [assistant(Date.now() - 60_000, "Merged and pushed.")],
+      held: () => null,
+      checks: () => undefined,
+      confirmed: () => null,
+      attended: () => true,
+    } as unknown as OverseerToolHost;
+    const tools = overseerTools(host, new TurnLimits());
+    const out = await tools.find((t) => t.name === "sova_session")!.execute("t", { session: "s1" }, undefined, undefined, undefined as never);
+    const text = (out.content[0] as { text: string }).text;
+    assert.match(text, /\nLast reply: 1m ago \(stop: stop\) — "Merged and pushed\."/);
+    assert.match(text, /\nNow \(summary, 1h ago, written before the last reply\): Old line/);
+    const read = tools.find((t) => t.name === "sova_read_session")!;
+    assert.ok(!/prefer/i.test(read.description), read.description);
+    assert.match(read.description, /The tail is what is true now/);
+  });
+});
+
 describe("card items", async () => {
   const { resolveConfirmItems, CONFIRM_ITEMS_MAX } = await import("./overseer-confirm");
   const { cardLines, displayOrder } = await import("../shared/overseer-card");

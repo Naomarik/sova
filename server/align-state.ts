@@ -27,6 +27,18 @@ export function sessionAlignOf(docs: readonly AlignDocument[]): SessionAlign | u
   };
 }
 
+/** A branch's open alignments (not done or dropped), each with its open and live (not dropped)
+    question counts, in fold order: what `sova_session` prints (§app.overseer/session-truth).
+    `entries` are raw session entries, root first. */
+export function openAlignmentsOf(entries: readonly unknown[]): { id: string; title: string; open: number; total: number }[] {
+  return openDocsOf(foldAlignments(entries).docs).map((doc) => ({
+    id: doc.id,
+    title: doc.title,
+    open: openQuestionsOf(doc).length,
+    total: doc.questions.filter((q) => !q.dropped).length,
+  }));
+}
+
 /** The bytes every `align` tool result carries (JSON.stringify writes no space after the colon). */
 const MARKER = Buffer.from('"toolName":"align"');
 const CHUNK = 256 * 1024;

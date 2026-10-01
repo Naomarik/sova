@@ -26,7 +26,7 @@ import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { stripImageNotes } from "../shared/image-note";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
 import { parseWakeNudge } from "../shared/wake";
-import { type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
+import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
 import { readLive, readOwnLiveRecords, workerCountsOf } from "./live";
 import { appliesAfter, defaultPatchOf, mergeMode, MINOR_MODES, modeApplyPlan, modeInfo, pinEntryFor, readMode, resolveChatMode, writeMode, type ModePatch, type ModeState } from "./mode-state";
@@ -1103,6 +1103,8 @@ class ChatSession {
     this.flushDeferredAppends();
     const images = item.images as Parameters<AgentSession["steer"]>[1];
     const toSdk = <T>(send: () => T) => this.toSdk(item.origin, send, item.confirm);
+    // What the extensions' input handlers are told: a person's input, or Sova's own (§app.overseer/input-source).
+    const source = inputSourceOf(item);
     // The sender's mark goes in with the message, never earlier: a held item is not in the SDK,
     // so a message the user types meanwhile with the same text must not take its mark. It stays
     // until the message ends (markSend) or the item departs undelivered (onGone).
@@ -1114,7 +1116,7 @@ class ChatSession {
       // Idle: this starts a turn. Its own failure belongs in this session's pane, like every other
       // turn nobody is awaiting, and must not be reported as a hand-off failure (which would hand
       // the text back to the composer for a message that HAS been sent).
-      const turn = toSdk(() => this.session.prompt(item.text, { images }));
+      const turn = toSdk(() => this.session.prompt(item.text, { images, source }));
       this.noteStarting(turn);
       turn.catch((err) => {
         if (mark) this.dropSenderMark(mark);
@@ -1129,10 +1131,10 @@ class ChatSession {
     // steer() throws on extension commands; prompt() runs them immediately (even mid-stream) and
     // otherwise queues with the same skill/template expansion. Same split as the direct path.
     if (item.kind === "steer" && !item.text.startsWith("/")) {
-      await toSdk(() => this.session.steer(item.text, images));
+      await toSdk(() => this.session.steer(item.text, images, { source }));
       return;
     }
-    await toSdk(() => this.session.prompt(item.text, { images, streamingBehavior: item.kind })).catch((err) => {
+    await toSdk(() => this.session.prompt(item.text, { images, streamingBehavior: item.kind, source })).catch((err) => {
       if (!this.heldForCompaction(err, { ...item, id: undefined })) throw err;
     });
   }
@@ -2020,6 +2022,8 @@ class ChatSession {
       sentBySession?: { sessionId: string; title: string; hop: number };
       delivery?: WebQueueItem["kind"];
       confirm?: string;
+      /** A person typed it elsewhere (a group batch): its input source is `interactive` (inputSourceOf). */
+      byPerson?: true;
     },
   ): { queued: boolean; turn: Promise<void> } {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
@@ -2037,7 +2041,8 @@ class ChatSession {
       const baton = opts?.sentByBaton ? { baton: opts.sentByBaton } : {};
       const fromSession = opts?.sentBySession ? { session: opts.sentBySession } : {};
       const confirm = opts?.confirm ? { confirm: opts.confirm } : {};
-      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm });
+      const byPerson = opts?.byPerson ? { byPerson: true as const } : {};
+      this.queue.enqueue({ kind: opts?.delivery ?? "followUp", text, images: images as QueueImage[] | undefined, origin, id: clientId, ...overseer, ...baton, ...fromSession, ...confirm, ...byPerson });
       return { queued: true, turn: Promise.resolve() };
     }
     this.flushDeferredAppends();
@@ -2054,7 +2059,8 @@ class ChatSession {
     const send: SenderMark | null = sender ? { text, sender } : null;
     if (send) this.senderMarks.push(send);
     if (opts?.sentBySession) this.profileState?.run?.expectHop(text, opts.sentBySession.hop);
-    const turn = this.toSdk(origin, () => this.session.prompt(text, { images, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }), opts?.confirm);
+    const source = inputSourceOf({ origin, ...(opts?.sentByOverseer ? { overseer: opts.sentByOverseer } : {}), ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}), ...(opts?.byPerson ? { byPerson: true as const } : {}) });
+    const turn = this.toSdk(origin, () => this.session.prompt(text, { images, source, ...(opts?.replay ? { expandPromptTemplates: false } : {}) }), opts?.confirm);
     this.noteStarting(turn);
     if (send)
       turn.catch(() => {
@@ -2075,6 +2081,7 @@ class ChatSession {
         ...(opts?.sentByBaton ? { baton: opts.sentByBaton } : {}),
         ...(opts?.sentBySession ? { session: opts.sentBySession } : {}),
         ...(opts?.confirm ? { confirm: opts.confirm } : {}),
+        ...(opts?.byPerson ? { byPerson: true as const } : {}),
       };
       if (!this.heldForCompaction(err, item)) throw err;
     };

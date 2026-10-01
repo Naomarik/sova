@@ -56,6 +56,8 @@ export interface TreeFacts {
   conflicts?: number;
   /** A TEMP / WIP / fixup! / squash! / amend! subject on the branch, the newest. */
   tempCommit?: string;
+  /** When the newest commit was made (committer time, ms). */
+  headAt?: number;
 }
 
 /** The session's facts the rules read. */
@@ -551,6 +553,7 @@ async function treeFacts(t: TrackedWorktree): Promise<TreeFacts> {
     ...(st.base ? { base: st.base } : {}),
     ...(st.conflicts ? { conflicts: st.conflicts } : {}),
     ...(st.subjects ? { tempCommit: tempCommitOf(st.subjects) } : {}),
+    ...(st.headAt ? { headAt: st.headAt } : {}),
   };
 }
 
@@ -567,8 +570,10 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts): Pro
   }
   const sf: SessionFacts = { running, openQuestions: s.align?.openQuestions ?? 0, asks, ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}) };
   const trees: WorktreeReadiness[] = [];
+  const heads: Record<string, number> = {};
   for (const t of own) {
     const tf = await treeFacts(t);
+    if (tf.headAt) heads[t.path] = tf.headAt;
     const r = treeReadiness(tf, sf);
     trees.push({
       path: t.path,
@@ -591,6 +596,7 @@ export async function computeReadiness(s: SessionSummary, facts: FileFacts): Pro
   }
   const followUp = newest ? followUpFor(s.id, newest.id) : undefined;
   const lastReplyAt = reply?.at ?? (Date.parse(s.lastActiveAt) || 0);
+  checksBySession.set(s.path, { ...(facts.lastCheck ? { lastCheck: facts.lastCheck } : {}), heads });
   return sessionReadinessOf(trees, { ...(newest ? { lastMerge: { at: newest.at, branch: newest.branch } } : {}), restartPending, pushPending, followUp }, lastReplyAt);
 }
 
@@ -690,8 +696,19 @@ export function readinessOverlay(s: SessionSummary): SessionReadiness | undefine
 export function pruneReadiness(listed: readonly SessionSummary[]): void {
   const paths = new Set(listed.map((s) => s.path));
   for (const k of cache.keys()) if (!paths.has(k)) cache.delete(k);
+  for (const k of checksBySession.keys()) if (!paths.has(k)) checksBySession.delete(k);
   deps.followUps?.prune(new Set(listed.map((s) => s.id)));
 }
+
+/** A session's last check run and each tracked worktree's newest commit time, as the last
+    readiness read saw them (sova_session's Merge line, §app.overseer/session-truth). */
+export interface ReadinessChecks {
+  lastCheck?: { at: number; ok: boolean };
+  /** Tree path → its newest commit's time (ms). */
+  heads: Record<string, number>;
+}
+const checksBySession = new Map<string, ReadinessChecks>();
+export const readinessChecksOf = (sessionPath: string): ReadinessChecks | undefined => checksBySession.get(sessionPath);
 
 /** A worktree's readiness from the session's cached answer (the Session tab's rows). */
 export function treeReadinessOf(sessionPath: string, treePath: string): WorktreeReadiness | undefined {

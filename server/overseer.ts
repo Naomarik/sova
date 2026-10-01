@@ -18,12 +18,12 @@ import {
   type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerKey, buildDigest, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerKey, buildDigest, mergedBranch, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-pipeline";
 import { conflictAttention } from "./decisions";
 import { notSentAttention } from "./outreach/log";
-import { restartItems } from "./merge-readiness";
+import { readinessChecksOf, restartItems } from "./merge-readiness";
 import {
   acquireChat,
   BusyError,
@@ -77,6 +77,7 @@ import { canonicalPath, resolveSessionPath } from "./paths";
 import { isViewing, markSeen, readSeen } from "./seen";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
 import { getSessionInsight } from "./insights";
+import { runNote, runNoteSessionIds, type SessionNow } from "./overseer-run-note";
 import { meshApi } from "./mesh";
 import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
@@ -567,6 +568,7 @@ const host: OverseerToolHost = {
   digest: () => attentionForWire(),
   transcript: async (path) => normalizeEntries(await readActiveBranch(path)),
   insight: (path) => getSessionInsight(path),
+  checks: (path) => readinessChecksOf(path),
   held(path) {
     const chat = heldChat(path);
     if (!chat) return null;
@@ -757,6 +759,40 @@ export function cardsNoteMessage(branch: readonly unknown[]): { message: { custo
   return note ? { message: { customType: CARDS_NOTE_MESSAGE, content: note, display: false } } : undefined;
 }
 
+/**
+ * before_agent_start's hidden message in the global Overseer: the run note (§app.overseer/run-note:
+ * the time now, the briefed blockers that cleared, open cards' sessions that merged or were
+ * archived), then the open cards (§app.overseer/confirm). One message, so it stays the cards note
+ * the attendance rule treats as state. A failure to read the sessions still sends the time and the cards.
+ */
+export async function runNoteMessage(branch: readonly unknown[], now = new Date()): Promise<{ message: { customType: string; content: string; display: false; details?: unknown } }> {
+  const cardsText = cardsNote(foldCards(branch), false, sessionActivity());
+  let note: { content: string; details: unknown };
+  try {
+    const aliases = readAliases();
+    const states = new Map<string, SessionNow | null>();
+    for (const id of runNoteSessionIds(branch, now.getTime())) {
+      const path = await pathOfId(id);
+      const s = path ? await getSessionSummary(path) : null;
+      states.set(id, s ? { name: sessionName(s, aliases[s.id]), archived: s.archived, ...(mergedBranch(s) ? { merged: s.readiness!.since } : {}), waitsOnAnswers: !!s.align && s.align.openQuestions > 0 } : null);
+    }
+    const digest = await attentionDigest();
+    const act = digest.items.filter((i) => i.tier === "act");
+    note = runNote({
+      now,
+      branch,
+      act: { keys: new Set(act.map(blockerKey)), complete: act.length >= digest.counts.act },
+      session: (id) => states.get(id) ?? null,
+      ...(cardsText ? { cardsText } : {}),
+      redact: (t) => serverRedactor().redact(t),
+    });
+  } catch (err) {
+    console.warn("[overseer] run note without sessions:", err instanceof Error ? err.message : String(err));
+    note = runNote({ now, branch: [], act: { keys: new Set(), complete: false }, session: () => null, ...(cardsText ? { cardsText } : {}) });
+  }
+  return { message: { customType: CARDS_NOTE_MESSAGE, content: note.content, display: false, details: note.details } };
+}
+
 /** When a session was last active (its file's mtime, as the session list says), by id, for the
     cards note's "may be stale" lines; paths come from the listing cache, so an id it doesn't hold
     reads as unknown. Shared with the project overseer. */
@@ -897,11 +933,12 @@ setOverseerRuntime({
             factory: (pi) => {
               for (const t of tools) pi.registerTool(t);
               // A run started by a message: its prompt, with the notes and settings as they are now.
-              // The open cards ride the prompt as a hidden message, never the system prompt (a prompt
-              // change restarts a Claude Code CLI): persisted, so a restart or a fold keeps it.
-              pi.on("before_agent_start", (event, ctx) => {
+              // The run note (the time now, what cleared) and the open cards ride the prompt as a
+              // hidden message, never the system prompt (a prompt change restarts a Claude Code CLI
+              // and breaks the cache): persisted, so a restart or a fold keeps it.
+              pi.on("before_agent_start", async (event, ctx) => {
                 event.systemPromptOptions.appendSystemPrompt = prompt.refresh();
-                return cardsNoteMessage(ctx.sessionManager.getBranch());
+                return runNoteMessage(ctx.sessionManager.getBranch());
               });
               // A compaction summarizes the card results away: the exact open cards, once, after it.
               pi.on("session_compact", (_event, ctx) => {

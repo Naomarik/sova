@@ -611,11 +611,17 @@ for that call with a warning line in the result; the extension never writes the 
 - **Monitor.** Added last, `tools: []`, with `team_msg` (plus `notice: wrap-up | pause |
   resume`), `team_inbox`, `team_roster` and `wake_nudge` — nothing else, on both backends. Its
   header is the standing instruction (roster every `everyMinutes`; wrap-up at `contextPct`;
-  pause at `pausePct`, `wake_nudge` at the reset + margin, then resume). The parent enforces the
-  wait: at a `pause` notice it records the team's windows then at or over `pausePct` with a reset
-  time, and refuses a `resume` notice (delivering nothing, recording no event) until the latest of
-  those resets plus `resumeMarginMinutes` (read at the resume) has passed; the refusal names the
-  window and the time. A pause with no such window holds nothing, and the hold is in memory only
+  pause when a provider is blocked, `wake_nudge` at the reset + margin, then resume). A login is
+  out when a non-weekly window (`5h`) is at or over `pausePct` or a `7d…` window is at 100%; a 7d
+  window below 100% is informational. A provider is blocked only when every login is out: Claude
+  counts `claude` (the default login) and each `claudeAccounts` entry with a reading that is not
+  `skipped: "auth"` (this host's only; the mesh pool is not consulted). The roster names each
+  window's login when there are several, marks AT/OVER only the windows of a blocked provider, and
+  says `headroom on N of M logins — not a reason to pause` when some are out. The parent enforces
+  the wait: at a `pause` notice it records, per blocked provider, the blocking windows of the login
+  that frees soonest (`blockingWindows`), and refuses a `resume` notice (delivering nothing,
+  recording no event) until the latest of those resets plus `resumeMarginMinutes` (read at the
+  resume) has passed; the refusal names the window and the time. A pause with no such window holds nothing, and the hold is in memory only
   (a pause restored after a reload has none). Its roster carries the
   thresholds read now and the usage-status windows of the providers the team's models spend
   from (`<agent dir>/cache/usage-status.json`); a window whose `resetsAt` has passed shows as

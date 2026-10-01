@@ -139,12 +139,15 @@ export default function specWorker(pi: ExtensionAPI): void {
 			.join("\n");
 	});
 
-	pi.on("agent_before_settle", async (event) => {
+	pi.on("agent_before_settle", async (event, ctx) => {
 		if (process.env.PI_SPEC_CHECK === "0" || event.outcome !== "completed") return;
 		try {
 			const t = freshTally(run.changed, run.ops.some((o) => o.kind === "promote"));
 			await tallyOps(t, run.ops, (top) => (top === run.tree?.view.top ? run.tree?.defaultTip : undefined), core());
 			if (run.tree && run.tools) await tallyTree(t, run.tree, core(), undefined, { commits: false, promoted: run.ops.some((o) => o.kind === "promote") });
+			const mapped = await census.mapped({ commands: bashCommands(ctx.sessionManager.getBranch()), sessionStart: ctx.sessionManager.getHeader()?.timestamp });
+			for (const id of mapped.ids) t.advisory.add(id);
+			if (mapped.errors.length) { t.exact = false; t.errors.push(...mapped.errors); }
 			const { check, foreign } = tallyCheck(t, reply);
 			const problems = t.errors.length ? [`${CHECK_TAG} the check itself failed: ${t.errors.join("; ")}. Check your \`Also changes:\` line against \`foreign\` by hand.`] : [];
 			if ((check.ok && !t.conflicts.length && !problems.length) || reprompts >= (t.landing ? LANDING_REPROMPTS : 1)) return;

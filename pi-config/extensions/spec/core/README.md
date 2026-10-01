@@ -64,6 +64,25 @@ to the project root. New fields are only ever added. Other tools read this outpu
 - A derived `resolution` block is optional and ignored, with a note. Spans are always recomputed
   from headings, so don't author one. The core ignores other unknown fields.
 
+### Safe inspection
+
+Invalid `claimsRoot` configuration is refused before any traversal. Boundary include and exclude
+paths are validated by the shared parser, so full and changed census cannot disagree about an
+escaping or absolute boundary. Mapped code marked `present` must be readable, not only stat-able.
+
+The review companion invokes the additive `--read-policy review` option. It applies the companion's
+secret-name, hard-link, and per-file size refusals before the core opens claim or incumbent contents.
+The default core provenance policy is unchanged; callers requiring review-grade refusal must opt in.
+This is a cooperative read policy, not protection against a hostile filesystem writer.
+
+Before a working-tree diff, Git configuration and attributes are inspected without running filters.
+Selected executable clean/process filters are unsupported and explicitly refused before the diff;
+ordinary unused driver configuration does not block inspection. Git's attribute output represents
+boolean filter attributes and literal driver names `set`/`unset` identically; if an executable
+driver has that ambiguous name, the matching result is conservatively refused. Absent filter
+attributes do not select a driver named `unspecified`. Filter command values are never included
+in refusal output. Git still runs with fsmonitor disabled and without a local shell.
+
 ### Records
 
 - `kind` is one of:
@@ -188,7 +207,11 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `conflict` without the draft ever promoting them, in each worktree whose HEAD the range brings in:
   an ancestor of head and not of base, never the default branch's own checkout; with no `--head`, the
   root's drafts; and each `--drafts DIR` project root; read with `sova-spec-draft.mjs status`, at most
-  20 drafts); `handResolved: [{commit, ids}]` (when head is a merge commit, ids whose text or record
+  20 drafts). Corrupt, unreadable, or capped draft inventories carry `draftScan` (`complete`,
+  `scanned`, `capped`, `unread`); a landing also carries top-level `complete` and `incomplete`
+  reason codes. An incomplete scan is not evidence that no pending draft exists. Changed census
+  carries its evidence inventory state as `census.draftScan`.
+  `handResolved: [{commit, ids}]` (when head is a merge commit, ids whose text or record
   differs from every parent's: a hand resolution, see `git show --cc`). None of them changes the exit.
 - **§a.b ids.** `scope` and `impact` read `§a.b` (not a § identifier) as `§a/b`, with an `id-alias`
   note; an unknown result is `unknown-id` as usual.

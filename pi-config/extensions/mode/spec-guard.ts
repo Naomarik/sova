@@ -297,6 +297,8 @@ export interface CensusState {
 	foreign: string[];
 	/** A failure was reported once. */
 	failed: boolean;
+	/** Last unavailable input stays incomplete until a successful census replaces it. */
+	incomplete?: string;
 	/** The manifest conflict now in progress was already reported (absent in older state files). */
 	conflict?: boolean;
 	/** Orphaned evidence commits already said (by the census or the write guard). */
@@ -438,7 +440,11 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 	const next: CensusState = { ...state, known: [...state.known], foreign: [...state.foreign], orphans: [...new Set([...(state.orphans ?? []), ...(call.orphansSaid ?? [])])] };
 	try {
 		const view = await gitView(call.cwd, io, call.signal);
-		if (!view) return { state, result: {} };
+		if (!view) {
+			if (!state.top) return { state, result: {} };
+			next.incomplete = "spec census hook: incomplete check (Git view unavailable); inspect by hand";
+			return { state: next, result: { failure: next.incomplete } };
+		}
 		seen.view = view;
 		if (next.top !== view.top) {
 			// First look at this tree: its current changes are the baseline, not the task's.
@@ -468,37 +474,47 @@ async function censusDelta(state: CensusState, call: CensusCall, core: string, i
 		if (ranCensus(call.toolName, call.input)) return { state: next, result: {} };
 		const root = await findSpecRoot(call.cwd, (p) => io.exists(p));
 		const tool = join(core, "sova-spec.mjs");
-		if (!root || !(await io.exists(tool))) return { state: next, result: {} };
+		if (!root) return { state: next, result: {} };
+		if (!(await io.exists(tool))) {
+			next.incomplete = "spec census hook: incomplete check (trusted census unavailable); run it by hand";
+			return { state: next, result: { failure: next.incomplete } };
+		}
 		const census = async (spec?: string) => {
 			const own = (next.ownBases ?? []).flatMap((rev) => ["--own-base", rev]);
 			const args = [tool, "census", "--changed", "--json", "--root", root, ...(next.base ? ["--base", next.base] : []), ...own, ...(spec ? ["--spec", spec] : [])];
 			const r = await io.exec("node", args, { cwd: root, timeout: TOOL_TIMEOUT_MS, signal: call.signal });
-			return { view: parseCensus(r.stdout), ran: r.stdout.trim() !== "" };
+			let incomplete: string | undefined;
+			try {
+				const out = JSON.parse(r.stdout);
+				if (out.complete === false || out.census?.draftScan?.complete === false) incomplete = `spec census hook: incomplete check (${Array.isArray(out.incomplete) ? out.incomplete.join(", ") : "partial draft scan"}); inspect by hand`;
+			} catch { /* unusable output is reported below */ }
+			return { view: parseCensus(r.stdout), ran: r.stdout.trim() !== "", incomplete };
 		};
 		const spec = await pickDraft(root, call.commands ?? [], call.sessionStart, io);
 		let r = await census(spec);
 		if (!r.view && spec) r = await census(); // an unreadable draft: the current spec still names what is foreign
-		if (!r.ran) {
-			if (next.failed) return { state: next, result: {} };
+		if (!r.ran || !r.view) {
+			next.incomplete = !r.ran ? "spec census hook: incomplete check: the census produced no output (timeout or crash); run it by hand" : "spec census hook: incomplete check (unusable census output); run it by hand";
+			const failure = next.incomplete;
 			next.failed = true;
-			return { state: next, result: { failure: "spec census hook: the census produced no output (timeout or crash); run it by hand" } };
+			return { state: next, result: { failure } };
 		}
-		if (!r.view) return { state: next, result: {} };
+		next.incomplete = r.incomplete;
 		const freshRel = fresh.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined);
 		const orphans = (r.view.orphanedEvidence ?? []).filter((e) => !next.orphans?.includes(e.commit));
 		const { text: said, said: printed } = digestSaying(r.view, freshRel, next, Boolean(spec));
+		next.foreign = [...new Set([...next.foreign, ...r.view.foreign])];
 		if (said) {
 			next.reported = true;
-			next.foreign = [...new Set([...next.foreign, ...r.view.foreign])];
 			next.said = printed;
 		}
 		if (orphans.length) next.orphans = [...(next.orphans ?? []), ...orphans.map((e) => e.commit)];
 		const text = [orphans.length ? orphanNote(orphans) : undefined, said].filter(Boolean).join("\n");
-		return { state: next, result: text ? { text } : {} };
+		return { state: next, result: { ...(text ? { text } : {}), ...(r.incomplete ? { failure: r.incomplete } : {}) } };
 	} catch (error) {
-		if (next.failed) return { state: next, result: {} };
 		next.failed = true;
-		return { state: next, result: { failure: `spec census hook: ${error instanceof Error ? error.message : String(error)}` } };
+		next.incomplete = `spec census hook: incomplete check (${error instanceof Error ? error.message : String(error)}); inspect by hand`;
+		return { state: next, result: { failure: next.incomplete } };
 	}
 }
 
@@ -531,6 +547,9 @@ export function callDirs(call: Pick<CensusCall, "cwd" | "toolName" | "input">): 
  */
 export class CensusHook {
 	private states = new Map<string, CensusState>();
+	/** Only this run's observed destinations and paths; census history itself persists across runs. */
+	private active = new Map<string, Set<string>>();
+	private observedHeads = new Map<string, string | null>();
 	private chain: Promise<unknown> = Promise.resolve();
 	private readonly io: SpecIO;
 	private readonly core: () => string;
@@ -540,9 +559,33 @@ export class CensusHook {
 		this.core = options.core;
 	}
 
+	/** Mapped claims seen by actual census calls are allowed names, not required prose changes. */
+	foreign(): string[] {
+		return [...new Set([...this.states.values()].flatMap((state) => state.foreign))].sort();
+	}
+
+	/** Re-read bounded relevant mappings, independently of whether a fresh-path census ran. */
+	mapped(options: { commands?: readonly string[]; sessionStart?: string } = {}): Promise<{ ids: string[]; errors: string[] }> {
+		return this.serial(async () => {
+			const ids = new Set<string>(), errors: string[] = [];
+			for (const [top, paths] of this.active) {
+				const state = this.states.get(top) ?? freshCensusState();
+				if (state.incomplete) errors.push(state.incomplete);
+				const view = await gitView(top, this.io);
+				if (!view) { errors.push(`${top}: incomplete check (Git view unavailable)`); continue; }
+				const r = await mappedClaims(view, [...new Set([...paths, ...Object.keys(view.files)])], this.io, state.ownBases, options);
+				for (const id of r.ids) ids.add(id);
+				if (r.error) errors.push(r.error);
+			}
+			return { ids: [...ids].sort(), errors };
+		}, { ids: [], errors: ["incomplete check (mapped paths unavailable)"] });
+	}
+
 	/** A new session (or a switch to another): nothing seen yet. */
 	reset(): void {
 		this.states = new Map();
+		this.active = new Map();
+		this.observedHeads = new Map();
 	}
 
 	private async topOf(dir: string, signal?: AbortSignal): Promise<string | undefined> {
@@ -564,10 +607,28 @@ export class CensusHook {
 		this.states.set(top, state);
 	}
 
+	private async observe(dir: string, signal?: AbortSignal): Promise<void> {
+		const view = await gitView(dir, this.io, signal);
+		if (!view) return;
+		const paths = this.active.get(view.top) ?? new Set<string>();
+		const before = this.observedHeads.get(view.top);
+		if (before && view.head && before !== view.head) {
+			// Tree objects only: never invoke worktree clean/process filters for this mapping lookup.
+			const diff = await this.io.exec("git", ["diff-tree", "--no-commit-id", "--name-only", "-r", "-z", before, view.head], { cwd: view.top, timeout: TOOL_TIMEOUT_MS, signal });
+			if (diff.code === 0) for (const p of diff.stdout.split("\0")) if (p) paths.add(p);
+		}
+		this.observedHeads.set(view.top, view.head);
+		for (const p of Object.keys(view.files)) paths.add(p);
+		this.active.set(view.top, paths);
+	}
+
 	/** Take the baseline now (a run's start), so the run's first edit is already a delta. */
 	prime(cwd: string): Promise<CensusResult> {
 		return this.serial(async () => {
+			this.active.clear();
+			this.observedHeads.clear();
 			await this.baseline(cwd);
+			await this.observe(cwd);
 			return {};
 		}, {});
 	}
@@ -576,7 +637,10 @@ export class CensusHook {
 	before(call: CensusCall): Promise<void> {
 		if (CENSUS_SKIP_TOOLS.has(call.toolName)) return Promise.resolve();
 		return this.serial(async () => {
-			for (const dir of callDirs(call)) await this.baseline(dir, call.signal);
+			for (const dir of callDirs(call)) {
+				await this.baseline(dir, call.signal);
+				await this.observe(dir, call.signal);
+			}
 		}, undefined);
 	}
 
@@ -590,6 +654,7 @@ export class CensusHook {
 				const top = await this.topOf(dir, call.signal);
 				if (!top || done.has(top)) continue;
 				done.add(top);
+				await this.observe(dir, call.signal);
 				const { state, result } = await censusStep(this.states.get(top) ?? freshCensusState(), { ...call, cwd: dir }, this.core(), this.io);
 				this.states.set(top, state);
 				if (result.text) texts.push(result.text);
@@ -879,6 +944,8 @@ export function commandRoot(command: string): string | undefined {
 /** What core's `foreign` says about a range (`--landing` adds the gate lists; `--own-base` the task's own). */
 export interface RangeLists {
 	foreign: string[];
+	complete?: boolean;
+	incomplete?: string[];
 	/** The task's own ids the range touched or created (already out of `foreign`). */
 	own: string[];
 	unmappedChanged: { path: string; status?: string; inBoundary?: boolean }[];
@@ -927,6 +994,7 @@ export async function rangeLists(root: string, base: string, head: string | unde
 		return {
 			foreign: arr<string>(out.foreign, (x) => typeof x === "string").filter((id) => !own.includes(id)),
 			own,
+			...(out.complete === false ? { complete: false, incomplete: arr<string>(out.incomplete, (x) => typeof x === "string") } : {}),
 			unmappedChanged: arr(out.unmappedChanged, (x) => typeof (x as { path?: unknown })?.path === "string"),
 			mappedUntouched: arr(out.mappedUntouched, (x) => typeof (x as { id?: unknown })?.id === "string"),
 			unpromotedDrafts: arr<{ draft: string; ids: string[] }>(out.unpromotedDrafts, (x) => Array.isArray((x as { ids?: unknown })?.ids)),
@@ -1134,6 +1202,7 @@ export async function landedSpec(
 export async function treeTurn(start: TreeStart, core: string, io: SpecIO = localIO, options: { commits?: boolean } = {}): Promise<TreeTurn> {
 	try {
 		const end = await gitView(start.view.top, io);
+		if (!end) return { changed: false, specChanged: false, error: `${start.view.top}: incomplete check (final Git view unavailable)` };
 		if (options.commits === false && end) start = { ...start, view: { ...start.view, head: end.head } };
 		const manifest = manifestConflict(end);
 		const conflict = manifest && end ? { conflict: manifestConflictNote(end.top, manifest, core) } : {};
@@ -1149,7 +1218,7 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 		const landed = await landedSpec(end.top, start.root, base, end.head, dirtySpec, isSpec, core, io, { ownBases });
 		const specChanged = landed.specChanged;
 		const ids = new Set<string>();
-		let known = false;
+		let known = landed.foreign !== undefined;
 		if (landed.foreign) {
 			known = true;
 			for (const id of landed.foreign) ids.add(id);
@@ -1157,11 +1226,10 @@ export async function treeTurn(start: TreeStart, core: string, io: SpecIO = loca
 		for (const name of drafts) {
 			const edited = await draftForeign(start.root, name, core, io, undefined, base, ownBases);
 			if (edited) {
-				known = true;
 				for (const id of edited) ids.add(id);
-			}
+			} else known = false;
 		}
-		return { changed, specChanged, ...(known ? { foreign: [...ids].sort() } : {}), ...conflict };
+		return { changed, specChanged, ...(known ? { foreign: [...ids].sort() } : { error: `${start.view.top}: incomplete check (foreign list unavailable)` }), ...conflict };
 	} catch (error) {
 		return { changed: false, specChanged: false, error: `${start.view.top}: ${error instanceof Error ? error.message : String(error)}` };
 	}
@@ -1331,6 +1399,46 @@ export function tallyForeign(t: TurnTally, foreign: readonly string[] | undefine
 	for (const id of foreign ?? []) t.ids.add(id);
 }
 
+/** Optional truthful names for observed paths only; reads manifests, never enumerates source trees.
+ * Re-read on every check so dirty/repeated edits and mapping changes need no fresh census event.
+ * Draft mappings may extend existing claims, but new draft claims are never foreign names.
+ */
+export async function mappedClaims(view: GitView, paths: readonly string[], io: SpecIO = localIO, ownBases: readonly string[] = [], options: { commands?: readonly string[]; sessionStart?: string } = {}): Promise<{ ids: string[]; error?: string }> {
+	const ids = new Set<string>();
+	try {
+		const root = await findSpecRoot(view.top, (p) => io.exists(p));
+		if (!root) return { ids: [] };
+		const records = (text: string): Record<string, { code?: string[] }> => {
+			const m = JSON.parse(text);
+			if (!m?.claims || typeof m.claims !== "object" || Array.isArray(m.claims)) throw new Error("invalid manifest claims");
+			for (const r of Object.values(m.claims) as { code?: unknown }[]) {
+				if (!r || typeof r !== "object" || (r.code !== undefined && (!Array.isArray(r.code) || r.code.some((p: unknown) => typeof p !== "string" || p.startsWith("/") || p.split("/").includes(".."))))) throw new Error("invalid code mappings");
+			}
+			return m.claims;
+		};
+		const current = records(await io.readFile(join(root, SPEC_REL, "manifest.json")));
+		let foreign = new Set(Object.keys(current));
+		if (ownBases.length) {
+			foreign = new Set();
+			for (const base of ownBases) {
+				const r = await io.exec("git", ["show", `${base}:${relative(view.top, join(root, SPEC_REL, "manifest.json"))}`], { cwd: view.top, timeout: TOOL_TIMEOUT_MS });
+				if (r.code !== 0) throw new Error("own-claim baseline unavailable");
+				for (const id of Object.keys(records(r.stdout))) foreign.add(id);
+			}
+		}
+		const relevant = new Set(paths.map((p) => underRoot(view.top, root, p)).filter((p): p is string => p !== undefined));
+		const add = (claims: Record<string, { code?: string[] }>) => {
+			for (const [id, r] of Object.entries(claims)) if (foreign.has(id) && r.code?.some((p) => relevant.has(p.replace(/^\.\//, "")))) ids.add(id);
+		};
+		add(current);
+		const draft = await pickDraft(root, options.commands ?? [], options.sessionStart, io);
+		if (draft) add(records(await io.readFile(join(root, draft, "manifest.json"))));
+		return { ids: [...ids].sort() };
+	} catch (error) {
+		return { ids: [...ids].sort(), error: `${view.top}: incomplete check (mapped paths unavailable: ${error instanceof Error ? error.message : String(error)})` };
+	}
+}
+
 /** Paths the current spec at a root (its work tree's manifest.json) maps in some claim's `code`; empty when unreadable. */
 export async function mappedNow(root: string, io: SpecIO = localIO): Promise<Set<string>> {
 	try {
@@ -1351,10 +1459,15 @@ export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultT
 		try {
 			j = await judgeOp(op, core, io, defaultTips(op.top));
 		} catch (error) {
-			t.errors.push(`${op.top}: ${error instanceof Error ? error.message : String(error)}`);
+			t.exact = false;
+			t.errors.push(`${op.top}: incomplete check (${error instanceof Error ? error.message : String(error)})`);
 			continue;
 		}
 		t.changed = true;
+		if (j.foreign === undefined || (j.landing && (!j.lists || j.lists.complete === false))) {
+			t.exact = false;
+			t.errors.push(`${op.top}: incomplete check (${j.lists?.incomplete?.join(", ") || "foreign/landing lists unavailable"})`);
+		}
 		if (j.landing) {
 			t.landing = true;
 			const where = op.top.split("/").pop() ?? op.top;
@@ -1375,7 +1488,7 @@ export async function tallyOps(t: TurnTally, ops: readonly OpLanding[], defaultT
 /** One tree against a baseline (treeTurn) into the tally; a current spec that changed there is a landing unless `promoted` covers it. */
 export async function tallyTree(t: TurnTally, start: TreeStart, core: string, io: SpecIO = localIO, options: { commits?: boolean; promoted?: boolean; label?: string } = {}): Promise<void> {
 	const r = await treeTurn(start, core, io, { commits: options.commits });
-	if (r.error) t.errors.push(r.error);
+	if (r.error) { t.exact = false; t.errors.push(r.error); }
 	if (r.conflict) t.conflicts.push(r.conflict);
 	if (!r.changed) return;
 	t.changed = true;

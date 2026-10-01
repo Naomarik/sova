@@ -18,6 +18,9 @@ export function createOlderRows(o: {
   path: string;
   items: Accessor<TranscriptItem[] | null>;
   setItems(items: TranscriptItem[]): void;
+  /** False: never fetch the rest in the background, whatever the hello says; only what is
+      scrolled to or jumped to (the Overseer, §app.overseer/transcript-window). */
+  prefetch?: boolean;
 }) {
   /** Null until this connection's hello or snapshot says what's above the list. */
   const [older, setOlder] = createSignal<Older | null>(null);
@@ -86,7 +89,7 @@ export function createOlderRows(o: {
       const now = waiting;
       waiting = [];
       now.forEach((r) => r());
-      if (msg.prefetch && next.left > 0) void loader.prefetch();
+      if (msg.prefetch && o.prefetch !== false && next.left > 0) void loader.prefetch();
     },
     /** The rows held, again from the file (a turn ended), with the context fill; the newest rows
         when it holds none (a new session's first turn). Throws when the server can't be reached. */

@@ -54,12 +54,11 @@ export class TopicDelivery {
   /** A batch handed over and not yet entered or gone, per topic: never two at once. */
   private inFlight = new Map<string, string>();
   private offs: (() => void)[] = [];
-  /** Tests: the outcome of each drain, for assertions. */
-  readonly log: { topic: string; outcome: string }[] = [];
 
+  /** `onDrain`: told each drain's outcome (tests); the server keeps no history of them. */
   constructor(
     private readonly host: DeliveryHost,
-    private readonly opts: { debounceMs?: number; settleMs?: number; maxWaitMs?: number } = {},
+    private readonly opts: { debounceMs?: number; settleMs?: number; maxWaitMs?: number; onDrain?: (topic: string, outcome: string) => void } = {},
   ) {}
 
   private pushWait(): { debounce: number; cap: number } {
@@ -131,7 +130,7 @@ export class TopicDelivery {
   /** One drain: at most one batch of `topic` to its receiver. Returns what happened. */
   async drain(topic: string): Promise<string> {
     const outcome = await this.drainOnce(topic);
-    this.log.push({ topic, outcome });
+    this.opts.onDrain?.(topic, outcome);
     return outcome;
   }
 

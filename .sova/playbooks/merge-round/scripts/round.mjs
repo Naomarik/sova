@@ -92,7 +92,7 @@ function parseBatches(text) {
     }
     if (!cur) continue;
     const head = BATCH_NOTE_RE.exec(line);
-    if (head) cur.notes.push({ id: head[1], from: head[3], lines: [] });
+    if (head) cur.notes.push({ id: head[1], from: head[3], at: head[4], lines: [] });
     else if (line.startsWith(">") && cur.notes.length) cur.notes[cur.notes.length - 1].lines.push(line.startsWith("> ") ? line.slice(2) : line.slice(1));
     else if (line.trim()) cur = null; // the batch ended: anything after it is not a note
   }
@@ -123,21 +123,47 @@ const HEADER_RE = /^<<untrusted content from another session: ".*" \(([^()\s]+)\
 
 /** The owner's answer in a `session_read` rendering (server/session-guards.ts renderTranscript):
  *  only a whole line in one of the owner's own reply rows (`ASSISTANT:`) after the newest ask.
- *  → {kind: "wrong-session"} | {kind: "none"} | {kind: "ready", sha} | {kind: "stale", sha} | {kind: "not-ready", why} */
-export function parseReply(transcript, { branch, head, owner, topic }) {
+ *  → {kind: "wrong-session"} | {kind: "none"} | {kind: "ready", sha} | {kind: "stale", sha} | {kind: "not-ready", why},
+ *  and for batches also {kind: "no-ask"} | {kind: "wrong-topic", topic} | {kind: "old"} (see replyOf). */
+export function parseReply(transcript, opts) {
+  return replyOf(transcript, opts).answer;
+}
+
+/** `parseReply` with what reading batches consumed: `read`, the ids of the owner's notes that
+ *  counted (to remember, so they never count again), and `noteAt`, the time (ms) of the note the
+ *  answer came from. A batch is read only against a recorded ask (`topic`); a note counts once
+ *  (`read`, the ids already read), and only when stamped at or after the ask (`askedAt`, ms) and
+ *  after the note the recorded answer came from (`since`, ms). Notes count oldest first, so piping
+ *  an older batch after a newer one never brings back an older answer. */
+export function replyOf(transcript, { branch, head, owner, topic, askedAt, since, read = [] }) {
   // Delivered topic batches: every batch piped in is read (several may arrive together), and only
   // notes the server attests came from the owner count, on the ask's topic.
   const batches = parseBatches(transcript);
   if (batches.length) {
-    const onAsk = topic ? batches.filter((b) => b.topic === topic) : batches;
-    if (!onAsk.length) return { kind: "wrong-topic", topic: batches[0].topic };
+    if (!topic) return { answer: { kind: "no-ask" }, read: [] };
+    const onAsk = batches.filter((b) => b.topic === topic);
+    if (!onAsk.length) return { answer: { kind: "wrong-topic", topic: batches[0].topic }, read: [] };
+    const seen = new Set(read);
+    const mine = onAsk.flatMap((b) => b.notes).filter((n) => n.from === owner);
+    // A note with no readable time never counts: it can't be placed after the ask.
+    const fresh = mine
+      .map((n) => ({ ...n, ms: Date.parse(n.at) }))
+      .filter((n) => !seen.has(n.id) && Number.isFinite(n.ms) && (askedAt === undefined || n.ms >= askedAt) && (since === undefined || n.ms > since))
+      .filter((n, i, all) => all.findIndex((m) => m.id === n.id) === i)
+      .sort((a, b) => a.ms - b.ms);
+    if (mine.length && !fresh.length) return { answer: { kind: "old" }, read: [] };
     let answer = { kind: "none" };
-    for (const b of onAsk) for (const note of b.notes) if (note.from === owner) answer = answerIn(note.lines, { branch, head }, answer);
-    return answer;
+    let noteAt;
+    for (const note of fresh) {
+      const next = answerIn(note.lines, { branch, head }, answer);
+      if (next !== answer) noteAt = note.ms;
+      answer = next;
+    }
+    return { answer, read: fresh.map((n) => n.id), ...(noteAt !== undefined ? { noteAt } : {}) };
   }
   const lines = transcript.split("\n");
   const start = lines.findIndex((l) => HEADER_RE.test(l));
-  if (start < 0 || HEADER_RE.exec(lines[start])[1] !== owner) return { kind: "wrong-session" };
+  if (start < 0 || HEADER_RE.exec(lines[start])[1] !== owner) return { answer: { kind: "wrong-session" }, read: [] };
   const endAt = lines.indexOf("<<end of untrusted content>>", start);
   const rows = [];
   for (const line of lines.slice(start + 1, endAt < 0 ? undefined : endAt)) {
@@ -149,7 +175,7 @@ export function parseReply(transcript, { branch, head, owner, topic }) {
   rows.forEach((r, i) => { if (!r.assistant && r.lines.some((l) => l.includes(question))) from = i + 1; });
   let answer = { kind: "none" };
   for (const r of rows.slice(from)) if (r.assistant) answer = answerIn(r.lines, { branch, head }, answer);
-  return answer;
+  return { answer, read: [] };
 }
 
 /** Test files a node:test run names as failing, relative to `root`. */
@@ -221,6 +247,8 @@ const MIN = 60_000;
 const FLOORS = { typecheck: 5 * MIN, test: 20 * MIN, build: 10 * MIN, ext: 10 * MIN, master: 10 * MIN };
 const NOTE_FRESH_MS = 15 * MIN;
 const ASK_GAP_MS = 10 * MIN;
+/** Note ids `reply` remembers per branch, so a batch piped again never counts twice. */
+const READ_NOTES_KEPT = 200;
 const HEARTBEAT_MS = 30_000;
 const DEFAULT_UNIT = "sova-runtime.service";
 const MANIFEST = ".sova/spec/manifest.json";
@@ -581,12 +609,29 @@ class Round {
     if (process.stdin.isTTY) stop(2, "Pipe the delivered topic batch (or the owner's session_read output) into stdin.");
     const chunks = [];
     for await (const c of process.stdin) chunks.push(c);
-    const a = parseReply(Buffer.concat(chunks).toString("utf8"), { branch, head, owner: rec.owner, topic: rec.ask?.topic });
+    const r = replyOf(Buffer.concat(chunks).toString("utf8"), {
+      branch,
+      head,
+      owner: rec.owner,
+      topic: rec.ask?.topic,
+      askedAt: rec.ask?.at,
+      since: rec.answer?.noteAt,
+      read: rec.readNotes ?? [],
+    });
+    const a = r.answer;
+    if (a.kind === "no-ask") stop(2, `No ask about ${branch} is recorded, so no batch answers one: ask first.`, `round.mjs ask ${branch} topic=<name>`);
     if (a.kind === "wrong-topic") stop(2, `That batch is on "${a.topic}", not this ask's topic "${rec.ask?.topic}".`);
     if (a.kind === "wrong-session") stop(2, `That isn't a topic batch or ${rec.owner}'s session_read output (the header names another session, or none).`);
+    // The owner's notes read here never count again (a batch piped twice, a reused topic).
+    if (r.read.length) {
+      rec.readNotes = [...(rec.readNotes ?? []), ...r.read].slice(-READ_NOTES_KEPT);
+      this.saveState();
+    }
+    if (a.kind === "old") return { exit: 1, lines: [`Nothing new from ${rec.owner} about ${branch}: its notes there were read already, or predate this ask or its recorded answer.`], next: "wait for the next batch on the topic, or ask again on a later round" };
     if (a.kind === "none") return { exit: 1, lines: [`No answer yet from ${rec.owner} about ${branch}.`], next: "wait for the next batch on the topic, or ask again on a later round" };
     if (a.kind === "stale") return { exit: 1, lines: [`Stale: ${rec.owner} answered READY at ${a.sha}, but ${branch} is at ${head.slice(0, 7)}.`], next: `ask again on a later round (round.mjs ask ${branch})` };
-    rec.answer = a.kind === "ready" ? { kind: "ready", head, at: this.now } : { kind: "not-ready", why: a.why, head, at: this.now };
+    const noteAt = r.noteAt !== undefined ? { noteAt: r.noteAt } : {};
+    rec.answer = a.kind === "ready" ? { kind: "ready", head, at: this.now, ...noteAt } : { kind: "not-ready", why: a.why, head, at: this.now, ...noteAt };
     this.event("answer", { branch, owner: rec.owner, answer: a.kind });
     this.saveState();
     if (a.kind === "ready") return { exit: 0, lines: [`${rec.owner}: READY ${branch} at ${head.slice(0, 7)} (its current head).`], next: `round.mjs check ${branch}` };

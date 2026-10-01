@@ -6,6 +6,7 @@ import {
   hostOf,
   hostUrl,
   mergePeerLists,
+  sameMeshInfo,
   joinHostLists,
   linkedSessionRow,
   seedPeerList,
@@ -165,6 +166,41 @@ test("a down peer keeps its last rows; a removed one loses them; groups never cr
   assert.deepEqual([...next.keys()].sort(), ["laptop", "vps"]);
   assert.equal(next.get("laptop")![0]!.path, A);
   assert.equal(next.get("vps")![0]!.groupId, undefined, "a peer's group id means nothing here");
+});
+
+test("a mesh poll that brings nothing new hands back the previous map, rows and all; a change makes a new one", () => {
+  const peers = [peer("laptop", "up"), peer("vps", "up")];
+  const titled = (path: string, title: string) => ({ path, title }) as SessionSummary;
+  const answer = (t: string) => ({
+    peers: [
+      { id: "laptop", label: "", state: "up" as const, sessions: [titled(A, t)] },
+      { id: "vps", label: "", state: "up" as const, sessions: [titled(B, "b")] },
+    ],
+  });
+  const first = mergePeerLists(new Map(), answer("a"), peers);
+  const again = mergePeerLists(first, answer("a"), peers);
+  assert.equal(again, first, "the same answer: the same map");
+  const renamed = mergePeerLists(first, answer("a2"), peers);
+  assert.notEqual(renamed, first, "a changed row: a new map");
+  assert.equal(renamed.get("laptop")![0]!.title, "a2");
+  assert.equal(renamed.get("vps"), first.get("vps"), "the peer that didn't change keeps its array");
+  const dropped = mergePeerLists(first, answer("a"), [peer("laptop", "up")]);
+  assert.notEqual(dropped, first, "a peer leaving is a change");
+  assert.deepEqual([...dropped.keys()], ["laptop"]);
+});
+
+test("a mesh answer equal to the last one is the same; any field moving, a peer's lastSeen included, is not", () => {
+  const info = (lastSeen: number | null) => ({
+    enabled: true,
+    self: { id: "desk", label: "Desk", hostname: "desk" },
+    peers: [{ ...peer("laptop", "up"), lastSeen }],
+    sync: [],
+    frontDoor: null,
+  });
+  assert.equal(sameMeshInfo(null, info(1)), false, "no previous state");
+  assert.equal(sameMeshInfo(info(1), info(1)), true);
+  assert.equal(sameMeshInfo(info(1), info(2)), false);
+  assert.equal(sameMeshInfo(info(1), { ...info(1), peers: [{ ...peer("laptop", "down"), lastSeen: 1 }] }), false);
 });
 
 test("only an up peer can be used, and every other status says why in words", () => {

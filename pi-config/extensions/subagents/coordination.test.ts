@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import * as path from "node:path";
 import {
+	blockingWindows,
 	claudeContextWindow,
 	NUDGE_MAX_DELAY_MS,
 	NUDGE_MIN_DELAY_MS,
@@ -92,7 +93,7 @@ test("usage lines read the cache's windows for the team's providers and mark tho
 	};
 	assert.deepEqual(usageWindows(cache, "claude").map((w) => [w.label, w.pct]), [["5h", 92], ["7d", 40]]);
 	assert.deepEqual(usageWindows({ claude: { state: "ok", fiveHour: { pct: 10 }, sevenDay: { pct: 20, resetsAt: "bogus" } } }, "claude"), [
-		{ provider: "claude", label: "5h", pct: 10 }, { provider: "claude", label: "7d", pct: 20 },
+		{ provider: "claude", label: "5h", pct: 10, login: "default" }, { provider: "claude", label: "7d", pct: 20, weekly: true, login: "default" },
 	], "the older fiveHour/sevenDay shape; an unparseable reset is dropped");
 	const lines = usageLines(cache, ["claude", "claude", "zai"], 90, Date.parse("2026-09-25T12:03:00Z"));
 	assert.equal(lines[0], "  Provider usage (cache fetched 3 min ago):");
@@ -103,6 +104,42 @@ test("usage lines read the cache's windows for the team's providers and mark tho
 	assert.match(usageLines(undefined, ["claude"], 90)[0], /unavailable/);
 	assert.match(usageLines(cache, [], 90)[0], /no tracked provider/);
 	assert.ok(usageLines(cache, ["openai"], undefined).every((l) => !l.includes("AT/OVER")), "no threshold, no marks");
+});
+
+test("Claude blocks only when every login on this host is out; a 7d window blocks only at 100%", () => {
+	const now = Date.parse("2026-09-25T12:00:00Z");
+	const login = (fiveHour: number, fiveReset: string, sevenDay = 40) => ({
+		state: "ok", limits: [{ label: "5h", pct: fiveHour, resetsAt: fiveReset }, { label: "7d", pct: sevenDay, resetsAt: "2026-09-30T00:00:00Z" }],
+	});
+	const cache = (claude: object, accounts: object) => ({ fetchedAt: now, claude, claudeAccounts: accounts });
+
+	const oneFree = cache(login(95, "2026-09-25T14:00:00Z"), { "l-b": { data: login(30, "2026-09-25T15:00:00Z") } });
+	assert.deepEqual(blockingWindows(oneFree, "claude", 90, now), [], "headroom on l-b");
+	const lines = usageLines(oneFree, ["claude"], 90, now);
+	assert.ok(lines.every((l) => !l.includes("AT/OVER")), lines.join("\n"));
+	assert.ok(lines.includes("    claude 5h [default]: 95%, resets 2026-09-25T14:00:00Z"), lines.join("\n"));
+	assert.ok(lines.includes("    claude 7d [l-b]: 40%, resets 2026-09-30T00:00:00Z (weekly, informational below 100%)"), lines.join("\n"));
+	assert.equal(lines.at(-1), "    claude: headroom on 1 of 2 logins — not a reason to pause");
+
+	const bothFull = cache(login(95, "2026-09-25T16:00:00Z"), { "l-b": { data: login(91, "2026-09-25T14:00:00Z") } });
+	const held = blockingWindows(bothFull, "claude", 90, now);
+	assert.deepEqual(held.map((w) => [w.login, w.label, w.resetsAt]), [["l-b", "5h", "2026-09-25T14:00:00Z"]], "the login that frees soonest");
+	const full = usageLines(bothFull, ["claude"], 90, now);
+	assert.ok(full.includes("    claude 5h [l-b]: 91%, resets 2026-09-25T14:00:00Z — AT/OVER the 90% pause threshold"), full.join("\n"));
+	assert.ok(full.every((l) => !l.includes("headroom on")));
+
+	const weekly96 = { fetchedAt: now, claude: login(10, "2026-09-25T14:00:00Z", 96) };
+	assert.deepEqual(blockingWindows(weekly96, "claude", 90, now), [], "7d at 96% is informational");
+	assert.ok(usageLines(weekly96, ["claude"], 90, now).every((l) => !l.includes("AT/OVER")));
+	const weekly100 = cache(login(10, "2026-09-25T14:00:00Z", 100), { "l-b": { data: login(95, "2026-09-25T13:00:00Z") } });
+	assert.deepEqual(blockingWindows(weekly100, "claude", 90, now).map((w) => [w.login, w.label]), [["l-b", "5h"]], "7d at 100% puts default out");
+
+	const authSkipped = cache(login(95, "2026-09-25T14:00:00Z"), { "l-b": { data: login(10, "2026-09-25T14:00:00Z"), skipped: "auth" }, "l-c": { error: "boom", nextFetchAt: 0 } });
+	assert.deepEqual(blockingWindows(authSkipped, "claude", 90, now).map((w) => w.login), ["default"], "a login needing sign-in, or with no reading, is not counted");
+	assert.ok(usageLines(authSkipped, ["claude"], 90, now).every((l) => !l.includes("[")), "one counted login: no login names");
+
+	const openai = { openai: { state: "ok", windows: [{ label: "5h", pct: 20, resetsAt: "2026-09-25T14:00:00Z" }, { label: "7d", pct: 96, resetsAt: "2026-09-29T00:00:00Z" }] } };
+	assert.deepEqual(blockingWindows(openai, "openai", 90, now), [], "openai's 7d follows the same weekly rule");
 });
 
 test("a window whose reset time has passed counts as reset (usage unknown), never AT/OVER", () => {

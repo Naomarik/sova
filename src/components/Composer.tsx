@@ -3,7 +3,7 @@ import type { ChatClaudeLogin, ScheduleInfo, SlashCommand, UploadResult } from "
 import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
 import { createTouchMode, enterSends } from "../lib/input-mode";
-import { enterRunsLocal, insertCommand, localCommand, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
+import { enterRunsLocal, insertCommand, localCommand, menuCommands, rankCommands, slashMenuSuppressed, slashTokenAt, type SlashToken } from "../lib/slash";
 import { commandOptionIds, SlashMenu } from "./SlashMenu";
 import {
   cachedFileIndex,
@@ -401,7 +401,7 @@ export function Composer(props: {
   // ---- Slash-command autocomplete (combobox: focus stays in the textarea) ----------------
   const slashMatches = createMemo(() => {
     const token = slashToken();
-    return token ? rankCommands(props.commands ?? [], token.query) : [];
+    return token ? rankCommands(menuCommands(props.commands ?? []), token.query) : [];
   });
   const slashIds = createMemo(() => commandOptionIds(slashMatches(), scope.id));
   /** Never while disabled, nor on a bare local command. Streaming is fine: pi runs a

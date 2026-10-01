@@ -155,15 +155,21 @@ has the tool; the parent refuses it from anyone else. Each report is a team acti
 - **Standing instruction** (its header, with the file's thresholds): at each wake, read
   `team_roster`; a member whose context is at or above `contextPct` % of its window is told
   (`notice: wrap-up`) to finish its current step, write its handover note, and end its turn, and
-  the coordinator is told too so it can start a successor. When usage checking is on and any provider window a team member
-  uses is at or above `pausePct` %, it tells the coordinator (`notice: pause`) to have the whole
-  team wrap up and go idle, then schedules `wake_nudge` for that window's reset plus
+  the coordinator is told too so it can start a successor. When usage checking is on and a
+  provider a team member uses is blocked, it tells the coordinator (`notice: pause`) to have the
+  whole team wrap up and go idle, then schedules `wake_nudge` for that window's reset plus
   `resumeMarginMinutes` (at most 24 h ahead, re-checking if the reset is later); on that wake,
   once that window's reset plus `resumeMarginMinutes` has passed, it tells the coordinator
-  (`notice: resume`) to resume the team.
+  (`notice: resume`) to resume the team. A login is out when one of its non-weekly windows (such
+  as `5h`) is at or above `pausePct` % or one of its weekly windows (a label starting `7d`) is at
+  100 %; a weekly window below 100 % is informational and never a reason to pause. A provider is
+  blocked only when every one of its logins is out: Claude counts Claude Code's own login and each
+  added login this host has a reading for (one needing sign-in is not counted), so while any of
+  them has headroom the team keeps working; every other provider is one login.
 - **An early resume is refused.** The parent does not trust the monitor's clock reading: at a
-  `pause` notice it records the windows of the team's providers that are then at or over
-  `pausePct` and have a reset time, and until the latest of those resets plus
+  `pause` notice it records, for each blocked provider of the team, the blocking windows of the
+  login that frees soonest (the one whose latest blocking reset is earliest), and until the
+  latest of those resets plus
   `resumeMarginMinutes` (read at the resume) has passed, a `resume` notice is refused — nothing is
   delivered and no event is written — with a reply naming the window, its reset, the time resume
   is allowed from and how long that is, and telling the monitor to schedule `wake_nudge` then. A
@@ -215,7 +221,11 @@ natively 1M such as bare `opus`, else 200,000 — the claude-code extension's ru
 session pane uses), rounded down to a whole percent. Unknown parts say so: `context —` before the first
 reply, `context 64k/?` without a known window. For a monitor or coordinator, `team_roster` also
 carries the file's current thresholds and, from `<agent dir>/cache/usage-status.json`, each
-provider window the team's members use (percent and reset time, and the cache's age). A window
+provider window the team's members use (percent and reset time, and the cache's age); for Claude
+that is every window of every login counted on this host (§teams.defaults/monitor), each line
+naming its login, weekly lines are marked informational below 100 %, only windows that block the
+provider are marked at or over the pause threshold, and when some but not all logins are out a
+line says how many still have headroom and that this is not a reason to pause. A window
 whose reset time has passed is shown as reset with its usage unknown (the cached percent predates
 the reset) and is never marked at or over the pause threshold, so a stale cache cannot keep a team
 paused. A coordinator's roster also lists the assignments (§teams.defaults/coordinator).

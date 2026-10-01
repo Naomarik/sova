@@ -45,10 +45,11 @@ test("open: a server-made name every push can check; the same base reuses; diffe
   assert.equal(again.topic(a.name)!.receiver.path, "/x/a.jsonl");
 });
 
-test("open: a session holds at most 5 topics; a reuse is never refused", () => {
+test("open: a session holds at most 10 topics; a reuse is never refused", () => {
   const s = new TopicStore(fresh());
   for (let i = 0; i < TOPICS_PER_SESSION; i++) s.open(A, `t${i}`);
-  assert.throws(() => s.open(A, "one-more"), /already has 5 topics open/);
+  assert.equal(TOPICS_PER_SESSION, 10);
+  assert.throws(() => s.open(A, "one-more"), /already has 10 topics open/);
   assert.equal(s.open(A, "t0").reused, true);
   assert.equal(s.open(B, "one-more").reused, false, "another session's count is its own");
 });

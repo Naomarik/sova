@@ -401,6 +401,20 @@ test("the real ~/.local/state/mise/trusted-configs is not writable under the def
 	assert.equal(existsSync(target), false);
 });
 
+test("Sova's topic store is on the default hidden list: other sessions' return addresses can't be read", { skip }, async (t) => {
+	const ws = scratch(t, "sbx-ws-");
+	const agentDir = scratch(t, "sbx-agent-");
+	const topics = join(agentDir, "sova", "topics");
+	mkdirSync(topics, { recursive: true });
+	writeFileSync(join(topics, "topics.json"), '{"v":1,"topics":{"merge-k7m4qz":{}}}');
+	const defaults = new LinuxBwrapBackend().platformDefaults({ home: homedir(), agentDir });
+	assert.ok(defaults.hidden.includes(topics));
+	assert.ok(defaults.hidden.includes(join(homedir(), ".pi", "agent", "sova", "topics")), "pi's default agent dir's too");
+	const r = await run(new LinuxBwrapBackend(), makePolicy(ws, scratch(t, "sbx-tmp-"), { hidden: defaults.hidden }), `cat ${join(topics, "topics.json")} 2>/dev/null; ls -A ${topics} | wc -l`);
+	assert.doesNotMatch(r.output, /merge-k7m4qz/);
+	assert.equal(r.output.trim(), "0", r.output);
+});
+
 test("parity: checkWrite's verdict equals what the bwrap profile actually lets through", { skip }, async (t) => {
 	const { checkWrite } = await import("../../backend.ts");
 	const ws = scratch(t, "sbx-ws-");

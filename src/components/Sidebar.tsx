@@ -89,6 +89,8 @@ import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
+import { GroupPicker } from "./GroupPicker";
+import { EMPTY_GROUP_REASON, NO_GROUPS_NOTE } from "../lib/group-picker";
 import { RemoteGroupDot } from "./RemoteStatus";
 import { Banner, Icon } from "./ui";
 import { SHARES_HREF } from "../lib/session-shares";
@@ -128,8 +130,6 @@ const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
     closed: memory only, module state for the same reason as the groups — rebuilt on every poll. */
 const [openOrgs, setOpenOrgs] = createSignal<Record<string, boolean>>({});
 const [openDone, setOpenDone] = createSignal<Record<string, boolean>>({});
-/** The Groups head's `+` has opened the new-group name field. */
-const [newGroupField, setNewGroupField] = createSignal(false);
 
 /** Collapsed on every page load, and never persisted (`lib/group-open`): the module state above
     holds the user's choice for as long as the page lives, and a reload starts closed again. */
@@ -835,7 +835,7 @@ function GroupBlock(props: {
                     title={`Open ${quoted(group().name)} as a workspace`}
                     icon={<Icon name="external" small />}
                     href={groupHref(group().id)}
-                    disabled={count() === 0 ? "Nothing is in it yet. Drag a session into it first." : ""}
+                    disabled={count() === 0 ? EMPTY_GROUP_REASON : ""}
                   />
                   <menu.Item
                     label="Rename…"
@@ -1339,34 +1339,17 @@ export function Sidebar(props: {
       is component state, not module state: the region is one node that outlives every poll. */
   const [groupsChosen, setGroupsChosen] = createSignal<boolean | undefined>(undefined);
   /** Forced open, without touching the choice, while a search is on (a matching group must not
-      hide its hits), or while the
-      new-group field is showing (it lives in here too, and the `+` can be pressed on a shut region). */
-  const groupsRegionOpen = () =>
-    groupsRegionOpenRule({
-      chosen: groupsChosen(),
-      searching: searching(),
-      composing: newGroupField(),
-    });
+      hide its hits). */
+  const groupsRegionOpen = () => groupsRegionOpenRule({ chosen: groupsChosen(), searching: searching() });
   const onGroupsRegionToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === groupsRegionOpen()) return; // our own `open` update, not the user's
     setGroupsChosen(open);
   };
 
-  /** The head's `+`. Held so the field can hand focus back to it: the field unmounts when it
-      closes, and without this the caret would drop to <body>. */
-  let newGroupToggle: HTMLButtonElement | undefined;
-  /** Every way the new-group field closes — saved, cancelled, Escape, an empty blur — ends here.
-      Focus goes back to the `+` only if it would otherwise be lost: a blur that saved because the
-      user clicked or tabbed to something focusable has already put the caret where they wanted it.
-      Checked a frame later, when that move (or the fall to <body>) has landed. */
-  const closeNewGroup = () => {
-    setNewGroupField(false);
-    requestAnimationFrame(() => {
-      const at = document.activeElement;
-      if (!at || at === document.body || !at.isConnected) newGroupToggle?.focus();
-    });
-  };
+  /** The head's `Open Groups` has opened the group picker. Focus goes back to the button when it
+      closes (trapFocus, which remembers what had focus when the picker opened). */
+  const [pickerOpen, setPickerOpen] = createSignal(false);
 
   // A groupId this tab doesn't know means the local group list is behind (another tab, another
   // server): without this the row would silently vanish from the Groups region until a reload.
@@ -2049,44 +2032,32 @@ export function Sidebar(props: {
                   <span class="sidebar-region-count">
                     · {searching() ? `${sections().length} of ${sessionGroups().length}` : sessionGroups().length}
                   </span>
-                  {/* Making a group is the region's one action, a `+` at the head's right end.
-                      Not while searching: the field it opens is hidden then, and a fruitless search
-                      hides the whole region. Its click and keydown stop here, as the group head's
-                      `⋯` does, so a press is never read as a press on the summary. */}
-                  <Show when={!searching()}>
-                    <button
-                      ref={newGroupToggle}
-                      type="button"
-                      class="button button-icon button-ghost group-new-toggle"
-                      aria-label="New group"
-                      title="New group"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setNewGroupField(true);
-                      }}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
-                      <Icon name="plus" small />
-                    </button>
-                  </Show>
+                  {/* The region's one action, at the head's right end: the group picker, which
+                      only opens workspaces. Groups are made where sessions are filed (the drop
+                      overlay, Move into group, the selection toolbar, the Overseer). Its click
+                      and keydown stop here, as the group head's `⋯` does, so a press is never
+                      read as a press on the summary. */}
+                  <button
+                    type="button"
+                    class="button button-icon button-ghost group-picker-open"
+                    aria-haspopup="dialog"
+                    aria-label="Open Groups"
+                    aria-disabled={sessionGroups().length === 0 ? "true" : undefined}
+                    title={sessionGroups().length === 0 ? NO_GROUPS_NOTE : "Open Groups"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      if (sessionGroups().length === 0) announce(NO_GROUPS_NOTE);
+                      else setPickerOpen(true);
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="external" small />
+                  </button>
                 </h2>
               </summary>
-              {/* The field opens where the region's rows start, forcing the region open while it
-                  shows (lib/group-open), and hands focus back to the `+` when it closes. */}
-              <Show when={!searching() && newGroupField()}>
-                <div class="group-field-row">
-                  <GroupNameField
-                    label="New group name"
-                    onDone={(name) => {
-                      closeNewGroup();
-                      void createGroup(name);
-                    }}
-                    onCancel={closeNewGroup}
-                  />
-                </div>
-              </Show>
               <Show when={!searching() && sessionGroups().length === 0}>
-                <p class="sidebar-region-note">No groups yet. Make one, then drag a session into it.</p>
+                <p class="sidebar-region-note">{NO_GROUPS_NOTE}</p>
               </Show>
               <For each={sections().map((s) => s.group)}>
                 {(group) => (
@@ -2319,6 +2290,10 @@ export function Sidebar(props: {
         </nav>
         {/* Portalled: the full-screen overlay a dragged row opens, and its New group dialog. */}
         <DropOverlay groups={sessionGroups()} counts={groupCounts()} onDrop={onOverlayDrop} onCreate={(d, name) => void createAndMove(d, name)} />
+        {/* Portalled too: Open Groups' picker, the same shell with only the group tiles. */}
+        <Show when={pickerOpen()}>
+          <GroupPicker groups={sessionGroups()} counts={groupCounts()} onClose={() => setPickerOpen(false)} />
+        </Show>
 
         <div class="sidebar-foot">
           {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}

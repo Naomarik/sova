@@ -1800,16 +1800,16 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
 }
 
 /* ---- GROUPS. The user's own sections, the pane's first region: a
-   head with a `+` that makes a group, then one <details> per group with the same
-   summary/body grammar as an Archive date section, each a drop target while a row is
-   being dragged. A group is additive, so its rows keep every other region's shape. -- */
+   head with `Open Groups` (the group picker), then one <details> per group with the same
+   summary/body grammar as an Archive date section. A group is additive, so its rows
+   keep every other region's shape. -- */
 
-/* The region's one action: a `+` at the right end of the region head. On the head so
-   it is there with the region shut (the field it opens forces the region open), and
-   at the end so the name and count keep their place. Quiet like a group's `⋯` — muted
-   until the head is hovered or the `+` has focus — with the full 44px target, hung into
-   the head's right padding so the glyph lines up with the `⋯` of the groups below. */
-.sidebar-region-head .group-new-toggle {
+/* The region's one action: `Open Groups` at the right end of the region head. On the
+   head so it is there with the region shut, and at the end so the name and count keep
+   their place. Quiet like a group's `⋯` — muted until the head is hovered or the button
+   has focus — with the full 44px target, hung into the head's right padding so the
+   glyph lines up with the `⋯` of the groups below. */
+.sidebar-region-head .group-picker-open {
   flex: none;
   width: var(--tap-min);
   min-height: var(--tap-min);
@@ -1818,11 +1818,11 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   color: var(--color-ink-muted);
   transition: color var(--dur-fast) var(--ease-standard);
 }
-.sidebar-groups-summary:hover .group-new-toggle,
-.sidebar-region-head .group-new-toggle:focus-visible { color: var(--color-ink); }
+.sidebar-groups-summary:hover .group-picker-open,
+.sidebar-region-head .group-picker-open:focus-visible { color: var(--color-ink); }
 
-/* The name field (New group, Rename) opens where the region's rows start, or where a
-   tool button was, so a section doesn't jump when it appears. */
+/* The name field (Rename, and New group in Move into group) opens where its rows were,
+   so nothing jumps when it appears. */
 .group-field-row { padding: var(--space-2) var(--space-4); }
 .group-tools .group-field { padding: var(--space-2) var(--space-4); }
 .group-field { display: flex; align-items: center; gap: var(--space-2); }
@@ -2102,6 +2102,41 @@ summary.sidebar-region-head .icon-twist { transition: transform var(--dur-fast) 
   outline-color: var(--status-error);
 }
 .drop-tile-archive.drop-tile-over .drop-tile-icon { color: var(--status-error); }
+
+/* The group picker (Open Groups): the drop overlay's shell and group tiles with nothing in
+   flight. So none of the drag's settings — a normal cursor, a finger scrolls the list, text
+   selects — and a tile is a link with a plain hover and the focus ring, never the accent
+   under-the-pointer look a drop target takes. Disabled tiles keep the shared disabled rule.
+   The scrim fills the window, but the panel takes the LIST's own size and no more: the drop
+   overlay's own measure (dropListLayout, written inline by GroupPicker — --drop-list-w for the
+   panel's width rule, --pick-row-h and the column count for the grid, and a max-height for the
+   scroll cap) lays out one column of session-row tiles, then 2 and 3 when the window's height
+   won't hold one, then shorter rows, then a scroll inside the panel. The grid takes `flex: none`:
+   under a flex-shrunk height the browser sizes the grid's auto rows against that constraint and
+   freezes them at their minimum, and a wrapped empty-group reason is clipped by the next row
+   (measured in Chromium). With flex none and a max-height cap, the rows size to their tiles and
+   the grid scrolls past the cap. So a few groups are a compact panel centred on the scrim like
+   the drop overlay itself, and a long list grows toward the window only as its own size does.
+   Folded, the shell's bottom-sheet rule makes it the window's full width, as tall as its list. */
+.group-picker { cursor: auto; touch-action: auto; user-select: auto; -webkit-user-select: auto; -webkit-touch-callout: default; }
+.group-picker-grid {
+  flex: none;
+  grid-auto-flow: row;
+  grid-auto-rows: minmax(var(--pick-row-h), auto);
+  align-items: start;            /* a tall empty tile never stretches its row's neighbours */
+  padding: 2px;                  /* room for a tile's focus ring inside the scroller */
+}
+.group-picker-tile { min-height: var(--pick-row-h); }
+/* An empty group's reason is read whole, never cut to an ellipsis: it wraps, and its tile grows. */
+.group-picker-tile[aria-disabled="true"] { padding-block: var(--space-2); }
+.group-picker-tile[aria-disabled="true"] .drop-tile-line { white-space: normal; overflow: visible; color: var(--color-ink-2); }
+.group-picker-head { flex-direction: row; align-items: flex-start; gap: var(--space-2); }
+.group-picker-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; padding-top: var(--space-2); }
+.group-picker-head .button-icon { flex: none; margin: calc(var(--space-2) * -1) calc(var(--space-2) * -1) 0 0; }
+a.group-picker-tile { color: var(--color-ink); text-decoration: none; cursor: pointer; }
+a.group-picker-tile:hover { color: var(--color-ink); background: var(--color-sunken); }
+a.group-picker-tile:focus-visible { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+a.group-picker-tile[aria-disabled="true"] { cursor: default; color: var(--color-ink-muted); background: var(--color-sunken); }
 
 /* The floating card: the dragged row as it looks in the list, lifted — surface
    fill, accent edge, the modal shadow, a hair larger — with where it would land

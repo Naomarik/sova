@@ -744,15 +744,20 @@ export interface ThemeList {
 //                                  fails: an unreadable user folder is `error`, and a cwd that can't
 //                                  be listed — none given, remote, missing — is `project.state`)
 // ---------------------------------------------------------------------------
+/** The file a playbook folder is read from, in the order it is looked for (§chat.playbooks/where-playbooks-come-from). */
+export const PLAYBOOK_ENTRIES = ["PLAYBOOK.md", "SKILL.md"] as const;
+export type PlaybookEntry = (typeof PLAYBOOK_ENTRIES)[number];
+
 /** One entry in the Sova playbook catalog. */
 export interface PlaybookInfo {
   id: string;                 // directory name; validate against /^[a-z0-9][a-z0-9-]*$/ (no traversal)
-  title: string;              // frontmatter title, else the id
+  title: string;              // frontmatter title, else name, else the id
   description: string;        // frontmatter description, else ""
   promptHint?: string;        // frontmatter promptHint: what the reader may want to specify for the first turn
   source: "sova" | "user" | "project";
-  dir: string;                // ABSOLUTE directory holding the playbook (its PLAYBOOK.md, phases/, templates/)
-  body: string;               // PLAYBOOK.md body, frontmatter stripped
+  dir: string;                // ABSOLUTE directory holding the playbook: its entry file, scripts/, references/…; every relative path in it resolves here
+  entry: PlaybookEntry;       // the file read as the playbook: PLAYBOOK.md when the folder has one, else SKILL.md
+  body: string;               // the entry file's body, frontmatter stripped
   replacesSova?: boolean;     // a user playbook with the same id as a shipped one
   /** Its schedule (§chat/schedules), when its frontmatter has `when:`. */
   schedule?: PlaybookSchedule;

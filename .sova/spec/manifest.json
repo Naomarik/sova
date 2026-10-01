@@ -194,7 +194,8 @@
       "code": [
         "src/components/Sidebar.tsx",
         "src/lib/storage-keys.ts",
-        "src/lib/archive.ts"
+        "src/lib/archive.ts",
+        "src/lib/archive.test.ts"
       ]
     },
     "§app.session-list/archive-cleanup": {
@@ -214,7 +215,7 @@
         "§chat.context-window/sidebar-ring"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -623,7 +624,9 @@
         "src/lib/input-mode.ts",
         "src/lib/input-mode.test.ts",
         "src/components/VoiceInput.tsx",
-        "src/design/base.css"
+        "src/design/base.css",
+        "src/lib/release-control.ts",
+        "src/lib/release-control.test.ts"
       ],
       "requires": [
         "§chat.images/composer-attachments"
@@ -2885,7 +2888,9 @@
         "src/lib/signals.ts",
         "src/lib/summary-diff.ts",
         "server/turn-error.test.ts",
-        "src/lib/summary-diff.test.ts"
+        "src/lib/summary-diff.test.ts",
+        "server/unread-replies.ts",
+        "server/unread-replies.test.ts"
       ],
       "requires": []
     },
@@ -5960,7 +5965,7 @@
         "§chat.images/thread-thumbnails"
       ],
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "src/lib/tail-render.ts",
         "src/lib/tail-render.test.ts",
@@ -10985,6 +10990,21 @@
         "pi-config/extensions/mode/README.md",
         "pi-config/extensions/claude-code/README.md",
         "pi-config/extensions/spec/README.md"
+      ]
+    },
+    "§app.overseer/transcript-window": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/components/OverseerView.tsx",
+        "src/lib/older-rows-view.ts"
+      ],
+      "requires": [
+        "§chat.transcript/rendering",
+        "§app.overseer/confirm"
       ]
     }
   },

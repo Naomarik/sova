@@ -554,7 +554,8 @@ member at once.
   what it looks like.
 - **The same keys as a pane composer** (§chat.composer/behavior): Enter sends, Shift+Enter adds a
   line, Ctrl/⌘+Enter always sends, the same IME rule, and the same touch mode — tapped, Enter adds
-  a line and Send to All sends. The placeholder carries the key hint exactly when Enter sends.
+  a line and Send to All sends. The placeholder carries the key hint exactly when Enter sends, and
+  fits its box by the same rule, the key hint being what a narrow box drops first.
 
 ### Refusal
 

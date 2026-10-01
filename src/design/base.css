@@ -342,6 +342,11 @@ i.icon {
 .input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-color: var(--color-accent); }
 .input:disabled      { opacity: .42; cursor: not-allowed; }
 .input[aria-invalid="true"] { border-color: var(--status-error); }
+/* A field's placeholder, and a long typed value with it, ends in an ellipsis rather than a hard
+   cut mid-glyph (§design.ground-rules/text-fit). The browser does this itself for an `<input>`; a
+   `<textarea>` would scroll instead, which is why the composer fits its own string
+   (§chat.composer/behavior). */
+input.input { text-overflow: ellipsis; }
 
 .textarea {
   min-height: calc(var(--control-md) * 2);
@@ -1676,7 +1681,9 @@ html.is-resizing * {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+/* Folded and unfolded hold the one toolbar line now: 8px over/under and at the sides (the line
+     is denser than the old three-row block, every pixel belongs to the count). */
+  padding: var(--space-2);
   border-bottom: var(--stroke-thin) solid var(--color-border);
   flex: none;
 }
@@ -2491,33 +2498,40 @@ a.group-option { color: inherit; text-decoration: none; }
 .session-row-shell-selected { box-shadow: inset 2px 0 0 var(--color-accent); }
 
 /* The toolbar: a band between the search and the list, so it never floats over
-   the rows it is about. The actions are ONE row — Move as a word, Rename and
-   Archive as 44px icons, all three together at the leading edge — so they fit a
-   320px sidebar without wrapping. */
+   the rows it is about. ONE row: the count leads and takes the leftover width
+   (it may ellipsize; the controls never shrink); the actions are ONE cluster at
+   the right end — Move, Rename, Archive at the normal control gap, and Cancel
+   after a space-3 step, so it reads as the way out rather than a fifth action.
+   The count matches the search toolbar's (micro). The open rename field is the
+   one thing below the row. */
 .sidebar-select-bar {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
+  /* The pane's own side edge (space-3, the list rows' and search block's): 8px
+     read as pinched at the left. */
+  padding: var(--space-3);
   border-bottom: var(--stroke-thin) solid var(--color-border);
   background: var(--color-sunken);
 }
-.sidebar-select-head {
+.sidebar-select-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
 }
-.sidebar-select-count { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
-.sidebar-select-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
+/* Margins by boundary, not `gap`: the menu's closed panel sits in the cluster
+   display:none, and the count may shrink — a container gap can't absorb either. */
+.sidebar-select-row > * + * { margin-left: var(--space-2); }
+.sidebar-select-count { margin: 0; font-size: var(--fs-micro); color: var(--color-ink-muted); flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-select-actions { display: flex; align-items: center; flex: none; margin-left: auto; }
+.sidebar-select-actions > * + * { margin-left: var(--space-2); }
 /* Small buttons, full-size targets — Cancel included: the band is a touch
-   surface first, and Cancel is the control a mis-hold reaches for. */
+   surface first, and Cancel is the control a mis-hold reaches for. The word
+   buttons run tighter inside. */
 .sidebar-select-bar .button { min-height: var(--control-md); }
-.sidebar-select-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
+.sidebar-select-actions > .sidebar-select-move,
+.sidebar-select-actions > .sidebar-select-cancel { padding: 0 var(--space-2); gap: var(--space-1); }
+/* The wider step before Cancel: the way out, not a fifth action. */
+.sidebar-select-actions > .sidebar-select-cancel { margin-left: var(--space-3); }.sidebar-select-note { margin: 0; font-size: var(--fs-caption); color: var(--color-ink-muted); }
 .sidebar-select-rename { display: flex; flex-direction: column; gap: var(--space-1); }
 .session-title-field { width: 100%; }
 .session-title-field .input { flex: 1; min-width: 0; }
@@ -3081,11 +3095,18 @@ a.group-option { color: inherit; text-decoration: none; }
   overflow-y: auto;
   field-sizing: content;          /* native auto-grow where supported; JS fallback per the composer spec */
 }
-/* Empty, the box is one line: a placeholder longer than the box ("Steer the current turn…" beside
-   Steer and Stop) is cut, not wrapped, so a turn starting doesn't make the composer taller, and
-   clipped, never scrolled sideways. */
+/* Empty, the box is one line: a placeholder wider than the box steps down and drops its key hint
+   before it is cut (§chat.composer/behavior), so a turn starting never makes the composer taller
+   and no width leaves a half-said word. It is one line and clipped, never scrolled sideways. */
 .composer-input:placeholder-shown { field-sizing: fixed; overflow: hidden; }
 .composer-input::placeholder { white-space: nowrap; }
+/* The fitted placeholder's one step down. The line height stays the body one, so the smaller text
+   keeps the 44px box's centring instead of riding up with a smaller line box — the unitless
+   `--lh-body` it would otherwise inherit shrinks with the font. */
+.composer-input[data-ph-size="caption"]::placeholder {
+  font-size: var(--fs-caption);
+  line-height: calc(var(--fs-body) * var(--lh-body));
+}
 .composer-actions { display: flex; align-items: flex-end; gap: var(--space-2); flex: none; }
 .composer-foot {
   display: flex;
@@ -4473,6 +4494,46 @@ a.group-option { color: inherit; text-decoration: none; }
 }
 .sidebar-settings:hover { background: var(--color-sunken); color: var(--color-ink); }
 
+/* Folded (<768), where the rows cost the list too much room: the foot is ONE 44px bar
+   (§app.insights/sidebar-foot-phone) — the mesh's connected count (mesh on only), the agents at
+   work (worker icon + count), and every provider's usage cap ({abbr} {pct}%, or the credit
+   balance). Rendered folded only (the JSX gates it), so no media query: the `.sidebar-foot` it
+   replaces is unfolded-only the same way. One line, never wrapped; what won't fit clips. It pays
+   the bottom safe-area inset the foot used to. */
+.sidebar-footbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  min-height: var(--tap-min);
+  padding: 0 var(--space-4) env(safe-area-inset-bottom);
+  border: 0;
+  border-top: var(--stroke-thin) solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-ink-muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  cursor: pointer;
+}
+.sidebar-footbar:hover { background: var(--color-sunken); }
+.sidebar-footbar:focus-visible { outline: var(--focus-ring); outline-offset: calc((var(--focus-width) + var(--focus-offset)) * -1); }
+.sidebar-footbar-seg { display: inline-flex; align-items: center; gap: var(--space-1); flex: none; }
+.sidebar-footbar-seg > .icon { color: var(--color-ink-muted); }
+.sidebar-footbar-seg .text-num { color: var(--color-ink-2); }
+/* Each cap keeps the glance's own emphasis: at 80%+ semibold ink, never hue alone; a stale
+   whole-file reading is muted, like the glance's. */
+.sidebar-footbar-cap-high { font-weight: var(--fw-semibold); }
+.sidebar-footbar-cap-high .text-num { color: var(--color-ink); font-weight: var(--fw-semibold); }
+.sidebar-footbar-cap-stale .text-num { color: var(--color-ink-muted); }
+
+/* The bar's sheet: the `.modal` frame, and the foot's rows verbatim — no `.modal-body`, whose
+   padding and gaps would pull the rows off their own padding. */
+.sidebar-foot-sheet { padding-bottom: env(safe-area-inset-bottom); }
+
 /* Usage glance: "C 47% O 95% OL 80% Z 0% DS $4", one segment per provider.
    Never wraps; clips as a guard. Beside the monitor button the box is 215px in
    the 320px sidebar, so segments sit space-2 apart (twice the tag-to-number gap,
@@ -5724,18 +5785,23 @@ a.subagent-row { text-decoration: none; }
    and the machine rows and confirm card in its thread.
    ============================================================================= */
 
-/* The search row: the Overseer button, then the field. The button leaves the
-   row while the search is in use, and the field takes the width. */
-.sidebar-search-row { display: flex; align-items: center; gap: var(--space-2); }
-.sidebar-search-row > .search { flex: 1; min-width: 0; }
-
-/* Folded, the search row and the count row are one line: the eye, the count, Select and a search
-   icon. Opened, the field takes the line beside Close Search, and the count stays in it hidden
-   (the field's description and live count), so `position: relative` keeps it inside the line. */
-.sidebar-toolbar { position: relative; display: flex; align-items: center; gap: var(--space-2); min-height: var(--tap-min); }
+/* The one toolbar line, every width (§app.session-list/search): the count, Select, the search
+   icon, and the labelled Overseer at the right end. Opened, the field takes the line beside
+   Close Search, and the count stays in it hidden (the field's description and live count), so
+   `position: relative` keeps it inside the line. The normal control gap (space-2) is a boundary
+   margin, not `gap`: the Overseer's auto margin must be able to absorb it at the 320px pane.
+   (A container `gap` can't collapse, and would starve the count by exactly it.) */
+.sidebar-toolbar { position: relative; display: flex; align-items: center; min-height: var(--tap-min); }
+.sidebar-toolbar > * + * { margin-left: var(--space-2); }
 .sidebar-toolbar > .search { flex: 1; min-width: 0; }
-.sidebar-toolbar > .search-count { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The count keeps its text, and is what shrinks when the line is tight. Clip, never an
+   ellipsis: the deficit that fires it at the 320px pane is sub-pixel (~0.8px of Inter
+   fraction), and an ellipsis drops two whole characters for that. A real deficit (a 4-digit
+   count at the drag floor) clips half a glyph; the aria-live region says the number whole. */
+.sidebar-toolbar > .search-count { flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: clip; text-overflow: clip; font-size: var(--fs-micro); }
 .sidebar-toolbar > .button-icon { flex: none; }
+.sidebar-toolbar > .overseer-entry { margin-left: auto; }
+.sidebar-toolbar > .sidebar-select-start { padding: 0 var(--space-2); gap: var(--space-1); flex: none; }
 
 /* The entry button. `position: relative` anchors its one mark: the count of
    Overseer messages you haven't read, top-right. It is aria-hidden: the button's
@@ -5759,6 +5825,10 @@ a.subagent-row { text-decoration: none; }
   text-align: center;
   pointer-events: none;
 }
+/* The toolbar's labelled form: the word after a small eye with a tighter gap, and the count kept
+   as a corner pill (inline, it would cost the session count its room). */
+.overseer-entry-word { padding: 0 var(--space-2); gap: var(--space-1); }
+.overseer-entry-word .overseer-entry-count { position: absolute; top: -4px; right: -4px; }
 
 /* A session row with activity since you last had it open: a small accent dot
    leading line 1, like the draft pencil. The hidden word carries it for AT. */

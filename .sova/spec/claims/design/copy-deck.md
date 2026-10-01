@@ -12,8 +12,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or tag (model still matches; the placeholder must fit the 320px field) |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
-| Search icon button (folded toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
-| Close Search (folded toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
+| Search icon button (toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
+| Close Search (toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
 | Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
 | Row Busy dot (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session", or while its request waits on a provider's limit the waiting sentence, "Waiting for zai · 5 of 5 in use" (§app.provider-limits/waiting-shown) · tap: the same as a toast |
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
@@ -32,7 +32,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("2 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
-| Overseer entry button (eye) | wordless · badge: {unread}, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
+| Overseer entry button | `eye` + the word `Overseer` on the toolbar line (§app.session-list/search); wordless `eye` on the spine · badge: {unread} at the button's top-right corner, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Organizations region head (§app.session-list/organizations) | Organizations · {n} · searching: Organizations · {hits} of {total} · `title`: "Hand-offs, project overseers, and the coding sessions they started, by organization and project." |
@@ -153,7 +153,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 |---|---|
 | Label (visually hidden) | Message |
 | Placeholder, idle | Enter sends: Enter sends · touch mode (§chat.composer/behavior) and read only: none |
-| Placeholder, streaming | Enter sends: Steer the current turn… Enter sends · touch mode: Steer the current turn… |
+| Placeholder, streaming | Enter sends: Steer the current turn… Enter sends · touch mode: Steer the current turn… · a box too narrow for either (§chat.composer/behavior): the key hint goes, then the caption size, then the string cut back to its last whole word with an ellipsis |
 | Buttons | `Send` · streaming: `Steer` + `Stop` · after Stop is pressed: "Stopping…" in run status |
 | Run status | Wide composer (≥ 620px): `Working` + detail: `· thinking` / `· writing` / `· running {tool}`, and beside it the subagents trigger: `2 of 5 subagents working` (team members among them: `2 of 5 team members working` · `3 of 5 workers working`, the split `1 subagent · 2 team members` in the tooltip), `5 subagents` once all have settled. Narrow: no visible words, the dot and the step's icon, and the trigger as its ring and a count (`2/5`, settled `5`); the same words are the tooltip and accessible name · in both: `Stopping…` · `Compacting context` · `Retrying after a provider error` · `Waiting for zai · 5 of 5 in use` (+ ` (lowered after a rate limit)`, §app.provider-limits/waiting-shown) · trigger name: `2 of 5 subagents working — show subagents` · settled: `5 subagents — show subagents` |
 | Alignment chip (§chat.alignment/chip) | `{n} aligns · {decided}/{total} decided` (1: `1 align · …`) · `aria-label` "{n} open alignments, {decided} of {total} questions decided — show alignments" · menu rows: {id} {title}, then "{decided}/{live}" (no live questions: the status word) · row `aria-label` "{id} {title}: {decided} of {live} questions decided — jump to its card" (no live questions: "{id} {title}: {status}, no questions — jump to its card") · off-screen toast: "That alignment isn't in the transcript on screen." |
@@ -509,7 +509,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Tab | Overseer (icon `eye`) · Notifications (icon `bell`), the next tab, holding Phone Notifications |
-| Intro | The Overseer watches every session and acts on them for you. Open it with the eye beside the session search, or Alt+O. |
+| Intro | The Overseer watches every session and acts on them for you. Open it with the Overseer button on the toolbar line (its eye, the word, and its unread count), or Alt+O. |
 | Group order (legends) | Proactivity · Model and thinking · Limits · Quick actions · Standing notes · Advanced (folded) |
 | Model and thinking | labels Model · Thinking · options pi's default · Model default · {ref} (not available) · hint: Applies when the Overseer is idle. It never changes the model new sessions start with. |
 | Limits lede | Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts restart each time you message it. |
@@ -705,7 +705,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Member chips | `Working` (live dot, mid-turn — the split row's only at-a-glance sign of who is still running; the tab strip's dot covers tabs mode) · `TUI` (accent, static) · `Archived` (neutral) · `Can't open` (error) · `Busy` (warn) |
 | Member composer reasons | "This session is open in a terminal, so Sova won't write to it." · "This session is archived. Unarchive it to send." · "This session can't be opened. The banner above says why." · "Another program is writing to this session." |
 | Member file gone | **This session's file is gone.** Its transcript was deleted outside Sova, so there's nothing left to read. Removing it from the group is all that's left. · button `Remove From Group` |
-| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (in touch mode, where Enter adds a line: "Ask all {n} members…"; 1 member: "Ask this member…") · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
+| Group composer label and placeholder | `aria-label` "Message every member" · placeholder "Ask all {n} members…—Enter sends, Shift+Enter adds a line" (in touch mode, where Enter adds a line: "Ask all {n} members…"; 1 member: "Ask this member…"; a box too narrow for the whole string: the key hint goes, then the caption size, then the ask cut back to its last whole word with an ellipsis — §chat.composer/behavior) · **{n} is the group's size, never the available count**: availability belongs in the foot, where it can change without rewriting a placeholder under the caret, and "Ask this member…" in a 3-member group would be false |
 | Group composer Send | `Send to All` · in flight `Sending…` · 1 member: `Send` |
 | Group composer targets line | `{n} of {m} members` then the excluded reasons, counted: `· 1 mid-turn` · `· 2 open in a terminal` · `· 1 archived` · `· 1 can't be opened` · `· 1 busy` · `· 1 file gone`. All available: `{n} members` alone |
 | Group composer off | 0 available: Send is `aria-disabled`, reason "No member can take a message right now." · 0 members: the composer isn't rendered |

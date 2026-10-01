@@ -43,7 +43,7 @@ mark sdk "one writer per session file"
 - `sdk --> srv "events"`: a node already labelled takes one string, the edge's.
 - `done "Reply streamed?" decision`: a shape (`box round store decision circle`) and a tone may follow.
 - `node db "Orders" store` alone on a line declares a node; then `api -> db "SQL"` labels the edge.
-- With no string right after any line's first id, strings after targets are all edge labels.
+- Label the first node too: with no string right after any line's first id, strings after targets are all edge labels.
 - Edges `->`, dashed `-->`, two-way `<->`; chains `a -> b -> c`; `dir: right`; under 12 nodes.
 - `group "Label" id id …` frames related nodes (a node in one group at most).
 - `== Label ==` lines start side-by-side panels (before/after) with their own ids:
@@ -66,7 +66,7 @@ s --> c "SYN-ACK"
 note c s "keys derived from the exchange"
 mark 2 "the server commits resources here"
 ```
-- `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors (2–4 fit a phone). Keep message labels short.
+- `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors (2–4 fit a phone); short message labels.
 
 ## state
 <!-- owner: process member (flow's parser, layout and View; `end` sinks to the last rank). Emphasis target: state id or label. -->
@@ -220,7 +220,7 @@ document.getElementById("s").onclick=function(){if(v[i]>v[i+1]){var t=v[i];v[i]=
 draw();
 </script>
 ```
-- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. In prose name a colour by what it marks, never by hue. Buttons, inputs and selects are already styled; the body has padding.
+- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. In prose name a colour by what it marks, never by hue. Buttons, inputs and selects are already styled.
 - Fit a 360px-wide phone (flex-wrap, grid with `fr`); keep it under about 500px tall.
 - Nothing moves until the reader clicks or presses a key in it: give motion a Play or Step button (in SVG, `begin="play.click"` on the animations, with a `<g id="play" role="button">`). No `setTimeout` loops.
 - Check a large draft with the `vis_check` tool before you post it.

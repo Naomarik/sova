@@ -911,6 +911,66 @@ export class ProjectEngine {
     await this.containerExec(s.container.engine, ["rm", "-f", name]);
   }
 
+  /** Keep the container an instance's service is about to run as in its record (a down after the service left the definition removes it by this name). */
+  private noteContainer(run: Run, def: ProjectDef, scope: Scope, s: ServiceDecl): void {
+    const c = this.containerOf(def, scope, s);
+    const rec = run.rec;
+    if (!c || !rec || rec.id !== scope.id) return;
+    const was = rec.containers?.[s.name];
+    if (was?.engine === c.engine && was.name === c.name) return;
+    rec.containers = { ...(rec.containers ?? {}), [s.name]: c };
+    this.save(rec);
+  }
+
+  /** The services `rec` still records that `def` no longer declares as checkout services (every one, with no definition). */
+  private removedOf(rec: InstanceRecord, def: ProjectDef | null): string[] {
+    return Object.keys(rec.desired).filter((n) => !def?.services.some((s) => s.name === n && s.scope === "checkout"));
+  }
+
+  /**
+   * Stop `name`, a service `rec` records that its definition no longer declares (§app.project-services/down):
+   * by its unit's name and by the container name its last start recorded, then mark it stopped.
+   */
+  private async stopRemoved(run: Run, rec: InstanceRecord, name: string, why: string): Promise<void> {
+    const unit = this.unitOf(rec.id, name);
+    const wanted = rec.desired[name] === "running";
+    rec.desired[name] = "stopped";
+    this.save(rec);
+    await this.step(run, `stop:${name}`, "stop", async () => {
+      const did: string[] = [];
+      if (staticServes().some((x) => x.id === unit)) {
+        await stopStaticServe(unit);
+        did.push("static serve stopped");
+      } else {
+        const st = await this.driver.status(unit);
+        if (st.state !== "missing") await this.driver.stop(unit);
+        if (st.state !== "missing" && st.state !== "inactive") did.push(unit);
+      }
+      const c = rec.containers?.[name];
+      if (c && (await this.containerExec(c.engine, ["rm", "-f", c.name])) === 0) {
+        did.push(`container ${c.name} removed`);
+        rec.containers = { ...rec.containers };
+        delete rec.containers[name];
+        this.save(rec);
+      }
+      return did.length || wanted ? { result: "done", detail: `${why}: ${did.join(", ") || "marked stopped"}` } : { result: "skipped", detail: why };
+    });
+  }
+
+  /** Before up or apply: stop every service the record still wants or still runs that left the definition. */
+  private async stopRemovedDue(run: Run, rec: InstanceRecord, def: ProjectDef): Promise<string[]> {
+    const out: string[] = [];
+    for (const name of this.removedOf(rec, def)) {
+      const unit = this.unitOf(rec.id, name);
+      const st = staticServes().some((x) => x.id === unit) ? null : await this.driver.status(unit);
+      const alive = !st || (st.state !== "missing" && st.state !== "inactive");
+      if (rec.desired[name] !== "running" && !alive && !rec.containers?.[name]) continue;
+      await this.stopRemoved(run, rec, name, `${name} is no longer in the definition`);
+      out.push(name);
+    }
+    return out;
+  }
+
   private async startService(run: Run, def: ProjectDef, scope: Scope, s: ServiceDecl): Promise<void> {
     const unit = this.unitOf(scope.id, s.name);
     const port = Object.values(this.allPorts(def, scope)[s.name] ?? {})[0];
@@ -927,6 +987,7 @@ export class ProjectEngine {
       }
       await this.preflight(def, scope, s);
       await this.removeContainer(def, scope, s);
+      this.noteContainer(run, def, scope, s);
       const vars = this.vars(def, scope);
       try {
         await this.driver.start({ unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) });
@@ -1013,6 +1074,7 @@ export class ProjectEngine {
     await this.supervised(def);
     const names = run.req.services?.length ? run.req.services : def.services.filter((s) => s.scope === "checkout").map((s) => s.name);
     for (const n of names) if (!def.services.some((s) => s.name === n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
+    await this.stopRemovedDue(run, rec, def);
     const wanted = closureOf(def, names);
     await this.upShared(run, def, wanted.filter((s) => s.scope === "shared"));
     const scope = scopeOf(rec);
@@ -1046,10 +1108,13 @@ export class ProjectEngine {
     const rec = run.rec!;
     const def = run.def;
     await this.supervised(def);
-    const known = def ? serviceOrder(def) : Object.keys(rec.desired).map((name) => ({ name, scope: "checkout" }) as ServiceDecl);
-    const names = run.req.services?.length ? run.req.services : known.filter((s) => s.scope === "checkout").map((s) => s.name);
-    for (const n of names) if (!known.some((s) => s.name === n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
-    const order = [...known].reverse().filter((s) => names.includes(s.name));
+    const known = def ? serviceOrder(def) : [];
+    // What the record still names that the definition no longer declares is stopped too: nothing of it comes back later.
+    const removed = this.removedOf(rec, def);
+    const names = run.req.services?.length ? run.req.services : [...removed, ...known.filter((s) => s.scope === "checkout").map((s) => s.name)];
+    for (const n of names) if (!known.some((s) => s.name === n) && !removed.includes(n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
+    for (const n of removed.filter((x) => names.includes(x))) await this.stopRemoved(run, rec, n, def ? `${n} is no longer in the definition` : "definition unreadable");
+    const order = [...known].reverse().filter((s) => names.includes(s.name) && !removed.includes(s.name));
     for (const s of order) {
       if (s.scope === "shared") {
         await this.stopService(run, def, this.sharedScope(def!, rec.project), s.name, s);
@@ -1072,6 +1137,7 @@ export class ProjectEngine {
     const scope = scopeOf(rec);
     const names = run.req.services?.length ? run.req.services : def.services.filter((s) => s.scope === "checkout").map((s) => s.name);
     for (const n of names) if (!def.services.some((s) => s.name === n)) throw new VerbFailure("invalid-request", `no service "${n}"`);
+    await this.stopRemovedDue(run, rec, def);
     for (const s of serviceOrder(def).filter((x) => names.includes(x.name) && x.scope === "checkout")) {
       const unit = this.unitOf(rec.id, s.name);
       if (!(await this.isActive(unit, s)).active) {
@@ -1101,6 +1167,7 @@ export class ProjectEngine {
           await this.removeContainer(def, scope, s);
           await this.portsReleased(def, scope, s);
           this.preflight(def, scope, s);
+          this.noteContainer(run, def, scope, s);
           const vars = this.vars(def, scope);
           await this.driver.start({ unit, argv: s.cmd!.map((a) => render(a, vars)), cwd: join(scope.checkout, s.cwd), env: this.env(def, scope, { service: s }) });
           return { result: "done", detail: "restarted" };
@@ -1387,7 +1454,9 @@ export class ProjectEngine {
     const run = this.bare(rec);
     if (!run.def) return [];
     const vars = this.vars(run.def, scopeOf(rec));
-    return run.def.services.filter((s) => s.container && s.scope === "checkout").map((s) => ({ engine: s.container!.engine, name: render(s.container!.name, vars) }));
+    const declared = run.def.services.filter((s) => s.container && s.scope === "checkout").map((s) => ({ engine: s.container!.engine, name: render(s.container!.name, vars) }));
+    const recorded = Object.values(rec.containers ?? {}).filter((c) => !declared.some((d) => d.engine === c.engine && d.name === c.name));
+    return [...declared, ...recorded];
   }
 
   // ---- reconcile (§app.project-services/reconcile) ------------------------------------------------------
@@ -1434,6 +1503,12 @@ export class ProjectEngine {
             await this.stopService(run, def, scope, s.name, s);
             did.push(`${rec.id}: stopped ${s.name}`);
           }
+        }
+        // Never started: a service that left the definition; its unit (and container) are stopped, and it is marked stopped.
+        try {
+          for (const name of await this.stopRemovedDue(run, rec, def)) did.push(`${rec.id}: stopped ${name} (no longer in the definition)`);
+        } catch (err) {
+          did.push(`${rec.id}: a service no longer in the definition failed to stop (${err instanceof Error ? err.message : String(err)})`);
         }
       } finally {
         lock.release();

@@ -188,7 +188,13 @@ async function runSuite(
   const containersSeen: { engine: string; name: string }[] = [];
   const recOf = (id: string | null) => (id ? (readRegistry().instances.find((i) => i.id === id) ?? null) : null);
 
-  const before = { units: new Set(await engine.driver.units(engine.unitPrefix())), instances: new Set(readRegistry().instances.map((i) => i.id)), data: new Set(listDataDirs()) };
+  const regBefore = readRegistry();
+  const before = {
+    units: new Set(await engine.driver.units(engine.unitPrefix())),
+    instances: new Set(regBefore.instances.map((i) => i.id)),
+    shared: regBefore.shared.map((x) => x.id),
+    data: new Set(listDataDirs()),
+  };
 
   const suite = async () => {
     let t0 = Date.now();
@@ -335,10 +341,23 @@ async function runSuite(
   for (const c of containersSeen) if (await containerExists(c.engine, c.name)) leaks.push(`container ${c.name}`);
   const wt = await git(["worktree", "list", "--porcelain"], project);
   for (const br of [branchA, branchB]) if (wt.stdout.includes(`branch refs/heads/${br}\n`)) leaks.push(`git worktree on ${br}`);
-  const after = { units: await engine.driver.units(engine.unitPrefix()), instances: readRegistry().instances.map((i) => i.id), data: listDataDirs() };
-  for (const u of after.units) if (!before.units.has(u) && !leaks.includes(`unit ${u}`)) leaks.push(`unit ${u}`);
-  for (const i of after.instances) if (!before.instances.has(i) && !leaks.includes(`registry entry ${i}`)) leaks.push(`registry entry ${i}`);
-  for (const d of after.data) if (!before.data.has(d) && !leaks.some((l) => l.includes(d))) leaks.push(`data dir ${d}`);
+  // What appeared during the run is a leak only when it is the run's own scratch instance's, or nobody's:
+  // another instance's (registered before the run, or made meanwhile by another caller: a session's
+  // up, the server's reconcile) never is.
+  const reg = readRegistry();
+  const scratch = new Set<string>([recA as InstanceRecord | null, recB as InstanceRecord | null].flatMap((r) => (r ? [r.id] : [])));
+  for (const i of reg.instances) if (i.createdBy === callerTag(confCaller)) scratch.add(i.id);
+  const others = new Set([...before.instances, ...before.shared, ...reg.instances.map((i) => i.id), ...reg.shared.map((x) => x.id)].filter((id) => !scratch.has(id)));
+  // The owner is the longest id that names it (one id can be another's prefix).
+  const leaked = (owned: (id: string) => boolean) => {
+    const owner = [...scratch, ...others].filter(owned).sort((x, y) => y.length - x.length)[0];
+    return owner === undefined || scratch.has(owner);
+  };
+  const after = { units: await engine.driver.units(engine.unitPrefix()), instances: reg.instances.map((i) => i.id), data: listDataDirs() };
+  for (const u of after.units)
+    if (!before.units.has(u) && !leaks.includes(`unit ${u}`) && leaked((id) => u.startsWith(`${engine.unitPrefix()}${id}-`))) leaks.push(`unit ${u}`);
+  for (const i of after.instances) if (!before.instances.has(i) && scratch.has(i) && !leaks.includes(`registry entry ${i}`)) leaks.push(`registry entry ${i}`);
+  for (const d of after.data) if (!before.data.has(d) && !leaks.includes(`data dir ${dataRootOf(d)}`) && leaked((id) => d === id)) leaks.push(`data dir ${d}`);
   s.check("no-leaks", !leaks.length, leaks.length ? leaks.join("; ") : "no unit, process, listener, data dir, container, registry entry or worktree left", t0);
   return {
     report: { suiteVersion: SUITE_VERSION, defHash: t.defHash, ref: `${t.ref} (${commit.slice(0, 12)})`, pass: !s.failed, checks: s.checks, leaks },

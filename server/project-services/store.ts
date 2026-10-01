@@ -46,6 +46,8 @@ export interface InstanceRecord {
   data: Record<string, string>;
   /** Checkout-scoped ports this instance holds: `{service: {port: n}}`. */
   ports: Record<string, Record<string, number>>;
+  /** Container service → the container its last start ran as, so a down can remove it after the service left the definition. */
+  containers?: Record<string, { engine: string; name: string }>;
 }
 
 /** A project's shared services (§app.project-services/contract `scope: shared`): one per project. */

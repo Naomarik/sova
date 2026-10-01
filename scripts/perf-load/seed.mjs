@@ -2,12 +2,15 @@
 // seed.mjs — write synthetic pi session files into a hermetic agent dir, so the Sova sidebar has
 // a realistic, deterministic list to render.
 //
-// Usage: node seed.mjs --agent-dir <dir> [--sessions 480] [--cwds 40]
+// Usage: node seed.mjs --agent-dir <dir> [--sessions 480] [--cwds 40] [--big 2] [--big-turns 300]
 //
 // Every session is a real session file the server's own parser understands: a v3 header, a
 // model_change, a user message (what the list titles from) and an assistant reply with usage.
 // mtimes are spread over ~2 weeks so the Archive's Today/Yesterday/… sections all appear. The
 // paths, ids, cwds and mtimes are written to <agent-dir>/perf-load-seed.json for churn.mjs.
+// `--big N` adds N long sessions (`--big-turns` user/assistant pairs each) in their own folder,
+// listed under `big` in that file: the probe's session-switch check opens them. churn never
+// touches them.
 //
 // Nothing is written outside <agent-dir>.
 
@@ -23,6 +26,8 @@ if (!agentDir) {
 }
 const SESSIONS = Number(args.get("sessions") ?? 480);
 const CWDS = Number(args.get("cwds") ?? 40);
+const BIG = Number(args.get("big") ?? 0);
+const BIG_TURNS = Number(args.get("big-turns") ?? 300);
 
 const agent = resolve(agentDir);
 const sessionsDir = join(agent, "sessions");
@@ -55,7 +60,7 @@ function cleanPrevious() {
   try { old = JSON.parse(readFileSync(seedMarker, "utf8")); } catch { /* malformed: leave files */ }
   const dirs = new Set();
   if (old && Array.isArray(old.sessions)) {
-    for (const s of old.sessions) {
+    for (const s of [...old.sessions, ...(Array.isArray(old.big) ? old.big : [])]) {
       if (!s || typeof s.path !== "string" || !insideSessions(s.path)) continue;
       dirs.add(dirname(s.path));
       try { unlinkSync(s.path); } catch { /* already gone */ }
@@ -134,5 +139,65 @@ for (let i = 0; i < SESSIONS; i++) {
   sessions.push({ path, id, cwd, createdAt, mtime: now - activeAgo, lastMessageId: `a-${i}` });
 }
 
-writeFileSync(join(agent, "perf-load-seed.json"), JSON.stringify({ cwds, sessions }, null, 0));
-console.error(`[seed] ${sessions.length} sessions across ${cwds.length} cwds in ${sessionsDir}`);
+// Long sessions for the switch check: many turns with a little markdown each, so a transcript is
+// thousands of nodes and one that stays retained after a switch shows in the node count too.
+const big = [];
+// A real folder (the chat view refuses a session whose working directory is gone), inside the agent dir.
+const bigCwd = join(agent, "perf-load-cwd");
+if (BIG > 0) mkdirSync(bigCwd, { recursive: true });
+for (let b = 0; b < BIG; b++) {
+  const id = uuid();
+  const at = now - 2 * DAY - b * 60_000; // older than the write guard's 2-minute "someone else is writing" window
+  const createdAt = new Date(at).toISOString();
+  const dir = join(sessionsDir, `--${bigCwd.slice(1).replace(/\//g, "-")}--`);
+  const path = join(dir, `${createdAt.replace(/[:.]/g, "-")}_${id}.jsonl`);
+  const lines = [
+    { type: "session", version: 3, id, timestamp: createdAt, cwd: bigCwd },
+    { type: "model_change", id: `bm-${b}`, parentId: null, timestamp: createdAt, provider: "zai", modelId: "glm-5.3" },
+  ];
+  let parent = `bm-${b}`;
+  for (let t = 0; t < BIG_TURNS; t++) {
+    const u = `bu-${b}-${t}`;
+    const a = `ba-${b}-${t}`;
+    const text = t === 0 ? `big transcript ${String.fromCharCode(65 + b)}` : `step ${t}: ${pick(verbs)} the ${pick(nouns)}`;
+    lines.push({ type: "message", id: u, parentId: parent, timestamp: createdAt, message: { role: "user", content: [{ type: "text", text }], timestamp: 0 } });
+    lines.push({
+      type: "message",
+      id: a,
+      parentId: u,
+      timestamp: createdAt,
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: `Done with step ${t}.\n\n- ${pick(verbs)} **${pick(apps)}**\n- check \`${pick(nouns)}\`\n\nNext: ${pick(verbs)} ${pick(nouns)}.` }],
+        provider: "zai",
+        model: "glm-5.3",
+        api: "openai-completions",
+        stopReason: "stop",
+        timestamp: 0,
+        usage: { input: 120, output: 24, cacheRead: 0, cacheWrite: 0, totalTokens: 144, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      },
+    });
+    parent = a;
+  }
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+  utimesSync(path, new Date(at), new Date(at));
+  big.push({ path, id, cwd: bigCwd, createdAt, mtime: at });
+}
+
+// The switch check types a draft into A, and the server keeps drafts by session id (seeded ids
+// repeat), so a rerun would open A with last run's draft already in the composer. Drop the big
+// sessions' drafts, and nothing else, from the agent dir's draft store.
+const draftsFile = join(agent, "sova", "drafts.json");
+if (big.length && existsSync(draftsFile)) {
+  try {
+    const store = JSON.parse(readFileSync(draftsFile, "utf8"));
+    if (store && typeof store.drafts === "object" && store.drafts) {
+      for (const b of big) delete store.drafts[b.id];
+      writeFileSync(draftsFile, JSON.stringify(store));
+    }
+  } catch { /* malformed: leave it */ }
+}
+
+writeFileSync(join(agent, "perf-load-seed.json"), JSON.stringify({ cwds, sessions, big }, null, 0));
+console.error(`[seed] ${sessions.length} sessions across ${cwds.length} cwds${big.length ? `, ${big.length} big (${BIG_TURNS} turns)` : ""} in ${sessionsDir}`);

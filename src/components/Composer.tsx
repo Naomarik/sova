@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, ScheduleInfo, SlashCommand, UploadResult } from "../../shared/protocol";
 import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
@@ -277,9 +278,13 @@ export function Composer(props: {
     if (stored.text && !touched && !text()) setText(stored.text);
   });
   let disposed = false;
+  /** The textarea has had focus: the browser then holds this view until another text field is
+      focused (lib/release-control), so closing it hands that hold on. */
+  let focusedOnce = false;
   onCleanup(() => {
     disposed = true;
     flushDrafts();
+    if (focusedOnce) releaseControl(input, document);
   });
 
   const reason = () => props.readOnly ?? props.blocked ?? null;
@@ -1131,6 +1136,7 @@ export function Composer(props: {
               }
             }}
             onPointerDown={onPointerDown}
+            onFocus={() => (focusedOnce = true)}
             onBlur={() => {
               dropButtonSlash(); // closing by blur undoes an untouched button "/" too
               setSlashToken(null);

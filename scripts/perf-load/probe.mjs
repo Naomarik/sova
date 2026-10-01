@@ -12,6 +12,10 @@
 //   - long tasks (PerformanceObserver 'longtask', installed once, guarded by a window flag);
 //   - nodes added/removed per second (one MutationObserver, installed once);
 //   - Performance.getMetrics Nodes/JSEventListeners, before and after HeapProfiler.collectGarbage.
+// With --switch a,b it then checks a session switch: opens A, types in its composer, opens B,
+// forces GC, and reports whether A's div.transcript-wrap was released (a WeakRef the page holds),
+// the detached div.transcript-wrap trees DOM.getDetachedDomNodes still finds, and the post-GC
+// Nodes. A retained transcript fails the run.
 //
 // It prints one JSON summary and a PASS/FAIL line (FAIL if fewer than 95% of rows survive, or the
 // window's long-task total is over 300 ms), and always stops its browser (stop-browser.sh).
@@ -32,6 +36,9 @@ const warmupSec = Number(args.get("warmup") ?? 10);
 // folder sections (Live & web first, in document order) before it measures: survival is over rows
 // that exist at the window's start, and those are the opened folders' rows.
 const openFolders = Number(args.get("open") ?? 6);
+// Two long sessions, "a,b" (run.mjs passes them): the switch check opens A, types in its composer,
+// switches to B, forces GC and counts what is left of A's transcript.
+const switchPaths = args.get("switch")?.split(",") ?? null;
 const skills = resolve(args.get("skills") ?? join(import.meta.dirname, "..", "..", ".claude", "skills", "playwright", "scripts"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -155,6 +162,86 @@ const END = `(() => {
   };
 })()`;
 
+/** Every element node under a CDP DOM.Node (its returned subtree) whose class names `cls`. */
+function countClass(node, cls) {
+  if (!node) return 0;
+  let n = 0;
+  const a = node.attributes ?? [];
+  for (let i = 0; i < a.length; i += 2) if (a[i] === "class" && a[i + 1].split(/\s+/).includes(cls)) n++;
+  for (const c of node.children ?? []) n += countClass(c, cls);
+  for (const c of node.shadowRoots ?? []) n += countClass(c, cls);
+  return n;
+}
+
+/** Evaluate `expr` until it is truthy, or throw after `ms`. */
+async function until(expr, ms, what) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    try {
+      if (await cdp.evaluate(expr)) return;
+    } catch {
+      // navigating
+    }
+    await sleep(250);
+  }
+  const seen = await cdp
+    .evaluate(`(() => {
+      const w = document.querySelector("div.transcript-wrap");
+      const ta = document.querySelector("textarea.composer-input");
+      return JSON.stringify({ hash: location.hash.slice(0, 60), wrap: !!w, wrapText: w?.textContent.slice(0, 120) ?? null, textarea: ta ? { disabled: ta.disabled } : null, main: document.querySelector("main")?.textContent.slice(0, 200) ?? null });
+    })()`)
+    .catch(() => "unreadable");
+  throw new Error(`timed out waiting for ${what}; on screen: ${seen}`);
+}
+
+/** Open A, type in its composer, open B, collect garbage: is A's transcript still alive? */
+async function switchCheck([a, b]) {
+  const href = (p) => `#/s/${encodeURIComponent(p)}`;
+  const shown = (label) => `(() => {
+    const w = document.querySelector("div.transcript-wrap");
+    return !!w && w.textContent.includes(${JSON.stringify(label)}) && !!document.querySelector("textarea.composer-input:not([disabled])");
+  })()`;
+  await cdp.evaluate(`location.hash = ${JSON.stringify(href(a))}`);
+  await until(shown("big transcript A"), 60_000, "session A's transcript and composer");
+  await sleep(1500);
+  const tagged = await cdp.evaluate(`(() => {
+    const w = document.querySelector("div.transcript-wrap");
+    window.__perfSwitch = { ref: new WeakRef(w) };
+    const ta = document.querySelector("textarea.composer-input");
+    ta.focus();
+    return { elements: w.querySelectorAll("*").length, focused: document.activeElement === ta };
+  })()`);
+  // Typed the way a user's keys arrive: through the editor, so the browser's own editing state
+  // (its undo stack) sees it, not by setting .value.
+  for (const word of ["typed ", "by ", "the ", "perf ", "probe"]) {
+    await cdp.send("Input.insertText", { text: word });
+    await sleep(60);
+  }
+  const typed = await cdp.evaluate(`document.querySelector("textarea.composer-input")?.value ?? null`);
+  await sleep(500);
+  await cdp.evaluate(`location.hash = ${JSON.stringify(href(b))}`);
+  await until(shown("big transcript B"), 60_000, "session B's transcript and composer");
+  await sleep(2000);
+  const before = await cdp.metrics();
+  for (let i = 0; i < 3; i++) {
+    await cdp.send("HeapProfiler.collectGarbage");
+    await sleep(300);
+  }
+  const afterGc = await cdp.metrics();
+  const released = await cdp.evaluate(`window.__perfSwitch.ref.deref() === undefined`);
+  let detached;
+  try {
+    await cdp.send("DOM.enable");
+    const r = await cdp.send("DOM.getDetachedDomNodes");
+    const trees = r.detachedNodes ?? [];
+    detached = { trees: trees.length, transcriptWraps: trees.reduce((n, t) => n + countClass(t.treeNode, "transcript-wrap"), 0) };
+  } catch (err) {
+    detached = { error: err instanceof Error ? err.message : String(err) };
+  }
+  const pass = released && (detached.transcriptWraps ?? 0) === 0;
+  return { a: tagged, typed, released, detached, metrics: { before, afterGc }, pass };
+}
+
 let browserPort = null;
 let cdp = null;
 function stopBrowser() {
@@ -231,7 +318,9 @@ try {
   await sleep(250);
   const afterGc = await cdp.metrics();
 
-  const pass = (end.rows.survivalPct ?? 0) >= 95 && end.longTasks.totalMs <= 300;
+  const listPass = (end.rows.survivalPct ?? 0) >= 95 && end.longTasks.totalMs <= 300;
+  const switched = switchPaths ? await switchCheck(switchPaths) : null;
+  const pass = listPass && (switched === null || switched.pass);
   const summary = {
     url,
     windowSec,
@@ -243,6 +332,8 @@ try {
     longTasks: end.longTasks,
     nodes: end.nodes,
     metrics: { before, afterGc },
+    listPass,
+    switch: switched,
   };
   console.log(JSON.stringify(summary));
   console.log(`RESULT: ${pass ? "PASS" : "FAIL"}`);

@@ -32,9 +32,14 @@ shared one) and measures over the window:
 - long tasks (one `PerformanceObserver`),
 - nodes added/removed per second (one `MutationObserver`),
 - `Performance.getMetrics` Nodes/JSEventListeners, before and after `HeapProfiler.collectGarbage`.
+- a session switch (`--big`, default 2: the seed adds that many long sessions in a real folder
+  under the agent dir, and clears their stored drafts): open A, type in its composer, open B, force
+  GC three times, then report whether A's `div.transcript-wrap` was released (a `WeakRef` the page
+  holds), the detached `div.transcript-wrap` trees `DOM.getDetachedDomNodes` still finds, and the
+  post-GC Nodes. A retained transcript fails the run.
 
 It prints one JSON summary and a `RESULT: PASS|FAIL` line. **FAIL** when fewer than 95% of rows
-survive, or the window's long-task total exceeds 300 ms. Exit code 1 on FAIL.
+survive, the window's long-task total exceeds 300 ms, or the switch leaves A's transcript alive. Exit code 1 on FAIL.
 
 Ports are 4840–4859 only; the browser's CDP port is one the skill claims (9300–9999), never 9222.
 Everything written lands under `<tree>/.agent`.

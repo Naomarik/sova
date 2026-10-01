@@ -3,7 +3,7 @@
 // churn the list, probe the sidebar in an isolated headless browser, then report.
 //
 // Usage: node scripts/perf-load/run.mjs --tree <checkout> --port <n> [--rate 1] [--window 30]
-//                                       [--sessions 480] [--live 360] [--open 6] [--skip-build] [--keep]
+//                                       [--sessions 480] [--live 360] [--open 6] [--big 2] [--skip-build] [--keep]
 //
 // The harness lives in THIS worktree; --tree may be any checkout (this worktree, or a baseline
 // archive). Frontend assets come from <tree>/dist (built on demand with `pnpm run build`); the
@@ -12,7 +12,7 @@
 // Exit code: 1 when the probe FAILs, else 0.
 
 import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, openSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { join, resolve } from "node:path";
 
@@ -32,6 +32,7 @@ const windowSec = args.get("window") ?? "30";
 const sessions = args.get("sessions") ?? "480";
 const live = args.get("live") ?? "360";
 const openCount = args.get("open") ?? "6";
+const bigCount = args.get("big") ?? "2";
 const skipBuild = has("skip-build");
 const keep = has("keep");
 const log = (msg) => console.error(`[run] ${msg}`);
@@ -116,10 +117,13 @@ try {
 
   log(`seeding ${sessions} sessions`);
   const seeded = await new Promise((res) => {
-    const p = spawn(process.execPath, [join(here, "seed.mjs"), "--agent-dir", agentDir, "--sessions", String(sessions)], { stdio: "inherit" });
+    const p = spawn(process.execPath, [join(here, "seed.mjs"), "--agent-dir", agentDir, "--sessions", String(sessions), "--big", String(bigCount)], { stdio: "inherit" });
     p.on("close", res);
   });
   if (seeded !== 0) throw new Error("seed.mjs failed");
+  // The two long sessions the probe switches between (none with --big 0: no switch check).
+  const big = JSON.parse(readFileSync(join(agentDir, "perf-load-seed.json"), "utf8")).big ?? [];
+  const switchArgs = big.length >= 2 ? ["--switch", `${big[0].path},${big[1].path}`] : [];
 
   if (!skipBuild && !existsSync(join(tree, "dist", "index.html"))) {
     log("building frontend (pnpm run build)");
@@ -151,7 +155,7 @@ try {
 
   log(`probing (${windowSec}s window)`);
   const probeCode = await new Promise((res) => {
-    const p = spawn(process.execPath, [join(here, "probe.mjs"), "--url", base, "--window", String(windowSec), "--open", String(openCount), "--skills", skills], { stdio: "inherit" });
+    const p = spawn(process.execPath, [join(here, "probe.mjs"), "--url", base, "--window", String(windowSec), "--open", String(openCount), ...switchArgs, "--skills", skills], { stdio: "inherit" });
     p.on("close", res);
   });
 

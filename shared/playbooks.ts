@@ -10,19 +10,20 @@ import type { PlaybookInfo } from "./protocol";
  * The text a playbook is sent as, exactly:
  *
  *   Playbook: <title> — <absolute dir>
- *   Read the files in that directory as the playbook directs.
+ *   Every relative path in this playbook is relative to that directory; read its files as the playbook directs.
  *
  *   <body>
  *
  * and, when the user wrote something, `\n---\n\n<their text>\n` after it. The first line is
  * always plain prose, so the turn can never start with `/` and be taken for a command; it names
- * the ABSOLUTE directory because the body refers to its phases/ and templates/ by relative path,
- * and the session's cwd is a different folder. The body goes through verbatim — the SDK expands
+ * the ABSOLUTE directory, and the second line makes it the base of every relative path, because
+ * the body refers to its scripts/, references/ (or phases/, templates/) by relative path and the
+ * session's cwd is a different folder (§chat.playbooks/bundles). The body goes through verbatim — the SDK expands
  * prompt templates and skills on its way in, so anything that looks like one must arrive intact.
  * Blank or whitespace-only user text adds nothing: no separator, no filler.
  */
 export function playbookTurnText(playbook: Pick<PlaybookInfo, "title" | "dir" | "body">, userText: string): string {
-  const head = `Playbook: ${playbook.title} — ${playbook.dir}\nRead the files in that directory as the playbook directs.\n\n${playbook.body}`;
+  const head = `Playbook: ${playbook.title} — ${playbook.dir}\nEvery relative path in this playbook is relative to that directory; read its files as the playbook directs.\n\n${playbook.body}`;
   const own = userText.trim();
   return own ? `${head}\n---\n\n${own}\n` : head;
 }

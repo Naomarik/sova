@@ -304,6 +304,12 @@
       ;; when unattended, counted against no allowance. The effect mints it; turning one off is no act.
       (dsl/act {:sova/feed :feed :event :preview/start :checks [not-archived invalid preview-check]}
         (dsl/effect :preview preview-effect))
+      ;; sova_project_verbs on the project's running instances (§app.project-services/callers): stopping
+      ;; one is L0, every other verb but the reads is L3; neither is held nor counted. The act is the
+      ;; gate only: the host runs the verb once it is taken, and the verb's own rules (scope, confirm)
+      ;; are the engine's. Stopping is never refused for an archived project.
+      (dsl/act {:sova/feed :feed :event :services/down :checks [invalid]})
+      (dsl/act {:sova/feed :feed :event :services/run :checks [not-archived invalid]})
 
       (parallel {:id :regions}
         (state {:id :shelf :initial :active}
@@ -400,6 +406,8 @@
                        :what (fn [d] (str "A WhatsApp message to " (get-in (b/evt d) [:target :name])))}
    :preview/start     {:needs "L1" :tool "sova_preview" :people-facing true :hold true :confirm-kind "preview"
                        :what (fn [d] (str "A preview link: " (str/trim (or (:purpose (b/evt d)) ""))))}
+   :services/down     {:needs "L0" :tool "sova_project_verbs"}
+   :services/run      {:needs "L3" :tool "sova_project_verbs"}
    :hold/cancel       {:needs "L0" :correction true}
    :hold/approve      {:needs "L0" :correction true}})
 

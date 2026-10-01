@@ -401,7 +401,7 @@ export class ScheduleKeeper {
       const holder = singletonHolder(keyOf(profile), await this.deps.sessions());
       if (holder) {
         if (holder.live) return skip(`${profile.label} is open in a terminal`);
-        const r = await this.deps.wake(holder.path, `${head}\n${wakeInstruction(pb.title, pb.dir)}`);
+        const r = await this.deps.wake(holder.path, `${head}\n${wakeInstruction(pb.title, pb.dir, pb.entry)}`);
         if (!r.ok) return this.log(s, trigger, "refused", { why: r.error, session: holder.id });
         this.record(s, { trigger, kind: "wake", sessionId: holder.id, path: holder.path }, tz);
         return this.log(s, trigger, "fired", { session: holder.id });

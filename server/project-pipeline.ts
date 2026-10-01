@@ -277,6 +277,8 @@ export const LINES: Record<string, string> = {
   "decision:sova/started": "A decision was recorded.",
   "gap/file": "The gap was filed.",
   "gap/drop": "The gap was dropped.",
+  "services/down": "A running copy of the project was stopped.",
+  "services/run": "A running copy of the project was started or changed.",
   "gather/start": "A gathering started.",
   "gather/plan": "A gathering was planned.",
   "build/start": "A coding session started.",

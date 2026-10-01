@@ -77,7 +77,7 @@ export function ProfilePlaybookCard(props: {
                   <h2 class="modal-title" id="ppv-title">
                     {pb().title}
                   </h2>
-                  <p class="profile-muted text-mono">{tildePath(pb().dir, home())}/PLAYBOOK.md</p>
+                  <p class="profile-muted text-mono">{tildePath(pb().dir, home())}/{pb().entry}</p>
                 </div>
                 <div class="modal-body profile-playbook-body">
                   <Markdown text={pb().body} />

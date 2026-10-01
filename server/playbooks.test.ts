@@ -3,7 +3,7 @@
 // project cwd handled on /api/files's terms. Uses a throwaway PI_CODING_AGENT_DIR in the OS temp
 // dir; ~/.pi is never read or written. The shipped playbooks/ folder is read, never modified.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,7 +11,7 @@ import { after, test } from "node:test";
 
 const agentDir = mkdtempSync(join(tmpdir(), "sova-playbooks-test-"));
 process.env.PI_CODING_AGENT_DIR = agentDir; // before the modules below compute their paths
-const { isPlaybookId, listPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, userPlaybooksDir } = await import("./playbooks");
+const { isPlaybookId, listPlaybooks, parseFrontmatter, PROJECT_PLAYBOOK_DIRS, readProjectPlaybook, userPlaybooksDir } = await import("./playbooks");
 const PROJECT_PLAYBOOKS = PROJECT_PLAYBOOK_DIRS[1];
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
@@ -24,10 +24,10 @@ const fresh = (label: string) => {
   mkdirSync(dir, { recursive: true });
   return dir;
 };
-/** One playbook directory with the given PLAYBOOK.md text. */
-const drop = (root: string, id: string, text: string) => {
+/** One playbook directory with the given entry file text (PLAYBOOK.md unless named). */
+const drop = (root: string, id: string, text: string, entry = "PLAYBOOK.md") => {
   mkdirSync(join(root, id), { recursive: true });
-  writeFileSync(join(root, id, "PLAYBOOK.md"), text);
+  writeFileSync(join(root, id, entry), text);
 };
 const fm = (fields: Record<string, string>, body: string) =>
   `---\n${Object.entries(fields).map(([k, v]) => `${k}: ${v}`).join("\n")}\n---\n\n${body}`;
@@ -43,6 +43,7 @@ test("shipped only: every well-formed playbook, sorted by title, with its absolu
   const a = cat.playbooks.find((p) => p.id === "alpha")!;
   assert.equal(a.source, "sova");
   assert.equal(a.dir, join(deps.shippedDir, "alpha"));
+  assert.equal(a.entry, "PLAYBOOK.md");
   assert.equal(a.body, "# A\nbody\n");
   assert.equal(a.promptHint, "Name your brand");
   assert.equal(cat.playbooks.find((p) => p.id === "zeta")!.promptHint, undefined, "no promptHint → absent, not empty");
@@ -156,7 +157,7 @@ test("malformed or absent frontmatter still yields an entry with fallbacks", asy
   assert.equal(by.spaces!.description, "", "an empty description stays empty");
 });
 
-test("traversal-shaped and non-id directory names are skipped; so are dirs without PLAYBOOK.md and plain files", async () => {
+test("traversal-shaped and non-id directory names are skipped; so are dirs without an entry file and plain files", async () => {
   const deps = base();
   for (const bad of [".hidden", "-lead", "Upper", "under_score", "dot.name", "..sneaky"]) drop(deps.shippedDir, bad, fm({ title: bad }, "x"));
   mkdirSync(join(deps.shippedDir, "empty-dir"));
@@ -166,6 +167,47 @@ test("traversal-shaped and non-id directory names are skipped; so are dirs witho
   assert.deepEqual(cat.playbooks.map((p) => p.id), ["ok-1"]);
   for (const id of ["..", "../etc", "a/b", "a\\b", "", ".", "A"]) assert.equal(isPlaybookId(id), false, id);
   for (const id of ["a", "0", "brand-maker", "x1-2"]) assert.equal(isPlaybookId(id), true, id);
+});
+
+test("a SKILL.md-only folder is a playbook: titled by name:, its other keys ignored (§chat.playbooks/where-playbooks-come-from)", async () => {
+  const deps = base();
+  drop(deps.shippedDir, "skill-only", fm({ name: "Skill named", description: "From a skill", "allowed-tools": "Bash Read", promptHint: "Which branch" }, "# Skill\n"), "SKILL.md");
+  drop(deps.shippedDir, "both-keys", fm({ name: "the-name", title: "The title" }, "b"), "SKILL.md");
+  drop(deps.shippedDir, "blank-name", fm({ name: '"  "' }, "b"), "SKILL.md");
+  const cat = await listPlaybooks(undefined, deps);
+  const by = Object.fromEntries(cat.playbooks.map((p) => [p.id, p]));
+  assert.deepEqual(
+    { title: by["skill-only"]!.title, description: by["skill-only"]!.description, promptHint: by["skill-only"]!.promptHint, entry: by["skill-only"]!.entry, body: by["skill-only"]!.body },
+    { title: "Skill named", description: "From a skill", promptHint: "Which branch", entry: "SKILL.md", body: "# Skill\n" },
+  );
+  assert.equal(by["both-keys"]!.title, "The title", "title: wins over name:");
+  assert.equal(by["blank-name"]!.title, "blank-name", "a blank name: falls back to the id");
+});
+
+test("a folder with both PLAYBOOK.md and SKILL.md is read from PLAYBOOK.md alone", async () => {
+  const deps = base();
+  drop(deps.shippedDir, "twin", fm({ name: "From skill", description: "skill side" }, "SKILL BODY\n"), "SKILL.md");
+  drop(deps.shippedDir, "twin", fm({ title: "From playbook", description: "playbook side" }, "PLAYBOOK BODY\n"));
+  const [p] = (await listPlaybooks(undefined, deps)).playbooks;
+  assert.deepEqual({ title: p!.title, description: p!.description, entry: p!.entry, body: p!.body }, { title: "From playbook", description: "playbook side", entry: "PLAYBOOK.md", body: "PLAYBOOK BODY\n" });
+});
+
+test("a bundle's scripts are never run by listing or reading it; only the entry is read (§chat.playbooks/bundles)", async () => {
+  const deps = base();
+  const cwd = fresh("project");
+  const root = join(cwd, PROJECT_PLAYBOOK_DIRS[0]);
+  drop(root, "bundle", fm({ name: "Bundle", when: "every 30m", profile: "p" }, "Run `scripts/check.mjs status`.\n"), "SKILL.md");
+  const marker = join(cwd, "ran");
+  for (const sub of ["scripts", "references", "tests"]) mkdirSync(join(root, "bundle", sub));
+  writeFileSync(join(root, "bundle", "scripts", "check.mjs"), `require("node:fs").writeFileSync(${JSON.stringify(marker)}, "x");\n`, { mode: 0o755 });
+  const cat = await listPlaybooks(cwd, deps);
+  const b = cat.playbooks.find((p) => p.id === "bundle")!;
+  assert.equal(b.entry, "SKILL.md");
+  assert.equal(b.schedule!.state, "needs-approval", "a SKILL.md entry carries a schedule like a PLAYBOOK.md one");
+  const read = await readProjectPlaybook(cwd, "bundle");
+  assert.equal(read!.info.entry, "SKILL.md");
+  assert.equal(read!.fields.when, "every 30m", "the keeper reads the header from the same entry file");
+  assert.equal(existsSync(marker), false, "nothing in scripts/ ran");
 });
 
 test("parseFrontmatter: quotes, CRLF, BOM, colons in values, and a body that looks like frontmatter", () => {

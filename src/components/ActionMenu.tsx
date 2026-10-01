@@ -66,6 +66,8 @@ export function ActionMenu(props: {
   title?: string;
   /** The trigger's icon. `null` skips it: a word-plus-caret trigger for a narrow row. */
   icon?: IconName | null;
+  /** The word trigger's dropdown caret. `false` skips it: the narrowest rows keep only the word. */
+  caret?: boolean;
   /** Extra classes on the trigger, for a head that reveals it on hover. */
   class?: string;
   /** A toolbar trigger says what it opens in words: the icon-only "⋯" is the default, and this
@@ -263,7 +265,7 @@ export function ActionMenu(props: {
           {(text) => (
             <span class="action-menu-text">
               {text()}
-              <Icon name="chevron-down" small />
+              {props.caret !== false && <Icon name="chevron-down" small />}
             </span>
           )}
         </Show>

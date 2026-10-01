@@ -239,16 +239,20 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
 
   return (
     <div class="sidebar-select-bar" role="group" aria-label="Selected sessions">
-      {/* One row: the count leads, the actions follow, and Cancel ends it at the right. */}
+      {/* One row: the count leads and takes the leftover width; the actions are one cluster at
+          the right end — Move, then Rename, then Archive, and Cancel after a wider step, so it
+          reads as the way out rather than a fifth action. */}
       <div class="sidebar-select-row">
         <p class="sidebar-select-count" aria-live="polite">
           <span class="text-num">{plan().count}</span> selected
         </p>
+        <div class="sidebar-select-actions">
         <ActionMenu
           label={`Move ${sessionsWord(plan().count)} into a group`}
           title="Move into group"
           text="Move"
           icon={null}
+          caret={false}
           class="button-sm sidebar-select-move"
           align="start"
         >
@@ -345,6 +349,7 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
         >
           Cancel
         </button>
+        </div>
       </div>
       {/* The open rename field is the one thing below the row; its hint is the field's description. */}
       <Show when={renaming() && plan().canRename}>

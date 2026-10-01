@@ -162,8 +162,14 @@ const isCompaction = (raw: unknown) => typeof raw === "object" && raw !== null &
  * depend on it; a drawn row remembers its real height. A row that draws nothing (a paired tool
  * result) takes no space whatever its estimate (`.entry:empty`).
  */
-export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }, images?: readonly string[], at: ImagesAt = "user"): string {
+export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }, images?: readonly string[], at: ImagesAt = "user", chain = false, folded = false): string {
   const text = item.text ?? "";
+  // A step of a timeline (a thinking row, a tool call, an orphan result) is one `--timeline-row`
+  // line plus the air between two of them, not a card (§chat.transcript/work-chain) — and the one
+  // row a FOLDED run still draws is that line and nothing else.
+  const compact = chain && (item.kind === "thinking" || item.kind === "tool-call" || item.kind === "tool-result");
+  const card = compact ? (folded ? "24px" : "32px") : "46px";
+  const foldedEst = compact ? (folded ? "24px" : "32px") : "36px";
   let est: string;
   if (item.kind === "assistant-text") {
     const s = textShape(text);
@@ -171,8 +177,8 @@ export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }
   } else if (item.kind === "user") est = `97px + ${wrapped(textShape(text, true), 0.7)}`;
   else if (item.kind === "info" && isCompaction(item.raw)) est = "36px";
   else if (item.kind === "info") est = `-4px + ${wrapped(textShape(text, true), 1)}`;
-  else if (item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "wake") est = "46px";
-  else if (item.kind === "thinking" || item.kind === "report") est = "36px";
+  else if (item.kind === "tool-call" || item.kind === "tool-result" || item.kind === "wake") est = card;
+  else if (item.kind === "thinking" || item.kind === "report") est = item.kind === "thinking" ? foldedEst : "36px";
   else if (item.kind === "worktree-merge") est = "110px + var(--entry-narrow, 0) * 70px";
   else est = "70px";
   const [wide, narrow] = imagesEstimate(images, at);

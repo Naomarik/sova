@@ -68,6 +68,11 @@ const MAX_GROUPS = 6;
 const isGroupLine = (t: Token[]) => t[0]?.t === "word" && GROUP_WORDS.includes(t[0].v) && t[1]?.t === "str" && !t.some((x) => x.t === "arrow");
 /** `a1 "Label" ["second"] [shape] [tone]` with no arrow: a `node` line without the word (checked after isGroupLine). */
 const isDeclLine = (t: Token[]) => t[0]?.t === "word" && t[0].v !== "node" && t[1]?.t === "str" && !t.some((x) => x.t === "arrow");
+const isShape = (w: string) => (SHAPES as readonly string[]).includes(w);
+/** `node end done`: a shape, then a word that is no tone or shape, so it can only be the id (no arrow on the line). */
+const isShapeFirst = (t: Token[]) => t[0]?.t === "word" && t[0].v === "node" && t[1]?.t === "word" && isShape(t[1].v) && t[2]?.t === "word" && !isTone(t[2].v) && !isShape(t[2].v) && !t.some((x) => x.t === "arrow");
+/** `node "In progress" [second] [shape] [tone]`: a node line naming its node by label, no arrow. */
+const isLabelFirst = (t: Token[]) => t[0]?.t === "word" && t[0].v === "node" && t[1]?.t === "str" && !isNL(t[1]) && t.slice(2).every((x) => x.t === "str" || (x.t === "word" && (isTone(x.v) || isShape(x.v))));
 
 /** Mermaid's dotted arrow `-.->` (tokenized as the word `-.` and `->`) is a dashed edge, `-->`. */
 const dotted = (t: Token[]): Token[] =>
@@ -237,6 +242,9 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
   const nodeLines = new Set<string>();
   let inlineStyle = false;
   let at = -1;
+  // Ids written in chains, and `node end done` lines (shape first), per panel.
+  const chainIds = new Set<string>();
+  const shapeFirst: { line: Line; at: number; shape: string; nid: string }[] = [];
   for (const line of rest) {
     if (divider(line) !== null) {
       at++;
@@ -250,10 +258,25 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     }
     if (t[0]?.t !== "word" || isGroupLine(t)) continue;
     if (t[0].v === "node" && t[1]?.t !== "arrow") {
-      if (t[1]?.t === "word") nodeLines.add(`${at}\0${t[1].v}`);
+      if (isShapeFirst(t)) shapeFirst.push({ line, at, shape: (t[1] as { v: string }).v, nid: (t[2] as { v: string }).v });
+      else if (t[1]?.t === "word") nodeLines.add(`${at}\0${t[1].v}`);
     } else if (isDeclLine(t)) nodeLines.add(`${at}\0${t[0].v}`);
     // A bracket's label (`A[Label]`) labels its node in either style, so it sets neither.
     else if (t[1]?.t === "str" && !isNL(t[1])) inlineStyle = true;
+    if (t[0].v === "node" && t[1]?.t !== "arrow") continue;
+    t.forEach((x, i) => {
+      if (x.t === "word" && (i === 0 || t[i - 1]?.t === "arrow")) chainIds.add(`${at}\0${x.v}`);
+    });
+  }
+  // `node end done` is `node done end` when nothing else names `end` as a node (§chat.markdown/vis-lenience-content).
+  const swapped = new Set<Line>();
+  for (const s of shapeFirst) {
+    const named = (x: string) => chainIds.has(`${s.at}\0${x}`) || nodeLines.has(`${s.at}\0${x}`);
+    if (named(s.shape)) nodeLines.add(`${s.at}\0${s.shape}`);
+    else {
+      swapped.add(s.line);
+      nodeLines.add(`${s.at}\0${s.nid}`);
+    }
   }
   // Sections: each panel's ids are its own. `key` is the node's id in the spec: the id as written,
   // or, for an id an earlier panel already has, `id@<panel>` (no written id contains @).
@@ -348,6 +371,13 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     // `node -> db` is a chain from a node whose id is node.
     const idAt = first.t === "word" && first.v === "node" && toks[1]?.t !== "arrow" ? 1 : isDeclLine(toks) ? 0 : -1;
     if (idAt >= 0) {
+      // `node end done` is `node done end`; `node "In progress"` names its node by label, as a chain does.
+      if (swapped.has(line)) [toks[1], toks[2]] = [toks[2]!, toks[1]!];
+      else if (idAt === 1 && isLabelFirst(toks)) {
+        const sid = nodeByLabel((toks[1] as { v: string }).v, line.n);
+        nodeLines.add(`${sections.length - 1}\0${sid}`);
+        toks.splice(1, 0, { t: "word", v: sid });
+      }
       const nid = id(toks[idAt], line.n, "a node id after node");
       const k0 = key(nid, line.n);
       const again = declared.get(k0);

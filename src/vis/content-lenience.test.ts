@@ -325,6 +325,24 @@ test("flow and state: the same node line written twice is one node", () => {
   assert.match(err("flow", 'node a "A"\nnode a "B"').message, /node a is declared twice/);
 });
 
+test("flow and state: a node line with its shape before its id, or a label and no id", () => {
+  // haiku R2 state-player: the final state's line, its id and shape swapped.
+  const p = ok<FlowSpec>("state", 'node s0 start\nnode end done\ns0 -> stopped\nstopped -> done "quit"');
+  assert.deepEqual(shapes(p), { s0: "start", done: "end", stopped: "round" });
+  assert.deepEqual(edges(p), [["s0", "stopped", null, false], ["stopped", "done", "quit", false]]);
+  // An edge naming the shape word as a node, or a tone after it: as before.
+  assert.match(err("state", "node s0 start\nnode end done\ns0 -> end").message, /unknown word "done"/);
+  assert.deepEqual(shapes(ok<FlowSpec>("state", "node end warn\na -> end")), { end: "round", a: "round" });
+  // haiku R2 state-ticket: states named by label on their node lines and in edges.
+  const t = ok<FlowSpec>("state", 'node s0 start\nnode New\nnode "In progress"\nnode "Waiting on customer" warn\ns0 -> New\nNew -> "In progress" "start work"\n"In progress" -> "Waiting on customer" "awaiting input"\nmark "Waiting on customer" info "SLA clock pauses"');
+  assert.deepEqual(t.nodes.map((n) => [n.id, n.label, n.tone ?? null]), [["s0", "s0", null], ["New", "New", null], ["in-progress", "In progress", null], ["waiting-on-customer", "Waiting on customer", "warn"]]);
+  assert.deepEqual(edges(t), [["s0", "New", null, false], ["New", "in-progress", "start work", false], ["in-progress", "waiting-on-customer", "awaiting input", false]]);
+  assert.deepEqual(t.emphasis, [{ key: "waiting-on-customer", tone: "info", note: "SLA clock pauses", n: 1 }]);
+  // In inline style the string after it is still the edge's; a word that could be an id: as before.
+  assert.deepEqual(edges(ok<FlowSpec>("flow", 'node "Cache" store\napi "API" -> "Cache" "get"')), [["api", "cache", "get", false]]);
+  assert.match(err("flow", 'node "In progress" prog').message, /expected a node id after node/);
+});
+
 test("timeline: a label's own tone or note; a mark without the row's (…)", () => {
   const t = ok<TimelineSpec>("timeline", '2024-03-01 | Alpha\n2024-06-30 | Beta warn\n2024-07-14 | GA "was 2024-06-30" ok\nmark "Beta" "slipped"');
   assert.deepEqual(t.items, [

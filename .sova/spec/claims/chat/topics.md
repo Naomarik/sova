@@ -18,7 +18,7 @@ topic-outline's topics and to a session's taxonomy topic tag (§app.decisions/se
   can't clash, and it can't be guessed. The calling session is the topic's one receiver.
 - **Reuse.** Opening the same base name again from the same session returns the topic it already
   has open under that base, so a captain that opens `merge` every round keeps one topic. A session
-  holds at most 5 open topics. The sixth is refused.
+  holds at most 10 open topics. The eleventh is refused.
 - **Invitations.** Only a session the receiver asked may push to its topic. When the receiver's
   `session_send` is accepted (handed to its target or queued there, not refused) and its text names
   one of the receiver's own open topics as a whole word (not inside a longer name), the server

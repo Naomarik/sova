@@ -33,6 +33,7 @@ import {
   type RejectedFile,
 } from "../lib/images";
 import { modelProvider, shortModel } from "../lib/format";
+import { fitPlaceholderNow, type FittedPlaceholder } from "../lib/placeholder-fit";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
   clearDraft,
@@ -298,10 +299,27 @@ export function Composer(props: {
   // Tapped, Enter adds a line and Send sends; the placeholder's key hint shows exactly when
   // Enter sends, so it swaps in place when the mode does.
   const { touch, onPointerDown } = createTouchMode();
-  const placeholder = () =>
-    [props.running ? "Steer the current turn…" : "",
-      !touch() && !props.readOnly ? "Enter sends" : ""]
-      .filter(Boolean).join(" ");
+  /** The placeholder in reading order: the sentence, then the key hint a narrow box can spare. */
+  const placeholderParts = () =>
+    [props.running ? "Steer the current turn…" : "", !touch() && !props.readOnly ? "Enter sends" : ""]
+      .filter(Boolean);
+  /** The fitted placeholder, or null until this box has been measured. */
+  const [fitted, setFitted] = createSignal<FittedPlaceholder | null>(null);
+  /** What the box shows: the whole string while it fits, else the fitted one (§chat.composer/behavior). */
+  const placeholder = () => fitted()?.text ?? placeholderParts().join(" ");
+  /** Measure the strings against this box. The strings changing and the box changing are the two
+      reasons to re-fit; a font arriving changes every width without changing either. */
+  const fit = () => setFitted(fitPlaceholderNow(input, placeholderParts()));
+  createEffect(() => {
+    placeholderParts();
+    fit();
+  });
+  onMount(() => {
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(input);
+    void document.fonts.ready.then(() => fit());
+    onCleanup(() => observer.disconnect());
+  });
   const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
   createEffect(() => props.onDraft?.(text().trim().length > 0 || images().length > 0));
 
@@ -1126,6 +1144,7 @@ export function Composer(props: {
             id={paneId("composer-input")}
             rows={1}
             placeholder={placeholder()}
+            data-ph-size={fitted()?.size === "caption" ? "caption" : undefined}
             enterkeyhint={touch() ? "enter" : "send"}
             aria-describedby={paneId("composer-reason")}
             aria-autocomplete={slashOpen() || mentionOpen() ? "list" : undefined}

@@ -9,6 +9,7 @@
     "node": ">=22.19"
   },
   "scripts": {
+    "auth:token": "node scripts/sova-token.mjs",
     "dev:server": "node scripts/dev-server.mjs",
     "dev:server:tsx": "tsx watch server/index.ts",
     "dev:server:detached": "PI_WORKER_TRANSPORT=host node scripts/dev-server.mjs",

@@ -21,7 +21,8 @@ to assert that those decisions have been implemented.
 
 | Path | What it is |
 | --- | --- |
-| `core/sova-spec.mjs` | The read-only core: `check`, `census`, `foreign`, `scope`, `impact` |
+| `core/sova-spec.mjs` | The read-only core: `packet`, `check`, `census`, `foreign`, `scope`, `impact` |
+| `core/packet.mjs` | The standalone core's bounded packet serialization and stateless navigation module |
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
 | `DRAFTS.md` | The draft workflow's reference |
@@ -32,8 +33,21 @@ to assert that those decisions have been implemented.
 ## Core (read-only)
 
 ```sh
+node core/sova-spec.mjs packet '<§id>' [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR]
 node core/sova-spec.mjs <check | census [--changed [--base <rev>] [--related]] | foreign --base <rev> [--head <rev>] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
 ```
+
+`packet` is the bounded task-reading path: compact JSON, exact text (not summaries), default
+12,000 UTF-8 bytes for the entire response including metadata and newline. Explicit budgets
+are integers 1,024–32,768. Follow `next` with `--cursor`, keeping the same ID and part, to
+finish relevant contiguous prose fragments; finish a passage at `fragment.end == fragment.total`.
+`fragment.complete` means the item contains the whole passage, NOT that it is the final chunk.
+Inspect `--part frontier` separately; `inventory`, `code` and `findings` expose paged details.
+Counts reveal all streams; a cursor advances only the selected one. `done` or exit 0 is not
+complete behavioral context or evidence of earlier reading. Changed captured inputs invalidate
+continuation. There is no cursor store, snapshot write, new assessment or release gate.
+Full-graph `scope` remains available for deliberate machine inspection and review, with its
+unchanged prose-only budget. See `core/README.md` for packet fields, fragments and refusals.
 
 `census --changed` checks one task's files instead of the whole boundary. It
 takes the files that differ between `--base` (default `HEAD`) and the working
@@ -65,7 +79,7 @@ keeps it, which a `grep` or JSON key-pick of stdout
 doesn't touch. With `--spec` only, each new id whose H1 parent already exists
 gets a `child-under-foreign` note. With `--related`, each `touched` entry also
 carries `created: true|false`, and each foreign touched § gets a
-`touched-foreign` note (read it with `scope`; flag it if a user sees a change
+`touched-foreign` note (read it with `packet`; flag it if a user sees a change
 there, even one the new claim describes; a gap it already had never flags, even one you now rely on). Human output prints the summary
 before the touched list. Notes are reminders, not flags: the exit code is
 unchanged. The rule counts a request, hook, helper or CSS class as plumbing, and
@@ -85,7 +99,8 @@ promote turn's `Also changes:` line must name; `worktree merge` and
 
 Quote IDs, because `§` is not a shell word character. `scope` and `impact` read a
 bare namespace like `§app.shell` as `§app/shell`, with an `id-alias` note. `--budget` is accepted by
-`scope` only; with any other command it's a usage error. `--spec` reads another
+`scope` and `packet`; with any other command it's a usage error. Scope budgets prose only;
+packet budgets the whole response. `--spec` reads another
 spec directory, given relative to the project root (default `.sova/spec`), such
 as a draft. Code and incumbent paths stay relative to the root. The core never
 writes.
@@ -96,7 +111,8 @@ reports them as written and never derives them. Kind `note` holds reference,
 decision and rationale prose. Plain H3 and deeper headings are prose inside a
 claim. `core/README.md` has the format.
 
-- **Exit 0**: the declared closure was delivered. It never means the context is
+- **Exit 0**: the declared closure was delivered (`packet`: the selected stream is done without
+  scope warnings). It never means the context is
   complete, because what the graph doesn't declare can't show up.
 - **Exit 1**: something relevant is incomplete or stale.
 - **Exit 2**: the output can't be trusted.

@@ -84,6 +84,17 @@ that reads or changes state is open beside them. Everything else on the listener
 added later included, is gated by default. `SOVA_AUTH=off` stops asking for the token, for a test
 rig, and only while the server is bound to loopback; the host and cross-site rules hold anyway.
 
+**A browser on this machine is not asked.** Opening the app's own address on the machine Sova runs
+on just works: a request that carries **no proxy header at all** (nothing from a front, a relay or
+`tailscale serve`), arrives on this process's own port, and is the browser's own **navigation** to
+it — `Sec-Fetch-Mode: navigate` with `Sec-Fetch-Site` either `same-origin` (a link inside the app)
+**or `none`** (a typed address or a bookmark, which is how a person usually arrives) — headers a
+script cannot set, is answered and given the cookie instead of the unlock screen. Every other caller keeps the rules
+above unchanged: a request carrying proxy headers (which is how the tailnet reaches this listener,
+through loopback), a cross-site request, a page on another port of this host, a foreign Host, and
+any caller that sets no fetch metadata at all still needs the token. The rule is a convenience for
+the person at the keyboard, never a licence for the network.
+
 Every answer on the main listener, a refusal and the static shell included, carries
 `X-Sova-Server: sova`, which a preview link refuses to pass on, so no preview can front a Sova
 port (§mesh.public/preview). A request forwarded to a peer (`/peer/<id>/…`) carries none of this
@@ -100,8 +111,11 @@ the install's token file is damaged and needs deletion and a restart.
 ## §app.access/unlock — The first visit, and the way back in
 
 A browser with no token is shown an unlock screen instead of the app: a heading, a one-line
-explanation, a token field and an `Unlock` button. It takes the token, and from then on that
-browser is never asked again.
+explanation, a **choice of what is being pasted** — a pairing code or the install's token — a field
+and an `Unlock` button. It accepts either, and from then on that browser is never asked again. Every
+sentence on that screen has to be true on a machine with **no `sova` command installed**: it names
+the pairing code first, the token FILE as the fallback, and the installer's commands only as the
+alternative for someone who has that launcher.
 
 - **The link.** `sova open` (and any URL a person copies from it) carries the token in the URL's
   **fragment** — `#t=<token>` — which a browser never sends to the server. The page posts it once
@@ -111,17 +125,26 @@ browser is never asked again.
 - **A code.** A device that is already unlocked can mint a short-lived, single-use pairing code
   (§app.access/devices); the new device opens the same screen with `#c=<code>` in the fragment and
   the same route exchanges it for that device's cookie, so the install's token itself never leaves
-  the browser that already had it. The screen says where the code comes from, for a person who has
-  only the device in their hand.
+  the browser that already had it. It is **typed on that screen** as readily as it is opened as a
+  link: the form's choice of what is being pasted is what keeps the two secrets apart, since a
+  minted token and a minted code are the same shape and neither can be told from the other by
+  looking. The screen says where a code comes from, for a person who has only the device in hand.
 - **Any state, no storm.** The screen replaces the app whenever the server refuses the browser —
   any request answered `401`, or a socket whose upgrade is refused (which stops reconnecting
   instead of retrying into the refusal). A refusal that asks for a reload reloads the page once,
   so a tab older than the server picks up the current app; a second one shows the unlock screen,
   never another reload. The screen itself makes no request until `Unlock` is pressed, and a
   page unlocked from it reloads so every view starts with the cookie.
-- **The way back.** `sova token` prints the token for a person who needs it on another device or
-  in a script; `sova open` opens the authorized URL. Losing the cookie — a new browser, a private
-  window, the phone — costs one paste, never a reset.
+- **The way back.** Losing the cookie — a new browser, a private window, the phone — costs one
+  paste, never a reset. What the screen names is reachable on the machine Sova runs on: the token
+  file, `<agent dir>/sova/auth-token`, read there (mode 0600). `sova token` and `sova open` are
+  named only as the alternative for a person who installed through the installer's launcher — never
+  as the only way, because a checkout has no such command.
+- **One address at a time.** Unlocking one address of this Sova does not unlock another: the cookie
+  is scoped to the host it was set for, so `127.0.0.1`, `localhost` and a tailnet name each need
+  their own unlock, while two ports of one host share one. The screen says so, and the pairing code
+  is the way across — a code is not bound to the address that minted it and works at any address
+  this server allows, which is why the access page names the address to open and not merely a link.
 - **The phone.** A device reaching the app through `tailscale serve` gets in with a pairing code
   read off a browser that is already unlocked, or with the token its owner copies to it; its host
   name counts as reachable by the rule above.
@@ -141,8 +164,9 @@ Every caller keeps working with no new step for the person:
   this server back reads the token itself, from `SOVA_TOKEN` if started with it or from the token
   file, as docs/customization.md tells its author.
 - **Scripts and documented commands** that talk to the main listener send `x-sova-token`, read
-  from `SOVA_TOKEN`, else the target's own token file (`scripts/sova-token.mjs` for Node scripts,
-  `$(sova token)` in the docs' curl lines); a rig that starts its own servers pins one token for
+  from `SOVA_TOKEN`, else the target's own token file (`scripts/sova-token.mjs` for Node scripts, which
+  `pnpm run auth:token` runs from the checkout, and `$(sova token)` in the docs' curl lines for a
+  host that installed the launcher); a rig that starts its own servers pins one token for
   them with `SOVA_TOKEN`, or reads each server's file.
 - **`sova token` and `sova open`** are the installed launcher's: `token` prints the token from the
   agent dir (`$PI_CODING_AGENT_DIR`, else the one the install used), and `open` opens
@@ -170,9 +194,10 @@ own cookie. The code is a secret in its own right and is treated as one.
 - **Minting.** `POST /api/auth/pair` mints a code: 32 random bytes in base64url, valid for five
   minutes and usable exactly once. Codes live in `<state root>/auth-codes.json`, written at 0600
   like every other store, and an unreadable store lists none of them rather than guessing.
-- **Exchanging.** The code is presented in the fragment of the unlock URL (`#c=<code>`), which a
-  browser never sends to the server, and posted once to `POST /api/auth/unlock` — the same route a
-  token uses. A good code sets the cookie and is consumed; a bad, spent or expired one is refused
+- **Exchanging.** The code is typed on the unlock screen's pairing-code field, or presented in the
+  fragment of the unlock URL (`#c=<code>`, which a browser never sends to the server) and posted
+  once to `POST /api/auth/unlock` — the same route a token uses. A good code sets the cookie and is
+  consumed; a bad, spent or expired one is refused
   with the same 401 a bad token gets, and a spent code is never accepted twice.
 - **Every address a device can use.** The answer names each of them, as its own link: the origin
   the minting page is served from, and the tailnet's own HTTPS address — this host's serve URL when

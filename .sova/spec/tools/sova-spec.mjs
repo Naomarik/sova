@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // sova-spec: read-only core for a project's .sova/spec. Node stdlib only; never writes.
-// Commands: check | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] |
+// Commands: check | packet §id | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] |
 //   foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...].
-// Flags: --root DIR, --spec DIR, --json, --budget BYTES.
+// Flags: --root DIR, --spec DIR, --json, --budget BYTES; packet: --part PART, --cursor TOKEN.
 // Exit: 0 usable known closure (never completeness), 1 relevant unknown/stale/unread, 2 untrustworthy.
 import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync, openSync, closeSync, fstatSync, constants } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join, resolve, dirname, relative, posix } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PACKET_PARTS, PACKET_HELP, packetBudget, packetError, packetOrder, packetPage, serializePacket } from "./packet.mjs";
 
 const ID_SRC = String.raw`§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?/[a-z][a-z-]*`;
 const ID_RE = new RegExp(`^${ID_SRC}$`);
@@ -25,6 +26,7 @@ const FOREIGN_NOTICE = "foreign lists every § whose prose span or manifest reco
 
 // ---------------------------------------------------------------- findings
 const findings = [];
+let packetInputs = null, packetInvocation = false;
 const add = (severity, code, message, where = {}) => findings.push({ severity, code, message, ...where });
 const exitOf = (fs) => (fs.some((f) => f.severity === "error") ? 2 : fs.some((f) => f.severity === "warn") ? 1 : 0);
 
@@ -38,7 +40,7 @@ function parseArgs(argv) {
     else if (a === "--related") o.related = true;
     else if (a === "--landing") o.landing = true;
     else if (a === "--own-base" || a === "--drafts") { if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; } o[a === "--drafts" ? "drafts" : "ownBase"].push(argv[++i]); }
-    else if (a === "--root" || a === "--spec" || a === "--budget" || a === "--base" || a === "--head" || a === "--read-policy") {
+    else if (a === "--root" || a === "--spec" || a === "--budget" || a === "--base" || a === "--head" || a === "--read-policy" || a === "--part" || a === "--cursor") {
       if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; }
       o[a.slice(2)] = argv[++i];
     } else if (a === "--help" || a === "-h") o.help = true;
@@ -48,7 +50,7 @@ function parseArgs(argv) {
   if (o.usage || o.help) return o;
   const [cmd, ...rest] = o.pos;
   o.cmd = cmd;
-  const arity = { check: 0, census: 0, scope: 1, impact: 1, foreign: 0 }[cmd];
+  const arity = { check: 0, census: 0, scope: 1, packet: 1, impact: 1, foreign: 0 }[cmd];
   if (arity === undefined) o.usage = cmd ? `unknown command ${cmd}` : "missing command";
   else if (rest.length !== arity) o.usage = `${cmd} takes ${arity ? "one §id" : "no arguments"}`;
   else if (arity && /^§[a-z][a-z-]*\.[a-z][a-z-]*$/.test(rest[0])) { o.alias = rest[0]; o.id = rest[0].replace(".", "/"); } // §app.shell names §app/shell
@@ -61,10 +63,16 @@ function parseArgs(argv) {
     else o.spec = s.rel;
   }
   if (!o.usage && o.budget !== undefined) {
-    if (cmd !== "scope") o.usage = "--budget applies to scope only";
+    if (cmd === "packet") {
+      const budget = packetBudget(o.budget);
+      if (budget === null) o.usage = "packet --budget takes an integer from 1024 to 32768";
+      else o.budget = budget;
+    } else if (cmd !== "scope") o.usage = "--budget applies to scope and packet only";
     else if (!/^\d+$/.test(o.budget) || !Number.isSafeInteger(Number(o.budget))) o.usage = "--budget takes a non-negative integer byte count";
     else o.budget = Number(o.budget);
   }
+  if (!o.usage && (o.part !== undefined || o.cursor !== undefined) && cmd !== "packet") o.usage = "--part and --cursor apply to packet only";
+  if (!o.usage && o.part !== undefined && !PACKET_PARTS.includes(o.part)) o.usage = "unknown packet part";
   if (!o.usage && cmd === "foreign") {
     if (o.base === undefined) o.usage = "foreign needs --base REV";
     else if (o.spec !== undefined && o.head !== undefined) o.usage = "foreign --spec reads a draft in the working tree as the head; it does not combine with --head";
@@ -77,7 +85,7 @@ function parseArgs(argv) {
   if (!o.usage && o.ownBase.length && !(cmd === "foreign" || o.changed)) o.usage = "--own-base applies to foreign and census --changed only";
   return o;
 }
-const USAGE = "usage: sova-spec <check | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
+const USAGE = "usage: sova-spec <check | packet §id [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
 
 // --spec: a project-relative directory holding manifest.json (default .sova/spec). → {rel} | {why}
 function specDir(raw) {
@@ -152,6 +160,7 @@ function readInput(root, rel) {
   try {
     const b = readFileSync(fd);
     if (reviewPolicy && b.length > 2 * 1024 * 1024) throw Object.assign(new Error("oversize"), { code: "refused" });
+    if (packetInputs) packetInputs.files.push([rel, sha(b)]);
     return b.toString("utf8");
   } finally { closeSync(fd); }
 }
@@ -266,6 +275,7 @@ function scanDeclarations(root, ctx) {
     for (const n of tryRead(() => readdirSync(dir).sort(), unreadable(toPosix(relative(root, dir)))) ?? []) {
       const p = join(dir, n), rel = toPosix(relative(root, p)), st = tryRead(() => lstatSync(p), unreadable(rel));
       if (!st) continue;
+      if (packetInputs) packetInputs.tree.push([rel, st.isSymbolicLink() ? "symlink" : st.isDirectory() ? "directory" : st.isFile() ? "file" : "other"]);
       if (st.isSymbolicLink()) add("error", "symlink-refused", `${rel} is a symlink; claims are never read through links`, { file: rel });
       else if (st.isDirectory()) walk(p);
       else if (st.isFile() && n.endsWith(".md")) files.push(p);
@@ -1085,9 +1095,31 @@ function human(out) {
   return L.join("\n") + "\n";
 }
 
+function packetMain(opt) {
+  const budget = packetBudget(opt.budget);
+  const write = (out) => { process.stdout.write(serializePacket(out)); return out.exit; };
+  if (budget === null) return write(packetError("usage"));
+  if (opt.usage) return write(packetError("usage", budget));
+  if (opt.help) return write({ tool: "sova-spec", command: "packet", exit: 0, status: "done", budget, help: PACKET_HELP });
+  opt.spec ??= DEFAULT_SPEC;
+  packetInputs = { files: [], tree: [] };
+  const root = findSpec(opt);
+  if (!root) return write({ ...packetError("graph-untrusted", budget), cause: "manifest-not-found" });
+  const ctx = load(root, opt.spec);
+  if (!ctx || exitOf(findings) === 2 || !ctx.claims.has(opt.id)) return write({ ...packetError("graph-untrusted", budget),
+    ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}) });
+  if (opt.alias) add("note", "id-alias", `${opt.alias} is not a § identifier; read as ${opt.id} (did you mean ${opt.id}?)`, { id: opt.id });
+  const result = scope(ctx, opt.id);
+  const passages = packetOrder(ctx, opt.id, result.passages, parentOf);
+  return write(packetPage({ identity: { root, spec: opt.spec, id: opt.id, readPolicy: reviewPolicy ? "review" : "default" },
+    inputs: packetInputs, result, findings, passages, part: opt.part, cursor: opt.cursor, budget }));
+}
+
 function main(argv) {
   const opt = parseArgs(argv);
+  packetInvocation = argv[0] === "packet" || opt.pos[0] === "packet";
   reviewPolicy = opt["read-policy"] === "review";
+  if (packetInvocation) return packetMain(opt);
   let out = { tool: "sova-spec", command: opt.cmd ?? null };
   if (opt.help) { process.stdout.write(USAGE + "\n"); return 0; }
   if (opt.usage) add("error", "usage", `${opt.usage}. ${USAGE}`);
@@ -1123,7 +1155,12 @@ function main(argv) {
 }
 
 try { process.exitCode = main(process.argv.slice(2)); } catch (e) {
-  add("error", "internal-error", String(e?.stack ?? e));
-  process.stdout.write((process.argv.includes("--json") ? JSON.stringify({ tool: "sova-spec", exit: 2, findings }, null, 2) : `error internal-error: ${e?.message ?? e}\nexit 2`) + "\n");
-  process.exitCode = 2;
+  if (packetInvocation) {
+    process.stdout.write(serializePacket(packetError("graph-untrusted")));
+    process.exitCode = 2;
+  } else {
+    add("error", "internal-error", String(e?.stack ?? e));
+    process.stdout.write((process.argv.includes("--json") ? JSON.stringify({ tool: "sova-spec", exit: 2, findings }, null, 2) : `error internal-error: ${e?.message ?? e}\nexit 2`) + "\n");
+    process.exitCode = 2;
+  }
 }

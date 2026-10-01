@@ -175,15 +175,22 @@ export function partialAfterRetry(was: PartialState, accepted: readonly string[]
 }
 
 /**
- * The placeholder names the GROUP's size, not how many can take a message this second. The foot
- * carries availability and changes as members start and finish turns; a placeholder that moved
- * with it would rewrite itself under the caret, and "Ask all 3 members…" would become "Ask all 2
- * members…" while someone typed. `members` is the whole group; a group of one asks about "this
- * member" because "all 1 members" is not a sentence. The key hint rides along exactly when Enter
- * sends (not in touch mode).
+ * The placeholder's parts, in reading order: the ask, then the key hint. The placeholder names
+ * the GROUP's size, not how many can take a message this second. The foot carries availability
+ * and changes as members start and finish turns; a placeholder that moved with it would rewrite
+ * itself under the caret, and "Ask all 3 members…" would become "Ask all 2 members…" while
+ * someone typed. `members` is the whole group; a group of one asks about "this member" because
+ * "all 1 members" is not a sentence. The key hint rides along exactly when Enter sends (not in
+ * touch mode), and it is the part a narrow box can spare: the fit drops it before it cuts the
+ * ask (§chat.composer/behavior).
  */
-export function composerPlaceholder(members: number, enterSends: boolean): string {
-  if (members === 1) return "Ask this member…";
+export function composerParts(members: number, enterSends: boolean): string[] {
+  if (members === 1) return ["Ask this member…"];
   const ask = `Ask all ${members} members…`;
-  return enterSends ? `${ask}—Enter sends, Shift+Enter adds a line` : ask;
+  return enterSends ? [ask, "Enter sends, Shift+Enter adds a line"] : [ask];
+}
+
+/** The placeholder as written, its parts joined by an em dash. */
+export function composerPlaceholder(members: number, enterSends: boolean): string {
+  return composerParts(members, enterSends).join("—");
 }

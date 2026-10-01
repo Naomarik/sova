@@ -171,7 +171,7 @@
     "§app.session-list/anatomy": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/Sidebar.tsx",
         "src/design/base.css",
@@ -548,9 +548,14 @@
     "§app/new-session-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/NewSessionDialog.tsx",
+        "src/components/FolderPicker.tsx",
+        "src/lib/new-session.ts",
+        "src/lib/new-session.test.ts",
+        "src/lib/hidden-folders.ts",
+        "src/lib/hidden-folders.test.ts",
         "server/targets.ts"
       ]
     },
@@ -620,6 +625,8 @@
       "kind": "behavior",
       "code": [
         "src/components/Composer.tsx",
+        "src/lib/placeholder-fit.ts",
+        "src/lib/placeholder-fit.test.ts",
         "src/components/ModelMenu.tsx",
         "src/lib/input-mode.ts",
         "src/lib/input-mode.test.ts",
@@ -1319,7 +1326,8 @@
         "src/lib/voice/format.ts",
         "src/components/Composer.tsx",
         "src/components/ChatView.tsx",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "src/lib/placeholder-fit.ts"
       ]
     },
     "§design.copy-deck/composer-flyout": {
@@ -1387,7 +1395,7 @@
     "§design.copy-deck/new-session-dialog": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§design.copy-deck/settings-modes-delegate": {
       "kind": "note",
@@ -1628,7 +1636,7 @@
         "§workspace.groups/member-states"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/GroupComposer.tsx",
         "src/lib/group-prompt.ts",
@@ -10395,7 +10403,10 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts"
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/mode/spec-mode.md"
       ]
     },
     "§chat.worktrees/merged-state": {
@@ -10862,6 +10873,11 @@
       "authority": "accepted",
       "evidence": "unreviewed",
       "code": [
+        "README.md",
+        "docs/customization.md",
+        "docs/getting-started.md",
+        "docs/public-links.md",
+        "package.json",
         "scripts/install.sh",
         "server/auth.ts",
         "src/components/Unlock.tsx",
@@ -11062,12 +11078,14 @@
       "authority": "accepted",
       "evidence": "unreviewed",
       "code": [
+        "package.json",
         "server/auth-devices.ts",
         "server/auth.ts",
         "server/index.ts",
         "src/components/AccessPage.tsx",
         "src/components/OverviewActions.tsx",
         "src/components/Unlock.tsx",
+        "src/lib/auth.ts",
         "src/lib/qr.test.ts",
         "src/lib/qr.ts"
       ]
@@ -11160,6 +11178,135 @@
         "pi-config/extensions/claude-code/provider/stream.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts"
       ]
+    },
+    "§tools.spec/context-packets": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/tests/packet-acceptance.test.mjs",
+        "pi-config/extensions/spec/tests/fixtures/legacy-scope-envelope.json",
+        "pi-config/extensions/subagents/spec-brief.test.ts",
+        "pi-config/extensions/spec/tests/packet.test.mjs",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md"
+      ]
+    },
+    "§app.session-list/group-picker": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/groups",
+        "§app.session-list/drop-overlay",
+        "§workspace.groups/routes"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/GroupPicker.tsx",
+        "src/lib/group-picker.ts",
+        "src/lib/group-picker.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ]
+    },
+    "§app.overseer/alignment-read": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/align-state.ts",
+        "server/session-guards.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-tools.test.ts",
+        "server/overseer-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§chat.alignment/session-mark",
+        "§chat.profiles/session-tools"
+      ]
+    },
+    "§app.overseer/brief-repeat": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer.ts",
+        "server/attention.ts",
+        "server/attention.test.ts",
+        "server/overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/proactivity",
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.overseer/id-check": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-id-check.ts",
+        "server/overseer.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-id-check.test.ts",
+        "server/overseer-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/links",
+        "§app.overseer/tools",
+        "§app.overseer/session-names"
+      ]
+    },
+    "§app.overseer/sessions-in-play": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-run-note.ts",
+        "server/overseer.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-run-note.test.ts",
+        "server/overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/run-note",
+        "§app.overseer/confirm",
+        "§app.overseer/session-names",
+        "§chat.worktrees/readiness",
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.insights/sidebar-foot-phone": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ],
+      "requires": [
+        "§app.insights/sidebar-foot",
+        "§mesh.remote-sessions/host-filter"
+      ]
+    },
+    "§design.ground-rules/text-fit": {
+      "kind": "behavior",
+      "code": [
+        "src/design/base.css"
+      ],
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified"
     }
   },
   "boundary": {

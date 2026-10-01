@@ -1,15 +1,56 @@
 // Bare "/new" in the composer: a fresh session in the chat's folder, and the
 // chat it was typed in goes to the Archive. Kept free of the api module so it's testable.
 
+import { hiddenFolder } from "./hidden-folders";
+import { isRemoteCwd, type RemotePlace, remoteRecents, splitRemoteCwd } from "./remote-session";
+
 type Located = { cwd: string; overseer?: true };
+
+/** How many recent folders a list offers: the dialog's own list and the picker's Recent view. */
+export const MAX_RECENT = 20;
+
+/**
+ * The path a folder is judged by: for a remote session's placeholder cwd
+ * (`<home>/.pi/agent/sova/targets/<target>/<remote path>`) it is the path ON the target. The
+ * placeholder is hidden itself (`.pi`), so judging it directly would hide every remote folder.
+ */
+const offeredPath = (cwd: string): string => splitRemoteCwd(cwd)?.remoteCwd ?? cwd;
+
+/** True when the dialog offers this folder at all: hidden ones need Show hidden folders. */
+export const offersCwd = (cwd: string, showHidden: boolean): boolean => showHidden || !hiddenFolder(offeredPath(cwd));
+
+/** The one line under a recent list that dropped rows, e.g. "3 hidden folders are not listed." */
+export function hiddenRecentNote(count: number): string {
+  return count === 1 ? "1 hidden folder is not listed." : `${count} hidden folders are not listed.`;
+}
 
 /** The folder "/new" starts in: the chat's own, else the most recently active session's. The
     Overseer's folder is its state, not a project, so an Overseer file never supplies one: from its
-    page, the most recent other session's folder is used. */
-export function newSessionCwd(current: Located | null | undefined, sessions: readonly (Located & { lastActiveAt: string })[]): string | null {
-  if (current?.cwd && !current.overseer) return current.cwd;
-  const latest = sessions.filter((s) => !s.overseer).sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0];
+    page, the most recent other session's folder is used. A folder `offers` refuses — a hidden one
+    while Show hidden folders is off — is passed over, and the next session's is tried. */
+export function newSessionCwd(
+  current: Located | null | undefined,
+  sessions: readonly (Located & { lastActiveAt: string })[],
+  offers: (cwd: string) => boolean = () => true,
+): string | null {
+  if (current?.cwd && !current.overseer && offers(current.cwd)) return current.cwd;
+  const latest = sessions
+    .filter((s) => !s.overseer && !!s.cwd && offers(s.cwd))
+    .sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt))[0];
   return latest?.cwd || null;
+}
+
+/** The recent local folders a list shows: the remote placeholders out, the hidden ones out while
+    Show hidden folders is off, in the order given (newest first), at most MAX_RECENT. */
+export function recentFolders(cwds: readonly string[], showHidden: boolean): string[] {
+  return cwds.filter((c) => !isRemoteCwd(c) && offersCwd(c, showHidden)).slice(0, MAX_RECENT);
+}
+
+/** The same for the Remote tab's recents, judged by each folder's path on its target. */
+export function recentRemoteFolders(cwds: readonly string[], showHidden: boolean): RemotePlace[] {
+  return remoteRecents(cwds)
+    .filter((p) => showHidden || !hiddenFolder(p.remoteCwd))
+    .slice(0, MAX_RECENT);
 }
 
 export type NewSessionOutcome<S> =

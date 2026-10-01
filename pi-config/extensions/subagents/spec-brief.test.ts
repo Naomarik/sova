@@ -12,7 +12,7 @@ const PINNED = `## Spec discipline (the spawning session has spec mode on)
 This project documents behavior in \`.sova/spec/\`. The rules below are quoted from its spec mode; they bind your part of the task.
 Trusted tools: start each bash command that runs them with exactly \`core=/agent/extensions/spec/core\`. <project root> is \`git rev-parse --show-toplevel\` of your working directory. Read-only: \`node "$core/sova-spec.mjs" <check|census|scope '<§id>'|impact '<§id>'|foreign --base <rev>> --root <project root> --json\`.
 - never put \`§\` IDs or spec annotations in source code.
-- Every behavior change is spec'd. Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling), decided from \`scope\` output, never memory; a test that fails or flakes because of product code (a race, a wrong value) is that code's behavior fix, never test-only; say you claim the exemption.
+- Every behavior change is spec'd. Exempt from drafts, not census: work changing no behavior (refactor, tests, tooling), decided from \`packet\` output, never memory; a test that fails or flakes because of product code (a race, a wrong value) is that code's behavior fix, never test-only; say you claim the exemption.
 - Behavior no claim covers gets a new claim in a feature draft before coding. Write its sentence before the first code edit; \`new\` alone isn't enough.
 - While coding, exempt work included, edit one file per tool call (no multi-file sed, heredoc or parallel edits) and run \`census --changed\` (\`--spec\` your draft, if any) after the first edit and each new file.
 - Any § the task didn't create is foreign, your new claim's parent included, wherever you put the claim; editing one in your draft flags.

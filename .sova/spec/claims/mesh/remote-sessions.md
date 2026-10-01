@@ -49,7 +49,8 @@ While the mesh is on and more than one host is known, the session pane's foot st
 row, directly above the usage row: it names the current choice (`All hosts`, or a host with its
 state dot), with `N/M connected` at its right end at every width (hosts answering now, this host
 included, out of all hosts; a host on another version answers and counts, one that refused this
-host doesn't). The whole row is one target: a click anywhere on it opens the host
+host doesn't). On a phone the foot's rows live in the sheet its bar opens
+(§app.insights/sidebar-foot-phone), this one first, drawn exactly as here. The whole row is one target: a click anywhere on it opens the host
 menu (upward when there is no room below; a bottom sheet on a narrow screen), and the click itself
 changes no filter. The collapsed pane has no host item. The menu lists `All hosts` and then each
 host by name with its dot, whose tone and word follow the host's state: up is a green dot and no

@@ -16,16 +16,10 @@ export const groupOpen = (chosen: boolean | undefined): boolean => chosen ?? fal
 
 /**
  * Whether the Groups region itself is open right now. It is forced open, WITHOUT changing the
- * user's choice, while a search is on (a matching group must not hide its hits), and while the
- * new-group name field is showing (`composing`: the head's `+`
- * opens that field in the region's body, and a collapsed region would hide the field the user
- * just asked for). Otherwise it is the user's choice, and collapsed until they make one — so when
- * the field closes, a region the user never opened is closed again.
+ * user's choice, while a search is on (a matching group must not hide its hits). Otherwise it is
+ * the user's choice, and collapsed until they make one — so when the search clears, a region the
+ * user never opened is closed again.
  */
-export function groupsRegionOpen(input: {
-  chosen?: boolean | undefined;
-  searching: boolean;
-  composing: boolean;
-}): boolean {
-  return input.searching || input.composing || groupOpen(input.chosen);
+export function groupsRegionOpen(input: { chosen?: boolean | undefined; searching: boolean }): boolean {
+  return input.searching || groupOpen(input.chosen);
 }

@@ -196,8 +196,9 @@ test("flow: a stray string after a target says what to write instead", () => {
   assert.equal(ok<FlowSpec>("flow", 'a -> b warn "go"').edges[0]!.label, "go", "outside inline style a string after a target is the edge's");
   assert.equal(msg('a "A" -> b error "rejected"'), 'unexpected "rejected" after b: strings go before shape and tone words: -> b "rejected" error', "b unlabelled: its label or the edge's");
   assert.equal(msg('a "A" -> b "B" "e" warn "go"'), 'unexpected "go" after b: strings go before shape and tone words: -> b "B" "e" "go" warn', "the edge has its label");
-  // Outside inline style: one string, the edge's.
-  assert.equal(msg('a -> b "go" "more"'), 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
+  // Outside inline style: one string, the edge's; two after an unlabelled target are its label and
+  // the edge's (§chat.markdown/vis-lenience-content), so the error is for a third.
+  assert.equal(msg('a -> b "go" "more" "most"'), 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
   // A stray word keeps its message.
   assert.equal(msg("a -> b cloud"), "unexpected cloud after b");
 });

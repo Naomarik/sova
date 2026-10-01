@@ -393,6 +393,15 @@ test("sequence: dashed or a tone after a message's label", () => {
   assert.match(err("sequence", 'a -> b "x" later').message, /one message per line/);
 });
 
+test("flow: two strings after an unlabelled target in edge-label style", () => {
+  const f = ok<FlowSpec>("flow", 'bar -> parse "Parse URL"\nparse -> cache "Cache?" decision\ncache -> render "Render" "hit"\nresp -> render');
+  assert.deepEqual(edges(f), [["bar", "parse", "Parse URL", false], ["parse", "cache", "Cache?", false], ["cache", "render", "hit", false], ["resp", "render", null, false]]);
+  assert.deepEqual([labels(f).render, labels(f).cache], ["Render", "cache"]);
+  // Labelled already, or three strings: as before.
+  assert.match(err("flow", 'a -> r "R" "x"\nb -> r "y" "z"').message, /unexpected "z"/);
+  assert.match(err("flow", 'a -> b "x" "y" "z"').message, /unexpected "y"/);
+});
+
 test("layers and timeline: a row ending in |, a tone field mark", () => {
   const l = ok<LayersSpec>("layers", "Registers | CPU registers | <1 ns |\nL1 | L1 cache | 1 ns | accent |\nDRAM | DIMMs | 100 ns | mark\nNVMe | SSD | 100 µs | muted\nmark L1 \"fast\"");
   assert.deepEqual(l.layers.map((x) => [x.label, x.note ?? null, x.tone ?? null]), [["Registers", "<1 ns", null], ["L1", "1 ns", "accent"], ["DRAM", "100 ns", null], ["NVMe", "100 µs", "muted"]]);

@@ -15,6 +15,12 @@ import {
   publicLinksSaveError,
   publicLinksSaving as saving,
   setPublicLinksDraft,
+  setVisitorLoggingDraft,
+  setVisitorLoggingSaved,
+  getVisitorLogging,
+  visitorLoggingDraft,
+  visitorLoggingSaveError,
+  visitorLoggingSaving,
   sourceLabel,
   stateChip,
   verifyPublicLinks,
@@ -49,6 +55,16 @@ export function PublicLinksSettingsSection() {
     const i = loaded();
     if (i) acceptPublicLinksInfo(i);
   });
+  // The host's visitor switches (§mesh.public/visitor-log): their own small file and store.
+  const [visitors] = createResource(getVisitorLogging);
+  createEffect(() => {
+    const v = visitors.error ? undefined : visitors();
+    if (v) setVisitorLoggingSaved(v);
+  });
+  const visitorSwitches = [
+    { key: "logVisitors", label: "Log visitors", hint: "Records each visitor's IP address, browser, language and pages opened on this host's links." },
+    { key: "forwardIp", label: "Send the visitor's address to preview apps", hint: "Preview apps get X-Forwarded-For." },
+  ] as const;
   /** What the server said last: the GET, or the answer to a save since. */
   const info = (): PublicLinksInfo | undefined => publicLinksInfo() ?? loaded();
   const pinned = () => info()?.pinnedByEnv ?? [];
@@ -203,6 +219,33 @@ export function PublicLinksSettingsSection() {
             </label>
           )}
         </For>
+      </fieldset>
+
+      <fieldset class="field public-links-route">
+        <legend class="field-label">Visitor logging</legend>
+        <For each={visitorSwitches}>
+          {(s) => (
+            <label class="toggle public-links-choice">
+              <input
+                type="checkbox"
+                checked={visitorLoggingDraft()?.[s.key] ?? false}
+                disabled={!visitorLoggingDraft() || visitorLoggingSaving()}
+                onChange={(e) => {
+                  const d = visitorLoggingDraft();
+                  if (d) setVisitorLoggingDraft({ ...d, [s.key]: e.currentTarget.checked });
+                }}
+              />
+              <span class="toggle-box" aria-hidden="true" />
+              <span class="public-links-choice-main">
+                <span class="public-links-choice-name">{s.label}</span>
+                <span class="public-links-choice-meta">{s.hint}</span>
+              </span>
+            </label>
+          )}
+        </For>
+        <Show when={visitorLoggingSaveError()}>
+          {(e) => <Banner tone="error" title="Couldn't save visitor logging." body={`${sentence(e().message)} Your saved setting is unchanged.`} />}
+        </Show>
       </fieldset>
 
       <Show when={draft()?.route === "self"}>

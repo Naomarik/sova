@@ -29,7 +29,7 @@ shared one) and measures over the window:
   build their rows only when first opened, so the probe first opens the first `--open` (default 6)
   folder sections by their summary; row survival is over the rows that exist at the window's start,
   which are those folders' rows,
-- long tasks (one `PerformanceObserver`),
+- long tasks (one `PerformanceObserver`): count, total, max, and each task's start (ms from the window's start) and duration in `longTasks.list`,
 - nodes added/removed per second (one `MutationObserver`),
 - `Performance.getMetrics` Nodes/JSEventListeners, before and after `HeapProfiler.collectGarbage`.
 - a session switch (`--big`, default 2: the seed adds that many long sessions in a real folder

@@ -9,7 +9,8 @@
 // (closed folders hold no rows until first opened), warms up, then over the window measures:
 //   - row and group survival, by tagging every `details.session-group li` / `details.session-group`
 //     with a JS property and counting how many are still connected at the end;
-//   - long tasks (PerformanceObserver 'longtask', installed once, guarded by a window flag);
+//   - long tasks (PerformanceObserver 'longtask', installed once, guarded by a window flag), each
+//     one's start (ms from the window's start) and duration as well as the totals;
 //   - nodes added/removed per second (one MutationObserver, installed once);
 //   - Performance.getMetrics Nodes/JSEventListeners, before and after HeapProfiler.collectGarbage.
 // With --switch a,b it then checks a session switch: opens A, types in its composer, opens B,
@@ -157,7 +158,13 @@ const END = `(() => {
     elapsed,
     rows: { start: P.rows.length, alive: rowsAlive, survivalPct: pct(rowsAlive, P.rows.length) },
     groups: { start: P.groups.length, alive: groupsAlive, survivalPct: pct(groupsAlive, P.groups.length) },
-    longTasks: { count: lt.length, totalMs: Math.round(lt.reduce((s, e) => s + e.d, 0)), maxMs: Math.round(lt.reduce((s, e) => Math.max(s, e.d), 0)) },
+    longTasks: {
+      count: lt.length,
+      totalMs: Math.round(lt.reduce((s, e) => s + e.d, 0)),
+      maxMs: Math.round(lt.reduce((s, e) => Math.max(s, e.d), 0)),
+      // Each task, for plotting: start in ms from the window's start, and its duration.
+      list: lt.map((e) => ({ startMs: Math.round(e.t - P.winStart), durationMs: Math.round(e.d) })),
+    },
     nodes: { added, removed, records, perSecond },
   };
 })()`;

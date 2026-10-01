@@ -6,9 +6,9 @@ was checked against particular inputs. Their checks establish structure and appl
 semantic correctness. The minor mode adds task reminders and change accounting; response wording
 is not proof that implementation and requirements agree.
 
-This milestone repairs existing promotion integrity, inspection safety, and runtime accounting.
-It does not remove existing release checks. Bounded packets and observation-only assessments are
-later milestones, contingent on proving this repair first.
+Complete graph queries remain available to machine consumers. Task-facing packets deliver exact
+requirements within an explicit whole-response budget, with continuation and unknowns kept visible.
+They change context delivery, not release policy; structured change assessments remain separate work.
 
 ## §tools.spec/census-note — The `[spec census]` note stays short
 
@@ -57,3 +57,62 @@ explicit other-worktree destination. An incomplete check is reported as incomple
 claim may be truthfully named after an ordinary code edit, without being rejected merely because
 its prose was unchanged. Writer routing changes reach sessions whose spec mode was enabled by a
 note, not only sessions whose original prompt already contained spec.
+
+## §tools.spec/context-packets — Exact context within a whole-response budget
+
+The read-only `packet` command complements the existing complete-graph `scope` API; it does not
+change that API's output or prose-only budget semantics. Its default response budget is 12,000
+UTF-8 bytes, including all serialized JSON metadata, cursor data, and the terminating newline.
+Supported explicit budgets are integers from 1,024 to 32,768 bytes. Every response with a supported
+budget, including errors, fits it; invalid-budget errors use a small bounded response of their own.
+Packet output is compact JSON, not a large human rendering or an unbounded stderr side channel.
+
+Passages are the exact text the scope API supplies, never generated summaries. Every prose item,
+whole or fragmented, includes its declared kind and any authority/evidence labels; absent labels
+stay absent. These are recorded statuses, not a verdict derived by the packet. The requested
+claim comes first; its parent orientation and nearby declared obligations precede distant
+transitive material in a deterministic order. Oversized prose is delivered as explicit fragments
+whose concatenation exactly recovers the original text, preserving Unicode and long lines. A
+fragment never claims to be the whole claim. Pagination must make progress or return an explicit
+budget/refusal result, never an empty-success loop or silent omission.
+
+The packet separates prose delivery from compact inventories of unread passages, dependency
+unknowns, and code locations. Detailed inventories can be paged without dumping them into every
+prose response. Counts and continuation make omitted material discoverable. A readable page is
+not evidence of a complete behavioral context, a complete dependency graph, or an agent having
+read previous pages. Exit/status fields and the guide state those distinctions explicitly.
+
+Continuation tokens bind the requested identity and the captured spec inputs; a changed manifest,
+claim source or relevant reported input state invalidates the continuation rather than silently
+mixing versions. Malformed, out-of-range and mismatched tokens are refused within the budget.
+Tokens are navigation state, not authenticated reviewer identity or proof that earlier pages were
+read. The actual ordered streams and serialized inventory data also participate in the fingerprint,
+so changing the records or order being navigated invalidates an old token. The command stores no
+sessions, cursors, or source snapshots and runs no project code.
+
+The minor-mode guide uses bounded packets for task reading and tells the agent to finish relevant
+fragments and inspect the stated frontier and findings, including warnings about missing code. Full graph tools remain available for deliberate
+machine inspection and review. No new mandatory assessment or release gate is introduced here.
+
+### Reading a packet
+
+`packet '§ns/name'` starts the prose stream. `--part inventory|frontier|code|findings` starts a
+detailed inventory independently; `--cursor` continues the chosen stream, and the budget may be
+changed between pages. Counts name the whole streams; `remaining` and `next` describe only the
+selected stream. An empty stream terminates without a cursor. `packet --help` also returns small
+bounded JSON. The global help and the existing graph commands keep their existing formats.
+
+Prose fragments carry exclusive UTF-8 byte ranges. Their `complete` flag means that this one item
+contains the whole passage; the final piece of a previously fragmented passage is still partial.
+Finish contiguous ranges through `end == total`, not by waiting for that flag to become true.
+Oversized inventory records may likewise carry fragments of their exact JSON serialization;
+joining and parsing them recovers the original record. No record is silently discarded to fit.
+
+Exit 0 means the selected stream is done and the underlying scope has no warnings. Exit 1 means
+that stream has more pages or scope warnings remain. Exit 2 is a refusal. A missing manifest carries
+bounded `cause: manifest-not-found` so the agent can start a draft; a malformed graph does not carry
+that cause. An orphaned claims tree still refuses destructive draft creation. Navigation status and
+scope uncertainty remain distinct; none of these establishes semantic completeness or prior reading.
+Raw manifest and claim bytes, traversal identity, safely read provenance inputs, and reported scope
+states participate in cursor binding. Code contents that were not read are not
+snapshotted. Refused inputs are not reopened merely to compute a fingerprint.

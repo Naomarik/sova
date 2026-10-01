@@ -10395,7 +10395,10 @@
       "evidence": "verified",
       "code": [
         "pi-config/extensions/mode/spec-guard.ts",
-        "pi-config/extensions/claude-code/spec-hooks.ts"
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/mode/spec-mode.md"
       ]
     },
     "§chat.worktrees/merged-state": {
@@ -11159,6 +11162,25 @@
       "code": [
         "pi-config/extensions/claude-code/provider/stream.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts"
+      ]
+    },
+    "§tools.spec/context-packets": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§tools.spec/inspection-safety"
+      ],
+      "code": [
+        "pi-config/extensions/spec/core/sova-spec.mjs",
+        "pi-config/extensions/spec/core/packet.mjs",
+        "pi-config/extensions/spec/tests/packet-acceptance.test.mjs",
+        "pi-config/extensions/spec/tests/packet.test.mjs",
+        "pi-config/extensions/mode/spec-mode.md",
+        "pi-config/extensions/mode/index.test.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/spec/README.md",
+        "pi-config/extensions/spec/core/README.md"
       ]
     }
   },

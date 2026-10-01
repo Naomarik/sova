@@ -742,6 +742,18 @@ function toolHost(rt: Rt): PoToolHost {
       if (!view) throw new Error("The preview was made, but it can't be read back.");
       return { preview: view };
     },
+    async servicesAct(verb, instance) {
+      // The gate of sova_project_verbs (§app.project-services/callers): the level is the statechart's; the verb runs
+      // in the engine once this is taken, never held, counting nothing.
+      await actOrThrow(
+        orgId,
+        `project/${orgId}/${projectId}`,
+        verb === "down" ? "services/down" : "services/run",
+        { verb, ...(instance ? { instance } : {}) },
+        overseerEnvelope(orgId, projectId, paths, rt.turns.attended()),
+        { settle: true },
+      );
+    },
     async turnOffPreview(id) {
       // Never held, at any level: it only takes something away. Only this project's.
       if (!listPreviews({ orgId, projectId }).some((v) => v.id === id)) throw new OrgError(`No preview ${id} in this project: sova_previews lists them.`, 404);

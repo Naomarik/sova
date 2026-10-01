@@ -1,7 +1,7 @@
 import { readdir, readFile, stat } from "node:fs/promises";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { PlaybookCatalog, PlaybookInfo, PlaybookSchedule } from "../shared/protocol";
+import { PLAYBOOK_ENTRIES, type PlaybookCatalog, type PlaybookEntry, type PlaybookInfo, type PlaybookSchedule } from "../shared/protocol";
 import { scheduleOf, scheduleText } from "../shared/schedules";
 import { defaultRemoteOf, type RemoteCwd } from "./files";
 import { projectOf } from "./project-root";
@@ -9,8 +9,10 @@ import { stateRoot } from "./state-root";
 
 /**
  * Every playbook the composer's Playbooks dialog can offer: markdown recipes an agent runs against
- * any project. Three folders, one grammar — each playbook is a directory `<id>/` holding a
- * `PLAYBOOK.md` (plus whatever phases/ and templates/ it names):
+ * any project. Three folders, one grammar — each playbook is a directory `<id>/` whose entry file is
+ * `PLAYBOOK.md` or, failing that, `SKILL.md` (plus whatever scripts/, references/, phases/… it
+ * names, all relative to that directory; §chat.playbooks/bundles). Sova only ever reads the entry:
+ * a playbook's scripts are the agent's to run, never this server's.
  *
  *   - shipped:  playbooks/ at the repo root (source "sova")
  *   - user:     ~/.pi/agent/sova/playbooks/ (source "user"; an id that matches a shipped one
@@ -93,21 +95,40 @@ export function headerSchedule(fields: Record<string, string>, source: Source): 
   return { ...base, text: scheduleText(h.triggers), state: "needs-approval" };
 }
 
-async function readOne(dir: string, id: string, source: Source): Promise<PlaybookInfo> {
-  const text = await readFile(join(dir, "PLAYBOOK.md"), "utf8");
+/**
+ * The entry file of a playbook folder and its text: PLAYBOOK.md when the folder has one, else
+ * SKILL.md (so a folder with both reads exactly as it did before SKILL.md was accepted). Throws
+ * when neither is readable — the folder isn't a playbook.
+ */
+async function readEntry(dir: string): Promise<{ entry: PlaybookEntry; text: string }> {
+  let last: unknown;
+  for (const entry of PLAYBOOK_ENTRIES) {
+    try {
+      return { entry, text: await readFile(join(dir, entry), "utf8") };
+    } catch (err) {
+      last = err;
+    }
+  }
+  throw last;
+}
+
+async function readOne(dir: string, id: string, source: Source): Promise<{ info: PlaybookInfo; fields: Record<string, string> }> {
+  const { entry, text } = await readEntry(dir);
   const { fields, body } = parseFrontmatter(text);
   const info: PlaybookInfo = {
     id,
-    title: fields.title?.trim() || id,
+    // A skill names itself with `name:`; Sova's own key wins when both are there.
+    title: fields.title?.trim() || fields.name?.trim() || id,
     description: fields.description ?? "",
     source,
     dir,
+    entry,
     body,
   };
   if (fields.promptHint) info.promptHint = fields.promptHint;
   const schedule = headerSchedule(fields, source);
   if (schedule) info.schedule = schedule;
-  return info;
+  return { info, fields };
 }
 
 /**
@@ -121,8 +142,7 @@ export async function readProjectPlaybook(root: string, id: string): Promise<{ i
     const dir = join(root, rel, id);
     try {
       if (!(await stat(dir)).isDirectory()) continue;
-      const text = await readFile(join(dir, "PLAYBOOK.md"), "utf8");
-      return { info: await readOne(dir, id, "project"), fields: parseFrontmatter(text).fields };
+      return await readOne(dir, id, "project");
     } catch {
       continue;
     }
@@ -141,7 +161,7 @@ export async function listProjectPlaybooks(root: string): Promise<PlaybookInfo[]
 }
 
 /** Every playbook in one folder. A missing folder is empty; any other failure to list it is the
-    caller's to report. A child that isn't a well-named directory with a readable PLAYBOOK.md is
+    caller's to report. A child that isn't a well-named directory with a readable entry file is
     skipped — it isn't a playbook, and one bad folder must not hide the rest. */
 async function scan(root: string, source: Source): Promise<{ entries: PlaybookInfo[]; error?: string }> {
   let names: string[];
@@ -156,7 +176,7 @@ async function scan(root: string, source: Source): Promise<{ entries: PlaybookIn
       const dir = join(root, id);
       try {
         if (!(await stat(dir)).isDirectory()) return null; // follows symlinks: a linked playbook counts
-        return await readOne(dir, id, source);
+        return (await readOne(dir, id, source)).info;
       } catch {
         return null;
       }

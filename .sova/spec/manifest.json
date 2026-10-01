@@ -1746,7 +1746,8 @@
         "src/components/PlaybooksDialog.tsx",
         "src/components/ChatView.tsx",
         "server/chat-manager.ts",
-        "shared/playbooks.ts"
+        "shared/playbooks.ts",
+        "src/lib/playbooks.test.ts"
       ]
     },
     "§chat.playbooks/when-sending-stops-being-possible": {
@@ -2946,7 +2947,8 @@
         "src/components/ProfileCards.tsx",
         "server/profile-sources.ts",
         "server/archive-worktrees.ts",
-        "server/archive-worktrees.test.ts"
+        "server/archive-worktrees.test.ts",
+        "server/project-services/tools.ts"
       ],
       "requires": [
         "§app.overseer/caps",
@@ -4403,7 +4405,8 @@
         "statecharts/src/sova/statecharts/rules/levels.cljc",
         "server/org-envelope.test.ts",
         "server/org-stamp.ts",
-        "server/org-stamp.test.ts"
+        "server/org-stamp.test.ts",
+        "statecharts/src/sova/statecharts/proj.cljc"
       ],
       "requires": [
         "§app.project-overseer/tools"
@@ -4491,7 +4494,9 @@
         "server/project-coding-runtime.test.ts",
         "server/project-overseer-tools-statecharts.test.ts",
         "server/outreach/log.ts",
-        "server/outreach.test.ts"
+        "server/outreach.test.ts",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/project-services/tools.ts"
       ],
       "requires": [
         "§app.baton/goal-and-loadout",
@@ -10443,6 +10448,367 @@
       "requires": [
         "§app.overseer/session-truth",
         "§app.overseer/run-note"
+      ]
+    },
+    "§chat.playbooks/bundles": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/playbooks.ts",
+        "shared/playbooks.ts",
+        "server/playbooks.test.ts"
+      ],
+      "requires": [
+        "§chat.playbooks/where-playbooks-come-from",
+        "§chat.playbooks/what-gets-sent"
+      ]
+    },
+    "§app.project-services/apply": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/up",
+        "§app.project-services/supervisor"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/removed-services.test.ts"
+      ]
+    },
+    "§app.project-services/callers": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/result",
+        "§app.project-services/trust",
+        "§app.project-overseer/tools"
+      ],
+      "code": [
+        "server/project-services/routes.ts",
+        "server/project-services/tools.ts",
+        "scripts/sova-project.mjs",
+        "server/index.ts",
+        "server/chat-manager.ts",
+        "server/overseer-tools.ts",
+        "server/project-overseer-tools.ts",
+        "server/overseer-runtime.test.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/conform.ts",
+        "server/project-overseer.ts",
+        "statecharts/src/sova/statecharts/proj.cljc",
+        "server/project-overseer-tools-statecharts.test.ts",
+        "server/project-overseer-tools.test.ts"
+      ]
+    },
+    "§app.project-services/conform": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/create",
+        "§app.project-services/up",
+        "§app.project-services/down",
+        "§app.project-services/apply",
+        "§app.project-services/reset",
+        "§app.project-services/teardown",
+        "§app.project-services/doctor",
+        "§app.project-services/status-logs"
+      ],
+      "code": [
+        "server/project-services/conform.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/container-claims.test.ts",
+        "server/project-services/conform-leaks.test.ts"
+      ]
+    },
+    "§app.project-services/contract": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "shared/project-contract.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/engine.ts"
+      ]
+    },
+    "§app.project-services/create": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/instances",
+        "§app.project-services/lock",
+        "§app.project-services/trust",
+        "§app.project-services/result",
+        "§app.project-overseer/coding-worktrees"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts"
+      ]
+    },
+    "§app.project-services/doctor": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-services/contract",
+        "§app.project-services/trust",
+        "§app.project-services/supervisor"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/adapters.ts",
+        "server/project-services/container-claims.test.ts"
+      ]
+    },
+    "§app.project-services/down": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/supervisor",
+        "§app.project-services/lock"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/removed-services.test.ts",
+        "server/project-services/store.ts"
+      ]
+    },
+    "§app.project-services/instances": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§chat.profiles/projects"
+      ],
+      "code": [
+        "server/project-services/store.ts",
+        "server/project-services/store.test.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts"
+      ]
+    },
+    "§app.project-services/lock": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/result"
+      ],
+      "code": [
+        "server/project-services/store.ts",
+        "server/project-services/store.test.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/conform.ts"
+      ]
+    },
+    "§app.project-services/reconcile": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/supervisor",
+        "§app.project-services/up",
+        "§app.project-services/down"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/routes.ts",
+        "server/index.ts",
+        "server/project-services/removed-services.test.ts"
+      ]
+    },
+    "§app.project-services/reserved": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/result"
+      ],
+      "code": [
+        "shared/project-contract.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts"
+      ]
+    },
+    "§app.project-services/reset": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/down",
+        "§app.project-services/up",
+        "§app.project-services/create"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts"
+      ]
+    },
+    "§app.project-services/result": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [],
+      "code": [
+        "shared/project-contract.ts",
+        "shared/project-contract.test.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/routes.ts",
+        "scripts/sova-project.mjs"
+      ]
+    },
+    "§app.project-services/status-logs": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/supervisor",
+        "§app.project-services/result"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/drivers.ts",
+        "server/project-services/adapters.ts"
+      ]
+    },
+    "§app.project-services/supervisor": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "requires": [
+        "§app.project-services/contract",
+        "§mesh.public/preview-serve"
+      ],
+      "code": [
+        "server/project-services/drivers.ts",
+        "server/project-services/drivers.test.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/adapters.ts",
+        "server/project-services/adapters.test.ts",
+        "server/project-services/proctable.ts",
+        "server/project-services/proctable.test.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§app.project-services/teardown": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/down",
+        "§app.project-services/instances"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/removed-services.test.ts"
+      ]
+    },
+    "§app.project-services/trust": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/contract"
+      ],
+      "code": [
+        "server/project-services/trust.ts",
+        "server/project-services/routes.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts"
+      ]
+    },
+    "§app.project-services/up": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.project-services/create",
+        "§app.project-services/supervisor",
+        "§app.project-services/lock",
+        "§app.project-services/trust"
+      ],
+      "code": [
+        "server/project-services/engine.ts",
+        "server/project-services/engine.test.ts",
+        "server/project-services/container-ports.ts",
+        "server/project-services/container-ports.test.ts",
+        "server/project-services/container-claims.test.ts",
+        "server/project-services/removed-services.test.ts"
+      ]
+    },
+    "§app/project-services": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/project-contract.ts",
+        "server/project-services/engine.ts",
+        "server/project-services/routes.ts"
+      ]
+    },
+    "§chat.merge-round/private-names": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        ".sova/playbooks/merge-round/scripts/discover-names.mjs",
+        ".sova/playbooks/merge-round/tests/discover-names.test.mjs",
+        ".sova/playbooks/merge-round/scripts/leak-scan.mjs",
+        ".sova/playbooks/merge-round/tests/leak-scan.test.mjs"
+      ],
+      "requires": []
+    },
+    "§chat.merge-round/round": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        ".sova/playbooks/merge-round/PLAYBOOK.md"
+      ],
+      "requires": [
+        "§chat.schedules/fire",
+        "§chat.worktrees/readiness",
+        "§chat.profiles/singleton"
+      ]
+    },
+    "§chat/merge-round": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        ".sova/playbooks/merge-round/PLAYBOOK.md"
+      ]
+    },
+    "§chat.merge-round/driver": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        ".sova/playbooks/merge-round/scripts/round.mjs",
+        ".sova/playbooks/merge-round/tests/round.test.mjs",
+        "server/merge-round-rules.test.ts"
+      ],
+      "requires": [
+        "§chat.merge-round/private-names",
+        "§chat.worktrees/readiness"
       ]
     }
   },

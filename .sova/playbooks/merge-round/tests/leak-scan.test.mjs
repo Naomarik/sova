@@ -1,4 +1,4 @@
-// Run: node --test .sova/playbooks/merge-round/leak-scan.test.mjs
+// Run: node --test .sova/playbooks/merge-round/tests/leak-scan.test.mjs
 // The merge round's leak scan: it finds a planted private name without ever printing it, finds a
 // secret, passes a clean range, and fails closed without its settings file.
 import assert from "node:assert/strict";
@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const SCAN = fileURLToPath(new URL("./leak-scan.mjs", import.meta.url));
+const SCAN = fileURLToPath(new URL("../scripts/leak-scan.mjs", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "leak-scan-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const agent = join(dir, "agent");

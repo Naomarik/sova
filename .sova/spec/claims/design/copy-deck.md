@@ -223,7 +223,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Flyout row (§chat/composer) | Playbooks · chat sessions only, absent in a watch view · while the composer is blocked: `aria-disabled`, described by the composer's reason |
 | Modal title | step 1: Playbooks · step 2: {title}, the playbook's own |
 | Group headings | Sova · Yours · This project (a group with no rows has no heading) |
-| Row | {title} · under it {description}, one line, truncated, the full text in the row's `title` · no description: the title alone · frontmatter title missing, empty or whitespace-only: the id |
+| Row | {title} · under it {description}, one line, truncated, the full text in the row's `title` · no description: the title alone · frontmatter `title`, else `name`, else the id (each skipped when missing, empty or whitespace-only) |
 | Step 1 foot | `Close` |
 | Loading | skeleton rows after 300ms, no words |
 | Load failed | `.banner-error` **Couldn't load the playbooks.** {error} · action `Retry` |
@@ -234,7 +234,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Step 2 body | {description} (the title is in the modal head, not repeated) · textarea label: Anything to add · hint: {promptHint} verbatim, or no hint |
 | Buttons, step 2 | `Back` · `Send Playbook` (the label never changes; there is no in-flight label) |
 | Send blocked | the composer's reason for that state, with its icon, beside `Back` (§design.copy-deck/composer, §design.copy-deck/connection) · model turned off: {ref} is turned off in Settings → Models. Pick another model, then send this again. |
-| The sent turn (verbatim, §chat/playbooks) | Playbook: {title} — {absolute dir} / Read the files in that directory as the playbook directs. / blank line / {body} · with your text: then a line `---`, a blank line, {your text, trimmed} |
+| The sent turn (verbatim, §chat/playbooks) | Playbook: {title} — {absolute dir} / Every relative path in this playbook is relative to that directory; read its files as the playbook directs. / blank line / {body} · with your text: then a line `---`, a blank line, {your text, trimmed} |
 
 ## §design.copy-deck/images — Images
 

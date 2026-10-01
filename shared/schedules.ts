@@ -288,7 +288,7 @@ export function fireHead(id: string, trigger: string, playbook: string, reason: 
   return lines.join("\n");
 }
 
-/** A wake's instruction: run the playbook again, re-reading it. */
-export const wakeInstruction = (title: string, dir: string): string => `Run the playbook "${title}" again: read ${dir}/PLAYBOOK.md first, since it may have changed.`;
+/** A wake's instruction: run the playbook again, re-reading its entry file (PLAYBOOK.md or SKILL.md, as read at this fire). */
+export const wakeInstruction = (title: string, dir: string, entry: string): string => `Run the playbook "${title}" again: read ${dir}/${entry} first, since it may have changed.`;
 
 export const LIMIT_RESET_INSTRUCTION = "Your last turn stopped at that Claude login's usage limit, which has now reset. Continue where you left off.";

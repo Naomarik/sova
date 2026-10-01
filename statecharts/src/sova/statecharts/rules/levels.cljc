@@ -41,7 +41,7 @@
    "sova_note" "L0" "sova_card" "L0" "sova_idea" "L0"
    "sova_start_gathering" "L1" "sova_offer" "L1" "sova_close_gathering" "L1" "sova_reconcile" "L1" "sova_owner_update" "L1" "sova_preview" "L1"
    "sova_promote" "L2"
-   "sova_create_session" "L3" "sova_send" "L3"})
+   "sova_create_session" "L3" "sova_send" "L3" "sova_project_verbs" "L3"})
 
 (defn operator? [envelope] (= "operator" (some-> (:by envelope) name)))
 (defn statechart? [envelope] (= "statechart" (some-> (:by envelope) name)))

@@ -22,16 +22,18 @@ export function WorktreeMergeCard(props: { merge: WorktreeMergeInfo; time?: stri
       aria-label={`Merged ${m().branch} into ${m().target} at ${shortSha(m().sha)}: ${mergeNumbers(m())}`}
     >
       <div class="worktree-merge-head">
-        <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
-        <span class="chip chip-success">
-          <span class="chip-dot" aria-hidden="true" />
-          Merged
-        </span>
-        <span class="worktree-merge-title">
-          <span class="text-mono">{m().branch}</span> into <span class="text-mono">{m().target}</span>
-        </span>
-        <span class="text-mono text-caption" title={m().sha}>
-          {shortSha(m().sha)}
+        <span class="worktree-merge-text">
+          <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
+          <span class="chip chip-success">
+            <span class="chip-dot" aria-hidden="true" />
+            Merged
+          </span>
+          <span class="worktree-merge-title">
+            <span class="text-mono">{m().branch}</span> into <span class="text-mono">{m().target}</span>
+          </span>
+          <span class="text-mono text-caption" title={m().sha}>
+            {shortSha(m().sha)}
+          </span>
         </span>
         <Show when={session}>
           <button

@@ -46,6 +46,8 @@ import { claudeCodeProviderEnabled } from "./web-settings";
 import { ForeignWriteGuard, markOwned, markOwnedStat, recentForeignWriteAgeSec } from "./write-guard";
 import { monitorExtension } from "./resource-monitor";
 import { visCheckExtension, type VisCheckHost } from "./vis-check";
+import { projectEngine } from "./project-services/routes";
+import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { profileOnBranch } from "./session-profile";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
@@ -3145,6 +3147,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
           extensionFactories: [
             ...DEFAULT_EXTENSION_FACTORIES,
             visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
+            // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
+            projectVerbsExtension(projectEngine),
             ...powers,
           ],
         });

@@ -260,7 +260,7 @@ Enforced in the tool, never by the prompt; each has a default and is editable pe
   own source first, then This project, Yours and Sova.
 - **The playbook card.** On the empty screen, a session whose picked profile links a playbook
   shows a card under what the profile changes. It holds the playbook's title and description,
-  **View Playbook**, which opens its `PLAYBOOK.md` read-only with its folder, and **Run Playbook**.
+  **View Playbook**, which opens its entry file (`PLAYBOOK.md` or `SKILL.md`) read-only with its path, and **Run Playbook**.
   The message box holds the playbook's arguments: "Anything you type in the message box goes with
   it." Run Playbook sends the playbook's turn (§chat.playbooks/what-gets-sent) with the message
   box's text as your text, through the ordinary send path, and empties the message box. Nothing is

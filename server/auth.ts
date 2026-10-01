@@ -6,6 +6,8 @@ import { dirname, join, resolve } from "node:path";
 import type { Duplex } from "node:stream";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { Context } from "hono";
+import { consumeCode, mintCode } from "./auth-devices";
+import { localRequest } from "./mesh/proxy";
 
 // The main listener's gate (§app.access/token, §app.access/gate): one per-install token, carried
 // as the install's cookie or an x-sova-token header, plus a Host rule and a cross-site rule that
@@ -414,18 +416,42 @@ function servedOverHttps(c: Context): boolean {
   return (meshNames().own ?? []).some((v) => !!v && v.trim().toLowerCase().startsWith("https://") && hostnameOf(v) === name);
 }
 
-/** POST /api/auth/unlock {token}: the right token sets the cookie, the wrong one is a 401. The
-    gate has already checked Host and the cross-site rule. The token is never echoed. */
+/** POST /api/auth/unlock {token} or {code}: either credential sets the same cookie. The gate
+    has already checked Host and the cross-site rule. Neither credential is ever echoed. */
 export async function unlock(c: Context): Promise<Response> {
-  let token: unknown;
+  let body: { token?: unknown; code?: unknown } | null;
   try {
-    token = ((await c.req.json()) as { token?: unknown } | null)?.token;
+    body = await c.req.json();
   } catch {
-    token = undefined;
+    body = null;
   }
-  if (typeof token !== "string" || !tokenMatches(token.trim())) return c.json(refusal(401), 401);
+  // A damaged install token cannot be recovered by spending a code.
+  const token = initAuthToken().token;
+  const authorized = token !== null && (
+    (typeof body?.token === "string" && tokenMatches(body.token.trim())) ||
+    (typeof body?.code === "string" && consumeCode(body.code))
+  );
+  if (!authorized) return c.json(refusal(401), 401);
   const secure = servedOverHttps(c) ? "; Secure" : "";
-  c.header("Set-Cookie", `${AUTH_COOKIE}=${token.trim()}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}${secure}`);
+  c.header("Set-Cookie", `${AUTH_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}${secure}`);
   c.header("Cache-Control", "no-store");
   return c.json({ ok: true });
+}
+
+/** Gated, local-only credential routes. Peer identity is not the owner's browser credential. */
+export function pair(c: Context): Response {
+  c.header("Cache-Control", "no-store");
+  if (!localRequest(c)) return c.json({ error: "Forbidden" }, 403);
+  const host = c.req.header("host");
+  if (!host) return c.json({ error: "Forbidden" }, 403);
+  const { code, expiresAt } = mintCode();
+  const url = `${servedOverHttps(c) ? "https" : "http"}://${host}/#c=${code}`;
+  return c.json({ code, url, expiresAt });
+}
+
+/** Deliberate recovery only: never log the credential, and never let a cache retain it. */
+export function revealToken(c: Context): Response {
+  c.header("Cache-Control", "no-store");
+  if (!localRequest(c)) return c.json({ error: "Forbidden" }, 403);
+  return c.json({ token: sovaToken() });
 }

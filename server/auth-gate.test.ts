@@ -97,6 +97,40 @@ describe("the token", () => {
   });
 });
 
+describe("device credentials on the real listener", () => {
+  test("pair and recovery are gated and local-only; a code exchanges once on the wired unlock route", async (t) => {
+    const logs = ["log", "info", "warn", "error", "debug"].map((name) => t.mock.method(console, name as "log", () => {}));
+    assert.equal((await send("POST", "/api/auth/pair")).status, 401);
+    assert.equal((await get("/api/auth/token")).status, 401);
+    for (const [method, path] of [["POST", "/api/auth/pair"], ["GET", "/api/auth/token"]]) {
+      const relayed = await send(method!, path!, browser({ "X-Sova-Relayed": "1" }));
+      assert.equal(relayed.status, 403);
+      assert.equal(relayed.body.includes(token), false);
+      const peer = await app.fetch(new Request(`http://${self}${path}`, { method, headers: browser() }), { incoming: {}, meshPeer: { id: "peer" } });
+      assert.equal(peer.status, 403);
+    }
+    const minted = await send("POST", "/api/auth/pair", browser());
+    assert.equal(minted.status, 200);
+    assert.equal(minted.headers["cache-control"], "no-store");
+    const code = JSON.parse(minted.body).code as string;
+    assert.equal(JSON.parse(minted.body).url, `http://${self}/#c=${code}`);
+    const again = await send("POST", "/api/auth/pair", browser());
+    assert.equal(again.status, 200);
+    assert.notEqual(JSON.parse(again.body).code, code);
+    const exchange = () => send("POST", "/api/auth/unlock", { "Content-Type": "application/json" }, JSON.stringify({ code }));
+    const unlocked = await exchange();
+    assert.equal(unlocked.status, 200);
+    assert.deepEqual(JSON.parse(unlocked.body), { ok: true });
+    assert.ok(unlocked.headers["set-cookie"]?.[0]?.startsWith(`${cookie(token)};`));
+    assert.equal((await exchange()).status, 401);
+    const recovered = await get("/api/auth/token", browser());
+    assert.equal(recovered.status, 200);
+    assert.deepEqual(JSON.parse(recovered.body), { token });
+    assert.equal(recovered.headers["cache-control"], "no-store");
+    for (const log of logs) assert.equal(log.mock.callCount(), 0);
+  });
+});
+
 describe("where the request comes from (403, even with a valid token)", () => {
   test("a foreign Host (DNS rebinding) is a 403; a forwarded-host header doesn't launder it", async () => {
     assert.equal((await get(PROTECTED, { Host: "evil.example" })).status, 403, "Host is judged before the token");

@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/auth.test.ts
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
-import { authState, checkAccess, fragmentToken, isUnlocked, onAuthorized, onUnauthorized, postUnlock, resetAuthForTest, unlock, unlockFailure, unlockFromFragment, wantsReload } from "./auth";
+import { authState, checkAccess, fragmentCode, fragmentToken, isUnlocked, onAuthorized, onUnauthorized, postUnlock, resetAuthForTest, unlock, unlockFailure, unlockFromFragment, wantsReload } from "./auth";
 import { withJsonType } from "./api";
 
 beforeEach(() => resetAuthForTest());
@@ -24,6 +24,40 @@ function deps() {
 
 test("#t=<token>: the token comes off the fragment, leaving it empty", () => {
   assert.deepEqual(fragmentToken(`#t=${TOKEN}`), { token: TOKEN, rest: "" });
+});
+
+test("#c=<code>: only a whole base64url fragment is taken", () => {
+  assert.deepEqual(fragmentCode(`#c=${TOKEN}`), { code: TOKEN, rest: "" });
+  for (const hash of ["", "#/access", "#c=", "#c=bad code", "#/x#c=abc", "#cc=abc", `#t=${TOKEN}`]) {
+    assert.deepEqual(fragmentCode(hash), { code: null, rest: hash });
+  }
+});
+
+test("a #c= link clears the fragment and posts a code, never a token", async () => {
+  const replaced: string[] = [];
+  const hist = { state: null, replaceState: (_s: unknown, _t: string, url?: string | URL | null) => void replaced.push(String(url)) };
+  let calls = 0;
+  const fake = (async (url: string, init: RequestInit) => {
+    calls++;
+    assert.deepEqual(replaced, ["/?x=1"]);
+    assert.equal(authState(), "unlocking");
+    assert.equal(url, "/api/auth/unlock");
+    assert.equal(init.method, "POST");
+    assert.equal(init.credentials, "same-origin");
+    assert.equal(new Headers(init.headers).get("Content-Type"), "application/json");
+    assert.deepEqual(JSON.parse(init.body as string), { code: TOKEN });
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  await unlockFromFragment({ hash: `#c=${TOKEN}`, pathname: "/", search: "?x=1" }, hist, fake);
+  assert.equal(calls, 1);
+  assert.equal(isUnlocked(), true);
+});
+
+test("a refused code uses the unlock failure surface with a way to get a new code", async () => {
+  const fake = (async () => new Response("{}", { status: 401 })) as unknown as typeof fetch;
+  await unlockFromFragment({ hash: `#c=${TOKEN}`, pathname: "/", search: "" }, { state: null, replaceState: () => {} }, fake);
+  assert.equal(authState(), "locked");
+  assert.match(unlockFailure() ?? "", /open Access to get a new code/);
 });
 
 test("any other fragment is the app's own and is left alone", () => {

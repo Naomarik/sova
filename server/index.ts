@@ -138,7 +138,7 @@ import { readLiveRecords } from "./live";
 import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
-import { authGate, SERVER_HEADER, serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken, unlock } from "./auth";
+import { authGate, SERVER_HEADER, serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken, unlock, pair, revealToken } from "./auth";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
 // Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
@@ -202,6 +202,9 @@ app.onError((err, c) => {
 app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD }));
 // A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
 app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
+// Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.
+app.post("/api/auth/pair", pair);
+app.get("/api/auth/token", revealToken);
 // Gated like everything else: 200 means this browser's cookie is good, a 401 that it is locked.
 app.get("/api/auth/status", (c) => c.json({ ok: true }));
 // The folder this server lists sessions from (its agent dir's), which the empty list names.

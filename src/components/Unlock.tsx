@@ -23,6 +23,7 @@ export function Unlock() {
     <main class="empty" style={{ height: "100%", "box-sizing": "border-box", "overflow-y": "auto", "justify-content": "center" }}>
       <h1 class="empty-title">Unlock Sova</h1>
       <p class="empty-body">This browser hasn't been given this Sova's access token yet.</p>
+      <p class="empty-body">On a device that is already unlocked, open Access to get a code for this one.</p>
       <form class="field empty-action" style={{ width: "min(100%, 28rem)", "text-align": "left" }} onSubmit={submit}>
         <label class="field-label" for="unlock-token">
           Access token

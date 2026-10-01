@@ -27,16 +27,21 @@ export function fragmentToken(hash: string): { token: string | null; rest: strin
   return { token: m[1]!, rest: "" };
 }
 
+export function fragmentCode(hash: string): { code: string | null; rest: string } {
+  const m = /^#c=([A-Za-z0-9_-]+)$/.exec(hash);
+  return m ? { code: m[1]!, rest: "" } : { code: null, rest: hash };
+}
+
 export type UnlockResult = "ok" | "refused" | "unreachable";
 
 /** Post the token once; the answer sets the cookie. `fetchImpl` is for tests. */
-export async function postUnlock(token: string, fetchImpl: typeof fetch = fetch): Promise<UnlockResult> {
+export async function postUnlock(token: string, fetchImpl: typeof fetch = fetch, kind: "token" | "code" = "token"): Promise<UnlockResult> {
   let res: Response;
   try {
     res = await fetchImpl("/api/auth/unlock", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ [kind]: token }),
       credentials: "same-origin",
     });
   } catch {
@@ -52,14 +57,16 @@ const FAILURE: Record<Exclude<UnlockResult, "ok">, string> = {
 
 /** The unlock screen's button and the `#t=` link both end here. Unlocking changes nothing but
     the cookie; a refusal is remembered for the unlock screen to say why. */
-export async function unlock(token: string, fetchImpl: typeof fetch = fetch): Promise<UnlockResult> {
-  const result = await postUnlock(token.trim(), fetchImpl);
+export async function unlock(token: string, fetchImpl: typeof fetch = fetch, kind: "token" | "code" = "token"): Promise<UnlockResult> {
+  const result = await postUnlock(token.trim(), fetchImpl, kind);
   if (result === "ok") {
     setFailure(null);
     forgetReload();
     setState("open");
   } else {
-    setFailure(FAILURE[result]);
+    setFailure(result === "refused" && kind === "code"
+      ? "That code wasn't accepted. On an unlocked device, open Access to get a new code."
+      : FAILURE[result]);
     setState("locked");
   }
   return result;
@@ -75,11 +82,12 @@ export async function unlockFromFragment(
   hist: Pick<History, "state" | "replaceState"> = history,
   fetchImpl: typeof fetch = fetch,
 ): Promise<void> {
-  const { token, rest } = fragmentToken(loc.hash);
-  if (!token) return;
-  hist.replaceState(hist.state, "", `${loc.pathname}${loc.search}${rest}`);
+  const { token } = fragmentToken(loc.hash);
+  const { code } = fragmentCode(loc.hash);
+  if (!token && !code) return;
+  hist.replaceState(hist.state, "", `${loc.pathname}${loc.search}`);
   setState("unlocking");
-  await unlock(token, fetchImpl);
+  await unlock((token ?? code)!, fetchImpl, token ? "token" : "code");
 }
 
 /**

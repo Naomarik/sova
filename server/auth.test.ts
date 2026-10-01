@@ -17,7 +17,8 @@ delete process.env.SOVA_AUTH;
 delete process.env.HOST;
 delete process.env.SOVA_ALLOWED_HOSTS;
 
-const { AUTH_COOKIE, SERVER_HEADER, authGate, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tokenFile, unlock, upgradeAllowed } = await import("./auth");
+const { AUTH_COOKIE, SERVER_HEADER, authGate, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tokenFile, unlock, upgradeAllowed, pair, revealToken } = await import("./auth");
+const { mintCode, consumeCode } = await import("./auth-devices");
 setAuthPort(4800);
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
@@ -39,6 +40,8 @@ app.use("*", async (c, next) => {
 });
 app.get("/api/health", (c) => c.json({ ok: true }));
 app.post("/api/auth/unlock", unlock);
+app.post("/api/auth/pair", pair);
+app.get("/api/auth/token", revealToken);
 app.get("/api/auth/status", (c) => c.json({ ok: true }));
 app.get("/api/sessions", (c) => c.json([]));
 app.post("/api/sessions", (c) => c.json({ made: true }));
@@ -369,6 +372,110 @@ describe("unlocking", () => {
   test("another site can't unlock (or plant a token) in the person's browser", async () => {
     const res = await ask("/api/auth/unlock", { method: "POST", headers: { origin: "http://127.0.0.1:9999", "sec-fetch-site": "same-site" }, body: JSON.stringify({ token: sovaToken() }) });
     assert.equal(res.status, 403);
+  });
+});
+
+describe("bringing a device in", () => {
+  const store = () => join(process.env.PI_CODING_AGENT_DIR!, "sova", "auth-codes.json");
+  const mint = (headers: Record<string, string> = cookie(), env: object = SOCKET) => ask("/api/auth/pair", { method: "POST", headers }, env);
+  const exchange = (code: string) => ask("/api/auth/unlock", { method: "POST", body: JSON.stringify({ code }) });
+
+  test("minting requires the token and refuses peer-listener and relayed calls", async () => {
+    assert.equal((await mint({})).status, 401);
+    assert.equal((await mint(cookie(), PEER)).status, 403);
+    assert.equal((await mint({ ...cookie(), "x-sova-relayed": "1" })).status, 403);
+    assert.equal((await mint({ "x-sova-token": sovaToken() })).status, 200);
+  });
+
+  test("minted codes are fresh, private at 0600, five-minute and never logged", async (t) => {
+    const logs = ["log", "info", "warn", "error", "debug"].map((name) => t.mock.method(console, name as "log", () => {}));
+    const before = Date.now();
+    const first = await mint();
+    assert.equal(first.status, 200);
+    assert.equal(first.headers.get("cache-control"), "no-store");
+    const a = await first.json() as { code: string; url: string; expiresAt: string };
+    const b = await (await mint()).json() as typeof a;
+    assert.deepEqual(Object.keys(a).sort(), ["code", "expiresAt", "url"]);
+    assert.match(a.code, /^[A-Za-z0-9_-]{43}$/);
+    assert.notEqual(a.code, b.code, "a later response must never return the earlier code");
+    assert.equal(a.url, `http://${HOST}/#c=${a.code}`);
+    assert.ok(Date.parse(a.expiresAt) >= before + 300_000);
+    assert.ok(Date.parse(a.expiresAt) <= Date.now() + 300_000);
+    assert.equal(statSync(store()).mode & 0o777, 0o600);
+    const rows = JSON.parse(readFileSync(store(), "utf8")) as Array<{ code: string; at: string; expiresAt: string }>;
+    const row = rows.find((r) => r.code === a.code)!;
+    assert.equal(Date.parse(row.expiresAt) - Date.parse(row.at), 300_000);
+    for (const log of logs) assert.equal(log.mock.callCount(), 0);
+  });
+
+  test("pairing URLs use the real Host and HTTPS decision, never forwarded headers", async () => {
+    for (const [host, env, scheme] of [
+      [HOST, SOCKET, "http"],
+      ["phone.example.ts.net", SOCKET, "https"],
+      [HOST, { incoming: { socket: { encrypted: true } } }, "https"],
+    ] as const) {
+      const res = await mint({ ...cookie(), host, "x-forwarded-proto": "https", "x-forwarded-host": "ignored.ts.net" }, env);
+      assert.equal(res.status, 200);
+      const body = await res.json() as { code: string; url: string };
+      assert.equal(body.url, `${scheme}://${host}/#c=${body.code}`);
+    }
+  });
+
+  test("a minted code unlocks exactly once, sets the same cookie and echoes neither credential", async () => {
+    const { code } = await (await mint()).json() as { code: string };
+    const res = await exchange(code);
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true });
+    const set = res.headers.get("set-cookie")!;
+    assert.ok(set.startsWith(`${AUTH_COOKIE}=${sovaToken()};`));
+    for (const attr of ["HttpOnly", "SameSite=Strict", "Path=/", "Max-Age=31536000"]) assert.ok(set.includes(attr));
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    assert.equal((JSON.parse(readFileSync(store(), "utf8")) as Array<{ code: string }>).some((r) => r.code === code), false);
+    const spent = await exchange(code);
+    const bad = await exchange("bad-code");
+    assert.equal(spent.status, 401);
+    assert.deepEqual(await spent.json(), await bad.json());
+    assert.equal(spent.headers.get("set-cookie"), null);
+  });
+
+  test("expired codes are refused at five minutes and pruned on the next write", async (t) => {
+    const now = Date.now();
+    const clock = t.mock.method(Date, "now", () => now);
+    const row = mintCode();
+    clock.mock.mockImplementation(() => now + 300_000);
+    const expired = await exchange(row.code);
+    assert.equal(expired.status, 401);
+    assert.equal(expired.headers.get("set-cookie"), null);
+    mintCode();
+    assert.equal(readFileSync(store(), "utf8").includes(row.code), false);
+  });
+
+  test("the store is re-read, and missing, unreadable or partly malformed stores authorize nothing", () => {
+    const row = mintCode();
+    rmSync(store());
+    assert.equal(consumeCode(row.code), false);
+    mkdirSync(store()); // unreadable as a file even when tests run as root
+    assert.equal(consumeCode(row.code), false);
+    rmSync(store(), { recursive: true });
+    for (const contents of ["not json", JSON.stringify([row, { code: "broken" }]), JSON.stringify([row, row])]) {
+      writeFileSync(store(), contents);
+      assert.equal(consumeCode(row.code), false);
+    }
+  });
+
+  test("token recovery requires the cookie, refuses peers and relays, is no-store and never logged", async (t) => {
+    const logs = ["log", "info", "warn", "error", "debug"].map((name) => t.mock.method(console, name as "log", () => {}));
+    assert.equal((await ask("/api/auth/token")).status, 401);
+    for (const [headers, env] of [[cookie(), PEER], [{ ...cookie(), "x-sova-relayed": "1" }, SOCKET]] as const) {
+      const res = await ask("/api/auth/token", { headers }, env);
+      assert.equal(res.status, 403);
+      assert.ok(!(await res.text()).includes(sovaToken()));
+    }
+    const res = await ask("/api/auth/token", { headers: cookie() });
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { token: sovaToken() });
+    assert.equal(res.headers.get("cache-control"), "no-store");
+    for (const log of logs) assert.equal(log.mock.callCount(), 0);
   });
 });
 

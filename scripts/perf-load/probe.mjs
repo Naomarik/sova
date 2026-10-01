@@ -40,6 +40,9 @@ const openFolders = Number(args.get("open") ?? 6);
 // Two long sessions, "a,b" (run.mjs passes them): the switch check opens A, types in its composer,
 // switches to B, forces GC and counts what is left of A's transcript.
 const switchPaths = args.get("switch")?.split(",") ?? null;
+// The Overseer check (`--overseer <rows in its branch>`, `--overseer-earlier <id>`): see overseerCheck.
+const overseerRows = Number(args.get("overseer") ?? 0);
+const overseerEarlier = args.get("overseer-earlier") ?? null;
 const skills = resolve(args.get("skills") ?? join(import.meta.dirname, "..", "..", ".claude", "skills", "playwright", "scripts"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -204,9 +207,11 @@ async function until(expr, ms, what) {
 /** Open A, type in its composer, open B, collect garbage: is A's transcript still alive? */
 async function switchCheck([a, b]) {
   const href = (p) => `#/s/${encodeURIComponent(p)}`;
+  // The session's title, its first message, is in its head: a capped transcript (about 400 rows
+  // built) doesn't build that first row of a 600-row session.
   const shown = (label) => `(() => {
     const w = document.querySelector("div.transcript-wrap");
-    return !!w && w.textContent.includes(${JSON.stringify(label)}) && !!document.querySelector("textarea.composer-input:not([disabled])");
+    return !!w && !!w.querySelector(".thread .entry") && !!document.querySelector("main")?.textContent.includes(${JSON.stringify(label)}) && !!document.querySelector("textarea.composer-input:not([disabled])");
   })()`;
   await cdp.evaluate(`location.hash = ${JSON.stringify(href(a))}`);
   await until(shown("big transcript A"), 60_000, "session A's transcript and composer");
@@ -247,6 +252,162 @@ async function switchCheck([a, b]) {
   }
   const pass = released && (detached.transcriptWraps ?? 0) === 0;
   return { a: tagged, typed, released, detached, metrics: { before, afterGc }, pass };
+}
+
+/** The Overseer's transcript (`--overseer <rows>`, seeded long by seed.mjs `--overseer-big`), with
+    the list churning on: what opening it builds and costs, whether scrolling up and the card jumps
+    still work on rows not built, and what its earlier conversation fetches. Each phase starts from
+    a fresh page load, so one phase's builds don't help the next. */
+async function overseerCheck(rowsInBranch, earlierId) {
+  const transcript = `document.querySelector("div.transcript-wrap .transcript")`;
+  const entries = `document.querySelectorAll(".thread .entry").length`;
+  // Transcript rows over REST (GET /api/transcript?…): the older rows a view fetched. Each is listed
+  // by its asking parameters (before/from/tail/chars), so a background prefetch shows as a run of
+  // `before` chunks.
+  const fetches = `performance.getEntriesByType("resource").filter((r) => new URL(r.name).pathname === "/api/transcript")`;
+  const fetchSummary = `(() => { const f = ${fetches}; return { count: f.length, bytes: f.reduce((s, r) => s + (r.encodedBodySize || 0), 0),
+    asks: f.map((r) => [...new URL(r.name).searchParams.keys()].filter((k) => k !== "path").join("+")) }; })()`;
+  const fresh = async (hash) => {
+    await cdp.evaluate(`location.hash = ${JSON.stringify(hash)}`);
+    await cdp.send("Page.reload");
+    await sleep(500);
+    await until(`!!document.querySelector(".thread .entry")`, 60_000, `${hash}'s transcript`);
+  };
+  // Long tasks from the document's start: each phase reloads the page, and the open's cost starts
+  // before any script the probe could evaluate after it.
+  await cdp.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `window.__ovLT = []; new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__ovLT.push({ t: e.startTime, d: e.duration }); }).observe({ type: "longtask", buffered: true });`,
+  });
+  const longTasksSince = (fromExpr, toExpr = "Infinity") => `(() => {
+    const from = ${fromExpr}, to = ${toExpr};
+    const lt = window.__ovLT.filter((e) => e.t >= from && e.t < to);
+    return { count: lt.length, totalMs: Math.round(lt.reduce((s, e) => s + e.d, 0)), maxMs: Math.round(lt.reduce((s, e) => Math.max(s, e.d), 0)),
+      list: lt.map((e) => ({ startMs: Math.round(e.t - from), durationMs: Math.round(e.d) })) };
+  })()`;
+  // The page reloads: the observers RESET_AND_TAG installs go with it.
+  const install = () => cdp.evaluate(RESET_AND_TAG);
+  const out = { rowsInBranch };
+
+  // A: open (a page load straight onto #/overseer, timed from the document's start), and the 20 s
+  // it settles in: rows built over time, long tasks, transcript fetches.
+  await cdp.evaluate(`location.hash = "#/overseer"`);
+  await cdp.send("Page.reload");
+  await sleep(300);
+  await until(`!!document.body`, 30_000, "the reloaded page");
+  await install();
+  await cdp.evaluate(`window.__perfLoad.ovStart = 0`);
+  await until(`!!document.querySelector(".thread .entry") && document.querySelector("div.transcript-wrap")?.textContent.includes("Two cards still wait")`, 60_000, "the Overseer's transcript");
+  const firstRows = await cdp.evaluate(`({ ms: Math.round(performance.now() - window.__perfLoad.ovStart), entries: ${entries} })`);
+  const built = [];
+  for (let i = 0; i < 40; i++) {
+    built.push(await cdp.evaluate(`({ ms: Math.round(performance.now() - window.__perfLoad.ovStart), entries: ${entries} })`));
+    await sleep(500);
+  }
+  const settle = await cdp.evaluate(longTasksSince("window.__perfLoad.ovStart"));
+  const settleFetches = await cdp.evaluate(fetchSummary);
+  // Then a window like the list's, with the churn still on.
+  await cdp.evaluate(`(window.__perfLoad.ovWin = performance.now(), window.__perfLoad.muts = [], 0)`);
+  await sleep(windowSec * 1000);
+  const window_ = await cdp.evaluate(longTasksSince("window.__perfLoad.ovWin"));
+  const winNodes = await cdp.evaluate(`window.__perfLoad.muts.reduce((s, m) => ({ added: s.added + m.a, removed: s.removed + m.r }), { added: 0, removed: 0 })`);
+  const before = await cdp.metrics();
+  for (let i = 0; i < 2; i++) {
+    await cdp.send("HeapProfiler.collectGarbage");
+    await sleep(300);
+  }
+  const afterGc = await cdp.metrics();
+  // Scrolling up: within 2 viewports of the top of the built rows, more are built (or fetched) and
+  // the row at the top of the view stays where it was, to the pixel.
+  // The row is the first one reaching into the view (ThreadScroller's own spot), read right after
+  // the scroll is written and before its scroll event builds anything; then again once the build
+  // and the drawing of what it built are over.
+  const anchorBefore = await cdp.evaluate(`(() => {
+    const root = ${transcript};
+    root.scrollTop = Math.round(root.clientHeight * 1.2);
+    const top = root.getBoundingClientRect().top;
+    const row = [...root.querySelectorAll(".thread > .entry")].find((e) => { const b = e.getBoundingClientRect(); return b.height > 0 && b.bottom > top; });
+    window.__perfAnchor = row;
+    return { entries: ${entries}, rowId: row?.dataset.entry ?? null, offset: row ? row.getBoundingClientRect().top - top : null, scrollTop: root.scrollTop };
+  })()`);
+  await sleep(2500);
+  const anchorAfter = await cdp.evaluate(`(() => {
+    const root = ${transcript}, row = window.__perfAnchor;
+    return { entries: ${entries}, offset: row?.isConnected ? row.getBoundingClientRect().top - root.getBoundingClientRect().top : null, scrollTop: root.scrollTop };
+  })()`);
+  const anchor = {
+    before: anchorBefore,
+    after: anchorAfter,
+    builtMore: anchorAfter.entries - anchorBefore.entries,
+    driftPx: anchorBefore.offset === null || anchorAfter.offset === null ? null : Math.round((anchorAfter.offset - anchorBefore.offset) * 10) / 10,
+  };
+  out.open = { firstRows, built, settle, fetches: settleFetches, window: { ...window_, nodes: winNodes }, metrics: { before, afterGc }, anchor };
+
+  // B: the card chip, then a card reference, to cards whose newest snapshot is far above the tail.
+  const inView = (id) => `(() => {
+    const el = document.querySelector('[data-card-id="${id}"]');
+    if (!el) return null;
+    const r = el.getBoundingClientRect(), v = ${transcript}.getBoundingClientRect();
+    return r.top < v.bottom && r.bottom > v.top;
+  })()`;
+  const landed = async (id) => {
+    const t0 = Date.now();
+    let stable = 0;
+    while (Date.now() - t0 < 15_000) {
+      if (await cdp.evaluate(inView(id))) {
+        if (++stable >= 3) break;
+      } else stable = 0;
+      await sleep(250);
+    }
+    return { inView: !!(await cdp.evaluate(inView(id))), ms: Date.now() - t0, entries: await cdp.evaluate(entries) };
+  };
+  await fresh("#/overseer");
+  await sleep(3000);
+  const chipOpened = await cdp.evaluate(`(() => { const b = document.querySelector("button.run-status-cards"); b?.click(); return b?.textContent.trim() ?? null; })()`);
+  await sleep(300);
+  const chipChose = await cdp.evaluate(`(() => { const it = document.querySelector('[aria-label^="c_1:"]'); it?.click(); return !!it; })()`);
+  const chip = { chip: chipOpened, chose: chipChose, ...(await landed("c_1")) };
+  await fresh("#/overseer");
+  await sleep(3000);
+  const refClicked = await cdp.evaluate(`(() => { const refs = [...document.querySelectorAll('a[data-card-ref="c_35"]')]; refs.at(-1)?.click(); return refs.length; })()`);
+  const ref = { refs: refClicked, ...(await landed("c_35")) };
+  out.cards = { chip, ref };
+
+  // C: scrolling to the top in steps, the way a reader would hold Home: everything gets built.
+  await fresh("#/overseer");
+  await install();
+  await cdp.evaluate(`window.__perfLoad.ovTop = performance.now()`);
+  let steps = 0;
+  let last = -1;
+  let still = 0;
+  for (; steps < 400; steps++) {
+    const s = await cdp.evaluate(`(() => { const root = ${transcript}; root.scrollTop = 0; return { entries: ${entries}, edge: !!document.querySelector(".older-edge") }; })()`);
+    if (!s.edge && s.entries === last && ++still >= 4) break;
+    if (s.entries !== last) still = 0;
+    last = s.entries;
+    await sleep(300);
+  }
+  out.top = {
+    steps,
+    ms: await cdp.evaluate(`Math.round(performance.now() - window.__perfLoad.ovTop)`),
+    entries: await cdp.evaluate(entries),
+    longTasks: await cdp.evaluate(longTasksSince("window.__perfLoad.ovTop")),
+  };
+
+  // D: the earlier conversation: what it fetches in its first 10 s.
+  if (earlierId) {
+    await fresh(`#/overseer/h/${encodeURIComponent(earlierId)}`);
+    await sleep(10_000);
+    out.earlier = { entries: await cdp.evaluate(entries), fetches: await cdp.evaluate(fetchSummary) };
+  }
+  out.pass =
+    firstRows.entries > 0 &&
+    built.at(-1).entries <= 600 &&
+    chip.inView &&
+    ref.inView &&
+    anchor.driftPx !== null &&
+    Math.abs(anchor.driftPx) < 2 &&
+    out.top.entries >= Math.floor(rowsInBranch * 0.98);
+  return out;
 }
 
 let browserPort = null;
@@ -334,7 +495,8 @@ try {
 
   const listPass = (end.rows.survivalPct ?? 0) >= 95 && end.longTasks.totalMs <= 300;
   const switched = switchPaths ? await switchCheck(switchPaths) : null;
-  const pass = listPass && (switched === null || switched.pass);
+  const overseen = overseerRows > 0 ? await overseerCheck(overseerRows, overseerEarlier) : null;
+  const pass = listPass && (switched === null || switched.pass) && (overseen === null || overseen.pass);
   const summary = {
     url,
     browser,
@@ -349,6 +511,7 @@ try {
     metrics: { before, afterGc },
     listPass,
     switch: switched,
+    overseer: overseen,
   };
   console.log(JSON.stringify(summary));
   console.log(`RESULT: ${pass ? "PASS" : "FAIL"}`);

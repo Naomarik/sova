@@ -2,7 +2,7 @@
 // seed.mjs — write synthetic pi session files into a hermetic agent dir, so the Sova sidebar has
 // a realistic, deterministic list to render.
 //
-// Usage: node seed.mjs --agent-dir <dir> [--sessions 480] [--cwds 40] [--big 2] [--big-turns 300]
+// Usage: node seed.mjs --agent-dir <dir> [--sessions 480] [--cwds 40] [--big 2] [--big-turns 300] [--overseer-big 5300]
 //
 // Every session is a real session file the server's own parser understands: a v3 header, a
 // model_change, a user message (what the list titles from) and an assistant reply with usage.
@@ -60,7 +60,7 @@ function cleanPrevious() {
   try { old = JSON.parse(readFileSync(seedMarker, "utf8")); } catch { /* malformed: leave files */ }
   const dirs = new Set();
   if (old && Array.isArray(old.sessions)) {
-    for (const s of [...old.sessions, ...(Array.isArray(old.big) ? old.big : [])]) {
+    for (const s of [...old.sessions, ...(Array.isArray(old.big) ? old.big : []), ...(Array.isArray(old.overseer) ? old.overseer : [])]) {
       if (!s || typeof s.path !== "string" || !insideSessions(s.path)) continue;
       dirs.add(dirname(s.path));
       try { unlinkSync(s.path); } catch { /* already gone */ }
@@ -199,5 +199,112 @@ if (big.length && existsSync(draftsFile)) {
   } catch { /* malformed: leave it */ }
 }
 
-writeFileSync(join(agent, "perf-load-seed.json"), JSON.stringify({ cwds, sessions, big }, null, 0));
-console.error(`[seed] ${sessions.length} sessions across ${cwds.length} cwds${big.length ? `, ${big.length} big (${BIG_TURNS} turns)` : ""} in ${sessionsDir}`);
+// The Overseer, long (`--overseer-big <rows>`): a marked conversation of about that many rows,
+// made current in overseer-state.json before the server starts (the server then finds it instead
+// of creating one), with one earlier conversation of OVERSEER_EARLIER_ROWS in its history.
+// `sova_card` calls c_1..c_40 sit in the first half; c_1..c_20 are reopened and c_21..c_30
+// dropped later, still far above the tail, so each card's newest snapshot is well above the rows
+// a capped view builds; c_31..c_40 stay open as created. The last reply names [c_35](#c_35).
+const OVERSEER_ROWS = Number(args.get("overseer-big") ?? 0);
+const OVERSEER_EARLIER_ROWS = 1500;
+const overseer = [];
+if (OVERSEER_ROWS > 0) {
+  const ovCwd = join(agent, "sova", "overseer");
+  mkdirSync(ovCwd, { recursive: true });
+  const ovDir = join(sessionsDir, `--${ovCwd.slice(1).replace(/\//g, "-")}--`);
+  mkdirSync(ovDir, { recursive: true });
+  const usage = { input: 120, output: 24, cacheRead: 0, cacheWrite: 0, totalTokens: 144, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } };
+  const asst = (content, stopReason, at) => ({ role: "assistant", content, provider: "zai", model: "glm-5.3", api: "openai-completions", stopReason, timestamp: at, usage });
+  const iso = (ms) => new Date(ms).toISOString();
+  const card = (n, phase, rev, at, extra = {}) => ({
+    id: `c_${n}`,
+    title: `Archive the finished ${pick(apps)} sessions (${n})`,
+    detail: `Three sessions in ${pick(apps)} look done: merged, nothing running.`,
+    options: [{ label: "Archive them", reply: `Archive the sessions on c_${n}.` }, { label: "Keep them" }],
+    items: [],
+    phase,
+    rev,
+    createdAt: iso(at),
+    updatedAt: iso(at),
+    ...extra,
+  });
+  /** One conversation of about `rows` rows; returns its path and id. */
+  const writeConversation = (rows, label, endAgo, withCards) => {
+    const id = uuid();
+    const total = Math.ceil(rows / 3); // turns: a plain turn is 2 rows, a tool turn (every third) 5
+    const startAt = now - endAgo - total * 60_000;
+    const path = join(ovDir, `${iso(startAt).replace(/[:.]/g, "-")}_${id}.jsonl`);
+    const lines = [
+      { type: "session", version: 3, id, timestamp: iso(startAt), cwd: ovCwd },
+      { type: "custom", customType: "sova-overseer", data: { v: 1 }, id: `ov-mark-${label}`, parentId: null, timestamp: iso(startAt) },
+      { type: "model_change", id: `ov-m-${label}`, parentId: `ov-mark-${label}`, timestamp: iso(startAt), provider: "zai", modelId: "glm-5.3" },
+    ];
+    let parent = `ov-m-${label}`;
+    let n = 0;
+    const push = (message, at) => {
+      const eid = `ov-${label}-${++n}`;
+      lines.push({ type: "message", id: eid, parentId: parent, timestamp: iso(at), message });
+      parent = eid;
+      return eid;
+    };
+    // Turn index → what happens to a card there (c_N created; reopened; dropped).
+    const plan = new Map();
+    if (withCards) {
+      for (let c = 1; c <= 40; c++) plan.set(Math.floor(total * (0.05 + (0.5 * (c - 1)) / 40)), { n: c, op: "create" });
+      for (let c = 1; c <= 20; c++) plan.set(Math.floor(total * (0.62 + (0.06 * (c - 1)) / 20)), { n: c, op: "reopen" });
+      for (let c = 21; c <= 30; c++) plan.set(Math.floor(total * (0.58 + (0.03 * (c - 21)) / 10)), { n: c, op: "drop" });
+    }
+    let rowCount = 0;
+    for (let t = 0; t < total; t++) {
+      const at = startAt + t * 60_000;
+      const last = t === total - 1;
+      push({ role: "user", content: [{ type: "text", text: t === 0 ? `overseer transcript ${label}` : `What about ${pick(apps)} ${pick(nouns)}? (${t})` }], timestamp: at }, at);
+      rowCount++;
+      const cardOp = plan.get(t);
+      if (cardOp || t % 3 === 1) {
+        const callId = `call-${label}-${t}`;
+        let name = "sova_session";
+        let details = { v: 1 };
+        let args2 = { id: `s-${t}` };
+        if (cardOp) {
+          name = "sova_card";
+          const c = cardOp.n;
+          if (cardOp.op === "create") {
+            details = { v: 1, card: card(c, "open", 1, at), changes: [{ kind: "created" }], line: "created" };
+            args2 = { ops: [{ op: "create", title: `Archive the finished sessions (${c})` }] };
+          } else if (cardOp.op === "reopen") {
+            details = { v: 1, card: card(c, "open", 2, at), changes: [{ kind: "reopened" }], line: "reopened" };
+            args2 = { card: `c_${c}`, ops: [{ op: "reopen" }] };
+          } else {
+            details = { v: 1, card: card(c, "dropped", 2, at, { droppedWhy: "The sessions were archived by hand." }), changes: [{ kind: "dropped" }], line: "dropped" };
+            args2 = { card: `c_${c}`, ops: [{ op: "drop", reason: "The sessions were archived by hand." }] };
+          }
+        }
+        push(asst([{ type: "text", text: `Checking ${pick(apps)} first.` }, { type: "toolCall", id: callId, name, arguments: args2 }], "toolUse", at + 1000), at + 1000);
+        push({ role: "toolResult", toolCallId: callId, toolName: name, content: [{ type: "text", text: `${name}: ok (${t})` }], details, isError: false, timestamp: at + 2000 }, at + 2000);
+        rowCount += 3;
+      }
+      const text = last && withCards
+        ? `Two cards still wait: [c_35](#c_35) and [c_1](#c_1).\n\n- ${pick(verbs)} **${pick(apps)}**\n- check \`${pick(nouns)}\``
+        : `Looked at ${pick(apps)}: ${pick(verbs)} the ${pick(nouns)}.\n\n- ${pick(verbs)} **${pick(apps)}**\n- check \`${pick(nouns)}\`\n\nNext: ${pick(verbs)} ${pick(nouns)}.`;
+      push(asst([{ type: "text", text }], "stop", at + 3000), at + 3000);
+      rowCount++;
+    }
+    writeFileSync(path, lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+    // Older than the write guard's 2-minute window, so the chat opens writable.
+    const mtime = new Date(now - endAgo);
+    utimesSync(path, mtime, mtime);
+    return { path, id, rows: rowCount };
+  };
+  const earlier = writeConversation(OVERSEER_EARLIER_ROWS, "earlier", 3 * DAY, false);
+  const current = writeConversation(OVERSEER_ROWS, "current", 10 * 60_000, true);
+  overseer.push({ ...current, current: true }, { ...earlier, current: false });
+  mkdirSync(join(agent, "sova"), { recursive: true });
+  writeFileSync(join(agent, "sova", "overseer-state.json"), JSON.stringify({ version: 1, current: current.id, history: [earlier.id] }, null, 2) + "\n");
+}
+
+writeFileSync(join(agent, "perf-load-seed.json"), JSON.stringify({ cwds, sessions, big, overseer }, null, 0));
+console.error(
+  `[seed] ${sessions.length} sessions across ${cwds.length} cwds${big.length ? `, ${big.length} big (${BIG_TURNS} turns)` : ""}` +
+    `${overseer.length ? `, the Overseer (${overseer[0].rows} rows, earlier ${overseer[1].rows})` : ""} in ${sessionsDir}`,
+);

@@ -38,6 +38,20 @@ shared one) and measures over the window:
   holds), the detached `div.transcript-wrap` trees `DOM.getDetachedDomNodes` still finds, and the
   post-GC Nodes. A retained transcript fails the run.
 
+- the Overseer, long (`--overseer-big <rows>`, default 0 = off; 5300 matches the user's): the seed
+  writes a marked Overseer conversation of about that many rows, with 40 `sova_card` cards whose
+  newest snapshots sit far above the tail (c_1–c_20 reopened, c_21–c_30 dropped, c_31–c_40 open)
+  and a last reply naming `[c_35](#c_35)`, plus one earlier conversation (1,500 rows), and makes
+  it current before the server starts. The probe then, each phase from a fresh page load:
+  opens `#/overseer` and reports the built `.thread .entry` count every 500 ms for 20 s, the long
+  tasks from the document's start, the `/api/transcript` fetches (each by its asking parameters),
+  a window of the list's length with the churn on, post-GC Nodes, and a scroll-up check (the row
+  at the top of the view, read before the scroll event builds and 2.5 s after: `driftPx`);
+  jumps by the card chip to c_1 and by the `[c_35]` reference (in view, how long, rows built);
+  scrolls to the top in steps until every row is built; and opens the earlier conversation for
+  10 s. It FAILs when more than 600 rows are built after 20 s, a card jump misses, the top row
+  moves by 2 px or more, or the top isn't reached.
+
 It prints one JSON summary and a `RESULT: PASS|FAIL` line. **FAIL** when fewer than 95% of rows
 survive, the window's long-task total exceeds 300 ms, or the switch leaves A's transcript alive. Exit code 1 on FAIL.
 

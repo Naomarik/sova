@@ -2,10 +2,11 @@
 // probe.mjs — drive an isolated headless Chromium over raw CDP and measure one window of sidebar
 // churn. No requestAnimationFrame loops are injected; every observer is installed once.
 //
-// Usage: node probe.mjs --url http://127.0.0.1:<port> [--window 30] [--warmup 10] [--skills <dir>]
+// Usage: node probe.mjs --url http://127.0.0.1:<port> [--window 30] [--warmup 10] [--open 6] [--skills <dir>]
 //
 // It starts its own browser with the playwright skill's start-browser.sh (never attaches to
-// another), navigates at 1600x1000, waits for the list, warms up, then over the window measures:
+// another), navigates at 1600x1000, waits for the list, opens the first --open folder sections
+// (closed folders hold no rows until first opened), warms up, then over the window measures:
 //   - row and group survival, by tagging every `details.session-group li` / `details.session-group`
 //     with a JS property and counting how many are still connected at the end;
 //   - long tasks (PerformanceObserver 'longtask', installed once, guarded by a window flag);
@@ -27,6 +28,10 @@ if (!url) {
 }
 const windowSec = Number(args.get("window") ?? 30);
 const warmupSec = Number(args.get("warmup") ?? 10);
+// Folders start collapsed and build their rows on first open, so the probe opens the first N
+// folder sections (Live & web first, in document order) before it measures: survival is over rows
+// that exist at the window's start, and those are the opened folders' rows.
+const openFolders = Number(args.get("open") ?? 6);
 const skills = resolve(args.get("skills") ?? join(import.meta.dirname, "..", "..", ".claude", "skills", "playwright", "scripts"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -191,7 +196,7 @@ try {
     await sleep(500);
     try {
       const probe = await cdp.evaluate(`({ rows: document.querySelectorAll("details.session-group li").length, groups: document.querySelectorAll("details.session-group").length, width: innerWidth })`);
-      if (probe.rows > 0) {
+      if (probe.groups > 0) {
         ready = probe;
         break;
       }
@@ -202,6 +207,19 @@ try {
   if (!ready) throw new Error("sidebar list never rendered");
   if (ready.width !== 1600) {
     await cdp.send("Emulation.setDeviceMetricsOverride", { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false });
+  }
+
+  // Open the first N folders the way a user does, by their summary; the choice is stored, so a
+  // folder stays open across the window's polls. Then wait until the opened folders hold rows.
+  const opened = await cdp.evaluate(`(() => {
+    const closed = [...document.querySelectorAll("details.session-group")].filter((d) => !d.open).slice(0, ${openFolders});
+    for (const d of closed) d.querySelector(":scope > summary").click();
+    return closed.length;
+  })()`);
+  for (let i = 0; i < 40; i++) {
+    const rows = await cdp.evaluate(`document.querySelectorAll("details.session-group[open] li").length`);
+    if (rows > 0 || opened === 0) break;
+    await sleep(250);
   }
 
   await sleep(warmupSec * 1000);
@@ -218,6 +236,7 @@ try {
     url,
     windowSec,
     warmupSec,
+    foldersOpened: opened,
     renderedAtStart: start,
     rows: end.rows,
     groups: end.groups,

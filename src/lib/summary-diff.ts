@@ -69,12 +69,15 @@ function same(a: unknown, b: unknown): boolean {
 /** True when nothing a row can show differs: every compared field, deeply. */
 export const sameSummary = (a: SessionSummary, b: SessionSummary): boolean => COMPARED_FIELDS.every((k) => same(a[k], b[k]));
 
-/** Keeps the previous object for unchanged rows so <For> updates the list in place (focus survives). */
+/** Keeps the previous object for unchanged rows so <For> updates the list in place (focus survives).
+    When no row changed and none moved, it hands back `prev` itself, so a memo or signal holding the
+    list sees no change at all and nothing downstream re-runs. */
 export function reuseUnchanged(next: SessionSummary[], prev: SessionSummary[] | undefined): SessionSummary[] {
   if (!prev) return next;
   const old = new Map(prev.map((s) => [s.path, s]));
-  return next.map((s) => {
+  const out = next.map((s) => {
     const o = old.get(s.path);
     return o && sameSummary(o, s) ? o : s;
   });
+  return out.length === prev.length && out.every((s, i) => s === prev[i]) ? prev : out;
 }

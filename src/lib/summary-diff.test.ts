@@ -88,3 +88,17 @@ test("the unread dot clears: a row whose unread went away gets a new object (E2E
   const [same] = reuseUnchanged([{ ...before, seenAt: 99 }], [before]);
   assert.equal(same, before, "an exempt field alone keeps the old object");
 });
+
+test("a list where nothing changed comes back as the previous array itself, so nothing downstream re-runs", () => {
+  const a = { ...full(), path: "/a.jsonl" };
+  const b = { ...full(), path: "/b.jsonl" };
+  const prev = [a, b];
+  assert.equal(reuseUnchanged([{ ...a }, { ...b, seenAt: 7 }], prev), prev, "equal rows: the same array");
+  const changed = reuseUnchanged([{ ...a }, { ...b, title: "renamed" }], prev);
+  assert.notEqual(changed, prev, "one changed row: a new array");
+  assert.equal(changed[0], a, "with the unchanged row's object kept");
+  const moved = reuseUnchanged([{ ...b }, { ...a }], prev);
+  assert.notEqual(moved, prev, "a reorder is a change");
+  assert.deepEqual(moved, [b, a]);
+  assert.notEqual(reuseUnchanged([{ ...a }], prev), prev, "a removed row is a change");
+});

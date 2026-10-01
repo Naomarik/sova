@@ -25,7 +25,10 @@ builds `<tree>/dist` if missing, starts `<tree>`'s server on the given port with
 and runs `probe.mjs`, which starts its **own** isolated headless browser (playwright skill, never a
 shared one) and measures over the window:
 
-- row and group survival (tagged elements still attached at the end),
+- row and group survival (tagged elements still attached at the end). Folders start collapsed and
+  build their rows only when first opened, so the probe first opens the first `--open` (default 6)
+  folder sections by their summary; row survival is over the rows that exist at the window's start,
+  which are those folders' rows,
 - long tasks (one `PerformanceObserver`),
 - nodes added/removed per second (one `MutationObserver`),
 - `Performance.getMetrics` Nodes/JSEventListeners, before and after `HeapProfiler.collectGarbage`.

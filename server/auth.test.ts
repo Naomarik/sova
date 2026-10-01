@@ -340,6 +340,108 @@ describe("the gate", () => {
   });
 });
 
+describe("a browser on this machine", () => {
+  // What its socket and fetch metadata look like: loopback with no proxy header (isDirectLocal),
+  // this process's own port in Host, and the browser's own navigation. The raw headers ride in
+  // env.incoming, exactly as the real server's IncomingMessage carries them.
+  const NAV = { "sec-fetch-site": "same-origin", "sec-fetch-mode": "navigate" };
+  const local = (raw: Record<string, string> = {}) => ({ incoming: { socket: { remoteAddress: "127.0.0.1" }, headers: raw } });
+
+  test("a same-origin navigation with no proxy header is answered and handed the cookie: the shell and a data route alike", async () => {
+    for (const path of ["/", "/api/sessions"]) {
+      const res = await ask(path, { headers: NAV }, local(NAV));
+      assert.equal(res.status, 200, path);
+      const set = res.headers.get("set-cookie") ?? "";
+      assert.match(set, /^sova_token_[0-9a-f]{8}=[^;]+; HttpOnly; SameSite=Strict; Path=\//);
+      assert.equal(res.headers.get("cache-control"), "no-store");
+      // The cookie it was handed carries the install's token: it passes on the next request.
+      const handed = set.split(";")[0]!;
+      assert.equal((await ask("/api/sessions", { headers: { cookie: handed } })).status, 200);
+      assert.equal(handed.startsWith(`${AUTH_COOKIE}=`), true);
+      await res.text();
+    }
+  });
+
+  test("a typed address or bookmark (Sec-Fetch-Site: none) navigates straight in: the document gets the cookie, the next fetch rides it", async () => {
+    const TYPED = { "sec-fetch-site": "none", "sec-fetch-mode": "navigate", "sec-fetch-dest": "document" };
+    const res = await ask("/", { headers: TYPED }, local(TYPED));
+    assert.equal(res.status, 200);
+    const set = res.headers.get("set-cookie");
+    assert.match(set ?? "", /^sova_token_[0-9a-f]{8}=[^;]+; HttpOnly; SameSite=Strict/, "the cookie is on the document response");
+    // The page's boot fetch — a same-origin, non-navigation request — passes on that cookie.
+    const boot = await ask("/api/sessions", { headers: { "sec-fetch-mode": "same-origin", cookie: set!.split(";")[0]! } }, local());
+    assert.equal(boot.status, 200);
+    await res.text();
+  });
+
+  test("Sec-Fetch-Site: none that is NOT a navigation (Sec-Fetch-Mode: same-origin) still needs the token", async () => {
+    const headers = { "sec-fetch-site": "none", "sec-fetch-mode": "same-origin" };
+    const res = await ask("/api/sessions", { headers }, local(headers));
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get("set-cookie"), null);
+  });
+
+  test("a proxy header over a typed-address navigation still refuses: none + navigate through tailscale serve needs the token", async () => {
+    const headers = { "sec-fetch-site": "none", "sec-fetch-mode": "navigate", "x-forwarded-host": "box.tail1234.ts.net" };
+    const res = await ask("/api/sessions", { headers }, local(headers));
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get("set-cookie"), null);
+  });
+
+  test("a request carrying proxy headers — how the tailnet reaches this listener through loopback — still needs the token", async () => {
+    const proxies: Array<Record<string, string>> = [{ "x-forwarded-host": "box.tail1234.ts.net" }, { "x-forwarded-proto": "https" }, { forwarded: "host=box.tail1234.ts.net" }, { "x-real-ip": "100.64.0.7" }, { via: "1.1 tail" }, { "tailscale-user-login": "someone@example.com" }];
+    for (const proxy of proxies) {
+      const headers = { ...NAV, ...proxy };
+      const res = await ask("/api/sessions", { headers }, local(headers));
+      assert.equal(res.status, 401, JSON.stringify(proxy));
+      assert.equal(res.headers.get("set-cookie"), null);
+    }
+  });
+
+  test("cross-site and same-site navigations stay 403, a foreign Host stays 403, and they never mint a cookie", async () => {
+    for (const [headers, status] of [
+      [{ ...NAV, "sec-fetch-site": "cross-site" }, 403],
+      [{ ...NAV, "sec-fetch-site": "same-site" }, 403],
+      [{ host: "evil.example", ...NAV }, 403],
+    ] as Array<[Record<string, string>, number]>) {
+      const res = await ask("/api/sessions", { headers }, local(headers));
+      assert.equal(res.status, status);
+      assert.equal(res.headers.get("set-cookie"), null);
+    }
+    // Same-site here means a page on another port of this host, cookie or not.
+    assert.equal((await ask("/api/sessions", { headers: { ...NAV, "sec-fetch-site": "same-site", ...cookie() } }, local())).status, 403);
+  });
+
+  test("not this process's own port, no fetch metadata at all, or a socket upgrade: still the token", async () => {
+    // Another port of this host answers only a caller that has the token.
+    const otherPort = { host: "127.0.0.1:9999", ...NAV };
+    const res = await ask("/api/sessions", { headers: otherPort }, local(otherPort));
+    assert.equal(res.status, 401);
+    assert.equal(res.headers.get("set-cookie"), null);
+    // curl, a script, a local process: loopback with no Sec-Fetch headers at all.
+    assert.equal((await ask("/api/sessions", {}, local())).status, 401);
+    assert.equal((await ask("/api/sessions", {}, local())).headers.get("set-cookie"), null);
+    // A WebSocket upgrade is never silently admitted (verdict is shared, silentLocal is not).
+    const upgradeReq = (headers: Record<string, string>) => ({ url: "/ws/chat?path=x", headers: { host: HOST, ...headers } }) as unknown as IncomingMessage;
+    assert.equal(upgradeAllowed(upgradeReq(NAV)), false);
+    assert.equal(upgradeAllowed(upgradeReq({ "sec-fetch-site": "same-origin", "sec-fetch-mode": "websocket" })), false);
+  });
+
+  test("SOVA_AUTH=off with a proxy header behaves as before: answered, and no cookie invented", async () => {
+    process.env.SOVA_AUTH = "off";
+    try {
+      const proxied = { ...NAV, "x-forwarded-host": "box.tail1234.ts.net" };
+      const res = await ask("/api/sessions", { headers: proxied }, local(proxied));
+      assert.equal(res.status, 200);
+      assert.equal(res.headers.get("set-cookie"), null);
+      // And the direct navigation now answers without the token as before; the cookie it sets is a nicety, not a gate.
+      assert.equal((await ask("/api/sessions")).status, 200);
+    } finally {
+      delete process.env.SOVA_AUTH;
+    }
+  });
+});
+
 describe("unlocking", () => {
   test("the right token sets the install's cookie, never echoing it in the body", async () => {
     const res = await ask("/api/auth/unlock", { method: "POST", headers: { "content-type": "application/json", origin: `http://${HOST}` }, body: JSON.stringify({ token: sovaToken() }) });

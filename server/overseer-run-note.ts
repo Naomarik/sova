@@ -1,4 +1,4 @@
-import { OVERSEER_BRIEF_PREFIX } from "../shared/protocol";
+import { OVERSEER_BRIEF_PREFIX, type SessionReadiness } from "../shared/protocol";
 import { CARDS_NOTE_MESSAGE, foldCards, openCardsOf } from "../shared/overseer-card";
 
 /**
@@ -31,6 +31,10 @@ export interface SessionNow {
   merged?: number;
   /** It waits on the user's answers to open alignment questions. */
   waitsOnAnswers: boolean;
+  /** Its state now, for the sessions in play: working, idle, needs-input, error, archived. */
+  state?: string;
+  /** Its worktrees, each "branch <name> (<badge>)" (branchLabels). */
+  branches?: string[];
 }
 
 /** The note's `details`: the blockers it listed as cleared, each `<key>@<brief ms>`, so a later note lists each once per brief. */
@@ -113,13 +117,16 @@ export interface RunNoteInput {
   session: (id: string) => SessionNow | null;
   /** The open-cards note (cardsNote), when a card is open. */
   cardsText?: string;
+  /** Sessions the Overseer created or prompted, by id, with when (sessionsInPlay adds the briefed ones). */
+  prompted?: readonly Touched[];
   /** Text from other sessions is redacted before it reaches the model. */
   redact?: (text: string) => string;
 }
 
-/** The ids the note will ask `session` about: briefed blockers in the window, and open cards' sessions. */
-export function runNoteSessionIds(branch: readonly unknown[], now: number): string[] {
-  const ids = new Set<string>();
+/** The ids the note will ask `session` about: briefed blockers in the window, open cards' sessions,
+    and the sessions in play. */
+export function runNoteSessionIds(branch: readonly unknown[], now: number, prompted: readonly Touched[] = []): string[] {
+  const ids = new Set<string>(sessionsInPlay(branch, now, prompted).map((p) => p.id));
   for (const b of briefedBlockers(branch)) if (now - b.at <= CLEARED_WINDOW_MS) ids.add(b.id);
   for (const c of openCardsOf(foldCards(branch))) for (const it of c.items) if (it.kind === "session") ids.add(it.id);
   return [...ids];
@@ -165,6 +172,97 @@ export function runNote(input: RunNoteInput): { content: string; details: RunNot
   }
   if (cardLines.length) parts.push(redact(["[card sessions] Sessions on open cards whose state moved. Drop or replace a card they make moot:", ...cardLines].join("\n")));
 
+  const play = sessionsInPlayText(sessionsInPlay(input.branch, now, input.prompted ?? []), input.session, now);
+  if (play) parts.push(redact(play));
+
   if (input.cardsText) parts.push(input.cardsText);
   return { content: parts.join("\n\n"), details: { v: 1, ...(cleared.length ? { cleared } : {}) } };
+}
+
+// ---- sessions in play (§app.overseer/sessions-in-play) -------------------------------------------
+
+/** At most this many sessions in play. */
+export const IN_PLAY_MAX = 15;
+
+/** A session the Overseer touched: its id and when. */
+export interface Touched {
+  id: string;
+  at: number;
+}
+
+/** A session in play: when the Overseer last created or prompted it, and the last brief that named it. */
+export interface InPlay {
+  id: string;
+  prompted?: number;
+  brief?: { kind: string; at: number };
+}
+
+const PLAY_TOOLS = new Set(["sova_create_session", "sova_send"]);
+
+/** The sessions the Overseer created or sent to, from its successful tool results on the branch:
+    this host's only (a peer's carries `host`). Survives a restart, unlike the server's own tracking. */
+export function promptedOnBranch(branch: readonly unknown[]): Touched[] {
+  const out: Touched[] = [];
+  for (const raw of branch) {
+    const e = raw as { type?: unknown; timestamp?: unknown; message?: { role?: unknown; toolName?: unknown; isError?: unknown; details?: unknown } };
+    const m = e?.type === "message" ? e.message : undefined;
+    if (m?.role !== "toolResult" || !PLAY_TOOLS.has(m.toolName as string) || m.isError === true) continue;
+    const d = m.details as { id?: unknown; host?: unknown } | undefined;
+    const at = typeof e.timestamp === "string" ? Date.parse(e.timestamp) : NaN;
+    if (typeof d?.id === "string" && d.host === undefined && Number.isFinite(at)) out.push({ id: d.id, at });
+  }
+  return out;
+}
+
+/**
+ * The sessions in play: those the Overseer created or prompted (on the branch, and `prompted`, the
+ * server's own tracking since it started) and those a brief named, in the last 24 hours (the
+ * cleared window); the most recently touched first, at most IN_PLAY_MAX. Pure.
+ */
+export function sessionsInPlay(branch: readonly unknown[], now: number, prompted: readonly Touched[] = []): InPlay[] {
+  const by = new Map<string, InPlay>();
+  const get = (id: string) => by.get(id) ?? by.set(id, { id }).get(id)!;
+  for (const t of [...promptedOnBranch(branch), ...prompted]) {
+    if (now - t.at > CLEARED_WINDOW_MS) continue;
+    const p = get(t.id);
+    p.prompted = Math.max(p.prompted ?? 0, t.at);
+  }
+  for (const b of briefedBlockers(branch)) {
+    if (now - b.at > CLEARED_WINDOW_MS) continue;
+    const p = get(b.id);
+    if (!p.brief || b.at >= p.brief.at) p.brief = { kind: b.kind, at: b.at };
+  }
+  const touched = (p: InPlay) => Math.max(p.prompted ?? 0, p.brief?.at ?? 0);
+  return [...by.values()].sort((a, b) => touched(b) - touched(a)).slice(0, IN_PLAY_MAX);
+}
+
+const BADGE_WORDS: Record<NonNullable<SessionReadiness["badge"]>, string> = { ready: "ready", waiting: "waiting for the OK", merged: "merged", restart: "merged, restart pending" };
+
+/** Each worktree a session tracks, "branch <name> (<badge>)": the readiness badge for the worktree it
+    speaks for, else that worktree's own state (in-progress, blocked, stale…). None without readiness. */
+export function branchLabels(r: SessionReadiness | undefined): string[] {
+  if (!r) return [];
+  return r.trees.map((t) => `branch ${t.branch} (${r.badge && (r.branch === undefined || r.branch === t.branch) ? BADGE_WORDS[r.badge] : t.state})`);
+}
+
+/**
+ * The sessions-in-play part of the run note, or undefined when none is in play. `followUps` is the
+ * slot for the Overseer's open follow-ups (round 3 fills it); today nobody passes it.
+ */
+export function sessionsInPlayText(play: readonly InPlay[], session: (id: string) => SessionNow | null, now: number, followUps: readonly string[] = []): string | undefined {
+  const parts: string[] = [];
+  if (play.length) {
+    const rows = play.map((p) => {
+      const s = session(p.id);
+      if (!s) return `- ${p.id} — the session is gone`;
+      const bits = [linkTo(s.name, p.id), p.id, s.archived ? "archived" : (s.state ?? "idle"), ...(s.branches ?? [])];
+      if (p.prompted) bits.push(`you created or prompted it ${ago(p.prompted, now)}`);
+      if (p.brief) bits.push(`last brief: ${p.brief.kind} ${ago(p.brief.at, now)}`);
+      return `- ${bits.join(" · ")}`;
+    });
+    parts.push(["[sessions in play] Sessions you created, prompted or were briefed about in the last 24 hours, as of now. Still check one with sova_session before saying what it is doing:", ...rows].join("\n"));
+  }
+  // Round 3's open follow-ups go here, beside the sessions they watch.
+  if (followUps.length) parts.push(["[follow-ups] Your open follow-ups:", ...followUps.map((f) => `- ${f}`)].join("\n"));
+  return parts.length ? parts.join("\n\n") : undefined;
 }

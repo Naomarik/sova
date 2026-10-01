@@ -19,7 +19,7 @@ interface Action {
 export function OverviewActions(props: { onNewSession(): void }) {
   const actions: Action[] = [
     { id: "new", icon: "plus", title: "New Session", body: "Start a chat with pi in any folder or on any host.", run: () => props.onNewSession() },
-    { id: "access", icon: "external", title: "Access", body: "Get a code to unlock Sova on your other device.", run: () => { location.hash = "#/access"; } },
+    { id: "access", icon: "external", title: "Access", body: "Get a code to unlock Sova on another browser, another address, or your other device.", run: () => { location.hash = "#/access"; } },
   ];
   return (
     <section class="explain-section" aria-labelledby="overview-start-title">

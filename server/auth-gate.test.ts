@@ -97,6 +97,50 @@ describe("the token", () => {
   });
 });
 
+describe("a browser on this machine (a real loopback socket, headers as it sends them)", () => {
+  const NAV = { "Sec-Fetch-Site": "same-origin", "Sec-Fetch-Mode": "navigate" };
+
+  test("a same-origin navigation with no proxy header is answered and handed the cookie, no token asked", async () => {
+    const res = await get(PROTECTED, NAV);
+    assert.equal(res.status, 200);
+    const set = res.headers["set-cookie"];
+    assert.ok(set?.[0], "the answer sets the cookie");
+    assert.match(set[0], /^sova_token_[0-9a-f]{8}=[^;]+; HttpOnly; SameSite=Strict/);
+    const handed = set[0].split(";")[0]!;
+    assert.equal((await get(PROTECTED, { Cookie: handed })).status, 200, "the handed cookie carries the token");
+  });
+
+  test("a proxy header — the tailnet reaching this listener through loopback — still gets a 401 and no cookie", async () => {
+    const proxies: Array<Record<string, string>> = [{ "X-Forwarded-Host": "box.tail1234.ts.net" }, { "Tailscale-User-Login": "someone@example.com" }];
+    for (const proxy of proxies) {
+      const res = await get(PROTECTED, { ...NAV, ...proxy });
+      assert.equal(res.status, 401, JSON.stringify(proxy));
+      assert.equal(res.headers["set-cookie"], undefined);
+    }
+    // Cross-site and same-site stay refused, and a caller with no fetch metadata still needs the token.
+    assert.equal((await get(PROTECTED, { "Sec-Fetch-Site": "cross-site", "Sec-Fetch-Mode": "navigate" })).status, 403);
+    assert.equal((await get(PROTECTED, { "Sec-Fetch-Site": "same-site", "Sec-Fetch-Mode": "navigate" })).status, 403);
+    assert.equal((await get(PROTECTED)).status, 401);
+  });
+
+  test("a typed address or bookmark (Sec-Fetch-Site: none) navigates straight in, cookie on the document; the boot fetch rides it", async () => {
+    const res = await get(PROTECTED, { "Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document" });
+    assert.equal(res.status, 200);
+    const set = res.headers["set-cookie"];
+    assert.ok(set?.[0], "the cookie is on the document response");
+    const handed = set[0].split(";")[0]!;
+    const boot = await get(PROTECTED, { Cookie: handed, "Sec-Fetch-Mode": "same-origin" });
+    assert.equal(boot.status, 200);
+  });
+
+  test("a none request that is not a navigation still needs the token; a proxy header over a none navigation still refuses", async () => {
+    assert.equal((await get(PROTECTED, { "Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "same-origin" })).status, 401);
+    const res = await get(PROTECTED, { "Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate", "X-Forwarded-Host": "box.tail1234.ts.net" });
+    assert.equal(res.status, 401);
+    assert.equal(res.headers["set-cookie"], undefined);
+  });
+});
+
 describe("device credentials on the real listener", () => {
   test("pair and recovery are gated and local-only; a code exchanges once on the wired unlock route", async (t) => {
     const logs = ["log", "info", "warn", "error", "debug"].map((name) => t.mock.method(console, name as "log", () => {}));
@@ -237,8 +281,10 @@ describe("the allowed-origin set: exact scheme, host and port, never the host al
       assert.equal((await send("POST", "/", withCookie({ ...headers, "Content-Type": "application/x-www-form-urlencoded" }), "a=1")).status, 403, "a form POST navigation");
     }
     const sameNav = { "Sec-Fetch-Site": "none", "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document" };
-    assert.equal((await get(PROTECTED, sameNav)).status, 401, "a typed /api URL with no cookie: the token, not the origin");
-    assert.equal((await get(PROTECTED, withCookie(sameNav))).status, 200, "and with it");
+    // A typed /api URL with no cookie is a browser on this machine: the silent admit answers it
+    // and hands it the cookie (covered in detail below); with the cookie it is 200 either way.
+    assert.equal((await get(PROTECTED, sameNav)).status, 200, "a typed URL is this machine's own navigation");
+    assert.equal((await get(PROTECTED, withCookie(sameNav))).status, 200, "and with the cookie");
   });
 
   test("WS: 127.0.0.1:8999 with a valid cookie is a 403; the front door's origin opens", async (t) => {

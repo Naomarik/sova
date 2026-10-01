@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { describe, test } from "node:test";
 import type { SessionSummary } from "../shared/protocol";
-import { type AttentionRow, blockerKey, buildDigest, DIGEST_MAX, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerCount, blockerKey, buildDigest, DIGEST_MAX, openQuestionsText, sessionItems, STALE_MS, whereOf, workerErrorTime } from "./attention";
 import { workerErrorTimesOf } from "./live";
 
 const NOW = Date.parse("2026-09-25T12:00:00.000Z");
@@ -118,6 +118,18 @@ describe("attention: a worker error is acknowledged by seeing the session after 
   test("an archived session's seen worker error no longer brings it back; an unseen one does", () => {
     assert.deepEqual(kinds(row(summary("a", { archived: true, seenAt: ERR + 1 }), { failedWorkers: 1, workerErrorAt: ERR })), []);
     assert.deepEqual(kinds(row(summary("a", { archived: true, seenAt: ERR - 1 }), { failedWorkers: 1, workerErrorAt: ERR })), ["act:worker-error"]);
+  });
+
+  test("a turn the session finished after the error deals with it, unseen or not; one finished before does not", () => {
+    // Never seen, never on screen: the parent's later finished reply clears it.
+    assert.deepEqual(kinds(row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR + 1 })), []);
+    assert.deepEqual(buildDigest([row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR + 1 })], NOW).badge, { act: 0, decide: 0 });
+    // A reply at or before the error is not one after it.
+    assert.deepEqual(kinds(row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR })), ["act:worker-error"]);
+    assert.deepEqual(kinds(row(summary("p"), { failedWorkers: 1, workerErrorAt: ERR, lastReplyAt: ERR - 60_000 })), ["act:worker-error"]);
+    // A new error after that turn raises it again; an error of unknown time still shows.
+    assert.deepEqual(kinds(row(summary("p"), { failedWorkers: 2, workerErrorAt: ERR + 5000, lastReplyAt: ERR + 1 })), ["act:worker-error"]);
+    assert.deepEqual(kinds(row(summary("p"), { failedWorkers: 1, lastReplyAt: NOW })), ["act:worker-error"]);
   });
 
   test("acknowledging a worker error leaves the session's other items alone", () => {
@@ -305,5 +317,22 @@ describe("attention: decision signals (the list carries them only while unseen a
   test("Overseer and worker sessions never carry items, signals or not", () => {
     assert.deepEqual(kinds(row(summary("o", { overseer: true, signals: signals(["looping"]) }))), []);
     assert.deepEqual(kinds(row(summary("w", { workerSession: true, workerSignals: { stuck: 1 } }))), []);
+  });
+});
+
+describe("blockerCount: the count \"Brief me\" compares (§app.overseer/brief-repeat)", () => {
+  test("read back from the details sessionItems writes: open questions, failed subagents; 1 for any other kind", () => {
+    const align = (openQuestions: number) => ({ openDocs: 1, openQuestions, questionDocs: 1, lead: { id: "al_3", title: "Autonomy" } });
+    const items = (r: AttentionRow) => sessionItems(r, NOW, "/home/u");
+    const q = items(row(summary("q", { align: align(3) })));
+    assert.deepEqual(q.map((i) => [i.kind, blockerCount(i)]), [["open-questions", 3]]);
+    const merged = items(row(summary("m", { align: align(12), readiness: { trees: [], badge: "merged", since: NOW } })));
+    assert.equal(blockerCount(merged.find((i) => i.kind === "open-questions")!), 12, "the demoted item's words too");
+    const w = items(row(summary("w"), { failedWorkers: 4 }));
+    assert.deepEqual(w.map((i) => [i.kind, blockerCount(i)]), [["worker-error", 4]]);
+    const one = items(row(summary("w1"), { failedWorkers: 1 }));
+    assert.equal(blockerCount(one[0]!), 1);
+    const e = items(row(summary("e", { activity: { state: "error", error: "429 too many" } })));
+    assert.deepEqual(e.map((i) => [i.kind, blockerCount(i)]), [["error", 1]], "another kind's number in its detail is no count");
   });
 });

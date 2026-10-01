@@ -14,7 +14,7 @@ process.on("exit", () => rmSync(agentDir, { recursive: true, force: true }));
 process.env.PI_CODING_AGENT_DIR = agentDir;
 
 const { concurrencyRefusal, overseerTools, renderTranscript, TurnLimits, BUILTIN_ALLOWED } = await import("./overseer-tools");
-const { buildOverseerTools, countRunning, renderOverseerPrompt, briefDecision, BRIEF_MIN_GAP_MS } = await import("./overseer");
+const { buildOverseerTools, countRunning, renderOverseerPrompt, briefDecision, BRIEF_MIN_GAP_MS, BRIEF_REPEAT_MS } = await import("./overseer");
 const { DEFAULT_CAPS, readOverseerSettings } = await import("./overseer-store");
 const { disposeAllChats } = await import("./chat-manager");
 
@@ -215,30 +215,74 @@ describe("bounded, untrusted transcript reads", () => {
 describe("Brief me", () => {
   const base = { proactivity: "brief" as const, now: 10 * BRIEF_MIN_GAP_MS, lastBriefAt: 0, unattended: 0, overseerIdle: true };
 
-  test("the first look is a baseline: what is already blocked is not news", () => {
-    const d = briefDecision({ ...base, current: ["a:error"], announced: null });
+  const told = (entries: [string, number, number?][]) => new Map(entries.map(([k, count, clearedAt]) => [k, clearedAt === undefined ? { count } : { count, clearedAt }]));
+
+  test("the first look is a baseline: what is already blocked is not news, at its count then", () => {
+    const d = briefDecision({ ...base, current: ["a:error", "b:open-questions"], counts: new Map([["b:open-questions", 3]]), announced: null });
     assert.deepEqual(d.brief, []);
-    assert.deepEqual([...d.announced], ["a:error"]);
+    assert.deepEqual([...d.announced], [["a:error", { count: 1 }], ["b:open-questions", { count: 3 }]]);
   });
 
-  test("a new blocker briefs once; a cleared one that recurs is new again", () => {
-    let d = briefDecision({ ...base, current: ["a:error", "b:needs-input"], announced: new Set(["a:error"]) });
+  test("a new blocker briefs once; a standing one is not news again at the same or a lower count (§app.overseer/brief-repeat)", () => {
+    let d = briefDecision({ ...base, current: ["a:error", "b:needs-input"], announced: told([["a:error", 1]]) });
     assert.deepEqual(d.brief, ["b:needs-input"]);
     d = briefDecision({ ...base, current: ["a:error", "b:needs-input"], announced: d.announced });
     assert.deepEqual(d.brief, []);
-    d = briefDecision({ ...base, current: [], announced: d.announced });
-    d = briefDecision({ ...base, current: ["b:needs-input"], announced: d.announced });
-    assert.deepEqual(d.brief, ["b:needs-input"]);
+    const q = "s:open-questions";
+    d = briefDecision({ ...base, current: [q], counts: new Map([[q, 2]]), announced: told([[q, 3]]) });
+    assert.deepEqual(d.brief, [], "fewer questions than told");
+    assert.equal(d.announced.get(q)?.count, 3, "the count told stays the bar");
+    d = briefDecision({ ...base, current: [q], counts: new Map([[q, 3]]), announced: d.announced });
+    assert.deepEqual(d.brief, [], "back to the count told");
+  });
+
+  test("its count rising is news while it stands, and the brief raises the count told", () => {
+    const q = "s:open-questions";
+    let d = briefDecision({ ...base, current: [q], counts: new Map([[q, 4]]), announced: told([[q, 2]]) });
+    assert.deepEqual(d.brief, [q]);
+    assert.equal(d.announced.get(q)?.count, 4);
+    d = briefDecision({ ...base, current: [q], counts: new Map([[q, 4]]), announced: d.announced });
+    assert.deepEqual(d.brief, []);
+    // A worker error's failed count rises the same way.
+    const w = "s:worker-error";
+    assert.deepEqual(briefDecision({ ...base, current: [w], counts: new Map([[w, 2]]), announced: told([[w, 1]]) }).brief, [w]);
+  });
+
+  test("a told blocker that clears and returns within the hour is the same blocker; after an hour, or with more, it is news", () => {
+    const q = "s:open-questions";
+    const counts = new Map([[q, 2]]);
+    // It stands, then clears (the session runs a turn): remembered from that moment.
+    let d = briefDecision({ ...base, current: [], announced: told([[q, 2]]) });
+    assert.deepEqual([...d.announced], [[q, { count: 2, clearedAt: base.now }]]);
+    // Back 17 minutes later at the same count: not briefed, and standing again.
+    const back = base.now + 17 * 60_000;
+    d = briefDecision({ ...base, now: back, current: [q], counts, announced: d.announced });
+    assert.deepEqual(d.brief, []);
+    assert.deepEqual([...d.announced], [[q, { count: 2 }]]);
+    // Back with more questions within the hour: news.
+    const cleared = told([[q, 2, base.now]]);
+    assert.deepEqual(briefDecision({ ...base, now: back, current: [q], counts: new Map([[q, 3]]), announced: cleared }).brief, [q]);
+    // Back after the hour, same count: forgotten, so news.
+    const late = base.now + BRIEF_REPEAT_MS;
+    assert.deepEqual(briefDecision({ ...base, now: late, current: [q], counts, announced: cleared }).brief, [q]);
+    // One that stays cleared for the hour leaves the memory.
+    assert.deepEqual([...briefDecision({ ...base, now: late, current: [], announced: cleared }).announced], []);
+    assert.deepEqual([...briefDecision({ ...base, now: late - 1, current: [], announced: cleared }).announced], [[q, { count: 2, clearedAt: base.now }]]);
   });
 
   test("held back while the Overseer is busy, within 10 minutes of the last brief, after 30 unattended, or when not in brief mode", () => {
-    const announced = new Set<string>();
+    const announced = told([]);
     assert.deepEqual(briefDecision({ ...base, current: ["n"], announced, overseerIdle: false }).brief, []);
     assert.deepEqual(briefDecision({ ...base, current: ["n"], announced, lastBriefAt: base.now - 60_000 }).brief, []);
     assert.deepEqual(briefDecision({ ...base, current: ["n"], announced, unattended: 30 }).brief, []);
     // Held back is not forgotten: it briefs when the gate opens.
     const held = briefDecision({ ...base, current: ["n"], announced, overseerIdle: false });
     assert.deepEqual(briefDecision({ ...base, current: ["n"], announced: held.announced }).brief, ["n"]);
+    // A risen count held back stays news until a brief carries it: the bar stays the count told.
+    const q = "s:open-questions";
+    const heldRise = briefDecision({ ...base, current: [q], counts: new Map([[q, 5]]), announced: told([[q, 2]]), overseerIdle: false });
+    assert.equal(heldRise.announced.get(q)?.count, 2);
+    assert.deepEqual(briefDecision({ ...base, current: [q], counts: new Map([[q, 5]]), announced: heldRise.announced }).brief, [q]);
     // Badge-only mode keeps the baseline current, so switching to brief later does not dump old blockers.
     const badge = briefDecision({ ...base, proactivity: "badge", current: ["old"], announced });
     assert.deepEqual(briefDecision({ ...base, current: ["old"], announced: badge.announced }).brief, []);
@@ -595,5 +639,122 @@ describe("the confirm card on the Overseer's route calls (§app.overseer/org-peo
       { kind: "idea", id: "§i", title: "I" },
     ]);
     assert.deepEqual(JSON.parse(header), { people: ["p_1"], projects: ["prj_1"], sessions: ["s1"] });
+  });
+});
+
+describe("sova_alignment and the transcript's ALIGN rows (§app.overseer/alignment-read)", async () => {
+  const { applyAlignCall } = await import("../pi-config/extensions/mode/align.ts");
+  const { normalizeEntry } = await import("./transcript");
+  type Doc = import("../pi-config/extensions/mode/align.ts").AlignDocument;
+  const now = Date.parse("2026-10-01T10:00:00Z");
+  const env = { now: "2026-10-01T09:00:00.000Z", readFile: () => "" };
+  let docs: Doc[] = [];
+  let seq = 0;
+  /** An align call's result entry, normalized as the tool's transcript read gets it. */
+  const call = (input: unknown): TranscriptItem[] => {
+    const { details } = applyAlignCall(docs, input, env);
+    if (details.doc) docs = [...docs.filter((d) => d.id !== details.doc!.id), details.doc];
+    const id = `r${++seq}`;
+    return normalizeEntry({ type: "message", id, parentId: null, timestamp: env.now, message: { role: "toolResult", toolCallId: `c${id}`, toolName: "align", content: [{ type: "text", text: "echo" }], details: JSON.parse(JSON.stringify(details)), isError: false } });
+  };
+  const items: TranscriptItem[] = [
+    ...call({
+      ops: [
+        {
+          op: "create",
+          title: "Export",
+          summary: "Download a session.",
+          questions: [
+            { topic: "Format", ask: "Which file format?", options: [{ label: "JSONL", tradeoff: "one line per entry" }, { label: "CSV", tradeoff: "opens in a spreadsheet" }], recommendation: { choice: "JSONL", why: "lossless" } },
+            { topic: "Zip", ask: "Zip it?", recommendation: { choice: "no", why: "small files" } },
+            { topic: "Name", ask: "File name?", recommendation: { choice: "title", why: "readable" } },
+          ],
+        },
+      ],
+    }),
+    ...call({ ops: [{ op: "create", title: "Pane", summary: "Show workers.", questions: [{ topic: "Cap", ask: "How many?", recommendation: { choice: "8", why: "fits" } }] }] }),
+    ...call({ doc: "al_1", ops: [{ op: "decide", q: "q1", decision: "CSV, for the spreadsheet" }, { op: "drop_question", q: "q3", reason: "the title is always used" }] }),
+    ...call({ doc: "al_2", ops: [{ op: "accept_all" }, { op: "status", to: "done" }] }),
+    ...call({ ops: [{ op: "exempt", reason: "a question, no change" }] }),
+  ];
+  const s = { id: "s1", path: "/s/s1.jsonl", title: "Export work", archived: false } as SessionSummary;
+  const tool = (align?: SessionSummary["align"]) => {
+    const host = {
+      session: async (ref: string) => (ref === "s1" ? { ...s, ...(align ? { align } : {}) } : null),
+      transcript: async () => items,
+      confirmed: () => null,
+      attended: () => false,
+    } as unknown as OverseerToolHost;
+    return overseerTools(host, new TurnLimits()).find((t) => t.name === "sova_alignment")!;
+  };
+  const run = async (params: Record<string, unknown>, align?: SessionSummary["align"]) =>
+    ((await tool(align).execute("t", params, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+
+  test("every open alignment: each question's state, ask, lettered options, recommendation and decision; dropped as one line; untrusted", async () => {
+    const out = await run({ session: "s1" }, { openDocs: 1, openQuestions: 1, questionDocs: 1 });
+    assert.match(out, /^<<untrusted content from another session: "Export work" \(s1\)/);
+    assert.ok(out.endsWith("<<end of untrusted content>>"));
+    assert.ok(out.includes("The session waits on the user's answers now."), out);
+    assert.ok(out.includes('al_1 "Export" · aligning · 1 of 2 open'), out);
+    assert.ok(out.includes("  Summary: Download a session."));
+    assert.ok(out.includes("  q1 Format — decided\n    Ask: Which file format?\n    a. JSONL — one line per entry\n    b. CSV — opens in a spreadsheet\n    Recommendation: a — JSONL — lossless\n    Decision (the user, "), out);
+    assert.ok(out.includes("): CSV, for the spreadsheet"));
+    assert.ok(out.includes("  q2 Zip — open\n    Ask: Zip it?\n    Recommendation: no — small files"), out);
+    assert.ok(out.includes("  q3 Name — dropped: the title is always used"));
+    assert.ok(!out.includes("al_2"), "a done alignment is left out without doc");
+  });
+
+  test("doc reads one alignment in any state; an id the branch lacks refuses naming the ones it has; not waiting is said", async () => {
+    const done = await run({ session: "s1", doc: "al_2" });
+    assert.ok(done.includes('al_2 "Pane" · done · all 1 decided'), done);
+    assert.ok(done.includes("Decision (the recommendation accepted"), done);
+    assert.ok(done.includes("not waiting on the user's answers"));
+    assert.ok(!done.includes("al_1"));
+    await assert.rejects(run({ session: "s1", doc: "al_9" }), /No alignment al_9 in that session; it has al_1, al_2\./);
+  });
+
+  test("a session with no open alignment says so in one line", async () => {
+    const { alignmentText } = await import("./align-state");
+    assert.equal(alignmentText([], { waits: false }), "No open alignment in this session.");
+  });
+
+  test("a transcript read shows each changing align call as one ALIGN row, and an exemption", () => {
+    const out = renderTranscript(items, { from: "start", items: 40, chars: 12000, title: "T", id: "x" });
+    const rows = out.split("\n").filter((l) => l.startsWith("ALIGN: "));
+    assert.deepEqual(rows, [
+      'ALIGN: al_1 "Export" · aligning · 3 of 3 open · created',
+      'ALIGN: al_2 "Pane" · aligning · 1 of 1 open · created',
+      'ALIGN: al_1 "Export" · aligning · 1 of 2 open · q1 decided · q3 dropped',
+      'ALIGN: al_2 "Pane" · done · all 1 decided · q1 accepted · → done',
+      "ALIGN: exempt — a question, no change",
+    ]);
+    assert.ok(!out.includes("Which file format?"), "the row never carries the questions");
+  });
+});
+
+describe("sova_list_sessions rows say each worktree's branch (§app.overseer/sessions-in-play)", () => {
+  test("'branch <name> (<badge>)' for the worktree the badge speaks for, the state for the others", async () => {
+    const base = { id: "s1", path: "/s/s1.jsonl", title: "T", cwd: "/w", model: null, lastActiveAt: new Date().toISOString(), live: null, busy: false, origin: "web", archived: false };
+    const sessions = [
+      {
+        ...base,
+        readiness: {
+          trees: [
+            { path: "/wt/a", branch: "feat/a", state: "ready" },
+            { path: "/wt/b", branch: "feat/b", state: "blocked" },
+          ],
+          badge: "ready",
+          branch: "feat/a",
+          since: 0,
+        },
+      },
+      { ...base, id: "s2", path: "/s/s2.jsonl" },
+    ] as unknown as SessionSummary[];
+    const host = { sessions: async () => sessions, confirmed: () => null, attended: () => false } as unknown as OverseerToolHost;
+    const list = overseerTools(host, new TurnLimits()).find((t) => t.name === "sova_list_sessions")!;
+    const text = ((await list.execute("t", {}, undefined, undefined, undefined as never)).content[0] as { text: string }).text;
+    const [row1, row2] = text.split("\n").filter((l) => l.startsWith("- "));
+    assert.ok(row1!.endsWith(" · branch feat/a (ready) · branch feat/b (blocked)"), row1);
+    assert.ok(!row2!.includes("branch"), row2);
   });
 });

@@ -11032,7 +11032,9 @@
         "server/index.ts",
         "src/components/AccessPage.tsx",
         "src/components/OverviewActions.tsx",
-        "src/components/Unlock.tsx"
+        "src/components/Unlock.tsx",
+        "src/lib/qr.test.ts",
+        "src/lib/qr.ts"
       ]
     }
   },

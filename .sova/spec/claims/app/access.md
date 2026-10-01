@@ -174,6 +174,18 @@ own cookie. The code is a secret in its own right and is treated as one.
   browser never sends to the server, and posted once to `POST /api/auth/unlock` — the same route a
   token uses. A good code sets the cookie and is consumed; a bad, spent or expired one is refused
   with the same 401 a bad token gets, and a spent code is never accepted twice.
+- **Every address a device can use.** The answer names each of them, as its own link: the origin
+  the minting page is served from, and the tailnet's own HTTPS address — this host's serve URL when
+  it has one, else `https://<its MagicDNS name>:8443` — with its port. Never a bare IP address, and
+  never http for the tailnet one. A code is exchanged at whichever of those origins the other
+  device opens, so one code serves every link; an address this server cannot know is simply absent,
+  and a page with no reachable-from-elsewhere link says so rather than offering a loopback one to a
+  phone that cannot open it.
+- **The phone's way in is the tailnet link.** The page leads with the address another device can
+  reach — the tailnet HTTPS one — and renders it as a **QR** the phone scans, drawn in the page
+  itself from a vendored encoder (no external service, no image request), with a copy control
+  beside every other address. The QR carries a live single-use code, so the page keeps saying the
+  link is private.
 - **Who may mint.** Only a browser the gate already trusts: the route is behind the gate like every
   other, and it is **local-only** — a call carrying `c.env.meshPeer` (the peer listener) or a
   relayed one is refused, so a paired peer cannot mint itself the owner's credential.

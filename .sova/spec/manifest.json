@@ -10373,6 +10373,39 @@
         "src/lib/project-page.test.ts",
         "src/projects.css"
       ]
+    },
+    "§chat.merge-round/private-names": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        ".sova/playbooks/merge-round/discover-names.mjs",
+        ".sova/playbooks/merge-round/discover-names.test.mjs",
+        ".sova/playbooks/merge-round/leak-scan.mjs",
+        ".sova/playbooks/merge-round/leak-scan.test.mjs"
+      ],
+      "requires": []
+    },
+    "§chat.merge-round/round": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        ".sova/playbooks/merge-round/PLAYBOOK.md"
+      ],
+      "requires": [
+        "§chat.schedules/fire",
+        "§chat.worktrees/readiness",
+        "§chat.profiles/singleton"
+      ]
+    },
+    "§chat/merge-round": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        ".sova/playbooks/merge-round/PLAYBOOK.md"
+      ]
     }
   },
   "boundary": {

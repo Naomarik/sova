@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// The merge round's check before a push (PLAYBOOK.md, step 3): scans the commits about to be pushed
+// The merge round's check before a push (PLAYBOOK.md; round.mjs push runs it): scans the commits about to be pushed
 // (diff lines they add, their messages, the names of files they add) for secrets and for the
 // private names in `<state root>/merge-round.json`. Node builtins only.
 //
-//   node leak-scan.mjs [--range origin/master..master] [--repo <dir>]
+//   node scripts/leak-scan.mjs [--range origin/master..master] [--repo <dir>]
 //
 // Exit 0: clean. Exit 1: hits, one line each: commit, file and line, and which private name (the
 // list's line number) or which secret pattern. The matched text is never printed: a transcript can

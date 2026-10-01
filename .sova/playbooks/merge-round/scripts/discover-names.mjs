@@ -3,7 +3,7 @@
 // never reach the public repo, and merges it into `<state root>/merge-round.json`, the list
 // leak-scan.mjs checks every push against. Node builtins only.
 //
-//   node discover-names.mjs [--dry-run] [--show] [--repo <dir>]
+//   node scripts/discover-names.mjs [--dry-run] [--show] [--repo <dir>]
 //                           [--add-kind <kind> --add <value>]... [--add-file <file>]
 //
 // Sources, each a kind: this host's name and home path; `tailscale status --json` (skipped silently

@@ -1,4 +1,4 @@
-// Run: node --test .sova/playbooks/merge-round/discover-names.test.mjs
+// Run: node --test .sova/playbooks/merge-round/tests/discover-names.test.mjs
 // The merge round's name discovery: it finds each kind in fixtures under a temporary agent dir and
 // HOME (never the real ~/.pi), drops public and generic terms, merges additively at 0600, takes the
 // user's own names, flags names origin already has, and never prints a value without --show.
@@ -10,8 +10,8 @@ import { delimiter, join } from "node:path";
 import { after, test } from "node:test";
 import { fileURLToPath } from "node:url";
 
-const DISCOVER = fileURLToPath(new URL("./discover-names.mjs", import.meta.url));
-const SCAN = fileURLToPath(new URL("./leak-scan.mjs", import.meta.url));
+const DISCOVER = fileURLToPath(new URL("../scripts/discover-names.mjs", import.meta.url));
+const SCAN = fileURLToPath(new URL("../scripts/leak-scan.mjs", import.meta.url));
 const dir = mkdtempSync(join(tmpdir(), "discover-names-"));
 after(() => rmSync(dir, { recursive: true, force: true }));
 const agent = join(dir, "agent");

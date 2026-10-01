@@ -8,6 +8,7 @@ import type { Duplex } from "node:stream";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { Context } from "hono";
 import { consumeCode, mintCode } from "./auth-devices";
+import { isDirectLocal } from "./compression";
 import { DEFAULT_SERVE_PORT } from "./mesh/front-door";
 import { localRequest } from "./mesh/proxy";
 
@@ -359,12 +360,52 @@ function refusal(status: 401 | 403) {
   return problem ? { error: problem, locked: true, hint: problem } : REFUSALS[401];
 }
 
+/** The install's cookie on an answer that earns it, as it rides from then on. */
+const setAuthCookie = (c: Context, token: string): void => {
+  const secure = servedOverHttps(c) ? "; Secure" : "";
+  c.header("Set-Cookie", `${AUTH_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}${secure}`);
+  c.header("Cache-Control", "no-store");
+};
+
+/** "A browser on this machine is not asked": the request a person makes by opening the app's own
+    address at the keyboard. The socket is loopback and carries NO proxy header at all
+    (isDirectLocal) — the proxy headers are what separate this machine's browser from the tailnet,
+    which reaches this listener through loopback via `tailscale serve` — the Host names this
+    process's own port, and the fetch metadata is the browser's own navigation: `Sec-Fetch-Mode:
+    navigate` with `Sec-Fetch-Site` either `same-origin` (a link inside the app) or `none` (a
+    typed address or a bookmark, which is how a person usually arrives). The Sec-Fetch headers are
+    forbidden to fetch and forms, so a page cannot forge them. `none` grants nothing more: a write
+    still can't ride it in, because the cookie is SameSite=Strict and the silent path only ever
+    hands the cookie to the browser that just navigated here — never answers a fetch for one.
+    Everything else — a proxy-headered request, a cross-site or same-site one, a socket upgrade, a
+    curl with no metadata — keeps the rules above, token included. */
+function silentLocal(a: Asked, incoming: unknown): boolean {
+  if (a.method !== "GET" && a.method !== "HEAD") return false;
+  const site = a.header("sec-fetch-site");
+  if ((site !== "same-origin" && site !== "none") || a.header("sec-fetch-mode") !== "navigate") return false;
+  const port = /:(\d+)$/.exec(a.header("host") ?? "")?.[1];
+  if (Number(port ?? 80) !== listenPort) return false;
+  return isDirectLocal(incoming as IncomingMessage);
+}
+
 /** The gate for a main-listener request: null to answer it, else the refusal to send. A call with
     no socket (app.request) or from the peer listener (c.env.meshPeer) is never asked. */
 export function authGate(c: Context): Response | null {
   const env = c.env as { incoming?: unknown; meshPeer?: unknown } | undefined;
   if (!env?.incoming || env.meshPeer) return null;
-  const status = verdict({ method: c.req.method, path: new URL(c.req.url).pathname, header: (n) => c.req.header(n) }, { exempt: true });
+  const a: Asked = { method: c.req.method, path: new URL(c.req.url).pathname, header: (n: string) => c.req.header(n) };
+  const status = verdict(a, { exempt: true });
+  // A browser on this machine opening the app's own address is answered — and handed the install's
+  // cookie — instead of meeting the unlock screen (silentLocal says why it's only the person at
+  // the keyboard). A foreign host or cross-site request (a 403) never earns it, and a damaged
+  // token file stays the recovery refusal below.
+  if (status !== 403 && silentLocal(a, env.incoming)) {
+    const token = initAuthToken().token;
+    if (token) {
+      setAuthCookie(c, token);
+      return null;
+    }
+  }
   if (!status) return null;
   return new Response(JSON.stringify(refusal(status)), {
     status,
@@ -434,9 +475,7 @@ export async function unlock(c: Context): Promise<Response> {
     (typeof body?.code === "string" && consumeCode(body.code))
   );
   if (!authorized) return c.json(refusal(401), 401);
-  const secure = servedOverHttps(c) ? "; Secure" : "";
-  c.header("Set-Cookie", `${AUTH_COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}${secure}`);
-  c.header("Cache-Control", "no-store");
+  setAuthCookie(c, token);
   return c.json({ ok: true });
 }
 

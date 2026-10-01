@@ -51,7 +51,7 @@ export async function postUnlock(token: string, fetchImpl: typeof fetch = fetch,
 }
 
 const FAILURE: Record<Exclude<UnlockResult, "ok">, string> = {
-  refused: "That token wasn't accepted. Run sova token on the machine Sova runs on and paste what it prints.",
+  refused: "That token wasn't accepted. Paste exactly what the token file holds: ~/.pi/agent/sova/auth-token on the machine Sova runs on, or sova/auth-token under the server's PI_CODING_AGENT_DIR.",
   unreachable: "The Sova server isn't reachable.",
 };
 

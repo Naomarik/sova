@@ -278,8 +278,11 @@ yet (add it under the gateway's **Accept links from**), or it can't be reached.
 
 A headless gateway, such as a VPS whose page you only reach over ssh, can be set through its own
 API on its main port (4800 by default, bound to `127.0.0.1`). The API refuses requests that come
-through the mesh or a proxy, and like every main-port request it needs the install's token
-(`sova token` prints it). Over ssh on the gateway:
+through the mesh or a proxy, and like every main-port request it needs the install's token. With
+the installer's launcher, `sova token` prints it, as the commands below use; from a source checkout
+without the launcher, `pnpm run auth:token` (or `node scripts/sova-token.mjs`) prints it, or read
+the token file, `~/.pi/agent/sova/auth-token` (`$PI_CODING_AGENT_DIR/sova/auth-token`). Over ssh on
+the gateway:
 
 ```sh
 curl -fsS -X PUT http://127.0.0.1:4800/api/public-links -H "x-sova-token: $(sova token)" \

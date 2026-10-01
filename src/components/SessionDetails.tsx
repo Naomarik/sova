@@ -43,8 +43,8 @@ const wrapMono = { margin: 0, "overflow-wrap": "anywhere" } as const;
 /**
  * What a session is, read-only: the session pane's Session tab (what it has spent is the Usage
  * tab's, SessionUsage.tsx). Its parent owns the data and the scroll box; this renders sections as
- * siblings for a flex column with gaps. Repository and Worktrees sit above Identity and hold about
- * their settled height while they load, so Identity's buttons don't move under the pointer.
+ * siblings for a flex column with gaps. The session's two actions sit at the right end of the Path
+ * heading row, above everything that loads, so they don't move under the pointer.
  *
  *   path      the session file (shown and copyable)
  *   insight   the session's insight, or null before the first load
@@ -96,9 +96,31 @@ export function SessionDetails(props: {
 
       {/* 1 · Path. The one fact the user came here to copy. */}
       <section class="stack-2" aria-labelledby={id("path")}>
-        <h3 class="text-eyebrow" id={id("path")}>
-          Path
-        </h3>
+        <div class="spread session-path-head">
+          <h3 class="text-eyebrow" id={id("path")}>
+            Path
+          </h3>
+          <Show when={summary()}>
+            {(s) => (
+              /* Archiving is ours to define only for sessions Sova started (it closes their
+                 runtime); grouping is Sova's own bookkeeping for any session. */
+              <div class="cluster session-actions">
+                <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged()} compact />
+                <Show when={s().origin === "web"}>
+                  <ArchiveAction
+                    session={s()}
+                    archived={archived()}
+                    working={Math.max(sessionWorking(s()), working())}
+                    onDone={(next) => {
+                      setArchivedNow(next);
+                      props.onArchiveChanged(props.path, next);
+                    }}
+                  />
+                </Show>
+              </div>
+            )}
+          </Show>
+        </div>
         <p class="text-mono" style={wrapMono}>
           {props.path}
         </p>
@@ -198,25 +220,6 @@ export function SessionDetails(props: {
                 )}
               </Show>
             </dl>
-            {/* Archiving is ours to define only for sessions Sova started (it closes their
-                runtime); grouping is Sova's own bookkeeping for any session. */}
-            <div class="cluster">
-              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged()} />
-              {/* The same assignment, read as a place to work: file it and open that group's
-                  workspace with this session focused. */}
-              <MoveToGroupMenu session={s()} onChanged={() => props.onGroupsChanged()} variant="beside" />
-              <Show when={s().origin === "web"}>
-                <ArchiveAction
-                  session={s()}
-                  archived={archived()}
-                  working={Math.max(sessionWorking(s()), working())}
-                  onDone={(next) => {
-                    setArchivedNow(next);
-                    props.onArchiveChanged(props.path, next);
-                  }}
-                />
-              </Show>
-            </div>
           </section>
         )}
       </Show>
@@ -793,13 +796,13 @@ function ArchiveAction(props: { session: SessionSummary; archived: boolean; work
   return (
     <button
       type="button"
-      class={props.archived ? "button" : "button button-destructive"}
-      title={blocked() ?? undefined}
+      class={props.archived ? "button button-sm session-action" : "button button-sm button-destructive session-action"}
+      title={blocked() ?? (props.archived ? "Unarchive Session" : "Archive Session")}
+      aria-label={props.archived ? "Unarchive Session" : "Archive Session"}
       aria-disabled={blocked() || pending() ? "true" : undefined}
       onClick={click}
     >
-      <Icon name="archive" />
-      {props.archived ? "Unarchive Session" : "Archive Session"}
+      <Icon name={props.archived ? "undo" : "trash"} small />
     </button>
   );
 }

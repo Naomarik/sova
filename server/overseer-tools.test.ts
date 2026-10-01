@@ -126,6 +126,42 @@ describe("the prompt and the tool set stay in step", () => {
     );
   });
 
+  test("sova_card: per-row choices with no answer option, a long note cut and named in the echo, and card on a create read as replaces", async () => {
+    const { addTodo } = await import("./overseer-todos");
+    const a = addTodo({ text: "Clean the worktree" });
+    const b = addTodo({ text: "Just file it" });
+    const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
+    const branch: unknown[] = [];
+    const ctx = { sessionManager: { getBranch: () => branch, getSessionId: () => "sess-rows" } };
+    const long = `${"Long note. ".repeat(25)}End.`;
+    const out = await card.execute(
+      "r1",
+      {
+        ops: [
+          {
+            op: "create",
+            title: "Tidy?",
+            choices: ["Do It", "Skip"],
+            items: { todos: [{ id: a.id, note: long, default: "a", choices: ["Clean Up & Tick", "Tick Only", "Skip"] }, { id: b.id, note: "Short.", default: "b" }] },
+          },
+        ],
+      },
+      undefined,
+      undefined,
+      ctx as never,
+    );
+    const c = out.details.card;
+    assert.deepEqual(c.options, [], "no fake Apply option");
+    assert.deepEqual(c.items.map((it: { choices?: { label: string }[] }) => it.choices?.length), [3, undefined]);
+    assert.equal(c.items[0].note.length, 220);
+    const text = (out.content[0] as { text: string }).text;
+    assert.match(text, new RegExp(`Notes over 220 characters were cut with "…" \\(item, length\\): ${a.id} \\(${long.length}\\)`));
+    assert.match(text, /\[choices a\. Clean Up & Tick · b\. Tick Only · c\. Skip\] \[default a\]/);
+    const again = await card.execute("r2", { card: c.id, ops: [{ op: "create", title: "Tidy fewer?", options: [{ label: "Go" }] }] }, undefined, undefined, ctx as never);
+    assert.equal(again.details.card.replaces, c.id);
+    assert.equal(again.details.closed.phase, "superseded");
+  });
+
   test("sova_card link options resolve like sova_navigate, plus https; anything else refuses the card", async () => {
     const card = buildOverseerTools().find((t) => t.name === "sova_card")!;
     const out = await card.execute(
@@ -332,7 +368,7 @@ describe("card items", async () => {
   const { cardLines, displayOrder } = await import("../shared/overseer-card");
   /** The card echo's item lines, as the model reads them (items numbered in display order). */
   const echo = (items: Awaited<ReturnType<typeof resolveConfirmItems>>) =>
-    cardLines({ id: "c_1", title: "t", options: [{ label: "Go" }], items: displayOrder(items).map((it, i) => ({ ...it, n: i + 1 })), phase: "open", rev: 1, createdAt: now, updatedAt: now }, "").join("\n");
+    cardLines({ id: "c_1", title: "t", options: [{ label: "Go" }], items: displayOrder(items).map(({ choices: _own, ...it }, i) => ({ ...it, n: i + 1 })), phase: "open", rev: 1, createdAt: now, updatedAt: now }, "").join("\n");
   const { CONFIRM_NOTE_MAX } = await import("../shared/protocol");
   const now = "2026-09-20T10:00:00.000Z";
   const sessions: Record<string, SessionSummary> = {
@@ -399,13 +435,28 @@ describe("card items", async () => {
     assert.ok(!("note" in items[1]!), "no note, no key");
   });
 
-  test(`a note over ${CONFIRM_NOTE_MAX} characters refuses the card and names its item`, async () => {
+  test(`a note over ${CONFIRM_NOTE_MAX} characters is cut with "…", never refused, and each cut note is named with its length`, async () => {
     const long = "x".repeat(CONFIRM_NOTE_MAX + 1);
-    await assert.rejects(
-      resolveConfirmItems({ sessions: [{ id: "s1", note: "fine" }, { id: "s2", note: long }], todos: [{ id: "td_aaaaaaaa", note: long }] }, lookup, refusal),
-      (err: Error) => err.message.includes(`s2 (${CONFIRM_NOTE_MAX + 1}), td_aaaaaaaa (${CONFIRM_NOTE_MAX + 1})`) && !err.message.includes("s1 (") && /at most 220 characters/.test(err.message),
-    );
-    assert.equal((await resolveConfirmItems({ sessions: [{ id: "s1", note: "y".repeat(CONFIRM_NOTE_MAX) }] }, lookup, refusal))[0]!.note!.length, CONFIRM_NOTE_MAX);
+    const cut: string[] = [];
+    const items = await resolveConfirmItems({ sessions: [{ id: "s1", note: "fine" }, { id: "s2", note: long }], todos: [{ id: "td_aaaaaaaa", note: long }] }, lookup, refusal, cut);
+    assert.deepEqual(cut, [`s2 (${CONFIRM_NOTE_MAX + 1})`, `td_aaaaaaaa (${CONFIRM_NOTE_MAX + 1})`]);
+    const s2 = items.find((i) => i.id === "s2")!.note!;
+    assert.equal(s2.length, CONFIRM_NOTE_MAX);
+    assert.ok(s2.endsWith("…") && s2.startsWith("x".repeat(CONFIRM_NOTE_MAX - 1)));
+    assert.equal(items.find((i) => i.id === "s1")!.note, "fine");
+    const exact: string[] = [];
+    assert.equal((await resolveConfirmItems({ sessions: [{ id: "s1", note: "y".repeat(CONFIRM_NOTE_MAX) }] }, lookup, refusal, exact))[0]!.note!.length, CONFIRM_NOTE_MAX);
+    assert.deepEqual(exact, [], "a note of exactly the limit is not cut");
+    // A refused card reports no cut: nothing was shown.
+    const refused: string[] = [];
+    await assert.rejects(resolveConfirmItems({ sessions: [{ id: "s2", note: long }, "zz"] }, lookup, refusal, refused), /These ids match nothing/);
+    assert.deepEqual(refused, []);
+  });
+
+  test("an entry's own choices ride along to the card model unchecked; its default is lowercased", async () => {
+    const items = await resolveConfirmItems({ sessions: [{ id: "s1", default: "C", choices: ["Clean Up & Archive", "Archive Only", "Keep"] }, "s2"] }, lookup, refusal);
+    assert.deepEqual(items.map((i) => [i.id, i.default, i.choices]), [["s1", "c", ["Clean Up & Archive", "Archive Only", "Keep"]], ["s2", undefined, undefined]]);
+    assert.ok(!("choices" in items[1]!), "no choices, no key");
   });
 
   test("the overseer's own conversation is refused by name, whatever form names it", async () => {

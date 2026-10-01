@@ -8,6 +8,7 @@ import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
+import type { OverseerCard } from "./overseer-card";
 export type { WakeInfo };
 
 export interface SessionSummary {
@@ -1868,6 +1869,11 @@ export interface OlderSummary {
       and its row, only those not done or dropped, the last touched last. Absent when none (and
       from older servers). A newer revision in the rows after them takes its place. */
   aligns?: { doc: AlignDocInfo; rowId: string }[];
+  /** The Overseer's cards open among them (§app.overseer/confirm, the composer chip): each card's
+      newest snapshot there and the row that shows it (its sova_card call's row), only those still
+      open, the last touched last. Absent when none (and from older servers). A newer snapshot in
+      the rows after them takes its place, as for aligns. */
+  cards?: { card: OverseerCard; rowId: string }[];
 }
 
 /**

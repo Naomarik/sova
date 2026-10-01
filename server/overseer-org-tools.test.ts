@@ -567,7 +567,7 @@ describe("the confirm card: people and projects, and the click that opens a conf
     await assert.rejects(() => confirm.resolveConfirmItems({ people: [{ org: org.id, id: "Nobody" }] }, lookup, refusal), /These ids match nothing \(people: Nobody in /);
     const noOrgs = { ...lookup, person: undefined, project: undefined };
     await assert.rejects(() => confirm.resolveConfirmItems({ people: [{ org: org.id, id: "Lee Chan" }] }, noOrgs, refusal), /items takes only sessions, ideas and todos/);
-    const echo = cardLines({ id: "c_1", title: "t", options: [{ label: "Go" }], items: rows.map((it, i) => ({ ...it, n: i + 1 })), phase: "open", rev: 1, createdAt: "x", updatedAt: "x" }, "").join("\n");
+    const echo = cardLines({ id: "c_1", title: "t", options: [{ label: "Go" }], items: rows.map(({ choices: _own, ...it }, i) => ({ ...it, n: i + 1 })), phase: "open", rev: 1, createdAt: "x", updatedAt: "x" }, "").join("\n");
     assert.match(echo, /  1\. project Portal \(prj_[a-z0-9]+\) in Cardco \(org_[a-z0-9]+\) — Its site\.\n  2\. Lee Chan \(p_[a-z0-9]+, active\) in Cardco/);
   });
 

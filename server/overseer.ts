@@ -1,5 +1,5 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { closeSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from "node:fs";
+import { closeSync, mkdirSync, openSync, readFileSync, readSync, statSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
@@ -82,6 +82,7 @@ import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
 import type { PeerLinkRead } from "../shared/mesh-links";
 import { activeBranch, normalizeEntries, parseLines, readActiveBranch } from "./transcript";
+import { archiveWorktrees } from "./archive-worktrees";
 import { markOwned } from "./write-guard";
 import { signalTextOf, teamStallOf } from "./signals-store";
 import { readDecisionSettings } from "./decide-settings";
@@ -613,6 +614,7 @@ const host: OverseerToolHost = {
     peerPoll.unref?.();
   },
   links: meshLinks,
+  worktrees: archiveWorktrees(readActiveBranch),
   runningStarted: () => countRunning(started, running, promptedAt),
   counted: (path) => countRunning(started.has(path) ? [path] : [], running, promptedAt) > 0,
   attended: () => turns.attended(),
@@ -751,8 +753,24 @@ export async function revokePermit(id: string): Promise<{ ok: true } | { ok: fal
 /** before_agent_start's hidden open-cards note for a branch (§app.overseer/confirm), or nothing when
     no card is open. Shared with the project overseer. */
 export function cardsNoteMessage(branch: readonly unknown[]): { message: { customType: string; content: string; display: false } } | undefined {
-  const note = cardsNote(foldCards(branch));
+  const note = cardsNote(foldCards(branch), false, sessionActivity());
   return note ? { message: { customType: CARDS_NOTE_MESSAGE, content: note, display: false } } : undefined;
+}
+
+/** When a session was last active (its file's mtime, as the session list says), by id, for the
+    cards note's "may be stale" lines; paths come from the listing cache, so an id it doesn't hold
+    reads as unknown. Shared with the project overseer. */
+export function sessionActivity(): (sessionId: string) => string | undefined {
+  const paths = indexedSessionPaths();
+  return (id) => {
+    const path = paths.get(id);
+    if (!path) return undefined;
+    try {
+      return new Date(statSync(path).mtimeMs).toISOString();
+    } catch {
+      return undefined;
+    }
+  };
 }
 
 /** An in-process call exactly as the Overseer's tools make it. Exported for the tests. */
@@ -887,7 +905,7 @@ setOverseerRuntime({
               });
               // A compaction summarizes the card results away: the exact open cards, once, after it.
               pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true);
+                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true, sessionActivity());
                 if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               // Worker reports and other extension messages reach the model redacted, like every tool's output.

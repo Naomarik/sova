@@ -3,7 +3,8 @@ import type { TmpAttachment } from "../../shared/protocol";
 import { renderMarkdown, type RenderedMarkdown, type RenderedVisual } from "../lib/markdown";
 import { activatePathChip } from "../lib/path-attachments";
 import { sessionIndexVersion } from "../lib/session-links";
-import { announce, openLightbox } from "../lib/ui-state";
+import { announce, openLightbox, toast } from "../lib/ui-state";
+import { scrollToCardId, useCardJump } from "../lib/card-refs";
 import { render } from "solid-js/web";
 import { createMarkdownPatcher } from "../vis/hydrate";
 import { Visual } from "../vis/Visual";
@@ -17,6 +18,7 @@ import { Visual } from "../vis/Visual";
  * the `vis` drawings mounted in them, survive each streaming frame.
  */
 export function Markdown(props: { text: string; streaming?: boolean; attachments?: TmpAttachment[] }) {
+  const jumpToCard = useCardJump();
   const [rendered, setRendered] = createSignal<RenderedMarkdown>(renderMarkdown(props.text, !!props.streaming, props.attachments));
   let frame = 0;
   onCleanup(() => cancelAnimationFrame(frame));
@@ -80,6 +82,15 @@ export function Markdown(props: { text: string; streaming?: boolean; attachments
         if (copyButton) return void copy(copyButton);
         const chip = target.closest<HTMLElement>(".path-chip");
         if (chip) return activatePathChip(chip);
+        // A card ref jumps to the card in this chat's thread; it never moves the route.
+        const ref = target.closest<HTMLAnchorElement>("a[data-card-ref]");
+        if (ref) {
+          e.preventDefault();
+          const id = ref.dataset.cardRef!;
+          if (jumpToCard) jumpToCard(id);
+          else if (!scrollToCardId(id)) toast("That card isn't in the transcript on screen.");
+          return;
+        }
         const thumb = target.closest<HTMLButtonElement>("button.thumb[data-md-image]");
         const img = thumb?.querySelector("img");
         if (thumb && img) openLightbox([{ src: img.src, alt: img.alt }], 0, thumb);

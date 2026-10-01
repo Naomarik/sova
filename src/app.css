@@ -604,16 +604,25 @@ html, body { overflow: clip; overscroll-behavior: none; }
 
 /* §chat.worktrees/merge-card: one merge the session recorded, as a quiet card in the thread. */
 .worktree-merge { padding: var(--space-3) var(--space-4); display: grid; gap: var(--space-1); }
+/* Review Changes ends the head, as on the show_changes card: the head's text grows and pushes it to
+   the right edge, and when the column is narrow it wraps onto its own row, at the left. The bottom
+   padding gives the button the same room below it as above. */
 .worktree-merge-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2) var(--space-3);
+  padding-bottom: var(--space-1);
+}
+.worktree-merge-text {
+  flex: 1 1 16rem;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-1) var(--space-2);
 }
 .worktree-merge-title { min-width: 0; overflow-wrap: anywhere; color: var(--color-ink); }
-/* Review Changes ends the head, and wraps below it when the column is narrow. Its negative block
-   margins keep the head as tall as its text. */
-.worktree-merge-review { margin: calc(var(--space-1) * -1) 0 calc(var(--space-1) * -1) auto; }
 .worktree-merge-numbers,
 .worktree-merge-path { margin: 0; overflow-wrap: anywhere; }
 

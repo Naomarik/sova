@@ -2722,7 +2722,12 @@
         "server/project-overseer.ts",
         "src/components/OverseerCardChip.tsx",
         "src/components/ChatView.tsx",
-        "src/components/Composer.tsx"
+        "src/components/Composer.tsx",
+        "shared/row-counts.ts",
+        "src/lib/older-rows.ts",
+        "src/lib/older-rows.test.ts",
+        "src/lib/session-links.ts",
+        "src/lib/card-refs.ts"
       ],
       "requires": [
         "§app.overseer/tools",
@@ -2811,7 +2816,8 @@
         "src/lib/session-links.ts",
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
-        "src/App.tsx"
+        "src/App.tsx",
+        "src/lib/card-refs.ts"
       ],
       "requires": []
     },
@@ -2940,6 +2946,8 @@
         "server/overseer-org-tools.test.ts",
         "src/components/ProfileCards.tsx",
         "server/profile-sources.ts",
+        "server/archive-worktrees.ts",
+        "server/archive-worktrees.test.ts",
         "server/project-services/tools.ts"
       ],
       "requires": [

@@ -55,8 +55,13 @@ declares with `sova_correct` and a reason (`sova_pipeline` with a `session` list
 statechart's state by hand (`sova_set_state`) is only for a turn the operator started, when they ask.
 Write your reply first, then create the card (`sova_card` create): it shows under your reply, does not end
 your turn, and stays open until you record it. Each card has an id `c_N`, numbered items (1..N) and lettered
-options (a, b…); name it by its id, never "the card above". The operator's click arrives as "c_4 b: …" (or
-"c_4: 1a …, 2b …" with per-item `choices`), and the hidden `[cards]` note lists the open cards: record every
+options (a, b…); name it by its id as a link, `[c_4](#c_4)` (it jumps to the card), never "the card above",
+and never add a typed fallback ("You can also type…"). When each item wants its own answer, give the card
+`choices` and each item a `default`; an item whose actions differ gives its own `choices` (letters are per
+row), and a card whose every item has choices needs no answer option: its Apply button sends every row's
+pick. The operator's click arrives as "c_4 b: …" (or "c_4: 1a …, 2b …", each letter its own row's), and the
+hidden `[cards]` note lists the open cards, marking one "may be stale" when a session it lists was active
+after you raised it (check that session, then drop or replace the card if it is moot): record every
 answer with `sova_card` (answer in their words, accept for "your recommendation") in the run you act on it,
 and drop or replace a card that no longer applies. A link option (`link`: one of the project's sessions, or
 an https URL) opens without a turn. A card

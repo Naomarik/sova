@@ -7,6 +7,7 @@ import type Token from "markdown-it/lib/token.mjs";
 import hljs from "highlight.js/lib/common";
 import type { TmpAttachment } from "../../shared/protocol";
 import { findTmpImagePaths } from "../../shared/tmp-paths";
+import { cardRefId } from "./card-refs";
 import { chipHtml } from "./path-attachments";
 import { groupLinkIndex, resolveAppLink, sessionIndex } from "./session-links";
 import type { VisBase } from "../vis/core/grammar";
@@ -189,6 +190,12 @@ md.renderer.rules.text = (tokens, idx, _opts, e) => {
 md.renderer.rules.link_open = (tokens, idx, _opts, e) => {
   const env = e as unknown as RenderEnv;
   const href = String(tokens[idx]!.attrGet("href") ?? "");
+  // A card ref (`[c_5](#c_5)`): in-app, and the click jumps to the card (Markdown.tsx), never the route.
+  const card = cardRefId(href);
+  if (card) {
+    env.linkStack.push("internal");
+    return `<a class="md-app-link md-card-ref" href="${esc(href)}" data-card-ref="${esc(card)}" title="Jump to ${esc(card)}">`;
+  }
   // In-app links first: a session link or a `#/` route opens in this tab.
   const app = resolveAppLink(href, sessionIndex(), groupLinkIndex());
   if (app?.kind === "text") {

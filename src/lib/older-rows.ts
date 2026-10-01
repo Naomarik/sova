@@ -52,11 +52,19 @@ export function helloRows(
       // An alignment whose newest revision is a kept row is now the list's to count.
       const keptIds = new Set(kept.map((it) => it.id));
       const aligns = s.aligns?.filter((a) => !keptIds.has(a.rowId));
+      // So is a card whose newest snapshot is a kept row.
+      const cards = s.cards?.filter((c) => !keptIds.has(c.rowId));
       return {
         items: reconcileItems(prev, [...kept, ...items]),
         older: {
           left: older - j,
-          summary: { inputs: s.inputs.slice(0, at), messages: Math.max(0, s.messages - messageCount(kept)), replies: s.replies, ...(aligns?.length ? { aligns } : {}) },
+          summary: {
+            inputs: s.inputs.slice(0, at),
+            messages: Math.max(0, s.messages - messageCount(kept)),
+            replies: s.replies,
+            ...(aligns?.length ? { aligns } : {}),
+            ...(cards?.length ? { cards } : {}),
+          },
         },
       };
     }

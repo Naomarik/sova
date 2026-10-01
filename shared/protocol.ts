@@ -3490,7 +3490,8 @@ export interface SessionReadiness {
   branch?: string;
   /** ms epoch the badge's condition began: the last reply for ready/waiting, the merge for merged. */
   since: number;
-  /** "merged · {n} follow-ups": only the follow-up check's answer (cleanup is said in the title). */
+  /** How much post-merge work the follow-up check named; the row words it ("2 follow-ups").
+      Cleanup is said in the title. */
   followUps?: number;
   /** A merge of this session changed the server since this process started. */
   restartPending?: true;

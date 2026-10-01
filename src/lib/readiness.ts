@@ -2,26 +2,10 @@ import type { ReadinessState, SessionReadiness } from "../../shared/protocol";
 
 /**
  * The row's merge readiness (§chat.worktrees/readiness): the server decides which badge holds; this
- * only words it. Ready and waiting are a toned chip that leads line 3 (they're what you can act
- * on); every other badge stays terse muted text between the time and the model.
+ * only words it. The count of the worktrees the session tracks ("2 of 3", lit while one is ready to
+ * merge) carries the state, and the muted badge after it adds only what a count cannot say — a merge
+ * this server hasn't run yet, and the open work a follow-up check named.
  */
-
-/** The chip that leads line 3: ready or waiting for your OK, else null. */
-export interface ReadinessRowChip {
-  label: string;
-  tone: "success" | "info";
-}
-
-export function readinessRowChip(r: SessionReadiness | undefined): ReadinessRowChip | null {
-  switch (r?.badge) {
-    case "ready":
-      return { label: "Ready to merge", tone: "success" };
-    case "waiting":
-      return { label: "Waiting for your OK", tone: "info" };
-    default:
-      return null;
-  }
-}
 
 /** The row's worktree count (§chat.worktrees/readiness): merged of the worktrees this session
     tracks, and whether one of them is ready to merge — the count lights up for that, with no glyph
@@ -50,15 +34,16 @@ export function readinessCountWords(c: ReadinessCount): string {
   return c.ready ? `${merged}, one is ready to merge` : merged;
 }
 
-/** The muted badge's words, or null when there is none. The count is the follow-up check's named
-    work only; a leftover worktree is in the title, never here. */
+/** The muted badge's words, or null when there is none. The count already says "merged", so this
+    carries only what the count cannot: a merge this server has not run yet, and the open work the
+    follow-up check named. A leftover worktree is in the title, never here. */
 export function readinessBadge(r: SessionReadiness | undefined): string | null {
   switch (r?.badge) {
     case "restart":
       return "restart pending";
     case "merged": {
       const n = r.followUps ?? 0;
-      return n > 0 ? `merged · ${n} follow-up${n === 1 ? "" : "s"}` : "merged";
+      return n > 0 ? `${n} follow-up${n === 1 ? "" : "s"}` : null;
     }
     default:
       return null;

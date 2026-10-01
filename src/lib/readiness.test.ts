@@ -1,23 +1,19 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionReadiness } from "../../shared/protocol";
-import { readinessBadge, readinessCount, readinessCountWords, readinessRowChip, readinessTitle } from "./readiness";
+import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "./readiness";
 import { readinessChip, readinessReason } from "./worktrees";
 
 const r = (over: Partial<SessionReadiness>): SessionReadiness => ({ trees: [{ path: "/wt/a", branch: "feat/a", state: "merged" }], since: 1, ...over });
 
-test("ready and waiting are the row's toned chip; every other badge stays terse muted text", () => {
-  assert.deepEqual(readinessRowChip(r({ badge: "ready" })), { label: "Ready to merge", tone: "success" });
-  assert.deepEqual(readinessRowChip(r({ badge: "waiting" })), { label: "Waiting for your OK", tone: "info" });
-  for (const b of ["restart", "merged"] as const) assert.equal(readinessRowChip(r({ badge: b })), null);
-  assert.equal(readinessRowChip(undefined), null);
-  assert.equal(readinessBadge(r({ badge: "waiting" })), null, "the chip speaks instead");
-  assert.equal(readinessBadge(r({ badge: "ready" })), null, "the chip speaks instead");
+test("the muted badge carries only what the count cannot: a restart, and named follow-up work", () => {
   assert.equal(readinessBadge(r({ badge: "restart" })), "restart pending");
-  assert.equal(readinessBadge(r({ badge: "merged" })), "merged");
-  assert.equal(readinessBadge(r({ badge: "merged", followUps: 1 })), "merged · 1 follow-up");
-  assert.equal(readinessBadge(r({ badge: "merged", followUps: 2 })), "merged · 2 follow-ups");
-  assert.equal(readinessBadge(r({ badge: "merged", cleanup: 3 })), "merged", "a leftover worktree is in the title, never counted");
+  assert.equal(readinessBadge(r({ badge: "merged", followUps: 1 })), "1 follow-up");
+  assert.equal(readinessBadge(r({ badge: "merged", followUps: 2 })), "2 follow-ups");
+  assert.equal(readinessBadge(r({ badge: "merged" })), null, "the count already says merged");
+  assert.equal(readinessBadge(r({ badge: "merged", cleanup: 3 })), null, "a leftover worktree is in the title, never counted");
+  assert.equal(readinessBadge(r({ badge: "ready" })), null, "the count speaks instead, in success");
+  assert.equal(readinessBadge(r({ badge: "waiting" })), null, "the count speaks instead, in success");
   assert.equal(readinessBadge(r({})), null);
   assert.equal(readinessBadge(undefined), null);
 });

@@ -38,6 +38,9 @@ mkdirSync(liveDir, { recursive: true });
 const pid = process.pid;
 const hex8 = () => Math.floor(Math.random() * 0xffffffff).toString(16).padStart(8, "0");
 const live = sessions.slice(0, liveCount).map((s) => ({ ...s, liveId: `p${pid}-${hex8()}` }));
+// Names the records this run owns, so the next seed run can clear them even after a SIGKILL.
+const liveMarker = join(agent, "perf-load-live.json");
+writeFileSync(liveMarker, JSON.stringify(live.map((e) => e.liveId)));
 const busy = new Uint8Array(live.length);
 const lastLine = new Map(sessions.map((s) => [s.path, s.lastMessageId]));
 let msgSeq = 0;
@@ -143,6 +146,7 @@ function cleanup() {
       // already gone
     }
   }
+  try { unlinkSync(liveMarker); } catch { /* already gone */ }
   process.exit(0);
 }
 process.on("SIGTERM", cleanup);

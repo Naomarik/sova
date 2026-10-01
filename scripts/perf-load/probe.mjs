@@ -105,9 +105,15 @@ const RESET_AND_TAG = `(() => {
     new PerformanceObserver((list) => {
       for (const e of list.getEntries()) P.longtasks.push({ t: e.startTime, d: e.duration });
     }).observe({ type: "longtask", buffered: false });
+    // Count every ELEMENT added or removed under document.body: a replaced subtree's descendants
+    // are lost with their root, so an added/removed node counts itself and all elements below it.
+    const elements = (n) => (n.nodeType === 1 ? 1 + n.querySelectorAll("*").length : 0);
     P.mo = new MutationObserver((recs) => {
       let a = 0, r = 0;
-      for (const m of recs) { a += m.addedNodes.length; r += m.removedNodes.length; }
+      for (const m of recs) {
+        for (const n of m.addedNodes) a += elements(n);
+        for (const n of m.removedNodes) r += elements(n);
+      }
       if (a || r) P.muts.push({ t: performance.now(), a, r });
     });
     P.mo.observe(document.body, { childList: true, subtree: true });

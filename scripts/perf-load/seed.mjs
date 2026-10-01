@@ -11,8 +11,8 @@
 //
 // Nothing is written outside <agent-dir>.
 
-import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { existsSync, mkdirSync, readFileSync, rmdirSync, unlinkSync, utimesSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
 
 const args = new Map();
 for (let i = 2; i < process.argv.length; i += 2) args.set(process.argv[i].replace(/^--/, ""), process.argv[i + 1]);
@@ -26,7 +26,49 @@ const CWDS = Number(args.get("cwds") ?? 40);
 
 const agent = resolve(agentDir);
 const sessionsDir = join(agent, "sessions");
-mkdirSync(join(sessionsDir, "live"), { recursive: true });
+const liveDir = join(sessionsDir, "live");
+
+/** True only for a .jsonl the harness itself wrote, under this agent's sessions dir. */
+function insideSessions(p) {
+  const r = resolve(p);
+  return r.startsWith(sessionsDir + sep) && !r.startsWith(liveDir + sep) && r.endsWith(".jsonl");
+}
+
+/** A rerun must start from the same state: remove the previous run's seed files and churn live
+    records, and nothing else. Both are named by the markers the harness writes. */
+function cleanPrevious() {
+  const liveMarker = join(agent, "perf-load-live.json");
+  if (existsSync(liveMarker)) {
+    try {
+      const ids = JSON.parse(readFileSync(liveMarker, "utf8"));
+      if (Array.isArray(ids)) for (const id of ids) {
+        if (typeof id === "string" && /^p[0-9]+-[0-9a-f]+$/.test(id)) {
+          try { unlinkSync(join(liveDir, `${id}.json`)); } catch { /* already gone */ }
+        }
+      }
+    } catch { /* malformed marker: leave its files */ }
+    try { unlinkSync(liveMarker); } catch { /* already gone */ }
+  }
+  const seedMarker = join(agent, "perf-load-seed.json");
+  if (!existsSync(seedMarker)) return;
+  let old = null;
+  try { old = JSON.parse(readFileSync(seedMarker, "utf8")); } catch { /* malformed: leave files */ }
+  const dirs = new Set();
+  if (old && Array.isArray(old.sessions)) {
+    for (const s of old.sessions) {
+      if (!s || typeof s.path !== "string" || !insideSessions(s.path)) continue;
+      dirs.add(dirname(s.path));
+      try { unlinkSync(s.path); } catch { /* already gone */ }
+    }
+  }
+  for (const d of dirs) {
+    if (!resolve(d).startsWith(sessionsDir + sep)) continue;
+    try { rmdirSync(d); } catch { /* not empty, or a real dir */ }
+  }
+  try { unlinkSync(seedMarker); } catch { /* already gone */ }
+}
+cleanPrevious();
+mkdirSync(liveDir, { recursive: true });
 
 /** mulberry32 — small, fast, seeded, so a run is reproducible. */
 function prng(seed) {

@@ -31,7 +31,6 @@ import {
   type StepKind,
   type VerbResult,
 } from "../../shared/project-contract";
-import type { Autonomy } from "../../shared/project-overseer";
 import { portOwner as realPortOwner, type PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
@@ -63,10 +62,36 @@ import { defHashOf, hostVars, isApproved } from "./trust";
 export type Caller =
   | { kind: "operator"; confirm?: boolean }
   | { kind: "overseer"; id: string }
-  /** `attended`: the operator's own run, which the level does not bind (§app.project-overseer/autonomy-levels). */
-  | { kind: "project-overseer"; id: string; root: string; level: Autonomy; attended?: boolean }
+  /** `act`: its project statechart's act for a verb that is not a read (§app.project-overseer/tools), which holds the
+      level; the engine checks none. */
+  | { kind: "project-overseer"; id: string; root: string; act: VerbAct }
   | { kind: "session"; id: string; root: string | null; own: string[] }
   | { kind: "conform"; id: string };
+
+/** Resolves once the project statechart took the verb's act; throws its refusal otherwise. */
+export type VerbAct = (verb: AnyVerb, instance: string | null) => Promise<void>;
+
+/** A statechart's refusal of the project overseer's act: passed through to the tool as it was thrown, never a result. */
+class ActRefused extends Error {
+  constructor(readonly refusal: unknown) {
+    super("act refused");
+  }
+}
+
+/** The project overseer's act for `verb`, after the engine's own checks and before anything changes. */
+export async function actFor(caller: Caller, verb: AnyVerb, instance: string | null): Promise<void> {
+  if (caller.kind !== "project-overseer" || (READ_VERBS as readonly string[]).includes(verb)) return;
+  try {
+    await caller.act(verb, instance);
+  } catch (err) {
+    throw new ActRefused(err);
+  }
+}
+
+/** Rethrow a statechart's refusal as it was thrown. */
+export function passRefusal(err: unknown): void {
+  if (err instanceof ActRefused) throw err.refusal;
+}
 
 export const callerTag = (c: Caller): string => (c.kind === "operator" ? "operator" : `${c.kind}:${c.id}`);
 
@@ -266,7 +291,7 @@ export class ProjectEngine {
 
   // ---- entry --------------------------------------------------------------------------------------
 
-  /** Run one verb for `caller`. Never throws: every outcome is a result. */
+  /** Run one verb for `caller`. Every outcome is a result, but the project overseer's refused act, which throws as the statechart refused it. */
   async run(verb: string, body: unknown, caller: Caller): Promise<VerbResult> {
     const run: Run = { verb: (isVerb(verb) ? verb : "status") as AnyVerb, caller, req: {}, project: null, rec: null, def: null, defError: null, defHash: null, approved: false, steps: [], extra: {} };
     let release: (() => void) | null = null;
@@ -278,6 +303,7 @@ export class ProjectEngine {
       await this.resolveTarget(run);
       if (run.verb === "teardown" && !run.rec) return await this.result(run);
       this.authorize(run);
+      await actFor(caller, run.verb, run.rec?.id ?? null);
       if (!(READ_VERBS as readonly string[]).includes(verb) && verb !== "conform") {
         const lock = tryLock(instanceLockFile(run.project!, this.targetKey(run)));
         if ("heldBy" in lock) throw new VerbFailure("busy", `another verb is running on this instance (pid ${lock.heldBy}); try again when it ends`);
@@ -288,6 +314,7 @@ export class ProjectEngine {
       await this.dispatch(run);
       return await this.result(run);
     } catch (err) {
+      passRefusal(err);
       const f = err instanceof VerbFailure ? err : err instanceof DefinitionError ? new VerbFailure("invalid-definition", err.message) : new VerbFailure("start-failed", err instanceof Error ? err.message : String(err));
       return await this.result(run, f);
     } finally {
@@ -443,9 +470,7 @@ export class ProjectEngine {
       return;
     }
     if (caller.kind === "project-overseer") {
-      const need: Autonomy = verb === "down" ? "L0" : "L3";
-      if (!caller.attended && caller.level < need)
-        throw new VerbFailure("forbidden", `${verb} needs level ${need} and you are at ${caller.level}: file the gap as an idea or raise a confirm card instead`);
+      // Its level is its statechart's act (run() sends it once these checks pass).
       if ((verb === "reset" || verb === "teardown") && run.rec && !createdByCaller)
         throw new VerbFailure("needs-confirm", `${verb} of an instance you did not create (${run.rec.createdBy}'s) is the operator's: ask them to run it`);
       return;

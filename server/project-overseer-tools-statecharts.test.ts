@@ -488,3 +488,58 @@ describe("the operator's own gap ideas (the project page's Ideas)", async () => 
     }
   });
 });
+
+describe("sova_project_verbs goes through the project statechart (§app.project-services/callers)", () => {
+  test("unattended: down from L0, up only at L3, any verb in the operator's run; each verb but the reads is an act", async () => {
+    const { approve, defHashOf } = await import("./project-services/trust");
+    const { parseDefinition } = await import("../shared/project-contract");
+    const { stopStaticServe, staticServes } = await import("./preview-serve");
+    const { createServer } = await import("node:net");
+    const { writeFileSync } = await import("node:fs");
+    const port = await new Promise<number>((done) => {
+      const s = createServer().listen(0, "127.0.0.1", () => {
+        const p = (s.address() as { port: number }).port;
+        s.close(() => done(p));
+      });
+    });
+    const dir = realpathSync(join(root, "proj"));
+    mkdirSync(join(dir, ".sova"), { recursive: true });
+    mkdirSync(join(dir, "public"), { recursive: true });
+    writeFileSync(join(dir, "public", "index.html"), "portal");
+    const def = { version: 1, services: { site: { static: "public", ports: { http: { base: port } } } } };
+    writeFileSync(join(dir, ".sova", "project.json"), JSON.stringify(def));
+    const h = defHashOf(parseDefinition(JSON.stringify(def)));
+    approve(dir, h, h);
+    type Result = { ok: boolean; state: string; instance: string | null; error?: { code: string } };
+    const verb = async (params: Record<string, unknown>, attended = false) => ((await run("sova_project_verbs", params, attended)) as { details: { result: Result } }).details.result;
+    const acts = () => hostOf(org.id).feed(project.id, { newestFirst: false, limit: 500 }).filter((e) => e.event.startsWith("services/")).map((e) => [e.event, e.refused ? "refused" : "taken"]);
+    const seen = acts().length;
+    try {
+      await settings({ autonomy: "L0" });
+      await assert.rejects(() => verb({ verb: "up" }), /^Error: This run was not started by the operator, and your autonomy here is L0; sova_project_verbs needs L3\. Do not retry it\./);
+      assert.deepEqual(actions().at(-1) && [actions().at(-1).tool, actions().at(-1).outcome], ["sova_project_verbs", "refused"]);
+      assert.equal((await verb({ verb: "status" })).state, "absent", "nothing was made; a read runs at any level");
+      await settings({ autonomy: "L3" });
+      const up = await verb({ verb: "up" });
+      assert.equal(up.ok, true, JSON.stringify(up.error));
+      assert.equal(up.state, "running");
+      assert.equal(await (await fetch(`http://127.0.0.1:${port}/`)).text(), "portal");
+      await settings({ autonomy: "L0" });
+      const down = await verb({ verb: "down", instance: up.instance });
+      assert.equal(down.ok, true, JSON.stringify(down.error));
+      assert.equal(down.state, "stopped");
+      const again = await verb({ verb: "up" }, true);
+      assert.equal(again.state, "running", "the operator's own run, at L0");
+      assert.equal((await verb({ verb: "down", instance: up.instance }, true)).state, "stopped");
+      assert.deepEqual(acts().slice(seen), [
+        ["services/run", "refused"],
+        ["services/run", "taken"],
+        ["services/down", "taken"],
+        ["services/run", "taken"],
+        ["services/down", "taken"],
+      ]);
+    } finally {
+      for (const s of staticServes()) await stopStaticServe(s.id).catch(() => false);
+    }
+  });
+});

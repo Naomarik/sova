@@ -16,7 +16,7 @@ import {
 } from "../../shared/project-contract";
 import { portOwner } from "../port-owner";
 import { projectOf } from "../project-root";
-import { callerTag, parseRequest, realGit, VerbFailure, type Caller, type ProjectEngine } from "./engine";
+import { actFor, callerTag, parseRequest, passRefusal, realGit, VerbFailure, type Caller, type ProjectEngine } from "./engine";
 import { conformDir, dataRootOf, instanceLockFile, readRegistry, servicesRoot, slugOf, tryLock, type InstanceRecord } from "./store";
 import { defHashOf, isApproved } from "./trust";
 
@@ -121,7 +121,7 @@ export function conformer(engine: ProjectEngine, git: Git = realGit) {
       if (p.state !== "ok") throw new VerbFailure("not-found", p.state === "none" ? `no project at ${req.project}` : p.message);
       project = p.root;
       if ((caller.kind === "project-overseer" || caller.kind === "session") && caller.root !== project) throw new VerbFailure("forbidden", "this caller conforms only its own project");
-      if (caller.kind === "project-overseer" && caller.level < "L3") throw new VerbFailure("forbidden", `conform needs level L3; the project overseer is at ${caller.level}`);
+      await actFor(caller, "conform", null);
       const ref = req.ref ?? "HEAD";
       const sha = await git(["rev-parse", "--verify", "--quiet", `${ref}^{commit}`], project);
       if (sha.code !== 0) throw new VerbFailure("not-found", `no commit ${ref} in ${project}`);
@@ -160,6 +160,7 @@ export function conformer(engine: ProjectEngine, git: Git = realGit) {
         lock.release();
       }
     } catch (err) {
+      passRefusal(err);
       const f = err instanceof VerbFailure ? err : new VerbFailure("start-failed", err instanceof Error ? err.message : String(err));
       return base({ project, error: { code: f.code, message: f.message }, defHash, approved });
     }

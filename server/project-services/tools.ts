@@ -3,11 +3,10 @@ import { execFile } from "node:child_process";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { exitOf, RESERVED_VERBS, VERBS, type VerbResult } from "../../shared/project-contract";
-import type { Autonomy } from "../../shared/project-overseer";
 import { redactingTool, serverRedactor, type Redactor } from "../overseer-redact";
 import { projectRootOf } from "../project-root";
 import { worktreesOf } from "../worktrees-state";
-import type { Caller, ProjectEngine } from "./engine";
+import type { Caller, ProjectEngine, VerbAct } from "./engine";
 
 /**
  * The verbs as tools (§app.project-services/callers), calling the engine in this process, never
@@ -185,16 +184,17 @@ export function overseerVerbsTool(engine: () => ProjectEngine, overseerId: () =>
   return { ...t, execute: execute as unknown as Tool["execute"] };
 }
 
-/** The project overseer's `sova_project_verbs`: its own project only, gated by its level. */
-export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; level: () => Autonomy; attended: () => boolean }): Tool {
+/** The project overseer's `sova_project_verbs`: its own project only; every verb but the reads is its project
+    statechart's act (`act`), which holds the level and throws the statechart's refusal. */
+export function projectOverseerVerbsTool(engine: () => ProjectEngine, who: { id: () => string; root: () => string; act: VerbAct }): Tool {
   return projectVerbsTool({
     name: "sova_project_verbs",
     label: "Project verbs",
     description:
-      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, create/up/apply/conform at L3 (in a run the operator started, at any level). Reset and teardown only of instances you created; stopping a shared service is the operator's (needs-confirm).",
+      "Run this project's instances (one running copy per worktree): status/logs/doctor at any level, down from L0, create/up/apply/reset/teardown/conform at L3 (in a run the operator started, at any level). Reset and teardown only of instances you created; stopping a shared service is the operator's (needs-confirm).",
     promptSnippet: "status, logs and lifecycle of the project's running instances (down from L0; create/up/apply/conform at L3)",
     engine,
     defaultProject: async () => (await projectRootOf(who.root())) ?? who.root(),
-    caller: async () => ({ kind: "project-overseer", id: who.id(), root: (await projectRootOf(who.root())) ?? who.root(), level: who.level(), attended: who.attended() }),
+    caller: async () => ({ kind: "project-overseer", id: who.id(), root: (await projectRootOf(who.root())) ?? who.root(), act: who.act }),
   });
 }

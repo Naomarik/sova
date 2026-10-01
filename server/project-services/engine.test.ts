@@ -187,20 +187,35 @@ test("who may call what", async () => {
   assert.equal((await engine.run("teardown", { instance: a.instance }, owner)).error?.code, "needs-confirm", "not its creation");
   assert.equal((await engine.run("up", { project }, { kind: "session", id: "s1", root: project, own: [project] })).error?.code, "forbidden", "never the main checkout");
   assert.equal((await engine.run("status", { project }, { kind: "session", id: "s2", root: "/other", own: [] })).error?.code, "forbidden");
-  const po = (level: "L0" | "L2" | "L3") => ({ kind: "project-overseer", id: "po", root: project, level }) as const;
-  const low = await engine.run("apply", { instance: a.instance }, po("L2"));
-  assert.equal(low.error?.code, "forbidden");
-  assert.match(low.error!.message, /file the gap as an idea or raise a confirm card/);
-  // The level binds only runs the operator did not start.
-  const theirs = await engine.run("apply", { instance: a.instance }, { ...po("L0"), attended: true });
-  assert.equal(theirs.ok, true, JSON.stringify(theirs.error));
-  assert.equal((await engine.run("reset", { instance: a.instance }, po("L3"))).error?.code, "needs-confirm");
+  // The project overseer's level is its statechart's act, sent after the engine's own checks and before anything
+  // changes; a refusal passes through as thrown, and nothing runs.
+  const acts: string[] = [];
+  const po = (refuse?: Error): Caller => ({ kind: "project-overseer", id: "po", root: project, act: async (verb, instance) => {
+    acts.push(`${verb}:${instance}`);
+    if (refuse) throw refuse;
+  } });
+  const refused = new Error("the statechart refused it");
+  assert.equal(shaped(await engine.run("status", { instance: a.instance }, op)).state, "running");
+  await assert.rejects(() => engine.run("down", { instance: a.instance }, po(refused)), (e) => e === refused);
+  assert.deepEqual(acts, [`down:${a.instance}`]);
+  assert.equal(shaped(await engine.run("status", { instance: a.instance }, op)).state, "running", "nothing ran");
+  assert.equal((await engine.run("status", { instance: a.instance }, po(refused))).ok, true, "a read is no act");
+  await assert.rejects(() => engine.run("conform", { project }, po(refused)), (e) => e === refused);
+  assert.deepEqual(acts, [`down:${a.instance}`, "conform:null"]);
+  acts.length = 0;
+  const taken = await engine.run("apply", { instance: a.instance }, po());
+  assert.equal(taken.ok, true, JSON.stringify(taken.error));
+  assert.deepEqual(acts, [`apply:${a.instance}`]);
+  acts.length = 0;
+  assert.equal((await engine.run("reset", { instance: a.instance }, po())).error?.code, "needs-confirm");
+  assert.equal((await engine.run("up", { project: "/elsewhere" }, po())).error?.code, "not-found");
+  assert.deepEqual(acts, [], "the engine's own refusals come first: no act");
   assert.equal((await engine.run("teardown", { instance: a.instance }, { kind: "overseer", id: "o" })).error?.code, "needs-confirm");
   assert.equal((await engine.run("down", { instance: a.instance, services: ["bus"] }, op)).error?.code, "needs-confirm", "a shared service needs the operator's confirm");
-  assert.equal((await engine.run("down", { instance: a.instance, services: ["bus"] }, po("L3"))).error?.code, "needs-confirm");
-  // The project overseer may stop from L0.
-  const d = await engine.run("down", { instance: a.instance, services: ["site"] }, po("L0"));
+  assert.equal((await engine.run("down", { instance: a.instance, services: ["bus"] }, po())).error?.code, "needs-confirm");
+  const d = await engine.run("down", { instance: a.instance, services: ["site"] }, po());
   assert.equal(d.ok, true, JSON.stringify(d.error));
+  assert.deepEqual(acts, [`down:${a.instance}`]);
   assert.equal((await engine.run("up", { instance: a.instance }, op)).ok, true);
 });
 

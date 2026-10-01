@@ -29,6 +29,7 @@ import { handoffOf } from "./project-previews";
 import { notSentReason, type LinkRef, type SendAnswer } from "../shared/outreach";
 import { projectEngine } from "./project-services/routes";
 import { projectOverseerVerbsTool } from "./project-services/tools";
+import { READ_VERBS } from "../shared/project-contract";
 
 /**
  * The project overseer's tools (§app.project-overseer/tools, /autonomy-levels). Scoped to one
@@ -104,6 +105,9 @@ export interface PoToolHost {
   sendStatus(): SendStatusRow[];
   /** A preview link of one of its coding sessions' apps: the project statechart's preview/start (L1, held unattended). */
   startPreview(input: { session: string; target: { port: number } | { folder: string }; purpose: string; days?: number }): Promise<{ preview: PreviewView } | { held: { id: string; until: number } }>;
+  /** sova_project_verbs' act for a verb that is not a read: the project statechart's services/down (L0) or
+      services/run (L3), never held, counting nothing; resolves once taken, throws its refusal. */
+  servicesAct(verb: string, instance: string | null): Promise<void>;
   /** Turn one of the project's previews off: at once, never held. */
   turnOffPreview(id: string): Promise<PreviewView>;
   /** A statechart refused `kind` for its allowance: the watch holds it until it comes back (limit/refused). */
@@ -180,9 +184,6 @@ const PLAIN_NEEDS: Record<string, Need> = {
   sova_send_status: "read",
   sova_hold: "L0", // hold/cancel, hold/approve: L0 corrections on every statechart that holds
   sova_set_state: "operator", // the engine takes it only in the operator's turn
-  // Its highest verb; the project-services engine checks each verb itself (reads at any level, down
-  // from L0, the rest at L3: §app.project-services/callers), no statechart act yet.
-  sova_project_verbs: "L3",
 };
 
 /**
@@ -1224,8 +1225,14 @@ export function projectOverseerTools(host: PoToolHost, redactor: () => Redactor 
         }
       }),
     },
-    // Project instances (§app.project-services/callers): this project only, gated by the level in force.
-    projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, level: () => host.effective().autonomy, attended: () => host.attended() }),
+    // Project instances (§app.project-services/callers): this project only; every verb but the reads is the project
+    // statechart's services/down or services/run, sent once the engine's own checks pass, and logged like any act.
+    (() => {
+      const t = projectOverseerVerbsTool(projectEngine, { id: () => host.overseerId(), root: () => host.project().root, act: (verb, instance) => host.servicesAct(verb, instance) });
+      const exec = (id: string, params: any) => t.execute(id, params, undefined, undefined, undefined as never) as Promise<Out>;
+      const acted = act("sova_project_verbs", (params, id) => exec(id, params));
+      return { ...t, execute: (id: string, params: any) => ((READ_VERBS as readonly string[]).includes(String(params?.verb)) ? exec(id, params) : acted(id, params)) } as Tool;
+    })(),
   ];
 
   return tools.map((t) => previewLinkFree(redactingTool(t, redactor)));

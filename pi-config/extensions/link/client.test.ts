@@ -109,6 +109,19 @@ test("requests go to the session's own host with the session named", async () =>
 	]);
 });
 
+test("the host's token rides every call as x-sova-token, and no token sends none", async () => {
+	const seen: Record<string, string>[] = [];
+	const f = (async (_u: string, init: RequestInit) => {
+		seen.push(Object.fromEntries(new Headers(init.headers).entries()));
+		return new Response("{}");
+	}) as unknown as typeof fetch;
+	const c = new LinkClient(ORIGIN, f, "tok-123");
+	await c.members("s1");
+	await c.send({ session: "s1", text: "t" });
+	await new LinkClient(ORIGIN, f).members("s1");
+	assert.deepEqual(seen, [{ "x-sova-token": "tok-123" }, { "content-type": "application/json", "x-sova-token": "tok-123" }, {}]);
+});
+
 test("the host's refusals reach the model as sentences", async () => {
 	const { f } = fakeFetch(
 		{ status: 409, body: { error: "This session is not a member of lk_a.", reason: "not-member" } },

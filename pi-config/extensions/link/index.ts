@@ -10,6 +10,8 @@
  *
  * Sova sets the `sova-link` flag on every runtime it hosts to its own origin (the real bound port).
  * Without the flag (a TUI, a worker) the extension is inert: the tools refuse, nothing is fetched.
+ * Beside it, `sova-link-token` carries the host's per-install token, sent on every call (the host's
+ * gate refuses a loopback call without it).
  * Every call goes to the session's own host only (`client.ts`); the host does every peer hop.
  *
  * While linked, each run's prompt gets the `mesh-link` section (`promptSection`), rebuilt only when
@@ -39,16 +41,22 @@ import {
 } from "./client.ts";
 
 export const FLAG = "sova-link";
+export const TOKEN_FLAG = "sova-link-token";
 export const SECTION = "mesh-link";
 
 export default function link(pi: ExtensionAPI, deps: { fetch?: typeof fetch } = {}) {
 	pi.registerFlag(FLAG, { description: "Sova sets this to its own origin in the sessions it hosts; enables the link tools", type: "string" });
+	pi.registerFlag(TOKEN_FLAG, { description: "Sova sets this to its own access token beside sova-link; the link tools send it back", type: "string" });
 
 	let client: LinkClient | null | undefined;
 	const host = (): LinkClient | null => {
 		if (client === undefined) {
 			const origin = pi.getFlag(FLAG);
-			client = typeof origin === "string" && /^https?:\/\//.test(origin) ? new LinkClient(origin, deps.fetch ?? fetch) : null;
+			const token = pi.getFlag(TOKEN_FLAG);
+			client =
+				typeof origin === "string" && /^https?:\/\//.test(origin)
+					? new LinkClient(origin, deps.fetch ?? fetch, typeof token === "string" ? token : undefined)
+					: null;
 		}
 		return client;
 	};

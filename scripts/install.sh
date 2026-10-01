@@ -300,8 +300,26 @@ write_file "$launcher" 755 <<LAUNCHER
 #!/usr/bin/env bash
 $marker
 # Runs the built Sova server from its install directory. PORT and HOST are read by the server.
+#   sova token   print this install's access token (the server mints it at its first start)
+#   sova open    open the browser at the app, unlocked by the token in the URL's fragment
 set -euo pipefail
 dir=$(printf '%q' "$dir")
+agent=\${PI_CODING_AGENT_DIR:-$(printf '%q' "$agent")}
+case "\$agent" in "~") agent=\$HOME ;; "~/"*) agent=\$HOME/\${agent#"~/"} ;; esac
+token() {
+	local f="\$agent/sova/auth-token"
+	[ -r "\$f" ] || { echo "sova: no token at \$f yet; start sova once and it mints one" >&2; exit 1; }
+	cat "\$f"
+}
+case "\${1:-}" in
+	token) token; exit 0 ;;
+	open)
+		url="http://127.0.0.1:\${PORT:-$port}/#t=\$(token)"
+		if command -v open >/dev/null 2>&1 && [ "\$(uname)" = Darwin ]; then exec open "\$url"; fi
+		if command -v xdg-open >/dev/null 2>&1; then exec xdg-open "\$url" >/dev/null 2>&1; fi
+		echo "sova: no browser opener (open, xdg-open); paste the token from 'sova token' into the page" >&2
+		exit 1 ;;
+esac
 exec "\$dir/node_modules/.bin/tsx" "\$dir/server/index.ts" "\$@"
 LAUNCHER
 
@@ -513,10 +531,11 @@ else
 	[ "$service_kind" = none ] || say "to run it as a login service instead, run this again with --service"
 fi
 say ""
-say "It serves http://127.0.0.1:$port — loopback only, and it has no authentication of its own."
-say "Set PORT to move the port. Setting HOST=0.0.0.0 puts an unauthenticated app that can read"
-say "your files and run commands as you on the network; only do that behind something that"
-say "authenticates."
+say "It serves http://127.0.0.1:$port — loopback only, and it asks every browser for this install's"
+say "token once: 'sova open' opens the page already unlocked, and 'sova token' prints the token to"
+say "paste on another device. Set PORT to move the port. The token is all that stands between the"
+say "network and an app that can read your files and run commands as you, so think twice before"
+say "setting HOST=0.0.0.0."
 say ""
 say "It reads the agent directory the pi TUI does: $agent"
 say "Sessions already on the machine are listed and readable straight away. To chat from the page"

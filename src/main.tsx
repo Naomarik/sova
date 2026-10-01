@@ -3,6 +3,8 @@ import "./design/tokens.css";
 import "./design/base.css";
 import "./app.css";
 import { App } from "./App";
+import { AuthShell } from "./components/Unlock";
+import { unlockFromFragment } from "./lib/auth";
 import { applyStoredTheme, clearTheme, clearTypography, setTextSize } from "./lib/theme";
 import { applyStoredSpine } from "./lib/spine";
 import { guardDelegatedEvents } from "./lib/release-control";
@@ -52,4 +54,15 @@ history.scrollRestoration = "manual";
 // through its path a closed view, alive for the page's life (lib/release-control).
 guardDelegatedEvents(window, Object.getOwnPropertyDescriptor(Event.prototype, "currentTarget")!.get!);
 
-render(() => <App />, document.getElementById("root")!);
+// A `sova open` link's `#t=<token>` comes off the address bar before the app reads its own `#/…`
+// route, and is posted while the shell holds the app back (lib/auth.ts).
+void unlockFromFragment();
+
+render(
+  () => (
+    <AuthShell>
+      <App />
+    </AuthShell>
+  ),
+  document.getElementById("root")!,
+);

@@ -8,7 +8,7 @@ import { after, before, describe, test } from "node:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { chaos, container, DOMAIN, exec, lab, laptopFetch, requireLab, SERVE_PORT, STATE, waitFor } from "./lib.mjs";
+import { chaos, container, DOMAIN, exec, lab, labTokenHeaders, laptopFetch, requireLab, SERVE_PORT, STATE, waitFor } from "./lib.mjs";
 
 let cfg;
 let order;
@@ -218,7 +218,7 @@ describe("WebSockets through the front door", () => {
     const path = list[0]?.path;
     assert.ok(path, "the serving host has a session to watch");
     const events = [];
-    const ws = new WebSocket(`ws://127.0.0.1:4890/ws/watch?path=${encodeURIComponent(path)}`);
+    const ws = new WebSocket(`ws://127.0.0.1:4890/ws/watch?path=${encodeURIComponent(path)}`, { headers: labTokenHeaders() });
     const opened = await new Promise((res) => {
       ws.onopen = () => res(true);
       ws.onclose = (e) => {
@@ -235,7 +235,7 @@ describe("WebSockets through the front door", () => {
       assert.notEqual(code, 4422);
       assert.notEqual(code, "still open after 20s");
       await servedBy(second);
-      const ws2 = new WebSocket(`ws://127.0.0.1:4890/ws/watch?path=${encodeURIComponent(path)}`);
+      const ws2 = new WebSocket(`ws://127.0.0.1:4890/ws/watch?path=${encodeURIComponent(path)}`, { headers: labTokenHeaders() });
       const r2 = await new Promise((res) => {
         ws2.onopen = () => res("open");
         ws2.onclose = (e) => res(`close ${e.code}`);

@@ -25,6 +25,7 @@ writeFileSync(join(tmp, "secret.txt"), "outside dist");
 
 const { app, server } = await import("./index");
 const { clearHealthCache, extensionsFile, readExtensions, validateExtension } = await import("./extensions");
+const { AUTH_COOKIE, sovaToken } = await import("./auth");
 
 /** The fake backend: records nothing, answers everything from the request itself. */
 let backend: Server;
@@ -34,6 +35,8 @@ let deadPort = 0;
 let healthStatus = 200;
 /** The close code each backend socket last saw from Sova's side. */
 const backendCloses: number[] = [];
+/** The headers of the last upgrade the backend accepted. */
+let backendUpgrade: IncomingMessage["headers"] = {};
 
 async function listen(s: Server): Promise<number> {
   await new Promise<void>((r) => s.listen(0, "127.0.0.1", r));
@@ -56,6 +59,7 @@ before(async () => {
   });
   const wss = new WebSocketServer({ server: backend });
   wss.on("connection", (ws, req) => {
+    backendUpgrade = req.headers;
     ws.on("close", (code) => backendCloses.push(code));
     ws.send(`hello ${req.url} ${req.headers["x-sova-origin"] ?? ""}`);
     ws.on("message", (data, isBinary) => {
@@ -261,6 +265,27 @@ describe("HTTP proxy", () => {
     assert.equal(echo.headers["x-sova-origin"], `http://127.0.0.1:${sovaPort()}`);
   });
 
+  test("Sova's credential never reaches the backend; the extension's own cookie and Authorization do", async () => {
+    writeManifest([stub()]);
+    const res = await app.request("/ext/stub/api/echo", {
+      headers: { Cookie: `ext_session=1; ${AUTH_COOKIE}=${sovaToken()}; sova_token_00000000=other-install`, "x-sova-token": sovaToken(), Authorization: "Bearer ext-own" },
+    });
+    const echo = (await res.json()) as { headers: Record<string, string> };
+    assert.equal(echo.headers.cookie, "ext_session=1", "every install's Sova cookie is dropped, the rest kept");
+    assert.equal(echo.headers["x-sova-token"], undefined);
+    assert.equal(echo.headers.authorization, "Bearer ext-own");
+    assert.equal(JSON.stringify(echo.headers).includes(sovaToken()), false);
+    // Over the real socket, with Sova's token as a bearer: the bearer goes too, the other cookies stay in order.
+    const real = await fetch(`http://127.0.0.1:${sovaPort()}/ext/stub/api/echo`, {
+      headers: { Cookie: `a=1; ${AUTH_COOKIE}=${sovaToken()}; b=2`, "x-sova-token": sovaToken(), Authorization: `Bearer ${sovaToken()}` },
+    });
+    assert.equal(real.status, 200);
+    const seen = ((await real.json()) as { headers: Record<string, string> }).headers;
+    assert.equal(seen.cookie, "a=1; b=2");
+    assert.equal(seen["x-sova-token"], undefined);
+    assert.equal(seen.authorization, undefined);
+  });
+
   test("a backend status passes through; an api prefix is kept", async () => {
     writeManifest([{ ...stub(), api: `http://127.0.0.1:${backendPort}/pre` }]);
     const res = await app.request("/ext/stub/api/teapot");
@@ -277,7 +302,9 @@ describe("HTTP proxy", () => {
 });
 
 describe("WS proxy", () => {
-  const open = (path: string, protocols?: string[]) => new WebSocket(`ws://127.0.0.1:${sovaPort()}${path}`, protocols);
+  // The upgrade passes the main listener's gate as a browser's would: with the cookie.
+  const open = (path: string, protocols?: string[]) =>
+    new WebSocket(`ws://127.0.0.1:${sovaPort()}${path}`, protocols, { headers: { Cookie: `${AUTH_COOKIE}=${sovaToken()}` } });
   const next = (ws: WebSocket) =>
     new Promise<[string, boolean]>((r) => ws.once("message", (d: Buffer, isBinary: boolean) => r([d.toString(), isBinary])));
 
@@ -294,6 +321,18 @@ describe("WS proxy", () => {
     await new Promise((r) => ws.once("close", r));
     await new Promise((r) => setTimeout(r, 50));
     assert.equal(backendCloses.at(-1), 4002, "the browser's close code reaches the backend");
+  });
+
+  test("Sova's credential never reaches the backend's socket", async () => {
+    writeManifest([stub()]);
+    const ws = new WebSocket(`ws://127.0.0.1:${sovaPort()}/ext/stub/ws/x`, {
+      headers: { Cookie: `ext_session=1; ${AUTH_COOKIE}=${sovaToken()}`, "x-sova-token": sovaToken() },
+    });
+    await next(ws);
+    ws.close();
+    assert.equal(backendUpgrade.cookie?.includes(AUTH_COOKIE) ?? false, false);
+    assert.equal(backendUpgrade["x-sova-token"], undefined);
+    assert.equal(JSON.stringify(backendUpgrade).includes(sovaToken()), false);
   });
 
   test("the backend's close code and reason reach the browser", async () => {

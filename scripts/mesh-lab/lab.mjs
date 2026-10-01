@@ -7,6 +7,7 @@
 // never the laptop's own tailscaled: every tailscale call below is a `docker exec` into a lab node.
 
 import { spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -26,6 +27,18 @@ const HOST_IDS = "abcdefgh".split("");
 export const PORTS = { publicfront: 4889, frontdoor: 4890, plain: 4899, host: (id) => 4891 + HOST_IDS.indexOf(id) };
 export const SOVA_PORT = 4800; // main listener inside each host (loopback)
 export const SERVE_PORT = 8443; // `tailscale serve --http` of the main listener on the tailnet
+
+/** One access token for every lab Sova, pinned there with SOVA_TOKEN (a front door may land on
+    any host), kept in STATE so a rebuild keeps it. Every lab client sends it as `x-sova-token`. */
+export function labToken() {
+  const file = join(STATE, "sova-token");
+  if (!existsSync(file)) {
+    mkdirSync(STATE, { recursive: true });
+    writeFileSync(file, `${randomBytes(32).toString("base64url")}\n`, { mode: 0o600 });
+  }
+  return readFileSync(file, "utf8").trim();
+}
+export const labTokenHeaders = () => ({ "x-sova-token": labToken() });
 export const PEER_PORT = 4801; // mesh-core's peer listener default
 export const SHARE_PORT = 4802; // the share port (shared/public-links.ts SHARE_PORT_DEFAULT): a gateway binds it on loopback
 const PUBLIC_FRONT_PORT = 4880; // the public front's Caddy, inside the gateway host's netns
@@ -127,6 +140,7 @@ function hostService(cfg, id) {
       LAB_SERVE_PORT: String(SERVE_PORT),
       PORT: String(SOVA_PORT),
       HOST: "127.0.0.1",
+      SOVA_TOKEN: labToken(),
       NODE_EXTRA_CA_CERTS: "/run/lab/ca-bundle.pem",
       ...mock.env,
     },
@@ -182,7 +196,7 @@ export function composeFor(cfg) {
       // NET_ADMIN only for the entrypoint's egress guard; Sova runs with it dropped. No tun device.
       cap_add: ["NET_ADMIN"],
       ...DNS,
-      environment: { LAB_HOST: "plain", LAB_TAILSCALE: "0", LAB_SOVA: "1", LAB_SEED: cfg.seed ? "1" : "0", PORT: String(SOVA_PORT), HOST: "127.0.0.1", NODE_EXTRA_CA_CERTS: "/run/lab-tls/ca.pem" },
+      environment: { LAB_HOST: "plain", LAB_TAILSCALE: "0", LAB_SOVA: "1", LAB_SEED: cfg.seed ? "1" : "0", PORT: String(SOVA_PORT), HOST: "127.0.0.1", SOVA_TOKEN: labToken(), NODE_EXTRA_CA_CERTS: "/run/lab-tls/ca.pem" },
       volumes: ["plain-agent:/sova/.agent", "plain-home:/root", CA_MOUNT, ...(auth ? [`${AUTH_SRC}:/run/lab-secrets/auth.json:ro`] : [])],
       ports: [`127.0.0.1:${PORTS.plain}:4900`],
       networks: ["lab"],
@@ -400,7 +414,7 @@ export function writeCaddyfile(cfg) {
 
 /** host-local HTTP to a lab host's main listener (from inside the container). */
 function hostApi(n, method, path, body) {
-  const argv = ["exec", ...(body !== undefined ? ["-i"] : []), container(n), "curl", "-sS", "-m", "5", "-X", method, "-w", "\n%{http_code}"];
+  const argv = ["exec", ...(body !== undefined ? ["-i"] : []), container(n), "curl", "-sS", "-m", "5", "-X", method, "-H", `x-sova-token: ${labToken()}`, "-w", "\n%{http_code}"];
   if (body !== undefined) argv.push("-H", "content-type: application/json", "--data-binary", "@-");
   argv.push(`http://127.0.0.1:${SOVA_PORT}${path}`);
   const r = docker(argv, { input: body === undefined ? undefined : JSON.stringify(body), allowFail: true, quiet: true });

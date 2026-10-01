@@ -16,6 +16,8 @@ KEEP=0
 OUT=${SMOKE_OUT:-$HOME/.cache/sova-mesh/lab-engineer/vps-smoke}
 mkdir -p "$OUT"
 B="\$HOME/$R"
+# Sova's main listener asks for its token, read on the VPS from the agent dir: a curl option for a remote command line.
+TOK="-H \"x-sova-token: \$(cat $B/agent/sova/auth-token)\""
 fail() { log "FAIL: $*"; stop || true; exit 1; }
 stop() {
   vps "if [ -f $B/smoke.pid ]; then kill \$(cat $B/smoke.pid) 2>/dev/null || true; for i in \$(seq 1 30); do kill -0 \$(cat $B/smoke.pid) 2>/dev/null || break; sleep 0.5; done; rm -f $B/smoke.pid; fi"
@@ -45,7 +47,7 @@ if [ "$peers" = 0 ]; then
 fi
 
 put() { # path json -> http code (answer in $B/smoke-put.json)
-  printf '%s' "$2" | vps "curl -sS -m 10 -o $B/smoke-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:$SOVA_PORT$1"
+  printf '%s' "$2" | vps "curl -sS -m 10 $TOK -o $B/smoke-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:$SOVA_PORT$1"
 }
 peers=$(printf '{"peers":[{"id":"%s","name":"%s","label":"%s","nodeId":"%s","url":"%s","serveUrl":"%s","priority":1}]}' \
   "$LAPTOP_ID" "$LAPTOP_DNS" "$LAPTOP_LABEL" "$LAPTOP_NODE_ID" "$LAPTOP_PEER_URL" "$LAPTOP_SERVE_URL")
@@ -65,9 +67,9 @@ echo "$L" > "$OUT/listen-mesh-on.txt"
 [ "$(echo "$L" | grep ":$SOVA_PEER_PORT\$")" = "$VPS_TAILNET_IP:$SOVA_PEER_PORT" ] || fail "peer listener binds: $(echo $L)"
 [ "$(echo "$L" | grep ":$SOVA_PORT\$")" = "127.0.0.1:$SOVA_PORT" ] || fail "main listener binds: $(echo $L)"
 log "mesh on: main 127.0.0.1:$SOVA_PORT, peer $VPS_TAILNET_IP:$SOVA_PEER_PORT only"
-vps "curl -fsS -m 5 http://127.0.0.1:$SOVA_PORT/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({enabled:m.enabled,self:m.self,peers:m.peers.map(p=>({id:p.id,state:p.state,error:p.error}))}))' | tee "$OUT/mesh.json"
+vps "curl -fsS -m 5 $TOK http://127.0.0.1:$SOVA_PORT/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({enabled:m.enabled,self:m.self,peers:m.peers.map(p=>({id:p.id,state:p.state,error:p.error}))}))' | tee "$OUT/mesh.json"
 [ "$(node -e 'console.log(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8")).self.id)' "$OUT/mesh.json")" = "$VPS_ID" ] || fail "self.id is not $VPS_ID"
-vps "curl -fsS -m 5 http://127.0.0.1:$SOVA_PORT/api/mesh/settings" | node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({loginKinds:s.loginKinds,loginKindsPinned:s.loginKindsPinned}))' | tee "$OUT/settings.json"
+vps "curl -fsS -m 5 $TOK http://127.0.0.1:$SOVA_PORT/api/mesh/settings" | node -e 'const s=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({loginKinds:s.loginKinds,loginKindsPinned:s.loginKindsPinned}))' | tee "$OUT/settings.json"
 grep -q 'Pinned' "$OUT/settings.json" && fail "loginKinds is pinned (SOVA_SYNC_LOGIN_KINDS is set)"
 grep -q '"loginKinds":"api-keys"' "$OUT/settings.json" && log "note: loginKinds is api-keys (set on this host's Mesh settings)"
 

@@ -46,6 +46,9 @@ globalThis.fetch = ((...args: Parameters<typeof fetch>) => {
 
 const { server } = await import("../index");
 const { listenerInfo, onSyncStatus, stopMesh } = await import("./index");
+const { AUTH_COOKIE, sovaToken } = await import("../auth");
+// Main-listener calls pass its gate as a browser's would (with the cookie); the peer listener's never ask.
+const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
 const { clearProbes, ownProtocol } = await import("./hello");
 const { clearPeerReach } = await import("./proxy");
 const { peersFile, readPeers } = await import("./peers");
@@ -134,7 +137,7 @@ after(async () => {
 const call = async <T>(method: string, path: string, body?: unknown): Promise<[number, T]> => {
   const res = await realFetch(`${base}${path}`, {
     method,
-    ...(body !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+    ...(body !== undefined ? { headers: { "Content-Type": "application/json", ...AUTH }, body: JSON.stringify(body) } : { headers: AUTH }),
   });
   return [res.status, (await res.json()) as T];
 };

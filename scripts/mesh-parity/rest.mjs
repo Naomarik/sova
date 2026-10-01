@@ -5,6 +5,7 @@
 
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { tokenHeaders } from "./side.mjs";
 
 // A 1x1 PNG.
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
@@ -193,7 +194,7 @@ export async function runRest(base, steps) {
     const s = typeof s0 === "function" ? s0(state) : s0;
     let status, type, body;
     try {
-      const r = await fetch(base + s.url, { method: s.method, headers: s.headers, body: s.body, redirect: "manual" });
+      const r = await fetch(base + s.url, { method: s.method, headers: { ...tokenHeaders(), ...s.headers }, body: s.body, redirect: "manual" });
       status = r.status;
       type = r.headers.get("content-type");
       const buf = Buffer.from(await r.arrayBuffer());

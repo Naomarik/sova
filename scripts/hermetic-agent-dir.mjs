@@ -9,12 +9,19 @@
 //
 //   node scripts/hermetic-agent-dir.mjs           # create or repair (idempotent)
 //   node scripts/hermetic-agent-dir.mjs --check   # verify only; nonzero if anything is off
+//   node scripts/hermetic-agent-dir.mjs --unlock-url   # also mint .agent's access token if it has
+//                                                  # none, and print the URL that unlocks the page
+//
+// `pnpm run dev:hermetic` passes --unlock-url, so its first visit needs no hunting for the token.
+// Without the flag the token is never printed (a deploy that builds its agent dir with this script
+// keeps it out of its logs).
 //
 // No link ever points into ~/.pi: the agent dir is self-contained. settings.json is derived from
 // pi-config/settings.json minus the machine-specific bits (external `packages`, changelog marker),
 // so no npm/git package is fetched into the throwaway dir.
 
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
+import { copyFileSync, existsSync, linkSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 
@@ -27,8 +34,9 @@ const HOME_PI = join(homedir(), ".pi");
 const MACHINE_SPECIFIC = new Set(["packages", "lastChangelogVersion"]);
 
 const check = process.argv[2] === "--check";
-if (process.argv[2] !== undefined && !check) {
-  console.error(`usage: ${process.argv[1]} [--check]`);
+const unlockUrl = process.argv[2] === "--unlock-url";
+if (process.argv[2] !== undefined && !check && !unlockUrl) {
+  console.error(`usage: ${process.argv[1]} [--check | --unlock-url]`);
   process.exit(2);
 }
 
@@ -224,3 +232,26 @@ if (check) {
 
 console.log(`${AGENT} ready (extensions -> ${extRoot})`);
 console.log(`use it with:  PORT=${process.env.SOVA_PORT || 4810} PI_CODING_AGENT_DIR=${AGENT} pnpm run dev:server`);
+
+/** .agent's access token, as the server keeps it (server/auth.ts): 32 random bytes in base64url at
+    sova/auth-token, mode 0600, created exclusively so a server minting at the same moment wins or
+    loses cleanly, and never rewritten. SOVA_TOKEN, when set, is the one the server will use. */
+function hermeticToken() {
+  if (process.env.SOVA_TOKEN?.trim()) return process.env.SOVA_TOKEN.trim();
+  const file = join(AGENT, "sova", "auth-token");
+  if (!existsSync(file)) {
+    mkdirSync(join(AGENT, "sova"), { recursive: true });
+    const tmp = `${file}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${randomBytes(32).toString("base64url")}\n`, { mode: 0o600 });
+    try {
+      linkSync(tmp, file);
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+    } finally {
+      rmSync(tmp, { force: true });
+    }
+  }
+  return readFileSync(file, "utf8").trim();
+}
+
+if (unlockUrl) console.log(`open (unlocked):  http://127.0.0.1:${process.env.SOVA_PORT || 4810}/#t=${hermeticToken()}`);

@@ -59,6 +59,7 @@ import { ExplanationsCard, ExplanationsView } from "./components/ExplanationsVie
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
+import { AccessPage } from "./components/AccessPage";
 import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { SharesPage } from "./components/SharesPage";
@@ -274,6 +275,7 @@ export function App() {
   /** `#/overview`: the overview as a phone's own page (§app.shell/overview); wide, it is the
       empty main column as always. */
   const [overviewRoute, setOverviewRoute] = createSignal(isOverviewHash(location.hash));
+  const [accessRoute, setAccessRoute] = createSignal(location.hash === "#/access");
   const [route, setRoute] = createSignal<string | null>(pathFromHash());
   createEffect(
     on(route, (p) => {
@@ -436,6 +438,7 @@ export function App() {
     setShareRoute(shareRouteFromHash(location.hash));
     setOrgsRoute(orgsRouteOf(location.hash));
     setOverviewRoute(isOverviewHash(location.hash));
+    setAccessRoute(location.hash === "#/access");
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
@@ -940,7 +943,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || accessRoute() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -973,9 +976,10 @@ export function App() {
           data-send-all={groupRoute() && groupSendAll() ? "true" : undefined}
         >
           <Show
-            when={!insightsRoute() && !overseerRoute()}
+            when={!accessRoute() && !insightsRoute() && !overseerRoute()}
             fallback={
               <Switch>
+                <Match when={accessRoute()}><AccessPage /></Match>
                 <Match when={overseerRoute()}>
                   {(r) => (
                     <OverseerView

@@ -16,7 +16,7 @@ node scripts/perf-load/run.mjs --tree <checkout> --port 4840 [--rate 1] [--windo
 From this worktree, against this worktree:
 
 ```sh
-node scripts/perf-load/run.mjs --tree "$PWD" --port 4841
+CHROMIUM_BIN=/usr/bin/google-chrome-stable node scripts/perf-load/run.mjs --tree "$PWD" --port 4841
 ```
 
 What it does: builds `<tree>/.agent` (hermetic), seeds 480 synthetic session files across 40 cwds,
@@ -40,6 +40,11 @@ shared one) and measures over the window:
 
 It prints one JSON summary and a `RESULT: PASS|FAIL` line. **FAIL** when fewer than 95% of rows
 survive, the window's long-task total exceeds 300 ms, or the switch leaves A's transcript alive. Exit code 1 on FAIL.
+
+**Browser.** Run it with `CHROMIUM_BIN=/usr/bin/google-chrome-stable`, the Chrome the user runs Sova in. Without
+it, `start-browser.sh` takes Playwright's Chromium, else the first `chromium` on `PATH`, and results differ by
+browser: a switch-check fix once passed on Chromium 148 and failed on Chrome 154. The JSON's `browser` field
+(`binary`, `product`, `userAgent`) says which one ran; check both when a fix touches browser internals.
 
 Ports are 4840–4859 only; the browser's CDP port is one the skill claims (9300–9999), never 9222.
 Everything written lands under `<tree>/.agent`.

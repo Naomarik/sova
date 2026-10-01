@@ -250,6 +250,9 @@ async function switchCheck([a, b]) {
 }
 
 let browserPort = null;
+/** Which browser ran: start-browser.sh's binary and its Browser.getVersion. A result is only a
+    result about that browser (the switch check passed on Chromium 148 and failed on Chrome 154). */
+let browser = null;
 let cdp = null;
 function stopBrowser() {
   if (browserPort === null) return;
@@ -267,6 +270,7 @@ try {
   const m = started.stdout.match(/PW_PORT=(\d+)/);
   if (!m) throw new Error(`no PW_PORT in start-browser.sh output: ${started.stdout}`);
   browserPort = Number(m[1]);
+  const binary = started.stdout.match(/Binary: (.*)/)?.[1]?.trim() ?? null;
 
   const listUrl = `http://127.0.0.1:${browserPort}/json/list`;
   let targets = await (await fetch(listUrl)).json();
@@ -277,6 +281,9 @@ try {
     target = await created.json();
   }
   cdp = await CDP.connect(target.webSocketDebuggerUrl);
+  const version = await cdp.send("Browser.getVersion").catch(() => null);
+  browser = { binary, product: version?.product ?? null, userAgent: version?.userAgent ?? null };
+  console.error(`[probe] browser: ${browser.product ?? "unknown"} (${binary ?? "unknown binary"})`);
   await cdp.send("Page.enable");
   await cdp.send("Runtime.enable");
   await cdp.send("Performance.enable");
@@ -330,6 +337,7 @@ try {
   const pass = listPass && (switched === null || switched.pass);
   const summary = {
     url,
+    browser,
     windowSec,
     warmupSec,
     foldersOpened: opened,
@@ -347,7 +355,7 @@ try {
   stopBrowser();
   process.exit(pass ? 0 : 1);
 } catch (err) {
-  console.log(JSON.stringify({ url, error: err instanceof Error ? err.message : String(err) }));
+  console.log(JSON.stringify({ url, browser, error: err instanceof Error ? err.message : String(err) }));
   console.log("RESULT: FAIL");
   stopBrowser();
   process.exit(1);

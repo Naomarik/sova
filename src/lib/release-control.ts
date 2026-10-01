@@ -1,56 +1,56 @@
-// Letting go of a text control as its view closes.
+// Letting go of a closed view that an event or a text control would keep alive.
 //
-// The browser keeps a hold tied to the last text field that had focus, and that hold kept the
-// field's whole closed view alive: one chat's transcript, thousands of nodes, after every session
-// switch. Measured in Chromium (scripts/perf-load, the switch check): a blur, cutting the field out
-// of its view, or focusing a link all leave the view alive; only a later focus in ANOTHER text
-// field lets it go. So a closing view hands that role to a sink: one hidden text input outside
-// every view, focused and blurred at once, and focus goes back to wherever it was.
+// Two holds, found with heap snapshots after a session switch (scripts/perf-load, the switch
+// check), each enough to keep a closed chat's whole transcript alive:
+//   - Chrome 154: Solid's delegated-event getter, cached in the event class's shared map —
+//       FocusEvent (internal cache) → Map → DescriptorArray → AccessorPair → getter `get` (Solid)
+//       → FocusEvent → blink::EventPath → <div class="composer-row"> → … → div.transcript-wrap.
+//     `guardDelegatedEvents` keeps that getter out of the shared map.
+//   - Chromium 148: a native handle on the last focused text control —
+//       C++ Persistent roots → <textarea class="composer-input"> → $$keydown → … → div.transcript-wrap.
+//     `releaseControl` makes the closing textarea a dead end: out of its parent, with no handler on
+//     it. Handlers Solid adds with addEventListener (focus, blur, paste) can't be taken off
+//     afterwards, so such a control uses delegated ones (`onFocusIn`/`onFocusOut`), or listens with
+//     a signal its closing aborts.
 
-/** The slice of an element this needs, so a test can hand in plain objects. */
-export interface Focusable {
-  focus(options?: { preventScroll?: boolean }): void;
-  blur(): void;
-  readonly isConnected: boolean;
+import { DelegatedEvents } from "solid-js/web";
+
+/** The slice of an element this needs, so a test can hand in a plain object. */
+export interface Releasable {
+  remove(): void;
 }
 
-/** The slice of a document this needs. */
-export interface SinkDocument {
-  readonly activeElement: unknown;
-  readonly body: { append(node: never): void } | null;
-  createElement(tag: "input"): Focusable & { setAttribute(name: string, value: string): void; className: string };
+/** Take a closing control out of its parent and drop every handler Solid's delegation stored on it
+    (its `$$<event>` and `$$<event>Data` properties). Safe on one already detached. */
+export function releaseControl(el: Releasable | undefined): void {
+  if (!el) return;
+  el.remove();
+  const own = el as unknown as Record<string, unknown>;
+  for (const key of Object.keys(own)) if (key.startsWith("$$")) delete own[key];
 }
 
-const sinks = new WeakMap<object, Focusable>();
-
-/** The document's sink, made on first use: a text input no one sees, reads or tabs to, and one that
-    never raises a phone's keyboard (`inputmode="none"`). */
-function sinkOf(doc: SinkDocument): Focusable | null {
-  const known = sinks.get(doc);
-  if (known?.isConnected) return known;
-  if (!doc.body) return null;
-  const el = doc.createElement("input");
-  el.setAttribute("type", "text");
-  el.setAttribute("inputmode", "none");
-  el.setAttribute("tabindex", "-1");
-  el.setAttribute("aria-hidden", "true");
-  el.setAttribute("autocomplete", "off");
-  el.className = "visually-hidden";
-  doc.body.append(el as never);
-  sinks.set(doc, el);
-  return el;
+/** The slice of a window this needs. */
+export interface EventScope {
+  addEventListener(type: string, listener: (e: Event) => void, options: { capture: true; passive: true }): void;
 }
 
 /**
- * Release the browser's hold on `field` as its view closes: focus and blur the sink, then put focus
- * back where it was, unless that was `field` itself (it is going away) or nothing. Call it only
- * for a field that has had focus: one that never did holds nothing.
+ * Keep Solid's per-event `currentTarget` getter out of the event classes' shared maps.
+ *
+ * Solid defines `currentTarget` on every delegated event with a getter that closes over the event,
+ * and V8 keeps the accessor that first adds the property to a class's map for the life of the page
+ * (the Chrome 154 hold above). A capturing listener on the window runs before Solid's on the
+ * document and defines it first, with the browser's own getter: it closes over nothing and answers
+ * what the native property does. Solid's redefinition then stays on the one event. Call once,
+ * before `render`.
  */
-export function releaseControl(field: Focusable, doc: SinkDocument): void {
-  const sink = sinkOf(doc);
-  if (!sink) return;
-  const was = doc.activeElement as Focusable | null;
-  sink.focus({ preventScroll: true });
-  sink.blur();
-  if (was && was !== field && was !== sink && was !== (doc.body as unknown) && was.isConnected) was.focus({ preventScroll: true });
+export function guardDelegatedEvents(
+  scope: EventScope,
+  nativeGetter: (this: Event) => unknown,
+  types: Iterable<string> = DelegatedEvents,
+): void {
+  const define = (e: Event) => {
+    Object.defineProperty(e, "currentTarget", { configurable: true, get: nativeGetter });
+  };
+  for (const type of types) scope.addEventListener(type, define, { capture: true, passive: true });
 }

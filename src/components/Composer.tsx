@@ -278,13 +278,15 @@ export function Composer(props: {
     if (stored.text && !touched && !text()) setText(stored.text);
   });
   let disposed = false;
-  /** The textarea has had focus: the browser then holds this view until another text field is
-      focused (lib/release-control), so closing it hands that hold on. */
-  let focusedOnce = false;
+  /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
+  const listening = new AbortController();
   onCleanup(() => {
     disposed = true;
     flushDrafts();
-    if (focusedOnce) releaseControl(input, document);
+    // A delegated event can keep this textarea alive after the view closes (lib/release-control):
+    // make it a dead end, so what is kept is the textarea, not the closed session's transcript.
+    listening.abort();
+    releaseControl(input);
   });
 
   const reason = () => props.readOnly ?? props.blocked ?? null;
@@ -729,6 +731,18 @@ export function Composer(props: {
     ),
   );
   onMount(() => {
+    // Pasted files attach; a paste with text keeps its text, the files are ours either way. By hand,
+    // not `onPaste`: Solid doesn't delegate paste, and closing must be able to take it off.
+    input.addEventListener(
+      "paste",
+      (e) => {
+        const files = [...(e.clipboardData?.files ?? [])];
+        if (files.length === 0) return;
+        if (!e.clipboardData?.getData("text/plain")) e.preventDefault();
+        addFiles(files, true);
+      },
+      { signal: listening.signal },
+    );
     // After the frame, so a closing dialog's focus handling has already run. Not on a touch-only
     // device: focusing the textarea there raises the keyboard over the new session.
     const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -1136,18 +1150,12 @@ export function Composer(props: {
               }
             }}
             onPointerDown={onPointerDown}
-            onFocus={() => (focusedOnce = true)}
-            onBlur={() => {
+            // focusout, not blur: a delegated handler is one releaseControl can drop (the textarea
+            // has no children, so the two fire alike).
+            onFocusOut={() => {
               dropButtonSlash(); // closing by blur undoes an untouched button "/" too
               setSlashToken(null);
               setMentionToken(null);
-            }}
-            onPaste={(e) => {
-              const files = [...(e.clipboardData?.files ?? [])];
-              if (files.length === 0) return;
-              // A paste with text keeps its text; the files are ours either way.
-              if (!e.clipboardData?.getData("text/plain")) e.preventDefault();
-              addFiles(files, true);
             }}
             onKeyDown={(e) => {
               // A bare local command runs on the Enter that would send; in touch mode it's a newline.

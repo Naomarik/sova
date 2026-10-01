@@ -620,6 +620,8 @@
       "kind": "behavior",
       "code": [
         "src/components/Composer.tsx",
+        "src/lib/placeholder-fit.ts",
+        "src/lib/placeholder-fit.test.ts",
         "src/components/ModelMenu.tsx",
         "src/lib/input-mode.ts",
         "src/lib/input-mode.test.ts",
@@ -1319,7 +1321,8 @@
         "src/lib/voice/format.ts",
         "src/components/Composer.tsx",
         "src/components/ChatView.tsx",
-        "src/components/SessionView.tsx"
+        "src/components/SessionView.tsx",
+        "src/lib/placeholder-fit.ts"
       ]
     },
     "§design.copy-deck/composer-flyout": {
@@ -1628,7 +1631,7 @@
         "§workspace.groups/member-states"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
         "src/components/GroupComposer.tsx",
         "src/lib/group-prompt.ts",
@@ -11275,6 +11278,28 @@
         "§chat.worktrees/readiness",
         "§app.overseer/tools"
       ]
+    },
+    "§app.insights/sidebar-foot-phone": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ],
+      "requires": [
+        "§app.insights/sidebar-foot",
+        "§mesh.remote-sessions/host-filter"
+      ]
+    },
+    "§design.ground-rules/text-fit": {
+      "kind": "behavior",
+      "code": [
+        "src/design/base.css"
+      ],
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified"
     }
   },
   "boundary": {

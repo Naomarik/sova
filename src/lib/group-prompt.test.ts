@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
-import { composerPlaceholder, memberBlock, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone } from "./group-prompt";
+import { composerParts, composerPlaceholder, memberBlock, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone } from "./group-prompt";
 
 const member = (id: string, over: Partial<SessionSummary> = {}): SessionSummary =>
   ({ id, path: `/tmp/${id}.jsonl`, title: id, live: null, busy: false, archived: false, ...over }) as SessionSummary;
@@ -147,6 +147,15 @@ test("the placeholder names the group's size, not who is available, and drops th
   // The count is the group's, so a member going mid-turn does not rewrite the box under the caret:
   // three members, none of them available, still reads "all 3".
   assert.equal(composerPlaceholder(3, false), "Ask all 3 members…");
+});
+
+test("the placeholder's parts hold the ask and the key hint apart, so the fit can drop the hint alone", () => {
+  assert.deepEqual(composerParts(4, true), ["Ask all 4 members…", "Enter sends, Shift+Enter adds a line"]);
+  assert.deepEqual(composerParts(4, false), ["Ask all 4 members…"]);
+  assert.deepEqual(composerParts(1, true), ["Ask this member…"]);
+  // The string is those parts joined, never a second string beside them: the box, the copy deck
+  // and the fit all read the same one.
+  assert.equal(composerPlaceholder(4, true), composerParts(4, true).join("—"));
 });
 
 test("withGone folds file-gone members in under missing, counted in the group's size", () => {

@@ -1082,7 +1082,7 @@ await commands.get("mode").handler("normal", ctx);
 // cached prefix survives a toggle on every provider. Each fake here records, in order, what pi would
 // put on the branch: the extension's entries and the notes it delivers.
 {
-	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
+	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS, VIS_KINDS, visGuide } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
 	const branch = [{ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes: ["spec"] } } }];
 	const open = () => {
 		const host = makeApi();
@@ -1130,10 +1130,20 @@ await commands.get("mode").handler("normal", ctx);
 	assert.match(head, /# Minor mode: spec/, "the first run builds the head from the active modes");
 	assert.doesNotMatch(head, /# Minor mode: vis/);
 	assert.deepEqual(first.notes, [], "nothing to tell on the first run");
+	const hasGuideTool = () => session.host.getTools().includes("vis_guide");
+	assert.ok(!hasGuideTool(), "no vis_guide while vis is off");
+	// The tool: in-process, kind is exactly the listed kinds, and a lookup is the shared rules then the kind's file.
+	const guideTool = session.host.registeredTools.get("vis_guide");
+	assert.deepEqual(guideTool.parameters.properties.kind.enum, [...VIS_KINDS]);
+	const looked = await guideTool.execute("t1", { kind: "wireframe" });
+	assert.equal(looked.content[0].text, visGuide("wireframe"));
+	assert.match(looked.content[0].text, /^# vis: rules for every kind\n[\s\S]*\n# vis wireframe\n/);
 
 	await session.mode("vis on");
 	assert.deepEqual(branch.at(-1).data.head, ["spec"], "the switch records the head it leaves in place");
+	assert.ok(!hasGuideTool(), "the tool set changes when the next run starts, not at the switch");
 	let turn = await session.userTurn();
+	assert.ok(hasGuideTool(), "vis on: the run that carries the note has vis_guide");
 	assert.equal(turn.section, head, "a minor toggle leaves the prompt's mode section byte-identical");
 	assert.equal(turn.notes.length, 1, "one note for the switch");
 	const onNote = turn.notes[0];
@@ -1141,13 +1151,14 @@ await commands.get("mode").handler("normal", ctx);
 	assert.equal(onNote.message.customType, "mode-note");
 	assert.equal(onNote.message.display, false, "hidden in the TUI and in Sova");
 	assert.ok(onNote.message.content.startsWith("Mode change: the user turned the vis minor mode on. Its instructions follow and apply from now on"), "it says what changed");
-	assert.ok(onNote.message.content.endsWith(`\n\n${VIS_INSTRUCTIONS}`), "turning on carries the mode's whole guide, as the head would have");
+	assert.ok(onNote.message.content.endsWith(`\n\n${VIS_INSTRUCTIONS}`), "turning on carries the mode's whole block (the kind list), as the head would have");
 	assert.deepEqual(onNote.message.details, { v: 1, minorModes: ["spec", "vis"], guides: ["vis"] });
 	assert.deepEqual((await session.userTurn()).notes, [], "told once: the next run sends nothing");
 
 	await session.mode("vis off");
 	assert.ok(!("head" in branch.at(-1).data), "no head recorded while it equals the active minor modes");
 	turn = await session.userTurn();
+	assert.ok(!hasGuideTool(), "vis off: the next run drops vis_guide");
 	assert.equal(turn.section, head);
 	assert.equal(
 		turn.notes[0].message.content,
@@ -1161,7 +1172,7 @@ await commands.get("mode").handler("normal", ctx);
 	assert.equal(steered.length, 1);
 	assert.equal(steered[0].options, undefined, "a steer: lands before the run's first request");
 	assert.match(steered[0].message.content, /^Mode change: the user turned the vis minor mode back on\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) apply again/);
-	assert.ok(!steered[0].message.content.includes(VIS_INSTRUCTIONS), "no second copy of the guide");
+	assert.ok(!steered[0].message.content.includes(VIS_INSTRUCTIONS), "no second copy of the block");
 	assert.deepEqual(steered[0].message.details.guides, []);
 
 	// Reopen (a new runtime on the same branch) with a switch the model hasn't heard of yet.

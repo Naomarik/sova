@@ -242,6 +242,12 @@ folds it into a new head, and the claude-code bridge restarts its CLI
 (§app.worker-restore/claude-bridge-restart), so one toggle re-sent the whole conversation uncached
 (measured: 53K–180K tokens per toggle).
 
+The tool list is another matter: turning `vis` or `align` on or off does change the active tools
+(`vis` adds or removes `vis_check` and `vis_guide` together, `align` its `align` tool), while the
+system prompt stays as it was (neither tool adds a line to it). In Sova's hosted sessions that is
+one tool-set change per toggle; in the plain TUI, where `vis` used to change no tool, it costs a
+prompt-cache rebuild.
+
 Instead the switch reaches the model as a **hidden note**, one path for every provider: a
 `mode-note` custom message (`display: false`, so neither the TUI nor Sova's transcript shows it)
 at the switch's next run — beside the user's prompt, or, in a run an extension's message starts (a

@@ -665,9 +665,10 @@ once), **lease** (an offer's lock on its first taker).
   (`POST /api/baton/:sid/abilities {draw?, readLinks?}`, answering the strip's `BatonInfo`;
   refused once it is done or closed). A change applies from the session's next reply: the prompt
   and the tools are set when a run starts. The share page never shows them.
-- **The drawing guide** is Sova's short opening plus `vis-mode.md`'s emphasis section and its
-  `flow`, `chart`, `matrix`, `timeline`, `tree`, `steps`, `wireframe` and `layers` sections (owner notes and stub
-  kinds stripped as the vis mode strips them; its examples parse, tested). Its rules: at most one
+- **The drawing guide** is Sova's short opening plus the vis guide's shared rules and `mark`
+  syntax (with every kind's `mark` targets in one line) and its `flow`, `chart`, `matrix`,
+  `timeline`, `tree`, `steps`, `wireframe` and `layers` files (owner notes and stub kinds stripped
+  as the vis mode strips them; its examples parse, tested). Its rules: at most one
   drawing in a reply, and only when a picture helps the person; only about the person's own
   subject (their figures, a screen or layout they describe, their own work's steps); never about
   people, roles, the roster, who decides what, the goal, or how this conversation is run. A

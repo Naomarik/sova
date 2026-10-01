@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, VIS_INSTRUCTIONS, visPrompt, workerMinorModes } from "./minor.ts";
+import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
@@ -274,18 +274,32 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(DELEGATE_ALIGN_BRIDGE, /status is implementing/);
 });
 
-test("vis: vis-mode.md verbatim minus its owner comments, composed last", () => {
+test("vis: vis/overview.md minus its owner comments and stub kinds' lines, composed last", () => {
 	const vis = buildMinorPrompt("vis");
+	assert.equal(vis, VIS_INSTRUCTIONS);
 	assert.match(vis, /^# Minor mode: vis\n/);
 	assert.doesNotMatch(vis, /<!--|owner:/, "owner notes never reach the model");
-	// A stub kind is never taught: whichever sections the guide itself marks as stubs.
-	const guide = readFileSync(new URL("./vis-mode.md", import.meta.url), "utf8");
-	for (const [, h] of guide.matchAll(/^## (.+)\n<!-- stub -->/gm)) assert.doesNotMatch(vis, new RegExp(`^## ${h}$`, "m"), `stub ${h} is never taught`);
-	assert.match(vis, /^## code$/m);
-	assert.match(vis, /^## Shared: emphasis$/m);
-	assert.equal(visPrompt("# A\n\n## x\n<!-- stub -->\nhidden\n\n## y\n<!-- note -->\nshown\n"), "# A\n\n## y\nshown");
-	assert.match(vis, /```vis flow\n/);
+	assert.equal(vis, visOverview(readFileSync(new URL("./vis/overview.md", import.meta.url), "utf8")), "the overview file, nothing more");
+	// The kind list only: no kind's grammar or example is in the prompt; vis_guide carries it.
+	assert.doesNotMatch(vis, /```vis /);
+	assert.match(vis, /call `vis_guide` with that kind/);
+	assert.deepEqual([...vis.matchAll(/^- ([a-z /]+): /gm)].flatMap((m) => m[1]!.split(" / ")), [...VIS_KINDS]);
+	// A stub kind is never taught: whichever kind files carry the marker.
+	for (const [word, file] of Object.entries(VIS_KIND_FILES)) assert.equal(VIS_KINDS.includes(word), !VIS_FILES[file]!.includes("<!-- stub -->"), word);
+	const taught = (w: string) => w !== "x";
+	assert.equal(visOverview("<!-- note -->\n# A\n\n- x: hidden\n- y: shown\n- x / y: hidden too\n- y / z: shown too\n", taught), "# A\n\n- y: shown\n- y / z: shown too");
 	assert.equal(composePrompt(withMinor(withMinor(defaults(), "vis", true), "align", true), ALL_OK), `${buildMinorPrompt("align")}\n\n${vis}`);
+});
+
+test("vis_guide: the shared rules then the kind's file, for the listed kinds only", () => {
+	const shared = readFileSync(new URL("./vis/shared.md", import.meta.url), "utf8");
+	const wireframe = readFileSync(new URL("./vis/wireframe.md", import.meta.url), "utf8");
+	assert.equal(visGuide("wireframe"), `${stripVisComments(shared)}\n\n${stripVisComments(wireframe)}`);
+	assert.match(visGuide("wireframe"), /^# vis: rules for every kind\n/);
+	assert.doesNotMatch(visGuide("flow"), /<!--/);
+	assert.equal(visGuide("html"), visGuide("svg"));
+	assert.equal(VIS_KIND_FILES.html, "html-svg");
+	for (const bad of ["mermaid", "overview", "shared", "html-svg", ""]) assert.throws(() => visGuide(bad), /No vis kind/);
 });
 
 test("spec: a registered minor mode, composed after align and never bridged", () => {
@@ -335,7 +349,7 @@ test("spec: minor.ts reads its own spec-mode.md, from any cwd, and refuses a mal
 		try {
 			writeFileSync(join(dir, "minor.ts"), readFileSync(join(here, "minor.ts")));
 			writeFileSync(join(dir, "spec-mode.md"), md);
-			writeFileSync(join(dir, "vis-mode.md"), readFileSync(join(here, "vis-mode.md")));
+			cpSync(join(here, "vis"), join(dir, "vis"), { recursive: true });
 			const src = `import(${JSON.stringify(pathToFileURL(join(dir, "minor.ts")).href)}).then((m) => process.stdout.write(JSON.stringify([m.buildMinorPrompt("spec"), m.SPEC_CORE_SHELL])))`;
 			return spawnSync(process.execPath, ["--input-type=module", "-e", src], { cwd: tmpdir(), encoding: "utf8" });
 		} finally {

@@ -14,7 +14,9 @@
  * agreement with the `align` tool (align-tool.ts), in the loadout only while align is on.
  * The tool results' snapshots are the state, folded along the branch (align.ts); a hidden
  * note on each user prompt lists what is open, a settling run that planned in prose gets one
- * nudge, and the TUI shows a widget and an overlay viewer (align-ui.ts).
+ * nudge, and the TUI shows a widget and an overlay viewer (align-ui.ts). "vis" puts a list
+ * of the drawable kinds in the prompt, and each kind's rules come from the `vis_guide` tool
+ * (vis-guide-tool.ts), in the loadout only while vis is on.
  *
  * Surface: a "Mode" category in the ctrl+p command palette (palette.ts, registered
  * through command-palette/contracts.ts; bare /mode opens it), scriptable /mode
@@ -65,6 +67,7 @@ import {
 } from "./align.ts";
 import { registerAlignTool } from "./align-tool.ts";
 import { ALIGN_OVERLAY_OPTIONS, alignWidget, createAlignViewer, type AlignViewer } from "./align-ui.ts";
+import { registerVisGuideTool, VIS_GUIDE_TOOL } from "./vis-guide-tool.ts";
 
 /** remote/workers.ts: a session on a target announces itself; asking makes it announce again. */
 const REMOTE_SESSION_EVENT = "remote:session";
@@ -567,6 +570,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		if (active.mode === "delegate" && active.strict) applyStrictTools();
 		else restoreTools();
 		syncAlignTool();
+		syncVisGuideTool();
 		recomputeRoutes();
 		syncHostSection();
 		renderStatus(ctx);
@@ -581,9 +585,21 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	 * before strict hid edit/write) follows too, so leaving strict doesn't bring back a stale set.
 	 */
 	function syncAlignTool(): void {
+		syncTool(ALIGN_TOOL, hasMinor(active, "align"));
+	}
+
+	/**
+	 * The vis_guide tool is in the loadout exactly while vis is on, synced where Sova's vis_check is (at
+	 * session start, when a user's prompt starts a run, and when a run settles), so a toggle changes the
+	 * tool set once, for both.
+	 */
+	function syncVisGuideTool(): void {
+		syncTool(VIS_GUIDE_TOOL, hasMinor(active, "vis"));
+	}
+
+	function syncTool(tool: string, want: boolean): void {
 		try {
-			const want = hasMinor(active, "align");
-			const fix = (tools: string[]) => (want ? (tools.includes(ALIGN_TOOL) ? tools : [...tools, ALIGN_TOOL]) : tools.filter((t) => t !== ALIGN_TOOL));
+			const fix = (tools: string[]) => (want ? (tools.includes(tool) ? tools : [...tools, tool]) : tools.filter((t) => t !== tool));
 			const current = pi.getActiveTools();
 			const next = fix(current);
 			if (next.length !== current.length) pi.setActiveTools(next);
@@ -712,6 +728,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		},
 		remoteTarget: () => remoteTarget,
 	});
+	registerVisGuideTool(pi);
 
 	/** One line per profile: the configured tuple(s) and, in delegate, what is actually in use. */
 	function routingLines(): string[] {
@@ -961,6 +978,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		lastReplyText = "";
 		runUserAsked = false;
 		nudged = false;
+		syncVisGuideTool();
 	});
 
 	// A compaction summarizes the align results away, and the next run may be one no user prompt
@@ -1307,6 +1325,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		// The first run since the start or a compaction fixes the head; a later one tells the model,
 		// in a hidden note beside this prompt, about minor modes switched since.
 		fixHead();
+		syncVisGuideTool();
 		const modeNote = takeNote();
 		if (modeNote) pi.sendMessage(modeNote, { deliverAs: "nextTurn" });
 		const block = modeBlock();

@@ -25,7 +25,10 @@ initTheme();
 const { createAssistantMessageEventStream, getCurrentSystemPrompt } = await jiti.import("@earendil-works/pi-ai");
 const { VIS_INSTRUCTIONS } = await jiti.import(path.resolve(new URL("../minor.ts", import.meta.url).pathname));
 
-/** Per provider request: the system prompt it leads with, its later system messages, and its user texts. */
+/**
+ * Per provider request: the system prompt it leads with, its later system messages that patch the prompt
+ * (text or sections), the tool-set changes among them, and its user texts.
+ */
 let requests = [];
 /** Where the extension-supplied compaction keeps from (an entry id), set by the scenario. */
 let keepFrom;
@@ -37,7 +40,11 @@ function streamSimple(model, context) {
 	const messages = context.messages;
 	requests.push({
 		prompt: getCurrentSystemPrompt(messages) ?? "",
-		midSystem: messages.slice(1).filter((m) => m.role === "system").length,
+		midSystem: messages.slice(1).filter((m) => m.role === "system" && (textOf(m.content) !== "" || m.sections !== undefined)).length,
+		toolChanges: messages
+			.slice(1)
+			.filter((m) => m.role === "system" && (m.toolsAdded || m.toolsRemoved))
+			.map((m) => ({ added: (m.toolsAdded ?? []).map((t) => t.name), removed: (m.toolsRemoved ?? []).map((t) => t.name ?? t) })),
 		users: messages.filter((m) => m.role === "user").map((m) => textOf(m.content)),
 	});
 	const message = { role: "assistant", content: [{ type: "text", text: "done" }], api: model.api, provider: model.provider, model: model.id, usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } }, stopReason: "stop", timestamp: Date.now() };
@@ -82,7 +89,11 @@ async function open(sessionManager) {
 }
 
 const mode = (session, args) => session.extensionRunner.getCommand("mode").handler(args, session.extensionRunner.createCommandContext());
-const systemEntries = (session) => session.sessionManager.getEntries().filter((e) => e.type === "message" && e.message.role === "system");
+/** The head and any prompt patch; a system message that only changes the tool set (vis_guide) is not one. */
+const systemEntries = (session) =>
+	session.sessionManager
+		.getEntries()
+		.filter((e) => e.type === "message" && e.message.role === "system" && !((e.message.toolsAdded || e.message.toolsRemoved) && textOf(e.message.content) === "" && e.message.sections === undefined));
 const noteEntries = (session) => session.sessionManager.getEntries().filter((e) => e.type === "custom_message" && e.customType === "mode-note");
 
 try {
@@ -100,11 +111,13 @@ try {
 		await session.prompt("two");
 		let request = requests.at(-1);
 		assert.equal(request.prompt, head, "the provider's system prompt is byte-identical after the toggle");
-		assert.equal(request.midSystem, 0, "no mid-conversation system message: nothing for a provider to fold into its head");
+		assert.equal(request.midSystem, 0, "no mid-conversation prompt patch: nothing for a provider to fold into its head");
+		// vis brings its vis_guide tool: the one tool-set change (what Sova's vis_check already changes at the same point).
+		assert.deepEqual(request.toolChanges, [{ added: ["vis_guide"], removed: [] }], "the only change: vis_guide joins the tools");
 		assert.equal(systemEntries(session).length, 1, "no prompt patch in the transcript");
 		const on = request.users.at(-1);
 		assert.ok(on.startsWith("Mode change: the user turned the vis minor mode on."), "the note follows the user's prompt");
-		assert.ok(on.endsWith(VIS_INSTRUCTIONS), "with the whole vis guide");
+		assert.ok(on.endsWith(VIS_INSTRUCTIONS), "with the whole vis block (the kind list)");
 		assert.equal(request.users.at(-2), "two");
 		assert.equal(noteEntries(session).length, 1);
 		assert.equal(noteEntries(session)[0].display, false, "stored hidden");
@@ -119,6 +132,7 @@ try {
 		request = requests.at(-1);
 		assert.equal(request.prompt, head);
 		assert.equal(request.midSystem, 0);
+		assert.deepEqual(request.toolChanges, [{ added: ["vis_guide"], removed: [] }], "a run no prompt starts keeps the tool set it had; it changes when that run settles");
 		assert.match(request.users.at(-1), /^Mode change: the user turned the vis minor mode off\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) no longer apply/);
 		assert.equal(systemEntries(session).length, 1);
 
@@ -136,6 +150,7 @@ try {
 		const request = requests.at(-1);
 		assert.equal(request.prompt, head, "a reopened session rebuilds the head it started with");
 		assert.equal(request.midSystem, 0);
+		assert.deepEqual(request.toolChanges, [{ added: ["vis_guide"], removed: [] }], "off then on again before any request: no net tool change");
 		assert.equal(systemEntries(session).length, 1, "and records no patch for it");
 		assert.match(request.users.at(-1), /^Mode change: the user turned the vis minor mode back on\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) apply again/);
 		assert.equal(request.users.filter((u) => u.startsWith("Mode change:")).length, 3, "every note so far is in the request");
@@ -150,6 +165,7 @@ try {
 		assert.match(after.prompt, /# Minor mode: vis/, "with the modes active at that point");
 		assert.equal(after.users.filter((u) => u.startsWith("Mode change:")).length, 0, "no guide twice: the notes the compaction kept are dropped");
 		assert.ok(after.users.includes("two"), "the kept tail itself stays");
+		assert.deepEqual(after.toolChanges, [], "the rebuilt head carries vis_guide among its tools");
 		const rebuilt = after.prompt;
 		await session.prompt("six");
 		assert.equal(requests.at(-1).prompt, rebuilt, "stable from then on");

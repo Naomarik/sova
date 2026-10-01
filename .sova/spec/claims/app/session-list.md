@@ -142,19 +142,21 @@
                 <p class="list-summary" title="…">Wiring /ws/watch to the session tailer</p>
                 <span class="session-topics text-num" title="7 topics in this session">7</span>
               </div>
-              <!-- line 3: the readiness chip when a worktree is ready or waiting for your OK
-                   (§chat.worktrees/readiness), leading the line, then time, the muted readiness
-                   badge when there is one ("restart pending", "merged · 2 follow-ups", "merged" —
-                   lowercase, the meta's own muted voice, no tone, never wrapped; its `title` the
-                   per-worktree lines), and model, then the context ring. With a chip:
-                   <span class="chip chip-success session-readiness-chip" title="feat/x: ready to merge, checks passed"><span class="chip-dot" aria-hidden="true"></span>Ready to merge</span>
-                   before the <p class="list-meta">. A tagged row's
+              <!-- line 3: time, then the worktrees the session tracks, "2 of 3" merged of the ones
+                   it owns (§chat.worktrees/readiness) — a 12px branch glyph and the bare figure in
+                   the meta's own muted voice, both in success while one of them is ready to merge,
+                   never wrapped and never grown, the digits aria-hidden with the words beside them
+                   for AT:
+                   <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span>
+                   — then the muted readiness badge when there is one ("restart pending", "2
+                   follow-ups" — lowercase, the meta's own muted voice, no tone, never wrapped; its
+                   `title` the per-worktree lines), then model, then the context ring. A tagged row's
                    `.list-meta` has the `title` "Topic: bug fix (tagged automatically)"; the topic
                    shows nowhere else on the row. A remote row opens the line with its
                    own mark (§app/session-list "Remote sessions"): one 6px muted dot before the time. Local rows
                    open with the time, as here. -->
               <div class="list-line list-meta-row">
-                <p class="list-meta">2h ago · <span class="session-readiness" title="feat/x: ready, checks passed">ready ✓</span> · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
+                <p class="list-meta">2h ago · <span class="session-worktrees session-worktrees-ready" title="feat/x: ready to merge, checks passed"><span class="icon icon-sm" style="--icon:url(/icons/branch.svg)" aria-hidden="true"></span><span class="text-num" aria-hidden="true">2 of 3</span><span class="visually-hidden">2 of 3 worktrees merged, one is ready to merge</span></span> · <span class="session-readiness" title="feat/c: merged, 19 commits ahead">2 follow-ups</span> · <span class="text-mono" title="anthropic/claude-opus-5">claude-opus-5</span></p>
                 <span class="context-ring {context-warn|context-error}" title="{the head's exact sentence}">
                   <svg viewBox="0 0 12 12" aria-hidden="true">
                     <circle class="context-ring-track" cx="6" cy="6" r="5" fill="none"/>
@@ -489,16 +491,22 @@ label a person reads says "sessions pane".
   beside (`readTailOutline` returns gist, "now" and count from the accepted entry), so the sentence
   and the figure can never disagree. No count, no chip — and no chip without a summary line either,
   since the line is what it rides on: a hidden line hides its count.
-- **Row line 3.** When the session's readiness badge is ready or waiting (§chat.worktrees/readiness),
-  a toned chip **leads the line**, at the same left edge on every row that has one: "● Ready to
-  merge" in success, "● Waiting for your OK" in info — a dot and the word, sentence case (the
-  `.org-needs-chip` treatment), `flex: none`, its `title` each worktree's state and reason. It comes
-  before a remote row's mark. Every other readiness (restart pending, merged, merged · {n}
-  follow-ups) stays muted text after the time, where it was; a leftover worktree is only in the
-  `title`, never counted. The chip never truncates: the text block after it does, so the model's
-  name gives way first, then the badge, then the time — at a 280px desktop sidebar and on a 390px
-  phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h ago", "yesterday", "Mar 4"),
-  then ` · `, then the model in mono. Show only the part after the first `/` and put the full
+- **Row line 3.** The worktrees the session tracks **lead the facts after the time**, when the
+  server has read at least one (§chat.worktrees/readiness): a 12px `branch` glyph and a bare figure,
+  "{merged} of {total}" — "0 of 1", "2 of 3" — over the session's own, non-dropped worktrees, in
+  the meta's own muted voice, `white-space: nowrap`, its `title` each worktree's state and reason.
+  Both the glyph and the figure take `--status-success` while **one or more** of those worktrees is
+  ready to merge, which includes one waiting for your OK: the light is the row's whole word for it,
+  so the row that can be merged is the row that glows — no check, no phrase. No worktrees, or none
+  the server has read yet, means no count at all, never "0 of 0". The digits are `aria-hidden` and
+  the row's accessible name carries the words ("2 of 3 worktrees merged, one is ready to merge").
+  The muted readiness badge follows it when there is one: "restart pending", or the follow-up count
+  ("1 follow-up", "2 follow-ups") — never the word "merged", which the count already says — and a
+  leftover worktree is only in the `title`, never counted. The line truncates from its end, so the
+  model's name gives way first, then the badge, then the count, the time last — at a 280px desktop
+  sidebar and on a 390px phone alike. Then relative `lastActiveAt` ("just now", "4m ago", "2h
+  ago", "yesterday", "Mar 4"), then ` · `, then the model in mono. Show only the part after the first
+  `/` and put the full
   `provider/model` in `title`. If `model` is null, omit the separator and the model. The line is
   `--fs-micro`, the model's mono included: two facts, never a sentence, under a title and a summary
   that carry the row (Tokens below). A remote row
@@ -709,7 +717,7 @@ whose branch is not merged (§chat.alignment/session-mark), and a baton hand-off
 their link, §app.baton/needs-you); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
 a team gone quiet (§app.decisions/team-stall) are not blockers: each is a quiet mark on its row,
 never a row here. Neither is a worktree ready to merge or waiting for your OK: that is the row's
-readiness chip (§chat.worktrees/readiness). A stuck subagent is not one either: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
+worktree count, lit (§chat.worktrees/readiness). A stuck subagent is not one either: it is its parent session's decide item. They are the attention digest's **act** tier (§app.overseer/attention-digest), read
 from `GET /api/overseer/attention`, the list the Overseer's "{a} need you" counts — less the
 organization sessions (§app.session-list/ordinary-surfaces), which wait in the Organizations
 region's own Needs you (§app.session-list/organizations). **The Overseer's count still includes

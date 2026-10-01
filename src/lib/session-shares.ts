@@ -70,12 +70,18 @@ export function cleanLabels(raw: readonly string[]): string[] {
 
 const VISIT_WORD: Record<SessionShareVisit["kind"], string> = { visit: "Opened", preview: "Link preview", refused: "Refused", capped: "More opens that day, not listed" };
 
-/** One visit line: "Opened · iPhone · 2h ago · 4 min". `rel` formats a past time. */
+/** One visit line: "Opened · iPhone · 2h ago · 4 min", then what the host's visitor log holds
+    (§mesh.public/visitor-log): "· 203.0.113.7 · en-GB · 3 pages · from https://example.com".
+    `rel` formats a past time. */
 export function visitLine(v: SessionShareVisit, rel: (iso: string) => string): string {
   const mins = v.lastSeenAt ? Math.round((Date.parse(v.lastSeenAt) - Date.parse(v.at)) / 60_000) : 0;
   const long = v.kind === "visit" && mins >= 1 ? ` · ${mins} min` : "";
-  return `${VISIT_WORD[v.kind]} · ${v.device}${v.bot ? " (automated)" : ""} · ${rel(v.at)}${long}`;
+  const who = [v.ip?.join(", "), v.lang?.split(",")[0], v.pages ? (v.pages.length === 1 ? "1 page" : `${v.pages.length} pages`) : "", v.referer ? `from ${v.referer}` : ""].filter(Boolean);
+  return `${VISIT_WORD[v.kind]} · ${v.device}${v.bot ? " (automated)" : ""} · ${rel(v.at)}${long}${who.length ? ` · ${who.join(" · ")}` : ""}`;
 }
+
+/** A visit line's hover: its time, then the raw user agents and the pages opened, when logged. */
+export const visitTitle = (v: SessionShareVisit, abs: string): string => [abs, ...(v.ua ?? []), ...(v.pages ?? [])].join("\n");
 
 /** A share's live links, and whether any recipient is looking now. */
 export const liveRecipients = (s: SessionShare): SessionShareRecipient[] => s.recipients.filter((r) => r.state === "live");

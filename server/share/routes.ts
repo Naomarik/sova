@@ -12,6 +12,7 @@ import { ownerAccess } from "../owner";
 import { ownerView } from "../owner-page";
 import { mountSessionShareRoutes } from "./session-routes";
 import { classify, recordOpen, recordRefused, recordShellFetch, type VisitLink } from "../visits";
+import { noteShareVisit } from "../visitor-identity";
 
 /**
  * The share listener's whole API (§app.baton/share-listener). Its own Hono app: nothing of the
@@ -154,7 +155,7 @@ export function createShareApp(): Hono {
     }
     logVisit(token, "open", () => {
       const link = findLink(token);
-      if (link) recordOpen(link, { tab: c.req.query("v"), userAgent: ua });
+      if (link) noteShareVisit(recordOpen(link, { tab: c.req.query("v"), userAgent: ua }), c.env);
     });
     return c.json(view);
   });
@@ -320,7 +321,7 @@ export function createShareApp(): Hono {
       if (err instanceof OrgError && err.status === 404) return c.json(refusal("missing", "Not found."), 404);
       throw err;
     }
-    logVisit(token, "open", () => recordOpen(ownerVisit(access.link), { tab: c.req.query("v"), userAgent: ua }));
+    logVisit(token, "open", () => noteShareVisit(recordOpen(ownerVisit(access.link), { tab: c.req.query("v"), userAgent: ua }), c.env));
     return c.json(view);
   };
   app.get("/api/i/:token", ownerRead(() => ({})));

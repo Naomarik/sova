@@ -12,7 +12,7 @@ import { stateRoot } from "./state-root";
 
 export const TOPIC_PENDING_CAP = 200;
 export const TOPIC_TEXT_MAX = 4000;
-export const TOPICS_PER_SESSION = 5;
+export const TOPICS_PER_SESSION = 10;
 const BASE_MAX = 16;
 const SUFFIX = 6;
 /** Closed topics' records are kept this long (so a name is never handed out twice meanwhile). */

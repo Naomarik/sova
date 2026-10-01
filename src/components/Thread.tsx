@@ -1193,8 +1193,21 @@ export function ThreadScroller(props: {
     if (toggled) return onScroll();
     toBottom();
   };
-  const observer = new MutationObserver(settle);
-  onCleanup(() => observer.disconnect());
+  // A mutation's settle waits for the frame (still before its paint), so the write to `scrollTop`
+  // no longer forces a layout of the whole thread inside the task that changed it, once per change.
+  let settleFrame = 0;
+  const settleSoon = () => {
+    if (settleFrame) return;
+    settleFrame = requestAnimationFrame(() => {
+      settleFrame = 0;
+      settle();
+    });
+  };
+  const observer = new MutationObserver(settleSoon);
+  onCleanup(() => {
+    observer.disconnect();
+    cancelAnimationFrame(settleFrame);
+  });
   // Rows change height with no mutation too: an image decoding, a row first drawn at its real
   // height instead of its estimate (content-visibility, app.css). Only a view that sat at the end
   // is put back there: rows drawn above a view scrolling up (a smooth scroll's first frames are

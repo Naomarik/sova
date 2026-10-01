@@ -1093,6 +1093,9 @@ export function ChatView(props: {
     else noteOn(entryId, result.message);
   };
 
+  /** The session's id, for Share. A memo: the summary is a new object on every list read, and every
+      strip's items read this. */
+  const shareId = createMemo(() => props.summary?.()?.id);
   /** What each delivered message offers here. Copy is ours alone; the rest are requests with a
       reason when they can't act, never a button that quietly does nothing. */
   const chatActions: MessageActionsProvider = {
@@ -1102,7 +1105,7 @@ export function ChatView(props: {
           case "copy":
             return { kind, reason: null, run: async () => void (await copyText(strip.text, COPIED)) };
           case "share": {
-            const id = props.summary?.()?.id;
+            const id = shareId();
             return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
           }
           case "rewind":

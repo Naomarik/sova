@@ -124,7 +124,8 @@ never carry Sova's own credential: Sova's `sova_token_*` cookies, `x-sova-token`
 headers, the extension's own `Authorization` included, pass through). A backend that calls Sova
 back sends the token itself as `x-sova-token: <token>`, reading it from the `SOVA_TOKEN`
 environment variable if you start the backend with it set, else from the token file,
-`~/.pi/agent/sova/auth-token` (or `$PI_CODING_AGENT_DIR/sova/auth-token`). `sova token` prints it.
+`~/.pi/agent/sova/auth-token` (or `$PI_CODING_AGENT_DIR/sova/auth-token`). Where the installer's
+launcher is present, `sova token` prints it; from the Sova checkout, `pnpm run auth:token` does.
 
 To open a session the extension just created, hand it to Sova rather than setting the page's
 hash. A new session has no messages yet, so it isn't in Sova's list, and `#/s/<path>` would find

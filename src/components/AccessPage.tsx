@@ -42,7 +42,7 @@ export function AccessPage() {
   });
   const remaining = () => `${Math.floor(seconds() / 60)}:${String(seconds() % 60).padStart(2, "0")} left`;
   const mintStatus = () => minting() ? "Making a code for your other device…" : mintError() ? "The code couldn't be made. Try making a code again." : pair() ? "Your code is ready. Keep the code and link private." : "No code made yet. Make one when your other device is ready.";
-  const tokenStatus = () => token() ? "The install's token is visible. Keep it private." : tokenError() ? "The token couldn't be fetched. Try revealing it again, or run sova token on the machine Sova runs on." : revealing() ? "Fetching the install's token…" : "The token stays hidden until you choose to reveal it.";
+  const tokenStatus = () => token() ? "The install's token is visible. Keep it private." : tokenError() ? "The token couldn't be fetched. Try revealing it again, or read the token file on the machine Sova runs on: ~/.pi/agent/sova/auth-token (sova/auth-token under the server's PI_CODING_AGENT_DIR)." : revealing() ? "Fetching the install's token…" : "The token stays hidden until you choose to reveal it.";
   createEffect(() => announce([mintStatus(), copyStatus(), tokenStatus()].filter(Boolean).join(" ")));
   let title!: HTMLHeadingElement;
   onMount(() => title.focus());
@@ -91,10 +91,10 @@ export function AccessPage() {
           <Icon name="chevron-left" /> Back to Overview
         </a>
         <h1 ref={title} tabindex="-1" class="text-display-xl" style={{ margin: "0" }}>Access</h1>
-        <p>Bring a second device—your phone, for example—into Sova with a one-use code. You don't need to see or share this install's access token.</p>
+        <p>Let another browser or device into this Sova — a different browser or address on this machine, or your phone — with a one-use code. You never see or share this install's access token.</p>
         <section class="card stack" aria-labelledby="access-code-title" style={{ padding: "var(--space-4)", "min-width": "0" }}>
           <h2 id="access-code-title" class="text-heading-m">Bring a device in</h2>
-          <p>The code expires in 5 minutes and works once. Scan the QR or open the link on your other device to unlock it.</p>
+          <p>The code expires in 5 minutes and works once. Scan the QR or open a link on the browser or device you're letting in, or type the code on its unlock screen. Each link is an address of this Sova with <code>/#c=&lt;code&gt;</code> after it; the code works at any of them.</p>
           <button class="button button-primary" type="button" disabled={minting()} onClick={mint} style={{ "align-self": "flex-start" }}>
             {minting() ? "Making Code…" : pair() ? "Make Another Code" : "Make a Code"}
           </button>

@@ -18,7 +18,7 @@ import {
   type SovaConfirmItem,
 } from "../shared/protocol";
 import { setArchived } from "./archived-sessions";
-import { type AttentionRow, blockerKey, buildDigest, mergedBranch, workerErrorTime } from "./attention";
+import { type AttentionRow, blockerCount, blockerKey, buildDigest, mergedBranch, workerErrorTime } from "./attention";
 import { readIndex, stakeholderAttention } from "./orgs";
 import { heldAttention } from "./project-pipeline";
 import { conflictAttention } from "./decisions";
@@ -78,7 +78,8 @@ import { isViewing, markSeen, readSeen } from "./seen";
 import { UnreadReplies } from "./unread-replies";
 import { cleanupSessions, getSessionSummary, idOf, indexedSessionPaths, lastReplyAtOf, listSessionFiles, listSessions } from "./sessions-index";
 import { getSessionInsight } from "./insights";
-import { runNote, runNoteSessionIds, type SessionNow } from "./overseer-run-note";
+import { branchLabels, runNote, runNoteSessionIds, type SessionNow, sessionsInPlay, sessionsInPlayText, type Touched } from "./overseer-run-note";
+import { assistantText, ID_NOTE_MESSAGE, idCheckNote } from "./overseer-id-check";
 import { meshApi } from "./mesh";
 import { probePeer } from "./mesh/hello";
 import { meshLinks } from "./mesh/links";
@@ -475,6 +476,10 @@ export const attendedForTest = () => turns.attended();
 
 /** Sessions the Overseer created or prompted, for the running-at-once cap. */
 const started = new Set<string>();
+/** When the Overseer last created or prompted each local session (by path), for the sessions in
+    play (§app.overseer/sessions-in-play); in memory, beside what its branch's tool results say. */
+const touchedAt = new Map<string, number>();
+const touchedHere = (): Touched[] => [...touchedAt].map(([path, at]) => ({ id: idOf(path), at }));
 /** When the Overseer last sent a prompt to a session, until that session is seen running: its run
     reports streaming only after some async preflight, and it must count as running meanwhile. */
 const promptedAt = new Map<string, number>();
@@ -580,6 +585,7 @@ const host: OverseerToolHost = {
   },
   started: (path, prompted) => {
     started.add(path);
+    touchedAt.set(path, Date.now());
     if (prompted) promptedAt.set(path, Date.now());
   },
   peer: async (id) => {
@@ -757,13 +763,8 @@ export async function runNoteMessage(branch: readonly unknown[], now = new Date(
   const cardsText = cardsNote(foldCards(branch), false, sessionActivity());
   let note: { content: string; details: unknown };
   try {
-    const aliases = readAliases();
-    const states = new Map<string, SessionNow | null>();
-    for (const id of runNoteSessionIds(branch, now.getTime())) {
-      const path = await pathOfId(id);
-      const s = path ? await getSessionSummary(path) : null;
-      states.set(id, s ? { name: sessionName(s, aliases[s.id]), archived: s.archived, ...(mergedBranch(s) ? { merged: s.readiness!.since } : {}), waitsOnAnswers: !!s.align && s.align.openQuestions > 0 } : null);
-    }
+    const prompted = touchedHere();
+    const states = await sessionsNow(runNoteSessionIds(branch, now.getTime(), prompted));
     const digest = await attentionDigest();
     const act = digest.items.filter((i) => i.tier === "act");
     note = runNote({
@@ -771,6 +772,7 @@ export async function runNoteMessage(branch: readonly unknown[], now = new Date(
       branch,
       act: { keys: new Set(act.map(blockerKey)), complete: act.length >= digest.counts.act },
       session: (id) => states.get(id) ?? null,
+      prompted,
       ...(cardsText ? { cardsText } : {}),
       redact: (t) => serverRedactor().redact(t),
     });
@@ -779,6 +781,73 @@ export async function runNoteMessage(branch: readonly unknown[], now = new Date(
     note = runNote({ now, branch: [], act: { keys: new Set(), complete: false }, session: () => null, ...(cardsText ? { cardsText } : {}) });
   }
   return { message: { customType: CARDS_NOTE_MESSAGE, content: note.content, display: false, details: note.details } };
+}
+
+/** A session's state as the sessions in play name it (overseer-tools' list rows say it the same way). */
+function stateNow(s: SessionSummary): string {
+  if (s.pendingDialogs) return "needs-input";
+  if (s.busy) return "working";
+  return s.activity?.state ?? "idle";
+}
+
+/** Each session the run note names, as it is now; null when it is gone. */
+async function sessionsNow(ids: readonly string[]): Promise<Map<string, SessionNow | null>> {
+  const aliases = readAliases();
+  const states = new Map<string, SessionNow | null>();
+  for (const id of ids) {
+    const path = await pathOfId(id);
+    const s = path ? await getSessionSummary(path) : null;
+    states.set(
+      id,
+      s
+        ? {
+            name: sessionName(s, aliases[s.id]),
+            archived: s.archived,
+            ...(mergedBranch(s) ? { merged: s.readiness!.since } : {}),
+            waitsOnAnswers: !!s.align && s.align.openQuestions > 0,
+            state: stateNow(s),
+            branches: branchLabels(s.readiness),
+          }
+        : null,
+    );
+  }
+  return states;
+}
+
+/**
+ * The note written once after a compaction (§app.overseer/confirm, §app.overseer/sessions-in-play):
+ * the sessions in play, then the exact open cards; undefined when there is neither.
+ */
+export async function compactNoteMessage(branch: readonly unknown[], now = Date.now()): Promise<{ customType: string; content: string; display: false } | undefined> {
+  const cards = cardsNote(foldCards(branch), true, sessionActivity());
+  let play: string | undefined;
+  try {
+    const inPlay = sessionsInPlay(branch, now, touchedHere());
+    const states = await sessionsNow(inPlay.map((p) => p.id));
+    const text = sessionsInPlayText(inPlay, (id) => states.get(id) ?? null, now);
+    play = text ? serverRedactor().redact(text) : undefined;
+  } catch (err) {
+    console.warn("[overseer] compaction note without sessions in play:", err instanceof Error ? err.message : String(err));
+  }
+  const content = [play, cards].filter(Boolean).join("\n\n");
+  return content ? { customType: CARDS_NOTE_MESSAGE, content, display: false } : undefined;
+}
+
+/**
+ * The id check's hidden note for a run's messages (§app.overseer/id-check), or null when every
+ * session it linked is a file on this host. Names come summary-first and are redacted.
+ */
+export async function idNoteMessage(messages: readonly unknown[]): Promise<{ customType: string; content: string; display: false; details: unknown } | null> {
+  const note = await idCheckNote(assistantText(messages), {
+    known: async (id) => (await pathOfId(id)) !== null,
+    allIds: async () => (await listSessionFiles()).map(idOf),
+    name: async (id) => {
+      const path = await pathOfId(id);
+      const s = path ? await getSessionSummary(path) : null;
+      return s ? sessionName(s, readAliases()[s.id]) : undefined;
+    },
+  });
+  return note ? { customType: ID_NOTE_MESSAGE, content: serverRedactor().redact(note.content), display: false, details: note.details } : null;
 }
 
 /** When a session was last active (its file's mtime, as the session list says), by id, for the
@@ -928,10 +997,22 @@ setOverseerRuntime({
                 event.systemPromptOptions.appendSystemPrompt = prompt.refresh();
                 return runNoteMessage(ctx.sessionManager.getBranch());
               });
+              // The id check (§app.overseer/id-check): a run that linked a session id this host has no
+              // file for leaves a hidden note naming the nearest real id. Sent while the run still
+              // streams, so the SDK appends it once the run's last message is in; the reply is never changed.
+              pi.on("agent_end", async (event) => {
+                try {
+                  const note = await idNoteMessage(event.messages);
+                  if (note) pi.sendMessage(note);
+                } catch (err) {
+                  console.warn("[overseer] id check skipped:", err instanceof Error ? err.message : String(err));
+                }
+              });
               // A compaction summarizes the card results away: the exact open cards, once, after it.
-              pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true, sessionActivity());
-                if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
+              // The sessions in play go with them (§app.overseer/sessions-in-play), even with no card open.
+              pi.on("session_compact", async (_event, ctx) => {
+                const note = await compactNoteMessage(ctx.sessionManager.getBranch());
+                if (note) pi.sendMessage(note);
               });
               // Worker reports and other extension messages reach the model redacted, like every tool's output.
               pi.on("context", (event) => {
@@ -1043,31 +1124,60 @@ const TICK_MS = 20_000;
 export const BRIEF_MIN_GAP_MS = 10 * 60_000;
 export const BRIEF_MAX_UNATTENDED = 30;
 
+/** A briefed blocker that cleared and stands again within this long is the same blocker, not news
+    (§app.overseer/brief-repeat): longer than a working turn that hides a session's open questions
+    while it runs (the audit saw the same session re-briefed every 16–17 minutes as it ran and
+    stopped), short enough that a blocker back after an hour is news again. */
+export const BRIEF_REPEAT_MS = 60 * 60_000;
+
+/** What a brief told about one blocker: its count then, and when it cleared since (absent while it stands). */
+export interface Told {
+  count: number;
+  clearedAt?: number;
+}
+
 /**
  * Which blockers are new, and whether to brief now. Pure, for the tests. `announced` is what the
- * user has been told about (or what was already there when watching began); a blocker that clears
- * leaves it, so a recurrence counts as new again.
+ * user has been told about (or what was already there when watching began), with each blocker's
+ * count then (`counts`, default 1). Per §app.overseer/brief-repeat a standing blocker is new again
+ * only when its count rises above the count told; one that clears is remembered for
+ * BRIEF_REPEAT_MS, so its return within that is not new (unless its count rose), and after it it is.
  */
 export function briefDecision(input: {
   current: string[];
-  announced: Set<string> | null;
+  counts?: ReadonlyMap<string, number>;
+  announced: ReadonlyMap<string, Told> | null;
   proactivity: OverseerSettings["proactivity"];
   now: number;
   lastBriefAt: number;
   unattended: number;
   overseerIdle: boolean;
-}): { announced: Set<string>; brief: string[] } {
+}): { announced: Map<string, Told>; brief: string[] } {
+  const count = (k: string) => input.counts?.get(k) ?? 1;
   const current = new Set(input.current);
-  if (input.announced === null || input.proactivity !== "brief") return { announced: current, brief: [] };
-  const announced = new Set([...input.announced].filter((k) => current.has(k)));
-  const fresh = input.current.filter((k) => !announced.has(k));
+  if (input.announced === null || input.proactivity !== "brief") return { announced: new Map(input.current.map((k) => [k, { count: count(k) }])), brief: [] };
+  const announced = new Map<string, Told>();
+  // Told and gone: remembered from when it cleared, for BRIEF_REPEAT_MS.
+  for (const [k, told] of input.announced) {
+    if (current.has(k)) continue;
+    const clearedAt = told.clearedAt ?? input.now;
+    if (input.now - clearedAt < BRIEF_REPEAT_MS) announced.set(k, { count: told.count, clearedAt });
+  }
+  const fresh: string[] = [];
+  for (const k of input.current) {
+    const told = input.announced.get(k);
+    const known = told && (told.clearedAt === undefined || input.now - told.clearedAt < BRIEF_REPEAT_MS) ? told : undefined;
+    if (!known || count(k) > known.count) fresh.push(k);
+    // Standing (again): told at the count it was told at; a new one waits as new until a brief carries it.
+    if (known) announced.set(k, { count: known.count });
+  }
   const may = fresh.length > 0 && input.overseerIdle && input.now - input.lastBriefAt >= BRIEF_MIN_GAP_MS && input.unattended < BRIEF_MAX_UNATTENDED;
   if (!may) return { announced, brief: [] };
-  for (const k of fresh) announced.add(k);
+  for (const k of fresh) announced.set(k, { count: count(k) });
   return { announced, brief: fresh };
 }
 
-let announced: Set<string> | null = null;
+let announced: Map<string, Told> | null = null;
 let lastBriefAt = 0;
 let unattended = 0;
 
@@ -1096,7 +1206,8 @@ async function tick(): Promise<void> {
   if ((readSeen()[st.current] ?? 0) > lastBriefAt || isViewing(st.current)) unattended = 0;
   const chat = heldChat(path);
   const idle = !chat || (!chat.session.isStreaming && chat.queue.size === 0);
-  const d = briefDecision({ current: act.map(blockerKey), announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt, unattended, overseerIdle: idle });
+  const counts = new Map(act.map((i) => [blockerKey(i), blockerCount(i)]));
+  const d = briefDecision({ current: act.map(blockerKey), counts, announced, proactivity: settings.proactivity, now: Date.now(), lastBriefAt, unattended, overseerIdle: idle });
   announced = d.announced;
   if (!d.brief.length) return;
   const text = briefText(act.filter((i) => d.brief.includes(blockerKey(i))));

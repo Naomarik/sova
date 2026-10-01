@@ -112,9 +112,12 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   }
   // A worker error is acknowledged once the user has had the session in front of them after it
   // (the seen stamp is at or past the error, or a pane shows it now). A never-stamped session or an
-  // error of unknown time is not acknowledged: a blocker errs on the side of showing.
+  // error of unknown time is not acknowledged: a blocker errs on the side of showing. The session
+  // finishing a turn after the error deals with it too: its last finished reply is later, so the
+  // failure (the worker's report) was in front of it.
   const errorSeen =
-    row.viewing === true || (s.seenAt !== undefined && row.workerErrorAt !== undefined && s.seenAt >= row.workerErrorAt);
+    row.viewing === true ||
+    (row.workerErrorAt !== undefined && ((s.seenAt !== undefined && s.seenAt >= row.workerErrorAt) || (row.lastReplyAt !== undefined && row.lastReplyAt > row.workerErrorAt)));
   if (row.failedWorkers > 0 && !errorSeen)
     add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
   // Open alignment questions (§chat.alignment/session-mark): a fact of the file, no model. Waiting
@@ -237,3 +240,12 @@ export function workerErrorTime(failed: number, rowTimes: number[], risenAt?: nu
 
 /** A stable key per blocker, for "Brief me": a NEW key is a new blocker. */
 export const blockerKey = (it: Pick<AttentionItem, "id" | "kind">) => `${it.id}:${it.kind}`;
+
+/** The count a blocker carries, for "Brief me" (§app.overseer/brief-repeat): an open-questions item's
+    open questions, a worker-error item's failed subagents, read back from the detail sessionItems
+    writes ("3 open questions in …", "2 subagents ended in an error."); 1 for every other kind. */
+export function blockerCount(it: Pick<AttentionItem, "kind" | "detail">): number {
+  if (it.kind !== "open-questions" && it.kind !== "worker-error") return 1;
+  const m = /^(?:Merged with )?(\d+) /.exec(it.detail ?? "");
+  return m ? Number(m[1]) : 1;
+}

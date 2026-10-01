@@ -84,10 +84,41 @@ test("a refused token locks with a reason; an accepted one opens and clears it",
   const answer = (status: number) => (async () => new Response("{}", { status })) as unknown as typeof fetch;
   assert.equal(await unlock("wrong", answer(401)), "refused");
   assert.equal(authState(), "locked");
-  assert.match(unlockFailure() ?? "", /sova token/);
+  // The reason names the token file; it never assumes a `sova` launcher is installed.
+  assert.match(unlockFailure() ?? "", /~\/\.pi\/agent\/sova\/auth-token/);
+  assert.doesNotMatch(unlockFailure() ?? "", /sova token/);
   assert.equal(await unlock(` ${TOKEN} `, answer(200)), "ok");
   assert.equal(isUnlocked(), true);
   assert.equal(unlockFailure(), null);
+});
+
+test("the unlock screen's choice decides what is posted: a code posts {code}, a token posts {token}", async () => {
+  const posted: unknown[] = [];
+  const ok = (async (_url: string, init: RequestInit) => {
+    posted.push(JSON.parse(init.body as string));
+    return new Response("{}", { status: 200 });
+  }) as unknown as typeof fetch;
+  assert.equal(await unlock(TOKEN, ok, "code"), "ok");
+  assert.deepEqual(posted.at(-1), { code: TOKEN });
+  assert.equal(await unlock(TOKEN, ok), "ok");
+  assert.deepEqual(posted.at(-1), { token: TOKEN });
+});
+
+test("a refused code says to make a new one in Access; a refused token names the token file", async () => {
+  const no = (async () => new Response("{}", { status: 401 })) as unknown as typeof fetch;
+  assert.equal(await unlock(TOKEN, no, "code"), "refused");
+  assert.match(unlockFailure() ?? "", /open Access to get a new code/);
+  assert.equal(await unlock(TOKEN, no, "token"), "refused");
+  assert.match(unlockFailure() ?? "", /token file/);
+});
+
+test("the unlock screen keeps a visible kind choice, defaults to the token and passes the choice through", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("../components/Unlock.tsx", import.meta.url), "utf8");
+  assert.match(src, /type="radio"/);                 // a labelled radio group, not a hidden toggle
+  assert.match(src, /name="unlock-kind"/);
+  assert.match(src, /createSignal<Kind>\("token"\)/); // the token first: the recovery path
+  assert.match(src, /await unlock\(token\(\), undefined, kind\(\)\)/); // posted as {code} or {token}
 });
 
 test("an unreachable server is said as such, not as a wrong token", async () => {

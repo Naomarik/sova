@@ -858,24 +858,15 @@ sessions shows as empty.
     <h2 class="sidebar-region-head" id="r-groups">
       <svg class="icon icon-sm icon-twist" aria-hidden="true">…chevron-right…</svg>
       Groups <span class="sidebar-region-count">· 2</span>
-      <!-- The region's one action, at the head's right end: there with the region shut, and
-           hidden while searching. Click and keydown stop here, as a group's `⋯` does, or they
-           would toggle the region. -->
-      <button type="button" class="button button-icon button-ghost group-new-toggle"
-              aria-label="New group" title="New group">
-        <svg class="icon icon-sm" aria-hidden="true">…plus…</svg>
+      <!-- The region's one action, at the head's right end: there with the region shut. It opens
+           the group picker (§app.session-list/group-picker) and makes nothing. Click and keydown
+           stop here, as a group's `⋯` does, or they would toggle the region. -->
+      <button type="button" class="button button-icon button-ghost group-picker-open"
+              aria-haspopup="dialog" aria-label="Open Groups" title="Open Groups">
+        <svg class="icon icon-sm" aria-hidden="true">…external…</svg>
       </button>
     </h2>
   </summary>
-
-  <!-- While a new group's name is being typed: the field opens where the region's rows start,
-       hidden while searching. -->
-  <div class="group-field-row">
-    <form class="group-field" aria-label="New group name">
-      <input class="input" type="text" maxlength="60" placeholder="Group name" aria-label="New group name">
-      <button type="submit" class="button button-sm">Save</button>
-    </form>
-  </div>
 
   <!-- One group: a <details>, like an Archive date section, and collapsed like one too. -->
   <details class="group-section">
@@ -921,9 +912,9 @@ sessions shows as empty.
 ```
 
 - **Placement.** Above Live & web, below the search field. The region is always rendered — with no
-groups it holds its head, with the `+` that makes a group, and the note "No groups yet. Make one,
-then drag a session into it." — because that `+` is the feature's front door, the way the top
-region keeps its head when it is empty.
+groups it holds its head, with its `Open Groups` button, and the note "No groups yet. Drag a
+session to start one." — because dragging a row is the feature's front door (its overlay's
+`+ New group` makes the first group), the way the top region keeps its head when it is empty.
 - **Order.** Groups keep their creation order, so a rename or a new group never shuffles the list.
 Within a group, rows and folder groups follow the usual rule (newest `lastActiveAt` first), and
 the folder labels are `h4`, one level under the group's own label.
@@ -949,31 +940,30 @@ opening the region lasts as long as the page does and no longer, so a reload alw
 This is the deliberate exception to the Archive's rule (§app/session-list "Regions"), and there is no storage key
 to read — `src/lib/group-open.ts` is the whole rule, inputs only.
 - **Forced open** — without changing the choice, exactly as the Archive is — while a search is on
-(a matching group must not hide its hits), and while the new-group
-name field is showing (it opens in the region's body, and a shut region would hide the field the
-user just asked for). When the field closes the choice answers again, so a region the user never
-opened is shut again.
+(a matching group must not hide its hits). When the search clears the choice answers again, so
+a region the user never opened is shut again.
 - **A group inside it is a `<details>` too**, like an Archive date section, and collapsed by
 default on the same terms: memory only, no storage key, reopened by hand each page.
 - **Empty.** An empty group stays visible with `0` and "No sessions yet. Drag a session to file it
 here.": it is what a group is when the user makes it, and its tile in the drop overlay is what fills it. While a search is on,
 a group with no matching session is left out entirely. Every group reaches this state when its
 last member leaves, an older build's `autoDissolve` group included (§workspace.groups/legacy-groups).
-- **Creating.** The region's one action is a `+` at the right end of its head
-(`.button-icon.button-ghost`, `aria-label` and `title` "New group"), not a row: a row read as one
-of the things it makes and sat inside the list it adds to. On the head it is there with the region
-shut, and at the end the name and count keep their place. It is quiet like a group's `⋯` — the
-count's muted ink, coming up to full ink when the head is hovered or the `+` has focus — with the
-standard 44px target, hung into the head's right padding so its glyph lines up with the `⋯` of the
-groups below. It stops its own click and keydown, as the `⋯` does, so a press on it is not also a
-press on the summary; and it is hidden while searching, with the field it opens. Pressing it opens
-the name field (focused) where the region's rows start, forcing the region open if it was shut.
-The field saves on Enter, saves what is there when it loses focus, and cancels on Escape or when
-empty. However it closes, focus goes back to the `+`, because the field is gone and the caret
-would otherwise drop to `<body>` — unless the blur that closed it already moved focus somewhere
-focusable, checked a frame later. `POST /api/session-groups`, then the group appears empty at the
-end of the region — collapsed like every other, with its `0` showing; the region it lands in is
-open, because the user is standing in it.
+- **Creating.** The region makes no group: it has no `+` and no name field. A group is made
+where a session is being filed: the drop overlay's `+ New group` (§app.session-list/drop-overlay),
+`New group…` in the session pane's `Move into group` and in the selection toolbar's Move to group,
+and the Overseer. `POST /api/session-groups`, then the group appears at the end of the region in
+creation order.
+- **Open Groups.** The region's one action is `Open Groups` at the right end of its head
+(`.button-icon.button-ghost` with the `external` glyph, as `Open workspace` has, `aria-label` and `title` "Open Groups",
+`aria-haspopup="dialog"`), not a row: a row read as one of the groups and sat inside the list.
+On the head it is there with the region shut and while searching, and at the end the name and
+count keep their place. It is quiet like a group's `⋯` — the count's muted ink, coming up to full
+ink when the head is hovered or it has focus — with the standard 44px target, hung into the head's
+right padding so its glyph lines up with the `⋯` of the groups below. It stops its own click and
+keydown, as the `⋯` does, so a press on it is not also a press on the summary, and it never opens
+or shuts the region. Pressing it opens the group picker (§app.session-list/group-picker). With no
+groups it is `aria-disabled` with the reason "No groups yet. Drag a session to start one." as its
+`title`, and a press only says that reason through the polite region.
 - **The actions menu.** A group's three actions live behind one `⋯` trigger on the group's own
 name row, in the `<summary>` after the count — not in a tool row under the section, which cost
 every group three buttons' worth of height whether or not anyone wanted them. The trigger is
@@ -991,8 +981,10 @@ row is. Measured before the panel moved: pressing `Rename…` collapsed the grou
 the group's members side by side, each a whole chat, with one composer that writes to all of them
 (§workspace/groups). An empty group can't be opened as one: the row is `aria-disabled` with its reason under the
 label ("Nothing is in it yet. Drag a session into it first."), said before the press rather than
-discovered as a blank workspace. The
-section is still the place you file sessions into; the workspace is the place you read them in.
+discovered as a blank workspace. The head's `Open Groups` picker
+(§app.session-list/group-picker) opens the same `#/g/{id}`, with the same refusal for an empty
+group. The section is still the place you file sessions into; the workspace is the place you read
+them in.
 - **This is where membership changes.** The Groups region, the selection toolbar and the
 session details' `Move into group` are where a person puts a session into a group; the workspace
 takes members out but adds none (§workspace.groups/group-lifecycle).
@@ -1028,11 +1020,94 @@ Space opens and closes the section and AT announces expanded or collapsed. The `
 it keeps the section's own gestures: it stops click and keydown, so Enter or Space on the trigger
 opens the menu and does not also toggle the section, and Tab reaches the trigger after the
 summary. Escape closes the menu (and any screen it is showing) and returns focus to it. The region
-head's `+` is a named button (`aria-label` "New group") inside its `<summary>`, and it keeps the
-region's gestures the same way: it stops click and keydown, so Enter or Space on it opens the name
-field and does not also toggle the region. When the field closes it hands focus back to the `+`.
+head's `Open Groups` is a named button inside its `<summary>`, and it keeps the region's gestures
+the same way: it stops click and keydown, so Enter or Space on it opens the picker and does not
+also toggle the region. When the picker closes it hands focus back to `Open Groups`.
 Dragging is a pointer gesture only (§app.session-list/drop-overlay): the popover path is what a
 keyboard uses. Contrast is the region head's (ink-2 on sunken, 7.65 dark / 7.22 light).
+
+## §app.session-list/group-picker — Open Groups: the group picker
+
+The Groups head's `Open Groups` (§app.session-list/groups) opens a **group picker**: every group as
+a tile, in one panel sized to its list, and a press on a tile opens that group's
+workspace (`#/g/{id}`, §workspace.groups/routes). It is the drop overlay's shell and tiles
+(§app.session-list/drop-overlay) with nothing in flight: no floating card, no target under the
+pointer, no `+ New group`, no `Remove from …`, no Archive and no Cancel bar. It makes, moves,
+archives and removes nothing; it only opens. The overlay is `src/components/GroupPicker.tsx`; its
+tiles keep the drop overlay's row size (`DROP_LIST_FIT` in `src/lib/drag-overlay.ts`).
+
+```html
+<!-- Portalled to <body>, position fixed, inset 0, over everything. Only while the picker is open. -->
+<div class="drop-overlay group-picker" role="dialog" aria-modal="true" aria-labelledby="group-picker-title">
+  <!-- As big as the list, never the window: the drop overlay's own dropListLayout, written
+       inline — one 260–320px column, then 2 and 3, then shorter rows, then a scroll. -->
+  <div class="drop-overlay-panel" style="--drop-list-w: 320px; --pick-row-h: 52px; --pick-gap: 4px">
+    <div class="drop-overlay-head group-picker-head">
+      <div class="group-picker-head-text">
+        <h2 class="drop-overlay-title" id="group-picker-title">Groups</h2>
+        <p class="drop-overlay-hint">Open one as a workspace.</p>
+      </div>
+      <button type="button" class="button button-icon button-ghost" aria-label="Close" title="Close">…close…</button>
+    </div>
+    <!-- Row by row across the layout's columns (one full-width column when folded); the grid
+         scrolls when the list outgrows the window. -->
+    <div class="drop-overlay-grid group-picker-grid">
+      <a class="drop-tile group-picker-tile" href="#/g/g1" title="Work">…folder… Work · 4 sessions</a>
+      <!-- An empty group: shown, never a link: an `Empty` chip by the name, and its reason
+           under it, wrapped and read whole. -->
+      <a class="drop-tile group-picker-tile" role="link" tabindex="0" aria-disabled="true"
+         title="Nothing is in it yet. Drag a session into it first.">…folder… Home
+         <span class="chip drop-tile-chip">Empty</span> · Nothing is in it yet. Drag a session into it first.</a>
+    </div>
+  </div>
+</div>
+```
+
+- **The tiles.** One per group, in creation order, each the drop overlay's group tile: a folder
+  icon, the name on the first line, and its session count on the second ("1 session", "4
+  sessions"), counted as the drop overlay counts them, over the whole list and not the search's
+  slice. Every group is shown whatever the sidebar's search, and the region need not be open. With
+  no group (the last one deleted elsewhere while it is open) the head's note reads "No groups yet.
+  Drag a session to start one."
+- **Opening one.** A populated tile is a link to `#/g/{id}`. A press closes the picker and the
+  route opens the workspace, split. A modified click (a new tab or window) is the browser's and
+  leaves the picker open.
+- **An empty group can't be opened**, exactly as the group menu's `Open workspace` refuses it: the
+  tile is shown, `aria-disabled`, in the drop overlay's disabled look, with an `Empty` chip after
+  its name (the drop overlay's chip, where `Current` sits) and "Nothing is in it yet. Drag a
+  session into it first." under it as its title and its second line. That line is never cut to an
+  ellipsis: it wraps at any width and the tile grows to hold it, so the reason is on screen, not
+  only in a tooltip. A press on it does nothing but say that reason through the polite region.
+- **Nothing is being dragged.** The tiles never take the drop overlay's under-the-pointer look
+  (accent tint and outline, drop words). Hover and keyboard focus are the plain affordance: the
+  sunken fill under the pointer and the standard focus ring. The overlay keeps a normal cursor,
+  scrolls its list with a finger or a wheel, and leaves text selectable.
+- **Layout: the list's own size.** The drop overlay's shell (fixed to the window under `--scrim`,
+  `--color-bg` panel, the head at body size with the hint in caption) — the scrim still fills the
+  window, dimming the list the picker opened from — but the panel takes the **list's own size and
+  no more**, measured by the drop overlay's own `dropListLayout` (`src/lib/drag-overlay.ts`,
+  written inline by GroupPicker): one column of session-row tiles, a second and a third when the
+  window's height won't hold it, rows shortened toward the 44px floor, then a scroll inside the
+  panel (wheel, finger or keyboard) while the head stays put. So a few groups are a compact panel
+  centred on the scrim, like the drop overlay itself, and it grows toward the window only as the
+  list does — never a full screen holding one strip of rows. The tiles keep a session row's size,
+  never stretched into cards: 52px tall at rest, filled **row by row** across the layout's columns,
+  which share the panel's width evenly. An empty group's tile grows only as tall as its wrapped
+  reason. Under 768px it is the shell's bottom sheet — the window's full width, one column, as
+  tall as its list and no taller. The head carries the close control at its right end, a 44px
+  `.button-icon.button-ghost` named "Close".
+- **Closing.** The close control, Escape, and a press on the scrim outside the panel close it, and
+  nothing changes. Opening a workspace closes it too. However it closes, focus returns to
+  `Open Groups`.
+- **The drop overlay is unchanged.** Dragging a row still opens it with every one of its targets
+  and rules, at its own compact size; the picker only shares its shell, tile look and row size.
+
+**Accessibility.** The picker is a modal `role="dialog"` labelled by its title. Opening it moves
+focus to the first populated tile (else the first tile, else the close control), Tab and Shift+Tab
+stay inside it (`trapFocus`), and Escape closes it from anywhere inside. A populated tile is a
+link named by its own words, the group's name and count, under the hint that says what a link
+does, so Enter opens it. An empty tile is still in the Tab
+order, `role="link"` and `aria-disabled`, so its reason is read before any press.
 
 ## §app.session-list/drop-overlay — Dragging a row: the drop overlay
 

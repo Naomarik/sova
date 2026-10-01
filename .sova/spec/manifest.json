@@ -11167,6 +11167,23 @@
         "pi-config/extensions/claude-code/provider/stream.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts"
       ]
+    },
+    "§app.session-list/group-picker": {
+      "kind": "behavior",
+      "requires": [
+        "§app.session-list/groups",
+        "§app.session-list/drop-overlay",
+        "§workspace.groups/routes"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/GroupPicker.tsx",
+        "src/lib/group-picker.ts",
+        "src/lib/group-picker.test.ts",
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ]
     }
   },
   "boundary": {

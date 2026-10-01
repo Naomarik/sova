@@ -55,11 +55,12 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Select mode, org rows | Move to group: "Skipped 1: an organization session stays with its project." · "Skipped {n}: organization sessions stay with their project." · Archive: "{n} went to its project's Done list." (n > 1: "{n} went to their projects' Done lists.") |
 | Archive date sections | Today · Yesterday · Last 7 days · Last 30 days · Older (each with its count) |
 | Groups region head (§app.session-list/groups) | Groups · {n} where n = **groups** · searching: Groups · {matching groups} of {all groups} |
-| New group button (the `+` on the Groups region head) | wordless `+` · `aria-label` and `title`: New group |
-| Group name field (New group, Rename) | placeholder Group name · `aria-label` "New group name" / "Rename “{name}”" · button `Save` · Enter saves, blur saves, Escape cancels |
+| Open Groups button (on the Groups region head) | wordless `external` · `aria-label` and `title`: Open Groups · no groups: `title` "No groups yet. Drag a session to start one." |
+| Group picker (§app.session-list/group-picker) | title **Groups** · hint "Open one as a workspace." · `Close` · a group: {name}, then "{n} sessions" (1: "1 session") · empty: {name} with an `Empty` chip, then "Nothing is in it yet. Drag a session into it first." (wrapped, never truncated) · no groups: "No groups yet. Drag a session to start one." |
+| Group name field (Rename, and New group in the session pane's Move into group) | placeholder Group name · `aria-label` "New group name" / "Rename “{name}”" · button `Save` · Enter saves, blur saves, Escape cancels |
 | Group section label | {name} (own case, no eyebrow), then its count · `title`: {name} |
 | Empty group | No sessions yet. Drag a session to file it here. |
-| Groups region, no groups | No groups yet. Make one, then drag a session into it. |
+| Groups region, no groups | No groups yet. Drag a session to start one. |
 | Open workspace (group tool row, §workspace/groups) | `Open workspace` · `title`: Open “{name}” as a workspace — every member side by side |
 | Group tool row | `Rename` · `Delete group` · asking: with sessions "Delete “{name}”? Its {n} sessions stay in the list." (1 session: "… Its 1 session stays …"), empty "Delete “{name}”? Nothing is in it." — with `Delete group` · `Cancel` |
 | Group toasts | "Added to “{name}”." · "Moved to “{name}”." · "Removed from “{name}”." · "Deleted “{name}”. Its {n} sessions are ungrouped." (1: "… Its 1 session is ungrouped.") · "Deleted “{name}”. It had no sessions." · failures: "Couldn't create the group. {server message}" · "Couldn't rename the group. …" · "Couldn't delete the group. …" · "Couldn't move this session. {server message}" |

@@ -548,9 +548,14 @@
     "§app/new-session-dialog": {
       "kind": "surface",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "src/components/NewSessionDialog.tsx",
+        "src/components/FolderPicker.tsx",
+        "src/lib/new-session.ts",
+        "src/lib/new-session.test.ts",
+        "src/lib/hidden-folders.ts",
+        "src/lib/hidden-folders.test.ts",
         "server/targets.ts"
       ]
     },
@@ -1390,7 +1395,7 @@
     "§design.copy-deck/new-session-dialog": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "verified"
     },
     "§design.copy-deck/settings-modes-delegate": {
       "kind": "note",

@@ -367,6 +367,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Buttons | `Create Session` (pending: "Creating…") · `Cancel` |
 | 4xx error | {server message}, or: That folder doesn't exist. Pick one that does. |
 | Other error | **Couldn't create the session.** Nothing was written. Try again. |
+| Recent list header | checkbox "Show hidden folders" (the picker's own preference, not a second one) · caption "1 hidden folder is not listed." / "{n} hidden folders are not listed." — one line, only when rows were dropped |
 
 ## §design.copy-deck/insights — Insights (§app/insights)
 

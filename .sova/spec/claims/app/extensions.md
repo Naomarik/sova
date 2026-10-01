@@ -50,7 +50,9 @@ An unknown id is a 404 everywhere: JSON `{"error":"Unknown extension"}` on `/api
 text `Unknown extension` on the UI paths.
 
 - **HTTP forwarding** (`hono/proxy`). Every request header goes along except `host` (the backend
-  sees its own) and the hop-by-hop headers, plus `X-Forwarded-Host` (the host the browser used) and
+  sees its own), the hop-by-hop headers and Sova's own credential (every `sova_token_*` cookie,
+  `x-sova-token`, and an `Authorization` carrying the token), plus
+  `X-Forwarded-Host` (the host the browser used) and
   `X-Sova-Origin: http://127.0.0.1:<the port this server listens on>`, which is how a backend
   learns where to call Sova back. The response comes back as the backend sent it: status, headers
   (minus hop-by-hop), streamed body. A backend that can't be reached is

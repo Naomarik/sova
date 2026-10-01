@@ -1,7 +1,7 @@
 # §chat/schedules — Playbook schedules
 > Part of the Sova design spec · [overview](../design/overview.md)
 
-A project's playbook can say when it runs by itself: a `when:` line in its `PLAYBOOK.md` header,
+A project's playbook can say when it runs by itself: a `when:` line in its entry file's header,
 with the profile it runs as. One keeper in the server (`server/schedules.ts`) fires it, with no
 model in the loop, and a fire reaches a session as a tagged wake-up. Nothing fires until you approve
 the schedule with a click, and an approval covers exactly the `when:`, `tz:` and profile you saw.
@@ -10,7 +10,7 @@ new session, and needs no model to re-arm it.
 
 ## §chat.schedules/header — The `when:` line
 
-- **Where.** Only a project playbook (`<project root>/.sova/playbooks/<id>/PLAYBOOK.md` or the
+- **Where.** Only a project playbook (`<project root>/.sova/playbooks/<id>/`, entry `PLAYBOOK.md` or `SKILL.md`, or the
   marketing folder, §chat.playbooks/where-playbooks-come-from) can have a schedule, because it has a
   project for its sessions to run in. `when:` in a Sova or Yours playbook is ignored and shown as
   "Schedules run only from a project's playbooks."
@@ -80,8 +80,9 @@ new session, and needs no model to re-arm it.
   <instruction>
   ```
   The instruction of a new session is the playbook's turn (§chat.playbooks/what-gets-sent) after a
-  blank line. A wake says `Run the playbook "<title>" again: read <dir>/PLAYBOOK.md first, since it
-  may have changed.` The run is not started by the user, so a send in it spends the profile's
+  blank line. A wake says `Run the playbook "<title>" again: read <dir>/<entry> first, since it
+  may have changed.`, where `<entry>` is the file the playbook is read from now, `PLAYBOOK.md` or
+  `SKILL.md` (§chat.playbooks/where-playbooks-come-from). The run is not started by the user, so a send in it spends the profile's
   "On its own" allowance (§chat.profiles/limits).
 - **Skipped while the last one runs.** A fire is skipped, and logged, while the session this
   schedule last fired into is still running or still holds a queued message.

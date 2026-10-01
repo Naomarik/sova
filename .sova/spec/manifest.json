@@ -1746,7 +1746,8 @@
         "src/components/PlaybooksDialog.tsx",
         "src/components/ChatView.tsx",
         "server/chat-manager.ts",
-        "shared/playbooks.ts"
+        "shared/playbooks.ts",
+        "src/lib/playbooks.test.ts"
       ]
     },
     "§chat.playbooks/when-sending-stops-being-possible": {
@@ -10372,6 +10373,20 @@
         "src/lib/project-page.ts",
         "src/lib/project-page.test.ts",
         "src/projects.css"
+      ]
+    },
+    "§chat.playbooks/bundles": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/playbooks.ts",
+        "shared/playbooks.ts",
+        "server/playbooks.test.ts"
+      ],
+      "requires": [
+        "§chat.playbooks/where-playbooks-come-from",
+        "§chat.playbooks/what-gets-sent"
       ]
     }
   },

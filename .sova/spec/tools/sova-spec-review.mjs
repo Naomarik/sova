@@ -115,7 +115,11 @@ async function inspect(root, rel) {
     }
     if (st.isSymbolicLink()) return { state: "refused", why: "symlink" };
     if (i < segs.length - 1 && !st.isDirectory()) return { state: "absent" };
-    if (i === segs.length - 1 && !st.isFile()) return { state: "refused", why: "not a regular file" };
+    if (i === segs.length - 1) {
+      if (!st.isFile()) return { state: "refused", why: "not a regular file" };
+      if (st.nlink > 1) return { state: "refused", why: `hard-linked file (${st.nlink} links)` };
+      if (st.size > MAX_FILE_BYTES) return { state: "refused", why: `oversize (${st.size} > ${MAX_FILE_BYTES} bytes)` };
+    }
   }
   let fh;
   try { fh = await open(cur, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0)); } catch (e) {
@@ -177,7 +181,7 @@ async function withLock(root, fn) {
 // ---------------------------------------------------------------- core
 function runCore(root, id) {
   return new Promise((ok, bad) => {
-    const ch = spawn(process.execPath, [CORE, "scope", id, "--root", root, "--json"], { cwd: root, shell: false, stdio: ["ignore", "pipe", "pipe"] });
+    const ch = spawn(process.execPath, [CORE, "scope", id, "--root", root, "--read-policy", "review", "--json"], { cwd: root, shell: false, stdio: ["ignore", "pipe", "pipe"] });
     const chunks = []; let n = 0;
     ch.stdout.on("data", (c) => { n += c.length; if (n > MAX_CORE_STDOUT) ch.kill(); else chunks.push(c); });
     ch.stderr.resume();

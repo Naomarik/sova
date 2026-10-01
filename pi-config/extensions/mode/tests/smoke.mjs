@@ -2,7 +2,8 @@
 // Drives the real index.ts through the globally installed pi runtime (jiti alias),
 // with a fake ExtensionAPI/TUI and a fake claude-code backend registration.
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -1014,6 +1015,32 @@ await commands.get("mode").handler("normal", ctx);
 	assert.deepEqual(worker.getTools(), ["read", "bash", "edit", "write", "grep"], "strict never strips a worker's edit/write");
 	const block = (await worker.hooks.get("before_agent_start")[0]({ systemPrompt: "base" }, worker.ctx)).systemPrompt;
 	assert.equal(block, `base\n\n${composeWorkerPrompt({ minorModes: ["spec"] })}`, "the worker form, with no writer paragraph although one is set");
+	// The full worktree-config mode extension appends the supplied parent ledger, not just spec-worker.ts.
+	const ledgerFixture = mkdtempSync(path.join(tmpdir(), "mode-worker-ledger-"));
+	const oldLedger = process.env.SOVA_SPEC_LEDGER;
+	try {
+		const ledger = path.join(ledgerFixture, "parent.jsonl");
+		const repo = path.join(ledgerFixture, "repo");
+		mkdirSync(repo);
+		const git = (...args) => { const r = spawnSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repo, ...args], { encoding: "utf8" }); assert.equal(r.status, 0, r.stderr); return r.stdout.trim(); };
+		git("init", "-qb", "main");
+		writeFileSync(path.join(repo, "code.txt"), "before\n");
+		git("add", "."); git("commit", "-qm", "base");
+		const before = git("rev-parse", "HEAD");
+		worker.ctx.cwd = repo;
+		worker.ctx.sessionManager.getSessionId = () => "worker-fixture";
+		worker.ctx.sessionManager.getHeader = () => undefined;
+		process.env.SOVA_SPEC_LEDGER = ledger;
+		for (const fn of worker.hooks.get("agent_start")) await fn({}, worker.ctx);
+		writeFileSync(path.join(repo, "code.txt"), "after\n");
+		const call = { toolCallId: "worker-commit", toolName: "bash", input: { command: "git commit -qam work" } };
+		for (const fn of worker.hooks.get("tool_call")) await fn(call, worker.ctx);
+		git("commit", "-qam", "work");
+		for (const fn of worker.hooks.get("tool_result")) await fn({ ...call, content: [], isError: false }, worker.ctx);
+		const rows = readFileSync(ledger, "utf8").trim().split("\n").map(JSON.parse);
+		assert.equal(rows.length, 1, "actual worker operation appended exactly once");
+		assert.deepEqual([rows[0].top, rows[0].before, rows[0].after, rows[0].kind, rows[0].actor.session], [repo, before, git("rev-parse", "HEAD"), "commit", "worker-fixture"]);
+	} finally { if (oldLedger === undefined) delete process.env.SOVA_SPEC_LEDGER; else process.env.SOVA_SPEC_LEDGER = oldLedger; rmSync(ledgerFixture, { recursive: true, force: true }); }
 	// The same branch and flags without the marker: the snapshot wins, as before (the regression's other side).
 	const parent = load(false);
 	for (const fn of parent.hooks.get("session_start")) await fn({ reason: "startup" }, parent.ctx);
@@ -1055,7 +1082,7 @@ await commands.get("mode").handler("normal", ctx);
 // cached prefix survives a toggle on every provider. Each fake here records, in order, what pi would
 // put on the branch: the extension's entries and the notes it delivers.
 {
-	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
+	const { VIS_INSTRUCTIONS, SPEC_INSTRUCTIONS, VIS_KINDS, visGuide } = await jiti.import(pathToFileURL(path.resolve(new URL("../minor.ts", import.meta.url).pathname)).href);
 	const branch = [{ type: "custom", customType: "mode", data: { mode: "normal", active: { version: 1, mode: "normal", strict: false, minorModes: ["spec"] } } }];
 	const open = () => {
 		const host = makeApi();
@@ -1103,10 +1130,20 @@ await commands.get("mode").handler("normal", ctx);
 	assert.match(head, /# Minor mode: spec/, "the first run builds the head from the active modes");
 	assert.doesNotMatch(head, /# Minor mode: vis/);
 	assert.deepEqual(first.notes, [], "nothing to tell on the first run");
+	const hasGuideTool = () => session.host.getTools().includes("vis_guide");
+	assert.ok(!hasGuideTool(), "no vis_guide while vis is off");
+	// The tool: in-process, kind is exactly the listed kinds, and a lookup is the shared rules then the kind's file.
+	const guideTool = session.host.registeredTools.get("vis_guide");
+	assert.deepEqual(guideTool.parameters.properties.kind.enum, [...VIS_KINDS]);
+	const looked = await guideTool.execute("t1", { kind: "wireframe" });
+	assert.equal(looked.content[0].text, visGuide("wireframe"));
+	assert.match(looked.content[0].text, /^# vis: rules for every kind\n[\s\S]*\n# vis wireframe\n/);
 
 	await session.mode("vis on");
 	assert.deepEqual(branch.at(-1).data.head, ["spec"], "the switch records the head it leaves in place");
+	assert.ok(!hasGuideTool(), "the tool set changes when the next run starts, not at the switch");
 	let turn = await session.userTurn();
+	assert.ok(hasGuideTool(), "vis on: the run that carries the note has vis_guide");
 	assert.equal(turn.section, head, "a minor toggle leaves the prompt's mode section byte-identical");
 	assert.equal(turn.notes.length, 1, "one note for the switch");
 	const onNote = turn.notes[0];
@@ -1114,13 +1151,14 @@ await commands.get("mode").handler("normal", ctx);
 	assert.equal(onNote.message.customType, "mode-note");
 	assert.equal(onNote.message.display, false, "hidden in the TUI and in Sova");
 	assert.ok(onNote.message.content.startsWith("Mode change: the user turned the vis minor mode on. Its instructions follow and apply from now on"), "it says what changed");
-	assert.ok(onNote.message.content.endsWith(`\n\n${VIS_INSTRUCTIONS}`), "turning on carries the mode's whole guide, as the head would have");
+	assert.ok(onNote.message.content.endsWith(`\n\n${VIS_INSTRUCTIONS}`), "turning on carries the mode's whole block (the kind list), as the head would have");
 	assert.deepEqual(onNote.message.details, { v: 1, minorModes: ["spec", "vis"], guides: ["vis"] });
 	assert.deepEqual((await session.userTurn()).notes, [], "told once: the next run sends nothing");
 
 	await session.mode("vis off");
 	assert.ok(!("head" in branch.at(-1).data), "no head recorded while it equals the active minor modes");
 	turn = await session.userTurn();
+	assert.ok(!hasGuideTool(), "vis off: the next run drops vis_guide");
 	assert.equal(turn.section, head);
 	assert.equal(
 		turn.notes[0].message.content,
@@ -1134,7 +1172,7 @@ await commands.get("mode").handler("normal", ctx);
 	assert.equal(steered.length, 1);
 	assert.equal(steered[0].options, undefined, "a steer: lands before the run's first request");
 	assert.match(steered[0].message.content, /^Mode change: the user turned the vis minor mode back on\. Its instructions \(the "# Minor mode: vis" block given earlier in this conversation\) apply again/);
-	assert.ok(!steered[0].message.content.includes(VIS_INSTRUCTIONS), "no second copy of the guide");
+	assert.ok(!steered[0].message.content.includes(VIS_INSTRUCTIONS), "no second copy of the block");
 	assert.deepEqual(steered[0].message.details.guides, []);
 
 	// Reopen (a new runtime on the same branch) with a switch the model hasn't heard of yet.
@@ -1166,6 +1204,35 @@ await commands.get("mode").handler("normal", ctx);
 	turn = await session.userTurn();
 	assert.equal(turn.section, rebuilt, "reopened after the compaction: the rebuilt head again");
 	assert.deepEqual(turn.notes, []);
+}
+
+// Note-only spec activation gets subsequent writer changes, including a worker-wake run.
+{
+	const host = makeApi();
+	const s = { status: new Map(), notices: [], widgets: new Map(), branch: [{ type: "custom", customType: "mode", data: { active: { version: 1, mode: "normal", strict: false, minorModes: [] } } }], customCalls: [] };
+	const c = makeCtx(s);
+	modeExtension(host.api);
+	const fire = async (name, event = {}) => { for (const fn of host.hooks.get(name) ?? []) await fn(event, c); };
+	const specFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-spec.json");
+	const writer = (model) => { writeFileSync(`${specFile}.tmp`, JSON.stringify({ version: 1, writer: { primary: { backend: "pi", model, effort: "high" }, fallback: null } })); renameSync(`${specFile}.tmp`, specFile); };
+	try {
+		await fire("session_start", { reason: "startup" });
+		await fire("before_agent_start", { systemPrompt: "base", prompt: "go" });
+		await fire("agent_start"); await fire("agent_settled");
+		writer("fixture/writer-a");
+		await host.commands.get("mode").handler("spec on", c);
+		await fire("before_agent_start", { systemPrompt: "base", prompt: "go" });
+		await fire("agent_start"); await fire("agent_settled");
+		assert.match(host.sent.at(-1).message.content, /fixture\/writer-a/);
+		const at = host.sent.length;
+		writer("fixture/writer-b");
+		await fire("agent_start"); // deliberately no before_agent_start: worker wake
+		await fire("agent_settled");
+		assert.equal(host.sent.length, at + 1, "writer-only change emits fresh context");
+		assert.match(host.sent.at(-1).message.content, /routing now applies instead of any earlier writer routing/);
+		assert.match(host.sent.at(-1).message.content, /fixture\/writer-b/);
+		assert.doesNotMatch(host.sent.at(-1).message.content, /fixture\/writer-a/);
+	} finally { rmSync(specFile, { force: true }); }
 }
 
 console.log("mode smoke tests passed");

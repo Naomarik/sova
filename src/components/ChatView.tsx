@@ -1054,7 +1054,7 @@ export function ChatView(props: {
 
   /** What every strip in this chat is judged by. Reactive by construction: a turn starting, a
       compaction, a model switch or a reconnect re-enables the actions in place. */
-  const actionState = (wake = false, link = false): ActionState => ({
+  const actionState = (wake = false, link = false, topic = false): ActionState => ({
     chat: true,
     live: false, // a ChatView only exists for a session Sova may write to
     streaming: live.running,
@@ -1065,6 +1065,7 @@ export function ChatView(props: {
     paused: blocked()?.text ?? null,
     wake,
     link,
+    topic,
   });
 
   /** Regenerate: the server walks back to the user message that started this reply, rewinds to
@@ -1114,7 +1115,7 @@ export function ChatView(props: {
           case "regenerate":
             return {
               kind,
-              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink)),
+              reason: actionReason("regenerate", actionState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic)),
               run: () => regenerate(strip.entryId),
             };
         }

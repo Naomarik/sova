@@ -450,6 +450,9 @@ Frontend is SolidJS (NOT React): signals/stores, `<For>/<Show>`, `onCleanup` for
   still held when the queue wakes on `agent_settled` is handed off synchronously inside that window,
   so its turn takes this path: it still starts, and its failure surfaces through the previous
   call's failure handling, which every `prompt()` call site in `server/chat-manager.ts` attaches
-  (`.catch`, or the returned `turn`).
+  (`.catch`, or the returned `turn`). Topic batches (`server/topic-delivery.ts`,
+  `ChatSession.deliverTopicBatch`) stay out of that window on purpose: a settle only schedules a
+  drain on a timer, after the web queue's own hand-off, and a batch counts as delivered at its user
+  entry's `message_end` (the `sova-topic-delivered` marker), never when its `prompt()` resolves.
 - `Agent.peekQueuedMessages()` exists from 0.87.0 (pi-agent-core `agent.d.ts:100`) but Sova's queue
   deliberately does not use it; `server/chat-queue-clients.test.ts` pins its presence.

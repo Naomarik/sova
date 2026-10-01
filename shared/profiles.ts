@@ -35,10 +35,10 @@ export const KNOWN_REMOVABLE_TOOLS = [
 /** The tools each grant adds (registered by the server's `sova-session-powers` extension). */
 export const GRANT_TOOLS: Record<Grantable, readonly string[]> = {
   "sessions.read": ["session_list", "session_detail", "session_read"],
-  "sessions.message": ["session_send"],
+  "sessions.message": ["session_send", "queue_open"],
   "sessions.all": [],
 };
-export const SESSION_TOOL_NAMES = ["session_list", "session_detail", "session_read", "session_send"] as const;
+export const SESSION_TOOL_NAMES = ["session_list", "session_detail", "session_read", "session_send", "queue_open"] as const;
 
 export const CAPABILITY_LABEL: Record<Removable | Grantable, string> = {
   shell: "Shell",

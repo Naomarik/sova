@@ -9,6 +9,7 @@ import {
   type TagTopic,
 } from "../shared/protocol";
 import { isLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import { type Answer, DecisionError, type DecisionProvider, type Question } from "./decide";
 import { maySend, terminalSession } from "./decide-settings";
 import { serverRedactor } from "./overseer-redact";
@@ -374,9 +375,9 @@ export async function readTailTurn(path: string, size: number): Promise<{ turnId
             if (!found && m?.role === "assistant" && m.stopReason !== "toolUse" && typeof e.id === "string") {
               found = { turnId: e.id, assistant: textOf(m.content) };
             } else if (found && m?.role === "user") {
-              // A partner's message over a link is never topic evidence (§mesh.links/transcript).
+              // A partner's message over a link, or a topic batch, is never topic evidence (§mesh.links/transcript, §chat.topics/row).
               const user = textOf(m.content);
-              return done(isLinkMessage(user) ? null : user);
+              return done(isLinkMessage(user) || isTopicBatch(user) ? null : user);
             }
           } catch {
             // torn line or not JSON: skip

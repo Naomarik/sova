@@ -2,6 +2,7 @@ import { appendFileSync, createReadStream, existsSync } from "node:fs";
 import { createInterface } from "node:readline";
 import { stripImageNotes } from "../shared/image-note";
 import { isLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import type { AutoTitleOutcome, AutoTitleSkip, DecisionFailure, SessionSummary, SessionTitleSettings, WorkerChoice } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { DecisionError, extractJsonObject, failureMessage } from "./decide";
@@ -57,7 +58,7 @@ function userText(content: unknown): string {
 }
 
 /** A user message that is not the user's own words: the derived title's rule (sessions-index.ts). */
-const notUsers = (text: string): boolean => parseWakeNudge(text) !== null || isLinkMessage(text);
+const notUsers = (text: string): boolean => parseWakeNudge(text) !== null || isLinkMessage(text) || isTopicBatch(text);
 
 /** One topic-outline entry's data as a title input: its summary line and topics, or null when it has none. */
 export function outlineOf(data: unknown): Pick<TitleInput, "summaryLine" | "topics"> | null {

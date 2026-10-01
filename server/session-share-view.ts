@@ -4,6 +4,7 @@ import { readFile, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { stripImageNotes } from "../shared/image-note";
 import { parseLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import {
   SESSION_SHARE_EXCERPT_MAX,
   SESSION_SHARE_IMAGE_MAX_BYTES,
@@ -285,8 +286,8 @@ export function shownEntries(branch: Entry[]): Shown[] {
     if (role !== "user" && role !== "assistant") continue;
     // A kept preview link never reaches a share (§app.session-share/never): redacted before any cut.
     const raw = cutAtToken(redactPreviewLinks(textBlocks(m.content)), SESSION_SHARE_TEXT_CEILING);
-    // Not the user's words: a wake nudge, a link partner's message.
-    if (role === "user" && (parseWakeNudge(raw) || parseLinkMessage(raw))) continue;
+    // Not the user's words: a wake nudge, a link partner's message, a topic batch.
+    if (role === "user" && (parseWakeNudge(raw) || parseLinkMessage(raw) || isTopicBatch(raw))) continue;
     const text = withoutImagePaths(role === "user" ? stripImageNotes(raw, m.content) : raw).trim();
     const blocks = imageBlocks(m.content);
     if (!text && !blocks.length) continue;

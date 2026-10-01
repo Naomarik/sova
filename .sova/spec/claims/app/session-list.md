@@ -1303,8 +1303,8 @@ the title rules alone (2 to 7 words, at most 60 characters, sentence case, name 
 than the process, never name the app); **no Sova or agent system prompt goes with it**, and the
 user message holds only:
 
-- the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge or
-  a partner's link message is not one, as for the derived title);
+- the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge,
+  a partner's link message or a topic batch, §chat.topics/row, is not one, as for the derived title);
 - its summary line (the last topic-outline snapshot's `overall`) and that snapshot's topic
   headings, each with at most 2 of its bullets;
 - or, with no summary line (the button only), its first 3 user messages instead.

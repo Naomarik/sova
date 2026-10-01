@@ -25,6 +25,7 @@ import { COMPACT_COMMAND, COMPACT_IMAGES_REFUSAL, compactCommand } from "../shar
 import type { LinkedAgentInfo } from "../shared/mesh-links";
 import { stripImageNotes } from "../shared/image-note";
 import { isLinkMessage, parseLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { inputSourceOf, type QueueImage, type QueueKind, WebQueue, type WebQueueItem } from "./queue";
 import { decodeUsageTotal, decodeWorkers } from "./insights";
@@ -51,6 +52,7 @@ import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { profileOnBranch } from "./session-profile";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
+import { queuePushExtension, topicStore } from "./topics";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -752,6 +754,9 @@ export function resolveRegenerate(branch: readonly BranchEntry[], entryId: strin
     // either; replaying it would redeliver the partner's words as a fresh message.
     if (isLinkMessage(text))
       return { ok: false, reason: "link", message: "That reply answered a message from a linked session, not one you sent, so there is nothing to send again." };
+    // A topic batch (kind "topic", §chat.topics/row) is notes other sessions pushed, not the user's.
+    if (isTopicBatch(text))
+      return { ok: false, reason: "topic", message: "That reply answered notes other sessions pushed to a topic, not a message you sent, so there is nothing to send again." };
     return { ok: true, userId: String(entry.id), text, ...(images ? { images } : {}) };
   }
   return notOnBranch("Nothing on this branch started that reply, so there is nothing to run again.");
@@ -856,6 +861,21 @@ type Sender = { kind: "overseer"; overseerId?: string } | { kind: "baton"; by: s
     message may still be in the SDK's queue). */
 type SenderMark = { text: string; sender: Sender; itemId?: string; held?: boolean };
 
+/** `customType` of the invisible marker beside a delivered topic batch (§chat.topics/delivery). */
+export const TOPIC_DELIVERED_ENTRY = "sova-topic-delivered";
+
+/** A topic batch handed to the agent whose user entry still needs its marker. `entered` runs once
+    that entry exists (the notes are acknowledged then); `gone` when it never will (the turn failed
+    first, or the run settled without it). */
+export interface TopicBatchMark {
+  text: string;
+  topic: string;
+  batch: string;
+  items: { id: string; from: { sessionId: string; title: string }; at: string }[];
+  entered(): void;
+  gone(): void;
+}
+
 /** The sender a queue item carries, if any. */
 const senderOfItem = (item: Pick<WebQueueItem, "overseer" | "baton" | "session">): Sender | null =>
   item.overseer
@@ -927,6 +947,19 @@ class ChatSession {
   }
   /** Texts sent here whose user entry still needs its sender marker. */
   private senderMarks: SenderMark[] = [];
+  /** Topic batches handed to the agent whose user entry still needs its marker (§chat.topics/delivery). */
+  private topicMarks: TopicBatchMark[] = [];
+  /** Stop pressed: no topic batch starts here until the user's next message (§chat.topics/delivery).
+      The pause outlives this runtime: the store keeps it (topic-store.ts paused.json), so a restart
+      holds it too. `topicsPaused` is the in-memory view the delivery gate reads; the three writers
+      below keep both. */
+  topicsPaused = false;
+  private setTopicsPaused(v: boolean): void {
+    if (this.topicsPaused === v) return;
+    this.topicsPaused = v;
+    if (v) topicStore().pauseReceiver(this.path);
+    else topicStore().resumeReceiver(this.path);
+  }
   /** This runtime's profile, set by openSession (null for special kinds). */
   profileState: ProfileState | null = null;
   /** The One at a time check passed for this runtime's first message. */
@@ -1279,6 +1312,72 @@ class ChatSession {
     return starts ? "started" : "delivered";
   }
 
+  /**
+   * Start a turn with a topic batch (§chat.topics/delivery): a sibling of deliverToAgent that ONLY
+   * ever starts a turn. Mid-turn, starting, compacting, or with anything queued (Sova's queue or the
+   * SDK's), it hands nothing over and says why, and the batch waits for the next settle; it never
+   * steers and never enters Sova's web queue. The write guards and the model policy throw, as for a
+   * prompt. Returns "started", or the word for why not.
+   *
+   * The turn is not the user's (no `toSdk("client")`), so it is unattended for session powers'
+   * limits. The batch's mark rides with it: `entered` at its user entry's message_end (markTopic),
+   * `gone` if the turn fails before that or the run settles without it.
+   */
+  deliverTopicBatch(mark: TopicBatchMark): "started" | "busy" | "paused" | "closed" {
+    if (this.disposed) return "closed";
+    if (this.topicsPaused) return "paused";
+    if (this.session.isStreaming || this.starting || this.isCompacting() || this.loginApplying || this.waking) return "busy";
+    if (this.queue.size > 0 || this.session.agent.hasQueuedMessages() || this.linkPending > 0 || this.linkHeld.length) return "busy";
+    assertNotLive(this.path);
+    this.assertNoForeignWrites();
+    this.assertModelAllowed();
+    this.flushDeferredAppends();
+    this.topicMarks.push(mark);
+    let turn: Promise<void>;
+    try {
+      turn = this.session.prompt(mark.text, { expandPromptTemplates: false, source: "extension" });
+      this.noteStarting(turn);
+    } catch (err) {
+      // A synchronous throw would otherwise orphan the mark (gone() never runs) and leave the
+      // delivery in flight: clean up on this failure path as the turn's rejection does below.
+      this.dropTopicMark(mark);
+      throw err;
+    }
+    turn.catch((err) => {
+      this.dropTopicMark(mark);
+      if (this.disposed || isCompactionInProgress(err)) return; // retried at compaction_end
+      this.reportTurnFailure(err);
+      this.queue.onSdkEvent();
+    });
+    return "started";
+  }
+
+  private dropTopicMark(mark: TopicBatchMark): void {
+    const i = this.topicMarks.indexOf(mark);
+    if (i < 0) return;
+    this.topicMarks.splice(i, 1);
+    mark.gone();
+  }
+
+  /** A user message ended: if it is a batch handed over here, write its invisible marker on its
+      entry (one microtask later, when the SDK has persisted it: markSend's timing) and acknowledge it. */
+  private markTopic(message: { content?: unknown }): void {
+    const text = typeof message.content === "string" ? message.content : textBlocks(message.content);
+    const i = this.topicMarks.findIndex((m) => m.text === text);
+    if (i < 0) return;
+    const [mark] = this.topicMarks.splice(i, 1);
+    queueMicrotask(() => {
+      if (this.disposed || this.foreignWrite) return mark!.gone();
+      const sm = this.session.sessionManager;
+      const leaf = sm.getLeafId();
+      const entry = leaf ? sm.getEntry(leaf) : undefined;
+      if (entry?.type !== "message" || entry.message.role !== "user") return mark!.gone();
+      sm.appendCustomEntry(TOPIC_DELIVERED_ENTRY, { v: 1, targetId: entry.id, topic: mark!.topic, batch: mark!.batch, items: mark!.items });
+      markOwned(this.path);
+      mark!.entered();
+    });
+  }
+
   /** Link messages held while a compaction runs; released when it ends (releaseLinks). */
   private linkHeld: string[] = [];
   /** Link messages Stop took back from the SDK before the model saw them: they go in at the
@@ -1560,6 +1659,18 @@ class ChatSession {
       if (event.type === "message_end" && this.senderMarks.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
         this.markSend((event as { message: { content?: unknown } }).message);
       }
+      if (event.type === "message_end" && this.topicMarks.length && (event as { message?: { role?: unknown } }).message?.role === "user") {
+        this.markTopic((event as { message: { content?: unknown } }).message);
+      }
+      if (event.type === "agent_settled" && this.topicMarks.length) {
+        // A batch whose message never entered this run is gone (its notes stay undelivered).
+        // Deferred like the sender sweep: a batch handed over inside this settle runs in it.
+        const stale = [...this.topicMarks];
+        setTimeout(() => {
+          if (!this.session.isStreaming && !this.starting) for (const m of stale) this.dropTopicMark(m);
+        }, 0);
+      }
+      if (event.type === "agent_settled" || event.type === "compaction_end") receiverIdle(this.path);
       if (event.type === "agent_settled" && this.senderMarks.length) {
         // A mark that never found its message this run (the prompt was swallowed or failed early)
         // is stale. Deferred, so a mark for a prompt made while this event is being emitted (it
@@ -2031,7 +2142,11 @@ class ChatSession {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
     this.assertNoForeignWrites();
+    // Blank text with no image is a no-op first of all: it is not a message, so it never lifts
+    // the pause (§chat.topics/delivery).
     if (!text.trim() && !images) return { queued: false, turn: Promise.resolve() };
+    // The user's own message lifts a Stop's pause on topic batches (§chat.topics/delivery).
+    if (origin === "client" && !opts?.replay) this.setTopicsPaused(false);
     // While streaming, a plain prompt is a follow-up — held in Sova's own queue now, so it can
     // still be taken back one item at a time. Server-originated prompts (a group batch, a remote
     // status probe) queue on the same terms as a client's: they are messages to this session, and
@@ -2443,6 +2558,8 @@ class ChatSession {
           return;
         }
         case "abort":
+          // Stop pauses topic batches here until the user's next message (§chat.topics/delivery).
+          this.setTopicsPaused(true);
           // The queue drains Sova's held items AND the SDK's, so Stop still means "nothing
           // queued survives this", and the drained text still comes back as `queue_cleared`.
           // In a baton session a participant's queued message is theirs, not the composer's to
@@ -2581,6 +2698,7 @@ class ChatSession {
     const text = String(msg.text ?? "");
     const images = parseImages(msg.images);
     if (!text.trim() && !images) return;
+    this.setTopicsPaused(false);
     // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
     // there is nothing to queue behind, so it starts its turn straight away (and the
     // extension-command split lives in handOffQueued, which both paths reach). While a
@@ -2961,6 +3079,23 @@ function startedTurn(path: string): void {
   }
 }
 
+const receiverIdleListeners = new Set<(path: string) => void>();
+/** A hosted runtime's turn settled or its compaction ended: a topic receiver may take its next
+    batch (server/topic-delivery.ts). Called inside the event; listeners defer their own work. */
+export function onReceiverIdle(fn: (path: string) => void): () => void {
+  receiverIdleListeners.add(fn);
+  return () => receiverIdleListeners.delete(fn);
+}
+function receiverIdle(path: string): void {
+  for (const fn of receiverIdleListeners) {
+    try {
+      fn(path);
+    } catch (err) {
+      console.error("[chat] receiver-idle listener failed", err);
+    }
+  }
+}
+
 export function onAgentSettled(fn: (path: string) => void): () => void {
   settledListeners.add(fn);
   return () => settledListeners.delete(fn);
@@ -3139,7 +3274,7 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
     }
     const powers =
       snap?.grant.length && profile.run && profile.limits
-        ? [sessionPowersExtension({ sessionId: sessionManager.getSessionId(), cwd, title: () => titleOf(sessionManager), profile: snap, run: profile.run, limits: profile.limits })]
+        ? [sessionPowersExtension({ sessionId: sessionManager.getSessionId(), cwd, title: () => titleOf(sessionManager), profile: snap, run: profile.run, limits: profile.limits, path: () => path })]
         : [];
     const services = special
       ? await servicesForCwd(cwd, modelRuntime, false, special.resourceLoaderOptions)
@@ -3149,6 +3284,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
             visCheckExtension(() => (visHost.chat && !visHost.chat.disposed ? visHost.chat.visCheckHost() : null)),
             // project_verbs: its own worktrees' running instances (server/project-services/tools.ts).
             projectVerbsExtension(projectEngine),
+            // queue_push: every ordinary session can answer on a topic (§chat.topics/push).
+            queuePushExtension({ sessionId: () => sessionManager.getSessionId(), title: () => titleOf(sessionManager) }),
             ...powers,
           ],
         });
@@ -3211,6 +3348,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       sessionManager,
     });
     const chat = new ChatSession(path, runtime, onDisposed);
+    // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
+    chat.topicsPaused = topicStore().receiverPaused(path);
     try {
       await chat.bind();
     } catch (err) {

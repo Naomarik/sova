@@ -11185,6 +11185,8 @@
         "pi-config/extensions/spec/core/sova-spec.mjs",
         "pi-config/extensions/spec/core/packet.mjs",
         "pi-config/extensions/spec/tests/packet-acceptance.test.mjs",
+        "pi-config/extensions/spec/tests/fixtures/legacy-scope-envelope.json",
+        "pi-config/extensions/subagents/spec-brief.test.ts",
         "pi-config/extensions/spec/tests/packet.test.mjs",
         "pi-config/extensions/mode/spec-mode.md",
         "pi-config/extensions/mode/index.test.ts",

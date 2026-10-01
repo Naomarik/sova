@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import type { MeshInfo, MeshLoginEntry, MeshSessions, PeerStatus, SessionSummary, SyncCategory } from "../../shared/protocol";
+import { reuseUnchanged } from "./summary-diff";
 
 // The client side of the peer mesh: which host a session lives on, and how a request for it
 // reaches that host. A session is driven only by the host whose disk holds it, and the browser
@@ -281,20 +282,36 @@ export function seedPeerList(
   return next;
 }
 
+/**
+ * Each listed peer's rows from one GET /api/mesh/sessions answer: a peer that sent none keeps its
+ * last rows, a peer no longer listed loses them. An unchanged row keeps its previous object and an
+ * unchanged peer its previous array (`reuseUnchanged`), and when no peer's rows changed the
+ * previous map itself comes back, so a poll that brings nothing new re-runs nothing that reads it.
+ */
 export function mergePeerLists(
   prev: ReadonlyMap<string, SessionSummary[]>,
   answer: MeshSessions,
   peers: readonly PeerStatus[],
-): Map<string, SessionSummary[]> {
+): ReadonlyMap<string, SessionSummary[]> {
   const next = new Map<string, SessionSummary[]>();
   const listed = new Set(peers.map((p) => p.id));
   for (const p of answer.peers) {
     if (!listed.has(p.id)) continue;
-    if (p.sessions) next.set(p.id, peerRows(p.sessions));
+    if (p.sessions) next.set(p.id, reuseUnchanged(peerRows(p.sessions), prev.get(p.id)));
     else if (prev.has(p.id)) next.set(p.id, prev.get(p.id)!);
   }
   for (const id of listed) if (!next.has(id) && prev.has(id)) next.set(id, prev.get(id)!);
-  return next;
+  const same = next.size === prev.size && [...next].every(([id, rows]) => prev.get(id) === rows);
+  return same ? prev : next;
+}
+
+/**
+ * Whether a GET /api/mesh answer says exactly what the last one did, so the page can keep the
+ * last state and nothing that reads it re-runs. Plain JSON off the wire, compared as such; a
+ * peer's `lastSeen` moving is a change (the Mesh page shows it).
+ */
+export function sameMeshInfo(prev: MeshInfo | null, next: MeshInfo): boolean {
+  return prev !== null && JSON.stringify(prev) === JSON.stringify(next);
 }
 
 // ---- the sidebar's host filter -----------------------------------------------------------------

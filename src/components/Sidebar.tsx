@@ -1110,9 +1110,10 @@ export function Sidebar(props: {
 }) {
   const [query, setQuery] = createSignal("");
   /** The host filter as remembered (lib/mesh.ts); what applies is `hostFilter()`, which reads All
-      while its host isn't known or the filter isn't shown. */
+      while its host isn't known or the filter isn't shown. A memo, so the search hits re-run only
+      when the filter's value moves, not on every mesh poll that rebuilds the peer list. */
   const [storedHostFilter, setStoredHostFilter] = createSignal(readKey(localStorage, HOST_FILTER_KEY));
-  const hostFilter = () => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown());
+  const hostFilter = createMemo(() => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown()));
   const chooseHostFilter = (value: string | null) => {
     setStoredHostFilter(value);
     if (value === null) removeKey(localStorage, HOST_FILTER_KEY);

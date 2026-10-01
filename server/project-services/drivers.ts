@@ -1,13 +1,14 @@
 import { execFile, spawn } from "node:child_process";
 import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { hostProcTable, procfsTable, unitMembers, type ProcTable } from "./proctable";
 import { logsDir, procsDir } from "./store";
 
 /**
  * Who runs a service's processes (§app.project-services/supervisor). Exactly one driver owns each
- * process: systemd transient user units by default, or, only when the server was started with
- * SOVA_PROJECT_DRIVER=detached, a process group of its own per unit. Everything by argv, never a
- * shell. Nothing here touches a unit or process it was not asked about by name.
+ * process: systemd transient user units, or a detached session of its own per unit (adapters.ts
+ * picks one). Everything by argv, never a shell. Nothing here touches a unit or process it was not
+ * asked about by name.
  */
 
 export interface UnitSpec {
@@ -34,8 +35,11 @@ export interface RunOnceResult {
   leftover?: number;
 }
 
+/** The supervisor adapters (adapters.ts): `launchd` is a reserved slot with no driver yet. */
+export type DriverId = "systemd" | "detached" | "launchd";
+
 export interface Driver {
-  readonly id: "systemd" | "detached";
+  readonly id: DriverId | "none";
   available(): Promise<{ ok: boolean; detail: string }>;
   start(spec: UnitSpec): Promise<void>;
   stop(unit: string): Promise<void>;
@@ -50,6 +54,8 @@ export interface Driver {
   runOnce(spec: UnitSpec & { timeoutSec: number }): Promise<RunOnceResult>;
   /** The units (running, or recorded) whose name starts with `prefix`. */
   units(prefix: string): Promise<string[]>;
+  /** At a server start, after reconcile: take charge of the units already running (the detached driver's restart watch). */
+  adopt?(): Promise<void>;
 }
 
 export class DriverError extends Error {}
@@ -67,29 +73,6 @@ export const realExec: Exec = (file, args, opts = {}) =>
       done({ code, stdout: String(stdout), stderr: String(stderr || (err && !stdout && !stderr ? err.message : "")) });
     });
   });
-
-/** `/proc/<pid>/stat` fields after the command name: [state, ppid, pgrp, session, …]; index 19 is starttime. */
-function statFields(pid: number): string[] | null {
-  try {
-    const s = readFileSync(`/proc/${pid}/stat`, "utf8");
-    return s.slice(s.lastIndexOf(")") + 2).split(" ");
-  } catch {
-    return null;
-  }
-}
-/** The session a live (not zombie) process belongs to. */
-const sidOf = (pid: number) => {
-  const f = statFields(pid);
-  return f && f[0] !== "Z" ? Number(f[3]) : null;
-};
-const startOf = (pid: number) => statFields(pid)?.[19] ?? null;
-const allPids = () => {
-  try {
-    return readdirSync("/proc").filter((d) => /^\d+$/.test(d)).map(Number);
-  } catch {
-    return [];
-  }
-};
 
 // ---- systemd ------------------------------------------------------------------------------------
 
@@ -152,7 +135,10 @@ export class SystemdDriver implements Driver {
     }
   }
   pids(unit: string) {
-    return allPids().filter((p) => this.owns(unit, p));
+    return procfsTable
+      .list()
+      .map((e) => e.pid)
+      .filter((p) => this.owns(unit, p));
   }
   async logs(unit: string, lines: number) {
     const r = await this.exec("journalctl", ["--user", "-u", `${unit}.service`, "-n", String(lines), "-o", "json", "--no-pager"]);
@@ -194,25 +180,60 @@ export class SystemdDriver implements Driver {
 interface ProcRecord {
   pid: number;
   start: string;
+  /** Which process table read `start` (a record from another table is matched by pid alone). */
+  clock?: "procfs" | "ps";
   argv: string[];
   cwd: string;
+  /** To start it again after a crash, as the engine started it. */
+  env?: Record<string, string>;
   at: string;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+export interface DetachedOptions {
+  /** How the driver reads processes (default: /proc on Linux, else `ps`). */
+  table?: ProcTable;
+  /** Start a unit again when it ends with a failure while this server runs (the server's driver: on). */
+  restart?: boolean;
+  /** The delay before such a start, and the watch's tick. */
+  restartMs?: number;
+}
+
+/** At most this many starts of one unit in RESTART_WINDOW_MS, then it stays failed (systemd's default burst). */
+const RESTART_BURST = 5;
+const RESTART_WINDOW_MS = 10_000;
+
 /**
- * Each unit is a process started in its own session, its output appended to
+ * Each unit is a process started in its own session (`detached`, so setsid), its output appended to
  * `<state root>/project-services/logs/<unit>.log` and its pid and start time recorded in
  * `procs/<unit>.json`. It is not the server's to wait for, so it outlives a server restart. The unit
  * is its whole session (a tool like `pnpm exec` puts its child in a new process group, but the
- * group stays in the session): stop signals every process in it, TERM, then KILL after 15 s. A
- * process that starts a session of its own escapes.
+ * group stays in the session): stop signals every process in it, TERM, then KILL after 15 s. Where
+ * the process table has no session ids (macOS's `ps`), the unit is its leader's process tree and
+ * the groups its members created. A process that starts a session of its own escapes. With
+ * `restart`, a unit that ends with a failure is started again after 2 s, at most 5 times in 10 s.
  */
 export class DetachedDriver implements Driver {
   readonly id = "detached" as const;
   private exits = new Map<string, number | null>();
-  constructor(private readonly stopGraceMs = 15_000) {}
+  private readonly table: ProcTable;
+  private readonly restartMs: number;
+  private watch: NodeJS.Timeout | null = null;
+  private ticking = false;
+  /** Units being stopped: never started again under the stop. */
+  private stopping = new Set<string>();
+  /** Per unit: when it first looked dead, and its recent starts. */
+  private down = new Map<string, number>();
+  private starts = new Map<string, number[]>();
+  private gaveUp = new Set<string>();
+  constructor(
+    private readonly stopGraceMs = 15_000,
+    private readonly opts: DetachedOptions = {},
+  ) {
+    this.table = opts.table ?? hostProcTable();
+    this.restartMs = opts.restartMs ?? 2_000;
+  }
   private recFile = (unit: string) => join(procsDir(), `${unit}.json`);
   private logFile = (unit: string) => join(logsDir(), `${unit}.log`);
   private rec(unit: string): ProcRecord | null {
@@ -222,11 +243,20 @@ export class DetachedDriver implements Driver {
       return null;
     }
   }
+  /** The recorded process is alive, is the one recorded (not a reuse of its pid), and still leads its unit. */
   private live(r: ProcRecord | null): boolean {
-    return !!r && startOf(r.pid) === r.start && sidOf(r.pid) === r.pid;
+    if (!r) return false;
+    const e = this.table.get(r.pid);
+    if (!e || e.zombie) return false;
+    if ((r.clock ?? "procfs") === this.table.kind && this.table.startOf(r.pid) !== r.start) return false;
+    return this.table.sessions ? e.sid === r.pid : e.pgid === r.pid;
+  }
+  private members(leader: number): number[] {
+    return unitMembers(this.table.list(), leader, this.table.sessions);
   }
   async available() {
-    return process.platform === "linux" ? { ok: true, detail: "detached process groups (SOVA_PROJECT_DRIVER=detached)" } : { ok: false, detail: "the detached driver reads /proc: Linux only" };
+    if (process.platform === "win32") return { ok: false, detail: "detached sessions need a Unix host" };
+    return { ok: true, detail: `detached sessions, processes read from ${this.table.kind === "procfs" ? "/proc" : `ps${this.table.sessions ? "" : " (no session ids: process trees and groups)"}`}` };
   }
   private spawnUnit(spec: UnitSpec): Promise<ProcRecord> {
     mkdirSync(procsDir(), { recursive: true });
@@ -247,7 +277,7 @@ export class DetachedDriver implements Driver {
       child.once("spawn", () => {
         closeSync(fd);
         const pid = child.pid!;
-        const rec: ProcRecord = { pid, start: startOf(pid) ?? "", argv: spec.argv, cwd: spec.cwd, at: new Date().toISOString() };
+        const rec: ProcRecord = { pid, start: this.table.startOf(pid) ?? "", clock: this.table.kind, argv: spec.argv, cwd: spec.cwd, env: spec.env, at: new Date().toISOString() };
         this.exits.delete(spec.unit);
         child.once("exit", (code, sig) => this.exits.set(spec.unit, code ?? (sig ? 128 : null)));
         child.unref();
@@ -255,19 +285,78 @@ export class DetachedDriver implements Driver {
       });
     });
   }
+  private async spawnRecorded(spec: UnitSpec): Promise<void> {
+    const rec = await this.spawnUnit(spec);
+    // The record holds the unit's env: only its owner reads it.
+    writeFileSync(this.recFile(spec.unit), `${JSON.stringify(rec)}\n`, { mode: 0o600 });
+    const now = Date.now();
+    this.starts.set(spec.unit, [...(this.starts.get(spec.unit) ?? []).filter((t) => now - t < RESTART_WINDOW_MS), now]);
+    this.down.delete(spec.unit);
+  }
   async start(spec: UnitSpec) {
     const old = this.rec(spec.unit);
     if (old && this.live(old)) return;
-    const rec = await this.spawnUnit(spec);
-    writeFileSync(this.recFile(spec.unit), `${JSON.stringify(rec)}\n`);
+    this.gaveUp.delete(spec.unit);
+    this.starts.delete(spec.unit);
+    await this.spawnRecorded(spec);
+    this.watchUnits();
   }
-  private sessionPids(sid: number): number[] {
-    return allPids().filter((p) => sidOf(p) === sid);
+  /** With `restart`: every tick, start again each recorded unit that ended with a failure. */
+  private watchUnits(): void {
+    if (!this.opts.restart || this.watch) return;
+    this.watch = setInterval(() => void this.tick(), Math.max(100, Math.min(this.restartMs, 1_000)));
+    this.watch.unref();
   }
-  /** TERM to every process of the session, then KILL to what is left after the grace. */
-  private async killSession(sid: number): Promise<void> {
+  /** One pass of the restart watch (public for tests). */
+  async tick(): Promise<string[]> {
+    if (this.ticking) return [];
+    this.ticking = true;
+    try {
+      return await this.restartFailed();
+    } finally {
+      this.ticking = false;
+    }
+  }
+  private async restartFailed(): Promise<string[]> {
+    const did: string[] = [];
+    for (const unit of await this.units("")) {
+      if (this.stopping.has(unit) || this.gaveUp.has(unit)) continue;
+      const r = this.rec(unit);
+      if (!r || this.live(r)) {
+        this.down.delete(unit);
+        continue;
+      }
+      // A clean exit of its own is not a failure (systemd's on-failure); an unknown one is. A record
+      // from before env was recorded can't be started the same way: reconcile starts it at the next server start.
+      if (this.exits.get(unit) === 0 || !r.env) continue;
+      const since = this.down.get(unit) ?? Date.now();
+      this.down.set(unit, since);
+      if (Date.now() - since < this.restartMs) continue;
+      const recent = (this.starts.get(unit) ?? []).filter((t) => Date.now() - t < RESTART_WINDOW_MS);
+      if (recent.length >= RESTART_BURST) {
+        this.gaveUp.add(unit);
+        did.push(`${unit}: start limit hit`);
+        continue;
+      }
+      // What is left of its session goes first, as systemd's restart stops the whole unit.
+      if (this.members(r.pid).length) await this.killSession(r.pid);
+      try {
+        await this.spawnRecorded({ unit, argv: r.argv, cwd: r.cwd, env: r.env ?? {} });
+        did.push(`${unit}: started again`);
+      } catch (err) {
+        did.push(`${unit}: ${(err as Error).message}`);
+      }
+    }
+    return did;
+  }
+  /** Adopt the recorded units at a server start: the watch covers them too. */
+  async adopt(): Promise<void> {
+    if ((await this.units("")).length) this.watchUnits();
+  }
+  /** TERM to every process of the unit, then KILL to what is left after the grace. */
+  private async killSession(leader: number): Promise<void> {
     const send = (sig: NodeJS.Signals) => {
-      for (const pid of this.sessionPids(sid))
+      for (const pid of this.members(leader))
         try {
           process.kill(pid, sig);
         } catch {
@@ -277,23 +366,38 @@ export class DetachedDriver implements Driver {
     send("SIGTERM");
     const until = Date.now() + this.stopGraceMs;
     while (Date.now() < until) {
-      if (!this.sessionPids(sid).length) return;
+      if (!this.members(leader).length) return;
       await sleep(100);
     }
     send("SIGKILL");
-    for (let i = 0; i < 50 && this.sessionPids(sid).length; i++) await sleep(100);
+    for (let i = 0; i < 50 && this.members(leader).length; i++) await sleep(100);
   }
   async stop(unit: string) {
-    const r = this.rec(unit);
-    if (r && this.sessionPids(r.pid).length) await this.killSession(r.pid);
-    rmSync(this.recFile(unit), { force: true });
+    this.stopping.add(unit);
+    try {
+      const r = this.rec(unit);
+      if (r && this.members(r.pid).length) await this.killSession(r.pid);
+      rmSync(this.recFile(unit), { force: true });
+      this.down.delete(unit);
+      this.starts.delete(unit);
+      this.gaveUp.delete(unit);
+    } finally {
+      this.stopping.delete(unit);
+    }
   }
   async status(unit: string): Promise<UnitStatus> {
     const r = this.rec(unit);
     if (!r) return { state: "missing", pid: null };
     if (this.live(r)) return { state: "active", pid: r.pid };
     const exit = this.exits.get(unit);
-    return { state: exit === 0 ? "inactive" : "failed", pid: null, ...(exit !== undefined ? { exit } : {}), detail: exit === undefined ? "exited" : `exited with ${exit}` };
+    // Waiting to be started again, as systemd's auto-restart.
+    if (this.opts.restart && this.watch && r.env && exit !== 0 && !this.gaveUp.has(unit)) return { state: "activating", pid: null, ...(exit !== undefined ? { exit } : {}), detail: "auto-restart" };
+    return {
+      state: exit === 0 ? "inactive" : "failed",
+      pid: null,
+      ...(exit !== undefined ? { exit } : {}),
+      detail: this.gaveUp.has(unit) ? "start limit hit" : exit === undefined ? "exited" : `exited with ${exit}`,
+    };
   }
   async signal(unit: string, sig: string) {
     const r = this.rec(unit);
@@ -302,11 +406,16 @@ export class DetachedDriver implements Driver {
   }
   owns(unit: string, pid: number) {
     const r = this.rec(unit);
-    return !!r && sidOf(pid) === r.pid;
+    if (!r) return false;
+    if (this.table.sessions) {
+      const e = this.table.get(pid);
+      return !!e && !e.zombie && e.sid === r.pid;
+    }
+    return this.members(r.pid).includes(pid);
   }
   pids(unit: string) {
     const r = this.rec(unit);
-    return r ? this.sessionPids(r.pid) : [];
+    return r ? this.members(r.pid) : [];
   }
   async logs(unit: string, lines: number) {
     try {
@@ -352,7 +461,7 @@ export class DetachedDriver implements Driver {
         closeSync(fd);
         // A hook leaves nothing behind (§app.project-services/supervisor): its session goes with it.
         const pid = child.pid;
-        const leftover = pid ? this.sessionPids(pid).length : 0;
+        const leftover = pid ? this.members(pid).length : 0;
         const finish = () => done({ code: code ?? (sig ? 128 : null), timedOut, ms: Date.now() - t0, ...(leftover ? { leftover } : {}) });
         if (pid && leftover) void this.killSession(pid).then(finish);
         else finish();
@@ -372,9 +481,4 @@ export class DetachedDriver implements Driver {
   clearLog(unit: string) {
     if (existsSync(this.logFile(unit))) rmSync(this.logFile(unit));
   }
-}
-
-/** The driver the server uses: systemd, unless SOVA_PROJECT_DRIVER=detached. */
-export function driverFromEnv(env: NodeJS.ProcessEnv = process.env): Driver {
-  return env.SOVA_PROJECT_DRIVER === "detached" ? new DetachedDriver() : new SystemdDriver();
 }

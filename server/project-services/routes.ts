@@ -4,7 +4,7 @@ import type { Hono } from "hono";
 import { CONTRACT_FILE, DefinitionError, httpStatusOf, parseDefinition } from "../../shared/project-contract";
 import { projectOf } from "../project-root";
 import { conformer } from "./conform";
-import { driverFromEnv } from "./drivers";
+import { SelectedDriver } from "./adapters";
 import { ProjectEngine } from "./engine";
 import { approve, defHashOf } from "./trust";
 
@@ -17,10 +17,10 @@ import { approve, defHashOf } from "./trust";
 
 let engine: ProjectEngine | null = null;
 
-/** The server's one engine (its driver chosen from SOVA_PROJECT_DRIVER at first use). */
+/** The server's one engine (its supervisor adapter chosen at first use, server/project-services/adapters.ts). */
 export function projectEngine(): ProjectEngine {
   if (!engine) {
-    engine = new ProjectEngine({ driver: driverFromEnv() });
+    engine = new ProjectEngine({ driver: new SelectedDriver() });
     engine.conformer = conformer(engine);
   }
   return engine;
@@ -63,6 +63,8 @@ export function registerProjectServiceRoutes(app: Hono<any>): void {
 /** At server start: bring instances back to their desired state (§app.project-services/reconcile). */
 export async function reconcileProjectServices(): Promise<void> {
   try {
+    const sel = await (projectEngine().driver as SelectedDriver).selection();
+    console.log(`[project-services] supervisor: ${sel.id} (${sel.why})`);
     const did = await projectEngine().reconcile();
     for (const d of did) console.log(`[project-services] ${d}`);
   } catch (err) {

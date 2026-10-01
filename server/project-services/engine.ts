@@ -31,10 +31,11 @@ import {
   type StepKind,
   type VerbResult,
 } from "../../shared/project-contract";
-import { portOwner as realPortOwner, type PortOwner } from "../port-owner";
+import type { PortOwner } from "../port-owner";
 import { startStaticServe, staticServes, StaticServeError, stopStaticServe } from "../preview-serve";
 import { projectOf } from "../project-root";
 import { DriverError, type Driver, type UnitSpec } from "./drivers";
+import { hostPortOwner } from "./proctable";
 import {
   dataRootOf,
   instanceLockFile,
@@ -258,7 +259,8 @@ const scopeOf = (rec: InstanceRecord): Scope => ({ id: rec.id, project: rec.proj
 export class ProjectEngine {
   readonly driver: Driver;
   private readonly git: GitRun;
-  private readonly portOwner: (port: number) => PortOwner;
+  /** Who listens on a port of this host (conform reads it too). */
+  readonly portOwner: (port: number) => PortOwner;
   private readonly containerExec: (engine: string, args: string[]) => Promise<number>;
   private readonly pollMs: number;
   private sharedChain = new Map<string, Promise<unknown>>();
@@ -268,7 +270,7 @@ export class ProjectEngine {
   constructor(deps: EngineDeps) {
     this.driver = deps.driver;
     this.git = deps.git ?? realGit;
-    this.portOwner = deps.portOwner ?? ((p) => realPortOwner(p));
+    this.portOwner = deps.portOwner ?? ((p) => hostPortOwner(p));
     this.containerExec =
       deps.containerExec ??
       ((engine, args) =>
@@ -433,7 +435,7 @@ export class ProjectEngine {
   private async supervised(def: ProjectDef | null): Promise<void> {
     if (!def || !runsProcesses(def)) return;
     const d = await this.driver.available();
-    if (!d.ok) throw new VerbFailure("unsupported", `${d.detail}: this host can't run a project's processes (a host without systemd starts Sova with SOVA_PROJECT_DRIVER=detached)`);
+    if (!d.ok) throw new VerbFailure("unsupported", `${d.detail}: this host can't run a project's processes`);
   }
 
   /** The definition, valid and approved, or the refusal. */
@@ -1117,7 +1119,14 @@ export class ProjectEngine {
     (run as Run & { tornDown?: InstanceRecord }).tornDown = rec;
   }
 
+  /** Which supervisor adapter is in use, why, and whether it serves this definition. */
+  private async supervisorCheck(def: ProjectDef | null): Promise<Check> {
+    const drv = await this.driver.available();
+    return { id: "supervisor", ok: drv.ok || !def || !runsProcesses(def), detail: `${this.driver.id}: ${drv.detail}` };
+  }
+
   private async status(run: Run): Promise<void> {
+    run.extra.checks = [await this.supervisorCheck(run.def)];
     if (run.rec || run.req.instance) return;
     // A whole project: every instance.
     const reg = readRegistry();
@@ -1149,9 +1158,7 @@ export class ProjectEngine {
     const add = (id: string, ok: boolean, detail: string) => checks.push({ id, ok, detail });
     add("definition", !run.defError && !!run.def, run.defError ? run.defError.message : run.def ? `valid (${run.defHash})` : `no ${CONTRACT_FILE}`);
     add("approved", run.approved, run.approved ? "approved on this host" : `not approved: ${run.defHash ?? "no definition"}`);
-    const needsProcess = !!run.def && runsProcesses(run.def);
-    const drv = await this.driver.available();
-    add("supervisor", drv.ok || !needsProcess, `${this.driver.id}: ${drv.detail}`);
+    checks.push(await this.supervisorCheck(run.def));
     if (run.def) {
       const def = run.def;
       const programs = new Set<string>();
@@ -1250,7 +1257,8 @@ export class ProjectEngine {
     const rec = run.rec;
     const gone = (run as Run & { tornDown?: InstanceRecord }).tornDown;
     const changed = run.steps.some((s) => s.result === "done" && s.kind !== "check" && s.kind !== "ready");
-    const checksOk = run.extra.checks ? run.extra.checks.every((c) => c.ok) : true;
+    // Only doctor's checks decide `ok`; status carries the supervisor's as a note.
+    const checksOk = run.verb !== "doctor" || !run.extra.checks || run.extra.checks.every((c) => c.ok);
     return ordered({
       v: 1,
       verb: run.verb,
@@ -1386,6 +1394,7 @@ export class ProjectEngine {
         did.push(`${sh.id}: shared services failed (${err instanceof Error ? err.message : String(err)})`);
       }
     }
+    await this.driver.adopt?.();
     return did;
   }
 }

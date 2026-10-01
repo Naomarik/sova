@@ -14,7 +14,6 @@ import {
   type ProjectDef,
   type VerbResult,
 } from "../../shared/project-contract";
-import { portOwner } from "../port-owner";
 import { projectOf } from "../project-root";
 import { actFor, callerTag, parseRequest, passRefusal, realGit, VerbFailure, type Caller, type ProjectEngine } from "./engine";
 import { conformDir, dataRootOf, instanceLockFile, readRegistry, servicesRoot, slugOf, tryLock, type InstanceRecord } from "./store";
@@ -216,7 +215,7 @@ async function runSuite(
     const own: string[] = [];
     for (const svc of upA.services.filter((x) => x.scope === "checkout"))
       for (const [k, port] of Object.entries(svc.ports)) {
-        const o = portOwner(port);
+        const o = engine.portOwner(port);
         const mine = typeof o === "object" && (svc.kind === "static" ? o.pid === process.pid : !!svc.unit && engine.driver.owns(svc.unit, o.pid));
         if (!mine) own.push(`${svc.name}.${k} (${port}): ${typeof o === "object" ? `pid ${o.pid} (${o.cwd})` : o}`);
       }
@@ -291,7 +290,7 @@ async function runSuite(
     const bPids = pidsOf(await s.verb("status B before down A", "status", { instance: b.instance }));
     const dn = await s.verb("down A", "down", { instance: a.instance });
     const leftA = (dn.services.filter((x) => x.scope === "checkout" && x.unit).flatMap((x) => engine.driver.pids(x.unit!)) as number[]).length;
-    const heldA = portsOf(dn).filter((p) => portOwner(p) !== "none");
+    const heldA = portsOf(dn).filter((p) => engine.portOwner(p) !== "none");
     const stB = await s.verb("status B after down A", "status", { instance: b.instance });
     if (!s.check("down-a", dn.ok && dn.state === "stopped" && !leftA && !heldA.length && stB.state === "running" && sameJson(pidsOf(stB), bPids), `${describe(dn)}; ${leftA} process(es) left, ports still held ${heldA.join(",") || "none"}; B ${describe(stB)}`, t0, dn.error?.code)) return;
     t0 = Date.now();
@@ -327,7 +326,7 @@ async function runSuite(
     const prefix = `${engine.unitPrefix()}${r.id}-`;
     for (const u of await engine.driver.units(prefix)) leaks.push(`unit ${u}`);
     for (const svc of def.services.filter((x) => x.scope === "checkout")) for (const p of engine.driver.pids(engine.unitOf(r.id, svc.name))) leaks.push(`process ${p} in ${svc.name}`);
-    for (const ports of Object.values(r.ports)) for (const p of Object.values(ports)) if (portOwner(p) !== "none") leaks.push(`listener on port ${p}`);
+    for (const ports of Object.values(r.ports)) for (const p of Object.values(ports)) if (engine.portOwner(p) !== "none") leaks.push(`listener on port ${p}`);
     if (existsSync(dataRootOf(r.id))) leaks.push(`data dir ${dataRootOf(r.id)}`);
     for (const ref of Object.values(r.data)) if (ref.startsWith("/") && existsSync(ref)) leaks.push(`data ${ref}`);
     if (readRegistry().instances.some((i) => i.id === r.id)) leaks.push(`registry entry ${r.id}`);

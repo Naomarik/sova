@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
 import { DetachedDriver, parseShow, SystemdDriver, systemdRunArgv, type Exec } from "./drivers";
+import { psTable, realSyncExec } from "./proctable";
+import { procsDir } from "./store";
 
 process.env.PI_CODING_AGENT_DIR = mkdtempSync(join(tmpdir(), "sova-drivers-"));
 after(() => rmSync(process.env.PI_CODING_AGENT_DIR!, { recursive: true, force: true }));
@@ -131,4 +133,77 @@ test("the detached driver's runOnce: exit codes, a timeout kills it, leftovers a
   assert.equal(leaky.leftover, 1, "the process it left behind is counted (and killed)");
   const missing = await d.runOnce({ ...base, unit: "sova-hook-t-missing", argv: ["/nonexistent/program"], timeoutSec: 5 });
   assert.equal(missing.code, 127);
+});
+
+/** The real `ps` of this host, its session column hidden as macOS's ps has none: no /proc read anywhere. */
+const macLikePs = () => {
+  const reads: string[] = [];
+  const t = psTable((file, args) => {
+    reads.push([file, ...args].join(" "));
+    return args.includes("sid=") ? { code: 1, stdout: "" } : realSyncExec(file, args);
+  });
+  return { t, reads };
+};
+
+test("the detached driver on ps alone (no /proc, no session ids): tree and groups, status, stop", async () => {
+  const { t, reads } = macLikePs();
+  assert.equal(t.sessions, false);
+  const d = new DetachedDriver(2_000, { table: t });
+  assert.match((await d.available()).detail, /ps \(no session ids: process trees and groups\)/);
+  const unit = `sova-svc-test-${process.pid}-ps`;
+  // sh's job control puts sleep in a process group of its own, as `pnpm exec` does.
+  await d.start({ unit, argv: ["sh", "-c", "set -m; sleep 60 & wait"], cwd: tmpdir(), env: { PATH: process.env.PATH ?? "" } });
+  const st = await d.status(unit);
+  assert.equal(st.state, "active");
+  let pids: number[] = [];
+  for (let i = 0; i < 50 && (pids = d.pids(unit)).length < 2; i++) await sleep(50);
+  assert.equal(pids.length, 2, `sh and sleep: ${pids}`);
+  const sleeper = pids.find((p) => p !== st.pid)!;
+  assert.notEqual(t.get(sleeper)!.pgid, st.pid, "the child really is in another process group");
+  assert.ok(d.owns(unit, sleeper) && d.owns(unit, st.pid!), "both are the unit's");
+  assert.ok(!d.owns(unit, process.pid), "the server is not");
+  const rec = JSON.parse(readFileSync(join(procsDir(), `${unit}.json`), "utf8"));
+  assert.equal(rec.clock, "ps");
+  assert.equal(rec.start, t.startOf(st.pid!), "the start time is ps's lstart");
+  await d.stop(unit);
+  assert.equal((await d.status(unit)).state, "missing");
+  for (const pid of pids) {
+    const e = t.get(pid);
+    assert.ok(!e || e.zombie, `pid ${pid} stopped`);
+  }
+  assert.ok(reads.every((r) => r.startsWith("ps ")), "only ps was read");
+});
+
+test("the detached driver's restart watch: a crash is started again; a clean exit and a stop are not; a crash loop gives up", async () => {
+  const d = new DetachedDriver(1_000, { restart: true, restartMs: 150 });
+  const env = { PATH: process.env.PATH ?? "" };
+  const crash = `sova-svc-test-${process.pid}-crash`;
+  await d.start({ unit: crash, argv: [process.execPath, "-e", "setInterval(()=>{},1000)"], cwd: tmpdir(), env });
+  const first = (await d.status(crash)).pid!;
+  process.kill(first, "SIGKILL");
+  let st = await d.status(crash);
+  for (let i = 0; i < 20 && st.state === "active"; i++) st = (await sleep(25), await d.status(crash));
+  assert.equal(st.state, "activating", "waiting to be started again, as systemd's auto-restart");
+  assert.equal(st.detail, "auto-restart");
+  for (let i = 0; i < 60 && !((st = await d.status(crash)).state === "active" && st.pid !== first); i++) await sleep(50);
+  assert.equal(st.state, "active");
+  assert.notEqual(st.pid, first, "a new process");
+  await d.stop(crash);
+  await sleep(400);
+  assert.equal((await d.status(crash)).state, "missing", "a stop is never undone");
+
+  const clean = `sova-svc-test-${process.pid}-clean`;
+  await d.start({ unit: clean, argv: [process.execPath, "-e", "0"], cwd: tmpdir(), env });
+  await sleep(600);
+  st = await d.status(clean);
+  assert.equal(st.state, "inactive", "exit 0 is not a failure");
+  assert.equal(st.exit, 0);
+  await d.stop(clean);
+
+  const loop = `sova-svc-test-${process.pid}-loop`;
+  await d.start({ unit: loop, argv: [process.execPath, "-e", "process.exit(3)"], cwd: tmpdir(), env });
+  for (let i = 0; i < 100 && (st = await d.status(loop)).state !== "failed"; i++) await sleep(50);
+  assert.equal(st.state, "failed");
+  assert.equal(st.detail, "start limit hit");
+  await d.stop(loop);
 });

@@ -8,6 +8,7 @@ import { after, before, test } from "node:test";
 import { exitOf, isVerbResult, type VerbResult } from "../../shared/project-contract";
 import { staticServes, stopStaticServe } from "../preview-serve";
 import { conformer } from "./conform";
+import { SelectedDriver } from "./adapters";
 import { DetachedDriver, SystemdDriver } from "./drivers";
 import { ProjectEngine, type Caller } from "./engine";
 import { readRegistry, sharedIdOf } from "./store";
@@ -243,6 +244,26 @@ test("with no supervisor reachable, process verbs are unsupported and change not
   assert.equal(up.ok, true, JSON.stringify(up.error));
   assert.equal(await (await fetch(`http://127.0.0.1:${PORTS.site + 10}/`)).text(), "static");
   assert.equal(shaped(await bare.run("down", { instance: up.instance }, op)).state, "stopped");
+});
+
+test("doctor and status name the supervisor adapter and why; a reserved adapter leaves process verbs unsupported", async () => {
+  const sel = new ProjectEngine({ driver: new SelectedDriver({ env: { SOVA_PROJECT_NO_SYSTEMD: "1" }, detached: () => engine.driver }), pollMs: 100 });
+  const doc = shaped(await sel.run("doctor", { project }, op));
+  const sup = doc.checks!.find((c) => c.id === "supervisor")!;
+  assert.equal(sup.ok, true);
+  assert.match(sup.detail, /^detached: detached sessions, processes read from \/proc; chosen because systemd treated as absent \(SOVA_PROJECT_NO_SYSTEMD=1\)$/);
+  const st = shaped(await sel.run("status", { project }, op));
+  assert.deepEqual(st.checks, [sup], "status carries the same check");
+  const launchd = new ProjectEngine({ driver: new SelectedDriver({ env: { SOVA_PROJECT_DRIVER: "launchd" } }), pollMs: 100 });
+  const before = readRegistry().instances.length;
+  const r = shaped(await launchd.run("up", { project, branch: "sova/launchd" }, op));
+  assert.equal(r.error?.code, "unsupported");
+  assert.match(r.error!.message, /launchd adapter .* is reserved and not built yet/);
+  assert.equal(readRegistry().instances.length, before, "nothing was made");
+  const ls = shaped(await launchd.run("status", { project }, op));
+  assert.equal(ls.ok, true, "status stays a read that succeeds");
+  assert.equal(ls.checks![0]!.ok, false);
+  assert.match(ls.checks![0]!.detail, /^launchd: no supervisor/);
 });
 
 test("reserved and malformed requests", async () => {

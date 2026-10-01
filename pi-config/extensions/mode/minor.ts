@@ -1,6 +1,6 @@
 /** Minor modes: independently toggleable prompt biases on top of the major mode. Node builtins only: unit-testable. */
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 
 export type MinorMode = "align" | "spec" | "vis";
 
@@ -75,19 +75,59 @@ function specCoreShell(text: string): string {
 }
 
 /**
- * The vis mode's text is vis-mode.md beside this module, read once at load: every `## ` section
- * carrying the stub marker (a kind not drawn yet) is dropped, then HTML comments (owner notes) are
- * stripped. The model gets exactly the formats Sova's `vis` fence renderer draws.
+ * The vis mode's guide is the vis/ directory beside this module, read once at load. overview.md is the
+ * prompt: when to draw, and one line per kind. shared.md holds the rules every kind shares, and each other
+ * file one kind (html-svg.md both free-form words); the `vis_guide` tool (vis-guide-tool.ts) returns
+ * shared.md then the asked kind's file. A kind file carrying the stub marker (a kind not drawn yet) is
+ * never taught: its overview line is dropped and vis_guide refuses it. HTML comments (owner notes) never
+ * reach the model. The model gets exactly the formats Sova's `vis` fence renderer draws.
  */
-export const VIS_INSTRUCTIONS = visPrompt(readFileSync(new URL("./vis-mode.md", import.meta.url), "utf8"));
+const VIS_DIR = new URL("./vis/", import.meta.url);
+const VIS_STUB = "<!-- stub -->";
 
-export function visPrompt(md: string): string {
-	return md
-		.split(/^(?=## )/m)
-		.filter((section) => !section.includes("<!-- stub -->"))
-		.join("")
-		.replace(/<!--[\s\S]*?-->\n?/g, "")
-		.trim();
+/** Every file in vis/ by its name without `.md`, as written (owner notes and stub markers included). */
+export const VIS_FILES: Readonly<Record<string, string>> = Object.fromEntries(
+	readdirSync(VIS_DIR)
+		.filter((name) => name.endsWith(".md"))
+		.sort()
+		.map((name) => [name.slice(0, -3), readFileSync(new URL(name, VIS_DIR), "utf8")]),
+);
+
+/** Each kind word → its file in vis/: every file but overview and shared is a kind, and html-svg is two. */
+export const VIS_KIND_FILES: Readonly<Record<string, string>> = Object.fromEntries(
+	Object.keys(VIS_FILES)
+		.filter((name) => name !== "overview" && name !== "shared")
+		.flatMap((name) => name.split("-").map((word) => [word, name])),
+);
+
+/** Owner notes out, ends trimmed: the text the model reads. */
+export function stripVisComments(md: string): string {
+	return md.replace(/<!--[\s\S]*?-->\n?/g, "").trim();
+}
+
+const isTaught = (word: string): boolean => Object.hasOwn(VIS_KIND_FILES, word) && !VIS_FILES[VIS_KIND_FILES[word]!]!.includes(VIS_STUB);
+/** An overview list line, `- flow: …` or `- html / svg: …`; group 1 is its kind words. */
+const KIND_LINE = /^- ([a-z]+(?: \/ [a-z]+)*): /;
+
+/** The overview as the model reads it: a line naming a kind that isn't taught (a stub, or no file) is dropped. */
+export function visOverview(md: string, taught: (word: string) => boolean = isTaught): string {
+	return stripVisComments(
+		md
+			.split("\n")
+			.filter((line) => KIND_LINE.exec(line)?.[1]?.split(" / ").every(taught) ?? true)
+			.join("\n"),
+	);
+}
+
+export const VIS_INSTRUCTIONS = visOverview(VIS_FILES.overview ?? "");
+
+/** The kinds the prompt lists, in its order: exactly the words `vis_guide` takes. */
+export const VIS_KINDS: readonly string[] = VIS_INSTRUCTIONS.split("\n").flatMap((line) => KIND_LINE.exec(line)?.[1]?.split(" / ") ?? []);
+
+/** What `vis_guide {kind}` returns: the shared rules, then that kind's file, owner notes stripped. */
+export function visGuide(kind: string): string {
+	if (!VIS_KINDS.includes(kind)) throw new Error(`No vis kind "${kind}" to look up. Kinds: ${VIS_KINDS.join(", ")}.`);
+	return `${stripVisComments(VIS_FILES.shared ?? "")}\n\n${stripVisComments(VIS_FILES[VIS_KIND_FILES[kind]!]!)}`;
 }
 
 const MINOR_INSTRUCTIONS: Record<MinorMode, string> = {

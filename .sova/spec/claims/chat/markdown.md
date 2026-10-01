@@ -187,8 +187,9 @@ block's source (§app.baton/outsider-view).
 
   A kind word that is neither in the registry nor one of its aliases
   (§chat.markdown/vis-lenience-content) is an error (below). The grammar of each kind is taught to the model by the
-  `vis` minor mode (`pi-config/extensions/mode/vis-mode.md`); its examples are parsed by the
-  renderer's own parser in tests, so the guide and the renderer can't drift.
+  `vis` minor mode's guide (`pi-config/extensions/mode/vis/`: the shared rules and one file per
+  kind); its examples are parsed by the renderer's own parser in tests, so the guide and the
+  renderer can't drift.
 - **The figure.** Every kind sits in one shell (`Visual.tsx`): a head with the `title:` (wrapping,
   never ellipsized) or, without one, the kind's name as an eyebrow; a **Source** toggle
   (`aria-pressed`, shows the fence as written, without ligatures) and **Copy** (copies the whole
@@ -242,11 +243,20 @@ block's source (§app.baton/outsider-view).
   above the fix. No retry when the run was stopped or failed, when a message is queued behind it
   (that message goes first), when the session's file is held by another writer, or when vis is
   off. A block that draws with warnings never triggers one.
+- **`vis_guide`.** While vis is on, the model has a `vis_guide {kind}` tool. It returns the guide's
+  shared rules (one statement per line, ids and quoting, tones, the strict parser, the "Not vis"
+  pairs, the `mark` syntax) followed by that kind's file (its syntax, examples and `mark` targets);
+  `html` and `svg` return the same free-form file. `kind` is one of the kinds the prompt lists; a
+  stub or unknown kind is refused. It runs in Sova's process, never on a remote target, so it
+  answers in every session the mode reaches (`mcp__sova__vis_guide` on the claude-code provider).
+  It enters and leaves the loadout where `vis_check` does (at a session's start, when a prompt starts
+  a run, when a run settles), so turning vis on or off changes the tool set once, and it adds no line
+  to the system prompt. With vis off the tool is not in the model's loadout.
 - **`vis_check`.** While vis is on, the model has a `vis_check` tool for draft `vis html` / `vis
   svg` bodies (title/caption lines included). It answers whether the block would draw (or its error
   and line), any warnings, and the document's size in characters against the budget (aim under
   8K; over 16K doesn't draw). With vis off the tool is not in the model's loadout. The guide's
-  html/svg section names it in one line.
+  html/svg file names it in one line.
 - **Streaming.** An open `vis` fence is never drawn half-way: it holds a 200px dashed box reading
   "Drawing <kind>… N lines", with a pulsing dot (static under reduced motion). The drawing replaces
   it when the fence closes. A re-render keeps an unchanged drawing's DOM (and a frame's state); a
@@ -275,12 +285,19 @@ block's source (§app.baton/outsider-view).
     (`setTimeout` loops and script-made SVG escape it; the guide asks for a Play/Step button);
   - height: only a clamped number posted by the frame is trusted;
   - a script error shows one muted line under the frame.
-- **The `vis` minor mode** (§chat/mode-menu) puts the guide in the system prompt, or in a hidden note
-  when it is turned on mid-session (§chat.mode-menu/minor-toggle-keeps-prompt): when to draw (at most
-  1–2 per reply, small, captioned, next to prose that says what to notice), the shared rules (with
-  the 200-character text limit and the one-line caption), and one section per kind. A kind flagged
-  `stub` in the registry is never taught. Its examples draw without warnings, and the flow and
-  state examples are checked for what they mean, not only that they parse (`guide.test.ts`).
+- **The `vis` minor mode** (§chat/mode-menu) puts a short entry point in the system prompt, or in a
+  hidden note when it is turned on mid-session (§chat.mode-menu/minor-toggle-keeps-prompt): when to
+  draw (at most 1–2 per reply, small, captioned, next to prose that says what to notice), that
+  every kind has its own syntax, never guessed from another, so the first fence of each kind in the
+  conversation follows a `vis_guide` call for it, never to nest a `vis` fence in another fence, and
+  one line per kind saying what it draws (`vis/overview.md`, about 1.6K characters). The shared rules (with
+  the 200-character text limit and the one-line caption) and each kind's syntax reach the model
+  only through `vis_guide`, so a reply that draws nothing carries no grammar. A kind flagged `stub`
+  in the registry is never taught: its line is dropped from the list and `vis_guide` refuses it.
+  The guide's files match the registry (one per kind, `html` and `svg` sharing one; a stub file
+  exactly for a stub kind; the list names exactly the kinds that aren't stubs), its examples draw
+  without warnings, and the flow and state examples are checked for what they mean, not only that
+  they parse (`guide.test.ts`).
 - **No regression.** A block that drew before soft warnings, inline flow labels
   (§chat.markdown/vis-flow-sections), panel-local ids, label marks in sequences and the character
   budget draws exactly as before (`src/vis/golden.json`, a fixed set of synthetic blocks and the
@@ -486,9 +503,10 @@ line with a warning.
   line under matrix with its example (`columns: Merge, "Rebase, then merge"`). It shows no node with two strings (a source's second line,
   a declaration without `node`): in an offline eval of weak models at low effort, showing one led
   a model to write `-> b "B" "role"` on targets, drawing the role on the arrow; the parser reads
-  those forms when a model writes them anyway. The text sent to the model stays within the size it
-  had before mark targets with spaces (12,397 bytes) plus that matrix line: 12,473 bytes, and the
-  file within 15,327.
+  those forms when a model writes them anyway. While the guide was one file, the text sent to the
+  model stayed within the size it had before mark targets with spaces (12,397 bytes) plus that
+  matrix line: 12,473 bytes, and the file within 15,327; split per kind (§chat.markdown/visuals),
+  the prompt carries only the kind list.
 
 ## §chat.markdown/vis-lenience-content — `vis` content as models write it: numbers, labels, Mermaid habits
 

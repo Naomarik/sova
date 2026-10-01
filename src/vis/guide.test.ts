@@ -1,8 +1,10 @@
-// The model is taught the formats by pi-config/extensions/mode/vis-mode.md. Every example there is a
+// The model is taught the formats by pi-config/extensions/mode/vis/: overview.md (the prompt's kind
+// list), shared.md and one file per kind, which the vis_guide tool returns. Every example there is a
 // second implementation of the grammar, so each must parse with the renderer's own parser; and the
-// guide's sections must match the registry, so no kind is taught that the chat can't draw.
+// guide's files must match the registry, so no kind is taught that the chat can't draw.
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { readdirSync, readFileSync } from "node:fs";
 import { test } from "node:test";
 import { MAX_TEXT } from "./core/grammar";
 import type { FlowSpec } from "./kinds/flow/parse";
@@ -11,15 +13,24 @@ import { FRAME_HARD_CHARS, FRAME_SOFT_CHARS } from "./kinds/frame/parse";
 import { parseVis, visKindWord } from "./parse";
 import { KIND_WORDS, KINDS } from "./registry";
 import { gatheringVisGuide, SHARE_VIS_KINDS } from "../../server/baton-vis-guide";
+import { stripVisComments, VIS_INSTRUCTIONS, VIS_KINDS, visGuide } from "../../pi-config/extensions/mode/minor.ts";
 
-const GUIDE = readFileSync(new URL("../../pi-config/extensions/mode/vis-mode.md", import.meta.url), "utf8");
+const VIS_DIR = new URL("../../pi-config/extensions/mode/vis/", import.meta.url);
+/** Every file in vis/ by its name without `.md`, as written. */
+const FILES: Record<string, string> = Object.fromEntries(
+  readdirSync(VIS_DIR)
+    .filter((name) => name.endsWith(".md"))
+    .map((name) => [name.slice(0, -3), readFileSync(new URL(name, VIS_DIR), "utf8")]),
+);
+/** The whole guide, for the checks that don't care which file holds a line. */
+const GUIDE = Object.values(FILES).join("\n");
 
-/** `## heading` → its text, for every section. "Shared:" sections belong to no kind. */
-const sections = GUIDE.split(/^(?=## )/m)
-  .filter((s) => s.startsWith("## "))
-  .map((s) => ({ heading: s.slice(3, s.indexOf("\n")).trim(), text: s }));
-const kindSections = sections.filter((s) => !s.heading.startsWith("Shared:"));
+/** Each kind's file: its name, its `# vis <kind>` heading's words, its text. overview and shared are no kind's. */
+const kindFiles = Object.entries(FILES)
+  .filter(([name]) => name !== "overview" && name !== "shared")
+  .map(([name, text]) => ({ name, heading: /^# vis (.*)$/m.exec(text)?.[1]?.trim() ?? "", text }));
 const wordsOf = (heading: string) => heading.split(/\s*\/\s*/);
+const isStub = (word: string) => !!KINDS[word]!.stub;
 
 test("every vis example in the guide parses", () => {
   const fences = [...GUIDE.matchAll(/^```(vis [a-z]+)\n([\s\S]*?)^```$/gm)];
@@ -34,7 +45,7 @@ test("every vis example in the guide parses", () => {
 // The flow section's rule is conditional (inline style vs edge labels), so its examples must mean
 // what the text says they mean, not merely parse.
 test("the guide's flow and state examples mean what the text says", () => {
-  const fences = [...GUIDE.matchAll(/^```vis (flow|state)\n([\s\S]*?)^```$/gm)].map(([, kind, body]) => {
+  const fences = [...`${FILES.flow}\n${FILES.state}`.matchAll(/^```vis (flow|state)\n([\s\S]*?)^```$/gm)].map(([, kind, body]) => {
     const r = parseVis(kind!, body!);
     assert.ok(r.ok);
     return r.spec as FlowSpec;
@@ -68,7 +79,7 @@ test("the guide's flow and state examples mean what the text says", () => {
   // In an offline eval of weak models (2026-09-30), showing any two-string node in the flow section
   // led one to write `-> b "B" "role"` on targets, drawing the role on the arrow. The parser reads a
   // source's second string and a declaration without `node`, but the guide teaches only `\n`.
-  const flowSection = sections.find((s) => s.heading === "flow")!.text.replace(/<!--[\s\S]*?-->/g, "");
+  const flowSection = FILES.flow!.replace(/<!--[\s\S]*?-->/g, "");
   // An id then two strings, at a line's or a bullet's start: only the target bullet's label + edge pair.
   const pairs = [...flowSection.matchAll(/(?:^|`)([a-z]\w*) "[^"]*" "[^"]*"/gm)].map((m) => m[1]);
   assert.deepEqual(pairs, ["srv"], "no two-string node is shown");
@@ -107,24 +118,56 @@ test("the guide's Not vis pairs: the right side means it, and the wrong side (re
   assert.deepEqual(outside.spec, tree.spec);
 });
 
-test("each kind section names registered kinds, and every registered kind has a section", () => {
-  const named = kindSections.flatMap((s) => wordsOf(s.heading));
-  for (const word of named) assert.ok(KIND_WORDS.includes(word), `## ${word} is not in registry.ts`);
-  for (const word of KIND_WORDS) assert.ok(named.includes(word), `registry.ts kind ${word} has no ## section in vis-mode.md`);
+test("one file per registered kind: each names registered kinds, as its file name does", () => {
+  const named = kindFiles.flatMap((f) => wordsOf(f.heading));
+  for (const f of kindFiles) assert.deepEqual(wordsOf(f.heading), f.name.split("-"), `vis/${f.name}.md: its heading names its file's kinds`);
+  for (const word of named) assert.ok(KIND_WORDS.includes(word), `vis ${word} is not in registry.ts`);
+  for (const word of KIND_WORDS) assert.equal(named.filter((w) => w === word).length, 1, `registry.ts kind ${word} has one file in vis/`);
 });
 
-test("a stub kind in the registry is a stub section in the guide, and only then", () => {
-  for (const s of kindSections) {
-    const stubbed = s.text.includes("<!-- stub -->");
-    for (const word of wordsOf(s.heading)) assert.equal(!!KINDS[word]!.stub, stubbed, `${word}: registry stub=${!!KINDS[word]!.stub}, guide stub=${stubbed}`);
+test("a stub kind in the registry is a stub file in the guide, and only then", () => {
+  for (const f of kindFiles) {
+    const stubbed = f.text.includes("<!-- stub -->");
+    for (const word of wordsOf(f.heading)) assert.equal(isStub(word), stubbed, `${word}: registry stub=${isStub(word)}, guide stub=${stubbed}`);
   }
 });
 
-test("the shared section exists (emphasis), and the free-form limits are in html / svg", () => {
-  const shared = sections.filter((s) => s.heading.startsWith("Shared:")).map((s) => s.heading);
-  assert.deepEqual(shared, ["Shared: emphasis"]);
-  assert.match(sections.find((s) => s.heading === "html / svg")!.text, /Aim under 8K characters/);
-  assert.match(GUIDE, /mark <target> \[tone\] \["short note"\]/, "the emphasis syntax as core/emphasis.ts parses it");
+test("the overview lists every kind file once, and the prompt exactly the registry's kinds that aren't stubs", () => {
+  const listed = (text: string) => [...text.matchAll(/^- ([a-z]+(?: \/ [a-z]+)*): /gm)].map((m) => m[1]!);
+  // As written: one line per kind file, stubs included, in the registry's order.
+  assert.deepEqual(listed(FILES.overview!).flatMap(wordsOf), KIND_WORDS);
+  assert.deepEqual(listed(FILES.overview!).map((h) => h.replace(" / ", "-")).sort(), kindFiles.map((f) => f.name).sort());
+  // As sent: the stubs' lines dropped, no owner notes; vis_guide takes exactly these words.
+  assert.deepEqual(listed(VIS_INSTRUCTIONS).flatMap(wordsOf), KIND_WORDS.filter((w) => !isStub(w)));
+  assert.deepEqual(VIS_KINDS, KIND_WORDS.filter((w) => !isStub(w)));
+  assert.doesNotMatch(VIS_INSTRUCTIONS, /<!--/);
+  assert.match(VIS_INSTRUCTIONS, /call `vis_guide` with that kind/);
+});
+
+test("vis_guide returns the shared rules, then that kind's file, owner notes stripped", () => {
+  const shared = stripVisComments(FILES.shared!);
+  for (const word of VIS_KINDS) {
+    const file = kindFiles.find((f) => wordsOf(f.heading).includes(word))!;
+    assert.equal(visGuide(word), `${shared}\n\n${stripVisComments(file.text)}`, word);
+    assert.doesNotMatch(visGuide(word), /<!--/);
+  }
+  assert.equal(visGuide("html"), visGuide("svg"));
+  assert.match(visGuide("wireframe"), /^# vis: rules for every kind\n- One statement per line;[\s\S]*\n\n# vis wireframe\nLow-fi screens:/);
+  for (const word of ["mermaid", "overview", "shared", "html-svg", ...KIND_WORDS.filter(isStub)]) assert.throws(() => visGuide(word), /No vis kind/, word);
+});
+
+// The emphasis section's one line of every kind's targets moved into the kinds' files.
+test("each kind's file says what its marks target", () => {
+  for (const f of kindFiles) {
+    if (f.name === "html-svg") continue; // emphasis does not apply to frames
+    const says = f.name === "wireframe" ? /`mark` a block by its first text or a screen by its name/ : /^- `mark` targets: .+\.$/m;
+    assert.match(stripVisComments(f.text), says, f.name);
+  }
+});
+
+test("the shared rules carry the mark syntax, and the free-form limits are in html / svg", () => {
+  assert.match(FILES["html-svg"]!, /Aim under 8K characters/);
+  assert.match(FILES.shared!, /mark <target> \[tone\] \["short note"\]/, "the emphasis syntax as core/emphasis.ts parses it");
   assert.match(GUIDE, /Aim under 8K characters \(the document after `title:` \/ `caption:`\); up to 16K draws marked large/);
   assert.equal(FRAME_SOFT_CHARS, 8 * 1024);
   assert.equal(FRAME_HARD_CHARS, 16 * 1024);
@@ -160,8 +203,8 @@ test("the guide asks for a matrix column name with a comma quoted, and its examp
 
 // server/baton-vis-guide.ts rewrites this one line for gathering sessions, by its start.
 test("the rules keep the '- The parser is strict:' line the gathering guide rewrites", () => {
-  assert.match(GUIDE, /^Rules for every kind:\n(?:- .*\n)*- The parser is strict: .*$/m);
-  const g = gatheringVisGuide(GUIDE);
+  assert.match(FILES.shared!, /^# vis: rules for every kind\n(?:- .*\n)*- The parser is strict: .*$/m);
+  const g = gatheringVisGuide();
   assert.match(g, /^- The parser is strict: use only the syntax below, or the person sees no drawing at all\.$/m);
   assert.doesNotMatch(g, /shows the block as source/);
 });
@@ -169,7 +212,7 @@ test("the rules keep the '- The parser is strict:' line the gathering guide rewr
 // A gathering session's guide (§app.baton/abilities): the business kinds' sections of this same
 // guide, so its examples are these; each must parse, and nothing else may be taught to it.
 test("the gathering guide teaches only the share page's kinds, and its examples parse", () => {
-  const g = gatheringVisGuide(GUIDE);
+  const g = gatheringVisGuide();
   const taught = [...g.matchAll(/^## (.*)$/gm)].map((m) => m[1]!.trim());
   assert.deepEqual(taught, ["Shared: emphasis", ...KIND_WORDS.filter((w) => (SHARE_VIS_KINDS as readonly string[]).includes(w))]);
   assert.doesNotMatch(g, /<!--|vis html|vis svg|8K|16K/, "no owner notes, frames or their limits");
@@ -182,4 +225,11 @@ test("the gathering guide teaches only the share page's kinds, and its examples 
     const r = parseVis(word, body!);
     assert.ok(r.ok, `${info}: ${r.ok ? "" : `line ${r.line}: ${r.message}`}`);
   }
+});
+
+// The gathering guide as last reviewed (the split of vis-mode.md kept it byte for byte; the e2e
+// round's rule fixes then changed it). A deliberate edit to shared.md or a share kind's file changes
+// it: check the new text reads right for a gathering session, then put its hash here.
+test("the gathering guide is the text last reviewed", () => {
+  assert.equal(createHash("sha256").update(gatheringVisGuide()).digest("hex"), "841871f212813c20ca5607eaebf6f8f9017e49df0167054268ce38bd8fd90728");
 });

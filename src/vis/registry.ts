@@ -41,7 +41,7 @@ export interface KindEntry<S extends VisBase = VisBase> {
   /** Free-form kinds: model-written documents in a sandboxed frame; Source shows them as HTML. */
   framed?: boolean;
   /**
-   * Not ready to be taught: its vis-mode.md section must carry the `<!-- stub -->` marker (so the
+   * Not ready to be taught: its file in pi-config/extensions/mode/vis/ must carry the `<!-- stub -->` marker (so the
    * model never hears of it; guide.test.ts checks), and its View may be `() => import("./StubView")`.
    */
   stub?: boolean;

@@ -1,12 +1,14 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { chmodSync, linkSync, mkdirSync, openSync, readFileSync, rmSync, statSync, writeFileSync, writeSync, closeSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
+import { isIP } from "node:net";
 import { hostname as osHostname, networkInterfaces } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { Duplex } from "node:stream";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { Context } from "hono";
 import { consumeCode, mintCode } from "./auth-devices";
+import { DEFAULT_SERVE_PORT } from "./mesh/front-door";
 import { localRequest } from "./mesh/proxy";
 
 // The main listener's gate (§app.access/token, §app.access/gate): one per-install token, carried
@@ -438,6 +440,22 @@ export async function unlock(c: Context): Promise<Response> {
   return c.json({ ok: true });
 }
 
+/** Pair at an origin, never at a literal IP. Loopback still has its honest local-only link. */
+function pairOrigin(value: string, local = false): URL | null {
+  try {
+    const url = new URL(value);
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password) return null;
+    const name = url.hostname.replace(/^\[|\]$/g, "");
+    if (isIP(name)) {
+      if (!local || !isLoopbackName(name)) return null;
+      url.hostname = "localhost";
+    }
+    return new URL(url.origin);
+  } catch {
+    return null;
+  }
+}
+
 /** Gated, local-only credential routes. Peer identity is not the owner's browser credential. */
 export function pair(c: Context): Response {
   c.header("Cache-Control", "no-store");
@@ -445,8 +463,27 @@ export function pair(c: Context): Response {
   const host = c.req.header("host");
   if (!host) return c.json({ error: "Forbidden" }, 403);
   const { code, expiresAt } = mintCode();
-  const url = `${servedOverHttps(c) ? "https" : "http"}://${host}/#c=${code}`;
-  return c.json({ code, url, expiresAt });
+  const known = meshNames();
+  const serve = pairOrigin(known.own?.[0] ?? "");
+  const dns = hostnameOf(known.magicDns ?? "");
+  const tailnet = serve?.protocol === "https:" ? serve :
+    dns && !isIP(dns) && !isLoopbackName(dns) ? pairOrigin(`https://${dns}:${DEFAULT_SERVE_PORT}`) : null;
+  const links: Array<{ label: string; url: string }> = [];
+  const add = (origin: URL | null, label: string) => {
+    if (!origin) return;
+    origin.hash = `c=${code}`;
+    const url = origin.href;
+    if (!links.some((link) => link.url === url)) links.push({ label, url });
+  };
+  add(tailnet, "Phone · Tailscale");
+  // A browser's Origin retains HTTPS on a non-default serve port. Forwarded headers
+  // alone never determine a pairing address, and the real Host remains its authority.
+  const browserOrigin = c.req.header("origin");
+  const https = servedOverHttps(c) || browserOrigin === `https://${host}` ||
+    (serve?.protocol === "https:" && serve.host === host);
+  const own = pairOrigin(`${https ? "https" : "http"}://${host}`, true);
+  add(own, own?.hostname === "localhost" ? "This machine only" : "This address");
+  return c.json({ code, expiresAt, links });
 }
 
 /** Deliberate recovery only: never log the credential, and never let a cache retain it. */

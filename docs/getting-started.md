@@ -20,7 +20,18 @@ sova
 
 Then, in another terminal, run `sova open`: it opens <http://127.0.0.1:4800> already unlocked.
 Sova asks every browser for its token once; `sova token` prints it, to paste on the unlock screen
-of another browser or device. If your shell says `sova` is not found, run `~/.local/bin/sova`
+of another browser or device.
+
+To bring a phone in, open the app on a browser that is already unlocked and use **Access** on the
+home page: it makes a **pairing code** that works once and expires in five minutes, and shows the
+link the other device must open — as a QR to scan with its camera, and as text to copy. The QR and
+the link use an address that device can actually reach (a tailnet name, never an IP address), so
+open Sova at that address before making the code; if it cannot, the page says so rather than
+offering a link the phone cannot open. The code goes on the other device's unlock screen, or the
+link is opened there — either way that device is in, and the install's token never had to leave
+the first browser.
+
+If your shell says `sova` is not found, run `~/.local/bin/sova`
 directly, or add `~/.local/bin` to your shell's `PATH`. Keep the process running while you use
 the app; `Ctrl+C` stops it.
 

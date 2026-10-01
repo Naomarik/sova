@@ -113,7 +113,7 @@ describe("device credentials on the real listener", () => {
     assert.equal(minted.status, 200);
     assert.equal(minted.headers["cache-control"], "no-store");
     const code = JSON.parse(minted.body).code as string;
-    assert.equal(JSON.parse(minted.body).url, `http://${self}/#c=${code}`);
+    assert.deepEqual(JSON.parse(minted.body).links, [{ label: "This machine only", url: `http://localhost:${port}/#c=${code}` }]);
     const again = await send("POST", "/api/auth/pair", browser());
     assert.equal(again.status, 200);
     assert.notEqual(JSON.parse(again.body).code, code);

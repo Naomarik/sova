@@ -47,7 +47,9 @@ existing pi provider login.
   [public links](docs/public-links.md) on an address you set up. Recipients need no account or tailnet.
 
 Single-user and loopback by default; every browser unlocks once with the install's token
-(`sova open`, `sova token`). Protect access before exposing it beyond your machine. Model requests go to your configured provider; tools and extensions may also
+(`sova open`, `sova token`), and a second device — a phone — comes in with a one-use **pairing
+code** from **Access** on the app's home page, with the link it must open shown as a QR to scan.
+Protect access before exposing it beyond your machine. Model requests go to your configured provider; tools and extensions may also
 use the network.
 
 ## Make it yours

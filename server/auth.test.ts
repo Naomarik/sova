@@ -5,6 +5,7 @@
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import type { IncomingMessage } from "node:http";
+import { isIP } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, afterEach, describe, test } from "node:test";
@@ -393,32 +394,84 @@ describe("bringing a device in", () => {
     const first = await mint();
     assert.equal(first.status, 200);
     assert.equal(first.headers.get("cache-control"), "no-store");
-    const a = await first.json() as { code: string; url: string; expiresAt: string };
+    const a = await first.json() as { code: string; links: Array<{ label: string; url: string }>; expiresAt: string };
     const b = await (await mint()).json() as typeof a;
-    assert.deepEqual(Object.keys(a).sort(), ["code", "expiresAt", "url"]);
+    assert.deepEqual(Object.keys(a).sort(), ["code", "expiresAt", "links"]);
     assert.match(a.code, /^[A-Za-z0-9_-]{43}$/);
     assert.notEqual(a.code, b.code, "a later response must never return the earlier code");
-    assert.equal(a.url, `http://${HOST}/#c=${a.code}`);
+    assert.deepEqual(a.links, [{ label: "This machine only", url: `http://localhost:4800/#c=${a.code}` }]);
     assert.ok(Date.parse(a.expiresAt) >= before + 300_000);
     assert.ok(Date.parse(a.expiresAt) <= Date.now() + 300_000);
     assert.equal(statSync(store()).mode & 0o777, 0o600);
     const rows = JSON.parse(readFileSync(store(), "utf8")) as Array<{ code: string; at: string; expiresAt: string }>;
     const row = rows.find((r) => r.code === a.code)!;
+    assert.equal(row.expiresAt, a.expiresAt, "the answer keeps the minted code's exact expiry");
     assert.equal(Date.parse(row.expiresAt) - Date.parse(row.at), 300_000);
     for (const log of logs) assert.equal(log.mock.callCount(), 0);
   });
 
-  test("pairing URLs use the real Host and HTTPS decision, never forwarded headers", async () => {
-    for (const [host, env, scheme] of [
-      [HOST, SOCKET, "http"],
-      ["phone.example.ts.net", SOCKET, "https"],
-      [HOST, { incoming: { socket: { encrypted: true } } }, "https"],
+  type PairAnswer = { code: string; expiresAt: string; links: Array<{ label: string; url: string }> };
+
+  test("mesh off: pairing offers only the request's own origin, with loopback labelled honestly", async () => {
+    for (const [host, env, origin, label] of [
+      [HOST, SOCKET, "http://localhost:4800", "This machine only"],
+      ["localhost:5173", SOCKET, "http://localhost:5173", "This machine only"],
+      ["[::1]:4800", SOCKET, "http://localhost:4800", "This machine only"],
+      ["phone.example.ts.net", SOCKET, "https://phone.example.ts.net", "This address"],
+      [HOST, { incoming: { socket: { encrypted: true } } }, "https://localhost:4800", "This machine only"],
     ] as const) {
       const res = await mint({ ...cookie(), host, "x-forwarded-proto": "https", "x-forwarded-host": "ignored.ts.net" }, env);
       assert.equal(res.status, 200);
-      const body = await res.json() as { code: string; url: string };
-      assert.equal(body.url, `${scheme}://${host}/#c=${body.code}`);
+      const body = await res.json() as PairAnswer;
+      assert.deepEqual(body.links, [{ label, url: `${origin}/#c=${body.code}` }]);
     }
+  });
+
+  test("a known HTTPS serve URL comes first, keeps its port and shares the code with loopback", async () => {
+    setAuthHosts(() => ({ magicDns: "box.example.ts.net", own: ["https://box.example.ts.net:9443/", "https://door.example"] }));
+    const body = await (await mint()).json() as PairAnswer;
+    assert.deepEqual(body.links, [
+      { label: "Phone · Tailscale", url: `https://box.example.ts.net:9443/#c=${body.code}` },
+      { label: "This machine only", url: `http://localhost:4800/#c=${body.code}` },
+    ]);
+    assert.ok(!JSON.stringify(body.links).includes("door.example"), "the front door is not this host's serve URL");
+  });
+
+  test("MagicDNS alone supplies the default HTTPS serve port, never the HTTP URL or front door", async () => {
+    for (const serve of [null, "http://box.example.ts.net:4800", "not a URL"]) {
+      setAuthHosts(() => ({ magicDns: "box.example.ts.net.", own: [serve, "https://door.example"] }));
+      const body = await (await mint()).json() as PairAnswer;
+      assert.deepEqual(body.links, [
+        { label: "Phone · Tailscale", url: `https://box.example.ts.net:8443/#c=${body.code}` },
+        { label: "This machine only", url: `http://localhost:4800/#c=${body.code}` },
+      ]);
+    }
+  });
+
+  test("pairing deduplicates the serve and request origins while retaining HTTPS and its actual port", async () => {
+    const host = "box.example.ts.net:9443";
+    setAuthHosts(() => ({ own: [`https://${host}/`] }));
+    const body = await (await mint({ ...cookie(), host, origin: `https://${host}` })).json() as PairAnswer;
+    assert.deepEqual(body.links, [{ label: "Phone · Tailscale", url: `https://${host}/#c=${body.code}` }]);
+    setAuthHosts(() => ({}));
+    const direct = await (await mint({ ...cookie(), host, origin: `https://${host}` })).json() as PairAnswer;
+    assert.deepEqual(direct.links, [{ label: "This address", url: `https://${host}/#c=${direct.code}` }]);
+  });
+
+  test("an IP literal never appears in a pairing link, from the request, serve URL or MagicDNS", async () => {
+    for (const ip of ["127.0.0.1", "[::1]", "192.0.2.1", "[2001:db8::1]", "0x7f000001"]) {
+      process.env.SOVA_ALLOWED_HOSTS = ip;
+      setAuthHosts(() => ({ magicDns: ip, own: [`https://${ip}:9443/`] }));
+      const res = await mint({ ...cookie(), host: `${ip}:4800` });
+      assert.equal(res.status, 200);
+      const body = await res.json() as PairAnswer;
+      const loopback = ["127.0.0.1", "[::1]", "0x7f000001"].includes(ip);
+      assert.deepEqual(body.links, loopback ? [{ label: "This machine only", url: `http://localhost:4800/#c=${body.code}` }] : []);
+      for (const link of body.links) assert.equal(isIP(new URL(link.url).hostname.replace(/^\[|\]$/g, "")), 0);
+    }
+    setAuthHosts(() => ({ magicDns: "box.example.ts.net", own: ["https://192.0.2.1:9443"] }));
+    const fallback = await (await mint()).json() as PairAnswer;
+    assert.equal(fallback.links[0]?.url, `https://box.example.ts.net:8443/#c=${fallback.code}`);
   });
 
   test("a minted code unlocks exactly once, sets the same cookie and echoes neither credential", async () => {

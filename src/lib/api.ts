@@ -162,7 +162,7 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const mintAccessCode = () =>
-  request<{ code: string; url: string; expiresAt: string }>("/api/auth/pair", { method: "POST" });
+  request<{ code: string; expiresAt: string; links?: { label: string; url: string }[] }>("/api/auth/pair", { method: "POST" });
 export const revealAccessToken = () => request<{ token: string }>("/api/auth/token", { cache: "no-store" });
 
 export const listSessions = () => request<SessionSummary[]>("/api/sessions");

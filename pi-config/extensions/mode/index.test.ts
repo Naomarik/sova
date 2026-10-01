@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
-import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, VIS_INSTRUCTIONS, visPrompt, workerMinorModes } from "./minor.ts";
+import { ALIGN_INSTRUCTIONS, buildMinorPrompt, isMinorMode, MINOR_DESCRIPTIONS, MINOR_MODES, MINOR_WORKER, type MinorMode, normalizeMinorModes, parseMinorFlag, SPEC_CORE_SHELL, SPEC_INSTRUCTIONS, stripVisComments, VIS_FILES, VIS_INSTRUCTIONS, VIS_KIND_FILES, VIS_KINDS, visGuide, visOverview, workerMinorModes } from "./minor.ts";
 import { parseModeWorkerEvent } from "./events.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
 import { ALIGN_FILE_SCHEMA, ALIGN_NUDGE_TEXT, ALIGN_OPS } from "./align.ts";
@@ -274,18 +274,32 @@ test("composePrompt joins the delegate block and minor blocks", () => {
 	assert.match(DELEGATE_ALIGN_BRIDGE, /status is implementing/);
 });
 
-test("vis: vis-mode.md verbatim minus its owner comments, composed last", () => {
+test("vis: vis/overview.md minus its owner comments and stub kinds' lines, composed last", () => {
 	const vis = buildMinorPrompt("vis");
+	assert.equal(vis, VIS_INSTRUCTIONS);
 	assert.match(vis, /^# Minor mode: vis\n/);
 	assert.doesNotMatch(vis, /<!--|owner:/, "owner notes never reach the model");
-	// A stub kind is never taught: whichever sections the guide itself marks as stubs.
-	const guide = readFileSync(new URL("./vis-mode.md", import.meta.url), "utf8");
-	for (const [, h] of guide.matchAll(/^## (.+)\n<!-- stub -->/gm)) assert.doesNotMatch(vis, new RegExp(`^## ${h}$`, "m"), `stub ${h} is never taught`);
-	assert.match(vis, /^## code$/m);
-	assert.match(vis, /^## Shared: emphasis$/m);
-	assert.equal(visPrompt("# A\n\n## x\n<!-- stub -->\nhidden\n\n## y\n<!-- note -->\nshown\n"), "# A\n\n## y\nshown");
-	assert.match(vis, /```vis flow\n/);
+	assert.equal(vis, visOverview(readFileSync(new URL("./vis/overview.md", import.meta.url), "utf8")), "the overview file, nothing more");
+	// The kind list only: no kind's grammar or example is in the prompt; vis_guide carries it.
+	assert.doesNotMatch(vis, /```vis /);
+	assert.match(vis, /call `vis_guide` with that kind/);
+	assert.deepEqual([...vis.matchAll(/^- ([a-z /]+): /gm)].flatMap((m) => m[1]!.split(" / ")), [...VIS_KINDS]);
+	// A stub kind is never taught: whichever kind files carry the marker.
+	for (const [word, file] of Object.entries(VIS_KIND_FILES)) assert.equal(VIS_KINDS.includes(word), !VIS_FILES[file]!.includes("<!-- stub -->"), word);
+	const taught = (w: string) => w !== "x";
+	assert.equal(visOverview("<!-- note -->\n# A\n\n- x: hidden\n- y: shown\n- x / y: hidden too\n- y / z: shown too\n", taught), "# A\n\n- y: shown\n- y / z: shown too");
 	assert.equal(composePrompt(withMinor(withMinor(defaults(), "vis", true), "align", true), ALL_OK), `${buildMinorPrompt("align")}\n\n${vis}`);
+});
+
+test("vis_guide: the shared rules then the kind's file, for the listed kinds only", () => {
+	const shared = readFileSync(new URL("./vis/shared.md", import.meta.url), "utf8");
+	const wireframe = readFileSync(new URL("./vis/wireframe.md", import.meta.url), "utf8");
+	assert.equal(visGuide("wireframe"), `${stripVisComments(shared)}\n\n${stripVisComments(wireframe)}`);
+	assert.match(visGuide("wireframe"), /^# vis: rules for every kind\n/);
+	assert.doesNotMatch(visGuide("flow"), /<!--/);
+	assert.equal(visGuide("html"), visGuide("svg"));
+	assert.equal(VIS_KIND_FILES.html, "html-svg");
+	for (const bad of ["mermaid", "overview", "shared", "html-svg", ""]) assert.throws(() => visGuide(bad), /No vis kind/);
 });
 
 test("spec: a registered minor mode, composed after align and never bridged", () => {
@@ -335,7 +349,7 @@ test("spec: minor.ts reads its own spec-mode.md, from any cwd, and refuses a mal
 		try {
 			writeFileSync(join(dir, "minor.ts"), readFileSync(join(here, "minor.ts")));
 			writeFileSync(join(dir, "spec-mode.md"), md);
-			writeFileSync(join(dir, "vis-mode.md"), readFileSync(join(here, "vis-mode.md")));
+			cpSync(join(here, "vis"), join(dir, "vis"), { recursive: true });
 			const src = `import(${JSON.stringify(pathToFileURL(join(dir, "minor.ts")).href)}).then((m) => process.stdout.write(JSON.stringify([m.buildMinorPrompt("spec"), m.SPEC_CORE_SHELL])))`;
 			return spawnSync(process.execPath, ["--input-type=module", "-e", src], { cwd: tmpdir(), encoding: "utf8" });
 		} finally {
@@ -399,8 +413,8 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 		assert.match(draftUsage, new RegExp(`[<|] ?${cmd}[ >]`), `${cmd} is a draft command`);
 		assert.match(spec, new RegExp(`\`${cmd}\\b`), `${cmd} is named`);
 	}
-	// The core's five commands only read; --budget only inside the scope form (elsewhere a usage error).
-	assert.match(spec, /only reads; command is `check`, `census`, `foreign --base <rev>`, `scope '<§id>' \[--budget <bytes>\]` or `impact '<§id>'`; `--spec <dir>` reads a draft instead\./);
+	// Task reading uses packet; full scope/impact remain deliberate inspection tools.
+	assert.match(spec, /only reads: `packet '<§id>' \[--part prose\|inventory\|frontier\|code\|findings\] \[--cursor <token>\] \[--budget <bytes>\]`, `scope '<§id>'`, `impact '<§id>'`, `check`, `census`, `foreign --base <rev>`; `--spec <dir>` reads a draft\./);
 	assert.doesNotMatch(usage("sova-spec.mjs", "foreign"), /unknown command/, "foreign is a core command");
 	assert.equal(spec.match(/--budget/g)?.length, 1);
 	// A project's copy is foreign code: inspected and asked about, never run blind.
@@ -409,9 +423,11 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /Without trusted tools, say so and read the files directly/);
 	// The discipline, one assertion per rule.
 	assert.match(spec, /It needs no Git, no prior docs and no source annotations/, "any project, no incumbent prose");
-	assert.match(spec, /Work from the returned passages as written/, "literal scope before work");
-	assert.match(spec, /Keep the frontier in view/);
-	assert.match(spec, /Exit 0 means the declared closure was delivered, not that the context is complete/, "known closure, not completeness");
+	assert.match(spec, /Before coding:\n1\. Justify roots; `packet` them, `impact` anything others require\. Work from returned passages as written;/, "reverse impact and literal passage reading are mandatory before coding, not merely available tools");
+	assert.match(spec, /finish relevant contiguous fragments at `end == total`, not `complete: true`/, "finish exact fragments, not a whole-item flag");
+	assert.match(spec, /Follow `next` with `--cursor`, same ID\/part; inspect `--part frontier` and `--part findings`/, "missing-code warnings need findings inspection, not frontier alone");
+	assert.match(spec, /Full `scope`: machine inspection/);
+	assert.match(spec, /`done`\/exit 0: selected stream only, never complete context or reading proof/, "navigation, not completeness or read proof");
 	assert.match(spec, /Labels are declared, never proof: `migrated` text is the requirement with its implementation unreviewed; `candidate` is a proposal\./);
 	assert.match(spec, /Documentation changes only through drafts, never by editing current `claims\/` or `manifest\.json`/);
 	assert.match(spec, /`new <name> --write` copies the whole current spec \(or starts one\)/, "a draft is a full copy");
@@ -421,11 +437,11 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.doesNotMatch(spec, /or `migrated`/, "migrated is provenance, not an alternative to accepted");
 	assert.match(spec, /`--commit <rev>` \(Git: the implementation's existing commit\)/);
 	assert.match(spec, /It is not permission to commit: without that, leave evidence pending, and never commit unrelated changes\./, "task approval is not a commit");
-	assert.match(spec, /except `manifest-not-found`: no spec yet, so start a draft\./, "no spec is a start, not an error");
+	assert.match(spec, /`cause: manifest-not-found` means no spec: start a draft\./, "a generic refusal is not permission to bootstrap a malformed spec");
 	assert.match(spec, /Promote only what is implemented and verified\. A refusal is resolved, never forced\./);
 	assert.match(spec, /Write `"requires": \[\]` only after investigating; otherwise omit the key/);
 	// Mandatory: every behavior change is spec'd, and only a declared no-behavior change is exempt.
-	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from `scope` output, never memory; a test that fails or flakes because of product code \(a race, a wrong value\) is that code's behavior fix, never test-only; say you claim the exemption\./, "a flaky test's product cause is no test-only exemption");
+	assert.match(spec, /Every behavior change is spec'd\. Exempt from drafts, not census: work changing no behavior \(refactor, tests, tooling\), decided from `packet` output, never memory; a test that fails or flakes because of product code \(a race, a wrong value\) is that code's behavior fix, never test-only; say you claim the exemption\./, "a flaky test's product cause is no test-only exemption");
 	assert.match(spec, /Behavior no claim covers gets a new claim in a feature draft before coding\. Write its sentence before the first code edit; `new` alone isn't enough\./, "the claim comes before the code");
 	assert.ok(spec.indexOf("Before coding:") < spec.indexOf("before coding.") && spec.indexOf("before coding.") < spec.indexOf("Documentation changes only through drafts"), "the new claim is a before-coding step");
 	// Only what the task changed is claimed; neighbours are linked, never spec'd.
@@ -460,6 +476,118 @@ test("spec: the prompt names the trusted tools, their real flags, and the draft 
 	assert.match(spec, /plumbing \(a request, hook, helper or CSS class\) never flags/);
 	assert.ok(spec.split(/\s+/).length <= 1020, "short enough to ride every turn");
 	assert.match(spec, /and no changed file outside it that no claim maps unless a "Plumbing: <path> — <why>" line above the last line names it \(never UI text, colour, CLI output or footer rendering\)/, "the boundary is not an exemption");
+});
+
+test("spec: shipped task-reading argv delivers exact fragments and a separate frontier to parents and workers", () => {
+	const guide = readFileSync(new URL("./spec-mode.md", import.meta.url), "utf8").trimEnd();
+	const form = guide.match(/`(packet) '<§id>' \[(--part) (prose\|inventory\|frontier\|code\|findings)\] \[(--cursor) <token>\] \[(--budget) <bytes>\]`/);
+	assert.ok(form, "use the actual shipped guide's CLI form, not a second instruction source");
+	const [, command, partFlag, parts, cursorFlag, budgetFlag] = form;
+	const dir = tmp();
+	try {
+		mkdirSync(join(dir, ".sova/spec/claims/guide"), { recursive: true });
+		const id = "§guide/task";
+		const text = `# ${id} — Exact task\n\n${"Exact 🙂 prose; ".repeat(300)}`;
+		writeFileSync(join(dir, ".sova/spec/claims/guide/task.md"), `${text}\n`);
+		writeFileSync(join(dir, ".sova/spec/manifest.json"), JSON.stringify({ formatVersion: 1, claims: { [id]: { kind: "behavior", requires: [], code: [] } } }));
+		const cli = fileURLToPath(new URL("../spec/core/sova-spec.mjs", import.meta.url));
+		const run = (...args: string[]) => {
+			const r = spawnSync(process.execPath, [cli, command!, ...args], { encoding: "utf8" });
+			assert.equal(r.stderr, "", "packet has no unbounded stderr side channel");
+			const page = JSON.parse(r.stdout);
+			assert.equal(r.status, page.exit);
+			assert.ok(Buffer.byteLength(r.stdout) <= page.budget, "whole output, not just text, fits the page budget");
+			return page;
+		};
+		const help = run("--help");
+		assert.equal(help.command, command);
+		assert.ok(help.help.includes(`[${partFlag} ${parts}]`), "help agrees with the guide's actual parts");
+		assert.ok(help.help.includes(`[${cursorFlag} TOKEN]`) && help.help.includes(`[${budgetFlag} BYTES]`), "help agrees with continuation and budget argv");
+		let cursor: string | null = null;
+		let joined = "";
+		let end = 0;
+		let pages = 0;
+		do {
+			const page = run(id, partFlag!, parts!.split("|")[0]!, budgetFlag!, "1024", "--root", dir, "--json", ...(cursor ? [cursorFlag!, cursor] : []));
+			assert.ok([0, 1].includes(page.exit), JSON.stringify(page));
+			assert.ok(page.items.length, "a continued prose page must advance");
+			for (const item of page.items) {
+				assert.equal(item.id, id);
+				assert.equal(item.fragment.start, end);
+				assert.equal(item.fragment.complete, false, "even the final oversized fragment is not a whole item");
+				end = item.fragment.end;
+				joined += item.text;
+				assert.equal(end, Buffer.byteLength(joined));
+			}
+			cursor = page.next;
+			assert.equal(page.status, cursor ? "more" : "done");
+			assert.ok(++pages < 100, "navigation cannot empty-loop");
+		} while (cursor);
+		assert.ok(pages > 1, "this fixture discriminates bounded fragment navigation");
+		const scope = spawnSync(process.execPath, [cli, "scope", id, "--root", dir, "--json"], { encoding: "utf8" });
+		assert.equal(scope.status, 0, scope.stderr);
+		assert.equal(joined, JSON.parse(scope.stdout).passages[0].text, "the actual guide's continuation argv recovers exact legacy scope prose");
+		const frontierPart = guide.match(/inspect `(--part) (frontier)`/)!.slice(1);
+		const frontier = run(id, ...frontierPart, "--root", dir);
+		assert.equal(frontier.part, "frontier");
+		assert.equal(frontier.status, "done");
+		assert.deepEqual(frontier.items, []);
+		assert.equal(frontier.next, null, "the frontier is independent, not prose continuation");
+		const findingsPart = guide.match(/inspect `--part frontier` and `(--part) (findings)`/)!.slice(1);
+		const manifest = JSON.parse(readFileSync(join(dir, ".sova/spec/manifest.json"), "utf8"));
+		manifest.claims[id].code = ["missing.ts"];
+		writeFileSync(join(dir, ".sova/spec/manifest.json"), JSON.stringify(manifest));
+		assert.deepEqual(run(id, ...frontierPart, "--root", dir).items, [], "missing code is not a dependency-frontier entry");
+		const warnings = run(id, ...findingsPart, "--root", dir);
+		assert.equal(warnings.part, "findings");
+		assert.equal(warnings.status, "done");
+		assert.equal(warnings.exit, 1, "done navigation does not clear scope warnings");
+		assert.ok(warnings.items.some((item: { value?: { code?: string } }) => item.value?.code === "code-missing"));
+		assert.equal(composePrompt(withMinor(defaults(), "spec", true), ALL_OK), guide);
+		assert.equal(composeWorkerPrompt({ minorModes: ["spec"] }), `${guide}\n\n${SPEC_WORKER_NOTE}`, "workers inherit the same bounded-reading guide");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});
+
+test("spec: shipped missing-spec guidance distinguishes refusal causes and preserves orphaned claims", () => {
+	const guide = buildMinorPrompt("spec");
+	const cause = guide.match(/`cause: (manifest-not-found)` means no spec: start a draft/);
+	assert.ok(cause, "the guide names the actual bounded missing-spec cause");
+	const dir = tmp();
+	try {
+		const core = fileURLToPath(new URL("../spec/core/", import.meta.url));
+		const run = (tool: string, ...args: string[]) => {
+			const r = spawnSync(process.execPath, [join(core, tool), ...args, "--root", dir, "--json"], { encoding: "utf8" });
+			return { ...r, out: JSON.parse(r.stdout) };
+		};
+		assert.ok(!existsSync(join(dir, ".git")), "bootstrap works without Git");
+		const packet = run("sova-spec.mjs", "packet", "§guide/task");
+		assert.equal(packet.status, 2);
+		assert.equal(packet.out.code, "graph-untrusted");
+		assert.equal(packet.out.cause, cause[1], "the shipped guide's missing-spec cause is visible");
+		const draft = run("sova-spec-draft.mjs", "new", "bootstrap");
+		assert.equal(draft.status, 0, draft.stderr);
+		assert.ok(!existsSync(join(dir, ".sova/spec/drafts")), "a preview does not create a draft");
+		mkdirSync(join(dir, ".sova/spec/claims/guide"), { recursive: true });
+		const path = join(dir, ".sova/spec/claims/guide/task.md");
+		const orphan = "# §guide/task — Preserve orphaned prose\n";
+		writeFileSync(path, orphan);
+		const orphanPacket = run("sova-spec.mjs", "packet", "§guide/task");
+		assert.equal(orphanPacket.out.cause, cause[1]);
+		const refused = run("sova-spec-draft.mjs", "new", "bootstrap");
+		assert.equal(refused.status, 2);
+		assert.ok(JSON.stringify(refused.out).includes("orphaned-spec"), "missing manifest never authorizes destructive orphan bootstrap");
+		assert.equal(readFileSync(path, "utf8"), orphan);
+		assert.ok(!existsSync(join(dir, ".sova/spec/drafts")));
+		writeFileSync(join(dir, ".sova/spec/manifest.json"), "{ malformed");
+		const malformed = run("sova-spec.mjs", "packet", "§guide/task");
+		assert.equal(malformed.status, 2);
+		assert.equal(malformed.out.code, "graph-untrusted");
+		assert.equal(malformed.out.cause, undefined, "a malformed existing spec must not look missing");
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
 });
 
 test("mode helpers", () => {

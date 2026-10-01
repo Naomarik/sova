@@ -46,6 +46,8 @@ export function WatchView(props: {
   streaming: boolean;
   stateBanner: JSX.Element;
   readOnly: ComposerReason;
+  /** False: never fetch the older rows in the background (an earlier Overseer conversation). */
+  prefetch?: boolean;
   /** Rows were appended: data derived from the session file may have changed. */
   onAppend?(): void;
   /** Subagents working now (live record); the composer shows them as a status row. */
@@ -65,7 +67,7 @@ export function WatchView(props: {
   onCleanup(transcripts.show(cacheKey));
   const [items, setItems] = createSignal<TranscriptItem[] | null>(cached?.items ?? null);
   /** The rows above the list that it doesn't hold (lib/older-rows, as ChatView's). */
-  const olderRows = createOlderRows({ path: props.path, items, setItems });
+  const olderRows = createOlderRows({ path: props.path, items, setItems, prefetch: props.prefetch });
   const { older, whole } = olderRows;
   createEffect(on([items, older], ([list, o]) => list && cacheItems(cacheKey, list, o)));
   /** The last snapshot's first row: rows that arrive above it are history, never "N new". */
@@ -127,7 +129,7 @@ export function WatchView(props: {
    * reason rather than disappearing — a control that vanishes in one view and exists in another
    * teaches nothing about why.
    */
-  const watchState = (wake = false, link = false): ActionState => ({
+  const watchState = (wake = false, link = false, topic = false): ActionState => ({
     chat: false,
     live: props.streaming,
     streaming: false,
@@ -136,6 +138,7 @@ export function WatchView(props: {
     paused: null,
     wake,
     link,
+    topic,
   });
 
   const watchActions: MessageActionsProvider = {
@@ -149,7 +152,7 @@ export function WatchView(props: {
             return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
           }
           default:
-            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink)), run: () => {} };
+            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic)), run: () => {} };
         }
       });
     },

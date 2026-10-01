@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { AttentionItem, AttentionKind, AttentionTier, ReadinessState, SessionReadiness, SessionSummary, WorktreeReadiness } from "../shared/protocol";
 import { parseWakeNudge } from "../shared/wake";
 import { isLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import { normalizeMergeDetails, restoreActive, type TrackedWorktree, WORKTREE_MERGE_MESSAGE, WORKTREES_ENTRY_TYPE } from "../pi-config/extensions/worktrees/state.ts";
 import { deferredOf, followUpFor, type FollowUpInput, type MergeFollowUps } from "./merge-followup";
 import { asksUserOf } from "./signals-store";
@@ -332,7 +333,7 @@ export function scanLine(line: string, checkIds: Set<string>): ScanEntry | null 
       e.check = { toolCallId: m.toolCallId, ok: !checkFailed(m.isError === true, textOf(m.content).slice(-4000)) };
     } else if (m.role === "user") {
       const text = textOf(m.content);
-      if (parseWakeNudge(text) === null && !isLinkMessage(text)) e.userPrompt = true;
+      if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
     }
   }
   return e;

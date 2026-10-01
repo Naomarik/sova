@@ -45,7 +45,8 @@ const event = (root: string, extra: Partial<HookInput>): HookInput => ({ session
 
 test("specHookSettings: the three events, after ANY tool, run by node with the core and state dirs; withClaudeSettings keeps a sandbox's settings and hooks", () => {
 	const settings = specHookSettings({ node: "/usr/bin/node", coreDir: "/c ore", stateDir: "/s" }) as any;
-	assert.deepEqual(Object.keys(settings.hooks).sort(), ["PostToolUse", "Stop", "UserPromptSubmit"]);
+	assert.deepEqual(Object.keys(settings.hooks).sort(), ["PostToolUse", "PreToolUse", "Stop", "UserPromptSubmit"]);
+	assert.equal(settings.hooks.PreToolUse[0].matcher, "*");
 	assert.equal(settings.hooks.PostToolUse[0].matcher, "*");
 	assert.equal(settings.hooks.Stop[0].hooks[0].command, `/usr/bin/node ${SPEC_HOOK_SCRIPT} stop --core '/c ore' --state /s`);
 	const merged = JSON.parse(withClaudeSettings('{"sandbox":{"enabled":true},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"own"}]}]}}', settings));
@@ -398,6 +399,7 @@ test("cross-tree fast-forward: a worker in its worktree runs `cd <root> && git m
 	const { root, wt, stateDir } = withWorktree();
 	const o = { core: CORE, stateDir };
 	await runHook("turn", event(wt, {}), o);
+	assert.equal(await runHook("pre", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o), undefined, "observation never blocks");
 	git(root, "merge", "-q", "--ff-only", "feat");
 	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
 	const turn = readState(statePath(stateDir, "s1")!).turn;
@@ -415,6 +417,7 @@ test("cross-tree non-ff with `git -C <root>` while master moved: only the branch
 	write(root, ".sova/spec/claims/app/w.md", "# §app/w\n\nW.\n");
 	git(root, ...C, "add", "."); git(root, ...C, "commit", "-qm", "master: w");
 	await runHook("turn", event(wt, {}), o);
+	await runHook("pre", event(wt, { tool_name: "Bash", tool_input: { command: `git -C ${root} merge --no-ff -m "merge feat" feat` } }), o);
 	git(root, ...C, "merge", "-q", "--no-ff", "-m", "merge feat", "feat");
 	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `git -C ${root} merge --no-ff -m "merge feat" feat` } }), o);
 	const turn = readState(statePath(stateDir, "s1")!).turn;
@@ -465,6 +468,7 @@ test("the landing gate: an unmapped file needs a Plumbing line; an unpromoted dr
 	write(wt, "src/a.txt", "links\n");
 	git(wt, ...C, "add", "-A"); git(wt, ...C, "commit", "-qm", "links, spec deferred");
 	await runHook("turn", event(wt, {}), o);
+	await runHook("pre", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
 	git(root, "merge", "-q", "--ff-only", "feat");
 	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
 	const l = readState(statePath(stateDir, "s1")!).turn.landings![0]!;
@@ -490,6 +494,7 @@ test("q14: the same landing into a non-default branch (a team integration branch
 	git(wt, ...C, "add", "-A"); git(wt, ...C, "commit", "-qm", "links, spec deferred");
 	git(root, "checkout", "-q", "-b", "team/links");
 	await runHook("turn", event(wt, {}), o);
+	await runHook("pre", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
 	git(root, "merge", "-q", "--ff-only", "feat");
 	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
 	const l = readState(statePath(stateDir, "s1")!).turn.landings![0]!;
@@ -515,6 +520,7 @@ test("M3-B-s2-2: a claim the task created and promoted earlier, relabelled after
 	editManifest(wt, (c) => { c["§app/y"].evidence = "verified"; });
 	git(wt, ...C, "commit", "-qam", "relabel y");
 	await runHook("turn", event(wt, {}), o);
+	await runHook("pre", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
 	git(root, "merge", "-q", "--ff-only", "feat");
 	await runHook("post", event(wt, { tool_name: "Bash", tool_input: { command: `cd ${root} && git merge --ff-only feat` } }), o);
 	const turn = readState(statePath(stateDir, "s1")!).turn;
@@ -552,4 +558,130 @@ test("a deleted mapped file lands in its claim: advisory (never an extra), not u
 	assert.deepEqual([l.unmapped, l.advisory], [[], ["§app/x"]]);
 	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: §app/x — its file is gone" }), o), undefined);
 	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Merged.\nAlso changes: none" }), o), undefined);
+});
+
+test("explicit other-worktree uncommitted Bash edit gets census and a required truthful footer", async () => {
+	const { root, stateDir } = project();
+	const wt = path.join(root, "linked");
+	git(root, "worktree", "add", "-qb", "other", wt);
+	const o = { core: CORE, stateDir };
+	await runHook("turn", event(root, {}), o);
+	assert.equal(await runHook("pre", event(root, { tool_name: "Bash", tool_input: { command: `cd '${wt}' && printf changed > src/a.txt` } }), o), undefined);
+	write(wt, "src/a.txt", "changed in linked tree\n");
+	const post = await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: `cd '${wt}' && printf changed > src/a.txt` } }), o) as any;
+	assert.match(post?.hookSpecificOutput?.additionalContext ?? "", /Foreign §: §app\/x/);
+	assert.equal(readState(statePath(stateDir, "s1")!).turn.wrote, true);
+	assert.equal(git(wt, "rev-parse", "HEAD"), git(root, "rev-parse", "HEAD"), "edit remains uncommitted");
+	const stop = await runHook("stop", event(root, { last_assistant_message: "Done." }), o) as any;
+	assert.equal(stop?.decision, "block", "not invisible completion without a footer");
+	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Done.\nAlso changes: §app/x — linked-tree edit" }), o), undefined);
+});
+
+test("another actor's spec commit followed by Bash true is never attributed or appended to worker ledger", async () => {
+	const { root, stateDir } = project();
+	const ledger = path.join(stateDir, "parent.jsonl");
+	const o = { core: CORE, stateDir, ledger };
+	await runHook("turn", event(root, {}), o);
+	write(root, ".sova/spec/claims/app/x.md", "# §app/x\n\nAnother actor changed this.\n");
+	git(root, ...C, "commit", "-qam", "other actor");
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "true" } }), o);
+	const state = readState(statePath(stateDir, "s1")!);
+	assert.equal(state.turn.wrote, false);
+	assert.equal(state.turn.landed, false);
+	assert.deepEqual(state.turn.foreign, []);
+	assert.equal(fs.existsSync(ledger), false, "forbidden effect: no attribution record was written");
+	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Nothing changed." }), o), undefined);
+});
+
+test("turn and cwd calls never inspect unrelated worktrees; explicit pre-call destination is observed without blocking", async () => {
+	const { root, stateDir } = project();
+	const other: string[] = [];
+	for (let i = 0; i < 4; i++) {
+		const dir = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "spec-lazy-")), "wt");
+		roots.push(path.dirname(dir)); other.push(dir);
+		git(root, "worktree", "add", "-qb", `lazy${i}`, dir);
+	}
+	const inspected: string[] = [];
+	const observe = (p: string) => { if (other.some((dir) => p === dir || p.startsWith(`${dir}/`))) inspected.push(p); };
+	const io = { ...localIO,
+		exec: (cmd: string, args: string[], opts: any) => { observe(opts.cwd); return localIO.exec(cmd, args, opts); },
+		readFile: (p: string) => { observe(p); return localIO.readFile(p); },
+		readDir: (p: string) => { observe(p); return localIO.readDir(p); },
+		mtime: (p: string) => { observe(p); return localIO.mtime(p); },
+	};
+	const o = { core: CORE, stateDir, io };
+	await runHook("turn", event(root, {}), o);
+	await runHook("pre", event(root, { tool_name: "Bash", tool_input: { command: "true" } }), o);
+	await runHook("post", event(root, { tool_name: "Bash", tool_input: { command: "true" } }), o);
+	assert.deepEqual(inspected, [], "forbidden effect: no per-tree Git/source/census/spec scan of unrelated trees");
+	const call = event(root, { tool_name: "Bash", tool_input: { command: `git -C '${other[0]}' status` } });
+	assert.equal(await runHook("pre", call, o), undefined, "no permission decision");
+	assert.ok(inspected.some((p) => p.startsWith(other[0]!)), "positive control: explicit destination actually inspected");
+	assert.ok(inspected.every((p) => p.startsWith(other[0]!)), "other unrelated trees remain untouched");
+});
+
+test("dirty-baseline and repeated-path names use bounded current mappings; an unrelated known ID remains rejected", async () => {
+	const { root, stateDir } = project();
+	editManifest(root, (c) => { c["§app/unrelated"] = { kind: "behavior", requires: [], code: ["src/b.txt"] }; });
+	write(root, ".sova/spec/claims/app/unrelated.md", "# §app/unrelated\n\nOther.\n");
+	write(root, "src/b.txt", "b\n"); git(root, ...C, "add", "."); git(root, ...C, "commit", "-qm", "other mapping");
+	const o = { core: CORE, stateDir };
+	write(root, "src/a.txt", "dirty baseline\n");
+	for (const prompt_id of ["dirty", "repeat"]) {
+		await runHook("turn", event(root, { prompt_id }), o);
+		const input = event(root, { prompt_id, tool_name: "Edit", tool_input: { file_path: "src/a.txt" } });
+		await runHook("pre", input, o); write(root, "src/a.txt", `${prompt_id} edit\n`); await runHook("post", input, o);
+		assert.deepEqual(readState(statePath(stateDir, "s1")!).census.foreign, [], "no fresh-path census: mapping proof is independent");
+		assert.equal(await runHook("stop", event(root, { prompt_id, last_assistant_message: "Done.\nAlso changes: §app/x — truthful mapped edit" }), o), undefined);
+	}
+	assert.equal(git(root, "diff", "--", ".sova/spec/claims/app/x.md"), "", "prose unchanged");
+	const extra = await runHook("stop", event(root, { last_assistant_message: "Done.\nAlso changes: §app/unrelated — invented" }), o) as any;
+	assert.equal(extra?.decision, "block"); assert.match(extra.reason, /§app\/unrelated.*never saw/);
+});
+
+test("real core corrupt draft census is incomplete; failed mapping input never falsely accuses a truthful name", async () => {
+	const { root, stateDir } = project();
+	const o = { core: CORE, stateDir };
+	await runHook("turn", event(root, {}), o);
+	write(root, ".sova/spec/drafts/corrupt/draft.json", "{");
+	write(root, "src/a.txt", "changed\n");
+	const out = await runHook("post", event(root, { tool_name: "Edit", tool_input: { file_path: "src/a.txt" } }), o) as any;
+	assert.match(out?.hookSpecificOutput?.additionalContext ?? "", /incomplete check.*partial draft scan/);
+	assert.equal(readState(statePath(stateDir, "s1")!).turn.partial, true);
+	const stop = await runHook("stop", event(root, { last_assistant_message: "Done.\nAlso changes: §app/x — truthful edit" }), o) as any;
+	assert.match(stop?.systemMessage ?? "", /incomplete check/); assert.equal(stop?.decision, undefined);
+	fs.rmSync(path.join(root, ".sova/spec/drafts/corrupt"), { recursive: true });
+	await runHook("turn", event(root, {}), o);
+	write(root, "src/a.txt", "again\n");
+	await runHook("post", event(root, { tool_name: "Edit", tool_input: { file_path: "src/a.txt" } }), o);
+	const unread = { ...localIO, readFile: (p: string) => { if (p.endsWith("manifest.json")) throw new Error("fixture unreadable"); return localIO.readFile(p); } };
+	const unavailable = await runHook("stop", event(root, { last_assistant_message: "Done.\nAlso changes: §app/x — truthful edit" }), { ...o, io: unread }) as any;
+	assert.match(unavailable?.systemMessage ?? "", /incomplete check/); assert.equal(unavailable?.decision, undefined);
+});
+
+test("nonthrowing missing/malformed census output and unavailable destination remain incomplete, never exact-empty QA", async () => {
+	for (const stdout of ["", "{}", "not JSON"]) {
+		const { root, stateDir } = project();
+		const io = { ...localIO, exec: (cmd: string, args: string[], opts: any) => cmd === "node" && args.includes("census") ? Promise.resolve({ stdout, code: 1 }) : localIO.exec(cmd, args, opts) };
+		const o = { core: CORE, stateDir, io };
+		await runHook("turn", event(root, {}), o);
+		write(root, "src/a.txt", "changed\n");
+		const result = await runHook("post", event(root, { tool_name: "Edit", tool_input: { file_path: "src/a.txt" } }), o) as any;
+		assert.match(result?.hookSpecificOutput?.additionalContext ?? "", /incomplete check/);
+		const stopped = await runHook("stop", event(root, { last_assistant_message: "Done.\nAlso changes: §app/x — truthful" }), o) as any;
+		assert.match(stopped?.systemMessage ?? "", /incomplete check/); assert.equal(stopped?.decision, undefined);
+	}
+	const { root, stateDir } = project();
+	const wt = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "spec-unavailable-")), "wt"); roots.push(path.dirname(wt));
+	git(root, "worktree", "add", "-qb", "unavailable", wt);
+	let unavailable = false;
+	const io = { ...localIO, exec: (cmd: string, args: string[], opts: any) => unavailable && opts.cwd === wt ? Promise.resolve({ stdout: "", code: 1 }) : localIO.exec(cmd, args, opts) };
+	const o = { core: CORE, stateDir, io }, call = event(root, { tool_name: "Bash", tool_input: { command: `cd '${wt}' && printf changed > src/a.txt` } });
+	await runHook("turn", event(root, {}), o); await runHook("pre", call, o);
+	write(wt, "src/a.txt", "changed\n"); unavailable = true;
+	const post = await runHook("post", call, o) as any;
+	assert.match(post?.hookSpecificOutput?.additionalContext ?? "", /incomplete check: Git view unavailable/);
+	assert.equal(readState(statePath(stateDir, "s1")!).turn.wrote, false, "observation really cannot classify the Bash write");
+	const stop = await runHook("stop", event(root, { last_assistant_message: "Done.\nAlso changes: §app/x — truthful linked edit" }), o) as any;
+	assert.match(stop?.systemMessage ?? "", /incomplete check/); assert.equal(stop?.decision, undefined, "never claims that unknown means no files changed");
 });

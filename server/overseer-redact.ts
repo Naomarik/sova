@@ -38,6 +38,9 @@ export function secretSources(home = homedir(), agentDir = getAgentDir()): Secre
     // Sova's own Jev key (Settings → Decisions, server/decide-secret.ts): the whole file is the key.
     { path: join(home, ".pi", "agent", "sova", "secrets", "jev-key"), pick: textValue, text: true as const },
     { path: join(agentDir, "sova", "secrets", "jev-key"), pick: textValue, text: true as const },
+    // The main listener's per-install token (server/auth.ts): the whole file is the token.
+    { path: join(home, ".pi", "agent", "sova", "auth-token"), pick: textValue, text: true as const },
+    { path: join(agentDir, "sova", "auth-token"), pick: textValue, text: true as const },
     // Sova's Web Push signing key (server/push-store.ts): the private half only; the public one is on the wire anyway.
     { path: join(home, ".pi", "agent", "sova", "secrets", "vapid.json"), pick: vapidPrivate },
     { path: join(agentDir, "sova", "secrets", "vapid.json"), pick: vapidPrivate },

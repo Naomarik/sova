@@ -7,9 +7,9 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { container, containerState, DOMAIN, LAB_DIR, loadConfig, PEER_PORT, PORTS, SERVE_PORT, SOVA_PORT, sovaNodes, STATE, tailnetNodes, tsStatus } from "../lab.mjs";
+import { container, containerState, DOMAIN, LAB_DIR, labToken, labTokenHeaders, loadConfig, PEER_PORT, PORTS, SERVE_PORT, SOVA_PORT, sovaNodes, STATE, tailnetNodes, tsStatus } from "../lab.mjs";
 
-export { container, DOMAIN, PEER_PORT, PORTS, SERVE_PORT, SOVA_PORT, sovaNodes, STATE, tailnetNodes, tsStatus };
+export { container, DOMAIN, labToken, labTokenHeaders, PEER_PORT, PORTS, SERVE_PORT, SOVA_PORT, sovaNodes, STATE, tailnetNodes, tsStatus };
 
 /** The lab config, or throws a clear error when no lab is up (node:test reports it as the failure). */
 export function requireLab() {
@@ -51,7 +51,8 @@ export function execBackground(node, argv) {
  */
 export function curlFrom(node, url, { method = "GET", body, headers = {}, timeoutS = 5 } = {}) {
   const argv = ["curl", "-sS", "--path-as-is", "-m", String(timeoutS), "-X", method, "-D", "/dev/stderr", "-o", "-", "-w", "\n%{http_code}"];
-  for (const [k, v] of Object.entries(headers)) argv.push("-H", `${k}: ${v}`);
+  // Every lab Sova shares one token (lab.mjs labToken); a peer or share listener ignores it.
+  for (const [k, v] of Object.entries({ ...labTokenHeaders(), ...headers })) argv.push("-H", `${k}: ${v}`);
   if (body !== undefined) argv.push("-H", "content-type: application/json", "--data-binary", "@-");
   argv.push(url);
   const r = exec(node, argv, { input: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body), timeoutMs: (timeoutS + 5) * 1000 });
@@ -74,7 +75,7 @@ export function curlFrom(node, url, { method = "GET", body, headers = {}, timeou
 /** HTTP from the laptop to a lab node's published port (`a`…`h`, `plain`, `frontdoor`). */
 export async function laptopFetch(node, path, init = {}) {
   const port = node === "plain" ? PORTS.plain : node === "frontdoor" ? PORTS.frontdoor : PORTS.host(node);
-  const go = () => fetch(`http://127.0.0.1:${port}${path}`, { ...init, signal: AbortSignal.timeout(init.timeoutMs ?? 10000) });
+  const go = () => fetch(`http://127.0.0.1:${port}${path}`, { ...init, headers: { ...labTokenHeaders(), ...init.headers }, signal: AbortSignal.timeout(init.timeoutMs ?? 10000) });
   try {
     return await go();
   } catch (e) {
@@ -91,16 +92,16 @@ export const hostUrl = (node) => `http://127.0.0.1:${node === "plain" ? PORTS.pl
  */
 export function wsFrom(node, url, { holdMs = 1500, send = [] } = {}) {
   const script = `
-const [url, holdMs, send] = [process.argv[1], Number(process.argv[2]), JSON.parse(process.argv[3])];
+const [url, holdMs, send, token] = [process.argv[1], Number(process.argv[2]), JSON.parse(process.argv[3]), process.argv[4]];
 const r = { opened: false, closeCode: null, closeReason: null, messages: [] };
-const ws = new WebSocket(url);
+const ws = new WebSocket(url, { headers: { "x-sova-token": token } });
 const finish = () => { console.log(JSON.stringify(r)); process.exit(0); };
 ws.onopen = () => { r.opened = true; for (const m of send) ws.send(typeof m === "string" ? m : JSON.stringify(m)); };
 ws.onmessage = (e) => r.messages.push(String(e.data).slice(0, 2000));
 ws.onerror = (e) => { r.error = String(e.message || e.type); };
 ws.onclose = (e) => { r.closeCode = e.code; r.closeReason = e.reason; finish(); };
 setTimeout(finish, holdMs);`;
-  const r = exec(node, ["node", "-e", script, url, String(holdMs), JSON.stringify(send)], { timeoutMs: holdMs + 15000 });
+  const r = exec(node, ["node", "-e", script, url, String(holdMs), JSON.stringify(send), labToken()], { timeoutMs: holdMs + 15000 });
   try {
     return JSON.parse(r.out.split("\n").pop());
   } catch {

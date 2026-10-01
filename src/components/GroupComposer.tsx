@@ -1,8 +1,9 @@
-import { createMemo, createSignal, For, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import type { BatchRefusal, SessionSummary } from "../../shared/protocol";
 import { promptSessionGroup } from "../lib/api";
 import { createTouchMode, enterSends } from "../lib/input-mode";
-import { composerPlaceholder, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
+import { fitPlaceholderNow, type FittedPlaceholder } from "../lib/placeholder-fit";
+import { composerParts, partialAfterRetry, partialBody, partialRetries, refusalBody, refusalSentence, targetsLine, targetsOf, withGone, type Targets } from "../lib/group-prompt";
 import { announce, toast } from "../lib/ui-state";
 import { Banner, Icon } from "./ui";
 import { createVoiceInput, VoiceButton, VoiceStrip } from "./VoiceInput";
@@ -58,6 +59,25 @@ export function GroupComposer(props: {
   const [partial, setPartial] = createSignal<{ failed: BatchRefusal[]; sent: number; text: string } | null>(null);
   /** Tapped, Enter adds a line and Send to All sends; the placeholder drops its key hint. */
   const { touch, onPointerDown } = createTouchMode();
+  /** The placeholder in reading order: the ask, then the key hint a narrow box can spare. */
+  const placeholderParts = () => composerParts(totalMembers(), !touch());
+  /** The fitted placeholder, or null until this box has been measured. */
+  const [fitted, setFitted] = createSignal<FittedPlaceholder | null>(null);
+  /** What the box shows: the whole string while it fits, else the fitted one (§chat.composer/behavior). */
+  const placeholder = () => fitted()?.text ?? placeholderParts().join("—");
+  /** Measure the strings against this box. The strings changing and the box changing are the two
+      reasons to re-fit; a font arriving changes every width without changing either. */
+  const fit = () => setFitted(fitPlaceholderNow(input, placeholderParts(), "—"));
+  createEffect(() => {
+    placeholderParts();
+    fit();
+  });
+  onMount(() => {
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(input);
+    void document.fonts.ready.then(() => fit());
+    onCleanup(() => observer.disconnect());
+  });
   /** The same mic as a pane composer's (§chat.voice/button); its text lands in this box. */
   const voice = createVoiceInput({ input: () => input, announce });
 
@@ -227,7 +247,8 @@ export function GroupComposer(props: {
             class="input textarea composer-input"
             id="group-composer-input"
             rows={1}
-            placeholder={composerPlaceholder(totalMembers(), !touch())}
+            placeholder={placeholder()}
+            data-ph-size={fitted()?.size === "caption" ? "caption" : undefined}
             enterkeyhint={touch() ? "enter" : "send"}
             aria-describedby="group-composer-reason"
             onInput={(e) => edit(e.currentTarget.value)}

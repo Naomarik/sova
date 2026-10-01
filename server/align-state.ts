@@ -1,8 +1,20 @@
 import { open } from "node:fs/promises";
 import type { SessionAlign } from "../shared/protocol";
-import { alignResultOf, foldAlignments, openDocsOf, openQuestionsOf, type AlignDocument } from "../pi-config/extensions/mode/align.ts";
+import {
+  alignResultOf,
+  docLine,
+  foldAlignments,
+  openDocsOf,
+  openQuestionsOf,
+  optionLetter,
+  questionState,
+  recommendedText,
+  type AlignDetails,
+  type AlignDocument,
+} from "../pi-config/extensions/mode/align.ts";
 import { restoreActive } from "../pi-config/extensions/mode/state.ts";
 import { isLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { activeBranch, type Entry } from "./transcript";
 
@@ -37,6 +49,68 @@ export function openAlignmentsOf(entries: readonly unknown[]): { id: string; tit
     open: openQuestionsOf(doc).length,
     total: doc.questions.filter((q) => !q.dropped).length,
   }));
+}
+
+const flat = (s: string) => s.replace(/\s+/g, " ").trim();
+
+function ago(ms: number, now: number): string {
+  const s = Math.max(0, Math.round((now - ms) / 1000));
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.round(s / 60)}m ago`;
+  if (s < 86_400) return `${Math.round(s / 3600)}h ago`;
+  return `${Math.round(s / 86_400)}d ago`;
+}
+
+/** A transcript read's one row for an `align` result (§app.overseer/alignment-read): what the call
+    changed, never the questions. "al_3 "Autonomy settings" · aligning · 2 of 5 open · q3 decided". */
+export function alignRowText(d: Pick<AlignDetails, "doc" | "line" | "exempt">): string {
+  if (d.doc) return `${flat(docLine(d.doc))}${d.line ? ` · ${d.line}` : ""}`;
+  if (d.exempt) return `exempt — ${flat(d.exempt.why)}`;
+  return d.line || "no change";
+}
+
+/** One alignment as `sova_alignment` prints it: its line, summary, then each live question with its
+    options, recommendation and decision; a dropped question is one line with its reason. */
+function alignmentBlock(doc: AlignDocument, now: number): string[] {
+  const out = [docLine(doc), `  Summary: ${flat(doc.summary)}`];
+  if (doc.phase === "dropped" && doc.droppedWhy) out.push(`  Dropped: ${flat(doc.droppedWhy)}`);
+  for (const q of doc.questions) {
+    const state = questionState(q);
+    if (state === "dropped") {
+      out.push(`  ${q.id} ${flat(q.topic)} — dropped: ${flat(q.dropped!.why)}`);
+      continue;
+    }
+    out.push(`  ${q.id} ${flat(q.topic)} — ${state}`, `    Ask: ${flat(q.ask)}`);
+    if (q.context) out.push(`    Context: ${flat(q.context)}`);
+    q.options?.forEach((o, i) => out.push(`    ${optionLetter(i)}. ${flat(o.label)} — ${flat(o.tradeoff)}`));
+    out.push(`    Recommendation: ${flat(recommendedText(q))} — ${flat(q.recommendation.why)}`);
+    if (q.decision) {
+      const at = Date.parse(q.decision.at);
+      const who = q.decision.by === "user" ? "the user" : "the recommendation accepted";
+      out.push(`    Decision (${who}${Number.isFinite(at) ? `, ${ago(at, now)}` : ""}): ${flat(q.decision.text)}`);
+    }
+  }
+  return out;
+}
+
+/**
+ * `sova_alignment`'s body (§app.overseer/alignment-read), from a branch's raw entries (root first),
+ * folded with the extension's own fold: every open alignment, or the one `doc` names in any state.
+ * `waits`: the session waits on the user's answers now. Throws a plain Error naming the branch's ids
+ * when `doc` is not on it. Pure.
+ */
+export function alignmentText(entries: readonly unknown[], opts: { doc?: string; waits: boolean; now?: number }): string {
+  const now = opts.now ?? Date.now();
+  const docs = foldAlignments(entries).docs;
+  let shown: AlignDocument[];
+  if (opts.doc) {
+    const one = docs.find((d) => d.id === opts.doc);
+    if (!one) throw new Error(docs.length ? `No alignment ${opts.doc} in that session; it has ${docs.map((d) => d.id).join(", ")}.` : `No alignment ${opts.doc} in that session; it has none.`);
+    shown = [one];
+  } else shown = openDocsOf(docs);
+  if (!shown.length) return "No open alignment in this session.";
+  const waits = opts.waits ? "The session waits on the user's answers now." : "The session is not waiting on the user's answers (they spoke since, or align is off).";
+  return [waits, ...shown.flatMap((d) => ["", ...alignmentBlock(d, now)])].join("\n");
 }
 
 /** The bytes every `align` tool result carries (JSON.stringify writes no space after the colon). */
@@ -133,7 +207,7 @@ function compactLine(line: string): ScanEntry | null {
     if (m.role === "toolResult" && m.toolName === "align") e.message = { role: "toolResult", toolName: "align", isError: m.isError === true, details: m.details };
     if (m.role === "user") {
       const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((b) => (isRecord(b) && typeof b.text === "string" ? b.text : "")).join("\n") : "";
-      if (parseWakeNudge(text) === null && !isLinkMessage(text)) e.userPrompt = true;
+      if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
     }
   }
   return e;

@@ -8,17 +8,21 @@ no source annotations. They are not a pi extension. There is no
 `index.ts`, so pi's loader skips this directory. They need only the Node
 standard library and import nothing from pi, Sova or the rest of pi-config.
 
-The `spec` minor mode (`../mode/`) is their only consumer here. Its text,
+The `spec` minor mode (`../mode/`) uses these tools for coding work. Its text,
 [`../mode/spec-mode.md`](../mode/spec-mode.md), is the discipline: when to run
-these tools and what to do with the output. A project may point its agents at
-that file without the mode, as Sova's `CLAUDE.md` does. Nothing in pi or Sova
-runs the tools itself.
+them and what to do with the output. A project may point its agents at that
+file without the mode, as Sova's `CLAUDE.md` does; that instruction alone does
+not activate the mode's automatic checks. With the mode on, its hooks run
+census and change checks. Sova's requirements reconciler is another consumer:
+it uses drafts and doc-only evidence to publish accepted decision notes, not
+to assert that those decisions have been implemented.
 
 ## Layout
 
 | Path | What it is |
 | --- | --- |
-| `core/sova-spec.mjs` | The read-only core: `check`, `census`, `foreign`, `scope`, `impact` |
+| `core/sova-spec.mjs` | The read-only core: `packet`, `check`, `census`, `foreign`, `scope`, `impact` |
+| `core/packet.mjs` | The standalone core's bounded packet serialization and stateless navigation module |
 | `core/README.md` | The core's reference: commands, exit codes, the manifest format it reads, evidence states |
 | `core/sova-spec-draft.mjs` | Drafts: full-copy proposals of `.sova/spec`, their evidence, and guarded promotion into the current docs |
 | `DRAFTS.md` | The draft workflow's reference |
@@ -29,13 +33,27 @@ runs the tools itself.
 ## Core (read-only)
 
 ```sh
+node core/sova-spec.mjs packet '<§id>' [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR]
 node core/sova-spec.mjs <check | census [--changed [--base <rev>] [--related]] | foreign --base <rev> [--head <rev>] | scope '<§id>' [--budget <bytes>] | impact '<§id>'> [--root DIR] [--spec DIR] [--json]
 ```
 
+`packet` is the bounded task-reading path: compact JSON, exact text (not summaries), default
+12,000 UTF-8 bytes for the entire response including metadata and newline. Explicit budgets
+are integers 1,024–32,768. Follow `next` with `--cursor`, keeping the same ID and part, to
+finish relevant contiguous prose fragments; finish a passage at `fragment.end == fragment.total`.
+`fragment.complete` means the item contains the whole passage, NOT that it is the final chunk.
+Inspect `--part frontier` separately; `inventory`, `code` and `findings` expose paged details.
+Counts reveal all streams; a cursor advances only the selected one. `done` or exit 0 is not
+complete behavioral context or evidence of earlier reading. Changed captured inputs invalidate
+continuation. There is no cursor store, snapshot write, new assessment or release gate.
+Full-graph `scope` remains available for deliberate machine inspection and review, with its
+unchanged prose-only budget. See `core/README.md` for packet fields, fragments and refusals.
+
 `census --changed` checks one task's files instead of the whole boundary. It
 takes the files that differ between `--base` (default `HEAD`) and the working
-tree, plus untracked files that aren't ignored, and drops deletions. Then it
-lists the ones inside the boundary as claimed (with their §IDs) or unclaimed.
+tree, plus untracked files that aren't ignored. Mapped deletions remain touched
+claims; an unmapped deletion needs no new mapping. It lists files inside the
+boundary as claimed (with their §IDs) or unclaimed.
 Changed files outside the boundary are listed but don't count against it.
 Each unclaimed file is a `changed-unclaimed` finding (exit 1). No Git work
 tree (`not-git`) or a `--base` that isn't a commit (`bad-rev`) exits 2. Git is
@@ -61,7 +79,7 @@ keeps it, which a `grep` or JSON key-pick of stdout
 doesn't touch. With `--spec` only, each new id whose H1 parent already exists
 gets a `child-under-foreign` note. With `--related`, each `touched` entry also
 carries `created: true|false`, and each foreign touched § gets a
-`touched-foreign` note (read it with `scope`; flag it if a user sees a change
+`touched-foreign` note (read it with `packet`; flag it if a user sees a change
 there, even one the new claim describes; a gap it already had never flags, even one you now rely on). Human output prints the summary
 before the touched list. Notes are reminders, not flags: the exit code is
 unchanged. The rule counts a request, hook, helper or CSS class as plumbing, and
@@ -81,7 +99,8 @@ promote turn's `Also changes:` line must name; `worktree merge` and
 
 Quote IDs, because `§` is not a shell word character. `scope` and `impact` read a
 bare namespace like `§app.shell` as `§app/shell`, with an `id-alias` note. `--budget` is accepted by
-`scope` only; with any other command it's a usage error. `--spec` reads another
+`scope` and `packet`; with any other command it's a usage error. Scope budgets prose only;
+packet budgets the whole response. `--spec` reads another
 spec directory, given relative to the project root (default `.sova/spec`), such
 as a draft. Code and incumbent paths stay relative to the root. The core never
 writes.
@@ -92,7 +111,8 @@ reports them as written and never derives them. Kind `note` holds reference,
 decision and rationale prose. Plain H3 and deeper headings are prose inside a
 claim. `core/README.md` has the format.
 
-- **Exit 0**: the declared closure was delivered. It never means the context is
+- **Exit 0**: the declared closure was delivered (`packet`: the selected stream is done without
+  scope warnings). It never means the context is
   complete, because what the graph doesn't declare can't show up.
 - **Exit 1**: something relevant is incomplete or stale.
 - **Exit 2**: the output can't be trusted.
@@ -255,11 +275,16 @@ spawn path installs):
   appends a short `[spec census]` digest to that tool result, saying so when
   the session has no draft yet;
 - at the end of a turn that edited, committed, promoted or merged, the reply's
-  last line must be `Also changes: …` naming every § `foreign` computes for
-  the turn. A turn that ran `worktree merge` or `promote --write` is sent back
-  once with the computed list; elsewhere a miss is a warning. A line
-  `Spec check override: <why>` right above the last line accepts a list the
-  agent shows is wrong.
+  last line is checked against the § `foreign` computes for the turn. Recognized
+  landing turns get at most two corrective continuations; unresolved replies
+  can still finish after that limit. Ordinary parent edit turns get a warning;
+  workers can receive one ordinary correction. An override records the author's
+  explanation, not machine verification that the computed list was wrong.
+
+These are post-operation diagnostics, not a write barrier. An unchanged claim
+whose mapped code changed is advisory, so a successful reply check does not
+establish that the prose still matches the implementation. Review the affected
+behavior rather than treating `Also changes: none` as evidence of preservation.
 
 `PI_SPEC_CENSUS_HOOK=0` and `PI_SPEC_CHECK=0` turn them off in pi.
 

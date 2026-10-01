@@ -11,7 +11,7 @@ import { home } from "../lib/ui-state";
 import { ensureRendered, entryIdOf, JUMP_EVENT, loadRow, registerRows, registerTranscript } from "../lib/jump";
 import type { RowTarget } from "../lib/older-rows";
 import type { ScrollSpot } from "../lib/transcript-cache";
-import { carriedStart, chunkStart, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
+import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initialStart, lineCols, nextChunk, rowEstimate, rowIndexFor, windowId } from "../lib/tail-render";
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel } from "../lib/hidden-rows";
 import { isChangeRow } from "../lib/change-rows";
@@ -20,6 +20,7 @@ import { profileIconName } from "../lib/profiles";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
+import { parseTopicBatch } from "../../shared/topic-message";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
@@ -32,6 +33,7 @@ import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
+import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { ShowChangesCard } from "./ChangesViewer";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
@@ -542,7 +544,8 @@ export function HistoryItems(props: {
   const openFrom = () => props.openFrom ?? lastUserIndex() + 1;
   /**
    * Tail-first (lib/tail-render): inside a transcript, the newest rows are built with the list and
-   * the older ones prepended above them while the browser is idle, until all are built. The window
+   * the older ones prepended above them while the browser is idle, up to MAX_BUILT_ROWS, then as
+   * the view nears their top or a jump needs them. The window
    * is held as the id of its first row, so an append or a refetch keeps what is already built.
    * Every index below is the row's index in `rows()`, never in the built slice.
    */
@@ -568,54 +571,63 @@ export function HistoryItems(props: {
   if (scroller) {
     const root = scroller.root();
     const ids = createMemo(() => rows().map((r) => (r.kind === "link" ? null : r.id)));
-    /** Builds from row `i` down, keeping the view where it is. */
-    const buildFrom = (i: number) => scroller.prepend(() => setFirstId(idAt(i)));
+    /** Builds from row `i` down, keeping the view where it is (`hold`: to the pixel while they draw). */
+    const buildFrom = (i: number, hold = false) => scroller.prepend(() => setFirstId(idAt(i)), hold);
     let chunk = FIRST_CHUNK;
     let cancel: (() => void) | null = null;
+    /** One chunk above the built rows, timed for the next one's size. */
+    const buildChunk = () => {
+      const next = chunkStart(start(), chunk);
+      const t0 = performance.now();
+      buildFrom(next, true);
+      chunk = nextChunk(chunk, performance.now() - t0);
+      return next;
+    };
+    // The idle fill: up to MAX_BUILT_ROWS (lib/tail-render `fillStops`); past that, the view nearing
+    // the top builds the next chunk (below).
     const step = () => {
       cancel = null;
-      const s = start();
-      if (s === 0) return;
+      if (fillStops(rows().length, start())) return;
       // A jump's smooth scroll is under way: moving the content now would stop it short.
       if (scroller.jumping()) return schedule();
-      const next = chunkStart(s, chunk);
-      const t0 = performance.now();
-      buildFrom(next);
-      chunk = nextChunk(chunk, performance.now() - t0);
-      if (next > 0) schedule();
+      const next = buildChunk();
+      if (!fillStops(rows().length, next)) schedule();
     };
     const schedule = () => {
       if (cancel) return;
       cancel = whenIdle(step);
     };
-    createEffect(() => start() > 0 && schedule());
+    createEffect(() => !fillStops(rows().length, start()) && schedule());
     onCleanup(() => cancel?.());
-    // Older rows not held yet: once every row held is built and the view is within
-    // NEAR_TOP_VIEWS viewports of the top, the next chunk is fetched; it lands above the window,
-    // where the fill builds it with the view held still, as any row not built yet.
-    if (props.older) {
-      const older = props.older;
-      let later: ReturnType<typeof setTimeout> | undefined;
-      const check = () => {
-        const left = older.left();
-        if (left === null || left <= 0 || start() > 0 || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
-        // A jump's smooth scroll is under way (it may have landed near the top): rows landing above
-        // now would cut it short, as the fill knows too. Look again once it's over.
-        if (scroller.jumping()) {
-          clearTimeout(later);
-          later = setTimeout(check, 300);
-          return;
-        }
-        older.more();
-      };
-      root.addEventListener("scroll", check, { passive: true });
-      onCleanup(() => {
+    // Once the view is within NEAR_TOP_VIEWS viewports of the top of the built rows: rows held but
+    // not built (the fill stopped at its cap) are built a chunk at a time, with the view held still;
+    // once every row held is built, the next older rows are fetched, and they land above the
+    // window, where the fill builds them as any row not built yet.
+    const older = props.older;
+    let later: ReturnType<typeof setTimeout> | undefined;
+    const check = () => {
+      const left = older?.left() ?? 0;
+      if ((start() === 0 && (left === null || left <= 0)) || root.scrollTop >= NEAR_TOP_VIEWS * root.clientHeight) return;
+      // A jump's smooth scroll is under way (it may have landed near the top): rows landing above
+      // now would cut it short, as the fill knows too. Look again once it's over.
+      if (scroller.jumping()) {
         clearTimeout(later);
-        root.removeEventListener("scroll", check);
-      });
-      // After a change to what's held or built, when the frame has settled (a short list sits at the top).
-      createEffect(on([start, () => older.left(), () => rows().length], () => requestAnimationFrame(check)));
-    }
+        later = setTimeout(check, 300);
+        return;
+      }
+      if (start() > 0) buildChunk();
+      else older?.more();
+    };
+    root.addEventListener("scroll", check, { passive: true });
+    onCleanup(() => {
+      clearTimeout(later);
+      root.removeEventListener("scroll", check);
+    });
+    // After a change to what's held or built, when the frame has settled (a short list sits at the
+    // top): a frame later, since the follow-scroll for the same change runs in that frame's
+    // animation callbacks after this one is queued, and a check before it reads a view not yet at
+    // the end (an open would fetch a chunk nobody asked for).
+    createEffect(on([start, () => older?.left(), () => rows().length], () => requestAnimationFrame(() => requestAnimationFrame(check))));
     registerRows(root, {
       has: (entryId) => rowIndexFor(ids(), entryId) >= 0,
       ensure: (entryId) => {
@@ -703,6 +715,9 @@ export function HistoryItems(props: {
               </Match>
               <Match when={item.kind === "wake" && item.wake}>
                 {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={timestampOf(item.raw)} />}
+              </Match>
+              <Match when={item.kind === "topic" && item.topic}>
+                {(batch) => <TopicCard batch={batch()} time={timestampOf(item.raw)} />}
               </Match>
               <Match when={item.kind === "assistant-text"}>
                 <AssistantText
@@ -978,6 +993,7 @@ export function LiveEntries(props: {
                 <Show
                   when={parseWakeNudge(e().text)}
                   fallback={
+                    <Show when={parseTopicBatch(e().text)} fallback={
                     <Show when={!isBriefText(e().text)} fallback={<BriefRow text={e().text} />}>
                     {
                     /* A queued row has no `.entry` around it, so it brings the hover/tap region
@@ -999,6 +1015,9 @@ export function LiveEntries(props: {
                       </Show>
                     </div>
                     }
+                    </Show>
+                    }>
+                      {(batch) => <TopicCard batch={batch()} />}
                     </Show>
                   }
                 >
@@ -1072,8 +1091,10 @@ interface ScrollerApi {
   /** The transcript element: jumps find its rows through it (lib/jump `registerRows`). */
   root(): HTMLElement;
   /** Runs `build`, which adds rows above the ones on screen, and keeps the view where it was:
-      at the bottom while following, else the same distance from the end. */
-  prepend(build: () => void): void;
+      at the bottom while following, else the same distance from the end. With `hold`, the row at
+      the top of the view also stays put while the rows just built are first drawn (not for a
+      jump, whose own scroll moves the view). */
+  prepend(build: () => void, hold?: boolean): void;
   /** A jump's smooth scroll is under way. */
   jumping(): boolean;
 }
@@ -1097,6 +1118,9 @@ const FOLLOW_PX = 80;
 const JUMP_SETTLE_MS = 1000;
 /** A jump's scroll is over once no scroll event has come for this long. */
 const JUMP_QUIET_MS = 150;
+/** How long the row at the top of the view is held after rows were built above it (ThreadScroller
+    `holdView`): they are drawn within a few frames. */
+const HOLD_MS = 600;
 
 /**
  * The transcript scroll region. Follows new content while the user is near the bottom; scrolling
@@ -1148,10 +1172,40 @@ export function ThreadScroller(props: {
     jumpQuiet = setTimeout(() => (jumpScrolling = false), JUMP_QUIET_MS);
   };
   onCleanup(() => clearTimeout(jumpQuiet));
+  /**
+   * The row at the top of the view, held for a moment after rows were built above it. Rows built
+   * near the view are first drawn a few frames later, at their real height instead of their
+   * estimate, and the browser's scroll anchoring doesn't always make up for rows it only just got
+   * (Chrome 154, rows built a viewport above the view): the view then moved by the difference.
+   * Corrected when the thread's size changes, after layout and before paint; the user's own
+   * scroll, or a jump, ends it.
+   */
+  let held: { row: HTMLElement; offset: number; until: number; at: number } | null = null;
+  const offsetOf = (row: HTMLElement) => row.getBoundingClientRect().top - el.getBoundingClientRect().top;
+  const holdView = () => {
+    const s = spot();
+    const row = s && !s.follow ? el.querySelector<HTMLElement>(`.thread > .entry[data-entry="${CSS.escape(s.rowId)}"]`) : null;
+    held = row ? { row, offset: offsetOf(row), until: performance.now() + HOLD_MS, at: el.scrollTop } : null;
+  };
+  const keepHeld = () => {
+    if (!held) return;
+    if (performance.now() > held.until || !held.row.isConnected || api.jumping()) {
+      held = null;
+      return;
+    }
+    const delta = offsetOf(held.row) - held.offset;
+    if (Math.abs(delta) >= 1) el.scrollTop += delta;
+    held.at = el.scrollTop;
+  };
   /** The view's width at the last scroll event. */
   let scrolledWidth = 0;
   const onScroll = () => {
     if (jumpScrolling) jumpScrolled();
+    // A scroll that moved the held row is the user's (the browser's anchoring keeps it in place).
+    if (held && el.scrollTop !== held.at) {
+      if (Math.abs(offsetOf(held.row) - held.offset) >= 1) held = null;
+      else held.at = el.scrollTop;
+    }
     lastGap = el.scrollHeight - el.scrollTop - el.clientHeight;
     // The view narrowing or widening reflows the rows, and scroll anchoring's correction can come
     // before `viewResized` and `measured` put a following view back at the end: not scrolling away.
@@ -1193,13 +1247,26 @@ export function ThreadScroller(props: {
     if (toggled) return onScroll();
     toBottom();
   };
-  const observer = new MutationObserver(settle);
-  onCleanup(() => observer.disconnect());
+  // A mutation's settle waits for the frame (still before its paint), so the write to `scrollTop`
+  // no longer forces a layout of the whole thread inside the task that changed it, once per change.
+  let settleFrame = 0;
+  const settleSoon = () => {
+    if (settleFrame) return;
+    settleFrame = requestAnimationFrame(() => {
+      settleFrame = 0;
+      settle();
+    });
+  };
+  const observer = new MutationObserver(settleSoon);
+  onCleanup(() => {
+    observer.disconnect();
+    cancelAnimationFrame(settleFrame);
+  });
   // Rows change height with no mutation too: an image decoding, a row first drawn at its real
   // height instead of its estimate (content-visibility, app.css). Only a view that sat at the end
   // is put back there: rows drawn above a view scrolling up (a smooth scroll's first frames are
   // still "following") must not pull it back down.
-  const resized = typeof ResizeObserver === "function" ? new ResizeObserver(() => lastGap <= 2 && settle()) : null;
+  const resized = typeof ResizeObserver === "function" ? new ResizeObserver(() => (keepHeld(), lastGap <= 2 && settle())) : null;
   onCleanup(() => resized?.disconnect());
   // The view itself changing height (the composer's status row appearing, a keyboard) never moves
   // a scroll under way, so while following it always goes back to the end. A scroll event can read
@@ -1225,7 +1292,7 @@ export function ThreadScroller(props: {
   onCleanup(() => measured?.disconnect());
   const api: ScrollerApi = {
     root: () => el,
-    prepend(build) {
+    prepend(build, hold) {
       const fromEnd = el.scrollHeight - el.scrollTop;
       build();
       // The rows just added are above the view: not new content to follow. The view keeps its
@@ -1235,6 +1302,7 @@ export function ThreadScroller(props: {
       observer.takeRecords();
       const want = el.scrollHeight - fromEnd;
       if (Math.abs(el.scrollTop - want) >= 1) el.scrollTop = want;
+      if (hold && !follow) holdView();
     },
     jumping: () => performance.now() < jumpingUntil || jumpScrolling,
   };

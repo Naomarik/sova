@@ -2,13 +2,14 @@ import { createEffect, createMemo, createResource, createSignal, For, onCleanup,
 import type { SessionSummary } from "../../shared/protocol";
 import { ApiError, connectTarget, createSession, fetchTargets, listCwds } from "../lib/api";
 import { tildePath } from "../lib/format";
+import { hiddenFolder, setShowHiddenFolders, showHiddenFolders } from "../lib/hidden-folders";
+import { hiddenRecentNote, recentFolders, recentRemoteFolders } from "../lib/new-session";
 import { localOnly, remoteLabel, type RemotePlace, remoteRecents, splitRemoteCwd, type TargetInfo, targetDown } from "../lib/remote-session";
 import { home } from "../lib/ui-state";
 import { meshOn, meshPeers, noteHost, peerUnavailable, selfLabel } from "../lib/mesh";
 import { FolderPicker } from "./FolderPicker";
 import { Banner, Chip, Icon, trapFocus } from "./ui";
 
-const MAX_RECENT = 20;
 /** The targets list is a cached read on the server; past this it's broken, not slow. */
 const TARGETS_TIMEOUT_MS = 10_000;
 /** A probe still running when /api/targets answers reads "unknown" and finishes in the background:
@@ -114,12 +115,21 @@ export function NewSessionDialog(props: {
     return t ? targetName(t) : target;
   };
 
-  const recent = createMemo(() => localOnly(cwds() ?? []).slice(0, MAX_RECENT));
-  const recentRemote = createMemo(() => remoteRecents(cwds() ?? []).slice(0, MAX_RECENT));
-  const recentOnTarget = createMemo(() => {
+  const recent = createMemo(() => recentFolders(cwds() ?? [], showHiddenFolders()));
+  const recentRemote = createMemo(() => recentRemoteFolders(cwds() ?? [], showHiddenFolders()));
+  /** The same recents unfiltered, for the picker: its own checkbox has to be able to reveal them. */
+  const pickerRecents = createMemo(() => localOnly(cwds() ?? []));
+  const pickerRemoteRecents = createMemo(() => {
     const t = place().target;
     return t ? remoteRecents(cwds() ?? [], t).map((p) => p.remoteCwd) : [];
   });
+  /** How many rows each list dropped for being hidden, 0 while Show hidden folders is on. */
+  const droppedLocal = createMemo(() =>
+    showHiddenFolders() ? 0 : localOnly(cwds() ?? []).filter((c) => hiddenFolder(c)).length,
+  );
+  const droppedRemote = createMemo(() =>
+    showHiddenFolders() ? 0 : remoteRecents(cwds() ?? []).filter((p) => hiddenFolder(p.remoteCwd)).length,
+  );
 
   const pick = (path: string) => {
     setCwd(path);
@@ -335,35 +345,46 @@ export function NewSessionDialog(props: {
                 </span>
               </div>
               <Show when={picking()}>
-                <FolderPicker start={cwd()} recents={recent()} host={host()} onPick={pick} onClose={() => setPicking(false)} />
+                <FolderPicker start={cwd()} recents={pickerRecents()} host={host()} onPick={pick} onClose={() => setPicking(false)} />
               </Show>
-              <Show when={!picking() && recent().length > 0}>
+              <Show when={!picking() && (recent().length > 0 || droppedLocal() > 0)}>
                 <div class="field">
-                  <span class="field-label" id="ns-recent">
-                    Recent folders
-                  </span>
-                  <ul class="list folder-list" role="listbox" aria-labelledby="ns-recent">
-                    <For each={recent()}>
-                      {(c) => (
-                        <li
-                          class="list-row list-row-interactive"
-                          role="option"
-                          tabindex="0"
-                          title={c}
-                          aria-selected={c === cwd().trim() ? "true" : "false"}
-                          onClick={() => pick(c)}
-                          onDblClick={() => {
-                            pick(c);
-                            form.requestSubmit();
-                          }}
-                          onKeyDown={(e) => rowKeys(e, () => pick(c))}
-                        >
-                          <Icon name="folder" small />
-                          <span class="list-title truncate">{tildePath(c, home())}</span>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
+                  <div class="spread">
+                    <span class="field-label" id="ns-recent">
+                      Recent folders
+                    </span>
+                    <label class="folder-picker-hidden">
+                      <input type="checkbox" checked={showHiddenFolders()} onChange={(e) => setShowHiddenFolders(e.currentTarget.checked)} />
+                      Show hidden folders
+                    </label>
+                  </div>
+                  <Show when={recent().length > 0}>
+                    <ul class="list folder-list" role="listbox" aria-labelledby="ns-recent">
+                      <For each={recent()}>
+                        {(c) => (
+                          <li
+                            class="list-row list-row-interactive"
+                            role="option"
+                            tabindex="0"
+                            title={c}
+                            aria-selected={c === cwd().trim() ? "true" : "false"}
+                            onClick={() => pick(c)}
+                            onDblClick={() => {
+                              pick(c);
+                              form.requestSubmit();
+                            }}
+                            onKeyDown={(e) => rowKeys(e, () => pick(c))}
+                          >
+                            <Icon name="folder" small />
+                            <span class="list-title truncate">{tildePath(c, home())}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                  <Show when={droppedLocal() > 0}>
+                    <span class="field-hint">{hiddenRecentNote(droppedLocal())}</span>
+                  </Show>
                 </div>
               </Show>
             </Show>
@@ -468,7 +489,7 @@ export function NewSessionDialog(props: {
                         {(n) => (
                           <FolderPicker
                             start={place().remoteCwd}
-                            recents={recentOnTarget()}
+                            recents={pickerRemoteRecents()}
                             remote={{ target: n, name: nameOf(n) }}
                             host={host()}
                             onPick={(path) => pickRemote({ target: n, remoteCwd: path })}
@@ -481,34 +502,45 @@ export function NewSessionDialog(props: {
                 )}
               </Show>
 
-              <Show when={!picking() && recentRemote().length > 0}>
+              <Show when={!picking() && (recentRemote().length > 0 || droppedRemote() > 0)}>
                 <div class="field">
-                  <span class="field-label" id="ns-rrecent">
-                    Recent remote folders
-                  </span>
-                  <ul class="list folder-list" role="listbox" aria-labelledby="ns-rrecent">
-                    <For each={recentRemote()}>
-                      {(p) => (
-                        <li
-                          class="list-row list-row-interactive"
-                          role="option"
-                          tabindex="0"
-                          title={remoteLabel(p)}
-                          aria-selected={p.target === place().target && p.remoteCwd === place().remoteCwd ? "true" : "false"}
-                          onClick={() => pickRemote(p)}
-                          onDblClick={() => {
-                            pickRemote(p);
-                            form.requestSubmit();
-                          }}
-                          onKeyDown={(e) => rowKeys(e, () => pickRemote(p))}
-                        >
-                          <Icon name="terminal" small />
-                          <span class="list-title truncate">{p.remoteCwd}</span>
-                          <span class="folder-picker-link truncate">{nameOf(p.target)}</span>
-                        </li>
-                      )}
-                    </For>
-                  </ul>
+                  <div class="spread">
+                    <span class="field-label" id="ns-rrecent">
+                      Recent remote folders
+                    </span>
+                    <label class="folder-picker-hidden">
+                      <input type="checkbox" checked={showHiddenFolders()} onChange={(e) => setShowHiddenFolders(e.currentTarget.checked)} />
+                      Show hidden folders
+                    </label>
+                  </div>
+                  <Show when={recentRemote().length > 0}>
+                    <ul class="list folder-list" role="listbox" aria-labelledby="ns-rrecent">
+                      <For each={recentRemote()}>
+                        {(p) => (
+                          <li
+                            class="list-row list-row-interactive"
+                            role="option"
+                            tabindex="0"
+                            title={remoteLabel(p)}
+                            aria-selected={p.target === place().target && p.remoteCwd === place().remoteCwd ? "true" : "false"}
+                            onClick={() => pickRemote(p)}
+                            onDblClick={() => {
+                              pickRemote(p);
+                              form.requestSubmit();
+                            }}
+                            onKeyDown={(e) => rowKeys(e, () => pickRemote(p))}
+                          >
+                            <Icon name="terminal" small />
+                            <span class="list-title truncate">{p.remoteCwd}</span>
+                            <span class="folder-picker-link truncate">{nameOf(p.target)}</span>
+                          </li>
+                        )}
+                      </For>
+                    </ul>
+                  </Show>
+                  <Show when={droppedRemote() > 0}>
+                    <span class="field-hint">{hiddenRecentNote(droppedRemote())}</span>
+                  </Show>
                 </div>
               </Show>
 

@@ -9,6 +9,7 @@ import { redactingTool, serverRedactor } from "./overseer-redact";
 import { auditedAct, cut, hiddenFromProfiles, Refusal, readBounds, renderTranscript, sessionRef, text, writableRefusal, type AuditRecord } from "./session-guards";
 import { stateRoot } from "./state-root";
 import { UserTurns, type TurnEvent, userMessageText } from "./overseer-tools";
+import { inviteFromSend, queueOpenTool } from "./topics";
 
 /**
  * A profile session's powers (§chat.profiles/session-tools, /limits): the `sova-session-powers`
@@ -218,6 +219,8 @@ export interface PowersContext {
   profile: Profile;
   run: RunState;
   limits: SessionLimits;
+  /** This session's file, for `queue_open`'s receiver record (§chat.topics/open). */
+  path?: () => string;
 }
 
 type Tool = ToolDefinition<any, any>;
@@ -417,13 +420,18 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
           if (over) throw new Refusal(over);
           const give = ctx.limits.take(s.id, attended);
           const from = { sessionId: ctx.sessionId, title: ctx.title(), hop };
+          // A topic of this session's that the text names invites the target to answer there
+          // as well: recorded before the hand-off, kept only if the send is accepted.
+          const invites = inviteFromSend(ctx.sessionId, s.id, params.text);
           const r = await need()
             .send(s.path, `${sessionSentHeader(from, hop)}\n${params.text}`, params.delivery, from)
             .catch((err) => ({ ok: false as const, error: err instanceof Error ? err.message : String(err) }));
           if (!r.ok) {
             give();
+            invites.refused();
             throw new Refusal(r.error);
           }
+          invites.accepted();
           const link = `[${s.title.replace(/[[\]]/g, "")}](sova://s/${s.id})`;
           const said = !r.queued ? `Sent to ${link} (hop ${hop}).` : r.kind === "steer" ? `Queued as a steer in ${link} (hop ${hop}).` : `Queued in ${link} behind its running turn (hop ${hop}).`;
           return { content: text(said), details: { v: 1, target: { id: s.id, title: s.title }, queued: r.queued, kind: r.kind, hop } };
@@ -432,6 +440,11 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
       )(toolCallId, p, signal, onUpdate, extCtx);
     },
   });
+  // A return address other sessions answer on (§chat.topics/open): only where session_send is.
+  if (ctx.path) {
+    const path = ctx.path;
+    tools.push(queueOpenTool({ sessionId: ctx.sessionId, path, project: () => need().projectRoot?.(ctx.cwd) ?? Promise.resolve(null) }));
+  }
   return tools;
 }
 

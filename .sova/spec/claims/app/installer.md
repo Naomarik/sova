@@ -6,8 +6,10 @@ the repository pins. It installs no toolchain and no system package and never us
 clones the requested ref into an install directory of its own (default `~/.local/share/sova`),
 installs its dependencies and builds it in a staging directory beside it, promotes the build only
 after it succeeded (the previous install kept until then, and restored on failure), and writes a
-`sova` launcher (default `~/.local/bin/sova`). An install directory that is not a clean clone of
-Sova, or a launcher this script did not write, is refused and left alone.
+`sova` launcher (default `~/.local/bin/sova`). The launcher runs the server, except `sova token`,
+which prints the install's access token, and `sova open`, which opens the browser at the app
+already unlocked (§app.access/callers); its closing message says both. An install directory that
+is not a clean clone of Sova, or a launcher this script did not write, is refused and left alone.
 
 Beyond that it links Sova's pi extensions into the agent directory (§app.installer/pi-extensions),
 switches on the Claude Code provider (§app.installer/claude-code-provider), and offers a login

@@ -100,7 +100,8 @@ interface SessionGroup {
 
 `#/s/{path}` keeps meaning exactly what it means now — one session, alone, whether or not it is in
 a group. Opening a grouped session from the sidebar row still goes to `#/s/`, because the row is a
-session; the workspace is reached from the group (§app.session-list/groups, the group menu's `Open workspace`).
+session; the workspace is reached from the group (§app.session-list/groups, the group menu's `Open workspace`)
+or from the Groups head's `Open Groups` picker (§app.session-list/group-picker), both of which open `#/g/{id}`.
 A member's pane head links to `#/s/{path}` so one member can always be pulled out to full width
 without leaving the group.
 
@@ -553,7 +554,8 @@ member at once.
   what it looks like.
 - **The same keys as a pane composer** (§chat.composer/behavior): Enter sends, Shift+Enter adds a
   line, Ctrl/⌘+Enter always sends, the same IME rule, and the same touch mode — tapped, Enter adds
-  a line and Send to All sends. The placeholder carries the key hint exactly when Enter sends.
+  a line and Send to All sends. The placeholder carries the key hint exactly when Enter sends, and
+  fits its box by the same rule, the key hint being what a narrow box drops first.
 
 ### Refusal
 
@@ -664,8 +666,9 @@ Dissolve (here) and Delete group (the sidebar) do.
 A comparison is a group of ordinary sessions. There is no gesture that creates several sessions
 at once, and nothing marks a session as a comparison's member.
 
-- **By hand:** `+ New group` in the sidebar, then a session per model — New Session, with the
-  model picked in its own composer — moved into the group from the sidebar.
+- **By hand:** a session per model — New Session, with the model picked in its own composer —
+  then the first one dragged onto the drop overlay's `+ New group` (or `New group…` in the session
+  pane's `Move into group`), and the rest moved into that group from the sidebar.
 - **Through the Overseer:** `sova_group` with `op: "create"` makes the group, then one
   `sova_create_session` per member names that group with its own `model` and `thinking`, and may
   send the first prompt. The Overseer's prompt (`server/overseer-prompt.md`) says this in one

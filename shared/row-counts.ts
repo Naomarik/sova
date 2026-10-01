@@ -17,7 +17,7 @@ export const entryOfRow = (rowId: string): string => {
 };
 
 /** The kinds a rendered row can belong to that ARE messages (a user's, a nudge's, a reply's). */
-const MESSAGE_KINDS: ReadonlySet<TranscriptItem["kind"]> = new Set(["user", "wake", "link", "assistant-text", "thinking", "tool-call"]);
+const MESSAGE_KINDS: ReadonlySet<TranscriptItem["kind"]> = new Set(["user", "wake", "link", "topic", "assistant-text", "thinking", "tool-call"]);
 
 /** Distinct entries behind message rows: one multi-block reply is one message (src/lib/message-count.ts). */
 export const messageCount = (items: readonly TranscriptItem[]): number =>

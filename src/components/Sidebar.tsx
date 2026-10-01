@@ -1,13 +1,13 @@
 import { ProfileShelf } from "./ProfileShelf";
 import { profileIconName } from "../lib/profiles";
-import { createEffect, createMemo, createResource, createSignal, For, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
+import { Dynamic, Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
 import { autoTitleSessions, fetchTargets, sessionsDir as fetchSessionsDir, setSessionArchived } from "../lib/api";
 import { nameableRows, nameLabel, nameSessions, namingIn, setNaming } from "../lib/auto-title";
-import { type ArchiveGroupId, groupByArchiveDate, sessionsWord } from "../lib/archive";
+import { type ArchiveGroupId, groupByArchiveDate, sessionsWord, startOfDay } from "../lib/archive";
 import { relativeTime, shortModel, tildePath } from "../lib/format";
 import { agentsHref, type GlancePart, usageGlance, usageHref } from "../lib/insights";
 import { isMainThread, isOrdinarySession, isOrgSession, isTopSession } from "../lib/regions";
@@ -55,7 +55,7 @@ import {
 import { announce, hasLocalDraft, home, localRunning, sessionContext, toast } from "../lib/ui-state";
 import { showsDraftMark } from "../lib/draft-mark";
 import { overlaid, rowLeadMark, rowNeedsYou, SIGNAL_CLASS, SIGNAL_ICON, signalTitle, signalWords, stalledPaths, tagSearchText, tagsTitle, turnErrorTitle } from "../lib/signals";
-import { readinessBadge, readinessRowChip, readinessTitle } from "../lib/readiness";
+import { readinessBadge, readinessCount, readinessCountWords, readinessTitle } from "../lib/readiness";
 import { requestListRefresh } from "../lib/list-refresh";
 import { orgHref } from "../lib/orgs-route";
 import { marksOverlay, openSessionFeed } from "../lib/session-feed";
@@ -89,8 +89,10 @@ import { waitingWords } from "../lib/working-hours";
 import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
+import { GroupPicker } from "./GroupPicker";
+import { EMPTY_GROUP_REASON, NO_GROUPS_NOTE } from "../lib/group-picker";
 import { RemoteGroupDot } from "./RemoteStatus";
-import { Banner, Icon } from "./ui";
+import { Banner, Icon, trapFocus } from "./ui";
 import { SHARES_HREF } from "../lib/session-shares";
 import { showSummaries } from "../lib/summary-line";
 import {
@@ -106,7 +108,7 @@ import {
   sessionHrefOn,
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
-import { hostFilterAsk } from "../lib/mesh-details";
+import { connectedCount, hostFilterAsk } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
 
 const ARCHIVE_KEY = "sova:archive-open";
@@ -128,8 +130,6 @@ const [openFolders, setOpenFolders] = createSignal<Record<string, boolean>>({});
     closed: memory only, module state for the same reason as the groups — rebuilt on every poll. */
 const [openOrgs, setOpenOrgs] = createSignal<Record<string, boolean>>({});
 const [openDone, setOpenDone] = createSignal<Record<string, boolean>>({});
-/** The Groups head's `+` has opened the new-group name field. */
-const [newGroupField, setNewGroupField] = createSignal(false);
 
 /** Collapsed on every page load, and never persisted (`lib/group-open`): the module state above
     holds the user's choice for as long as the page lives, and a reload starts closed again. */
@@ -267,8 +267,8 @@ function SessionRow(props: {
   const leadMark = () => rowLeadMark(s(), props.selected);
   /** Line 3's merge-readiness badge (src/lib/readiness.ts): the server's answer, worded. */
   const badge = () => readinessBadge(s().readiness);
-  /** Line 3's leading chip: ready to merge, or waiting for your OK. */
-  const readyChip = () => readinessRowChip(s().readiness);
+  /** Line 3's worktree count, "2 of 3", after the time: muted, lit while one is ready to merge. */
+  const trees = () => readinessCount(s().readiness);
   const tuiTitle = () => `Open in a TUI · pid ${s().live!.pid} · ${s().live!.status}`;
   const working = () => sessionWorking(s());
   /** The row's context fill: the open session's live value wins over the list's tail value, and a
@@ -597,15 +597,6 @@ function SessionRow(props: {
             </div>
           </Show>
           <div class="list-line list-meta-row">
-            {/* Ready or waiting leads the line, at one left edge down the list; it never truncates. */}
-            <Show when={readyChip()}>
-              {(c) => (
-                <span class={`chip chip-${c().tone} session-readiness-chip`} title={readinessTitle(s().readiness) ?? undefined}>
-                  <span class="chip-dot" aria-hidden="true" />
-                  {c().label}
-                </span>
-              )}
-            </Show>
             <Show when={hostOf(s().path)}>{(h) => <HostMark host={h()} />}</Show>
             <Show when={mark()}>
               {(m) => (
@@ -622,7 +613,28 @@ function SessionRow(props: {
             </Show>
             <p class="list-meta" title={tagsTitle(s().tags) ?? undefined}>
               {relativeTime(s().lastActiveAt, props.now)}
-              {/* The merge-readiness badge, between the time and the model. The topic is search-only. */}
+              {/* The worktrees this session tracks: "2 of 3" merged, after the time, before the
+                  badge and the model. Muted, and lit while one of them is ready to merge. The
+                  digits are aria-hidden: the words after them are what the row's name says. */}
+              <Show when={trees()}>
+                {(c) => (
+                  <>
+                    {" · "}
+                    <span
+                      class="session-worktrees"
+                      classList={{ "session-worktrees-ready": c().ready }}
+                      title={readinessTitle(s().readiness) ?? undefined}
+                    >
+                      <Icon name="branch" small />
+                      <span class="text-num" aria-hidden="true">
+                        {c().merged} of {c().total}
+                      </span>
+                      <span class="visually-hidden">{readinessCountWords(c())}</span>
+                    </span>
+                  </>
+                )}
+              </Show>
+              {/* The merge-readiness badge, between the count and the model. The topic is search-only. */}
               <Show when={badge()}>
                 {(w) => (
                   <>
@@ -673,6 +685,24 @@ function SessionRow(props: {
   );
 }
 
+/** `<For>` keyed by a string the caller names rather than by object identity. Folder sections,
+    date sections and rows are rebuilt as new objects on every poll, so a plain `<For>` over them
+    tore down and rebuilt every node each time; keyed by cwd, id or path, each one is built once
+    and its item accessor updates in place. The last item is held while a removed key is being
+    disposed, so an accessor read in that gap never sees `undefined`. */
+function ForKey<T>(props: { each: readonly T[]; by: (item: T) => string; children: (item: () => T, index: () => number) => JSX.Element }) {
+  const byKey = createMemo(() => new Map(props.each.map((x) => [props.by(x), x])));
+  const keys = createMemo(() => props.each.map(props.by));
+  return (
+    <For each={keys()}>
+      {(k, i) => {
+        let last = byKey().get(k)!;
+        return props.children(() => (last = byKey().get(k) ?? last), i);
+      }}
+    </For>
+  );
+}
+
 /** Sessions grouped by folder: the markup of the session list "Anatomy". The ORDER is the
     caller's — `groupByCreation` for Live & web, `groupByActivity` for the Archive and for a group
     (src/lib/session-order.ts) — so this component never decides what "newest" means.
@@ -689,29 +719,39 @@ function GroupList(props: {
   level?: 4;
 }) {
   return (
-    <For each={props.groups}>
+    <ForKey each={props.groups} by={(g) => g.cwd}>
       {(group, gi) => {
+        // Keyed by cwd (ForKey): this section is built once per folder and `group()` follows each
+        // poll's fresh object, so everything read from it below stays an accessor.
+        const cwd = group().cwd;
         // The label's remote form is the group's only while every row runs at one target and folder:
         // a mixed group keeps the plain folder label and its rows' marks speak.
-        const remote = groupRemotePlaceOf(group.sessions, group.cwd);
-        const host = () => (remote ? props.targets.find((t) => t.name === remote.target)?.host : undefined);
+        const remote = createMemo(() => groupRemotePlaceOf(group().sessions, cwd));
+        const host = () => {
+          const r = remote();
+          return r ? props.targets.find((t) => t.name === r.target)?.host : undefined;
+        };
         const label = (name: string) => props.targets.find((t) => t.name === name)?.label || name;
         // Open/closed per region + folder, remembered for the browser session. The folder object
         // is rebuilt on every poll, so the choice lives in module state and sessionStorage, never
         // in this component.
-        const key = folderOpenKey(props.idPrefix, group.cwd);
+        const key = folderOpenKey(props.idPrefix, cwd);
         const open = () =>
           folderOpen({
-            stored: openFolders()[key] ?? storedFolderOpen(readFolderOpenRaw(props.idPrefix, group.cwd)),
+            stored: openFolders()[key] ?? storedFolderOpen(readFolderOpenRaw(props.idPrefix, cwd)),
             searching: props.searching,
           });
+        // Rows are built the first time the folder is open and kept after it closes: a folder
+        // never opened costs its head alone (§app.session-list/content-rules, open/closed state).
+        let built = false;
+        const rowsBuilt = createMemo(() => built || (built = open()));
         // Folders start collapsed, so one holding an agent at work says so on its own head.
-        const active = () => folderActive(group.sessions, localRunning());
+        const active = () => folderActive(group().sessions, localRunning());
         const onFolderToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
           const now = e.currentTarget.open;
           if (now === open()) return; // our own `open` update, not the user's
           setOpenFolders((m) => ({ ...m, [key]: now }));
-          writeFolderOpenRaw(props.idPrefix, group.cwd, now);
+          writeFolderOpenRaw(props.idPrefix, cwd, now);
         };
         return (
           <details class="session-group" aria-labelledby={`${props.idPrefix}-${gi()}`} open={open()} onToggle={onFolderToggle}>
@@ -722,13 +762,16 @@ function GroupList(props: {
                 component={props.level === 4 ? "h4" : "h3"}
                 class="list-group-label"
                 id={`${props.idPrefix}-${gi()}`}
-                title={remote ? `${remote.target}${host() ? ` (${host()})` : ""}:${remote.remoteCwd}` : group.cwd}
+                title={(() => {
+                  const r = remote();
+                  return r ? `${r.target}${host() ? ` (${host()})` : ""}:${r.remoteCwd}` : cwd;
+                })()}
               >
                 <Icon name="chevron-right" small class="icon-twist" />
-                <Icon name={remote ? "terminal" : "folder"} small />
+                <Icon name={remote() ? "terminal" : "folder"} small />
                 {/* Remote: the target's label stays whole and the folder on it truncates from the left
                     like a local path, but never as "~": the target's $HOME isn't ours. */}
-                <Show when={remote}>
+                <Show when={remote()}>
                   {(r) => (
                     <>
                       <span>{label(r().target)}</span>
@@ -740,7 +783,7 @@ function GroupList(props: {
                   )}
                 </Show>
                 <span class="session-group-path">
-                  <bdi>{remote ? remote.remoteCwd : tildePath(group.cwd, home())}</bdi>
+                  <bdi>{remote()?.remoteCwd ?? tildePath(cwd, home())}</bdi>
                 </span>
                 <Show when={active()}>
                   <span class="session-group-active" title="An agent is working in this folder">
@@ -748,18 +791,20 @@ function GroupList(props: {
                     <span class="visually-hidden">, an agent is working here</span>
                   </span>
                 </Show>
-                <span class="text-num">{group.sessions.length}</span>
+                <span class="text-num">{group().sessions.length}</span>
               </Dynamic>
             </summary>
             <ul class="list">
-              <For each={group.sessions}>
-                {(s) => <SessionRow session={s} selected={props.selected} now={props.now} targets={props.targets} />}
-              </For>
+              <Show when={rowsBuilt()}>
+                <ForKey each={group().sessions} by={(s) => s.path}>
+                  {(s) => <SessionRow session={s()} selected={props.selected} now={props.now} targets={props.targets} />}
+                </ForKey>
+              </Show>
             </ul>
           </details>
         );
       }}
-    </For>
+    </ForKey>
   );
 }
 
@@ -835,7 +880,7 @@ function GroupBlock(props: {
                     title={`Open ${quoted(group().name)} as a workspace`}
                     icon={<Icon name="external" small />}
                     href={groupHref(group().id)}
-                    disabled={count() === 0 ? "Nothing is in it yet. Drag a session into it first." : ""}
+                    disabled={count() === 0 ? EMPTY_GROUP_REASON : ""}
                   />
                   <menu.Item
                     label="Rename…"
@@ -1077,9 +1122,10 @@ export function Sidebar(props: {
 }) {
   const [query, setQuery] = createSignal("");
   /** The host filter as remembered (lib/mesh.ts); what applies is `hostFilter()`, which reads All
-      while its host isn't known or the filter isn't shown. */
+      while its host isn't known or the filter isn't shown. A memo, so the search hits re-run only
+      when the filter's value moves, not on every mesh poll that rebuilds the peer list. */
   const [storedHostFilter, setStoredHostFilter] = createSignal(readKey(localStorage, HOST_FILTER_KEY));
-  const hostFilter = () => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown());
+  const hostFilter = createMemo(() => effectiveHostFilter(storedHostFilter(), meshPeers(), hostFilterShown()));
   const chooseHostFilter = (value: string | null) => {
     setStoredHostFilter(value);
     if (value === null) removeKey(localStorage, HOST_FILTER_KEY);
@@ -1087,10 +1133,8 @@ export function Sidebar(props: {
   };
   // "Open Through This Host" in the mesh details: the filter takes that host (a fresh ask each time).
   createEffect(on(hostFilterAsk, (ask) => ask && chooseHostFilter(ask.value), { defer: true }));
-  /** The search field has focus: it takes the whole row, and the Overseer button steps aside. */
-  const [searchFocused, setSearchFocused] = createSignal(false);
-  /** Folded, the search sits behind an icon in the list's one toolbar line; this is that line
-      opened on the field. A query keeps it open too, so a row tapped and left finds it as it was. */
+  /** The one toolbar line (both widths) has the search open: opened by its icon or "/", and
+      held open by a query, so a row tapped and left finds it as it was. */
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
@@ -1166,9 +1210,11 @@ export function Sidebar(props: {
     announce(on ? "Sessions pane collapsed." : "Sessions pane expanded.");
     if (refocus && hadFocus) queueMicrotask(() => (on ? expandToggle : collapseToggle)?.focus());
   };
-  /** The spine's Search, and "/" while collapsed: open the pane and put the cursor in the field. */
+  /** The spine's Search, and "/" while collapsed: open the pane and its search line, cursor in
+      the field. The field exists only while the line is open, so the line opens here too. */
   const expandToSearch = () => {
     setCollapsed(false, false);
+    setSearchOpen(true);
     queueMicrotask(() => search.focus());
   };
 
@@ -1203,8 +1249,7 @@ export function Sidebar(props: {
     if (inText) return;
     e.preventDefault();
     if (collapsed()) expandToSearch();
-    else if (!props.unfolded) openSearch();
-    else search.focus();
+    else openSearch();
   };
   document.addEventListener("keydown", onKey);
   onCleanup(() => {
@@ -1308,9 +1353,12 @@ export function Sidebar(props: {
     return r?.detail ? { text: r.detail, title: r.details.join(" ") } : null;
   };
   // The Archive splits by date first (Today … Older), then by cwd inside each date section.
+  // The date sections move only when the calendar day does, so they read the start of today,
+  // not the 30 s clock: a tick that stays inside one day re-runs nothing below.
+  const today = createMemo(() => startOfDay(props.now));
   const archiveSections = createMemo(() => {
     const sorted = [...archiveHits()].sort((a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt));
-    return groupByArchiveDate(sorted, new Date(props.now)).map((d) => ({ ...d, groups: groupByActivity(d.items) }));
+    return groupByArchiveDate(sorted, new Date(today())).map((d) => ({ ...d, groups: groupByActivity(d.items) }));
   });
   const archiveTotal = () => ordinary().filter((s) => !isTop(s)).length;
   /**
@@ -1339,34 +1387,17 @@ export function Sidebar(props: {
       is component state, not module state: the region is one node that outlives every poll. */
   const [groupsChosen, setGroupsChosen] = createSignal<boolean | undefined>(undefined);
   /** Forced open, without touching the choice, while a search is on (a matching group must not
-      hide its hits), or while the
-      new-group field is showing (it lives in here too, and the `+` can be pressed on a shut region). */
-  const groupsRegionOpen = () =>
-    groupsRegionOpenRule({
-      chosen: groupsChosen(),
-      searching: searching(),
-      composing: newGroupField(),
-    });
+      hide its hits). */
+  const groupsRegionOpen = () => groupsRegionOpenRule({ chosen: groupsChosen(), searching: searching() });
   const onGroupsRegionToggle = (e: Event & { currentTarget: HTMLDetailsElement }) => {
     const open = e.currentTarget.open;
     if (open === groupsRegionOpen()) return; // our own `open` update, not the user's
     setGroupsChosen(open);
   };
 
-  /** The head's `+`. Held so the field can hand focus back to it: the field unmounts when it
-      closes, and without this the caret would drop to <body>. */
-  let newGroupToggle: HTMLButtonElement | undefined;
-  /** Every way the new-group field closes — saved, cancelled, Escape, an empty blur — ends here.
-      Focus goes back to the `+` only if it would otherwise be lost: a blur that saved because the
-      user clicked or tabbed to something focusable has already put the caret where they wanted it.
-      Checked a frame later, when that move (or the fall to <body>) has landed. */
-  const closeNewGroup = () => {
-    setNewGroupField(false);
-    requestAnimationFrame(() => {
-      const at = document.activeElement;
-      if (!at || at === document.body || !at.isConnected) newGroupToggle?.focus();
-    });
-  };
+  /** The head's `Open Groups` has opened the group picker. Focus goes back to the button when it
+      closes (trapFocus, which remembers what had focus when the picker opened). */
+  const [pickerOpen, setPickerOpen] = createSignal(false);
 
   // A groupId this tab doesn't know means the local group list is behind (another tab, another
   // server): without this the row would silently vanish from the Groups region until a reload.
@@ -1538,8 +1569,7 @@ export function Sidebar(props: {
     setSearchOpen(false);
     queueMicrotask(() => searchToggle?.focus());
   };
-  // The unfolded layout is the two rows, always: an open folded line doesn't survive unfolding.
-  createEffect(on(() => props.unfolded, (u) => u && setSearchOpen(false), { defer: true }));
+
 
   /** A region count on the spine: open the pane and bring that region into view. The Archive is
       scrolled to, never forced open — its open state is the user's stored choice. */
@@ -1563,22 +1593,25 @@ export function Sidebar(props: {
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
-   * The Overseer's door: an eye beside the search, with the count of Overseer messages you haven't
-   * read. Who needs you is the Needs you region's to say, not the eye's. Alt+O does the same (App).
+   * The Overseer's door, with the count of Overseer messages you haven't read. In the toolbar it
+   * is a labelled button (`labelled`): the eye, the word, then the count as an inline pill; on the
+   * spine it is the bare eye with the corner pill. Who needs you is the Needs you region's to say,
+   * not the eye's. Alt+O does the same (App).
    */
-  const OverseerButton = (p: { class: string }) => {
+  const OverseerButton = (p: { class: string; labelled?: boolean }) => {
     // The Overseer's own messages, so it shows whatever the proactivity; moot while it is open.
     const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
     const label = () => overseerButtonLabel(unread());
     return (
       <a
-        class={`button button-icon overseer-entry ${p.class}`}
+        class={`button overseer-entry ${p.labelled ? "button-sm overseer-entry-word" : "button-icon"} ${p.class}`}
         href={OVERSEER_HASH}
         aria-current={props.overseerOpen ? "page" : undefined}
         aria-label={label()}
         title={`${label()} · Alt+O`}
       >
-        <Icon name="eye" />
+        <Icon name="eye" small={p.labelled || undefined} />
+        <Show when={p.labelled}>Overseer</Show>
         <Show when={unread() > 0}>
           <span class="overseer-entry-count text-num" aria-hidden="true">
             {unread() > 99 ? "99+" : unread()}
@@ -1588,7 +1621,7 @@ export function Sidebar(props: {
     );
   };
 
-  /** The session filter. One is mounted at a time (folded or unfolded), so its id and ref stay unique. */
+  /** The session filter, in the toolbar line while the search is open (both widths). */
   const SearchField = () => (
     <div class="search">
       <Icon name="search" />
@@ -1603,14 +1636,11 @@ export function Sidebar(props: {
         spellcheck={false}
         value={query()}
         onInput={(e) => setQuery(e.currentTarget.value)}
-        onFocus={() => setSearchFocused(true)}
-        onBlur={() => setSearchFocused(false)}
         onKeyDown={(e) => {
           if (e.key !== "Escape") return;
           e.preventDefault();
           if (query()) setQuery("");
-          else if (!props.unfolded) closeSearch();
-          else search.blur();
+          else closeSearch();
         }}
       />
       <Show when={query()}>
@@ -1647,6 +1677,139 @@ export function Sidebar(props: {
       </button>
     </Show>
   );
+
+  /** The foot's four rows, as §app.insights/sidebar-foot draws them: the host filter (mesh only),
+      the Usage glance with its monitor button, Agents with its Settings gear, and Shares. On the
+      desktop they sit in `.sidebar-foot`; on a phone the foot bar's sheet holds them, verbatim. */
+  const FootRows = () => (
+    <>
+      {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}
+      <Show when={hostFilterShown()}>
+        <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
+      </Show>
+      {/* The monitor button takes the gear's exact markup, so the two stack in one column. */}
+      <div class="sidebar-foot-row">
+        <a
+          class="list-row list-row-interactive insights-row sidebar-foot-link"
+          href={usageHref()}
+          aria-current={props.insightsPage === "usage" ? "page" : undefined}
+          title={glanceText() || undefined}
+          aria-label={glanceText() || undefined}
+        >
+          <Icon name="gauge" />
+          <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
+            <UsageGlance parts={glance()} />
+          </span>
+        </a>
+        <button type="button" class="button button-icon sidebar-settings" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
+          <Icon name="activity" small />
+        </button>
+      </div>
+      <div class="sidebar-foot-row">
+        <a
+          class="list-row list-row-interactive insights-row sidebar-foot-link"
+          href={agentsHref()}
+          aria-current={props.insightsPage === "agents" ? "page" : undefined}
+          title={agentsSentence(props.agents)}
+          aria-label={agentsSentence(props.agents)}
+        >
+          <Icon name="worker" />
+          <span class="insights-row-text">
+            <AgentsGlance agents={props.agents} />
+          </span>
+        </a>
+        <button
+          type="button"
+          class="button button-icon sidebar-settings"
+          title="Settings"
+          aria-label="Settings"
+          onClick={() => props.onOpenSettings()}
+        >
+          <Icon name="settings" small />
+        </button>
+      </div>
+      {/* Every public link, and who is looking (§app.session-share/shares-page). */}
+      <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
+        <Icon name="external" />
+        <span class="insights-row-text">Shares</span>
+      </a>
+    </>
+  );
+
+  /**
+   * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —
+   * the mesh's connected count (while the mesh is on), the agents at work (the worker icon and
+   * the count), and every provider's usage cap as the glance shows it. Tapping the bar opens the
+   * rows as a bottom sheet, verbatim. Focus leaves and returns with the sheet (trapFocus).
+   */
+  const PhoneFoot = () => {
+    const [sheetOpen, setSheetOpen] = createSignal(false);
+    const close = () => setSheetOpen(false);
+    /** The bar's accessible name: the facts in words, then what the tap does. */
+    const barName = () => {
+      const facts: string[] = [];
+      if (hostFilterShown()) {
+        const c = connectedCount(meshPeers());
+        facts.push(`${c.up} of ${c.total} hosts connected`);
+      }
+      facts.push(workingNow(agentsWorking()));
+      const caps = glance().map((p) => p.full);
+      if (caps.length) facts.push(caps.join(", "));
+      return `${facts.join(". ")}. Open hosts, usage, agents and shares.`;
+    };
+    return (
+      <>
+        <button
+          type="button"
+          class="sidebar-footbar"
+          aria-haspopup="dialog"
+          aria-expanded={sheetOpen()}
+          aria-label={barName()}
+          onClick={() => setSheetOpen(true)}
+        >
+          <Show when={hostFilterShown()}>
+            <span class="sidebar-footbar-seg">
+              <span class="text-num">{connectedCount(meshPeers()).up}/{connectedCount(meshPeers()).total}</span>
+            </span>
+          </Show>
+          <span class="sidebar-footbar-seg">
+            <Icon name="worker" small />
+            <span class="text-num">{agentsWorking()}</span>
+          </span>
+          {/* Every provider the glance would show, in its order (at most the five): never one
+              invented number, and the line never wraps — what can't fit clips, like the glance. */}
+          <For each={glance()}>
+            {(p) => (
+              <span
+                class="sidebar-footbar-seg sidebar-footbar-cap"
+                classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale }}
+              >
+                <span class="sidebar-footbar-tag">{p.abbr}</span> <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
+              </span>
+            )}
+          </For>
+        </button>
+        <Show when={sheetOpen()}>
+          <Portal>
+            <div class="scrim" onClick={close} />
+            <div
+              class="modal sidebar-foot-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Hosts, usage, agents and shares"
+              ref={(el) => trapFocus(el)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") close();
+              }}
+            >
+              <div class="sheet-grip" aria-hidden="true" />
+              <FootRows />
+            </div>
+          </Portal>
+        </Show>
+      </>
+    );
+  };
 
   /**
    * The collapsed pane: one 44px item per action the expanded pane offers, reading the same memos,
@@ -1879,54 +2042,36 @@ export function Sidebar(props: {
           <label class="visually-hidden" for="session-search">
             Search sessions
           </label>
-          <Show
-            when={props.unfolded}
-            fallback={
-              /* Folded: one line. The search waits behind its icon, and opens in the line's place. */
-              <div class="sidebar-toolbar">
-                <Show when={!toolbarOpen()}>
-                  <OverseerButton class="button-ghost" />
-                </Show>
-                {/* Kept while the search is open, out of sight: the field's description, and the live count. */}
-                <SearchCount hidden={toolbarOpen()} />
-                <Show
-                  when={toolbarOpen()}
-                  fallback={
-                    <>
-                      <SelectStart />
-                      <button
-                        ref={searchToggle}
-                        type="button"
-                        class="button button-icon button-ghost"
-                        aria-label="Search sessions"
-                        title="Search sessions · /"
-                        onClick={openSearch}
-                      >
-                        <Icon name="search" />
-                      </button>
-                    </>
-                  }
-                >
-                  <SearchField />
-                  <button type="button" class="button button-icon" aria-label="Close Search" title="Close Search" onClick={closeSearch}>
-                    <Icon name="close" />
+          {/* One toolbar line at every width. At rest: the count, Select, the search icon, and the
+              labelled Overseer at the right end. Open: only the field and Close Search — the count
+              stays in the DOM, visually hidden, as the field's description and the live count. */}
+          <div class="sidebar-toolbar">
+            <SearchCount hidden={toolbarOpen()} />
+            <Show
+              when={toolbarOpen()}
+              fallback={
+                <>
+                  <SelectStart />
+                  <button
+                    ref={searchToggle}
+                    type="button"
+                    class="button button-icon button-ghost"
+                    aria-label="Search sessions"
+                    title="Search sessions · /"
+                    onClick={openSearch}
+                  >
+                    <Icon name="search" small />
                   </button>
-                </Show>
-              </div>
-            }
-          >
-            <div class="sidebar-search-row">
-              {/* Out of the row (and the tab order) while the search is in use: the field takes the width. */}
-              <Show when={!searchFocused() && !query()}>
-                <OverseerButton class="button-ghost" />
-              </Show>
+                  <OverseerButton class="button-ghost" labelled />
+                </>
+              }
+            >
               <SearchField />
-            </div>
-            <div class="spread">
-              <SearchCount hidden={false} />
-              <SelectStart />
-            </div>
-          </Show>
+              <button type="button" class="button button-icon" aria-label="Close Search" title="Close Search" onClick={closeSearch}>
+                <Icon name="close" />
+              </button>
+            </Show>
+          </div>
         </div>
 
         {/* Inside the sidebar, above the list: the rows it acts on stay on screen, on a phone too. */}
@@ -2049,44 +2194,32 @@ export function Sidebar(props: {
                   <span class="sidebar-region-count">
                     · {searching() ? `${sections().length} of ${sessionGroups().length}` : sessionGroups().length}
                   </span>
-                  {/* Making a group is the region's one action, a `+` at the head's right end.
-                      Not while searching: the field it opens is hidden then, and a fruitless search
-                      hides the whole region. Its click and keydown stop here, as the group head's
-                      `⋯` does, so a press is never read as a press on the summary. */}
-                  <Show when={!searching()}>
-                    <button
-                      ref={newGroupToggle}
-                      type="button"
-                      class="button button-icon button-ghost group-new-toggle"
-                      aria-label="New group"
-                      title="New group"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setNewGroupField(true);
-                      }}
-                      onKeyDown={(e) => e.stopPropagation()}
-                    >
-                      <Icon name="plus" small />
-                    </button>
-                  </Show>
+                  {/* The region's one action, at the head's right end: the group picker, which
+                      only opens workspaces. Groups are made where sessions are filed (the drop
+                      overlay, Move into group, the selection toolbar, the Overseer). Its click
+                      and keydown stop here, as the group head's `⋯` does, so a press is never
+                      read as a press on the summary. */}
+                  <button
+                    type="button"
+                    class="button button-icon button-ghost group-picker-open"
+                    aria-haspopup="dialog"
+                    aria-label="Open Groups"
+                    aria-disabled={sessionGroups().length === 0 ? "true" : undefined}
+                    title={sessionGroups().length === 0 ? NO_GROUPS_NOTE : "Open Groups"}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      if (sessionGroups().length === 0) announce(NO_GROUPS_NOTE);
+                      else setPickerOpen(true);
+                    }}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Icon name="external" small />
+                  </button>
                 </h2>
               </summary>
-              {/* The field opens where the region's rows start, forcing the region open while it
-                  shows (lib/group-open), and hands focus back to the `+` when it closes. */}
-              <Show when={!searching() && newGroupField()}>
-                <div class="group-field-row">
-                  <GroupNameField
-                    label="New group name"
-                    onDone={(name) => {
-                      closeNewGroup();
-                      void createGroup(name);
-                    }}
-                    onCancel={closeNewGroup}
-                  />
-                </div>
-              </Show>
               <Show when={!searching() && sessionGroups().length === 0}>
-                <p class="sidebar-region-note">No groups yet. Make one, then drag a session into it.</p>
+                <p class="sidebar-region-note">{NO_GROUPS_NOTE}</p>
               </Show>
               <For each={sections().map((s) => s.group)}>
                 {(group) => (
@@ -2297,18 +2430,18 @@ export function Sidebar(props: {
                 </span>
                 <NameSessionsButton section="a" rows={archiveHits()} onDone={props.onRefresh} />
               </summary>
-              <For each={archiveSections()}>
+              <ForKey each={archiveSections()} by={(d) => d.id}>
                 {(d) => (
-                  <details class="archive-date" open={dateOpen(d)} onToggle={(e) => onDateToggle(d, e)}>
+                  <details class="archive-date" open={dateOpen(d())} onToggle={(e) => onDateToggle(d(), e)}>
                     <summary class="list-group-label archive-date-label">
                       <Icon name="chevron-right" small class="icon-twist" />
-                      <span class="archive-date-name">{d.label}</span>
-                      <span class="text-num">{d.items.length}</span>
+                      <span class="archive-date-name">{d().label}</span>
+                      <span class="text-num">{d().items.length}</span>
                     </summary>
-                    <GroupList groups={d.groups} selected={props.selected} now={props.now} idPrefix={`a-${d.id}`} targets={targets()} searching={searching()} />
+                    <GroupList groups={d().groups} selected={props.selected} now={props.now} idPrefix={`a-${d().id}`} targets={targets()} searching={searching()} />
                   </details>
                 )}
-              </For>
+              </ForKey>
               {/* Cleanup ignores the search, so it's hidden while one filters the list. */}
               <Show when={!query().trim()}>
                 <ArchiveCleanup sessions={ordinary()} selected={props.selected} onDeleted={() => props.onRefresh()} />
@@ -2319,59 +2452,18 @@ export function Sidebar(props: {
         </nav>
         {/* Portalled: the full-screen overlay a dragged row opens, and its New group dialog. */}
         <DropOverlay groups={sessionGroups()} counts={groupCounts()} onDrop={onOverlayDrop} onCreate={(d, name) => void createAndMove(d, name)} />
+        {/* Portalled too: Open Groups' picker, the same shell with only the group tiles. */}
+        <Show when={pickerOpen()}>
+          <GroupPicker groups={sessionGroups()} counts={groupCounts()} onClose={() => setPickerOpen(false)} />
+        </Show>
 
-        <div class="sidebar-foot">
-          {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}
-          <Show when={hostFilterShown()}>
-            <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
-          </Show>
-          {/* The monitor button takes the gear's exact markup, so the two stack in one column. */}
-          <div class="sidebar-foot-row">
-            <a
-              class="list-row list-row-interactive insights-row sidebar-foot-link"
-              href={usageHref()}
-              aria-current={props.insightsPage === "usage" ? "page" : undefined}
-              title={glanceText() || undefined}
-              aria-label={glanceText() || undefined}
-            >
-              <Icon name="gauge" />
-              <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
-                <UsageGlance parts={glance()} />
-              </span>
-            </a>
-            <button type="button" class="button button-icon sidebar-settings" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
-              <Icon name="activity" small />
-            </button>
+        {/* Unfolded: the foot's rows, always on screen. Folded: one 44px bar that opens them as a
+            bottom sheet, verbatim (§app.insights/sidebar-foot-phone). */}
+        <Show when={props.unfolded} fallback={<PhoneFoot />}>
+          <div class="sidebar-foot">
+            <FootRows />
           </div>
-          <div class="sidebar-foot-row">
-            <a
-              class="list-row list-row-interactive insights-row sidebar-foot-link"
-              href={agentsHref()}
-              aria-current={props.insightsPage === "agents" ? "page" : undefined}
-              title={agentsSentence(props.agents)}
-              aria-label={agentsSentence(props.agents)}
-            >
-              <Icon name="worker" />
-              <span class="insights-row-text">
-                <AgentsGlance agents={props.agents} />
-              </span>
-            </a>
-            <button
-              type="button"
-              class="button button-icon sidebar-settings"
-              title="Settings"
-              aria-label="Settings"
-              onClick={() => props.onOpenSettings()}
-            >
-              <Icon name="settings" small />
-            </button>
-          </div>
-          {/* Every public link, and who is looking (§app.session-share/shares-page). */}
-          <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
-            <Icon name="external" />
-            <span class="insights-row-text">Shares</span>
-          </a>
-        </div>
+        </Show>
       </Show>
     </aside>
   );

@@ -77,8 +77,10 @@ The machine can't tell which label is correct.
      project; `--base REV` overrides) while the draft leaves its prose as it was. It warns when a
      line the draft edited cites that §. `drift-base-unknown` (note): an older draft with no base
      commit and no `--base`.
-   - `evidence-not-ancestor` (warn, `evidenceNotAncestor`): an evidence commit that is gone or
-     not an ancestor of `HEAD`, usually a rebase after evidence.
+   - `evidence-not-ancestor` (warn, `evidenceNotAncestor`): an active evidence commit that is gone
+     or not an ancestor of `HEAD`, usually a rebase after evidence. The newest evidence entry
+     for each ID is active. Superseded entries remain in history but no longer raise this warning;
+     an older multi-ID entry remains active for IDs a newer entry has not replaced.
 2. **Implement the change and verify it.** The tool never does this part.
 3. **`evidence`** records, for each changed ID, what was verified and against which
    implementation bytes:
@@ -91,7 +93,9 @@ The machine can't tell which label is correct.
    - **No Git**: `--snapshot`. The exact input bytes are kept under `evidence/objects/`.
    - `--doc-only` is accepted only for `note` and `section` kinds, which carry no implementation.
    - `--verification TEXT` says what was run or checked, and what it showed. `--log FILE` keeps
-     a copy of a log as an object.
+     a copy of a log as an object. Evidence becomes stale if that retained log is missing or its
+     digest differs. Log paths may be outside the project, but every path component is checked
+     for symlinks before the file is opened, and secret/hard-link/size refusals still apply.
    - Evidence binds to the proposed record and to the prose hash. Editing either later makes it
      `stale`, and so does changing an input in the working tree or at the commit.
    - Every `code` path the ID's record maps must exist (`evidence-code-missing`). `--path` adds
@@ -147,16 +151,23 @@ The write works in this order:
 
 1. Under the lock, the plan is recomputed from the current bytes. Every "before" hash is
    rechecked.
-2. The old bytes, the new bytes and a journal are written to `drafts/.txn/`.
+2. The old bytes, the new bytes and a journal are written to `drafts/.txn/`. The targets include
+   both the selected current documentation and the promotion receipt in `draft.json`.
 3. Each target is replaced by an atomic rename, or deleted. Before each step, the tool checks
-   that the target still has its planned "before" bytes.
+   that the target still has its planned "before" bytes. The journal is retired only after the
+   documentation and receipt have both been written and checked.
 
-If any step fails, every applied file is restored and new directories are removed. Afterwards,
-`draft.json` records the promotion (`promotions[]`).
+If a step fails, rollback inspects the actual target hashes, including a replacement that took
+place before its syscall reported failure. Applied targets, the receipt included, are restored
+and new directories are removed. A rollback that cannot safely complete keeps the transaction
+and reports the need for recovery; a failed receipt write is never silently treated as publication
+without a receipt.
 
 If the process dies mid-way, `.txn/` stays, and every write command refuses with
 `pending-transaction`. `recover` shows each target as `untouched`, `applied` or `foreign`.
-`recover --write` rolls every applied file back to its pre-promotion bytes and removes `.txn/`.
+`recover --write` rolls every applied target, including the promotion receipt, back to its
+pre-promotion bytes and removes `.txn/`. Journals from older versions without a receipt target
+remain recoverable.
 If any file matches neither side (`foreign`), recovery touches nothing. Resolve it by hand from
 `.txn/old-*` and `.txn/new-*`.
 
@@ -206,7 +217,12 @@ draft. Keys keep ours' order; the output is 2-space JSON, as promotion writes it
   keep cooperating writers apart. A writer racing between a check and a rename, or a parent
   directory swapped for a symlink, isn't fully prevented with portable fs calls. The Git calls
   are read-only plumbing (`rev-parse`, `cat-file`, `merge-base`). They run without a shell, with
-  `core.fsmonitor=false` and the caller's `GIT_*` environment cleared.
+  `core.fsmonitor=false` and the caller's `GIT_*` environment cleared. Before working-tree diffs,
+  the tool inspects filter configuration and attributes without running filters. A configured
+  executable clean/process filter selected for an inspected path is explicitly refused; an unused
+  configured driver does not prevent inspection. Ambiguous boolean attributes with executable
+  drivers named `set`/`unset` are conservatively refused too (see `core/README.md`, Safe inspection).
+  No refusal includes the configured command text.
 - **Limits on what it reads.** Symlinks, hard-linked files and files over 2 MiB are refused, both
   in the spec trees and as evidence inputs. A spec tree (current, base or draft: the manifest plus
   the whole claims tree) over 64 MiB in total is refused (`oversize`). The 2 MiB limit applies per

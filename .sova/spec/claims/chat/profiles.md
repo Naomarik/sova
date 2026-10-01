@@ -110,7 +110,8 @@ TUI-live sessions show no picker.
 ## §chat.profiles/session-tools — The session powers
 
 With **Read other sessions**: `session_list`, `session_detail`, `session_read`. With **Message other
-sessions**: `session_send` too.
+sessions**: `session_send` too, and `queue_open`, which opens a topic other sessions answer on
+(§chat.topics/open).
 
 - **Which sessions it sees.** Without See all Sova sessions: sessions on this host in its project
   (§chat.profiles/projects): the main checkout, its worktrees and their subfolders, or, outside git,

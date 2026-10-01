@@ -37,7 +37,9 @@ import { mountOutreach } from "./outreach/routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
 import { pruneVisitorLogs } from "./visitor-identity";
-import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
+import { acquireChat, disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, onReceiverIdle, warmClaudeCodeProvider } from "./chat-manager";
+import { receiverSpecial, startTopicDelivery } from "./topic-delivery";
+import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
@@ -137,6 +139,7 @@ import { readLiveRecords } from "./live";
 import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
+import { authGate, SERVER_HEADER, serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken, unlock, pair, revealToken } from "./auth";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
 // Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
@@ -163,6 +166,22 @@ process.on("unhandledRejection", (err) => console.error("[unhandledRejection]", 
 
 const app = new Hono();
 
+// The gate (server/auth.ts, §app.access/gate), first so it stands before everything, and the
+// X-Sova-Server mark on every answer (a refusal and the static shell included), which the preview
+// proxy refuses to pass on. In-process calls and the peer listener are never asked.
+app.use("*", async (c, next) => {
+  const refused = authGate(c);
+  if (refused) return refused;
+  await next();
+  try {
+    c.res.headers.set(SERVER_HEADER, "sova");
+  } catch {
+    // a proxied answer's headers are immutable: copy it
+    c.res = new Response(c.res.body, c.res);
+    c.res.headers.set(SERVER_HEADER, "sova");
+  }
+});
+
 // gzip/deflate for the JSON API (a transcript is MBs), when the client asks for it. Registered
 // first so it wraps every /api route. hono/compress skips what must pass as is: responses that
 // already carry a Content-Encoding, 206s, HEAD, Cache-Control: no-transform, and types it doesn't
@@ -182,6 +201,13 @@ app.onError((err, c) => {
 
 // What this process runs (§chat.profiles/live-commit): its start and its checkout's commit then.
 app.get("/api/health", (c) => c.json({ ok: true, startedAt: SERVER_STARTED_AT, head: SERVER_HEAD }));
+// A browser's way in (§app.access/unlock): the token it was given sets the install's cookie.
+app.post("/api/auth/unlock", bodyLimit({ maxSize: 4096 }), unlock);
+// Both routes stay behind the gate, and refuse peer-listener and relayed calls as well.
+app.post("/api/auth/pair", pair);
+app.get("/api/auth/token", revealToken);
+// Gated like everything else: 200 means this browser's cookie is good, a 401 that it is locked.
+app.get("/api/auth/status", (c) => c.json({ ok: true }));
 // The folder this server lists sessions from (its agent dir's), which the empty list names.
 app.get("/api/sessions/dir", (c) => c.json({ sessionsDir: SESSIONS_DIR, home: homedir() } satisfies SessionsDirInfo));
 
@@ -1332,6 +1358,19 @@ const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(
 setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
+// Topic queues (§chat.topics/delivery): batches to a topic's receiver when it is idle or settles.
+// An org's ordinary sessions (a project's coding sessions, unregistered workspace files) get their
+// batches; only what the runtime opens as special, and workers, are refused (receiverSpecial).
+startTopicDelivery({
+  async summary(path) {
+    const s = await getSessionSummary(path);
+    if (!s) return null;
+    return { archived: s.archived, live: s.live, special: receiverSpecial(s, projectOverseerOfPath(path)) };
+  },
+  acquire: (path) => acquireChat(path),
+  onIdle: onReceiverIdle,
+  onArchived: onSessionArchived,
+});
 // Public links (shared/public-links.ts): Settings → Public links under /api/public-links (main
 // listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
 mountPublicLinks(app);
@@ -1431,11 +1470,24 @@ const linkOrigin = (port: number) => `http://${HOST === "0.0.0.0" || HOST === ":
 // Known before listen when the port is fixed, so no runtime opened meanwhile misses the flag.
 if (PORT) setLinkOrigin(linkOrigin(PORT));
 
+// Initialize before the first request: mint if missing; a damaged file is logged once and leaves
+// the shell reachable, with token checks refused until the file is deleted and we restart.
+initAuthToken();
+if (process.env.SOVA_AUTH === "off")
+  console.warn(serverAuthEnabled() ? `[auth] SOVA_AUTH=off ignored: ${HOST} is not a loopback bind` : "[auth] SOVA_AUTH=off: the token is not asked for");
+// What the gate knows from the mesh (server/auth.ts): this host's MagicDNS name, its front door and
+// serve URL (names it answers to, and pages it is served from), and the peers' serve URLs.
+setAuthHosts(() => {
+  const config = meshApi.config();
+  return { magicDns: meshApi.selfNode().dnsName, own: [config?.self.serveUrl, config?.frontDoor], peers: config?.peers.map((p) => p.serveUrl) ?? [] };
+});
+
 // Every attached org's engine opens before the first request (its pages and share links read it).
 await openAttachedOrgs();
 
 export const server = serve({ fetch: app.fetch, port: PORT, hostname: HOST }, (info) => {
   setSovaPort(info.port);
+  setAuthPort(info.port);
   // The link extension's tools call this server back here: the real bound port (PORT=0 in tests).
   setLinkOrigin(linkOrigin(info.port));
   console.log(`sova server on http://${HOST}:${info.port}`);

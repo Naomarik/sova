@@ -5,6 +5,7 @@ library. There is no install step and no config import, and it never writes a fi
 
 ```sh
 node sova-spec.mjs check                [--root DIR] [--spec DIR] [--json]
+node sova-spec.mjs packet §ns/name      [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] [--budget BYTES] [--root DIR] [--spec DIR] [--read-policy review]
 node sova-spec.mjs scope  §ns/name      [--root DIR] [--spec DIR] [--json] [--budget BYTES]
 node sova-spec.mjs impact §ns/name      [--root DIR] [--spec DIR] [--json]
 node sova-spec.mjs census               [--root DIR] [--spec DIR] [--json]
@@ -30,12 +31,60 @@ parent.
 | 1 | Relevant unknown, stale, unresolved, or unread content: dangling edge, missing `requires`, a code path that is missing, refused (absolute, outside the root, through a symlink), unreadable or not a regular file, provenance moved/changed/missing/refused/unreadable, budget left passages unread (including the requested one), no census boundary, unreadable census directory, a changed file in the boundary that no record claims (`changed-unclaimed`, one per file). |
 | 2 | Output can't be trusted: usage error, unreadable or unsupported manifest, malformed record, bad declaration, a symlink anywhere on the claims path or in the claims tree, an unreadable claims file or directory, an unknown seed, or an internal error. For `census --changed`: no Git work tree, or an enclosing repository that ignores the project (`not-git`), a `--base` that doesn't name a commit (`bad-rev`), or a failed Git command (`git-failed`). Scope and impact return no passages while the graph is malformed. A malformed record never enters the graph. |
 
-`--json` prints one object: `tool: "sova-spec"`, `command`, `spec` (the normalized graph
+For commands other than `packet`, `--json` prints one object: `tool: "sova-spec"`, `command`, `spec` (the normalized graph
 directory), `root`, `exit` (equal to the process status), and `findings[]` (`severity`
 error|warn|note, `code`, `message`, and `id`/`file`/`line` where known). It also holds the
 command's results. A `note` never changes the exit code. Every `file` in the output is relative
 to the project root. New fields are only ever added. Other tools read this output:
 `sova-spec-review.mjs` uses `scope`, and the draft tool uses `check`.
+
+## Bounded task packets
+
+`packet` is the task-reading path; `scope` remains the complete-graph API for deliberate machine
+inspection and review, with its existing prose-only budget unchanged. Packets always print compact
+JSON (also with `--json`), with no stderr side channel or writes. The default whole-response budget
+is 12,000 UTF-8 bytes; explicit integer budgets are 1,024–32,768. The bound includes all metadata,
+cursors and the final newline, even on errors. Invalid-budget errors have their own small bound.
+`packet --help` is bounded JSON too. This is one CLI response's bound: a host may add an exit-status
+footer or result envelope. Keep one packet per tool call rather than concatenating pages into a
+single result that can be clipped again.
+
+The default `--part prose` returns exact scope text, never summaries, in deterministic near-first
+order: requested claim, its parent orientation, then breadth-first declared obligations. Every prose
+item carries its `id`, declared `kind`, and `labels` when present, on partial fragments too. Absent
+labels stay absent; authority and evidence labels are recorded declarations, never a derived verdict.
+Oversized text uses explicit `fragment: {start, end, total, complete}` UTF-8 byte ranges (exclusive end,
+Unicode-scalar-safe). Join contiguous fragments to recover the passage. `complete` means this
+item contains the WHOLE passage (`start == 0 && end == total`); even the final fragment of an
+oversized passage remains false. Finish at `end == total`, not by waiting for `complete: true`.
+
+Each response exposes `items`, `next`, `counts` for all five streams, `remaining` for the selected
+stream (including a partially delivered record), and `status`. Repeat the same ID and part with
+`--cursor` set to the returned `next` until the relevant fragments are finished. Start
+`--part frontier` separately to inspect declared dependency unknowns, and `--part findings` for
+warnings such as missing code that are not frontier entries. `inventory` lists all passage metadata
+and byte sizes; `code` and `findings` page the scope's detailed records. These four detail streams
+return `{index, value}` items, or `{index, json, fragment}` for oversized records; join contiguous
+JSON fragments before parsing them. Counts are record totals, not proof of prior reading. A
+cursor continues only its selected stream; it does not consume the others.
+
+`status: more` means that selected stream has more and supplies `next`; `done` has `next: null`.
+Exit 1 means more OR existing scope warnings/unknowns; exit 0 means selected-stream done without
+scope warnings, never a complete behavioral context or proof that an agent read earlier pages.
+Exit 2 is `status: refused`, including invalid graph, usage/cursor errors and a budget too small
+to make progress. A known missing manifest adds `cause: manifest-not-found` to `graph-untrusted`;
+other graph refusals do not imply a missing spec. Start a draft for that missing-manifest cause,
+but never overwrite orphaned claims: the draft tool still refuses `orphaned-spec`. Pagination is separate from dependency unknowns: the frontier does not
+substitute page omissions for graph findings. Inspect the stated frontier and unread inventory,
+not just the first readable page. This adds no assessment or release gate.
+
+Cursors are stateless navigation tokens, not authenticated identity or reading evidence. They bind
+root, spec, seed, read policy, captured inputs, and the actual ordered/serialized streams. Changed
+raw manifest/claim sources, changed stream records/order, or relevant
+reported provenance/code-readability state invalidate them; restart the stream rather than mixing
+versions. Code-content-only changes need not invalidate a cursor when only code locations and
+readability were reported. A continuation may change the supported budget. No session, cursor
+store or source snapshot is written, and no project code is run.
 
 ## Format read (version 1)
 
@@ -64,6 +113,25 @@ to the project root. New fields are only ever added. Other tools read this outpu
 - A derived `resolution` block is optional and ignored, with a note. Spans are always recomputed
   from headings, so don't author one. The core ignores other unknown fields.
 
+### Safe inspection
+
+Invalid `claimsRoot` configuration is refused before any traversal. Boundary include and exclude
+paths are validated by the shared parser, so full and changed census cannot disagree about an
+escaping or absolute boundary. Mapped code marked `present` must be readable, not only stat-able.
+
+The review companion invokes the additive `--read-policy review` option. It applies the companion's
+secret-name, hard-link, and per-file size refusals before the core opens claim or incumbent contents.
+The default core provenance policy is unchanged; callers requiring review-grade refusal must opt in.
+This is a cooperative read policy, not protection against a hostile filesystem writer.
+
+Before a working-tree diff, Git configuration and attributes are inspected without running filters.
+Selected executable clean/process filters are unsupported and explicitly refused before the diff;
+ordinary unused driver configuration does not block inspection. Git's attribute output represents
+boolean filter attributes and literal driver names `set`/`unset` identically; if an executable
+driver has that ambiguous name, the matching result is conservatively refused. Absent filter
+attributes do not select a driver named `unspecified`. Filter command values are never included
+in refusal output. Git still runs with fsmonitor disabled and without a local shell.
+
 ### Records
 
 - `kind` is one of:
@@ -89,6 +157,7 @@ to the project root. New fields are only ever added. Other tools read this outpu
 
 ## What each command returns
 
+- **packet**: bounded exact task context and separately paged inventories; see above.
 - **scope**: actual claim prose, never a summary. The requested passage always comes first.
   - A surface expands its sorted H2 children.
   - A child brings its parent lede as `orientation`, but not its siblings. For a requested child,
@@ -188,9 +257,13 @@ to the project root. New fields are only ever added. Other tools read this outpu
   `conflict` without the draft ever promoting them, in each worktree whose HEAD the range brings in:
   an ancestor of head and not of base, never the default branch's own checkout; with no `--head`, the
   root's drafts; and each `--drafts DIR` project root; read with `sova-spec-draft.mjs status`, at most
-  20 drafts); `handResolved: [{commit, ids}]` (when head is a merge commit, ids whose text or record
+  20 drafts). Corrupt, unreadable, or capped draft inventories carry `draftScan` (`complete`,
+  `scanned`, `capped`, `unread`); a landing also carries top-level `complete` and `incomplete`
+  reason codes. An incomplete scan is not evidence that no pending draft exists. Changed census
+  carries its evidence inventory state as `census.draftScan`.
+  `handResolved: [{commit, ids}]` (when head is a merge commit, ids whose text or record
   differs from every parent's: a hand resolution, see `git show --cc`). None of them changes the exit.
-- **§a.b ids.** `scope` and `impact` read `§a.b` (not a § identifier) as `§a/b`, with an `id-alias`
+- **§a.b ids.** `packet`, `scope` and `impact` read `§a.b` (not a § identifier) as `§a/b`, with an `id-alias`
   note; an unknown result is `unknown-id` as usual.
 
 ## Evidence
@@ -224,5 +297,6 @@ themselves:
 Neither tool adopts a claim or decides that code implements prose. The `spec` minor mode
 (`../../mode/minor.ts`) tells the agent when to run them. The three tools are shipped together:
 the other two find this core as the sibling `sova-spec.mjs`.
+Ship all `core/*.mjs`, including `packet.mjs`; copying only the three entrypoints is insufficient.
 
 Tests: `node --test ../tests/*.test.mjs`

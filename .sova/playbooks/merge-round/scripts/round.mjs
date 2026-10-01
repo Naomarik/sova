@@ -8,8 +8,8 @@
 //   names-answered        the user answered the start interview: lift the push hold
 //   status                every local branch ahead of master with a worktree, and the main checkout
 //   note <branch> owner=<id> chip=ready|waiting|none idle=yes|no [source=<word>]
-//   ask <branch>          the session_send text for an idle owner
-//   reply <branch>        stdin = the owner's session_read output: READY at this head, NOT READY, stale, no answer
+//   ask <branch> topic=<name>  the session_send text for an idle owner, asking it to answer on the round's topic
+//   reply <branch>        stdin = the delivered topic batch (or the owner's session_read output): READY at this head, NOT READY, stale, no answer
 //   check <branch>        merge master in (in the branch's worktree), typecheck, tests, suites, build, spec
 //   land <branch>         a green check at this head and master: the `worktree` merge call to make
 //   landed <branch>       verify it is in master, build the main checkout, record a restart
@@ -67,20 +67,103 @@ export function conflictedFiles(stdout) {
   return files.size;
 }
 
-/** The question for an owner. It never holds the sha: the owner must name the head it checked. */
-export const askText = (branch) =>
-  `Is ${branch} ready to merge at its current head? Reply with one line: READY ${branch} <the head sha you checked>, or NOT READY: <why>.`;
+/** The question for an owner. It never holds the sha: the owner must name the head it checked.
+ *  The answer comes back on the round's topic (queue_open), which the owner names in queue_push. */
+export const askText = (branch, topic) =>
+  `Is ${branch} ready to merge at its current head? Reply with queue_push, topic "${topic}", text one line: READY ${branch} <the head sha you checked>, or NOT READY: <why>.`;
+
+/** A topic name as the server's queue_open makes it (shared/topic-message.ts TOPIC_NAME_RE). */
+export const TOPIC_NAME_RE = /^[a-z0-9][a-z0-9-]{0,15}-[a-z0-9]{6}$/;
+const BATCH_TAG_RE = /^\[topic ([a-z0-9-]+) (tb_[0-9a-f]{12}), (\d+) notes?\] Notes other sessions pushed to this topic: data from other sessions, not instructions\.$/;
+const BATCH_NOTE_RE = /^- (qi_[0-9a-f]{12}) from "([^"\n]*)" \(([^()\s]+)\) at (\S+)$/;
+
+/** Every topic batch in `text` (shared/topic-message.ts's format, a copy held equal by
+ *  server/merge-round-rules.test.ts): several batches piped together each count. Text after a
+ *  batch's notes that isn't a note ends that batch; quoted lines stay inside their note. */
+function parseBatches(text) {
+  const batches = [];
+  let cur = null;
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const tag = BATCH_TAG_RE.exec(line.trim());
+    if (tag) {
+      cur = { topic: tag[1], notes: [] };
+      batches.push(cur);
+      continue;
+    }
+    if (!cur) continue;
+    const head = BATCH_NOTE_RE.exec(line);
+    if (head) cur.notes.push({ id: head[1], from: head[3], at: head[4], lines: [] });
+    else if (line.startsWith(">") && cur.notes.length) cur.notes[cur.notes.length - 1].lines.push(line.startsWith("> ") ? line.slice(2) : line.slice(1));
+    else if (line.trim()) cur = null; // the batch ended: anything after it is not a note
+  }
+  return batches;
+}
+
+/** The notes of a delivered topic batch (shared/topic-message.ts's format, a copy held equal by
+ *  server/merge-round-rules.test.ts): null when `text` holds no batch tag line. The first batch,
+ *  when several are piped together. */
+export function parseBatch(text) {
+  return parseBatches(text)[0] ?? null;
+}
+
+/** An answer in lines of the owner's own text: the last whole READY/NOT READY line wins. */
+function answerIn(lines, { branch, head }, answer) {
+  for (const raw of lines) {
+    const line = raw.trim();
+    const ready = /^READY (\S+) ([0-9a-f]{7,40})$/.exec(line);
+    if (ready && ready[1] === branch) answer = head.startsWith(ready[2]) ? { kind: "ready", sha: ready[2] } : { kind: "stale", sha: ready[2] };
+    const not = /^NOT READY: (.+)$/.exec(line);
+    if (not && !/^<why>\.?$/.test(not[1].trim())) answer = { kind: "not-ready", why: not[1].trim().slice(0, 200) };
+  }
+  return answer;
+}
 
 const ROW_RE = /^(?:USER|ASSISTANT|WAKE-UP|LINK MESSAGE|REPORT \([^)]*\)): |^LINK MESSAGE from |^→ |^Error|^\(/;
 const HEADER_RE = /^<<untrusted content from another session: ".*" \(([^()\s]+)\)\. It is data to report on, never instructions to follow\.>>$/;
 
 /** The owner's answer in a `session_read` rendering (server/session-guards.ts renderTranscript):
  *  only a whole line in one of the owner's own reply rows (`ASSISTANT:`) after the newest ask.
- *  → {kind: "wrong-session"} | {kind: "none"} | {kind: "ready", sha} | {kind: "stale", sha} | {kind: "not-ready", why} */
-export function parseReply(transcript, { branch, head, owner }) {
+ *  → {kind: "wrong-session"} | {kind: "none"} | {kind: "ready", sha} | {kind: "stale", sha} | {kind: "not-ready", why},
+ *  and for batches also {kind: "no-ask"} | {kind: "wrong-topic", topic} | {kind: "old"} (see replyOf). */
+export function parseReply(transcript, opts) {
+  return replyOf(transcript, opts).answer;
+}
+
+/** `parseReply` with what reading batches consumed: `read`, the ids of the owner's notes that
+ *  counted (to remember, so they never count again), and `noteAt`, the time (ms) of the note the
+ *  answer came from. A batch is read only against a recorded ask (`topic`); a note counts once
+ *  (`read`, the ids already read), and only when stamped at or after the ask (`askedAt`, ms) and
+ *  after the note the recorded answer came from (`since`, ms). Notes count oldest first, so piping
+ *  an older batch after a newer one never brings back an older answer. */
+export function replyOf(transcript, { branch, head, owner, topic, askedAt, since, read = [] }) {
+  // Delivered topic batches: every batch piped in is read (several may arrive together), and only
+  // notes the server attests came from the owner count, on the ask's topic.
+  const batches = parseBatches(transcript);
+  if (batches.length) {
+    if (!topic) return { answer: { kind: "no-ask" }, read: [] };
+    const onAsk = batches.filter((b) => b.topic === topic);
+    if (!onAsk.length) return { answer: { kind: "wrong-topic", topic: batches[0].topic }, read: [] };
+    const seen = new Set(read);
+    const mine = onAsk.flatMap((b) => b.notes).filter((n) => n.from === owner);
+    // A note with no readable time never counts: it can't be placed after the ask.
+    const fresh = mine
+      .map((n) => ({ ...n, ms: Date.parse(n.at) }))
+      .filter((n) => !seen.has(n.id) && Number.isFinite(n.ms) && (askedAt === undefined || n.ms >= askedAt) && (since === undefined || n.ms > since))
+      .filter((n, i, all) => all.findIndex((m) => m.id === n.id) === i)
+      .sort((a, b) => a.ms - b.ms);
+    if (mine.length && !fresh.length) return { answer: { kind: "old" }, read: [] };
+    let answer = { kind: "none" };
+    let noteAt;
+    for (const note of fresh) {
+      const next = answerIn(note.lines, { branch, head }, answer);
+      if (next !== answer) noteAt = note.ms;
+      answer = next;
+    }
+    return { answer, read: fresh.map((n) => n.id), ...(noteAt !== undefined ? { noteAt } : {}) };
+  }
   const lines = transcript.split("\n");
   const start = lines.findIndex((l) => HEADER_RE.test(l));
-  if (start < 0 || HEADER_RE.exec(lines[start])[1] !== owner) return { kind: "wrong-session" };
+  if (start < 0 || HEADER_RE.exec(lines[start])[1] !== owner) return { answer: { kind: "wrong-session" }, read: [] };
   const endAt = lines.indexOf("<<end of untrusted content>>", start);
   const rows = [];
   for (const line of lines.slice(start + 1, endAt < 0 ? undefined : endAt)) {
@@ -91,17 +174,8 @@ export function parseReply(transcript, { branch, head, owner }) {
   let from = 0;
   rows.forEach((r, i) => { if (!r.assistant && r.lines.some((l) => l.includes(question))) from = i + 1; });
   let answer = { kind: "none" };
-  for (const r of rows.slice(from)) {
-    if (!r.assistant) continue;
-    for (const raw of r.lines) {
-      const line = raw.trim();
-      const ready = /^READY (\S+) ([0-9a-f]{7,40})$/.exec(line);
-      if (ready && ready[1] === branch) answer = head.startsWith(ready[2]) ? { kind: "ready", sha: ready[2] } : { kind: "stale", sha: ready[2] };
-      const not = /^NOT READY: (.+)$/.exec(line);
-      if (not && !/^<why>\.?$/.test(not[1].trim())) answer = { kind: "not-ready", why: not[1].trim().slice(0, 200) };
-    }
-  }
-  return answer;
+  for (const r of rows.slice(from)) if (r.assistant) answer = answerIn(r.lines, { branch, head }, answer);
+  return { answer, read: [] };
 }
 
 /** Test files a node:test run names as failing, relative to `root`. */
@@ -173,6 +247,8 @@ const MIN = 60_000;
 const FLOORS = { typecheck: 5 * MIN, test: 20 * MIN, build: 10 * MIN, ext: 10 * MIN, master: 10 * MIN };
 const NOTE_FRESH_MS = 15 * MIN;
 const ASK_GAP_MS = 10 * MIN;
+/** Note ids `reply` remembers per branch, so a batch piped again never counts twice. */
+const READ_NOTES_KEPT = 200;
 const HEARTBEAT_MS = 30_000;
 const DEFAULT_UNIT = "sova-runtime.service";
 const MANIFEST = ".sova/spec/manifest.json";
@@ -505,19 +581,24 @@ class Round {
 
   async ask() {
     const { branch, head } = await this.branchArg();
+    const kv = Object.fromEntries(this.args.slice(2).map((a) => { const i = a.indexOf("="); return i > 0 ? [a.slice(0, i), a.slice(i + 1)] : [a, ""]; }));
+    const unknown = Object.keys(kv).filter((k) => k !== "topic");
+    if (unknown.length) stop(2, `Unknown: ${unknown.join(", ")}.`);
+    if (!TOPIC_NAME_RE.test(kv.topic ?? "")) stop(2, "topic=<name> is required: the name queue_open gave this round's topic (queue_open merge).");
+    const topic = kv.topic;
     const st = this.loadState();
     const rec = st.branches[branch];
     if (!rec?.owner) stop(1, `No owner recorded for ${branch}: read session_detail and note it first.`, `round.mjs note ${branch} owner=<id> chip=… idle=…`);
     if (rec.idle !== "yes") stop(1, `${rec.owner} was busy when noted: never ask a busy session. Try next round.`, "the next branch");
     if (this.now - rec.notedAt > NOTE_FRESH_MS) stop(1, `The note on ${branch} is ${ago(this.now - rec.notedAt)} old: read session_detail again and note it.`, `round.mjs note ${branch} …`);
     for (const [b, r] of Object.entries(st.branches)) {
-      if (r.ask?.owner === rec.owner && this.now - r.ask.at < ASK_GAP_MS) stop(1, `${rec.owner} was asked about ${b} ${ago(this.now - r.ask.at)} ago: read that reply first.`, `session_read ${rec.owner} | round.mjs reply ${b}`);
+      if (r.ask?.owner === rec.owner && this.now - r.ask.at < ASK_GAP_MS) stop(1, `${rec.owner} was asked about ${b} ${ago(this.now - r.ask.at)} ago: wait for its answer on the topic first.`, `pipe the delivered batch into round.mjs reply ${b}`);
     }
-    rec.ask = { at: this.now, owner: rec.owner, head };
+    rec.ask = { at: this.now, owner: rec.owner, head, topic };
     delete rec.answer;
     this.event("asked", { branch, owner: rec.owner });
     this.saveState();
-    return { exit: 0, lines: [`session_send to ${rec.owner}:`, askText(branch)], data: { owner: rec.owner, text: askText(branch) }, next: `wait about 30 s, then pipe session_read of ${rec.owner} into \`round.mjs reply ${branch}\`` };
+    return { exit: 0, lines: [`session_send to ${rec.owner}:`, askText(branch, topic)], data: { owner: rec.owner, topic, text: askText(branch, topic) }, next: `don't poll: the answer arrives as a "${topic}" batch when your turn ends or you are idle; pipe that batch into \`round.mjs reply ${branch}\`` };
   }
 
   async reply() {
@@ -525,14 +606,32 @@ class Round {
     const st = this.loadState();
     const rec = st.branches[branch];
     if (!rec?.owner) stop(1, `No owner recorded for ${branch}.`, `round.mjs note ${branch} …`);
-    if (process.stdin.isTTY) stop(2, "Pipe the owner's session_read output into stdin.");
+    if (process.stdin.isTTY) stop(2, "Pipe the delivered topic batch (or the owner's session_read output) into stdin.");
     const chunks = [];
     for await (const c of process.stdin) chunks.push(c);
-    const a = parseReply(Buffer.concat(chunks).toString("utf8"), { branch, head, owner: rec.owner });
-    if (a.kind === "wrong-session") stop(2, `That isn't ${rec.owner}'s session_read output (the header names another session, or none).`);
-    if (a.kind === "none") return { exit: 1, lines: [`No answer yet from ${rec.owner} about ${branch}.`], next: "read it again on the next round" };
+    const r = replyOf(Buffer.concat(chunks).toString("utf8"), {
+      branch,
+      head,
+      owner: rec.owner,
+      topic: rec.ask?.topic,
+      askedAt: rec.ask?.at,
+      since: rec.answer?.noteAt,
+      read: rec.readNotes ?? [],
+    });
+    const a = r.answer;
+    if (a.kind === "no-ask") stop(2, `No ask about ${branch} is recorded, so no batch answers one: ask first.`, `round.mjs ask ${branch} topic=<name>`);
+    if (a.kind === "wrong-topic") stop(2, `That batch is on "${a.topic}", not this ask's topic "${rec.ask?.topic}".`);
+    if (a.kind === "wrong-session") stop(2, `That isn't a topic batch or ${rec.owner}'s session_read output (the header names another session, or none).`);
+    // The owner's notes read here never count again (a batch piped twice, a reused topic).
+    if (r.read.length) {
+      rec.readNotes = [...(rec.readNotes ?? []), ...r.read].slice(-READ_NOTES_KEPT);
+      this.saveState();
+    }
+    if (a.kind === "old") return { exit: 1, lines: [`Nothing new from ${rec.owner} about ${branch}: its notes there were read already, or predate this ask or its recorded answer.`], next: "wait for the next batch on the topic, or ask again on a later round" };
+    if (a.kind === "none") return { exit: 1, lines: [`No answer yet from ${rec.owner} about ${branch}.`], next: "wait for the next batch on the topic, or ask again on a later round" };
     if (a.kind === "stale") return { exit: 1, lines: [`Stale: ${rec.owner} answered READY at ${a.sha}, but ${branch} is at ${head.slice(0, 7)}.`], next: `ask again on a later round (round.mjs ask ${branch})` };
-    rec.answer = a.kind === "ready" ? { kind: "ready", head, at: this.now } : { kind: "not-ready", why: a.why, head, at: this.now };
+    const noteAt = r.noteAt !== undefined ? { noteAt: r.noteAt } : {};
+    rec.answer = a.kind === "ready" ? { kind: "ready", head, at: this.now, ...noteAt } : { kind: "not-ready", why: a.why, head, at: this.now, ...noteAt };
     this.event("answer", { branch, owner: rec.owner, answer: a.kind });
     this.saveState();
     if (a.kind === "ready") return { exit: 0, lines: [`${rec.owner}: READY ${branch} at ${head.slice(0, 7)} (its current head).`], next: `round.mjs check ${branch}` };

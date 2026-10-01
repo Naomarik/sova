@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 // sova-spec: read-only core for a project's .sova/spec. Node stdlib only; never writes.
-// Commands: check | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] |
+// Commands: check | packet §id | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] |
 //   foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...].
-// Flags: --root DIR, --spec DIR, --json, --budget BYTES.
+// Flags: --root DIR, --spec DIR, --json, --budget BYTES; packet: --part PART, --cursor TOKEN.
 // Exit: 0 usable known closure (never completeness), 1 relevant unknown/stale/unread, 2 untrustworthy.
-import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync } from "node:fs";
+import { readFileSync, readdirSync, lstatSync, existsSync, realpathSync, openSync, closeSync, fstatSync, constants } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { join, resolve, dirname, relative, posix } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PACKET_PARTS, PACKET_HELP, packetBudget, packetError, packetOrder, packetPage, serializePacket } from "./packet.mjs";
 
 const ID_SRC = String.raw`§[a-z][a-z-]*(?:\.[a-z][a-z-]*)?/[a-z][a-z-]*`;
 const ID_RE = new RegExp(`^${ID_SRC}$`);
@@ -25,6 +26,7 @@ const FOREIGN_NOTICE = "foreign lists every § whose prose span or manifest reco
 
 // ---------------------------------------------------------------- findings
 const findings = [];
+let packetInputs = null, packetInvocation = false;
 const add = (severity, code, message, where = {}) => findings.push({ severity, code, message, ...where });
 const exitOf = (fs) => (fs.some((f) => f.severity === "error") ? 2 : fs.some((f) => f.severity === "warn") ? 1 : 0);
 
@@ -38,7 +40,7 @@ function parseArgs(argv) {
     else if (a === "--related") o.related = true;
     else if (a === "--landing") o.landing = true;
     else if (a === "--own-base" || a === "--drafts") { if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; } o[a === "--drafts" ? "drafts" : "ownBase"].push(argv[++i]); }
-    else if (a === "--root" || a === "--spec" || a === "--budget" || a === "--base" || a === "--head") {
+    else if (a === "--root" || a === "--spec" || a === "--budget" || a === "--base" || a === "--head" || a === "--read-policy" || a === "--part" || a === "--cursor") {
       if (i + 1 >= argv.length) { o.usage = `${a} needs a value`; break; }
       o[a.slice(2)] = argv[++i];
     } else if (a === "--help" || a === "-h") o.help = true;
@@ -48,22 +50,29 @@ function parseArgs(argv) {
   if (o.usage || o.help) return o;
   const [cmd, ...rest] = o.pos;
   o.cmd = cmd;
-  const arity = { check: 0, census: 0, scope: 1, impact: 1, foreign: 0 }[cmd];
+  const arity = { check: 0, census: 0, scope: 1, packet: 1, impact: 1, foreign: 0 }[cmd];
   if (arity === undefined) o.usage = cmd ? `unknown command ${cmd}` : "missing command";
   else if (rest.length !== arity) o.usage = `${cmd} takes ${arity ? "one §id" : "no arguments"}`;
   else if (arity && /^§[a-z][a-z-]*\.[a-z][a-z-]*$/.test(rest[0])) { o.alias = rest[0]; o.id = rest[0].replace(".", "/"); } // §app.shell names §app/shell
   else if (arity && !ID_RE.test(rest[0])) o.usage = `not a § identifier: ${rest[0]}`;
   else o.id = rest[0];
+  if (!o.usage && o["read-policy"] !== undefined && o["read-policy"] !== "review") o.usage = "--read-policy accepts review only";
   if (!o.usage && o.spec !== undefined) {
     const s = specDir(o.spec);
     if (s.why) o.usage = `--spec ${JSON.stringify(o.spec)}: ${s.why}`;
     else o.spec = s.rel;
   }
   if (!o.usage && o.budget !== undefined) {
-    if (cmd !== "scope") o.usage = "--budget applies to scope only";
+    if (cmd === "packet") {
+      const budget = packetBudget(o.budget);
+      if (budget === null) o.usage = "packet --budget takes an integer from 1024 to 32768";
+      else o.budget = budget;
+    } else if (cmd !== "scope") o.usage = "--budget applies to scope and packet only";
     else if (!/^\d+$/.test(o.budget) || !Number.isSafeInteger(Number(o.budget))) o.usage = "--budget takes a non-negative integer byte count";
     else o.budget = Number(o.budget);
   }
+  if (!o.usage && (o.part !== undefined || o.cursor !== undefined) && cmd !== "packet") o.usage = "--part and --cursor apply to packet only";
+  if (!o.usage && o.part !== undefined && !PACKET_PARTS.includes(o.part)) o.usage = "unknown packet part";
   if (!o.usage && cmd === "foreign") {
     if (o.base === undefined) o.usage = "foreign needs --base REV";
     else if (o.spec !== undefined && o.head !== undefined) o.usage = "foreign --spec reads a draft in the working tree as the head; it does not combine with --head";
@@ -76,7 +85,7 @@ function parseArgs(argv) {
   if (!o.usage && o.ownBase.length && !(cmd === "foreign" || o.changed)) o.usage = "--own-base applies to foreign and census --changed only";
   return o;
 }
-const USAGE = "usage: sova-spec <check | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
+const USAGE = "usage: sova-spec <check | packet §id [--part prose|inventory|frontier|code|findings] [--cursor TOKEN] | scope §id | impact §id | census [--changed [--base REV] [--related] [--own-base REV]...] | foreign --base REV [--head REV | --spec DIR] [--own-base REV]... [--landing [--drafts DIR]...]> [--root DIR] [--spec DIR] [--json] [--budget BYTES]";
 
 // --spec: a project-relative directory holding manifest.json (default .sova/spec). → {rel} | {why}
 function specDir(raw) {
@@ -118,6 +127,44 @@ function safePath(root, rel) {
   return { state: "present", abs: cur };
 }
 
+// The review companion's refusal policy must hold in this subprocess too, before contents are read.
+const SECRET_DIRS = new Set([".git", ".hg", ".svn", ".ssh", ".gnupg", ".aws", ".azure", ".kube", ".docker"]);
+const SECRET_FILE = /^(?:\.env(?:\..*)?|\.envrc|auth\.json|credentials(?:\.json)?|\.netrc|\.npmrc|\.pypirc|\.pgpass|\.git-credentials|\.htpasswd|id_(?:rsa|dsa|ecdsa|ed25519)(?:\.pub)?|secrets?(?:(?:[.-][a-z0-9_-]+)*\.(?:json|ya?ml|toml|ini|conf|cfg|env|txt|properties|xml|enc|age|asc))?|.*\.(?:pem|key|p12|pfx|jks|keystore|kdbx|gpg))$/i;
+let reviewPolicy = false;
+function reviewRefusal(rel) {
+  if (!reviewPolicy) return null;
+  const segs = toPosix(rel).split("/"), low = toPosix(rel).toLowerCase();
+  if ([`${DEFAULT_SPEC}/reviews`, `${DEFAULT_SPEC}/.cache`].some((d) => low === d || low.startsWith(d + "/"))) return "review/cache storage is never its own input";
+  if (segs.some((s) => SECRET_DIRS.has(s.toLowerCase()))) return "secret, config or runtime-state directory";
+  return SECRET_FILE.test(segs.at(-1)) ? "secret or credential file" : null;
+}
+function openInput(root, rel) {
+  const p = safePath(root, rel), why = reviewRefusal(rel);
+  if (why || p.state !== "present") throw Object.assign(new Error(why ?? p.why ?? p.state), { code: why ? "refused" : p.state });
+  if (reviewPolicy) {
+    const st = lstatSync(p.abs);
+    if (st.nlink > 1 || st.size > 2 * 1024 * 1024)
+      throw Object.assign(new Error(st.nlink > 1 ? "hard-linked file" : "oversize"), { code: "refused" });
+  }
+  const fd = openSync(p.abs, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+  try {
+    const st = fstatSync(fd);
+    if (!st.isFile()) throw Object.assign(new Error("not a regular file"), { code: "not-file" });
+    if (reviewPolicy && (st.nlink > 1 || st.size > 2 * 1024 * 1024))
+      throw Object.assign(new Error(st.nlink > 1 ? "hard-linked file" : "oversize"), { code: "refused" });
+    return fd;
+  } catch (e) { closeSync(fd); throw e; }
+}
+function readInput(root, rel) {
+  const fd = openInput(root, rel);
+  try {
+    const b = readFileSync(fd);
+    if (reviewPolicy && b.length > 2 * 1024 * 1024) throw Object.assign(new Error("oversize"), { code: "refused" });
+    if (packetInputs) packetInputs.files.push([rel, sha(b)]);
+    return b.toString("utf8");
+  } finally { closeSync(fd); }
+}
+
 // foldaidev idToFile, with directory-deep kinds as data.
 function idToFile(id, dirKinds) {
   const [ns, name] = id.slice(1).split("/");
@@ -146,7 +193,8 @@ function loadManifest(root, specRel) {
   if (link) { add("error", "symlink-refused", `${link} is a symlink`, { file: link }); return null; }
   const mPath = join(root, specRel, "manifest.json");
   if (!existsSync(mPath)) { add("error", "manifest-not-found", `no ${specRel}/manifest.json under ${root}`); return null; }
-  return parseManifest(readFileSync(mPath, "utf8"), specRel);
+  const text = tryRead(() => readInput(root, `${specRel}/manifest.json`), (e) => add("error", "manifest-unreadable", `manifest.json: ${e}`));
+  return text === null ? null : parseManifest(text, specRel);
 }
 
 // A manifest's text, from a file or a Git object. → ctx without root/claims/decls | null (error added)
@@ -159,15 +207,18 @@ function parseManifest(text, specRel) {
   const v1 = m.formatVersion === 1 || (m.formatVersion === undefined && m.schema === "sova-spec/pilot-manifest" && m.version === 1);
   if (!v1) { add("error", "manifest-version", `unsupported format (formatVersion ${JSON.stringify(m.formatVersion ?? m.version)}); this core reads version 1`); return null; }
   const g = m.grammar ?? {};
+  if (!g || typeof g !== "object" || Array.isArray(g)) { add("error", "grammar-invalid", "grammar must be an object"); return null; }
   if (g.id !== undefined && g.id !== ID_SRC) add("error", "grammar-unsupported", "grammar.id differs from the fixed § grammar; custom grammars are not read");
   if (g.fullToken === false) add("error", "grammar-unsupported", "grammar.fullToken false is not supported");
   const claimsRoot = g.claimsRoot ?? "claims/";
   const dirKinds = g.directoryKinds ?? ["section"];
   const croot = typeof claimsRoot === "string" ? posix.normalize(toPosix(claimsRoot)).replace(/\/$/, "") : "";
-  if (!croot || croot === "." || croot === ".." || croot.startsWith("../") || croot.startsWith("/") || /^[a-zA-Z]:/.test(croot))
-    add("error", "grammar-invalid", "grammar.claimsRoot must be a relative directory inside .sova/spec");
-  if (!Array.isArray(dirKinds) || !dirKinds.every((k) => typeof k === "string" && /^[a-z][a-z-]*$/.test(k)))
-    add("error", "grammar-invalid", "grammar.directoryKinds must be an array of namespace names");
+  if (!croot || claimsRoot.includes("\0") || toPosix(claimsRoot).split("/").includes("..") || croot === "." || croot === ".." || croot.startsWith("../") || croot.startsWith("/") || /^[a-zA-Z]:/.test(croot)) {
+    add("error", "grammar-invalid", "grammar.claimsRoot must be a relative directory inside .sova/spec"); return null;
+  }
+  if (!Array.isArray(dirKinds) || !dirKinds.every((k) => typeof k === "string" && /^[a-z][a-z-]*$/.test(k))) {
+    add("error", "grammar-invalid", "grammar.directoryKinds must be an array of namespace names"); return null;
+  }
   if (m.resolution !== undefined) add("note", "resolution-ignored", "manifest `resolution` is derived data; it is ignored and recomputed from headings");
   if (!m.claims || typeof m.claims !== "object" || Array.isArray(m.claims)) { add("error", "manifest-unreadable", "manifest.claims must be an object"); return null; }
   return { m, specRel, claimsRel: `${specRel}/${croot}`, dirKinds: Array.isArray(dirKinds) ? dirKinds : [] };
@@ -218,10 +269,13 @@ function scanDeclarations(root, ctx) {
   if (!existsSync(croot)) { add("error", "claims-missing", `${ctx.claimsRel} does not exist`); return decls; }
   const files = [];
   const walk = (dir) => {
+    const rel = toPosix(relative(root, dir)), why = reviewRefusal(rel);
+    if (why) { add("error", "claims-unreadable", `${rel}: refused (${why})`, { file: rel }); return; }
     const unreadable = (file) => (e) => add("error", "claims-unreadable", `${file}: ${e}`, { file });
     for (const n of tryRead(() => readdirSync(dir).sort(), unreadable(toPosix(relative(root, dir)))) ?? []) {
       const p = join(dir, n), rel = toPosix(relative(root, p)), st = tryRead(() => lstatSync(p), unreadable(rel));
       if (!st) continue;
+      if (packetInputs) packetInputs.tree.push([rel, st.isSymbolicLink() ? "symlink" : st.isDirectory() ? "directory" : st.isFile() ? "file" : "other"]);
       if (st.isSymbolicLink()) add("error", "symlink-refused", `${rel} is a symlink; claims are never read through links`, { file: rel });
       else if (st.isDirectory()) walk(p);
       else if (st.isFile() && n.endsWith(".md")) files.push(p);
@@ -231,7 +285,7 @@ function scanDeclarations(root, ctx) {
   const bodies = [];
   for (const abs of files) {
     const rel = toPosix(relative(root, abs));
-    const body = tryRead(() => readFileSync(abs, "utf8"), (e) => add("error", "claims-unreadable", `${rel}: ${e}`, { file: rel }));
+    const body = tryRead(() => readInput(root, rel), (e) => add("error", "claims-unreadable", `${rel}: ${e}`, { file: rel }));
     if (body !== null) bodies.push({ rel, inClaims: toPosix(relative(croot, abs)), body });
   }
   return parseDeclarations(ctx, bodies, decls);
@@ -315,8 +369,9 @@ function provenance(ctx, id) {
     const out = { file: e.file, lines: e.lines, ...(e.heading ? { heading: e.heading } : {}), ...(e.object ? { object: e.object } : {}) };
     const p = safePath(ctx.root, e.file);
     if (p.state !== "present") { add("warn", "provenance-stale", `incumbent ${e.file}: ${p.state}${p.why ? ` (${p.why})` : ""}`, { id }); return { ...out, state: p.state }; }
-    const text = tryRead(() => readFileSync(p.abs, "utf8"), (err) => add("warn", "provenance-stale", `incumbent ${e.file}: unreadable (${err})`, { id }));
-    if (text === null) return { ...out, state: "unreadable" };
+    let failure = "unreadable";
+    const text = tryRead(() => readInput(ctx.root, e.file), (err) => { failure = err === "refused" ? "refused" : "unreadable"; add("warn", "provenance-stale", `incumbent ${e.file}: ${failure} (${err})`, { id }); });
+    if (text === null) return { ...out, state: failure };
     const cur = text.split(/\r?\n/);
     const [a, b] = e.lines, n = b - a + 1;
     if (b <= cur.length && sha(cur.slice(a - 1, b).join("\n")) === hash) return { ...out, state: "current-equal" };
@@ -339,6 +394,10 @@ function codeUnion(ctx, ids) {
   for (const id of ids) for (const c of ctx.claims.get(id)?.code ?? []) by.set(c, [...(by.get(c) ?? []), id]);
   return [...by.keys()].sort().map((path) => {
     const p = safePath(ctx.root, path);
+    if (p.state === "present") {
+      try { closeSync(openInput(ctx.root, path)); }
+      catch (e) { p.state = e.code === "refused" ? "refused" : "unreadable"; p.why = e.message; }
+    }
     const claims = by.get(path);
     if (p.state !== "present") add("warn", `code-${p.state}`, `${path}: ${p.state}${p.why ? ` (${p.why})` : ""}`, { id: claims[0] });
     return { path, state: p.state, claims, ...(p.why ? { why: p.why } : {}) };
@@ -490,8 +549,16 @@ function readBoundary(ctx) {
   const bad = !b || !Array.isArray(b.include) || !b.include.every((p) => typeof p === "string") ||
     (b.exclude !== undefined && !(Array.isArray(b.exclude) && b.exclude.every((e) => typeof e?.path === "string")));
   if (bad) { add("error", "boundary-invalid", "boundary needs include: [path] and exclude: [{path, reason}]"); return false; }
+  const paths = [...b.include, ...(b.exclude ?? []).map((e) => e.path)];
+  if (paths.some((p) => !p || p.includes("\0") || toPosix(p).startsWith("/") || /^[a-zA-Z]:/.test(p) || toPosix(p).split("/").includes(".."))) {
+    add("error", "boundary-refused", "boundary paths must stay relative to the project root, without .."); return false;
+  }
   const norm = (p) => posix.normalize(toPosix(p)).replace(/\/$/, "");
   const include = b.include.map(norm), exclude = (b.exclude ?? []).map((e) => ({ path: norm(e.path), reason: e.reason }));
+  for (const inc of include) {
+    const s = safePath(ctx.root, inc);
+    if (s.state === "refused") { add("error", "boundary-refused", `include ${inc}: ${s.why}`); return false; }
+  }
   for (const e of exclude) if (typeof e.reason !== "string" || !e.reason.trim()) add("warn", "boundary-exclude-reason", `exclude ${e.path} states no reason`);
   const under = (p, dir) => dir === "." || p === dir || p.startsWith(dir + "/");
   // No spec graph is ever census population: all of .sova/spec (current, drafts, reviews) and the chosen --spec.
@@ -540,13 +607,40 @@ function census(ctx, changed) {
 }
 
 // ---------------------------------------------------------------- git (read-only plumbing, no shell)
-function git(root, args) {
+function git(root, args, input) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.startsWith("GIT_")));
   const r = spawnSync("git", ["-c", "core.fsmonitor=false", "-C", root, ...args], {
-    shell: false, encoding: "utf8", maxBuffer: 64 * 1024 * 1024, stdio: ["ignore", "pipe", "pipe"],
+    shell: false, encoding: "utf8", input, maxBuffer: 64 * 1024 * 1024, stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
     env: { ...env, GIT_TERMINAL_PROMPT: "0", GIT_OPTIONAL_LOCKS: "0" },
   });
   return r.error ? { status: null, error: r.error.code } : { status: r.status, out: r.stdout, err: String(r.stderr ?? "") };
+}
+// Working-tree diff can invoke clean/process filters even with no-ext-diff/no-textconv.
+// Refuse this executable configuration; this is not a claim that arbitrary Git is nonexecuting.
+function filterFree(root, base) {
+  // Inspect attribute-selected drivers over index + base candidates without comparing working bytes.
+  // Unused configured drivers (for example global LFS) do not limit inspection availability.
+  const cached = git(root, ["ls-files", "--cached", "-z", "--", "."]);
+  const tree = git(root, ["ls-tree", "--name-only", "-r", "-z", base, "--", "."]);
+  if (cached.status !== 0 || tree.status !== 0) { add("error", "git-failed", "cannot enumerate filter candidates"); return false; }
+  const paths = [...new Set([...nulList(cached.out), ...nulList(tree.out)])];
+  if (!paths.length) return true;
+  const attrs = git(root, ["check-attr", "--all", "-z", "--stdin"], paths.join("\0") + "\0");
+  if (attrs.status !== 0) { add("error", "git-failed", "cannot inspect filter attributes"); return false; }
+  const fields = attrs.out.split("\0"), drivers = new Set();
+  if (fields.pop() !== "" || fields.length % 3 !== 0) { add("error", "git-failed", "unexpected Git filter attribute output"); return false; }
+  // --all omits absent/unspecified attributes, unlike a literal driver named unspecified.
+  // Boolean filter/-filter still render like literal set/unset drivers: refuse executable ambiguity.
+  for (let i = 0; i + 2 < fields.length; i += 3) if (fields[i + 1] === "filter") drivers.add(fields[i + 2]);
+  for (const driver of drivers) for (const kind of ["clean", "process"]) {
+    const r = git(root, ["config", "--get", `filter.${driver}.${kind}`]);
+    if (r.status === 1) continue;
+    if (r.status !== 0) { add("error", "git-failed", "cannot inspect selected filter configuration"); return false; }
+    if (r.out.trim()) {
+      add("error", "git-filter-refused", "a tracked path's filter attribute names or is ambiguous with a configured Git clean/process filter; working-tree inspection is unsupported and no diff was run"); return false;
+    }
+  }
+  return true;
 }
 const nulList = (out) => out.split("\0").filter((p) => p && !p.endsWith("/"));
 
@@ -563,6 +657,7 @@ function changedFiles(root, base) {
   const rev = git(root, ["rev-parse", "--verify", "--quiet", "--end-of-options", `${base}^{commit}`]);
   if (rev.status !== 0) { add("error", "bad-rev", `--base ${base} does not name a commit`); return null; }
   const commit = rev.out.trim();
+  if (!filterFree(root, commit)) return null;
   const diff = git(root, ["diff", "--name-only", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--relative", commit, "--", "."]);
   const others = git(root, ["ls-files", "-z", "--others", "--exclude-standard", "--", "."]);
   for (const [r, what] of [[diff, "diff"], [others, "ls-files"]]) if (r.status !== 0) { add("error", "git-failed", `git ${what}: ${r.error ?? r.err.trim()}`); return null; }
@@ -609,32 +704,58 @@ const foreignSummary = (foreign) => foreign.length && add("note", "foreign-summa
 
 // Evidence commits the project's drafts name that HEAD no longer contains: a rebase (or reset) rewrote them.
 // Read-only: each draft.json, then `git merge-base --is-ancestor`. → [{draft, commit, ids}], one note each.
-function orphaned(root) {
-  const dir = join(root, DEFAULT_SPEC, "drafts"), out = [];
+function draftInventory(root, scan, code, limit = Infinity) {
+  const dirRel = `${DEFAULT_SPEC}/drafts`, dir = join(root, dirRel), items = [];
+  const unread = (reason, draft) => {
+    scan.complete = false; scan.unread.push({ ...(draft ? { draft } : {}), worktree: root, reason });
+    add("warn", code, `${draft ? `draft ${draft}` : "draft inventory"} in ${root}: ${reason}`);
+  };
+  if (linkOnPath(root, dirRel)) { unread("symlink on drafts path"); return items; }
   let names;
-  try { names = readdirSync(dir).filter((n) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(n)).sort(); } catch { return out; }
+  try { names = readdirSync(dir).filter((n) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(n)).sort(); }
+  catch (e) { if (e.code !== "ENOENT") unread(`cannot list drafts (${e.code})`); return items; }
   for (const draft of names) {
-    let d;
-    try { if (isLink(join(dir, draft)) || isLink(join(dir, draft, "draft.json"))) continue; d = JSON.parse(readFileSync(join(dir, draft, "draft.json"), "utf8")); } catch { continue; }
-    const by = new Map();
-    for (const e of Array.isArray(d?.evidence) ? d.evidence : [])
-      if (e?.mode === "commit" && /^[0-9a-f]{40,64}$/.test(e.commit ?? "")) by.set(e.commit, [...(by.get(e.commit) ?? []), ...(e.ids ?? []).map((i) => i?.id).filter((x) => typeof x === "string")]);
+    if (scan.scanned >= limit) {
+      scan.complete = false; scan.capped = true;
+      add("note", "landing-drafts-capped", `more than ${limit} drafts; the rest were not read`); break;
+    }
+    scan.scanned++;
+    try {
+      const rel = `${dirRel}/${draft}/draft.json`;
+      const d = JSON.parse(readInput(root, rel));
+      if (!d || typeof d !== "object" || Array.isArray(d) || !Array.isArray(d.evidence) || (d.promotions !== undefined && !Array.isArray(d.promotions)) ||
+          d.evidence.some((e) => !e || typeof e !== "object" || !Array.isArray(e.ids) || e.ids.some((i) => typeof i?.id !== "string")))
+        throw new Error("malformed draft metadata");
+      items.push({ draft, d });
+    } catch (e) { unread(e.message, draft); }
+  }
+  return items;
+}
+const newDraftScan = () => ({ complete: true, scanned: 0, capped: false, unread: [] });
+function orphaned(root) {
+  const out = [], draftScan = newDraftScan();
+  for (const { draft, d } of draftInventory(root, draftScan, "evidence-draft-unread")) {
+    // The latest entry naming each ID is active, even if it is invalid. Never fall back.
+    const active = new Map(), by = new Map();
+    for (const e of d.evidence) for (const i of Array.isArray(e?.ids) ? e.ids : []) if (typeof i?.id === "string") active.set(i.id, e);
+    for (const [id, e] of active)
+      if (e?.mode === "commit" && /^[0-9a-f]{40,64}$/.test(e.commit ?? "")) by.set(e.commit, [...(by.get(e.commit) ?? []), id]);
     for (const [commit, ids] of by) {
       if (git(root, ["merge-base", "--is-ancestor", commit, "HEAD"]).status === 0) continue;
       out.push({ draft, commit, ids: [...new Set(ids)].sort() });
       add("note", "evidence-orphaned", `draft ${draft}'s evidence commit ${commit.slice(0, 12)} (${[...new Set(ids)].sort().join(", ")}) is not in HEAD: a rebase rewrote it; never rebase after evidence (merge master in instead), and re-record evidence on the commit HEAD has`, { file: `${DEFAULT_SPEC}/drafts/${draft}/draft.json` });
     }
   }
-  return out;
+  return { orphanedEvidence: out, draftScan };
 }
 
 function censusChanged(ctx, { base, related, ownBase }, claimed) {
+  const bd = readBoundary(ctx);
+  if (bd === false) return { census: null };
   const ch = changedFiles(ctx.root, base);
   if (!ch) return { census: null };
   const own = ownOf(ctx.root, ownBase);
   if (!own) return { census: null };
-  const bd = readBoundary(ctx);
-  if (bd === false) return { census: null };
   // The spec graph itself is never population, not even as outside.
   const paths = ch.paths.filter((p) => ![DEFAULT_SPEC, ctx.specRel].some((o) => p === o || p.startsWith(o + "/")));
   const files = [], symlinks = [], mappedOutside = [], deleted = [], gone = new Set();
@@ -650,7 +771,7 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
   // A deleted in-boundary file a claim maps lands in that claim; an unclaimed one has nothing to claim.
   const deletedClaimed = deleted.filter((p) => claimed.has(p) && (!bd || bd.inBoundary(p)));
   const head = { mode: "changed", base: { rev: base, commit: ch.commit }, changed: ch.paths.length };
-  const orphanedEvidence = orphaned(ctx.root);
+  const { orphanedEvidence, draftScan } = orphaned(ctx.root);
   // Without a boundary no population is named: claims are still shown, nothing is judged unclaimed.
   const hits = [...files, ...deletedClaimed].sort().filter((p) => claimed.has(p)).map(entry);
   const rel = relatedOf(ctx, [...hits, ...mappedOutside], related, own.is);
@@ -658,7 +779,7 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
   Object.assign(head, { foreignNote: FOREIGN_RULE.replace("any", "any of these"), foreign: rel.foreign, childUnderForeign: rel.childUnderForeign,
     ...(own.bases.length ? { own: own.list([...rel.touchedIds]), ownBases: own.bases } : {}) });
   const touched = related ? { touched: rel.touched } : {};
-  if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, deleted, orphanedEvidence, ...touched } }; }
+  if (!bd) { foreignSummary(rel.foreign); return { census: { ...head, boundary: null, claimed: hits, unclaimed: null, outside: null, deleted, orphanedEvidence, draftScan, ...touched } }; }
   const unclaimed = files.filter((p) => !claimed.has(p));
   for (const p of unclaimed) add("warn", "changed-unclaimed", `${p} changed and no record's code claims it`, { file: p });
   if (symlinks.length) add("note", "census-symlinks", `${symlinks.length} changed symlink(s) inside the boundary were not followed`);
@@ -674,6 +795,7 @@ function censusChanged(ctx, { base, related, ownBase }, claimed) {
       mappedOutside,
       deleted,
       orphanedEvidence,
+      draftScan,
       symlinks,
       ...touched,
     },
@@ -816,6 +938,7 @@ function foreign(root, opt) {
 const MAX_LANDING_DRAFTS = 20;
 const DRAFT_TOOL = join(dirname(fileURLToPath(import.meta.url)), "sova-spec-draft.mjs");
 function landing(root, prefix, { base, head, b, h, changes, created, own, spec, drafts }) {
+  if (!head && !filterFree(root, base)) return {};
   const diff = git(root, ["diff", "--name-status", "-z", "--no-renames", "--no-ext-diff", "--no-textconv", "--relative", base, ...(head ? [head] : []), "--", "."]);
   if (diff.status !== 0) { add("error", "git-failed", `git diff: ${diff.error ?? diff.err.trim()}`); return {}; }
   const status = new Map(), parts = diff.out.split("\0");
@@ -835,7 +958,8 @@ function landing(root, prefix, { base, head, b, h, changes, created, own, spec, 
   const hit = new Map();
   for (const p of paths) for (const id of mapped.get(p) ?? []) if (!listed.has(id) && !own.is(id)) hit.set(id, [...(hit.get(id) ?? []), p]);
   const mappedUntouched = [...hit.keys()].sort().map((id) => ({ id, files: hit.get(id) }));
-  return { unmappedChanged, mappedUntouched, unpromotedDrafts: unpromotedDrafts(root, prefix, base, head, drafts), handResolved: head ? handResolved(root, prefix, head, h) : [] };
+  const scan = unpromotedDrafts(root, prefix, base, head, drafts);
+  return { unmappedChanged, mappedUntouched, ...scan, handResolved: head ? handResolved(root, prefix, head, h) : [] };
 }
 
 // Draft records not yet promoted, in every worktree whose HEAD the range brings in (an ancestor of head, not of base),
@@ -867,25 +991,28 @@ function unpromotedDrafts(root, prefix, base, head, extra = []) {
   }
   if (!head && !pick.length) pick.push(root);
   for (const d of extra) { const a = resolve(d); if (!pick.some((p) => { try { return realpathSync(p) === realpathSync(a); } catch { return false; } })) pick.push(a); }
-  let n = 0;
+  const draftScan = newDraftScan(), start = findings.length;
+  if (list.status !== 0) {
+    draftScan.complete = false; draftScan.unread.push({ worktree: root, reason: "cannot list worktrees" });
+    add("warn", "landing-draft-unread", "cannot list worktrees; draft inventory is incomplete");
+  }
   for (const proot of pick) {
-    const dir = join(proot, DEFAULT_SPEC, "drafts");
-    let names;
-    try { names = readdirSync(dir).filter((x) => /^[a-z0-9][a-z0-9_-]{0,63}$/.test(x)).sort(); } catch { continue; }
-    for (const draft of names) {
-      if (++n > MAX_LANDING_DRAFTS) { add("note", "landing-drafts-capped", `more than ${MAX_LANDING_DRAFTS} drafts; the rest were not read`); return out; }
-      let d;
-      try { if (isLink(join(dir, draft))) continue; d = JSON.parse(readFileSync(join(dir, draft, "draft.json"), "utf8")); } catch { continue; }
+    for (const { draft, d } of draftInventory(proot, draftScan, "landing-draft-unread", MAX_LANDING_DRAFTS)) {
       const promoted = new Set((Array.isArray(d?.promotions) ? d.promotions : []).flatMap((x) => (Array.isArray(x?.ids) ? x.ids : [])));
       const r = spawnSync(process.execPath, [DRAFT_TOOL, "status", draft, "--root", proot, "--json"], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024, timeout: 60_000 });
       let s;
-      try { s = JSON.parse(r.stdout); } catch { add("warn", "landing-draft-unread", `draft ${draft} in ${proot}: status printed no JSON`); continue; }
-      if (!Array.isArray(s?.ids)) { add("warn", "landing-draft-unread", `draft ${draft} in ${proot}: ${s?.findings?.map?.((f) => f.message).join("; ") ?? "no status"}`); continue; }
+      try { s = JSON.parse(r.stdout); } catch { s = null; }
+      if (r.status === 2 || !Array.isArray(s?.ids)) {
+        const reason = s?.findings?.map?.((f) => f.message).join("; ") || "status printed no usable IDs";
+        draftScan.complete = false; draftScan.unread.push({ draft, worktree: proot, reason });
+        add("warn", "landing-draft-unread", `draft ${draft} in ${proot}: ${reason}`); continue;
+      }
       const ids = s.ids.filter((i) => i.current === "pending" || (i.current === "conflict" && !promoted.has(i.id))).map((i) => i.id).sort();
       if (ids.length) out.push({ draft, worktree: proot, ids });
     }
   }
-  return out;
+  return { unpromotedDrafts: out, draftScan, complete: draftScan.complete,
+    incomplete: [...new Set(findings.slice(start).filter((f) => ["landing-draft-unread", "landing-drafts-capped"].includes(f.code)).map((f) => f.code))] };
 }
 
 // The default branch: origin/HEAD, else master, else main (the branch a merge lands on). → name | null
@@ -968,8 +1095,31 @@ function human(out) {
   return L.join("\n") + "\n";
 }
 
+function packetMain(opt) {
+  const budget = packetBudget(opt.budget);
+  const write = (out) => { process.stdout.write(serializePacket(out)); return out.exit; };
+  if (budget === null) return write(packetError("usage"));
+  if (opt.usage) return write(packetError("usage", budget));
+  if (opt.help) return write({ tool: "sova-spec", command: "packet", exit: 0, status: "done", budget, help: PACKET_HELP });
+  opt.spec ??= DEFAULT_SPEC;
+  packetInputs = { files: [], tree: [] };
+  const root = findSpec(opt);
+  if (!root) return write({ ...packetError("graph-untrusted", budget), cause: "manifest-not-found" });
+  const ctx = load(root, opt.spec);
+  if (!ctx || exitOf(findings) === 2 || !ctx.claims.has(opt.id)) return write({ ...packetError("graph-untrusted", budget),
+    ...(findings.some((f) => f.code === "manifest-not-found") ? { cause: "manifest-not-found" } : {}) });
+  if (opt.alias) add("note", "id-alias", `${opt.alias} is not a § identifier; read as ${opt.id} (did you mean ${opt.id}?)`, { id: opt.id });
+  const result = scope(ctx, opt.id);
+  const passages = packetOrder(ctx, opt.id, result.passages, parentOf);
+  return write(packetPage({ identity: { root, spec: opt.spec, id: opt.id, readPolicy: reviewPolicy ? "review" : "default" },
+    inputs: packetInputs, result, findings, passages, part: opt.part, cursor: opt.cursor, budget }));
+}
+
 function main(argv) {
   const opt = parseArgs(argv);
+  packetInvocation = argv[0] === "packet" || opt.pos[0] === "packet";
+  reviewPolicy = opt["read-policy"] === "review";
+  if (packetInvocation) return packetMain(opt);
   let out = { tool: "sova-spec", command: opt.cmd ?? null };
   if (opt.help) { process.stdout.write(USAGE + "\n"); return 0; }
   if (opt.usage) add("error", "usage", `${opt.usage}. ${USAGE}`);
@@ -1005,7 +1155,12 @@ function main(argv) {
 }
 
 try { process.exitCode = main(process.argv.slice(2)); } catch (e) {
-  add("error", "internal-error", String(e?.stack ?? e));
-  process.stdout.write((process.argv.includes("--json") ? JSON.stringify({ tool: "sova-spec", exit: 2, findings }, null, 2) : `error internal-error: ${e?.message ?? e}\nexit 2`) + "\n");
-  process.exitCode = 2;
+  if (packetInvocation) {
+    process.stdout.write(serializePacket(packetError("graph-untrusted")));
+    process.exitCode = 2;
+  } else {
+    add("error", "internal-error", String(e?.stack ?? e));
+    process.stdout.write((process.argv.includes("--json") ? JSON.stringify({ tool: "sova-spec", exit: 2, findings }, null, 2) : `error internal-error: ${e?.message ?? e}\nexit 2`) + "\n");
+    process.exitCode = 2;
+  }
 }

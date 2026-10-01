@@ -547,6 +547,18 @@ html, body { overflow: clip; overscroll-behavior: none; }
 .public-links-routed-row .list-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .public-links-verify { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 
+/* Unlock screen (components/Unlock): the "What are you pasting?" choice is two round radios,
+   drawn like Settings' size choice and Public links' route choice (base.css: the skill's
+   .toggle-radio is not ported); the whole row is the target. */
+.unlock-route { margin: 0; padding: 0; border: 0; min-width: 0; }
+.unlock-route > legend { padding: 0; margin-bottom: var(--space-1); }
+.unlock-choice { justify-content: flex-start; align-items: flex-start; gap: var(--space-3); min-height: var(--tap-min); padding: var(--space-2) 0; }
+.unlock-choice .toggle-box { border-radius: var(--r-full); flex: none; margin-top: 2px; order: -1; }
+.unlock-choice input:checked ~ .toggle-box { box-shadow: inset 0 0 0 3px var(--color-surface); }
+.unlock-choice-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.unlock-choice-name { color: var(--color-ink); }
+.unlock-choice-meta { font-size: var(--fs-caption); color: var(--color-ink-muted); }
+
 /* Session details → Repository (SessionDetails RepositorySection). The changed-path list is
    bounded and scrolls inside itself, so a repository with thousands of changes never stretches
    the panel; each row keeps its path and its line counts on one baseline. */

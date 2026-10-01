@@ -30,7 +30,7 @@ function project(manifest, files = {}) {
 const claim = (rel, text) => [".sova/spec/claims/" + rel, text];
 
 function run(root, ...args) {
-  const r = spawnSync(process.execPath, [CLI, ...args, "--root", root, "--json"], { encoding: "utf8", cwd: root });
+  const r = spawnSync(process.execPath, [CLI, ...args, "--root", root, "--json"], { encoding: "utf8", cwd: root, env: { ...process.env, HOME: root, XDG_CONFIG_HOME: root } });
   let json;
   try { json = JSON.parse(r.stdout); } catch { assert.fail(`non-JSON stdout (status ${r.status}): ${r.stdout}\n${r.stderr}`); }
   assert.equal(r.status, json.exit, "process status equals JSON exit");
@@ -461,9 +461,14 @@ test("unreadable claims directory → JSON exit 2, no crash", { skip: isRoot }, 
   try { assert.equal(run(root, "check").exit, 2); } finally { chmodSync(d, 0o755); }
 });
 test("unreadable code file → JSON result, no crash", { skip: isRoot }, () => {
-  const root = base({}, { "§chat.input/draft": { kind: "behavior", requires: [], incumbent: [{ file: "app.txt", lines: [1, 1], hash: "0".repeat(64) }] } });
+  const root = base({}, { "§chat.input/draft": { kind: "behavior", requires: [], code: ["app.txt"] } });
   chmodSync(join(root, "app.txt"), 0o000);
-  try { assert.ok(run(root, "scope", "§chat.input/draft").exit >= 1); } finally { chmodSync(join(root, "app.txt"), 0o644); }
+  try {
+    const j = run(root, "scope", "§chat.input/draft");
+    assert.equal(j.exit, 1);
+    assert.equal(j.code.find((c) => c.path === "app.txt").state, "unreadable");
+    hasCode(j, "code-unreadable");
+  } finally { chmodSync(join(root, "app.txt"), 0o644); }
 });
 test("unreadable boundary dir in census → JSON, no crash", { skip: isRoot }, () => {
   const root = base({ boundary: { include: ["lib"], exclude: [] } }); write(root, "lib/x/a.js", "");
@@ -483,8 +488,8 @@ for (const inc of ["/", "../", "lib/../.."]) {
   test(`boundary include ${inc} refused, never walked`, () => {
     const j = run(base({ boundary: { include: [inc], exclude: [] } }), "census");
     hasCode(j, "boundary-refused");
-    assert.ok(j.exit >= 1);
-    assert.equal(j.census.files, 0);
+    assert.equal(j.exit, 2);
+    assert.equal(j.census, null);
   });
 }
 
@@ -593,6 +598,7 @@ function withDraft(dir = ".sova/spec/drafts/feat/spec") {
   const root = base();
   write(root, `${dir}/manifest.json`, JSON.stringify(M({ "§core/net": { kind: "surface", authority: "candidate" }, "§core.net/new": { kind: "behavior", requires: [], code: ["app.txt"] } }), null, 2));
   write(root, `${dir}/claims/core/net.md`, "# §core/net\n\nDRAFT network.\n\n## §core.net/new\n\nNew.\n");
+  if (dir === ".sova/spec/drafts/feat/spec") write(root, ".sova/spec/drafts/feat/draft.json", JSON.stringify({ evidence: [], promotions: [] }));
   return root;
 }
 
@@ -810,7 +816,7 @@ test("census --changed: unclaimed tracked and untracked changes → changed-uncl
   assert.deepEqual(j.census.deleted, ["lib/gone.js"]);
   assert.ok(!JSON.stringify(j.census.unclaimed).includes("gone.js") && !JSON.stringify(j.census).includes("debug.log"));
   assert.equal(j.exit, 1);
-  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--root", root], { encoding: "utf8" });
+  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--root", root], { encoding: "utf8", env: { ...process.env, HOME: root, XDG_CONFIG_HOME: root } });
   assert.equal(h.status, 1);
   assert.match(h.stdout, /unclaimed lib\/new\.js/);
 });
@@ -914,14 +920,14 @@ test("census --changed: without --related, no touched list or per-§ notes; the 
   write(root, "lib/claimed.js", "2\n");
   const j = run(root, "census", "--changed");
   assert.equal(j.census.touched, undefined);
-  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign", "boundary", "files", "claimed", "unclaimed", "outside", "mappedOutside", "deleted", "orphanedEvidence", "symlinks"]);
+  assert.deepEqual(Object.keys(j.census), ["mode", "base", "changed", "foreignNote", "foreign", "childUnderForeign", "boundary", "files", "claimed", "unclaimed", "outside", "mappedOutside", "deleted", "orphanedEvidence", "draftScan", "symlinks"]);
   assert.deepEqual(codes(j), ["foreign-summary"]);
 });
 
 test("census --changed --related: human output lists touched § with the files that put them there", () => {
   const root = repo();
   write(root, "lib/claimed.js", "2\n");
-  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8" });
+  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8", env: { ...process.env, HOME: root, XDG_CONFIG_HOME: root } });
   assert.equal(h.status, 0);
   assert.match(h.stdout, /touched §/);
   assert.match(h.stdout, /§chat\.input\/draft \[behavior; foreign\] \.sova\/spec\/claims\/chat\/input\.md:9-11 ← lib\/claimed\.js; requires: none declared; consumers: none declared/);
@@ -1015,7 +1021,7 @@ test("census --related --spec: a missing or broken current manifest leaks no fin
 
 test("census --related --spec: human output marks each touched § created or foreign", () => {
   const root = draftRepo();
-  const h = spawnSync(process.execPath, [CLI, "--spec", ...DRAFT, "census", "--changed", "--related", "--root", root], { encoding: "utf8" });
+  const h = spawnSync(process.execPath, [CLI, "--spec", ...DRAFT, "census", "--changed", "--related", "--root", root], { encoding: "utf8", env: { ...process.env, HOME: root, XDG_CONFIG_HOME: root } });
   assert.equal(h.status, 0);
   assert.match(h.stdout, /  §core\.net\/new \[behavior; created\] /);
   assert.match(h.stdout, /  §core\/net \[surface; candidate\/-; foreign\] /);
@@ -1068,7 +1074,7 @@ test("census --related: without a boundary the summary is still last", () => {
 
 test("census --related: human output starts the related block with the summary", () => {
   const root = draftRepo();
-  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8" });
+  const h = spawnSync(process.execPath, [CLI, "census", "--changed", "--related", "--root", root], { encoding: "utf8", env: { ...process.env, HOME: root, XDG_CONFIG_HOME: root } });
   assert.equal(h.status, 0);
   assert.match(h.stdout, /\nnote foreign-summary: flag any foreign § where [^\n]*: 1 touched \(§chat\.input\/send\)\ntouched § \(read each/);
   assert.match(h.stdout, /  §chat\.input\/send \[behavior; foreign\] /);
@@ -1088,7 +1094,7 @@ test("census --changed without --related: foreignNote before foreign, childUnder
 });
 
 test("census --changed: one stderr line iff something foreign is touched; stdout stays pure JSON", () => {
-  const sh = (root, ...a) => spawnSync(process.execPath, [CLI, ...a, "--root", root, "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const sh = (root, ...a) => spawnSync(process.execPath, [CLI, ...a, "--root", root, "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, HOME: root, XDG_CONFIG_HOME: root } });
   const r = sh(draftRepo(), "census", "--changed");
   assert.equal(r.stderr, "sova-spec: flag any foreign § where a user sees a change, even one your new claim describes, wherever you put it; plumbing (a request, hook, helper or CSS class) never flags, nor a gap it already had, even one you now rely on; the last line names these foreign §, never your new claims: 1 touched (§chat.input/send)\n");
   assert.deepEqual(JSON.parse(r.stdout).census.foreign, ["§chat.input/send"]);

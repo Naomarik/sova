@@ -234,6 +234,13 @@ not in the composer's "N inputs", the Timeline's Inputs Only view or the rewind 
 regenerating a reply to it is refused. The session list never titles a session from one. Its text
 is shown only in the Agents tab (§mesh.links/agents-pane).
 
+**topic.** A batch of notes other sessions pushed to a topic this session opened
+(§chat.topics/delivery): under the hood a real `role:"user"` message tagged `[topic <name> tb_…, n
+notes]` (`shared/topic-message.ts`), classified by that tag on reload and on the live path alike.
+It renders as a compact collapsed card, never "You" (§chat.topics/row). Like a link message, it is
+a turn start but never an input, regenerating a reply to it is refused, and the session list never
+titles a session from one.
+
 **info.** Compaction, labels, branch summaries and other short machine notes. Model changes,
 thinking-level changes and the mode extension's markers are the exception: they render
 **nothing** in the thread — they are settings history, not conversation. That history stays where
@@ -406,7 +413,9 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   steer, so s1 and a2 leave while u1, a1 and the tool call stay; regenerating a1 resolves to u1 and
   takes a1, the tool call, s1 and a2 with it. A reply that answered a scheduled WAKE nudge has no
   message of yours to send again, so Regenerate is off there with that as its reason — permanently,
-  since no amount of waiting turns a nudge into something you sent.
+  since no amount of waiting turns a nudge into something you sent. A reply that answered a topic
+  batch (§chat.topics/row) is the same, with its own reason: "That reply answered notes other
+  sessions pushed to a topic, not a message you sent, so there's nothing to send again."
 - **Both confirm inline, in place.** The first press arms: the strip becomes the sentence plus
   `Rewind Here` / `Regenerate Here` and `Cancel`. Focus follows into the confirm and back to the
   button that armed it on Cancel or Esc. The sentence says what survives as well as what goes:
@@ -612,7 +621,9 @@ runaway reply there is capped: it can't write a line too long to read back or to
 
 A transcript opens on its newest rows, and fetches the older ones only when they're wanted: as
 the reader scrolls toward them, when a jump needs them, or all at once for a browser on this
-machine. Nothing that's held is virtualized.
+machine. It builds about its newest 400 rows into the page on its own; older rows held are
+built only as the reader scrolls up to them or a jump needs them. Nothing that's built is
+virtualized.
 
 - **Newest rows first.** The chat's `hello` and the watch view's snapshot carry only the
   transcript's newest whole entries: at least 60 rows, within about 256 KB, never opening on a
@@ -624,8 +635,10 @@ machine. Nothing that's held is virtualized.
 - **Older rows when wanted.** They come over REST (`GET /api/transcript`, read-only, never a
   runtime or a write), cut from the same rows the socket would have carried, so they fit onto the
   list exactly. Three things fetch them:
-  - **Scrolling up.** Once every row held is built and the view is within 2 viewports of their
-    top, the next rows above are fetched: about 256 KB of whole entries, never opening on a tool
+  - **Scrolling up.** While rows held are not yet built, a view within 2 viewports of the top
+    of the built rows builds the next chunk above them. Once every row held is built and the
+    view is within 2 viewports of their top, the next rows above are fetched: about 256 KB of
+    whole entries, never opening on a tool
     result or inside a baton wrap-up. A list too short to fill that much fetches at once, until
     it's taller or reaches the top. While older rows remain, a line's height is held at the top
     of the transcript, so what appears in it never moves the view. When a fetch (this one, or a
@@ -637,11 +650,14 @@ machine. Nothing that's held is virtualized.
   - **A browser on this machine connecting directly** (the rule of
     §chat.transcript/compressed-transfer; the server says so with the `hello`) fetches all of
     them in the background right after the first paint, in chunks of about 1 MB while the browser
-    is idle, so `Ctrl+F` reaches the whole transcript within a second or two. A phone, or any
-    client reaching the server through a proxy, never does.
+    is idle. They are held as data, built only as above, so a far jump lands without a fetch. A
+    phone, or any client reaching the server through a proxy, never does, and neither does the
+    Overseer (§app.overseer/transcript-window).
 
-  Fetched rows are built above the ones on screen while the browser is idle, a chunk at a time,
-  each chunk sized to stay under a frame; rows landing never build at once. The view doesn't move
+  Rows are built above the ones on screen while the browser is idle, a chunk at a time, each
+  chunk sized to stay under a frame, until about 400 rows are built; past that, a chunk is built
+  only as the view comes near the top of the built rows (above). Rows landing never build at
+  once, and rows appended at the end are built as they come. The view doesn't move
   while they're added, not by a pixel: it keeps its distance from the end, which at the bottom is
   the bottom. Nor does it while a row above it is first drawn at its real height: every row,
   estimated or drawn, is laid out at a whole-pixel height.
@@ -649,10 +665,13 @@ machine. Nothing that's held is virtualized.
   Jump to Latest's "N new". Each fetch names the list's first row and its last entry; if the
   branch has moved under the list since (a rewind in another tab), the view starts again from
   the branch's newest rows, keeping the rows above them that are still their ancestors.
-- **Nothing held is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers
-  and text selection reach every row fetched so far: the whole transcript once a browser on this
-  machine has fetched it all and the fill completes, a few hundred milliseconds for an 800-row
-  session. A row off screen is skipped by layout and paint
+- **Nothing built is virtualized.** A built row stays in the page, so `Ctrl+F`, screen readers
+  and text selection reach every row built so far: the newest 400 or so, and every row the
+  reader has scrolled up to or a jump has built. A row held but not built, or not fetched, is not
+  in the page, so the browser's own find does not reach it; the Timeline, the outline's Jump to
+  Message, Open in Session, the card chip and a card reference still reach every row on the
+  branch, since each jump builds (and if need be fetches) its target first (below). A row off
+  screen is skipped by layout and paint
   (`content-visibility: auto`), at a height estimated from its kind, its text and its images
   until it is first drawn. The estimate counts a card or disclosure at its collapsed height
   (a compaction as its folded disclosure, not its summary). Text is wrapped at the width the

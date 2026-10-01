@@ -1,4 +1,4 @@
-import { createEffect, createSignal, createUniqueId, For, on, onCleanup, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, createUniqueId, For, on, onCleanup, Show } from "solid-js";
 import { ACTION_CONFIRM, ACTION_LABEL, type MessageActionKind } from "../lib/message-actions";
 import { acquireMessageReveal } from "../lib/message-reveal";
 import { confirmActivate } from "../lib/confirm-step";
@@ -71,6 +71,10 @@ export function MessageActions(props: {
   let confirmButton: HTMLButtonElement | undefined;
 
   const item = (kind: MessageActionKind | null) => props.items.find((i) => i.kind === kind);
+  /** The kinds on offer, in order: what the buttons are keyed by. */
+  const kinds = createMemo(() => props.items.map((i) => i.kind), undefined, {
+    equals: (a, b) => a.length === b.length && a.every((k, i) => k === b[i]),
+  });
   const armedItem = () => item(armed());
   const confirmOf = (kind: MessageActionKind) => ACTION_CONFIRM[kind];
 
@@ -160,26 +164,37 @@ export function MessageActions(props: {
       <Show
         when={armedItem()}
         fallback={
-          <For each={props.items}>
-            {(it) => (
-              <button
-                type="button"
-                class="button button-icon button-ghost message-action"
-                aria-label={it.label ?? ACTION_LABEL[it.kind]}
-                title={it.reason ?? it.label ?? ACTION_LABEL[it.kind]}
-                aria-disabled={it.reason ? "true" : undefined}
-                aria-describedby={it.reason ? describe(it.kind) : undefined}
-                data-action={it.kind}
-                onClick={() => press(it)}
-              >
-                <Icon name={it.kind === "copy" && copied() ? "check" : ICON[it.kind]} small />
-                <Show when={it.reason}>
-                  <span class="visually-hidden" id={describe(it.kind)}>
-                    {it.reason}
-                  </span>
-                </Show>
-              </button>
-            )}
+          // Keyed by kind: the owner builds new item objects whenever anything they read changes (a
+          // turn starting, a list read), and a button per object would be rebuilt each time, losing
+          // focus. The button stays; its label and reason follow the item of its kind.
+          <For each={kinds()}>
+            {(kind) => {
+              const it = () => item(kind);
+              const reason = () => it()?.reason ?? null;
+              const label = () => it()?.label ?? ACTION_LABEL[kind];
+              return (
+                <button
+                  type="button"
+                  class="button button-icon button-ghost message-action"
+                  aria-label={label()}
+                  title={reason() ?? label()}
+                  aria-disabled={reason() ? "true" : undefined}
+                  aria-describedby={reason() ? describe(kind) : undefined}
+                  data-action={kind}
+                  onClick={() => {
+                    const current = it();
+                    if (current) press(current);
+                  }}
+                >
+                  <Icon name={kind === "copy" && copied() ? "check" : ICON[kind]} small />
+                  <Show when={reason()}>
+                    <span class="visually-hidden" id={describe(kind)}>
+                      {reason()}
+                    </span>
+                  </Show>
+                </button>
+              );
+            }}
           </For>
         }
       >

@@ -110,8 +110,11 @@ function up() {
 // ---- driving a host ----------------------------------------------------------------------------
 
 const sh = (h, script) => docker("exec", `sovapool-${h}`, "sh", "-c", script);
+/** Each host's own token, minted by its server at first start in its agent dir (§app.access/token). */
+const tokens = {};
+const tokenOf = (h) => (tokens[h] ||= quiet("exec", `sovapool-${h}`, "cat", `${AGENT}/sova/auth-token`));
 async function api(h, method, path, body) {
-  const args = ["exec", `sovapool-${h}`, "curl", "-sS", "-m", "90", "-X", method, "-H", "content-type: application/json", "-w", "\n%{http_code}"];
+  const args = ["exec", `sovapool-${h}`, "curl", "-sS", "-m", "90", "-X", method, "-H", "content-type: application/json", "-H", `x-sova-token: ${tokenOf(h)}`, "-w", "\n%{http_code}"];
   if (body !== undefined) args.push("--data-binary", JSON.stringify(body));
   args.push(`http://127.0.0.1:4800${path}`);
   const out = docker(...args);
@@ -230,7 +233,7 @@ async function main() {
   const p0 = await pool("vps");
   check(p0.logins.every((l) => l.holder.device === "desk"), "vps sees every login held by desk");
   check(hasCreds("desk", alpha.id), "nothing moved or was deleted by forming the pool");
-  if (process.argv.includes("--keep")) return log("paired; desk on http://127.0.0.1:4821");
+  if (process.argv.includes("--keep")) return log(`paired; desk on http://127.0.0.1:4821/#t=${tokenOf("desk")}`);
 
   log(`3. idle return: after ${IDLE_MS / 1000}s unused, desk's held logins become free`);
   await waitFor("all free at desk", async () => (await pool("desk")).logins.every((l) => l.holder.free && l.holder.device === "desk"), IDLE_MS + 60_000);

@@ -1,7 +1,7 @@
 // Tail-first rendering of a long transcript. A session opens on its newest rows: those are built
 // in the same task as the hello, the frame paints, and the older rows are then prepended above
-// them in small chunks while the browser is idle, until every row is in the DOM again (so
-// Ctrl+F, the outline and the input list see the whole transcript once the fill completes).
+// them in small chunks while the browser is idle, until MAX_BUILT_ROWS are built; the rest are
+// built as the reader scrolls up to them or a jump needs them.
 // This file is the arithmetic; Thread.tsx does the mounting and the scroll anchoring.
 
 import { dataUrlSize, type ImageSize, thumbBoxHeight } from "./image-size";
@@ -16,8 +16,17 @@ export const CHUNK_BUDGET_MS = 12;
 export const MIN_CHUNK = 5;
 export const MAX_CHUNK = 200;
 
+/** Rows the idle fill builds on its own. Past this, older rows are built only as the view nears the
+    top of the built rows or a jump needs them: a 5,000-row transcript would otherwise put every
+    row in the page, and every update would pay for all of them. */
+export const MAX_BUILT_ROWS = 400;
+
 /** The first row built with the hello, for a list of `n` rows. */
 export const initialStart = (n: number, tail = TAIL_ROWS): number => Math.max(0, n - tail);
+
+/** Whether the idle fill is done with a list of `n` rows built from `start`: it reached the top,
+    or `cap` rows are built. */
+export const fillStops = (n: number, start: number, cap = MAX_BUILT_ROWS): boolean => start <= 0 || n - start >= cap;
 
 /**
  * The next chunk's size, from how long the last one took: scaled toward the budget, never more

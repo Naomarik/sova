@@ -122,8 +122,11 @@ writer**).
   and trade-offs), then stops and waits for the user's answers. Questions,
   explicit commands, pointed-at one-liners and confirmations are exempt. Text
   in `minor.ts`; see **Alignments**.
-- **spec** — every behavior change is spec'd: the agent scopes it from the
-  project's `.sova/spec/` documentation, writes a claim for behavior no claim
+- **spec** — every behavior change is spec'd: the agent reads bounded exact
+  task packets from the project's `.sova/spec/` documentation, finishes relevant
+  contiguous fragments and inspects the stated frontier; full `scope`/`impact`
+  remain available for deliberate machine inspection and review. A page's success
+  or `done` status is not complete context or proof of reading. It writes a claim for behavior no claim
   covers in a feature draft before coding, claims only the files the task
   changed, checks with `census --changed` before finishing that none of them is
   left unclaimed, and promotes what it verified (or says why it could not).
@@ -148,8 +151,9 @@ writer**).
   that only answered writes none. A request, hook, helper or CSS class is
   plumbing and never flags. No widget, command or entry of its own, but two
   mechanical checks (`spec-guard.ts`, plain node, shared with the Claude Code
-  workers' hooks), silent without a spec, Git or the trusted tools, and in a
-  remote session:
+  workers' hooks). Local coverage needs a spec, Git, and the trusted tools;
+  unavailable or partial inputs are not complete coverage. Reply-format diagnostics
+  may still run without them. The parent checks are disabled in a remote session:
   - **Census on a Git delta.** After any tool call, bash included, each work
     tree the call writes in (the cwd, a command's `cd`/`git -C`/`--root`, an
     edit's file) has its `git status` (paths and mtimes) compared with what the
@@ -164,10 +168,9 @@ writer**).
     "No draft yet" line while there is none. It stays short: each file in
     `New:` names at most 3 §, then `(+N more)`; the `Rule:` and "No draft yet"
     lines print once a session per tree, and each "New claims under a foreign §"
-    pair once (only printed pairs count as said, in the census state; a Claude
-    Code worker keeps one census state, so moving to another tree starts these
-    over, even on returning to a tree already seen); the
-    state still keeps every foreign § seen. Tools that cannot write the repo
+    pair once (only printed pairs count as said). Both pi and Claude Code workers
+    retain a separate census state per tree, including when returning to a tree
+    already seen; the state still keeps every foreign § seen. Tools that cannot write the repo
     (`CENSUS_SKIP_TOOLS`, exact names: read, grep, find, ls, align, the agent
     and team listing tools, agent_wait (it waits on workers and writes nothing
     to the repo), the link inbox tools; never bash) skip the census:
@@ -359,9 +362,13 @@ so a reopened session rebuilds the head it started with and replays its notes
 (`restoreHead` in `state.ts`). A compaction loses the cached prefix anyway: the
 next run rebuilds the head from the modes active then, and notes the compaction
 kept in its recent tail are dropped from requests (`context`) once it has. A
-major-mode switch, a Delegate or spec-writer routing change, and align in
-delegate (whose bridge paragraph follows the active align) still change the
-section; align also changes the tool set (its `align` tool), which breaks the
+major-mode switch, a Delegate routing change, and align in delegate (whose
+bridge paragraph follows the active align) still change the section. Spec-writer
+routing changes the section when spec is in its head; when spec was introduced
+by a note, a new hidden routing note supersedes the earlier writer instead,
+without resending the whole guide. This refresh also runs at a worker-wake turn
+boundary. Clearing the writer tells the session to write its own draft and
+evidence. Align also changes the tool set (its `align` tool), which breaks the
 prefix on every provider and restarts the claude-code CLI regardless.
 
 The prompt is the same whoever started the turn. pi runs `before_agent_start`

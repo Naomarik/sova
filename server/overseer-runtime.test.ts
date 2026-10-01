@@ -120,7 +120,7 @@ const TEST_MODEL = {
 };
 /** What a model call's hook may ask the stub to reply with instead of "ok": a provider error, or
     one tool call (which the SDK then runs as it would a real model's). */
-type StubReply = { error: string } | { toolCall: { name: string; arguments: Record<string, unknown> } };
+type StubReply = { error: string } | { toolCall: { name: string; arguments: Record<string, unknown> } } | { text: string };
 /** Each model call: an optional hook that runs inside the run (so in its async context) and may
     hold the reply back, then a one-line reply (or the hook's StubReply). */
 const modelCalls: Array<() => Promise<void | StubReply> | void | StubReply> = [];
@@ -152,9 +152,10 @@ function fakeRuns(chat: Chat): void {
     const reply = (await modelCalls.shift()?.()) ?? undefined;
     const failed = reply && "error" in reply ? reply : undefined;
     const call = reply && "toolCall" in reply ? reply.toolCall : undefined;
+    const said = reply && "text" in reply ? reply.text : "ok";
     const message = {
       role: "assistant", api: "stub", provider: "stub", model: "stub", timestamp: Date.now(),
-      content: call ? [{ type: "toolCall", id: `tc-${Date.now()}`, name: call.name, arguments: call.arguments }] : [{ type: "text", text: "ok" }],
+      content: call ? [{ type: "toolCall", id: `tc-${Date.now()}`, name: call.name, arguments: call.arguments }] : [{ type: "text", text: said }],
       ...(failed ? { stopReason: "error", errorMessage: failed.error } : call ? { stopReason: "toolUse" } : { stopReason: "stop" }),
       usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
     };
@@ -317,7 +318,7 @@ describe("turns the user did not start are read-only", () => {
     sova_card: { ops: [{ op: "create", title: "Archive these?", options: [{ label: "Yes" }, { label: "No" }] }] },
     sova_navigate: { page: "usage" },
   };
-  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_orgs", "sova_org_person"];
+  const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_alignment", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_orgs", "sova_org_person"];
   /** Reads by their parameters: sova_org_project without op reads (with op it acts, above). */
   const READ_CALLS: [string, Record<string, unknown>][] = [
     ["sova_org_project", { org: "any", project: "any" }],
@@ -998,5 +999,30 @@ describe("a model, thinking level or mode the Overseer sets applies to that sess
     assert.match(said, /model ollama-cloud\/glm-5\.3/);
     assert.equal(pristine(s.path), true);
     assert.deepEqual(bytes(), before);
+  });
+});
+
+describe("the id check after a run (§app.overseer/id-check)", () => {
+  test("a reply linking an id no session has leaves one hidden note, state, that the next run's request carries; known ids leave none", async () => {
+    const chat = await overseerChat();
+    const self = (await overseer.ensureOverseer()).id;
+    const notes = () => chat.session.sessionManager.getBranch().filter((e) => e.type === "custom_message" && (e as { customType?: string }).customType === "overseer-ids");
+    const before = notes().length;
+    modelCalls.push(() => ({ text: `All fine: [me](sova://s/${self}).` }));
+    await userSends(chat, "how am I doing?");
+    assert.equal(notes().length, before, "a known id adds nothing");
+    const typo = `${self.slice(0, 30)}ffffff`;
+    modelCalls.push(() => ({ text: `Look at [it](sova://s/${typo}).` }));
+    await userSends(chat, "what is running?");
+    await until(() => notes().length === before + 1);
+    const note = notes().at(-1) as unknown as { content: string; display: boolean };
+    assert.equal(note.display, false);
+    assert.ok(note.content.includes(`- ${typo} is no session here; nearest: ${self}`), note.content);
+    assert.ok(!chat.session.isStreaming, "the run ended; the note did not start one");
+    // The next run, the user's, still is theirs and its request has the note.
+    const seen = contexts.length;
+    await userSends(chat, "thanks");
+    assert.ok(entered.at(-1)!.attended, "the note never made the user's run read-only");
+    assert.ok(JSON.stringify(contexts.slice(seen)).includes(`${typo} is no session here`));
   });
 });

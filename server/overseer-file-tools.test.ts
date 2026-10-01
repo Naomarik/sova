@@ -32,6 +32,7 @@ const SECRETS: Record<string, string> = {
   "aws": join(home, ".aws", "credentials"),
   "netrc": join(home, ".netrc"),
   "gh hosts": join(home, ".config", "gh", "hosts.yml"),
+  "sova access token": join(agentDir, "sova", "auth-token"),
   ".env": join(project, ".env"),
   ".env.local": join(project, "app", ".env.local"),
   // Copies the fixed paths miss (RETEST3 N6-R1): denied by name wherever they are.

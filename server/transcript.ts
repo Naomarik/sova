@@ -25,6 +25,7 @@ const BATON_ROWS = new Set([
 ]);
 import { stripImageNotes } from "../shared/image-note";
 import { parseLinkMessage } from "../shared/link-message";
+import { parseTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { inlineTmpImages } from "./attachments";
 import { isReport, parseReport, parseTeamMessage, previewLine, TEAM_EVENT_TYPE, teamEventOf } from "./reports";
@@ -168,6 +169,13 @@ function normalizeMessage(entry: Entry, id: string, state?: { model?: string }):
       if (link) {
         const it = item(id, "link", entry, raw);
         it.link = link;
+        return [it];
+      }
+      // Notes other sessions pushed to a topic this session opened (§chat.topics/row): never "You".
+      const topic = parseTopicBatch(raw);
+      if (topic) {
+        const it = item(id, "topic", entry, raw);
+        it.topic = topic;
         return [it];
       }
       const it = item(id, "user", entry, undefined, undefined, contentImages(m.content));

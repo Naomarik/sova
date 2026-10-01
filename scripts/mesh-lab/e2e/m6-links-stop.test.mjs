@@ -7,7 +7,7 @@
 //   LAB_STATE=… scripts/mesh-lab/lab e2e m6-links-stop     (spends two short glm-5.3 turns on b)
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
-import { hostUrl, lab, laptopFetch, requireLab, waitFor } from "./lib.mjs";
+import { hostUrl, lab, labTokenHeaders, laptopFetch, requireLab, waitFor } from "./lib.mjs";
 import { link, MODEL, newSession, send, transcript, unlink } from "./links-lib.mjs";
 
 const wsBase = (n) => hostUrl(n).replace(/^http/, "ws");
@@ -19,7 +19,7 @@ let A, B;
  */
 function chatClient(node, path) {
   const frames = [];
-  const ws = new WebSocket(`${wsBase(node)}/ws/chat?path=${encodeURIComponent(path)}`);
+  const ws = new WebSocket(`${wsBase(node)}/ws/chat?path=${encodeURIComponent(path)}`, { headers: labTokenHeaders() });
   let modelSet;
   const ready = new Promise((res, rej) => {
     modelSet = res;

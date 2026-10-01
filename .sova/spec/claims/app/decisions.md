@@ -183,7 +183,8 @@ appends (one line each).
   the user a question, or for a decision, approval or information it needs before it can go
   on?"), only when all of these hold: the session has **no open alignment question**
   (§chat.alignment/session-mark: those already put it in Needs you); a partner's link message did
-  not open the turn (its question is to the partner); and the reply's end looks like it asks.
+  not open the turn (its question is to the partner), nor a topic batch (§chat.topics/row); and the
+  reply's end looks like it asks.
 - **Looks like it asks** is counted in code on the last 1,000 characters of the reply, after the
   closing spec lines (`Also changes:`, `Deferred:`, `Plumbing:`, `Spec check override:`) are cut:
   a question mark, or a phrase such as "should I", "shall I", "want me to", "do you want", "would

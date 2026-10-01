@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show, type JSX } from "solid-js";
+import { releaseControl } from "../lib/release-control";
 import type { ChatClaudeLogin, ScheduleInfo, SlashCommand, UploadResult } from "../../shared/protocol";
 import { composerLogin } from "../lib/claude-login";
 import { runControls } from "../lib/compact";
@@ -32,6 +33,7 @@ import {
   type RejectedFile,
 } from "../lib/images";
 import { modelProvider, shortModel } from "../lib/format";
+import { fitPlaceholderNow, type FittedPlaceholder } from "../lib/placeholder-fit";
 import { ensureModels, modelList, thinkingLevelsFor } from "../lib/models";
 import {
   clearDraft,
@@ -277,9 +279,15 @@ export function Composer(props: {
     if (stored.text && !touched && !text()) setText(stored.text);
   });
   let disposed = false;
+  /** Listeners Solid can't delegate (paste), added by hand so closing can take them off. */
+  const listening = new AbortController();
   onCleanup(() => {
     disposed = true;
     flushDrafts();
+    // A delegated event can keep this textarea alive after the view closes (lib/release-control):
+    // make it a dead end, so what is kept is the textarea, not the closed session's transcript.
+    listening.abort();
+    releaseControl(input);
   });
 
   const reason = () => props.readOnly ?? props.blocked ?? null;
@@ -291,10 +299,27 @@ export function Composer(props: {
   // Tapped, Enter adds a line and Send sends; the placeholder's key hint shows exactly when
   // Enter sends, so it swaps in place when the mode does.
   const { touch, onPointerDown } = createTouchMode();
-  const placeholder = () =>
-    [props.running ? "Steer the current turn…" : "",
-      !touch() && !props.readOnly ? "Enter sends" : ""]
-      .filter(Boolean).join(" ");
+  /** The placeholder in reading order: the sentence, then the key hint a narrow box can spare. */
+  const placeholderParts = () =>
+    [props.running ? "Steer the current turn…" : "", !touch() && !props.readOnly ? "Enter sends" : ""]
+      .filter(Boolean);
+  /** The fitted placeholder, or null until this box has been measured. */
+  const [fitted, setFitted] = createSignal<FittedPlaceholder | null>(null);
+  /** What the box shows: the whole string while it fits, else the fitted one (§chat.composer/behavior). */
+  const placeholder = () => fitted()?.text ?? placeholderParts().join(" ");
+  /** Measure the strings against this box. The strings changing and the box changing are the two
+      reasons to re-fit; a font arriving changes every width without changing either. */
+  const fit = () => setFitted(fitPlaceholderNow(input, placeholderParts()));
+  createEffect(() => {
+    placeholderParts();
+    fit();
+  });
+  onMount(() => {
+    const observer = new ResizeObserver(() => fit());
+    observer.observe(input);
+    void document.fonts.ready.then(() => fit());
+    onCleanup(() => observer.disconnect());
+  });
   const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
   createEffect(() => props.onDraft?.(text().trim().length > 0 || images().length > 0));
 
@@ -724,6 +749,18 @@ export function Composer(props: {
     ),
   );
   onMount(() => {
+    // Pasted files attach; a paste with text keeps its text, the files are ours either way. By hand,
+    // not `onPaste`: Solid doesn't delegate paste, and closing must be able to take it off.
+    input.addEventListener(
+      "paste",
+      (e) => {
+        const files = [...(e.clipboardData?.files ?? [])];
+        if (files.length === 0) return;
+        if (!e.clipboardData?.getData("text/plain")) e.preventDefault();
+        addFiles(files, true);
+      },
+      { signal: listening.signal },
+    );
     // After the frame, so a closing dialog's focus handling has already run. Not on a touch-only
     // device: focusing the textarea there raises the keyboard over the new session.
     const touchOnly = matchMedia("(hover: none) and (pointer: coarse)").matches;
@@ -1107,6 +1144,7 @@ export function Composer(props: {
             id={paneId("composer-input")}
             rows={1}
             placeholder={placeholder()}
+            data-ph-size={fitted()?.size === "caption" ? "caption" : undefined}
             enterkeyhint={touch() ? "enter" : "send"}
             aria-describedby={paneId("composer-reason")}
             aria-autocomplete={slashOpen() || mentionOpen() ? "list" : undefined}
@@ -1131,17 +1169,12 @@ export function Composer(props: {
               }
             }}
             onPointerDown={onPointerDown}
-            onBlur={() => {
+            // focusout, not blur: a delegated handler is one releaseControl can drop (the textarea
+            // has no children, so the two fire alike).
+            onFocusOut={() => {
               dropButtonSlash(); // closing by blur undoes an untouched button "/" too
               setSlashToken(null);
               setMentionToken(null);
-            }}
-            onPaste={(e) => {
-              const files = [...(e.clipboardData?.files ?? [])];
-              if (files.length === 0) return;
-              // A paste with text keeps its text; the files are ours either way.
-              if (!e.clipboardData?.getData("text/plain")) e.preventDefault();
-              addFiles(files, true);
             }}
             onKeyDown={(e) => {
               // A bare local command runs on the Enter that would send; in touch mode it's a newline.

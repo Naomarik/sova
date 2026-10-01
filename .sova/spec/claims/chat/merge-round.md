@@ -39,12 +39,15 @@ ask, and what to tell the user.
   the branch's head), so before accepting a branch the captain reads the owner's transcript
   (`session_read`) and the git state: commits ahead, a clean tree (the sandbox tests' own output
   apart), no TEMP, WIP, `fixup!`, `squash!` or `amend!` subject, and no open alignment questions.
-- **Asking the owner.** Unsure, and only when the owner session and all its workers are idle, the
-  captain asks it with `session_send` whether the branch is ready at its current head, for a reply of
-  `READY <branch> <sha>` or `NOT READY: <why>`, and reads the reply about 30 seconds later or on a
-  later round, through the driver's `ask` and `reply`. It
-  never asks a busy session. "Waiting for your OK" means ask, never merge. A branch its owner
-  confirms at the head it reports, and that passes every check, merges without asking the user.
+- **Asking the owner.** Every round the captain calls `queue_open` with `merge`, which gives it its
+  own topic, the same one each round while the session lives (§chat.topics/open). Unsure, and only
+  when the owner session and all its workers are idle, the captain asks it with `session_send`
+  whether the branch is ready at its current head, for an answer pushed to that topic with
+  `queue_push`: `READY <branch> <sha>` or `NOT READY: <why>`. It doesn't poll: the answer arrives as
+  a batch when the captain's turn ends or it is idle (§chat.topics/delivery). It asks through the
+  driver's `ask` and pipes that batch into its `reply`. It never asks a busy session. "Waiting for
+  your OK" means ask, never merge. A branch its owner confirms at the head it reports, and that
+  passes every check, merges without asking the user.
 - **Each branch** is merged with master in its worktree, checked (typecheck, tests with timeouts
   near their baseline, each touched pi-config extension's suite, build; a failure that also fails
   on master is named as pre-existing), its drafts promoted, then landed with `worktree merge` and
@@ -90,14 +93,24 @@ shell and under a timeout.
   restart (§chat.worktrees/readiness's rule). A branch with no recorded owner is flagged unowned. It
   also says whether the main checkout is on master, how many files are dirty there, and how far it
   is from origin/master.
-- **`ask <branch>`** refuses an owner not recorded idle, a note older than 15 minutes, and an owner
-  asked in the last 10 minutes. Otherwise it prints the text to `session_send`: `Is <branch> ready
-  to merge at its current head? Reply with one line: READY <branch> <the head sha you checked>, or
-  NOT READY: <why>.`, which never holds the head's sha. **`reply <branch>`** reads the owner's
-  `session_read` output on stdin and refuses another session's transcript. It accepts only a whole
-  line `READY <branch> <sha>` in one of the owner's own reply rows (`ASSISTANT:`), whose sha (7 or
-  more characters) begins the branch's current head, or `NOT READY: <why>`. Any other sha is
-  **stale**; nothing else is an answer, so an echoed ask or a line in another row never counts.
+- **`ask <branch> topic=<name>`** needs the name `queue_open` gave the round's topic (a bare base
+  name is refused), and refuses an owner not recorded idle, a note older than 15 minutes, and an
+  owner asked in the last 10 minutes. Otherwise it records the topic with the ask and prints the text
+  to `session_send`: `Is <branch> ready to merge at its current head? Reply with queue_push, topic
+  "<name>", text one line: READY <branch> <the head sha you checked>, or NOT READY: <why>.`, which
+  never holds the head's sha, and its `next:` line says not to poll. **`reply <branch>`** reads the
+  delivered topic batches on stdin (§chat.topics/delivery) — every batch piped, when several arrive
+  together — or the owner's `session_read` output. A batch is read only against a recorded ask:
+  with none, it is refused. When no piped batch is on the ask's topic the answer is refused as
+  another topic's; in the batches that are, only the notes whose sender is the recorded owner count,
+  as the server framed them, so another session's READY never does. A note counts once and only for
+  the current ask: one stamped before the ask, or before the note the recorded answer came from,
+  doesn't count, and the ids of the notes already read are kept in the state, so a batch piped again
+  (a reused topic, the same head) or an older batch after a newer answer changes nothing. A
+  transcript of another session is refused, and in it only the owner's own reply rows (`ASSISTANT:`)
+  count. Either way it accepts only a whole line `READY <branch> <sha>`, whose sha (7 or more
+  characters) begins the branch's current head, or `NOT READY: <why>`. Any other sha is **stale**;
+  nothing else is an answer, so an echoed ask or a line elsewhere never counts.
 - **`check <branch>`** refuses a branch with no worktree, no commit ahead, uncommitted files or a
   TEMP-style subject. It merges master into the branch in its worktree, never on master. On
   conflicts it stops and leaves them to the captain, except that a conflicting
@@ -127,7 +140,8 @@ shell and under a timeout.
 - **`report`** prints the round report's skeleton from the state.
 
 The two rules it shares with the server, which subjects are temporary and which changed files need a
-restart, are copies, held equal to `server/merge-readiness.ts`'s by a test over an enumerated table.
+restart, are copies, held equal to `server/merge-readiness.ts`'s by a test over an enumerated table;
+so are the topic batch's format and the topic name's rule, held equal to `shared/topic-message.ts`'s.
 
 ## §chat.merge-round/private-names — Finding the private names, and the leak scan
 

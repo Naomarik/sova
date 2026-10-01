@@ -8,6 +8,7 @@ import {
   groupByArchiveDate,
   parseCleanupResult,
   skippedText,
+  startOfDay,
 } from "./archive";
 
 const at = (y: number, m: number, d: number, h = 12, min = 0, s = 0, ms = 0) =>
@@ -131,4 +132,20 @@ test("skippedText lists only the nonzero reasons", () => {
     "3 skipped: 1 open in a TUI, 1 mid-turn, 1 just written",
   );
   assert.equal(skippedText(parseCleanupResult({ skipped: { recent: 2 } })), "2 skipped: 2 just written");
+});
+
+test("startOfDay: every instant of one day maps to one number, and the sections it gives are the clock's own", () => {
+  const morning = new Date(2026, 2, 10, 0, 0, 1).getTime();
+  const night = new Date(2026, 2, 10, 23, 59, 59).getTime();
+  assert.equal(startOfDay(morning), startOfDay(night));
+  assert.notEqual(startOfDay(night), startOfDay(night + 2000), "the next day is another number");
+  const items = [
+    { lastActiveAt: new Date(2026, 2, 10, 9).toISOString() },
+    { lastActiveAt: new Date(2026, 2, 9, 23, 59).toISOString() },
+    { lastActiveAt: new Date(2026, 2, 3, 1).toISOString() },
+    { lastActiveAt: new Date(2026, 1, 1).toISOString() },
+  ];
+  for (const at of [morning, night]) {
+    assert.deepEqual(groupByArchiveDate(items, new Date(startOfDay(at))), groupByArchiveDate(items, new Date(at)));
+  }
 });

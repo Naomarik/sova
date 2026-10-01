@@ -1,5 +1,5 @@
 import { setProfileStartAdopt } from "./lib/profile-start";
-import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
+import { batch, createEffect, createMemo, createResource, createSignal, Match, on, onCleanup, Show, Switch, untrack } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import type { ChatClaudeLogin, SessionSummary, WorkerInfo } from "../shared/protocol";
@@ -26,7 +26,7 @@ import {
 import { socketReconnects } from "./lib/socket";
 import { actSessionCount, setAppBadge } from "./lib/push";
 import { firstBaseline, helloStep, HELLO_POLL_MS, meshReadInit, pathOfViewKey, sessionViewKey, watchMove, HOST_CONFIRM_MS, seedPeerList, setHostCheck, type HelloBaseline, type PendingHost, type HelloChange, sessionHrefOn } from "./lib/mesh";
-import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerSessions, peerInfo, peerUnavailable, sessionRouteFromHash, setMeshState } from "./lib/mesh";
+import { hostLabel, hostOf, isMeshHash, joinHostLists, linkedSessionRow, meshRetryDelay, meshState, meshOn, meshPeers, mergePeerLists, noteHost, notePeerOrgs, notePeerSessions, peerInfo, peerUnavailable, sameMeshInfo, sessionRouteFromHash, setMeshState } from "./lib/mesh";
 import { isOverseerHash, isOverseerShortcut, OVERSEER_HASH, OVERSEER_POLL_MS, overseerHistoryId } from "./lib/overseer";
 import { sessionIdFromHash, setGroupLinkIndex, setSessionIndex } from "./lib/session-links";
 import { agentsHref, insightsRouteFromHash, legacyInsightsTarget } from "./lib/insights";
@@ -37,7 +37,8 @@ import { orgsRouteFromHash } from "./lib/orgs-route";
 import { onListRefresh } from "./lib/list-refresh";
 import { OrgsView } from "./components/OrgsView";
 import { loadSessionGroups, sessionGroups, sessionGroupsLoaded } from "./lib/session-groups";
-import { createThenArchive, dropArchived, newSessionCwd } from "./lib/new-session";
+import { createThenArchive, dropArchived, newSessionCwd, offersCwd } from "./lib/new-session";
+import { showHiddenFolders } from "./lib/hidden-folders";
 import { cwdLabel } from "./lib/remote-session";
 import { startRecentPreload } from "./lib/recent-preload";
 import { createPoll } from "./lib/poll";
@@ -59,6 +60,7 @@ import { ExplanationsCard, ExplanationsView } from "./components/ExplanationsVie
 import { ExtensionCards, ExtensionView } from "./components/ExtensionView";
 import { HomeSessionsCard } from "./components/HomeSessionsCard";
 import { OverviewActions } from "./components/OverviewActions";
+import { AccessPage } from "./components/AccessPage";
 import { OverviewOrgsCard } from "./components/OverviewOrgsCard";
 import { MeshCard, MeshView, StaleTabBanner } from "./components/MeshView";
 import { SharesPage } from "./components/SharesPage";
@@ -188,7 +190,9 @@ export function App() {
       .then((s) => {
         meshFailures = 0;
         servedBy ??= { id: s.self.id, label: s.self.label || s.self.hostname };
-        setMeshState(s);
+        // An answer that says what the last one did keeps the last state: every poll would
+        // otherwise hand each reader of the mesh a fresh object (lib/mesh `sameMeshInfo`).
+        setMeshState((prev) => (sameMeshInfo(prev, s) ? prev : s));
         setMeshError(null);
         setMeshSettled(true);
       })
@@ -202,7 +206,7 @@ export function App() {
   void loadMesh();
   onCleanup(() => clearTimeout(meshRetry));
   /** Each peer's last good session list, by peer id. */
-  const [peerLists, setPeerLists] = createSignal<Map<string, SessionSummary[]>>(new Map());
+  const [peerLists, setPeerLists] = createSignal<ReadonlyMap<string, SessionSummary[]>>(new Map());
   /** The first GET /api/mesh/sessions has answered or failed: a peer's session a link names is known by now. */
   const [peersSettled, setPeersSettled] = createSignal(false);
   const loadPeerSessions = async () => {
@@ -222,12 +226,16 @@ export function App() {
     }
     setPeersSettled(true);
   };
+  // Gated on the boolean, not on the mesh state: the effect read `meshOn()` straight, which reads
+  // the whole state, so every mesh poll re-ran it — an extra peer-session fetch and a restarted
+  // interval each time (CLAUDE.md, the `on(deps)` note).
+  const meshIsOn = createMemo(meshOn);
   createEffect(() => {
-    if (!meshOn()) {
-      if (peerLists().size) setPeerLists(new Map());
+    if (!meshIsOn()) {
+      if (untrack(peerLists).size) setPeerLists(new Map());
       return;
     }
-    void loadPeerSessions();
+    void untrack(loadPeerSessions);
     const t = setInterval(() => {
       if (document.hidden) return;
       void loadMesh();
@@ -268,6 +276,7 @@ export function App() {
   /** `#/overview`: the overview as a phone's own page (§app.shell/overview); wide, it is the
       empty main column as always. */
   const [overviewRoute, setOverviewRoute] = createSignal(isOverviewHash(location.hash));
+  const [accessRoute, setAccessRoute] = createSignal(location.hash === "#/access");
   const [route, setRoute] = createSignal<string | null>(pathFromHash());
   createEffect(
     on(route, (p) => {
@@ -430,6 +439,7 @@ export function App() {
     setShareRoute(shareRouteFromHash(location.hash));
     setOrgsRoute(orgsRouteOf(location.hash));
     setOverviewRoute(isOverviewHash(location.hash));
+    setAccessRoute(location.hash === "#/access");
   };
   // A `#/sid/` route opened before the first list load resolves when the lists land.
   createEffect(on([list, peerLists, meshSettled, peersSettled], () => sessionIdFromHash(location.hash) && onHash(), { defer: true }));
@@ -934,7 +944,7 @@ export function App() {
       <div
         class="app"
         data-spine={collapsed() ? "on" : undefined}
-        data-view={groupRoute() ? "workspace" : route() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
+        data-view={groupRoute() ? "workspace" : route() || accessRoute() || insightsRoute() || overseerRoute() || extRoute() || meshRoute() || sharesRoute() || shareRoute() || orgsRoute() || overviewRoute() ? "session" : "list"}
         data-ext-maximized={extMaximized() ? "1" : undefined}
       >
         <Sidebar
@@ -967,9 +977,10 @@ export function App() {
           data-send-all={groupRoute() && groupSendAll() ? "true" : undefined}
         >
           <Show
-            when={!insightsRoute() && !overseerRoute()}
+            when={!accessRoute() && !insightsRoute() && !overseerRoute()}
             fallback={
               <Switch>
+                <Match when={accessRoute()}><AccessPage /></Match>
                 <Match when={overseerRoute()}>
                   {(r) => (
                     <OverseerView
@@ -1202,7 +1213,7 @@ export function App() {
       <Show when={creating()}>
         <Portal>
           <NewSessionDialog
-            prefill={newSessionCwd(summary(), list() ?? []) ?? ""}
+            prefill={newSessionCwd(summary(), list() ?? [], (cwd) => offersCwd(cwd, showHiddenFolders())) ?? ""}
             knownCwds={[...new Set((list() ?? []).filter((s) => !s.overseer && !s.org).map((s) => s.cwd))]}
             onCancel={() => setCreating(false)}
             onCreated={adoptCreated}

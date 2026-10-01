@@ -15,7 +15,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, test } from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { chaos, hostUrl, lab, readAgentFile, requireLab, waitFor, writeAgentFile } from "./lib.mjs";
+import { chaos, hostUrl, lab, labTokenHeaders, readAgentFile, requireLab, waitFor, writeAgentFile } from "./lib.mjs";
 import { api, byId, link, newSession, prompt, releaseLock, send, takeLock, unlink, waitIdle, waitInbox } from "./links-lib.mjs";
 
 const REPO = fileURLToPath(new URL("../../..", import.meta.url));
@@ -79,7 +79,7 @@ before(async () => {
   if (!existsSync(PW)) throw new Error(`Playwright not found at ${PW}: install the playwright skill or set PLAYWRIGHT_MODULE`);
   const { chromium } = await import(pathToFileURL(PW).href);
   browser = await chromium.launch({ headless: true, executablePath: chromiumBin() });
-  const ctx = await browser.newContext({ serviceWorkers: "block" });
+  const ctx = await browser.newContext({ serviceWorkers: "block", extraHTTPHeaders: labTokenHeaders() });
   page = await ctx.newPage();
   page.on("websocket", (ws) => sockets.push(ws.url()));
   await takeLock("frontend");

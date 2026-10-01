@@ -3,8 +3,11 @@ import "./design/tokens.css";
 import "./design/base.css";
 import "./app.css";
 import { App } from "./App";
+import { AuthShell } from "./components/Unlock";
+import { unlockFromFragment } from "./lib/auth";
 import { applyStoredTheme, clearTheme, clearTypography, setTextSize } from "./lib/theme";
 import { applyStoredSpine } from "./lib/spine";
+import { guardDelegatedEvents } from "./lib/release-control";
 import "./sw-register";
 
 /**
@@ -47,5 +50,19 @@ applyStoredSpine();
 // The document never scrolls (app.css), so a reload or an installed app's relaunch must not put
 // back an offset left from before it: that offset is the list's head cut off at the top.
 history.scrollRestoration = "manual";
+// Before any event is handled: Solid's event delegation would otherwise leave an event, and
+// through its path a closed view, alive for the page's life (lib/release-control).
+guardDelegatedEvents(window, Object.getOwnPropertyDescriptor(Event.prototype, "currentTarget")!.get!);
 
-render(() => <App />, document.getElementById("root")!);
+// A `sova open` link's `#t=<token>` comes off the address bar before the app reads its own `#/…`
+// route, and is posted while the shell holds the app back (lib/auth.ts).
+void unlockFromFragment();
+
+render(
+  () => (
+    <AuthShell>
+      <App />
+    </AuthShell>
+  ),
+  document.getElementById("root")!,
+);

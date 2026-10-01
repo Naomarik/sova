@@ -18,9 +18,25 @@ The installer builds the published `vNEXT` release in `~/.local/share/sova` and 
 sova
 ```
 
-Open <http://127.0.0.1:4800>. If your shell says `sova` is not found, run
-`~/.local/bin/sova` directly, or add `~/.local/bin` to your shell's `PATH`.
-Keep the process running while you use the app; `Ctrl+C` stops it.
+Then, in another terminal, run `sova open`: it opens <http://127.0.0.1:4800> already unlocked.
+Sova asks every browser for its token once, at each address it uses; `sova token` prints it, to
+paste on the unlock screen of another browser or device. A browser can also be let in with a
+pairing code instead of the token — see below. Without the installer's launcher (Sova running from
+a source checkout), the token is in `~/.pi/agent/sova/auth-token` (or `sova/auth-token` under the
+server's `PI_CODING_AGENT_DIR`), and `pnpm run auth:token` in the checkout prints it.
+
+To bring a phone in, open the app on a browser that is already unlocked and use **Access** on the
+home page: it makes a **pairing code** that works once and expires in five minutes, and shows the
+link the other device must open — as a QR to scan with its camera, and as text to copy. The QR and
+the link use an address that device can actually reach (a tailnet name, never an IP address), so
+open Sova at that address before making the code; if it cannot, the page says so rather than
+offering a link the phone cannot open. The code can be typed or pasted on the other device's unlock
+screen, or the link is opened there — either way that device is in, and the install's token never
+had to leave the first browser.
+
+If your shell says `sova` is not found, run `~/.local/bin/sova`
+directly, or add `~/.local/bin` to your shell's `PATH`. Keep the process running while you use
+the app; `Ctrl+C` stops it.
 
 The installer uses no `sudo`, installs no toolchain, and changes no shell profiles or autostart
 services. It does not read or write `~/.pi`, or install the optional pi configuration.
@@ -64,9 +80,10 @@ Use an authenticated tunnel or an HTTPS reverse proxy with authentication and We
 Keep Sova on loopback when the tunnel or proxy runs on the same host. Protect **all** routes,
 including `/api` and `/ws`, and firewall the backend port against direct access.
 
-Setting `HOST=0.0.0.0` exposes the backend on all interfaces; it does not add protection.
-Anyone who can reach the unprotected app can read files and run commands with
-the server user's permissions. Sova has no built-in authentication and is not a multi-user service.
+Setting `HOST=0.0.0.0` exposes the backend on all interfaces. Sova's only protection is its
+per-install token (in `~/.pi/agent/sova/auth-token`; deleting it and restarting revokes every
+browser), and anyone who has it can read files and run commands with the server user's
+permissions. Sova is not a multi-user service.
 
 To send people outside your devices a read-only link to a session, set up
 [public links](public-links.md). They use a separate, locked-down port, never Sova's own.

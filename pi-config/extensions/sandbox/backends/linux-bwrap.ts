@@ -204,7 +204,8 @@ export class LinuxBwrapBackend implements Backend {
 				h(".claude/.credentials.json"), h(".claude.json"),
 				// Both the runtime's agent dir and pi's default one: a hermetic agent dir (the test
 				// server's) does not make the user's real credentials any less real.
-				...uniq([ctx.agentDir, h(".pi/agent")]).flatMap((a) => [join(a, "auth.json"), join(a, "sova", "api-token"), join(a, "claude-accounts")]),
+				// Sova's topic store too: its open topics are other sessions' return addresses.
+				...uniq([ctx.agentDir, h(".pi/agent")]).flatMap((a) => [join(a, "auth.json"), join(a, "sova", "api-token"), join(a, "claude-accounts"), join(a, "sova", "topics")]),
 			],
 			// Not the host caches: ~/.cache holds code host tools run later (AUR build dirs installed
 			// as root, nvim bytecode, browser binaries), ~/.npm/_npx what npx runs, ~/.m2 Maven's

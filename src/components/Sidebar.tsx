@@ -1,7 +1,7 @@
 import { ProfileShelf } from "./ProfileShelf";
 import { profileIconName } from "../lib/profiles";
 import { createEffect, createMemo, createResource, createSignal, For, type JSX, Match, on, onCleanup, onMount, Show, Switch } from "solid-js";
-import { Dynamic } from "solid-js/web";
+import { Dynamic, Portal } from "solid-js/web";
 import type { AgentsInsight, AttentionDigest, ContextInfo, OverseerInfo, SessionGroup, SessionSummary, UsageInsight } from "../../shared/protocol";
 import { OVERSEER_HASH, overseerButtonLabel } from "../lib/overseer";
 import { openOverview } from "../lib/overview-route";
@@ -90,7 +90,7 @@ import { groupHref } from "../lib/group-route";
 import { GroupNameField } from "./Groups";
 import { draggingPath, dragSuppressesClick, DropOverlay, openNewGroupFor, startRowDrag } from "./DropOverlay";
 import { RemoteGroupDot } from "./RemoteStatus";
-import { Banner, Icon } from "./ui";
+import { Banner, Icon, trapFocus } from "./ui";
 import { SHARES_HREF } from "../lib/session-shares";
 import { showSummaries } from "../lib/summary-line";
 import {
@@ -106,7 +106,7 @@ import {
   sessionHrefOn,
 } from "../lib/mesh";
 import { MeshHostMenu } from "./MeshHostMenu";
-import { hostFilterAsk } from "../lib/mesh-details";
+import { connectedCount, hostFilterAsk } from "../lib/mesh-details";
 import { openMonitor } from "../lib/monitor-nav";
 
 const ARCHIVE_KEY = "sova:archive-open";
@@ -1121,10 +1121,8 @@ export function Sidebar(props: {
   };
   // "Open Through This Host" in the mesh details: the filter takes that host (a fresh ask each time).
   createEffect(on(hostFilterAsk, (ask) => ask && chooseHostFilter(ask.value), { defer: true }));
-  /** The search field has focus: it takes the whole row, and the Overseer button steps aside. */
-  const [searchFocused, setSearchFocused] = createSignal(false);
-  /** Folded, the search sits behind an icon in the list's one toolbar line; this is that line
-      opened on the field. A query keeps it open too, so a row tapped and left finds it as it was. */
+  /** The one toolbar line (both widths) has the search open: opened by its icon or "/", and
+      held open by a query, so a row tapped and left finds it as it was. */
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [showSkeleton, setShowSkeleton] = createSignal(false);
   const skeletonTimer = setTimeout(() => setShowSkeleton(true), 300);
@@ -1200,9 +1198,11 @@ export function Sidebar(props: {
     announce(on ? "Sessions pane collapsed." : "Sessions pane expanded.");
     if (refocus && hadFocus) queueMicrotask(() => (on ? expandToggle : collapseToggle)?.focus());
   };
-  /** The spine's Search, and "/" while collapsed: open the pane and put the cursor in the field. */
+  /** The spine's Search, and "/" while collapsed: open the pane and its search line, cursor in
+      the field. The field exists only while the line is open, so the line opens here too. */
   const expandToSearch = () => {
     setCollapsed(false, false);
+    setSearchOpen(true);
     queueMicrotask(() => search.focus());
   };
 
@@ -1237,8 +1237,7 @@ export function Sidebar(props: {
     if (inText) return;
     e.preventDefault();
     if (collapsed()) expandToSearch();
-    else if (!props.unfolded) openSearch();
-    else search.focus();
+    else openSearch();
   };
   document.addEventListener("keydown", onKey);
   onCleanup(() => {
@@ -1575,8 +1574,7 @@ export function Sidebar(props: {
     setSearchOpen(false);
     queueMicrotask(() => searchToggle?.focus());
   };
-  // The unfolded layout is the two rows, always: an open folded line doesn't survive unfolding.
-  createEffect(on(() => props.unfolded, (u) => u && setSearchOpen(false), { defer: true }));
+
 
   /** A region count on the spine: open the pane and bring that region into view. The Archive is
       scrolled to, never forced open — its open state is the user's stored choice. */
@@ -1600,22 +1598,25 @@ export function Sidebar(props: {
   const tuiSentence = () => `${liveCount()} ${liveCount() === 1 ? "session" : "sessions"} open in a TUI`;
 
   /**
-   * The Overseer's door: an eye beside the search, with the count of Overseer messages you haven't
-   * read. Who needs you is the Needs you region's to say, not the eye's. Alt+O does the same (App).
+   * The Overseer's door, with the count of Overseer messages you haven't read. In the toolbar it
+   * is a labelled button (`labelled`): the eye, the word, then the count as an inline pill; on the
+   * spine it is the bare eye with the corner pill. Who needs you is the Needs you region's to say,
+   * not the eye's. Alt+O does the same (App).
    */
-  const OverseerButton = (p: { class: string }) => {
+  const OverseerButton = (p: { class: string; labelled?: boolean }) => {
     // The Overseer's own messages, so it shows whatever the proactivity; moot while it is open.
     const unread = () => (props.overseerOpen ? 0 : (props.overseer?.unread ?? 0));
     const label = () => overseerButtonLabel(unread());
     return (
       <a
-        class={`button button-icon overseer-entry ${p.class}`}
+        class={`button overseer-entry ${p.labelled ? "button-sm overseer-entry-word" : "button-icon"} ${p.class}`}
         href={OVERSEER_HASH}
         aria-current={props.overseerOpen ? "page" : undefined}
         aria-label={label()}
         title={`${label()} · Alt+O`}
       >
-        <Icon name="eye" />
+        <Icon name="eye" small={p.labelled || undefined} />
+        <Show when={p.labelled}>Overseer</Show>
         <Show when={unread() > 0}>
           <span class="overseer-entry-count text-num" aria-hidden="true">
             {unread() > 99 ? "99+" : unread()}
@@ -1625,7 +1626,7 @@ export function Sidebar(props: {
     );
   };
 
-  /** The session filter. One is mounted at a time (folded or unfolded), so its id and ref stay unique. */
+  /** The session filter, in the toolbar line while the search is open (both widths). */
   const SearchField = () => (
     <div class="search">
       <Icon name="search" />
@@ -1640,14 +1641,11 @@ export function Sidebar(props: {
         spellcheck={false}
         value={query()}
         onInput={(e) => setQuery(e.currentTarget.value)}
-        onFocus={() => setSearchFocused(true)}
-        onBlur={() => setSearchFocused(false)}
         onKeyDown={(e) => {
           if (e.key !== "Escape") return;
           e.preventDefault();
           if (query()) setQuery("");
-          else if (!props.unfolded) closeSearch();
-          else search.blur();
+          else closeSearch();
         }}
       />
       <Show when={query()}>
@@ -1684,6 +1682,139 @@ export function Sidebar(props: {
       </button>
     </Show>
   );
+
+  /** The foot's four rows, as §app.insights/sidebar-foot draws them: the host filter (mesh only),
+      the Usage glance with its monitor button, Agents with its Settings gear, and Shares. On the
+      desktop they sit in `.sidebar-foot`; on a phone the foot bar's sheet holds them, verbatim. */
+  const FootRows = () => (
+    <>
+      {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}
+      <Show when={hostFilterShown()}>
+        <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
+      </Show>
+      {/* The monitor button takes the gear's exact markup, so the two stack in one column. */}
+      <div class="sidebar-foot-row">
+        <a
+          class="list-row list-row-interactive insights-row sidebar-foot-link"
+          href={usageHref()}
+          aria-current={props.insightsPage === "usage" ? "page" : undefined}
+          title={glanceText() || undefined}
+          aria-label={glanceText() || undefined}
+        >
+          <Icon name="gauge" />
+          <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
+            <UsageGlance parts={glance()} />
+          </span>
+        </a>
+        <button type="button" class="button button-icon sidebar-settings" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
+          <Icon name="activity" small />
+        </button>
+      </div>
+      <div class="sidebar-foot-row">
+        <a
+          class="list-row list-row-interactive insights-row sidebar-foot-link"
+          href={agentsHref()}
+          aria-current={props.insightsPage === "agents" ? "page" : undefined}
+          title={agentsSentence(props.agents)}
+          aria-label={agentsSentence(props.agents)}
+        >
+          <Icon name="worker" />
+          <span class="insights-row-text">
+            <AgentsGlance agents={props.agents} />
+          </span>
+        </a>
+        <button
+          type="button"
+          class="button button-icon sidebar-settings"
+          title="Settings"
+          aria-label="Settings"
+          onClick={() => props.onOpenSettings()}
+        >
+          <Icon name="settings" small />
+        </button>
+      </div>
+      {/* Every public link, and who is looking (§app.session-share/shares-page). */}
+      <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
+        <Icon name="external" />
+        <span class="insights-row-text">Shares</span>
+      </a>
+    </>
+  );
+
+  /**
+   * Folded (<768): the foot as one 44px bar under the list (§app.insights/sidebar-foot-phone) —
+   * the mesh's connected count (while the mesh is on), the agents at work (the worker icon and
+   * the count), and every provider's usage cap as the glance shows it. Tapping the bar opens the
+   * rows as a bottom sheet, verbatim. Focus leaves and returns with the sheet (trapFocus).
+   */
+  const PhoneFoot = () => {
+    const [sheetOpen, setSheetOpen] = createSignal(false);
+    const close = () => setSheetOpen(false);
+    /** The bar's accessible name: the facts in words, then what the tap does. */
+    const barName = () => {
+      const facts: string[] = [];
+      if (hostFilterShown()) {
+        const c = connectedCount(meshPeers());
+        facts.push(`${c.up} of ${c.total} hosts connected`);
+      }
+      facts.push(workingNow(agentsWorking()));
+      const caps = glance().map((p) => p.full);
+      if (caps.length) facts.push(caps.join(", "));
+      return `${facts.join(". ")}. Open hosts, usage, agents and shares.`;
+    };
+    return (
+      <>
+        <button
+          type="button"
+          class="sidebar-footbar"
+          aria-haspopup="dialog"
+          aria-expanded={sheetOpen()}
+          aria-label={barName()}
+          onClick={() => setSheetOpen(true)}
+        >
+          <Show when={hostFilterShown()}>
+            <span class="sidebar-footbar-seg">
+              <span class="text-num">{connectedCount(meshPeers()).up}/{connectedCount(meshPeers()).total}</span>
+            </span>
+          </Show>
+          <span class="sidebar-footbar-seg">
+            <Icon name="worker" small />
+            <span class="text-num">{agentsWorking()}</span>
+          </span>
+          {/* Every provider the glance would show, in its order (at most the five): never one
+              invented number, and the line never wraps — what can't fit clips, like the glance. */}
+          <For each={glance()}>
+            {(p) => (
+              <span
+                class="sidebar-footbar-seg sidebar-footbar-cap"
+                classList={{ "sidebar-footbar-cap-high": p.high && !p.stale, "sidebar-footbar-cap-stale": p.stale }}
+              >
+                <span class="sidebar-footbar-tag">{p.abbr}</span> <span class="text-num">{p.amount ?? `${p.pct}%`}</span>
+              </span>
+            )}
+          </For>
+        </button>
+        <Show when={sheetOpen()}>
+          <Portal>
+            <div class="scrim" onClick={close} />
+            <div
+              class="modal sidebar-foot-sheet"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Hosts, usage, agents and shares"
+              ref={(el) => trapFocus(el)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") close();
+              }}
+            >
+              <div class="sheet-grip" aria-hidden="true" />
+              <FootRows />
+            </div>
+          </Portal>
+        </Show>
+      </>
+    );
+  };
 
   /**
    * The collapsed pane: one 44px item per action the expanded pane offers, reading the same memos,
@@ -1916,54 +2047,36 @@ export function Sidebar(props: {
           <label class="visually-hidden" for="session-search">
             Search sessions
           </label>
-          <Show
-            when={props.unfolded}
-            fallback={
-              /* Folded: one line. The search waits behind its icon, and opens in the line's place. */
-              <div class="sidebar-toolbar">
-                <Show when={!toolbarOpen()}>
-                  <OverseerButton class="button-ghost" />
-                </Show>
-                {/* Kept while the search is open, out of sight: the field's description, and the live count. */}
-                <SearchCount hidden={toolbarOpen()} />
-                <Show
-                  when={toolbarOpen()}
-                  fallback={
-                    <>
-                      <SelectStart />
-                      <button
-                        ref={searchToggle}
-                        type="button"
-                        class="button button-icon button-ghost"
-                        aria-label="Search sessions"
-                        title="Search sessions · /"
-                        onClick={openSearch}
-                      >
-                        <Icon name="search" />
-                      </button>
-                    </>
-                  }
-                >
-                  <SearchField />
-                  <button type="button" class="button button-icon" aria-label="Close Search" title="Close Search" onClick={closeSearch}>
-                    <Icon name="close" />
+          {/* One toolbar line at every width. At rest: the count, Select, the search icon, and the
+              labelled Overseer at the right end. Open: only the field and Close Search — the count
+              stays in the DOM, visually hidden, as the field's description and the live count. */}
+          <div class="sidebar-toolbar">
+            <SearchCount hidden={toolbarOpen()} />
+            <Show
+              when={toolbarOpen()}
+              fallback={
+                <>
+                  <SelectStart />
+                  <button
+                    ref={searchToggle}
+                    type="button"
+                    class="button button-icon button-ghost"
+                    aria-label="Search sessions"
+                    title="Search sessions · /"
+                    onClick={openSearch}
+                  >
+                    <Icon name="search" small />
                   </button>
-                </Show>
-              </div>
-            }
-          >
-            <div class="sidebar-search-row">
-              {/* Out of the row (and the tab order) while the search is in use: the field takes the width. */}
-              <Show when={!searchFocused() && !query()}>
-                <OverseerButton class="button-ghost" />
-              </Show>
+                  <OverseerButton class="button-ghost" labelled />
+                </>
+              }
+            >
               <SearchField />
-            </div>
-            <div class="spread">
-              <SearchCount hidden={false} />
-              <SelectStart />
-            </div>
-          </Show>
+              <button type="button" class="button button-icon" aria-label="Close Search" title="Close Search" onClick={closeSearch}>
+                <Icon name="close" />
+              </button>
+            </Show>
+          </div>
         </div>
 
         {/* Inside the sidebar, above the list: the rows it acts on stay on screen, on a phone too. */}
@@ -2357,58 +2470,13 @@ export function Sidebar(props: {
         {/* Portalled: the full-screen overlay a dragged row opens, and its New group dialog. */}
         <DropOverlay groups={sessionGroups()} counts={groupCounts()} onDrop={onOverlayDrop} onCreate={(d, name) => void createAndMove(d, name)} />
 
-        <div class="sidebar-foot">
-          {/* Only with the mesh on and a peer: one host's sessions, or All, and the mesh details. */}
-          <Show when={hostFilterShown()}>
-            <MeshHostMenu value={hostFilter()} onChange={chooseHostFilter} />
-          </Show>
-          {/* The monitor button takes the gear's exact markup, so the two stack in one column. */}
-          <div class="sidebar-foot-row">
-            <a
-              class="list-row list-row-interactive insights-row sidebar-foot-link"
-              href={usageHref()}
-              aria-current={props.insightsPage === "usage" ? "page" : undefined}
-              title={glanceText() || undefined}
-              aria-label={glanceText() || undefined}
-            >
-              <Icon name="gauge" />
-              <span class="insights-row-text" classList={{ "usage-glance": glance().length > 0 }}>
-                <UsageGlance parts={glance()} />
-              </span>
-            </a>
-            <button type="button" class="button button-icon sidebar-settings" title="Resource monitor" aria-label="Resource monitor" onClick={() => openMonitor()}>
-              <Icon name="activity" small />
-            </button>
+        {/* Unfolded: the foot's rows, always on screen. Folded: one 44px bar that opens them as a
+            bottom sheet, verbatim (§app.insights/sidebar-foot-phone). */}
+        <Show when={props.unfolded} fallback={<PhoneFoot />}>
+          <div class="sidebar-foot">
+            <FootRows />
           </div>
-          <div class="sidebar-foot-row">
-            <a
-              class="list-row list-row-interactive insights-row sidebar-foot-link"
-              href={agentsHref()}
-              aria-current={props.insightsPage === "agents" ? "page" : undefined}
-              title={agentsSentence(props.agents)}
-              aria-label={agentsSentence(props.agents)}
-            >
-              <Icon name="worker" />
-              <span class="insights-row-text">
-                <AgentsGlance agents={props.agents} />
-              </span>
-            </a>
-            <button
-              type="button"
-              class="button button-icon sidebar-settings"
-              title="Settings"
-              aria-label="Settings"
-              onClick={() => props.onOpenSettings()}
-            >
-              <Icon name="settings" small />
-            </button>
-          </div>
-          {/* Every public link, and who is looking (§app.session-share/shares-page). */}
-          <a class="list-row list-row-interactive insights-row sidebar-foot-link" href={SHARES_HREF} aria-current={props.sharesOpen ? "page" : undefined}>
-            <Icon name="external" />
-            <span class="insights-row-text">Shares</span>
-          </a>
-        </div>
+        </Show>
       </Show>
     </aside>
   );

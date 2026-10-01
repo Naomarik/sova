@@ -229,34 +229,27 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
 
   const archiveLabel = () => (plan().mode === "unarchive" ? "Unarchive" : "Archive");
   const archiveAria = () => `${archiveLabel()} ${sessionsWord(plan().mode === "mixed" ? plan().count : plan().eligible.length)}`;
+  /** The reason Archive can't run. There is no note line (the bar is one row), so the reason
+      lives where every user meets it before the press: the control's own accessible name and
+      title. */
+  const archiveBlock = () => (busy() ? running() : plan().disabled);
+  const archiveName = () => (archiveBlock() ? `${archiveAria()}. ${archiveBlock()}` : archiveAria());
+  /** A disabled control names itself and its reason. */
+  const withReason = (name: string) => (running() ? `${name}. ${running()}` : name);
 
   return (
     <div class="sidebar-select-bar" role="group" aria-label="Selected sessions">
-      <div class="sidebar-select-head">
+      {/* One row: the count leads, the actions follow, and Cancel ends it at the right. */}
+      <div class="sidebar-select-row">
         <p class="sidebar-select-count" aria-live="polite">
           <span class="text-num">{plan().count}</span> selected
         </p>
-        {/* Cancel is refused while an action runs: leaving the mode mid-run is exactly how a
-            finished run came back to a tab that had moved on. */}
-        <button
-          type="button"
-          class="button button-sm button-ghost"
-          aria-disabled={busy() ? "true" : undefined}
-          title={running() || undefined}
-          onClick={() => !busy() && clearSelection()}
-        >
-          Cancel
-        </button>
-      </div>
-      <div class="sidebar-select-actions">
-        {/* Move, then Rename, then Archive, side by side: one row at any sidebar width.
-            Rename and Archive are icons, named by their aria-labels and titles. */}
         <ActionMenu
           label={`Move ${sessionsWord(plan().count)} into a group`}
           title="Move into group"
           text="Move"
-          icon="folder"
-          class="button-sm"
+          icon={null}
+          class="button-sm sidebar-select-move"
           align="start"
         >
           {(menu) => (
@@ -321,7 +314,7 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
           <button
             type="button"
             class="button button-sm button-icon"
-            aria-label="Rename this session"
+            aria-label={withReason("Rename this session")}
             aria-expanded={renaming() ? "true" : "false"}
             aria-disabled={busy() ? "true" : undefined}
             title={running() || (one()?.originalTitle ? `Renamed in Sova. Originally ${quoted(one()!.originalTitle!)}` : "Rename this session in Sova")}
@@ -333,19 +326,27 @@ export function SelectionToolbar(props: { sessions: SessionSummary[]; onRefresh(
         <button
           type="button"
           class={plan().mode === "unarchive" ? "button button-sm button-icon sidebar-select-archive" : "button button-sm button-icon button-destructive sidebar-select-archive"}
-          aria-label={archiveAria()}
+          aria-label={archiveName()}
           aria-disabled={plan().disabled || busy() ? "true" : undefined}
-          title={running() || plan().disabled || archiveAria()}
+          title={running() || (plan().disabled ? archiveName() : archiveAria())}
           onClick={() => !busy() && void runArchive()}
         >
           <Icon name="archive" />
         </button>
+        {/* Cancel is refused while an action runs: leaving the mode mid-run is exactly how a
+            finished run came back to a tab that had moved on. */}
+        <button
+          type="button"
+          class="button button-sm button-ghost sidebar-select-cancel"
+          aria-label={withReason("Cancel")}
+          aria-disabled={busy() ? "true" : undefined}
+          title={running() || undefined}
+          onClick={() => !busy() && clearSelection()}
+        >
+          Cancel
+        </button>
       </div>
-      {/* The reason the archive control can't run, in words, before it is pressed — and the one
-          place the skipped rows are named as a count. */}
-      <Show when={plan().disabled}>
-        <p class="sidebar-select-note">{plan().disabled}</p>
-      </Show>
+      {/* The open rename field is the one thing below the row; its hint is the field's description. */}
       <Show when={renaming() && plan().canRename}>
         <div class="sidebar-select-rename">
           <TitleField

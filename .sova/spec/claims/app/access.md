@@ -12,8 +12,11 @@ own edge (§mesh.public, §app.baton/share-listener).
 One secret per install, at `<agent dir>/sova/auth-token`: 32 random bytes in base64url at mode
 0600, minted on the first start that finds no such file, and never rewritten or rotated while it
 exists. Creation is exclusive: two starts racing on one agent dir end up with the one token that
-landed first, and a file that holds no token stops the start instead of being replaced. It is
-compared with a constant-time equality; a request either carries it or is refused. It is never
+landed first. A file that holds no valid token is never replaced: startup logs the problem once
+and keeps serving the static shell; token checks fail closed with a 401 whose error and hint say
+`<file> does not hold a Sova token: delete it and restart to mint a new one`. HTTP, unlock and
+WebSocket refusals carry that same recovery message. The damaged state is held until restart.
+A valid token is compared with a constant-time equality; a request either carries it or is refused. It is never
 written to a log, a reply, a session file or a commit message, and no surface ever prints it
 except `sova token`, which exists to be read by its owner.
 
@@ -35,7 +38,8 @@ one: cookies ignore ports) never overwrite each other's; it is `HttpOnly`, `Same
 several cookies of that name is answered if any of them is the token, so a page that plants a
 second one cannot lock the person out. No other carrier counts: an `Authorization` bearer is not
 the token. The `401` is JSON that tells the reader to reload, so a tab left open across the change
-finds its way to the unlock screen (§app.access/unlock).
+finds its way to the unlock screen (§app.access/unlock); a damaged token file instead names the
+problem and the delete-and-restart recovery (§app.access/token).
 
 Independently of the token, and even when it is right, it refuses with `403`:
 
@@ -55,7 +59,16 @@ Independently of the token, and even when it is right, it refuses with `403`:
   a page on another port of the same machine — the browser counts it as the same site and sends it
   the cookie — and what stops a page the person visits, or a rebound hostname, from acting for
   them; a page behind the front door, whose proxy names this host in `Host`, passes by its own
-  origin. A forwarded header is never what admits a request.
+  origin. Only when the real Host is `127.0.0.1`, `localhost` or `[::1]` on this process's port,
+  an `X-Forwarded-Host` whose name passes the same host allowlist admits an HTTPS origin with
+  the same ts.net hostname, case-insensitive and with trailing dots stripped, regardless of
+  either port (including a forwarded host with no port). A ts.net name resolves to this node
+  alone, so any port on it is still this app, as with the mesh-known MagicDNS name. This exception
+  never admits HTTP or another hostname; direct Host matches and all other origin comparisons
+  stay as before. An absent, malformed or unallowed forwarded host changes nothing. The real-Host allowlist is always checked first and the token is still required;
+  a different real Host never gains this fallback. A browser page cannot forge the header on a
+  simple cross-origin request: no-cors drops non-safelisted headers and Sova never approves a
+  CORS preflight.
 
 Sova makes no demand on a body's content type: the token and the two rules above are the gate.
 
@@ -81,8 +94,8 @@ The **sockets** are checked the same way and for the same reasons: every upgrade
 listener — `/ws/chat`, `/ws/watch`, an extension's socket and a peer's — requires the token and
 passes the host and cross-site rules before it is dispatched, since neither CORS nor `SameSite`
 gates a WebSocket on its own. The peer listener's own upgrades are not asked. The gate's refusal
-never leaks which part failed beyond the status: an unauthenticated caller learns whether it lacks
-the token, not what the token is.
+never reveals the token: an unauthenticated caller learns whether it lacks the token, or that
+the install's token file is damaged and needs deletion and a restart.
 
 ## §app.access/unlock — The first visit, and the way back in
 

@@ -10780,15 +10780,10 @@
         "§mesh.public/preview"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/auth.ts",
         "server/index.ts",
-        "server/ws.ts",
-        "server/chat-manager.ts",
-        "src/lib/api.ts",
-        "src/lib/socket.ts",
-        "server/mesh/proxy.ts",
         "server/auth.test.ts",
         "server/auth-gate.test.ts"
       ]
@@ -10797,12 +10792,12 @@
       "kind": "behavior",
       "requires": [],
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "verified",
       "code": [
         "server/auth.ts",
-        "scripts/install.sh",
-        "scripts/hermetic-agent-dir.mjs",
-        "server/auth.test.ts"
+        "server/index.ts",
+        "server/auth.test.ts",
+        "server/auth-gate.test.ts"
       ]
     },
     "§app.access/unlock": {

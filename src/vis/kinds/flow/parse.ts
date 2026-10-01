@@ -1,5 +1,5 @@
 /**
- * `vis flow` and `vis state`: nodes, edges, shapes and tones. See vis-mode.md § flow for the syntax
+ * `vis flow` and `vis state`: nodes, edges, shapes and tones. See the vis guide's flow.md for the syntax
  * the model is taught. `== label ==` lines split one fence into panels: independent graphs, each
  * laid out on its own and drawn side by side (./sections.ts). Ids are local to their panel: the same
  * id in two panels is two nodes (the later one's key gets an `@<panel>` suffix no id can contain).

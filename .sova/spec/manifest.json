@@ -1217,7 +1217,8 @@
         "src/lib/explain.ts",
         "src/lib/explain.test.ts",
         "src/components/SessionPane.tsx",
-        "pi-config/extensions/stamp/format.ts"
+        "pi-config/extensions/stamp/format.ts",
+        "shared/topic-message.ts"
       ]
     },
     "§chat/composer": {
@@ -6463,7 +6464,21 @@
         "src/lib/markdown.ts",
         "src/components/Markdown.tsx",
         "pi-config/extensions/mode/minor.ts",
-        "pi-config/extensions/mode/vis-mode.md",
+        "pi-config/extensions/mode/vis/overview.md",
+        "pi-config/extensions/mode/vis/shared.md",
+        "pi-config/extensions/mode/vis/flow.md",
+        "pi-config/extensions/mode/vis/sequence.md",
+        "pi-config/extensions/mode/vis/state.md",
+        "pi-config/extensions/mode/vis/layers.md",
+        "pi-config/extensions/mode/vis/tree.md",
+        "pi-config/extensions/mode/vis/chart.md",
+        "pi-config/extensions/mode/vis/timeline.md",
+        "pi-config/extensions/mode/vis/steps.md",
+        "pi-config/extensions/mode/vis/wireframe.md",
+        "pi-config/extensions/mode/vis/matrix.md",
+        "pi-config/extensions/mode/vis/code.md",
+        "pi-config/extensions/mode/vis/html-svg.md",
+        "pi-config/extensions/mode/vis-guide-tool.ts",
         "src/vis/StubView.tsx",
         "src/vis/Visual.tsx",
         "src/vis/core/core.test.ts",
@@ -6569,9 +6584,10 @@
         "§app.worker-restore/claude-bridge-restart"
       ],
       "authority": "accepted",
-      "evidence": "verified",
+      "evidence": "unreviewed",
       "code": [
         "pi-config/extensions/mode/index.ts",
+        "pi-config/extensions/mode/vis-guide-tool.ts",
         "pi-config/extensions/mode/prompt.ts",
         "pi-config/extensions/mode/state.ts",
         "pi-config/extensions/mode/index.test.ts",
@@ -6805,7 +6821,7 @@
         "src/vis/kinds/flow/View.tsx",
         "src/vis/kinds/flow/flow.css",
         "src/vis/kinds/flow/layout.ts",
-        "pi-config/extensions/mode/vis-mode.md",
+        "pi-config/extensions/mode/vis/flow.md",
         "src/vis/guide.test.ts"
       ]
     },
@@ -6824,7 +6840,7 @@
         "src/vis/kinds/chart/parse.ts",
         "src/vis/kinds/chart/View.tsx",
         "src/vis/kinds/chart/layout.ts",
-        "pi-config/extensions/mode/vis-mode.md"
+        "pi-config/extensions/mode/vis/chart.md"
       ]
     },
     "§chat.markdown/vis-steps": {
@@ -6843,7 +6859,7 @@
         "src/vis/kinds/steps/steps.css",
         "src/vis/registry.ts",
         "src/vis/views.ts",
-        "pi-config/extensions/mode/vis-mode.md"
+        "pi-config/extensions/mode/vis/steps.md"
       ]
     },
     "§app.overseer/head-layout": {
@@ -7397,7 +7413,7 @@
         "src/vis/registry.ts",
         "src/vis/views.ts",
         "src/vis/share-views.ts",
-        "pi-config/extensions/mode/vis-mode.md"
+        "pi-config/extensions/mode/vis/wireframe.md"
       ]
     },
     "§app.claude-logins/borrow-return": {
@@ -7918,7 +7934,7 @@
         "src/vis/kinds/flow/sections.ts",
         "src/vis/kinds/flow/View.tsx",
         "src/vis/kinds/flow/flow.css",
-        "pi-config/extensions/mode/vis-mode.md",
+        "pi-config/extensions/mode/vis/flow.md",
         "src/vis/guide.test.ts",
         "src/vis/kinds/flow/groups.test.ts",
         "src/vis/kinds/flow/layout-master.json"
@@ -7938,7 +7954,7 @@
         "src/vis/kinds/matrix/matrix.css",
         "src/vis/kinds/matrix/height.ts",
         "src/vis/kinds/matrix/height.test.ts",
-        "pi-config/extensions/mode/vis-mode.md",
+        "pi-config/extensions/mode/vis/matrix.md",
         "src/vis/icons.ts"
       ]
     },
@@ -9210,7 +9226,13 @@
         "src/vis/core/grammar.ts",
         "src/vis/kinds/layers/parse.ts",
         "src/vis/kinds/timeline/parse.ts",
-        "pi-config/extensions/mode/vis-mode.md",
+        "pi-config/extensions/mode/vis/shared.md",
+        "pi-config/extensions/mode/vis/flow.md",
+        "pi-config/extensions/mode/vis/tree.md",
+        "pi-config/extensions/mode/vis/timeline.md",
+        "pi-config/extensions/mode/vis/steps.md",
+        "pi-config/extensions/mode/vis/chart.md",
+        "pi-config/extensions/mode/vis/matrix.md",
         "src/vis/guide.test.ts",
         "src/vis/kinds/matrix/parse.ts",
         "src/vis/kinds/matrix/parse.test.ts",
@@ -9373,7 +9395,8 @@
         "server/session-guards.ts",
         "server/session-profile-routes.ts",
         "server/session-profiles-runtime.test.ts",
-        "server/session-profiles.test.ts"
+        "server/session-profiles.test.ts",
+        "shared/profiles.ts"
       ],
       "requires": [
         "§chat.profiles/enforcement",
@@ -9758,7 +9781,7 @@
         "src/vis/kinds/wireframe/layout.test.ts",
         "src/vis/kinds/wireframe/parse.test.ts",
         "src/vis/kinds/wireframe/previews.fixture.ts",
-        "pi-config/extensions/mode/vis-mode.md"
+        "pi-config/extensions/mode/vis/wireframe.md"
       ]
     },
     "§app.outreach/channels": {
@@ -10310,7 +10333,7 @@
         "src/vis/kinds/code/parse.ts",
         "src/vis/kinds/wireframe/parse.ts",
         "src/vis/content-lenience.test.ts",
-        "pi-config/extensions/mode/vis-mode.md",
+        "pi-config/extensions/mode/vis/flow.md",
         "src/lib/markdown.ts",
         "src/share/markdown.ts",
         "src/vis/guide.test.ts",
@@ -10828,6 +10851,171 @@
         "server/ws.ts",
         "src/lib/auth.ts",
         "src/components/Unlock.tsx"
+      ]
+    },
+    "§app.overseer/input-source": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/queue.ts",
+        "server/group-prompt.ts",
+        "server/input-source.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.overseer/run-note": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer.ts",
+        "server/overseer-run-note.ts",
+        "server/overseer-run-note.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/confirm",
+        "§app.overseer/proactivity",
+        "§app.overseer/attention-digest",
+        "§chat.worktrees/readiness",
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.overseer/session-truth": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/overseer.ts",
+        "server/align-state.ts",
+        "server/merge-readiness.ts",
+        "server/worktrees.ts",
+        "server/overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§chat.worktrees/readiness",
+        "§chat.alignment/session-mark",
+        "§app.overseer/seen"
+      ]
+    },
+    "§app.overseer/verify-first": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/overseer-prompt.md",
+        "server/project-overseer-prompt.md"
+      ],
+      "requires": [
+        "§app.overseer/session-truth",
+        "§app.overseer/run-note"
+      ]
+    },
+    "§chat.topics/delivery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/topic-delivery.ts",
+        "server/index.ts",
+        "shared/topic-message.ts",
+        "server/topics-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.topics/store",
+        "§chat.topics/open",
+        "§chat.profiles/limits",
+        "§mesh.links/delivery"
+      ]
+    },
+    "§chat.topics/open": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-powers.ts",
+        "server/topics.ts",
+        "server/topic-store.ts",
+        "shared/profiles.ts",
+        "server/topic-store.test.ts",
+        "server/topics-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/session-tools",
+        "§chat.topics/store"
+      ]
+    },
+    "§chat.topics/push": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/topics.ts",
+        "server/chat-manager.ts",
+        "server/topics-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.topics/open",
+        "§chat.topics/store"
+      ]
+    },
+    "§chat.topics/row": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/topic-message.ts",
+        "server/transcript.ts",
+        "shared/protocol.ts",
+        "shared/row-counts.ts",
+        "src/components/Thread.tsx",
+        "src/components/TopicCard.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/lib/turn.ts",
+        "src/lib/message-actions.ts",
+        "server/chat-manager.ts",
+        "server/sessions-index.ts",
+        "server/session-autotitle.ts",
+        "server/session-tags.ts",
+        "server/attention-signals.ts",
+        "server/merge-readiness.ts",
+        "server/align-state.ts",
+        "server/session-share-view.ts",
+        "server/topics-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.topics/delivery",
+        "§chat.transcript/transcript-items",
+        "§app.decisions/session-tags",
+        "§app.decisions/asks-user"
+      ]
+    },
+    "§chat.topics/store": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/topic-store.ts",
+        "server/topic-store.test.ts"
+      ],
+      "requires": []
+    },
+    "§chat/topics": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/topics.ts",
+        "server/topic-store.ts",
+        "server/topic-delivery.ts",
+        "shared/topic-message.ts"
       ]
     }
   },

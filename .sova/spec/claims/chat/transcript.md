@@ -234,6 +234,13 @@ not in the composer's "N inputs", the Timeline's Inputs Only view or the rewind 
 regenerating a reply to it is refused. The session list never titles a session from one. Its text
 is shown only in the Agents tab (§mesh.links/agents-pane).
 
+**topic.** A batch of notes other sessions pushed to a topic this session opened
+(§chat.topics/delivery): under the hood a real `role:"user"` message tagged `[topic <name> tb_…, n
+notes]` (`shared/topic-message.ts`), classified by that tag on reload and on the live path alike.
+It renders as a compact collapsed card, never "You" (§chat.topics/row). Like a link message, it is
+a turn start but never an input, regenerating a reply to it is refused, and the session list never
+titles a session from one.
+
 **info.** Compaction, labels, branch summaries and other short machine notes. Model changes,
 thinking-level changes and the mode extension's markers are the exception: they render
 **nothing** in the thread — they are settings history, not conversation. That history stays where
@@ -406,7 +413,9 @@ icons. Under a message of yours it is end-aligned like the message head (`.messa
   steer, so s1 and a2 leave while u1, a1 and the tool call stay; regenerating a1 resolves to u1 and
   takes a1, the tool call, s1 and a2 with it. A reply that answered a scheduled WAKE nudge has no
   message of yours to send again, so Regenerate is off there with that as its reason — permanently,
-  since no amount of waiting turns a nudge into something you sent.
+  since no amount of waiting turns a nudge into something you sent. A reply that answered a topic
+  batch (§chat.topics/row) is the same, with its own reason: "That reply answered notes other
+  sessions pushed to a topic, not a message you sent, so there's nothing to send again."
 - **Both confirm inline, in place.** The first press arms: the strip becomes the sentence plus
   `Rewind Here` / `Regenerate Here` and `Cancel`. Focus follows into the confirm and back to the
   button that armed it on Cancel or Esc. The sentence says what survives as well as what goes:

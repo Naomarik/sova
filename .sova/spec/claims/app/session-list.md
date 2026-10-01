@@ -711,7 +711,7 @@ place in Live & web (and Groups), but a profile session is never a Recent row
 
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
-(§chat.alignment/session-mark), and a baton hand-off (the baton is with you, or a person needs
+whose branch is not merged (§chat.alignment/session-mark), and a baton hand-off (the baton is with you, or a person needs
 their link, §app.baton/needs-you); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
 a team gone quiet (§app.decisions/team-stall) are not blockers: each is a quiet mark on its row,
 never a row here. Neither is a worktree ready to merge or waiting for your OK: that is the row's
@@ -1303,8 +1303,8 @@ the title rules alone (2 to 7 words, at most 60 characters, sentence case, name 
 than the process, never name the app); **no Sova or agent system prompt goes with it**, and the
 user message holds only:
 
-- the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge or
-  a partner's link message is not one, as for the derived title);
+- the session's first user message, whitespace collapsed, at most 600 characters (a wake nudge,
+  a partner's link message or a topic batch, §chat.topics/row, is not one, as for the derived title);
 - its summary line (the last topic-outline snapshot's `overall`) and that snapshot's topic
   headings, each with at most 2 of its bullets;
 - or, with no summary line (the button only), its first 3 user messages instead.

@@ -3,6 +3,7 @@ import type { SessionAlign } from "../shared/protocol";
 import { alignResultOf, foldAlignments, openDocsOf, openQuestionsOf, type AlignDocument } from "../pi-config/extensions/mode/align.ts";
 import { restoreActive } from "../pi-config/extensions/mode/state.ts";
 import { isLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { activeBranch, type Entry } from "./transcript";
 
@@ -25,6 +26,18 @@ export function sessionAlignOf(docs: readonly AlignDocument[]): SessionAlign | u
     questionDocs: asking.length,
     ...(lead ? { lead: { id: lead.id, title: lead.title } } : {}),
   };
+}
+
+/** A branch's open alignments (not done or dropped), each with its open and live (not dropped)
+    question counts, in fold order: what `sova_session` prints (§app.overseer/session-truth).
+    `entries` are raw session entries, root first. */
+export function openAlignmentsOf(entries: readonly unknown[]): { id: string; title: string; open: number; total: number }[] {
+  return openDocsOf(foldAlignments(entries).docs).map((doc) => ({
+    id: doc.id,
+    title: doc.title,
+    open: openQuestionsOf(doc).length,
+    total: doc.questions.filter((q) => !q.dropped).length,
+  }));
 }
 
 /** The bytes every `align` tool result carries (JSON.stringify writes no space after the colon). */
@@ -121,7 +134,7 @@ function compactLine(line: string): ScanEntry | null {
     if (m.role === "toolResult" && m.toolName === "align") e.message = { role: "toolResult", toolName: "align", isError: m.isError === true, details: m.details };
     if (m.role === "user") {
       const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((b) => (isRecord(b) && typeof b.text === "string" ? b.text : "")).join("\n") : "";
-      if (parseWakeNudge(text) === null && !isLinkMessage(text)) e.userPrompt = true;
+      if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
     }
   }
   return e;

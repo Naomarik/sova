@@ -105,7 +105,8 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   detail, whose summary topics read newest first, as the insight strip lists them
   (§app.insights/insight-strip), each heading with how long ago its own section of the conversation ended
   (§app.insights/summary-sections; how long ago the summary last wrote it, for a topic without one)
-  (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
+  (`Topics (newest first): Merge (1m ago); Sandbox menu (2h ago)`), and what is true of it now
+  (§app.overseer/session-truth); a bounded transcript read (≤40 items, ≤12,000 characters, each item ≤1,000, wrapped as
   untrusted content from another session, read with Sova's own parser so a TUI-live file is never
   opened for writing); list groups, targets, models and folders; the ideas backlog (`sova_ideas`: its table of contents,
   a search, one idea, an idea's scope and impact, an idea's explorer; §app.overseer/ideas); the
@@ -288,6 +289,35 @@ host's sender secret never leaves it. The peer's own routes and refusals apply.
   says per session what was archived, each worktree removed or kept and why, and each branch deleted
   or kept. Without `worktrees`, archiving never touches a worktree.
 
+## §app.overseer/session-truth — What `sova_session` says is true now
+
+`sova_session` prints, after the session's row and its link, the facts the server holds about the
+session now, each only when there is one, every time as an age ("12m ago"), so the Overseer can
+check a session in one call instead of trusting a brief, a card or a summary line:
+
+- **Last reply:** how long ago the last assistant message on the active branch ended, its stop
+  reason, and the first 300 characters of its text (whitespace collapsed, "…" when cut), read from
+  the file when the tool runs. A session with no assistant message yet says so.
+- **Turn error:** the last turn's error (`turnError`, §app.overseer/seen, or a last reply that
+  stopped with an error), with its message when the file has one.
+- **Alignments:** each open alignment on the active branch (not done or dropped), its id, title
+  and how many of its questions are open ("al_3 "Autonomy settings": 2 of 5 questions open"), and
+  whether the session waits on the user's answers (§chat.alignment/session-mark) or the user has
+  spoken since.
+- **Merge:** per tracked worktree, its branch and readiness line (§chat.worktrees/readiness,
+  "Ready to merge · checks passed · 3 commits ahead"), the session's badge when it has one (merged,
+  restart pending), and the last check run on the session's branch (a test, typecheck or build the
+  session ran): passed or failed, how long ago, and whether it ran after the worktree's newest
+  commit or before it; with none, "no check run seen". It is the readiness answer as last read
+  (about 20 seconds old at most); a session that tracks no worktree of its own has no Merge line.
+- **Summary:** the Purpose and Now lines are labelled as the summary's, with its age, "written
+  before the last reply" when it is older than the last reply, and the summarizer's state when it
+  is stale or failed and kept its last line: "Now (summary, 2h ago, written before the last reply):
+  …".
+
+`sova_read_session`'s description says that the transcript's tail is what is true now and that the
+summary may lag it; it never tells the Overseer to prefer the summary.
+
 ## §app.overseer/confirm — Decision cards
 
 The Overseer asks with **cards**: `sova_card({card?, ops: [...]})`, a clone of the align tool's
@@ -340,6 +370,8 @@ jumps to it (§app.overseer/links).
   no longer applies. An open card listing a session whose file changed after the card was raised
   carries a line "may be stale: <session id> active since <time>" for each such session, so the
   model checks it before acting and drops or replaces it; the server never changes the card itself.
+  In the global Overseer the same hidden message also carries the run note (§app.overseer/run-note),
+  so it is there on every run a message starts, with open cards or none.
   After a compaction the same note is written once, after the summary. The note
   is persisted, so it survives restarts, folds and compaction, and it never changes who a run belongs
   to (§app.overseer/tools). Typed replies ("2", "archive a and c, keep b") are mapped by the model,
@@ -435,6 +467,33 @@ jumps to it (§app.overseer/links).
   this one says "the user", and it resolves only the sessions it may read (the project's coding and
   gathering sessions, §app/project-overseer), its own ideas and its own todos; it takes no people,
   projects or org links.
+
+## §app.overseer/run-note — The run note: the time, and what cleared
+
+Every run of the global Overseer that a message starts (the user's, a brief, a fired wake-up)
+carries one hidden note, in the same hidden message as the open cards (§app.overseer/confirm):
+never in the thread, never the system prompt, persisted with the conversation, and never changing
+who the run belongs to (§app.overseer/tools).
+
+- **The time.** It opens with the current time, local with its zone, and says that the system
+  prompt's time is when the conversation opened and that elapsed time is read from this and from
+  tool ages. The system prompt itself stays as it was opened (§app.overseer/hosting), so its cache
+  holds.
+- **Cleared since briefed.** Each blocker a brief (§app.overseer/proactivity) on the branch named in
+  the last 24 hours that is not a Needs-you item now is listed as cleared, with the session as a
+  link, the blocker's kind, why, and when it was briefed. Why is the first that holds: the session is
+  gone; it is archived; it is merged (its readiness badge is merged or restart pending,
+  §chat.worktrees/readiness); its questions were answered in the session (an open-questions blocker
+  whose session no longer waits on the user's answers); else it no longer needs the user. When the
+  digest was cut short by its cap, a blocker is listed only for a reason the server knows. Each
+  is listed once per brief: the note records what it listed, and a later note leaves out a blocker
+  already listed after the brief that last named it, so it comes back only when a later brief names
+  it again and it clears again. At most 12, the most recently briefed first.
+- **Open cards' sessions.** Each session an open card lists that is gone, archived now, or whose
+  branch merged after the card was raised, gets a line naming the card, the item number, the session as a
+  link and that fact ("c_4 item 2: … — merged 20m ago, after the card was raised").
+- The cards follow as §app.overseer/confirm lists them. The note's text from other sessions (names,
+  details) is redacted like any tool output (§app.overseer/tools).
 
 ## §app.overseer/project-card-clicks — Cards in a project overseer's chat
 
@@ -696,9 +755,13 @@ itself.
   archived, whose `align` counts say it waits on the user's answers (align on, and no user prompt
   since the alignment last changed), is `open-questions` ("{n} open
   question(s) in {al_N} {title}" with one open alignment, else "… in {m} alignments"), dated by its
-  last reply. It needs no signal and no model; it shows with the attention feature off too.
+  last reply. It needs no signal and no model; it shows with the attention feature off too. A
+  session whose branch is merged (its readiness badge merged or restart pending,
+  §chat.worktrees/readiness) has the same item as a decide item instead, "Merged with {n} open
+  question(s) in {al_N} {title}" (or "… in {m} alignments"): visible in the digest, never Needs you,
+  a brief or a phone notification.
 - **Only real blockers are act.** The act tier — Needs you, the Overseer's "need you" count, its
-  briefs and phone notifications — is exactly: open alignment questions, open dialogs, errored
+  briefs and phone notifications — is exactly: open alignment questions on an unmerged branch, open dialogs, errored
   turns, subagent errors, and the baton and roster hand-offs and held acts below. A guess (a
   reply that seems to ask, a team that seems stalled) and a branch ready to merge are decide
   items: a line in the digest and a quiet mark on the session's row, never a brief.
@@ -911,6 +974,43 @@ checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ s
   read-only (§app.overseer/tools), so it can report and offer a `sova_card` card but never act,
   and it renews no caps (§app.overseer/caps). Brief Me also sends one brief when Sova first finds a
   playbook schedule that needs approval (§chat.schedules/where-shown).
+- A brief is a snapshot of the moment it was sent. When a blocker it named clears, the next run's
+  note says so (§app.overseer/run-note); no brief is sent for a blocker clearing.
+
+## §app.overseer/verify-first — The prompt's rules for saying what is true
+
+The Overseer's prompt holds these rules; the server enforces none of them, and the tools and the
+run note (§app.overseer/session-truth, §app.overseer/run-note) give it what they need:
+
+- **Check before stating.** Never state a session's state, or list open cards or open questions,
+  from memory, a brief, a card's note or a summary line: check it with `sova_session` or
+  `sova_attention` in the same turn, and drop or replace a card that no longer applies before
+  listing cards.
+- **A brief is a snapshot** of when it was sent.
+- **Ids are copied** verbatim from a tool's output in the same turn, never typed from memory.
+- **Checks are reported as said.** "Tests pass" from a session is relayed as what the session
+  says, unless `sova_session` shows a check that passed after the worktree's newest commit.
+- **A promise has a trigger.** Every "I'll …" is backed in the same turn by something that will
+  bring it back (a `wake_nudge`); without one, the Overseer asks the user to tell it when.
+- **No polling.** No `wake_nudge` sooner than 5 minutes just to look again, and a card for the same
+  question is raised once.
+- **Time** comes from tool ages and the run note's time, never from the system prompt's opening
+  time.
+
+The project overseer's prompt holds the first and third for its own tools and the project's
+sessions.
+
+## §app.overseer/input-source — Sova's own messages are not typed input
+
+A message reaches a session's runtime, and its extensions' `input` handlers, as pi's input source
+`interactive` only when a person typed it: a message, steer, quick action or regenerate from a
+Sova composer (the Overseer sending through `sova_send` is not one), a group batch the user sent,
+or a baton participant's message. Every message Sova sends on its own is `rpc`: Overseer briefs,
+auto-resume's prompts and reports, `sova_send`, a schedule's message, a profile start's first
+message, a project overseer's prompt or look, another session's send, and a baton wrap-up. A
+message queued behind a running turn keeps its source to its hand-off. Never `extension`, which the vision-delegate extension skips,
+so an image on such a message is still described for a model that can't see it. So the wake-nudge
+extension's limit of 30 fires without input restarts only on a person's input.
 
 ## §app.overseer/standing-notes — Standing notes
 

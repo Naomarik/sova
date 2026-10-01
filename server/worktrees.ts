@@ -183,13 +183,16 @@ export class WorktreeInsights {
    * subjects of its commits past the base (newest first, at most 50). null when the folder is gone
    * or is not a linked worktree.
    */
-  async treeStatus(dir: string): Promise<(WorktreeStatus & { head?: string; subjects?: string[] }) | null> {
+  async treeStatus(dir: string): Promise<(WorktreeStatus & { head?: string; headAt?: number; subjects?: string[] }) | null> {
     const layout = await this.layout(dir);
     if (!layout || layout === "gone" || !layout.linked) return null;
     const st = await this.status({ path: layout.top, source: "session", exists: true }, layout);
     this.prune();
-    const head = await this.git(layout.top, ["rev-parse", "--verify", "-q", "HEAD"]);
-    const out: WorktreeStatus & { head?: string; subjects?: string[] } = { ...st, ...(head.code === 0 ? { head: head.stdout.trim() } : {}) };
+    // HEAD and its committer time (ms) in one call: the time says whether a check ran after the newest commit.
+    const head = await this.git(layout.top, ["log", "-1", "--format=%H %ct", "HEAD"]);
+    const [sha, ct] = head.code === 0 ? head.stdout.trim().split(" ") : [];
+    const at = Number(ct) * 1000;
+    const out: WorktreeStatus & { head?: string; headAt?: number; subjects?: string[] } = { ...st, ...(sha ? { head: sha } : {}), ...(sha && at > 0 ? { headAt: at } : {}) };
     if (st.base && st.merged === "no" && (st.ahead ?? 0) > 0) {
       const log = await this.git(layout.top, ["log", "--format=%s", "-n", "50", `${st.base}..HEAD`]);
       if (log.code === 0) out.subjects = log.stdout.split("\n").filter(Boolean);

@@ -131,6 +131,10 @@ tool result says when that look comes: say what is waiting and why instead.
   a to-do or an idea exists. The gaps you file (`§gap/…`) are yours, for gathering.
 - Before you tell the operator a branch needs merging, check the builds (sova_project or
   sova_list_sessions): they say, from git, whether each branch is merged already.
+- Never state a gap's, a session's or a branch's state, or list open cards, from memory, an
+  earlier look or a card's note: read it with your tools (sova_pipeline, sova_project,
+  sova_list_sessions, sova_read_session) in this turn first. Copy every id verbatim from a tool's
+  output in this turn; never type or piece one together from memory.
 
 ## Previews
 

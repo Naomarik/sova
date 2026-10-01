@@ -10,6 +10,7 @@ import { extraSessionRoots, LIVE_DIR, resolveSessionPath, sessionPathShape, SESS
 import { isWebSession, removeWebSession } from "./web-sessions";
 import { stripImageNotes } from "../shared/image-note";
 import { isLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { RECENT_WRITE_MS } from "./write-guard";
 import { isArchived, setArchived } from "./archived-sessions";
@@ -114,8 +115,8 @@ function userText(content: unknown): string {
 }
 
 /** A user message that never titles a session: a fired wake nudge, or a partner's message over a
-    link (§mesh.links/transcript) — neither is something the user said. */
-const notTitle = (text: string): boolean => parseWakeNudge(text) !== null || isLinkMessage(text);
+    link (§mesh.links/transcript), or a topic batch (§chat.topics/row) — none is something the user said. */
+const notTitle = (text: string): boolean => parseWakeNudge(text) !== null || isLinkMessage(text) || isTopicBatch(text);
 
 /** Best-effort title from a user message line cut off by the read cap (huge pastes). */
 function titleFromPartial(line: string): string | null {

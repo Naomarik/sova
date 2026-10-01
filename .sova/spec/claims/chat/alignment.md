@@ -371,7 +371,8 @@ The session list knows, from the file and with no model, whether a session is wa
 user's answers: each summary carries `align: {openDocs, openQuestions}` (open alignments on the
 active branch and their open questions) while an alignment is open, **align is on** (the newest
 `mode` entry on the branch), and **the session waits**: the newest align result that changed a
-document comes after the user's last prompt (a wake nudge or a partner's link message is not one).
+document comes after the user's last prompt (a wake nudge, a partner's link message or a topic
+batch, §chat.topics/row, is not one).
 Once the user has spoken again and the agent moved on without touching an alignment, or align is
 turned off (nothing could record an answer), the questions stay on the card and the chip but leave
 the row mark, Needs you and push; the next align result that changes a document brings them back.
@@ -389,6 +390,10 @@ change parses only the lines appended since (a file that shrank or was rewritten
   digest, kind `open-questions` ("3 open questions in al_3 Autonomy settings" or "… in 2
   alignments"), dated by the session's last reply; so it lists in the sidebar's Needs you, counts
   in the Overseer's badge, and is a phone-notification kind ("Open questions", on by default).
+  Once the session's branch is merged (its readiness badge merged or restart pending,
+  §chat.worktrees/readiness), the questions are a decide item instead, "Merged with 3 open
+  questions in al_3 Autonomy settings": they stay in the digest and the row mark, but leave Needs
+  you, the badge, briefs and push.
 
 ## §chat.alignment/tui — In the TUI
 

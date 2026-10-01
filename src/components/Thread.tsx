@@ -20,6 +20,7 @@ import { profileIconName } from "../lib/profiles";
 import { profileToolCard, ProfileToolCardView } from "./ProfileCards";
 import { isTurnStart } from "../lib/turn";
 import { parseWakeNudge } from "../../shared/wake";
+import { parseTopicBatch } from "../../shared/topic-message";
 import { ImageStrip } from "./ImageStrip";
 import { PathAttachment, PathText } from "./PathAttachment";
 import { ReportRow } from "./ReportRow";
@@ -32,6 +33,7 @@ import { explainOf } from "../lib/explain";
 import { Markdown } from "./Markdown";
 import { ToolCard, type ToolStatus } from "./ToolCard";
 import { WakeCard } from "./WakeCard";
+import { TopicCard } from "./TopicCard";
 import { WorktreeMergeCard } from "./WorktreeMergeCard";
 import { ShowChangesCard } from "./ChangesViewer";
 import { normalizeShowChangesDetails, SHOW_CHANGES_TOOL } from "../../pi-config/extensions/show-changes/details";
@@ -704,6 +706,9 @@ export function HistoryItems(props: {
               <Match when={item.kind === "wake" && item.wake}>
                 {(wake) => <WakeCard nudge={wake()} text={item.text ?? ""} time={timestampOf(item.raw)} />}
               </Match>
+              <Match when={item.kind === "topic" && item.topic}>
+                {(batch) => <TopicCard batch={batch()} time={timestampOf(item.raw)} />}
+              </Match>
               <Match when={item.kind === "assistant-text"}>
                 <AssistantText
                   text={item.text ?? ""}
@@ -978,6 +983,7 @@ export function LiveEntries(props: {
                 <Show
                   when={parseWakeNudge(e().text)}
                   fallback={
+                    <Show when={parseTopicBatch(e().text)} fallback={
                     <Show when={!isBriefText(e().text)} fallback={<BriefRow text={e().text} />}>
                     {
                     /* A queued row has no `.entry` around it, so it brings the hover/tap region
@@ -999,6 +1005,9 @@ export function LiveEntries(props: {
                       </Show>
                     </div>
                     }
+                    </Show>
+                    }>
+                      {(batch) => <TopicCard batch={batch()} />}
                     </Show>
                   }
                 >

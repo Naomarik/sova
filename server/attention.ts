@@ -63,6 +63,9 @@ export function openQuestionsText(a: NonNullable<SessionSummary["align"]>): stri
   return `${n} in ${a.questionDocs} alignments`;
 }
 
+/** The session's branch is merged: its readiness badge is merged or restart pending (§chat.worktrees/readiness). */
+export const mergedBranch = (s: Pick<SessionSummary, "readiness">): boolean => s.readiness?.badge === "merged" || s.readiness?.badge === "restart";
+
 /** The items one session contributes, most urgent first. */
 export function sessionItems(row: AttentionRow, now: number, home?: string): AttentionItem[] {
   const s = row.summary;
@@ -115,9 +118,12 @@ export function sessionItems(row: AttentionRow, now: number, home?: string): Att
   if (row.failedWorkers > 0 && !errorSeen)
     add("act", "worker-error", lastActive, `${row.failedWorkers} subagent${row.failedWorkers === 1 ? "" : "s"} ended in an error.`);
   // Open alignment questions (§chat.alignment/session-mark): a fact of the file, no model. Waiting
-  // on the user only while nothing runs; an archived session is out of the way on purpose.
+  // on the user only while nothing runs; an archived session is out of the way on purpose. A merged
+  // branch (readiness from git) has moved on: the questions stay visible as a decide item, never a
+  // blocker, a brief or a push.
   const questions = !!s.align && s.align.openQuestions > 0 && !running && !s.archived;
-  if (questions) add("act", "open-questions", row.lastReplyAt ?? lastActive, openQuestionsText(s.align!));
+  if (questions && mergedBranch(s)) add("decide", "open-questions", row.lastReplyAt ?? lastActive, `Merged with ${openQuestionsText(s.align!)}`);
+  else if (questions) add("act", "open-questions", row.lastReplyAt ?? lastActive, openQuestionsText(s.align!));
   // Decision signals (server/signals-store.ts): the list carries them only while unseen and idle,
   // with the kinds already derived from the fixed thresholds. They are guesses, so never blockers
   // (§app.overseer/attention-digest): a reply that seems to ask the user something is a decide

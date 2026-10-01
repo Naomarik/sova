@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { createStore } from "solid-js/store";
+import { parseTopicBatch, formatTopicBatch } from "../../shared/topic-message";
 import {
   addPendingPrompt,
   applyEvent,
@@ -527,6 +528,24 @@ test("a Stop pressed during a /compact (no turn) clears at compaction_end; insid
   assert.equal(s.stopping, true);
   applyEvent(set, { type: "agent_settled" });
   assert.equal(s.stopping, false);
+});
+
+test("a topic batch's start claims none of this tab's pending rows and adds its own", () => {
+  const [s, set] = store();
+  addPendingPrompt(set, "my own");
+  const batch = formatTopicBatch({
+    topic: "merge-k7m4qz",
+    batch: "tb_0123456789ab",
+    notes: [{ id: "qi_0123456789ab", from: { sessionId: "s1", title: "Fix login" }, at: "2026-10-01T10:00:00.000Z", text: "READY feat/x 0123456" }],
+  });
+  applyEvent(set, { type: "message_start", message: { role: "user", content: [{ type: "text", text: batch }] } });
+  const users = s.entries.filter((e) => e.kind === "user") as { text: string; started?: boolean }[];
+  assert.equal(users.length, 2, "the batch is its own row, never a claim");
+  assert.equal(users[0]!.text, "my own");
+  assert.notEqual(users[0]!.started, true, "still waiting for its own start");
+  assert.equal(users[1]!.text, batch);
+  assert.equal(users[1]!.started, true);
+  assert.ok(parseTopicBatch(users[1]!.text), "the live row still parses as a batch, so the thread draws the Queue card");
 });
 
 test("a link message's start draws no row and claims none of this tab's pending rows", () => {

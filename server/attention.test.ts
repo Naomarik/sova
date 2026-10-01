@@ -229,6 +229,21 @@ describe("attention: open alignment questions (§chat.alignment/session-mark)", 
     assert.deepEqual(d.badge, { act: 1, decide: 0 });
     assert.equal(blockerKey(d.items[0]!), "a:open-questions");
   });
+
+  test("a merged branch demotes them to a decide item, out of Needs you, the badge, briefs and push", () => {
+    const tree = { path: "/wt/a", branch: "feat/a", state: "merged" as const };
+    for (const badge of ["merged", "restart"] as const) {
+      const s = summary("a", { align: align(3), readiness: { trees: [tree], badge, branch: "feat/a", since: NOW - 60_000 } });
+      const items = sessionItems(row(s, { lastReplyAt: NOW - 7000 }), NOW).filter((i) => i.kind === "open-questions");
+      assert.deepEqual(items.map((i) => `${i.tier}:${i.detail}`), ["decide:Merged with 3 open questions in al_3 Autonomy settings"], badge);
+      const d = buildDigest([row(s)], NOW);
+      assert.equal(d.badge.act, 0, `${badge}: no session needs you`);
+      assert.ok(!d.items.some((i) => i.tier === "act"), `${badge}: no act item, so no brief and no push`);
+    }
+    // A branch not merged yet (ready to merge) keeps them a blocker.
+    const ready = summary("b", { align: align(1), readiness: { trees: [{ ...tree, state: "ready" }], badge: "ready", branch: "feat/a", since: NOW } });
+    assert.deepEqual(sessionItems(row(ready), NOW).filter((i) => i.kind === "open-questions").map((i) => i.tier), ["act"]);
+  });
 });
 
 describe("attention: decision signals (the list carries them only while unseen and idle)", () => {

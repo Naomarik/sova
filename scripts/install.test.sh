@@ -218,7 +218,7 @@ check "$([ -f "$home/.local/share/sova/package.json" ] && echo true || echo fals
 check "$([ -f "$home/.local/share/sova/dist/index.html" ] && echo true || echo false)" "success: the build is in place"
 check "$([ -x "$home/.local/bin/sova" ] && echo true || echo false)" "success: the launcher is executable"
 check "$(printf '%s' "$out" | grep -q '127.0.0.1:4800' && echo true || echo false)" "success: prints the URL"
-check "$(printf '%s' "$out" | grep -q 'no authentication' && echo true || echo false)" "success: says there is no auth"
+check "$(printf '%s' "$out" | grep -q "sova open" && echo true || echo false)" "success: says how to unlock the page"
 check "$(pi_untouched && echo true || echo false)" "success: ~/.pi untouched"
 check "$([ ! -e "$home/.local/share/sova/.pi" ] && echo true || echo false)" "success: wrote no .pi into the install dir"
 check "$([ -z "$(ls -d "$home/.local/share/.sova-staging."* 2>/dev/null)" ] && echo true || echo false)" \
@@ -476,6 +476,35 @@ fresh_home ask-no
 printf 'n\n' > "$tmp/ask-no/tty"
 CASE_TTY=$tmp/ask-no/tty inst
 check "$(yes_if [ ! -e "$home/.config/systemd/user/sova.service" ])" "ask, no: no service"
+
+# 24a. The launcher's `token` prints the agent dir's token (the install's, or $PI_CODING_AGENT_DIR's)
+#      and `open` opens the page unlocked by it, on the install's port or $PORT; neither starts the
+#      server. Before the server ever minted a token, both say so and exit nonzero.
+run_install launcher-token --port 4811 --no-service
+opener=$tmp/launcher-token/opener
+mkdir -p "$opener"
+printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s"\n' "$tmp/launcher-token/opened" > "$opener/xdg-open"
+chmod 755 "$opener/xdg-open"
+sova_cmd() { set +e; launch=$(PATH="$opener:$sandbox" "$@" 2>&1); lstatus=$?; set -e; }
+sova_cmd env -u PI_CODING_AGENT_DIR "$home/.local/bin/sova" token
+check "$(yes_if [ "$lstatus" -ne 0 ])" "launcher token, none minted: exits nonzero"
+check "$(printf '%s' "$launch" | grep -q 'start sova once' && echo true || echo false)" "launcher token, none minted: says to start sova once"
+check "$(printf '%s' "$launch" | grep -q 'tsx stub ran' && echo false || echo true)" "launcher token: never starts the server"
+mkdir -p "$home/.pi/agent/sova"
+printf 'tok-of-the-install\n' > "$home/.pi/agent/sova/auth-token"
+sova_cmd env -u PI_CODING_AGENT_DIR "$home/.local/bin/sova" token
+check "$(yes_if [ "$launch" = tok-of-the-install ])" "launcher token: prints the install's agent dir token"
+mkdir -p "$tmp/launcher-token/other agent/sova"
+printf 'tok-of-other\n' > "$tmp/launcher-token/other agent/sova/auth-token"
+sova_cmd env PI_CODING_AGENT_DIR="$tmp/launcher-token/other agent" "$home/.local/bin/sova" token
+check "$(yes_if [ "$launch" = tok-of-other ])" "launcher token: \$PI_CODING_AGENT_DIR's token when set"
+sova_cmd env -u PI_CODING_AGENT_DIR -u PORT "$home/.local/bin/sova" open
+check "$(yes_if [ "$lstatus" -eq 0 ])" "launcher open: exits 0"
+check "$(yes_if grep -qxF 'http://127.0.0.1:4811/#t=tok-of-the-install' "$tmp/launcher-token/opened")" \
+	"launcher open: the install's port, unlocked in the fragment"
+sova_cmd env -u PI_CODING_AGENT_DIR PORT=4999 "$home/.local/bin/sova" open
+check "$(yes_if grep -qxF 'http://127.0.0.1:4999/#t=tok-of-the-install' "$tmp/launcher-token/opened")" "launcher open: \$PORT wins"
+rm "$home/.pi/agent/sova/auth-token"
 
 # 24. The installer is bash 3.2 and BSD safe: it parses, and uses none of the GNU-only flags or
 #     bash 4 features that break on a stock Mac.

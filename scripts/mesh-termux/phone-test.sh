@@ -39,6 +39,9 @@ log() { printf '[phone-test] %s\n' "$*" >&2; }
 die() { log "FAIL: $*"; exit 1; }
 need() { local v; for v in "$@"; do [ -n "${!v:-}" ] || die "$v is not set: put it in scripts/mesh-termux/local.env (see local.env.example)"; done; }
 ph() { ssh -o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -p "$PHONE_PORT" "$PHONE" "$@"; }
+# The phone's main listener asks for its own token (§app.access/token), read on the phone from its agent dir; a curl
+# option for a remote command line.
+PH_TOK='-H "x-sova-token: $(cat $HOME/sova-mesh/agent/sova/auth-token)"'
 
 tarball() {
   local stage="$OUT/src/stage" sha
@@ -552,9 +555,16 @@ LAPTOP_PEERS_FILE=${LAPTOP_PEERS_FILE:-$ROOT/.agent/sova/peers.json}
 go() { [ "${PAIR_GO:-}" = 1 ] || die "pairing needs coordinator-2's go: rerun with PAIR_GO=1"; }
 pairing_vars() { need LAPTOP_ID LAPTOP_NODE_ID LAPTOP_PEER_URL PHONE_ID PHONE_NODE_ID PHONE_DNS; }
 phone_put() { # path json -> http code
-  printf '%s' "$2" | ph "curl -sS -m 10 -o \$PREFIX/tmp/sova-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:4800$1; cat \$PREFIX/tmp/sova-put.json >&2; rm -f \$PREFIX/tmp/sova-put.json"
+  printf '%s' "$2" | ph "curl -sS -m 10 $PH_TOK -o \$PREFIX/tmp/sova-put.json -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- http://127.0.0.1:4800$1; cat \$PREFIX/tmp/sova-put.json >&2; rm -f \$PREFIX/tmp/sova-put.json"
 }
-laptop_put() { printf '%s' "$2" | curl -sS -m 10 -o "$OUT/put.json" -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- "$LAPTOP_API$1"; }
+# The laptop's team server's token: LAPTOP_TOKEN, else SOVA_TOKEN, else the one in its agent dir (LAPTOP_AGENT, default
+# this checkout's .agent). Handed to curl as a header file, never on its command line.
+LAPTOP_AGENT=${LAPTOP_AGENT:-$ROOT/.agent}
+laptop_curl() {
+  [ -n "${LAPTOP_TOKEN:-}" ] || LAPTOP_TOKEN=$(node "$ROOT/scripts/sova-token.mjs" "$LAPTOP_AGENT") || die "no token for the laptop's server"
+  curl -H @<(printf 'x-sova-token: %s\n' "$LAPTOP_TOKEN") "$@"
+}
+laptop_put() { printf '%s' "$2" | laptop_curl -sS -m 10 -o "$OUT/put.json" -w '%{http_code}' -X PUT -H 'content-type: application/json' --data-binary @- "$LAPTOP_API$1"; }
 code_from_laptop() { curl -s -m 8 -o /dev/null -w '%{http_code}' "$PHONE_PEER_URL$1" || true; }
 phone_log_tail() { ph 'tail -n 40 $PREFIX/var/log/sv/sova-mesh/current' | grep -E '\[mesh\]' | tail -"${1:-8}" >&2 || true; }
 
@@ -609,22 +619,22 @@ pair() {
   [ "$(phone_put /api/mesh/peers "$body")" = 200 ] || die "phone PUT peers"
   local ok=0 a b
   for _ in $(seq 1 40); do
-    a=$(ph 'curl -s -m 5 http://127.0.0.1:4800/api/mesh/hello >/dev/null; curl -s -m 5 http://127.0.0.1:4800/api/mesh' | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));const p=m.peers.find(p=>p.id===process.argv[1]);console.log(p?.state??"none")' "$LAPTOP_ID" || true)
-    b=$(curl -s -m 5 "$LAPTOP_API/api/mesh/hello" >/dev/null; curl -s -m 5 "$LAPTOP_API/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));const p=m.peers.find(p=>p.id===process.argv[1]);console.log(p?.state??"none")' "$PHONE_ID" || true)
+    a=$(ph "curl -s -m 5 $PH_TOK http://127.0.0.1:4800/api/mesh/hello >/dev/null; curl -s -m 5 $PH_TOK http://127.0.0.1:4800/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));const p=m.peers.find(p=>p.id===process.argv[1]);console.log(p?.state??"none")' "$LAPTOP_ID" || true)
+    b=$(laptop_curl -s -m 5 "$LAPTOP_API/api/mesh/hello" >/dev/null; laptop_curl -s -m 5 "$LAPTOP_API/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));const p=m.peers.find(p=>p.id===process.argv[1]);console.log(p?.state??"none")' "$PHONE_ID" || true)
     [ "$a" = up ] && [ "$b" = up ] && { ok=1; break; }
     sleep 1
   done
   log "phone sees $LAPTOP_ID: $a; laptop sees $PHONE_ID: $b"
   [ $ok = 1 ] || { phone_log_tail 12; die "hello not up both ways"; }
   local c
-  c=$(curl -s -m 10 -o /dev/null -w '%{http_code}' "$LAPTOP_API/peer/$PHONE_ID/api/health"); [ "$c" = 200 ] || die "/peer/$PHONE_ID/api/health via the laptop -> $c"
+  c=$(laptop_curl -s -m 10 -o /dev/null -w '%{http_code}' "$LAPTOP_API/peer/$PHONE_ID/api/health"); [ "$c" = 200 ] || die "/peer/$PHONE_ID/api/health via the laptop -> $c"
   log "laptop /peer/$PHONE_ID/api/health -> 200"
   c=$(code_from_laptop /api/peer/hello); [ "$c" = 200 ] || die "the laptop (now a peer) calling the phone directly -> $c"
   log "laptop -> phone peer listener /api/peer/hello -> 200"
   c=$(ph "curl -s -m 5 -o /dev/null -w '%{http_code}' $PHONE_PEER_URL/api/peer/hello" || true)
   [ "$c" = 403 ] || die "the phone calling itself got $c after pairing, want 403"
-  curl -s -m 5 "$LAPTOP_API/api/mesh/sessions" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify(m.peers.map(p=>({id:p.id,state:p.state,sessions:p.sessions?.length}))))'
-  ph 'curl -s -m 5 http://127.0.0.1:4800/api/mesh' | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({enabled:m.enabled,self:m.self,peers:m.peers.map(p=>({id:p.id,state:p.state,error:p.error})),sync:m.sync}))'
+  laptop_curl -s -m 5 "$LAPTOP_API/api/mesh/sessions" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify(m.peers.map(p=>({id:p.id,state:p.state,sessions:p.sessions?.length}))))'
+  ph "curl -s -m 5 $PH_TOK http://127.0.0.1:4800/api/mesh" | node -e 'const m=JSON.parse(require("fs").readFileSync(0,"utf8"));console.log(JSON.stringify({enabled:m.enabled,self:m.self,peers:m.peers.map(p=>({id:p.id,state:p.state,error:p.error})),sync:m.sync}))'
   phone_log_tail 8
   echo "PAIR PASS"
 }

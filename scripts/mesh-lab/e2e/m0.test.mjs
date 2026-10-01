@@ -5,7 +5,7 @@
 import assert from "node:assert/strict";
 import { before, describe, test } from "node:test";
 import {
-  chaos, curlFrom, dockerIp, exec, execBackground, laptopFetch, localapi, magicName, nodeId, readAgentFile, requireLab,
+  chaos, curlFrom, dockerIp, exec, execBackground, labTokenHeaders, laptopFetch, localapi, magicName, nodeId, readAgentFile, requireLab,
   SERVE_PORT, sh, SOVA_PORT, tailnetIp, tailnetNodes, tsStatus, waitFor, waitTailnetHealth,
 } from "./lib.mjs";
 
@@ -169,7 +169,7 @@ describe("front door", () => {
     }, { what: `front door on ${first}` });
     assert.equal(res.status, 200);
     const ws = await new Promise((resolve) => {
-      const s = new WebSocket("ws://127.0.0.1:4890/ws/watch");
+      const s = new WebSocket("ws://127.0.0.1:4890/ws/watch", { headers: labTokenHeaders() });
       s.onopen = () => resolve("open");
       s.onclose = (e) => resolve(`close ${e.code}`);
       s.onerror = () => {};

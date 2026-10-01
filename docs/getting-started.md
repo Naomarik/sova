@@ -18,9 +18,11 @@ The installer builds the published `vNEXT` release in `~/.local/share/sova` and 
 sova
 ```
 
-Open <http://127.0.0.1:4800>. If your shell says `sova` is not found, run
-`~/.local/bin/sova` directly, or add `~/.local/bin` to your shell's `PATH`.
-Keep the process running while you use the app; `Ctrl+C` stops it.
+Then, in another terminal, run `sova open`: it opens <http://127.0.0.1:4800> already unlocked.
+Sova asks every browser for its token once; `sova token` prints it, to paste on the unlock screen
+of another browser or device. If your shell says `sova` is not found, run `~/.local/bin/sova`
+directly, or add `~/.local/bin` to your shell's `PATH`. Keep the process running while you use
+the app; `Ctrl+C` stops it.
 
 The installer uses no `sudo`, installs no toolchain, and changes no shell profiles or autostart
 services. It does not read or write `~/.pi`, or install the optional pi configuration.
@@ -64,9 +66,10 @@ Use an authenticated tunnel or an HTTPS reverse proxy with authentication and We
 Keep Sova on loopback when the tunnel or proxy runs on the same host. Protect **all** routes,
 including `/api` and `/ws`, and firewall the backend port against direct access.
 
-Setting `HOST=0.0.0.0` exposes the backend on all interfaces; it does not add protection.
-Anyone who can reach the unprotected app can read files and run commands with
-the server user's permissions. Sova has no built-in authentication and is not a multi-user service.
+Setting `HOST=0.0.0.0` exposes the backend on all interfaces. Sova's only protection is its
+per-install token (in `~/.pi/agent/sova/auth-token`; deleting it and restarting revokes every
+browser), and anyone who has it can read files and run commands with the server user's
+permissions. Sova is not a multi-user service.
 
 To send people outside your devices a read-only link to a session, set up
 [public links](public-links.md). They use a separate, locked-down port, never Sova's own.

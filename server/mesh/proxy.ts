@@ -18,6 +18,9 @@ const HOP_BY_HOP = ["connection", "keep-alive", "proxy-authenticate", "proxy-aut
 /** The Overseer's in-process sender secret (server/overseer.ts OVERSEER_SENDER_HEADER): never
     forwarded, so a peer can't replay it against this host (§mesh.links/delivery). */
 const OVERSEER_HEADER = "x-sova-overseer";
+/** This host's own credentials (server/auth.ts): never forwarded, so no peer host ever sees the
+    token, in a log or otherwise; the peer answers by this host's Tailscale identity. */
+const CREDENTIAL_HEADERS = ["cookie", "authorization", "x-sova-token"];
 
 // Failing fast. A blackholed peer (host asleep, off the tailnet, a killed container) never
 // answers a SYN, and fetch would wait its full ~10 s connect timeout before our 502 (a kept-alive
@@ -156,6 +159,7 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
   headers.delete("host");
   for (const h of HOP_BY_HOP) headers.delete(h);
   headers.delete(OVERSEER_HEADER);
+  for (const h of CREDENTIAL_HEADERS) headers.delete(h);
   headers.set(PROXIED_HEADER, host || "unknown");
   headers.set(RELAYED_HEADER, "1");
   const base = peerUrl(peer);
@@ -194,6 +198,8 @@ export async function proxyPeer(c: Context, peer: PeerEntry, tail: string): Prom
     await res.body?.cancel();
     return c.json({ error: "peer refused", id: peer.id }, 403);
   }
+  // Nor may a peer set or overwrite a cookie on this host's origin.
+  res.headers.delete("set-cookie");
   return res;
 }
 

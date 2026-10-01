@@ -61,6 +61,11 @@ meshApi.onSettingsChange((s) => settingsLog.push(s.hostLabel));
 const { clearProbes, ownProtocol } = await import("./hello");
 const { clearPeerReach, notePeerReach, setPeerHeadersTimeout } = await import("./proxy");
 const { peersFile } = await import("./peers");
+const { AUTH_COOKIE, sovaToken } = await import("../auth");
+// Main-listener calls pass its gate as a browser's would (with the cookie); the peer listener's
+// calls carry nothing, because a peer is answered by whois, never by the token.
+const AUTH = { Cookie: `${AUTH_COOKIE}=${sovaToken()}` };
+const mainFetch = (url: string, init: RequestInit = {}) => realFetch(url, { ...init, headers: { ...AUTH, ...(init.headers as Record<string, string> | undefined) } });
 
 let base = "";
 let wsBase = "";
@@ -97,6 +102,7 @@ before(async () => {
     if (url.pathname === "/api/sessions") return json(200, fakeSessions);
     if (url.pathname === "/api/gate-refused") return json(403, { error: "not a peer" }, { "X-Sova-Mesh": "refused" });
     if (url.pathname === "/api/own-403") return json(403, { error: "route says no" });
+    if (url.pathname === "/api/sets-cookie") return json(200, { ok: true }, { "Set-Cookie": "planted=1; Path=/" });
     if (url.pathname === "/api/stream") {
       // Headers at once, then a body that outlasts the headers deadline.
       res.writeHead(200, { "Content-Type": "text/plain" });
@@ -112,7 +118,7 @@ before(async () => {
     }
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
-    json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: req.url, body: Buffer.concat(chunks).toString(), fwd: req.headers["x-forwarded-host"] ?? null, relayed: req.headers["x-sova-relayed"] ?? null });
+    json(url.pathname === "/api/teapot" ? 418 : 200, { method: req.method, url: req.url, body: Buffer.concat(chunks).toString(), fwd: req.headers["x-forwarded-host"] ?? null, relayed: req.headers["x-sova-relayed"] ?? null, cookie: req.headers.cookie ?? null, token: req.headers["x-sova-token"] ?? null, authorization: req.headers.authorization ?? null });
   });
   const wss = new WebSocketServer({ noServer: true });
   fake.on("upgrade", (req, socket, head) => {
@@ -144,11 +150,11 @@ after(async () => {
 });
 
 const getJson = async <T>(path: string): Promise<[number, T]> => {
-  const res = await realFetch(`${base}${path}`);
+  const res = await mainFetch(`${base}${path}`);
   return [res.status, (await res.json()) as T];
 };
 const putJson = async <T>(path: string, body: unknown): Promise<[number, T]> => {
-  const res = await realFetch(`${base}${path}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  const res = await mainFetch(`${base}${path}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   return [res.status, (await res.json()) as T];
 };
 
@@ -243,7 +249,7 @@ function peerGet(path: string): Promise<{ status: number; headers: IncomingMessa
 /** A request on the main listener with its path sent byte for byte (no client-side resolution). */
 function rawRequest(method: string, path: string, body?: string): Promise<{ status: number; body: string }> {
   return new Promise((resolve, reject) => {
-    const req = request({ host: "127.0.0.1", port: Number(new URL(base).port), path, method, agent: false }, (res) => {
+    const req = request({ host: "127.0.0.1", port: Number(new URL(base).port), path, method, agent: false, headers: AUTH }, (res) => {
       let text = "";
       res.on("data", (c) => (text += c));
       res.on("end", () => resolve({ status: res.statusCode!, body: text }));
@@ -257,7 +263,7 @@ function rawRequest(method: string, path: string, body?: string): Promise<{ stat
 /** Open a socket; resolve with its first message and close code, or the handshake's HTTP status. */
 function wsTrip(url: string, send?: string): Promise<{ first?: string; code?: number; reason?: string; status?: number; error?: string }> {
   return new Promise((resolve) => {
-    const ws = new WebSocket(url);
+    const ws = new WebSocket(url, wsBase && url.startsWith(wsBase) ? { headers: AUTH } : {});
     let first: string | undefined;
     ws.on("message", (d) => {
       if (first === undefined) {
@@ -309,7 +315,7 @@ describe("mesh OFF (no peers.json)", () => {
     assert.equal(fd.order.length, 1, "OFF: this host alone");
     assert.match(fd.order[0]!.upstream, /YOUR-TAILNET/);
     assert.match(fd.caddyfile, /lb_policy first/);
-    await realFetch(`${base}/peer/b/api/health`);
+    await mainFetch(`${base}/peer/b/api/health`);
     await wsTrip(`${wsBase}/peer/b/ws/chat?path=x`);
     assert.equal(identityCalls, 0);
     assert.equal(fetches, 0);
@@ -447,7 +453,7 @@ describe("mesh ON", () => {
 
   test("/api/mesh/logins*: served on the main listener only, never to a peer, never forwarded by /peer", async () => {
     // Not vacuous: the routes are live here (mesh ON), so the 404s below are the gates.
-    assert.equal((await realFetch(`${base}/api/mesh/logins`)).status, 200);
+    assert.equal((await mainFetch(`${base}/api/mesh/logins`)).status, 200);
     whoisNode = "nB";
     const paths = ["/api/mesh/logins", "/api/mesh/logins/claim", "/api/%6Desh/logins", "/api/mesh/%6Cogins/claim", "/api/MESH/LOGINS", "/api//mesh/logins/claim"];
     const notFoundBody = await (await app.request("/api/no-such-route")).text();
@@ -490,13 +496,19 @@ describe("mesh ON", () => {
   });
 
   test("proxy REST: verbatim path + query + body; the peer's answer untouched", async () => {
-    const res = await realFetch(`${base}/peer/b/api/echo?x=1&y=%2F`, { method: "POST", body: "hi" });
+    const res = await mainFetch(`${base}/peer/b/api/echo?x=1&y=%2F`, { method: "POST", body: "hi" });
     assert.equal(res.status, 200);
-    const echo = (await res.json()) as { method: string; url: string; body: string; fwd: string; relayed: string };
+    const echo = (await res.json()) as { method: string; url: string; body: string; fwd: string; relayed: string; cookie: string | null; token: string | null; authorization: string | null };
     assert.deepEqual([echo.method, echo.url, echo.body], ["POST", "/api/echo?x=1&y=%2F", "hi"]);
     assert.equal(echo.fwd, new URL(base).host);
     assert.equal(echo.relayed, "1", "the relay marks itself, so the peer's local routes refuse it");
-    assert.equal((await realFetch(`${base}/peer/b/api/teapot`)).status, 418);
+    // This host's token never travels to another host (§app.access/callers).
+    assert.deepEqual([echo.cookie, echo.token, echo.authorization], [null, null, null], "the peer is sent no cookie or token from this side");
+    assert.equal((await mainFetch(`${base}/peer/b/api/teapot`)).status, 418);
+    // Nor does a peer's answer set a cookie on this origin (it could shadow this host's own).
+    const planted = await mainFetch(`${base}/peer/b/api/sets-cookie`);
+    assert.equal(planted.status, 200);
+    assert.equal(planted.headers.get("set-cookie"), null);
   });
 
   test("proxy REST: our own failures — unknown 404, down 502, gate refusal 403; a route's 403 passes", async () => {
@@ -510,7 +522,7 @@ describe("mesh ON", () => {
   test("proxy: /api/peer/* and /api/mesh/* on a peer are never reachable from a browser, in any spelling", async () => {
     // The check is not vacuous: an allowed tail does reach the fake peer through the counted fetch.
     let before = fetches;
-    await realFetch(`${base}/peer/b/api/echo`);
+    await mainFetch(`${base}/peer/b/api/echo`);
     assert.equal(fetches, before + 1);
     const tails = [
       "/api/peer/hello",
@@ -671,7 +683,7 @@ describe("mesh ON", () => {
       assert.deepEqual(await within(wsTrip(`${wsBase}/peer/stuck/ws/chat?path=p`), 9000, "the wedged WS hop"), { status: 502 });
       assert.ok(Date.now() - t < 7000, `ws 502 took ${Date.now() - t} ms`);
       // Headers in time, body for ~1.6 s (past the 1 s deadline): passes whole.
-      const res = await within(realFetch(`${base}/peer/b/api/stream`), 5000, "the stream's headers");
+      const res = await within(mainFetch(`${base}/peer/b/api/stream`), 5000, "the stream's headers");
       assert.equal(res.status, 200);
       assert.equal(await within(res.text(), 5000, "the stream's body"), "abcd!");
     } finally {

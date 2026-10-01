@@ -1,6 +1,6 @@
 /**
  * The link extension's only way out: HTTP to the session's OWN Sova host, whose origin arrives in
- * the `sova-link` flag. The host does every peer hop (§mesh.links/delivery); nothing here knows the
+ * the `sova-link` flag (and its token in `sova-link-token`). The host does every peer hop (§mesh.links/delivery); nothing here knows the
  * mesh. Builtins only (global fetch), so tests run under plain `node --test`.
  *
  * The shapes below mirror Sova's `shared/mesh-links.ts` structurally (pi-config never imports
@@ -140,12 +140,18 @@ export const UNLINKED_REASONS: ReadonlySet<string> = new Set(["not-member", "end
 /** An offer lists the whole tree before it answers (a big tree takes a while); packing runs on after. */
 const TIMEOUTS = { members: 15_000, brief: 3_000, send: 60_000, inbox: 10_000, offer: 300_000, answer: 30_000, offers: 30_000 };
 
+/** The header the host's gate reads the per-install token from (§app.access/callers). */
+export const TOKEN_HEADER = "x-sova-token";
+
 export class LinkClient {
 	readonly origin: string;
 	private readonly fetchImpl: typeof fetch;
-	constructor(origin: string, fetchImpl: typeof fetch = fetch) {
+	private readonly token: string | undefined;
+	/** `token`: the host's per-install token (the `sova-link-token` flag), sent on every call. */
+	constructor(origin: string, fetchImpl: typeof fetch = fetch, token?: string) {
 		this.origin = origin;
 		this.fetchImpl = fetchImpl;
+		this.token = token || undefined;
 	}
 
 	/** link_members, and (brief: no peer hops, bounded) the prompt section. */
@@ -187,12 +193,16 @@ export class LinkClient {
 		const url = this.origin.replace(/\/+$/, "") + route;
 		const timeout = AbortSignal.timeout(timeoutMs);
 		const combined = signal ? AbortSignal.any([signal, timeout]) : timeout;
+		const headers: Record<string, string> = {};
+		if (body !== undefined) headers["content-type"] = "application/json";
+		if (this.token) headers[TOKEN_HEADER] = this.token;
 		let res: Response;
 		try {
 			res = await this.fetchImpl(url, {
 				method,
 				signal: combined,
-				...(body !== undefined ? { headers: { "content-type": "application/json" }, body: JSON.stringify(body) } : {}),
+				headers,
+				...(body !== undefined ? { body: JSON.stringify(body) } : {}),
 			});
 		} catch (e) {
 			if (signal?.aborted) throw e;

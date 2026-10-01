@@ -162,14 +162,15 @@ const isCompaction = (raw: unknown) => typeof raw === "object" && raw !== null &
  * depend on it; a drawn row remembers its real height. A row that draws nothing (a paired tool
  * result) takes no space whatever its estimate (`.entry:empty`).
  */
-export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }, images?: readonly string[], at: ImagesAt = "user", chain = false, folded = false): string {
+export function rowEstimate(item: { kind: string; text?: string; raw?: unknown }, images?: readonly string[], at: ImagesAt = "user", chain = false, folded = false, first = false): string {
   const text = item.text ?? "";
-  // A step of a timeline (a thinking row, a tool call, an orphan result) is one `--timeline-row`
-  // line plus the air between two of them, not a card (§chat.transcript/work-chain) — and the one
-  // row a FOLDED run still draws is that line and nothing else.
+  // A run head reserves its group line (44), gap (8), and step (24). Middle steps
+  // retain the 32px convention. Folded, only the 44px group line draws, never images.
   const compact = chain && (item.kind === "thinking" || item.kind === "tool-call" || item.kind === "tool-result");
-  const card = compact ? (folded ? "24px" : "32px") : "46px";
-  const foldedEst = compact ? (folded ? "24px" : "32px") : "36px";
+  if (compact && folded) return "calc(44px)";
+  const compactEst = first ? "76px" : "32px";
+  const card = compact ? compactEst : "46px";
+  const foldedEst = compact ? compactEst : "36px";
   let est: string;
   if (item.kind === "assistant-text") {
     const s = textShape(text);

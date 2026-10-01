@@ -65,6 +65,17 @@ test("a visible message still breaks runs beside skipped rows", () => {
   ]);
 });
 
+test("compression off removes every run, including single steps and runs across paired results", () => {
+  for (const [working, skip] of [
+    [[true], []],
+    [[true, false, true, false, true], [false, true, false, false, false]],
+  ]) {
+    assert.deepEqual(chainRuns(working!, skip!, false), working!.map(() => null));
+    assert.deepEqual(chainRuns(working!, skip!, true), chainRuns(working!, skip!));
+  }
+  assert.deepEqual(chainRuns([], [], false), []);
+});
+
 test("every row of a run reads the same count, whichever row is asked", () => {
   assert.deepEqual(chainRuns([true, true, true]).map((r) => r!.steps), [3, 3, 3]);
 });

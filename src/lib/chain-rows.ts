@@ -21,8 +21,10 @@ export interface ChainRun {
  * `skip` rows draw nothing: they get null, never count as steps, and never break a run.
  * Every run is a run, one row long or fifty; `steps` is how many lines it draws.
  */
-export function chainRuns(working: readonly boolean[], skip: readonly boolean[] = []): (ChainRun | null)[] {
+export function chainRuns(working: readonly boolean[], skip: readonly boolean[] = [], enabled = true): (ChainRun | null)[] {
   const out: (ChainRun | null)[] = working.map(() => null);
+  // Off means no run metadata at all: neither styling nor a remembered fold can affect cards.
+  if (!enabled) return out;
   let pending: number[] = [];
   const finish = () => {
     pending.forEach((i, step) => {

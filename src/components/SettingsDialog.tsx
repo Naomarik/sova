@@ -31,6 +31,7 @@ import {
   setRecentCount,
 } from "../lib/recent";
 import { setShowSummaries, showSummaries } from "../lib/summary-line";
+import { compressWork, setCompressWork } from "../lib/work-compression";
 import { activeThemeId, applyTheme, droppedThemeId, reconcileTheme, typography } from "../lib/theme";
 import type { SettingsTab } from "../lib/settings-nav";
 import {
@@ -539,6 +540,21 @@ function GeneralPanel() {
             {problem()}
           </span>
         </Show>
+      </div>
+      <div class="field settings-field">
+        <label class="toggle toggle-switch">
+          <span class="field-label">Compress thinking &amp; tool calls</span>
+          <input
+            type="checkbox"
+            checked={compressWork()}
+            aria-describedby="compress-work-hint"
+            onChange={(e) => setCompressWork(e.currentTarget.checked)}
+          />
+          <span class="toggle-box" />
+        </label>
+        <span class="field-hint" id="compress-work-hint">
+          Show the working as a compact timeline. Off, thinking and tool calls use their original cards.
+        </span>
       </div>
       <div class="field settings-field">
         <label class="toggle toggle-switch">

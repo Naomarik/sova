@@ -15,6 +15,7 @@ import { carriedStart, chunkStart, fillStops, FIRST_CHUNK, type ImagesAt, initia
 import { usePaneId } from "../lib/pane-scope";
 import { isHiddenBlock, liveHiddenCounts, splitHidden, thinkingHiddenLabel, toolsHiddenLabel, CARD_TOOLS } from "../lib/hidden-rows";
 import { chainRuns, type ChainRun } from "../lib/chain-rows";
+import { compressWork } from "../lib/work-compression";
 import { isChangeRow } from "../lib/change-rows";
 import { stripSessionHeader } from "../../shared/profiles";
 import { profileIconName } from "../lib/profiles";
@@ -576,7 +577,7 @@ export function HistoryItems(props: {
         (it.kind === "tool-result" && !(it.toolCallId && callIds.has(it.toolCallId))),
     );
     const skip = list.map((it) => it.kind === "tool-result" && !!it.toolCallId && callIds.has(it.toolCallId));
-    const runs = chainRuns(working, skip);
+    const runs = chainRuns(working, skip, compressWork());
     // What the folded line reports on, counted FIRST and for the run as a whole: the row that draws
     // that line is the run's first one, and it would otherwise be told the count before its own run
     // had been walked. One error per failed step, never twice for a call and its stored result.
@@ -763,7 +764,7 @@ export function HistoryItems(props: {
       <For each={built()}>
         {(item, local) => {
           const index = indexOf ? () => indexOf().get(item) ?? local() : local;
-          /** The timeline run this row belongs to, when it is the working (§chat.transcript/work-chain). */
+          /** The timeline run this row belongs to, when it is the working. */
           const chain = () => chains().get(item.id);
           // The strip every list change rebuilds, kept while it offers the same thing: rows
           // arriving above (a tail-first hello's history), an append or a turn-end reload would
@@ -786,7 +787,7 @@ export function HistoryItems(props: {
             data-chain-last={chain()?.last ? "" : undefined}
             data-chain-folded={foldedRun(chain()) ? "" : undefined}
             data-entry={item.id}
-            style={{ "--entry-est": rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain())) }}
+            style={{ "--entry-est": rowEstimate(item, ...shownImages(item), !!chain(), foldedRun(chain()), !!chain()?.first) }}
           >
             <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
             <Switch fallback={<Unknown raw={item.raw} />}>
@@ -1087,7 +1088,7 @@ export function LiveEntries(props: {
   queueActions?: (row: { id?: string; state: LiveUserState; text: string }) => MessageActionItem[];
 }) {
   const hide = () => ({ tools: !!props.hideTools, thinking: !!props.hideThinking });
-  const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide()) && (b.type !== "text" || !!b.text);
+  const shows = (b: LiveBlock | undefined) => !!b && !isHiddenBlock(b, hide()) && (!compressWork() || b.type !== "text" || !!b.text);
   /** The nearest block before `i` that renders, so a hidden call doesn't repeat the author head. */
   const shownBefore = (blocks: LiveBlock[], i: number) => {
     for (let j = i - 1; j >= 0; j--) if (!isHiddenBlock(blocks[j], hide())) return blocks[j];
@@ -1128,7 +1129,7 @@ export function LiveEntries(props: {
     // grows at the end, so where it starts is what identifies it. Settling gives it a real id,
     // which is why a run folded while it streamed comes back open.
     // The failures are counted before any block is handed a run, as the settled path counts them.
-    const runsList = chainRuns(working, skip);
+    const runsList = chainRuns(working, skip, compressWork());
     const failed = new Map<number, number>();
     const running = new Map<number, number>();
     blocks.forEach((b, i) => {
@@ -1196,8 +1197,19 @@ export function LiveEntries(props: {
                   <For each={e().blocks}>
                     {(block, i) => {
                       const chain = () => liveChainOf(block);
+                      const view = () => (
+                        <LiveBlockView
+                          block={block}
+                          live={props.live}
+                          author={shortModel(e().model) ?? props.author}
+                          model={e().model}
+                          streaming={blockStreams(e(), i())}
+                          showHead={shownBefore(e().blocks, i())?.type !== "text"}
+                        />
+                      );
                       return (
                       <Show when={shows(block) && !foldedStep(chain())}>
+                        <Show when={compressWork()} fallback={view()}>
                         <div
                           classList={{ "chain-live": !!chain() }}
                           data-chain={chain() ? String(chain()!.at) : undefined}
@@ -1206,17 +1218,9 @@ export function LiveEntries(props: {
                           data-chain-folded={foldedRun(chain()) ? "" : undefined}
                         >
                           <Show when={foldable(chain()) ? chain() : null}>{(run) => <ChainFold run={run()} />}</Show>
-                          <Show when={!foldedRun(chain())}>
-                            <LiveBlockView
-                              block={block}
-                              live={props.live}
-                              author={shortModel(e().model) ?? props.author}
-                              model={e().model}
-                              streaming={blockStreams(e(), i())}
-                              showHead={shownBefore(e().blocks, i())?.type !== "text"}
-                            />
-                          </Show>
+                          <Show when={!foldedRun(chain())}>{view()}</Show>
                         </div>
+                        </Show>
                       </Show>
                       );
                     }}

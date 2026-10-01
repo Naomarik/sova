@@ -711,7 +711,7 @@ place in Live & web (and Groups), but a profile session is never a Recent row
 
 The top of the list, above Recent: the sessions blocked on you right now — a dialog open, an
 errored turn, a subagent that ended in an error, an idle session with open alignment questions
-(§chat.alignment/session-mark), and a baton hand-off (the baton is with you, or a person needs
+whose branch is not merged (§chat.alignment/session-mark), and a baton hand-off (the baton is with you, or a person needs
 their link, §app.baton/needs-you); a roster proposal stays a decide item. A reply that seems to ask you (§app.decisions/asks-user) and
 a team gone quiet (§app.decisions/team-stall) are not blockers: each is a quiet mark on its row,
 never a row here. Neither is a worktree ready to merge or waiting for your OK: that is the row's

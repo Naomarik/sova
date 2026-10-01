@@ -10381,6 +10381,69 @@
         "src/lib/project-page.test.ts",
         "src/projects.css"
       ]
+    },
+    "§app.overseer/input-source": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/queue.ts",
+        "server/group-prompt.ts",
+        "server/input-source.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.overseer/run-note": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer.ts",
+        "server/overseer-run-note.ts",
+        "server/overseer-run-note.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/confirm",
+        "§app.overseer/proactivity",
+        "§app.overseer/attention-digest",
+        "§chat.worktrees/readiness",
+        "§app.overseer/tools"
+      ]
+    },
+    "§app.overseer/session-truth": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/overseer.ts",
+        "server/align-state.ts",
+        "server/merge-readiness.ts",
+        "server/worktrees.ts",
+        "server/overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§chat.worktrees/readiness",
+        "§chat.alignment/session-mark",
+        "§app.overseer/seen"
+      ]
+    },
+    "§app.overseer/verify-first": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "server/overseer-prompt.md",
+        "server/project-overseer-prompt.md"
+      ],
+      "requires": [
+        "§app.overseer/session-truth",
+        "§app.overseer/run-note"
+      ]
     }
   },
   "boundary": {

@@ -389,6 +389,10 @@ change parses only the lines appended since (a file that shrank or was rewritten
   digest, kind `open-questions` ("3 open questions in al_3 Autonomy settings" or "… in 2
   alignments"), dated by the session's last reply; so it lists in the sidebar's Needs you, counts
   in the Overseer's badge, and is a phone-notification kind ("Open questions", on by default).
+  Once the session's branch is merged (its readiness badge merged or restart pending,
+  §chat.worktrees/readiness), the questions are a decide item instead, "Merged with 3 open
+  questions in al_3 Autonomy settings": they stay in the digest and the row mark, but leave Needs
+  you, the badge, briefs and push.
 
 ## §chat.alignment/tui — In the TUI
 

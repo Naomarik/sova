@@ -129,11 +129,14 @@ pairs or unlinks it.
   person gets their own **sibling** of it (a new `pv_…`): the same organization, project and port,
   expiring when the original does and never later (an Extend of a sibling stops at the original's
   expiry), and turned off whenever the original is (§mesh.public/preview). The preview named stays
-  as it is. The previews lists (the project's card, the Shares page) show a sibling as "sent to
-  {name}", so each person's link can be turned off on its own. A sibling records who sent it
-  (`createdBy`): `operator` for the operator's own send, else `session:<id>` of the overseer that
-  sent it (the project's overseer conversation for a project overseer's send, the current Overseer
-  for the global Overseer's), so the lists say "Made by the overseer" for an overseer's.
+  as it is. The previews lists (the project's card, the Shares page) name a sibling's person on its
+  original's **Sent to** line (as "sent to {name}" on a row of its own when its original isn't
+  listed), each with its own Turn Off, so each person's link can be turned off on its own
+  (§mesh.public/preview-card). A sibling records who sent it (`createdBy`): `operator` for the
+  operator's own send, else `session:<id>` of the overseer that sent it (the project's overseer
+  conversation for a project overseer's send, the current Overseer for the global Overseer's), so
+  the lists say "Sent by the overseer" (the name's tooltip on a Sent to line) or "Made by the
+  overseer" (a row of its own on the card) for an overseer's.
 - Both refuse while the public address warning is `off`, `unreachable` or `not-accepted` (a link
   nobody outside can open), with that warning's text (§app.baton/links), and a preview while no
   preview address is set.

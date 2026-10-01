@@ -58,7 +58,7 @@ which is also its live view: its tool calls render as tool cards as they happen.
   list (never their text: it reads them with `sova_todos` when the operator asks,
   §app.project-overseer/ideas-and-todos), its notes, the organization's About text (§app.organizations/about) and, last, the operator's extra instructions. Model and thinking from `overseer.json`, else the new-session
   defaults; the composer's picks are saved there.
-- **Extra instructions.** The project's Overseer card has an **Extra instructions** field, after
+- **Extra instructions.** The project page's Settings tab has an **Extra instructions** field, after
   the coding sessions' mode and before Limits: the hint "Added last to this overseer's prompt, after
   the organization's About text, and they win over it. It reads them at its next run.", a textarea
   (at most 8,000 characters) with a live `{n} / 8,000` counter, and **Save** and **Cancel**, both
@@ -265,11 +265,19 @@ user row.
   only the decisions it promoted count against the allowance; an id it refused (unknown, not
   drafted, in a conflict, outside its author's area) takes nothing, and a call that promotes none
   takes nothing.
-- **The page** (the project's Overseer card) has a **Limits** section: every limit above, each
-  allowance with an `Unlimited` checkbox that disables its field (a blank field is
-  never Unlimited), the at-once limits without one, and the pace; one form, **Save Limits** (one
-  PATCH), **Reset Limits** (the defaults, into the form, unsaved), with the first problem under it
-  before anything is sent. Under the status line, what it has
+- **The page** (the project page's Settings tab) has a **Limits** section, read-only until
+  **Edit**: one table, a row per limit (Gathering sessions started, Decisions promoted, Coding
+  sessions started, Prompts to coding sessions, Looks, Gathering sessions open, Coding sessions
+  running) and a column each for Per message, Per day and At once, a cell `—` where the limit
+  doesn't exist and `∞` (named "Unlimited") for Unlimited; under it one hint ("Per day resets at
+  midnight on {host}. At once never goes Unlimited: it's what stops a burst."), then the pace in
+  one line. **Edit Limits** turns
+  the cells into fields, each allowance with an `∞` toggle ("Unlimited", pressed or not) that
+  disables its field (a blank field is never Unlimited), the at-once limits without one, and the
+  pace selects; one form, **Save Limits** (one PATCH; saved, the table is read-only again),
+  **Reset Limits** (the defaults, into the form, unsaved) and **Cancel** (the saved values back,
+  read-only), with the first problem under it before anything is sent. Under 560px of pane width
+  each row stacks, every figure under its column's name. Under the status line, what it has
   used today on its own and in the operator's last message, and a **Waiting** line per held item
   that isn't the message allowance's. The Watch hint is built from the pace. Copy:
   §design.copy-deck/project-limits.
@@ -494,8 +502,11 @@ user row.
   (the overseer's and the operator's), newest first: title (a link on this host), who started it
   (the overseer, you, or you via the Overseer: an `operator-coding` row marked `via: "overseer"`,
   §app.overseer/org-project-overseers),
-  state, and its branch in mono, then **Merge Branch** and **Remove Worktree**; "Sessions it
-  started" keeps its gathering sessions and offers. Copy: §design.copy-deck/project-coding.
+  state, age and its branch in mono (one line, cut with an ellipsis, the whole branch as its
+  `title`), then a **⋯** menu ("Actions · {title}") holding **Merge Branch** and **Remove
+  Worktree…** (each disabled with its reason, and absent when the row doesn't offer it); the
+  Remove confirmation opens under the row. "Sessions it started" keeps its gathering sessions and
+  offers. Copy: §design.copy-deck/project-coding.
 - **Merge Branch** is the operator's gesture; the overseer has no tool for it. It merges
   `sova/<name>` into `target` in the project root's checkout, which must have `target` checked
   out, no tracked changes and no merge, rebase or cherry-pick in progress: a fast-forward when
@@ -679,7 +690,8 @@ user row.
 
 - Ideas (the overseer's and the operator's, `POST …/overseer/ideas`) and to-dos use the Overseer's
   stores and shapes at the project's paths, so the same panels show them. The project page adds
-  either from its list: **Add Item** (a to-do) and **Add Idea** (a title; its id is
+  either from its list, its form opened by **+** on the list's heading (for ideas, also **+ Idea**
+  on the Requirements tab's counts line): **Add Item** (a to-do) and **Add Idea** (a title; its id is
   `§idea/<the title's words>`, numbered when taken).
 - **The operator's list, not the overseer's work queue.** An idea or a to-do the operator adds or
   changes is not a reason to look, and the overseer's prompt does not list the to-dos: it says
@@ -961,10 +973,11 @@ user row.
   choose every kind but `preview`, so `preview` is on for it and the rest (`send` included) read as
   saved. Nothing is rewritten to do this: the file keeps what was saved until the next save. The
   list is stamped on every act of the project, as read at that moment.
-  On the page, right after the level picker, it is "Waits for the overseer's approval", with the
-  hint "When one of these is held, it goes ahead only once the overseer approves it; you can cancel
-  it in Needs you. The rest go ahead when their hold ends." and one toggle per kind, in the
-  server's order: Starting a gathering, Offering a gathering, Closing a
+  On the page, right after the level picker, it is "Waits for the overseer's approval": a summary
+  line ("All {n} wait for its approval." · "{k} of {n} wait for its approval: {labels}." · "None
+  waits for its approval.") with **Edit**, which opens the hint "When one of these is held, it goes
+  ahead only once the overseer approves it; you can cancel it in Needs you. The rest go ahead when
+  their hold ends." and one toggle per kind (**Done** closes it), in the server's order: Starting a gathering, Offering a gathering, Closing a
   gathering, Promoting decisions, Starting a coding session, Prompting a coding session, Owner
   updates, Approving a proposed person, Declining a proposed person, Publishing a preview link. Each tick saves at once
   (`PATCH …/overseer {confirmKinds}`) and says "{label}: waits for the overseer's approval once its
@@ -1020,14 +1033,13 @@ user row.
 
 ## §app.project-overseer/pipeline — The project page's Pipeline
 
-- **A card after the overseer.** The project page has a **Pipeline** card right after the
-  overseer panel: one row for each gap the overseer filed (§app.project-overseer/gaps), from the
+- **A card on the Requirements tab.** The project page has a **Pipeline** card on its
+  Requirements tab (§app.organizations/project-page), shown while it has a row or a held act: one row for each gap the overseer filed (§app.project-overseer/gaps), from the
   gaps' statecharts (`GET /api/orgs/:id/projects/:pid/pipeline`), re-read every 10 seconds while the tab
   shows and reconciled in place, so an open timeline and focus survive. The project's held acts
   come first, under "Waiting to start" (§app.project-overseer/holds). A line under the title counts
   the rows: "{n} gap(s) open · {n} stalled · {n} on hold · {n} done.", leaving out parts that are
-  zero. With no gap: "No gaps yet. When the overseer files a decision the project needs that nobody
-  has made, it gets a row here."
+  zero. With no gap and no held act the card is left out and the tab's counts line names it.
 - **Each row**: the gap's title; its stage as a chip (Open, Gathering, Deciding, Promoted, Done,
   On hold), warn when its state needs the operator, is in conflict or was edited in the spec, error
   when its build failed, accent with the live dot while a build works; beside it the state in

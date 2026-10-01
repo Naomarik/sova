@@ -5,7 +5,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ALSO_CHANGES_OVERRIDE } from "../mode/spec-guard.ts";
+import { ALSO_CHANGES_OVERRIDE, localIO } from "../mode/spec-guard.ts";
 import {
 	MERGE_BLOCKS, SPEC_HOOK_SCRIPT, alsoChangesOf, readState, runHook, specHookSettings, statePath, withClaudeSettings,
 	type HookInput,
@@ -80,6 +80,67 @@ test("post after a Bash edit: a census digest; a read-only tool: nothing; the tu
 	const state = readState(statePath(stateDir, "s1")!);
 	assert.equal(state.turn.wrote, true);
 	assert.ok(fs.readFileSync(path.join(stateDir, "s1.log.jsonl"), "utf8").includes("[spec census]"), "the event log records what was said");
+});
+
+/** A committed project whose src/a.txt five § map and src/b.txt, src/c.txt one each. */
+function manyProject(): { root: string; stateDir: string } {
+	const { root, stateDir } = project();
+	const claims: Record<string, unknown> = {};
+	for (const n of ["a", "b", "c", "d", "e"]) claims[`§app/a${n}`] = { kind: "behavior", requires: [], code: ["src/a.txt"] };
+	for (const f of ["b", "c"]) claims[`§app/${f}`] = { kind: "surface", code: [`src/${f}.txt`] };
+	write(root, ".sova/spec/manifest.json", JSON.stringify({ formatVersion: 1, grammar: { claimsRoot: "claims/", directoryKinds: ["section"] }, boundary: { include: ["src"], exclude: [] }, claims }));
+	for (const id of Object.keys(claims)) write(root, `.sova/spec/claims/app/${id.slice(5)}.md`, `# ${id}\n\nText.\n`);
+	fs.rmSync(path.join(root, ".sova/spec/claims/app/x.md"));
+	for (const f of ["b", "c"]) write(root, `src/${f}.txt`, "1\n");
+	git(root, "add", "-A");
+	git(root, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "many");
+	return { root, stateDir };
+}
+
+test("the census note: New: shows 3 § a file, the Stop check still accepts the rest; the Rule prints once in a session; an old state file loads", async () => {
+	const { root, stateDir } = manyProject();
+	const o = { core: CORE, stateDir };
+	const context = (out: any): string => out?.hookSpecificOutput?.additionalContext ?? "";
+	await runHook("turn", event(root, {}), o);
+	write(root, "src/a.txt", "2\n");
+	const first = context(await runHook("post", event(root, { tool_name: "Edit", tool_input: { file_path: "src/a.txt" } }), o));
+	assert.match(first, /New: src\/a\.txt → §app\/aa, §app\/ab, §app\/ac \(\+2 more\)/);
+	assert.match(first, /Rule: /);
+	assert.deepEqual(readState(statePath(stateDir, "s1")!).census.foreign, ["§app/aa", "§app/ab", "§app/ac", "§app/ad", "§app/ae"]);
+	assert.equal(await runHook("stop", event(root, { last_assistant_message: "Done.\nAlso changes: §app/ae — tweak" }), o), undefined, "a § the note held back is still one the census saw");
+	await runHook("turn", event(root, { prompt_id: "p2" }), o);
+	write(root, "src/b.txt", "2\n");
+	const second = context(await runHook("post", event(root, { prompt_id: "p2", tool_name: "Edit", tool_input: { file_path: "src/b.txt" } }), o));
+	assert.match(second, /Foreign §: §app\/b/);
+	assert.doesNotMatch(second, /Rule: |No draft yet/, "said once in the session");
+	// A state file from before the note was shortened (no `said`): it loads, and says the Rule again.
+	const file = statePath(stateDir, "s1")!;
+	const old = JSON.parse(fs.readFileSync(file, "utf8"));
+	delete old.census.said;
+	fs.writeFileSync(file, JSON.stringify(old));
+	write(root, "src/c.txt", "2\n");
+	const third = context(await runHook("post", event(root, { prompt_id: "p2", tool_name: "Edit", tool_input: { file_path: "src/c.txt" } }), o));
+	assert.match(third, /Foreign §: §app\/c/);
+	assert.match(third, /Rule: /);
+});
+
+test("the team MCP tools skip the census, by exact name: no git call, and the next Edit reports the change; another team tool still runs it", async () => {
+	const { root, stateDir } = project();
+	const calls: string[][] = [];
+	const io = { ...localIO, exec: (cmd: string, args: string[], opts: any) => (calls.push([cmd, ...args]), localIO.exec(cmd, args, opts)) };
+	const o = { core: CORE, stateDir, io };
+	await runHook("turn", event(root, {}), o);
+	write(root, "src/a.txt", "changed by a teammate\n");
+	calls.length = 0;
+	for (const tool of ["mcp__team__team_inbox", "mcp__team__team_msg", "mcp__team__team_ask", "mcp__team__team_roster", "mcp__team__team_report", "mcp__team__wake_nudge"])
+		assert.equal(await runHook("post", event(root, { tool_name: tool, tool_input: {} }), o), undefined, tool);
+	assert.deepEqual(calls, [], "a skipped tool never looks");
+	const out = await runHook("post", event(root, { tool_name: "Edit", tool_input: { file_path: "src/a.txt" } }), o) as any;
+	assert.match(out?.hookSpecificOutput?.additionalContext ?? "", /New: src\/a\.txt → §app\/x/);
+	assert.equal(readState(statePath(stateDir, "s1")!).turn.wrote, true);
+	write(root, "src/new.txt", "n\n");
+	const other = await runHook("post", event(root, { tool_name: "mcp__team__future_tool", tool_input: {} }), o) as any;
+	assert.match(other?.hookSpecificOutput?.additionalContext ?? "", /New: src\/new\.txt → unclaimed/, "an unlisted team tool is never skipped");
 });
 
 test("stop: a writing turn needs the Also changes line (sent back once, then let through); a pure Q&A turn must not carry it", async () => {

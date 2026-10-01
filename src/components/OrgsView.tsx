@@ -37,7 +37,7 @@ import { aboutChangeWord, aboutCount, aboutLength, aboutOverCap, aboutPreview } 
 import { orgPageRoute } from "../lib/org-page-route";
 import { createOrgSource } from "../lib/org-source";
 import { useMinuteNow } from "../lib/minute-clock";
-import { orgHref, orgSessionHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab } from "../lib/orgs-route";
+import { orgHref, orgSessionHref, orgTabHref, personHref, projectHref, startForHref, takeStartParent, type OrgsRoute, type OrgTab, type ProjectTab } from "../lib/orgs-route";
 import { orgTabsOf } from "../lib/org-tabs";
 import { announce, toast } from "../lib/ui-state";
 import { InsightsPage } from "./InsightsPage";
@@ -68,13 +68,15 @@ const STATE_WORDS: Record<string, { word: string; tone: "info" | "warn" | "succe
 export function OrgsView(props: { route: OrgsRoute; titleRef(el: HTMLHeadingElement): void }) {
   // Memos, not ternaries in the props below: the start form reads `start` from its Cancel handler.
   const page = orgPageRoute(() => props.route);
+  const projectTab = createMemo((): ProjectTab => (props.route.kind === "project" ? (props.route.tab ?? "overview") : "overview"));
   return (
     <Switch>
       <Match when={props.route.kind === "list"}>
         <OrgList titleRef={props.titleRef} />
       </Match>
-      <Match when={props.route.kind === "project" && props.route} keyed>
-        {(r) => <ProjectPage orgId={r.id} projectId={r.projectId} titleRef={props.titleRef} />}
+      {/* Keyed on the project alone: a tab change keeps the page and what it fetched. */}
+      <Match when={props.route.kind === "project" && `${props.route.id}/${props.route.projectId}`} keyed>
+        {(key) => <ProjectPage orgId={key.split("/")[0]!} projectId={key.split("/")[1]!} tab={projectTab()} titleRef={props.titleRef} />}
       </Match>
       <Match when={props.route.kind === "person" && props.route} keyed>
         {(r) => <PersonPage orgId={r.id} personId={r.personId} titleRef={props.titleRef} />}
@@ -110,7 +112,7 @@ function OverseerDoor(props: { orgId: string; projectId: string; titleRef(el: HT
       {(e) => (
         <>
           <Banner tone="error" title="Couldn't open the overseer." body={e()} />
-          <ProjectPage orgId={props.orgId} projectId={props.projectId} titleRef={props.titleRef} />
+          <ProjectPage orgId={props.orgId} projectId={props.projectId} tab="overview" titleRef={props.titleRef} />
         </>
       )}
     </Show>

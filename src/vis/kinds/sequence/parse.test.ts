@@ -84,13 +84,13 @@ mark 9 "past the end"`;
   assert.deepEqual(ok<SequenceSpec>("sequence", 'actor a "Ping"\na -> b "Ping"\nmark "Ping"').emphasis, [{ key: "actor:a", tone: "accent" }]);
 });
 
-test("sequence: a Mermaid message is an error quoting the vis one", () => {
-  const msg = (body: string) => err("sequence", body).message;
-  assert.equal(msg("Client -> Server: SYN"), 'write Client -> Server "SYN" (not Mermaid a -> b: msg)');
-  assert.equal(msg("Client->>Server: SYN ACK"), 'write Client -> Server "SYN ACK" (not Mermaid a ->> b: msg)');
-  assert.equal(msg("s -->> c: ok"), 'write s --> c "ok" (not Mermaid a -->> b: msg)');
-  assert.equal(msg('c -> s: "SYN"'), 'write c -> s "SYN" (not Mermaid a -> b: msg)');
-  assert.equal(msg("c -> s:"), "write c -> s (not Mermaid a -> b: msg)");
+test("sequence: a Mermaid message reads as the vis one (§chat.markdown/vis-lenience-content)", () => {
+  const step = (body: string) => ok<SequenceSpec>("sequence", `a -> b\n${body}`).steps[1];
+  assert.deepEqual(step("Client -> Server: SYN"), { type: "msg", from: "Client", to: "Server", label: "SYN", dashed: false });
+  assert.deepEqual(step("Client->>Server: SYN ACK"), { type: "msg", from: "Client", to: "Server", label: "SYN ACK", dashed: false });
+  assert.deepEqual(step("s -->> c: ok"), { type: "msg", from: "s", to: "c", label: "ok", dashed: true });
+  assert.deepEqual(step('c -> s: "SYN"'), { type: "msg", from: "c", to: "s", label: "SYN", dashed: false });
+  assert.deepEqual(step("c -> s:"), { type: "msg", from: "c", to: "s", dashed: false });
   // Other bad targets keep their message.
-  assert.match(msg("c -> s[x]"), /not an id/);
+  assert.match(err("sequence", "c -> s[x]").message, /not an id/);
 });

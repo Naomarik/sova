@@ -1,5 +1,62 @@
-/* An org project's page (#/orgs/<id>/projects/<pid>): its overseer panel, requirements,
-   conflicts and decisions. Token values only; builds on orgs.css. */
+/* An org project's page (#/orgs/<id>/projects/<pid>[/<tab>], §app.organizations/project-page): a
+   summary (the overseer line and count chips), the tab strip, then one tab's cards. Token values
+   only; builds on orgs.css. */
+
+/* ---- The summary: the overseer line, what waits, and the count chips. */
+.project-summary { display: flex; flex-direction: column; gap: var(--space-3); }
+.project-summary-overseer { display: flex; flex-direction: column; gap: var(--space-2); }
+.project-summary-overseer > .orgs-line { margin: 0; }
+.project-summary-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+.project-summary-status { flex: 1 1 22rem; min-width: 0; margin: 0; color: var(--color-ink-2); overflow-wrap: anywhere; }
+.project-summary-actions { flex: none; flex-wrap: wrap; }
+.project-level {
+  display: inline-block;
+  padding: 0 var(--space-2);
+  border-radius: var(--r-full);
+  background: var(--color-sunken);
+  border: var(--stroke-thin) solid var(--color-border);
+  color: var(--color-ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-mono);
+  white-space: nowrap;
+}
+/* Each chip a link to its tab and section: a pill at the button's small height, a 44px target. */
+.project-counts { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.project-count {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--control-sm);
+  padding: 0 var(--space-3);
+  border: var(--stroke-thin) solid var(--color-border);
+  border-radius: var(--r-full);
+  background: var(--color-surface);
+  color: var(--color-ink-2);
+  font-size: var(--fs-caption);
+  line-height: var(--lh-caption);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.project-count::after { content: ""; position: absolute; inset: calc((var(--tap-min) - 100%) / -2) 0; }
+.project-count:hover { color: var(--color-ink); border-color: var(--color-border-strong); }
+.project-count:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
+.project-count-warn { color: var(--status-warn); background: var(--status-warn-bg); }
+.project-count .chip-dot { width: 6px; height: 6px; }
+
+/* ---- Tabs and their panel. */
+.project-tabpanel { display: flex; flex-direction: column; gap: var(--space-5); }
+/* Overview: two columns from 1000px of pane, one below; its cards fill their column. */
+.project-overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-5); align-items: start; }
+@container insights (min-width: 1000px) {
+  .project-overview { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
+.project-col { display: flex; flex-direction: column; gap: var(--space-5); min-width: 0; }
+.project-overview .card.orgs-section { max-width: none; }
+.project-anchor, .project-tabpanel .orgs-section { scroll-margin-top: var(--space-4); }
+.project-empty-line { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); max-width: 880px; }
+.project-empty-line > .orgs-empty { margin: 0; }
+.project-activity .orgs-change { min-height: var(--tap-min); }
 
 .project-muted { color: var(--color-ink-muted); }
 .project-spec-line { font-size: var(--fs-caption); }
@@ -44,32 +101,61 @@
 
 /* The overseer panel. */
 .project-autonomy { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: var(--space-1); }
-.project-autonomy-row {
-  display: flex;
+/* The level as a segmented control: the radios are the segments (the label is the target). */
+.project-segments { display: inline-flex; align-self: flex-start; border: var(--stroke-thin) solid var(--color-border-strong); border-radius: var(--r-md); overflow: hidden; }
+.project-segment {
+  position: relative;
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-3);
+  justify-content: center;
+  min-width: 56px;
   min-height: var(--tap-min);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--r-md);
+  padding: 0 var(--space-3);
+  color: var(--color-ink-2);
   cursor: pointer;
 }
-.project-autonomy-row:hover { background: var(--color-sunken); }
-.project-autonomy-on { background: var(--color-accent-tint); }
-.project-autonomy-on:hover { background: var(--color-accent-tint); }
-.project-autonomy-row input { flex: none; width: 18px; height: 18px; margin: 0; accent-color: var(--color-accent); }
-.project-autonomy-row input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); }
-.project-autonomy-level { flex: none; color: var(--color-ink); }
-.project-autonomy-meaning { color: var(--color-ink-2); }
-.project-overseer-settings { display: flex; flex-direction: column; gap: var(--space-2); }
-.project-extra { margin: var(--space-3) 0; }
+.project-segment + .project-segment { border-left: var(--stroke-thin) solid var(--color-border); }
+.project-segment input { position: absolute; inset: 0; margin: 0; opacity: 0; cursor: pointer; }
+.project-segment:hover { background: var(--color-sunken); color: var(--color-ink); }
+.project-segment-on, .project-segment-on:hover { background: var(--color-accent-tint); color: var(--color-ink); font-weight: var(--fw-semibold); }
+.project-segment:has(input:focus-visible) { outline: var(--focus-ring); outline-offset: calc(var(--focus-offset) * -1); }
+.project-autonomy-meaning { margin: 0; color: var(--color-ink-2); }
+.project-confirm-summary { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); color: var(--color-ink-2); }
+/* The sessions it starts: each kind's model, thinking and its third select, three to a row where they fit. */
+.project-models { display: flex; flex-direction: column; gap: var(--space-4); }
+.project-models .project-coding-model { grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); }
+
+.project-extra { margin: 0; }
 .project-extra-foot { align-items: center; }
 .project-archive-confirm { display: flex; flex-direction: column; gap: var(--space-2); }
-/* Limits (§app.project-overseer/limits): groups divided by a rule, each a grid of fields. */
-.project-limits { display: flex; flex-direction: column; gap: var(--space-3); margin-bottom: var(--space-3); }
+/* Limits (§app.project-overseer/limits): one table, a row per limit and a column per allowance;
+   editing, each cell holds its field (and ∞), the pace under it. */
+.project-limits { display: flex; flex-direction: column; gap: var(--space-3); }
+.project-limits-table { width: 100%; border-collapse: collapse; font-size: var(--fs-body); }
+.project-limits-table th, .project-limits-table td { padding: var(--space-2) var(--space-3); border-bottom: var(--stroke-thin) solid var(--color-border); text-align: left; vertical-align: middle; }
+.project-limits-table thead th { font-size: var(--fs-caption); font-weight: var(--fw-medium); color: var(--color-ink-muted); }
+.project-limits-table th[scope="row"] { font-weight: var(--fw-regular); color: var(--color-ink); }
+.project-limits-table td { font-family: var(--font-mono); font-size: var(--fs-mono); color: var(--color-ink); white-space: nowrap; }
+.project-limits-table tbody tr:last-child > * { border-bottom: 0; }
+.project-limit-edit { display: inline-flex; align-items: center; gap: var(--space-1); }
+.project-limit-input { width: 5.5rem; }
+.project-limit-inf { min-width: var(--tap-min); font-family: var(--font-mono); }
+.project-limit-inf[aria-pressed="true"] { background: var(--color-accent-tint); color: var(--color-ink); }
+.project-pace-line { margin: 0; color: var(--color-ink-2); }
+/* Under 560px of pane each row stacks: its name, then one line per column that exists. */
+@container insights (max-width: 559px) {
+  .project-limits-table, .project-limits-table tbody { display: block; }
+  .project-limits-table thead { display: none; }
+  .project-limits-table tr { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-1); padding: var(--space-2) 0; border-bottom: var(--stroke-thin) solid var(--color-border); }
+  .project-limits-table tbody tr:last-child { border-bottom: 0; }
+  .project-limits-table th, .project-limits-table td { display: block; padding: 0; border: 0; }
+  .project-limits-table td.project-limit-none[data-label] { display: none; }
+  .project-limits-table td[data-label] { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+  .project-limits-table td[data-label]::before { content: attr(data-label); font-family: var(--font-body); font-size: var(--fs-caption); color: var(--color-ink-muted); }
+}
 .project-limits-group { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; margin: 0; padding: var(--space-3) 0 0; border: 0; border-top: var(--stroke-thin) solid var(--color-border); }
 .project-limits-legend { float: left; width: 100%; padding: 0; font-size: var(--fs-body); font-weight: var(--fw-semibold); color: var(--color-ink); }
 .project-limits-hint { margin: 0; }
-.project-limit-unlimited { justify-content: flex-start; }
 .project-limits-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .project-waiting { color: var(--status-warn); }
 .project-item { display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2) 0; }
@@ -86,15 +172,26 @@
 .project-link-name { font-weight: var(--fw-semibold); }
 .project-chips { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: var(--space-1); }
 
-/* Coding worktrees: a row wraps its confirmation under itself. */
+/* Coding worktrees: title and meta one line each (cut with an ellipsis, the whole text as their
+   titles), the row's ⋯ at its end; the Remove confirmation wraps under the row. */
 .project-worktree { flex-wrap: wrap; }
-/* Narrow: the buttons wrap under the words rather than squeezing them. */
-.orgs-row.project-worktree .list-main { flex: 1 1 18rem; }
+.orgs-row.project-worktree .list-main { flex: 1 1 0; min-width: 0; }
+.orgs-row.project-worktree .list-main > .project-worktree-title,
+.orgs-row.project-worktree .list-main > .project-worktree-meta { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
 .project-worktree-path { white-space: normal; overflow-wrap: anywhere; }
-.project-worktree-actions { flex: none; display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .project-worktree-note .button-row { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .project-worktree-note { flex-basis: 100%; margin: 0; }
 
+/* The Requirements card's strip: the main stakeholder and Frozen side by side from 768px, then
+   the facts, a line each. */
+.project-spec-strip { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
+@container insights (min-width: 768px) {
+  .project-spec-strip { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+}
+.project-frozen-field > .field-hint { margin: 0; }
+.project-spec-facts { display: flex; flex-direction: column; gap: var(--space-1); }
+.project-spec-facts > .orgs-line { margin: 0; }
+.project-spec-root { overflow-wrap: anywhere; }
 /* The main stakeholder, at the top of the Requirements card: its banners above the select. */
 .project-stakeholder { display: flex; flex-direction: column; gap: var(--space-2); }
 .project-stakeholder-field { max-width: 28rem; }

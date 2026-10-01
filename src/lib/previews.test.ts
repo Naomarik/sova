@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { PreviewView } from "../../shared/preview-links";
-import { activePreviews, parsePort, previewWarning, runningLine } from "./previews";
+import { activePreviews, parsePort, previewGroups, previewWarning, recipientName, runningLine, sentToLine, turnOffConfirm } from "./previews";
 
 const view = (over: Partial<PreviewView>): PreviewView => ({
   id: "pv_aaaaaaaaaaaaaaaa",
@@ -40,4 +40,40 @@ test("the port field: whole numbers 1–65535, never Sova's own defaults", () =>
   assert.deepEqual(parsePort(" 5173 "), { port: 5173 });
   for (const bad of ["", "abc", "0", "65536", "51.73", "-1"]) assert.ok("error" in parsePort(bad), bad);
   for (const own of ["4800", "4801", "4802", "4810"]) assert.match((parsePort(own) as { error: string }).error, /Sova's own/);
+});
+
+test("a person's own link sits under its original, not on a row of its own", () => {
+  const list = [
+    view({ id: "orig", expiresAt: "2026-10-03T00:00:00.000Z" }),
+    view({ id: "karim", siblingOf: "orig", sentTo: "p_t", sentToName: "Karim", createdAt: "2026-09-30T02:00:00.000Z", expiresAt: "2026-10-03T00:00:00.000Z" }),
+    view({ id: "sara", siblingOf: "orig", sentTo: "p_s", sentToName: "Sara", createdAt: "2026-09-30T01:00:00.000Z", expiresAt: "2026-10-03T00:00:00.000Z" }),
+    // Turned off: not a recipient.
+    view({ id: "undone", siblingOf: "orig", sentTo: "p_t", sentToName: "Karim", state: "off" }),
+    view({ id: "other", expiresAt: "2026-10-02T00:00:00.000Z" }),
+  ];
+  const groups = previewGroups(list);
+  assert.deepEqual(
+    groups.map((g) => [g.preview.id, g.recipients.map((r) => r.id)]),
+    [
+      ["orig", ["sara", "karim"]],
+      ["other", []],
+    ],
+  );
+});
+
+test("a sibling whose original isn't listed keeps its own row, still saying who it went to", () => {
+  const list = [
+    view({ id: "gone-orig", state: "off" }),
+    view({ id: "orphan", siblingOf: "gone-orig", sentTo: "p_t", sentToName: "Karim" }),
+    view({ id: "lost", siblingOf: "pv_never_listed", sentTo: "p_s" }),
+  ];
+  const groups = previewGroups(list);
+  assert.deepEqual(groups.map((g) => [g.preview.id, g.recipients.length]).sort(), [["lost", 0], ["orphan", 0]]);
+  assert.equal(sentToLine(groups.find((g) => g.preview.id === "orphan")!.preview), "sent to Karim");
+  assert.equal(recipientName({ sentToName: "  " }), "a person");
+});
+
+test("the original's Turn Off confirm counts every link it ends", () => {
+  assert.equal(turnOffConfirm(0), "Turn Off Preview?");
+  assert.equal(turnOffConfirm(2), "Turn Off All 3 Links?");
 });

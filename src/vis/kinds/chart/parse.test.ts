@@ -31,12 +31,12 @@ test("chart: series, gaps, tones, log scale, percent", () => {
   assert.equal(bar.type, "bar");
   assert.equal(bar.rows[1]!.tone, "error");
   assert.equal(bar.rows[2]!.values[0], 42);
-  assert.match(err("chart", "Merge sort 12").message, /quote labels/);
-  assert.match(err("chart", "a 1,000").message, /thousands commas/);
+  assert.match(err("chart", "Merge sort x").message, /quote labels/);
+  assert.match(err("chart", "a 1,00").message, /thousands commas/);
   assert.match(err("chart", "series: a, b\nx 1").message, /1 values; expected 2/);
   assert.match(err("chart", "scale: log\nx 0").message, /above 0/);
-  assert.match(err("chart", "type: pie\nx 1").message, /bar, stacked, line, scatter, parts \(no pie or donut: use parts/);
-  assert.equal(parseVis("bar", "x 1").ok, false, "no shorthand kinds: chart is the one fence");
+  assert.match(err("chart", "type: radar\nx 1").message, /bar, stacked, line, scatter, parts/);
+  assert.match(err("chart", "type: donut chart\nseries: a, b\nx 1 2").message, /parts takes no series/, "pie and donut are parts");
 });
 
 test("chart: scatter rows are label x y, with an optional tone; no series", () => {
@@ -60,4 +60,11 @@ test("chart: stacked bars refuse a log scale; quoted series names keep their spa
 
 test("chart: a quoted series name may hold a comma", () => {
   assert.deepEqual(ok<ChartSpec>("chart", 'series: "A, B"\nx 1').series, ["A, B"]);
+});
+
+test("chart: a comma inside parentheses doesn't split a series name, unless the rows' values say so", () => {
+  assert.deepEqual(ok<ChartSpec>("chart", "series: Latency (p50, ms), Latency (p99, ms)\nGET 12 40").series, ["Latency (p50, ms)", "Latency (p99, ms)"]);
+  // Every row has three values: the one other reading with three names (splitting inside the parentheses, as before).
+  assert.deepEqual(ok<ChartSpec>("chart", "series: Dev (local, CI), Prod\nx 1 2 3\ny 4 - 6").series, ["Dev (local", "CI)", "Prod"]);
+  assert.match(err("chart", "series: a, b, c\nx 1 2\ny 1 2").message, /2 values; expected 3/);
 });

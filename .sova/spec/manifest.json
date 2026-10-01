@@ -2167,10 +2167,12 @@
     "§mesh.peers/health": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "reviewed",
+      "evidence": "verified",
       "code": [
         "server/mesh/index.ts",
-        "server/mesh/hello.ts"
+        "server/mesh/hello.ts",
+        "server/mesh/details.ts",
+        "server/mesh/mesh.test.ts"
       ]
     },
     "§mesh.peers/hello": {
@@ -5248,7 +5250,11 @@
     "§design.copy-deck/project-stakeholder": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectPage.tsx",
+        "src/components/ProjectOverseerPanel.tsx"
+      ]
     },
     "§app.insights/summary-sections": {
       "kind": "behavior",
@@ -5905,7 +5911,9 @@
         "server/project-overseer-watch-run.test.ts",
         "server/stream-stub.ts",
         "src/lib/project-overseer-view.test.ts",
-        "server/org-envelope.ts"
+        "server/org-envelope.ts",
+        "src/lib/project-page.ts",
+        "src/lib/project-page.test.ts"
       ],
       "requires": [
         "§app.project-overseer/autonomy-levels",
@@ -5915,7 +5923,11 @@
     "§design.copy-deck/project-limits": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "reviewed"
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/lib/project-page.ts"
+      ]
     },
     "§chat.transcript/rendering": {
       "kind": "behavior",
@@ -6752,7 +6764,10 @@
     "§design.copy-deck/overseer-orgs": {
       "kind": "note",
       "authority": "accepted",
-      "evidence": "verified"
+      "evidence": "verified",
+      "code": [
+        "src/components/ProjectPage.tsx"
+      ]
     },
     "§chat.markdown/vis-flow-sections": {
       "kind": "behavior",
@@ -8682,7 +8697,9 @@
         "statecharts/test/sova/statecharts/refit/feed_golden.cljs",
         "statecharts/src/sova/statecharts/base.cljc",
         "statecharts/src/sova/statecharts/reasons.cljc",
-        "server/project-previews.test.ts"
+        "server/project-previews.test.ts",
+        "src/lib/project-page.ts",
+        "src/lib/project-page.test.ts"
       ],
       "requires": [
         "§app.project-overseer/holds",
@@ -9173,7 +9190,13 @@
         "src/vis/kinds/layers/parse.ts",
         "src/vis/kinds/timeline/parse.ts",
         "pi-config/extensions/mode/vis-mode.md",
-        "src/vis/guide.test.ts"
+        "src/vis/guide.test.ts",
+        "src/vis/kinds/matrix/parse.ts",
+        "src/vis/kinds/matrix/parse.test.ts",
+        "src/vis/kinds/chart/parse.test.ts",
+        "src/vis/kinds/layers/parse.test.ts",
+        "src/vis/kinds/wireframe/parse.ts",
+        "src/vis/kinds/wireframe/parse.test.ts"
       ]
     },
     "§app.session-list/profile-shelf": {
@@ -10238,6 +10261,68 @@
         "src/vis/kinds/wireframe/layout.test.ts"
       ]
     },
+    "§chat.markdown/vis-lenience-content": {
+      "kind": "behavior",
+      "requires": [
+        "§chat.markdown/visuals",
+        "§chat.markdown/vis-lenience",
+        "§chat.markdown/vis-parts",
+        "§chat.markdown/vis-steps",
+        "§chat.markdown/vis-wireframe",
+        "§chat.markdown/vis-flow-sections"
+      ],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "src/vis/core/grammar.ts",
+        "src/vis/core/emphasis.ts",
+        "src/vis/parse.ts",
+        "src/vis/registry.ts",
+        "src/vis/kinds/chart/parse.ts",
+        "src/vis/kinds/flow/parse.ts",
+        "src/vis/kinds/sequence/parse.ts",
+        "src/vis/kinds/timeline/parse.ts",
+        "src/vis/kinds/layers/parse.ts",
+        "src/vis/kinds/matrix/parse.ts",
+        "src/vis/kinds/steps/parse.ts",
+        "src/vis/kinds/tree/parse.ts",
+        "src/vis/kinds/code/parse.ts",
+        "src/vis/kinds/wireframe/parse.ts",
+        "src/vis/content-lenience.test.ts",
+        "pi-config/extensions/mode/vis-mode.md",
+        "src/lib/markdown.ts",
+        "src/share/markdown.ts",
+        "src/vis/guide.test.ts",
+        "src/vis/lenience.test.ts",
+        "src/vis/markdown.test.ts",
+        "server/vis-check.test.ts"
+      ]
+    },
+    "§tools.spec/census-note": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts",
+        "pi-config/extensions/mode/spec-guard.test.ts",
+        "pi-config/extensions/mode/tests/spec-worker.mjs",
+        "pi-config/extensions/claude-code/spec-hooks.test.ts",
+        "pi-config/extensions/mode/README.md",
+        "pi-config/extensions/claude-code/README.md"
+      ]
+    },
+    "§tools/spec": {
+      "kind": "surface",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "pi-config/extensions/mode/spec-guard.ts",
+        "pi-config/extensions/claude-code/spec-hooks.ts"
+      ]
+    },
     "§chat.worktrees/merged-state": {
       "kind": "behavior",
       "requires": [
@@ -10248,6 +10333,37 @@
       "code": [
         "pi-config/extensions/worktrees/git.ts",
         "pi-config/extensions/worktrees/git.test.ts"
+      ]
+    },
+    "§app.organizations/project-page": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "requires": [
+        "§app.organizations/org-page",
+        "§app.organizations/archive",
+        "§app.organizations/stakeholder",
+        "§app/project-overseer",
+        "§app.project-overseer/limits",
+        "§app.project-overseer/reviews",
+        "§app.project-overseer/coding-worktrees",
+        "§app.project-overseer/pipeline",
+        "§app.project-overseer/ideas-and-todos",
+        "§app.project-costs/card",
+        "§app/requirements",
+        "§mesh.public/preview-card",
+        "§app.owner-page/controls"
+      ],
+      "code": [
+        "src/components/ProjectPage.tsx",
+        "src/components/ProjectOverseerPanel.tsx",
+        "src/components/ProjectCostCard.tsx",
+        "src/components/PipelineCard.tsx",
+        "src/components/OrgsView.tsx",
+        "src/lib/orgs-route.ts",
+        "src/lib/project-page.ts",
+        "src/lib/project-page.test.ts",
+        "src/projects.css"
       ]
     }
   },

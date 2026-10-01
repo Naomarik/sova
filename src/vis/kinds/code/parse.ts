@@ -27,11 +27,18 @@ const MAX_LINES = 60;
 
 export function parseCode(body: string): CodeSpec {
   const all = body.replace(/\n$/, "").split("\n");
-  const sep = all.findIndex((l) => l.trim() === "---");
-  if (sep < 0) fail(0, "put a line with just --- between the settings and marks and the code");
-  const spec: CodeSpec = { kind: "code", start: 1, lines: all.slice(sep + 1) };
-  const { rest: settled, values } = takeSettings(lines(all.slice(0, sep).join("\n")), ["lang", "start"], spec);
-  const { rest, marks } = takeMarks(settled);
+  let sep = all.findIndex((l) => l.trim() === "---");
+  let from = sep + 1;
+  // No `---`: the settings and marks end at the first line that is none of blank, a setting or a
+  // mark; the rest is code (§chat.markdown/vis-lenience-content).
+  if (sep < 0) {
+    const head = all.findIndex((l) => !(l.trim() === "" || /^\s*mark\s/.test(l) || /^(title|caption|lang|start):(\s|$)/i.test(l.trim())));
+    sep = head < 0 ? all.length : head;
+    from = sep;
+  }
+  const spec: CodeSpec = { kind: "code", start: 1, lines: all.slice(from) };
+  const { rest: settled, values } = takeSettings(lines(all.slice(0, sep).join("\n")), ["lang", "start"], spec, { caseless: true });
+  const { rest, marks } = takeMarks(settled, { indented: true });
   if (rest.length) fail(rest[0]!.n, "before --- only settings (title: caption: lang: start:) and mark lines");
   const lang = values.get("lang");
   if (lang) {
@@ -44,7 +51,7 @@ export function parseCode(body: string): CodeSpec {
     spec.start = Number(start.value);
   }
   while (spec.lines.length && spec.lines[spec.lines.length - 1]!.trim() === "") spec.lines.pop();
-  if (spec.lines.length === 0) fail(sep + 1, "no code after ---");
+  if (spec.lines.length === 0) fail(from === sep ? 0 : sep + 1, from === sep ? "no code: put it after a line with just ---" : "no code after ---");
   if (spec.lines.length > MAX_LINES) fail(0, `${spec.lines.length} lines of code; at most ${MAX_LINES}: show the part that matters`);
   const first = spec.start;
   const last = spec.start + spec.lines.length - 1;

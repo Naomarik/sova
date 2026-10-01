@@ -15,7 +15,7 @@ import type {
 } from "../../shared/protocol";
 import type { MeshLocalSettings } from "../../shared/mesh-local";
 import { frontDoorConfig, noBrowserIds } from "./front-door";
-import { ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
+import { answered, ownHello, probeHello, probePeer, peerLastSeen, PROBE_TIMEOUT_MS } from "./hello";
 import { type ListenerDeps, PeerListener } from "./listener";
 import { addressIdentity, identityMode } from "./address-identity";
 import { getIdentity, setIdentity, type TailnetStatus } from "./localapi";
@@ -312,7 +312,7 @@ export type MeshApi = typeof meshApi;
 async function peerStatuses(): Promise<PeerStatus[]> {
   const peers = rt.config?.peers ?? [];
   const probes = await Promise.all(peers.map((p) => probePeer(p)));
-  peers.forEach((p, i) => sawPeer(p.id, probes[i]!.state === "up"));
+  peers.forEach((p, i) => sawPeer(p.id, answered(probes[i]!)));
   return peers.map((p, i) => ({
     id: p.id,
     label: p.label,

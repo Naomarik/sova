@@ -108,7 +108,7 @@ export function ChangesDialog(props: ChangesSource & { onClose(): void }) {
  * one step on the right. Read-only; it reads the summary once, patches per file as they are shown,
  * and the patches of the files the steps need to place hunks.
  */
-export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose?(): void; inline?: boolean }) {
+export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose?(): void }) {
   const [summary, setSummary] = createSignal<DiffSummary | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   const [loading, setLoading] = createSignal(false);
@@ -291,26 +291,14 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
   let side: HTMLElement | undefined;
   let back: HTMLButtonElement | undefined;
   const folded = () => !!back && back.offsetParent !== null;
-  let root: HTMLDivElement | undefined;
-  /** Inline, the viewer flows with the page: after a swap its top may be above the screen, so
-      bring it back rather than leave the reader mid-way down the other view. */
-  const revealTop = () => {
-    if (props.inline && root && root.getBoundingClientRect().top < 0) root.scrollIntoView({ block: "start" });
-  };
   const showDiff = () => {
     setView("diff");
     if (folded())
-      queueMicrotask(() => {
-        revealTop();
-        diffPane?.focus({ preventScroll: true });
-      });
+      queueMicrotask(() => diffPane?.focus({ preventScroll: true }));
   };
   const showList = () => {
     setView("list");
-    queueMicrotask(() => {
-      revealTop();
-      (side?.querySelector<HTMLElement>('[aria-current="true"] button, button[aria-current="true"]') ?? side)?.focus({ preventScroll: !!props.inline });
-    });
+    queueMicrotask(() => (side?.querySelector<HTMLElement>('[aria-current="true"] button, button[aria-current="true"]') ?? side)?.focus());
   };
   const openFile = (path: string) => {
     setPick({ kind: "file", path });
@@ -377,9 +365,7 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
 
   return (
     <div
-      ref={root}
       class="changes"
-      classList={{ "changes-inline": !!props.inline }}
       data-view={view()}
       data-pane={paneHidden() ? "hidden" : "shown"}
       aria-busy={loading() ? "true" : undefined}
@@ -396,11 +382,9 @@ export function ChangesViewer(props: ChangesSource & { titleId?: string; onClose
           <Icon name={paneHidden() ? "panel-expand" : "panel-collapse"} />
         </button>
         <div class="changes-titles">
-          <Show when={props.inline} fallback={<h2 class="changes-title" id={props.titleId}>{title()}</h2>}>
-            <p class="changes-title" id={props.titleId}>
-              {title()}
-            </p>
-          </Show>
+          <h2 class="changes-title" id={props.titleId}>
+            {title()}
+          </h2>
           <p class="changes-meta text-caption text-muted">
             <Show when={summary()} fallback={loading() ? "Reading the diff…" : ""}>
               {props.agent?.title ? `${scopeTitle(summary()!)} · ` : ""}

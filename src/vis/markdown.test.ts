@@ -22,12 +22,12 @@ test("the key follows the content, so a changed fence never keeps an old drawing
 });
 
 test("a fence that doesn't parse is the plain code block plus one line naming the error", () => {
-  const r = renderMarkdown('```vis flow\na -> b\nA["x"] --> b\n```');
+  const r = renderMarkdown('```vis flow\na -> b\nA["x" --> b\n```');
   assert.equal(r.visuals.length, 0);
   assert.equal(r.codes.length, 1, "Copy Code still works");
   assert.match(r.html, /class="md-code md-vis-source"><div class="md-code-head"><span class="md-code-lang">vis flow<\/span>/, "the head names the kind");
   assert.match(r.html, /<p class="md-vis-error">Couldn't draw this vis flow block \(line 2: [^<]+\), so here is its source\.<\/p>/);
-  assert.match(renderMarkdown("```vis pie\nx 1\n```").html, /unknown kind &quot;pie&quot;/);
+  assert.match(renderMarkdown("```vis gantt\nx 1\n```").html, /unknown kind &quot;gantt&quot;/);
   // gitgraph was dropped: its fences fall back to a code block like any unknown kind.
   assert.match(renderMarkdown("```vis gitgraph\ncommit A\n```").html, /unknown kind &quot;gitgraph&quot;/);
 });

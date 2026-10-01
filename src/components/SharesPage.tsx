@@ -3,9 +3,9 @@ import type { OrgLinkRow, SessionShare, SharesOverview } from "../../shared/sess
 import { relativeTime } from "../lib/format";
 import { absoluteTime } from "../lib/spend";
 import { hostLabel, meshOn, meshPeers, selfLabel } from "../lib/mesh";
-import type { PreviewView } from "../../shared/preview-links";
 import { getPreviews, turnOffPreview } from "../lib/api";
-import { activePreviews, runningLine, sentToLine } from "../lib/previews";
+import { senderLine } from "../lib/preview-rows";
+import { type PreviewGroup, previewGroups, recipientName, recipientOffConfirm, recipientOffTip, runningLine, sentToLine, TURN_OFF_ALL_TIP, turnOffConfirm } from "../lib/previews";
 import { expiresWord, openedLine, presenceWord, revokeHandoff, revokeOwnerLink, sharesOverview, shareLine, shareLive, stopShare, visitLine } from "../lib/session-shares";
 import { InsightsPage } from "./InsightsPage";
 import { RecipientChip, ShareSheet } from "./ShareSheet";
@@ -27,8 +27,8 @@ const sessionLink = (sessionId: string) => `#/sid/${encodeURIComponent(sessionId
 /**
  * The Shares page (§app.session-share/shares-page): every live public link this host and each up
  * peer serve, session shares first, then organization links, then this host's preview links
- * (§mesh.public/preview-card). Read-only over the org stores; Turn Off Link uses their own revoke
- * routes, and a preview's Turn Off its own.
+ * (§mesh.public/preview-card), each with the people it was sent to. Read-only over the org stores;
+ * Turn Off Link uses their own revoke routes, and a preview's Turn Off its own.
  */
 export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement): void }) {
   const [hosts, setHosts] = createSignal<HostShares[]>([]);
@@ -36,7 +36,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
   const [refreshing, setRefreshing] = createSignal(false);
   const [managing, setManaging] = createSignal<{ host: string | null; share: SessionShare } | null>(null);
   const [error, setError] = createSignal<string | null>(null);
-  const [previews, setPreviews] = createSignal<PreviewView[]>([]);
+  const [previews, setPreviews] = createSignal<PreviewGroup[]>([]);
 
   let run = 0;
   const read = async () => {
@@ -52,7 +52,7 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
         }
       }),
     );
-    const mineOnly = await getPreviews().then((l) => activePreviews(l.previews), () => null);
+    const mineOnly = await getPreviews().then((l) => previewGroups(l.previews), () => null);
     if (mine !== run) return;
     if (mineOnly) setPreviews(mineOnly);
     setHosts(answers);
@@ -168,26 +168,57 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
           </h2>
           <ul class="list">
             <For each={previews()}>
-              {(v) => (
-                <li class="list-row shares-row">
-                  <div class="list-main">
-                    <p class="list-title shares-row-title">
-                      <a href={`#/orgs/${encodeURIComponent(v.orgId)}/projects/${encodeURIComponent(v.projectId)}`}>Port {v.port}</a>
-                      <span class={v.running ? "chip chip-success" : "chip"}>
-                        <span class="chip-dot" aria-hidden="true" />
-                        {runningLine(v)}
-                      </span>
-                    </p>
-                    <p class="list-meta">
-                      Project {v.projectId} · {sentToLine(v) ? `${sentToLine(v)} · ` : ""}
-                      {expiresWord(v.expiresAt, props.now)}
-                    </p>
-                  </div>
-                  <div class="shares-row-actions">
-                    <TwoStep label="Turn Off" confirm="Turn Off Preview?" onRun={() => void act(() => turnOffPreview(v.id))} />
-                  </div>
-                </li>
-              )}
+              {(g) => {
+                const v = g.preview;
+                return (
+                  <li class="list-row shares-row">
+                    <div class="list-main">
+                      <p class="list-title shares-row-title">
+                        <a href={`#/orgs/${encodeURIComponent(v.orgId)}/projects/${encodeURIComponent(v.projectId)}`}>Port {v.port}</a>
+                        <span class={v.running ? "chip chip-success" : "chip"}>
+                          <span class="chip-dot" aria-hidden="true" />
+                          {runningLine(v)}
+                        </span>
+                      </p>
+                      <p class="list-meta">
+                        Project {v.projectId} · {sentToLine(v) ? `${sentToLine(v)} · ` : ""}
+                        {expiresWord(v.expiresAt, props.now)}
+                      </p>
+                      <Show when={g.recipients.length > 0}>
+                        <div class="list-meta previews-sent">
+                          <span class="previews-sent-label">Sent to</span>
+                          <ul class="previews-recipients">
+                            <For each={g.recipients}>
+                              {(r) => (
+                                <li class="previews-recipient">
+                                  <span class="previews-recipient-name" title={senderLine(r.createdBy) ?? undefined}>
+                                    {recipientName(r)}
+                                  </span>
+                                  <TwoStep
+                                    label="Turn Off"
+                                    confirm={recipientOffConfirm(recipientName(r))}
+                                    title={recipientOffTip(recipientName(r))}
+                                    class="previews-recipient-off"
+                                    onRun={() => void act(() => turnOffPreview(r.id))}
+                                  />
+                                </li>
+                              )}
+                            </For>
+                          </ul>
+                        </div>
+                      </Show>
+                    </div>
+                    <div class="shares-row-actions">
+                      <TwoStep
+                        label="Turn Off"
+                        confirm={turnOffConfirm(g.recipients.length)}
+                        title={v.siblingOf ? undefined : TURN_OFF_ALL_TIP}
+                        onRun={() => void act(() => turnOffPreview(v.id))}
+                      />
+                    </div>
+                  </li>
+                );
+              }}
             </For>
           </ul>
         </section>
@@ -210,12 +241,13 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
 }
 
 /** A two-press destructive button: the first press asks, the second runs; leaving it disarms. */
-function TwoStep(props: { label: string; confirm: string; onRun(): void }) {
+function TwoStep(props: { label: string; confirm: string; title?: string; class?: string; onRun(): void }) {
   const [armed, setArmed] = createSignal(false);
   return (
     <button
       type="button"
-      class="button button-sm button-destructive"
+      class={`button button-sm button-destructive${props.class ? ` ${props.class}` : ""}`}
+      title={props.title}
       onClick={() => {
         if (!armed()) return setArmed(true);
         setArmed(false);

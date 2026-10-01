@@ -3,21 +3,33 @@ import type { CostModelRow, CostTokens, ProjectCost } from "../../shared/costs";
 import { getProjectCost } from "../lib/api";
 import { allModels, costNotes, emptyLine, ESTIMATE_TITLE, hasEstimate, KIND_LABEL, kindRows, moneyWord, modelRows, starterParts, TOKEN_KINDS, topMeta, usd } from "../lib/costs";
 import { orgSessionHref } from "../lib/orgs-route";
-import { createPoll } from "../lib/poll";
+import { createPoll, type Poll } from "../lib/poll";
 import { tokens } from "../lib/project-overseer-view";
 
 const COST_POLL_MS = 60_000;
 const TOKEN_HEAD: Record<(typeof TOKEN_KINDS)[number], string> = { input: "Input", output: "Output", cacheRead: "Cache read", cacheWrite: "Cache write" };
 
 /**
- * What the project's sessions would cost at each provider's API prices (§app.project-costs/card):
- * the total, who started what, by kind, by model and token kind, the most expensive sessions, and
- * what isn't priced or counted. Read on its own (it's heavier than the overseer's info): on open,
- * with Refresh Project (`tick`), and every 60 seconds while the tab shows.
+ * The project's cost, read on its own (it's heavier than the overseer's info): on open, with
+ * Refresh Project (`tick`), and every 60 seconds while the tab shows. The page reads it once for
+ * its summary chip and its Cost tab.
  */
-export function ProjectCostCard(props: { orgId: string; projectId: string; tick: number }) {
+export function createProjectCost(props: { orgId: string; projectId: string; tick(): number }): Poll<ProjectCost> {
   const poll = createPoll(() => getProjectCost(props.orgId, props.projectId), COST_POLL_MS);
-  createEffect(on(() => props.tick, () => poll.refetch(), { defer: true }));
+  createEffect(on(props.tick, () => poll.refetch(), { defer: true }));
+  return poll;
+}
+
+/** The total as the card's headline writes it (`$27.21`, `≈$4.10`), for the summary chip. */
+export const costFigure = (c: ProjectCost): string => usd(c.totalUsd, hasEstimate(c));
+
+/**
+ * What the project's sessions would cost at each provider's API prices (§app.project-costs/card):
+ * the total, who started what, the most expensive sessions, by kind and by model and token kind
+ * behind Breakdown, and what isn't priced or counted.
+ */
+export function ProjectCostCard(props: { orgId: string; poll: Poll<ProjectCost> }) {
+  const poll = props.poll;
   return (
     <section class="card orgs-section" aria-labelledby="project-cost">
       <h2 class="orgs-h2" id="project-cost">
@@ -59,73 +71,6 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
           </For>
         </p>
       </Show>
-      <Show when={kinds().length}>
-        <div class="md md-table-wrap cost-table-wrap">
-          <table class="cost-table">
-            <caption class="visually-hidden">Cost by kind</caption>
-            <thead>
-              <tr>
-                <th scope="col">Kind</th>
-                <th scope="col" align="right">
-                  Cost
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={kinds()}>
-                {(r) => (
-                  <tr>
-                    <th scope="row">{KIND_LABEL[r.kind]}</th>
-                    <td align="right" data-label="Cost">
-                      <span class="cost-figure">{usd(r.usd)}</span>
-                    </td>
-                  </tr>
-                )}
-              </For>
-            </tbody>
-          </table>
-        </div>
-      </Show>
-      <Show when={models().length}>
-        <div class="md md-table-wrap cost-table-wrap">
-          <table class="cost-table cost-table-stack">
-            <caption class="visually-hidden">Cost by model and token kind</caption>
-            <thead>
-              <tr>
-                <th scope="col">Model</th>
-                <For each={TOKEN_KINDS}>
-                  {(k) => (
-                    <th scope="col" align="right">
-                      {TOKEN_HEAD[k]}
-                    </th>
-                  )}
-                </For>
-                <th scope="col" align="right">
-                  Cost
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              <For each={models()}>
-                {(r) => (
-                  <tr>
-                    <th scope="row" class={r.name ? undefined : "text-mono"} title={r.name ? r.model : undefined}>
-                      {r.name ?? r.model}
-                    </th>
-                    <ModelCells row={r} />
-                  </tr>
-                )}
-              </For>
-            </tbody>
-            <tfoot>
-              <tr>
-                <th scope="row">All models</th>
-                <ModelCells row={{ ...allModels(models()), status: "priced" }} />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      </Show>
       <Show when={c().top.length}>
         <h3 class="orgs-h3">Most expensive sessions</h3>
         <ol class="cost-sessions">
@@ -143,6 +88,81 @@ function CostBody(props: { cost: ProjectCost; orgId: string }) {
             )}
           </For>
         </ol>
+      </Show>
+      <Show when={kinds().length || models().length}>
+        <details class="orgs-history cost-breakdown">
+          <summary>Breakdown by kind and model</summary>
+          <Show when={kinds().length}>
+            <div class="md md-table-wrap cost-table-wrap">
+              <table class="cost-table">
+                <caption class="visually-hidden">Cost by kind</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Kind</th>
+                    <th scope="col" align="right">
+                      Cost
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={kinds()}>
+                    {(r) => (
+                      <tr>
+                        <th scope="row">{KIND_LABEL[r.kind]}</th>
+                        <td align="right" data-label="Cost">
+                          <span class="cost-figure">{usd(r.usd)}</span>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
+          <Show when={models().length}>
+            <div class="md md-table-wrap cost-table-wrap">
+              <table class="cost-table cost-table-stack">
+                <caption class="visually-hidden">Cost by model and token kind</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Model</th>
+                    <For each={TOKEN_KINDS}>
+                      {(k) => (
+                        <th scope="col" align="right">
+                          {TOKEN_HEAD[k]}
+                        </th>
+                      )}
+                    </For>
+                    <th scope="col" align="right">
+                      Cost
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={models()}>
+                    {(r) => (
+                      <tr>
+                        <th scope="row" class={r.name ? undefined : "text-mono"} title={r.name ? r.model : undefined}>
+                          {r.name ?? r.model}
+                        </th>
+                        <ModelCells row={r} />
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+                {/* One model: its own row already says it all. */}
+                <Show when={models().length > 1}>
+                  <tfoot>
+                    <tr>
+                      <th scope="row">All models</th>
+                      <ModelCells row={{ ...allModels(models()), status: "priced" }} />
+                    </tr>
+                  </tfoot>
+                </Show>
+              </table>
+            </div>
+          </Show>
+        </details>
       </Show>
       <ul class="cost-notes">
         <For each={costNotes(c())}>

@@ -6148,17 +6148,13 @@ a.subagent-row { text-decoration: none; }
    splits; the model's name gives way first. */
 .session-row .list-meta .session-readiness { white-space: nowrap; }
 /* The worktrees this session tracks, "2 of 3" merged, between the time and the badge: the branch
-   glyph and the figure in the meta's own voice, sharing line 3's box so no row grows. The whole
-   thing takes the success tone while one of them is ready to merge — the icon with it, so the row
-   lights up as one fact. flex: none, so the model's name gives way before the count does. */
-.session-row .list-meta .session-worktrees {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  flex: none;
-  white-space: nowrap;
-}
-.session-worktrees > .icon { width: 12px; height: 12px; }
+   glyph and the figure on line 3's own baseline — plain inline text, so "2 of 3" sits where "1m
+   ago" sits (a flex box's baseline comes from the icon, and the digits ride 2px high). The 12px
+   glyph drops 2px below the baseline to centre itself on the micro text; its right margin stands
+   in for the old flex gap. The whole thing takes the success tone while one of them is ready to
+   merge — the icon with it, so the row lights up as one fact. */
+.session-row .list-meta .session-worktrees { white-space: nowrap; }
+.session-worktrees > .icon { width: 12px; height: 12px; margin-right: 3px; vertical-align: -2px; }
 .session-worktrees-ready { color: var(--status-success); }
 
 /* Settings → Decisions. Each provider is one line: a chip (dot and word) for its state, then

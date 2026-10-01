@@ -101,7 +101,9 @@ error. Sessions are addressed by id, bare or in any form the tools print it (`so
 to that host over the peer hop (§mesh.peers/listener), never through the page's proxy, so this
 host's sender secret never leaves it. The peer's own routes and refusals apply.
 
-- **Read** (no side effects): the attention digest; list sessions (compact rows); one session's
+- **Read** (no side effects): the attention digest; list sessions (compact rows, each with its
+  worktrees' branches, §app.overseer/sessions-in-play); a session's alignments
+  (§app.overseer/alignment-read); one session's
   detail, whose summary topics read newest first, as the insight strip lists them
   (§app.insights/insight-strip), each heading with how long ago its own section of the conversation ended
   (§app.insights/summary-sections; how long ago the summary last wrote it, for a topic without one)
@@ -318,6 +320,34 @@ check a session in one call instead of trusting a brief, a card or a summary lin
 `sova_read_session`'s description says that the transcript's tail is what is true now and that the
 summary may lag it; it never tells the Overseer to prefer the summary.
 
+## §app.overseer/alignment-read — Reading a session's alignments
+
+`sova_alignment {session, doc?}` is a read tool: it returns a session's alignments
+(§chat/alignment) as the session's own `align` results fold them on its active branch, with the
+mode extension's own fold, so the Overseer never greps a session file for them.
+
+- **Without `doc`:** every open alignment (not done or dropped), the last touched last. With
+  `doc` (`al_N`): that one alignment in any state, open or not; an id the branch doesn't have is a
+  refusal naming the ids it does have.
+- **Per alignment:** its id, title, status and open count ("al_3 "Autonomy settings" · aligning ·
+  2 of 5 open"), its summary, then every question that isn't dropped: its id, topic and state
+  (open or decided), the ask, its options lettered a, b, c… each with its trade-off, the
+  recommendation with its why, and for a decided question the decision's words, who made it (the
+  user, or the recommendation accepted) and how long ago. A dropped question is one line with its
+  reason.
+- **Waiting.** A line says whether the session waits on the user's answers now
+  (§chat.alignment/session-mark) or the user has spoken since.
+- With no alignment open (and no `doc`), it says so in one line. The text comes from another
+  session: it is wrapped as untrusted content like a transcript read, and redacted like every
+  tool's output (§app.overseer/tools).
+- **Transcript reads show alignments.** In `sova_read_session` (and every other bounded transcript
+  read, §chat.profiles/session-tools), each `align` call that changed an alignment is one row,
+  "ALIGN: al_3 "Autonomy settings" · aligning · 2 of 5 open · q3 decided", and a recorded
+  exemption is "ALIGN: exempt — <why>". The row says what changed, never the questions: those are
+  `sova_alignment`'s.
+
+The Overseer's prompt names `sova_alignment` for an alignment's questions and decisions.
+
 ## §app.overseer/confirm — Decision cards
 
 The Overseer asks with **cards**: `sova_card({card?, ops: [...]})`, a clone of the align tool's
@@ -494,6 +524,29 @@ who the run belongs to (§app.overseer/tools).
   link and that fact ("c_4 item 2: … — merged 20m ago, after the card was raised").
 - The cards follow as §app.overseer/confirm lists them. The note's text from other sessions (names,
   details) is redacted like any tool output (§app.overseer/tools).
+
+## §app.overseer/sessions-in-play — The sessions it is working with
+
+The global Overseer's run note (§app.overseer/run-note) also lists the sessions in play, so which
+session is on which branch survives a compaction and a restart:
+
+- **Which sessions.** This host's sessions the Overseer created or sent a message to (its
+  successful `sova_create_session` and `sova_send` calls on its branch, and the ones this server
+  saw it start or prompt since it started), and the sessions a brief on its branch named, in the
+  last 24 hours. Never the Overseer's own. At most 15, the most recently touched first.
+- **Each row:** the session as a link, named summary-first (§app.overseer/session-names), its id
+  as plain text, its state now (working, idle, needs-input, archived, or gone), each worktree it
+  tracks as "branch <name> (<badge>)" (the readiness badge, §chat.worktrees/readiness, else that
+  worktree's state, such as in-progress or blocked), when the Overseer last created or prompted it,
+  and the kind of the last brief that named it and when. A line before the rows says the table is
+  as of now, and that the Overseer still checks a session with `sova_session` before saying what it
+  is doing.
+- It is computed when the note is written, never kept: a session that leaves the window leaves the
+  table. After a compaction it is written once more, with the open cards, after the summary
+  (§app.overseer/confirm), even when no card is open. Its text from other sessions is redacted like
+  any tool output (§app.overseer/tools).
+- **List rows say the branch.** Each row of `sova_list_sessions` for a session that tracks a
+  worktree of its own adds "branch <name> (<badge>)" per worktree, by the same rule.
 
 ## §app.overseer/project-card-clicks — Cards in a project overseer's chat
 
@@ -755,10 +808,12 @@ itself.
   predates it) the stop is taken as 30 s before this start. A worker error while the server keeps
   running is never one of these, and still shows. A worker error counts as
   seen once the session is on screen, or its seen stamp (§app.overseer/seen) is at or past the
-  latest error; a new error after that raises it again. An error's time is its worker row's
+  latest error; it is also dealt with once the session finished a turn after the latest error (its
+  last finished reply is later than the error: the session had the failure in front of it). A new
+  error after either raises it again. An error's time is its worker row's
   `endedAt` (else `lastActivity`, else `startedAt`); when rows were dropped from the live record
   for size, the time this server saw the error count rise stands in (in memory, so after a restart
-  such an error shows again until the session is seen). A session never seen, or an error of
+  such an error shows again until the session is seen or finishes a turn). A session never seen, or an error of
   unknown time, still shows. This holds for archived sessions too.
 - **Needs you, open questions** (§chat.alignment/session-mark): an idle session that is not
   archived, whose `align` counts say it waits on the user's answers (align on, and no user prompt
@@ -886,6 +941,27 @@ A card's link option (§app.overseer/confirm) opens an in-app target the same wa
 (so Back returns to the Overseer on the phone), and an `https` URL in a new tab, with
 `noopener noreferrer`; neither sends a message or runs a turn.
 
+## §app.overseer/id-check — Session ids in its replies are checked
+
+When a run of the global Overseer ends, the server reads the assistant text of that run for
+session links, `sova://s/<id>` and `sova://g/<groupId>/s/<id>`, and looks each id up among this
+host's session files. The reply is never changed, and the client still links every id
+(§app.overseer/links).
+
+- **An unknown id gets a note.** When any id matches no session file, the server adds one hidden
+  message to the conversation (never in the thread, persisted with it): for each unknown id, the id
+  and the nearest real session id, with that session's name and the characters the two share at
+  the start ("01a0f3ef12… is no session here; nearest: 01a0f3ef-5c2e-… "Spec tools", same first 8
+  characters"), or "no session id is close" when none is. The nearest is the id with the fewest
+  single-character edits from it, the longer shared start breaking a tie; one more edits away than
+  half the longer id's length (18 for a session id) is not close, so a link whose tail was spliced
+  from another session's id still finds a real session. The note asks the Overseer to correct the link in its next reply, and to copy
+  ids from tool output.
+- At most 5 unknown ids are named per note. A run whose ids are all known adds nothing.
+- The note is state, like the open-cards note: it never changes who a run belongs to
+  (§app.overseer/tools), and the next run the Overseer takes (the user's, a brief, a wake-up) has it
+  in its context.
+
 ## §app.overseer/quick-actions — Quick actions
 
 - **One button, Quick Actions,** sits at the right end of the Overseer's composer foot, in the
@@ -985,6 +1061,24 @@ checked (§app.overseer/head-layout). The ⋯ item is there at every width ⋯ s
   playbook schedule that needs approval (§chat.schedules/where-shown).
 - A brief is a snapshot of the moment it was sent. When a blocker it named clears, the next run's
   note says so (§app.overseer/run-note); no brief is sent for a blocker clearing.
+- Which needs-you items count as new is §app.overseer/brief-repeat's rule.
+
+## §app.overseer/brief-repeat — When a briefed blocker is briefed again
+
+A needs-you item is known by its session and kind. Under Brief Me (§app.overseer/proactivity):
+
+- **Its count rising is new.** An item with a count (an open-questions item's open questions, a
+  worker-error item's failed subagents) is briefed again while it stands when its count rises above
+  the count last briefed; the same count or a lower one is not new.
+- **A return within an hour is not new.** An item that was briefed, cleared, and stands again
+  within 60 minutes of clearing is the same blocker (a session that ran a turn and stopped again
+  hides and shows its open questions): it is not briefed again unless its count rose. One that
+  stays cleared for 60 minutes is forgotten, and briefed as new when it returns.
+- **Never briefed** is new: an item that stood when the server started watching, or while
+  proactivity was not Brief Me, counts as told, at its count then.
+- A new item that waits (the Overseer busy, or the 10-minute gap) stays new until a brief carries
+  it. What the server has told is kept in memory: a restart starts over, with the items standing
+  then counted as told.
 
 ## §app.overseer/verify-first — The prompt's rules for saying what is true
 

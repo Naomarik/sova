@@ -621,8 +621,11 @@ export function HistoryItems(props: {
       clearTimeout(later);
       root.removeEventListener("scroll", check);
     });
-    // After a change to what's held or built, when the frame has settled (a short list sits at the top).
-    createEffect(on([start, () => older?.left(), () => rows().length], () => requestAnimationFrame(check)));
+    // After a change to what's held or built, when the frame has settled (a short list sits at the
+    // top): a frame later, since the follow-scroll for the same change runs in that frame's
+    // animation callbacks after this one is queued, and a check before it reads a view not yet at
+    // the end (an open would fetch a chunk nobody asked for).
+    createEffect(on([start, () => older?.left(), () => rows().length], () => requestAnimationFrame(() => requestAnimationFrame(check))));
     registerRows(root, {
       has: (entryId) => rowIndexFor(ids(), entryId) >= 0,
       ensure: (entryId) => {

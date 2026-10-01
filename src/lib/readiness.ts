@@ -23,8 +23,35 @@ export function readinessRowChip(r: SessionReadiness | undefined): ReadinessRowC
   }
 }
 
-/** The muted badge's words, or null when there is none (or the chip speaks instead). The count is
-    the follow-up check's named work only; a leftover worktree is in the title, never here. */
+/** The row's worktree count (§chat.worktrees/readiness): merged of the worktrees this session
+    tracks, and whether one of them is ready to merge — the count lights up for that, with no glyph
+    and no word of its own. Null when the session tracks none, and before the server's background
+    git read has a set. */
+export interface ReadinessCount {
+  merged: number;
+  total: number;
+  ready: boolean;
+}
+
+export function readinessCount(r: SessionReadiness | undefined): ReadinessCount | null {
+  if (!r || r.trees.length === 0) return null;
+  return {
+    merged: r.trees.filter((t) => t.state === "merged").length,
+    total: r.trees.length,
+    // Ready to merge is either state: a worktree that waits for your OK is still mergeable.
+    ready: r.trees.some((t) => t.state === "ready" || t.state === "waiting-approval"),
+  };
+}
+
+/** The count's words for a reader who can't see the glyph or the tone: "2 of 3 worktrees merged",
+    and ", one is ready to merge" while one is. The row's accessible name carries it. */
+export function readinessCountWords(c: ReadinessCount): string {
+  const merged = `${c.merged} of ${c.total} worktrees merged`;
+  return c.ready ? `${merged}, one is ready to merge` : merged;
+}
+
+/** The muted badge's words, or null when there is none. The count is the follow-up check's named
+    work only; a leftover worktree is in the title, never here. */
 export function readinessBadge(r: SessionReadiness | undefined): string | null {
   switch (r?.badge) {
     case "restart":

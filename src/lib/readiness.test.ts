@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { SessionReadiness } from "../../shared/protocol";
-import { readinessBadge, readinessRowChip, readinessTitle } from "./readiness";
+import { readinessBadge, readinessCount, readinessCountWords, readinessRowChip, readinessTitle } from "./readiness";
 import { readinessChip, readinessReason } from "./worktrees";
 
 const r = (over: Partial<SessionReadiness>): SessionReadiness => ({ trees: [{ path: "/wt/a", branch: "feat/a", state: "merged" }], since: 1, ...over });
@@ -20,6 +20,37 @@ test("ready and waiting are the row's toned chip; every other badge stays terse 
   assert.equal(readinessBadge(r({ badge: "merged", cleanup: 3 })), "merged", "a leftover worktree is in the title, never counted");
   assert.equal(readinessBadge(r({})), null);
   assert.equal(readinessBadge(undefined), null);
+});
+
+test("the row's worktree count: merged of the tracked set, lit while one is ready", () => {
+  assert.equal(readinessCount(undefined), null);
+  assert.equal(readinessCount(r({ trees: [] })), null, "a session that tracks none has no count");
+  assert.deepEqual(readinessCount(r({})), { merged: 1, total: 1, ready: false });
+  const three = r({
+    trees: [
+      { path: "/wt/a", branch: "feat/a", state: "merged" },
+      { path: "/wt/b", branch: "feat/b", state: "in-progress" },
+      { path: "/wt/c", branch: "feat/c", state: "ready" },
+    ],
+    badge: "ready",
+  });
+  assert.deepEqual(readinessCount(three), { merged: 1, total: 3, ready: true });
+  // Stale is merged but dirty, and the spec says it is never merged; it is not ready either.
+  assert.deepEqual(readinessCount(r({ trees: [{ path: "/wt/a", branch: "feat/a", state: "stale" }] })), { merged: 0, total: 1, ready: false });
+  // Waiting for your OK is still mergeable, so the count lights up for it too.
+  assert.equal(readinessCount(r({ trees: [{ path: "/wt/a", branch: "feat/a", state: "waiting-approval" }] }))?.ready, true);
+  // A ready worktree lights the count even when the badge says something else (a stale sibling
+  // hides the badge, §chat.worktrees/readiness), because the fact is the trees'.
+  const hidden = r({
+    trees: [
+      { path: "/wt/a", branch: "feat/a", state: "stale" },
+      { path: "/wt/b", branch: "feat/b", state: "ready" },
+    ],
+  });
+  assert.equal(hidden.badge, undefined);
+  assert.equal(readinessCount(hidden)?.ready, true);
+  assert.equal(readinessCountWords({ merged: 2, total: 3, ready: false }), "2 of 3 worktrees merged");
+  assert.equal(readinessCountWords({ merged: 2, total: 3, ready: true }), "2 of 3 worktrees merged, one is ready to merge");
 });
 
 test("the title names each worktree and every routine follow-up in words", () => {

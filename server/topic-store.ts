@@ -62,6 +62,9 @@ export function topicBase(name: string): string {
 export class TopicStore {
   private topics: Record<string, TopicRecord> | null = null;
   private loaded = new Map<string, Loaded>();
+  /** Receivers Stop has paused, by session file (§chat.topics/delivery): kept with the store so a
+      restart still holds the pause, until the user's next real message. */
+  private paused: Set<string> | null = null;
 
   constructor(
     readonly dir: string = join(stateRoot(), "topics"),
@@ -71,6 +74,9 @@ export class TopicStore {
 
   private get topicsFile(): string {
     return join(this.dir, "topics.json");
+  }
+  private get pausedFile(): string {
+    return join(this.dir, "paused.json");
   }
   private notesFile(name: string): string {
     return join(this.dir, `${name}.jsonl`);
@@ -150,7 +156,47 @@ export class TopicStore {
     this.saveTopics();
     this.loaded.delete(name);
     rmSync(this.notesFile(name), { force: true });
+    // Nothing left to pause for them: clear the Stop pause of a receiver with no open topic.
+    if (!this.openTopics().some(([, x]) => x.receiver.path === t.receiver.path)) this.resumeReceiver(t.receiver.path);
     return dropped;
+  }
+
+  /** Stop was pressed in this receiver: no batch starts there until its user's next real message. */
+  pauseReceiver(path: string): void {
+    const s = this.pauses();
+    if (!s.has(path)) {
+      s.add(path);
+      this.savePauses();
+    }
+  }
+
+  /** The lift of a Stop's pause: the user's real message, or the receiver's last topic closing. */
+  resumeReceiver(path: string): void {
+    if (this.pauses().delete(path)) this.savePauses();
+  }
+
+  receiverPaused(path: string): boolean {
+    return this.pauses().has(path);
+  }
+
+  private pauses(): Set<string> {
+    if (this.paused) return this.paused;
+    const set = new Set<string>();
+    try {
+      const raw = JSON.parse(readFileSync(this.pausedFile, "utf8"));
+      // A path whose file is gone can never be un-paused by a message: prune it.
+      for (const p of raw?.paused ?? []) if (typeof p === "string" && existsSync(p)) set.add(p);
+    } catch {
+      // missing or unreadable: no pauses
+    }
+    return (this.paused = set);
+  }
+
+  private savePauses(): void {
+    mkdirSync(this.dir, { recursive: true });
+    const tmp = `${this.pausedFile}.${process.pid}.tmp`;
+    writeFileSync(tmp, `${JSON.stringify({ v: 1, paused: [...this.pauses()], updatedAt: new Date(this.now()).toISOString() })}\n`);
+    renameSync(tmp, this.pausedFile);
   }
 
   private load(name: string): Loaded {

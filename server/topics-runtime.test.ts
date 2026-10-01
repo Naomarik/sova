@@ -367,7 +367,7 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     assert.ok(at("typed while busy") < texts.findIndex((t) => parseTopicBatch(t)), texts.join(" | "));
   });
 
-  test("Stop pauses delivery until the user's next message; a blank one doesn't lift it", async () => {
+  test("Stop pauses delivery until the user's next message; a blank one doesn't lift it; the pause outlives the runtime", async () => {
     const { ownPath, own, capPath, cap, name } = await pair();
     running = delivery();
     running.start();
@@ -381,8 +381,14 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     await sleep(200);
     assert.ok(running.log.some((l) => l.outcome === "paused"));
     assert.equal(batchesIn(capPath).length, 0);
-    await turn(cap, capPath, [], "carry on");
+    // A fresh runtime of the same file — what a restart reopens — is still paused: the store holds it.
+    assert.ok(await disposeHeldChat(capPath, "test reopen"));
+    assert.equal(await running.drain(name), "paused");
+    assert.equal(batchesIn(capPath).length, 0);
+    const cap2 = await held(capPath);
+    await turn(cap2, capPath, [], "carry on");
     await until(() => batchesIn(capPath).length === 1);
+    assert.equal(topicStore().receiverPaused(capPath), false, "the user's message lifted it for good");
   });
 
   test("an unloaded receiver is reopened; a model turned off keeps the notes", async () => {

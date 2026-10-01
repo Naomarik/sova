@@ -52,7 +52,7 @@ import { projectVerbsExtension } from "./project-services/tools";
 import { excludedTools, GRANT_TOOLS, keyOf, KNOWN_REMOVABLE_TOOLS, PROFILE_ENTRY, SESSION_SENT_ENTRY, singletonRaceText, type ProfileEntryData, type SessionSentData } from "../shared/profiles";
 import { profileOnBranch } from "./session-profile";
 import { RunState, SessionLimits, sessionPowersExtension } from "./session-powers";
-import { queuePushExtension } from "./topics";
+import { queuePushExtension, topicStore } from "./topics";
 
 const GUARD_POLL_MS = 3000;
 /** Hosted workers' context fill, read off their transcripts' tails; shared, mtime-gated. */
@@ -949,8 +949,17 @@ class ChatSession {
   private senderMarks: SenderMark[] = [];
   /** Topic batches handed to the agent whose user entry still needs its marker (§chat.topics/delivery). */
   private topicMarks: TopicBatchMark[] = [];
-  /** Stop pressed: no topic batch starts here until the user's next message (§chat.topics/delivery). */
+  /** Stop pressed: no topic batch starts here until the user's next message (§chat.topics/delivery).
+      The pause outlives this runtime: the store keeps it (topic-store.ts paused.json), so a restart
+      holds it too. `topicsPaused` is the in-memory view the delivery gate reads; the three writers
+      below keep both. */
   topicsPaused = false;
+  private setTopicsPaused(v: boolean): void {
+    if (this.topicsPaused === v) return;
+    this.topicsPaused = v;
+    if (v) topicStore().pauseReceiver(this.path);
+    else topicStore().resumeReceiver(this.path);
+  }
   /** This runtime's profile, set by openSession (null for special kinds). */
   profileState: ProfileState | null = null;
   /** The One at a time check passed for this runtime's first message. */
@@ -2137,7 +2146,7 @@ class ChatSession {
     // the pause (§chat.topics/delivery).
     if (!text.trim() && !images) return { queued: false, turn: Promise.resolve() };
     // The user's own message lifts a Stop's pause on topic batches (§chat.topics/delivery).
-    if (origin === "client" && !opts?.replay) this.topicsPaused = false;
+    if (origin === "client" && !opts?.replay) this.setTopicsPaused(false);
     // While streaming, a plain prompt is a follow-up — held in Sova's own queue now, so it can
     // still be taken back one item at a time. Server-originated prompts (a group batch, a remote
     // status probe) queue on the same terms as a client's: they are messages to this session, and
@@ -2550,7 +2559,7 @@ class ChatSession {
         }
         case "abort":
           // Stop pauses topic batches here until the user's next message (§chat.topics/delivery).
-          this.topicsPaused = true;
+          this.setTopicsPaused(true);
           // The queue drains Sova's held items AND the SDK's, so Stop still means "nothing
           // queued survives this", and the drained text still comes back as `queue_cleared`.
           // In a baton session a participant's queued message is theirs, not the composer's to
@@ -2689,7 +2698,7 @@ class ChatSession {
     const text = String(msg.text ?? "");
     const images = parseImages(msg.images);
     if (!text.trim() && !images) return;
-    this.topicsPaused = false;
+    this.setTopicsPaused(false);
     // Mid-turn, this is a steer and goes through Sova's queue so it stays removable; idle,
     // there is nothing to queue behind, so it starts its turn straight away (and the
     // extension-command split lives in handOffQueued, which both paths reach). While a
@@ -3339,6 +3348,8 @@ async function openSession(path: string, onDisposed: () => void): Promise<ChatSe
       sessionManager,
     });
     const chat = new ChatSession(path, runtime, onDisposed);
+    // A Stop pressed before a restart still pauses its topic batches (§chat.topics/delivery).
+    chat.topicsPaused = topicStore().receiverPaused(path);
     try {
       await chat.bind();
     } catch (err) {

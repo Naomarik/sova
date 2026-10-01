@@ -3,7 +3,7 @@
 // §chat.topics/store and §chat.topics/open: names, reuse, the per-session limit, notes kept across a
 // reload until acknowledged, the cap refusing instead of dropping, compaction, closing.
 import assert from "node:assert/strict";
-import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, test } from "node:test";
@@ -112,6 +112,31 @@ test("compaction: once delivered notes are most of the file, it is rewritten wit
   const lines = readFileSync(join(s.dir, `${name}.jsonl`), "utf8").trim().split("\n");
   assert.equal(lines.length, 5);
   assert.deepEqual(new TopicStore(s.dir).pending(name).map((it) => it.text), ["n55", "n56", "n57", "n58", "n59"]);
+});
+
+test("Stop's pause: kept with the store across a reload, lifted once, cleared when the last topic closes", () => {
+  const dir = fresh();
+  const file = join(root, "receiver.jsonl");
+  writeFileSync(file, "{}\n");
+  const s = new TopicStore(dir);
+  assert.equal(s.receiverPaused(file), false);
+  s.pauseReceiver(file);
+  s.pauseReceiver(file); // idempotent
+  assert.equal(new TopicStore(dir).receiverPaused(file), true, "a reload still holds the pause");
+  const again = new TopicStore(dir);
+  again.resumeReceiver(file);
+  assert.equal(new TopicStore(dir).receiverPaused(file), false);
+  // A path whose file is gone is pruned at load.
+  s.pauseReceiver("/gone/nowhere.jsonl");
+  assert.equal(new TopicStore(dir).receiverPaused("/gone/nowhere.jsonl"), false);
+  // Closing the receiver's last topic drops its pause; another open topic keeps it.
+  const { name } = s.open(A, "merge");
+  s.pauseReceiver(A.path);
+  const other = s.open(A, "standup").name;
+  s.close(name);
+  assert.equal(s.receiverPaused(A.path), true, "another topic of theirs is still open");
+  s.close(other);
+  assert.equal(new TopicStore(dir).receiverPaused(A.path), false, "no open topic: nothing left to pause");
 });
 
 test("close: the topic is gone for pushes, its notes are dropped and counted", () => {

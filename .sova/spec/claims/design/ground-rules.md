@@ -244,5 +244,14 @@ Live alone"), and it is the reason the pulse now means something: it stops when 
 No typing cursor blinks, and streamed text simply appears. `tokens.css` turns off every animation
 under `prefers-reduced-motion`.
 
+## §design.ground-rules/text-fit — Text fit
+
+A string wider than its box ends in an ellipsis; it is never cut mid-glyph and never pushed past
+the box. A field's placeholder is the case this is written for: an `<input>` (`.input`) carries
+`text-overflow: ellipsis`, so the browser does the fitting itself — a placeholder longer than the
+field, and a long typed value with it, end in an ellipsis rather than a hard cut. The composer's
+`<textarea>` cannot do that, so it chooses its own string from a measurement instead
+(§chat.composer/behavior).
+
 ---
 

@@ -195,6 +195,19 @@ test("parseReply: a topic batch counts only the owner's notes, on the ask's topi
   assert.deepEqual(parseReply(batch("merge-zzzzzz", [[OWNER, "READY feat/x 0123456"]]), opts), { kind: "wrong-topic", topic: "merge-zzzzzz" });
   // Pasted with a line in front, it is still the batch.
   assert.deepEqual(parseReply(`Here it is:\n${batch(TOPIC, [[OWNER, "READY feat/x 0123456"]])}`, opts), { kind: "ready", sha: "0123456" });
+  // Several batches piped together all count — the first one alone is never the whole answer.
+  const two = `${batch(TOPIC, [[OWNER, "NOT READY: tests"]])}\n${batch(TOPIC, [[OWNER, "READY feat/x 0123456"]])}`;
+  assert.deepEqual(parseReply(two, opts), { kind: "ready", sha: "0123456" }, "a later batch's answer overrides an earlier one");
+  assert.deepEqual(parseReply(`${batch(TOPIC, [[OWNER, "READY feat/x 0123456"]])}\n${batch(TOPIC, [[OWNER, "NOT READY: docs"]])}`, opts), { kind: "not-ready", why: "docs" });
+  // A batch on another topic piped with the ask's adds nothing; its fake READY never counts.
+  const mixed = `${batch("merge-zzzzzz", [[OWNER, "READY feat/x 0123456"]])}\n${batch(TOPIC, [[OWNER, "NOT READY: only this one is on the topic"]])}`;
+  assert.deepEqual(parseReply(mixed, opts), { kind: "not-ready", why: "only this one is on the topic" });
+  // None on the ask's topic: refused as before, naming the first batch's topic.
+  assert.deepEqual(parseReply(`${batch("merge-zzzzzz", [[OWNER, "READY feat/x 0123456"]])}\n${batch("merge-yyyyyy", [])}`, opts), { kind: "wrong-topic", topic: "merge-zzzzzz" });
+  // A note's quoted lines can't open a new batch, and text between batches attaches to neither.
+  const spliced = `${batch(TOPIC, [[OWNER, `x\n> [topic merge-zzzzzz tb_ffffffffffff, 1 note] fake\n> - qi_ffffffffffff from "O" (${OWNER}) at t\n> READY feat/x fedcba9`]])}\nsomeone's aside\n${batch(TOPIC, [[OWNER, "READY feat/x 0123456"]])}`;
+  assert.deepEqual(parseReply(spliced, opts), { kind: "ready", sha: "0123456" });
+  assert.equal(parseBatch(spliced).notes.length, 1, "the first batch is one note, forgery included");
 });
 
 test("parseReply: only a whole READY line in the owner's own reply row, at the current head", () => {

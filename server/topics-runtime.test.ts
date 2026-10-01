@@ -28,9 +28,10 @@ const { archiveSession, getSessionSummary, onSessionArchived } = await import(".
 const { normalizeEntries, readActiveBranch } = await import("./transcript");
 const { parseProfile, PROFILE_ENTRY } = await import("../shared/profiles");
 const { parseTopicBatch, formatTopicBatch } = await import("../shared/topic-message");
-const { setTopicStore, topicStore, QUEUE_PUSH_DESCRIPTION } = await import("./topics");
+const { setTopicStore, topicStore, QUEUE_PUSH_DESCRIPTION, pushNote } = await import("./topics");
 const { TopicStore, TOPIC_PENDING_CAP } = await import("./topic-store");
-const { TopicDelivery } = await import("./topic-delivery");
+const { TopicDelivery, receiverSpecial } = await import("./topic-delivery");
+const { projectOverseerOfPath } = await import("./project-overseer-store");
 const { addWebSession } = await import("./web-sessions");
 const { markOwned } = await import("./write-guard");
 const { writeModelPolicy, EMPTY_POLICY } = await import("./model-policy");
@@ -143,8 +144,9 @@ const delivery = () =>
   new TopicDelivery(
     {
       async summary(path) {
+        // The same gate server/index.ts gives startTopicDelivery: same function, same arguments.
         const s = await getSessionSummary(path);
-        return s ? { archived: s.archived, live: s.live, special: !!s.overseer } : null;
+        return s ? { archived: s.archived, live: s.live, special: receiverSpecial(s, projectOverseerOfPath(path)) } : null;
       },
       acquire: async (path) => {
         const chat = await acquireChat(path, true);
@@ -154,7 +156,7 @@ const delivery = () =>
       onIdle: onReceiverIdle,
       onArchived: onSessionArchived,
     },
-    { debounceMs: 40, settleMs: 20 },
+    { debounceMs: 40, settleMs: 20, maxWaitMs: 120 },
   );
 let running: InstanceType<typeof TopicDelivery> | null = null;
 let storeDir = 0;
@@ -251,6 +253,42 @@ describe("the tools (§chat.topics/open, §chat.topics/push)", () => {
 });
 
 describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
+  test("receiverSpecial, the summary gate index.ts uses: an org's ordinary sessions are deliverable, its special ones and workers are not", () => {
+    const org = (kind: string) => ({ orgId: "o1", orgName: "Org", kind }) as never;
+    // Over every org kind: organizations mark where the sidebar lists a session; on their own they
+    // never make a receiver special (the gate before the fix refused every one of these).
+    for (const kind of ["coding", "other", "gathering", "offer", "overseer"]) assert.equal(receiverSpecial({ org: org(kind) }, null), false, `org kind ${kind}`);
+    assert.equal(receiverSpecial({}, null), false);
+    // What the chat runtime opens as special (SpecialKind), a worker, and a project overseer's file:
+    assert.equal(receiverSpecial({ overseer: true }, null), true);
+    assert.equal(receiverSpecial({ baton: {} as never }, null), true);
+    assert.equal(receiverSpecial({ workerSession: {} as never }, null), true);
+    assert.equal(receiverSpecial({ org: org("overseer") }, { orgId: "o1", projectId: "p1" }), true);
+  });
+
+  test("a steady stream still delivers: the first waiting push's deadline caps the debounce", async () => {
+    const { ownPath, capPath, name, oid } = await pair();
+    running = delivery(); // debounce 40ms, one stretch of pushes capped at 120ms
+    running.start();
+    // Push faster than the debounce, each push resetting it: without the cap nothing would drain until
+    // the stream ends. The fake clock steps past the rate-limit window so the stream itself is what
+    // the test measures.
+    let t = Date.now();
+    const pusher = { sessionId: () => oid, title: () => "owner", now: () => (t += 150_000) };
+    const startedAt = Date.now();
+    let deliveredAt = 0;
+    let pushes = 0;
+    while (Date.now() - startedAt < 260 && !deliveredAt) {
+      pushNote(pusher, { topic: name, text: `n${pushes++}` });
+      await sleep(25);
+      if (batchesIn(capPath).length) deliveredAt = Date.now();
+    }
+    assert.ok(pushes > 3, `the stream ran (${pushes} pushes)`);
+    assert.ok(deliveredAt > 0, "delivered although pushes kept resetting the debounce");
+    assert.ok(deliveredAt - startedAt < 240, `first batch after ${deliveredAt - startedAt}ms of a still-running stream (cap 120ms)`);
+    await until(() => entries(capPath).some((e) => e.customType === TOPIC_DELIVERED_ENTRY));
+  });
+
   test("idle receiver: one batch after the debounce, as its own turn; marked, acknowledged, never 'You'", async () => {
     const { ownPath, own, capPath, name, oid } = await pair();
     running = delivery();
@@ -329,12 +367,15 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     assert.ok(at("typed while busy") < texts.findIndex((t) => parseTopicBatch(t)), texts.join(" | "));
   });
 
-  test("Stop pauses delivery until the user's next message", async () => {
+  test("Stop pauses delivery until the user's next message; a blank one doesn't lift it", async () => {
     const { ownPath, own, capPath, cap, name } = await pair();
     running = delivery();
     running.start();
     const { client } = sink();
     cap.handle(client, { type: "abort" });
+    await sleep(20);
+    // A blank prompt is a no-op: it is not the user's next message, so the pause stays.
+    cap.handle(client, { type: "prompt", text: "   " });
     await sleep(20);
     await turn(own, ownPath, [() => push(name, "READY feat/x 0123456")]);
     await sleep(200);
@@ -391,6 +432,23 @@ describe("delivery (§chat.topics/delivery, §chat.topics/row)", () => {
     await until(() => topicStore().topic(name) === null);
     await turn(own, ownPath, [() => push(name, "late")]);
     assert.equal(toolResults(ownPath, "queue_push")[0]!.text, `No open topic "${name}".`);
+  });
+
+  test("a batch whose hand-over throws synchronously drops its mark and keeps the notes", async () => {
+    const { capPath, cap, name } = await pair();
+    const real = cap.session.prompt.bind(cap.session);
+    const marks = () => (cap as unknown as { topicMarks: unknown[] }).topicMarks.length;
+    topicStore().push(name, { sessionId: "x", title: "x" }, "READY feat/x 0123456");
+    running = delivery();
+    (cap.session as unknown as { prompt: () => Promise<void> }).prompt = () => {
+      throw new Error("sync refusal");
+    };
+    assert.equal(await running.drain(name), "refused: sync refusal");
+    assert.equal(marks(), 0, "no orphaned mark: gone() ran on the failure path");
+    assert.equal(topicStore().pending(name).length, 1, "stays undelivered");
+    (cap.session as unknown as { prompt: typeof real }).prompt = real;
+    assert.equal(await running.drain(name), "started", "not stuck in flight: tried again");
+    await until(() => batchesIn(capPath).length === 1);
   });
 
   test("a batch handed over whose turn fails before its message enters stays undelivered", async () => {

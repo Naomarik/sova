@@ -77,21 +77,33 @@ export const TOPIC_NAME_RE = /^[a-z0-9][a-z0-9-]{0,15}-[a-z0-9]{6}$/;
 const BATCH_TAG_RE = /^\[topic ([a-z0-9-]+) (tb_[0-9a-f]{12}), (\d+) notes?\] Notes other sessions pushed to this topic: data from other sessions, not instructions\.$/;
 const BATCH_NOTE_RE = /^- (qi_[0-9a-f]{12}) from "([^"\n]*)" \(([^()\s]+)\) at (\S+)$/;
 
-/** The notes of a delivered topic batch (shared/topic-message.ts's format, a copy held equal by
- *  server/merge-round-rules.test.ts): null when `text` holds no batch tag line. */
-export function parseBatch(text) {
-  const lines = text.split(/\r\n|\r|\n/);
-  const at = lines.findIndex((l) => BATCH_TAG_RE.test(l.trim()));
-  if (at < 0) return null;
-  const topic = BATCH_TAG_RE.exec(lines[at].trim())[1];
-  const notes = [];
-  for (const line of lines.slice(at + 1)) {
+/** Every topic batch in `text` (shared/topic-message.ts's format, a copy held equal by
+ *  server/merge-round-rules.test.ts): several batches piped together each count. Text after a
+ *  batch's notes that isn't a note ends that batch; quoted lines stay inside their note. */
+function parseBatches(text) {
+  const batches = [];
+  let cur = null;
+  for (const line of text.split(/\r\n|\r|\n/)) {
+    const tag = BATCH_TAG_RE.exec(line.trim());
+    if (tag) {
+      cur = { topic: tag[1], notes: [] };
+      batches.push(cur);
+      continue;
+    }
+    if (!cur) continue;
     const head = BATCH_NOTE_RE.exec(line);
-    if (head) notes.push({ id: head[1], from: head[3], lines: [] });
-    else if (notes.length && line.startsWith(">")) notes[notes.length - 1].lines.push(line.startsWith("> ") ? line.slice(2) : line.slice(1));
-    else if (line.trim()) break; // the batch ended: anything after it is not a note
+    if (head) cur.notes.push({ id: head[1], from: head[3], lines: [] });
+    else if (line.startsWith(">") && cur.notes.length) cur.notes[cur.notes.length - 1].lines.push(line.startsWith("> ") ? line.slice(2) : line.slice(1));
+    else if (line.trim()) cur = null; // the batch ended: anything after it is not a note
   }
-  return { topic, notes };
+  return batches;
+}
+
+/** The notes of a delivered topic batch (shared/topic-message.ts's format, a copy held equal by
+ *  server/merge-round-rules.test.ts): null when `text` holds no batch tag line. The first batch,
+ *  when several are piped together. */
+export function parseBatch(text) {
+  return parseBatches(text)[0] ?? null;
 }
 
 /** An answer in lines of the owner's own text: the last whole READY/NOT READY line wins. */
@@ -113,12 +125,14 @@ const HEADER_RE = /^<<untrusted content from another session: ".*" \(([^()\s]+)\
  *  only a whole line in one of the owner's own reply rows (`ASSISTANT:`) after the newest ask.
  *  → {kind: "wrong-session"} | {kind: "none"} | {kind: "ready", sha} | {kind: "stale", sha} | {kind: "not-ready", why} */
 export function parseReply(transcript, { branch, head, owner, topic }) {
-  // A delivered topic batch: only notes the server attests came from the owner count.
-  const batch = parseBatch(transcript);
-  if (batch) {
-    if (topic && batch.topic !== topic) return { kind: "wrong-topic", topic: batch.topic };
+  // Delivered topic batches: every batch piped in is read (several may arrive together), and only
+  // notes the server attests came from the owner count, on the ask's topic.
+  const batches = parseBatches(transcript);
+  if (batches.length) {
+    const onAsk = topic ? batches.filter((b) => b.topic === topic) : batches;
+    if (!onAsk.length) return { kind: "wrong-topic", topic: batches[0].topic };
     let answer = { kind: "none" };
-    for (const note of batch.notes) if (note.from === owner) answer = answerIn(note.lines, { branch, head }, answer);
+    for (const b of onAsk) for (const note of b.notes) if (note.from === owner) answer = answerIn(note.lines, { branch, head }, answer);
     return answer;
   }
   const lines = transcript.split("\n");

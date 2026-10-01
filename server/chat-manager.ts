@@ -1324,8 +1324,16 @@ class ChatSession {
     this.assertModelAllowed();
     this.flushDeferredAppends();
     this.topicMarks.push(mark);
-    const turn = this.session.prompt(mark.text, { expandPromptTemplates: false, source: "extension" });
-    this.noteStarting(turn);
+    let turn: Promise<void>;
+    try {
+      turn = this.session.prompt(mark.text, { expandPromptTemplates: false, source: "extension" });
+      this.noteStarting(turn);
+    } catch (err) {
+      // A synchronous throw would otherwise orphan the mark (gone() never runs) and leave the
+      // delivery in flight: clean up on this failure path as the turn's rejection does below.
+      this.dropTopicMark(mark);
+      throw err;
+    }
     turn.catch((err) => {
       this.dropTopicMark(mark);
       if (this.disposed || isCompactionInProgress(err)) return; // retried at compaction_end
@@ -2125,9 +2133,11 @@ class ChatSession {
     // Never write if a TUI grabbed this file, or anyone else wrote it, after we opened it.
     assertNotLive(this.path);
     this.assertNoForeignWrites();
+    // Blank text with no image is a no-op first of all: it is not a message, so it never lifts
+    // the pause (§chat.topics/delivery).
+    if (!text.trim() && !images) return { queued: false, turn: Promise.resolve() };
     // The user's own message lifts a Stop's pause on topic batches (§chat.topics/delivery).
     if (origin === "client" && !opts?.replay) this.topicsPaused = false;
-    if (!text.trim() && !images) return { queued: false, turn: Promise.resolve() };
     // While streaming, a plain prompt is a follow-up — held in Sova's own queue now, so it can
     // still be taken back one item at a time. Server-originated prompts (a group batch, a remote
     // status probe) queue on the same terms as a client's: they are messages to this session, and

@@ -20,12 +20,6 @@ export function setTopicStore(s: TopicStore | null): void {
   pushTimes.clear();
 }
 
-/** Who receives a topic, found by name: the store's open record (§chat.topics/open). The one
-    binding from a topic to its receiver. */
-export function topicReceiver(name: string): { sessionId: string; path: string } | null {
-  return topicStore().topic(name)?.receiver ?? null;
-}
-
 const pushListeners = new Set<(topic: string) => void>();
 /** Delivery's hook: a note was kept on `topic`. */
 export function onTopicPush(fn: (topic: string) => void): () => void {
@@ -35,7 +29,10 @@ export function onTopicPush(fn: (topic: string) => void): () => void {
 
 export const PUSH_WINDOW_MS = 10 * 60_000;
 export const PUSHES_PER_WINDOW = 5;
-/** Pushes per sender → topic in the last window, for this process's life. */
+/** Pushes per sender → topic in the last window. Process-local BY CHOICE: a restart forgets the
+    count, so a sender could push a fresh 5 right after one. Persisting it (the topic store's own
+    files) isn't worth the machinery: the pending cap (200 notes) bounds what a restarted flood can
+    pile up, the debounce coalesces it into batches, and the audit keeps every accepted push. */
 const pushTimes = new Map<string, number[]>();
 
 export const QUEUE_PUSH_TOOL = "queue_push";

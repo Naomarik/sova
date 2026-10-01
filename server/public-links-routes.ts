@@ -1,6 +1,6 @@
 import type { Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { AdvertisedGateway, PublicLinksFile, PublicLinksInfo, RoutedHost, VerifyResult } from "../shared/public-links";
+import type { AdvertisedGateway, PublicLinksFile, PublicLinksInfo, RoutedHost, VerifyResult, VisitorLogging } from "../shared/public-links";
 import { advertisedGateways } from "./mesh/hello";
 import { localRequest } from "./mesh/proxy";
 import { patchPublicLinks, pinnedByEnv, readPublicLinks, writeServerFields } from "./public-links";
@@ -10,12 +10,14 @@ import { refreshGateway } from "./share/gateway-client";
 import { noteVerify, shareListenerSettled, shareState } from "./share/listener";
 import { routedHosts } from "./share/registry";
 import { publicLinksChanged } from "./share/setting-events";
+import { parseVisitorLogging, readVisitorLogging, writeVisitorLogging } from "./visitor-logging";
 
 /**
  * Settings → Public links (§mesh.public/setting): GET and PUT /api/public-links and POST
  * /api/public-links/verify (shared/public-links.ts). Main listener only: a request from the peer
  * listener (`meshPeer`) or relayed by a peer's proxy (X-Sova-Relayed) gets the plain 404, like the mesh
- * links' local acts. Works with the mesh off.
+ * links' local acts. Works with the mesh off. GET and PUT /api/visitor-logging, the host's two
+ * visitor switches (§mesh.public/visitor-log), answer the same way.
  */
 
 const notFound = (c: Context) => c.json({ error: "Not found" }, 404);
@@ -67,6 +69,14 @@ export function mountPublicLinks(app: Hono, sources: PublicLinksSources = SOURCE
       clearTimeout(timer);
     }
     return c.json(await publicLinksInfo(r.file, sources), 200, NO_STORE);
+  });
+
+  app.get("/api/visitor-logging", (c) => (local(c) ? c.json(readVisitorLogging() satisfies VisitorLogging, 200, NO_STORE) : notFound(c)));
+  app.put("/api/visitor-logging", small, async (c) => {
+    if (!local(c)) return notFound(c);
+    const next = parseVisitorLogging(await c.req.json().catch(() => undefined));
+    if (!next) return c.json({ error: "Expected { logVisitors, forwardIp }, both true or false." }, 400);
+    return c.json(writeVisitorLogging(next) satisfies VisitorLogging, 200, NO_STORE);
   });
 
   // Checks the effective address as it is now; a pass is kept (verifiedAt), a failure reads as

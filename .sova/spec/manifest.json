@@ -11184,6 +11184,75 @@
         "src/components/Sidebar.tsx",
         "src/design/base.css"
       ]
+    },
+    "§app.overseer/alignment-read": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-tools.ts",
+        "server/align-state.ts",
+        "server/session-guards.ts",
+        "server/overseer-prompt.md",
+        "server/overseer-tools.test.ts",
+        "server/overseer-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/tools",
+        "§chat.alignment/session-mark",
+        "§chat.profiles/session-tools"
+      ]
+    },
+    "§app.overseer/brief-repeat": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer.ts",
+        "server/attention.ts",
+        "server/attention.test.ts",
+        "server/overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/proactivity",
+        "§app.overseer/attention-digest"
+      ]
+    },
+    "§app.overseer/id-check": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-id-check.ts",
+        "server/overseer.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-id-check.test.ts",
+        "server/overseer-runtime.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/links",
+        "§app.overseer/tools",
+        "§app.overseer/session-names"
+      ]
+    },
+    "§app.overseer/sessions-in-play": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/overseer-run-note.ts",
+        "server/overseer.ts",
+        "server/overseer-tools.ts",
+        "server/overseer-run-note.test.ts",
+        "server/overseer-tools.test.ts"
+      ],
+      "requires": [
+        "§app.overseer/run-note",
+        "§app.overseer/confirm",
+        "§app.overseer/session-names",
+        "§chat.worktrees/readiness",
+        "§app.overseer/tools"
+      ]
     }
   },
   "boundary": {

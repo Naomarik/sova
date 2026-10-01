@@ -722,6 +722,10 @@ await commands.get("mode").handler("normal", ctx);
 
 // ── Delegate routing: /mode delegate, settings re-read per turn, policy, discovery failure ──
 const delegateFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-delegate.json");
+// The legacy files reach a session through subagent-profiles.json, seeded from them when it is
+// absent: these tests edit a legacy file, then drop the profiles file so the next read seeds again.
+const profilesFile = path.join(process.env.PI_CODING_AGENT_DIR, "subagent-profiles.json");
+const reseed = () => rmSync(profilesFile, { force: true });
 const policyFile = path.join(process.env.PI_CODING_AGENT_DIR, "model-policy.json");
 const writeRouting = (mutate) => {
 	const settings = { version: 1, profiles: {
@@ -734,6 +738,7 @@ const writeRouting = (mutate) => {
 	// Atomic replace, the way Sova writes it: a new inode, so the per-turn stat sees the change.
 	writeFileSync(`${delegateFile}.tmp`, JSON.stringify(settings));
 	renameSync(`${delegateFile}.tmp`, delegateFile);
+	reseed();
 };
 offered = [
 	{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: ["low", "medium", "high", "xhigh", "max"] },
@@ -763,7 +768,8 @@ await flush();
 await flush();
 await commands.get("mode").handler("status", piCtx);
 assert.match(store.notices.at(-1).message, /^  Routine implementation: pi · zai\/glm-5.3 · high, fallback claude-code · opus\[1m\] · low — using primary$/m, "the background probe verified the pi tuple");
-assert.match(store.notices.at(-1).message, /^delegate routing \(.*mode-delegate\.json\):$/m);
+assert.match(store.notices.at(-1).message, /^delegate routing:$/m);
+assert.match(store.notices.at(-1).message, /^subagent profile: My setup \(the default\)$/m, "the seeded profile is the default");
 
 // Normal mode never reads the routing: the prompt is untouched whatever the file says.
 await commands.get("mode").handler("normal", ctx);
@@ -813,6 +819,7 @@ await flush();
 assert.equal(store.status.get("mode"), "<warning>delegate · fallback:plan</warning>", "an unsupported effort is not clamped silently");
 assert.match(store.notices.at(-1).message, /Planning & specs: fallback claude-code · opus\[1m\] · high \(claude-fable-5-1\[1m\] does not support effort "max"/, "a routing change that degrades a profile is announced");
 rmSync(delegateFile);
+reseed();
 await commands.get("mode").handler("normal", ctx);
 
 // ── A turn during the entry probe joins it: no restart, and the entry's fallback notice survives ──
@@ -871,6 +878,7 @@ await commands.get("mode").handler("normal", ctx);
 	const writeSpec = (settings) => {
 		writeFileSync(`${specFile}.tmp`, JSON.stringify(settings));
 		renameSync(`${specFile}.tmp`, specFile);
+		reseed();
 	};
 	const all = ["low", "medium", "high", "xhigh", "max"];
 	offered = [{ id: "claude-fable-5-1[1m]", name: "Fable", efforts: all }, { id: "opus[1m]", name: "Opus", efforts: ["low"] }];
@@ -900,7 +908,7 @@ await commands.get("mode").handler("normal", ctx);
 	prompt = (await beforeAgentStart({ systemPrompt: "base" }, ctx)).systemPrompt;
 	assert.match(prompt, /Spec writer: .* → backend "claude-code", model "claude-fable-5-1\[1m\]", effort "high"\. This is the configured FALLBACK/);
 	await commands.get("mode").handler("status", ctx);
-	assert.match(store.notices.at(-1).message, /^spec writer \(.*mode-spec\.json\): claude-code · opus\[1m\] · medium, fallback claude-code · claude-fable-5-1\[1m\] · high — using FALLBACK/m);
+	assert.match(store.notices.at(-1).message, /^spec writer: claude-code · opus\[1m\] · medium, fallback claude-code · claude-fable-5-1\[1m\] · high — using FALLBACK/m);
 
 	// Spec off mid-session: the head keeps its spec block, writer paragraph included, byte for byte;
 	// the note says it no longer applies. Rebuilt (as after a compaction): no block, no paragraph.
@@ -912,6 +920,7 @@ await commands.get("mode").handler("normal", ctx);
 	assert.equal(store.status.get("mode"), "<dim>normal</dim>");
 	assert.ok(existsSync(specFile), "nothing here writes or removes the writer file");
 	rmSync(specFile);
+	reseed();
 }
 
 // ── The host's base prompt sections: kept in step, so a turn an extension's message starts reads the same prompt ──
@@ -998,6 +1007,7 @@ await commands.get("mode").handler("normal", ctx);
 	// the parent's delegate + strict + align snapshot onto its branch; mode-spec.json names a writer.
 	const specFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-spec.json");
 	writeFileSync(specFile, JSON.stringify({ version: 1, writer: { primary: { backend: "claude-code", model: "opus[1m]", effort: "medium" }, fallback: null } }));
+	reseed();
 	const forkedBranch = [{ type: "custom", customType: "mode", data: { mode: "delegate", active: { version: 1, mode: "delegate", strict: true, minorModes: ["align", "vis"] } } }];
 	const saved = { ...flagValues };
 	flagValues.major = "normal";
@@ -1048,6 +1058,7 @@ await commands.get("mode").handler("normal", ctx);
 	for (const [k, v] of Object.entries(saved)) flagValues[k] = v;
 	for (const k of Object.keys(flagValues)) if (!(k in saved)) delete flagValues[k];
 	rmSync(specFile);
+	reseed();
 }
 
 // ── /mode sync: adopt the host and re-apply the session's block, and nothing else ──
@@ -1214,7 +1225,7 @@ await commands.get("mode").handler("normal", ctx);
 	modeExtension(host.api);
 	const fire = async (name, event = {}) => { for (const fn of host.hooks.get(name) ?? []) await fn(event, c); };
 	const specFile = path.join(process.env.PI_CODING_AGENT_DIR, "mode-spec.json");
-	const writer = (model) => { writeFileSync(`${specFile}.tmp`, JSON.stringify({ version: 1, writer: { primary: { backend: "pi", model, effort: "high" }, fallback: null } })); renameSync(`${specFile}.tmp`, specFile); };
+	const writer = (model) => { writeFileSync(`${specFile}.tmp`, JSON.stringify({ version: 1, writer: { primary: { backend: "pi", model, effort: "high" }, fallback: null } })); renameSync(`${specFile}.tmp`, specFile); reseed(); };
 	try {
 		await fire("session_start", { reason: "startup" });
 		await fire("before_agent_start", { systemPrompt: "base", prompt: "go" });
@@ -1232,7 +1243,49 @@ await commands.get("mode").handler("normal", ctx);
 		assert.match(host.sent.at(-1).message.content, /routing now applies instead of any earlier writer routing/);
 		assert.match(host.sent.at(-1).message.content, /fixture\/writer-b/);
 		assert.doesNotMatch(host.sent.at(-1).message.content, /fixture\/writer-a/);
-	} finally { rmSync(specFile, { force: true }); }
+	} finally { rmSync(specFile, { force: true }); reseed(); }
+}
+
+// Subagent profiles: a chat's pick (its hidden entry, which Sova writes into a held chat
+// directly) is re-read at each turn boundary; Off names the work kinds with no worker; the
+// default moves a chat with no pick; /mode subagents writes the entry itself.
+{
+	const host = makeApi();
+	const s = { status: new Map(), notices: [], widgets: new Map(), branch: [{ type: "custom", customType: "mode", data: { active: { version: 1, mode: "delegate", strict: false, minorModes: [] } } }], customCalls: [] };
+	host.api.appendEntry = (type, data) => s.branch.push({ type: "custom", customType: type, data });
+	const c = makeCtx(s);
+	modeExtension(host.api);
+	const fire = async (name, event = {}) => { let out; for (const fn of host.hooks.get(name) ?? []) out = (await fn(event, c)) ?? out; return out; };
+	const route = (model) => Object.fromEntries(["planning", "investigation", "routine", "complex"].map((k) => [k, { primary: { backend: "claude-code", model, effort: "low" }, fallback: null }]));
+	const empty = { teams: null, members: null, specWriter: null };
+	writeFileSync(profilesFile, JSON.stringify({ version: 1, default: "a", profiles: [{ id: "a", name: "A", delegate: route("opus[1m]"), ...empty }, { id: "b", name: "B", delegate: route("sonnet"), ...empty }] }));
+	try {
+		await fire("session_start", { reason: "startup" });
+		let prompt = (await fire("before_agent_start", { systemPrompt: "base", prompt: "go" })).systemPrompt;
+		assert.match(prompt, /Routine implementation .* → backend "claude-code", model "opus\[1m\]"/, "no pick: the default profile routes");
+		await fire("agent_start"); await fire("agent_settled");
+		s.branch.push({ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "b" } });
+		prompt = (await fire("before_agent_start", { systemPrompt: "base", prompt: "go" })).systemPrompt;
+		assert.match(prompt, /Routine implementation .* → backend "claude-code", model "sonnet"/, "a pick written into the branch applies from the next turn");
+		await fire("agent_start"); await fire("agent_settled");
+		s.branch.push({ type: "custom", customType: "subagent-profile", data: { v: 1, profile: "off" } });
+		prompt = (await fire("before_agent_start", { systemPrompt: "base", prompt: "go" })).systemPrompt;
+		assert.match(prompt, /# Mode: delegate/, "Off still asks the agent to delegate");
+		assert.match(prompt, /no subagent profile routes them/);
+		assert.match(prompt, /- Routine implementation \(mechanical/);
+		assert.doesNotMatch(prompt, /→ backend/, "Off carries no worker line");
+		await fire("agent_start"); await fire("agent_settled");
+		const before = s.branch.length;
+		await host.commands.get("mode").handler("subagents B", c);
+		assert.deepEqual(s.branch.at(-1), { type: "custom", customType: "subagent-profile", data: { v: 1, profile: "b" } }, "/mode subagents takes a name and writes the entry");
+		assert.equal(s.branch.length, before + 1);
+		await host.commands.get("mode").handler("subagents b", c);
+		assert.equal(s.branch.length, before + 1, "the same pick again writes nothing");
+		await host.commands.get("mode").handler("subagents nope", c);
+		assert.match(s.notices.at(-1).message, /No subagent profile "nope"/);
+		await host.commands.get("mode").handler("status", c);
+		assert.match(s.notices.at(-1).message, /^subagent profile: B \(this chat's pick\)$/m);
+	} finally { rmSync(profilesFile, { force: true }); }
 }
 
 console.log("mode smoke tests passed");

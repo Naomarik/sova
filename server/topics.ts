@@ -1,4 +1,6 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { existsSync } from "node:fs";
+import { isArchived } from "./archived-sessions";
 import { Refusal, text } from "./session-guards";
 import { TOPIC_TEXT_MAX, TopicStore } from "./topic-store";
 
@@ -52,23 +54,67 @@ export interface PusherContext {
 }
 
 /**
+ * The invitations a `session_send` makes: each of the sender's own open topics
+ * its text names as a whole word invites the target there, once the send is accepted. They are
+ * recorded BEFORE the hand-off, since the target's turn may push before the send returns; the
+ * caller then says `accepted()` (each new one is audited) or `refused()` (the new ones are taken
+ * back, so a refused send invites no one; an invitation the target already had stays).
+ */
+export function inviteFromSend(senderId: string, targetId: string, sent: string): { accepted(): string[]; refused(): void } {
+  const s = topicStore();
+  const made: string[] = [];
+  for (const [name, t] of s.openTopics()) if (t.receiver.sessionId === senderId && namesTopic(sent, name) && s.invite(name, targetId)) made.push(name);
+  return {
+    accepted: () => {
+      for (const name of made) s.audit({ sessionId: senderId, tool: "session_send", topic: name, outcome: "invited", target: targetId });
+      return made;
+    },
+    refused: () => {
+      for (const name of made) s.uninvite(name, targetId);
+    },
+  };
+}
+
+/** `text` holds `name` as a whole word: not inside a longer name (names are [a-z0-9-]). */
+export function namesTopic(text: string, name: string): boolean {
+  for (let i = text.indexOf(name); i >= 0; i = text.indexOf(name, i + 1)) {
+    const before = text[i - 1];
+    const after = text[i + name.length];
+    if ((before === undefined || !/[a-z0-9-]/.test(before)) && (after === undefined || !/[a-z0-9-]/.test(after))) return true;
+  }
+  return false;
+}
+
+/** The receiver can no longer take a batch: its file is gone, or it is archived. */
+const receiverGone = (r: { sessionId: string; path: string }): boolean => !existsSync(r.path) || isArchived(r.sessionId);
+
+/**
  * One push (§chat.topics/push): checks, keeps the note, audits, tells delivery. Returns the
- * one-sentence result; throws a Refusal with the sentence otherwise.
+ * one-sentence result; throws a Refusal with the sentence otherwise. An uninvited sender and a
+ * receiver found gone get the same sentence as a name that isn't open, so nothing tells them apart
+ * but the audit's `reason`.
  */
 export function pushNote(ctx: PusherContext, params: { topic?: unknown; text?: unknown }): string {
   const s = topicStore();
   const sessionId = ctx.sessionId();
   const topic = typeof params?.topic === "string" ? params.topic.trim() : "";
-  const refuse = (error: string): never => {
-    s.audit({ sessionId, tool: "queue_push", ...(topic ? { topic: topic.slice(0, 64) } : {}), outcome: "refused", error });
+  const refuse = (error: string, reason?: "not-open" | "not-invited" | "receiver-gone"): never => {
+    s.audit({ sessionId, tool: "queue_push", ...(topic ? { topic: topic.slice(0, 64) } : {}), outcome: "refused", error, ...(reason ? { reason } : {}) });
     throw new Refusal(error);
   };
+  const notOpen = `No open topic "${topic.slice(0, 64)}".`;
   const rec = s.topic(topic);
-  if (!rec) refuse(`No open topic "${topic.slice(0, 64)}".`);
+  if (!rec) refuse(notOpen, "not-open");
+  if (receiverGone(rec!.receiver)) {
+    const dropped = s.close(topic);
+    s.audit({ sessionId: rec!.receiver.sessionId, tool: "queue_open", topic, outcome: "closed", dropped });
+    refuse(notOpen, "receiver-gone");
+  }
+  if (rec!.receiver.sessionId === sessionId) refuse(`This session is "${topic}"'s receiver; a topic is for other sessions.`);
+  if (!s.invited(topic, sessionId)) refuse(notOpen, "not-invited");
   const body = typeof params?.text === "string" ? params.text.trim() : "";
   if (!body) refuse("text must not be blank.");
   if (body.length > TOPIC_TEXT_MAX) refuse(`Too long: at most ${TOPIC_TEXT_MAX} characters.`);
-  if (rec!.receiver.sessionId === sessionId) refuse(`This session is "${topic}"'s receiver; a topic is for other sessions.`);
   const now = (ctx.now ?? Date.now)();
   const key = `${sessionId}\u0000${topic}`;
   const recent = (pushTimes.get(key) ?? []).filter((t) => now - t < PUSH_WINDOW_MS);

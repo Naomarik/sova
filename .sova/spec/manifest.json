@@ -10881,7 +10881,8 @@
       "code": [
         "server/topics.ts",
         "server/chat-manager.ts",
-        "server/topics-runtime.test.ts"
+        "server/topics-runtime.test.ts",
+        "server/topic-store.ts"
       ],
       "requires": [
         "§chat.topics/open",
@@ -10926,7 +10927,10 @@
       "evidence": "verified",
       "code": [
         "server/topic-store.ts",
-        "server/topic-store.test.ts"
+        "server/topic-store.test.ts",
+        "pi-config/extensions/sandbox/backends/linux-bwrap.ts",
+        "pi-config/extensions/sandbox/backends/darwin-seatbelt.ts",
+        "pi-config/extensions/sandbox/tests/unit/linux-bwrap.unit.test.ts"
       ],
       "requires": []
     },
@@ -11005,6 +11009,29 @@
       "requires": [
         "§chat.transcript/rendering",
         "§app.overseer/confirm"
+      ]
+    },
+    "§app.claude-code-provider/invalid-tool-input": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "pi-config/extensions/claude-code/provider/stream.test.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/provider/fixtures/invalid-tool-input-turn.ndjson"
+      ]
+    },
+    "§app/claude-code-provider": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
       ]
     }
   },

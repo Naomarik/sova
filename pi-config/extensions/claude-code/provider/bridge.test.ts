@@ -2095,3 +2095,379 @@ test("a resume the CLI refuses falls back to a fold in the same turn", { timeout
 	});
 	await bridge.disposeAll();
 });
+
+// ---------------------------------------------------------------------------
+// Tool calls whose arguments are not valid JSON (§app.claude-code-provider/invalid-tool-input)
+// ---------------------------------------------------------------------------
+
+/** One streamed CLI message of tool_use blocks, each with its raw input_json, ending in tool_use. */
+function rawToolFrames(blocks: { id: string; name: string; json: string }[], extra: (index: number) => unknown[] = () => []): unknown[] {
+	return [
+		{ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 10, output_tokens: 0 } } } },
+		...blocks.flatMap((block, index) => [
+			{ type: "stream_event", event: { type: "content_block_start", index, content_block: { type: "tool_use", id: block.id, name: `mcp__sova__${block.name}`, input: {} } } },
+			{ type: "stream_event", event: { type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: block.json } } },
+			{ type: "stream_event", event: { type: "content_block_stop", index } },
+			...extra(index),
+		]),
+		{ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 10, output_tokens: 5 } } },
+		{ type: "stream_event", event: { type: "message_stop" } },
+	];
+}
+
+const BAD = "{\"command\":\"ls\"}]}";
+const SECRET_BAD = "{\"command\":\"echo top-secret-value\"}]}";
+
+/** The answer the CLI got for one held tools/call. */
+async function mcpAnswer(cli: FakeClaude, requestId: string) {
+	const frame = await cli.waitFor((f) => f.type === "control_response" && f.response?.request_id === requestId);
+	return frame.response.response.mcp_response.result as { content: { type: string; text: string }[]; isError?: boolean };
+}
+
+async function started(children: FakeClaude[], n = 1): Promise<FakeClaude> {
+	const cli = await child(children, n);
+	await cli.waitFor((f) => f.request?.subtype === "initialize");
+	await cli.handshake();
+	return cli;
+}
+
+test("a rejected call and the CLI's retry: one pi message, the same child, no desync, and the turn completes", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const m1 = [user("record my answers")];
+	const [first] = await Promise.all([
+		piMessage(bridge, m1),
+		(async () => { const cli = await started(children); for (const line of fixtureLines("invalid-tool-input-turn.ndjson")) cli.emitRaw(line); })(),
+	]);
+	assert.equal(first.stopReason, "toolUse", first.errorMessage);
+	assert.deepEqual(first.content.flatMap((b) => b.type === "toolCall" ? [b.id] : []), ["toolu_IJ_GOOD"]);
+	const cli = children[0]!;
+	const good = first.content.find((b) => b.type === "toolCall")!;
+	assert.ok(good.type === "toolCall");
+	const [final] = await Promise.all([
+		piMessage(bridge, [...m1, first as Message, toolResult(good.id, good.name, "recorded")]),
+		(async () => {
+			assert.deepEqual(await mcpAnswer(cli, "ij-align"), { content: [{ type: "text", text: "recorded" }] });
+			for (const frame of finalTextFrames("Recorded.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(final.stopReason, "stop", final.errorMessage);
+	assert.equal(children.length, 1, "a rejected call must not restart the CLI");
+	assert.ok(!debug.some((e) => e.event === "desynced"), JSON.stringify(debug));
+	const rejected = debug.filter((e) => e.event === "tool-input-rejected");
+	assert.equal(rejected.length, 1);
+	assert.equal(rejected[0]!.tool, "align");
+	assert.equal(rejected[0]!.id, "toolu_IJ_BAD");
+	assert.ok(!JSON.stringify(debug).includes("Diagnostic only"), "the debug log kept argument text");
+
+	// The child is in step: a clean append continues on it.
+	const [third] = await Promise.all([
+		piMessage(bridge, [...m1, first as Message, toolResult(good.id, good.name, "recorded"), final as Message, user("thanks")]),
+		(async () => {
+			await cli.waitFor((f) => f.type === "user" && f.message.content[0]?.text === "thanks");
+			for (const frame of finalTextFrames("You're welcome.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(third.stopReason, "stop", third.errorMessage);
+	assert.equal(children.length, 1);
+	await bridge.disposeAll();
+});
+
+test("a message with a valid and an invalid call: pi answers only the valid one, on the same child", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const m1 = [user("read and list")];
+	const [first] = await Promise.all([
+		piMessage(bridge, m1),
+		(async () => {
+			const cli = await started(children);
+			const lines = rawToolFrames([{ id: "toolu_R", name: "read", json: "{\"path\":\"a.txt\"}" }, { id: "toolu_B", name: "bash", json: BAD }],
+				// The CLI dispatches a valid call when its block ends, and never the rejected one.
+				(index) => index === 0 ? [{ type: "control_request", request_id: "mx-read", request: { subtype: "mcp_message", server_name: "sova", message: { jsonrpc: "2.0", id: 31, method: "tools/call", params: { name: "read", arguments: { path: "a.txt" } } } } }] : []);
+			for (const frame of lines) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(first.stopReason, "toolUse", first.errorMessage);
+	assert.deepEqual(first.content.map((b) => b.type === "toolCall" ? b.id : b.type), ["toolu_R"]);
+	const cli = children[0]!;
+	const [final] = await Promise.all([
+		piMessage(bridge, [...m1, first as Message, toolResult("toolu_R", "read", "body")]),
+		(async () => {
+			assert.deepEqual(await mcpAnswer(cli, "mx-read"), { content: [{ type: "text", text: "body" }] });
+			for (const frame of finalTextFrames("Read it; the listing failed.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(final.stopReason, "stop", final.errorMessage);
+	assert.equal(children.length, 1, "answering only the valid call must not count as a partial answer");
+	assert.ok(!debug.some((e) => e.event === "desynced"), JSON.stringify(debug));
+	await bridge.disposeAll();
+});
+
+test("a dispatched tools/call for a rejected call is failed at once and never reaches pi", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const [message] = await Promise.all([
+		piMessage(bridge, [user("list")]),
+		(async () => {
+			const cli = await started(children);
+			for (const frame of rawToolFrames([{ id: "toolu_B", name: "bash", json: SECRET_BAD }])) cli.emitFrame(frame);
+			// A later whole-message frame names the rejected call: it stays rejected.
+			cli.emitFrame({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_B", name: "mcp__sova__bash", input: { command: "echo top-secret-value" } }], stop_reason: null } });
+			// A CLI that accepted what pi rejected: its call must not run.
+			cli.toolCall("bash", { command: "echo top-secret-value" }, "stray-bash");
+			const answer = await mcpAnswer(cli, "stray-bash");
+			assert.equal(answer.isError, true);
+			assert.match(answer.content[0]!.text, /arguments were not valid JSON; nothing ran/);
+			for (const frame of finalTextFrames("I'll stop here.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(message.stopReason, "stop", message.errorMessage);
+	assert.ok(!message.content.some((b) => b.type === "toolCall"), "a rejected call reached pi");
+	assert.ok(debug.some((e) => e.event === "rejected-call-failed" && e.tool === "bash"));
+	assert.ok(!JSON.stringify(debug).includes("top-secret-value"), "the debug log kept argument text");
+	await bridge.disposeAll();
+});
+
+test("beside a rejected call of the same tool, only the valid call's exact arguments match it", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const [message] = await Promise.all([
+		piMessage(bridge, [user("two listings")]),
+		(async () => {
+			const cli = await started(children);
+			for (const frame of rawToolFrames([{ id: "toolu_OK", name: "bash", json: "{\"command\":\"pwd\"}" }, { id: "toolu_BAD", name: "bash", json: BAD }])) cli.emitFrame(frame);
+			// Not the valid call's arguments: no name-only fallback may take the valid slot.
+			cli.toolCall("bash", { command: "ls" }, "guess-bash");
+			const answer = await mcpAnswer(cli, "guess-bash");
+			assert.equal(answer.isError, true);
+			cli.toolCall("bash", { command: "pwd" }, "ok-bash");
+		})(),
+	]);
+	assert.equal(message.stopReason, "toolUse", message.errorMessage);
+	assert.deepEqual(message.content.flatMap((b) => b.type === "toolCall" ? [[b.id, b.arguments]] : []), [["toolu_OK", { command: "pwd" }]]);
+	const cli = children[0]!;
+	const [final] = await Promise.all([
+		piMessage(bridge, [user("two listings"), message as Message, toolResult("toolu_OK", "bash", "/tmp")]),
+		(async () => {
+			assert.deepEqual(await mcpAnswer(cli, "ok-bash"), { content: [{ type: "text", text: "/tmp" }] });
+			for (const frame of finalTextFrames("Done.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(final.stopReason, "stop", final.errorMessage);
+	assert.equal(children.length, 1);
+	await bridge.disposeAll();
+});
+
+test("three rejected-only messages in a row interrupt the CLI, fail the message, and the next turn restarts", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const [message] = await Promise.all([
+		piMessage(bridge, [user("list")]),
+		(async () => {
+			const cli = await started(children);
+			for (let n = 1; n <= 3; n++) for (const frame of rawToolFrames([{ id: `toolu_B${n}`, name: "bash", json: BAD }])) cli.emitFrame(frame);
+			await cli.waitFor((f) => f.request?.subtype === "interrupt");
+			// The interrupt's wind-down: the CLI's own aborted result reaches no turn, and that is expected.
+			cli.emitFrame({ type: "result", subtype: "error_during_execution", is_error: true, terminal_reason: "aborted_streaming" });
+		})(),
+	]);
+	assert.equal(message.stopReason, "error");
+	assert.equal(message.errorMessage, "Claude sent invalid JSON arguments for tool \"bash\" 3 times in a row");
+	assert.ok(!message.content.some((b) => b.type === "toolCall"));
+	assert.equal(message.diagnostics?.filter((d) => d.type === "claude-code.invalid-tool-input").length, 3);
+	assert.equal(debug.filter((e) => e.event === "desynced").length, 1, JSON.stringify(debug));
+
+	await collectAfter(bridge.runTurn(request([user("list"), message as Message, user("try again")])), async () => {
+		const cli = await started(children, 2);
+		const folded = await cli.waitFor((f) => f.type === "user");
+		assert.ok(folded.message.content[0].text.startsWith(`<conversation-history>\n${RESTARTED_HEADER}\n`));
+		cli.emitFrame({ type: "result", subtype: "success", is_error: false, result: "ok" });
+	});
+	assert.equal(children.length, 2);
+	await bridge.disposeAll();
+});
+
+test("two rejected-only messages and then a valid retry stay under the bound", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const [message] = await Promise.all([
+		piMessage(bridge, [user("list")]),
+		(async () => {
+			const cli = await started(children);
+			for (let n = 1; n <= 2; n++) for (const frame of rawToolFrames([{ id: `toolu_B${n}`, name: "bash", json: BAD }])) cli.emitFrame(frame);
+			for (const frame of rawToolFrames([{ id: "toolu_OK", name: "bash", json: "{\"command\":\"ls\"}" }])) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(message.stopReason, "toolUse", message.errorMessage);
+	assert.deepEqual(message.content.flatMap((b) => b.type === "toolCall" ? [b.id] : []), ["toolu_OK"]);
+	assert.equal(children[0]!.sent.some((f) => f.request?.subtype === "interrupt"), false);
+	await bridge.disposeAll();
+});
+
+test("an abort between a rejected attempt and its retry interrupts the CLI and leaves the child reusable", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const controller = new AbortController();
+	const [message] = await Promise.all([
+		piMessage(bridge, [user("list")], controller.signal),
+		(async () => {
+			const cli = await started(children);
+			for (const frame of rawToolFrames([{ id: "toolu_B", name: "bash", json: BAD }])) cli.emitFrame(frame);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			controller.abort();
+			await cli.waitFor((f) => f.request?.subtype === "interrupt");
+			cli.emitFrame({ type: "result", subtype: "error_during_execution", is_error: true, terminal_reason: "aborted_streaming" });
+		})(),
+	]);
+	assert.equal(message.stopReason, "aborted");
+	assert.ok(!message.content.some((b) => b.type === "toolCall"));
+	assert.ok(!debug.some((e) => e.event === "desynced"), JSON.stringify(debug));
+
+	// The settled child takes the next prompt as a plain append: no restart, no fold.
+	const cli = children[0]!;
+	const [next] = await Promise.all([
+		piMessage(bridge, [user("list"), message as Message, user("again")]),
+		(async () => {
+			const sent = await cli.waitFor((f) => f.type === "user" && f.message.content[0]?.text === "again");
+			assert.ok(!sent.message.content[0].text.includes("<conversation-history>"));
+			for (const frame of finalTextFrames("Listed.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(next.stopReason, "stop", next.errorMessage);
+	assert.deepEqual(next.content, [{ type: "text", text: "Listed." }]);
+	assert.equal(children.length, 1, "the aborted turn's child must be reused");
+	await bridge.disposeAll();
+});
+
+test("with no deltas, a non-object block-start input is rejected by the bridge too, and the retry carries on", { timeout: 8000 }, async () => {
+	for (const value of [null, "a.txt", ["a.txt"]]) {
+		const { bridge, children, debug } = harness();
+		const [message] = await Promise.all([
+			piMessage(bridge, [user("read it")]),
+			(async () => {
+				const cli = await started(children);
+				cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 0 } } } });
+				cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_START", name: "mcp__sova__read", input: value } } });
+				cli.emitFrame({ type: "stream_event", event: { type: "content_block_stop", index: 0 } });
+				cli.emitFrame({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 5, output_tokens: 2 } } });
+				cli.emitFrame({ type: "stream_event", event: { type: "message_stop" } });
+				for (const frame of rawToolFrames([{ id: "toolu_OK", name: "read", json: "{\"path\":\"a.txt\"}" }])) cli.emitFrame(frame);
+			})(),
+		]);
+		assert.equal(message.stopReason, "toolUse", `${JSON.stringify(value)}: ${message.errorMessage}`);
+		assert.deepEqual(message.content.flatMap((b) => b.type === "toolCall" ? [b.id] : []), ["toolu_OK"], JSON.stringify(value));
+		assert.ok(debug.some((e) => e.event === "tool-input-rejected" && e.id === "toolu_START"), JSON.stringify(debug));
+		assert.ok(!debug.some((e) => e.event === "desynced"), JSON.stringify(debug));
+		assert.equal(children.length, 1);
+		await bridge.disposeAll();
+	}
+});
+
+/** Whether the CLI got any answer to one held call yet (fail or result). */
+const answered = (cli: FakeClaude, requestId: string) => cli.sent.some((f) => f.type === "control_response" && f.response?.request_id === requestId);
+const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+
+test("a tools/call held for a block before its stop, when pi then rejects the block, is failed, not orphaned", { timeout: 8000 }, async () => {
+	const { bridge, children, debug } = harness();
+	const [message] = await Promise.all([
+		piMessage(bridge, [user("list")]),
+		(async () => {
+			const cli = await started(children);
+			cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 0 } } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_X", name: "mcp__sova__bash", input: {} } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: BAD } } });
+			// The CLI's own copy says it parsed, and it dispatches before the block's stop.
+			cli.emitFrame({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_X", name: "mcp__sova__bash", input: { command: "ls" } }], stop_reason: null } });
+			cli.toolCall("bash", { command: "ls" }, "early-bash");
+			await settle();
+			assert.equal(answered(cli, "early-bash"), false, "held for the block, not yet judged");
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_stop", index: 0 } });
+			const answer = await mcpAnswer(cli, "early-bash");
+			assert.equal(answer.isError, true);
+			assert.match(answer.content[0]!.text, /arguments were not valid JSON; nothing ran/);
+			cli.emitFrame({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 5, output_tokens: 3 } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "message_stop" } });
+			for (const frame of finalTextFrames("That failed; stopping.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(message.stopReason, "stop", message.errorMessage);
+	assert.ok(!message.content.some((b) => b.type === "toolCall"));
+	assert.ok(debug.some((e) => e.event === "rejected-call-failed"), JSON.stringify(debug));
+	assert.ok(!debug.some((e) => e.event === "desynced"), JSON.stringify(debug));
+	await bridge.disposeAll();
+});
+
+test("after a rejected call, the same tool's next call dispatched before its stop waits for it and is held for pi", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const m1 = [user("list twice")];
+	const [first] = await Promise.all([
+		piMessage(bridge, m1),
+		(async () => {
+			const cli = await started(children);
+			cli.emitFrame({ type: "stream_event", event: { type: "message_start", message: { usage: { input_tokens: 5, output_tokens: 0 } } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "toolu_BAD", name: "mcp__sova__bash", input: {} } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: BAD } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_stop", index: 0 } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_start", index: 1, content_block: { type: "tool_use", id: "toolu_OK", name: "mcp__sova__bash", input: {} } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_delta", index: 1, delta: { type: "input_json_delta", partial_json: "{\"command\":\"pwd\"}" } } });
+			// Dispatched while its block is still open: no exact match yet, and a rejected bash is outstanding.
+			cli.toolCall("bash", { command: "pwd" }, "early-ok");
+			await settle();
+			assert.equal(answered(cli, "early-ok"), false, "a call that may still match a streaming block must not be failed");
+			cli.emitFrame({ type: "stream_event", event: { type: "content_block_stop", index: 1 } });
+			cli.emitFrame({ type: "stream_event", event: { type: "message_delta", delta: { stop_reason: "tool_use" }, usage: { input_tokens: 5, output_tokens: 9 } } });
+			cli.emitFrame({ type: "stream_event", event: { type: "message_stop" } });
+		})(),
+	]);
+	assert.equal(first.stopReason, "toolUse", first.errorMessage);
+	assert.deepEqual(first.content.flatMap((b) => b.type === "toolCall" ? [b.id] : []), ["toolu_OK"]);
+	const cli = children[0]!;
+	assert.equal(answered(cli, "early-ok"), false);
+	const [final] = await Promise.all([
+		piMessage(bridge, [...m1, first as Message, toolResult("toolu_OK", "bash", "/work")]),
+		(async () => {
+			assert.deepEqual(await mcpAnswer(cli, "early-ok"), { content: [{ type: "text", text: "/work" }] });
+			for (const frame of finalTextFrames("Done.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(final.stopReason, "stop", final.errorMessage);
+	assert.equal(children.length, 1);
+	await bridge.disposeAll();
+});
+
+test("beside a rejected call, a valid call matches in pi's parse or the CLI's announced copy, in any key order", { timeout: 8000 }, async () => {
+	const { bridge, children } = harness();
+	const m1 = [user("two")];
+	const [first] = await Promise.all([
+		piMessage(bridge, m1),
+		(async () => {
+			const cli = await started(children);
+			const lines = rawToolFrames([
+				{ id: "toolu_BAD", name: "bash", json: BAD },
+				{ id: "toolu_A", name: "bash", json: "{\"timeout\":5,\"command\":\"pwd\"}" },
+				{ id: "toolu_B", name: "bash", json: "{\"command\":\"ls\"}" },
+			]);
+			for (const frame of lines) {
+				const event = (frame as { event?: { type: string; index?: number } }).event;
+				// The CLI's copy of toolu_B carries a field it filled in: a normalised form of valid bytes.
+				if (event?.type === "content_block_stop" && event.index === 2) {
+					cli.emitFrame({ type: "assistant", message: { content: [{ type: "tool_use", id: "toolu_B", name: "mcp__sova__bash", input: { command: "ls", timeout: 0 } }], stop_reason: null } });
+				}
+				cli.emitFrame(frame);
+			}
+			// A rejected bash is outstanding, so no name-only fallback: each must match exactly.
+			cli.toolCall("bash", { command: "pwd", timeout: 5 }, "reordered"); // pi's parse, keys reordered
+			cli.toolCall("bash", { timeout: 0, command: "ls" }, "announced"); // the CLI's copy, not pi's parse
+		})(),
+	]);
+	assert.equal(first.stopReason, "toolUse", first.errorMessage);
+	assert.deepEqual(first.content.flatMap((b) => b.type === "toolCall" ? [b.id] : []), ["toolu_A", "toolu_B"]);
+	const cli = children[0]!;
+	await settle();
+	assert.equal(answered(cli, "reordered"), false, "the reordered call was failed instead of held");
+	assert.equal(answered(cli, "announced"), false, "the announced-form call was failed instead of held");
+	const [final] = await Promise.all([
+		piMessage(bridge, [...m1, first as Message, toolResult("toolu_A", "bash", "ran A"), toolResult("toolu_B", "bash", "ran B")]),
+		(async () => {
+			assert.deepEqual(await mcpAnswer(cli, "reordered"), { content: [{ type: "text", text: "ran A" }] });
+			assert.deepEqual(await mcpAnswer(cli, "announced"), { content: [{ type: "text", text: "ran B" }] });
+			for (const frame of finalTextFrames("Done.")) cli.emitFrame(frame);
+		})(),
+	]);
+	assert.equal(final.stopReason, "stop", final.errorMessage);
+	assert.equal(children.length, 1);
+	await bridge.disposeAll();
+});

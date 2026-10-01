@@ -10986,6 +10986,29 @@
         "pi-config/extensions/claude-code/README.md",
         "pi-config/extensions/spec/README.md"
       ]
+    },
+    "§app.claude-code-provider/invalid-tool-input": {
+      "kind": "behavior",
+      "requires": [],
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts",
+        "pi-config/extensions/claude-code/provider/types.ts",
+        "pi-config/extensions/claude-code/provider/stream.test.ts",
+        "pi-config/extensions/claude-code/provider/bridge.test.ts",
+        "pi-config/extensions/claude-code/provider/fixtures/invalid-tool-input-turn.ndjson"
+      ]
+    },
+    "§app/claude-code-provider": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "pi-config/extensions/claude-code/provider/stream.ts",
+        "pi-config/extensions/claude-code/provider/session-bridge.ts"
+      ]
     }
   },
   "boundary": {

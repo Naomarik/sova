@@ -329,7 +329,10 @@
       "evidence": "verified",
       "code": [
         "src/lib/recent.ts",
-        "src/lib/summary-line.ts"
+        "src/lib/summary-line.ts",
+        "src/lib/work-compression.ts",
+        "src/lib/work-compression.test.ts",
+        "src/components/SettingsDialog.tsx"
       ]
     },
     "§app.settings-dialog/models": {
@@ -1125,7 +1128,7 @@
     },
     "§chat.transcript/accessibility": {
       "kind": "behavior",
-      "authority": "migrated",
+      "authority": "accepted",
       "evidence": "unreviewed"
     },
     "§chat.transcript/anatomy": {
@@ -1226,7 +1229,8 @@
         "src/lib/live.test.ts",
         "src/design/base.css",
         "public/icons/bulb.svg",
-        "public/icons/wrench.svg"
+        "public/icons/wrench.svg",
+        "src/components/Thread.tsx"
       ]
     },
     "§chat.transcript/tokens": {
@@ -11342,6 +11346,42 @@
         "src/shares.css",
         "src/app.css"
       ]
+    },
+    "§chat.transcript/work-chain": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/lib/chain-rows.ts",
+        "src/lib/chain-rows.test.ts",
+        "src/components/Thread.tsx",
+        "src/lib/tail-render.ts",
+        "src/design/base.css"
+      ]
+    },
+    "§chat.work-chain-setting/preference": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "requires": [
+        "§app.settings-dialog/general",
+        "§chat.transcript/transcript-items",
+        "§chat.transcript/streaming"
+      ],
+      "code": [
+        "src/lib/work-compression.ts",
+        "src/lib/work-compression.test.ts",
+        "src/components/SettingsDialog.tsx",
+        "src/components/Thread.tsx",
+        "src/lib/chain-rows.ts",
+        "src/lib/chain-rows.test.ts",
+        "src/lib/tail-render.ts"
+      ]
+    },
+    "§chat/work-chain-setting": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "unreviewed"
     }
   },
   "boundary": {

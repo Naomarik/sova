@@ -38,6 +38,8 @@ can change the dialog's size by being long or short.
 
 ## §app.settings-dialog/general — General
 
+- **Compress thinking & tool calls** — a default-on browser-local switch, applied immediately to every open transcript and stored in `localStorage["sova:compress-work"]`. Only `"false"` disables it; missing, unreadable, or corrupt values mean on. On selects the compact work timeline; off restores the original cards (§chat.work-chain-setting/preference).
+
 The first tab: how **this browser** draws Sova. Nothing here is written to the machine — no
 policy file, no server endpoint — which is the line between this screen and Models, where a
 switch is a rule every session obeys. The panel says so in one line, because "settings" in a tool

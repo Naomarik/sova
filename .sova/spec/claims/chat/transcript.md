@@ -56,6 +56,8 @@
 
 ## §chat.transcript/transcript-items — Transcript items (by `TranscriptItem.kind`)
 
+The browser's **Compress thinking & tool calls** preference is on by default (§chat.work-chain-setting/preference). On, working rows use the existing compact timeline; off, the thinking disclosures and tool cards described below retain their original DOM, styles, spacing, and estimates. The preference updates every open transcript without a reload.
+
 Render items in array order. The column is `.thread` (gap `--space-4`) inside `.transcript-inner`,
 centred at `--measure` plus 96px (`--space-9`). Messages, tool cards, thinking, and thumbnails
 cap at `--measure`.
@@ -480,7 +482,7 @@ can't be removed now.", and the row becomes the delivered message it turned out 
 
 ## §chat.transcript/streaming — Streaming (chat sessions)
 
-Driven by `ChatServerMessage.event`.
+Driven by `ChatServerMessage.event`. Streaming working blocks follow the same browser-local compression preference as settled history (§chat.work-chain-setting/preference). Off, they render their original components directly, without a timeline wrapper or group control.
 
 - **Start of turn** (`agent_start` / `turn_start`). Append a pending assistant `.message` with the
   class `message-streaming`. Its head is `author` + `<span class="live-dot"></span>`.
@@ -674,7 +676,10 @@ virtualized.
   screen is skipped by layout and paint
   (`content-visibility: auto`), at a height estimated from its kind, its text and its images
   until it is first drawn. The estimate counts a card or disclosure at its collapsed height
-  (a compaction as its folded disclosure, not its summary). Text is wrapped at the width the
+  (a compaction as its folded disclosure, not its summary). A work timeline's rows are estimated
+  at the height they take in the timeline instead: a step at its line plus the air between two
+  of them, a run's head at the group line it carries over its first step, and a folded run at
+  the group line alone. Text is wrapped at the width the
   transcript has at that moment, so the same row is estimated taller on a phone than on a wide
   window. A row that draws nothing (a tool result shown in its call's card) takes no space. A
   row's single image counts at the height its box will have
@@ -1216,6 +1221,14 @@ repository around the folder. Two of its figures:
 - **Tool card.** `--color-sunken`, `--r-lg`, and `--font-mono` / `--fs-mono`. Name `--fw-semibold`
   in `--color-ink`; arg `--color-ink-muted`. `pre` sits on `--color-surface` with `--r-sm`.
   Section labels use eyebrow styling (`--fs-micro`, `--ls-eyebrow`).
+- **Work timeline** (§chat.transcript/work-chain) is the one place the tool card's ground and the
+  thread's gap do NOT apply: a step's line draws on the page (`background: none`), with no border
+  and no rounding, and its line is `--fs-mono` (a thinking step too, at `--fs-caption`) — the tool
+  icon goes, the twist stays. A step's status is the chip's word and dot without the chip: no
+  border, no ground, `--fs-micro`, `--color-ink-muted` (`--status-error` for a failure,
+  `--color-accent` for a live one). The run's fold mark is `--color-ink-muted` (`--color-ink` under
+  the pointer, the focus ring on keyboard focus) on the page, and the folded run's line is
+  `--fs-caption` `--color-ink-2`.
 - **Tool card file content.** `write` content and each `edit` show as a diff
   (§chat.changes/tool-card-diff, drawn per §chat.changes/diff-renderer). `read` output is
   highlighted by file path (never auto-detected) in `pre.toolcard-code`: back on
@@ -1227,7 +1240,8 @@ repository around the folder. Two of its figures:
   - Warn: `--status-warn-bg` with a `--status-warn` icon.
   - Error: `--status-error-bg` with a `--status-error` icon.
   - Title text is `--color-ink`; body is `--color-ink-2`.
-- **Spacing.** Thread gap `--space-4`. Inner padding `--space-4` / `--space-6`.
+- **Spacing.** Thread gap `--space-4`. Inner padding `--space-4` / `--space-6`. A work timeline's
+  steps sit `--space-2` apart instead, on a `--space-5` line, with the rail closing over that gap.
 
 ## §chat.transcript/accessibility — Accessibility
 
@@ -1253,6 +1267,8 @@ repository around the folder. Two of its figures:
   |---|---|---|
   | Ink on accent-tint (user bubble) | 12.57 | 14.57 |
   | Ink-2 on sunken (thinking body; tool card sits on sunken) | 7.65 | 7.22 |
+  | Ink-2 on the page (a timeline step's line) | 7.81 | 8.44 |
+  | Muted on the page (a step's arg, its status word) | 5.15 | 5.96 |
   | Muted on sunken | 5.40 | 4.75 |
   | Ink on info-bg | 11.07 | 15.57 |
   | Ink-2 on info-bg | 6.30 | 7.60 |
@@ -1262,6 +1278,51 @@ repository around the folder. Two of its figures:
   | Ink-2 on warn-bg | 6.02 | 7.78 |
   | Success on surface (chips) | 6.61 | 6.09 |
   | Error on surface (chips) | 5.42 | 6.01 |
+
+## §chat.transcript/work-chain — The working renders as one timeline
+
+A run of consecutive working rows — a thinking row, a plain tool call, an orphan result, whether
+there is one of them or twenty — draws as a single timeline: one bare hairline rail in
+`--color-border`, one line per step of `--timeline-row` (`--space-5`, 24px: the summary's
+`min-height` and each rail segment's height) with `--timeline-gap` (`--space-2`) of air between two
+steps, and no card behind any of them — no fill, no border, no rounding, and no head line above
+them. The timeline is indented `--space-5` with the rail drawn inside that gutter: it runs from the
+run's first line to its last, and reaches half the gap past its own row at each end so the air
+between two steps never breaks the line.
+
+**The rail carries one mark: the run's own.** No dot per step: a circle beside every chevron was two
+marks before every line of text. Instead the rail holds the run's fold control, on the run's first
+line and nothing else — a caret button pointing down while the run is open and right while it is
+folded, named for what it does to the run ("Collapse these 6 steps"). A step's own disclosure stays
+what it always was: its twist, whose whole row opens it, by click or by keyboard. So the reader has
+one control per RUN on the rail and one control per STEP on the row, and neither is decoration.
+
+Folded, the run draws as that one line: the caret and a count — `{n} steps`, and `· {m} failed` when
+any step failed — in `--fs-caption` `--color-ink-2`, and no rail, no rows. Clicking the caret, or
+that line, opens the run again. A run of one step has nothing to fold and draws no control.
+
+The type is the mono step: a step's line is `--fs-mono` (its name `--fw-semibold`
+in `--color-ink`, its argument `--color-ink-muted`), and its status is the chip's word and dot
+without the chip — `--color-ink-muted`, `--status-error` for a failure, `--color-accent` for a live
+one — so no status is carried by hue alone. A thinking step keeps `--fs-caption` and its preview,
+being prose rather than a machine fact. A step keeps its twist and drops the tool's icon, and it
+opens the way every other disclosure does: click the row, or reach it by keyboard. It keeps its
+whole row as the target, and its Arguments and Output.
+
+The timeline breaks at anything that is the message rather than the working — a user or assistant
+message, a report, a card tool (`sova_card`, `sova_confirm`, `sova_link`, `sova_unlink`, `align`,
+`session_send`, `sova_create_session`, or `show_changes` with valid successful details),
+a compaction, a topic, a wake, a worktree merge — so a card tool is never swallowed into a step.
+Nothing about a step is a card, and no step draws as one.
+
+A row that draws nothing is TRANSPARENT to the timeline: it is not a step and it never breaks a
+run, so consecutive visible working rows join up across it with no gap. That is a tool result whose
+call is in the list, a streaming block the session hides, and an empty streaming text block. Hidden
+rows of a settled transcript are filtered out before the runs are cut, so they are not steps either,
+and a streaming assistant-entry boundary is not a row at all: it does not break a run, where a
+visible user, text or card row and a stop notice or an error do.
+
+---
 
 ## §chat.transcript/open-questions — Open questions
 

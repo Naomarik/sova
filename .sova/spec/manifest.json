@@ -871,8 +871,15 @@
     },
     "§chat.model-menu/content-and-order": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/contrast": {
       "kind": "behavior",
@@ -886,8 +893,15 @@
     },
     "§chat.model-menu/keyboard": {
       "kind": "behavior",
-      "authority": "migrated",
-      "evidence": "unreviewed"
+      "authority": "accepted",
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/menu": {
       "kind": "behavior",
@@ -895,14 +909,26 @@
         "§chat.composer/composer-flyout"
       ],
       "authority": "accepted",
-      "evidence": "unreviewed"
+      "evidence": "reviewed",
+      "code": [
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
+      ]
     },
     "§chat.model-menu/states": {
       "kind": "behavior",
       "authority": "accepted",
-      "evidence": "unreviewed",
+      "evidence": "reviewed",
       "code": [
-        "src/components/ChatView.tsx"
+        "src/components/ChatView.tsx",
+        "src/components/ModelMenu.tsx",
+        "src/components/ComposerMenu.tsx",
+        "src/design/base.css",
+        "src/lib/model-picker.ts",
+        "src/lib/model-picker.test.ts"
       ]
     },
     "§chat.model-menu/tokens": {

@@ -287,8 +287,8 @@ it.
   {rect.left}px`. A resize re-anchors it; it closes only when the anchor isn't laid out anymore.
   Under 768px it's the same bottom sheet the model menu is.
 - **Panels.** Up to four, one popover: **menu** (the `plus` button's), **model** (the indicator's), and
-  the §chat/model-menu **picker**, which the Model row opens and a `Back` button above its search field returns
-  from — to the model panel, which is the only way in; and **login**, the login label's, where it
+  the §chat/model-menu **picker**, which the Model row opens on its Providers step and a `Back` button above its search field returns
+  from — to the model panel, which is the only way in (on a provider's step, `Back` first returns to Providers); and **login**, the login label's, where it
   is shown. Only the panel in front is rendered, so it
   is also the whole keyboard order. One popover means no nested light-dismiss to reason about, and
   `Esc` always means "close the flyout".

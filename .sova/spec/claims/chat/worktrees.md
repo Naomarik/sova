@@ -231,12 +231,16 @@ and only for session files that ever wrote a `worktrees` entry, so a listing nev
 
 **The row's badge** (§app.session-list/anatomy) is one short phrase from the session's worktrees,
 the first that holds: "Waiting for your OK" (a worktree waits for the go-ahead) and "Ready to
-merge" (one is ready), each a toned chip leading the row's third line; none while another worktree is in progress, stale or blocked (the busy and open-question
-marks say it), "restart pending", "merged · {n} follow-up(s)" ({n} = only the
+merge" (one is ready) — the two states the row's count already lights for, and the two the
+Overseer's decide tier words ("Ready to merge: {branch}", §app.overseer/attention-digest) — none
+while another worktree is in progress, stale or blocked (the busy and open-question
+marks say it), "restart pending", the follow-up count ({n} = only the
 §app.decisions/merge-followup answer when it names small or significant work; leftover worktrees
-— cleanup — are said only in the `title`, never counted), "merged". An **empty leftover
-worktree** — no commit of its own, a clean tree, nothing running — does not hide the merged badge
-of the session's merged worktrees. Its `title` names each worktree with its state and every
+— cleanup — are said only in the `title`, never counted), and "merged". **The row writes only the
+two a count cannot**: "restart pending", and the follow-up count as "{n} follow-up(s)" — never
+"merged", which the count already says, and never the ready or waiting phrases, which the count's
+own light and `title` carry. An **empty leftover
+worktree** — no commit of its own, a clean tree, nothing running — never changes the count. Its `title` names each worktree with its state and every
 routine follow-up in words, one line each.
 The session's `readiness` travels with its row in the session list (`SessionSummary.readiness`),
 so the Overseer reads the same answer.

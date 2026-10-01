@@ -323,14 +323,79 @@ test("no-spec bootstrap distinguishes missing manifest from malformed graph; orp
   const malformed = packet(root, undefined, { budget: 1024 }); refused(malformed); assert.notEqual(malformed.cause, "manifest-not-found", "malformed existing graph must not invite bootstrap");
 });
 
-test("real same a-pane legacy stdout unchanged; packet12k retains full requested seed and orientation, not an empty byte win", () => {
-  const baseline = readFileSync(join(projectRoot, ".sova/spec/drafts/spec-context-packets/attachments/baseline-scope.json"));
-  assert.equal(baseline.length, 354696); assert.equal(sha(baseline), "110d59521aee401f14a71b8080a19dc3690f4b5ac9d6e611fd05449f58f5f50b");
-  const old = invoke(projectRoot, ["scope", "§workspace.groups/a-pane", "--budget", "12000", "--json"]); assert.equal(old.stderr.length, 0); assert.deepEqual(old.stdout, baseline, "legacy complete envelope unchanged");
-  const r = invoke(projectRoot, ["packet", "§workspace.groups/a-pane"]), j = output(r, 12000), full = JSON.parse(baseline);
-  assert.ok(r.stdout.length < baseline.length); assert.ok(j.counts.prose > 100 && j.counts.code === 1101 && j.counts.frontier >= 75);
-  for (const [i, id] of ["§workspace.groups/a-pane", "§workspace/groups"].entries()) {
-    assert.equal(j.items[i].id, id); assert.equal(j.items[i].text, full.passages.find((p) => p.id === id).text); assert.equal(j.items[i].fragment.complete, true);
+const legacyFixture = JSON.parse(readFileSync(join(here, "fixtures/legacy-scope-envelope.json"), "utf8"));
+function legacyProject() {
+  const root = temporary();
+  for (const [rel, text] of Object.entries(legacyFixture.files)) write(root, rel, text);
+  return root;
+}
+function normalizedLegacyStdout(r, root) {
+  assert.equal(r.stderr.length, 0, "legacy has no stderr spill");
+  const raw = r.stdout.toString("utf8");
+  assert.ok(Buffer.from(raw).equals(r.stdout), "valid legacy UTF-8 stdout");
+  assert.equal(JSON.parse(raw).root, root, "only the generated project root may vary");
+  const field = `  "root": ${JSON.stringify(root)},\n`;
+  assert.equal(raw.split(field).length, 2, "exactly one top-level root field");
+  // Do not parse/reserialize: spacing, field order, newline and every other byte remain contractual.
+  return raw.replace(field, '  "root": "<fixture-root>",\n');
+}
+
+test("legacy scope preserves frozen pre-packet envelope bytes and prose-only budgets at different roots", () => {
+  assert.equal(sha(JSON.stringify(legacyFixture.files)), legacyFixture.provenance.inputsSha256, "frozen inputs match oracle provenance");
+  assert.deepEqual(legacyFixture.cases.map((c) => c.budget), [null, 12000, 0, legacyFixture.seedBytes - 1, legacyFixture.seedBytes]);
+  const projects = [legacyProject(), legacyProject()];
+  assert.notEqual(projects[0], projects[1]);
+  for (const root of projects) {
+    assert.equal(existsSync(join(root, ".git")), false);
+    const check = () => {
+      for (const c of legacyFixture.cases) {
+        const r = invoke(root, ["scope", legacyFixture.id, "--json", ...(c.budget === null ? [] : ["--budget", String(c.budget)])]);
+        assert.equal(r.status, c.exit);
+        assert.equal(normalizedLegacyStdout(r, root), c.stdout, "legacy complete envelope unchanged from independently frozen pre-M2 CLI");
+      }
+    };
+    check();
+    write(root, ".sova/spec/claims/growth/unrelated.md", "# §growth/unrelated\n\nUnrelated corpus growth must not change the fixed closure.\n");
+    manifest(root, (m) => m.claims["§growth/unrelated"] = { kind: "note" });
+    check();
   }
-  assert.ok(j.next); assert.equal(j.status, "more");
+  const envelopes = legacyFixture.cases.map((c) => JSON.parse(c.stdout));
+  assert.deepEqual(envelopes[1].passages, envelopes[0].passages, "12k fits all fixed prose");
+  for (const i of [2, 3]) assert.deepEqual(envelopes[i].passages, [], "a whole oversized seed is unread, never fragmented");
+  assert.equal(envelopes[4].passages.length, 1, "exact UTF-8 seed boundary keeps one whole passage");
+  assert.equal(bytes(envelopes[4].passages[0].text), legacyFixture.seedBytes);
+  for (const e of envelopes.slice(1)) {
+    assert.deepEqual(e.code, envelopes[0].code, "prose budget never truncates complete code inventory");
+    assert.deepEqual(e.frontier.filter((f) => f.reason !== "unread-budget"), envelopes[0].frontier, "dependency unknowns survive prose cuts");
+    assert.equal(e.budget.used, e.passages.reduce((n, p) => n + bytes(p.text), 0));
+  }
+  assert.ok(bytes(legacyFixture.cases[4].stdout) > legacyFixture.seedBytes, "legacy budget is NOT a whole-envelope cap");
+});
+
+test("real a-pane packet12k smoke delivers exact useful seed/orientation fragments independent of corpus size", {
+  skip: !existsSync(join(projectRoot, ".sova/spec/manifest.json")),
+}, () => {
+  // Dynamic scope parity is a corpus smoke check, not the independent legacy compatibility oracle above.
+  const ids = ["§workspace.groups/a-pane", "§workspace/groups"], full = scope(projectRoot, ids[0]);
+  const requested = ids.map((id) => full.passages.find((p) => p.id === id));
+  for (const p of requested) assert.ok(p, "current corpus contains the requested seed and orientation");
+  const accumulated = new Map(ids.map((id) => [id, ""]));
+  let cursor;
+  for (let page = 0; page < 500; page++) {
+    const j = packet(projectRoot, ids[0], { cursor });
+    assert.notEqual(j.exit, 2); assert.equal(j.counts.prose, full.passages.length); assert.equal(j.counts.code, full.code.length);
+    if (page === 0) { assert.equal(j.items[0].id, ids[0]); assert.ok(bytes(j.items[0].text) > 0, "bounded response starts with useful requested prose"); }
+    for (const item of j.items) {
+      if (!accumulated.has(item.id)) continue;
+      const text = requested.find((p) => p.id === item.id).text, prior = accumulated.get(item.id);
+      const f = fragment(item, item.text, bytes(prior));
+      assert.equal(f.total, bytes(text));
+      assert.deepEqual(Buffer.from(item.text), Buffer.from(text).subarray(f.start, f.end), "exact UTF-8 range, not a summary");
+      accumulated.set(item.id, prior + item.text);
+    }
+    if (requested.every((p) => accumulated.get(p.id) === p.text)) return;
+    assert.ok(j.next, "continue until requested seed and orientation finish, even when oversized");
+    cursor = j.next;
+  }
+  assert.fail("requested seed/orientation traversal did not terminate");
 });

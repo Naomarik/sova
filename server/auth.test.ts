@@ -17,7 +17,7 @@ delete process.env.SOVA_AUTH;
 delete process.env.HOST;
 delete process.env.SOVA_ALLOWED_HOSTS;
 
-const { AUTH_COOKIE, SERVER_HEADER, authGate, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tokenFile, unlock, upgradeAllowed } = await import("./auth");
+const { AUTH_COOKIE, SERVER_HEADER, authGate, initAuthToken, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, tokenFile, unlock, upgradeAllowed } = await import("./auth");
 setAuthPort(4800);
 
 after(() => rmSync(agentDir, { recursive: true, force: true }));
@@ -65,7 +65,7 @@ describe("the token", () => {
     assert.equal(sovaToken(), t);
   });
 
-  test("an existing file wins over a mint, and a damaged one fails closed", () => {
+  test("an existing file wins over a mint", () => {
     const other = mkdtempSync(join(tmpdir(), "sova-auth-other-"));
     try {
       mkdirSync(join(other, "sova"));
@@ -73,15 +73,48 @@ describe("the token", () => {
       writeFileSync(join(other, "sova", "auth-token"), `${theirs}\n`, { mode: 0o600 });
       process.env.PI_CODING_AGENT_DIR = other;
       assert.equal(sovaToken(), theirs);
-      const damaged = mkdtempSync(join(tmpdir(), "sova-auth-damaged-"));
-      mkdirSync(join(damaged, "sova"));
-      writeFileSync(join(damaged, "sova", "auth-token"), "");
-      process.env.PI_CODING_AGENT_DIR = damaged;
-      assert.throws(() => sovaToken(), /does not hold a Sova token/);
-      assert.equal(readFileSync(join(damaged, "sova", "auth-token"), "utf8"), "");
-      rmSync(damaged, { recursive: true, force: true });
     } finally {
       rmSync(other, { recursive: true, force: true });
+    }
+  });
+
+  test("a damaged token logs once, keeps the shell open and refuses every credential with recovery instructions", async (t) => {
+    const log = t.mock.method(console, "error", () => {});
+    for (const contents of ["", "short\n"]) {
+      const damaged = mkdtempSync(join(tmpdir(), "sova-auth-damaged-"));
+      try {
+        mkdirSync(join(damaged, "sova"));
+        const file = join(damaged, "sova", "auth-token");
+        writeFileSync(file, contents);
+        const before = statSync(file);
+        process.env.PI_CODING_AGENT_DIR = damaged;
+        const problem = `${file} does not hold a Sova token: delete it and restart to mint a new one`;
+        const calls = log.mock.callCount();
+        assert.equal(initAuthToken().token, null, "initialization does not throw or invent a token");
+        assert.equal(initAuthToken().problem, problem);
+        assert.throws(() => sovaToken(), /does not hold a Sova token/, "trusted callers never get a placeholder");
+        assert.equal((await ask("/")).status, 200);
+        assert.equal((await ask("/api/health")).status, 200);
+        const candidates: Array<Record<string, string>> = [{}, cookie(""), cookie("x".repeat(43)), { "x-sova-token": "" }, { "x-sova-token": "x".repeat(43) }];
+        for (const headers of candidates) {
+          const res = await ask("/api/sessions", { headers });
+          assert.equal(res.status, 401);
+          assert.deepEqual(await res.json(), { error: problem, locked: true, hint: problem });
+        }
+        for (const token of [undefined, "", "x".repeat(43)]) {
+          const res = await ask("/api/auth/unlock", { method: "POST", body: JSON.stringify({ token }) });
+          assert.equal(res.status, 401);
+          assert.deepEqual(await res.json(), { error: problem, locked: true, hint: problem });
+          assert.equal(res.headers.get("set-cookie"), null);
+        }
+        assert.equal(log.mock.callCount(), calls + 1, "one loud log, not one per request");
+        assert.deepEqual(log.mock.calls.at(-1)?.arguments, [`[auth] ${problem}`]);
+        assert.equal(readFileSync(file, "utf8"), contents);
+        assert.equal(statSync(file).ino, before.ino);
+        assert.equal(statSync(file).mtimeMs, before.mtimeMs);
+      } finally {
+        rmSync(damaged, { recursive: true, force: true });
+      }
     }
   });
 
@@ -171,6 +204,67 @@ describe("the gate", () => {
     assert.equal((await ask("/api/sessions", { headers: { host } })).status, 401);
     // a rebound name is still not one of ours
     assert.equal((await post({ host: "evil.example:8443", origin: "https://evil.example:8443" })).status, 403);
+  });
+
+  test("a loopback Host with an allowed forwarded Host and matching Origin passes, still requiring the token", async () => {
+    const forwarded = { "x-forwarded-host": "phone-box.tail9999.ts.net:8443", origin: "https://phone-box.tail9999.ts.net:8443" };
+    for (const host of [HOST, "localhost:4800", "[::1]:4800"]) {
+      assert.equal((await post({ host, ...forwarded })).status, 200, host);
+      assert.equal((await ask("/api/sessions", { method: "POST", headers: { host, ...forwarded } })).status, 401, "the forward is not a credential");
+    }
+  });
+
+  test("a loopback Host with a portless forwarded ts.net name admits its HTTPS Origin on any port", async () => {
+    for (const host of [HOST, "localhost:4800", "[::1]:4800"]) {
+      for (const forwarded of ["phone-box.tail9999.ts.net", "PHONE-BOX.tail9999.ts.net.:9443"]) {
+        for (const origin of ["https://phone-box.tail9999.ts.net:8443", "https://PHONE-BOX.tail9999.ts.net.:8443", "https://phone-box.tail9999.ts.net"]) {
+          const headers = { host, "x-forwarded-host": forwarded, origin };
+          assert.equal((await post(headers)).status, 200, `${host}, ${forwarded}, ${origin}`);
+          assert.equal((await ask("/api/sessions", { method: "POST", headers })).status, 401, "still requires the token");
+        }
+      }
+    }
+  });
+
+  test("a portless forwarded ts.net name never admits another hostname or HTTP", async () => {
+    for (const origin of ["https://other.ts.net:8443", "https://evil.example", "http://phone-box.tail9999.ts.net:8443"]) {
+      assert.equal((await post({ "x-forwarded-host": "phone-box.tail9999.ts.net", origin })).status, 403, origin);
+    }
+  });
+
+  test("the forwarded-name exception never widens direct Host or non-ts.net origin matches", async () => {
+    const origin = "https://phone-box.tail9999.ts.net:8443";
+    assert.equal((await post({ host: "phone-box.tail9999.ts.net", origin })).status, 403, "direct Host keeps the exact port rule");
+    for (const host of [HOST, "evil.example", "localhost:5173"]) {
+      assert.equal((await post({ host, origin })).status, 403, "no forwarded header");
+      if (host !== HOST) assert.equal((await post({ host, origin, "x-forwarded-host": "phone-box.tail9999.ts.net" })).status, 403, host);
+    }
+    process.env.SOVA_ALLOWED_HOSTS = "door.example";
+    process.env.SOVA_ALLOWED_ORIGINS = "https://door.example";
+    assert.equal((await post({ "x-forwarded-host": "door.example", origin: "https://door.example" })).status, 200);
+    assert.equal((await post({ "x-forwarded-host": "door.example", origin: "https://door.example:8443" })).status, 403, "non-ts.net stays exact");
+  });
+
+  test("a loopback Host with an allowed forwarded Host but a foreign Origin is 403", async () => {
+    for (const origin of ["https://evil.example", "https://other.ts.net:8443", "http://phone-box.tail9999.ts.net:8443"]) {
+      assert.equal((await post({ "x-forwarded-host": "phone-box.tail9999.ts.net:8443", origin })).status, 403, origin);
+    }
+  });
+
+  test("an unallowed or malformed forwarded Host cannot admit an Origin", async () => {
+    for (const forwarded of ["evil.example:8443", "phone-box.tail9999.ts.net:8443, other.ts.net", "https://phone-box.tail9999.ts.net:8443", "user@phone-box.tail9999.ts.net:8443", "phone-box.tail9999.ts.net:8443/path", "phone-box.tail9999.ts.net:99999"]) {
+      assert.equal((await post({ "x-forwarded-host": forwarded, origin: "https://phone-box.tail9999.ts.net:8443" })).status, 403, forwarded);
+    }
+    assert.equal((await post({ "x-forwarded-host": "evil.example:8443", origin: "https://evil.example:8443" })).status, 403);
+    assert.equal((await post({ "x-forwarded-host": "evil.example:8443", origin: `http://${HOST}` })).status, 200, "ignored, not a new refusal");
+  });
+
+  test("a forwarded Host never admits a foreign real Host or applies beyond this loopback port", async () => {
+    const forwarded = { "x-forwarded-host": "phone-box.tail9999.ts.net:8443", origin: "https://phone-box.tail9999.ts.net:8443" };
+    for (const host of ["evil.example:4800", "localhost:5173", "127.0.0.1", "[::1]:4801", "other.ts.net:8443"]) {
+      assert.equal((await post({ host, ...forwarded })).status, 403, host);
+    }
+    assert.equal((await post({ origin: forwarded.origin })).status, 403, "absent forwarded header changes nothing");
   });
 
   test("check 2: through the front door (Caddy rewrites Host to this host's name) passes, unconfigured", async () => {
@@ -304,6 +398,17 @@ describe("socket upgrades", () => {
     assert.equal(upgradeAllowed(upgrade({ ...cookie(), host: "box.tail1234.ts.net:8443", origin: "https://other.ts.net:8443" })), false);
     // a navigation header never opens a socket
     assert.equal(upgradeAllowed(upgrade({ ...cookie(), origin: "https://evil.example", "sec-fetch-mode": "navigate" }, "/")), false);
+  });
+
+  test("forwarded Host on this loopback port follows the same origin and token rules for upgrades", () => {
+    const forwarded = { "x-forwarded-host": "phone-box.tail9999.ts.net:8443", origin: "https://phone-box.tail9999.ts.net:8443" };
+    for (const host of [HOST, "localhost:4800", "[::1]:4800"]) {
+      assert.equal(upgradeAllowed(upgrade({ ...cookie(), host, ...forwarded })), true, host);
+      assert.equal(upgradeAllowed(upgrade({ host, ...forwarded })), false, "no token");
+    }
+    for (const override of [{ origin: "https://evil.example" }, { "x-forwarded-host": "evil.example" }, { host: "evil.example" }, { host: "localhost:5173" }]) {
+      assert.equal(upgradeAllowed(upgrade({ ...cookie(), ...forwarded, ...override })), false);
+    }
   });
 
   test("an extension's and a peer's socket path are asked too", () => {

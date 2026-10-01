@@ -35,7 +35,8 @@ const TOKEN_RE = /^[A-Za-z0-9_-]{32,}$/;
 const pinned = process.env.SOVA_TOKEN?.trim() || null;
 delete process.env.SOVA_TOKEN;
 
-let cached: { file: string; token: string } | null = null;
+let cached: { file: string; token: string | null; problem: string | null } | null = null;
+class DamagedTokenError extends Error {}
 
 function readToken(file: string): string | null {
   let text: string;
@@ -46,7 +47,7 @@ function readToken(file: string): string | null {
     throw err;
   }
   // Fail closed: a damaged file is never silently replaced (that would be a rotation nobody asked for).
-  if (!TOKEN_RE.test(text)) throw new Error(`${file} does not hold a Sova token: delete it and restart to mint a new one`);
+  if (!TOKEN_RE.test(text)) throw new DamagedTokenError(`${file} does not hold a Sova token: delete it and restart to mint a new one`);
   try {
     if ((statSync(file).mode & 0o077) !== 0) chmodSync(file, 0o600);
   } catch {
@@ -88,21 +89,35 @@ function mint(file: string): string {
   return won;
 }
 
-/** This install's token: SOVA_TOKEN if it was set at start, else the token file, minted on the
-    first start that finds none. Held for the process's life; the file is never rewritten. */
-export function sovaToken(): string {
-  if (pinned) return pinned;
+/** Initialize before listening. A damaged file leaves the shell reachable, but no credential
+    can match: remember and log its problem once, never mint over it or retry on each request. */
+export function initAuthToken(): { token: string | null; problem: string | null } {
+  if (pinned) return { token: pinned, problem: null };
   const file = tokenFile();
-  if (cached?.file === file) return cached.token;
-  const token = readToken(file) ?? mint(file);
-  cached = { file, token };
-  return token;
+  if (cached?.file === file) return cached;
+  try {
+    cached = { file, token: readToken(file) ?? mint(file), problem: null };
+  } catch (err) {
+    if (!(err instanceof DamagedTokenError)) throw err;
+    cached = { file, token: null, problem: err.message };
+    console.error(`[auth] ${err.message}`);
+  }
+  return cached;
+}
+
+/** This install's token for trusted callers that need the credential itself. Never hand them
+    a placeholder when the file is damaged; startup and the gate use initAuthToken instead. */
+export function sovaToken(): string {
+  const state = initAuthToken();
+  if (state.token === null) throw new Error(state.problem!);
+  return state.token;
 }
 
 const digest = (s: string): Buffer => createHash("sha256").update(s).digest();
 
 function tokenMatches(candidate: string): boolean {
-  return timingSafeEqual(digest(candidate), digest(sovaToken()));
+  const token = initAuthToken().token;
+  return token !== null && timingSafeEqual(digest(candidate), digest(token));
 }
 
 // ---- where this server is bound, and the names it answers to ----------------------------------
@@ -200,7 +215,7 @@ export function hostAllowed(name: string): boolean {
 }
 
 /** A MagicDNS name (`*.ts.net`), which only Tailscale resolves: `tailscale serve` in front of this
-    app names it in Host even while the mesh is off and its own name unknown (no peers.json). */
+    app can name it in Host or the guarded forwarded Host, even with no mesh (no peers.json). */
 function isTailnetName(name: string): boolean {
   return name.toLowerCase().replace(/\.$/, "").endsWith(".ts.net");
 }
@@ -254,15 +269,20 @@ function originOf(value: string): string | null {
   }
 }
 
-/** The origins a page of this app is served from, matched exactly (scheme, host and port), never
-    by host alone: the loopback names on this process's port, this machine's hostname on it (and,
-    on a wildcard bind, each of its addresses), the mesh's own MagicDNS name on any port, the front
-    door, this host's and each peer's serve URL, and SOVA_ALLOWED_ORIGINS. */
-export function originAllowed(origin: string, host?: string): boolean {
+/** The origins a page of this app is served from: exact scheme, host and port, except for the
+    mesh's own MagicDNS name and the guarded forwarded ts.net name below. Loopback names and this
+    machine's hostname use this process's port (as do its addresses on a wildcard bind); the front
+    door, this host's and each peer's serve URL, and SOVA_ALLOWED_ORIGINS are exact origins. */
+export function originAllowed(origin: string, host?: string, guardedForwardedHost?: string): boolean {
   const o = originOf(origin);
   if (!o) return false; // "null" (a sandboxed page, a file://) and anything unparsable
-  // Through tailscale serve with the mesh off: the page's own https origin, exactly the real Host
-  // (name and port), so another tailnet's or a funnel's ts.net page is still another site.
+  // Only the guarded loopback forward may ignore ports. tailscale serve may omit or rewrite
+  // the forwarded port; a ts.net name resolves to this node alone, so any port on that name is
+  // still this app, just as for the mesh-known MagicDNS name. HTTPS and the normalized name
+  // must match; neither another node's name nor HTTP gains admission through this exception.
+  const forwardedName = guardedForwardedHost && hostnameOf(guardedForwardedHost);
+  if (forwardedName && isTailnetName(forwardedName) && o.startsWith("https://") && hostnameOf(o) === forwardedName) return true;
+  // A direct ts.net Host still needs its exact https origin, including the port.
   const own = host ? originOf(`https://${host.trim()}`) : null;
   if (own && o === own && isTailnetName(hostnameOf(own) ?? "")) return true;
   const known = meshNames();
@@ -279,12 +299,29 @@ export function originAllowed(origin: string, host?: string): boolean {
   return listed.some((v) => !!v && originOf(v) === o);
 }
 
+/** The real Host was allowed first. tailscale serve may rewrite it to this listener's loopback
+    address: only there, on this process's port, use an allowed forwarded host for the origin
+    check. A page cannot forge X-Forwarded-Host on a simple cross-origin request: no-cors drops
+    non-safelisted headers, and a CORS preflight is never answered with permission here. This
+    changes no token check and never admits a foreign real Host. */
+function forwardedOriginHost(a: Asked): string | undefined {
+  const host = a.header("host");
+  const forwarded = a.header("x-forwarded-host");
+  if (!host || !forwarded) return undefined;
+  // A Host is one authority, not a URL, a credentials field or a list of proxy hops.
+  const authority = /^(?:\[[0-9a-f:]+\]|[a-z0-9.-]+)(?::[0-9]+)?$/i;
+  const loopback = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::([0-9]+))?$/i.exec(host);
+  if (!loopback || Number(loopback[1] || 80) !== listenPort || !authority.test(forwarded)) return undefined;
+  const name = hostnameOf(forwarded);
+  return name && hostAllowed(name) ? forwarded : undefined;
+}
+
 /** Another site acting through the person's browser: an Origin outside the allowed set, or fetch
     metadata saying same-site (a page on another port of this host) or cross-site without one. No
     Origin and no such metadata is a caller that isn't a browser page, or a same-origin read. */
 function crossSite(a: Asked): boolean {
   const origin = a.header("origin");
-  if (origin !== undefined) return !originAllowed(origin, a.header("host"));
+  if (origin !== undefined) return !originAllowed(origin, a.header("host"), forwardedOriginHost(a));
   const site = a.header("sec-fetch-site");
   return site === "same-site" || site === "cross-site";
 }
@@ -312,6 +349,12 @@ const REFUSALS = {
   403: { error: "Forbidden" },
 } as const;
 
+function refusal(status: 401 | 403) {
+  if (status === 403) return REFUSALS[403];
+  const problem = initAuthToken().problem;
+  return problem ? { error: problem, locked: true, hint: problem } : REFUSALS[401];
+}
+
 /** The gate for a main-listener request: null to answer it, else the refusal to send. A call with
     no socket (app.request) or from the peer listener (c.env.meshPeer) is never asked. */
 export function authGate(c: Context): Response | null {
@@ -319,7 +362,7 @@ export function authGate(c: Context): Response | null {
   if (!env?.incoming || env.meshPeer) return null;
   const status = verdict({ method: c.req.method, path: new URL(c.req.url).pathname, header: (n) => c.req.header(n) }, { exempt: true });
   if (!status) return null;
-  return new Response(JSON.stringify(REFUSALS[status]), {
+  return new Response(JSON.stringify(refusal(status)), {
     status,
     headers: { "Content-Type": "application/json", "Cache-Control": "no-store", [SERVER_HEADER]: "sova" },
   });
@@ -345,7 +388,7 @@ export function refuseUpgrade(req: IncomingMessage, socket: Duplex): boolean {
   const status = upgradeStatus(req);
   if (!status) return false;
   if (!socket.destroyed) {
-    const json = JSON.stringify(REFUSALS[status]);
+    const json = JSON.stringify(refusal(status));
     socket.end(
       `HTTP/1.1 ${status} ${status === 401 ? "Unauthorized" : "Forbidden"}\r\nContent-Type: application/json\r\n${SERVER_HEADER}: sova\r\n` +
         `Content-Length: ${Buffer.byteLength(json)}\r\nConnection: close\r\n\r\n${json}`,
@@ -380,7 +423,7 @@ export async function unlock(c: Context): Promise<Response> {
   } catch {
     token = undefined;
   }
-  if (typeof token !== "string" || !tokenMatches(token.trim())) return c.json(REFUSALS[401], 401);
+  if (typeof token !== "string" || !tokenMatches(token.trim())) return c.json(refusal(401), 401);
   const secure = servedOverHttps(c) ? "; Secure" : "";
   c.header("Set-Cookie", `${AUTH_COOKIE}=${token.trim()}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${COOKIE_MAX_AGE}${secure}`);
   c.header("Cache-Control", "no-store");

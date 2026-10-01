@@ -5,7 +5,7 @@
 // exactly what a browser (or an attacker's page) would send. app.request() never reaches the gate's
 // socket checks, so only the exemption tests use it.
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { request, type IncomingHttpHeaders } from "node:http";
 import { hostname, tmpdir } from "node:os";
@@ -245,6 +245,24 @@ describe("tailscale serve with the mesh off: a *.ts.net Host on its own https or
     assert.equal(opened, "open");
   });
 
+  test("a rewritten loopback Host uses the allowed forwarded Host for data and unlock, not as a credential", async () => {
+    const forwarded = { Host: self, "X-Forwarded-Host": TS, Origin: `https://${TS}` };
+    for (const forwardedHost of [TS, "laptop.tail1234.ts.net"]) {
+      const headers = { ...forwarded, "X-Forwarded-Host": forwardedHost };
+      assert.equal((await get(PROTECTED, { ...headers, Cookie: cookie(token) })).status, 200);
+      assert.equal((await get(PROTECTED, headers)).status, 401);
+    }
+    const unlocked = await send("POST", "/api/auth/unlock", { ...forwarded, "Content-Type": "application/json" }, JSON.stringify({ token }));
+    assert.equal(unlocked.status, 200);
+    assert.ok(unlocked.headers["set-cookie"]?.[0]?.startsWith(cookie(token)));
+    for (const extra of [{ Origin: "https://evil.example" }, { "X-Forwarded-Host": "evil.example:8443" }, { Host: "evil.example" }, { Host: "localhost:5173" }]) {
+      assert.equal((await send("POST", "/api/auth/unlock", { ...forwarded, ...extra, "Content-Type": "application/json" }, JSON.stringify({ token }))).status, 403);
+    }
+    const preflight = await send("OPTIONS", PROTECTED, { Host: self, Origin: "https://evil.example", "Access-Control-Request-Method": "POST", "Access-Control-Request-Headers": "x-forwarded-host" });
+    assert.equal(preflight.status, 403);
+    assert.equal(preflight.headers["access-control-allow-origin"], undefined);
+  });
+
   test("(b) the same Host with Origin https://evil.example is a 403", async () => {
     assert.equal((await get(PROTECTED, served({ Origin: "https://evil.example" }))).status, 403);
     assert.equal((await send("POST", PROTECTED, served({ Origin: "https://evil.example", "Content-Type": "text/plain" }), "{}")).status, 403);
@@ -438,6 +456,20 @@ describe("the WebSocket upgrade", () => {
     assert.equal(await upgrade(watch, { Host: `evil.example:${port}`, Origin: `http://evil.example:${port}`, Cookie: cookie(token) }), 403);
   });
 
+  test("a rewritten loopback Host admits only the matching forwarded origin and still needs the token on WS", async () => {
+    const forwarded = { Host: self, "X-Forwarded-Host": "laptop.tail1234.ts.net:8443", Origin: "https://laptop.tail1234.ts.net:8443" };
+    for (const forwardedHost of ["laptop.tail1234.ts.net:8443", "laptop.tail1234.ts.net"]) {
+      const headers = { ...forwarded, "X-Forwarded-Host": forwardedHost };
+      assert.equal(await upgrade(watch, { ...headers, Cookie: cookie(token) }), "open");
+      assert.equal(await upgrade(watch, headers), 401);
+      assert.equal(await upgrade(watch, { ...headers, Cookie: cookie(token), Origin: "https://other.ts.net:8443" }), 403);
+      assert.equal(await upgrade(watch, { ...headers, Cookie: cookie(token), Origin: "http://laptop.tail1234.ts.net:8443" }), 403);
+    }
+    for (const extra of [{ Origin: "https://evil.example" }, { "X-Forwarded-Host": "evil.example:8443" }, { Host: "evil.example" }, { Host: "localhost:5173" }]) {
+      assert.equal(await upgrade(watch, { ...forwarded, Cookie: cookie(token), ...extra }), 403);
+    }
+  });
+
   test("the cookie with this host's own origin is allowed; so is the header with no Origin (a script)", async () => {
     assert.equal(await upgrade(watch, { Origin: `http://${self}`, Cookie: cookie(token) }), "open");
     assert.equal(await upgrade(watch, { Origin: `http://${self}`, Cookie: `${cookie("clobbered")}; ${cookie(token)}` }), "open");
@@ -455,6 +487,69 @@ function startAuth(env: Record<string, string> = {}): { token: string; file: str
 }
 
 describe("the token file", () => {
+  test("a damaged token file starts the server: shell 200, data and WS 401 with recovery instructions, no rewrite", () => {
+    const damaged = join(tmp, "damaged-agent");
+    const file = join(damaged, "sova", "auth-token");
+    mkdirSync(join(damaged, "sessions", "live"), { recursive: true });
+    mkdirSync(join(damaged, "sova"));
+    writeFileSync(file, "short\n");
+    const before = statSync(file);
+    // A separate process exercises index.ts's startup, not just the in-memory gate. No real
+    // state is copied. A shell fixture is the fallback when this checkout has no frontend build.
+    const code = `
+      import assert from "node:assert/strict";
+      import { WebSocket } from "ws";
+      try {
+        const { app, server } = await import("./server/index.ts");
+        app.get("/", (c) => c.html("<!doctype html><title>shell fixture</title>"));
+        if (!server.listening) await new Promise((r) => server.once("listening", r));
+        const origin = "http://127.0.0.1:" + server.address().port;
+        const problem = ${JSON.stringify(`${file} does not hold a Sova token: delete it and restart to mint a new one`)};
+        const expected = { error: problem, locked: true, hint: problem };
+        const shell = await fetch(origin + "/");
+        assert.equal(shell.status, 200);
+        assert.match(await shell.text(), /<!doctype html>/i);
+        assert.equal((await fetch(origin + "/api/health")).status, 200);
+        for (const headers of [{}, { "x-sova-token": "x".repeat(43) }]) {
+          const data = await fetch(origin + "/api/settings", { headers });
+          assert.equal(data.status, 401);
+          assert.deepEqual(await data.json(), expected);
+        }
+        const unlock = await fetch(origin + "/api/auth/unlock", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: "" }) });
+        assert.equal(unlock.status, 401);
+        assert.deepEqual(await unlock.json(), expected);
+        assert.equal(unlock.headers.get("set-cookie"), null);
+        const refused = await new Promise((resolve, reject) => {
+          const ws = new WebSocket(origin.replace("http:", "ws:") + "/ws/watch?path=nope");
+          ws.on("open", () => { ws.terminate(); reject(new Error("damaged token admitted WS")); });
+          ws.on("unexpected-response", (_req, res) => {
+            let body = "";
+            res.on("data", (chunk) => body += chunk);
+            res.on("end", () => { resolve({ status: res.statusCode, body }); ws.terminate(); });
+          });
+          ws.on("error", reject);
+        });
+        assert.equal(refused.status, 401);
+        assert.deepEqual(JSON.parse(refused.body), expected);
+        server.close();
+        server.closeAllConnections();
+        console.log("damaged-token startup: shell=200 data=401 unlock=401 ws=401");
+        process.exit(0);
+      } catch (err) { console.error(err); process.exit(1); }
+    `;
+    const { SOVA_TOKEN: _drop, ...base } = process.env;
+    const run = spawnSync(process.execPath, ["--import", "tsx", "--input-type=module", "--eval", code], {
+      env: { ...base, PI_CODING_AGENT_DIR: damaged, PORT: "0", SOVA_AUTH: "", SOVA_USAGE_POLL: "off", SOVA_PRICES_FETCH: "off" },
+      encoding: "utf8", timeout: 60_000,
+    });
+    assert.equal(run.status, 0, `${run.error ?? ""}\n${run.stderr}\n${run.stdout}`);
+    assert.match(run.stdout, /damaged-token startup: shell=200 data=401 unlock=401 ws=401/);
+    assert.equal(run.stderr.split("does not hold a Sova token").length - 1, 1, "logged once, not on every refusal");
+    assert.equal(readFileSync(file, "utf8"), "short\n");
+    assert.equal(statSync(file).ino, before.ino);
+    assert.equal(statSync(file).mtimeMs, before.mtimeMs);
+  });
+
   test("lives at <agent dir>/sova/auth-token, mode 0600, the same bytes on every read", () => {
     const file = tokenFile();
     assert.equal(file, join(tmp, "agent", "sova", "auth-token"));

@@ -136,7 +136,7 @@ import { readLiveRecords } from "./live";
 import { resourceMonitor, startResourceMonitor, stopResourceMonitor } from "./resource-monitor";
 import { defaultAdapters } from "./worker-adapters";
 import { serverRedactor } from "./overseer-redact";
-import { authGate, SERVER_HEADER, serverAuthEnabled, setAuthHosts, setAuthPort, sovaToken, unlock } from "./auth";
+import { authGate, SERVER_HEADER, serverAuthEnabled, setAuthHosts, setAuthPort, initAuthToken, unlock } from "./auth";
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4800; // PORT=0: an ephemeral port (tests)
 // Loopback by default; set HOST=0.0.0.0 to deliberately expose on the LAN.
@@ -1440,9 +1440,9 @@ const linkOrigin = (port: number) => `http://${HOST === "0.0.0.0" || HOST === ":
 // Known before listen when the port is fixed, so no runtime opened meanwhile misses the flag.
 if (PORT) setLinkOrigin(linkOrigin(PORT));
 
-// The token exists before the first request: minted on the first start, and a damaged file stops
-// the start here rather than being replaced (server/auth.ts).
-sovaToken();
+// Initialize before the first request: mint if missing; a damaged file is logged once and leaves
+// the shell reachable, with token checks refused until the file is deleted and we restart.
+initAuthToken();
 if (process.env.SOVA_AUTH === "off")
   console.warn(serverAuthEnabled() ? `[auth] SOVA_AUTH=off ignored: ${HOST} is not a loopback bind` : "[auth] SOVA_AUTH=off: the token is not asked for");
 // What the gate knows from the mesh (server/auth.ts): this host's MagicDNS name, its front door and

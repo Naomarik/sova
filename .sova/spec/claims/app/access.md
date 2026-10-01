@@ -108,6 +108,11 @@ browser is never asked again.
   to `POST /api/auth/unlock`, which sets the cookie and answers; the fragment is then cleared
   from the address bar, and the app is held back until the answer arrives. Unlocking changes
   nothing but the cookie. A token the server refuses leaves the unlock screen showing why.
+- **A code.** A device that is already unlocked can mint a short-lived, single-use pairing code
+  (§app.access/devices); the new device opens the same screen with `#c=<code>` in the fragment and
+  the same route exchanges it for that device's cookie, so the install's token itself never leaves
+  the browser that already had it. The screen says where the code comes from, for a person who has
+  only the device in their hand.
 - **Any state, no storm.** The screen replaces the app whenever the server refuses the browser —
   any request answered `401`, or a socket whose upgrade is refused (which stops reconnecting
   instead of retrying into the refusal). A refusal that asks for a reload reloads the page once,
@@ -117,8 +122,9 @@ browser is never asked again.
 - **The way back.** `sova token` prints the token for a person who needs it on another device or
   in a script; `sova open` opens the authorized URL. Losing the cookie — a new browser, a private
   window, the phone — costs one paste, never a reset.
-- **The phone.** A device reaching the app through `tailscale serve` unlocks once with the token
-  its owner copies to it, and its host name counts as reachable by the rule above.
+- **The phone.** A device reaching the app through `tailscale serve` gets in with a pairing code
+  read off a browser that is already unlocked, or with the token its owner copies to it; its host
+  name counts as reachable by the rule above.
 
 ## §app.access/callers — Everything that is not a browser
 
@@ -154,3 +160,27 @@ Every caller keeps working with no new step for the person:
   pin a known one; neither is honoured by the installed service unless the person sets it.
 - **Another host** is never given this token: a request proxied to a peer, or from one, carries
   no cookie from this side.
+
+## §app.access/devices — Bring a device in with a code
+
+A person who can already use the app can bring a second device in without ever seeing the install's
+token: an already-unlocked browser mints a **pairing code**, and the new device trades it for its
+own cookie. The code is a secret in its own right and is treated as one.
+
+- **Minting.** `POST /api/auth/pair` mints a code: 32 random bytes in base64url, valid for five
+  minutes and usable exactly once. Codes live in `<state root>/auth-codes.json`, written at 0600
+  like every other store, and an unreadable store lists none of them rather than guessing.
+- **Exchanging.** The code is presented in the fragment of the unlock URL (`#c=<code>`), which a
+  browser never sends to the server, and posted once to `POST /api/auth/unlock` — the same route a
+  token uses. A good code sets the cookie and is consumed; a bad, spent or expired one is refused
+  with the same 401 a bad token gets, and a spent code is never accepted twice.
+- **Who may mint.** Only a browser the gate already trusts: the route is behind the gate like every
+  other, and it is **local-only** — a call carrying `c.env.meshPeer` (the peer listener) or a
+  relayed one is refused, so a paired peer cannot mint itself the owner's credential.
+- **Where it is reached.** The app's own home surface carries the control, which opens the access
+  page; that page shows the code, the exact URL to open on the other device, and a copy control.
+  It is the only entry point — Settings has no access tab. Nothing here is written to a log, and
+  the code and the token never appear in a session file or a tool result.
+- **The token, in full, only where it is needed.** The same page may show the install's token
+  behind a second, deliberate step — for the case where the exchange route itself is what is broken
+  — and never by default.

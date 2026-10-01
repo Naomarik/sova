@@ -10831,14 +10831,14 @@
       "authority": "accepted",
       "evidence": "unreviewed",
       "code": [
+        "scripts/install.sh",
         "server/auth.ts",
         "src/components/Unlock.tsx",
-        "src/lib/auth.ts",
-        "src/lib/auth.test.ts",
         "src/lib/api.ts",
+        "src/lib/auth.test.ts",
+        "src/lib/auth.ts",
         "src/lib/socket.ts",
-        "src/main.tsx",
-        "scripts/install.sh"
+        "src/main.tsx"
       ]
     },
     "§app/access": {
@@ -11016,6 +11016,23 @@
         "server/topic-store.ts",
         "server/topic-delivery.ts",
         "shared/topic-message.ts"
+      ]
+    },
+    "§app.access/devices": {
+      "kind": "behavior",
+      "requires": [
+        "§app.access/gate",
+        "§app.access/unlock"
+      ],
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "server/auth-devices.ts",
+        "server/auth.ts",
+        "server/index.ts",
+        "src/components/AccessPage.tsx",
+        "src/components/OverviewActions.tsx",
+        "src/components/Unlock.tsx"
       ]
     }
   },

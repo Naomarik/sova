@@ -34,14 +34,16 @@ const ORG_KINDS = ["people", "projects"];
 const ITEMS_EXAMPLE = '{"sessions": [{"id": "<session id>", "note": "What it is. Why it fits."}], "todos": [{"id": "td_…", "note": "…"}]}';
 const ORG_EXAMPLE = '"people": [{"org": "<org id or name>", "id": "<person id or name>", "note": "…"}], "projects": [{"org": "…", "id": "<project id or name>", "note": "…"}]';
 
-/** One requested item: its id as the model wrote it, its note (whitespace collapsed), and the
-    per-item choice it starts on (a sova_card entry's `default`, checked by the card model). */
-type Wanted = { ref: string; note?: string; default?: string };
-/** A resolved item, with the `default` its entry gave. */
-export type ResolvedItem = SovaConfirmItem & { default?: string };
-const defaultOf = (x: unknown): { default?: string } => {
-  const d = x && typeof x === "object" ? (x as { default?: unknown }).default : undefined;
-  return typeof d === "string" && d.trim() ? { default: d.trim().toLowerCase() } : {};
+/** One requested item: its id as the model wrote it, its note (whitespace collapsed), the per-item
+    choice it starts on and its own choices (a sova_card entry's `default` and `choices`, both
+    checked by the card model). */
+type Wanted = { ref: string; note?: string; default?: string; choices?: unknown };
+/** A resolved item, with the `default` and `choices` its entry gave. */
+export type ResolvedItem = SovaConfirmItem & { default?: string; choices?: unknown };
+const defaultOf = (x: unknown): { default?: string; choices?: unknown } => {
+  const o = x && typeof x === "object" ? (x as { default?: unknown; choices?: unknown }) : {};
+  const d = o.default;
+  return { ...(typeof d === "string" && d.trim() ? { default: d.trim().toLowerCase() } : {}), ...(o.choices !== undefined ? { choices: o.choices } : {}) };
 };
 /** A list of ids, each a bare string or `{id, note}`; the first mention of an id wins. */
 function wanted(v: unknown): Wanted[] {
@@ -85,9 +87,10 @@ export function sessionItem(s: SessionSummary): SovaConfirmItem {
   };
 }
 
-/** Resolve `items` to card rows, refusing (all at once, each named) unknown ids, the overseer's own
-    conversation and over-long notes, and more than the cap. */
-export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, refusal: (m: string) => Error): Promise<ResolvedItem[]> {
+/** Resolve `items` to card rows, refusing (all at once, each named) unknown ids and the overseer's
+    own conversation, and more than the cap. A note over CONFIRM_NOTE_MAX is cut with "…", never
+    refused: `cutNotes`, when given, collects each such note's item and length ("s2 (241)") for the echo. */
+export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, refusal: (m: string) => Error, cutNotes?: string[]): Promise<ResolvedItem[]> {
   if (raw === undefined || raw === null) return [];
   const orgs = !!(lookup.person && lookup.project);
   const kinds = orgs ? [...ITEM_KINDS, ...ORG_KINDS] : ITEM_KINDS;
@@ -107,9 +110,13 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   const self: string[] = [];
   const long: string[] = [];
   const seen = new Set<string>();
-  const noted = <T extends SovaConfirmItem>(item: T, w: Wanted): T & { default?: string } => {
-    if (w.note && w.note.length > CONFIRM_NOTE_MAX) long.push(`${w.ref} (${w.note.length})`);
-    return { ...item, ...(w.note ? { note: w.note } : {}), ...(w.default ? { default: w.default } : {}) };
+  const noted = <T extends SovaConfirmItem>(item: T, w: Wanted): T & { default?: string; choices?: unknown } => {
+    let note = w.note;
+    if (note && note.length > CONFIRM_NOTE_MAX) {
+      long.push(`${w.ref} (${note.length})`);
+      note = cut(note, CONFIRM_NOTE_MAX);
+    }
+    return { ...item, ...(note ? { note } : {}), ...(w.default ? { default: w.default } : {}), ...(w.choices !== undefined ? { choices: w.choices } : {}) };
   };
   for (const w of want.sessions) {
     const s = await lookup.session(w.ref);
@@ -158,8 +165,8 @@ export async function resolveConfirmItems(raw: unknown, lookup: ConfirmLookup, r
   if (missing.length)
     problems.push(`These ids match nothing (${missing.join("; ")}). List them again (sova_list_sessions, sova_ideas, sova_todos${orgs ? ", sova_orgs" : ""}) and use the ids exactly as printed.`);
   if (self.length) problems.push(`${self.join(", ")} is your own conversation; a card never lists it. Leave it out.`);
-  if (long.length) problems.push(`A note is at most ${CONFIRM_NOTE_MAX} characters (two short sentences); these are longer: ${long.join(", ")}. Shorten them.`);
   if (problems.length) throw refusal(`No card was shown. ${problems.join(" ")}`);
+  cutNotes?.push(...long);
   return out;
 }
 
@@ -178,25 +185,33 @@ export async function clickOnlyCard(items: SovaConfirmItem[], lookup: ConfirmLoo
 }
 
 const NOTE_DESC =
-  `What the item is, then why the action fits it: at most 2 short sentences, ${CONFIRM_NOTE_MAX} characters, plain text. ` +
+  `What the item is, then why the action fits it: at most 2 short sentences, ${CONFIRM_NOTE_MAX} characters (a longer note is cut with "…"), plain text. ` +
   'E.g. "Push notifications for Overseer briefs. Merged to master yesterday, nothing running." ' +
   `For an idea or todo a button also acts on, say the effect: "Covered by the push session's final report. Ticking marks it done."`;
-const DEFAULT_DESC = 'With choices: the choice letter this item starts on ("a"), your recommendation for it.';
+const DEFAULT_DESC = "With choices (this item's own, else the card's): the choice letter this item starts on (\"a\"), your recommendation for it.";
+const CHOICES_DESC =
+  'This item\'s own choices, when its actions differ from the card\'s choices (2 to 4 short labels, lettered a, b… for this row only), e.g. ["Archive", "Keep"] on a session with no worktree beside ["Clean Up & Archive", "Archive Only", "Keep"] on the card.';
+const choicesProp = { type: "array", minItems: 2, maxItems: 4, items: { type: "string", minLength: 1 }, description: CHOICES_DESC };
 const idList = (description: string) => ({
   type: "array",
   items: {
     anyOf: [
       { type: "string" },
-      { type: "object", properties: { id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC } }, required: ["id"], additionalProperties: false },
+      {
+        type: "object",
+        properties: { id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp },
+        required: ["id"],
+        additionalProperties: false,
+      },
     ],
   },
-  description: `${description} Each entry is { id, note, default? } (a bare id still works).`,
+  description: `${description} Each entry is { id, note, default?, choices? } (a bare id still works).`,
 });
 const orgList = (description: string) => ({
   type: "array",
   items: {
     type: "object",
-    properties: { org: { type: "string" }, id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC } },
+    properties: { org: { type: "string" }, id: { type: "string" }, note: { type: "string", description: NOTE_DESC }, default: { type: "string", description: DEFAULT_DESC }, choices: choicesProp },
     required: ["org", "id"],
     additionalProperties: false,
   },

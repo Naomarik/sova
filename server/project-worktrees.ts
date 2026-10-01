@@ -103,8 +103,8 @@ async function mergedInto(git: Git, cwd: string, w: WorktreeRecord): Promise<boo
   return (await probeMerge(git, { path: cwd, branch: w.branch, base: w.base, baseBranch: w.target }, w.target))?.merged === true;
 }
 
-/** The worktree's uncommitted files (tracked changes and untracked files). */
-async function uncommitted(git: Git, dir: string): Promise<string[]> {
+/** The worktree's uncommitted files (tracked changes and untracked files). Also archive's worktree cleanup's check (server/archive-worktrees.ts). */
+export async function uncommitted(git: Git, dir: string): Promise<string[]> {
   const st = await git(["status", "--porcelain=v1", "-z", "--untracked-files=all"], dir);
   if (st.code !== 0) throw new WorktreeRefusal(firstLine(st.stderr || st.stdout));
   const out: string[] = [];

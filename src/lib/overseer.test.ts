@@ -257,3 +257,35 @@ test("an error result, bad details and a legacy sova_confirm row are never state
   assert.equal(live.cards.get("c_1")?.phase, "answered");
   assert.equal(live.newest.has("c_1"), false, "a card this run changed has no settled row to render it in full");
 });
+
+test("cards open above the rows held: the summary carries each open card's newest snapshot and call row; the fold takes them first, and a newer snapshot in the list wins", async () => {
+  const { summarize } = await import("../../shared/row-counts");
+  const second = applyCardCall([created.card!], { ops: [{ op: "create", title: "Tick?", options: [{ label: "Tick" }] }] }, { now: NOW, prepared: { items: [], hrefs: [] } }).details;
+  const replaced = applyCardCall([created.card!, second.card!], { ops: [{ op: "create", title: "Archive fewer?", options: [{ label: "Go" }], replaces: "c_2" }] }, { now: NOW, prepared: { items: [], hrefs: [] } }).details;
+  // c_1 open, c_2 raised then replaced by c_3: above the list, c_1 and c_3 are open.
+  const above = [call("k1"), result("k1", created), call("k2"), result("k2", second), call("k3"), result("k3", replaced), call("k4"), result("k4", answered, true)];
+  const s = summarize(above);
+  assert.deepEqual(s.cards?.map((c) => [c.card.id, c.rowId]), [["c_1", "k1"], ["c_3", "k3"]], "an error result is never state; superseded c_2 is not open");
+  // The fold counts them for the chip, and knows each one's row for the jump.
+  const fold = cardFold([row("u9", "user", "anything")], [], s.cards);
+  assert.deepEqual(openCards(fold).map((c) => c.id), ["c_1", "c_3"]);
+  assert.equal(fold.newest.get("c_1"), "k1");
+  // The answer in the rows held closes c_1, whatever the summary said.
+  const later = cardFold([call("k5"), result("k5", answered)], [], s.cards);
+  assert.deepEqual(openCards(later).map((c) => c.id), ["c_3"]);
+  assert.equal(later.newest.get("c_1"), "k5");
+  // A result whose call row isn't among the rows is keyed by its own row.
+  assert.deepEqual(summarize([result("k1", created)]).cards?.map((c) => c.rowId), ["r-k1"]);
+  assert.equal(summarize([call("k5"), result("k5", answered)]).cards, undefined, "no open card, no key");
+});
+
+test("a #c_N link is a card ref: in-app, never the route; any other # href stays text", async () => {
+  const { renderMarkdown } = await import("./markdown");
+  const { html } = renderMarkdown("See [c_5](#c_5), not [the top](#top) or [usage](#/usage).");
+  assert.match(html, /<a class="md-app-link md-card-ref" href="#c_5" data-card-ref="c_5" title="Jump to c_5">c_5<\/a>/);
+  assert.ok(!/target="_blank"/.test(html), "a card ref opens nothing new");
+  assert.match(html, /not the top or/, "#top renders as its text, unlinked");
+  assert.match(html, /<a class="md-app-link" href="#\/usage">usage<\/a>/, "a #/ route is still a route");
+  const { cardRefId } = await import("./card-refs");
+  assert.deepEqual(["#c_5", "#c_12", "#c_0", "#c_5x", "c_5", "#/c_5"].map(cardRefId), ["c_5", "c_12", null, null, null, null]);
+});

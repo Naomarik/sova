@@ -1,5 +1,5 @@
 import { OVERSEER_BRIEF_PREFIX, type SovaConfirmDetails, type SovaConfirmItem, type SovaNavigateDetails, type TranscriptItem } from "../../shared/protocol";
-import { CARD_TOOL, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../../shared/overseer-card";
+import { CARD_TOOL, normalizeCard, normalizeCardDetails, openCardsOf, type CardDetails, type OverseerCard } from "../../shared/overseer-card";
 import { isObj, str, toolResultView } from "./message";
 import { openSettings, SETTINGS_TABS, type SettingsSection, type SettingsTab } from "./settings-nav";
 
@@ -149,9 +149,10 @@ export interface CardFold {
 /**
  * Folds the thread's `sova_card` results in order (a clone of the align fold): an error result and
  * details that don't check out are never state, and a legacy `sova_confirm` row is never folded.
- * `live`: this run's results not in the transcript yet, in call order.
+ * `live`: this run's results not in the transcript yet, in call order. `older`: the cards open above
+ * the rows held (the hello's or last fetch's OlderSummary.cards), folded first, each with its row.
  */
-export function cardFold(items: readonly TranscriptItem[], live: readonly unknown[] = []): CardFold {
+export function cardFold(items: readonly TranscriptItem[], live: readonly unknown[] = [], older: readonly { card: unknown; rowId: string }[] = []): CardFold {
   const results = new Map<string, TranscriptItem>();
   for (const it of items) if (it.kind === "tool-result" && it.toolCallId) results.set(it.toolCallId, it);
   const fold: CardFold = { rows: new Map(), cards: new Map(), newest: new Map() };
@@ -159,6 +160,12 @@ export function cardFold(items: readonly TranscriptItem[], live: readonly unknow
     fold.cards.delete(c.id);
     fold.cards.set(c.id, c);
   };
+  for (const e of older) {
+    const c = normalizeCard(e.card);
+    if (!c) continue;
+    put(c);
+    fold.newest.set(c.id, e.rowId);
+  }
   const take = (d: CardDetails | undefined, rowId?: string) => {
     if (!d) return;
     if (rowId) fold.rows.set(rowId, d);

@@ -68,7 +68,7 @@ import {
   stakeholderLine,
 } from "./orgs";
 import { hostOf, isOrgHostOpen, onOrgChange, onOrgHostOpened, setOrgClockForTest, type InvocationReport } from "./org-engine";
-import { appRequest, cardsNoteMessage, pathOfId, promptSession, toolCatalogue } from "./overseer";
+import { appRequest, cardsNoteMessage, pathOfId, promptSession, sessionActivity, toolCatalogue } from "./overseer";
 import { CARDS_NOTE_MESSAGE, cardsNote, foldCards } from "../shared/overseer-card";
 import { RootConfinement } from "./overseer-deny";
 import { overseerFileTools } from "./overseer-file-tools";
@@ -1096,7 +1096,7 @@ registerSpecialLoadout({
                 return cardsNoteMessage(ctx.sessionManager.getBranch());
               });
               pi.on("session_compact", (_event, ctx) => {
-                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true);
+                const note = cardsNote(foldCards(ctx.sessionManager.getBranch()), true, sessionActivity());
                 if (note) pi.sendMessage({ customType: CARDS_NOTE_MESSAGE, content: note, display: false });
               });
               pi.on("context", (event) => {

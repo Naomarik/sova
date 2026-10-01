@@ -236,3 +236,20 @@ test("refresh: the rows held, again from their first, and what's above them", as
   assert.deepEqual(ids(h.list()), ids(whole.slice(60)));
   assert.deepEqual(h.older(), olderAt(60));
 });
+
+test("the cards open above the list: a hello keeps them, and kept rows take theirs (as aligns)", async () => {
+  const { applyCardCall } = await import("../../shared/overseer-card");
+  const created = (title: string, from: never[] = []) => applyCardCall(from, { ops: [{ op: "create", title, options: [{ label: "Go" }] }] }, { now: "2026-09-30T10:00:00.000Z", prepared: { items: [], hrefs: [] } }).details;
+  const c1 = created("One");
+  const c2 = created("Two", [c1.card!] as never[]);
+  const callRow = (id: string): TranscriptItem => ({ id, kind: "tool-call", text: "sova_card", toolCallId: `t-${id}`, raw: null });
+  const resultRow = (id: string, details: unknown): TranscriptItem => ({ id: `${id}r`, kind: "tool-result", toolCallId: `t-${id}`, raw: { type: "message", message: { role: "toolResult", toolName: "sova_card", details } } });
+  // c_1's call and result at rows 10/11, c_2's at 40/41: both above a hello cut at 60.
+  const branch = whole.map((it, i) => (i === 10 ? callRow("k10") : i === 11 ? resultRow("k10", c1) : i === 40 ? callRow("k40") : i === 41 ? resultRow("k40", c2) : it));
+  const s = summarize(branch.slice(0, 60));
+  assert.deepEqual(s.cards?.map((c) => [c.card.id, c.rowId]), [["c_1", "k10"], ["c_2", "k40"]]);
+  assert.deepEqual(helloRows(null, branch.slice(60), 60, s).older.summary.cards, s.cards, "a hello keeps them");
+  const kept = helloRows(branch.slice(30), branch.slice(60), 60, s);
+  assert.deepEqual(kept.older.summary.cards?.map((c) => c.card.id), ["c_1"], "c_2's row is held now");
+  assert.equal(helloRows(branch.slice(5), branch.slice(60), 60, s).older.summary.cards, undefined);
+});

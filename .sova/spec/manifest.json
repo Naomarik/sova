@@ -1217,7 +1217,8 @@
         "src/lib/explain.ts",
         "src/lib/explain.test.ts",
         "src/components/SessionPane.tsx",
-        "pi-config/extensions/stamp/format.ts"
+        "pi-config/extensions/stamp/format.ts",
+        "shared/topic-message.ts"
       ]
     },
     "§chat/composer": {
@@ -9373,7 +9374,8 @@
         "server/session-guards.ts",
         "server/session-profile-routes.ts",
         "server/session-profiles-runtime.test.ts",
-        "server/session-profiles.test.ts"
+        "server/session-profiles.test.ts",
+        "shared/profiles.ts"
       ],
       "requires": [
         "§chat.profiles/enforcement",
@@ -10809,6 +10811,108 @@
       "requires": [
         "§chat.merge-round/private-names",
         "§chat.worktrees/readiness"
+      ]
+    },
+    "§chat.topics/delivery": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/chat-manager.ts",
+        "server/topic-delivery.ts",
+        "server/index.ts",
+        "shared/topic-message.ts",
+        "server/topics-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.topics/store",
+        "§chat.topics/open",
+        "§chat.profiles/limits",
+        "§mesh.links/delivery"
+      ]
+    },
+    "§chat.topics/open": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/session-powers.ts",
+        "server/topics.ts",
+        "server/topic-store.ts",
+        "shared/profiles.ts",
+        "server/topic-store.test.ts",
+        "server/topics-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.profiles/session-tools",
+        "§chat.topics/store"
+      ]
+    },
+    "§chat.topics/push": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/topics.ts",
+        "server/chat-manager.ts",
+        "server/topics-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.topics/open",
+        "§chat.topics/store"
+      ]
+    },
+    "§chat.topics/row": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "shared/topic-message.ts",
+        "server/transcript.ts",
+        "shared/protocol.ts",
+        "shared/row-counts.ts",
+        "src/components/Thread.tsx",
+        "src/components/TopicCard.tsx",
+        "src/components/ChatView.tsx",
+        "src/components/WatchView.tsx",
+        "src/lib/turn.ts",
+        "src/lib/message-actions.ts",
+        "server/chat-manager.ts",
+        "server/sessions-index.ts",
+        "server/session-autotitle.ts",
+        "server/session-tags.ts",
+        "server/attention-signals.ts",
+        "server/merge-readiness.ts",
+        "server/align-state.ts",
+        "server/session-share-view.ts",
+        "server/topics-runtime.test.ts"
+      ],
+      "requires": [
+        "§chat.topics/delivery",
+        "§chat.transcript/transcript-items",
+        "§app.decisions/session-tags",
+        "§app.decisions/asks-user"
+      ]
+    },
+    "§chat.topics/store": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/topic-store.ts",
+        "server/topic-store.test.ts"
+      ],
+      "requires": []
+    },
+    "§chat/topics": {
+      "kind": "surface",
+      "authority": "accepted",
+      "evidence": "verified",
+      "code": [
+        "server/topics.ts",
+        "server/topic-store.ts",
+        "server/topic-delivery.ts",
+        "shared/topic-message.ts"
       ]
     }
   },

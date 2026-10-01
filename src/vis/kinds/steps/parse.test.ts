@@ -57,7 +57,7 @@ test("steps: each error says what to write", () => {
     ['"A" | a -> -> b', /an empty step/, 1],
     ['"A" | a ->', /an empty step/, 1],
     ['"A" | a --> b', /steps join with ->, not -->/, 1],
-    ['"A" | "quoted" and bare -> b', /one "quoted label" or bare words, not both/, 1],
+    ['"A" | "quoted" "twice" -> b', /one "quoted label" or bare words, not two labels: "quoted" "twice" \(join steps with ->\)/, 1],
     ["a -> b | c", /the steps go after the \|/, 1],
     ["== Empty ==\n== Full ==\nA | a", /lane "Empty" is empty/, 1],
     ["A | a\n== Trailing ==", /lane "Trailing" is empty/, 2],

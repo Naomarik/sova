@@ -86,11 +86,11 @@ test("only a hard error is a failure: a figure that draws with warnings is not",
 
 test("an unknown kind and an over-budget html are failures of the block as a whole", () => {
   const huge = `<p>${"y".repeat(FRAME_HARD_CHARS + 10)}</p>`;
-  const failures = visFailures(visFences([[fence("pie", "a 1"), fence("html", huge)].join("\n\n")]));
+  const failures = visFailures(visFences([[fence("gantt", "a 1"), fence("html", huge)].join("\n\n")]));
   assert.deepEqual(
     failures.map((f) => [f.kind, f.line]),
     [
-      ["pie", 0],
+      ["gantt", 0],
       ["html", 0],
     ],
   );

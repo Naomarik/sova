@@ -5,7 +5,7 @@
  */
 
 import { applyMarks, byIdOrLabel, takeMarks } from "../../core/emphasis";
-import { commaList, fail, fields, isTone, lines, takeSettings, unquote, type Tone, type VisBase } from "../../core/grammar";
+import { bars, commaListFor, fail, fields, hasBar, isTone, lines, tableRow, takeSettings, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export type CellMark = "yes" | "no" | "partial";
 export interface MatrixCell {
@@ -29,16 +29,34 @@ const MARKS: Record<string, CellMark> = { yes: "yes", no: "no", partial: "partia
 export function parseMatrix(body: string): MatrixSpec {
   const ls = lines(body);
   const spec: MatrixSpec = { kind: "matrix", columns: [], rows: [] };
-  const { rest: settled, values } = takeSettings(ls, ["columns"], spec);
-  const { rest, marks } = takeMarks(settled);
-  const cols = values.get("columns");
+  const { rest: settled, values } = takeSettings(ls, ["columns"], spec, { caseless: true });
+  // `Mark "WebGPU"` on a line with no `|`, which no row can be, is a mark line (§chat.markdown/vis-lenience-content).
+  const lower = (l: Line): Line => (/^mark\s/i.test(l.text) && !hasBar(l.text) ? { ...l, raw: l.raw.replace(/^(\s*)mark/i, "$1mark"), text: `mark${l.text.slice(4)}` } : l);
+  const { rest: marked, marks } = takeMarks(settled.map(lower), { indented: true });
+  // Markdown table rows (`| SSO | no | yes |`) lose their outer bars; the `|---|` rule is skipped.
+  let rest = marked.flatMap((l) => tableRow(l) ?? []);
+  const cellCount = (line: Line) => bars(line.text).length - 1;
+  let cols = values.get("columns");
+  // No `columns:`: the first row is the header, its first cell (the corner) dropped.
+  if (!cols && rest.length > 1 && hasBar(rest[0]!.text)) {
+    const header = rest[0]!;
+    rest = rest.slice(1);
+    const names = fields(header).slice(1);
+    if (names.some((c) => c === "")) fail(header.n, "empty column name in the header row");
+    cols = { value: names.join(", "), raw: names.map((c) => `"${c.replace(/"/g, '\\"')}"`).join(", "), n: header.n };
+  }
   if (!cols) fail(0, "matrix needs columns: A, B, C");
-  spec.columns = commaList(cols!.raw, cols!.n);
+  // `columns: A | B | C`: split at `|` when every row has that many cells.
+  const piped = hasBar(cols!.raw) ? cols!.raw.replace(/^\|\s*|\s*(?<!\\)\|$/g, "").split(/(?<!\\)\|/).map((c) => c.trim().replace(/^"((?:[^"\\]|\\.)*)"$/, (_, q: string) => unquote(q))) : null;
+  const counts = rest.map(cellCount);
+  if (piped && piped.every((c) => c !== "") && counts.length > 0 && counts.every((c) => c === piped.length)) spec.columns = piped;
+  // The rows' cell counts settle a `columns:` line that reads more than one way (commaListFor).
+  else spec.columns = commaListFor(cols!.raw, cols!.n, () => rest.map(cellCount));
   if (spec.columns.length < 1 || spec.columns.length > MAX_COLUMNS) fail(cols!.n, `1 to ${MAX_COLUMNS} columns`);
   for (const line of rest) {
     const fs = fields(line);
     // Which cells were one quoted string (fields() unquotes them): those stay text, tone word or not.
-    const quoted = line.text.split(/(?<!\\)\|/).map((p) => /^"(?:[^"\\]|\\.)*"$/.test(p.trim()));
+    const quoted = bars(line.text).map((p) => /^"(?:[^"\\]|\\.)*"$/.test(p.trim()));
     if (fs.length !== spec.columns.length + 1) fail(line.n, `${fs.length - 1} cells; expected ${spec.columns.length} (label | ${spec.columns.join(" | ")})`);
     const [label, ...cells] = fs as [string, ...string[]];
     if (!label) fail(line.n, "empty row label");

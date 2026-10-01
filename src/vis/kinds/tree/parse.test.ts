@@ -30,8 +30,12 @@ test("tree: indentation or tree-drawing art, notes and tones", () => {
   const lib = indented.roots[0]!.children[0]!;
   assert.deepEqual(lib.children[0], { key: "0.0.0", name: "vis.ts", note: "parser", tone: "accent", children: [] });
   assert.equal(indented.roots[0]!.children[1]!.tone, "warn");
-  assert.match(err("tree", "a\n  b\n      c").message, /more than one level/);
-  assert.match(err("tree", "a\n  b\n   c").message, /not a multiple of 2/);
+  // Indentation that isn't a multiple of the first indent: each line under the nearest less-indented one.
+  const loose = (body: string) => ok<TreeSpec>("tree", body).roots.map(function shape(n: TreeSpec["roots"][number]): unknown {
+    return n.children.length ? [n.name, n.children.map(shape)] : n.name;
+  });
+  assert.deepEqual(loose("a\n  b\n      c"), [["a", [["b", ["c"]]]]]);
+  assert.deepEqual(loose("a\n  b\n   c\n d"), [["a", [["b", ["c"]], "d"]]]);
 });
 
 test("tree: mark an item by name (first match, depth first) or quoted name", () => {

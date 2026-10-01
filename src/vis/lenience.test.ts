@@ -76,9 +76,10 @@ test("replay: a tree folder's slash outside the quotes (09-29) draws the folders
   ]);
 });
 
-test("replay: a Mermaid sequence message (09-27) quotes the vis message", () => {
-  const e = err("sequence", "title: TCP + TLS handshake\ncaption: Three messages open the socket; TLS rides on top.\nClient -> Server: SYN\nmark 2 \"the server commits resources here\"\n");
-  assert.deepEqual([e.line, e.message], [3, 'write Client -> Server "SYN" (not Mermaid a -> b: msg)']);
+test("replay: a Mermaid sequence message (09-27) reads as the vis message (§chat.markdown/vis-lenience-content)", () => {
+  const r = parseVis("sequence", "title: TCP + TLS handshake\ncaption: Three messages open the socket; TLS rides on top.\nClient -> Server: SYN\nClient -> Server \"ACK\"\nmark 2 \"the server commits resources here\"\n");
+  assert.ok(r.ok && r.warnings.length === 0);
+  assert.deepEqual((r.spec as { steps: unknown[] }).steps[0], { type: "msg", from: "Client", to: "Server", label: "SYN", dashed: false });
 });
 
 test("replay: chart parts over `of:` (09-29, twice) draw without of:, with a warning", () => {

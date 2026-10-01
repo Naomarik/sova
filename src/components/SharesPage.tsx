@@ -203,14 +203,14 @@ export function SharesPage(props: { now: number; titleRef(el: HTMLHeadingElement
                                     class="previews-recipient-off"
                                     onRun={() => void act(() => turnOffPreview(r.id))}
                                   />
-                                  <Visits visits={previewVisits(r.id)} now={props.now} />
+                                  <Visits id={`preview:${r.id}`} visits={previewVisits(r.id)} now={props.now} />
                                 </li>
                               )}
                             </For>
                           </ul>
                         </div>
                       </Show>
-                      <Visits visits={previewVisits(v.id)} now={props.now} />
+                      <Visits id={`preview:${v.id}`} visits={previewVisits(v.id)} now={props.now} />
                     </div>
                     <div class="shares-row-actions">
                       <TwoStep
@@ -289,7 +289,7 @@ function ShareRow(props: { host: string | null; share: SessionShare; now: number
                   {openedLine(r.opened, r.lastAt, (iso) => relativeTime(iso, props.now))}
                   <Show when={r.state === "live"}> · {expiresWord(r.expiresAt, props.now)}</Show>
                 </span>
-                <Visits visits={r.visits ?? []} now={props.now} />
+                <Visits id={`share:${props.host ?? ""}:${r.id}`} visits={r.visits ?? []} now={props.now} />
               </li>
             )}
           </For>
@@ -307,11 +307,23 @@ function ShareRow(props: { host: string | null; share: SessionShare; now: number
   );
 }
 
+/** Which links' Visits are unfolded, by `Visits.id`: every 5-second read rebuilds the rows, and an
+    unfolded list stays unfolded across it. */
+const [openVisits, setOpenVisits] = createSignal<ReadonlySet<string>>(new Set());
+
 /** A link's visits folded under it, newest first; nothing when there are none. */
-function Visits(props: { visits: SessionShareVisit[]; now: number }) {
+function Visits(props: { id: string; visits: SessionShareVisit[]; now: number }) {
+  const toggle = (open: boolean) =>
+    setOpenVisits((s) => {
+      if (s.has(props.id) === open) return s;
+      const next = new Set(s);
+      if (open) next.add(props.id);
+      else next.delete(props.id);
+      return next;
+    });
   return (
     <Show when={props.visits.length > 0}>
-      <details class="disclosure share-visits">
+      <details class="disclosure share-visits" open={openVisits().has(props.id)} onToggle={(e) => toggle(e.currentTarget.open)}>
         <summary class="disclosure-summary">
           <Icon name="chevron-right" small class="icon-twist" />
           <span class="disclosure-label">Visits</span>
@@ -357,7 +369,7 @@ function OrgLinkItem(props: { link: OrgLinkRow; now: number; hostName: string | 
           {l().orgName} · {l().state} · {expiresWord(l().expiresAt, props.now)}
         </p>
         <p class="list-meta">{openedLine(l().opened, l().lastAt, (iso) => relativeTime(iso, props.now))}</p>
-        <Visits visits={l().visits} now={props.now} />
+        <Visits id={`org:${l().orgId}:${l().kind}:${l().sessionId ?? ""}:${l().n ?? ""}`} visits={l().visits} now={props.now} />
       </div>
       <div class="shares-row-actions">
         <TwoStep label="Turn Off Link" confirm={`Turn Off ${l().personName}'s Link?`} onRun={() => props.onRevoke()} />

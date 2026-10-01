@@ -31,6 +31,8 @@ const { createPreviewProxy, VISIT_COOKIE } = await import("./share/preview-proxy
 const { previewLabelOfHost, previewOrigin } = await import("./share/preview-address");
 const store = await import("./preview-links");
 const { sharesOverview } = await import("./shares-overview");
+const ingress = await import("./share/ingress");
+const { setIdentity } = await import("./mesh/localapi");
 
 const ZONE_URL = "http://*.preview.test";
 const CHROME = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0 Safari/537.36";
@@ -211,6 +213,37 @@ test("Send the visitor's address: exactly one X-Forwarded-For (the edge's client
   assert.equal(h["x-forwarded-proto"], "https");
   assert.equal(h["x-forwarded-host"], undefined);
   assert.equal(existsSync(idFile()), false, "logging stays off");
+});
+
+test("through a routed host's ingress: its own preview proxy gets the admitted gateway's client, on HTTP and websockets", async () => {
+  writeVisitorLogging({ logVisitors: true, forwardIp: true });
+  setIdentity({ status: async () => Promise.reject(new Error("no status here")), whois: async () => ({ nodeId: "nGW", name: "gw", tags: [], login: "me" }) });
+  process.env.SOVA_SHARE_PREVIEW_URL = "https://*.preview.test";
+  const ing = ingress.createIngress({ expected: () => ({ nodeId: "nGW" }), addresses: async () => ["127.0.0.1"], port: 0, recheckMs: 60_000 });
+  try {
+    await ing.start();
+    const port = ing.info().port;
+    const a = await app();
+    const { record, label } = store.mintPreview({ orgId: "o", projectId: "p", port: a.port }, new Set());
+    // The gateway's hop: one X-Forwarded-For (the visitor it computed) and the label it matched.
+    const hop = { "x-sova-preview": label, "x-forwarded-for": "203.0.113.7", "x-forwarded-proto": "https" };
+    assert.equal((await get(port, "/dash", { ...NAV, ...hop })).status, 200);
+    assert.equal(a.seen[0]!["x-forwarded-for"], "203.0.113.7");
+    assert.equal(a.seen[0]!["x-sova-preview"], undefined);
+    const ws = new WebSocket(`ws://127.0.0.1:${port}/hmr`, { headers: hop });
+    const h = JSON.parse(await new Promise<string>((r, j) => (ws.once("message", (m) => r(m.toString())), ws.once("error", j)))) as IncomingHttpHeaders;
+    ws.close();
+    assert.equal(h["x-forwarded-for"], "203.0.113.7");
+    // Two values aren't one the gateway set: the key falls back to the socket's address.
+    await get(port, "/other", { ...NAV, ...hop, "x-forwarded-for": "6.6.6.6, 203.0.113.7" });
+    assert.equal(a.seen[1]!["x-forwarded-for"], "127.0.0.1");
+    const ids = lines(idFile());
+    assert.deepEqual([...new Set(ids.map((l) => l.ip))], ["203.0.113.7", "127.0.0.1"]);
+    assert.ok(lines(pvFile()).some((l) => l.previewId === record.id && l.via === "preview"));
+  } finally {
+    ing.close();
+    delete process.env.SOVA_SHARE_PREVIEW_URL;
+  }
 });
 
 test("a sibling's visits are its own; the Shares page joins identity by visit id, and only there", async () => {

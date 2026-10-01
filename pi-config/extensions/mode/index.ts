@@ -75,10 +75,11 @@ import { WorkerProbe } from "./discovery.ts";
 import { MODE_WORKER_DISCOVER_EVENT, MODE_WORKER_EVENT, WORKER_ROLE_DISCOVER_EVENT, WORKER_ROLE_EVENT, type ModeWorkerEvent } from "./events.ts";
 import { isMinorMode, MINOR_MODES, normalizeMinorModes, parseMinorFlag, workerMinorModes, type MinorMode } from "./minor.ts";
 import { MODE_CATEGORY_ID, modeCategoryItems } from "./palette.ts";
-import { applyModeSection, buildModeNote, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
+import { applyModeSection, buildModeNote, buildSpecWriterPrompt, composePrompt, composeWorkerPrompt, DEFAULT_ROUTES, statusLabel } from "./prompt.ts";
 import { backendsOf, describeChoice, routeAll, routeNotice, routeWriter, slotNotice, type Discovery, type ProfileRoute, type SlotRoute } from "./routing.ts";
 import { SPEC_FILE_NAME, SPEC_WRITER_LABEL, specBackends, specKey, specReader } from "./spec.ts";
 import {
+	appendLedger,
 	bashCommands,
 	CensusHook,
 	CHECK_TAG,
@@ -93,6 +94,7 @@ import {
 	isAncestor,
 	freshTally,
 	LANDING_REPROMPTS,
+	LEDGER_ENV,
 	ledgerFiles,
 	type OpLanding,
 	promoteWrites,
@@ -186,6 +188,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	let routes: readonly ProfileRoute[] = DEFAULT_ROUTES;
 	/** Which worker writes the spec now, while spec is on and a writer is set; null otherwise. */
 	let writerRoute: SlotRoute | null = null;
+	let toldWriter: string | undefined;
+	const writerInstruction = () => writerRoute ? buildSpecWriterPrompt(writerRoute) : "Spec writer: no worker is configured; write draft claims and evidence yourself.";
 	/** Last discovery per backend; absent = never probed (its tuples read as unverified). */
 	let discoveries: Partial<Record<DelegateBackend, Discovery>> = {};
 	/** When each backend's discovery landed. */
@@ -314,6 +318,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		head = [...active.minorModes];
 		told = [...head];
 		guides = [];
+		toldWriter = head.includes("spec") ? writerInstruction() : undefined;
 	}
 
 	/** The hidden note for what the model hasn't been told yet, now counted as told; undefined when there is nothing. */
@@ -322,10 +327,14 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		const note = workerRole
 			? buildModeNote(workerMinorModes(told), workerMinorModes(active.minorModes), { head: workerMinorModes(head), guides }, null, true)
 			: buildModeNote(told, active.minorModes, { head, guides }, writerRoute);
-		if (!note) return undefined;
+		const instruction = writerInstruction();
+		const routeNote = !workerRole && active.minorModes.includes("spec") && !head.includes("spec") && !note?.guides.includes("spec") && toldWriter !== instruction
+			? `Spec writer routing now applies instead of any earlier writer routing.\n\n${instruction}` : undefined;
+		if (!note && !routeNote) return undefined;
+		if (active.minorModes.includes("spec")) toldWriter = instruction;
 		told = [...active.minorModes];
-		guides = normalizeMinorModes([...guides, ...note.guides]);
-		return { customType: MODE_NOTE_TYPE, content: note.text, display: false, details: { v: 1, minorModes: [...told], guides: note.guides } };
+		guides = normalizeMinorModes([...guides, ...(note?.guides ?? [])]);
+		return { customType: MODE_NOTE_TYPE, content: [note?.text, routeNote].filter(Boolean).join("\n\n"), display: false, details: { v: 1, minorModes: [...told], guides: note?.guides ?? [] } };
 	}
 
 	/**
@@ -1022,6 +1031,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		cwdTop?: string;
 		/** This session's own git operations (commit, merge, promote, worktree merge): HEAD before and after. */
 		ops: OpLanding[];
+		/** Accepted worker operations and keys stay in this run through every correction. */
+		workerOps: OpLanding[];
+		ledgerKeys: Set<string>;
+		completed: boolean;
 		/** Operations under way, by tool call: each tree's HEAD just before, and the kind. */
 		opening: Map<string, { top: string; before: string; kind: OpLanding["kind"] }[]>;
 		/** Snapshots of worktrees the session started tracking during the run (created or attached mid-run). */
@@ -1045,7 +1058,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	const ledgerSeen = new Set<string>();
 	const ledgerKey = (e: { at: number; top: string; after: string }) => `${e.at}:${e.top}:${e.after}`;
 	function freshSpecRun(): typeof specRun {
-		return { trees: [], branchAt: 0, pending: [], ops: [], opening: new Map(), changed: false, tools: false, merged: false, promoted: false, mergeForeign: [], mergeRanges: 0, taken: new Set() };
+		return { trees: [], branchAt: 0, pending: [], ops: [], workerOps: [], ledgerKeys: new Set(), completed: false, opening: new Map(), changed: false, tools: false, merged: false, promoted: false, mergeForeign: [], mergeRanges: 0, taken: new Set() };
 	}
 	const resetSpecRun = () => {
 		specRun = freshSpecRun();
@@ -1141,6 +1154,8 @@ export default function modeExtension(pi: ExtensionAPI): void {
 				const promoted = o.kind === "promote" && !event.isError;
 				if (at && (at.head !== o.before || promoted)) {
 					specRun.ops.push({ top: o.top, before: o.before, after: at.head, kind: o.kind, actor: "self" });
+					const ledger = process.env[LEDGER_ENV];
+					if (workerRole && ledger) appendLedger(ledger, { v: 1, at: Date.now(), actor: { runtime: "pi", session: ctx.sessionManager.getSessionId?.() }, top: o.top, before: o.before, after: at.head, kind: o.kind });
 					if (event.toolName === "worktree") specRun.mergeRanges++;
 				}
 			}
@@ -1164,6 +1179,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 
 	pi.on("agent_before_settle", async (event, ctx) => {
 		if (!specOn() || process.env.PI_SPEC_CHECK === "0") return;
+		specRun.completed = event.outcome === "completed";
 		if (event.outcome !== "completed") {
 			// An interrupted run's landings are checked with the next run (F11).
 			carriedOps = [...carriedOps, ...specRun.ops];
@@ -1177,7 +1193,6 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			// 1. This session's operations (and an interrupted run's), each judged on its own range.
 			const ops: OpLanding[] = [...carriedOps, ...specRun.ops];
 			const carried = carriedOps.length > 0;
-			carriedOps = [];
 			const tips = (top: string) => specRun.trees.find((tree) => tree.view.top === top)?.defaultTip;
 			await tallyOps(t, ops, tips, SPEC_CORE);
 			if (specRun.merged && !specRun.mergeRanges) tallyForeign(t, specRun.mergeForeign);
@@ -1193,22 +1208,24 @@ export default function modeExtension(pi: ExtensionAPI): void {
 			// landing; what the merges brought in is theirs, the rest waits for the next run.
 			const merges = ops.filter((o) => o.actor === "self" && (o.kind === "merge" || o.kind === "ff"));
 			const pinned = specRun.merged || merges.length > 0;
-			const ledger = ledgerOf(ctx).flatMap((file) => readLedger(file)).sort((a, b) => a.at - b.at).filter((e) => !ledgerSeen.has(ledgerKey(e)));
+			const ledger = ledgerOf(ctx).flatMap((file) => readLedger(file)).sort((a, b) => a.at - b.at).filter((e) => !ledgerSeen.has(ledgerKey(e)) && !specRun.ledgerKeys.has(ledgerKey(e)));
 			if ((relay || t.changed || carried) && ledger.length) {
-				const workerOps: OpLanding[] = [];
 				for (const e of ledger) {
 					if (pinned) {
 						let landedByMerge = false;
 						for (const m of merges) if (!landedByMerge && (await isAncestor(m.top, e.after, m.after))) landedByMerge = true;
-						if (landedByMerge) ledgerSeen.add(ledgerKey(e));
+						if (landedByMerge) specRun.ledgerKeys.add(ledgerKey(e));
 						continue;
 					}
-					ledgerSeen.add(ledgerKey(e));
-					workerOps.push({ top: e.top, before: e.before, after: e.after, kind: e.kind, actor: e.actor?.session ?? e.actor?.runtime ?? "worker" });
+					specRun.ledgerKeys.add(ledgerKey(e));
+					specRun.workerOps.push({ top: e.top, before: e.before, after: e.after, kind: e.kind, actor: e.actor?.session ?? e.actor?.runtime ?? "worker" });
 				}
-				await tallyOps(t, workerOps, tips, SPEC_CORE);
-				for (const op of workerOps) specRun.taken.add(op.top);
 			}
+			await tallyOps(t, specRun.workerOps, tips, SPEC_CORE);
+			for (const op of specRun.workerOps) specRun.taken.add(op.top);
+			const mapped = await specCensus.mapped({ commands: bashCommands(ctx.sessionManager.getBranch()), sessionStart: ctx.sessionManager.getHeader()?.timestamp });
+			for (const id of mapped.ids) t.advisory.add(id);
+			if (mapped.errors.length) { t.exact = false; t.errors.push(...mapped.errors); }
 			// 3. A relay run: each tracked worktree against where the last run left it (workers without a
 			// ledger). Other runs leave tracked worktrees out of the list: a tree that didn't land this turn
 			// is no part of it (F9).
@@ -1262,6 +1279,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// seen for the first time. A tracked worktree a Q&A run left out keeps its baseline, so a worker's
 	// landing there is still the relay run's.
 	pi.on("agent_settled", async () => {
+		if (specRun.completed) {
+			for (const key of specRun.ledgerKeys) ledgerSeen.add(key);
+			carriedOps = [];
+		}
 		if (!specOn()) return;
 		for (const tree of specRun.trees) {
 			if (settledTrees.has(tree.view.top) && !specRun.taken.has(tree.view.top)) continue;
@@ -1332,6 +1353,7 @@ export default function modeExtension(pi: ExtensionAPI): void {
 	// its first request; a continuation of a run (after a compaction or a nudge) keeps the run's mode.
 	pi.on("agent_start", async (_event, ctx) => {
 		if (!running) {
+			recomputeRoutes();
 			running = true;
 			resetSpecRun();
 			if (hasMinor(active, "spec") && remoteTarget === undefined) {
@@ -1354,6 +1376,10 @@ export default function modeExtension(pi: ExtensionAPI): void {
 		lastCtx = ctx;
 		running = false;
 		specCensus.reset();
+		ledgerSeen.clear();
+		carriedOps = [];
+		settledTrees.clear();
+		toldWriter = undefined;
 		restoreActiveState(event?.reason, ctx);
 		restoreAlign(ctx);
 		if (viewerShortcutClash && ctx.hasUI) {

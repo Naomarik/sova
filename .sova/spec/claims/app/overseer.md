@@ -946,13 +946,14 @@ head's height, so a width change is no layout shift.
 
 ## §app.overseer/entry-button — Entry button
 
-- An **eye** icon button (aria-label "Overseer") sits in the session-list search row, beside the
-  filter. It is **removed** while the filter is focused or has a query, and comes back on blur with
-  an empty query. On a phone, where the search opens inline in the list's one toolbar line
-  (§app.session-list/search), it is also removed for as long as that search is open.
-- The collapsed spine carries the same button.
+- A **labelled button** — the eye icon, the word "Overseer", and the unread badge (below) —
+  closes the session list's one toolbar line at its right end, at every width
+  (§app.session-list/search). It leaves the line, with the count, `Select` and the search icon,
+  for as long as the line's search is open, and comes back when the search closes.
+- The collapsed spine carries the same entry as a bare **eye** icon button.
 - **Alt+O** opens the Overseer from anywhere.
-- **Badge:** one count, top-right in the accent pill (`.overseer-entry-count`, "99+" past 99): the
+- **Badge:** one count — the accent pill at the button's top-right corner on both forms
+  (`.overseer-entry-count`, "99+" past 99): the
   Overseer's own assistant messages the user hasn't seen (`OverseerInfo.unread`,
   §app.overseer/seen). It is 0, and the badge gone, while `#/overseer` is the route, and it shows
   whatever the proactivity: these are the Overseer's messages, not an attention count. The eye

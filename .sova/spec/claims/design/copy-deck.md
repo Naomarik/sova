@@ -12,8 +12,8 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Search label (visually hidden) | Search sessions |
 | Search placeholder | Title, folder, or tag (model still matches; the placeholder must fit the 320px field) |
 | Count | `{n} sessions` · filtered: `{visible} of {total} sessions` |
-| Search icon button (folded toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
-| Close Search (folded toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
+| Search icon button (toolbar line, §app.session-list/search) | wordless `search` · `aria-label` "Search sessions" · `title` "Search sessions · /" |
+| Close Search (toolbar line, while the search is open) | wordless `close` · `aria-label` and `title`: Close Search |
 | Row TUI chip (rail) | `TUI`, static, no dot · `aria-label` (replaces the visible word in the accessible name): "Open in a TUI. Pid {pid}, status {status}." · `title`: "Open in a TUI · pid {pid} · {status}" · tap: the `title` as a toast |
 | Row Busy dot (rail) | wordless, pulsing · `aria-label` and `title`: "pi is replying in this session", or while its request waits on a provider's limit the waiting sentence, "Waiting for zai · 5 of 5 in use" (§app.provider-limits/waiting-shown) · tap: the same as a toast |
 | Row worker count (rail) | `{n}` + worker icon · `aria-label` and `title`: "{n} subagents working now" |
@@ -32,7 +32,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Needs you row, line 2 | the digest's sentence for the session's newest act item, verbatim ("2 open questions in al_3 Autonomy settings", "Waiting on a dialog.", "1 subagent ended in an error.") · `title`: every act sentence, newest first |
 | Needs you cut note | Some sessions may not be listed: this list stops at the 30 most urgent items. |
 | Needs you spine door | wordless `alert-circle` over {n} · `aria-label` and `title`: Needs you · {n} sessions (1: "1 session") |
-| Overseer entry button (eye) | wordless · badge: {unread}, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
+| Overseer entry button | `eye` + the word `Overseer` on the toolbar line (§app.session-list/search); wordless `eye` on the spine · badge: {unread} at the button's top-right corner, "99+" past 99 · `aria-label`: Overseer / Overseer · {n} new messages (1: "1 new message") · `title`: the same + " · Alt+O" |
 | Top region head | Live & web · {n} · searching: Live & web · {hits} of {total} |
 | Archive head | Archive · {n} · searching: Archive · {hits} of {total} |
 | Organizations region head (§app.session-list/organizations) | Organizations · {n} · searching: Organizations · {hits} of {total} · `title`: "Hand-offs, project overseers, and the coding sessions they started, by organization and project." |
@@ -508,7 +508,7 @@ times) go in `<code>` or `.text-mono`. `~` stands for `$HOME` in displayed paths
 | Where | Copy |
 |---|---|
 | Tab | Overseer (icon `eye`) · Notifications (icon `bell`), the next tab, holding Phone Notifications |
-| Intro | The Overseer watches every session and acts on them for you. Open it with the eye beside the session search, or Alt+O. |
+| Intro | The Overseer watches every session and acts on them for you. Open it with the Overseer button on the toolbar line (its eye, the word, and its unread count), or Alt+O. |
 | Group order (legends) | Proactivity · Model and thinking · Limits · Quick actions · Standing notes · Advanced (folded) |
 | Model and thinking | labels Model · Thinking · options pi's default · Model default · {ref} (not available) · hint: Applies when the Overseer is idle. It never changes the model new sessions start with. |
 | Limits lede | Before acting, the Overseer checks these. When one is reached it stops and asks you instead. "Per message" counts restart each time you message it. |

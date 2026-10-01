@@ -18,34 +18,23 @@
       <svg class="icon" aria-hidden="true">…panel-collapse…</svg></button>
   </div>
 
-  <div class="sidebar-search" role="search">
-    <label class="visually-hidden" for="session-search">Search sessions</label>
-    <div class="search">
-      <svg class="icon" aria-hidden="true">…search…</svg>
-      <input class="input" id="session-search" type="search" placeholder="Title, folder, or tag"
-             aria-describedby="session-count" autocomplete="off" spellcheck="false">
-      <!-- only when the query is non-empty -->
-      <button class="button button-icon" type="button" aria-label="Clear Search">…close…</button>
-    </div>
-    <div class="spread">
-      <p class="search-count" id="session-count" aria-live="polite">12 of 48 sessions</p>
-    </div>
-  </div>
-
-  <!-- folded (<768): the same region as ONE line (§app.session-list/search). Collapsed: -->
+  <!-- The one toolbar line (§app.session-list/search), the same at every width. At rest: -->
   <div class="sidebar-search" role="search">
     <label class="visually-hidden" for="session-search">Search sessions</label>
     <div class="sidebar-toolbar">
-      <a class="button button-icon overseer-entry button-ghost" href="#/overseer" aria-label="Overseer"
-         title="Overseer · Alt+O">…eye…</a>
       <p class="search-count" id="session-count" aria-live="polite">48 sessions</p>
-      <!-- not in selection mode -->
+      <!-- not in selection mode (§app.session-list/selecting-several-sessions) -->
       <button class="button button-sm button-ghost sidebar-select-start" type="button">…check…Select</button>
       <button class="button button-icon button-ghost" type="button" aria-label="Search sessions"
               title="Search sessions · /">…search…</button>
+      <!-- the Overseer entry button (§app.overseer/entry-button), with its unread badge -->
+      <a class="button button-sm button-ghost overseer-entry" href="#/overseer" aria-label="Overseer"
+         title="Overseer · Alt+O">…eye…Overseer</a>
     </div>
   </div>
-  <!-- open (after the search icon, or while there is a query): -->
+  <!-- search open (the icon pressed, or a query in force): -->
+  <div class="sidebar-search" role="search">
+    <label class="visually-hidden" for="session-search">Search sessions</label>
     <div class="sidebar-toolbar">
       <div class="search">
         <svg class="icon" aria-hidden="true">…search…</svg>
@@ -57,6 +46,7 @@
       <button class="button button-icon" type="button" aria-label="Close Search" title="Close Search">…close…</button>
       <p class="search-count visually-hidden" id="session-count" aria-live="polite">12 of 48 sessions</p>
     </div>
+  </div>
 
   <nav class="sidebar-list pane" aria-label="Session list">
     <!-- First region: Needs you (§app.session-list/needs-you), only while a session is blocked on
@@ -1192,7 +1182,7 @@ the hold lifts the row (§app.session-list/drop-overlay), and the release select
 sidebar in **selection mode**, on a Needs you row as on any other. The selection commits on the
 release, never at the hold, because a lifted row that moves is a drag. Press-and-hold is the accelerator; the **Select** button
 beside the session count is the door, for a keyboard and for anyone who has never held a row in
-their life — on a phone it shares the one toolbar line with the count, before the search icon
+their life — it shares the pane's one toolbar line with the count and the search icon
 (§app.session-list/search), and leaves it while the search is open. There is never only one way in.
 
 **What a press is, and what it stops being.** A press becomes a hold only if it stays within 10px
@@ -1221,8 +1211,12 @@ the list refreshes every few seconds and rebuilds every row, and a selection tha
 clear would be unusable. A poll may do exactly one thing to it: drop a session that is no longer in
 the list.
 
-**The toolbar sits inside the sidebar, above the list**, never floating over the rows it acts on:
-the count, `Cancel`, and the actions.
+**The toolbar sits inside the sidebar, above the list**, never floating over the rows it acts on —
+**one row**: the count ("**{n} selected**", a polite live region) leads at the left and takes the
+leftover width (it may ellipsize; the controls never shrink); the actions are one cluster at the
+right end — **Move** as a word, **Rename** and **Archive** as icons, the normal control gap apart
+— and `Cancel` ends them after a wider step, so it reads as the way out, not a fifth action. The
+rename field, while open, takes its own row below with its hint — that row is not the actions row.
 
 - **Rename** appears at **exactly one** selected session and is gone at two — one field cannot
   mean two titles. It opens an inline field: Enter saves, Escape cancels, and an **empty field
@@ -1236,8 +1230,10 @@ the count, `Cancel`, and the actions.
   (§app.session-list/organizations), and the run's sentence says so: "Archived 2 sessions. 1 went to
   its project's Done list." ({n} > 1: "{n} went to their projects' Done lists.")
 - **Archive** points one way for the whole selection. All archived → `Unarchive`. None archived →
-  `Archive`. **A mix is a disabled control** that says what it found ("2 of these 3 are archived
-  and the rest aren't. Select one kind, or the other."): guessing which half was meant is how a
+  `Archive`. **A mix is a disabled control**; what it found ("2 of these 3 are archived
+  and the rest aren't. Select one kind, or the other.") lives in the control's `title` and
+  **accessible name** — the bar is one row and there is no note line, so the reason can't exist
+  in a tooltip alone. Guessing which half was meant is how a
   bulk gesture loses work. Only eligible sessions are written — the single Archive button's own
   four rules, in one place (`archiveBlockReason`): open in a TUI, not started in Sova, mid-turn,
   or holding working subagents (archiving closes the runtime, so they would stop). The rest are
@@ -1284,7 +1280,7 @@ place for a keyboard to be in this mode — leaves the mode like Escape anywhere
 (`isTextEntry`). Every checkbox is a real
 `<input type="checkbox">` inside its label, named "Select {title}". The toolbar is a `role="group"`
 labelled "Selected sessions", its count is a polite live region, and every disabled control carries
-the reason it is disabled before it is pressed, never after. Every target in the mode is 44px.
+the reason it is disabled in its `title` and accessible name, before it is pressed, never after. Every target in the mode is 44px.
 
 ## §app.session-list/auto-titles — Automatic session titles
 
@@ -1559,7 +1555,7 @@ The rule is one predicate on the client, `isOrdinarySession` in `src/lib/regions
 `isMainThread`, which the Organizations region, the Overseer page and the Agents board still read.
 A server or mesh peer that sends no `org` leaves the session ordinary, exactly as it is listed today.
 
-The search row's count (`{n} sessions`, `{visible} of {total} sessions`) counts every session the pane
+The toolbar's count (`{n} sessions`, `{visible} of {total} sessions`) counts every session the pane
 draws once — org sessions included, the Overseer's never — so the number always matches the list.
 
 ## §app.session-list/organizations — Organizations
@@ -1988,25 +1984,25 @@ record whose transcript is gone.
   (`{visible} of {total} sessions`) covers both regions, and each region head shows its own
   filtered count.
 - **Count.** `.search-count` always shows `{visible} of {total} sessions`, and just
-  `{total} sessions` when the query is empty. It lives beside the filter it answers to,
-  following the filter-bar rule.
-- **Overseer button.** The search row also holds the Overseer entry button (§app.overseer/entry-button).
-  While the filter is focused or has a query, the button is removed (not just hidden) and the
-  field takes the full row; blur with an empty query brings it back.
-- **Folded (<768): one line.** On a phone the search row and the count row are one toolbar line:
-  the Overseer eye, the count, then at the far end `Select` (while not in selection mode) and a
-  wordless **search icon button**. The field is not on screen until that button is pressed; then
-  it opens **in the same line**, and the line holds only the field (with its Clear Search `×`
-  while there is a query) and a **Close Search** button — the eye, the count, `Select` and the
-  search icon are gone from it. The count stays in the DOM, visually hidden, so the field's
-  description and the live count still speak. The line stays open while there is a query, and
-  blur never closes it: tapping a row and coming back finds the field as it was left. **Close
-  Search** clears the query and folds the line back, and focus returns to the search icon.
-  Unfolding the screen drops the open state: the unfolded layout is the two rows above, always.
-- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search — on a phone it opens
-  the folded line first. `Esc` inside search clears the query first; a second press blurs it
-  (unfolded) or closes the folded line, as Close Search does. Clear Search returns focus to the
-  input.
+  `{total} sessions` when the query is empty. It leads the toolbar line, beside the search icon
+  that opens the filter it answers to.
+- **One toolbar line, every width.** Below the brand row the pane carries exactly one toolbar
+  row, unfolded and folded alike — the desktop's separate search row and count row are gone.
+  Left to right it holds: the count, then `Select` (while not in selection mode,
+  §app.session-list/selecting-several-sessions), then a wordless **search icon button**, and at
+  the right end the Overseer entry button (§app.overseer/entry-button), a labelled button with
+  its unread badge. The field is not on screen until that icon is pressed; then it opens **in
+  the same line**, focused at once, and the line holds only the field (with its Clear Search `×`
+  while there is a query) and a **Close Search** button — the count, `Select`, the search icon
+  and the Overseer button are gone from it. The count stays in the DOM, visually hidden, so the
+  field's description and the live count still speak. The line stays open while there is a
+  query, and blur never closes it: leaving the field and coming back finds it as it was left.
+  **Close Search** clears the query and folds the line back, and focus returns to the search
+  icon.
+- **Keys.** `/` anywhere, while focus isn't in a text field, focuses search — on the closed line
+  it opens the line first, at every width (from the spine, the pane expands first,
+  §app.session-list/spine). `Esc` inside search clears the query first; a second press closes
+  the line, as Close Search does. Clear Search returns focus to the input.
 
 ## §app.session-list/states — States
 

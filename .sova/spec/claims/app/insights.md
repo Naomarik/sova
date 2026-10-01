@@ -65,10 +65,12 @@ working worker is never the one it leaves out.
 </div>
 ```
 
-The foot holds **two stacked 44px rows, and both are always present**, so the layout never
+**Unfolded (≥768)** the foot holds **two stacked 44px rows, and both are always present**, so the layout never
 jumps. A third always-present row, **Shares**, sits under them: the whole-row link to `#/shares`
 (§app.session-share/shares-page, `external` icon, text "Shares"), with no button beside it; the
-spine's foot has its Shares icon button after Agents. Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
+spine's foot has its Shares icon button after Agents. **Folded (<768) none of this shows**: a
+phone's foot is one bar that opens a sheet holding these same rows verbatim
+(§app.insights/sidebar-foot-phone). Each row is a `.sidebar-foot-row`: the whole-row link, then one 44px icon button at its
 right end — the **Resource monitor** button on the Usage row (§app.resource-monitor/entry-button),
 the Settings gear on the Agents row (§app/settings-dialog) — with one class between them, so the
 two buttons stack in one column. The link's own bottom border divides the rows, and the row draws
@@ -148,6 +150,35 @@ Usage glance needs the room.
 The rows take no color and no chip, because the pages carry the status. Each truncates with an
 ellipsis.
 
+## §app.insights/sidebar-foot-phone — The foot on a phone: one bar, one sheet
+
+Below 768px the sidebar foot is **one 44px bar** under the list, never the rows: on a phone the
+list needs the room. The bar is one plain button; tapping it opens a **bottom sheet** (the
+folded-width `.modal`, grip included; the scrim and Escape close it, focus is trapped inside and
+returns to the bar) holding the foot's columns **exactly as §app.insights/sidebar-foot draws
+them** — the host filter row (§mesh.remote-sessions/host-filter, only while the mesh is on), the
+Usage glance row with its monitor button, the Agents row with its Settings gear, and the Shares
+link row. Nothing in them is rewritten, only re-homed. At ≥768 the bar never shows and the foot
+is §app.insights/sidebar-foot as drawn there; the spine is untouched by either. The sheet's
+accessible name is "Hosts, usage, agents and shares".
+
+The bar itself reads the same data as the rows, left to right:
+
+- **Mesh.** The connected count `{up}/{total}`, the host filter row's own figures
+  (`connectedCount`) — shown only while the mesh is on, the same rule as the row.
+- **Agents at work.** The `worker` icon and the count (`activeAgentCounts`), no word — the bar is
+  a strip of figures; the accessible name says it. Always shown, `0` included.
+- **Usage caps.** Every provider the glance has a part for — `usageGlance()`'s own parts, in its
+  order (at most the five) — each as `{abbr} {pct}%` ("C 87%  Z 41%  OL 39%  O 27%"), a credit
+  provider as its `{abbr}` and money (`DS $4`). Each part keeps the glance's own emphasis: at 80%
+  or more **semibold ink, never hue alone**, and a stale whole-file reading muted, both as
+  §app.insights/sidebar-foot states. Always shown while any provider reports; never an invented
+  number. The bar is one line and never wraps: what a narrow phone can't hold clips at the edge,
+  exactly like the glance row it stands for.
+
+The bar's accessible name says the facts in words, then what the tap does: "2 of 3 hosts
+connected. 3 subagents working now. Claude 7-day 87%, Z.ai 5-hour 41%. Open hosts, usage, agents
+and shares." (agents: "1 subagent working now" at 1).
 ## §app.insights/aggregate-chips-live-vs-working — Aggregate chips: "Live" vs "Working"
 
 - **Live** is session-level: a TUI has the file open. It keeps the accent everywhere and says

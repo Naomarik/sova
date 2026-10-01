@@ -11160,6 +11160,19 @@
         "pi-config/extensions/claude-code/provider/stream.ts",
         "pi-config/extensions/claude-code/provider/session-bridge.ts"
       ]
+    },
+    "§app.insights/sidebar-foot-phone": {
+      "kind": "behavior",
+      "authority": "accepted",
+      "evidence": "unreviewed",
+      "code": [
+        "src/components/Sidebar.tsx",
+        "src/design/base.css"
+      ],
+      "requires": [
+        "§app.insights/sidebar-foot",
+        "§mesh.remote-sessions/host-filter"
+      ]
     }
   },
   "boundary": {

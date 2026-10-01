@@ -114,6 +114,25 @@
       (is (= 5173 (:port fx)))
       (is (not-any? #(contains? fx %) [:url :label :link]) "an effect carries no link: its result and payload are logged"))))
 
+(deftest project-verbs
+  ;; sova_project_verbs (§app.project-services/callers): stopping is L0, the other verbs L3; the level
+  ;; binds only runs the operator did not start; an archived project stops but starts nothing.
+  (let [x (project)
+        po (fn [level] {:by "overseer" :autonomy level :roster-active true :verb "up"})]
+    (is (nil? (h/refusal x psid :services/down (assoc (po "L0") :verb "down"))) "down from L0")
+    (is (= "This run was not started by the operator, and your autonomy here is L0; sova_project_verbs needs L3. Do not retry it. File what you would do as an idea (sova_idea, tag gap) or raise a sova_card card that says what and why; the operator's click starts a turn in which you may act."
+           (h/refusal x psid :services/run (po "L0"))))
+    (is (re-find #"sova_project_verbs needs L3" (h/refusal x psid :services/run (po "L2"))))
+    (is (nil? (h/refusal x psid :services/run (po "L3"))) "up at L3")
+    (is (nil? (h/refusal x psid :services/run (assoc (po "L0") :attended true))) "the operator's own run, at any level")
+    (is (re-find #"sova_project_verbs needs L3" (h/refusal x psid :services/run (assoc (po "L3") :paused true))) "paused is L0")
+    (is (= "Nothing runs on port 4910." (h/refusal x psid :services/run (assoc (po "L3") :invalid "Nothing runs on port 4910."))) "the host's own check")
+    (let [a (h/send! x psid :project/archive op)]
+      (is (= "Site is archived. Unarchive it first." (h/refusal a psid :services/run (po "L3"))))
+      (is (nil? (h/refusal a psid :services/down (assoc (po "L0") :verb "down"))) "stopping is never refused for an archived project"))
+    (let [y (h/send! x psid :services/run (po "L3"))]
+      (is (empty? (h/outbox y psid)) "the act is the gate only: the host runs the verb"))))
+
 (deftest hourly-committer
   (let [sid "residence/o1"
         x (-> (h/start! (h/new-host) "residence" sid {:org-id "o1" :host-id "h_me" :host-name "me" :mode "create" :commit-every-ms 3600000})

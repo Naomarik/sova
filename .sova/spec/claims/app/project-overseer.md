@@ -171,11 +171,13 @@ user row.
 ## §app.project-overseer/autonomy-levels — What it may do on its own
 
 - Four levels, set per project (`PATCH …/overseer {autonomy}`), default **L1**:
-  **L0 propose** (read, keep notes, file ideas, ask with a confirm card), **L1 gather** (+ start
+  **L0 propose** (read, keep notes, file ideas, ask with a confirm card, stop the project's
+  running instances, §app.project-services/callers), **L1 gather** (+ start
   gathering sessions and offers, run the reconciler, publish preview links of its coding
   sessions' apps, §app.project-overseer/previews), **L2 reconcile** (+ promote drafted
   decisions, approve or decline referrals), **L3 build** (+ start and prompt coding sessions in the
-  project, within its limits).
+  project, within its limits, and create, start, reload, reset, tear down and conform the
+  project's running instances).
 - The level in force is **L0 while the overseer is paused by an attach on this host**
   (§app.organizations/portability), until the operator sets its level here, and **L0 while the
   org's roster has no active person**, whatever the setting; the project page says why ("In force
@@ -317,6 +319,16 @@ user row.
   `sova://s/<id>`, `s/<id>`, or a `[title](sova://s/<id>)` link; anything else is refused with "No
   coding session "{what was given}" in this project: pass an id sova_list_sessions lists."
   People's words are marked as data, never instructions.
+- **Running the project.** `sova_project_verbs` (§app.project-services/callers) runs the verbs on
+  its own project's instances only (one running copy per worktree, §app/project-services). status,
+  logs and doctor are reads, at any level. Every other verb is an event of the project's
+  statechart, tried first: `down` is `services/down` (L0), create, up, apply, reset, teardown and
+  conform are `services/run` (L3, refused while the project is archived). Neither is held nor
+  counted against an allowance (§app.project-overseer/limits): stopping is never delayed, and an
+  instance runs within the project's slots. Above its level the call refuses with the level's
+  sentence and nothing runs; once taken, the verb's own rules still apply: reset and teardown of an
+  instance it did not create, and stopping a shared service, answer `needs-confirm` (the
+  operator's).
 - `sova_promote` asks the reconciler as the overseer (`by: "overseer"`): a decision made outside its
   author's decision area (they don't own that area, §app.requirements/promotion: neither its
   roster owner nor, for an area no one owns, the main stakeholder) is refused for it in every turn,
@@ -344,6 +356,8 @@ user row.
   project's coding sessions only, and an ordinary session whose folder is inside the project root,
   which is the project's own act: L3, counted as a prompt, held like one, kind `prompt`; never a
   gathering session; an optional `mode` and `minor_modes` too). Both take the mode within the operator's ceiling (§app.project-overseer/coding-mode).
+  L3 also: `sova_project_verbs` create, up, apply, reset, teardown and conform (L0: its `down`;
+  status, logs and doctor are reads; below).
   Operator turns only: `sova_todo`.
 - **Every start names its gap.** `sova_start_gathering` and `sova_offer` take a required `gap`: a
   `§gap/…` idea of the project (the session becomes that gap's, §app.project-overseer/gaps), or

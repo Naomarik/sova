@@ -70,6 +70,8 @@
    ["project" ":project/archive"] {:card? true, :people-facing true}
    ["project" ":project/edit"] {}
    ["project" ":project/unarchive"] {}
+   ["project" ":services/down"] {:needs "L0", :tool "sova_project_verbs"}
+   ["project" ":services/run"] {:needs "L3", :tool "sova_project_verbs"}
    ["project" ":session/prompt"] {:code-facing true, :confirm? true, :counts "prompt", :hold true, :needs "L3", :tool "sova_send", :what? true}
    ["project" ":spec/freeze"] {}
    ["project" ":stakeholder/set"] {}

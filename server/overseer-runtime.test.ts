@@ -300,6 +300,8 @@ describe("turns the user did not start are read-only", () => {
     sova_project_decisions: { op: "reconcile", org: "any", project: "any" },
     sova_gather: { op: "start", org: "any", project: "any", to: "operator", why: "Nobody has said this yet.", public_title: "t", question: "q", goal: "g" },
     sova_project_overseer: { op: "settings", org: "any", project: "any", watch: false },
+    // §app.project-services/callers: every verb but the reads acts.
+    sova_project_verbs: { verb: "up", project: agentDir },
   };
   /** Every other op of the organization acts: refused as read-only too, a message to a project overseer included. */
   const ACTING_OPS: [string, Record<string, unknown>][] = [
@@ -317,11 +319,15 @@ describe("turns the user did not start are read-only", () => {
   };
   const READS = ["sova_attention", "sova_list_sessions", "sova_session", "sova_read_session", "sova_list_groups", "sova_list_targets", "sova_list_models", "sova_list_folders", "sova_ideas", "sova_todos", "sova_links", "sova_orgs", "sova_org_person"];
   /** Reads by their parameters: sova_org_project without op reads (with op it acts, above). */
-  const READ_CALLS: [string, Record<string, unknown>][] = [["sova_org_project", { org: "any", project: "any" }]];
+  const READ_CALLS: [string, Record<string, unknown>][] = [
+    ["sova_org_project", { org: "any", project: "any" }],
+    ["sova_project_verbs", { verb: "status", project: agentDir }],
+    ["sova_project_verbs", { verb: "doctor", project: agentDir }],
+  ];
 
   test("every Overseer tool is classified: acting, allowed unattended, or a read", () => {
     const names = overseer.buildOverseerTools().map((t) => t.name).sort();
-    assert.deepEqual(names, [...Object.keys(ACTING), ...Object.keys(ALLOWED), ...READS].sort());
+    assert.deepEqual(names, [...new Set([...Object.keys(ACTING), ...Object.keys(ALLOWED), ...READS, ...READ_CALLS.map(([n]) => n)])].sort());
   });
 
   test("in a wake-up or brief turn every acting tool refuses, and says to ask with sova_card", async () => {

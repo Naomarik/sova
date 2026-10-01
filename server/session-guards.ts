@@ -1,4 +1,5 @@
 import type { SessionSummary, TranscriptItem } from "../shared/protocol";
+import { alignRowText } from "./align-state";
 
 /**
  * Guards every in-process session tool shares: the Overseer's sova_* tools (server/overseer-tools.ts),
@@ -85,6 +86,10 @@ export function renderTranscript(
         break;
       case "report":
         line = `REPORT (${it.report?.source ?? "extension"}): ${it.text ?? ""}`;
+        break;
+      case "align":
+        // One row per call that changed an alignment, or an exemption (§app.overseer/alignment-read).
+        if (it.align) line = `ALIGN: ${alignRowText(it.align)}`;
         break;
       case "info":
         if (it.overseerMark?.kind === "dialog-answer") line = `(${it.text})`;

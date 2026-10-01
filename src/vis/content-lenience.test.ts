@@ -375,3 +375,54 @@ test("wireframe: a leaf block written after a line's texts is another block", ()
   assert.equal(drawn("wireframe", 'button "Terms" link').warnings[0]!.message, 'ignored "link" (after the texts: a tone, on, wide)');
   assert.deepEqual(ok<WireframeSpec>("wireframe", 'tabs "A, B" button "C"').screens[0]!.blocks[0]!.items, ["A", "B", "button", "C"]);
 });
+
+test("flow, state and sequence: an arrow written backwards", () => {
+  const f = ok<FlowSpec>("flow", 'vps "VPS cron" --> main "periodic pull"\napp "Live app" <- vps\nb <-- app');
+  assert.deepEqual(edges(f), [["vps", "main", null, true], ["vps", "app", null, false], ["app", "b", null, true]]);
+  assert.deepEqual([labels(f).app, labels(f).main], ["Live app", "periodic pull"]);
+  const s = ok<SequenceSpec>("sequence", 'actor w "Worker"\nactor q "Queue"\nw <- q "dequeue"\nw <-- q "ack"');
+  assert.deepEqual(s.steps, [{ type: "msg", from: "q", to: "w", label: "dequeue", dashed: false }, { type: "msg", from: "q", to: "w", label: "ack", dashed: true }]);
+});
+
+test("sequence: dashed or a tone after a message's label", () => {
+  const s = ok<SequenceSpec>("sequence", 'actor app "App"\nactor auth "Auth"\napp -> auth "POST /token" dashed\napp -> auth "token request\\n(code + code_verifier)" accent\nauth --> app "tokens" dashed warn\nmark 2 "checks S256"');
+  assert.deepEqual(s.steps.map((m) => (m.type === "msg" ? [m.label, m.dashed] : null)), [["POST /token", true], ["token request\n(code + code_verifier)", false], ["tokens", true]]);
+  assert.deepEqual(s.emphasis, [{ key: "step:1", tone: "accent", note: "checks S256", n: 1 }, { key: "step:2", tone: "warn" }]);
+  // Bare words stay the label; any other word after a string: as before.
+  assert.equal((ok<SequenceSpec>("sequence", "a -> b hello accent").steps[0] as { label: string }).label, "hello accent");
+  assert.match(err("sequence", 'a -> b "x" later').message, /one message per line/);
+});
+
+test("layers and timeline: a row ending in |, a tone field mark", () => {
+  const l = ok<LayersSpec>("layers", "Registers | CPU registers | <1 ns |\nL1 | L1 cache | 1 ns | accent |\nDRAM | DIMMs | 100 ns | mark\nNVMe | SSD | 100 µs | muted\nmark L1 \"fast\"");
+  assert.deepEqual(l.layers.map((x) => [x.label, x.note ?? null, x.tone ?? null]), [["Registers", "<1 ns", null], ["L1", "1 ns", "accent"], ["DRAM", "100 ns", null], ["NVMe", "100 µs", "muted"]]);
+  assert.deepEqual(l.emphasis, [{ key: "1", tone: "accent", note: "fast", n: 1 }, { key: "2", tone: "accent" }]);
+  // A mark line on the same row keeps its own tone and note.
+  assert.deepEqual(ok<LayersSpec>("layers", 'A | x | n | mark\nmark A warn "why"').emphasis, [{ key: "0", tone: "warn", note: "why", n: 1 }]);
+  const t = ok<TimelineSpec>("timeline", "2015 | Intern | first job |\n2023 | Manager | team of 6 | mark");
+  assert.deepEqual([t.items.map((i) => (i.type === "event" ? i.note : null)), t.emphasis], [["first job", "team of 6"], [{ key: "1", tone: "accent" }]]);
+  assert.match(err("layers", "A | x | n | store").message, /"store" is not a tone/);
+});
+
+test("matrix: Mark in capitals", () => {
+  const m = ok<MatrixSpec>("matrix", 'columns: Chrome, Safari\nWebGPU | yes | partial\nMark "WebGPU" "gated"');
+  assert.deepEqual(m.emphasis, [{ key: "0", tone: "accent", note: "gated", n: 1 }]);
+});
+
+test("tree: an extension glued after a quoted name", () => {
+  const t = ok<TreeSpec>("tree", 'components/\n  "Nav Bar".tsx "the menu"\n  Footer.tsx\nmark "Nav Bar".tsx "refactor"');
+  assert.deepEqual([t.roots[0]!.children[0]!.name, t.roots[0]!.children[0]!.note], ["Nav Bar.tsx", "the menu"]);
+  assert.deepEqual(t.emphasis, [{ key: "0.0", tone: "accent", note: "refactor", n: 1 }]);
+});
+
+test("chart: a | glued to a value; more rows that settle the width", () => {
+  const p = ok<ChartSpec>("chart", "type: stacked\nseries: Design, Build, QA\nv1.0 | 5 | 20 | 8\nv2.0 | 10| 35 | 15");
+  assert.deepEqual(rows(p), [["v1.0", 5, 20, 8], ["v2.0", 10, 35, 15]]);
+  const s = ok<ChartSpec>("chart", "type: scatter\niPhone 16 799 22\nGalaxy S24 859 21\nNothing Phone (2a) 349 19 accent");
+  assert.deepEqual(rows(s), [["iPhone 16", 799, 22], ["Galaxy S24", 859, 21], ["Nothing Phone (2a)", 349, 19]]);
+  const d = ok<ChartSpec>("chart", "type: line\nSep 24 120\nSep 25 135\nSep 26 128\nmark Sep 25 \"peak\"");
+  assert.deepEqual([rows(d), d.emphasis?.map((e) => e.key)], [[["Sep 24", 120], ["Sep 25", 135], ["Sep 26", 128]], ["1"]]);
+  // The same labels either way, or no repeated first word: as before.
+  assert.match(err("chart", "Sep 24 120\nSep 24 130").message, /2 values; expected 1/);
+  assert.match(err("chart", "Q1 2024 100\nQ2 2024 130").message, /2 values; expected 1/);
+});

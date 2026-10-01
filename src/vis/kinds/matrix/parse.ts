@@ -30,7 +30,9 @@ export function parseMatrix(body: string): MatrixSpec {
   const ls = lines(body);
   const spec: MatrixSpec = { kind: "matrix", columns: [], rows: [] };
   const { rest: settled, values } = takeSettings(ls, ["columns"], spec, { caseless: true });
-  const { rest: marked, marks } = takeMarks(settled, { indented: true });
+  // `Mark "WebGPU"` on a line with no `|`, which no row can be, is a mark line (§chat.markdown/vis-lenience-content).
+  const lower = (l: Line): Line => (/^mark\s/i.test(l.text) && !hasBar(l.text) ? { ...l, raw: l.raw.replace(/^(\s*)mark/i, "$1mark"), text: `mark${l.text.slice(4)}` } : l);
+  const { rest: marked, marks } = takeMarks(settled.map(lower), { indented: true });
   // Markdown table rows (`| SSO | no | yes |`) lose their outer bars; the `|---|` rule is skipped.
   let rest = marked.flatMap((l) => tableRow(l) ?? []);
   const cellCount = (line: Line) => bars(line.text).length - 1;

@@ -237,16 +237,33 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
       return readRowFromEnd(rest, width, true);
     }
   };
-  // A row that reads as written with exactly `width` values settles the width: then a label may end
-  // in a number (`iPhone 16 799 22` in a scatter), as a missing `series:` can't be what's meant.
-  const widthSettled = rest.some((line) => {
+  // `10|`, `|10`: a `|` glued to a value, apart from it.
+  const unglue = (toks: Token[]): Token[] => toks.flatMap((t) => {
+    const m = t.t === "word" ? /^\|(.+)$|^(.+)\|$/.exec(t.v) : null;
+    const v = m?.[1] ?? m?.[2];
+    return v !== undefined && readValue(v) ? (m![1] !== undefined ? [{ t: "word", v: "|" }, { t: "word", v }] : [{ t: "word", v }, { t: "word", v: "|" }]) as Token[] : [t];
+  });
+  const noBars = (toks: Token[]) => unglue(toks).filter((t) => !(t.t === "word" && t.v === "|"));
+  // A missing `series:` can't be what's meant when a row reads as written with exactly `width`
+  // values, or from its end with a label word that is no value (`Galaxy S24 859 21`), or when two
+  // rows share their first word while the labels read from their ends differ (`Sep 24 120`,
+  // `Sep 25 135`). Then a label may end in a number (`iPhone 16 799 22` in a scatter).
+  const strictOk = (line: Line) => {
     try {
       strict(line, tokenize(line));
       return true;
     } catch {
       return false;
     }
-  });
+  };
+  const failing = rest.filter((line) => !strictOk(line)).map((line) => tokenize(line));
+  const fromEnd = failing.map((toks) => readRowFromEnd(noBars(toks), width, true));
+  const heads = failing.flatMap((toks) => (toks[0]?.t === "word" ? [toks[0].v] : []));
+  const labels = fromEnd.flatMap((r) => (r ? [r.label] : []));
+  const widthSettled =
+    failing.length < rest.length ||
+    failing.some((toks) => readRowFromEnd(noBars(toks), width, false) !== null) ||
+    (new Set(heads).size < heads.length && labels.length === failing.length && new Set(labels).size === labels.length);
   // A tone on a row of several series: that row marked in that tone, after the fence's own marks.
   const toned: { key: string; tone: Tone }[] = [];
   // Each row's values' units, by row index.
@@ -258,7 +275,7 @@ export function parseChart(body: string, defaultType: ChartType = "bar"): ChartS
       row = strict(line, all);
     } catch (e) {
       // Today's reading refuses the row: the one other reading, or today's error.
-      const lenient = e instanceof VisError ? (readRowFromEnd(all.filter((t) => !(t.t === "word" && t.v === "|")), width, widthSettled) ?? labelBeforeBar(line, all)) : null;
+      const lenient = e instanceof VisError ? (readRowFromEnd(noBars(all), width, widthSettled) ?? labelBeforeBar(line, unglue(all))) : null;
       if (!lenient) throw e;
       row = lenient;
     }

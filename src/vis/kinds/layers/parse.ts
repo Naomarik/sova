@@ -1,7 +1,7 @@
 /** `vis layers`: layers top to bottom, `label | item, item | note | tone`. */
 
 import { applyMarks, byIdOrLabel, takeMarks, type MarkTarget } from "../../core/emphasis";
-import { bars, commaList, fail, hasBar, lines, notATone, popTone, swapToneNote, tableRow, takeSettings, text, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
+import { bars, commaList, fail, hasBar, lines, notATone, popTone, rowEnd, swapToneNote, tableRow, takeSettings, text, unquote, type Line, type Tone, type VisBase } from "../../core/grammar";
 
 export interface Layer {
   label: string;
@@ -28,6 +28,8 @@ export function parseLayers(body: string): LayersSpec {
   const spec: LayersSpec = { kind: "layers", layers: [] };
   const { rest: settled } = takeSettings(ls, [], spec, { caseless: true });
   const { rest, marks } = takeMarks(settled, { indented: true });
+  // Rows whose tone field is `mark`, by index: marked after the fence's own marks.
+  const markedRows: number[] = [];
   for (const written of rest) {
     // A Markdown table's row (`| Server | Hono |`); its `|---|` rule is skipped.
     const line = tableRow(written);
@@ -35,6 +37,7 @@ export function parseLayers(body: string): LayersSpec {
     // No `|` but a `: `: `Browser: React, Redux` is `Browser | React, Redux`.
     const colon = hasBar(line.text) ? null : /^([^:]+?):\s+(.+)$/.exec(line.text);
     const fs = colon ? [text(colon[1]!.trim(), line.n), text(colon[2]!.trim(), line.n)] : rawFields(line);
+    if (rowEnd(fs, 4)) markedRows.push(spec.layers.length);
     swapToneNote(fs, 4);
     const tone = popTone(fs);
     const shape = "a layer is: label | item, item, … | note (optional) | tone (optional)";
@@ -61,5 +64,7 @@ export function parseLayers(body: string): LayersSpec {
         ? null
         : one(spec.layers.flatMap((l, i) => (l.items.includes(t.text) ? [i] : [])));
   applyMarks(spec, marks, (t) => byLayer(t) ?? byPart(t), "layer");
+  const extra = markedRows.map(String).filter((key) => !(spec.emphasis ?? []).some((e) => e.key === key));
+  if (extra.length) spec.emphasis = [...(spec.emphasis ?? []), ...extra.map((key) => ({ key, tone: "accent" as const }))];
   return spec;
 }

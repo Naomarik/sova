@@ -1,7 +1,7 @@
 /** `vis timeline`: `when | label | note | tone` rows and `== section ==` lines. */
 
 import { applyMarks, takeMarks } from "../../core/emphasis";
-import { bars, divider, fail, fields, hasBar, isTone, lines, notATone, popTone, swapToneNote, tableRow, takeSettings, text, unquote, type Tone, type VisBase } from "../../core/grammar";
+import { bars, divider, fail, fields, hasBar, isTone, lines, notATone, popTone, rowEnd, swapToneNote, tableRow, takeSettings, text, unquote, type Tone, type VisBase } from "../../core/grammar";
 
 export type TimelineItem = { type: "event"; when: string; label: string; note?: string; tone?: Tone } | { type: "section"; label: string };
 export interface TimelineSpec extends VisBase {
@@ -46,6 +46,8 @@ export function parseTimeline(body: string): TimelineSpec {
   const spec: TimelineSpec = { kind: "timeline", items: [] };
   const { rest: settled } = takeSettings(ls, [], spec, { caseless: true });
   const { rest, marks } = takeMarks(settled, { indented: true });
+  // Rows whose tone field is `mark`, by index: marked after the fence's own marks.
+  const markedRows: number[] = [];
   for (const written of rest) {
     const div = divider(written);
     if (div !== null) {
@@ -57,6 +59,7 @@ export function parseTimeline(body: string): TimelineSpec {
     if (!line) continue;
     // No `|` at all: `2013: React`, `2013 — React — note` (§chat.markdown/vis-lenience-content).
     const fs = hasBar(line.text) ? fields(line) : noBar(line.text, line.n);
+    if (rowEnd(fs, 4)) markedRows.push(spec.items.length);
     swapToneNote(fs, 4);
     const tone = popTone(fs);
     const shape = "a row is: when | label | note (optional) | tone (optional)";
@@ -79,5 +82,7 @@ export function parseTimeline(body: string): TimelineSpec {
     const js = spec.items.flatMap((it, j) => (it.type === "event" && bare(it.label) !== it.label && bare(it.label) === t.text ? [j] : []));
     return js.length === 1 ? String(js[0]) : null;
   }, "row");
+  const extra = markedRows.map(String).filter((key) => !(spec.emphasis ?? []).some((e) => e.key === key));
+  if (extra.length) spec.emphasis = [...(spec.emphasis ?? []), ...extra.map((key) => ({ key, tone: "accent" as const }))];
   return spec;
 }

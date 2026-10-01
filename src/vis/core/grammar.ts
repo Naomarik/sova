@@ -445,6 +445,19 @@ export function swapToneNote(fs: string[], max: number): void {
   if (fs.length === max && isTone(fs[max - 2]!) && !isTone(fs[max - 1]!)) fs.splice(max - 2, 2, fs[max - 1]!, fs[max - 2]!);
 }
 
+/**
+ * The end of a row in a kind whose rows end `| note | tone` (`max` fields with the tone), when it
+ * couldn't be read otherwise (§chat.markdown/vis-lenience-content): empty fields from the tone
+ * field on are dropped (`a | b | c |`), and a tone field `mark` too. True when it was `mark`: the
+ * row is marked.
+ */
+export function rowEnd(fs: string[], max: number): boolean {
+  while (fs.length >= max && fs[fs.length - 1] === "") fs.pop();
+  if (fs.length !== max || fs[max - 1] !== "mark") return false;
+  fs.pop();
+  return true;
+}
+
 export function popTone(fs: string[]): Tone | undefined {
   const last = fs[fs.length - 1];
   if (fs.length > 1 && last !== undefined && isTone(last)) {

@@ -28,6 +28,8 @@ export function parseSequence(body: string): SequenceSpec {
   const { rest: settled } = takeSettings(ls, [], spec, { caseless: true });
   const { rest, marks } = takeMarks(settled, { indented: true });
   const actors = new Map<string, Actor>();
+  // A tone after a message: that message marked in that tone, after the fence's own marks.
+  const toned: { key: string; tone: Tone }[] = [];
   const use = (a: string) => {
     if (!actors.has(a)) actors.set(a, { id: a, label: a });
   };
@@ -138,7 +140,10 @@ export function parseSequence(body: string): SequenceSpec {
       spec.steps.push({ type: "note", over, text: text(q ? unquote(q[1]!) : body, line.n) });
       return true;
     }
-    const toks = tokenize({ ...line, text: t }, { wide: true });
+    let toks = tokenize({ ...line, text: t }, { wide: true });
+    // `w <- q "msg"`: the arrow written backwards is `q -> w "msg"`.
+    const back = toks[1];
+    if (back?.t === "word" && (back.v === "<-" || back.v === "<--") && toks[2]) toks = [toks[2], { t: "arrow", v: back.v === "<-" ? "->" : "-->" }, toks[0]!, ...toks.slice(3)];
     // `u "User"` [tone]: an actor declared without the word.
     if (toks[0]?.t === "word" && ID.test(toks[0].v) && toks[1]?.t === "str" && toks.length <= 3 && (toks.length === 2 || (toks[2]!.t === "word" && isTone(toks[2]!.v)))) {
       const had = actors.get(toks[0].v);
@@ -167,6 +172,16 @@ export function parseSequence(body: string): SequenceSpec {
       after[0] = { t: "word", v: after[0].v.slice(1) };
     }
     if (after.some((x) => x.t === "arrow")) return false;
+    // After the label's strings, `dashed` / `dotted` (the arrow dashed) and a tone (the message marked in it).
+    let dashed = arrow.v === "-->";
+    let tone: Tone | undefined;
+    const strs = after.findIndex((x) => x.t === "str");
+    for (let w = after[after.length - 1]; !colon && strs >= 0 && w?.t === "word" && after.length - 1 > strs; w = after[after.length - 1]) {
+      if (/^(dashed|dotted)$/.test(w.v)) dashed = true;
+      else if (isTone(w.v) && !tone) tone = w.v;
+      else break;
+      after.pop();
+    }
     const words = after.map((x) => x.v).filter((v) => v !== "");
     // After a colon, the rest of the line; else one "label", two (its two lines, as a flow edge's) or bare words.
     const two = !colon && after.length === 2 && after.every((x) => x.t === "str");
@@ -174,7 +189,8 @@ export function parseSequence(body: string): SequenceSpec {
     const label = words.join(two ? "\n" : " ").trim();
     use(from);
     use(to);
-    spec.steps.push({ type: "msg", from, to, ...(label ? { label: text(label, line.n) } : {}), dashed: arrow.v === "-->" });
+    if (tone) toned.push({ key: `step:${spec.steps.length}`, tone });
+    spec.steps.push({ type: "msg", from, to, ...(label ? { label: text(label, line.n) } : {}), dashed });
     return true;
   }
   spec.actors = [...actors.values()];
@@ -193,5 +209,7 @@ export function parseSequence(body: string): SequenceSpec {
     const at = spec.steps.findIndex((s) => s.type === "msg" && s.label === t.text);
     return at < 0 ? null : `step:${at}`;
   }, "actor or message");
+  const extra = toned.filter((t) => !(spec.emphasis ?? []).some((e) => e.key === t.key));
+  if (extra.length) spec.emphasis = [...(spec.emphasis ?? []), ...extra];
   return spec;
 }

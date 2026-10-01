@@ -25,8 +25,8 @@ export function parseTree(body: string): TreeSpec {
   const ls = lines(body);
   const spec: TreeSpec = { kind: "tree", roots: [] };
   const { rest: settled } = takeSettings(ls, [], spec);
-  // `mark "Photos"/`: the folder's slash inside the quotes, as on an item line (§chat.markdown/vis-lenience-content).
-  const slashIn = (t: string) => t.replace(/("(?:[^"\\]|\\.)*)"\/(?=[\s,]|$)/g, '$1/"');
+  // `mark "Photos"/`, `mark "Nav Bar".tsx`: the slash or extension inside the quotes, as on an item line (§chat.markdown/vis-lenience-content).
+  const slashIn = (t: string) => t.replace(/("(?:[^"\\]|\\.)*)"(\/|\.[\p{L}\p{N}_.-]+)(?=[\s,]|$)/gu, '$1$2"');
   const { rest, marks } = takeMarks(settled.map((l) => (/^mark\s/.test(l.raw) ? { ...l, raw: slashIn(l.raw), text: slashIn(l.text) } : l)));
   if (rest.length === 0) fail(0, "nothing to draw");
   if (rest.length > MAX_ROWS) fail(0, `${rest.length} rows; at most ${MAX_ROWS}`);
@@ -115,6 +115,12 @@ function treeNode(s: string, n: number): TreeNode {
       if (!name.endsWith("/")) name += "/";
       restText = restText.slice(1).trim();
     } else if (restText.startsWith("/")) fail(n, `put the / inside the quotes: "${name}/"${restText.slice(1)}`);
+    // `"Nav Bar".tsx`: an extension glued after the quote is part of the name.
+    const ext = /^\.[\p{L}\p{N}_.-]+(?=\s|$)/u.exec(s.slice(end + 1));
+    if (ext) {
+      name += ext[0];
+      restText = restText.slice(ext[0].length).trim();
+    }
   } else {
     const q = s.indexOf('"');
     name = (q < 0 ? s : s.slice(0, q)).trim();

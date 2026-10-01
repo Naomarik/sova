@@ -84,6 +84,16 @@ const dotted = (t: Token[]): Token[] =>
     return [x];
   });
 
+/** Arrows written backwards (`app <- vps`), each read as its forward arrow; the edge it draws turns round. */
+const backward = new WeakSet<Token>();
+const backwards = (t: Token[]): Token[] =>
+  t.map((x) => {
+    if (x.t !== "word" || (x.v !== "<-" && x.v !== "<--")) return x;
+    const a: Token = { t: "arrow", v: x.v === "<-" ? "->" : "-->" };
+    backward.add(a);
+    return a;
+  });
+
 /** Words for a shape (§chat.markdown/vis-lenience-content), read where a shape word goes. */
 const SHAPE_WORDS: Readonly<Record<string, Shape>> = {
   diamond: "decision", rhombus: "decision", condition: "decision", choice: "decision",
@@ -235,7 +245,7 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
     });
     return m ? [m] : [];
   });
-  const toksOf = (line: Line): FTok[] => mermaidTokens(dotted(tokenize(line, { wide: true })));
+  const toksOf = (line: Line): FTok[] => mermaidTokens(backwards(dotted(tokenize(line, { wide: true }))));
   const hasSections = rest.some((l) => divider(l) !== null);
   // A pre-pass for the label style: which ids have a `node` line (per panel), and whether any chain
   // line carries a string right after its source. A line it can't read is left to the main loop.
@@ -506,7 +516,8 @@ function parseFlowLines(ls: Line[], defaultShape: Shape): FlowSpec {
       }
       if (stray && stray.t !== "arrow") fail(line.n, `unexpected ${stray.v} after ${dst}`);
       const a = (arrow as { v: Arrow }).v;
-      spec.edges.push({ from, to, ...(label ? { label } : {}), dashed: dashedWord || a === "-->" || a === "<-->", both: a.startsWith("<") });
+      const turned = backward.has(arrow as Token);
+      spec.edges.push({ from: turned ? to : from, to: turned ? from : to, ...(label ? { label } : {}), dashed: dashedWord || a === "-->" || a === "<-->", both: a.startsWith("<") });
       edgeHome.push(sections.length - 1);
       from = to;
     }

@@ -24,18 +24,32 @@ and a guessed path that finds nothing doesn't mean the tools are missing. The `$
 only after `pi-config/install.sh` has run. In any other project, treat vendored copies as foreign code: read
 them, or compare hashes, before you run them. The draft and review tools run the `sova-spec.mjs`
 beside them, so vendor them together.
+Ship all `core/*.mjs`, including `packet.mjs`; copying only the three entrypoints is insufficient.
 
 ## Reading the docs
 
 ```sh
 node pi-config/extensions/spec/core/sova-spec.mjs check
-node pi-config/extensions/spec/core/sova-spec.mjs scope '§workspace/groups' --budget 4000
-node pi-config/extensions/spec/core/sova-spec.mjs scope '§workspace.groups/decisions'
+node pi-config/extensions/spec/core/sova-spec.mjs packet '§workspace.groups/decisions' --budget 12000
+node pi-config/extensions/spec/core/sova-spec.mjs packet '§workspace.groups/decisions' --cursor '<returned next token>'
+node pi-config/extensions/spec/core/sova-spec.mjs packet '§workspace.groups/decisions' --part frontier
+node pi-config/extensions/spec/core/sova-spec.mjs scope '§workspace/groups' --budget 4000 # deliberate full-graph inspection
 node pi-config/extensions/spec/core/sova-spec.mjs impact '§chat.composer/behavior'
 node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts/NAME/spec   # a draft; local only
 ```
 
-- **`scope §id`** prints the actual text you need before you change that area. A surface gives its
+- **`packet §id`** is the task-reading path: exact text, never summaries, in compact JSON.
+  Each prose fragment carries its declared kind and any authority/evidence labels; absent labels
+  stay absent, and labels are not a tool's verification verdict. Its default 12,000-byte budget includes all UTF-8 output, metadata, cursor and newline;
+  explicit budgets are integers 1,024–32,768. Follow `next` using `--cursor`, same ID/part,
+  to finish relevant contiguous fragments. A passage finishes at `fragment.end == fragment.total`;
+  `fragment.complete` means THIS item is the whole passage, not the final oversized chunk.
+  Inspect `--part frontier` and `--part findings` separately: warnings such as missing code are
+  findings, not dependency-frontier entries. `inventory` and `code` page their own details;
+  counts expose all streams, while each cursor continues only the selected stream. Oversized
+  detail records carry JSON fragments: join them before parsing. Changed captured inputs refuse
+  continuation; restart rather than mixing versions. No cursor state is stored.
+- **`scope §id`** remains the complete-graph API for deliberate machine inspection and review. A surface gives its
   lede and every child. A child gives its parent lede for orientation, and not its siblings. A
   section gives its members. Then everything they `requires`, depth-first. `--budget BYTES` keeps
   whole passages and names the rest as unread.
@@ -47,8 +61,12 @@ node pi-config/extensions/spec/core/sova-spec.mjs check --spec .sova/spec/drafts
   `changed-unclaimed` (exit 1). Changed files outside the boundary are listed, not failed.
 - **`--spec DIR`** reads a draft's graph instead of the current one.
 
-Exit `0` means the declared closure was delivered, never that it is complete. Exit `1` means
-something relevant is unknown, stale or unread. Exit `2` means the input can't be trusted.
+Exit `0` means the declared closure was delivered (`packet`: selected stream done without scope
+warnings), never complete behavioral context or proof of reading earlier pages. Packet `status`
+`more`/`done` describes only selected-stream navigation; `next` is null only when it is done.
+Exit `1` means something relevant is unknown, stale or unread, or the packet stream has more.
+Exit `2` means refused/untrusted, including a packet budget that cannot make progress. Packet errors
+also fit supported budgets and have no stderr side channel. This adds no assessment or release gate.
 
 **Current state, 2026-09-26:** 318 records (228 behaviors). `check` exits 1 with 130
 `requires-uninvestigated` warnings and nothing else. 98 records declare `requires` (27 of them
@@ -63,7 +81,7 @@ lands in (`census.foreign`), with the rule, and on one stderr line. Adding `--re
 (`child-under-foreign`). The notes are reminders to read and judge, not flags. Where you put your
 claim changes nothing: the parent is foreign either way and the flag is owed either way. Any § the task didn't create is foreign, even one your draft edits, and
 even the parent your new claim nests under; editing it in the draft (a row, a sub-claim, a sketch
-line) is itself a flag. Read a foreign § with `scope` and stay silent while its text holds;
+line) is itself a flag. Read a foreign § with `packet` and stay silent while its text holds;
 plumbing (an added request, hook, helper, CSS class or types) never flags. Otherwise flag only a contradiction of its text, or
 something a user would see there that its own text doesn't describe; that your new claim describes
 it, in the parent's document or its own, does not remove the flag. A gap the foreign § already had (a field its prose never named) is not

@@ -122,8 +122,11 @@ writer**).
   and trade-offs), then stops and waits for the user's answers. Questions,
   explicit commands, pointed-at one-liners and confirmations are exempt. Text
   in `minor.ts`; see **Alignments**.
-- **spec** — every behavior change is spec'd: the agent scopes it from the
-  project's `.sova/spec/` documentation, writes a claim for behavior no claim
+- **spec** — every behavior change is spec'd: the agent reads bounded exact
+  task packets from the project's `.sova/spec/` documentation, finishes relevant
+  contiguous fragments and inspects the stated frontier; full `scope`/`impact`
+  remain available for deliberate machine inspection and review. A page's success
+  or `done` status is not complete context or proof of reading. It writes a claim for behavior no claim
   covers in a feature draft before coding, claims only the files the task
   changed, checks with `census --changed` before finishing that none of them is
   left unclaimed, and promotes what it verified (or says why it could not).

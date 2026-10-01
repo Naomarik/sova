@@ -170,6 +170,10 @@ function fake(opts: { attended?: boolean; autonomy?: Autonomy; roster?: Person[]
       if (opts.previewHeld) return { held: { id: "project/org_aaaaaaaa/prj_bbbbbbbb:h7", until: Date.parse("2026-09-30T10:10:00.000Z") } };
       return { preview: { ...PREVIEW, ...("folder" in input.target ? { target: { kind: "static" as const, folder: input.target.folder } } : {}), purpose: input.purpose, sessionId: input.session } };
     },
+    servicesAct: async (verb: string, instance: string | null) => {
+      calls.push(`services:${verb}:${instance ?? ""}`);
+      if (opts.refuse) throw opts.refuse;
+    },
     turnOffPreview: async (id: string) => {
       calls.push(`preview-off:${id}`);
       return { ...PREVIEW, id, state: "off" as const, revokedAt: "2026-09-30T11:00:00.000Z", running: undefined };
@@ -213,6 +217,24 @@ describe("the levels, as the statecharts declare them", () => {
   test("each of master's tools keeps its level: the statecharts' acts declare the same needs", () => {
     for (const [name, need] of Object.entries(MASTER_NEEDS)) assert.equal(TOOL_NEEDS[name], need, name);
     assert.deepEqual([TOOL_NEEDS.sova_pipeline, TOOL_NEEDS.sova_hold, TOOL_NEEDS.sova_correct, TOOL_NEEDS.sova_set_state], ["read", "L0", "L2", "operator"]);
+  });
+
+  test("sova_project_verbs' level is its acts': services/down at L0, services/run at L3, neither held nor counted", () => {
+    const acts = statechartInfo("project")!.acts as Record<string, { needs?: string | null; tool?: string; hold?: boolean; counts?: string | null }>;
+    assert.deepEqual(
+      Object.entries(acts).filter(([, a]) => a.tool === "sova_project_verbs").map(([id, a]) => [id, a.needs, !!a.hold, a.counts ?? null]).sort(),
+      [["services/down", "L0", false, null], ["services/run", "L3", false, null]],
+    );
+    assert.equal(TOOL_NEEDS.sova_project_verbs, "L3", "its highest act");
+    assert.equal(COUNTS.sova_project_verbs, undefined, "it draws on no allowance");
+  });
+
+  test("sova_project_verbs: the engine's own refusals come before the act, and a read is no act", async () => {
+    const { run, calls } = fake();
+    const up = (await run("sova_project_verbs", { verb: "up" })) as { details: { result: { error?: { code: string } } } };
+    assert.equal(up.details.result.error?.code, "not-found", "the fake's root is no project");
+    await run("sova_project_verbs", { verb: "status" });
+    assert.deepEqual(calls.filter((c) => c.startsWith("services:")), []);
   });
 
   test("the operator's own to-do list: only in their turn; every other tool is the statecharts' to refuse", () => {

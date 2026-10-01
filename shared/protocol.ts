@@ -6,6 +6,7 @@
 import type { WakeInfo } from "./wake";
 import type { BatonMark, BatonSummaryField } from "./baton";
 import type { LinkMessageInfo } from "./link-message";
+import type { TopicBatchInfo } from "./topic-message";
 import type { LinkedAgentInfo } from "./mesh-links";
 import type { Permit } from "./overseer-grants";
 import type { OverseerCard } from "./overseer-card";
@@ -191,6 +192,10 @@ export type EntryKind =
            // role:"user" message tagged "[link_msg lk_… lm_…] …" (shared/link-message.ts). Renders
            // NOTHING in the thread and is never counted among hidden rows; a turn start, never an
            // input (inputs count, Timeline, rewind targets). See `link`.
+  | "topic" // a batch of notes pushed to a topic this session opened (§chat.topics/row): a real
+            // role:"user" message tagged "[topic <name> tb_…, n notes] …" (shared/topic-message.ts).
+            // Renders as a compact Queue card, never a "You" bubble; a turn start, never an input.
+            // See `topic`.
   | "assistant-text"
   | "thinking"
   | "tool-call"
@@ -227,6 +232,9 @@ export interface TranscriptItem {
   /** kind "link" only: the parsed tag (shared/link-message.ts `parseLinkMessage`). `text` holds the
       whole message exactly as delivered. */
   link?: LinkMessageInfo;
+  /** kind "topic" only: the parsed batch (shared/topic-message.ts `parseTopicBatch`). `text` holds
+      the whole message exactly as delivered. */
+  topic?: TopicBatchInfo;
   /** "provider/model" that produced this row: the assistant message's own provider/model,
       else the nearest prior model_change on the branch. Set on assistant-text, thinking and
       tool-call rows; absent on other kinds and entries with neither (renderers fall back to
@@ -1561,8 +1569,10 @@ export type RewindRefusal = "streaming" | "compacting" | "busy" | "recent" | "no
     the branch as if the user had typed it, complete with its "[wake_nudge …] Scheduled wakeup
     fired" preamble and a stale elapsed time. There is no honest thing to re-send, so nothing is.
     "link" = the message that started the turn is a LINK MESSAGE (§mesh.links/transcript): a
-    partner's words delivered by its host, not the user's; the same reasoning refuses it. */
-export type RegenerateRefusal = RewindRefusal | "wake" | "link";
+    partner's words delivered by its host, not the user's; the same reasoning refuses it.
+    "topic" = the message that started the turn is a TOPIC BATCH (§chat.topics/row): notes other
+    sessions pushed, delivered by the server; the same reasoning refuses it. */
+export type RegenerateRefusal = RewindRefusal | "wake" | "link" | "topic";
 
 /** Why a compaction was refused or did not happen; nothing was written in any of these.
     streaming / compacting / queued / busy / recent are RewindRefusal's conditions, for the same

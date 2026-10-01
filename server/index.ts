@@ -36,7 +36,9 @@ import { mountOutreachRelay } from "./outreach/relay";
 import { mountOutreach } from "./outreach/routes";
 import { startShareRuntime, stopShareRuntime } from "./share/runtime";
 import { flushOpenVisits } from "./visits";
-import { disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, warmClaudeCodeProvider } from "./chat-manager";
+import { acquireChat, disposeAllChats, getModelRuntime, heldChat, heldChats, ModeRefusedError, onAgentSettled, onReceiverIdle, warmClaudeCodeProvider } from "./chat-manager";
+import { startTopicDelivery } from "./topic-delivery";
+import { projectOverseerOfPath } from "./project-overseer-store";
 import { canonicalPath, LIVE_DIR, resolveSessionPath, SESSIONS_DIR } from "./paths";
 import { stateRoot } from "./state-root";
 import { claudeCodeModelCount, listModels, listRegistryModels, resolveContext } from "./models";
@@ -1331,6 +1333,18 @@ const linkedAgents = async (id: string, path: string) => meshLinks.linkedAgents(
 setLinksSource(linkedAgents);
 setInsightLinks(linkedAgents);
 onSessionArchived((id) => void meshLinks.endFor(id));
+// Topic queues (§chat.topics/delivery): batches to a topic's receiver when it is idle or settles.
+startTopicDelivery({
+  async summary(path) {
+    const s = await getSessionSummary(path);
+    if (!s) return null;
+    const special = !!(s.overseer || s.baton || s.org || s.workerSession || projectOverseerOfPath(path));
+    return { archived: s.archived, live: s.live, special };
+  },
+  acquire: (path) => acquireChat(path),
+  onIdle: onReceiverIdle,
+  onArchived: onSessionArchived,
+});
 // Public links (shared/public-links.ts): Settings → Public links under /api/public-links (main
 // listener only), and a gateway's peer routes under /api/peer/share-gateway/*.
 mountPublicLinks(app);

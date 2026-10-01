@@ -1,6 +1,7 @@
 import { open, stat } from "node:fs/promises";
 import type { DecisionSettings, SessionSummary, TeamDuty, WorkerInfo } from "../shared/protocol";
 import { isLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import type { WorkerTranscriptAdapters, WorkerTranscriptItem, WorkerTranscriptRef, WorkerTranscriptSummary } from "../pi-config/extensions/subagents/worker-transcript.ts";
 import { DecisionError, type DecisionProvider, type DecisionResult, type JsonObject, type Question } from "./decide";
@@ -415,7 +416,7 @@ export const ASKS_USER: Question = {
  */
 export function turnQuestions(f: TurnFacts, ctx: { openQuestions?: number } = {}): Record<string, Question> {
   const long = (f.durationMs >= LONG_TURN_MS || f.tools.length >= LONG_TURN_TOOLS) && !mostlyWaits(f.tools);
-  const asks = !(ctx.openQuestions && ctx.openQuestions > 0) && !isLinkMessage(f.lastUser) && looksLikeAsk(f.assistantLast);
+  const asks = !(ctx.openQuestions && ctx.openQuestions > 0) && !isLinkMessage(f.lastUser) && !isTopicBatch(f.lastUser) && looksLikeAsk(f.assistantLast);
   return { ...(long ? { stuck: STUCK } : {}), ...(asks ? { asks_user: ASKS_USER } : {}) };
 }
 

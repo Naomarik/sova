@@ -9,6 +9,7 @@ import { redactingTool, serverRedactor } from "./overseer-redact";
 import { auditedAct, cut, hiddenFromProfiles, Refusal, readBounds, renderTranscript, sessionRef, text, writableRefusal, type AuditRecord } from "./session-guards";
 import { stateRoot } from "./state-root";
 import { UserTurns, type TurnEvent, userMessageText } from "./overseer-tools";
+import { queueOpenTool } from "./topics";
 
 /**
  * A profile session's powers (§chat.profiles/session-tools, /limits): the `sova-session-powers`
@@ -218,6 +219,8 @@ export interface PowersContext {
   profile: Profile;
   run: RunState;
   limits: SessionLimits;
+  /** This session's file, for `queue_open`'s receiver record (§chat.topics/open). */
+  path?: () => string;
 }
 
 type Tool = ToolDefinition<any, any>;
@@ -432,6 +435,11 @@ export function sessionPowersTools(ctx: PowersContext, actionsFile?: () => strin
       )(toolCallId, p, signal, onUpdate, extCtx);
     },
   });
+  // A return address other sessions answer on (§chat.topics/open): only where session_send is.
+  if (ctx.path) {
+    const path = ctx.path;
+    tools.push(queueOpenTool({ sessionId: ctx.sessionId, path, project: () => need().projectRoot?.(ctx.cwd) ?? Promise.resolve(null) }));
+  }
   return tools;
 }
 

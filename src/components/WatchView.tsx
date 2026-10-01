@@ -127,7 +127,7 @@ export function WatchView(props: {
    * reason rather than disappearing — a control that vanishes in one view and exists in another
    * teaches nothing about why.
    */
-  const watchState = (wake = false, link = false): ActionState => ({
+  const watchState = (wake = false, link = false, topic = false): ActionState => ({
     chat: false,
     live: props.streaming,
     streaming: false,
@@ -136,6 +136,7 @@ export function WatchView(props: {
     paused: null,
     wake,
     link,
+    topic,
   });
 
   const watchActions: MessageActionsProvider = {
@@ -149,7 +150,7 @@ export function WatchView(props: {
             return { kind, reason: id ? null : SHARE_WAIT_REASON, run: () => void (id && (location.hash = shareHref(id, { host: hostOf(props.path), from: strip.entryId }))) };
           }
           default:
-            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink)), run: () => {} };
+            return { kind, reason: actionReason(kind, watchState(!!strip.fromWake, !!strip.fromLink, !!strip.fromTopic)), run: () => {} };
         }
       });
     },

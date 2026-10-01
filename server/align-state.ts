@@ -3,6 +3,7 @@ import type { SessionAlign } from "../shared/protocol";
 import { alignResultOf, foldAlignments, openDocsOf, openQuestionsOf, type AlignDocument } from "../pi-config/extensions/mode/align.ts";
 import { restoreActive } from "../pi-config/extensions/mode/state.ts";
 import { isLinkMessage } from "../shared/link-message";
+import { isTopicBatch } from "../shared/topic-message";
 import { parseWakeNudge } from "../shared/wake";
 import { activeBranch, type Entry } from "./transcript";
 
@@ -133,7 +134,7 @@ function compactLine(line: string): ScanEntry | null {
     if (m.role === "toolResult" && m.toolName === "align") e.message = { role: "toolResult", toolName: "align", isError: m.isError === true, details: m.details };
     if (m.role === "user") {
       const text = typeof m.content === "string" ? m.content : Array.isArray(m.content) ? m.content.map((b) => (isRecord(b) && typeof b.text === "string" ? b.text : "")).join("\n") : "";
-      if (parseWakeNudge(text) === null && !isLinkMessage(text)) e.userPrompt = true;
+      if (parseWakeNudge(text) === null && !isLinkMessage(text) && !isTopicBatch(text)) e.userPrompt = true;
     }
   }
   return e;

@@ -342,6 +342,11 @@ i.icon {
 .input:focus-visible { outline: var(--focus-ring); outline-offset: var(--focus-offset); border-color: var(--color-accent); }
 .input:disabled      { opacity: .42; cursor: not-allowed; }
 .input[aria-invalid="true"] { border-color: var(--status-error); }
+/* A field's placeholder, and a long typed value with it, ends in an ellipsis rather than a hard
+   cut mid-glyph (§design.ground-rules/text-fit). The browser does this itself for an `<input>`; a
+   `<textarea>` would scroll instead, which is why the composer fits its own string
+   (§chat.composer/behavior). */
+input.input { text-overflow: ellipsis; }
 
 .textarea {
   min-height: calc(var(--control-md) * 2);
@@ -3081,11 +3086,18 @@ a.group-option { color: inherit; text-decoration: none; }
   overflow-y: auto;
   field-sizing: content;          /* native auto-grow where supported; JS fallback per the composer spec */
 }
-/* Empty, the box is one line: a placeholder longer than the box ("Steer the current turn…" beside
-   Steer and Stop) is cut, not wrapped, so a turn starting doesn't make the composer taller, and
-   clipped, never scrolled sideways. */
+/* Empty, the box is one line: a placeholder wider than the box steps down and drops its key hint
+   before it is cut (§chat.composer/behavior), so a turn starting never makes the composer taller
+   and no width leaves a half-said word. It is one line and clipped, never scrolled sideways. */
 .composer-input:placeholder-shown { field-sizing: fixed; overflow: hidden; }
 .composer-input::placeholder { white-space: nowrap; }
+/* The fitted placeholder's one step down. The line height stays the body one, so the smaller text
+   keeps the 44px box's centring instead of riding up with a smaller line box — the unitless
+   `--lh-body` it would otherwise inherit shrinks with the font. */
+.composer-input[data-ph-size="caption"]::placeholder {
+  font-size: var(--fs-caption);
+  line-height: calc(var(--fs-body) * var(--lh-body));
+}
 .composer-actions { display: flex; align-items: flex-end; gap: var(--space-2); flex: none; }
 .composer-foot {
   display: flex;

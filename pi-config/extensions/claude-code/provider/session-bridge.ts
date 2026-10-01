@@ -38,7 +38,7 @@ import {
 import type { ImageContent, Message, TextContent, Tool } from "@earendil-works/pi-ai";
 import { PiMcpHost, type HeldMcpCall, type McpContent, type McpToolResult } from "./mcp-host.ts";
 import {
-	parseClaudeFrame, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
+	parseClaudeFrame, parseToolInput, MCP_SERVER_NAME, MCP_TOOL_PREFIX,
 	type ClaudeFrame, type ClaudeSessionBridge, type ClaudeTurnRequest,
 } from "./types.ts";
 
@@ -755,7 +755,15 @@ interface PendingToolUse {
 	id: string;
 	/** Bare pi tool name, as `tools/call` will name it. */
 	name: string;
+	/** The arguments: pi's parse of the streamed bytes once they are judged valid. */
 	input: unknown;
+	/**
+	 * The CLI's own copy of the arguments, from its assistant frame. A `tools/call`
+	 * carries the CLI's object, so the exact match also accepts this form, in case
+	 * the CLI ever normalises what it parsed. Only a block judged valid keeps a slot,
+	 * so this never makes a rejected call matchable.
+	 */
+	announced?: unknown;
 	/** The CLI's `tools/call` for this block, once dispatched. */
 	held?: HeldMcpCall;
 	/** pi's answer, when it came before the CLI dispatched the call. */
@@ -781,10 +789,43 @@ interface TurnState {
 	surfaced: boolean;
 	/** Logins this turn already switched away from. */
 	failovers: number;
+	/** The current CLI message's tool calls whose arguments parsed, and the first one rejected. */
+	accepted: number;
+	rejected?: string;
+	/** CLI messages in a row, in this pi message, whose tool calls were all rejected. */
+	rejectedRun: number;
+}
+
+/**
+ * CLI messages in a row whose tool calls were all rejected (invalid JSON arguments)
+ * after which one pi message gives up: a model repeating the mistake would
+ * otherwise spend quota on retries nobody sees.
+ */
+export const MAX_REJECTED_RUN = 3;
+
+/** A held `tools/call` for a tool whose call pi rejected: it must never run. */
+const REJECTED_CALL_REASON = "arguments were not valid JSON; nothing ran";
+
+/** The pi tool name a `tools/call` carries, from the CLI's `mcp__sova__<name>`. */
+function bareToolName(name: string): string {
+	return name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;
+}
+
+/** JSON with every object's keys sorted: two parses of one value compare equal whatever their key order. */
+function canonicalJson(value: unknown): string {
+	return JSON.stringify(value, (_key, v: unknown) =>
+		v !== null && typeof v === "object" && !Array.isArray(v)
+			? Object.fromEntries(Object.keys(v as Record<string, unknown>).sort().map((k) => [k, (v as Record<string, unknown>)[k]]))
+			: v);
 }
 
 function deepEqual(a: unknown, b: unknown): boolean {
-	try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+	try { return canonicalJson(a) === canonicalJson(b); } catch { return false; }
+}
+
+/** A held call's arguments are exactly this block's, in pi's parse or the CLI's announced copy. */
+function sameArguments(slot: PendingToolUse, args: unknown): boolean {
+	return deepEqual(slot.input, args) || (slot.announced !== undefined && deepEqual(slot.announced, args));
 }
 
 class CliSession {
@@ -819,6 +860,14 @@ class CliSession {
 	private calls: PendingToolUse[] = [];
 	/** Held calls whose tool_use block has not been seen yet (dispatch can race). */
 	private unmatched: HeldMcpCall[] = [];
+	/** The current CLI message's open tool_use blocks by content index, with their input_json so far. */
+	private openInputs = new Map<number, { id: string; name: string; json: string; input: unknown }>();
+	/**
+	 * The current CLI message's tool calls whose arguments were not valid JSON
+	 * (parseToolInput, the rule stream.ts applies too). The CLI answers each
+	 * itself and calls the model again; pi never sees nor runs them.
+	 */
+	private rejected: { id: string; name: string }[] = [];
 	/** Bounds pi results waiting on a `tools/call` the CLI has yet to send. */
 	private dispatchTimer?: ReturnType<typeof setTimeout>;
 	private heldTimer?: ReturnType<typeof setTimeout>;
@@ -916,6 +965,7 @@ class CliSession {
 		const turn: TurnState = {
 			queue, messageComplete: false, wantsTools: false, streaming: false, signal,
 			request, first: !!(plan.restart && plan.first), surfaced: false, failovers: 0,
+			accepted: 0, rejectedRun: 0,
 		};
 		this.turn = turn;
 		this.detector.reset();
@@ -1339,6 +1389,27 @@ class CliSession {
 			return;
 		}
 		this.checkBoundary();
+		if (turn.rejectedRun >= MAX_REJECTED_RUN) this.giveUpRejected(turn);
+	}
+
+	/**
+	 * The model sent only invalid tool arguments MAX_REJECTED_RUN messages in a
+	 * row: stop the CLI turn, as an abort does, and end the pi message with an
+	 * error. The child's conversation now holds attempts pi never kept, so the
+	 * next turn restarts it with folded history.
+	 */
+	private giveUpRejected(turn: TurnState): void {
+		if (turn.queue.isEnded()) return;
+		const message = `Claude sent invalid JSON arguments for tool "${turn.rejected ?? "unknown"}" ${MAX_REJECTED_RUN} times in a row`;
+		this.markDesynced(message);
+		turn.queue.push({ type: "result", outcome: "error", message });
+		turn.queue.end();
+		const transport = this.transport;
+		if (!transport || transport.isClosed()) return;
+		this.rejectHeld(message);
+		// What the CLI says until its aborted result is the interrupt winding down.
+		this.abortPending = true;
+		void transport.interrupt().catch(() => { /* the restart next turn replaces the child anyway */ });
 	}
 
 	// -- logins -------------------------------------------------------------
@@ -1519,12 +1590,25 @@ class CliSession {
 					this.markDesynced("Claude moved on without dispatching a tool call pi answered");
 					this.rejectHeld("Claude started a new message");
 				}
+				// The CLI answered the last message's rejected calls itself; this is
+				// its retry (or whatever the model said instead).
+				this.openInputs.clear(); this.rejected = [];
+				turn.accepted = 0; turn.rejected = undefined;
 				turn.messageComplete = false; turn.wantsTools = false; turn.streaming = true;
 			} else if (event.type === "content_block_start" && event.block.kind === "tool_use") {
+				this.openInputs.set(event.index, { id: event.block.id, name: bareToolName(event.block.name), json: "", input: event.block.input });
 				this.addPending(turn, event.block.id, event.block.name, event.block.input);
+			} else if (event.type === "content_block_delta" && event.delta.kind === "input_json") {
+				const open = this.openInputs.get(event.index);
+				if (open) open.json += event.delta.partialJson;
 			} else if (event.type === "content_block_stop") {
-				// The block's arguments are complete now; re-try any held call that
-				// arrived before we had the block to match it against.
+				// The block's arguments are complete now: judge them, then re-try any
+				// held call that arrived before we had the block to match it against.
+				const open = this.openInputs.get(event.index);
+				if (open) {
+					this.openInputs.delete(event.index);
+					this.judgeInput(turn, open);
+				}
 				this.rematch();
 			} else if (event.type === "message_delta") {
 				// Not the end: ending here would leave the message_stop that
@@ -1532,17 +1616,20 @@ class CliSession {
 				if (event.stopReason === "tool_use") turn.wantsTools = true;
 			} else if (event.type === "message_stop") {
 				turn.messageComplete = true; turn.streaming = false;
+				turn.rejectedRun = turn.rejected !== undefined && turn.accepted === 0 ? turn.rejectedRun + 1 : 0;
 			}
 			return;
 		}
 		if (frame.type === "assistant") {
 			for (const block of frame.blocks) {
 				if (block.kind !== "tool_use") continue;
+				// A rejected call stays rejected, whatever a later frame says of it.
+				if (this.rejected.some((r) => r.id === block.id)) continue;
 				this.addPending(turn, block.id, block.name, block.input);
 				// A streamed tool_use starts with empty input; this frame carries
 				// the final arguments, which the tools/call matching compares.
 				const slot = this.calls.find((call) => call.id === block.id);
-				if (slot) slot.input = block.input;
+				if (slot) { slot.input = block.input; slot.announced = block.input; }
 			}
 			// Under --include-partial-messages the CLI sends one assistant frame
 			// PER CONTENT BLOCK, just before that block's content_block_stop
@@ -1561,22 +1648,60 @@ class CliSession {
 
 	private addPending(turn: TurnState, id: string, name: string, input: unknown): void {
 		if (this.calls.some((p) => p.id === id)) return;
-		const bare = name.startsWith(MCP_TOOL_PREFIX) ? name.slice(MCP_TOOL_PREFIX.length) : name;
-		this.calls.push({ id, name: bare, input });
+		this.calls.push({ id, name: bareToolName(name), input });
 		turn.wantsTools = true;
 		this.rematch();
+	}
+
+	/**
+	 * A tool_use block's arguments are complete. Valid ones become what the
+	 * exact-arguments match compares a `tools/call` against. An invalid one leaves
+	 * pi's calls: stream.ts drops it from the pi message by the same rule, so
+	 * pi never answers it, and a message left with no call does not end the pi
+	 * message (checkBoundary), which stays open for the CLI's retry.
+	 */
+	private judgeInput(turn: TurnState, open: { id: string; name: string; json: string; input: unknown }): void {
+		// The block-start input untouched, as stream.ts judges it.
+		const verdict = parseToolInput(open.json, open.input);
+		const slot = this.calls.find((call) => call.id === open.id);
+		if (verdict.ok) {
+			turn.accepted++;
+			// pi's own parse of the bytes; the CLI's announced copy (assistant frame) stays as `announced`.
+			if (slot) slot.input = verdict.args;
+			return;
+		}
+		this.calls = this.calls.filter((call) => call !== slot);
+		// A call matched to it by name alone was some other block's: match it again.
+		if (slot?.held) this.unmatched.push(slot.held);
+		this.rejected.push({ id: open.id, name: open.name });
+		turn.rejected ??= open.name;
+		// Never the arguments themselves: their length and where parsing failed.
+		(this.options.onDebug ?? debugLog)({
+			event: "tool-input-rejected", session: this.piSessionId, tool: open.name, id: open.id, bytes: verdict.bytes, error: verdict.error,
+			...(verdict.position === undefined ? {} : { position: verdict.position }),
+		});
 	}
 
 	/**
 	 * A held `tools/call` names its tool but carries no `tool_use` id, so it is
 	 * matched against the announced blocks: same name, and same arguments when
 	 * that distinguishes two calls of one tool. Arrival order breaks the tie.
+	 * While a call of that tool was rejected, only an exact match counts: a call
+	 * matching no valid block is failed, so a rejected call never runs under a
+	 * valid one's id.
 	 */
 	private rematch(): void {
 		if (!this.unmatched.length) return;
 		const rest: HeldMcpCall[] = [];
 		for (const call of this.unmatched) {
-			const exact = this.calls.find((p) => !p.held && p.name === call.name && deepEqual(p.input, call.arguments));
+			const exact = this.calls.find((p) => !p.held && p.name === call.name && sameArguments(p, call.arguments));
+			if (!exact && this.rejected.some((r) => r.name === call.name)) {
+				// A block of that tool still streaming may yet match it exactly.
+				if ([...this.openInputs.values()].some((open) => open.name === call.name)) { rest.push(call); continue; }
+				(this.options.onDebug ?? debugLog)({ event: "rejected-call-failed", session: this.piSessionId, tool: call.name });
+				this.host?.fail(call, REJECTED_CALL_REASON);
+				continue;
+			}
 			const slot = exact ?? this.calls.find((p) => !p.held && p.name === call.name);
 			if (!slot) { rest.push(call); continue; }
 			slot.held = call;
@@ -1668,7 +1793,7 @@ class CliSession {
 
 	private rejectHeld(reason: string, host = this.host): void {
 		const calls = [...this.calls.flatMap((slot) => slot.held ? [slot.held] : []), ...this.unmatched];
-		this.calls = []; this.unmatched = [];
+		this.calls = []; this.unmatched = []; this.rejected = []; this.openInputs.clear();
 		if (this.dispatchTimer) { clearTimeout(this.dispatchTimer); this.dispatchTimer = undefined; }
 		for (const call of calls) host?.fail(call, `Tool call not completed: ${reason}`);
 	}

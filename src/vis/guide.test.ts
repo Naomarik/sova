@@ -82,17 +82,20 @@ test("the guide's flow and state examples mean what the text says", () => {
 });
 
 // The rules' "Not vis" pairs: the Mermaid side fails with a hint, the vis side draws what it says.
-test("the guide's Not vis pairs: the wrong side is refused with a hint, the right side means it", () => {
+test("the guide's Not vis pairs: the right side means it, and the wrong side (read anyway) means the same", () => {
   assert.match(GUIDE, /`A->>B: msg` is `a -> b "msg"`; `A\[Label\] --> B` is `a "Label" --> b`/);
-  const seq = parseVis("sequence", 'A->>B: msg');
-  assert.ok(!seq.ok && seq.message === 'write A -> B "msg" (not Mermaid a ->> b: msg)');
   const msg = parseVis("sequence", 'a -> b "msg"');
   assert.ok(msg.ok);
   assert.deepEqual((msg.spec as { steps: unknown[] }).steps, [{ type: "msg", from: "a", to: "b", label: "msg", dashed: false }]);
-  assert.ok(!parseVis("flow", "A[Label] --> B").ok);
+  const seq = parseVis("sequence", "A->>B: msg");
+  assert.ok(seq.ok);
+  assert.deepEqual((seq.spec as { steps: unknown[] }).steps, [{ type: "msg", from: "A", to: "B", label: "msg", dashed: false }]);
   const flow = parseVis("flow", 'a "Label" --> b');
   assert.ok(flow.ok);
   assert.deepEqual([(flow.spec as FlowSpec).nodes[0]!.label, (flow.spec as FlowSpec).edges[0]!.dashed], ["Label", true]);
+  const mermaid = parseVis("flow", "A[Label] --> B");
+  assert.ok(mermaid.ok);
+  assert.deepEqual([(mermaid.spec as FlowSpec).nodes[0]!.label, (mermaid.spec as FlowSpec).edges[0]!.dashed], ["Label", true]);
   // Tree: the folder's slash inside the quotes.
   assert.match(GUIDE, /End folder names with `\/`, inside quotes: `"My Docs\/"`, never `"My Docs"\/`\./);
   assert.match(GUIDE, /`"My Docs\/" "shared"`/);
@@ -145,6 +148,14 @@ test("the guide teaches several targets per mark and matrix cell tones, with exa
   const matrix = [...GUIDE.matchAll(/^```vis matrix\n([\s\S]*?)^```$/gm)].map(([, body]) => parseVis("matrix", body!));
   const cells = matrix.flatMap((r) => (r.ok ? (r.spec as MatrixSpec).rows.flatMap((row) => row.cells) : []));
   assert.ok(cells.some((c) => c.tone === "ok") && cells.some((c) => c.tone === "warn"), "the matrix example tones a text cell");
+});
+
+test("the guide asks for a matrix column name with a comma quoted, and its example means it", () => {
+  const line = /^Quote a column name that has a comma: `(columns: [^`]+)`\.$/m.exec(GUIDE);
+  assert.ok(line, "the matrix section's quoting line");
+  const r = parseVis("matrix", `${line![1]}\nLinear history | no | yes`);
+  assert.ok(r.ok && r.warnings.length === 0);
+  assert.deepEqual((r.spec as MatrixSpec).columns, ["Merge", "Rebase, then merge"]);
 });
 
 // server/baton-vis-guide.ts rewrites this one line for gathering sessions, by its start.

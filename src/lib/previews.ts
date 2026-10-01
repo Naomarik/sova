@@ -15,12 +15,47 @@ export const previewWarning = (port: number | null): string => PREVIEW_WARNING.r
 /** Whether something listens on the preview's port, as the card says it. */
 export const runningLine = (v: PreviewView): string => (v.running ? "App is running" : `Nothing on port ${v.port}`);
 /** A person's own link to another preview, sent to them on WhatsApp (§app.outreach/links): "sent to {name}", else null. */
-export const sentToLine = (v: Pick<PreviewView, "siblingOf" | "sentToName">): string | null => (v.siblingOf ? `sent to ${v.sentToName ?? "a person"}` : null);
+export const sentToLine = (v: Pick<PreviewView, "siblingOf" | "sentToName">): string | null => (v.siblingOf ? `sent to ${recipientName(v)}` : null);
 
 /** The previews the card and the Shares page list: active ones, soonest to expire last. */
 export function activePreviews(list: readonly PreviewView[]): PreviewView[] {
   return list.filter((v) => v.state === "active").sort((a, b) => Date.parse(b.expiresAt) - Date.parse(a.expiresAt));
 }
+
+/** One row of the card or the Shares page: a preview and the people it was sent to (its active siblings, oldest first). */
+export interface PreviewGroup {
+  preview: PreviewView;
+  recipients: PreviewView[];
+}
+
+/** The rows the card and the Shares page list: each active original with its active siblings under it; a sibling whose
+    original isn't listed (off, expired or gone) keeps a row of its own. Soonest to expire last, like `activePreviews`. */
+export function previewGroups(list: readonly PreviewView[]): PreviewGroup[] {
+  const active = activePreviews(list);
+  const listed = new Set(active.filter((v) => !v.siblingOf).map((v) => v.id));
+  const recipients = new Map<string, PreviewView[]>();
+  const groups: PreviewGroup[] = [];
+  for (const v of active) {
+    if (v.siblingOf && listed.has(v.siblingOf)) {
+      const under = recipients.get(v.siblingOf) ?? [];
+      under.push(v);
+      recipients.set(v.siblingOf, under);
+    } else groups.push({ preview: v, recipients: [] });
+  }
+  for (const g of groups) g.recipients = (recipients.get(g.preview.id) ?? []).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  return groups;
+}
+
+/** A recipient as the Sent to line names them. */
+export const recipientName = (v: Pick<PreviewView, "sentToName">): string => v.sentToName?.trim() || "a person";
+
+/** The original's Turn Off confirm: with recipients listed it ends all of their links too. */
+export const turnOffConfirm = (recipients: number): string => (recipients > 0 ? `Turn Off All ${recipients + 1} Links?` : "Turn Off Preview?");
+export const TURN_OFF_ALL_TIP = "Turns off this preview and every link sent from it.";
+/** A recipient's own Turn Off: its tooltip, confirm and done toast. */
+export const recipientOffTip = (name: string): string => `Turns off only ${name}'s link.`;
+export const recipientOffConfirm = (name: string): string => `Turn Off ${name}'s Link?`;
+export const recipientOffDone = (name: string): string => `${name}'s link turned off.`;
 
 /** The port field: a number the server would take, or what's wrong with it. Sova's own defaults
     are refused here too; the server also refuses whatever this host binds. */

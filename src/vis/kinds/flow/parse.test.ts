@@ -63,13 +63,13 @@ test("state: nodes default to round", () => {
 });
 
 test("flow errors point at the line and say what to write", () => {
-  assert.deepEqual([err("flow", 'a -> b\nA["Label"] --> b').line], [2]);
-  assert.match(err("flow", 'a["x"] -> b').message, /node <id> "Label"/);
+  assert.deepEqual([err("flow", 'a -> b\nA["Label" --> b').line], [2]);
+  assert.match(err("flow", 'a["x" -> b').message, /node <id> "Label"/);
   assert.match(err("flow", 'node a "A"\na "Label" -> b').message, /a has a node line: its label goes there/);
   assert.match(err("flow", "node a sparkly").message, /unknown word "sparkly"/);
-  assert.match(err("flow", "direction: down\na -> b").message, /unknown setting "direction:"/);
+  assert.match(err("flow", "orientation: down\na -> b").message, /unknown setting "orientation:"/);
   assert.match(err("flow", "dir: up\na -> b").message, /down or right/);
-  assert.match(err("flow", "node a\nnode a").message, /declared twice/);
+  assert.match(err("flow", "node a\nnode a \"A\"").message, /declared twice/);
   assert.match(err("flow", 'node a "unclosed').message, /unclosed quote/);
   assert.match(err("flow", "a -> ").message, /target id/);
   assert.match(err("flow", "").message, /nothing to draw/);
@@ -94,11 +94,15 @@ test("flow: a tone after an edge's target colours that node", () => {
   assert.equal(tone(s, "newhead"), undefined);
   assert.deepEqual(s.edges.map((e) => e.label), ["<mode> head rewritten", "cache prefix dead", "re-send"]);
   assert.equal(s.nodes.find((n) => n.id === "miss")!.label, "miss");
-  // Agrees with the node line: fine, in either order. Disagrees: an error naming both.
+  // Agrees with the node line: fine, in either order. Disagrees: the node line's tone, else the
+  // first chain's, with a warning naming both (§chat.markdown/vis-lenience-content).
   assert.equal(tone(ok<FlowSpec>("flow", 'node b "B" error\na -> b error'), "b"), "error");
-  assert.match(err("flow", 'node b "B" ok\na -> b error').message, /node b is toned ok on its node line and error/);
-  assert.match(err("flow", 'a -> b error\nnode b "B" ok').message, /node b is toned ok on its node line and error/);
-  assert.match(err("flow", "a -> b error\nc -> b ok").message, /node b is toned error and ok/);
+  for (const body of ['node b "B" ok\na -> b error', 'a -> b error\nnode b "B" ok']) {
+    assert.equal(warning("flow", body).message, "node b is toned ok and error: kept ok");
+    assert.equal(tone(ok<FlowSpec>("flow", body), "b"), "ok");
+  }
+  assert.equal(warning("flow", "a -> b error\nc -> b ok").message, "node b is toned error and ok: kept error");
+  assert.equal(tone(ok<FlowSpec>("flow", "a -> b error\nc -> b ok"), "b"), "error");
   assert.match(err("flow", 'a -> b "x" loud').message, /unexpected loud after b/);
   assert.match(err("flow", "a -> b error extra").message, /unexpected extra after b/);
   const sec = ok<FlowSpec>("flow", "== A ==\na -> b warn\n== B ==\nc -> d");
@@ -192,8 +196,9 @@ test("flow: a stray string after a target says what to write instead", () => {
   assert.equal(ok<FlowSpec>("flow", 'a -> b warn "go"').edges[0]!.label, "go", "outside inline style a string after a target is the edge's");
   assert.equal(msg('a "A" -> b error "rejected"'), 'unexpected "rejected" after b: strings go before shape and tone words: -> b "rejected" error', "b unlabelled: its label or the edge's");
   assert.equal(msg('a "A" -> b "B" "e" warn "go"'), 'unexpected "go" after b: strings go before shape and tone words: -> b "B" "e" "go" warn', "the edge has its label");
-  // Outside inline style: one string, the edge's.
-  assert.equal(msg('a -> b "go" "more"'), 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
+  // Outside inline style: one string, the edge's; two after an unlabelled target are its label and
+  // the edge's (§chat.markdown/vis-lenience-content), so the error is for a third.
+  assert.equal(msg('a -> b "go" "more" "most"'), 'unexpected "more" after b: one string per edge label (\\n breaks a line): -> b "go\\nmore"');
   // A stray word keeps its message.
   assert.equal(msg("a -> b cloud"), "unexpected cloud after b");
 });

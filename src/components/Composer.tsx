@@ -293,7 +293,7 @@ export function Composer(props: {
   const { touch, onPointerDown } = createTouchMode();
   const placeholder = () =>
     [props.running ? "Steer the current turn…" : "",
-      !touch() && !props.readOnly ? "Enter sends, Shift+Enter adds a line" : ""]
+      !touch() && !props.readOnly ? "Enter sends" : ""]
       .filter(Boolean).join(" ");
   const canSend = () => !disabled() && uploading() === 0 && (text().trim().length > 0 || images().length > 0 || !!props.picks);
   createEffect(() => props.onDraft?.(text().trim().length > 0 || images().length > 0));

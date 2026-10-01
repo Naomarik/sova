@@ -10,7 +10,7 @@ import type { Component } from "solid-js";
 import type { VisBase } from "./core/grammar";
 import type { ViewProps } from "./types";
 import { estimateHeight as chartHeight } from "./kinds/chart/layout";
-import { parseChart } from "./kinds/chart/parse";
+import { parseChart, type ChartType } from "./kinds/chart/parse";
 import { estimateHeight as codeHeight } from "./kinds/code/layout";
 import { parseCode } from "./kinds/code/parse";
 import { estimateHeight as flowHeight } from "./kinds/flow/layout";
@@ -80,3 +80,23 @@ export const KINDS: Record<string, KindEntry> = {
 };
 
 export const KIND_WORDS = Object.keys(KINDS);
+
+/**
+ * Other words models write for a kind (`vis flowchart`, `vis table`): drawn as that kind, never
+ * taught. A chart type's word draws a chart of that type unless its `type:` says otherwise.
+ */
+const chartOf = (type: ChartType) => (body: string) => parseChart(body, type);
+export const KIND_ALIASES: Readonly<Record<string, { kind: string; parse?: (body: string) => VisBase }>> = {
+  flowchart: { kind: "flow" }, graph: { kind: "flow" }, diagram: { kind: "flow" }, architecture: { kind: "flow" },
+  sequencediagram: { kind: "sequence" }, seq: { kind: "sequence" },
+  statediagram: { kind: "state" }, "statediagram-v2": { kind: "state" }, states: { kind: "state" }, fsm: { kind: "state" }, statemachine: { kind: "state" },
+  stack: { kind: "layers" },
+  hierarchy: { kind: "tree" }, filetree: { kind: "tree" }, files: { kind: "tree" },
+  table: { kind: "matrix" }, comparison: { kind: "matrix" }, compare: { kind: "matrix" },
+  mockup: { kind: "wireframe" }, ui: { kind: "wireframe" }, screen: { kind: "wireframe" }, wire: { kind: "wireframe" },
+  journey: { kind: "steps" }, scenarios: { kind: "steps" },
+  bar: { kind: "chart" }, line: { kind: "chart", parse: chartOf("line") }, scatter: { kind: "chart", parse: chartOf("scatter") }, stacked: { kind: "chart", parse: chartOf("stacked") }, parts: { kind: "chart", parse: chartOf("parts") }, pie: { kind: "chart", parse: chartOf("parts") },
+};
+
+/** The registry word a fence word draws as (itself, or an alias's kind); unknown words are returned as they are. */
+export const canonicalKind = (word: string): string => (Object.hasOwn(KINDS, word) ? word : Object.hasOwn(KIND_ALIASES, word) ? KIND_ALIASES[word]!.kind : word);

@@ -30,7 +30,7 @@ test("takeMarks: an unreadable mark line is dropped with a warning (no target, j
   assert.deepEqual(dropped("mark a warn error"), ["1: mark takes one tone; mark dropped"]);
   assert.deepEqual(dropped('mark a "open'), ["1: unclosed quote; mark dropped"]);
   assert.deepEqual(dropped("mark a -> b"), ['1: mark: unexpected -> (after the target: a tone and/or a "note"); mark dropped']);
-  assert.deepEqual(dropped('mark "Merge" sort'), ['1: mark: unexpected sort (after the target: a tone and/or a "note"); mark dropped'], "a run is bare words only");
+  assert.deepEqual(dropped('mark "Merge" "a" sort'), ['1: mark: unexpected sort (after the target: a tone and/or a "note"); mark dropped'], "a word after the note");
 });
 
 test("takeMarks: bare words after a target are one run with it, up to a comma, a tone or a string", () => {

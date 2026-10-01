@@ -133,6 +133,43 @@ test("probeMerge: a branch with no commits beyond its base is not merged", async
 	}
 });
 
+test("probeMerge: a branch made from a feature branch is merged when master or its base branch has it", async () => {
+	const r = repo();
+	try {
+		const parent = await createWorktree(runGit, { repoCwd: r.main, name: "goal" });
+		commit(parent.path, "g.txt", "g\n", "goal");
+		const told = await createWorktree(runGit, { repoCwd: r.main, name: "told", base: "feat/goal" });
+		assert.equal(told.baseBranch, "feat/goal");
+		// No commits beyond its base: never merged, though both branches have its tip.
+		assert.equal((await probeMerge(runGit, told))?.merged, false);
+		commit(told.path, "t.txt", "t\n", "told");
+		const open = await probeMerge(runGit, told);
+		assert.equal(open?.merged, false);
+		assert.equal(open?.target, "feat/goal");
+		// Merged into master only (parent never got it): merged, into master.
+		sh(r.main, "merge", "-q", "--no-edit", "feat/told");
+		const onMaster = await probeMerge(runGit, told);
+		assert.equal(onMaster?.merged, true);
+		assert.equal(onMaster?.target, "master");
+		assert.equal(onMaster?.targetSha, sh(r.main, "rev-parse", "master"));
+		// An explicit target is the only one checked.
+		assert.equal((await probeMerge(runGit, told, "feat/goal"))?.merged, false);
+
+		// Stacked and merged into its parent only: merged, into the parent.
+		const stack = await createWorktree(runGit, { repoCwd: r.main, name: "stack", base: "feat/goal" });
+		commit(stack.path, "s.txt", "s\n", "stack");
+		sh(parent.path, "merge", "-q", "--no-edit", "feat/stack");
+		const onParent = await probeMerge(runGit, stack);
+		assert.equal(onParent?.merged, true);
+		assert.equal(onParent?.target, "feat/goal");
+		// Once master has it too, the base branch is still the one named.
+		sh(r.main, "merge", "-q", "--no-edit", "feat/goal");
+		assert.equal((await probeMerge(runGit, stack))?.target, "feat/goal");
+	} finally {
+		r.done();
+	}
+});
+
 /** A branch `name` off master's current tip with one commit writing `file`; master stays checked out. */
 function branchWith(main: string, name: string, file: string, body: string): string {
 	sh(main, "checkout", "-q", "-b", name, "master");

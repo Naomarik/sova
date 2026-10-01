@@ -43,7 +43,7 @@ mark sdk "one writer per session file"
 - `sdk --> srv "events"`: a node already labelled takes one string, the edge's.
 - `done "Reply streamed?" decision`: a shape (`box round store decision circle`) and a tone may follow.
 - `node db "Orders" store` alone on a line declares a node; then `api -> db "SQL"` labels the edge.
-- With no string right after any line's first id, strings after targets are all edge labels.
+- Label the first node too: with no string right after any line's first id, strings after targets are all edge labels.
 - Edges `->`, dashed `-->`, two-way `<->`; chains `a -> b -> c`; `dir: right`; under 12 nodes.
 - `group "Label" id id …` frames related nodes (a node in one group at most).
 - `== Label ==` lines start side-by-side panels (before/after) with their own ids:
@@ -56,7 +56,7 @@ app "App" -> cache "Cache" -> db "Database"
 
 ## sequence
 <!-- owner: process member. Step-through walks messages (a divider goes with the next, a note with the one before), so "Step 2" is what `mark 2` names. Emphasis targets: actor id or label, message number. -->
-Messages between parties over time (protocols, handshakes, request/response). The reader can step through it one message at a time.
+Messages between parties over time (protocols, handshakes, request/response). The reader can step through it message by message.
 ```vis sequence
 actor c "Client"
 actor s "Server"
@@ -66,7 +66,7 @@ s --> c "SYN-ACK"
 note c s "keys derived from the exchange"
 mark 2 "the server commits resources here"
 ```
-- `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors; 2–4 read best on a phone. Keep message labels to a few words.
+- `actor <id> ["Label"] [tone]` (optional; order = first use). `a -> b "msg"`, reply `a --> b "msg"`, self `a -> a "msg"`. `note a [b] "text"`, `== section ==`. At most 8 actors (2–4 fit a phone); short message labels.
 
 ## state
 <!-- owner: process member (flow's parser, layout and View; `end` sinks to the last rank). Emphasis target: state id or label. -->
@@ -106,7 +106,7 @@ mark markdown.ts "the vis hook lives here"
 
 ## chart
 <!-- owner: data member. kinds/chart: parse.ts, scale.ts (axes, ticks), layout.ts (geometry, tested), View.tsx. Emphasis target: row label (key = row index). -->
-Numbers to compare. `type:` `bar` (default; `series:` makes grouped bars), `stacked`, `line` (a trend across ordered rows) or `scatter` (two measures per item). `unit:`, `x:` and `y:` name the axes; `scale: log` for values spanning decades (both axes in a scatter). No pie or donut charts.
+Numbers to compare. `type:` `bar` (default; `series:` makes grouped bars), `stacked`, `line` (a trend across ordered rows) or `scatter` (two measures per item). `unit:`, `x:` and `y:` name the axes; `scale: log` for values spanning decades (both axes in a scatter).
 ```vis chart
 type: bar
 unit: ms
@@ -115,7 +115,7 @@ unit: ms
 "Bubble sort" 9800
 mark "Bubble sort" warn "quadratic"
 ```
-- A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives and `12%` are fine; no thousands commas. At most 40 rows, 6 series.
+- A row: a label (quote it if it has spaces), one number per series (`-` for none), then an optional tone (single series only). Negatives, `12%` and `1.2k` are fine. At most 40 rows, 6 series.
 - Scatter rows are `label x y [tone]`, with no `series:`.
 - `type: parts`: one bar split into its rows, for a whole and its parts; `of:` a capacity draws the unused rest (rows past it don't draw: drop `of:`, say so in the caption).
 ```vis chart
@@ -179,6 +179,7 @@ mark "Unpaid" "tap to filter"
 ## matrix
 <!-- owner: data member. Emphasis target: row label (key = index) or column name (key = c<index>). -->
 Options against criteria; also capabilities by level or role (a matrix, not a flow). `columns: A, B`, then `criterion | cell | cell`; a cell is `yes`, `no`, `partial` (optionally followed by a "note"), or short text that may end with a tone (`72% warn`; quote text ending in a tone word). At most 6 columns.
+Quote a column name that has a comma: `columns: Merge, "Rebase, then merge"`.
 ```vis matrix
 columns: Merge, Rebase
 Keeps original commits | yes | no "new SHAs"
@@ -201,7 +202,7 @@ for (let i = 0;
   i <= items.length;
   i++) total += items[i];
 ```
-- `lang:` a fence word (ts, py, rust, sql, …). `start:` the first line's number, so the numbers match the file.
+- `lang:` a fence word (ts, py, sql, …). `start:` the first line's number, as in the file.
 - Marks go before `---`; all after it is code.
 
 ## html / svg
@@ -219,7 +220,7 @@ document.getElementById("s").onclick=function(){if(v[i]>v[i+1]){var t=v[i];v[i]=
 draw();
 </script>
 ```
-- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. In prose name a colour by what it marks, never by hue. Buttons, inputs and selects are already styled; the body has padding.
+- Colours only from the theme, so light and dark both work: `var(--color-ink)`, `--color-ink-2`, `--color-ink-muted`, `--color-surface`, `--color-sunken`, `--color-border`, `--color-border-strong`, `--color-accent`, `--color-accent-tint`, `--status-success|warn|error|info` and each with `-bg`. In prose name a colour by what it marks, never by hue. Buttons, inputs and selects are already styled.
 - Fit a 360px-wide phone (flex-wrap, grid with `fr`); keep it under about 500px tall.
 - Nothing moves until the reader clicks or presses a key in it: give motion a Play or Step button (in SVG, `begin="play.click"` on the animations, with a `<g id="play" role="button">`). No `setTimeout` loops.
 - Check a large draft with the `vis_check` tool before you post it.

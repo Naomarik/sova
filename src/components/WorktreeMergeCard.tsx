@@ -3,41 +3,25 @@ import type { WorktreeMergeInfo } from "../../shared/protocol";
 import { clockTime, tildePath } from "../lib/format";
 import { home } from "../lib/ui-state";
 import { mergeNumbers, shortSha } from "../lib/worktrees";
-import { ChangesViewer, useChangesSession } from "./ChangesViewer";
-import { Icon } from "./ui";
+import { ChangesDialog, useChangesSession } from "./ChangesViewer";
 
 /**
  * A merge this session recorded (§chat.worktrees/merge-card): which worktree's branch went into
  * which branch, the resulting commit, and what it brought. The model read the same fact as one line.
- * Its chevron unfolds the changes viewer inside the card on that commit against its first parent
- * (§chat.changes/entry), when the card knows its session.
+ * Review Changes, at the end of its head, opens the changes viewer as a dialog on what the merge
+ * brought in (§chat.changes/entry; the server resolves the merge scope), when the card knows its session.
  */
 export function WorktreeMergeCard(props: { merge: WorktreeMergeInfo; time?: string }) {
   const m = () => props.merge;
   const session = useChangesSession();
   const [open, setOpen] = createSignal(false);
-  const viewerId = `merge-changes-${m().sha.slice(0, 12)}-${Math.random().toString(36).slice(2, 8)}`;
   return (
     <div
       class="card worktree-merge"
-      classList={{ "worktree-merge-open": open() }}
       role="group"
       aria-label={`Merged ${m().branch} into ${m().target} at ${shortSha(m().sha)}: ${mergeNumbers(m())}`}
     >
       <div class="worktree-merge-head">
-        <Show when={session}>
-          <button
-            type="button"
-            class="button button-icon button-ghost worktree-merge-toggle"
-            aria-expanded={open()}
-            aria-controls={viewerId}
-            aria-label={open() ? "Hide This Merge's Changes" : "Show This Merge's Changes"}
-            title={open() ? "Hide the changes" : "Show the changes this merge brought"}
-            onClick={() => setOpen(!open())}
-          >
-            <Icon name={open() ? "chevron-down" : "chevron-right"} small />
-          </button>
-        </Show>
         <span class="icon icon-sm" style={{ "--icon": "url(/icons/branch.svg)" }} aria-hidden="true" />
         <span class="chip chip-success">
           <span class="chip-dot" aria-hidden="true" />
@@ -49,6 +33,17 @@ export function WorktreeMergeCard(props: { merge: WorktreeMergeInfo; time?: stri
         <span class="text-mono text-caption" title={m().sha}>
           {shortSha(m().sha)}
         </span>
+        <Show when={session}>
+          <button
+            type="button"
+            class="button button-sm worktree-merge-review"
+            aria-label={`Review Changes from ${m().branch}`}
+            title="Review the changes this merge brought in"
+            onClick={() => setOpen(true)}
+          >
+            Review Changes
+          </button>
+        </Show>
       </div>
       <p class="worktree-merge-numbers text-caption">
         <span class="text-num">
@@ -73,13 +68,11 @@ export function WorktreeMergeCard(props: { merge: WorktreeMergeInfo; time?: stri
       </p>
       <Show when={open() && session}>
         {(s) => (
-          <div id={viewerId} class="worktree-merge-changes">
-            <ChangesViewer
-              inline
-              scope={{ kind: "commit", sessionPath: s().path, repoPath: m().path, sha: m().sha }}
-              cwd={s().cwd}
-            />
-          </div>
+          <ChangesDialog
+            scope={{ kind: "merge", sessionPath: s().path, repoPath: m().path, sha: m().sha }}
+            cwd={s().cwd}
+            onClose={() => setOpen(false)}
+          />
         )}
       </Show>
     </div>

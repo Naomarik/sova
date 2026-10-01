@@ -110,7 +110,7 @@ test("parts: each error says what to write", () => {
   assert.match(err("type: parts\nscale: log\na 1").message, /can't use scale: log/);
   assert.match(err("type: parts\nx: time\na 1").message, /no axes/);
   assert.match(err("of: 100\na 1").message, /of: is the capacity of a type: parts chart/);
-  assert.match(err("type: parts\nof: 1,000\na 1").message, /number above 0 \(no thousands commas\)/);
+  assert.match(err("type: parts\nof: 1,00\na 1").message, /number above 0 \(no thousands commas\)/);
   assert.match(err("type: parts\nof: 0\na 1").message, /number above 0/);
   assert.match(err("type: parts\nof: 100").message, /add parts like/);
   assert.match(err(`type: parts\n${Array.from({ length: 13 }, (_, i) => `p${i} 1`).join("\n")}`).message, /13 parts; at most 12/);

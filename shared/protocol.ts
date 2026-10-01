@@ -3545,6 +3545,11 @@ export type DiffScope =
   /** One commit against its first parent (a root commit: against the empty tree). `sha` is hex,
       4–64 chars, resolved to a commit in that repository; a merge card's sha, typically. */
   | { kind: "commit"; sessionPath: string; repoPath: string; sha: string }
+  /** What a merge card's merge brought in (§chat.changes/endpoint). `repoPath` and `sha` must be a
+      merge card this session recorded (its `path` and full `sha`). A merge commit against its
+      first parent; a fast-forward (the card's sha is the branch tip) against the tracked worktree's
+      base when that is an ancestor of the tip and not the tip itself, else its first parent. */
+  | { kind: "merge"; sessionPath: string; repoPath: string; sha: string }
   /** The repository containing `cwd`: index + working tree (untracked files as added) against HEAD. */
   | { kind: "dirty"; sessionPath: string; cwd: string };
 
@@ -3552,7 +3557,7 @@ export type DiffScope =
 export function diffScopeQuery(s: DiffScope): string {
   const q = new URLSearchParams({ kind: s.kind, session: s.sessionPath });
   if (s.kind === "worktree") q.set("path", s.worktreePath);
-  else if (s.kind === "commit") {
+  else if (s.kind === "commit" || s.kind === "merge") {
     q.set("path", s.repoPath);
     q.set("sha", s.sha);
   } else q.set("path", s.cwd);

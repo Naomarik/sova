@@ -143,7 +143,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
     "The 1 project here is archived. Unarchive one below, or add a project." (or "All {n} projects
     here are archived. …") instead of "No projects yet."
 - **Rows and width.** A hand-off session row's title and meta line wrap rather than truncate. Each
-  card on the org list, org and project pages stops at 880px wide, left-aligned. The project
+  card on the org list, org and project pages stops at 880px wide, left-aligned, except the
+  project page's Overview, whose cards fill its columns (§app.organizations/project-page). The project
   page's title, cut with an ellipsis when it doesn't fit, carries the whole project name as its
   tooltip (`title`).
   - **Workspace**: the workspace repo card: how often changes are committed ("Changes are
@@ -170,7 +171,8 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   opens its page. Picking a tab replaces the hash (no history entry per tab), and the page
   is not reloaded: the fetched org stays. `#/orgs/<id>/projects/<project>` stays the project page,
   and its back link opens the Projects tab; `#/orgs/<id>/people/<pid>` is a person's page, and its
-  back link opens the People tab; the project page, its overseer and a person's page are untabbed.
+  back link opens the People tab; the project page has its own tabs (§app.organizations/project-page),
+  and its overseer and a person's page are untabbed.
 - **Keyboard.** The selected tab is the strip's one tab stop; Left/Right move focus along the
   strip (wrapping), Home/End jump, Enter or Space selects. Selecting keeps focus on the tab at
   every width: the phone's move-focus-to-the-title on a route change happens only when the page
@@ -324,6 +326,69 @@ the URL (§app.organizations/org-page); each roster person has a page of their o
   plus `linkOpens` (whether a link of theirs on this host opens that session now, which the
   "links don't open this session now" line reads); its viewer can never write. None
   of them is reachable on the share listener.
+
+## §app.organizations/project-page — One project's page: a summary and four tabs
+
+- **Head.** The page head is the project's name (§app.organizations/org-page: cut with an
+  ellipsis, the whole name as its `title`), the org · folder meta line, **Refresh Project**, and a
+  **⋯** menu ("Project actions · {project}") holding **Settings** (a link to the Settings tab) and
+  **Archive Project…** (or **Unarchive Project** while archived, §app.organizations/archive). No
+  destructive button sits in the head itself.
+- **Summary**, under the head on every tab:
+  - **The overseer line**: the level in force as a chip-like word pair (`L3 Build`), then
+    "Watching" or "Not watching", then the last run in the page's own words
+    (§app.project-overseer/watch-loop: "Last looked on its own {time}{tail}." or "It hasn't looked
+    on its own yet.") and "{n} run(s) today."; the line is one line where it fits and wraps on a
+    phone. The **Working** chip while it works, **Run Now** and **Open Overseer** (or **Start
+    Overseer**, with the unread count) sit beside it. Under it, only when true: "Waiting to look
+    at: …", today's and the last message's allowance used, and each Waiting line
+    (§app.project-overseer/limits); the paused-by-attach banner with Resume at {level}.
+  - **A strip of count chips**, each a link that opens its tab and brings its section into view:
+    `{n} sessions` (coding sessions, Overview), `{n} previews` (active preview links, Overview),
+    the project's cost (`$27.21`, Cost), `{n} conflicts` (open, warn while above 0,
+    Requirements), `{n} decisions` (Requirements; its `title` says how many are ready to promote),
+    `{n} gaps` (open gap ideas, with " · {n} ideas" for the other open ideas, Requirements) and `{n} to-dos` (open, Overview). A count not read yet
+    is left out, never shown as 0.
+- **Tabs**: Overview (the default) · Requirements · Cost · Settings, the org page's tab strip
+  (`.tabs`, keyboard as §app.organizations/org-page; Requirements carries the warn dot while a
+  conflict is open or a decision is ready to promote). The tab is in the URL:
+  `#/orgs/<id>/projects/<pid>` is Overview, `…/requirements`, `…/cost`, `…/settings` the others
+  (`…/overseer` stays the overseer's door). Picking a tab or a chip adds a history entry, so Back
+  returns to the previous tab and a reload opens the same one; the page is not reloaded and its
+  fetched data stays.
+- **Overview.** First, while there is something to act on, a warn banner "{n} conflict(s) open ·
+  {n} decision(s) ready to promote." with **Review Requirements**. Then, in two columns when the
+  pane is at least 1000px wide (one column below): **Coding sessions** (§app.project-overseer/
+  coding-worktrees) and the gathering **Sessions it started**, and **Previews**
+  (§mesh.public/preview-card) in the first; **Activity** and **To-do** in the second. Overview's
+  cards use the width they are given (no 880px cap); the page stops at 1280px.
+- **Activity** is a card: its newest 5 acts, then **Show All {n}** (and **Show Fewer**). A done
+  act has no chip; `Partly`, `Refused` and `Failed` keep theirs. With none: "Nothing yet. Every act
+  it takes, refused or not, lists here."
+- **To-do** is a card of the open items (each with its tick and actions,
+  §app.project-overseer/ideas-and-todos); its add form opens from **+** ("Add a to-do item") on
+  its heading and closes after an add or on Cancel.
+- **Requirements.** One status card: the heading `Requirements` with **Reconcile Now** and
+  **Rewrite Draft**; the main stakeholder select (§app.organizations/stakeholder); the decisions
+  line and the spec line; the spec folder in mono; "Last reconciled …" or "Never reconciled."; the
+  spec banners; and the **Frozen** switch with its hint. Then **Conflicts** (when any conflict,
+  open or resolved, exists), **Decisions** (when any decision exists), **Pipeline**
+  (§app.project-overseer/pipeline, when it has a gap row or a held act) and **Gaps and ideas**
+  (when an idea is open), each as it is; the empty ones are named in one line instead ("No
+  conflicts, decisions, pipeline rows or ideas yet.", listing only the empty ones), with **+ Idea**
+  opening the add form.
+- **Cost**: the Cost card (§app.project-costs/card).
+- **Settings.** In this order: **Overseer** (the Watch switch and its hint; the level as a
+  segmented control `L0 | L1 | L2 | L3` whose selected level's sentence shows under it, the
+  "In force now" note and the hint; the approval list as a summary line with **Edit**,
+  §app.project-overseer/reviews); **Sessions it starts** (the gathering and coding sessions'
+  model, thinking, abilities and mode selects, three to a row where they fit); **Extra
+  instructions**; **Limits** (§app.project-overseer/limits); the Owner Page card while the org has
+  an owner (§app.owner-page/controls); and a **Danger zone** with **Archive Project** (or
+  Unarchive). Every control saves exactly as it did before the page had tabs: a pick, tick or
+  switch at once, Extra instructions and Limits on their own Save.
+- **Width.** At 390px nothing scrolls sideways: the chips wrap, the tab strip scrolls as the org
+  page's does, and every control stays at least 44px tall.
 
 ## §app.organizations/workspace-repo — What the workspace repo holds, and what it never holds
 
@@ -832,8 +897,9 @@ Organizations region's own Needs you, never the global one.
     Organizations region's own Needs you list. Its sessions are not moved or archived: its project
     page lists them, and their links and URLs open them;
   - the owner page (§app/owner-page) is unchanged: it shows the project as before.
-- **The project page** stays reachable by its URL. Its head carries **Archive Project**
-  (destructive, outlined), confirmed with "{project} leaves the Projects list and its overseer stops
+- **The project page** stays reachable by its URL. Its head's **⋯** menu (**Archive Project…**) and
+  its Settings tab's **Danger zone** (**Archive Project**, destructive, outlined) both ask, where
+  they were pressed, with "{project} leaves the Projects list and its overseer stops
   looking. Nothing is deleted; Unarchive brings it back." (`Archive Project` · `Cancel`); a refusal
   shows under it in the server's words. Archived, the page shows an info banner, "{project} was
   archived {when}. Its overseer is paused and nothing new starts here. Nothing was deleted."

@@ -447,10 +447,9 @@ export function startRegistryPush(): void {
     // meshApi hooks can't be removed, so it's added once and checks `started` itself.
     meshApi.onPeerUp((peerId) => {
       if (started && viaGatewayPeer()?.id === peerId) {
-        // A gateway that came back renegotiates what it routes before it gets session rows.
-        forgetKinds();
-        void refreshThenPush();
-        void kick();
+        // A gateway that came back is asked again; what it last stated stays in effect (the
+        // preview address reads it) until that answer replaces it, and the push follows it.
+        void refreshThenPush().finally(() => void kick());
       }
     });
   }

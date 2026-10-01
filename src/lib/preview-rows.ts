@@ -20,7 +20,7 @@ export interface PreviewRow {
   maker: { text: string; href: string | null } | null;
   state: { text: string; tone: "ok" | "warn" };
   expires: string;
-  /** The link to copy, or null; then `linkNote` says why there is none. */
+  /** The link to copy, or null; then `linkNote` says why there is none (null for a sibling: its link went to its person). */
   url: string | null;
   linkNote: string | null;
 }
@@ -50,6 +50,9 @@ export function stateLine(v: PreviewView): { text: string; tone: "ok" | "warn" }
   return { text: t.kind === "port" ? `Nothing on port ${t.port}` : "Folder not served", tone: "warn" };
 }
 
+/** Who sent a recipient's link, for its name's tooltip. */
+export const senderLine = (createdBy: string): string | null => (createdBy === "operator" ? "Sent by you" : createdBy.startsWith("session:") ? "Sent by the overseer" : null);
+
 /** `operator` is you; `session:<id>` is the project overseer's conversation that made it. */
 export function makerLine(createdBy: string): { text: string; href: string | null } | null {
   if (createdBy === "operator") return { text: "Made by you", href: null };
@@ -72,6 +75,7 @@ export function previewRow(v: PreviewView, now: number, minted?: string): Previe
     state: stateLine(v),
     expires: expiresWord(v.expiresAt, now),
     url: url || null,
-    linkNote: url ? null : PREVIEW_NOT_KEPT,
+    // A sibling's link went to its person, never to this page: no "not kept" line for it.
+    linkNote: url || v.siblingOf ? null : PREVIEW_NOT_KEPT,
   };
 }

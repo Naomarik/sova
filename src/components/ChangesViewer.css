@@ -277,27 +277,6 @@ button.changes-step-chip[aria-pressed="true"] { background: var(--color-accent);
 @media (max-width: 767px) {
   .modal.changes-dialog { top: 0; height: 100dvh; width: auto; border-radius: 0; border: 0; }
 }
-/* Inline (a merge card): at every width the viewer is at most the transcript's visible height
-   (--transcript-view, Thread.tsx) less room above and below, so centred it fits on screen; a
-   shorter change keeps its natural height. Beyond that the list and the diff each scroll inside
-   it, and a scroll that reaches a pane's end carries on to the transcript. */
-.changes-inline {
-  height: auto;
-  max-height: calc(var(--transcript-view, 100dvh) - var(--space-5) * 2);
-  border-top: var(--stroke-thin) solid var(--color-border);
-}
-.changes-inline .changes-body { flex: 0 1 auto; grid-template-rows: minmax(0, 1fr); }
-.changes-inline .changes-side,
-.changes-inline .changes-main-body { overscroll-behavior: auto; }
-
-/* A merge card's chevron sits at the start of its head; the viewer unfolds edge to edge below. */
-.worktree-merge-toggle { width: var(--control-sm); min-height: var(--control-sm); margin: calc(var(--space-1) * -1) 0 calc(var(--space-1) * -1) calc(var(--space-2) * -1); }
-@media (pointer: coarse) { .worktree-merge-toggle { width: var(--tap-min); min-height: var(--tap-min); } }
-.worktree-merge-changes {
-  margin: var(--space-2) calc(var(--space-4) * -1) calc(var(--space-3) * -1);
-  border-radius: 0 0 var(--r-lg) var(--r-lg);
-  overflow: hidden;
-}
 
 /* An agent's show_changes result. */
 .changes-card { padding: var(--space-3) var(--space-4); }

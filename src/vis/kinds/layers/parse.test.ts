@@ -49,3 +49,8 @@ test("layers: items that are all quoted keep their own quotes (the field isn't u
   assert.equal(s.layers[3]!.label, "Load balancer");
   assert.equal(s.layers[3]!.note, "one per cluster");
 });
+
+test("layers: a comma inside parentheses doesn't split an item; unbalanced parentheses split at every comma", () => {
+  const s = ok<LayersSpec>("layers", "Transport | TCP, UDP (datagrams, no order) | where ports live\nFaces | Happy :), Sad :(");
+  assert.deepEqual(s.layers.map((l) => l.items), [["TCP", "UDP (datagrams, no order)"], ["Happy :)", "Sad :("]]);
+});

@@ -126,8 +126,11 @@ branch's last spec commit. Those lines never change the card. The message never 
 lands when that turn ends. A branch with no commits beyond its base is never "merged". The TUI
 draws it as a card, and Sova's transcript renders a **merge card**: the worktree path, branch,
 target branch, resulting commit, commit count, lines added and removed, and whether it was a
-fast-forward or a merge commit; a detected one also says "seen after the turn". Details Sova
-can't read render as the plain text.
+fast-forward or a merge commit; a detected one also says "seen after the turn". At the end of its
+head (below it when the column is narrow) a **Review Changes** control, labelled with the branch
+for a screen reader, opens the changes viewer on what the merge brought in (§chat.changes/entry);
+a card in a transcript Sova can't tie to a session has none. Details Sova can't read render as the
+plain text.
 
 A tool merge's commit is the target's new tip, and its count and lines are the target's own change.
 For a merge seen after a turn, the commit is the first one on the target's first-parent history
@@ -140,6 +143,16 @@ the same commit.
 
 A merge this session did not make gets no card; the pane still shows the worktree as merged
 (§chat.worktrees/pane).
+
+## §chat.worktrees/merged-state — When git finds a worktree merged
+
+A tracked worktree counts as merged when its branch has commits beyond its base and all of them
+are in its base branch or in the repository's main branch (master, else main), whether or not a
+merge was recorded. A worktree made from another feature branch whose commits reached master but
+never that branch is merged into master. The target it is merged into is its base branch when
+that branch has it, else the main branch; one merged into neither is checked against its base
+branch (the main branch when it has none). A check that names its target, such as the one after
+a turn against the target seen at the turn's start, looks at that target only.
 
 ## §chat.worktrees/pane — The Worktrees section
 

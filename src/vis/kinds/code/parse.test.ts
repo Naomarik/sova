@@ -35,7 +35,7 @@ test("code: header, ---, verbatim lines; marks by displayed line number or range
 });
 
 test("code: errors say what to write", () => {
-  assert.match(err("x = 1").message, /---/);
+  assert.match(err("lang: ts").message, /no code: put it after a line with just ---/);
   assert.match(err("lang: ts\n---\n").message, /no code/);
   assert.match(warning("mark 5\n---\na\nb").message, /no line \(lines here are 1–2\) 5, dropped/);
   assert.match(err("x = 1\n---\na").message, /only settings/);
